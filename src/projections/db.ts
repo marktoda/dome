@@ -69,11 +69,11 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { createHash } from "node:crypto";
 
 import { type Result, ok, err } from "../types";
 import { commitOid, type CommitOid } from "../core/source-ref";
 import { configureSqliteConnection } from "../sqlite/connection";
+import { computeDdlHash, sha256Hex } from "../sqlite/hash";
 
 import { compareStrings } from "../core/compare";
 
@@ -363,11 +363,6 @@ const PROJECTION_TABLE_NAMES = Object.freeze(
   REQUIRED_TABLE_COLUMNS.map((entry) => entry.table),
 );
 
-// ----- sha256 helper --------------------------------------------------------
-
-const sha256 = (s: string): string =>
-  createHash("sha256").update(s).digest("hex");
-
 // ----- Public types ---------------------------------------------------------
 
 /**
@@ -518,7 +513,7 @@ export type ProjectionDbError =
  * for callers that want to log the schema version on startup.
  */
 export function computeSchemaHash(): string {
-  return sha256(DDL.join("\n"));
+  return computeDdlHash(DDL);
 }
 
 /**
@@ -535,7 +530,7 @@ export function computeExtensionSetHash(
   // Project to a canonical {name, version} shape so unknown extra keys on
   // the input (if any slip past TS at boundaries) don't perturb the hash.
   const canonical = sorted.map((e) => ({ name: e.name, version: e.version }));
-  return sha256(JSON.stringify(canonical));
+  return sha256Hex(JSON.stringify(canonical));
 }
 
 /**
@@ -548,7 +543,7 @@ export function computeProcessorVersionsHash(
 ): string {
   const sorted = [...versions].sort((a, b) => compareStrings(a.id, b.id));
   const canonical = sorted.map((p) => ({ id: p.id, version: p.version }));
-  return sha256(JSON.stringify(canonical));
+  return sha256Hex(JSON.stringify(canonical));
 }
 
 // ----- openProjectionDb -----------------------------------------------------

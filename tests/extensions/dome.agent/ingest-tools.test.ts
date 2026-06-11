@@ -2,13 +2,11 @@ import { describe, expect, test } from "bun:test";
 import {
   appendCapturedTaskLines,
   CAPTURED_APPEND_MAX_LINES,
-  CAPTURED_END,
   CAPTURED_LINE_MAX_CHARS,
-  CAPTURED_START,
-  dailyPath,
-  dailyPathSettings,
-  renderDailySkeleton,
-} from "../../../assets/extensions/dome.daily/processors/daily-shared";
+} from "../../../assets/extensions/dome.daily/processors/captured-block";
+import { dailyPath, dailyPathSettings } from "../../../assets/extensions/dome.daily/processors/daily-paths";
+import { renderDailySkeleton } from "../../../assets/extensions/dome.daily/processors/daily-scaffold";
+import { CAPTURED_END, CAPTURED_START } from "../../../assets/extensions/dome.daily/processors/daily-types";
 import { makeIngestTools } from "../../../assets/extensions/dome.agent/lib/ingest-tools";
 import type { AgentRunState } from "../../../assets/extensions/dome.agent/lib/agent-loop";
 

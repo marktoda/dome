@@ -28,19 +28,11 @@ import {
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
 
-import {
-  DAILY_GENERATED_BLOCKS,
-  closeScaffoldSection,
-  dailyPath,
-  dailyPathSettings,
-  ensureCloseScaffoldSection,
-  localDateParts,
-  openLoopSurfaceKey,
-  openSourceBackedOpenLoopsFromMarkdown,
-  settledActionItemsFromMarkdown,
-  settledSourceBackedOpenLoopsFromMarkdown,
-  type DailyCloseDoneCandidate,
-} from "./daily-shared";
+import { settledActionItemsFromMarkdown } from "./action-extraction";
+import { dailyPath, dailyPathSettings, localDateParts } from "./daily-paths";
+import { closeScaffoldSection, ensureCloseScaffoldSection } from "./daily-scaffold";
+import { DAILY_GENERATED_BLOCKS, type DailyCloseDoneCandidate } from "./daily-types";
+import { openLoopSurfaceKey, openSourceBackedOpenLoopsFromMarkdown, settledSourceBackedOpenLoopsFromMarkdown } from "./open-loop-surface";
 
 type ScheduleInput = {
   readonly kind: "schedule";

@@ -3,14 +3,12 @@ import {
   appendCapturedTaskLines,
   CAPTURED_APPEND_MAX_LINES,
   CAPTURED_LINE_MAX_CHARS,
-  dailyPath,
   isCapturedTaskLine,
   isValidCapturedTasksWrite,
-  previousLocalDate,
-  renderDailySkeleton,
-  type DailyDate,
-  type DailyPathSettings,
-} from "../../dome.daily/processors/daily-shared";
+} from "../../dome.daily/processors/captured-block";
+import { dailyPath, previousLocalDate } from "../../dome.daily/processors/daily-paths";
+import { renderDailySkeleton } from "../../dome.daily/processors/daily-scaffold";
+import type { DailyDate, DailyPathSettings } from "../../dome.daily/processors/daily-types";
 import type { AgentRunState, AgentTool } from "./agent-loop";
 import {
   appendToPageTool,

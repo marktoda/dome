@@ -7,7 +7,6 @@
 
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
-import { createHash } from "node:crypto";
 import { dirname } from "node:path";
 
 import { err, ok, type Result } from "../types";
@@ -16,6 +15,7 @@ import {
   type SqliteTableShape,
 } from "../sqlite-shape";
 import { configureSqliteConnection } from "../sqlite/connection";
+import { computeDdlHash } from "../sqlite/hash";
 
 const DDL: ReadonlyArray<string> = Object.freeze([
   "CREATE TABLE IF NOT EXISTS answers_meta ("
@@ -65,9 +65,6 @@ const REQUIRED_TABLE_SHAPES: ReadonlyArray<SqliteTableShape> = Object.freeze([
     ],
   },
 ]);
-
-const sha256 = (s: string): string =>
-  createHash("sha256").update(s).digest("hex");
 
 export type AnswersDb = {
   readonly raw: Database;
@@ -155,7 +152,7 @@ export async function openAnswersDb(
 }
 
 export function computeAnswersSchemaHash(): string {
-  return sha256(DDL.join("\n"));
+  return computeDdlHash(DDL);
 }
 
 function applyDdl(db: Database): void {

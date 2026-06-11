@@ -7,7 +7,6 @@
 // processor's job is to make the question channel useful without adding a
 // probabilistic dependency.
 
-import { createHash } from "node:crypto";
 import { posix } from "node:path";
 
 import matter from "gray-matter";
@@ -22,6 +21,7 @@ import {
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
+import { shortHash } from "../../../../src/core/short-hash";
 import {
   DUPLICATE_DETECTION_OPTIONS,
   DUPLICATE_DETECTION_QUESTION_PREFIX,
@@ -63,7 +63,7 @@ const duplicateDetection = defineProcessorImplementation({
             options: DUPLICATE_DETECTION_OPTIONS,
             sourceRefs: [changed.sourceRef, other.sourceRef],
             idempotencyKey:
-              `${DUPLICATE_DETECTION_QUESTION_PREFIX}${sha256(pairKey + ":" + changed.signature)}`,
+              `${DUPLICATE_DETECTION_QUESTION_PREFIX}${shortHash(pairKey + ":" + changed.signature, 16)}`,
             metadata: {
               risk: "medium",
               confidence: 0.8,
@@ -340,6 +340,3 @@ function orderedPairKey(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
-function sha256(value: string): string {
-  return createHash("sha256").update(value).digest("hex").slice(0, 16);
-}

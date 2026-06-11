@@ -29,17 +29,13 @@ import {
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
 
+import { dailyPath, dailyPathSettings, formatDate, localDateParts, previousLocalDate } from "../../dome.daily/processors/daily-paths";
 import {
-  dailyPath,
-  dailyPathSettings,
-  formatDate,
-  localDateParts,
   previousDailyDigest,
-  previousLocalDate,
   removeLegacyStartContextSection,
   renderDailySkeleton,
   yesterdayFallbackSection,
-} from "../../dome.daily/processors/daily-shared";
+} from "../../dome.daily/processors/daily-scaffold";
 
 import { ATTENTION_DISCOUNT_PREDICATE } from "../../dome.daily/processors/attention-shared";
 
@@ -49,7 +45,8 @@ import {
   agentTruncatedEffect,
 } from "../lib/agent-run-effects";
 import { BRIEF_CHARTER } from "../lib/brief-charter";
-import { coreMemorySection, withCoreMemory } from "../lib/core-memory";
+import { withCoreMemory } from "../lib/core-memory";
+import { agentPreamble } from "../lib/agent-preamble";
 import {
   INTEGRATED_BLOCK,
   MEETINGS_BLOCK,
@@ -86,12 +83,6 @@ type ScheduleInput = {
 
 const brief = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
-    // step is undefined only when NO model provider is wired (doctor's
-    // model.provider-missing carries that signal); a text-only provider gets
-    // a throwing step from the engine, surfaced below as brief-failed.
-    const step = ctx.modelInvoke?.step;
-    if (step === undefined) return Object.freeze([]);
-
     const input = parseScheduleInput(ctx.input);
     if (input === null) return Object.freeze([]);
 
@@ -168,24 +159,12 @@ const brief = defineProcessorImplementation({
       calendarExists: calendarContent !== null,
     });
 
-    // Owner core memory: prepended to the task turn as DATA (never
-    // instructions — same defensive framing as the calendar list).
-    // Absent/empty page → no-op.
-    const core = await coreMemorySection({
-      readFile: (p) => ctx.snapshot.readFile(p),
-      config: ctx.extensionConfig,
-    });
-    const configDiagnostics: Effect[] =
-      core.problem === null
-        ? []
-        : [
-            diagnosticEffect({
-              severity: "warning",
-              code: "dome.agent.core-config-invalid",
-              message: core.problem,
-              sourceRefs,
-            }),
-          ];
+    // step check + coreMemorySection read + core-problem diagnostic.
+    // No per-processor config problems to pass (brief has no extra config).
+    const pre = await agentPreamble(ctx, [], sourceRefs);
+    if (pre.kind === "no-model") return Object.freeze([]);
+    const { step, core } = pre;
+    const configDiagnostics: Effect[] = [...pre.effects];
 
     // Seed the accumulator with the prepared daily so the model's readPage
     // sees it (overlay) and a model that does nothing still lands the

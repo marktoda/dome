@@ -176,6 +176,10 @@ export function resolveSubscriptions(
  * feed, and a feed that could land anywhere in the vault would turn the
  * fetch command into a general write channel. Returns the problem string,
  * or null when well-formed.
+ *
+ * Note: see src/core/config-path.ts for the shared relative-markdown-path
+ * validator; sources' domain-specific checks ({date}, sources/ prefix policy)
+ * are why this validator is not used wholesale here.
  */
 export function outputPathTemplateProblem(template: string): string | null {
   if (template.trim() !== template || template.length === 0) {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { normalizeTaskSyntax } from "../../assets/extensions/dome.daily/processors/daily-shared";
+import { normalizeTaskSyntax } from "../../assets/extensions/dome.daily/processors/action-extraction";
 
 describe("normalizeTaskSyntax", () => {
   test("returns null for an Obsidian Tasks query-dashboard file", () => {

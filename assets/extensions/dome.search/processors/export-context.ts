@@ -24,9 +24,7 @@ import {
   dailySurfaceOpenLoopsForContext,
   type DailySurfaceContextOpenLoop,
 } from "./daily-surface";
-import {
-  openLoopSurfaceKey,
-} from "../../dome.daily/processors/daily-shared";
+import { openLoopSurfaceKey } from "../../dome.daily/processors/open-loop-surface";
 import {
   groupByMatchingPath,
   questionItemFromProjection,

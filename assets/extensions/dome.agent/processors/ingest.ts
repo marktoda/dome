@@ -9,16 +9,13 @@ import {
   defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
-import {
-  dailyPath,
-  dailyPathSettings,
-  localDateParts,
-} from "../../dome.daily/processors/daily-shared";
+import { dailyPath, dailyPathSettings, localDateParts } from "../../dome.daily/processors/daily-paths";
 import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
 import { finalTextExcerpt, finishAgentRun } from "../lib/agent-run-effects";
-import { coreMemorySection, withCoreMemory } from "../lib/core-memory";
+import { withCoreMemory } from "../lib/core-memory";
 import { makeIngestTools, type CapturedTasksRouting } from "../lib/ingest-tools";
 import { INGEST_CHARTER } from "../lib/ingest-charter";
+import { agentPreamble } from "../lib/agent-preamble";
 
 const MAX_STEPS = 25;
 
@@ -30,15 +27,16 @@ const MAX_SOURCE_CHARS = 100_000;
 
 const ingest = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
-    // step is undefined only when NO model provider is wired (doctor's
-    // model.provider-missing carries that signal); a text-only provider gets
-    // a throwing step from the engine, which fails loudly per source below.
-    const step = ctx.modelInvoke?.step;
-    if (step === undefined) return Object.freeze([]);
-
+    // Extra guard before preamble: no raw captures → nothing to do.
     const rawPaths = ctx.changedPaths.filter(isRawCapturePath);
     if (rawPaths.length === 0) return Object.freeze([]);
     const sourceRefs = rawPaths.map((p) => ctx.sourceRef(p));
+
+    // step check + coreMemorySection read + core-problem diagnostic.
+    // No per-processor config problems to pass (ingest has no extra config).
+    const pre = await agentPreamble(ctx, [], sourceRefs);
+    if (pre.kind === "no-model") return Object.freeze([]);
+    const { step, core } = pre;
 
     // Today's daily — the captured-tasks landing zone. Same settings-derived
     // path computation as the brief and create-daily (a `daily_path` override
@@ -60,29 +58,12 @@ const ingest = defineProcessorImplementation({
       capturedTasks,
     });
 
-    // Owner core memory: read once per run, prepended to every source's task
-    // turn as DATA (never instructions). Absent/empty page → no-op.
-    const core = await coreMemorySection({
-      readFile: (p) => ctx.snapshot.readFile(p),
-      config: ctx.extensionConfig,
-    });
-
     // One accumulator shared across every source in this run. Each source's
     // loop reads prior sources' in-run edits (via the overlay-aware tools) and
     // builds on them, and the whole batch lands as a SINGLE PatchEffect — so
     // there are no racing per-source sub-proposals to clobber a shared page.
     const state: AgentRunState = { edits: new Map(), questions: [] };
-    const effects: Effect[] = [];
-    if (core.problem !== null) {
-      effects.push(
-        diagnosticEffect({
-          severity: "warning",
-          code: "dome.agent.core-config-invalid",
-          message: core.problem,
-          sourceRefs,
-        }),
-      );
-    }
+    const effects: Effect[] = [...pre.effects];
     let truncated = false;
 
     for (const sourcePath of rawPaths) {

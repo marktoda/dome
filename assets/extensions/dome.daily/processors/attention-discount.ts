@@ -35,7 +35,7 @@ import {
   attentionDiscountFactValue,
   collectAttentionDiscounts,
 } from "./attention-shared";
-import { dailyPathSettings } from "./daily-shared";
+import { dailyPathSettings } from "./daily-paths";
 
 import { compareStrings } from "../../../../src/core/compare";
 

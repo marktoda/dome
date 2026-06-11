@@ -32,8 +32,6 @@
 // runtime by Bun's dynamic-import loader (the bundle is loaded via
 // `loadBundles` in `src/extensions/loader.ts`).
 
-import { createHash } from "node:crypto";
-
 import {
   diagnosticEffect,
   patchEffect,
@@ -42,6 +40,7 @@ import {
   type FileChangeInput,
   type QuestionEffect,
 } from "../../../../src/core/effect";
+import { shortHash } from "../../../../src/core/short-hash";
 import {
   defineProcessorImplementation,
   type ProcessorContext,
@@ -223,13 +222,13 @@ function ambiguousWikilinkQuestion(opts: {
     options,
     sourceRefs: [opts.sourceRef],
     idempotencyKey:
-      `${AMBIGUOUS_WIKILINK_QUESTION_PREFIX}${sha256([
+      `${AMBIGUOUS_WIKILINK_QUESTION_PREFIX}${shortHash([
         opts.changedPath,
         String(opts.line),
         String(opts.startChar),
         opts.target,
         candidateOptions.join("|"),
-      ].join("\0"))}`,
+      ].join("\0"), 64)}`,
     metadata: {
       risk: "medium",
       confidence: 0.72,
@@ -263,6 +262,3 @@ function stubPatchEffect(
   });
 }
 
-function sha256(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}

@@ -19,6 +19,7 @@
 //   - `noUncheckedIndexedAccess` discipline: indexed reads from `.all()`
 //     check `=== undefined` before reading.
 
+import { mapRows } from "../sqlite/rows";
 import type { ProjectionDb } from "./db";
 
 // ----- Public types ---------------------------------------------------------
@@ -105,7 +106,7 @@ export function getCursor(
  */
 export function allCursors(db: ProjectionDb): ReadonlyArray<ScheduleCursor> {
   const rows = db.raw.query<CursorRow, []>(ALL_CURSORS_SQL).all();
-  return Object.freeze(rows.map(rowToCursor));
+  return mapRows(rows, rowToCursor);
 }
 
 // ----- internals ------------------------------------------------------------

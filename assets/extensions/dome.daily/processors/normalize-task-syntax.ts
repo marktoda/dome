@@ -37,13 +37,9 @@ import {
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
-import {
-  dailyPath,
-  dailyPathSettings,
-  localDateParts,
-  normalizeTaskSyntax,
-  repairCapturedTodayHeadings,
-} from "./daily-shared";
+import { normalizeTaskSyntax } from "./action-extraction";
+import { repairCapturedTodayHeadings } from "./captured-block";
+import { dailyPath, dailyPathSettings, localDateParts } from "./daily-paths";
 
 const normalizeTaskSyntaxProcessor = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {

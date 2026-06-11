@@ -3,31 +3,33 @@ import { describe, expect, test } from "bun:test";
 import {
   actionItemsFromMarkdown,
   ambiguousFollowupsFromMarkdown,
+  openTasksFromMarkdown,
+  settledActionItemsFromMarkdown,
+} from "../../assets/extensions/dome.daily/processors/action-extraction";
+import { dailyPath, dailyPathSettings, parseDailyPath } from "../../assets/extensions/dome.daily/processors/daily-paths";
+import {
   carriedForwardSection,
   closeDigestFromDailyContent,
   closeScaffoldSection,
-  completedSourceBackedOpenLoopsFromMarkdown,
-  dailyPathSettings,
-  dailyPath,
   ensureCloseScaffoldSection,
   ensureYesterdayFallbackSection,
-  openLoopIdentity,
-  openLoopFreshnessKey,
-  openLoopStableId,
-  openLoopSurfaceSection,
-  openLoopSurfaceKey,
-  openLoopSurfaceSources,
-  openTasksFromMarkdown,
-  parseDailyPath,
   previousDailyDigest,
-  rankDailyOpenLoopSurfaceItems,
   removeLegacyStartContextSection,
   renderDailySkeleton,
-  replaceOpenLoopSurfaceSection,
-  settledActionItemsFromMarkdown,
-  settledSourceBackedOpenLoopsFromMarkdown,
   yesterdayFallbackSection,
-} from "../../assets/extensions/dome.daily/processors/daily-shared";
+} from "../../assets/extensions/dome.daily/processors/daily-scaffold";
+import {
+  completedSourceBackedOpenLoopsFromMarkdown,
+  openLoopFreshnessKey,
+  openLoopIdentity,
+  openLoopStableId,
+  openLoopSurfaceKey,
+  openLoopSurfaceSection,
+  openLoopSurfaceSources,
+  rankDailyOpenLoopSurfaceItems,
+  replaceOpenLoopSurfaceSection,
+  settledSourceBackedOpenLoopsFromMarkdown,
+} from "../../assets/extensions/dome.daily/processors/open-loop-surface";
 
 describe("dome.daily shared date helpers", () => {
   test("parseDailyPath accepts real daily dates", () => {

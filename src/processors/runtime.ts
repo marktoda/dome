@@ -116,15 +116,13 @@ import {
 } from "./execution-policy";
 import {
   insertQueued,
-  markCancelled,
-  markFailed,
   markRunning,
   markSkipped,
-  markSucceeded,
-  markTimedOut,
+  markTerminal,
   newRunId,
   sumCostUsdByProcessorPrefix,
   type RunId,
+  type TerminalMark,
   type TriggerKind,
 } from "../ledger/runs";
 import type { ProcessorRegistry } from "./registry";
@@ -1434,47 +1432,57 @@ function scopeTriggerMatchesForProcessor(
   );
 }
 
+function toTerminalMark(
+  execution: ProcessorExecutionResult,
+  costUsd: number | null,
+): TerminalMark {
+  switch (execution.status) {
+    case "succeeded":
+      return {
+        status: "succeeded",
+        effectHashes: execution.effectHashes,
+        costUsd,
+        durationMs: execution.durationMs,
+        outputCommit: null,
+      };
+    case "timed_out":
+      return {
+        status: "timed_out",
+        error: execution.error,
+        costUsd,
+        durationMs: execution.durationMs,
+      };
+    case "cancelled":
+      return {
+        status: "cancelled",
+        error: execution.error,
+        costUsd,
+        durationMs: execution.durationMs,
+      };
+    case "failed":
+      return {
+        status: "failed",
+        error: execution.error,
+        costUsd,
+        durationMs: execution.durationMs,
+      };
+  }
+}
+
 function markDispatchTerminal(
   frame: DispatchFrame,
   execution: ProcessorExecutionResult,
   costUsd: number,
 ): void {
   if (frame.ledger === undefined) return;
+  const id = frame.runId;
   const finishedAt = new Date();
-  if (execution.status === "succeeded") {
-    markSucceeded(frame.ledger, {
-      id: frame.runId,
-      effectHashes: execution.effectHashes,
-      costUsd: costUsdOrNull(costUsd),
-      durationMs: execution.durationMs,
-      outputCommit: null,
-      finishedAt,
-    });
-  } else if (execution.status === "timed_out") {
-    markTimedOut(frame.ledger, {
-      id: frame.runId,
-      error: execution.error,
-      costUsd: costUsdOrNull(costUsd),
-      durationMs: execution.durationMs,
-      finishedAt,
-    });
-  } else if (execution.status === "cancelled") {
-    markCancelled(frame.ledger, {
-      id: frame.runId,
-      error: execution.error,
-      costUsd: costUsdOrNull(costUsd),
-      durationMs: execution.durationMs,
-      finishedAt,
-    });
-  } else {
-    markFailed(frame.ledger, {
-      id: frame.runId,
-      error: execution.error,
-      costUsd: costUsdOrNull(costUsd),
-      durationMs: execution.durationMs,
-      finishedAt,
-    });
-  }
+  const resolvedCostUsd = costUsdOrNull(costUsd);
+  markTerminal(frame.ledger, {
+    ...toTerminalMark(execution, resolvedCostUsd),
+    id,
+    finishedAt,
+  });
 }
 
 function runnerResultForExecution(

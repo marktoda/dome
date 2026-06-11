@@ -32,6 +32,7 @@ import {
 } from "../core/effect";
 import type { CommitOid } from "../core/source-ref";
 import { parseJsonColumn, parseSourceRefsColumn } from "../sqlite/row-json";
+import { mapRows } from "../sqlite/rows";
 import type { ProjectionDb } from "./db";
 
 // ----- Public types ---------------------------------------------------------
@@ -178,7 +179,7 @@ export function factsBySubject(
   const rows = db.raw
     .query<FactRow, [string, string]>(FACTS_BY_SUBJECT_SQL)
     .all(normalized.kind, subjectId(normalized));
-  return Object.freeze(rows.map(rowToFact));
+  return mapRows(rows, rowToFact);
 }
 
 /**
@@ -193,7 +194,7 @@ export function factsByPredicate(
   const rows = db.raw
     .query<FactRow, [string, string]>(FACTS_BY_PREDICATE_SQL)
     .all(namespace, predicate);
-  return Object.freeze(rows.map(rowToFact));
+  return mapRows(rows, rowToFact);
 }
 
 /**
@@ -203,7 +204,7 @@ export function factsByPredicate(
  */
 export function allFacts(db: ProjectionDb): ReadonlyArray<FactEffect> {
   const rows = db.raw.query<FactRow, []>(ALL_FACTS_SQL).all();
-  return Object.freeze(rows.map(rowToFact));
+  return mapRows(rows, rowToFact);
 }
 
 /**

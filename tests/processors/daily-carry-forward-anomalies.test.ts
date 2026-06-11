@@ -9,11 +9,7 @@
 import { describe, expect, test } from "bun:test";
 
 import carryForward from "../../assets/extensions/dome.daily/processors/carry-forward";
-import {
-  dailyPath,
-  dailyPathSettings,
-  localDateParts,
-} from "../../assets/extensions/dome.daily/processors/daily-shared";
+import { dailyPath, dailyPathSettings, localDateParts } from "../../assets/extensions/dome.daily/processors/daily-paths";
 import type { DiagnosticEffect } from "../../src/core/effect";
 import { treeOid, type Snapshot } from "../../src/core/processor";
 import { commitOid } from "../../src/core/source-ref";

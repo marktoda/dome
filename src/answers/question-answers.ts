@@ -4,6 +4,7 @@
 // durable answer by QuestionEffect.idempotencyKey so rebuilds can rehydrate
 // projection state without giving processors direct write access.
 
+import { mapRows } from "../sqlite/rows";
 import type { AnswersDb } from "./db";
 
 export type QuestionAnswerRecord = {
@@ -132,7 +133,7 @@ export function queryQuestionAnswers(
   db: AnswersDb,
 ): ReadonlyArray<QuestionAnswerRecord> {
   const rows = db.raw.query<QuestionAnswerRow, []>(QUERY_ALL_SQL).all();
-  return Object.freeze(rows.map(rowToRecord));
+  return mapRows(rows, rowToRecord);
 }
 
 export function answerHandlersNeedDispatch(record: QuestionAnswerRecord): boolean {

@@ -94,7 +94,9 @@ import {
   type ProcessorTimeoutExecutionError,
   type RunId,
 } from "../engine/core/runner-contract";
+import { parseEnum } from "../sqlite/parse-enum";
 import { parseJsonColumn } from "../sqlite/row-json";
+import { mapRows } from "../sqlite/rows";
 import type { LedgerDb } from "./db";
 import { limitClause } from "./limits";
 
@@ -647,6 +649,68 @@ export function markSkipped(db: LedgerDb, opts: MarkSkippedOpts): void {
 }
 
 /**
+ * Discriminated terminal-state dispatch over the running→terminal mark
+ * functions. markSkipped is intentionally excluded (queued→skipped is not
+ * a running-terminal).
+ *
+ * Compile-time exhaustiveness is enforced at the construction site: the
+ * value-returning `toTerminalMark` switch in runtime.ts produces TS2366 if
+ * a new status variant is added without a matching case. The `default` guard
+ * below is a defence-in-depth catch for any unconstructed variant that
+ * reaches the dispatch site without going through `toTerminalMark`.
+ */
+export type TerminalMark =
+  | {
+      readonly status: "succeeded";
+      readonly effectHashes: ReadonlyArray<string>;
+      readonly costUsd: number | null;
+      readonly durationMs: number;
+      readonly outputCommit: CommitOid | null;
+    }
+  | {
+      readonly status: "failed";
+      readonly error: string | ProcessorFailedExecutionError;
+      readonly costUsd?: number | null;
+      readonly durationMs: number;
+    }
+  | {
+      readonly status: "timed_out";
+      readonly error: ProcessorTimeoutExecutionError;
+      readonly costUsd?: number | null;
+      readonly durationMs: number;
+    }
+  | {
+      readonly status: "cancelled";
+      readonly error: ProcessorCancelledExecutionError;
+      readonly costUsd?: number | null;
+      readonly durationMs: number;
+    };
+
+export function markTerminal(
+  db: LedgerDb,
+  opts: TerminalMark & { readonly id: RunId; readonly finishedAt: Date },
+): void {
+  switch (opts.status) {
+    case "succeeded":
+      markSucceeded(db, opts);
+      return;
+    case "failed":
+      markFailed(db, opts);
+      return;
+    case "timed_out":
+      markTimedOut(db, opts);
+      return;
+    case "cancelled":
+      markCancelled(db, opts);
+      return;
+    default: {
+      const _exhaustive: never = opts;
+      throw new Error(`unreachable terminal status: ${(_exhaustive as { status: string }).status}`);
+    }
+  }
+}
+
+/**
  * Land the closure-commit OID on the `output_commit` column of every named
  * successful run. Called by `src/engine/core/adopt.ts` after `makeClosureCommit`
  * returns a non-null OID for the iteration.
@@ -696,7 +760,7 @@ export function queryRuns(
   const sql = `${SELECT_BASE_SQL}${where} ORDER BY started_at DESC${limitClause(filter?.limit)}`;
 
   const rows = db.raw.query<RunRawRow, string[]>(sql).all(...params);
-  return Object.freeze(rows.map(rowToRunRow));
+  return mapRows(rows, rowToRunRow);
 }
 
 /**
@@ -714,7 +778,7 @@ export function queryRunSummaries(
   const sql = `${SELECT_SUMMARY_BASE_SQL}${where} ORDER BY started_at DESC${limitClause(filter?.limit)}`;
 
   const rows = db.raw.query<RunSummaryRawRow, string[]>(sql).all(...params);
-  return Object.freeze(rows.map(rowToRunSummaryRow));
+  return mapRows(rows, rowToRunSummaryRow);
 }
 
 export function countRuns(
@@ -746,7 +810,7 @@ export function latestActiveProblemRuns(
   db: LedgerDb,
 ): ReadonlyArray<RunRow> {
   const rows = db.raw.query<RunRawRow, []>(LATEST_ACTIVE_PROBLEM_RUNS_SQL).all();
-  return Object.freeze(rows.map(rowToRunRow));
+  return mapRows(rows, rowToRunRow);
 }
 
 export function countLatestActiveProblemRuns(db: LedgerDb): number {
@@ -835,7 +899,7 @@ export function orphanRuns(
 ): ReadonlyArray<RunRow> {
   const cutoff = new Date(now.getTime() - runningOlderThanMs).toISOString();
   const rows = db.raw.query<RunRawRow, [string]>(ORPHAN_RUNS_SQL).all(cutoff);
-  return Object.freeze(rows.map(rowToRunRow));
+  return mapRows(rows, rowToRunRow);
 }
 
 /**
@@ -974,44 +1038,41 @@ function runsWhereClause(
   });
 }
 
+const RUN_STATUSES = [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "skipped",
+  "timed_out",
+  "cancelled",
+] as const satisfies ReadonlyArray<RunStatus>;
+
+const PROCESSOR_PHASES = [
+  "adoption",
+  "garden",
+  "view",
+] as const satisfies ReadonlyArray<ProcessorPhase>;
+
+const TRIGGER_KINDS = [
+  "signal",
+  "path",
+  "schedule",
+  "answer",
+  "command",
+  "job",
+] as const satisfies ReadonlyArray<TriggerKind>;
+
 function narrowStatus(s: string): RunStatus {
-  switch (s) {
-    case "queued":
-    case "running":
-    case "succeeded":
-    case "failed":
-    case "skipped":
-    case "timed_out":
-    case "cancelled":
-      return s;
-    default:
-      throw new Error(`ledger.runs: unknown status '${s}'`);
-  }
+  return parseEnum(s, RUN_STATUSES, "ledger.runs: status");
 }
 
 function narrowPhase(s: string): ProcessorPhase {
-  switch (s) {
-    case "adoption":
-    case "garden":
-    case "view":
-      return s;
-    default:
-      throw new Error(`ledger.runs: unknown phase '${s}'`);
-  }
+  return parseEnum(s, PROCESSOR_PHASES, "ledger.runs: phase");
 }
 
 function narrowTriggerKind(s: string): TriggerKind {
-  switch (s) {
-    case "signal":
-    case "path":
-    case "schedule":
-    case "answer":
-    case "command":
-    case "job":
-      return s;
-    default:
-      throw new Error(`ledger.runs: unknown trigger_kind '${s}'`);
-  }
+  return parseEnum(s, TRIGGER_KINDS, "ledger.runs: trigger_kind");
 }
 
 function isRecoveredOrphanRun(

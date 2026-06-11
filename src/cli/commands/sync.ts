@@ -36,11 +36,12 @@
 
 import { basename } from "node:path";
 
-import { openVault, type Vault } from "../../vault";
+import type { Vault } from "../../vault";
 import {
   openVaultErrorKind,
   vaultOpenFailureMessage,
 } from "../../surface/adapter";
+import { withVaultCli } from "../vault-helpers";
 import type { AdoptionResult } from "../../core/proposal";
 import type { CompilerHostTickResult } from "../../engine/host/compiler-host";
 import type { GardenPhaseResult } from "../../engine/garden/garden";
@@ -67,6 +68,7 @@ import {
 } from "../presenter";
 
 import { resolveVaultPath } from "../../surface/resolve-vault";
+import { EX_TEMPFAIL, EX_USAGE } from "../exit-codes";
 // ----- Public types ---------------------------------------------------------
 
 /**
@@ -163,61 +165,56 @@ export async function runSync(options: RunSyncOptions = {}): Promise<number> {
   const verbose = options.verbose === true;
   const quiet = options.quiet === true && !jsonMode;
 
-  // ----- 2. Open the vault ----------------------------------------------------
-  const opened = await openVault({
+  // ----- 2. Open the vault + 3. Run one compiler-host tick -------------------
+  return withVaultCli({
     path: vaultPath,
     bundlesRoot: options.bundlesRoot,
+    onOpenFailed: (error) => {
+      const errorKind = openVaultErrorKind(error);
+      const msg = vaultOpenFailureMessage("dome sync", error);
+      if (jsonMode) {
+        emitErrorJson({ branch: null, error: errorKind, message: msg });
+      } else {
+        console.error(msg);
+      }
+      return 1;
+    },
+    run: async (vault) => {
+      const tick = await vault.sync({
+        ...(verbose && !quiet && !jsonMode
+          ? {
+              onEvent: (e) => {
+                const line = formatFilteredAdoptEvent(e, {
+                  command: "sync",
+                  ...(options.filterProcessor !== undefined
+                    ? { processorFilter: options.filterProcessor }
+                    : {}),
+                });
+                if (line !== null) console.error(line);
+              },
+            }
+          : {}),
+        ...(!quiet
+          ? {
+              onGardenProcessorStart: (info) => {
+                if (info.executionClass === "llm" || verbose) {
+                  console.error(
+                    `dome sync: ▶ running ${info.processorId}${info.executionClass === "llm" ? " (agent)" : ""}…`,
+                  );
+                }
+              },
+            }
+          : {}),
+      });
+      const result = tickResultJson(tick, await collectSyncHealth(vault));
+      if (jsonMode) {
+        console.log(formatJson(result));
+      } else {
+        printTickLines(tick, { quiet, result, vaultPath });
+      }
+      return exitCodeForTick(tick);
+    },
   });
-  if (!opened.ok) {
-    const errorKind = openVaultErrorKind(opened.error);
-    const msg = vaultOpenFailureMessage("dome sync", opened.error);
-    if (jsonMode) {
-      emitErrorJson({ branch: null, error: errorKind, message: msg });
-    } else {
-      console.error(msg);
-    }
-    return 1;
-  }
-  const vault = opened.value;
-
-  // ----- 3. Run one compiler-host tick --------------------------------------
-  try {
-    const tick = await vault.sync({
-      ...(verbose && !quiet && !jsonMode
-        ? {
-            onEvent: (e) => {
-              const line = formatFilteredAdoptEvent(e, {
-                command: "sync",
-                ...(options.filterProcessor !== undefined
-                  ? { processorFilter: options.filterProcessor }
-                  : {}),
-              });
-              if (line !== null) console.error(line);
-            },
-          }
-        : {}),
-      ...(!quiet
-        ? {
-            onGardenProcessorStart: (info) => {
-              if (info.executionClass === "llm" || verbose) {
-                console.error(
-                  `dome sync: ▶ running ${info.processorId}${info.executionClass === "llm" ? " (agent)" : ""}…`,
-                );
-              }
-            },
-          }
-        : {}),
-    });
-    const result = tickResultJson(tick, await collectSyncHealth(vault));
-    if (jsonMode) {
-      console.log(formatJson(result));
-    } else {
-      printTickLines(tick, { quiet, result, vaultPath });
-    }
-    return exitCodeForTick(tick);
-  } finally {
-    await vault.close();
-  }
 }
 
 
@@ -377,8 +374,8 @@ function buildAttentionFooter(
 }
 
 function exitCodeForTick(tick: CompilerHostTickResult): number {
-  if (tick.kind === "detached-head" || tick.kind === "no-commits") return 64;
-  if (tick.kind === "busy") return 75;
+  if (tick.kind === "detached-head" || tick.kind === "no-commits") return EX_USAGE;
+  if (tick.kind === "busy") return EX_TEMPFAIL;
   if (tick.kind === "diverged") return 1;
   return tick.kind === "blocked" ? 1 : 0;
 }

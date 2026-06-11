@@ -9,7 +9,8 @@ import { basename } from "node:path";
 
 import type { AnswerHandlerDispatchResult } from "../../engine/host/question-answering";
 import type { QuestionRecord } from "../../projections/questions";
-import { openVault, type ResolveOutcome } from "../../vault";
+import type { ResolveOutcome } from "../../vault";
+import { withVaultCli } from "../vault-helpers";
 
 import { formatJson } from "../../surface/format";
 import { formatCommand } from "../human-output";
@@ -56,70 +57,68 @@ export async function runAnswer(
   }
 
   const vaultPath = resolveVaultPath(options.vault);
-  const opened = await openVault({
+  return withVaultCli({
     path: vaultPath,
     bundlesRoot: options.bundlesRoot,
-  });
-  if (!opened.ok) {
-    const errorKind = opened.error.kind === "runtime-open-failed"
-      ? opened.error.cause.kind
-      : opened.error.kind;
-    printAnswerError({
-      commandLabel,
-      json: options.json === true,
-      error: errorKind,
-      message: opened.error.kind === "not-a-vault"
-        ? `${commandLabel}: ${opened.error.message}`
-        : `${commandLabel}: openVaultRuntime failed (${errorKind}). ` +
-          "Run `dome init` first to initialize the vault.",
-    });
-    return 1;
-  }
-  const vault = opened.value;
+    onOpenFailed: (error) => {
+      const errorKind = error.kind === "runtime-open-failed"
+        ? error.cause.kind
+        : error.kind;
+      printAnswerError({
+        commandLabel,
+        json: options.json === true,
+        error: errorKind,
+        message: error.kind === "not-a-vault"
+          ? `${commandLabel}: ${error.message}`
+          : `${commandLabel}: openVaultRuntime failed (${errorKind}). ` +
+            "Run `dome init` first to initialize the vault.",
+      });
+      return 1;
+    },
+    run: async (vault) => {
+      try {
+        const rawValue = options.value?.trim();
+        if (rawValue === undefined || rawValue.length === 0) {
+          const record = await vault.getQuestion(id);
+          if (record === null) {
+            printAnswerError({
+              commandLabel,
+              json: options.json === true,
+              error: "question-not-found",
+              message: `${commandLabel}: question ${id} was not found.`,
+            });
+            return 64;
+          }
+          if (options.json === true) {
+            console.log(formatJson({
+              schema: ANSWER_SCHEMA,
+              ...questionRecordJson(record),
+            }));
+          } else {
+            console.log(formatQuestion(commandLabel, vaultPath, record));
+          }
+          return 0;
+        }
 
-  try {
-    const rawValue = options.value?.trim();
-    if (rawValue === undefined || rawValue.length === 0) {
-      const record = await vault.getQuestion(id);
-      if (record === null) {
+        const outcome = await vault.resolve(id, rawValue);
+        return printAnswerResult(
+          outcome,
+          options.json === true,
+          commandLabel,
+          vaultPath,
+        );
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
         printAnswerError({
           commandLabel,
           json: options.json === true,
-          error: "question-not-found",
-          message: `${commandLabel}: question ${id} was not found.`,
+          error: "answer-failed",
+          message: `${commandLabel}: failed: ${msg}`,
         });
-        return 64;
+        return 1;
       }
-      if (options.json === true) {
-        console.log(formatJson({
-          schema: ANSWER_SCHEMA,
-          ...questionRecordJson(record),
-        }));
-      } else {
-        console.log(formatQuestion(commandLabel, vaultPath, record));
-      }
-      return 0;
-    }
-
-    const outcome = await vault.resolve(id, rawValue);
-    return printAnswerResult(
-      outcome,
-      options.json === true,
-      commandLabel,
-      vaultPath,
-    );
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    printAnswerError({
-      commandLabel,
-      json: options.json === true,
-      error: "answer-failed",
-      message: `${commandLabel}: failed: ${msg}`,
-    });
-    return 1;
-  } finally {
-    await vault.close();
-  }
+    },
+  });
 }
 
 function printAnswerResult(

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { actionItemsFromMarkdown } from "../../assets/extensions/dome.daily/processors/daily-shared";
+import { actionItemsFromMarkdown } from "../../assets/extensions/dome.daily/processors/action-extraction";
 
 describe("actionItemsFromMarkdown is anchor-aware", () => {
   test("strips a trailing ^anchor from a checkbox body and exposes the anchor", () => {

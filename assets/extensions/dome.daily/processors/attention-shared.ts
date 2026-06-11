@@ -21,17 +21,15 @@
 
 import type { Snapshot } from "../../../../src/core/processor";
 
+import { dailyPathSettings, formatDate, parseDailyPath } from "./daily-paths";
 import {
-  dailyPathSettings,
-  formatDate,
   openLoopIdentity,
   openLoopSurfaceKey,
   openLoopSurfaceSources,
   openSourceBackedOpenLoopsFromMarkdown,
-  parseDailyPath,
   settledSourceBackedOpenLoopsFromMarkdown,
-  type DailyPathSettings,
-} from "./daily-shared";
+} from "./open-loop-surface";
+import type { DailyPathSettings } from "./daily-types";
 
 import { compareStrings } from "../../../../src/core/compare";
 

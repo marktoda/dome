@@ -25,6 +25,7 @@ import {
   parseOptionalJsonColumn,
   parseSourceRefsColumn,
 } from "../sqlite/row-json";
+import { mapRows } from "../sqlite/rows";
 import type { ProjectionDb } from "./db";
 
 // ----- Public types ---------------------------------------------------------
@@ -270,7 +271,7 @@ export function queryQuestionRecords(
   } else {
     rows = db.raw.query<QuestionRow, []>(QUERY_ALL_SQL).all();
   }
-  return Object.freeze(rows.map(rowToQuestionRecord));
+  return mapRows(rows, rowToQuestionRecord);
 }
 
 /**

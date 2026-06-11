@@ -20,6 +20,7 @@
 // — never past cap-dropped or failed-tonight material, so those pairs stay
 // eligible on subsequent runs. The windowDays floor is the decay backstop.
 
+import { validateRelativeMarkdownPath } from "../../../../src/core/config-path";
 import {
   diagnosticEffect,
   patchEffect,
@@ -35,7 +36,8 @@ import {
   type AgentRunResult,
   type AgentRunState,
 } from "../lib/agent-loop";
-import { coreMemorySection, withCoreMemory } from "../lib/core-memory";
+import { withCoreMemory } from "../lib/core-memory";
+import { agentPreamble } from "../lib/agent-preamble";
 import { sweepCharter } from "../lib/sweep-charter";
 import {
   parseSweepLedger,
@@ -64,10 +66,7 @@ function capMaterialRead(content: string): string {
 }
 import { globMatch } from "../../../../src/engine/core/glob-cache";
 import { isModelExecutionError } from "../../../../src/engine/core/model-invoke";
-import {
-  formatDate,
-  localDateParts,
-} from "../../dome.daily/processors/daily-shared";
+import { formatDate, localDateParts } from "../../dome.daily/processors/daily-paths";
 
 const MAX_STEPS = 8; // per item — one read + one write + slack
 const DEFAULT_LEDGER_PATH = "sweep-ledger.md";
@@ -108,25 +107,9 @@ export function sweepLedgerPath(
 ): SweepLedgerResolution {
   const raw = config?.sweep_ledger_path;
   if (raw === undefined) return Object.freeze({ path: DEFAULT_LEDGER_PATH, problem: null });
-  if (typeof raw !== "string") {
-    return ledgerFallback("sweep_ledger_path must be a string");
-  }
-  if (raw.trim() !== raw || raw.length === 0 || !raw.endsWith(".md")) {
-    return ledgerFallback("sweep_ledger_path must be a non-empty .md path");
-  }
-  if (
-    raw.startsWith("/") ||
-    raw.includes("\\") ||
-    raw.split("/").some(
-      (segment) =>
-        segment.length === 0 || segment === "." || segment === "..",
-    )
-  ) {
-    return ledgerFallback(
-      "sweep_ledger_path must be a relative vault markdown path",
-    );
-  }
-  return Object.freeze({ path: raw, problem: null });
+  const v = validateRelativeMarkdownPath(raw, "sweep_ledger_path");
+  if (!v.ok) return ledgerFallback(v.problem);
+  return Object.freeze({ path: v.path, problem: null });
 }
 
 function ledgerFallback(problem: string): SweepLedgerResolution {
@@ -400,11 +383,6 @@ export function neverRegressCursor(
 
 const sweep = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
-    // step is undefined only when NO model provider is wired; a text-only
-    // provider gets a throwing step from the engine, surfaced per item below.
-    const step = ctx.modelInvoke?.step;
-    if (step === undefined) return Object.freeze([]);
-
     const ledgerRes = sweepLedgerPath(ctx.extensionConfig);
     const ledgerPath = ledgerRes.path;
     const windowDays = positiveIntConfig(
@@ -420,39 +398,22 @@ const sweep = defineProcessorImplementation({
     const targets = sweepTargets(ctx.extensionConfig);
 
     const ledgerRefs = [ctx.sourceRef(ledgerPath)];
-    const core = await coreMemorySection({
-      readFile: (p) => ctx.snapshot.readFile(p),
-      config: ctx.extensionConfig,
-    });
 
-    const effects: Effect[] = [];
-    for (const problem of [
-      ledgerRes.problem,
-      windowDays.problem,
-      maxItems.problem,
-      targets.problem,
-    ]) {
-      if (problem !== null) {
-        effects.push(
-          diagnosticEffect({
-            severity: "warning",
-            code: "dome.agent.sweep-config-invalid",
-            message: problem,
-            sourceRefs: ledgerRefs,
-          }),
-        );
-      }
-    }
-    if (core.problem !== null) {
-      effects.push(
-        diagnosticEffect({
-          severity: "warning",
-          code: "dome.agent.core-config-invalid",
-          message: core.problem,
-          sourceRefs: ledgerRefs,
-        }),
-      );
-    }
+    // step check + coreMemorySection read + config-problem diagnostics
+    // (all four sweep config problems share the same code).
+    const pre = await agentPreamble(
+      ctx,
+      [
+        { problem: ledgerRes.problem, code: "dome.agent.sweep-config-invalid", sourceRefs: ledgerRefs },
+        { problem: windowDays.problem, code: "dome.agent.sweep-config-invalid", sourceRefs: ledgerRefs },
+        { problem: maxItems.problem, code: "dome.agent.sweep-config-invalid", sourceRefs: ledgerRefs },
+        { problem: targets.problem, code: "dome.agent.sweep-config-invalid", sourceRefs: ledgerRefs },
+      ],
+      ledgerRefs,
+    );
+    if (pre.kind === "no-model") return Object.freeze([]);
+    const { step, core } = pre;
+    const effects: Effect[] = [...pre.effects];
 
     const today = formatDate(localDateParts(ctx.now()));
     const ledgerContent = (await ctx.snapshot.readFile(ledgerPath)) ?? "";

@@ -35,7 +35,7 @@ import { resolveBundleRoots } from "./sync-shared";
 import { parseNonNegativeIntegerValue } from "../parse-options";
 
 import { resolveVaultPath } from "../../surface/resolve-vault";
-const EX_USAGE = 64;
+import { EX_USAGE } from "../exit-codes";
 
 export type RunDoctorOptions = {
   readonly repair?: boolean | undefined;

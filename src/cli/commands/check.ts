@@ -53,10 +53,9 @@ import {
   parsePositiveIntegerValue,
 } from "../parse-options";
 import { resolveVaultPath } from "../../surface/resolve-vault";
+import { EX_USAGE } from "../exit-codes";
 
 export type { RunCheckOptions } from "../../surface/check";
-
-const EX_USAGE = 64;
 
 export async function runCheck(
   options: RunCheckOptions = {},

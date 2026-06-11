@@ -34,8 +34,7 @@ import {
   parseNonNegativeIntegerOption,
   parsePositiveIntegerOption,
 } from "./parse-options";
-
-const EX_USAGE = 64;
+import { EX_USAGE } from "./exit-codes";
 
 // ----- runCli ---------------------------------------------------------------
 

@@ -65,9 +65,8 @@ import {
   type ResolvedServiceDeps,
   type ServiceDeps,
 } from "../../surface/service-probe";
+import { EX_USAGE } from "../exit-codes";
 // ----- Constants ------------------------------------------------------------
-
-const EX_USAGE = 64;
 
 /**
  * Standard PATH entries for the launchd service environment. launchd gui

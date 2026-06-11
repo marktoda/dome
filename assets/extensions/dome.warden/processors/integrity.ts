@@ -22,8 +22,6 @@
 // keyed on the page content hash, so a flag re-raises only when the page
 // content changes and settles by content-hash.
 
-import { createHash } from "node:crypto";
-
 import matter from "gray-matter";
 import { z } from "zod";
 
@@ -37,6 +35,7 @@ import {
   defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
+import { shortHash } from "../../../../src/core/short-hash";
 
 const MODEL_SCHEMA = "dome.warden.integrity/v1";
 
@@ -108,10 +107,7 @@ const integrity = defineProcessorImplementation({
       }
       if (result.findings.length === 0) continue;
 
-      const contentHash = createHash("sha256")
-        .update(content)
-        .digest("hex")
-        .slice(0, 12);
+      const contentHash = shortHash(content, 12);
       const policy: QuestionAutomationPolicy = isPeopleContent(path, content)
         ? "owner-needed"
         : "agent-safe";

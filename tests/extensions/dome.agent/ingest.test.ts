@@ -5,10 +5,7 @@ import type {
   ModelStepResult,
 } from "../../../src/core/processor";
 import type { PatchEffect, QuestionEffect, DiagnosticEffect } from "../../../src/core/effect";
-import {
-  formatDate,
-  localDateParts,
-} from "../../../assets/extensions/dome.daily/processors/daily-shared";
+import { formatDate, localDateParts } from "../../../assets/extensions/dome.daily/processors/daily-paths";
 
 function makeCtx(opts: {
   files: Record<string, string>;

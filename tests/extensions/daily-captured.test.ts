@@ -15,25 +15,23 @@ import { describe, expect, test } from "bun:test";
 
 import normalizeTaskSyntaxProcessor from "../../assets/extensions/dome.daily/processors/normalize-task-syntax";
 import taskIndex from "../../assets/extensions/dome.daily/processors/task-index";
+import { actionItemsFromMarkdown, stampTaskAnchors } from "../../assets/extensions/dome.daily/processors/action-extraction";
 import {
-  actionItemsFromMarkdown,
   appendCapturedTaskLines,
   CAPTURED_APPEND_MAX_LINES,
-  CAPTURED_END,
   CAPTURED_LINE_MAX_CHARS,
-  CAPTURED_START,
-  dailyPath,
-  dailyPathSettings,
   isCapturedTaskLine,
   isValidCapturedTasksWrite,
-  localDateParts,
-  openLoopSurfaceSources,
-  renderDailySkeleton,
   repairCapturedTodayHeadings,
+} from "../../assets/extensions/dome.daily/processors/captured-block";
+import { dailyPath, dailyPathSettings, localDateParts } from "../../assets/extensions/dome.daily/processors/daily-paths";
+import { renderDailySkeleton } from "../../assets/extensions/dome.daily/processors/daily-scaffold";
+import { CAPTURED_END, CAPTURED_START } from "../../assets/extensions/dome.daily/processors/daily-types";
+import {
+  openLoopSurfaceSources,
   reconcileSettledOpenLoops,
   settledSourceBackedOpenLoopsFromMarkdown,
-  stampTaskAnchors,
-} from "../../assets/extensions/dome.daily/processors/daily-shared";
+} from "../../assets/extensions/dome.daily/processors/open-loop-surface";
 import type { DiagnosticEffect, FactEffect, PatchEffect } from "../../src/core/effect";
 import { treeOid, type Snapshot } from "../../src/core/processor";
 import { commitOid } from "../../src/core/source-ref";

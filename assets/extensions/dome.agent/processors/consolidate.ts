@@ -13,13 +13,11 @@ import {
 } from "../../../../src/core/processor";
 import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
 import { finishAgentRun } from "../lib/agent-run-effects";
-import { coreMemorySection, withCoreMemory } from "../lib/core-memory";
+import { withCoreMemory } from "../lib/core-memory";
 import { makeConsolidatorTools } from "../lib/consolidate-tools";
 import { consolidateCharter } from "../lib/consolidate-charter";
-import {
-  formatDate,
-  localDateParts,
-} from "../../dome.daily/processors/daily-shared";
+import { formatDate, localDateParts } from "../../dome.daily/processors/daily-paths";
+import { agentPreamble } from "../lib/agent-preamble";
 
 const MAX_STEPS = 50;
 export const MAX_CHANGED_FILES = 30;
@@ -72,14 +70,20 @@ function fallback(problem: string): ConsolidationLedgerResolution {
 
 const consolidate = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
-    // step is undefined only when NO model provider is wired (doctor's
-    // model.provider-missing carries that signal); a text-only provider gets
-    // a throwing step from the engine, surfaced below as consolidate-failed.
-    const step = ctx.modelInvoke?.step;
-    if (step === undefined) return Object.freeze([]);
-
     const ledger = consolidationLedgerPath(ctx.extensionConfig);
     const ledgerPath = ledger.path;
+    const sourceRefs = [ctx.sourceRef(ledgerPath)];
+
+    // step check + coreMemorySection read + config-problem diagnostics
+    // (ledger path problem + core-config-invalid).
+    const pre = await agentPreamble(
+      ctx,
+      [{ problem: ledger.problem, code: "dome.agent.consolidate-config-invalid", sourceRefs }],
+      sourceRefs,
+    );
+    if (pre.kind === "no-model") return Object.freeze([]);
+    const { step, core } = pre;
+    const configDiagnostics: Effect[] = [...pre.effects];
 
     const tools = makeConsolidatorTools({
       reader: {
@@ -90,34 +94,6 @@ const consolidate = defineProcessorImplementation({
     });
 
     const state: AgentRunState = { edits: new Map(), questions: [] };
-    const sourceRefs = [ctx.sourceRef(ledgerPath)];
-    // Owner core memory: prepended to the task turn as DATA (never
-    // instructions). Absent/empty page → no-op.
-    const core = await coreMemorySection({
-      readFile: (p) => ctx.snapshot.readFile(p),
-      config: ctx.extensionConfig,
-    });
-    const configDiagnostics: Effect[] = [];
-    if (ledger.problem !== null) {
-      configDiagnostics.push(
-        diagnosticEffect({
-          severity: "warning",
-          code: "dome.agent.consolidate-config-invalid",
-          message: ledger.problem,
-          sourceRefs,
-        }),
-      );
-    }
-    if (core.problem !== null) {
-      configDiagnostics.push(
-        diagnosticEffect({
-          severity: "warning",
-          code: "dome.agent.core-config-invalid",
-          message: core.problem,
-          sourceRefs,
-        }),
-      );
-    }
 
     let result;
     try {
