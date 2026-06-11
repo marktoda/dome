@@ -1,0 +1,242 @@
+// dome.markdown.render-index — garden processor tests. The index catalog is a
+// RENDER of per-page `description:` frontmatter: same snapshot → same patch,
+// matching snapshot → zero effects, human prose outside the generated block
+// survives, stale shards are deleted.
+import { describe, expect, test } from "bun:test";
+
+import {
+  renderIndexFiles,
+  type IndexEntry,
+} from "../../assets/extensions/dome.markdown/lib/index-render";
+import renderIndex from "../../assets/extensions/dome.markdown/processors/render-index";
+import type { DiagnosticEffect, PatchEffect } from "../../src/core/effect";
+import { treeOid, type ExtensionConfig, type Snapshot } from "../../src/core/processor";
+import { commitOid } from "../../src/core/source-ref";
+import { makeProcessorContext } from "../../src/processors/context";
+
+const HEAD_COMMIT = commitOid("4444444444444444444444444444444444444444");
+const TREE = treeOid("5555555555555555555555555555555555555555");
+
+const START = "<!-- dome.markdown:index-catalog:start -->";
+const END = "<!-- dome.markdown:index-catalog:end -->";
+
+describe("dome.markdown.render-index", () => {
+  test("renders root map + per-category shards from description frontmatter", async () => {
+    const effects = await runRenderIndex({
+      "wiki/entities/a.md": "---\ndescription: Engineer\n---\n\n# A\n",
+      "wiki/concepts/b.md": "# B\n",
+    });
+
+    expect(effects).toHaveLength(1);
+    const patch = expectPatch(effects, 0);
+    expect(patch.mode).toBe("auto");
+    const byPath = changesByPath(patch);
+    expect([...byPath.keys()].sort()).toEqual([
+      "index-concepts.md",
+      "index-entities.md",
+      "index.md",
+    ]);
+
+    // Contents match the pure renderer byte-for-byte.
+    const expected = renderIndexFiles(
+      [
+        { path: "wiki/concepts/b.md", description: null, category: "concepts" },
+        { path: "wiki/entities/a.md", description: "Engineer", category: "entities" },
+      ] satisfies IndexEntry[],
+      { shardBudgetChars: 24_000 },
+    );
+    for (const [path, change] of byPath) {
+      expect(change.kind).toBe("write");
+      if (change.kind !== "write") continue;
+      expect(change.content).toBe(expected[path] as string);
+    }
+
+    const entities = byPath.get("index-entities.md");
+    expect(entities?.kind === "write" && entities.content).toContain(
+      "- [[wiki/entities/a]] — Engineer",
+    );
+    // Missing description still indexes the page, with the muted placeholder.
+    const concepts = byPath.get("index-concepts.md");
+    expect(concepts?.kind === "write" && concepts.content).toContain(
+      "- [[wiki/concepts/b]] — *(no description yet)*",
+    );
+  });
+
+  test("index: false frontmatter excludes the page entirely", async () => {
+    const effects = await runRenderIndex({
+      "wiki/entities/a.md": "---\ndescription: Engineer\n---\n\n# A\n",
+      "wiki/entities/hidden.md": "---\nindex: false\n---\n\n# Hidden\n",
+    });
+
+    const patch = expectPatch(effects, 0);
+    const entities = changesByPath(patch).get("index-entities.md");
+    expect(entities?.kind === "write" && entities.content).toContain(
+      "wiki/entities/a",
+    );
+    expect(entities?.kind === "write" && entities.content).not.toContain("hidden");
+  });
+
+  test("zero effects when no pages fall under the configured categories", async () => {
+    const effects = await runRenderIndex({
+      "index.md": "# Docs vault\n\nHand-written map — no catalog block here.\n",
+      "wiki/specs/processors.md": "# Processors\n",
+      "notes/scratch.md": "# Scratch\n",
+    });
+
+    expect(effects).toHaveLength(0);
+  });
+
+  test("zero effects when the index files already match (diff-before-emit)", async () => {
+    const seed: Record<string, string> = {
+      "wiki/entities/a.md": "---\ndescription: Engineer\n---\n\n# A\n",
+      "wiki/concepts/b.md": "# B\n",
+    };
+    const first = expectPatch(await runRenderIndex(seed), 0);
+    const next = { ...seed };
+    for (const [path, change] of changesByPath(first)) {
+      if (change.kind === "write") next[path] = change.content;
+    }
+
+    const second = await runRenderIndex(next);
+    expect(second).toHaveLength(0);
+  });
+
+  test("human prose outside the generated block is preserved", async () => {
+    const effects = await runRenderIndex({
+      "wiki/entities/a.md": "---\ndescription: Engineer\n---\n\n# A\n",
+      "index-entities.md": [
+        "Hand notes.",
+        "",
+        START,
+        "- [[wiki/entities/old]] — Gone",
+        END,
+        "",
+        "Trailing prose stays too.",
+        "",
+      ].join("\n"),
+    });
+
+    const patch = expectPatch(effects, 0);
+    const change = changesByPath(patch).get("index-entities.md");
+    expect(change?.kind).toBe("write");
+    if (change?.kind !== "write") return;
+    expect(change.content.startsWith("Hand notes.")).toBe(true);
+    expect(change.content).toContain("Trailing prose stays too.");
+    expect(change.content).toContain("- [[wiki/entities/a]] — Engineer");
+    expect(change.content).not.toContain("wiki/entities/old");
+  });
+
+  test("deletes stale generated shards no longer produced", async () => {
+    const effects = await runRenderIndex({
+      "wiki/entities/a.md": "---\ndescription: Engineer\n---\n\n# A\n",
+      // A previously generated shard whose category vanished.
+      "index-projects.md": `# Index — projects\n\n${START}\n- [[wiki/projects/old]] — Gone\n${END}\n`,
+      // A human file matching the shard name pattern but without our block:
+      // never deleted (it is not ours).
+      "index-handmade.md": "# My own index\n\nHands off.\n",
+    });
+
+    const patch = expectPatch(effects, 0);
+    const stale = changesByPath(patch).get("index-projects.md");
+    expect(stale?.kind).toBe("delete");
+    expect(changesByPath(patch).has("index-handmade.md")).toBe(false);
+  });
+
+  test("config overrides categories and budget; malformed config degrades to defaults", async () => {
+    // Valid override: only notes/ is indexed.
+    const overridden = await runRenderIndex(
+      {
+        "notes/idea.md": "---\ndescription: An idea\n---\n\n# Idea\n",
+        "wiki/entities/a.md": "---\ndescription: Engineer\n---\n\n# A\n",
+      },
+      { index_categories: { "notes/": "notes" } },
+    );
+    const patch = expectPatch(overridden, 0);
+    const byPath = changesByPath(patch);
+    expect([...byPath.keys()].sort()).toEqual(["index-notes.md", "index.md"]);
+
+    // Malformed override: defaults win and a warning diagnostic surfaces.
+    const degraded = await runRenderIndex(
+      { "wiki/entities/a.md": "---\ndescription: Engineer\n---\n\n# A\n" },
+      { index_categories: 42, index_shard_budget_chars: "huge" },
+    );
+    const diagnostics = degraded.filter(
+      (effect): effect is DiagnosticEffect =>
+        typeof effect === "object" &&
+        effect !== null &&
+        (effect as { readonly kind?: string }).kind === "diagnostic",
+    );
+    expect(diagnostics).toHaveLength(2);
+    for (const diagnostic of diagnostics) {
+      expect(diagnostic.severity).toBe("warning");
+      expect(diagnostic.code).toBe("dome.markdown.render-index-config-invalid");
+    }
+    const degradedPatch = expectPatch(degraded, 2);
+    expect([...changesByPath(degradedPatch).keys()].sort()).toEqual([
+      "index-entities.md",
+      "index.md",
+    ]);
+  });
+});
+
+async function runRenderIndex(
+  files: Readonly<Record<string, string>>,
+  extensionConfig?: ExtensionConfig,
+): Promise<ReadonlyArray<unknown>> {
+  const ctx = makeProcessorContext({
+    snapshot: fakeSnapshot(files),
+    changedPaths: [],
+    proposal: null,
+    runId: "run-render-index",
+    signal: new AbortController().signal,
+    input: {
+      kind: "schedule",
+      cron: "15 5 * * *",
+      firedAt: "2026-06-11T09:15:00.000Z",
+    },
+    ...(extensionConfig === undefined ? {} : { extensionConfig }),
+  });
+
+  return renderIndex.run(ctx);
+}
+
+function fakeSnapshot(files: Readonly<Record<string, string>>): Snapshot {
+  return Object.freeze({
+    commit: HEAD_COMMIT,
+    tree: TREE,
+    readFile: async (path: string) => files[path] ?? null,
+    listMarkdownFiles: async () =>
+      Object.freeze(Object.keys(files).filter((path) => path.endsWith(".md"))),
+    getFileInfo: async (path: string) =>
+      files[path] === undefined
+        ? null
+        : {
+            lastChangedCommit: HEAD_COMMIT,
+            lastChangedAt: "2026-06-11T09:00:00.000Z",
+            lastHumanChangedAt: "2026-06-11T09:00:00.000Z",
+          },
+  });
+}
+
+function expectPatch(
+  effects: ReadonlyArray<unknown>,
+  index: number,
+): PatchEffect {
+  const effect = effects[index];
+  if (effect === undefined) throw new Error(`expected effect at index ${index}`);
+  if (typeof effect !== "object" || effect === null || !("kind" in effect)) {
+    throw new Error("effect is not an object with `kind`");
+  }
+  if ((effect as { readonly kind: string }).kind !== "patch") {
+    throw new Error(
+      `expected patch effect, got ${(effect as { readonly kind: string }).kind}`,
+    );
+  }
+  return effect as PatchEffect;
+}
+
+function changesByPath(
+  patch: PatchEffect,
+): ReadonlyMap<string, PatchEffect["changes"][number]> {
+  return new Map(patch.changes.map((change) => [String(change.path), change]));
+}

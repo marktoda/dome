@@ -1,5 +1,5 @@
 id: dome.markdown
-version: 0.5.0
+version: 0.6.0
 processors:
   - id: dome.markdown.page-status
     version: 0.1.0
@@ -94,6 +94,25 @@ processors:
           - "wiki/index.md"
           - "wiki/**/index.md"
     module: processors/simplify-indexes.ts
+
+  - id: dome.markdown.render-index
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "15 5 * * *"
+      - kind: signal
+        name: file.created
+        pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "wiki/**/*.md"
+    capabilities:
+      - kind: read
+        paths: ["**/*.md"]
+      - kind: patch.auto
+        paths: ["index.md", "index-*.md"]
+    module: processors/render-index.ts
 
   - id: dome.markdown.normalize-frontmatter
     version: 0.2.1
