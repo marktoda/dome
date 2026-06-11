@@ -222,7 +222,12 @@ export function createDomeHttpServer(
         }
         return new Response(renderTodayHtml(run.data, { refreshSeconds: refresh }), {
           status: 200,
-          headers: { "content-type": "text/html; charset=utf-8" },
+          // no-store: an authenticated page whose URL can carry ?token=, and
+          // whose freshness contract is the meta-refresh — never cache it.
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            "cache-control": "no-store",
+          },
         });
       }
 

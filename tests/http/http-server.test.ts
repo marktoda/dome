@@ -385,6 +385,7 @@ describe("GET /today", () => {
     });
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/html");
+    expect(res.headers.get("cache-control")).toBe("no-store");
     const html = await res.text();
     expect(html).toContain("ship the http surface");
     expect(html).toContain('http-equiv="refresh"');
@@ -401,11 +402,26 @@ describe("GET /today", () => {
     // Query-param token must NOT authorize other routes.
     const other = await fetch(`${f.baseUrl}/tasks?token=${TOKEN}`);
     expect(other.status).toBe(401);
+
+    // ...and must NOT authorize other methods on /today (GET-only scoping).
+    const wrongMethod = await fetch(`${f.baseUrl}/today?token=${TOKEN}`, {
+      method: "POST",
+    });
+    expect(wrongMethod.status).toBe(401);
   }, TEST_TIMEOUT_MS);
 
   test("honors ?refresh= seconds", async () => {
     const f = await fixture();
     const res = await fetch(`${f.baseUrl}/today?token=${TOKEN}&refresh=30`);
     expect(await res.text()).toContain('content="30"');
+  }, TEST_TIMEOUT_MS);
+
+  test("absent or garbage ?refresh= falls back to 15 seconds", async () => {
+    const f = await fixture();
+    const absent = await fetch(`${f.baseUrl}/today?token=${TOKEN}`);
+    expect(await absent.text()).toContain('content="15"');
+
+    const garbage = await fetch(`${f.baseUrl}/today?token=${TOKEN}&refresh=banana`);
+    expect(await garbage.text()).toContain('content="15"');
   }, TEST_TIMEOUT_MS);
 });

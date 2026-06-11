@@ -9,6 +9,7 @@ export type TodayHtmlOptions = {
 };
 
 export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
+  const refresh = Math.max(1, Math.floor(opts.refreshSeconds));
   const record = isRecord(data) ? data : {};
   const date = typeof record.date === "string" ? esc(record.date) : "today";
   const openTasks = rows(record.openTasks);
@@ -35,11 +36,11 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="${Math.max(1, Math.floor(opts.refreshSeconds))}">
+<meta http-equiv="refresh" content="${refresh}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>dome today — ${date}</title>
 <style>
-  body { font: 16px/1.5 -apple-system, system-ui, sans-serif; margin: 1.5rem auto; max-width: 42rem; padding: 0 1rem; background: #111; color: #eee; }
+  body { font: 16px/1.5 -apple-system, system-ui, sans-serif; margin: 1.5rem auto; max-width: 42rem; padding: 0 1rem; background: #111; color: #eee; color-scheme: dark; }
   h1 { font-size: 1.2rem; } h2 { font-size: 1rem; margin-top: 1.5rem; color: #9ad; }
   ul { padding-left: 1.2rem; } li { margin: .4rem 0; }
   code { background: #222; padding: .1rem .3rem; border-radius: 4px; font-size: .85em; }
@@ -50,7 +51,7 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
 <body>
 <h1>dome today <span class="muted">${date} · ${total} open</span></h1>
 ${body}
-<p class="muted">auto-refreshes every ${Math.max(1, Math.floor(opts.refreshSeconds))}s</p>
+<p class="muted">auto-refreshes every ${refresh}s</p>
 </body>
 </html>
 `;
@@ -75,6 +76,7 @@ function taskHtml(t: TaskRow): string {
   return `<li>${esc(t.text)}${due} <span class="muted">${esc(where)}</span></li>`;
 }
 
+// These parsers mirror src/cli/commands/today.ts's; extract to src/surface/ if a third full-shape consumer appears.
 function rows(raw: unknown): ReadonlyArray<TaskRow> {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((item) => {
