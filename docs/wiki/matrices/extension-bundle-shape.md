@@ -18,7 +18,7 @@ The canonical map of "what an extension bundle contributes to a vault." Rows are
 | `test-fixture` | `tests/harness/fixtures/bundles/<bundle>/` (only in the SDK repo, never shipped or installed) | Iterate; assert each named filename exists. |
 | `anticipated` | n/a (documentation-of-intent for future-pressure bundles) | Skip — rows with this status are non-normative future pressure. |
 
-An **extension bundle** is a directory under `<vault>/.dome/extensions/<bundle-name>/` (or shipped from the SDK at `assets/extensions/<bundle-name>/`) containing a `manifest.yaml` plus contributions across five kinds: page-types, preamble fragments, processors, external-handlers, capability grants. The bundle mechanism is the only registration path in v1 — there is no separate "tool," "hook," or "workflow" registration kind.
+An **extension bundle** is a directory under `<vault>/.dome/extensions/<bundle-name>/` (or shipped from the SDK at `assets/extensions/<bundle-name>/`) containing a `manifest.yaml` plus contributions across seven kinds: page-types, preamble fragments, processors, external-handlers, capability grants, loops, doctor grant-entry probes. The bundle mechanism is the only registration path in v1 — there is no separate "tool," "hook," or "workflow" registration kind.
 
 ## Seven contribution kinds
 
