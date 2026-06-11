@@ -52,8 +52,8 @@ export function consolidationLedgerPath(
   const raw = config?.consolidation_ledger_path;
   if (raw === undefined) return resolution(DEFAULT_LEDGER_PATH, null);
   const v = validateRelativeMarkdownPath(raw, "consolidation_ledger_path");
-  if (v.problem !== null) return fallback(v.problem);
-  return resolution(v.path as string, null);
+  if (!v.ok) return fallback(v.problem);
+  return resolution(v.path, null);
 }
 
 function resolution(

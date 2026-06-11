@@ -265,7 +265,7 @@ function validateDailyPathTemplate(template: string): string {
   // wrapped by the caller with "dome.daily config " prefix reproduces the
   // historically thrown message byte-for-byte.
   const v = validateRelativeMarkdownPath(sample, "daily_path");
-  if (v.problem !== null) {
+  if (!v.ok) {
     throw new Error(`dome.daily config ${v.problem}`);
   }
   return template;

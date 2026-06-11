@@ -59,8 +59,8 @@ export function coreMemoryPath(
   const raw = config?.core_path;
   if (raw === undefined) return resolution(DEFAULT_CORE_PATH, null);
   const v = validateRelativeMarkdownPath(raw, "core_path");
-  if (v.problem !== null) return fallback(v.problem);
-  return resolution(v.path as string, null);
+  if (!v.ok) return fallback(v.problem);
+  return resolution(v.path, null);
 }
 
 export type CoreMemorySection = {
