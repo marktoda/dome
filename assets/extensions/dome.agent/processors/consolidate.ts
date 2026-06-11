@@ -182,6 +182,13 @@ const consolidate = defineProcessorImplementation({
           message: (count) =>
             `dome.agent.consolidate touched ${count} files (cap ${MAX_CHANGED_FILES}); run rolled back, no edits applied.`,
         },
+        noOp: {
+          code: "dome.agent.consolidate-no-op",
+          message: (excerpt) =>
+            `dome.agent.consolidate finished without edits or questions. ` +
+            `Model's final message: ${excerpt}`,
+          finalText: result.finalText,
+        },
       }),
     ]);
   },
