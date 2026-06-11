@@ -19,8 +19,7 @@ import { join } from "node:path";
 import { findGitRoot } from "../../git";
 import { createDomeHttpServer } from "../../http/server";
 import { resolveVaultPath } from "../../surface/resolve-vault";
-
-const EX_USAGE = 64;
+import { EX_USAGE } from "../exit-codes";
 
 /** Default port: "dome" on a phone keypad. */
 const DEFAULT_PORT = 3663;

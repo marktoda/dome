@@ -51,8 +51,8 @@ import {
 import { resolveBundleRoots } from "./sync-shared";
 
 import { resolveVaultPath } from "../../surface/resolve-vault";
+import { EX_USAGE } from "../exit-codes";
 const SCHEMA = "dome.reanchor/v1";
-const EX_USAGE = 64;
 
 export type RunReanchorOptions = {
   readonly vault?: string | undefined;

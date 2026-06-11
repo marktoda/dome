@@ -6,11 +6,11 @@
 
 import { basename } from "node:path";
 
-import { openVault } from "../../vault";
 import {
   openVaultErrorKind,
   vaultOpenFailureMessage,
 } from "../../surface/adapter";
+import { withVaultCli } from "../vault-helpers";
 import { formatJson } from "../../surface/format";
 import {
   footer,
@@ -51,70 +51,65 @@ export async function runRebuild(
   const vaultPath = resolveVaultPath(options.vault);
   const jsonMode = options.json === true;
 
-  const opened = await openVault({
+  return withVaultCli({
     path: vaultPath,
     bundlesRoot: options.bundlesRoot,
-  });
-  if (!opened.ok) {
-    return emitError({
-      jsonMode,
-      branch: null,
-      adopted: null,
-      error: openVaultErrorKind(opened.error),
-      message: vaultOpenFailureMessage("dome rebuild", opened.error),
-    });
-  }
-
-  const vault = opened.value;
-  try {
-    const outcome = await vault.rebuild();
-    switch (outcome.kind) {
-      case "detached-head":
-        return emitError({
-          jsonMode,
-          branch: null,
-          adopted: null,
-          error: "detached-head",
-          message:
-            `dome rebuild: HEAD is detached at ${vaultPath}. ` +
-            "Check out a branch and retry.",
-        });
-      case "missing-adopted-ref":
-        return emitError({
-          jsonMode,
-          branch: outcome.branch,
-          adopted: null,
-          error: "adopted-ref-uninitialized",
-          message:
-            `dome rebuild: adopted ref for ${outcome.branch} is uninitialized. Run \`dome sync\` first.`,
-        });
-      case "ok":
-        if (jsonMode) {
-          const payload: RebuildJsonResult = {
-            schema: "dome.rebuild/v1",
-            status: "rebuilt",
-            branch: outcome.branch,
-            adopted: outcome.adopted,
-            files: outcome.files,
-            processors: outcome.processors,
-            effects: outcome.effects,
-          };
-          console.log(formatJson(payload));
-        } else {
-          printRebuildText({
-            vaultPath,
-            branch: outcome.branch,
-            adopted: outcome.adopted,
-            files: outcome.files,
-            processors: outcome.processors,
-            effects: outcome.effects,
+    onOpenFailed: (error) =>
+      emitError({
+        jsonMode,
+        branch: null,
+        adopted: null,
+        error: openVaultErrorKind(error),
+        message: vaultOpenFailureMessage("dome rebuild", error),
+      }),
+    run: async (vault) => {
+      const outcome = await vault.rebuild();
+      switch (outcome.kind) {
+        case "detached-head":
+          return emitError({
+            jsonMode,
+            branch: null,
+            adopted: null,
+            error: "detached-head",
+            message:
+              `dome rebuild: HEAD is detached at ${vaultPath}. ` +
+              "Check out a branch and retry.",
           });
-        }
-        return 0;
-    }
-  } finally {
-    await vault.close();
-  }
+        case "missing-adopted-ref":
+          return emitError({
+            jsonMode,
+            branch: outcome.branch,
+            adopted: null,
+            error: "adopted-ref-uninitialized",
+            message:
+              `dome rebuild: adopted ref for ${outcome.branch} is uninitialized. Run \`dome sync\` first.`,
+          });
+        case "ok":
+          if (jsonMode) {
+            const payload: RebuildJsonResult = {
+              schema: "dome.rebuild/v1",
+              status: "rebuilt",
+              branch: outcome.branch,
+              adopted: outcome.adopted,
+              files: outcome.files,
+              processors: outcome.processors,
+              effects: outcome.effects,
+            };
+            console.log(formatJson(payload));
+          } else {
+            printRebuildText({
+              vaultPath,
+              branch: outcome.branch,
+              adopted: outcome.adopted,
+              files: outcome.files,
+              processors: outcome.processors,
+              effects: outcome.effects,
+            });
+          }
+          return 0;
+      }
+    },
+  });
 }
 
 

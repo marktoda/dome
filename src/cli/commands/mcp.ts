@@ -32,8 +32,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { findGitRoot } from "../../git";
 import { createDomeMcpServer } from "../../mcp/server";
 import { resolveVaultPath } from "../../surface/resolve-vault";
-
-const EX_USAGE = 64;
+import { EX_USAGE } from "../exit-codes";
 
 export type RunMcpOptions = {
   readonly vault?: string | undefined;
