@@ -12,6 +12,9 @@ extensions:
 
   dome.markdown:
     enabled: true
+    config:
+      # The docs index is curated by hand — empty map disables render-index.
+      index_categories: {}
     grant:
       read:
         - "wiki/**/*.md"

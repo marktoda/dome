@@ -59,11 +59,13 @@ function categoriesFromConfig(config?: ExtensionConfig): CategoriesResolution {
   if (raw === undefined) {
     return Object.freeze({ value: DEFAULT_CATEGORIES, problem: null });
   }
+  // An explicitly empty map is a deliberate "rendering disabled" switch for
+  // vaults whose indexes are curated by hand — honored as-is, never degraded
+  // to defaults and never warned about.
   const valid =
     typeof raw === "object" &&
     raw !== null &&
     !Array.isArray(raw) &&
-    Object.entries(raw).length > 0 &&
     Object.entries(raw).every(
       ([prefix, category]) =>
         typeof prefix === "string" &&
@@ -116,6 +118,10 @@ function budgetFromConfig(config?: ExtensionConfig): BudgetResolution {
 const renderIndex = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const categories = categoriesFromConfig(ctx.extensionConfig);
+    // Explicitly empty `index_categories: {}` disables rendering outright:
+    // zero categories → zero effects (defaults are never empty, so an empty
+    // resolved map can only come from a deliberate opt-out).
+    if (Object.keys(categories.value).length === 0) return Object.freeze([]);
     const budget = budgetFromConfig(ctx.extensionConfig);
 
     const effects: Effect[] = [];

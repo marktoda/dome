@@ -142,6 +142,26 @@ describe("dome.markdown.render-index", () => {
     expect(changesByPath(patch).has("index-handmade.md")).toBe(false);
   });
 
+  test("empty index_categories map disables rendering", async () => {
+    // Mirrors the docs/ dogfood vault: wiki pages exist under the default
+    // category prefixes and the curated root index has no generated block.
+    // An explicitly empty map is an opt-out, not a malformed config: zero
+    // categories → zero effects — no take-over patch, no degrade-to-defaults,
+    // no warning diagnostic, and no stale-shard deletion either.
+    const effects = await runRenderIndex(
+      {
+        "index.md": "# Docs vault\n\nCurated by hand — no catalog block.\n",
+        "wiki/entities/a.md": "---\ndescription: Engineer\n---\n\n# A\n",
+        "wiki/concepts/b.md": "# B\n",
+        // Even a leftover generated shard stays untouched while disabled.
+        "index-entities.md": `${START}\n- [[wiki/entities/a]] — Engineer\n${END}\n`,
+      },
+      { index_categories: {} },
+    );
+
+    expect(effects).toHaveLength(0);
+  });
+
   test("config overrides categories and budget; malformed config degrades to defaults", async () => {
     // Valid override: only notes/ is indexed.
     const overridden = await runRenderIndex(
