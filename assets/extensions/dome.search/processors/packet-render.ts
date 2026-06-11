@@ -9,8 +9,8 @@ import type {
   ContextOverview,
 } from "./export-context";
 
-const MAX_RELATED_ROWS = 8;
-const SCHEMA = "dome.search.export-context/v1";
+export const MAX_RELATED_ROWS = 8;
+export const SCHEMA = "dome.search.export-context/v1";
 
 export function renderMarkdown(
   topic: string,

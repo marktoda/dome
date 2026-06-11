@@ -59,14 +59,12 @@ import {
   compareTopicRelevance,
   topicRelevantItems,
 } from "./topic-relevance";
-import { renderMarkdown } from "./packet-render";
+import { renderMarkdown, SCHEMA, MAX_RELATED_ROWS } from "./packet-render";
 
 import { compareStrings } from "../../../../src/core/compare";
 
-const SCHEMA = "dome.search.export-context/v1";
 const DEFAULT_LIMIT = 8;
 const MAX_ENTRY_SUMMARY_ROWS = 5;
-const MAX_RELATED_ROWS = 8;
 const MAX_RECALL_PATHS = 24;
 
 const exportContext = defineProcessorImplementation({
@@ -80,10 +78,10 @@ const exportContext = defineProcessorImplementation({
     const projection = ctx.projection;
     const input = parseInput(ctx.input);
 
-    // Fetch FTS candidates, recall signals, and one-hop link expansion.
+    // Fetch FTS candidates, recall signals, link expansion, and RRF fusion.
     const collected = await collectCandidates(ctx, input, projection);
 
-    // Score, fuse RRF, apply recency decay, and build ContextEntries sliced to limit.
+    // Score candidates, apply recency decay, sort, and slice to limit.
     const ranked = await rankCandidates(collected, input, ctx);
 
     // Fetch pinned open loops from daily surface.
@@ -716,13 +714,13 @@ function openLoopOverviewKey(item: ContextOpenLoop): string {
     return [
       item.predicate,
       openLoopSurfaceKey({ body: item.text }),
-    ].join(" ");
+    ].join("\u0000");
   }
   return [
     item.path,
     item.predicate,
     openLoopSurfaceKey({ body: item.text }),
-  ].join(" ");
+  ].join("\u0000");
 }
 
 function uniqueDecisions(
@@ -734,7 +732,7 @@ function uniqueDecisions(
   for (const entry of entries) {
     for (const fact of entry.allFacts) {
       if (!isSearchDecisionFact(fact)) continue;
-      const key = `${entry.path} ${fact.predicate} ${fact.object}`;
+      const key = `${entry.path}\u0000${fact.predicate}\u0000${fact.object}`;
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(Object.freeze({
@@ -780,7 +778,7 @@ function uniqueDiagnostics(
         diagnostic.severity,
         diagnostic.code,
         diagnostic.message,
-      ].join(" ");
+      ].join("\u0000");
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(Object.freeze({
@@ -804,7 +802,7 @@ function uniqueRecallSignals(
         signal.path,
         signal.kind,
         signal.text,
-      ].join(" ");
+      ].join("\u0000");
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(Object.freeze({
