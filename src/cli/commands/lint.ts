@@ -19,6 +19,7 @@ import {
   runStructuredViewCommand,
   structuredViewBrokerMessages,
 } from "../../surface/view";
+import { FIRST_PARTY_VIEWS } from "../../surface/view-catalog";
 import {
   printViewCommandError,
   printViewCommandMessages,
@@ -53,8 +54,8 @@ export async function runLint(
     const run = await runStructuredViewCommand({
       commandLabel: "dome lint",
       commandName: "lint",
-      expectedViewName: "dome.lint.report",
-      expectedSchema: "dome.lint.report/v1",
+      expectedViewName: FIRST_PARTY_VIEWS.lint.viewName,
+      expectedSchema: FIRST_PARTY_VIEWS.lint.schema,
       commandArgs: Object.freeze({
         ...(options.failOn !== undefined ? { failOn: options.failOn } : {}),
         ...(limit !== null ? { limit } : {}),
@@ -63,8 +64,8 @@ export async function runLint(
       bundlesRoot: options.bundlesRoot,
       notFoundMessage: firstPartyViewNotFoundMessage({
         commandLabel: "dome lint",
-        bundleId: "dome.lint",
-        processorName: "lint",
+        bundleId: FIRST_PARTY_VIEWS.lint.bundleId,
+        processorName: FIRST_PARTY_VIEWS.lint.processorName,
       }),
       noStructuredResultMessage:
         "dome lint: lint processor returned no structured result.",
