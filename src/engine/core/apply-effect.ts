@@ -67,7 +67,7 @@ import type {
 } from "../../core/effect";
 import { diagnosticEffect } from "../../core/effect";
 import type { Capability, ProcessorPhase } from "../../core/processor";
-import type { CommitOid } from "../../core/source-ref";
+import type { CommitOid, SourceRef } from "../../core/source-ref";
 import { enforceCapability, type DeniedCapability } from "./capability-broker";
 import { recordDiagnosticsViaSink } from "./diagnostics";
 import {
@@ -268,12 +268,16 @@ export type ApplyEffectSinks = {
     readonly runId: RunId;
   }) => Promise<boolean>;
 
-  /** QuarantineRecoveryEffect — reset a quarantined processor trigger. */
+  /** QuarantineRecoveryEffect — reset a quarantined processor trigger.
+   *
+   * Returns false when no current quarantine row matched the effect's
+   * generation fields — routing then emits
+   * `quarantine-recovery.stale-or-missing` instead of silent success. */
   readonly recoverQuarantine: (input: {
     readonly effect: QuarantineRecoveryEffect;
     readonly processorId: string;
     readonly runId: RunId;
-  }) => Promise<void>;
+  }) => Promise<boolean>;
 
   /** RunRecoveryEffect — mark a stuck running ledger row failed. */
   readonly recoverRun: (input: {
@@ -388,7 +392,7 @@ export function noopSinks(): ApplyEffectSinks {
     enqueueJob: async () => undefined,
     dispatchExternal: async () => undefined,
     recoverOutbox: async () => true,
-    recoverQuarantine: async () => undefined,
+    recoverQuarantine: async () => true,
     recoverRun: async () => true,
     captureView: async () => undefined,
   };
@@ -695,27 +699,32 @@ async function routeToSink(
           runId: opts.runId,
         }))
       ) {
-        return {
-          newCandidate: null,
-          diagnostics: Object.freeze([
-            diagnosticEffect({
-              severity: "warning",
-              code: "outbox-recovery.stale-or-missing",
-              message:
-                `OutboxRecoveryEffect did not change row ${effect.idempotencyKey}: ` +
-                "the row is no longer failed, no longer matches the question generation, or does not exist.",
-              sourceRefs: effect.sourceRefs,
-            }),
-          ]),
-        };
+        return staleRecoveryResult({
+          code: "outbox-recovery.stale-or-missing",
+          message:
+            `OutboxRecoveryEffect did not change row ${effect.idempotencyKey}: ` +
+            "the row is no longer failed, no longer matches the question generation, or does not exist.",
+          sourceRefs: effect.sourceRefs,
+        });
       }
       return EMPTY_SINK_RESULT;
     case "quarantine-recovery":
-      await opts.sinks.recoverQuarantine({
-        effect,
-        processorId: opts.processorId,
-        runId: opts.runId,
-      });
+      if (
+        !(await opts.sinks.recoverQuarantine({
+          effect,
+          processorId: opts.processorId,
+          runId: opts.runId,
+        }))
+      ) {
+        return staleRecoveryResult({
+          code: "quarantine-recovery.stale-or-missing",
+          message:
+            `QuarantineRecoveryEffect did not clear quarantine ${effect.quarantineId} ` +
+            `for ${effect.processorId}@${effect.processorVersion} (${effect.phase}): ` +
+            "the quarantine no longer matches the question generation or does not exist.",
+          sourceRefs: effect.sourceRefs,
+        });
+      }
       return EMPTY_SINK_RESULT;
     case "run-recovery":
       if (
@@ -725,19 +734,13 @@ async function routeToSink(
           runId: opts.runId,
         }))
       ) {
-        return {
-          newCandidate: null,
-          diagnostics: Object.freeze([
-            diagnosticEffect({
-              severity: "warning",
-              code: "run-recovery.stale-or-missing",
-              message:
-                `RunRecoveryEffect did not change run ${effect.runId}: ` +
-                "the row is no longer running, no longer matches the question generation, or does not exist.",
-              sourceRefs: effect.sourceRefs,
-            }),
-          ]),
-        };
+        return staleRecoveryResult({
+          code: "run-recovery.stale-or-missing",
+          message:
+            `RunRecoveryEffect did not change run ${effect.runId}: ` +
+            "the row is no longer running, no longer matches the question generation, or does not exist.",
+          sourceRefs: effect.sourceRefs,
+        });
       }
       return EMPTY_SINK_RESULT;
     case "view":
@@ -773,4 +776,29 @@ const EMPTY_SINK_RESULT: {
  */
 function frozen(result: ApplyEffectResult): ApplyEffectResult {
   return Object.freeze(result);
+}
+
+// The three operational-recovery effects share one stale-answer contract:
+// the sink returns false when no current row matched the effect's
+// generation fields, and routing surfaces that as a warning instead of
+// silent success. (See docs/wiki/specs/effects.md — recovery effects.)
+function staleRecoveryResult(opts: {
+  readonly code: string;
+  readonly message: string;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
+}): {
+  readonly newCandidate: CommitOid | null;
+  readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
+} {
+  return {
+    newCandidate: null,
+    diagnostics: Object.freeze([
+      diagnosticEffect({
+        severity: "warning",
+        code: opts.code,
+        message: opts.message,
+        sourceRefs: opts.sourceRefs,
+      }),
+    ]),
+  };
 }

@@ -48,7 +48,7 @@ const RUN_ID = "run-1" as RunId;
 const noopApplyPatch: ApplyEffectSinks["applyPatch"] = async () => null;
 const noopCaptureView: ApplyEffectSinks["captureView"] = async () => undefined;
 const noopRecoverQuarantine: ApplyEffectSinks["recoverQuarantine"] =
-  async () => undefined;
+  async () => true;
 const noopRecoverRun: ApplyEffectSinks["recoverRun"] = async () => true;
 
 let root: string;
@@ -482,6 +482,7 @@ describe("buildSqliteSinks pass-through injections", () => {
           processorId: input.processorId,
           runId: input.runId,
         });
+        return true;
       };
 
     const sinks = buildSqliteSinks({

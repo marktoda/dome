@@ -652,6 +652,40 @@ describe("capability denial flows through", () => {
   });
 });
 
+describe("stale-or-missing recovery sinks emit warning diagnostics", () => {
+  test("quarantine-recovery against a stale/missing quarantine emits quarantine-recovery.stale-or-missing", async () => {
+    const recover: Capability = {
+      kind: "quarantine.recover",
+      actions: ["reset"],
+    };
+    const r = await applyEffect({
+      ...baseOpts,
+      declared: [recover],
+      granted: [recover],
+      phase: "garden",
+      effect: quarantineRecoveryEffect({
+        action: "reset",
+        phase: "garden",
+        processorId: "test.proc",
+        processorVersion: "0.1.0",
+        triggerHash: "trigger-1",
+        quarantineId: "quarantine-1",
+        quarantinedAt: "2026-05-29T00:00:00.000Z",
+        consecutiveRetryableFailures: 3,
+        reason: "recover",
+        sourceRefs: [ref],
+      }),
+      sinks: {
+        ...noopSinks(),
+        recoverQuarantine: async () => false,
+      },
+    });
+    expect(r.outcome).toBe("applied");
+    expect(r.diagnostics[0]?.code).toBe("quarantine-recovery.stale-or-missing");
+    expect(r.diagnostics[0]?.severity).toBe("warning");
+  });
+});
+
 describe("adoption propose patches block for review", () => {
   test("PatchEffect mode propose in adoption returns blocked-for-review", async () => {
     const propose: Capability = { kind: "patch.propose", paths: ["wiki/**"] };
