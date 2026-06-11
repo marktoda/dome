@@ -79,7 +79,7 @@ function excludedLineFlags(lines: ReadonlyArray<string>): boolean[] {
   const flags = new Array<boolean>(lines.length).fill(false);
 
   // --- Frontmatter (claims dialect: unterminated block excludes to EOF) ---
-  let frontmatterEnd = -1; // 0-based index of close --- line, or lines.length if unterminated
+  let frontmatterEnd = -1; // 0-based index of the close --- line, or lines.length - 1 if unterminated
   if (lines[0]?.trim() === "---") {
     let closed = false;
     for (let i = 1; i < lines.length; i += 1) {

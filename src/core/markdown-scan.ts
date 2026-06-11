@@ -18,6 +18,7 @@
 //
 // Pure (string-only, no IO).
 
+/** 1-indexed, inclusive line range within a document. */
 export type LineRange = { readonly start: number; readonly end: number };
 
 export type FenceScanOptions = {
@@ -62,7 +63,9 @@ export function frontmatterLineRange(content: string): LineRange | null {
 /**
  * Return all 1-indexed, inclusive line ranges covered by fenced code blocks
  * (``` or ~~~) in the document.  Fence open/close lines are included in the
- * range.  An unterminated fence extends to end of file (last line number).
+ * range.  An unterminated fence extends to end of file (last line number;
+ * note content ending in a trailing newline splits to a phantom final ""
+ * line, which counts — preserved from the original dome.daily behavior).
  *
  * Options default to the dome.daily dialect:
  *   `indent`                  — "any"   (trimStart before matching)
@@ -86,11 +89,10 @@ export function fencedCodeBlockLineRanges(
 
   for (let i = 0; i < lines.length; i += 1) {
     const raw = lines[i] ?? "";
-    const candidate = indent === "any" ? raw.trimStart() : raw;
     const match =
       indent === "any"
-        ? /^(`{3,}|~{3,})/.exec(candidate)
-        : /^[ ]{0,3}(`{3,}|~{3,})/.exec(candidate);
+        ? /^(`{3,}|~{3,})/.exec(raw.trimStart())
+        : /^[ ]{0,3}(`{3,}|~{3,})/.exec(raw);
 
     if (match === null) continue;
     const run = match[1] ?? "";
