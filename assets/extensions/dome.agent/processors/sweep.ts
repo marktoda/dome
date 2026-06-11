@@ -36,7 +36,8 @@ import {
   type AgentRunResult,
   type AgentRunState,
 } from "../lib/agent-loop";
-import { coreMemorySection, withCoreMemory } from "../lib/core-memory";
+import { withCoreMemory } from "../lib/core-memory";
+import { agentPreamble } from "../lib/agent-preamble";
 import { sweepCharter } from "../lib/sweep-charter";
 import {
   parseSweepLedger,
@@ -382,11 +383,6 @@ export function neverRegressCursor(
 
 const sweep = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
-    // step is undefined only when NO model provider is wired; a text-only
-    // provider gets a throwing step from the engine, surfaced per item below.
-    const step = ctx.modelInvoke?.step;
-    if (step === undefined) return Object.freeze([]);
-
     const ledgerRes = sweepLedgerPath(ctx.extensionConfig);
     const ledgerPath = ledgerRes.path;
     const windowDays = positiveIntConfig(
@@ -402,39 +398,22 @@ const sweep = defineProcessorImplementation({
     const targets = sweepTargets(ctx.extensionConfig);
 
     const ledgerRefs = [ctx.sourceRef(ledgerPath)];
-    const core = await coreMemorySection({
-      readFile: (p) => ctx.snapshot.readFile(p),
-      config: ctx.extensionConfig,
-    });
 
-    const effects: Effect[] = [];
-    for (const problem of [
-      ledgerRes.problem,
-      windowDays.problem,
-      maxItems.problem,
-      targets.problem,
-    ]) {
-      if (problem !== null) {
-        effects.push(
-          diagnosticEffect({
-            severity: "warning",
-            code: "dome.agent.sweep-config-invalid",
-            message: problem,
-            sourceRefs: ledgerRefs,
-          }),
-        );
-      }
-    }
-    if (core.problem !== null) {
-      effects.push(
-        diagnosticEffect({
-          severity: "warning",
-          code: "dome.agent.core-config-invalid",
-          message: core.problem,
-          sourceRefs: ledgerRefs,
-        }),
-      );
-    }
+    // step check + coreMemorySection read + config-problem diagnostics
+    // (all four sweep config problems share the same code).
+    const pre = await agentPreamble(
+      ctx,
+      [
+        { problem: ledgerRes.problem, code: "dome.agent.sweep-config-invalid", sourceRefs: ledgerRefs },
+        { problem: windowDays.problem, code: "dome.agent.sweep-config-invalid", sourceRefs: ledgerRefs },
+        { problem: maxItems.problem, code: "dome.agent.sweep-config-invalid", sourceRefs: ledgerRefs },
+        { problem: targets.problem, code: "dome.agent.sweep-config-invalid", sourceRefs: ledgerRefs },
+      ],
+      ledgerRefs,
+    );
+    if (pre.kind === "no-model") return Object.freeze([]);
+    const { step, core } = pre;
+    const effects: Effect[] = [...pre.effects];
 
     const today = formatDate(localDateParts(ctx.now()));
     const ledgerContent = (await ctx.snapshot.readFile(ledgerPath)) ?? "";
