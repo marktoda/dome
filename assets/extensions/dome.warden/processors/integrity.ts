@@ -185,7 +185,7 @@ function questionTextFor(path: string, finding: Finding): string {
   );
 }
 
-function promptForPage(path: string, content: string): string {
+export function promptForPage(path: string, content: string): string {
   return [
     "You are a knowledge-integrity warden for a Dome vault. Judge the page",
     "below for integrity issues and return STRICT JSON only.",
