@@ -1,0 +1,44 @@
+# CI for the Dome SDK. Runs the same gate as the local `v1:check` script
+# minus `v1:smoke`: the smoke script probes the repo's own dogfood vault at
+# docs/, whose .dome/ operational state is gitignored, so it cannot pass on
+# a fresh checkout. The bun test suite is hermetic by construction
+# (tests/preload.ts blanks model-provider credentials and points the API
+# base URL at an unroutable address before any test loads).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # Test fixtures drive real git repos; runners ship git but no
+      # identity, and some scenarios shell out to plain `git commit`.
+      - name: Configure git for test fixtures
+        run: |
+          git config --global user.name "dome-ci"
+          git config --global user.email "ci@dome.invalid"
+          git config --global init.defaultBranch main
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck (src + bundles + scripts)
+        run: bun run typecheck
+
+      - name: Test
+        run: bun test
