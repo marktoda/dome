@@ -18,6 +18,7 @@ import {
 } from "../engine/host/health";
 import { openVaultRuntime, type VaultRuntime } from "../engine/host/vault-runtime";
 import { resolveBundleRoots } from "../extensions/bundle-roots";
+import { runtimeHealthReportInputs } from "./health-inputs";
 import { queryRunSummaries } from "../ledger/runs";
 import {
   projectionCacheKeysChanged,
@@ -221,21 +222,7 @@ export async function buildCheckReport(opts: {
     });
     const engine = scopes.engine
       ? await collectHealthReport({
-          vaultPath: runtime.path,
-          projection: runtime.projectionDb,
-          ledger: runtime.ledgerDb,
-          outbox: runtime.outboxDb,
-          executionState: runtime.processorRuntime.executionState,
-          extensions: runtime.extensions,
-          processorVersions: runtime.processorVersions,
-          capabilityPolicyHash: runtime.capabilityPolicyHash,
-          registry: runtime.registry,
-          resolveGrants: runtime.resolveGrants,
-          extensionConfigFor: runtime.extensionConfigFor,
-          doctorGrantEntries: runtime.doctorGrantEntries,
-          modelProviderConfigured: runtime.modelProvider !== undefined,
-          externalHandlerTimeoutConfigured:
-            runtime.config.engine.externalHandlerTimeoutMs !== undefined,
+          ...runtimeHealthReportInputs(runtime),
           orphanRunThresholdMs: orphanThresholdMs,
         })
       : null;

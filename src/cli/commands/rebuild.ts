@@ -6,7 +6,11 @@
 
 import { basename } from "node:path";
 
-import { openVault, type OpenVaultError } from "../../vault";
+import { openVault } from "../../vault";
+import {
+  openVaultErrorKind,
+  vaultOpenFailureMessage,
+} from "../../surface/adapter";
 import { formatJson } from "../../surface/format";
 import {
   footer,
@@ -56,12 +60,8 @@ export async function runRebuild(
       jsonMode,
       branch: null,
       adopted: null,
-      error: openErrorKind(opened.error),
-      message:
-        opened.error.kind === "not-a-vault"
-          ? `dome rebuild: ${opened.error.message}`
-          : `dome rebuild: openVaultRuntime failed (${opened.error.cause.kind}). ` +
-            "Run `dome init` to initialize the vault.",
+      error: openVaultErrorKind(opened.error),
+      message: vaultOpenFailureMessage("dome rebuild", opened.error),
     });
   }
 
@@ -117,9 +117,6 @@ export async function runRebuild(
   }
 }
 
-function openErrorKind(error: OpenVaultError): string {
-  return error.kind === "runtime-open-failed" ? error.cause.kind : error.kind;
-}
 
 function printRebuildText(result: {
   readonly vaultPath: string;

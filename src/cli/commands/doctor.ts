@@ -6,6 +6,7 @@
 // questions, the user resolves them with `dome resolve`, and answer handlers apply
 // the mutation.
 
+import { runtimeHealthReportInputs } from "../../surface/health-inputs";
 import { basename } from "node:path";
 
 import { probeCommandModelProvider } from "../../engine/host/command-model-provider";
@@ -118,21 +119,7 @@ export async function runDoctor(
     }
 
     const report = await collectHealthReport({
-      vaultPath: runtime.path,
-      projection: runtime.projectionDb,
-      ledger: runtime.ledgerDb,
-      outbox: runtime.outboxDb,
-      executionState: runtime.processorRuntime.executionState,
-      extensions: runtime.extensions,
-      processorVersions: runtime.processorVersions,
-      capabilityPolicyHash: runtime.capabilityPolicyHash,
-      registry: runtime.registry,
-      resolveGrants: runtime.resolveGrants,
-      extensionConfigFor: runtime.extensionConfigFor,
-      doctorGrantEntries: runtime.doctorGrantEntries,
-      modelProviderConfigured: runtime.modelProvider !== undefined,
-      externalHandlerTimeoutConfigured:
-        runtime.config.engine.externalHandlerTimeoutMs !== undefined,
+      ...runtimeHealthReportInputs(runtime),
       ...(modelProviderProbe !== undefined ? { modelProviderProbe } : {}),
       orphanRunThresholdMs: orphanThresholdMs,
     });

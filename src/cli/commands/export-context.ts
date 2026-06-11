@@ -6,6 +6,7 @@ import {
   runStructuredViewCommand,
   structuredViewBrokerMessages,
 } from "../../surface/view";
+import { FIRST_PARTY_VIEWS } from "../../surface/view-catalog";
 import {
   printViewCommandError,
   printViewCommandMessages,
@@ -39,8 +40,8 @@ export async function runExportContext(
     const run = await runStructuredViewCommand({
       commandLabel: "dome export-context",
       commandName: "export-context",
-      expectedViewName: "dome.search.export-context",
-      expectedSchema: "dome.search.export-context/v1",
+      expectedViewName: FIRST_PARTY_VIEWS.exportContext.viewName,
+      expectedSchema: FIRST_PARTY_VIEWS.exportContext.schema,
       commandArgs: Object.freeze({
         topic,
         ...(options.limit !== undefined ? { limit: options.limit } : {}),
@@ -49,8 +50,8 @@ export async function runExportContext(
       bundlesRoot: options.bundlesRoot,
       notFoundMessage: firstPartyViewNotFoundMessage({
         commandLabel: "dome export-context",
-        bundleId: "dome.search",
-        processorName: "export-context",
+        bundleId: FIRST_PARTY_VIEWS.exportContext.bundleId,
+        processorName: FIRST_PARTY_VIEWS.exportContext.processorName,
       }),
       noStructuredResultMessage:
         "dome export-context: processor returned no structured result.",
