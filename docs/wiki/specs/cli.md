@@ -1850,8 +1850,14 @@ undeterminable uid, or unexpected I/O failure.
 
 Restarts the vault's ambient launchd service: `launchctl bootout
 gui/<uid>/<label>` (failure ignored when the service is not loaded — a dead
-service is exactly why an operator restarts), then `launchctl bootstrap
-gui/<uid> <plist>` **from the existing plist on disk**.
+service is exactly why an operator restarts), a **drain wait** (poll
+`launchctl print gui/<uid>/<label>` until the label leaves launchd, bounded
+at 15 s — `bootout` returns before a serve mid-agent-run actually exits, and
+bootstrapping during the drain fails with `Bootstrap failed: 5`), then
+`launchctl bootstrap gui/<uid> <plist>` **from the existing plist on disk**.
+`dome install` re-runs share the same drain wait between their bootout and
+bootstrap. On drain timeout the bootstrap proceeds and its error surfaces
+honestly.
 
 The plist is deliberately **not re-rendered**. The service's
 `EnvironmentVariables` entries (`--env` / `--env-file` credentials such as

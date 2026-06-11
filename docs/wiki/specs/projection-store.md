@@ -299,6 +299,17 @@ CREATE TABLE schedule_cursors (
 
 The at-most-once-per-sync clamp for missed intervals ([[wiki/gotchas/scheduled-hook-idempotency]] — name carried forward, semantics unchanged) is enforced by the engine: it updates `last_fire` to the current time, not the missed-interval time, so multiple missed intervals collapse to one fire. If a processor's cron expression changes, the engine preserves `last_fire`, updates the stored cron and `next_fire` from the current tick time, and skips immediate retroactive execution.
 
+**Rebuild recovery.** Cursor rows reset with the projection cache, but a wiped
+cursor must not make a scheduled processor look brand new ("new fires on the
+first tick") — that re-fires and re-charges nightly LLM jobs on every
+restart-with-rebuild (2026-06-10: consolidate fired 11× in one day). On a
+missing cursor the scheduler first consults the durable run ledger
+(`latestScheduleRunStartedAt`, [[wiki/specs/run-ledger]]): the most recent
+schedule-triggered run's `started_at` stands in for `last_fire` (any terminal
+status counts — a failed nightly run still consumed its slot), the cursor is
+re-seeded, and the processor fires only if genuinely due. Only a processor
+with no ledger history at all fires on its first tick.
+
 ## Outbox (separate database: `outbox.db`)
 
 External side effects are split into their own SQLite file because the failure characteristics differ — outbox rows survive across vault re-opens, projection rebuilds, and engine restarts independently of the projection cache lifecycle.

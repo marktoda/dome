@@ -356,4 +356,49 @@ describe("dome.agent.ingest", () => {
     expect(q.metadata?.automationPolicy).toBe("owner-needed");
     expect(effects.some((e) => e.kind === "patch")).toBe(false);
   });
+
+  test("warns with the model's final text when a source loop ends without archiving", async () => {
+    const ctx = makeCtx({
+      files: { "inbox/raw/x.md": "An article worth integrating." },
+      changedPaths: ["inbox/raw/x.md"],
+      // First step is a final text answer with NO tool calls — the silent
+      // no-op shape from 2026-06-10: the run "succeeds", nothing lands,
+      // the capture stays in inbox/raw, and the model's reasoning is lost.
+      steps: [{ text: "Nothing to do here, skipping this source." }],
+    });
+    const effects = await ingest.run(ctx);
+    const diag = effects.find(
+      (e) =>
+        e.kind === "diagnostic" &&
+        (e as DiagnosticEffect).code === "dome.agent.source-unarchived",
+    ) as DiagnosticEffect;
+    expect(diag).toBeDefined();
+    expect(diag.severity).toBe("warning");
+    expect(diag.message).toContain("inbox/raw/x.md");
+    expect(diag.message).toContain("Nothing to do here, skipping this source.");
+    expect(effects.some((e) => e.kind === "patch")).toBe(false);
+  });
+
+  test("no unarchived warning when the agent archives the source", async () => {
+    const ctx = makeCtx({
+      files: { "inbox/raw/x.md": "Acme raised a round." },
+      changedPaths: ["inbox/raw/x.md"],
+      steps: [
+        {
+          toolCalls: [
+            { id: "1", name: "archiveSource", input: { rawPath: "inbox/raw/x.md" } },
+          ],
+        },
+        { text: "ingested" },
+      ],
+    });
+    const effects = await ingest.run(ctx);
+    expect(
+      effects.some(
+        (e) =>
+          e.kind === "diagnostic" &&
+          (e as DiagnosticEffect).code === "dome.agent.source-unarchived",
+      ),
+    ).toBe(false);
+  });
 });

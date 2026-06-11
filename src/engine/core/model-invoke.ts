@@ -118,7 +118,10 @@ export function modelInvokeForProcessor(opts: {
   readonly stepProvider?: ModelStepProvider;
   readonly onCost?: (costUsd: number) => void;
   readonly onCapabilityUse?: (use: ModelInvokeCapabilityUse) => void;
-  readonly spentUsdToday?: () => number;
+  /** This processor's own provider-reported spend since local midnight. */
+  readonly spentUsdTodayByProcessor?: () => number;
+  /** The whole extension's pooled spend since local midnight. */
+  readonly spentUsdTodayByExtension?: () => number;
 }): ModelInvokeFn | undefined {
   if (opts.phase === "adoption") return undefined;
   const modelPolicy = effectiveModelPolicy(opts.declared, opts.granted);
@@ -130,7 +133,7 @@ export function modelInvokeForProcessor(opts: {
     let request: Omit<ModelProviderRequest, "signal">;
     try {
       request = normalizeRequest(input, modelPolicy);
-      enforceBudgetBeforeCall(modelPolicy, opts.spentUsdToday);
+      enforceBudgetBeforeCall(modelPolicy, spendScopes(opts));
     } catch (error) {
       recordModelCapabilityUse(opts.onCapabilityUse, {
         resource: input.model ?? null,
@@ -168,7 +171,7 @@ export function modelInvokeForProcessor(opts: {
       response.costUsd > 0
     ) {
       opts.onCost?.(response.costUsd);
-      enforceBudgetAfterCall(modelPolicy, opts.spentUsdToday);
+      enforceBudgetAfterCall(modelPolicy, spendScopes(opts));
     }
     return response.text;
   };
@@ -189,7 +192,7 @@ export function modelInvokeForProcessor(opts: {
       let model: string | undefined;
       try {
         model = resolveStepModel(input.model, modelPolicy);
-        enforceBudgetBeforeCall(modelPolicy, opts.spentUsdToday);
+        enforceBudgetBeforeCall(modelPolicy, spendScopes(opts));
       } catch (error) {
         recordModelCapabilityUse(opts.onCapabilityUse, {
           resource: input.model ?? null,
@@ -223,7 +226,7 @@ export function modelInvokeForProcessor(opts: {
         response.costUsd > 0
       ) {
         opts.onCost?.(response.costUsd);
-        enforceBudgetAfterCall(modelPolicy, opts.spentUsdToday);
+        enforceBudgetAfterCall(modelPolicy, spendScopes(opts));
       }
       return Object.freeze({
         ...(response.toolCalls !== undefined
@@ -275,7 +278,18 @@ function recordModelCapabilityUse(
 
 type EffectiveModelPolicy = {
   readonly allowlist: ReadonlyArray<string> | null;
-  readonly maxDailyCostUsd: number | null;
+  /**
+   * Manifest-declared cap — bounds THIS PROCESSOR's own daily spend. The
+   * bundle author's promise about one processor's appetite.
+   */
+  readonly declaredMaxDailyCostUsd: number | null;
+  /**
+   * Vault-granted cap — bounds the EXTENSION's pooled daily spend. The
+   * vault owner's single lever over the bundle's total burn. (Taking
+   * min(declared, granted) against the pooled spend let nightly batch
+   * processors starve signal-triggered ones for the rest of the day.)
+   */
+  readonly grantedMaxDailyCostUsd: number | null;
 };
 
 function effectiveModelPolicy(
@@ -292,11 +306,11 @@ function effectiveModelPolicy(
     declaredModel.modelAllowlist,
     grantedModel.modelAllowlist,
   );
-  const maxDailyCostUsd = minAllDefined(
-    declaredModel.maxDailyCostUsd,
-    grantedModel.maxDailyCostUsd,
-  );
-  return Object.freeze({ allowlist, maxDailyCostUsd });
+  return Object.freeze({
+    allowlist,
+    declaredMaxDailyCostUsd: declaredModel.maxDailyCostUsd ?? null,
+    grantedMaxDailyCostUsd: grantedModel.maxDailyCostUsd ?? null,
+  });
 }
 
 function normalizeRequest(
@@ -599,45 +613,73 @@ function intersectAllDefined(
   return Object.freeze(a.filter((model) => bSet.has(model)));
 }
 
-function minAllDefined(
-  a: number | undefined,
-  b: number | undefined,
-): number | null {
-  if (a === undefined && b === undefined) return null;
-  if (a === undefined) return b ?? null;
-  if (b === undefined) return a;
-  return Math.min(a, b);
+type SpendScopes = {
+  readonly byProcessor: (() => number) | undefined;
+  readonly byExtension: (() => number) | undefined;
+};
+
+function spendScopes(opts: {
+  readonly spentUsdTodayByProcessor?: () => number;
+  readonly spentUsdTodayByExtension?: () => number;
+}): SpendScopes {
+  return {
+    byProcessor: opts.spentUsdTodayByProcessor,
+    byExtension: opts.spentUsdTodayByExtension,
+  };
+}
+
+// Two independent checks, both of which must pass: the declared cap against
+// the processor's own spend, the granted cap against the extension pool.
+// `strict` distinguishes the pre-call check (>= denies the next call) from
+// the post-call check (> denies only when the response actually crossed).
+function enforceBudget(
+  policy: EffectiveModelPolicy,
+  scopes: SpendScopes,
+  strict: boolean,
+): void {
+  const checks = [
+    {
+      cap: policy.declaredMaxDailyCostUsd,
+      spent: scopes.byProcessor,
+      scope: "processor (manifest declaration)",
+    },
+    {
+      cap: policy.grantedMaxDailyCostUsd,
+      spent: scopes.byExtension,
+      scope: "extension pool (vault grant)",
+    },
+  ];
+  for (const check of checks) {
+    if (check.cap === null || check.spent === undefined) continue;
+    const spent = check.spent();
+    if (strict ? spent >= check.cap : spent > check.cap) {
+      throw budgetDenied(check.scope, check.cap, spent);
+    }
+  }
 }
 
 function enforceBudgetBeforeCall(
   policy: EffectiveModelPolicy,
-  spentUsdToday: (() => number) | undefined,
+  scopes: SpendScopes,
 ): void {
-  if (policy.maxDailyCostUsd === null || spentUsdToday === undefined) return;
-  const spent = spentUsdToday();
-  if (spent >= policy.maxDailyCostUsd) {
-    throw budgetDenied(policy.maxDailyCostUsd, spent);
-  }
+  enforceBudget(policy, scopes, true);
 }
 
 function enforceBudgetAfterCall(
   policy: EffectiveModelPolicy,
-  spentUsdToday: (() => number) | undefined,
+  scopes: SpendScopes,
 ): void {
-  if (policy.maxDailyCostUsd === null || spentUsdToday === undefined) return;
-  const spent = spentUsdToday();
-  if (spent > policy.maxDailyCostUsd) {
-    throw budgetDenied(policy.maxDailyCostUsd, spent);
-  }
+  enforceBudget(policy, scopes, false);
 }
 
 function budgetDenied(
+  scope: string,
   maxDailyCostUsd: number,
   spentUsdToday: number,
 ): ModelExecutionError {
   return modelError(
     "model.invoke.denied",
-    `model.invoke daily cost budget exceeded: spent $${spentUsdToday.toFixed(4)} of $${maxDailyCostUsd.toFixed(4)}.`,
+    `model.invoke daily cost budget exceeded for ${scope}: spent $${spentUsdToday.toFixed(4)} of $${maxDailyCostUsd.toFixed(4)}.`,
     false,
   );
 }

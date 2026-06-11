@@ -791,6 +791,34 @@ export function sumCostUsdByProcessorPrefix(
   return first?.cost_usd ?? 0;
 }
 
+const LATEST_SCHEDULE_RUN_SQL = `
+SELECT started_at
+FROM runs
+WHERE processor_id = ? AND trigger_kind = 'schedule'
+ORDER BY started_at DESC
+LIMIT 1
+`.trim();
+
+/**
+ * ISO-8601 `started_at` of the most recent schedule-triggered run for a
+ * processor, or null when none is recorded. The scheduler uses this as the
+ * durable fallback for a missing `schedule_cursors` row: projection state is
+ * rebuildable by design, so a rebuild wipes cursors — without this fallback
+ * every scheduled processor looks brand new after a rebuild and "new fires
+ * on the first tick" re-fires (and re-charges) nightly LLM jobs on every
+ * restart. Any recorded run counts as a fire regardless of terminal status:
+ * a failed nightly run still consumed its slot (and possibly budget).
+ */
+export function latestScheduleRunStartedAt(
+  db: LedgerDb,
+  processorId: string,
+): string | null {
+  const rows = db.raw
+    .query<{ started_at: string }, [string]>(LATEST_SCHEDULE_RUN_SQL)
+    .all(processorId);
+  return rows[0]?.started_at ?? null;
+}
+
 /**
  * Return every run currently in `status: 'running'` whose `started_at`
  * is older than `runningOlderThanMs` milliseconds before `now`. These are

@@ -1065,10 +1065,17 @@ function buildExecutionContext<TEnvelope>(
             recordedAt: new Date(),
           });
         },
-        spentUsdToday: () =>
+        spentUsdTodayByProcessor: () =>
           modelSpendForToday({
             ledger: frame.ledger,
-            extensionId: frame.extensionId,
+            processorIdPrefix: frame.processor.id,
+            currentRunCostUsd: costUsd,
+            now: frame.startedAt,
+          }),
+        spentUsdTodayByExtension: () =>
+          modelSpendForToday({
+            ledger: frame.ledger,
+            processorIdPrefix: frame.extensionId,
             currentRunCostUsd: costUsd,
             now: frame.startedAt,
           }),
@@ -1457,14 +1464,15 @@ function costUsdOrNull(costUsd: number): number | null {
 
 function modelSpendForToday(opts: {
   readonly ledger: LedgerDb | undefined;
-  readonly extensionId: string;
+  /** Full processor id for per-processor spend; extension id for the pool. */
+  readonly processorIdPrefix: string;
   readonly currentRunCostUsd: number;
   readonly now: Date;
 }): number {
   const persisted = opts.ledger === undefined
     ? 0
     : sumCostUsdByProcessorPrefix(opts.ledger, {
-        processorIdPrefix: opts.extensionId,
+        processorIdPrefix: opts.processorIdPrefix,
         sinceIso: startOfLocalDay(opts.now).toISOString(),
       });
   return persisted + opts.currentRunCostUsd;

@@ -17,6 +17,8 @@ import type { ApplyPatchInput } from "../../src/engine/core/apply-patch";
 import type { ModelStepProvider } from "../../src/engine/core/model-invoke";
 import { runScheduler } from "../../src/engine/operational/scheduler";
 import type { EngineVault } from "../../src/engine/core/vault-shape";
+import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
+import { insertQueued, markSucceeded, newRunId } from "../../src/ledger/runs";
 import { openProjectionDb, type ProjectionDb } from "../../src/projections/db";
 import {
   getCursor,
@@ -528,6 +530,107 @@ describe("runScheduler — executor-result telemetry", () => {
   });
 });
 
+
+describe("runScheduler — cursor reconstruction from the run ledger", () => {
+  // Projection state is rebuildable by design, so a rebuild wipes
+  // schedule_cursors. Without a fallback, every scheduled processor looks
+  // new ("no cursor -> fire now") and a restart double-charges nightly LLM
+  // jobs (consolidate fired 11x on 2026-06-10). The run ledger is durable
+  // and records every schedule-triggered run — it is the recovery source.
+
+  function recordScheduledRun(
+    ledger: LedgerDb,
+    processorId: string,
+    startedAt: Date,
+  ): void {
+    const id = newRunId(startedAt, () => "abc123");
+    insertQueued(ledger, {
+      id,
+      proposalId: null,
+      processorId,
+      processorVersion: "0.0.1",
+      phase: "garden",
+      inputCommit: ADOPTED,
+      triggerKind: "schedule",
+      triggerPayload: [],
+      startedAt,
+    });
+    markSucceeded(ledger, {
+      id,
+      effectHashes: [],
+      costUsd: 1,
+      durationMs: 10,
+      outputCommit: null,
+      finishedAt: new Date(startedAt.getTime() + 10),
+    });
+  }
+
+  test("a wiped cursor does not re-fire when the ledger shows today's fire already happened", async () => {
+    const processor = defineProcessor({
+      id: "test.scheduler.nightly",
+      version: "0.0.1",
+      phase: "garden",
+      triggers: [{ kind: "schedule", cron: "0 2 * * *" }],
+      capabilities: [],
+      run: async () => [],
+    });
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+    const ledger = await makeLedger(fixture.root);
+    // NOW is 2026-05-28T12:00Z; the nightly 02:00 fire already ran today.
+    recordScheduledRun(ledger, processor.id, new Date("2026-05-28T02:00:05.000Z"));
+
+    const result = await runWithProcessor(fixture, processor, {}, { ledger });
+
+    expect(result.fired).toEqual([]);
+    expect(result.skipped).toContainEqual({
+      processorId: processor.id,
+      reason: "not-due",
+    });
+    // The cursor is reconstructed so the NEXT tick needs no ledger fallback.
+    const cursor = getCursor(fixture.projection, processor.id);
+    expect(cursor?.lastFire).toBe("2026-05-28T02:00:05.000Z");
+  });
+
+  test("a wiped cursor still fires when the ledger's last fire predates the current due time", async () => {
+    const processor = defineProcessor({
+      id: "test.scheduler.nightly-due",
+      version: "0.0.1",
+      phase: "garden",
+      triggers: [{ kind: "schedule", cron: "0 2 * * *" }],
+      capabilities: [],
+      run: async () => [],
+    });
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+    const ledger = await makeLedger(fixture.root);
+    // Last fire was YESTERDAY 02:00; today's 02:00 has passed -> due.
+    recordScheduledRun(ledger, processor.id, new Date("2026-05-27T02:00:05.000Z"));
+
+    const result = await runWithProcessor(fixture, processor, {}, { ledger });
+
+    expect(result.fired.map((f) => f.processorId)).toContain(processor.id);
+  });
+
+  test("no cursor and no ledger history still fires on the first tick", async () => {
+    const processor = defineProcessor({
+      id: "test.scheduler.brand-new",
+      version: "0.0.1",
+      phase: "garden",
+      triggers: [{ kind: "schedule", cron: "0 2 * * *" }],
+      capabilities: [],
+      run: async () => [],
+    });
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+    const ledger = await makeLedger(fixture.root);
+
+    const result = await runWithProcessor(fixture, processor, {}, { ledger });
+
+    expect(result.fired.map((f) => f.processorId)).toContain(processor.id);
+  });
+});
+
 async function makeFixture(): Promise<Fixture> {
   const root = mkdtempSync(join(tmpdir(), "dome-scheduler-"));
   const projectionResult = await openProjectionDb({
@@ -551,6 +654,16 @@ async function makeFixture(): Promise<Fixture> {
   };
 }
 
+async function makeLedger(root: string): Promise<LedgerDb> {
+  const result = await openLedgerDb({
+    path: join(root, ".dome", "state", "runs.db"),
+  });
+  if (!result.ok) {
+    throw new Error(`openLedgerDb failed: ${JSON.stringify(result.error)}`);
+  }
+  return result.value.db;
+}
+
 async function runWithProcessor(
   fixture: Fixture,
   processor: Processor,
@@ -566,6 +679,7 @@ async function runWithProcessor(
       opts: ApplyPatchInput,
     ) => Promise<CommitOid | null>;
     readonly modelStepProvider?: ModelStepProvider;
+    readonly ledger?: LedgerDb;
   } = {},
 ) {
   const registryResult = buildRegistry([processor]);
@@ -587,6 +701,9 @@ async function runWithProcessor(
       : {}),
     ...(schedulerOverrides.signal !== undefined
       ? { signal: schedulerOverrides.signal }
+      : {}),
+    ...(schedulerOverrides.ledger !== undefined
+      ? { ledger: schedulerOverrides.ledger }
       : {}),
     ...(schedulerOverrides.adoptSubProposal !== undefined
       ? { adoptSubProposal: schedulerOverrides.adoptSubProposal }

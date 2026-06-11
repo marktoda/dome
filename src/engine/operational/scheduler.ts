@@ -73,6 +73,7 @@ import {
 import type { ProjectionDb } from "../../projections/db";
 import type { ProcessorRegistry } from "../../processors/registry";
 import type { LedgerDb } from "../../ledger/db";
+import { latestScheduleRunStartedAt } from "../../ledger/runs";
 import type {
   Capability,
   ExtensionConfig,
@@ -300,7 +301,11 @@ async function runSchedulerInner(opts: {
     const cursor = getCursor(projection, processor.id);
 
     // Decide whether to fire. Three cases:
-    //   1. No cursor row → fire immediately.
+    //   1. No cursor row → recover lastFire from the durable run ledger
+    //      (projection rebuilds wipe schedule_cursors; without the fallback
+    //      every restart-with-rebuild re-fires nightly jobs — 2026-06-10
+    //      re-charged consolidate 11×). Truly new (no ledger history) →
+    //      fire immediately.
     //   2. Cron changed → preserve lastFire, update the stored cron +
     //      nextFire from now, and do not retroactively fire.
     //   3. Cursor exists, cron matches: compute nextFire(parsed, lastFireDate);
@@ -308,8 +313,27 @@ async function runSchedulerInner(opts: {
     let shouldFire: boolean;
     let previousLastFire: string | null;
     if (cursor === null) {
-      shouldFire = true;
-      previousLastFire = null;
+      const ledgerLastFire =
+        ledger === undefined
+          ? null
+          : latestScheduleRunStartedAt(ledger, processor.id);
+      if (ledgerLastFire === null) {
+        shouldFire = true;
+        previousLastFire = null;
+      } else {
+        previousLastFire = ledgerLastFire;
+        const nextFireDate = nextFire(parsed, new Date(ledgerLastFire));
+        shouldFire = nextFireDate.getTime() <= nowDate.getTime();
+        if (!shouldFire) {
+          // Re-seed the cursor so the next tick reads case 3 directly.
+          upsertCursor(projection, {
+            processorId: processor.id,
+            cron,
+            lastFire: ledgerLastFire,
+            nextFire: nextFireDate.toISOString(),
+          });
+        }
+      }
     } else if (cursor.cron !== cron) {
       previousLastFire = cursor.lastFire;
       upsertCursor(projection, {

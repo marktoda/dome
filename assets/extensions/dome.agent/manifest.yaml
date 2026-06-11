@@ -38,10 +38,11 @@ processors:
           - "inbox/raw/*.md"
           - "preferences/signals.md"
       - kind: model.invoke
-        # The cap is min(declared, granted) but spend is pooled per extension,
-        # so this must clear the pool after sweep+consolidate's nightly burn
-        # or captures starve for the rest of the day.
-        maxDailyCostUsd: 15
+        # Bounds ingest's OWN daily spend (a few articles' worth); the
+        # extension-wide pool is the vault grant's job. Do not size this
+        # for sweep/consolidate's burn — per-processor declared caps no
+        # longer compete with the pool (capabilities.md §model.invoke).
+        maxDailyCostUsd: 5
       - kind: question.ask
     execution:
       class: llm

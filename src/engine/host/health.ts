@@ -383,7 +383,16 @@ export async function collectHealthReport(opts: {
   const stuckPendingOutbox = queryOutbox(opts.outbox, { status: "pending" })
     .filter((row) => isStuckPendingOutbox(row, now, pendingOutboxThresholdMs));
   const orphaned = orphanRuns(opts.ledger, orphanRunThresholdMs, now);
-  const failedRuns = latestActiveProblemRuns(opts.ledger);
+  // A latest-failure finding for a processor that is no longer registered
+  // (bundle retired or disabled) can never be superseded by a newer run —
+  // it would hold attention_required hostage forever (the stale
+  // dome.intake.synthesize-rollup failure of 2026-06-08). Registry absent
+  // (no bundles resolvable in this call shape) → no filtering.
+  const failedRuns = latestActiveProblemRuns(opts.ledger).filter(
+    (row) =>
+      opts.registry === undefined ||
+      opts.registry.get(row.processorId) !== undefined,
+  );
   const quarantined = opts.executionState.quarantines();
   const projectionDrift = projectionCacheKeysChanged(opts.projection, {
     extensionSet: opts.extensions,

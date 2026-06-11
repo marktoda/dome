@@ -120,6 +120,27 @@ const ingest = defineProcessorImplementation({
           state,
         });
         if (result.stopReason === "budget") truncated = true;
+        // INBOX_IS_EPHEMERAL: a finished loop that leaves the source in
+        // inbox/raw is a silent no-op — the run records "succeeded" with
+        // nothing landed and the model's reasoning lost. Surface it with the
+        // final text as the only evidence of what the model decided. (A
+        // budget-stopped loop already warns via `truncated`.)
+        if (
+          result.stopReason === "final" &&
+          state.edits.get(sourcePath)?.kind !== "delete"
+        ) {
+          effects.push(
+            diagnosticEffect({
+              severity: "warning",
+              code: "dome.agent.source-unarchived",
+              message:
+                `dome.agent: ingest finished ${sourcePath} without ` +
+                `archiving it; the capture remains in inbox/raw. ` +
+                `Model's final message: ${finalTextExcerpt(result.finalText)}`,
+              sourceRefs: [ctx.sourceRef(sourcePath)],
+            }),
+          );
+        }
       } catch (error) {
         // Per-source isolation: a failure on one source must not roll back the
         // sources already accumulated in `state`.
@@ -152,6 +173,16 @@ export default ingest;
 
 function isRawCapturePath(path: string): boolean {
   return /^inbox\/raw\/[^/]+\.md$/.test(path);
+}
+
+const FINAL_TEXT_EXCERPT_CHARS = 300;
+
+function finalTextExcerpt(finalText: string | null): string {
+  if (finalText === null || finalText.trim() === "") return "(none)";
+  const text = finalText.trim();
+  return text.length <= FINAL_TEXT_EXCERPT_CHARS
+    ? text
+    : `${text.slice(0, FINAL_TEXT_EXCERPT_CHARS)}…`;
 }
 
 function taskTurn(

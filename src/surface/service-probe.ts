@@ -44,6 +44,8 @@ export type ServiceDeps = {
   readonly launchctl?: LaunchctlRunner | undefined;
   readonly bunPath?: string | undefined;
   readonly domeBin?: string | undefined;
+  /** Bounded wait for a booted-out service to leave launchd (test knob). */
+  readonly drainTimeoutMs?: number | undefined;
 };
 
 export type ResolvedServiceDeps = {
@@ -53,6 +55,7 @@ export type ResolvedServiceDeps = {
   readonly launchctl: LaunchctlRunner;
   readonly bunPath: string;
   readonly domeBin: string;
+  readonly drainTimeoutMs: number;
 };
 
 export function resolveServiceDeps(deps: ServiceDeps): ResolvedServiceDeps {
@@ -65,8 +68,15 @@ export function resolveServiceDeps(deps: ServiceDeps): ResolvedServiceDeps {
     launchctl: deps.launchctl ?? spawnLaunchctl,
     bunPath: deps.bunPath ?? process.execPath,
     domeBin: deps.domeBin ?? DOME_BIN,
+    drainTimeoutMs: deps.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS,
   };
 }
+
+/**
+ * How long the service verbs wait after `bootout` for the label to leave
+ * launchd before bootstrapping. A serve mid-agent-run drains for seconds.
+ */
+export const DEFAULT_DRAIN_TIMEOUT_MS = 15_000;
 
 /** Real launchctl boundary: `Bun.spawn` with captured stdout/stderr. */
 async function spawnLaunchctl(

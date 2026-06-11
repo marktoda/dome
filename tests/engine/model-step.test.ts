@@ -29,7 +29,8 @@ function build(opts: {
     ...(opts.onUse !== undefined
       ? { onCapabilityUse: (u: { outcome: "allowed" | "denied" }) => opts.onUse?.({ outcome: u.outcome }) }
       : {}),
-    spentUsdToday: () => opts.spent ?? 0,
+    spentUsdTodayByProcessor: () => opts.spent ?? 0,
+    spentUsdTodayByExtension: () => opts.spent ?? 0,
   });
 }
 
@@ -98,7 +99,8 @@ describe("modelInvokeForProcessor.step", () => {
       policy: { timeoutMs: 1000, modelCallTimeoutMs: 25 } as never,
       signal: new AbortController().signal,
       stepProvider,
-      spentUsdToday: () => 0,
+      spentUsdTodayByProcessor: () => 0,
+      spentUsdTodayByExtension: () => 0,
     });
     await expect(
       fn!.step!({ messages: [{ role: "user", content: "go" }], tools: [] }),
