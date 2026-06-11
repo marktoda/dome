@@ -20,7 +20,7 @@ The canonical map of "what an extension bundle contributes to a vault." Rows are
 
 An **extension bundle** is a directory under `<vault>/.dome/extensions/<bundle-name>/` (or shipped from the SDK at `assets/extensions/<bundle-name>/`) containing a `manifest.yaml` plus contributions across five kinds: page-types, preamble fragments, processors, external-handlers, capability grants. The bundle mechanism is the only registration path in v1 — there is no separate "tool," "hook," or "workflow" registration kind.
 
-## Six contribution kinds
+## Seven contribution kinds
 
 - **Page type** — `<bundle>/page-types.yaml` adds entries to the runtime `PageTypeRegistry` during bundle load. Each entry declares the type name and optional `frontmatter_extras` schema; vault-local `.dome/page-types.yaml` is merged later from the candidate snapshot by `dome.markdown.lint-frontmatter`.
 
@@ -31,6 +31,8 @@ An **extension bundle** is a directory under `<vault>/.dome/extensions/<bundle-n
 - **External handlers** — `<bundle>/external-handlers/*.ts` register handlers for external capabilities (calendar, notify, network) per [[wiki/specs/capabilities]] §"external". The filename stem is the capability name, so `external-handlers/calendar.write.ts` registers `calendar.write`. A bundle may register an external handler for a capability it doesn't grant to its own processors (so a calendar-sync bundle can provide a `calendar.write` handler that other bundles' processors consume). Collisions across the loaded bundle set fail before runtime open.
 
 - **Capability grants** — `<bundle>/manifest.yaml`'s `processors[].capabilities` declares per-processor capabilities; `<vault>/.dome/config.yaml`'s `extensions.<bundle>.grant` declares per-bundle grants. The intersection is what the broker enforces per [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]].
+
+- **Doctor grant-entry probes** — `<bundle>/manifest.yaml`'s `doctor.grantEntries:` block declares "this processor needs this specific grant entry or X silently breaks" probes ([[wiki/specs/cli]] §"`dome doctor`"). Each names the processor (must be this bundle's own), the required `{kind, target}` entries, why the gap matters, and the exact config remediation. The health report evaluates composed entries generically; a probe fires only when the processor is loaded, the manifest still declares the entry, and the kind is granted but the entry is not.
 
 - **Loops** — `<bundle>/manifest.yaml`'s `loops:` block declares bundle-scoped maintenance loops ([[wiki/specs/sdk-surface]] §"Adding a maintenance loop"): id, goal, evidence, processors (must be this bundle's own), optional foreign contributors, surfaces, settlement `{key, noOpWhen}`, risks. The runtime composes them with the core's cross-bundle registry; loop-id collisions fail `openVault`. First-party bundles declare none today — their loops are cross-bundle compositions and stay in the core registry by design.
 
@@ -76,7 +78,7 @@ A bundle the SDK ships without a row in this matrix is a substrate violation —
 
 ## Why this matrix is closed (in v1)
 
-Six contribution kinds cover the v1 design (loops joined 2026-06-10: bundle-scoped maintenance loops declared in `manifest.yaml`, composed with the core's cross-bundle registry at runtime). Adding a seventh kind (e.g., `doctor-findings` per [[wiki/gotchas/operator-surfaces-enumerate-first-party]]) would be a substrate change touching [[wiki/specs/sdk-surface]] §"Extension bundles" — not a matrix-only edit.
+Seven contribution kinds cover the v1 design (loops and doctor grant-entry probes both joined 2026-06-10 per [[wiki/gotchas/operator-surfaces-enumerate-first-party]]). Adding an eighth kind (e.g., diagnostic rendering hints, the remaining shadow kind) would be a substrate change touching [[wiki/specs/sdk-surface]] §"Extension bundles" — not a matrix-only edit.
 
 ## Related
 

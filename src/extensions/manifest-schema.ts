@@ -68,6 +68,34 @@ export type Manifest = {
    * foreign ids. Cross-bundle loops stay in the core registry by design.
    */
   readonly loops?: ReadonlyArray<ManifestLoopDeclaration>;
+  /**
+   * Doctor contributions ([[wiki/specs/cli]] §"dome doctor"): declarative
+   * grant-entry requirements evaluated generically by the health report.
+   * `processorId` must be declared by this bundle.
+   */
+  readonly doctor?: {
+    readonly grantEntries: ReadonlyArray<ManifestGrantEntryRequirement>;
+  };
+};
+
+/**
+ * A declarative doctor probe: when the named processor is loaded and its
+ * capability KIND is granted but the specific entry is not, `dome doctor`
+ * raises `capability.grant-entry-missing` with this `why`/`recovery`.
+ */
+export type ManifestGrantEntryRequirement = {
+  readonly processorId: string;
+  readonly entries: ReadonlyArray<ManifestGrantEntry>;
+  /** What silently breaks while the entry is missing. */
+  readonly why: string;
+  /** The exact .dome/config.yaml addition that satisfies the probe. */
+  readonly recovery: string;
+};
+
+export type ManifestGrantEntry = {
+  readonly kind: "read" | "patch.auto" | "graph.write";
+  /** Vault path for path kinds; fact predicate for `graph.write`. */
+  readonly target: string;
 };
 
 /** A maintenance-loop declaration inside a manifest. Settlement checks are
@@ -173,6 +201,10 @@ export type ManifestError =
   | {
       readonly kind: "duplicate-loop-id";
       readonly loopId: string;
+    }
+  | {
+      readonly kind: "doctor-foreign-processor";
+      readonly processorId: string;
     };
 
 /** Closed set of trigger discriminators — the surface the matrix gates on. */
@@ -235,12 +267,34 @@ export const ManifestLoopSchema = z
   })
   .strict();
 
+const ManifestGrantEntrySchema = z
+  .object({
+    kind: z.enum(["read", "patch.auto", "graph.write"]),
+    target: z.string().min(1),
+  })
+  .strict();
+
+export const ManifestGrantEntryRequirementSchema = z
+  .object({
+    processorId: z.string().min(1),
+    entries: z.array(ManifestGrantEntrySchema).min(1),
+    why: z.string().min(1),
+    recovery: z.string().min(1),
+  })
+  .strict();
+
 export const ManifestSchema = z
   .object({
     id: z.string().min(1),
     version: z.string().min(1),
     processors: z.array(ProcessorDeclarationSchema),
     loops: z.array(ManifestLoopSchema).optional(),
+    doctor: z
+      .object({
+        grantEntries: z.array(ManifestGrantEntryRequirementSchema).min(1),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -375,6 +429,25 @@ function checkLoopDeclarations(
   return ok(undefined);
 }
 
+/**
+ * Cross-field validation: doctor grant-entry requirements are
+ * self-contained — the named processor must be declared by this bundle.
+ */
+function checkDoctorDeclarations(
+  manifest: Manifest,
+): Result<void, ManifestError> {
+  const declared = new Set(manifest.processors.map((decl) => decl.id));
+  for (const requirement of manifest.doctor?.grantEntries ?? []) {
+    if (!declared.has(requirement.processorId)) {
+      return err({
+        kind: "doctor-foreign-processor",
+        processorId: requirement.processorId,
+      });
+    }
+  }
+  return ok(undefined);
+}
+
 // ----- parseManifest --------------------------------------------------------
 
 /**
@@ -430,6 +503,9 @@ export function parseManifest(
 
   const loopResult = checkLoopDeclarations(manifest);
   if (!loopResult.ok) return err(loopResult.error);
+
+  const doctorResult = checkDoctorDeclarations(manifest);
+  if (!doctorResult.ok) return err(doctorResult.error);
 
   return ok(manifest);
 }

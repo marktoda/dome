@@ -11,7 +11,69 @@ import { describe, expect, test } from "bun:test";
 
 import { capabilityGrantEntryFindings } from "../../src/engine/host/health";
 import type { Capability } from "../../src/core/processor";
+import type { ManifestGrantEntryRequirement } from "../../src/extensions/manifest-schema";
 import type { ProcessorRegistry } from "../../src/processors/registry";
+
+// The shipped requirements moved into the bundle manifests
+// (doctor.grantEntries); these tests inject the same shapes directly so the
+// evaluator stays covered independent of the shipped manifest content. The
+// shipped-manifest lockstep lives in tests/extensions/loader.test.ts.
+const REQUIREMENTS: ReadonlyArray<ManifestGrantEntryRequirement> = [
+  {
+    processorId: "dome.daily.attention-discount",
+    entries: [{ kind: "graph.write", target: "dome.attention.discount" }],
+    why: "attention-discount facts are dropped by the broker",
+    recovery: 'Add "dome.attention.*" to extensions.dome.daily.grant.graph.write in .dome/config.yaml.',
+  },
+  {
+    processorId: "dome.agent.brief",
+    entries: [{ kind: "read", target: "core.md" }],
+    why: "agents cannot load the owner's core-memory page",
+    recovery: 'Add "core.md" to extensions.dome.agent.grant.read in .dome/config.yaml.',
+  },
+  {
+    processorId: "dome.agent.brief",
+    entries: [
+      { kind: "read", target: "preferences/signals.md" },
+      { kind: "patch.auto", target: "preferences/signals.md" },
+    ],
+    why: "preference signal lines can be neither read nor appended",
+    recovery: 'Add "preferences/signals.md" to extensions.dome.agent.grant.read and extensions.dome.agent.grant.patch.auto in .dome/config.yaml.',
+  },
+  {
+    processorId: "dome.agent.preference-signals",
+    entries: [{ kind: "graph.write", target: "dome.preference.topic" }],
+    why: "preference counter facts are dropped by the broker",
+    recovery: 'Add "dome.preference.*" to extensions.dome.agent.grant.graph.write in .dome/config.yaml.',
+  },
+  {
+    processorId: "dome.agent.preference-promotion-answer",
+    entries: [
+      { kind: "read", target: "core.md" },
+      { kind: "read", target: "preferences/signals.md" },
+      { kind: "patch.auto", target: "core.md" },
+      { kind: "patch.auto", target: "preferences/signals.md" },
+    ],
+    why: "owner-approved promotions cannot be written to core.md",
+    recovery:
+      "Add the per-processor replacement grant stanza in .dome/config.yaml: " +
+      'extensions.dome.agent.processors."dome.agent.preference-promotion-answer".grant ' +
+      'with read: ["core.md", "preferences/signals.md"] and patch.auto: ' +
+      '["core.md", "preferences/signals.md"].',
+  },
+  {
+    processorId: "dome.markdown.core-size",
+    entries: [{ kind: "read", target: "core.md" }],
+    why: "the core-memory size lint never fires",
+    recovery: 'Add "core.md" to extensions.dome.markdown.grant.read in .dome/config.yaml.',
+  },
+  {
+    processorId: "dome.markdown.page-status",
+    entries: [{ kind: "graph.write", target: "dome.page.status" }],
+    why: "page supersession facts are dropped by the broker",
+    recovery: 'Add "dome.page.*" to extensions.dome.markdown.grant.graph.write in .dome/config.yaml.',
+  },
+];
 
 function read(...paths: string[]): Capability {
   return { kind: "read", paths } as Capability;
@@ -71,6 +133,7 @@ function findingsFor(opts: {
   readonly grants: Readonly<Record<string, ReadonlyArray<Capability>>>;
 }) {
   return capabilityGrantEntryFindings({
+      requirements: REQUIREMENTS,
     registry: stubRegistry(opts.processorIds),
     resolveGrants: (processorId) => opts.grants[processorId] ?? [],
   });

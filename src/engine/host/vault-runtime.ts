@@ -102,6 +102,7 @@ import {
   type MaintenanceLoop,
   type MaintenanceLoopValidationError,
 } from "../../extensions/maintenance-loops";
+import type { ManifestGrantEntryRequirement } from "../../extensions/manifest-schema";
 import {
   flattenBundleProcessors,
   loadBundlesFromRoots,
@@ -116,6 +117,8 @@ import {
 } from "../../page-types";
 
 const EMPTY_EXTERNAL_HANDLERS: ReadonlyMap<string, ExternalHandler> = new Map();
+const EMPTY_GRANT_ENTRY_REQUIREMENTS: ReadonlyArray<ManifestGrantEntryRequirement> =
+  Object.freeze([]);
 
 // ----- Public types ---------------------------------------------------------
 
@@ -158,6 +161,8 @@ export type VaultRuntime = {
   readonly externalHandlers: ExternalHandlerRegistry;
   /** Composed maintenance loops (first-party registry + active bundles'). */
   readonly maintenanceLoops: ReadonlyArray<MaintenanceLoop>;
+  /** Composed doctor grant-entry requirements from active bundles. */
+  readonly doctorGrantEntries: ReadonlyArray<ManifestGrantEntryRequirement>;
   readonly operationalQueryView: OperationalQueryView;
   readonly modelProvider?: ModelProvider;
   readonly modelStepProvider?: ModelStepProvider;
@@ -579,6 +584,7 @@ function buildVaultRuntime(input: {
     extensionConfigFor: settings.extensionConfigFor,
     externalHandlers: settings.externalHandlers,
     maintenanceLoops: resolved.maintenanceLoops,
+    doctorGrantEntries: resolved.doctorGrantEntries,
     operationalQueryView,
     ...(settings.modelProvider !== undefined
       ? { modelProvider: settings.modelProvider }
@@ -640,6 +646,8 @@ type ResolvedRegistry = {
    * from the static registry, so third-party loops surface automatically.
    */
   readonly maintenanceLoops: ReadonlyArray<MaintenanceLoop>;
+  /** Composed doctor grant-entry requirements from active bundles. */
+  readonly doctorGrantEntries: ReadonlyArray<ManifestGrantEntryRequirement>;
 };
 
 /**
@@ -681,6 +689,7 @@ async function resolveRegistryFromOpts(
       processorExtensionIds,
       externalHandlers: EMPTY_EXTERNAL_HANDLERS,
       maintenanceLoops: FIRST_PARTY_MAINTENANCE_LOOPS,
+      doctorGrantEntries: EMPTY_GRANT_ENTRY_REQUIREMENTS,
       pageTypes: pageTypeRegistryForPrebuiltOpts(opts, policy),
     });
   }
@@ -726,6 +735,9 @@ async function resolveRegistryFromOpts(
     externalHandlers: deriveExternalHandlers(activeBundles, opts.vaultPath),
     pageTypes: buildPageTypeRegistryForBundles(activeBundles),
     maintenanceLoops: composedLoops.value,
+    doctorGrantEntries: Object.freeze(
+      activeBundles.flatMap((bundle) => bundle.doctorGrantEntries),
+    ),
   });
 }
 
@@ -777,6 +789,7 @@ function activePrebuiltRegistryForPolicy(input: {
     processorExtensionIds: activeProcessorExtensionIds,
     externalHandlers: EMPTY_EXTERNAL_HANDLERS,
     maintenanceLoops: FIRST_PARTY_MAINTENANCE_LOOPS,
+    doctorGrantEntries: EMPTY_GRANT_ENTRY_REQUIREMENTS,
     pageTypes: input.pageTypes,
   });
 }

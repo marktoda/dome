@@ -1205,3 +1205,120 @@ describe("loadBundles — manifest loops", () => {
     expect(result.value.find((b) => b.id === "acme.todo")?.loops).toEqual([]);
   });
 });
+
+// ----- Manifest-contributed doctor grant-entry requirements ---------------------
+//
+// Per [[wiki/gotchas/operator-surfaces-enumerate-first-party]]: the
+// grant-entry probe table converts from a core constant to a manifest
+// `doctor:` contribution. Entries are self-contained (processorId must be
+// declared by this bundle); the runtime composes active bundles' entries and
+// `dome doctor` evaluates them generically.
+
+describe("loadBundles — manifest doctor grant entries", () => {
+  async function writeDoctorBundle(opts: {
+    readonly root: string;
+    readonly doctor?: unknown;
+  }): Promise<void> {
+    const bundleDir = join(opts.root, "acme.todo");
+    const processorsDir = join(bundleDir, "processors");
+    await mkdir(processorsDir, { recursive: true });
+    await writeFile(
+      join(processorsDir, "scan.ts"),
+      "export default { async run() { return []; } };\n",
+    );
+    const manifest = {
+      id: "acme.todo",
+      version: "0.1.0",
+      processors: [
+        {
+          id: "acme.todo.scan",
+          version: "0.1.0",
+          phase: "garden",
+          triggers: [{ kind: "signal", name: "file.created" }],
+          capabilities: [{ kind: "read", paths: ["todos/**/*.md"] }],
+          module: "processors/scan.ts",
+        },
+      ],
+      ...(opts.doctor !== undefined ? { doctor: opts.doctor } : {}),
+    };
+    await writeFile(
+      join(bundleDir, "manifest.json"),
+      JSON.stringify(manifest),
+    );
+  }
+
+  const VALID_DOCTOR = {
+    grantEntries: [
+      {
+        processorId: "acme.todo.scan",
+        entries: [{ kind: "read", target: "todos/inbox.md" }],
+        why: "the scan never sees the inbox",
+        recovery: 'Add "todos/inbox.md" to extensions.acme.todo.grant.read.',
+      },
+    ],
+  };
+
+  test("a doctor grant-entry requirement loads onto the bundle", async () => {
+    const root = makeTmpRoot("loader-doctor-");
+    await writeDoctorBundle({ root, doctor: VALID_DOCTOR });
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const bundle = result.value.find((b) => b.id === "acme.todo");
+    expect(bundle?.doctorGrantEntries.length).toBe(1);
+    const requirement = bundle?.doctorGrantEntries[0];
+    expect(requirement?.processorId).toBe("acme.todo.scan");
+    expect(requirement?.entries[0]?.target).toBe("todos/inbox.md");
+  });
+
+  test("a requirement naming a foreign processor fails the load", async () => {
+    const root = makeTmpRoot("loader-doctor-foreign-");
+    await writeDoctorBundle({
+      root,
+      doctor: {
+        grantEntries: [
+          { ...VALID_DOCTOR.grantEntries[0], processorId: "dome.agent.brief" },
+        ],
+      },
+    });
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("manifest-invalid");
+  });
+
+  test("a bundle without a doctor block contributes no requirements", async () => {
+    const root = makeTmpRoot("loader-doctor-none-");
+    await writeDoctorBundle({ root });
+
+    const result = await loadBundles({ bundlesRoot: root });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.find((b) => b.id === "acme.todo")?.doctorGrantEntries)
+      .toEqual([]);
+  });
+
+  test("the shipped first-party manifests carry the converted probe table", async () => {
+    const result = await loadBundles({ bundlesRoot: SHIPPED_BUNDLES_ROOT });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const byProcessor = new Set(
+      result.value.flatMap((bundle) =>
+        bundle.doctorGrantEntries.map((req) => req.processorId),
+      ),
+    );
+    // The seven entries that moved out of FIRST_PARTY_GRANT_ENTRY_REQUIREMENTS.
+    for (const processorId of [
+      "dome.daily.attention-discount",
+      "dome.agent.brief",
+      "dome.agent.preference-signals",
+      "dome.agent.preference-promotion-answer",
+      "dome.markdown.core-size",
+      "dome.markdown.page-status",
+    ]) {
+      expect(byProcessor.has(processorId)).toBe(true);
+    }
+  });
+});

@@ -72,7 +72,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/matrices/effect-router-targets]] — Effect kind × processor phase → engine routing destination.
 - [[wiki/matrices/effect-x-capability]] — Per-Effect-kind capability requirements at the broker.
 - [[wiki/matrices/engine-module-map]] — `src/engine/`'s four internal layers (core / garden / operational / host); module → layer assignment; downward-only import rule; lockstep with `tests/integration/engine-import-direction.test.ts`.
-- [[wiki/matrices/extension-bundle-shape]] — Per-bundle file map; six contribution kinds (page-types, preamble, processors, external-handlers, capability-grants, loops).
+- [[wiki/matrices/extension-bundle-shape]] — Per-bundle file map; seven contribution kinds (page-types, preamble, processors, external-handlers, capability-grants, loops, doctor grant-entry probes).
 - [[wiki/matrices/intent-prompt-processors]] — User intent × prompt source × processor that handles them × effects emitted.
 - [[wiki/matrices/processor-phase-x-trigger]] — Phase × trigger compatibility; what's allowed where.
 - [[wiki/matrices/projection-table-x-owner]] — Per-projection-table writer authority; namespace scoping.
