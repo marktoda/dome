@@ -120,3 +120,83 @@ function deferred<T>(): {
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+// Stale-break race (review H2): the takeover path was read → unlink →
+// open("wx") with no recheck, so two contenders could both judge the same
+// crashed-process lock stale, and the second contender's unlink would
+// remove the first contender's *fresh* lock — two "exclusive" holders at
+// once. Since this lock backs the compiler-host branch lock and the
+// projection write lock, the failure mode is two concurrent adoption ticks
+// on one branch. The crashed-daemon restart racing a `dome sync` is the
+// realistic trigger, so this is a stress test over that exact shape.
+describe("stale-lock takeover", () => {
+  test("admits at most one holder at a time under contention", async () => {
+    const { hostname } = await import("node:os");
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const { dirname } = await import("node:path");
+
+    for (let round = 0; round < 20; round += 1) {
+      const lockPath = tempLockPath();
+      await mkdir(dirname(lockPath), { recursive: true });
+      // A crashed prior holder: same host, a pid that cannot be alive.
+      await writeFile(
+        lockPath,
+        `${JSON.stringify({
+          token: "stale-token",
+          pid: 0x7fffffff,
+          hostname: hostname(),
+          command: "crashed-serve",
+          acquiredAt: new Date(Date.now() - 3_600_000).toISOString(),
+        })}\n`,
+        "utf8",
+      );
+
+      let inside = 0;
+      let maxInside = 0;
+      const results = await Promise.all(
+        Array.from({ length: 6 }, (_, i) =>
+          withExclusiveFileLock(
+            { lockPath, command: `contender-${i}` },
+            async () => {
+              inside += 1;
+              maxInside = Math.max(maxInside, inside);
+              await sleep(5);
+              inside -= 1;
+            },
+          ),
+        ),
+      );
+
+      const acquired = results.filter((r) => r.kind === "acquired").length;
+      expect(maxInside).toBe(1);
+      expect(acquired).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  test("single contender still breaks a stale lock and acquires", async () => {
+    const { hostname } = await import("node:os");
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const { dirname } = await import("node:path");
+
+    const lockPath = tempLockPath();
+    await mkdir(dirname(lockPath), { recursive: true });
+    await writeFile(
+      lockPath,
+      `${JSON.stringify({
+        token: "stale-token",
+        pid: 0x7fffffff,
+        hostname: hostname(),
+        command: "crashed-serve",
+        acquiredAt: new Date(Date.now() - 3_600_000).toISOString(),
+      })}\n`,
+      "utf8",
+    );
+
+    const result = await withExclusiveFileLock(
+      { lockPath, command: "recovering" },
+      async () => "recovered",
+    );
+    expect(result).toEqual({ kind: "acquired", value: "recovered" });
+    expect(existsSync(lockPath)).toBe(false);
+  });
+});
