@@ -100,7 +100,7 @@ Task-routing has no dedicated tool: the agent `appendToPage`s a `#task` line, gu
 **Default capability grant (`.dome/config.yaml`):**
 
 - `read`: `wiki/**/*.md`, `notes/**/*.md`, `inbox/**/*.md`, `index.md`, `log.md`, `core.md`, `preferences/signals.md`
-- `model.invoke`: `{ maxDailyCostUsd: 5 }` · harness `budget.maxSteps: 25`
+- `model.invoke`: `{ maxDailyCostUsd: 15 }` · harness `budget.maxSteps: 25` — the cap is min(declared, granted) but spend pools per extension, so ingest's cap must clear the pool after sweep+consolidate's nightly burn or daytime captures starve
 - `patch.auto`: `wiki/**/*.md`, `notes/**/*.md`, `index.md`, `log.md`, `inbox/processed/*.md`, `inbox/raw/*.md`, `preferences/signals.md`  (`raw/**` is deliberately absent — see §"Grant-as-boundary")
 - `question.ask: true`
 - **NOT `graph.write`** — required by `MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS`
