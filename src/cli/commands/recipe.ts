@@ -30,7 +30,7 @@ function iosRecipe(base: string): string {
 
 Prerequisites
   1. The dome http surface is running on your server:
-       DOME_HTTP_TOKEN=<token> dome http --vault <vault> --host 0.0.0.0
+       DOME_HTTP_TOKEN=<token> dome http --vault <vault> --host <tailscale-ip>
      (bind a Tailscale interface, never a public one — see
       docs/wiki/specs/http-surface.md "Trust domain")
   2. Your phone is on the same Tailscale network.
