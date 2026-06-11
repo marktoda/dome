@@ -797,3 +797,98 @@ describe("adoption propose patches block for review", () => {
     expect(r.capabilityUse?.outcome).toBe("downgraded");
   });
 });
+
+// Per docs/wiki/specs/effects.md §DiagnosticEffect: "In the garden phase,
+// `block` is treated as `error` — garden processors cannot block adoption
+// because they run after it." The demotion must happen at the applier
+// chokepoint so the persisted projection row matches the matrix; a raw
+// `block` row from a garden run would surface as an adoption blocker that
+// no sync can ever clear.
+describe("garden-phase block-severity demotion", () => {
+  const blockDiagnostic = () =>
+    diagnosticEffect({
+      severity: "block",
+      code: "test.garden-blocker",
+      message: "garden processor emitted block",
+      sourceRefs: [ref],
+    });
+
+  test("garden block diagnostic routes as error", async () => {
+    const recorded: Array<{ severity: string; code: string }> = [];
+    const sinks = {
+      ...noopSinks(),
+      recordDiagnostic: async (input: {
+        effect: { severity: string; code: string };
+      }) => {
+        recorded.push({
+          severity: input.effect.severity,
+          code: input.effect.code,
+        });
+      },
+    };
+
+    const r = await applyEffect({
+      ...baseOpts,
+      sinks,
+      declared: [read],
+      granted: [read],
+      phase: "garden",
+      effect: blockDiagnostic(),
+    });
+
+    expect(r.outcome).toBe("applied");
+    expect(
+      r.appliedEffect?.kind === "diagnostic"
+        ? r.appliedEffect.severity
+        : null,
+    ).toBe("error");
+    // Code, message, and evidence survive the rewrite.
+    expect(
+      r.appliedEffect?.kind === "diagnostic" ? r.appliedEffect.code : null,
+    ).toBe("test.garden-blocker");
+    expect(
+      r.appliedEffect?.kind === "diagnostic"
+        ? r.appliedEffect.sourceRefs
+        : [],
+    ).toHaveLength(1);
+    // The persisted row (what the sink saw) is the demoted severity.
+    expect(recorded).toEqual([
+      { severity: "error", code: "test.garden-blocker" },
+    ]);
+  });
+
+  test("adoption block diagnostic keeps block severity", async () => {
+    const r = await applyEffect({
+      ...baseOpts,
+      declared: [read],
+      granted: [read],
+      phase: "adoption",
+      effect: blockDiagnostic(),
+    });
+
+    expect(r.outcome).toBe("applied");
+    expect(
+      r.appliedEffect?.kind === "diagnostic"
+        ? r.appliedEffect.severity
+        : null,
+    ).toBe("block");
+  });
+
+  test("garden error/warning diagnostics pass through unchanged", async () => {
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "garden",
+      effect: diagnosticEffect({
+        severity: "warning",
+        code: "test.warn",
+        message: "w",
+        sourceRefs: [],
+      }),
+    });
+    expect(
+      r.appliedEffect?.kind === "diagnostic"
+        ? r.appliedEffect.severity
+        : null,
+    ).toBe("warning");
+  });
+});
