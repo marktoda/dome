@@ -1,13 +1,13 @@
 ---
 type: invariant
-created: 2026-05-25T00:00:00.000Z
-updated: 2026-05-29T00:00:00.000Z
+created: 2026-05-25
+updated: 2026-06-11
 sources:
-  - '[[cohesive/brainstorms/2026-05-25-dome-vision]]'
-tier: axiom
+  - "[[cohesive/brainstorms/2026-05-25-dome-vision]]"
 enforced_by:
   - tests/vault/vault.test.ts
   - tests/git.test.ts
+tier: axiom
 ---
 
 # VAULT_IS_GIT_REPO

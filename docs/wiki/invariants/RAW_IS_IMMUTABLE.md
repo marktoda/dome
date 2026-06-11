@@ -1,13 +1,13 @@
 ---
 type: invariant
 created: 2026-05-27
-updated: 2026-05-29
+updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
-tier: axiom
 enforced_by:
   - tests/invariants/raw-is-immutable.test.ts
   - tests/engine/capability-broker.test.ts
+tier: axiom
 ---
 
 # RAW_IS_IMMUTABLE

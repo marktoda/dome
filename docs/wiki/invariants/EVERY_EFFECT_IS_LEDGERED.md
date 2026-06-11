@@ -4,10 +4,10 @@ created: 2026-05-27
 updated: 2026-06-10
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
-tier: shipped-default
 enforced_by:
   - tests/engine/apply-effect.test.ts
   - tests/ledger/runs.test.ts
+tier: shipped-default
 ---
 
 # EVERY_EFFECT_IS_LEDGERED

@@ -6,10 +6,10 @@ sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
 enforced_at: src/engine/core/adopt.ts
-tier: axiom
 enforced_by:
   - tests/harness/scenarios/cli-surface/reanchor-divergence.scenario.test.ts
   - tests/cli/sync.test.ts
+tier: axiom
 ---
 
 # ADOPTED_REF_IS_SEMANTIC_CURSOR

@@ -1,12 +1,12 @@
 ---
 type: invariant
 created: 2026-05-27
-updated: 2026-06-09
+updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
-tier: axiom
 enforced_by:
   - tests/integration/bundle-deps.test.ts
+tier: axiom
 ---
 
 # ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY

@@ -4,10 +4,10 @@ created: 2026-05-27
 updated: 2026-06-10
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
-tier: axiom
 enforced_by:
   - tests/processors/runtime.test.ts
   - tests/processors/executor.test.ts
+tier: axiom
 ---
 
 # EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT
