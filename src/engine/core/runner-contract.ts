@@ -89,7 +89,14 @@ export type ProcessorCancelledExecutionError =
 
 export type ProcessorSkippedExecutionErrorCode =
   | "execution-policy.phase-class-denied"
-  | "processor.quarantined";
+  | "processor.quarantined"
+  /**
+   * The phase runner was aborted (shutdown/restart) before this
+   * trigger-matched processor was dispatched. The skip row keeps
+   * EVERY_PROCESSOR_RUN_IS_LEDGERED honest: a mid-tick shutdown is
+   * auditable instead of indistinguishable from "never matched".
+   */
+  | "processor.aborted-before-dispatch";
 
 export type ProcessorSkippedExecutionError = {
   readonly code: ProcessorSkippedExecutionErrorCode;
