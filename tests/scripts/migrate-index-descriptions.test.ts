@@ -161,6 +161,89 @@ describe("migrateIndexDescriptions", () => {
     expect(parsed.data.description).toBe(description);
   });
 
+  test("insertion preserves every other byte — bare YAML dates stay bare", () => {
+    const dir = makeVault();
+    const original = [
+      "---",
+      "created: 2026-04-06",
+      'title: "quoted title"',
+      "---",
+      "# dated",
+      "",
+      "Body stays put.",
+      "",
+    ].join("\n");
+    writeFileSync(join(dir, "wiki", "entities", "dated.md"), original);
+    writeFileSync(
+      join(dir, "index.md"),
+      "- [[wiki/entities/dated]] — Holds a bare date\n",
+    );
+
+    const summary = migrateIndexDescriptions(dir, { dryRun: false });
+    expect(summary.updated).toEqual(["wiki/entities/dated.md"]);
+
+    // Byte-exact: the original file with exactly one line spliced in before
+    // the closing fence. No date re-serialization, no quote flips.
+    const expected = [
+      "---",
+      "created: 2026-04-06",
+      'title: "quoted title"',
+      "description: Holds a bare date",
+      "---",
+      "# dated",
+      "",
+      "Body stays put.",
+      "",
+    ].join("\n");
+    expect(readFileSync(join(dir, "wiki", "entities", "dated.md"), "utf8")).toBe(
+      expected,
+    );
+  });
+
+  test("entries resolving outside the vault go to unmatched, untouched", () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-migrate-outside-"));
+    fixtures.push(root);
+    const dir = join(root, "vault");
+    mkdirSync(dir, { recursive: true });
+    const outside = join(root, "outside.md");
+    writeFileSync(outside, BARE_BODY);
+    writeFileSync(join(dir, "index.md"), "- [[../outside]] — Escapes the vault\n");
+
+    const summary = migrateIndexDescriptions(dir, { dryRun: false });
+    expect(summary.updated).toEqual([]);
+    expect(summary.skipped).toEqual([]);
+    expect(summary.unmatched).toEqual(["../outside.md"]);
+    expect(readFileSync(outside, "utf8")).toBe(BARE_BODY);
+  });
+
+  test("duplicate targets: first wins, exact repeat skips, divergent repeat goes unmatched", () => {
+    const dir = makeVault();
+    writeFileSync(join(dir, "wiki", "entities", "0age.md"), BARE_BODY);
+    writeFileSync(
+      join(dir, "index.md"),
+      [
+        "- [[wiki/entities/0age]] — First description",
+        "- [[wiki/entities/0age]] — First description",
+        "- [[wiki/entities/0age]] — A different description",
+        "",
+      ].join("\n"),
+    );
+
+    // Dry run and real run must report identically.
+    const dry = migrateIndexDescriptions(dir, { dryRun: true });
+    const real = migrateIndexDescriptions(dir, { dryRun: false });
+    expect(dry).toEqual(real);
+
+    expect(real.updated).toEqual(["wiki/entities/0age.md"]);
+    expect(real.skipped).toEqual(["wiki/entities/0age.md"]);
+    expect(real.unmatched).toEqual(["wiki/entities/0age.md"]);
+
+    const parsed = matter(
+      readFileSync(join(dir, "wiki", "entities", "0age.md"), "utf8"),
+    );
+    expect(parsed.data.description).toBe("First description");
+  });
+
   test("targets that already carry .md resolve without doubling the extension", () => {
     const dir = makeVault();
     writeFileSync(join(dir, "wiki", "entities", "0age.md"), BARE_BODY);
