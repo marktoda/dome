@@ -119,6 +119,9 @@ function depsFor(
     launchctl,
     bunPath: "/opt/bun/bin/bun",
     domeBin: "/opt/dome/bin/dome",
+    // Fast drain wait: fakes that report the service as still loaded
+    // (`print` exit 0) would otherwise spin out the real 15s default.
+    drainTimeoutMs: 250,
     ...extra,
   };
 }
@@ -176,9 +179,11 @@ describe("runInstall", () => {
       `<string>${join(vault, ".dome", "state", "serve.log")}</string>`,
     );
 
-    // bootout-first idempotency shape, modern gui-domain forms.
+    // bootout-first idempotency shape, modern gui-domain forms (with the
+    // drain probe between bootout and bootstrap).
     expect(launchctl.calls).toEqual([
       ["bootout", `gui/501/${label}`],
+      ["print", `gui/501/${label}`],
       ["bootstrap", "gui/501", plistPath],
     ]);
   });
@@ -310,8 +315,10 @@ describe("runInstall", () => {
     const plistPath = join(agents, `${label}.plist`);
     expect(launchctl.calls.map((c) => c[0])).toEqual([
       "bootout",
+      "print", // drain probe: default fake reports the service gone
       "bootstrap",
       "bootout",
+      "print",
       "bootstrap",
     ]);
     expect(existsSync(plistPath)).toBe(true);
@@ -501,14 +508,63 @@ describe("runRestart", () => {
       await runRestart({ vault }, depsFor(agents, restartCtl.runner)),
     ).toBe(0);
 
-    // Exact restart sequence: bootout (failure tolerated), then bootstrap
-    // pointing at the on-disk plist.
+    // Exact restart sequence: bootout (failure tolerated), drain probe,
+    // then bootstrap pointing at the on-disk plist.
     expect(restartCtl.calls).toEqual([
       ["bootout", `gui/501/${label}`],
+      ["print", `gui/501/${label}`],
       ["bootstrap", "gui/501", plistPath],
     ]);
     // The plist is byte-identical — restart never rewrites it.
     expect(await readFile(plistPath, "utf8")).toBe(installedPlist);
+    expect(logs.join("\n")).toContain("service restarted");
+  });
+
+  test("waits for the old service to drain before bootstrapping (mid-agent-run restart)", async () => {
+    const vault = await vaultDir();
+    const agents = tempDir("dome-install-agents-");
+    const installCtl = fakeLaunchctl();
+    expect(await runInstall({ vault }, depsFor(agents, installCtl.runner))).toBe(0);
+
+    // A serve mid-agent-run drains slowly: bootout returns immediately but
+    // the service stays registered for a while. Bootstrapping during the
+    // drain fails (the production first-try `dome restart` error on
+    // 2026-06-10); after the drain it succeeds.
+    let printCalls = 0;
+    let drained = false;
+    const calls: Array<ReadonlyArray<string>> = [];
+    const runner: LaunchctlRunner = async (args) => {
+      calls.push([...args]);
+      const sub = args[0] ?? "";
+      if (sub === "bootout") return { exitCode: 0, stdout: "", stderr: "" };
+      if (sub === "print") {
+        printCalls += 1;
+        if (printCalls >= 3) {
+          drained = true;
+          return { exitCode: 113, stdout: "", stderr: "Could not find service" };
+        }
+        return { exitCode: 0, stdout: "state = running", stderr: "" };
+      }
+      if (sub === "bootstrap") {
+        if (!drained) {
+          return {
+            exitCode: 5,
+            stdout: "",
+            stderr: "Bootstrap failed: 5: Input/output error",
+          };
+        }
+        return { exitCode: 0, stdout: "", stderr: "" };
+      }
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+
+    expect(await runRestart({ vault }, depsFor(agents, runner))).toBe(0);
+    // The drain wait polled `print` until the service disappeared, and
+    // bootstrap was only attempted after that.
+    expect(printCalls).toBeGreaterThanOrEqual(3);
+    const bootstrapIndex = calls.findIndex((c) => c[0] === "bootstrap");
+    const lastPrintIndex = calls.map((c) => c[0]).lastIndexOf("print");
+    expect(bootstrapIndex).toBeGreaterThan(lastPrintIndex - 1);
     expect(logs.join("\n")).toContain("service restarted");
   });
 

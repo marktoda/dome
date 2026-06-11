@@ -254,6 +254,7 @@ export async function runInstall(
     // Bootout-first for idempotent replacement. Failure is expected when the
     // service isn't currently loaded; launchctl reports it via exit code.
     await d.launchctl(["bootout", `gui/${uid}/${label}`]);
+    await waitForServiceDrain(d, uid, label);
 
     const replaced = existsSync(plistPath);
     await writeFile(
@@ -360,6 +361,35 @@ export async function runUninstall(
   }
 }
 
+// ----- Drain wait ------------------------------------------------------------
+
+const DRAIN_POLL_INTERVAL_MS = 200;
+
+/**
+ * Wait (bounded) for a booted-out service to actually disappear from launchd.
+ * `launchctl bootout` delivers SIGTERM and returns immediately; a serve
+ * mid-agent-run drains for seconds, during which the label stays registered
+ * and `launchctl bootstrap` fails (`Bootstrap failed: 5`) — the first-try
+ * `dome restart` error of 2026-06-10. Poll `launchctl print` until the
+ * service is gone; on timeout fall through to bootstrap and let its error
+ * surface honestly.
+ */
+async function waitForServiceDrain(
+  d: ReturnType<typeof resolveServiceDeps>,
+  uid: number,
+  label: string,
+): Promise<void> {
+  const deadline = Date.now() + d.drainTimeoutMs;
+  for (;;) {
+    const probe = await d.launchctl(["print", `gui/${uid}/${label}`]);
+    if (probe.exitCode !== 0) return; // gone — safe to bootstrap
+    if (Date.now() >= deadline) return;
+    await new Promise((resolve) =>
+      setTimeout(resolve, DRAIN_POLL_INTERVAL_MS),
+    );
+  }
+}
+
 // ----- runRestart -----------------------------------------------------------
 
 /**
@@ -411,6 +441,7 @@ export async function runRestart(
     // service is not currently loaded (a dead service is exactly why an
     // operator restarts).
     await d.launchctl(["bootout", `gui/${uid}/${label}`]);
+    await waitForServiceDrain(d, uid, label);
 
     const bootstrap = await d.launchctl(["bootstrap", `gui/${uid}`, plistPath]);
     if (bootstrap.exitCode !== 0) {
