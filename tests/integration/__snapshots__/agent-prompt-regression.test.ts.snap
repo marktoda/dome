@@ -100,7 +100,7 @@ You run every night, so each run is SMALL and bounded to what drifted since your
 5. Finish one or two clusters completely, then update the ledger and stop.
 
 ## Per-run limits (hard)
-Touch at most 25 files in one run — merges, link rewrites, and index/log/ledger updates all count. The processor enforces this cap: a run that exceeds it is rolled back ENTIRELY. Prefer finishing one cluster completely over starting many.
+Touch at most 30 files in one run — merges, link rewrites, and index/log/ledger updates all count. The processor enforces this cap: a run that exceeds it is rolled back ENTIRELY. Prefer finishing one cluster completely over starting many.
 
 ## Merging duplicate pages (operation 1)
 When you are CONFIDENT two+ pages are the same thing:

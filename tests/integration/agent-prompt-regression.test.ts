@@ -11,6 +11,7 @@ import { describe, expect, test } from "bun:test";
 import { BRIEF_CHARTER } from "../../assets/extensions/dome.agent/lib/brief-charter";
 import { INGEST_CHARTER } from "../../assets/extensions/dome.agent/lib/ingest-charter";
 import { consolidateCharter } from "../../assets/extensions/dome.agent/lib/consolidate-charter";
+import { MAX_CHANGED_FILES } from "../../assets/extensions/dome.agent/processors/consolidate";
 import { sweepCharter } from "../../assets/extensions/dome.agent/lib/sweep-charter";
 import { promptForPage } from "../../assets/extensions/dome.warden/processors/integrity";
 
@@ -27,7 +28,7 @@ describe("agent prompt regression", () => {
     expect(
       consolidateCharter({
         ledgerPath: "wiki/meta/consolidation-ledger.md",
-        maxChangedFiles: 25,
+        maxChangedFiles: MAX_CHANGED_FILES,
       }),
     ).toMatchSnapshot();
   });

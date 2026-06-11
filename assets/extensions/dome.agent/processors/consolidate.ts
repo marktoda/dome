@@ -21,7 +21,7 @@ import {
 } from "../../dome.daily/processors/daily-shared";
 
 const MAX_STEPS = 50;
-const MAX_CHANGED_FILES = 30;
+export const MAX_CHANGED_FILES = 30;
 const DEFAULT_LEDGER_PATH = "consolidation-ledger.md";
 
 export type ConsolidationLedgerResolution = {
