@@ -30,6 +30,11 @@ describe("renderTodayHtml", () => {
     expect(html).not.toContain("<the>");                      // no raw injection
   });
 
+  test("floors refreshSeconds at 1 and truncates fractions", () => {
+    expect(renderTodayHtml(DATA, { refreshSeconds: 0 })).toContain('content="1"');
+    expect(renderTodayHtml(DATA, { refreshSeconds: 2.9 })).toContain('content="2"');
+  });
+
   test("tolerates malformed data with an empty-state page", () => {
     const html = renderTodayHtml(null, { refreshSeconds: 15 });
     expect(html).toContain("All clear");
