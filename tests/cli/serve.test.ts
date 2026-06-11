@@ -607,7 +607,10 @@ extensions:
         pollIntervalMs: 20,
         quiet: true,
         daemon: true,
-        daemonTimeoutMs: 5_000,
+        // Generous under full-suite parallelism: child startup (bun boot +
+        // runtime open + first heartbeat) regularly exceeded 5s under load
+        // and flaked this test all night on 2026-06-10.
+        daemonTimeoutMs: 15_000,
       });
       expect(code).toBe(0);
 
@@ -625,18 +628,36 @@ extensions:
       await waitFor(async () => {
         const status = await readStatusJson(f);
         return status.serve_status === "off";
-      }, 5_000);
+      }, 15_000);
       daemonPid = null;
     } finally {
-      if (daemonPid !== null) {
+      // Orphan-proofing: if an assertion threw before the pid was learned
+      // (e.g. the status read itself failed), recover it from the heartbeat
+      // file so a real polling daemon never outlives the test — an orphan
+      // at pollIntervalMs=20 burns CPU indefinitely and can wedge the
+      // suite (suspected cause of the 54-minute hang on 2026-06-10).
+      if (daemonPid === null) {
         try {
-          process.kill(daemonPid, "SIGTERM");
+          const heartbeat = JSON.parse(
+            await readFile(
+              join(f.vaultPath, ".dome", "state", "serve-heartbeat.json"),
+              "utf8",
+            ),
+          ) as { readonly pid?: number };
+          if (typeof heartbeat.pid === "number") daemonPid = heartbeat.pid;
         } catch {
-          // The daemon may have already exited and cleared its heartbeat.
+          // No heartbeat — nothing to clean up.
+        }
+      }
+      if (daemonPid !== null && daemonPid !== process.pid) {
+        try {
+          process.kill(daemonPid, "SIGKILL");
+        } catch {
+          // The daemon already exited.
         }
       }
     }
-  }, 10_000);
+  }, 40_000);
 });
 
 // ----- Test 2: detached HEAD ------------------------------------------------

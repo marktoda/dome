@@ -75,6 +75,72 @@ describe("finishAgentRun", () => {
     expect(effects.filter((e) => e.kind === "question")).toHaveLength(1);
   });
 
+  test("noOp option surfaces a zero-edit final run as an info diagnostic carrying the final text", () => {
+    const effects = finishAgentRun({
+      state: stateWith({}),
+      stopReason: "final",
+      sourceRefs: refs,
+      patchReason: "dome.agent: test run",
+      truncatedMessage: "unused",
+      noOp: {
+        code: "dome.agent.test-no-op",
+        message: (excerpt) => `nothing landed. Model said: ${excerpt}`,
+        finalText: "No drift since the last run, nothing to consolidate.",
+      },
+    });
+    const diags = effects.filter((e) => e.kind === "diagnostic");
+    expect(diags).toHaveLength(1);
+    const diag = diags[0];
+    expect(diag?.kind === "diagnostic" && diag.severity).toBe("info");
+    expect(diag?.kind === "diagnostic" && diag.code).toBe("dome.agent.test-no-op");
+    expect(diag?.kind === "diagnostic" && diag.message).toContain(
+      "No drift since the last run",
+    );
+  });
+
+  test("noOp is silent when edits landed, when questions were asked, or on budget stops", () => {
+    const noOp = {
+      code: "dome.agent.test-no-op",
+      message: (excerpt: string) => `no-op: ${excerpt}`,
+      finalText: "text",
+    };
+    const withEdits = finishAgentRun({
+      state: stateWith({ writes: [["wiki/a.md", "x"]] }),
+      stopReason: "final",
+      sourceRefs: refs,
+      patchReason: "r",
+      truncatedMessage: "unused",
+      noOp,
+    });
+    expect(
+      withEdits.some((e) => e.kind === "diagnostic" && e.code === noOp.code),
+    ).toBe(false);
+
+    const withQuestions = finishAgentRun({
+      state: stateWith({ questions: ["q?"] }),
+      stopReason: "final",
+      sourceRefs: refs,
+      patchReason: "r",
+      truncatedMessage: "unused",
+      noOp,
+    });
+    expect(
+      withQuestions.some((e) => e.kind === "diagnostic" && e.code === noOp.code),
+    ).toBe(false);
+
+    const onBudget = finishAgentRun({
+      state: stateWith({}),
+      stopReason: "budget",
+      sourceRefs: refs,
+      patchReason: "r",
+      truncatedMessage: "hit budget",
+      noOp,
+    });
+    expect(
+      onBudget.some((e) => e.kind === "diagnostic" && e.code === noOp.code),
+    ).toBe(false);
+  });
+
   test("budget stop appends the dome.agent.truncated diagnostic with the given message", () => {
     const effects = finishAgentRun({
       state: stateWith({ writes: [["wiki/a.md", "A"]] }),

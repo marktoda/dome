@@ -68,7 +68,7 @@
 
 import { posix } from "node:path";
 
-import { diagnosticEffect } from "../core/effect";
+import { diagnosticEffect, type Effect } from "../core/effect";
 import type {
   Capability,
   ExtensionConfig,
@@ -419,8 +419,27 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
       );
 
       const results: RunnerResult[] = [];
-      for (const processor of gardenProcessors) {
-        if (runnerSignal.signal?.aborted === true) break;
+      for (let i = 0; i < gardenProcessors.length; i += 1) {
+        const processor = gardenProcessors[i]!;
+        if (runnerSignal.signal?.aborted === true) {
+          // EVERY_PROCESSOR_RUN_IS_LEDGERED: the garden pass for this
+          // proposal never re-runs, so a silent break would make a mid-tick
+          // shutdown indistinguishable from "never matched" for every
+          // processor not yet dispatched (the 2026-06-10 ingest mystery).
+          // Record a reasoned skip row per remaining matched processor.
+          results.push(
+            ...recordAbortedBeforeDispatch({
+              processors: gardenProcessors.slice(i),
+              phase: "garden",
+              signals: input.signals,
+              resolveGrants,
+              proposalId: input.proposal?.id ?? null,
+              inputCommit: input.adopted,
+              ...(ledger !== undefined ? { ledger } : {}),
+            }),
+          );
+          break;
+        }
         const readableSignals = readableSignalsForProcessor({
           processor,
           signals: input.signals,
@@ -1022,6 +1041,78 @@ function returnSkippedRun(opts: {
       }),
     ]),
   });
+}
+
+/**
+ * Ledger a reasoned skip for every trigger-matched processor a phase runner
+ * abandoned when its signal aborted mid-pass (engine shutdown / `dome
+ * restart`). Unlike quarantine/policy skips this emits NO diagnostic
+ * effect: a routine restart mid-garden must not mint attention-raising
+ * diagnostics — the skip rows are the audit trail.
+ */
+function recordAbortedBeforeDispatch(opts: {
+  readonly processors: ReadonlyArray<Processor<unknown>>;
+  readonly phase: "adoption" | "garden";
+  readonly signals: ReadonlyArray<SignalEvent>;
+  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
+  readonly proposalId: string | null;
+  readonly inputCommit: CommitOid;
+  readonly ledger?: LedgerDb;
+}): ReadonlyArray<RunnerResult> {
+  const results: RunnerResult[] = [];
+  for (const processor of opts.processors) {
+    const readableSignals = readableSignalsForProcessor({
+      processor,
+      signals: opts.signals,
+      resolveGrants: opts.resolveGrants,
+    });
+    const matches = matchTriggers(processor.triggers, readableSignals);
+    if (matches.length === 0) continue;
+
+    const startedAt = new Date();
+    const runId = newRunId(startedAt);
+    const error = Object.freeze({
+      code: "processor.aborted-before-dispatch" as const,
+      message:
+        "phase runner aborted before this trigger-matched processor was " +
+        "dispatched (engine shutdown or restart mid-tick); this proposal's " +
+        "pass will not re-run.",
+      retryable: false as const,
+      phase: opts.phase,
+      processorId: processor.id,
+    });
+    if (opts.ledger !== undefined) {
+      insertQueued(opts.ledger, {
+        id: runId,
+        proposalId: opts.proposalId,
+        processorId: processor.id,
+        processorVersion: processor.version,
+        phase: opts.phase,
+        inputCommit: opts.inputCommit,
+        triggerKind: triggerKindOf(matches),
+        triggerPayload: triggerPayloadOf(matches),
+        startedAt,
+      });
+      markSkipped(opts.ledger, {
+        id: runId,
+        finishedAt: startedAt,
+        error: JSON.stringify(error),
+      });
+    }
+    results.push(
+      Object.freeze({
+        runId,
+        processorId: processor.id,
+        executionStatus: "skipped" as const,
+        executionError: error,
+        declared: processor.capabilities,
+        granted: opts.resolveGrants(processor.id),
+        inspectedPaths: Object.freeze([]) as ReadonlyArray<string>,
+        effects: Object.freeze([]) as ReadonlyArray<Effect>,
+      }),
+    );
+  }
+  return Object.freeze(results);
 }
 
 function markDispatchRunning(frame: DispatchFrame): void {

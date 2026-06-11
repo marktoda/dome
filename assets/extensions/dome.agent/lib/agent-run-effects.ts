@@ -66,6 +66,29 @@ export type AgentRunCap = {
   readonly message: (changedFiles: number) => string;
 };
 
+export type AgentRunNoOp = {
+  /** Diagnostic code (e.g. `dome.agent.consolidate-no-op`). */
+  readonly code: string;
+  /** Receives the (truncated) final text excerpt — the only evidence of what the model decided. */
+  readonly message: (finalTextExcerpt: string) => string;
+  readonly finalText: string | null;
+};
+
+const FINAL_TEXT_EXCERPT_CHARS = 300;
+
+/**
+ * The model's final message, bounded for a diagnostic. "(none)" when the
+ * model produced no text — still worth surfacing: a no-op with no
+ * explanation is the worst case.
+ */
+export function finalTextExcerpt(finalText: string | null): string {
+  if (finalText === null || finalText.trim() === "") return "(none)";
+  const text = finalText.trim();
+  return text.length <= FINAL_TEXT_EXCERPT_CHARS
+    ? text
+    : `${text.slice(0, FINAL_TEXT_EXCERPT_CHARS)}…`;
+}
+
 /**
  * The standard agent-run epilogue: patch + questions + truncated warning.
  *
@@ -81,9 +104,33 @@ export function finishAgentRun(opts: {
   readonly patchReason: string;
   readonly truncatedMessage: string;
   readonly cap?: AgentRunCap;
+  /**
+   * Surface a run that ended `final` with zero edits AND zero questions as
+   * an info diagnostic carrying the model's final text. Without it such a
+   * run records "succeeded" with no trace and the model's reasoning is
+   * discarded (the silent-no-op blind spot of 2026-06-10). Info severity:
+   * a quiet night is legitimate and must not raise attention.
+   */
+  readonly noOp?: AgentRunNoOp;
 }): ReadonlyArray<Effect> {
   const effects: Effect[] = [];
   const changes = agentChanges(opts.state);
+
+  if (
+    opts.noOp !== undefined &&
+    opts.stopReason === "final" &&
+    changes.length === 0 &&
+    opts.state.questions.length === 0
+  ) {
+    effects.push(
+      diagnosticEffect({
+        severity: "info",
+        code: opts.noOp.code,
+        message: opts.noOp.message(finalTextExcerpt(opts.noOp.finalText)),
+        sourceRefs: opts.sourceRefs,
+      }),
+    );
+  }
 
   if (opts.cap !== undefined && changes.length > opts.cap.maxChangedFiles) {
     effects.push(

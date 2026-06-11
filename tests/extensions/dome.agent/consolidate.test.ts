@@ -257,7 +257,34 @@ describe("dome.agent.consolidate", () => {
     ).toBe(true);
     expect(seenTask[0]).toContain("Never merge people pages.");
     expect(seenTask[0]).toContain("Consolidate RECENT drift"); // original task below
-    expect(effects.find((e) => e.kind === "diagnostic")).toBeUndefined();
+    // Zero-edit final runs now emit the consolidate-no-op info diagnostic;
+    // the assertion here is about core-memory injection adding NO diagnostics
+    // of its own.
+    expect(
+      effects.find(
+        (e) =>
+          e.kind === "diagnostic" && e.code !== "dome.agent.consolidate-no-op",
+      ),
+    ).toBeUndefined();
+  });
+
+  test("a zero-edit final run surfaces the consolidate-no-op info diagnostic with the final text", async () => {
+    const stepFn = async (): Promise<ModelStepResult> => ({
+      text: "No drift since the last run; nothing to consolidate tonight.",
+    });
+    const effects = await consolidate.run(
+      makeCtx({ files: { "index.md": "x" }, stepFn }),
+    );
+    const diag = effects.find(
+      (e) =>
+        e.kind === "diagnostic" && e.code === "dome.agent.consolidate-no-op",
+    );
+    expect(diag).toBeDefined();
+    expect(diag?.kind === "diagnostic" && diag.severity).toBe("info");
+    expect(diag?.kind === "diagnostic" && diag.message).toContain(
+      "nothing to consolidate tonight",
+    );
+    expect(effects.some((e) => e.kind === "patch")).toBe(false);
   });
 
   test("a malformed core_path config does not crash the run: default path + core-config-invalid diagnostic", async () => {

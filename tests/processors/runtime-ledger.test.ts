@@ -420,9 +420,14 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
 
     expect(processorSignal?.aborted).toBe(true);
     expect(laterInvoked).toBe(false);
-    expect(results.length).toBe(1);
+    // Two results: the cancelled run plus the abort-skip for the matched
+    // processor the aborted pass never dispatched.
+    expect(results.length).toBe(2);
     expect(results[0]?.executionStatus).toBe("cancelled");
     expect(results[0]?.executionError?.code).toBe("processor.cancelled");
+    expect(results[1]?.executionStatus).toBe("skipped");
+    expect(results[1]?.processorId).toBe("test.ledger.cancelled-b");
+    expect(results[1]?.effects).toEqual([]);
     const effects = results[0]?.effects ?? [];
     expect(effects.length).toBe(1);
     expect(effects[0]?.kind).toBe("diagnostic");
@@ -441,9 +446,18 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     const parsed = JSON.parse(row.error ?? "{}");
     expect(parsed.code).toBe("processor.cancelled");
     expect(parsed.processorId).toBe("test.ledger.cancelled-a");
-    expect(queryRuns(ledger, { processorId: "test.ledger.cancelled-b" })).toEqual(
-      [],
-    );
+    // The undispatched-but-trigger-matched processor must still be ledgered
+    // (EVERY_PROCESSOR_RUN_IS_LEDGERED): a mid-tick shutdown previously
+    // dropped it with no row at all, making aborted garden passes
+    // indistinguishable from passes that never matched (2026-06-10).
+    const skippedRows = queryRuns(ledger, {
+      processorId: "test.ledger.cancelled-b",
+    });
+    expect(skippedRows.length).toBe(1);
+    expect(skippedRows[0]?.status).toBe("skipped");
+    const skipError = JSON.parse(skippedRows[0]?.error ?? "{}");
+    expect(skipError.code).toBe("processor.aborted-before-dispatch");
+    expect(skipError.processorId).toBe("test.ledger.cancelled-b");
     expect(queryRuns(ledger, { status: "running" })).toEqual([]);
   });
 
@@ -493,9 +507,14 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
 
     expect(processorSignal?.aborted).toBe(true);
     expect(laterInvoked).toBe(false);
-    expect(results.length).toBe(1);
+    // Cancelled run + the abort-skip for the undispatched matched processor.
+    expect(results.length).toBe(2);
     expect(results[0]?.executionStatus).toBe("cancelled");
     expect(results[0]?.executionError?.code).toBe("processor.cancelled");
+    expect(results[1]?.executionStatus).toBe("skipped");
+    expect(results[1]?.executionError?.code).toBe(
+      "processor.aborted-before-dispatch",
+    );
 
     const rows = queryRuns(ledger, {
       processorId: "test.ledger.close-cancelled-a",
@@ -509,9 +528,14 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     const parsed = JSON.parse(row.error ?? "{}");
     expect(parsed.code).toBe("processor.cancelled");
     expect(parsed.processorId).toBe("test.ledger.close-cancelled-a");
-    expect(queryRuns(ledger, {
+    const closeSkips = queryRuns(ledger, {
       processorId: "test.ledger.close-cancelled-b",
-    })).toEqual([]);
+    });
+    expect(closeSkips.length).toBe(1);
+    expect(closeSkips[0]?.status).toBe("skipped");
+    expect(JSON.parse(closeSkips[0]?.error ?? "{}").code).toBe(
+      "processor.aborted-before-dispatch",
+    );
     expect(queryRuns(ledger, { status: "running" })).toEqual([]);
     await expect(rt.close()).resolves.toBeUndefined();
   });

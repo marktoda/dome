@@ -15,7 +15,7 @@ import {
   localDateParts,
 } from "../../dome.daily/processors/daily-shared";
 import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
-import { finishAgentRun } from "../lib/agent-run-effects";
+import { finalTextExcerpt, finishAgentRun } from "../lib/agent-run-effects";
 import { coreMemorySection, withCoreMemory } from "../lib/core-memory";
 import { makeIngestTools, type CapturedTasksRouting } from "../lib/ingest-tools";
 import { INGEST_CHARTER } from "../lib/ingest-charter";
@@ -173,16 +173,6 @@ export default ingest;
 
 function isRawCapturePath(path: string): boolean {
   return /^inbox\/raw\/[^/]+\.md$/.test(path);
-}
-
-const FINAL_TEXT_EXCERPT_CHARS = 300;
-
-function finalTextExcerpt(finalText: string | null): string {
-  if (finalText === null || finalText.trim() === "") return "(none)";
-  const text = finalText.trim();
-  return text.length <= FINAL_TEXT_EXCERPT_CHARS
-    ? text
-    : `${text.slice(0, FINAL_TEXT_EXCERPT_CHARS)}…`;
 }
 
 function taskTurn(
