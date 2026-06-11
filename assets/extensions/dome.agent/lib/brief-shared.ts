@@ -23,7 +23,7 @@ import {
   ATTENTION_STALE_THRESHOLD,
   parseAttentionDiscountFactValue,
 } from "../../dome.daily/processors/attention-shared";
-import { EDITION_YESTERDAY_BLOCK } from "../../dome.daily/processors/daily-shared";
+import { EDITION_YESTERDAY_BLOCK } from "../../dome.daily/processors/daily-types";
 
 import { compareStrings } from "../../../../src/core/compare";
 

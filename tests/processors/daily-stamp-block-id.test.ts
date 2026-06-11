@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { stampTaskAnchors } from "../../assets/extensions/dome.daily/processors/daily-shared";
+import { stampTaskAnchors } from "../../assets/extensions/dome.daily/processors/action-extraction";
 import { parseBlockAnchor } from "../../src/core/block-anchor";
 
 const PATH = "wiki/projects/conv.md";

@@ -16,10 +16,7 @@ import { finishAgentRun } from "../lib/agent-run-effects";
 import { coreMemorySection, withCoreMemory } from "../lib/core-memory";
 import { makeConsolidatorTools } from "../lib/consolidate-tools";
 import { consolidateCharter } from "../lib/consolidate-charter";
-import {
-  formatDate,
-  localDateParts,
-} from "../../dome.daily/processors/daily-shared";
+import { formatDate, localDateParts } from "../../dome.daily/processors/daily-paths";
 
 const MAX_STEPS = 50;
 export const MAX_CHANGED_FILES = 30;

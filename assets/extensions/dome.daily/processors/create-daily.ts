@@ -20,25 +20,26 @@ import {
   attentionAdjustedRecencyIso,
   collectAttentionDiscounts,
 } from "./attention-shared";
+import { dailyPath, dailyPathSettings, localDateParts, previousLocalDate } from "./daily-paths";
 import {
-  dailyPathSettings,
-  dailyPath,
   ensureYesterdayFallbackSection,
-  localDateParts,
+  previousDailyDigest,
+  renderDailySkeleton,
+  yesterdayFallbackSection,
+} from "./daily-scaffold";
+import {
+  type DailyOpenLoopCandidate,
+  type DailyOpenLoopSource,
+  type DailyPathSettings,
+} from "./daily-types";
+import {
   openLoopFreshnessKey,
   openLoopIdentity,
   openLoopSurfaceSection,
   openLoopSurfaceSources,
-  previousLocalDate,
-  previousDailyDigest,
   rankDailyOpenLoopSurfaceItems,
-  renderDailySkeleton,
   replaceOpenLoopSurfaceSection,
-  yesterdayFallbackSection,
-  type DailyOpenLoopCandidate,
-  type DailyOpenLoopSource,
-  type DailyPathSettings,
-} from "./daily-shared";
+} from "./open-loop-surface";
 
 type ScheduleInput = {
   readonly kind: "schedule";

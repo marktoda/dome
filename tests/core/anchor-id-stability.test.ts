@@ -8,7 +8,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { claimAnchorId } from "../../assets/extensions/dome.claims/processors/claims-shared";
-import { taskAnchorId } from "../../assets/extensions/dome.daily/processors/daily-shared";
+import { taskAnchorId } from "../../assets/extensions/dome.daily/processors/action-extraction";
 
 describe("anchor id stability", () => {
   test("taskAnchorId golden value", () => {

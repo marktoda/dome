@@ -65,10 +65,7 @@ function capMaterialRead(content: string): string {
 }
 import { globMatch } from "../../../../src/engine/core/glob-cache";
 import { isModelExecutionError } from "../../../../src/engine/core/model-invoke";
-import {
-  formatDate,
-  localDateParts,
-} from "../../dome.daily/processors/daily-shared";
+import { formatDate, localDateParts } from "../../dome.daily/processors/daily-paths";
 
 const MAX_STEPS = 8; // per item — one read + one write + slack
 const DEFAULT_LEDGER_PATH = "sweep-ledger.md";

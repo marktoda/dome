@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { reconcileSettledOpenLoops } from "../../assets/extensions/dome.daily/processors/daily-shared";
+import { reconcileSettledOpenLoops } from "../../assets/extensions/dome.daily/processors/open-loop-surface";
 
 describe("reconcileSettledOpenLoops", () => {
   test("propagates a resolved daily copy back to the origin task line", () => {

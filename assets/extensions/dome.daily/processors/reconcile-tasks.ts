@@ -20,7 +20,7 @@ import {
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
 
-import { reconcileSettledOpenLoops } from "./daily-shared";
+import { reconcileSettledOpenLoops } from "./open-loop-surface";
 
 const reconcileTasks = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {

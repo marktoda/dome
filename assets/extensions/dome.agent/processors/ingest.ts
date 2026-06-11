@@ -9,11 +9,7 @@ import {
   defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
-import {
-  dailyPath,
-  dailyPathSettings,
-  localDateParts,
-} from "../../dome.daily/processors/daily-shared";
+import { dailyPath, dailyPathSettings, localDateParts } from "../../dome.daily/processors/daily-paths";
 import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
 import { finalTextExcerpt, finishAgentRun } from "../lib/agent-run-effects";
 import { coreMemorySection, withCoreMemory } from "../lib/core-memory";

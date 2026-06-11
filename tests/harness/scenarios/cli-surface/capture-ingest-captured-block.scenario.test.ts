@@ -13,13 +13,8 @@
 import { expect } from "bun:test";
 import { join } from "node:path";
 
-import {
-  CAPTURED_END,
-  CAPTURED_START,
-  dailyPath,
-  dailyPathSettings,
-  localDateParts,
-} from "../../../../assets/extensions/dome.daily/processors/daily-shared";
+import { dailyPath, dailyPathSettings, localDateParts } from "../../../../assets/extensions/dome.daily/processors/daily-paths";
+import { CAPTURED_END, CAPTURED_START } from "../../../../assets/extensions/dome.daily/processors/daily-types";
 import { readBlob } from "../../../../src/git";
 import { scenario } from "../../index";
 

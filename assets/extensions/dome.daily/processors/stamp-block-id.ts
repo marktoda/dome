@@ -26,7 +26,7 @@ import {
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
-import { stampTaskAnchors } from "./daily-shared";
+import { stampTaskAnchors } from "./action-extraction";
 
 const stampBlockId = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {

@@ -10,12 +10,8 @@ import {
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
-import {
-  actionItemsFromMarkdown,
-  ambiguousFollowupsFromMarkdown,
-  openLoopStableId,
-  taskStableId,
-} from "./daily-shared";
+import { actionItemsFromMarkdown, ambiguousFollowupsFromMarkdown } from "./action-extraction";
+import { openLoopStableId, taskStableId } from "./open-loop-surface";
 import {
   AMBIGUOUS_FOLLOWUP_OPTIONS,
   ambiguousFollowupQuestionKey,

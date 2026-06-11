@@ -17,20 +17,9 @@ import {
   collectAttentionDiscounts,
   type AttentionDiscount,
 } from "./attention-shared";
-import {
-  dailyPathSettings,
-  dailyPath,
-  formatDate,
-  isValidDailyDate,
-  localDateParts,
-  openLoopIdentity,
-  openSourceBackedOpenLoopsFromMarkdown,
-  openLoopSurfaceKey,
-  parseDailyPath,
-  type DailyDate,
-  type DailyOpenLoopSource,
-  type DailyPathSettings,
-} from "./daily-shared";
+import { dailyPath, dailyPathSettings, formatDate, isValidDailyDate, localDateParts, parseDailyPath } from "./daily-paths";
+import { type DailyDate, type DailyOpenLoopSource, type DailyPathSettings } from "./daily-types";
+import { openLoopIdentity, openLoopSurfaceKey, openSourceBackedOpenLoopsFromMarkdown } from "./open-loop-surface";
 
 import { compareStrings } from "../../../../src/core/compare";
 

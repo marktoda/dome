@@ -29,17 +29,13 @@ import {
 } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
 
+import { dailyPath, dailyPathSettings, formatDate, localDateParts, previousLocalDate } from "../../dome.daily/processors/daily-paths";
 import {
-  dailyPath,
-  dailyPathSettings,
-  formatDate,
-  localDateParts,
   previousDailyDigest,
-  previousLocalDate,
   removeLegacyStartContextSection,
   renderDailySkeleton,
   yesterdayFallbackSection,
-} from "../../dome.daily/processors/daily-shared";
+} from "../../dome.daily/processors/daily-scaffold";
 
 import { ATTENTION_DISCOUNT_PREDICATE } from "../../dome.daily/processors/attention-shared";
 

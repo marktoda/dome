@@ -6,14 +6,13 @@
 
 import type { ProcessorContext } from "../../../../src/core/processor";
 import type { SourceRef } from "../../../../src/core/source-ref";
+import { actionItemsFromMarkdown } from "../../dome.daily/processors/action-extraction";
+import { type MarkdownActionItem, type DailyOpenLoopSource } from "../../dome.daily/processors/daily-types";
 import {
-  actionItemsFromMarkdown,
   openLoopStableId,
   openLoopSurfaceKey,
   openSourceBackedOpenLoopsFromMarkdown,
-  type DailyOpenLoopSource,
-  type MarkdownActionItem,
-} from "../../dome.daily/processors/daily-shared";
+} from "../../dome.daily/processors/open-loop-surface";
 import { searchDailyActionLabel } from "./labels";
 import { uniqueSourceRefs } from "./related";
 import type { SearchRecallSignal } from "./recall";

@@ -20,7 +20,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { claimsFromMarkdown } from "../../assets/extensions/dome.claims/processors/claims-shared";
-import { actionItemsFromMarkdown } from "../../assets/extensions/dome.daily/processors/daily-shared";
+import { actionItemsFromMarkdown } from "../../assets/extensions/dome.daily/processors/action-extraction";
 
 // ---------------------------------------------------------------------------
 // Helper: build a markdown string where each line carries a sentinel so we

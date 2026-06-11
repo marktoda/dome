@@ -15,7 +15,7 @@ import { describe, expect, test } from "bun:test";
 
 import { coreMemoryPath } from "../../assets/extensions/dome.agent/lib/core-memory";
 import { consolidationLedgerPath } from "../../assets/extensions/dome.agent/processors/consolidate";
-import { dailyPathSettings } from "../../assets/extensions/dome.daily/processors/daily-shared";
+import { dailyPathSettings } from "../../assets/extensions/dome.daily/processors/daily-paths";
 
 // ---------------------------------------------------------------------------
 // coreMemoryPath

@@ -22,31 +22,32 @@ import {
   attentionAdjustedRecencyIso,
   collectAttentionDiscounts,
 } from "./attention-shared";
+import { dailyPath, dailyPathSettings, localDateParts, previousLocalDate } from "./daily-paths";
+import {
+  ensureYesterdayFallbackSection,
+  previousDailyDigest,
+  removeLegacyStartContextSection,
+  yesterdayFallbackSection,
+} from "./daily-scaffold";
 import {
   DAILY_GENERATED_BLOCKS,
-  dailyPathSettings,
-  dailyPath,
-  ensureYesterdayFallbackSection,
-  localDateParts,
-  openLoopIdentity,
-  openLoopFreshnessKey,
-  openSourceBackedOpenLoopsFromMarkdown,
-  openLoopSurfaceKey,
-  openLoopSurfaceSection,
-  openLoopSurfaceSources,
-  previousDailyDigest,
-  previousLocalDate,
-  rankDailyOpenLoopSurfaceItems,
-  removeLegacyStartContextSection,
-  replaceOpenLoopSurfaceSection,
-  settledSourceBackedOpenLoopsFromMarkdown,
-  yesterdayFallbackSection,
   type DailyDate,
   type DailyOpenLoopCandidate,
   type DailyOpenLoopSource,
   type DailyPathSettings,
   type DailySettledOpenLoopSource,
-} from "./daily-shared";
+} from "./daily-types";
+import {
+  openLoopFreshnessKey,
+  openLoopIdentity,
+  openLoopSurfaceKey,
+  openLoopSurfaceSection,
+  openLoopSurfaceSources,
+  openSourceBackedOpenLoopsFromMarkdown,
+  rankDailyOpenLoopSurfaceItems,
+  replaceOpenLoopSurfaceSection,
+  settledSourceBackedOpenLoopsFromMarkdown,
+} from "./open-loop-surface";
 
 const OPEN_LOOP_SURFACE_LIMIT = 12;
 

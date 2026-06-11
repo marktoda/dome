@@ -11,11 +11,7 @@
 import { describe, expect, test } from "bun:test";
 
 import closeScaffold from "../../assets/extensions/dome.daily/processors/close-scaffold";
-import {
-  dailyPath,
-  dailyPathSettings,
-  localDateParts,
-} from "../../assets/extensions/dome.daily/processors/daily-shared";
+import { dailyPath, dailyPathSettings, localDateParts } from "../../assets/extensions/dome.daily/processors/daily-paths";
 import type { PatchEffect } from "../../src/core/effect";
 import { treeOid, type Snapshot } from "../../src/core/processor";
 import { commitOid } from "../../src/core/source-ref";
