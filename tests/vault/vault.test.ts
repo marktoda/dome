@@ -403,3 +403,66 @@ describe("decisions", () => {
     TEST_TIMEOUT_MS,
   );
 });
+
+// ----- Engine control: sync progress + operational summary ----------------------
+
+describe("sync progress and operational summary", () => {
+  test(
+    "sync streams adoption events and garden starts through the callbacks",
+    async () => {
+      const { vault, vaultPath } = await fixture();
+
+      await writeFile(
+        join(vaultPath, "wiki", "progress-note.md"),
+        "---\ntype: concept\n---\n# Progress Note\n\nWatch me adopt.\n",
+        "utf8",
+      );
+      await add(vaultPath, "wiki/progress-note.md");
+      await commit({ path: vaultPath, message: "add progress note" });
+
+      const events: string[] = [];
+      const gardenStarts: string[] = [];
+      const tick = await vault.sync({
+        onEvent: (event) => {
+          events.push(event.kind);
+        },
+        onGardenProcessorStart: (info) => {
+          gardenStarts.push(info.processorId);
+        },
+      });
+
+      expect(tick.kind).toBe("adopted");
+      expect(events.length).toBeGreaterThan(0);
+      // Garden-start notifications are best-effort signal; with shipped
+      // bundles at least one garden processor reacts to a wiki commit.
+      expect(gardenStarts.length).toBeGreaterThan(0);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "operationalSummary reports the attention counters over the operational stores",
+    async () => {
+      const { vault } = await fixture();
+
+      const summary = await vault.operationalSummary();
+
+      // Consistency with the decision surface.
+      const open = await vault.listQuestions({ resolved: false });
+      expect(summary.openQuestions).toBe(open.length);
+      // Fresh fixture vault: nothing failed, nothing quarantined.
+      expect(summary.failedRuns).toBe(0);
+      expect(summary.outboxFailed).toBe(0);
+      expect(summary.quarantined).toBe(0);
+      expect(summary.orphanRuns).toBe(0);
+      // Counter shape: every field is a non-negative integer.
+      for (const value of Object.values(summary)) {
+        expect(Number.isInteger(value)).toBe(true);
+        expect(value as number).toBeGreaterThanOrEqual(0);
+      }
+      expect(summary.contentDiagnostics + summary.unlocatedDiagnostics)
+        .toBeGreaterThanOrEqual(summary.attentionDiagnostics);
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
