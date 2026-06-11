@@ -80,3 +80,25 @@ describe("dome today", () => {
     expect(await runToday({ vault: await fixtureVault(), json: true, watch: true })).toBe(64);
   }, 120_000);
 });
+
+describe("dome today --watch", () => {
+  test("renders, then skips re-print when output is unchanged", async () => {
+    const v = await fixtureVault();
+    logs = [];
+    let clears = 0;
+    const sleeps: number[] = [];
+    const code = await runToday(
+      { vault: v, watch: true, interval: 1 },
+      {
+        iterations: 3,
+        sleep: async (ms) => { sleeps.push(ms); },
+        clearScreen: () => { clears += 1; },
+      },
+    );
+    expect(code).toBe(0);
+    // Three renders, identical output → exactly one clear+print cycle.
+    expect(clears).toBe(1);
+    expect(sleeps).toEqual([1000, 1000]);
+    expect(logs.join("\n")).toContain("review the cockpit plan");
+  }, 120_000);
+});
