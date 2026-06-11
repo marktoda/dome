@@ -78,7 +78,6 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { createHash } from "node:crypto";
 
 import { type Result, ok, err } from "../types";
 import {
@@ -86,6 +85,7 @@ import {
   type SqliteTableShape,
 } from "../sqlite-shape";
 import { configureSqliteConnection } from "../sqlite/connection";
+import { computeDdlHash } from "../sqlite/hash";
 
 const OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT =
   "82000d3d8dd8578f9c34d23fcca621c085aaf78d5d228ee62df824b739f19a68";
@@ -171,11 +171,6 @@ const REQUIRED_TABLE_SHAPES: ReadonlyArray<SqliteTableShape> = Object.freeze([
   },
 ]);
 
-// ----- sha256 helper --------------------------------------------------------
-
-const sha256 = (s: string): string =>
-  createHash("sha256").update(s).digest("hex");
-
 // ----- Public types ---------------------------------------------------------
 
 /**
@@ -248,7 +243,7 @@ export type OutboxDbError =
  * for callers that want to log the schema version on startup.
  */
 export function computeOutboxSchemaHash(): string {
-  return sha256(DDL.join("\n"));
+  return computeDdlHash(DDL);
 }
 
 // ----- openOutboxDb ---------------------------------------------------------

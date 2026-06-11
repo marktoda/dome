@@ -89,7 +89,6 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { createHash } from "node:crypto";
 
 import { type Result, ok, err } from "../types";
 import {
@@ -97,6 +96,7 @@ import {
   type SqliteTableShape,
 } from "../sqlite-shape";
 import { configureSqliteConnection } from "../sqlite/connection";
+import { computeDdlHash } from "../sqlite/hash";
 
 // ----- Schema DDL -----------------------------------------------------------
 //
@@ -227,11 +227,6 @@ const REQUIRED_TABLE_SHAPES: ReadonlyArray<SqliteTableShape> = Object.freeze([
   },
 ]);
 
-// ----- sha256 helper --------------------------------------------------------
-
-const sha256 = (s: string): string =>
-  createHash("sha256").update(s).digest("hex");
-
 // ----- Public types ---------------------------------------------------------
 
 /**
@@ -304,7 +299,7 @@ export type LedgerDbError =
  * for callers that want to log the schema version on startup.
  */
 export function computeLedgerSchemaHash(): string {
-  return sha256(DDL.join("\n"));
+  return computeDdlHash(DDL);
 }
 
 // ----- openLedgerDb ---------------------------------------------------------

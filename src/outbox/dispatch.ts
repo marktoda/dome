@@ -77,10 +77,12 @@
 
 import { JsonValueSchema, type ExternalActionEffect } from "../core/effect";
 import type { SourceRef } from "../core/source-ref";
+import { parseEnum } from "../sqlite/parse-enum";
 import {
   parseJsonColumn,
   parseSourceRefsColumn,
 } from "../sqlite/row-json";
+import { mapRows } from "../sqlite/rows";
 import type { OutboxDb } from "./db";
 
 // ----- Constants ------------------------------------------------------------
@@ -687,7 +689,7 @@ export function queryOutbox(
   const sql = `${SELECT_OUTBOX_BASE_SQL}${where} ORDER BY id`;
 
   const rows = db.raw.query<OutboxRawRow, string[]>(sql).all(...params);
-  return Object.freeze(rows.map(rowToOutboxRow));
+  return mapRows(rows, rowToOutboxRow);
 }
 
 export function getOutboxByIdempotencyKey(
@@ -1032,20 +1034,19 @@ function rowToOutboxRow(row: OutboxRawRow): OutboxRow {
   });
 }
 
+const OUTBOX_STATUSES = [
+  "pending",
+  "dispatching",
+  "sent",
+  "failed",
+  "abandoned",
+] as const satisfies ReadonlyArray<OutboxStatus>;
+
 /**
  * Narrow the raw `status` string to the closed `OutboxStatus` union.
  * The DDL doesn't carry a CHECK constraint on `status` (v1 simplicity);
  * this function is the read-side fence.
  */
 function narrowStatus(s: string): OutboxStatus {
-  switch (s) {
-    case "pending":
-    case "dispatching":
-    case "sent":
-    case "failed":
-    case "abandoned":
-      return s;
-    default:
-      throw new Error(`outbox.dispatch: unknown status '${s}'`);
-  }
+  return parseEnum(s, OUTBOX_STATUSES, "outbox.dispatch: status");
 }

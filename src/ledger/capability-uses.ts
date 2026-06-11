@@ -31,7 +31,9 @@
 
 import { z } from "zod";
 
+import { parseEnum } from "../sqlite/parse-enum";
 import { parseJsonColumn } from "../sqlite/row-json";
+import { mapRows } from "../sqlite/rows";
 import type { LedgerDb } from "./db";
 import { limitClause } from "./limits";
 import type { RunId } from "./runs";
@@ -198,7 +200,7 @@ export function capabilityUsesByRun(
   const rows = db.raw
     .query<CapabilityUseRawRow, [string]>(SELECT_BY_RUN_SQL)
     .all(runId);
-  return Object.freeze(rows.map(rowToCapabilityUseRow));
+  return mapRows(rows, rowToCapabilityUseRow);
 }
 
 /**
@@ -221,7 +223,7 @@ export function queryPatchRecords(
   const where = clauses.length === 0 ? "" : ` AND ${clauses.join(" AND ")}`;
   const sql = `${SELECT_PATCH_RECORDS_BASE_SQL}${where} ORDER BY capability_uses.recorded_at DESC, capability_uses.id DESC${limitClause(filter?.limit)}`;
   const rows = db.raw.query<PatchRecordRawRow, string[]>(sql).all(...params);
-  return Object.freeze(rows.map(rowToPatchRecord));
+  return mapRows(rows, rowToPatchRecord);
 }
 
 // ----- internals ------------------------------------------------------------
@@ -263,18 +265,17 @@ function rowToPatchRecord(row: PatchRecordRawRow): PatchRecord {
   });
 }
 
+const CAPABILITY_OUTCOMES = [
+  "allowed",
+  "downgraded",
+  "denied",
+] as const satisfies ReadonlyArray<CapabilityOutcome>;
+
 /**
  * Narrow the raw `outcome` string to the closed `CapabilityOutcome`
  * union. The DDL doesn't carry a CHECK constraint on `outcome` (v1
  * simplicity); this function is the read-side fence.
  */
 function narrowOutcome(s: string): CapabilityOutcome {
-  switch (s) {
-    case "allowed":
-    case "downgraded":
-    case "denied":
-      return s;
-    default:
-      throw new Error(`ledger.capability-uses: unknown outcome '${s}'`);
-  }
+  return parseEnum(s, CAPABILITY_OUTCOMES, "ledger.capability-uses: outcome");
 }

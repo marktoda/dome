@@ -41,6 +41,7 @@ import type { DiagnosticEffect } from "../core/effect";
 import { diagnosticEffect, DiagnosticEffectSchema } from "../core/effect";
 import { commitOid, type CommitOid, type SourceRef } from "../core/source-ref";
 import { parseSourceRefsColumn } from "../sqlite/row-json";
+import { mapRows } from "../sqlite/rows";
 import type { ProjectionDb } from "./db";
 
 // ----- Public types ---------------------------------------------------------
@@ -309,7 +310,7 @@ export function queryDiagnosticRecords(
     rows = db.raw.query<DiagnosticRow, []>(QUERY_ALL_SQL).all();
   }
 
-  return Object.freeze(rows.map(rowToDiagnosticRecord));
+  return mapRows(rows, rowToDiagnosticRecord);
 }
 
 /**
