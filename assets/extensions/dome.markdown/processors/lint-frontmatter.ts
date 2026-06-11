@@ -66,7 +66,8 @@ import {
 //
 // Codes are stable across versions — downstream tooling
 // (`dome inspect diagnostics --code <X>`) consumes them. Severity is mostly
-// warning, except optional-root unknown `type:` values, which are info.
+// warning, except optional-root unknown `type:` values and the
+// missing-description gradual-fill nudge, which are info.
 
 const CODE_MISSING_FRONTMATTER = "dome.markdown.missing-frontmatter";
 const CODE_MISSING_TYPE = "dome.markdown.missing-type";
@@ -77,6 +78,7 @@ const CODE_PAGE_TYPES_MALFORMED = "dome.markdown.page-types-malformed";
 const CODE_UNKNOWN_TYPE = "dome.markdown.type-unknown";
 const CODE_MISSING_REQUIRED_FIELD = "dome.markdown.missing-required-field";
 const CODE_UNKNOWN_FRONTMATTER_FIELD = "dome.markdown.unknown-frontmatter-field";
+const CODE_MISSING_DESCRIPTION = "dome.markdown.missing-description";
 const PAGE_TYPES_PATH = ".dome/page-types.yaml";
 
 // ----- Processor ------------------------------------------------------------
@@ -262,6 +264,23 @@ function lintContent(
     findings.push(...lintPageTypeFields(data, normalizedType, pageTypes));
   }
 
+  // `description:` nudge — required-mode (curated wiki) pages should carry a
+  // one-line description; it feeds the generated index and search. Info
+  // severity (gradual fill, never adoption noise), so it sits after the
+  // warning-grade checks above.
+  const descriptionValue = data["description"];
+  if (
+    mode === "required" &&
+    (typeof descriptionValue !== "string" ||
+      descriptionValue.trim().length === 0)
+  ) {
+    findings.push({
+      code: CODE_MISSING_DESCRIPTION,
+      message:
+        "Add a one-line `description:` — it feeds the generated index and search.",
+    });
+  }
+
   return findings;
 }
 
@@ -386,6 +405,10 @@ function severityForFinding(
   mode: FrontmatterLintMode,
 ): DiagnosticEffect["severity"] {
   if (mode === "optional" && finding.code === CODE_UNKNOWN_TYPE) {
+    return "info";
+  }
+  // missing-description is a gradual-fill nudge, never adoption noise.
+  if (finding.code === CODE_MISSING_DESCRIPTION) {
     return "info";
   }
   return "warning";
