@@ -109,6 +109,16 @@ The agent's durable output is markdown written via `PatchEffect` — source-of-t
 
 **Output shape:** one `PatchEffect(mode:"auto")` carrying all edits, plus `QuestionEffect`s for `askOwner` calls. On budget exhaustion the harness emits accumulated edits and a truncation `DiagnosticEffect` so the run is never silently half-finished.
 
+**No silent no-ops.** A source loop that ends `final` without archiving its
+`inbox/raw/` file emits a `dome.agent.source-unarchived` warning carrying the
+model's final text (truncated to 300 chars) — the only evidence of what the
+model decided. Without it, a model that answers its first step with plain text
+and no tool calls produces a run that records "succeeded" while the capture
+silently stays in `inbox/raw` (observed 2026-06-10). Per-source failures keep
+the existing `dome.agent.source-failed` warning; both honor
+[[wiki/invariants/INBOX_IS_EPHEMERAL]] ("captures either move out or surface a
+recoverable diagnostic").
+
 ## Grant-as-boundary + two hard floors
 
 Dome separates two things:
