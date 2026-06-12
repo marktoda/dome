@@ -363,7 +363,7 @@ scenario(
     expect(report.status).toBe("unhealthy");
     // Every capability kind is granted — the kind-level probe stays quiet.
     expect(report.summary.capabilityGrantGaps).toBe(0);
-    expect(report.summary.capabilityGrantEntryGaps).toBe(9);
+    expect(report.summary.capabilityGrantEntryGaps).toBe(10);
 
     const entryGaps = report.findings.filter(
       (finding) => finding.code === "capability.grant-entry-missing",
@@ -372,6 +372,7 @@ scenario(
       entryGaps.map((finding) => finding.capability?.processorId).sort(),
     ).toEqual([
       "dome.agent.active-projects",
+      "dome.agent.brief",
       "dome.agent.brief",
       "dome.agent.brief",
       "dome.agent.preference-promotion-answer",
@@ -431,6 +432,24 @@ scenario(
       { kind: "patch.auto", target: "index.md" },
       { kind: "patch.auto", target: "index-*.md" },
     ]);
+
+    // The brief's sources reads (v1 chunk 4): this fixture grants the
+    // calendar glob but not slack, so the calendar row stays quiet (entry
+    // covered) while the slack row names the exact YAML to add — instead
+    // of the brief's overnight Slack weave silently rendering nothing.
+    const slackSource = entryGaps.find((finding) =>
+      finding.id.includes("sources/slack"),
+    );
+    expect(slackSource?.capability?.processorId).toBe("dome.agent.brief");
+    expect(slackSource?.recovery).toContain(
+      'Add "sources/slack/*.md" to extensions.dome.agent.grant.read',
+    );
+    expect(slackSource?.capability?.missingEntries).toEqual([
+      { kind: "read", target: "sources/slack/2026-01-01.md" },
+    ]);
+    expect(
+      entryGaps.some((finding) => finding.id.includes("sources/calendar")),
+    ).toBe(false);
   },
 );
 
@@ -521,6 +540,103 @@ scenario(
 
 scenario(
   {
+    name: "cli-surface: dome doctor flags enabled source subscriptions whose fetch script is missing",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "capability", capability: "external" },
+    ],
+    harness: {
+      bundles: ["dome.sources"],
+      initialFiles: {
+        // Three subscriptions exercise the probe's full truth table in one
+        // vault: slack is enabled with a MISSING script (the finding),
+        // calendar is enabled with a present script (healthy, no finding),
+        // and gmail is disabled with a missing script (consent off →
+        // nothing — doctor never nags about subscriptions the owner hasn't
+        // opted into). external_handler_timeout_ms is set so the
+        // config.sources-timeout-default info finding stays quiet and the
+        // missing-script finding is the report's only row. The probe is
+        // STATIC: no fetch command runs during doctor.
+        ".dome/config.yaml": [
+          "extensions:",
+          "  dome.sources:",
+          "    enabled: true",
+          "    config:",
+          "      subscriptions:",
+          "        slack:",
+          "          enabled: true",
+          "          schedule: \"15 5 * * *\"",
+          "          output_path: \"sources/slack/{date}.md\"",
+          "          command: [\"sh\", \".dome/bin/fetch-slack.sh\"]",
+          "        calendar:",
+          "          enabled: true",
+          "          schedule: \"10 5 * * *\"",
+          "          output_path: \"sources/calendar/{date}.md\"",
+          "          command: [\"sh\", \".dome/bin/fetch-calendar.sh\"]",
+          "        gmail:",
+          "          enabled: false",
+          "          schedule: \"20 5 * * *\"",
+          "          output_path: \"sources/gmail/{date}.md\"",
+          "          command: [\"sh\", \".dome/bin/fetch-gmail.sh\"]",
+          "    grant:",
+          "      read: [\"sources/**/*.md\", \".dome/config.yaml\"]",
+          "      external: [\"sources.fetch\"]",
+          "engine:",
+          "  external_handler_timeout_ms: 300000",
+        ].join("\n"),
+        ".dome/bin/fetch-calendar.sh": "#!/bin/sh\nexit 0\n",
+        "AGENTS.md":
+          "# This is a Dome vault.\n\n" +
+          "<!-- BEGIN user-prose -->\n" +
+          "<!-- END user-prose -->\n",
+        "CLAUDE.md": "@AGENTS.md\n",
+      },
+    },
+  },
+  async (h) => {
+    const doctor = await h.runCli(["doctor", "--json"]);
+    expect(doctor.exitCode).toBe(0);
+    expect(doctor.stderr).toBe("");
+    const report = JSON.parse(doctor.stdout) as {
+      readonly status: string;
+      readonly summary: {
+        readonly sourcesFetchScriptMissing: number;
+        readonly sourcesTimeoutDefault: number;
+      };
+      readonly findings: ReadonlyArray<{
+        readonly code: string;
+        readonly id: string;
+        readonly severity: string;
+        readonly recovery: string;
+        readonly sources?: {
+          readonly kind: string;
+          readonly scriptPath: string;
+        };
+      }>;
+    };
+
+    expect(report.status).toBe("unhealthy");
+    expect(report.summary.sourcesFetchScriptMissing).toBe(1);
+    expect(report.summary.sourcesTimeoutDefault).toBe(0);
+    expect(report.findings).toEqual([
+      expect.objectContaining({
+        code: "sources.fetch-script-missing",
+        id: "sources_fetch:slack",
+        severity: "warning",
+        sources: {
+          kind: "slack",
+          scriptPath: ".dome/bin/fetch-slack.sh",
+        },
+      }),
+    ]);
+    expect(report.findings[0]?.recovery).toContain(
+      "dome init --with-source slack",
+    );
+  },
+);
+
+scenario(
+  {
     name: "cli-surface: dome doctor reports missing model provider preflight",
     tags: [
       { kind: "group", group: "cli-surface" },
@@ -542,6 +658,11 @@ scenario(
           "        - \"log.md\"",
           "        - \"preferences/signals.md\"",
           "        - \"core.md\"",
+          // The brief's sources reads: granting both globs keeps this
+          // scenario's grant-entry probe quiet so the model-provider
+          // finding is the only one.
+          "        - \"sources/calendar/*.md\"",
+          "        - \"sources/slack/*.md\"",
           "      patch.auto:",
           "        - \"wiki/**/*.md\"",
           "        - \"notes/**/*.md\"",

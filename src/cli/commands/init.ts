@@ -82,9 +82,11 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { commit, currentSha, initRepo, isGitRepo } from "../../git";
 import {
   type DefaultModelProvider,
+  type DefaultSourceKind,
   defaultModelProviderConfig,
   defaultConfigRecord,
   defaultConfigYaml,
+  defaultSourceSubscription,
 } from "../default-vault-config";
 import { formatJson } from "../../surface/format";
 import {
@@ -95,7 +97,10 @@ import {
   resolveCaps,
   section,
 } from "../presenter";
-import { resolveShippedModelProvidersRoot } from "./sync-shared";
+import {
+  resolveShippedModelProvidersRoot,
+  resolveShippedSourceHandlersRoot,
+} from "./sync-shared";
 
 // ----- Internal types -------------------------------------------------------
 
@@ -104,6 +109,7 @@ export type RunInitOptions = {
   readonly refreshConfig?: boolean | undefined;
   readonly refreshInstructions?: boolean | undefined;
   readonly modelProvider?: DefaultModelProvider | undefined;
+  readonly withSource?: ReadonlyArray<DefaultSourceKind> | undefined;
   readonly json?: boolean | undefined;
 };
 
@@ -127,6 +133,7 @@ type InitSummary = {
   readonly stateDir: StepOutcome;
   readonly configYaml: StepOutcome;
   readonly modelProvider: StepOutcome;
+  readonly sources: StepOutcome;
   readonly gitignore: StepOutcome;
   readonly coreMd: StepOutcome;
   readonly signalsMd: StepOutcome;
@@ -149,6 +156,7 @@ type InitJsonResult =
         readonly state_dir: StepOutcome;
         readonly config_yaml: StepOutcome;
         readonly model_provider: StepOutcome;
+        readonly sources: StepOutcome;
         readonly gitignore: StepOutcome;
         readonly core_md: StepOutcome;
         readonly signals_md: StepOutcome;
@@ -217,16 +225,24 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
     //    vaults may explicitly opt into reconciling missing first-party
     //    default bundle stanzas and grant keys with `--refresh-config`.
     const configPath = join(vaultPath, ".dome", "config.yaml");
+    const sourceKinds = [...new Set(options.withSource ?? [])];
     const configOutcome = await ensureConfigYaml({
       path: configPath,
       refresh: options.refreshConfig === true,
       modelProvider: options.modelProvider,
+      sources: sourceKinds,
     });
 
     const modelProviderOutcome = await ensureModelProvider({
       vaultPath,
       configPath,
       provider: options.modelProvider,
+    });
+
+    const sourcesOutcome = await ensureSources({
+      vaultPath,
+      configPath,
+      kinds: sourceKinds,
     });
 
     // 5. Write `.gitignore` so `.dome/state/` (derived operational
@@ -289,7 +305,7 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
         path: vaultPath,
         message: INITIAL_COMMIT_MESSAGE,
         author: { name: "dome init", email: "dome-init@local" },
-        files: initialCommitFiles(options.modelProvider),
+        files: initialCommitFiles(options.modelProvider, sourceKinds),
       });
       initialCommitOutcome = "created";
     }
@@ -304,6 +320,7 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
       stateDir: stateOutcome,
       configYaml: configOutcome,
       modelProvider: modelProviderOutcome,
+      sources: sourcesOutcome,
       gitignore: gitignoreOutcome,
       coreMd: coreOutcome,
       signalsMd: signalsOutcome,
@@ -354,15 +371,33 @@ async function writeIfMissing(path: string, content: string): Promise<StepOutcom
   return "created";
 }
 
+/**
+ * `writeIfMissing` with the executable bit set on creation — used for the
+ * `.dome/bin/fetch-<kind>.sh` adapters so the owner can run them directly.
+ * An existing file keeps both its content and its mode.
+ */
+async function writeExecutableIfMissing(
+  path: string,
+  content: string,
+): Promise<StepOutcome> {
+  if (existsSync(path)) return "skipped (already present)";
+  await writeFile(path, content, { encoding: "utf8", mode: 0o755 });
+  return "created";
+}
+
 async function ensureConfigYaml(opts: {
   readonly path: string;
   readonly refresh: boolean;
   readonly modelProvider?: DefaultModelProvider | undefined;
+  readonly sources?: ReadonlyArray<DefaultSourceKind> | undefined;
 }): Promise<StepOutcome> {
   if (!existsSync(opts.path)) {
     await writeFile(
       opts.path,
-      defaultConfigYaml({ modelProvider: opts.modelProvider }),
+      defaultConfigYaml({
+        modelProvider: opts.modelProvider,
+        sources: opts.sources,
+      }),
       "utf8",
     );
     return "created";
@@ -416,6 +451,114 @@ async function ensureModelProviderConfig(opts: {
   root.model_provider = defaultModelProviderConfig(opts.provider);
   await writeFile(opts.path, stringifyYaml(root), "utf8");
   return "updated";
+}
+
+/**
+ * Scaffold the requested `--with-source` kinds: copy each shipped fetch
+ * adapter template to `.dome/bin/fetch-<kind>.sh` (executable, first-write-
+ * only — the owner reviews and edits the script, init never overwrites it)
+ * and ensure the matching disabled subscription stanza exists in the config.
+ * Mirrors `ensureModelProvider`: works the same on fresh and existing
+ * vaults, and never changes anything already present (in particular it
+ * never flips an existing `enabled` value — consent stays with the owner).
+ */
+async function ensureSources(opts: {
+  readonly vaultPath: string;
+  readonly configPath: string;
+  readonly kinds: ReadonlyArray<DefaultSourceKind>;
+}): Promise<StepOutcome> {
+  if (opts.kinds.length === 0) return "skipped (not requested)";
+
+  await mkdir(join(opts.vaultPath, ".dome", "bin"), { recursive: true });
+  const outcomes: StepOutcome[] = [];
+  for (const kind of opts.kinds) {
+    const scriptPath = join(opts.vaultPath, ".dome", "bin", `fetch-${kind}.sh`);
+    outcomes.push(
+      await writeExecutableIfMissing(
+        scriptPath,
+        await readSourceHandlerTemplate(kind),
+      ),
+    );
+    outcomes.push(
+      await ensureSourceSubscriptionConfig({ path: opts.configPath, kind }),
+    );
+  }
+  return summarizeProviderOutcomes(outcomes);
+}
+
+/**
+ * Ensure `extensions.dome.sources.config.subscriptions.<kind>` exists,
+ * inserting the shipped default stanza (`enabled: false`) when absent. An
+ * existing entry — whatever its shape or `enabled` value — is user-owned
+ * config and is left byte-untouched, matching the `--refresh-config`
+ * stance (fill missing keys, never change present ones).
+ */
+async function ensureSourceSubscriptionConfig(opts: {
+  readonly path: string;
+  readonly kind: DefaultSourceKind;
+}): Promise<StepOutcome> {
+  const body = await readFile(opts.path, "utf8");
+  const root = recordFromYaml(parseYaml(body));
+  if (root === null) {
+    throw new Error(".dome/config.yaml must be a YAML mapping");
+  }
+  let extensions = recordFromYaml(root.extensions);
+  if (extensions === null) {
+    extensions = {};
+    root.extensions = extensions;
+  }
+  if (!hasOwn(extensions, "dome.sources")) {
+    // No dome.sources stanza at all (a pre-sources vault): insert the full
+    // first-party default — the same whole-stanza fill `--refresh-config`
+    // performs — then ensure the requested kind inside it.
+    extensions["dome.sources"] = defaultSourcesExtensionStanza();
+  }
+  const sources = recordFromYaml(extensions["dome.sources"]);
+  if (sources === null) {
+    throw new Error(
+      "extensions.dome.sources in .dome/config.yaml must be a YAML mapping",
+    );
+  }
+  let config = recordFromYaml(sources.config);
+  if (config === null) {
+    config = {};
+    sources.config = config;
+  }
+  let subscriptions = recordFromYaml(config.subscriptions);
+  if (subscriptions === null) {
+    subscriptions = {};
+    config.subscriptions = subscriptions;
+  }
+  if (hasOwn(subscriptions, opts.kind)) {
+    return "skipped (already present)";
+  }
+  subscriptions[opts.kind] = structuredClone(
+    defaultSourceSubscription(opts.kind),
+  );
+  await writeFile(opts.path, stringifyYaml(root), "utf8");
+  return "updated";
+}
+
+function defaultSourcesExtensionStanza(): Record<string, unknown> {
+  const defaults = recordFromYaml(defaultConfigRecord().extensions);
+  const stanza = defaults === null ? null : recordFromYaml(defaults["dome.sources"]);
+  if (stanza === null) {
+    throw new Error("first-party defaults are missing the dome.sources stanza");
+  }
+  return stanza;
+}
+
+/**
+ * Read the shipped fetch-adapter template from
+ * `<SDK>/assets/source-handlers/claude-<kind>.sh`. Like the model-provider
+ * template, it is shipped data resolved at runtime and copied into the
+ * vault — never imported by any `src/` module.
+ */
+async function readSourceHandlerTemplate(
+  kind: DefaultSourceKind,
+): Promise<string> {
+  const path = join(resolveShippedSourceHandlersRoot(), `claude-${kind}.sh`);
+  return readFile(path, "utf8");
 }
 
 async function ensureAgentsMd(opts: {
@@ -571,6 +714,7 @@ function summarizeProviderOutcomes(
 
 function initialCommitFiles(
   provider: DefaultModelProvider | undefined,
+  sourceKinds: ReadonlyArray<DefaultSourceKind>,
 ): ReadonlyArray<string> {
   const files = [
     ".gitignore",
@@ -585,6 +729,7 @@ function initialCommitFiles(
     "inbox/processed/.gitkeep",
   ];
   if (provider !== undefined) files.push(".dome/model-provider.ts");
+  for (const kind of sourceKinds) files.push(`.dome/bin/fetch-${kind}.sh`);
   return files;
 }
 
@@ -647,6 +792,7 @@ function initStepRows(s: InitSummary): {
     [".dome/state/", s.stateDir],
     [".dome/config.yaml", s.configYaml],
     [".dome/model-provider.ts", s.modelProvider],
+    [".dome/bin/fetch-<kind>.sh", s.sources],
     [".gitignore", s.gitignore],
     ["core.md", s.coreMd],
     ["preferences/signals.md", s.signalsMd],
@@ -684,6 +830,7 @@ function summaryToJson(s: InitSummary): InitJsonResult {
       state_dir: s.stateDir,
       config_yaml: s.configYaml,
       model_provider: s.modelProvider,
+      sources: s.sources,
       gitignore: s.gitignore,
       core_md: s.coreMd,
       signals_md: s.signalsMd,

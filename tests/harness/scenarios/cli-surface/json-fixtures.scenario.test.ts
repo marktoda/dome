@@ -92,6 +92,7 @@ const DOCTOR_SUMMARY_KEYS = Object.freeze([
   "modelProviderKeyMissing",
   "dailyPathMismatch",
   "sourcesTimeoutDefault",
+  "sourcesFetchScriptMissing",
   "dailyEditionNotCompiled",
   "dailyCalendarSourceMissing",
 ]);

@@ -50,6 +50,46 @@ export type FirstPartyExtensionDefault = {
 
 export type DefaultModelProvider = "anthropic";
 
+/**
+ * The source kinds `dome init --with-source <kind>` can scaffold: each has a
+ * shipped fetch-adapter template at `assets/source-handlers/claude-<kind>.sh`
+ * and a standard subscription stanza below. Scaffolding NEVER enables a
+ * subscription — `enabled: false` is the shipped consent stance
+ * (wiki/specs/sources.md); the owner reviews the script, then flips it.
+ */
+export type DefaultSourceKind = "calendar" | "slack";
+
+export const DEFAULT_SOURCE_KINDS: ReadonlyArray<DefaultSourceKind> =
+  Object.freeze(["calendar", "slack"]);
+
+/**
+ * The standard subscription stanza for a shipped source kind. Schedules sit
+ * before the 05:30 morning brief so the day's feeds are committed in time:
+ * calendar at 05:10, slack at 05:15.
+ */
+export function defaultSourceSubscription(
+  kind: DefaultSourceKind,
+): Readonly<Record<string, DefaultConfigValue>> {
+  switch (kind) {
+    case "calendar":
+      return Object.freeze({
+        enabled: false,
+        schedule: "10 5 * * *",
+        output_path: "sources/calendar/{date}.md",
+        command: Object.freeze(["sh", ".dome/bin/fetch-calendar.sh"]),
+      });
+    case "slack":
+      return Object.freeze({
+        enabled: false,
+        schedule: "15 5 * * *",
+        output_path: "sources/slack/{date}.md",
+        command: Object.freeze(["sh", ".dome/bin/fetch-slack.sh"]),
+      });
+  }
+  const _exhaustive: never = kind;
+  return _exhaustive;
+}
+
 export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDefault> =
   Object.freeze([
     extension("dome.lint", true, {
@@ -107,6 +147,7 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
           "consolidation-ledger.md",
           "sweep-ledger.md",
           "sources/calendar/*.md",
+          "sources/slack/*.md",
           "core.md",
           "preferences/signals.md",
         ],
@@ -165,12 +206,7 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
       true,
       {
         subscriptions: {
-          calendar: {
-            enabled: false,
-            schedule: "10 5 * * *",
-            output_path: "sources/calendar/{date}.md",
-            command: ["sh", ".dome/bin/fetch-calendar.sh"],
-          },
+          calendar: defaultSourceSubscription("calendar"),
         },
       },
       {
@@ -197,10 +233,11 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
 
 export function defaultConfigRecord(opts: {
   readonly modelProvider?: DefaultModelProvider | undefined;
+  readonly sources?: ReadonlyArray<DefaultSourceKind> | undefined;
 } = {}): Record<string, unknown> {
   const record: Record<string, unknown> = {
     extensions: Object.fromEntries(
-      FIRST_PARTY_EXTENSION_DEFAULTS.map((entry) => [
+      firstPartyDefaultsWithSources(opts.sources).map((entry) => [
         entry.id,
         {
           enabled: entry.enabled,
@@ -239,15 +276,51 @@ export function defaultConfigRecord(opts: {
 
 export function defaultConfigYaml(opts: {
   readonly modelProvider?: DefaultModelProvider | undefined;
+  readonly sources?: ReadonlyArray<DefaultSourceKind> | undefined;
 } = {}): string {
   return (
     DEFAULT_CONFIG_HEADER +
     renderModelProviderConfig(opts.modelProvider) +
     "extensions:\n" +
-    FIRST_PARTY_EXTENSION_DEFAULTS.map(renderExtension).join("\n") +
+    firstPartyDefaultsWithSources(opts.sources)
+      .map(renderExtension)
+      .join("\n") +
     "\n" +
     DEFAULT_CONFIG_FOOTER
   );
+}
+
+/**
+ * The first-party defaults with the requested source kinds' subscription
+ * stanzas merged into `dome.sources` (`--with-source`). Kinds whose stanza
+ * already ships (calendar) are no-ops, so the unmodified frozen array is
+ * returned when nothing new is requested.
+ */
+function firstPartyDefaultsWithSources(
+  sources: ReadonlyArray<DefaultSourceKind> | undefined,
+): ReadonlyArray<FirstPartyExtensionDefault> {
+  if (sources === undefined || sources.length === 0) {
+    return FIRST_PARTY_EXTENSION_DEFAULTS;
+  }
+  return FIRST_PARTY_EXTENSION_DEFAULTS.map((entry) => {
+    if (entry.id !== "dome.sources" || entry.config === undefined) return entry;
+    const subscriptions = {
+      ...(entry.config.subscriptions as Readonly<
+        Record<string, DefaultConfigValue>
+      >),
+    };
+    let changed = false;
+    for (const kind of sources) {
+      if (kind in subscriptions) continue;
+      subscriptions[kind] = defaultSourceSubscription(kind);
+      changed = true;
+    }
+    if (!changed) return entry;
+    return Object.freeze({
+      ...entry,
+      config: Object.freeze({ ...entry.config, subscriptions }),
+    });
+  });
 }
 
 function extension(

@@ -395,6 +395,103 @@ describe("the shipped claude-calendar.sh template", () => {
   });
 });
 
+describe("the shipped claude-slack.sh template", () => {
+  const SLACK_DATE = "2026-06-10";
+  const SLACK_OUTPUT = "sources/slack/2026-06-10.md";
+  const SLACK_DAY_FILE =
+    "---\ntype: slack-day\ndate: 2026-06-10\n---\n\n# Slack 2026-06-10\n";
+  const template = join(
+    import.meta.dir,
+    "..",
+    "..",
+    "..",
+    "assets",
+    "source-handlers",
+    "claude-slack.sh",
+  );
+
+  test("is sh-parseable (sh -n)", async () => {
+    const proc = Bun.spawn(["sh", "-n", template], {
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "pipe",
+    });
+    const [exitCode, stderrText] = await Promise.all([
+      proc.exited,
+      new Response(proc.stderr).text(),
+    ]);
+    expect(stderrText).toBe("");
+    expect(exitCode).toBe(0);
+  });
+
+  test("carries the consent header, the digest prompt, and the slack-day validation", async () => {
+    const text = await Bun.file(template).text();
+    // Consent surface: the header names the claude CLI + the owner's Slack
+    // MCP and frames the script itself as the consent surface.
+    expect(text).toContain("Slack MCP");
+    expect(text).toContain("consent");
+    // The fetch prompt asks for the three slack-day sections since the
+    // previous evening, the document and nothing else, ~30 items.
+    expect(text).toContain("claude -p --output-format text");
+    expect(text).toContain("## Mentions");
+    expect(text).toContain("## Direct messages");
+    expect(text).toContain("## Channels");
+    expect(text).toContain("previous local evening");
+    expect(text).toContain("30 items");
+    expect(text).toContain("type: slack-day");
+    // VALIDATE: frontmatter fence, the date line, and the day heading.
+    expect(text).toContain("grep -q '^---$'");
+    expect(text).toContain('grep -q "^date: $d$"');
+    expect(text).toContain('grep -q "^# Slack $d$"');
+    // LAND: pathspec-scoped commit with the slack commit subject.
+    expect(text).toContain('git commit -m "slack: overnight digest for $d" -- "$f"');
+  });
+
+  test("commit-only retry: when the output file already exists the template commits it without fetching", async () => {
+    // No `claude` on the PATH: if the template tried to fetch, it would exit
+    // non-zero. Exit 0 + a new HEAD blob proves the fetch was skipped and the
+    // existing file just got committed.
+    mkdirSync(join(vaultPath, "sources", "slack"), { recursive: true });
+    writeFileSync(join(vaultPath, SLACK_OUTPUT), SLACK_DAY_FILE);
+    const proc = Bun.spawn(["sh", template, SLACK_DATE, SLACK_OUTPUT], {
+      cwd: vaultPath,
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "pipe",
+      env: { ...process.env, PATH: "/usr/bin:/bin" }, // no claude here
+    });
+    const [exitCode, stderrText] = await Promise.all([
+      proc.exited,
+      new Response(proc.stderr).text(),
+    ]);
+    expect(stderrText).not.toContain("claude");
+    expect(exitCode).toBe(0);
+    expect(inHead(SLACK_OUTPUT)).toBe(true);
+    expect(git("log", "-1", "--pretty=%s")).toContain(
+      "slack: overnight digest for 2026-06-10",
+    );
+  });
+
+  test("pathspec commit: staged human work is never swept into the fetch commit", async () => {
+    writeFileSync(join(vaultPath, "notes.md"), "# human work in flight\n");
+    git("add", "--", "notes.md");
+    mkdirSync(join(vaultPath, "sources", "slack"), { recursive: true });
+    writeFileSync(join(vaultPath, SLACK_OUTPUT), SLACK_DAY_FILE);
+    const proc = Bun.spawn(["sh", template, SLACK_DATE, SLACK_OUTPUT], {
+      cwd: vaultPath,
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+      env: { ...process.env, PATH: "/usr/bin:/bin" },
+    });
+    expect(await proc.exited).toBe(0);
+    expect(inHead(SLACK_OUTPUT)).toBe(true);
+    expect(inHead("notes.md")).toBe(false); // still only staged
+    const staged = git("diff", "--cached", "--name-only");
+    expect(staged).toContain("notes.md");
+  });
+});
+
 describe("sources.fetch consent re-derivation (the config is the consent surface)", () => {
   test("no .dome/config.yaml at dispatch time refuses the row", async () => {
     const command = fakeCommand(WRITE_AND_COMMIT);

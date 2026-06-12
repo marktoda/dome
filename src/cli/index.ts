@@ -121,6 +121,13 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       "Write a local command model provider template (currently: anthropic).",
       parseInitModelProviderOption,
     )
+    .option(
+      "--with-source <kind>",
+      "Scaffold a source fetch adapter + disabled subscription stanza " +
+        "(repeatable; kinds: calendar, slack).",
+      parseInitSourceOption,
+      [] as ReadonlyArray<"calendar" | "slack">,
+    )
     .option("--json", "Emit JSON.")
     .action(async (path: string | undefined, options: InitCliOptions) => {
       setExitCode(
@@ -129,6 +136,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           refreshConfig: options.refreshConfig,
           refreshInstructions: options.refreshInstructions,
           modelProvider: options.withModelProvider,
+          withSource: options.withSource,
           json: options.json,
         }),
       );
@@ -693,6 +701,7 @@ type InitCliOptions = {
   readonly refreshConfig?: boolean;
   readonly refreshInstructions?: boolean;
   readonly withModelProvider?: "anthropic";
+  readonly withSource?: ReadonlyArray<"calendar" | "slack">;
   readonly json?: boolean;
 };
 
@@ -954,6 +963,17 @@ function parseInitModelProviderOption(value: string): "anthropic" {
   if (value === "anthropic") return value;
   throw new InvalidArgumentError(
     "invalid provider; expected one of: anthropic",
+  );
+}
+
+/** Repeatable `--with-source <kind>` accumulator. Unknown kind → EX_USAGE. */
+function parseInitSourceOption(
+  value: string,
+  previous: ReadonlyArray<"calendar" | "slack">,
+): ReadonlyArray<"calendar" | "slack"> {
+  if (value === "calendar" || value === "slack") return [...previous, value];
+  throw new InvalidArgumentError(
+    "invalid source kind; expected one of: calendar, slack",
   );
 }
 

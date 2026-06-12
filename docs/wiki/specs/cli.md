@@ -123,7 +123,7 @@ without imposing a first-party schema.
 
 ## Per-command specs
 
-### `dome init [path] [--refresh-config] [--refresh-instructions] [--with-model-provider anthropic]`
+### `dome init [path] [--refresh-config] [--refresh-instructions] [--with-model-provider anthropic] [--with-source <kind>]...`
 
 Creates a new Dome vault at `<path>` (defaults to `.`). Phase 11f
 hotfix: `dome init` no longer copies the shipped first-party bundles
@@ -193,6 +193,30 @@ The shipped initialization steps:
    and the `model_provider` stanza are each first-write-only, so the re-run
    adds whichever piece is missing and never overwrites a hand-edited
    provider or stanza.
+4b. When `--with-source <kind>` is supplied (repeatable; shipped kinds:
+   `calendar`, `slack` — any other kind is rejected with exit 64), scaffolds
+   each requested source adapter: copies the shipped fetch template from
+   `<SDK>/assets/source-handlers/claude-<kind>.sh` to
+   `<vault>/.dome/bin/fetch-<kind>.sh` (executable) and ensures the matching
+   subscription stanza exists under
+   `extensions.dome.sources.config.subscriptions.<kind>` with the shipped
+   default — always `enabled: false`: scaffolding is not consent
+   ([[wiki/specs/sources]] §"The Slack stance"); the owner reviews the script
+   and flips the flag. Both halves are first-write-only, mirroring the
+   model-provider step: an existing script keeps its content and mode, and an
+   existing stanza — whatever its shape or `enabled` value — is user-owned
+   config left byte-untouched (in particular, a re-run **never flips an
+   existing `enabled`** in either direction). Re-running
+   `dome init --with-source <kind>` on an existing vault is the supported
+   wiring path; on a vault with commits the resulting script + config changes
+   are left **uncommitted** for the owner to review (the scaffold commit in
+   step 9 only fires on a fresh repo). **Sharp edge:** inserting a missing
+   stanza rewrites `.dome/config.yaml` through YAML parse/stringify, which
+   **deletes hand-written comments** anywhere in the file (pre-existing
+   behavior shared with the `--with-model-provider` stanza insert) — on a
+   hand-commented config, commit first and re-add the comments, or
+   hand-insert the stanza instead and use `--with-source` only for the
+   script copy.
 5. Writes `<vault>/.gitignore` (ignores `.dome/state/` per
    [[wiki/specs/vault-layout]] §"Git repository structure"). First-write-only.
 6. Writes `<vault>/core.md`, the always-loaded core memory page (per
@@ -238,8 +262,10 @@ The shipped initialization steps:
    staging `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `core.md`,
    `preferences/signals.md`, `.dome/config.yaml`, and the
    `inbox/raw/.gitkeep` + `inbox/processed/.gitkeep` keepers, plus
-   `.dome/model-provider.ts` when the provider scaffold was requested. Skipped if HEAD already resolves (re-init on a vault
-   with commits is a no-op for this step).
+   `.dome/model-provider.ts` when the provider scaffold was requested and
+   `.dome/bin/fetch-<kind>.sh` for each `--with-source` kind. Skipped if HEAD already resolves (re-init on a vault
+   with commits is a no-op for this step — which is why §4b's changes stay
+   uncommitted on an existing vault).
 
 Deferred to v1.1:
 - `.dome/page-types.yaml` is not scaffolded by default. The page-type
@@ -260,7 +286,8 @@ Each step prints a one-line outcome (`created`, `updated`, or `skipped
 (already present)`); idempotent re-runs surface as all-skipped no-ops.
 
 Exit codes: 0 on success (including idempotent re-runs); 1 on
-unexpected I/O failure; 64 (EX_USAGE) on malformed path argument.
+unexpected I/O failure; 64 (EX_USAGE) on malformed path argument or an
+unknown `--with-source` kind.
 
 ### `dome capture [text] [--file <path>] [--title <t>] [--vault <path>] [--json]`
 
@@ -1681,6 +1708,18 @@ When any `dome.sources` subscription is enabled while
 `config.sources-timeout-default` **info** finding suggesting `300000` for
 model-backed fetch commands (the timeout footgun;
 [[wiki/specs/sources]] §"Timeout").
+When an enabled `dome.sources` subscription's fetch command references a
+script file that is missing or not a regular file, doctor raises a
+`sources.fetch-script-missing` **warning** naming the kind and path, with
+`dome init --with-source <kind>` in the recovery text — the
+stanza-enabled-but-never-scaffolded gap, caught before every scheduled fetch
+fails overnight. The probe is **static**: doctor never executes the fetch
+command; the script reference is derived from the command shape alone
+(`command[0]` when it carries a path separator, else `command[1]` under a
+bare interpreter name, skipping flag arguments), and commands with no
+checkable reference — bare PATH lookups, `sh -c` inline scripts — are
+silently unprobed rather than false-positived; their failures still surface
+through the outbox findings ([[wiki/specs/sources]] §"The flow").
 The implementation lives in `src/engine/host/health.ts`.
 
 **Model-provider probe.** When `.dome/config.yaml` carries a

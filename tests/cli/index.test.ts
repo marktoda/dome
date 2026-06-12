@@ -94,6 +94,21 @@ describe("runCli", () => {
     expect(err).toContain("Usage: dome init");
   });
 
+  test("init help exposes the repeatable source scaffold", async () => {
+    expect(await runCli(["init", "-h"])).toBe(0);
+    const out = captured.out.join("\n");
+    expect(out).toContain("--with-source <kind>");
+    expect(out).toContain("calendar");
+    expect(out).toContain("slack");
+  });
+
+  test("init rejects unknown source kinds with the kind list", async () => {
+    expect(await runCli(["init", "--with-source", "gmail"])).toBe(64);
+    const err = captured.err.join("\n");
+    expect(err).toContain("invalid source kind; expected one of: calendar, slack");
+    expect(err).toContain("Usage: dome init");
+  });
+
   test("compiler host help exposes quiet output mode", async () => {
     expect(await runCli(["sync", "-h"])).toBe(0);
     expect(await runCli(["serve", "-h"])).toBe(0);
