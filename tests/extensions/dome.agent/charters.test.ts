@@ -17,6 +17,7 @@ describe("dome.agent charters — supersession convention", () => {
   const consolidate = consolidateCharter({
     ledgerPath: "consolidation-ledger.md",
     maxChangedFiles: 30,
+    targets: ["wiki/"],
   });
 
   test("consolidate retires absorbed pages with the status flip, not deletePage", () => {
@@ -61,6 +62,7 @@ describe("dome.agent charters — preference signals (M5)", () => {
   const consolidate = consolidateCharter({
     ledgerPath: "consolidation-ledger.md",
     maxChangedFiles: 30,
+    targets: ["wiki/"],
   });
 
   // The load-bearing pieces of the one surgical instruction per charter

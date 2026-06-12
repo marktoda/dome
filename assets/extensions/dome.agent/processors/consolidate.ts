@@ -14,14 +14,19 @@ import {
 import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
 import { finishAgentRun } from "../lib/agent-run-effects";
 import { withCoreMemory } from "../lib/core-memory";
-import { makeConsolidatorTools } from "../lib/consolidate-tools";
+import {
+  CONSOLIDATE_WRITABLE_PATHS,
+  makeConsolidatorTools,
+} from "../lib/consolidate-tools";
 import { consolidateCharter } from "../lib/consolidate-charter";
 import { formatDate, localDateParts } from "../../dome.daily/processors/daily-paths";
 import { agentPreamble } from "../lib/agent-preamble";
+import { globMatch } from "../../../../src/engine/core/glob-cache";
 
 const MAX_STEPS = 50;
 export const MAX_CHANGED_FILES = 30;
 const DEFAULT_LEDGER_PATH = "consolidation-ledger.md";
+const DEFAULT_TARGETS: ReadonlyArray<string> = Object.freeze(["wiki/"]);
 
 export type ConsolidationLedgerResolution = {
   readonly path: string;
@@ -68,17 +73,84 @@ function fallback(problem: string): ConsolidationLedgerResolution {
   );
 }
 
+type TargetsResolution = {
+  readonly value: ReadonlyArray<string>;
+  readonly problem: string | null;
+};
+
+/**
+ * Resolve `consolidate_targets` (the path prefixes the run treats as
+ * in-scope for drift hunting, merging, tidying, and superseding) — an exact
+ * mirror of sweep's `sweep_targets` rule: same shape validation, same
+ * grant-probe via globMatch, malformed values degrade to the whole-wiki
+ * default with a `problem` the processor surfaces as the
+ * `dome.agent.consolidate-config-invalid` warning.
+ */
+function consolidateTargets(
+  config?: Readonly<Record<string, unknown>>,
+): TargetsResolution {
+  const raw = config?.consolidate_targets;
+  if (raw === undefined) return Object.freeze({ value: DEFAULT_TARGETS, problem: null });
+  const valid =
+    Array.isArray(raw) &&
+    raw.length > 0 &&
+    raw.every(
+      (t) =>
+        typeof t === "string" &&
+        t.length > 0 &&
+        t.trim() === t &&
+        !t.startsWith("/") &&
+        !t.includes("\\") &&
+        !t.includes(".."),
+    );
+  if (!valid) {
+    return Object.freeze({
+      value: DEFAULT_TARGETS,
+      problem:
+        "dome.agent config consolidate_targets must be a non-empty array of relative path prefixes; " +
+        `falling back to ${DEFAULT_TARGETS.join(", ")}`,
+    });
+  }
+  // Grant-mirror validation: every target prefix must be covered by the
+  // consolidator's patch.auto grant (CONSOLIDATE_WRITABLE_PATHS), or the
+  // grant-aware writePage would reject every merge under the foreign prefix
+  // mid-run. Probe with a representative page path directly under the
+  // prefix — `**` matches zero or more segments, so coverage of the probe
+  // implies coverage of every `.md` under the prefix.
+  const uncovered = (raw as ReadonlyArray<string>).filter(
+    (t) =>
+      !CONSOLIDATE_WRITABLE_PATHS.some((pattern) =>
+        globMatch(pattern, `${t}__consolidate-probe__.md`),
+      ),
+  );
+  if (uncovered.length > 0) {
+    return Object.freeze({
+      value: DEFAULT_TARGETS,
+      problem:
+        `dome.agent config consolidate_targets contains prefixes outside the consolidate write grant ` +
+        `(${uncovered.join(", ")} vs ${CONSOLIDATE_WRITABLE_PATHS.join(", ")}); ` +
+        `falling back to ${DEFAULT_TARGETS.join(", ")}`,
+    });
+  }
+  return Object.freeze({ value: raw as ReadonlyArray<string>, problem: null });
+}
+
 const consolidate = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const ledger = consolidationLedgerPath(ctx.extensionConfig);
     const ledgerPath = ledger.path;
+    const targets = consolidateTargets(ctx.extensionConfig);
     const sourceRefs = [ctx.sourceRef(ledgerPath)];
 
     // step check + coreMemorySection read + config-problem diagnostics
-    // (ledger path problem + core-config-invalid).
+    // (ledger path + targets problems share the consolidate-config-invalid
+    // code; core-config-invalid is the preamble's own).
     const pre = await agentPreamble(
       ctx,
-      [{ problem: ledger.problem, code: "dome.agent.consolidate-config-invalid", sourceRefs }],
+      [
+        { problem: ledger.problem, code: "dome.agent.consolidate-config-invalid", sourceRefs },
+        { problem: targets.problem, code: "dome.agent.consolidate-config-invalid", sourceRefs },
+      ],
       sourceRefs,
     );
     if (pre.kind === "no-model") return Object.freeze([]);
@@ -101,6 +173,7 @@ const consolidate = defineProcessorImplementation({
         charter: consolidateCharter({
           ledgerPath,
           maxChangedFiles: MAX_CHANGED_FILES,
+          targets: targets.value,
         }),
         task: withCoreMemory(core.section, taskTurn(ctx.now(), ledgerPath)),
         tools,

@@ -347,6 +347,119 @@ describe("dome.agent.consolidate", () => {
     }
   });
 
+  test("consolidate_targets scopes the charter to the configured prefixes with no diagnostic", async () => {
+    const seenSystem: string[] = [];
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      seenSystem.push(messages.find((m) => m.role === "system")?.content ?? "");
+      return { text: "done" };
+    };
+    const effects = await consolidate.run(
+      makeCtx({
+        files: { "index.md": "x" },
+        extensionConfig: { consolidate_targets: ["wiki/entities/"] },
+        stepFn,
+      }),
+    );
+    expect(seenSystem[0]).toContain("wiki/entities/");
+    expect(seenSystem[0]).toContain("ONLY pages under these prefixes");
+    expect(seenSystem[0]).not.toContain("pages under: wiki/.");
+    // Valid config → silent (no config-invalid diagnostic).
+    expect(
+      effects.some(
+        (e) =>
+          e.kind === "diagnostic" &&
+          (e as DiagnosticEffect).code === "dome.agent.consolidate-config-invalid",
+      ),
+    ).toBe(false);
+  });
+
+  test("absent consolidate_targets defaults to whole-wiki scope (wiki/) silently", async () => {
+    const seenSystem: string[] = [];
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      seenSystem.push(messages.find((m) => m.role === "system")?.content ?? "");
+      return { text: "done" };
+    };
+    const effects = await consolidate.run(
+      makeCtx({ files: { "index.md": "x" }, stepFn }),
+    );
+    expect(seenSystem[0]).toContain("pages under: wiki/.");
+    expect(
+      effects.some(
+        (e) =>
+          e.kind === "diagnostic" &&
+          (e as DiagnosticEffect).code === "dome.agent.consolidate-config-invalid",
+      ),
+    ).toBe(false);
+  });
+
+  test("malformed consolidate_targets degrades to the wiki/ default with a warning diagnostic", async () => {
+    for (const malformed of [7, [], [""], ["/abs/"], ["a\\b/"], ["../up/"], "wiki/"]) {
+      const seenSystem: string[] = [];
+      const stepFn = async ({
+        messages,
+      }: {
+        readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+      }): Promise<ModelStepResult> => {
+        seenSystem.push(messages.find((m) => m.role === "system")?.content ?? "");
+        return { text: "done" };
+      };
+      const effects = await consolidate.run(
+        makeCtx({
+          files: { "index.md": "x" },
+          extensionConfig: { consolidate_targets: malformed },
+          stepFn,
+        }),
+      );
+      // The run proceeded against the whole-wiki default scope.
+      expect(seenSystem[0]).toContain("pages under: wiki/.");
+      const diag = effects.find(
+        (e) =>
+          e.kind === "diagnostic" &&
+          (e as DiagnosticEffect).code === "dome.agent.consolidate-config-invalid",
+      ) as DiagnosticEffect;
+      expect(diag).toBeDefined();
+      expect(diag.severity).toBe("warning");
+      expect(diag.message).toContain("consolidate_targets");
+      expect(diag.message).toContain("falling back");
+    }
+  });
+
+  test("a consolidate_targets prefix outside the write grant degrades with a grant-naming warning", async () => {
+    const seenSystem: string[] = [];
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      seenSystem.push(messages.find((m) => m.role === "system")?.content ?? "");
+      return { text: "done" };
+    };
+    const effects = await consolidate.run(
+      makeCtx({
+        files: { "index.md": "x" },
+        extensionConfig: { consolidate_targets: ["notes/"] },
+        stepFn,
+      }),
+    );
+    expect(seenSystem[0]).toContain("pages under: wiki/.");
+    const diag = effects.find(
+      (e) =>
+        e.kind === "diagnostic" &&
+        (e as DiagnosticEffect).code === "dome.agent.consolidate-config-invalid",
+    ) as DiagnosticEffect;
+    expect(diag).toBeDefined();
+    expect(diag.message).toContain("notes/");
+    expect(diag.message).toContain("write grant");
+  });
+
   test("a malformed ledger-path config does not crash the run: default path + config diagnostic", async () => {
     const seenTask: string[] = [];
     const stepFn = async ({
