@@ -145,11 +145,19 @@ describe("dome.agent manifest cadence + grants", () => {
       (p) => p.id === "dome.agent.preference-promotion-answer",
     );
     expect(handler).toBeDefined();
+    // Two answer triggers, one writer: promotion and demotion questions are
+    // both emitted by dome.agent.preference-promotion, and the SAME gated
+    // handler answers both key families — no third core.md writer.
     expect(handler?.triggers).toEqual([
       {
         kind: "answer",
         questionProcessorId: "dome.agent.preference-promotion",
         idempotencyKeyPrefix: "dome.agent.preference-promotion:",
+      },
+      {
+        kind: "answer",
+        questionProcessorId: "dome.agent.preference-promotion",
+        idempotencyKeyPrefix: "dome.agent.preference-demotion:",
       },
     ]);
     const kinds = (handler?.capabilities ?? []).map((c) => c.kind).sort();

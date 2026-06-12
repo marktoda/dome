@@ -1,18 +1,34 @@
-// dome.agent.preference-promotion — owner-needed promotion questions
-// (memory-quality M5, docs/wiki/specs/preferences.md).
+// dome.agent.preference-promotion — owner-needed promotion AND demotion
+// questions (memory-quality M5 + WS1 pruning, docs/wiki/specs/preferences.md).
 //
-// For every topic in the `candidate` state — ≥ 3 same-sign signals in the
-// 30-day window, not already promoted (core.md's block is checked), not
-// rebutted, not owner-rejected — emits one QuestionEffect proposing the
+// Promotion: for every topic in the `candidate` state — ≥ 3 same-sign signals
+// in the 30-day window, not already promoted (core.md's block is checked),
+// not rebutted, not owner-rejected — emits one QuestionEffect proposing the
 // candidate rule VERBATIM with the in-window evidence lines quoted.
 //
-// Idempotency: the key is `dome.agent.preference-promotion:<topic>:<rule-hash>`
-// — one open question per topic + rule (re-emission refreshes the open row;
-// an answered row stays answered, so there is no re-ask), and a changed
-// candidate rule asks fresh. Promotions change agent behavior, so the
-// metadata is `automationPolicy: "owner-needed"`: never auto-resolved — the
-// owner decides. Confidence is the Wilson 95% lower bound × 90-day
-// freshness from the shared library.
+// Demotion (the lifecycle's closing tail): for every `promoted` topic whose
+// recomputed confidence — the same Wilson × freshness formula that promoted
+// it — has decayed below DEMOTE_BELOW_CONFIDENCE, emits one QuestionEffect
+// proposing removal. Freshness alone gets there: no signals for 90 days →
+// freshness 0 → confidence 0. The key hashes the PROMOTED BLOCK's rule text
+// (what `demote` would splice out), not the latest signal's.
+//
+// Idempotency: promotion keys are
+// `dome.agent.preference-promotion:<topic>:<rule-hash>:<epoch>`, demotion
+// keys are `dome.agent.preference-demotion:<topic>:<rule-hash>:<epoch>` —
+// one open question per topic + rule + signal epoch (re-emission refreshes
+// the open row; an answered row stays answered, settling that EPISODE). A
+// changed rule asks fresh via the hash; a changed evidence situation — a
+// `keep` reaffirmation, post-demote re-accrual with identical phrasing —
+// asks fresh via the epoch salt (`signalEpoch`: newest in-window signal
+// date, or `stale-<last-signal-date>` for pure freshness decay). Without
+// the salt, answered-row permanence dead-ended two lifecycle legs: one
+// `keep` exempted a rule from decay review forever, and a re-accrued
+// candidate with the original phrasing could never re-fire its question.
+// Both change agent behavior on every future run, so the metadata is
+// `automationPolicy: "owner-needed"`: never auto-resolved — the owner
+// decides. Confidence is the Wilson 95% lower bound × 90-day freshness from
+// the shared library.
 //
 // Deterministic (no model, no clock): same snapshot → same questions.
 
@@ -25,11 +41,17 @@ import {
 import { coreMemoryPath } from "../lib/core-memory";
 import {
   collectPreferenceTopics,
+  DEMOTE_BELOW_CONFIDENCE,
+  demotionQuestionKey,
+  fnv1aHex,
   PREFERENCE_PROMOTION_THRESHOLD,
   PREFERENCE_SIGNALS_PATH,
   PREFERENCE_WINDOW_DAYS,
+  promotedPreferenceEntries,
   promotionQuestionKey,
+  signalEpoch,
   type PreferenceTopic,
+  type PromotedPreferenceEntry,
 } from "../lib/preferences-shared";
 
 const preferencePromotion = defineProcessorImplementation({
@@ -38,35 +60,78 @@ const preferencePromotion = defineProcessorImplementation({
       PREFERENCE_SIGNALS_PATH,
     );
     if (signalsContent === null) return Object.freeze([]);
-    const coreContent = await ctx.snapshot.readFile(
-      coreMemoryPath(ctx.extensionConfig).path,
-    );
+    const corePath = coreMemoryPath(ctx.extensionConfig).path;
+    const coreContent = await ctx.snapshot.readFile(corePath);
     const collection = collectPreferenceTopics({ signalsContent, coreContent });
+    const promotedEntries = promotedPreferenceEntries(coreContent);
 
     const effects: Effect[] = [];
     for (const topic of collection.topics) {
-      if (topic.state !== "candidate") continue;
-      if (topic.rule === null || topic.ruleHash === null) continue;
+      if (topic.state === "candidate") {
+        if (topic.rule === null || topic.ruleHash === null) continue;
+        effects.push(
+          questionEffect({
+            question: promotionQuestion(topic),
+            options: ["promote", "reject"],
+            idempotencyKey: promotionQuestionKey({
+              topic: topic.topic,
+              ruleHash: topic.ruleHash,
+              epoch: signalEpoch(topic),
+            }),
+            sourceRefs: topic.evidence.map((signal) =>
+              ctx.sourceRef(PREFERENCE_SIGNALS_PATH, {
+                startLine: signal.line,
+                endLine: signal.line,
+              }),
+            ),
+            metadata: {
+              automationPolicy: "owner-needed",
+              confidence: topic.confidence,
+              recommendedAnswer: "promote",
+              ownerNeededReason:
+                "Promoting a standing preference changes agent behavior on every future run; the owner decides.",
+            },
+          }),
+        );
+        continue;
+      }
+
+      // Demotion candidates: promoted AND decayed below the floor. Topics
+      // with a block entry but NO signal history never appear in the
+      // collection — hand-added entries are out of demotion's scope.
+      if (topic.state !== "promoted") continue;
+      if (topic.confidence >= DEMOTE_BELOW_CONFIDENCE) continue;
+      const entry = promotedEntries.find((e) => e.topic === topic.topic);
+      if (entry === undefined) continue;
       effects.push(
         questionEffect({
-          question: promotionQuestion(topic),
-          options: ["promote", "reject"],
-          idempotencyKey: promotionQuestionKey({
+          question: demotionQuestion(topic, entry),
+          options: ["demote", "keep"],
+          idempotencyKey: demotionQuestionKey({
             topic: topic.topic,
-            ruleHash: topic.ruleHash,
+            ruleHash: fnv1aHex(entry.rule),
+            epoch: signalEpoch(topic),
           }),
-          sourceRefs: topic.evidence.map((signal) =>
-            ctx.sourceRef(PREFERENCE_SIGNALS_PATH, {
-              startLine: signal.line,
-              endLine: signal.line,
+          sourceRefs: [
+            // The promoted block's core.md line, then the in-window signal
+            // lines (often none — staleness is the usual decay path).
+            ctx.sourceRef(corePath, {
+              startLine: entry.line,
+              endLine: entry.line,
             }),
-          ),
+            ...topic.evidence.map((signal) =>
+              ctx.sourceRef(PREFERENCE_SIGNALS_PATH, {
+                startLine: signal.line,
+                endLine: signal.line,
+              }),
+            ),
+          ],
           metadata: {
             automationPolicy: "owner-needed",
             confidence: topic.confidence,
-            recommendedAnswer: "promote",
+            recommendedAnswer: "demote",
             ownerNeededReason:
-              "Promoting a standing preference changes agent behavior on every future run; the owner decides.",
+              "Demoting a standing preference changes agent behavior on every future run; the owner decides.",
           },
         }),
       );
@@ -87,5 +152,30 @@ function promotionQuestion(topic: PreferenceTopic): string {
     ...topic.evidence.map((signal) => `  ${signal.raw}`),
     "",
     "`promote` adds the rule to core.md's promoted-preferences block (it then rides every agent run); `reject` retires the topic so it is not proposed again.",
+  ].join("\n");
+}
+
+function demotionQuestion(
+  topic: PreferenceTopic,
+  entry: PromotedPreferenceEntry,
+): string {
+  const evidence =
+    topic.evidence.length === 0
+      ? [
+          `No signals within the ${PREFERENCE_WINDOW_DAYS}-day window — the rule has gone stale.`,
+        ]
+      : [
+          `Recent signals within ${PREFERENCE_WINDOW_DAYS} days (${topic.plusInWindow} for, ${topic.minusInWindow} against):`,
+          ...topic.evidence.map((signal) => `  ${signal.raw}`),
+        ];
+  return [
+    `Demote the standing preference for topic "${topic.topic}"?`,
+    "",
+    `Promoted rule: ${entry.rule}`,
+    "",
+    `Its confidence has decayed to ${topic.confidence} — below the ${DEMOTE_BELOW_CONFIDENCE} demotion floor (same Wilson × freshness formula that promoted it).`,
+    ...evidence,
+    "",
+    "`demote` removes the rule from core.md's promoted-preferences block and records a minus signal (NOT a rejection — the topic can re-earn promotion if corrections re-accrue); `keep` reaffirms the rule with a fresh plus signal, resetting its confidence.",
   ].join("\n");
 }

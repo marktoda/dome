@@ -379,7 +379,7 @@ describe("runInspect", () => {
         status: "disabled",
         loaded: false,
         inventory: "manifest",
-        version: "0.4.1",
+        version: "0.5.0",
         processors: 10,
         garden: 10,
         model_processors: 4,
