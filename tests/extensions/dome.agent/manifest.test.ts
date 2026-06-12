@@ -71,7 +71,7 @@ describe("dome.agent manifest cadence + grants", () => {
     expect(brief?.module).toBe("processors/brief.ts");
   });
 
-  test("core.md is readable by every agent processor and auto-writable ONLY by the promotion answer handler", async () => {
+  test("core.md is readable by every agent processor and auto-writable ONLY by the two gated block writers", async () => {
     const manifest = await loadManifest();
     const agents = ["dome.agent.ingest", "dome.agent.consolidate", "dome.agent.brief"];
     for (const id of agents) {
@@ -82,10 +82,13 @@ describe("dome.agent manifest cadence + grants", () => {
         `${id} must declare read over core.md`,
       ).toContain("core.md");
     }
-    // The propose-only pin (decision 4 of the memory plan): core.md appears
-    // in EXACTLY ONE patch.auto declaration in the whole bundle — the
-    // answer-mediated preference-promotion handler, the single auto-writer
-    // (wiki/specs/preferences.md §"The single-auto-writer exception").
+    // The propose-only pin (decision 4 of the memory plan, evolved): core.md
+    // appears in EXACTLY TWO patch.auto declarations in the whole bundle —
+    // the answer-mediated preference-promotion handler (owner of the
+    // promoted-preferences block) and the deterministic active-projects
+    // renderer (owner of the active-projects block). Every core.md writer
+    // owns a distinct generated block; everything else is propose-only
+    // (wiki/specs/preferences.md §two-gated-writers).
     const coreWriters = manifest.processors.filter((processor) =>
       processor.capabilities.some(
         (capability) =>
@@ -93,8 +96,39 @@ describe("dome.agent manifest cadence + grants", () => {
           capability.paths.includes("core.md"),
       ),
     );
-    expect(coreWriters.map((p) => p.id)).toEqual([
+    expect(coreWriters.map((p) => p.id).sort()).toEqual([
+      "dome.agent.active-projects",
       "dome.agent.preference-promotion-answer",
+    ]);
+  });
+
+  test("active-projects is deterministic, narrow, and scheduled between the index render and the brief", async () => {
+    const manifest = await loadManifest();
+    const processor = manifest.processors.find(
+      (p) => p.id === "dome.agent.active-projects",
+    );
+    expect(processor).toBeDefined();
+    expect(processor?.phase).toBe("garden");
+    expect(processor?.execution?.class).toBe("deterministic");
+    expect(processor?.module).toBe("processors/active-projects.ts");
+    expect(processor?.triggers).toEqual([
+      { kind: "schedule", cron: "20 5 * * *" },
+      {
+        kind: "signal",
+        name: "document.changed",
+        pathPattern: "wiki/dailies/*.md",
+      },
+    ]);
+    const kinds = (processor?.capabilities ?? []).map((c) => c.kind).sort();
+    expect(kinds).toEqual(["patch.auto", "read"]);
+    const read = processor?.capabilities.find((c) => c.kind === "read");
+    expect(read?.kind === "read" ? [...read.paths].sort() : []).toEqual([
+      "core.md",
+      "wiki/dailies/*.md",
+    ]);
+    const patch = processor?.capabilities.find((c) => c.kind === "patch.auto");
+    expect(patch?.kind === "patch.auto" ? patch.paths : []).toEqual([
+      "core.md",
     ]);
   });
 

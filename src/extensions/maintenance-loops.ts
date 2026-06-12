@@ -341,10 +341,16 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.daily.agenda-with",
         "dome.daily.carry-forward",
         "dome.agent.brief",
+        // Projects the dailies' open-loop tallies into core.md's
+        // active-projects generated block (the second gated core.md writer)
+        // — unresolved work stays visible in the always-loaded core page,
+        // not just the daily surface.
+        "dome.agent.active-projects",
       ],
       surfaces: [
         { kind: "path", pattern: "wiki/dailies/*.md" },
         { kind: "path", pattern: "notes/*.md" },
+        { kind: "path", pattern: "core.md" },
         { kind: "command", name: "query" },
         { kind: "command", name: "export-context" },
       ],

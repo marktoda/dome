@@ -363,7 +363,7 @@ scenario(
     expect(report.status).toBe("unhealthy");
     // Every capability kind is granted — the kind-level probe stays quiet.
     expect(report.summary.capabilityGrantGaps).toBe(0);
-    expect(report.summary.capabilityGrantEntryGaps).toBe(8);
+    expect(report.summary.capabilityGrantEntryGaps).toBe(9);
 
     const entryGaps = report.findings.filter(
       (finding) => finding.code === "capability.grant-entry-missing",
@@ -371,6 +371,7 @@ scenario(
     expect(
       entryGaps.map((finding) => finding.capability?.processorId).sort(),
     ).toEqual([
+      "dome.agent.active-projects",
       "dome.agent.brief",
       "dome.agent.brief",
       "dome.agent.preference-promotion-answer",
@@ -558,8 +559,8 @@ scenario(
           "      model.invoke:",
           "        maxDailyCostUsd: 5",
           "      question.ask: true",
-          // The single-auto-writer replacement grant: without it the
-          // answer handler's effective patch.auto misses core.md and the
+          // The two gated-writer replacement grants: without them the
+          // writers' effective patch.auto misses core.md and the
           // capability.grant-entry-missing probe would (correctly) fire.
           "    processors:",
           "      dome.agent.preference-promotion-answer:",
@@ -570,6 +571,13 @@ scenario(
           "          patch.auto:",
           "            - \"core.md\"",
           "            - \"preferences/signals.md\"",
+          "      dome.agent.active-projects:",
+          "        grant:",
+          "          read:",
+          "            - \"core.md\"",
+          "            - \"wiki/dailies/*.md\"",
+          "          patch.auto:",
+          "            - \"core.md\"",
         ].join("\n"),
         "AGENTS.md":
           "# This is a Dome vault.\n\n" +
