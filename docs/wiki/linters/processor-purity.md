@@ -1,10 +1,11 @@
 ---
 type: linter
-description: "Forbids processor files importing fs, sqlite, git, or network modules — run(ctx) must emit Effects only, never side-effect past the engine."
 created: 2026-05-27
-updated: 2026-05-29
+updated: 2026-06-12
+sources:
+  - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: Forbids processor files importing fs, sqlite, git, or network modules — run(ctx) must emit Effects only, never side-effect past the engine.
 status: v1 (implemented)
-sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 ---
 
 # processor-purity

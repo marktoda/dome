@@ -1,12 +1,12 @@
 ---
 type: spec
-description: "dome.sources subscriptions: consent in config, engine-scheduled fetches via the outbox; the fetch command, not the engine, writes sources/ files"
 created: 2026-06-10
 updated: 2026-06-12
 sources:
   - "[[daily]]"
   - "[[wiki/specs/daily-surface]]"
   - "[[wiki/specs/vault-layout]]"
+description: "dome.sources subscriptions: consent in config, engine-scheduled fetches via the outbox; the fetch command, not the engine, writes sources/ files"
 ---
 
 # Sources subscriptions

@@ -1,10 +1,10 @@
 ---
 type: invariant
-description: "Every vault mutation passes through a Proposal and adopt() in the engine; the SDK exports no direct-write API or privileged escape hatch"
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: Every vault mutation passes through a Proposal and adopt() in the engine; the SDK exports no direct-write API or privileged escape hatch
 enforced_by:
   - tests/integration/public-surface-shape.test.ts
   - tests/integration/no-direct-mutation-outside-boundaries.test.ts

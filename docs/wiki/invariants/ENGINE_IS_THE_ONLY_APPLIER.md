@@ -1,10 +1,10 @@
 ---
 type: invariant
-description: "All vault mutation runs through engine routing (apply-effect.ts, garden patch dispatch); no other module reaches fs/git/SQLite write primitives"
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: All vault mutation runs through engine routing (apply-effect.ts, garden patch dispatch); no other module reaches fs/git/SQLite write primitives
 enforced_by:
   - tests/integration/no-direct-mutation-outside-boundaries.test.ts
   - tests/engine/apply-effect.test.ts

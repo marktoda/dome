@@ -1,10 +1,10 @@
 ---
 type: invariant
-description: "Processor.run returns only Effect[] — no side effects; ProcessorContext has no writers and the processor-purity lint bans mutation imports"
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: Processor.run returns only Effect[] — no side effects; ProcessorContext has no writers and the processor-purity lint bans mutation imports
 enforced_by:
   - tests/processors/runtime.test.ts
   - tests/processors/executor.test.ts

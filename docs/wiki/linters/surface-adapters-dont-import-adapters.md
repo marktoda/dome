@@ -1,10 +1,10 @@
 ---
 type: linter
-description: "Checks CLI/MCP/HTTP adapters never import each other and src/surface/ imports no adapter — each surface stays a thin peer over one boundary."
 created: 2026-06-10
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/reviews/2026-06-10-oop-abstraction-layers-architecture-review]]"
+description: Checks CLI/MCP/HTTP adapters never import each other and src/surface/ imports no adapter — each surface stays a thin peer over one boundary.
 ---
 
 # surface-adapters-dont-import-adapters

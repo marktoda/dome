@@ -1,11 +1,11 @@
 ---
 type: spec
-description: "Proposal as the only trusted write path: manual branch-drift and garden-emitted construction, transactional adoption, structural provenance"
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
+description: "Proposal as the only trusted write path: manual branch-drift and garden-emitted construction, transactional adoption, structural provenance"
 ---
 
 # Proposals

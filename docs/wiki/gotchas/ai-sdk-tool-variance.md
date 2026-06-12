@@ -1,14 +1,15 @@
 ---
 type: gotcha
-description: "registry.ts double-casts AI SDK tool() through unknown plus an any,any satisfies, so tool input/output type mismatches compile silently."
 created: 2026-05-26
-updated: 2026-05-26
-sources: ["[[cohesive/reviews/2026-05-26-dome-v0.5-cohesion-architecture-review]]"]
-severity: low
+updated: 2026-06-12
+sources:
+  - "[[cohesive/reviews/2026-05-26-dome-v0.5-cohesion-architecture-review]]"
 coverage: off-matrix
+description: registry.ts double-casts AI SDK tool() through unknown plus an any,any satisfies, so tool input/output type mismatches compile silently.
 enforced_at: src/tools/registry.ts
-enforced_at_status: deferred  # v0.5 path retired; v1 enforcement TBD in later phase
+enforced_at_status: deferred
 first_observed: 2026-05-26
+severity: low
 ---
 
 # ai-sdk-tool-variance

@@ -1,11 +1,11 @@
 ---
 type: gotcha
-description: "Native writes (Obsidian, vim, agent Write) are canonical but leave projections and adopted ref stale until the host or dome sync adopts them."
 created: 2026-05-27
-updated: 2026-05-29
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
+description: Native writes (Obsidian, vim, agent Write) are canonical but leave projections and adopted ref stale until the host or dome sync adopts them.
 enforced_at: src/cli/commands/serve.ts
 enforced_at_status: implemented
 first_observed: 2026-05-27

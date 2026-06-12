@@ -1,11 +1,11 @@
 ---
 type: gotcha
-description: "Non-idempotent processors emit different effects on identical (snapshot, input), causing duplicate facts, divergence, and rebuild mismatches."
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
+description: Non-idempotent processors emit different effects on identical (snapshot, input), causing duplicate facts, divergence, and rebuild mismatches.
 enforced_at: src/engine/core/adopt.ts (fixed-point detection)
 enforced_at_status: deferred
 first_observed: 2026-05-27 (carried forward from v0.5's hook-non-idempotent)

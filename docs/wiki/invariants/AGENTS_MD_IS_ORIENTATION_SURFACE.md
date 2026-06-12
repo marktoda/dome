@@ -1,10 +1,10 @@
 ---
 type: invariant
-description: "dome init scaffolds AGENTS.md (plus CLAUDE.md shim) as the agent orientation surface; refresh preserves the delimited user-prose block"
 created: 2026-05-27
 updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: dome init scaffolds AGENTS.md (plus CLAUDE.md shim) as the agent orientation surface; refresh preserves the delimited user-prose block
 enforced_by:
   - tests/invariants/agents-md-is-orientation-surface.test.ts
   - tests/harness/scenarios/cli-surface/init-claude-boot.scenario.test.ts

@@ -1,13 +1,13 @@
 ---
 type: spec
-description: "Banked, unimplemented dense-vector retrieval design — embed envelope, model.embed tier, recomputable embeddings.db — gated on logged BM25 misses"
 created: 2026-06-09
-updated: 2026-06-09
+updated: 2026-06-12
 sources:
   - "[[memory]]"
   - "[[v1]]"
   - "[[wiki/specs/projection-store]]"
   - "[[wiki/specs/capabilities]]"
+description: Banked, unimplemented dense-vector retrieval design — embed envelope, model.embed tier, recomputable embeddings.db — gated on logged BM25 misses
 status: draft
 ---
 

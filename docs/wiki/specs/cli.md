@@ -1,11 +1,11 @@
 ---
 type: spec
-description: "Normative command-by-command CLI spec: capture, sync, status, check, resolve, query, today, log, serve/install, mcp, http, recipe and more"
 created: 2026-05-27
 updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
+description: "Normative command-by-command CLI spec: capture, sync, status, check, resolve, query, today, log, serve/install, mcp, http, recipe and more"
 ---
 
 # CLI

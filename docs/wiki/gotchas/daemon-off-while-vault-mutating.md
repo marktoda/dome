@@ -1,11 +1,11 @@
 ---
 type: gotcha
-description: "Vault keeps mutating while no compiler host runs; days of accumulated commits make the next serve/sync catch-up Proposal large and slow."
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
+description: Vault keeps mutating while no compiler host runs; days of accumulated commits make the next serve/sync catch-up Proposal large and slow.
 enforced_at: src/engine/core/adopt.ts
 enforced_at_status: deferred
 first_observed: 2026-05-27

@@ -1,11 +1,11 @@
 ---
 type: spec
-description: "Capture loop: dome capture commits inbox/raw files with no engine call, iOS Shortcut/HTTP recipes, iCloud queue fallback, captureId dedupe"
 created: 2026-06-09
 updated: 2026-06-12
 sources:
   - "[[wedge]]"
   - "[[v1]]"
+description: "Capture loop: dome capture commits inbox/raw files with no engine call, iOS Shortcut/HTTP recipes, iCloud queue fallback, captureId dedupe"
 ---
 
 # Capture

@@ -1,11 +1,11 @@
 ---
 type: gotcha
-description: "Bundle load order or colliding registry keys make openVault fail with bundle-load-failed/registry-build-failed; the vault won't open."
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
+description: Bundle load order or colliding registry keys make openVault fail with bundle-load-failed/registry-build-failed; the vault won't open.
 enforced_at: tests/extensions/loader.test.ts
 first_observed: 2026-05-26 (v0.5 dailies-bundle phase)
 severity: medium

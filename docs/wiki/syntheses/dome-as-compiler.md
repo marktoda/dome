@@ -1,11 +1,19 @@
 ---
 type: synthesis
-description: "Tests the 'compiler for your second brain' framing against real compilers; concludes Dome is closer to a language server + build system."
+tags:
+  - compiler
+  - architecture
+  - positioning
 created: 2026-05-28
-updated: 2026-05-28
-sources: ["[[VISION]]", "[[wiki/specs/adoption]]", "[[wiki/specs/harnesses]]", "[[wiki/specs/cli]]", "[[wiki/concepts/llm-wiki-pattern]]"]
+updated: 2026-06-12
+sources:
+  - "[[VISION]]"
+  - "[[wiki/specs/adoption]]"
+  - "[[wiki/specs/harnesses]]"
+  - "[[wiki/specs/cli]]"
+  - "[[wiki/concepts/llm-wiki-pattern]]"
+description: Tests the 'compiler for your second brain' framing against real compilers; concludes Dome is closer to a language server + build system.
 status: draft
-tags: ["compiler", "architecture", "positioning"]
 ---
 
 # Dome as a compiler — anatomy, where the analogy breaks, and what to borrow

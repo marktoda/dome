@@ -1,12 +1,13 @@
 ---
 type: gotcha
-description: "Concurrent writes from multiple surfaces (sessions, mobile, remote hosts) can overwrite each other; v1 lacks a single merge-boundary policy."
 created: 2026-05-25
-updated: 2026-05-29
-severity: medium
-coverage: deferred  # v1 multi-surface conflict policy remains a roadmap item
+updated: 2026-06-12
+sources:
+  - "[[cohesive/brainstorms/2026-05-25-dome-vision]]"
+coverage: deferred
+description: Concurrent writes from multiple surfaces (sessions, mobile, remote hosts) can overwrite each other; v1 lacks a single merge-boundary policy.
 first_observed: 2026-05-25
-sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
+severity: medium
 ---
 
 # Concurrent harness write

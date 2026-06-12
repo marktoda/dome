@@ -1,11 +1,11 @@
 ---
 type: spec
-description: "runs.db audit ledger: one row per processor invocation plus CapabilityUse rows; complements Dome-* trailers and survives projection rebuilds"
 created: 2026-05-27
 updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
+description: "runs.db audit ledger: one row per processor invocation plus CapabilityUse rows; complements Dome-* trailers and survives projection rebuilds"
 ---
 
 # Run ledger

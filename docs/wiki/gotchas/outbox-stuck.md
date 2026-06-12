@@ -1,11 +1,11 @@
 ---
 type: gotcha
-description: "Outbox rows stuck in status failed with high attempts; expected external actions (calendar, webhooks, notifications) never fire."
 created: 2026-05-27
-updated: 2026-06-02
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
+description: Outbox rows stuck in status failed with high attempts; expected external actions (calendar, webhooks, notifications) never fire.
 enforced_at: src/outbox/dispatch.ts
 enforced_at_status: deferred
 first_observed: 2026-05-27 (anticipated; surfaced in v1 design)

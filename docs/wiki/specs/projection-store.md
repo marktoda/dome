@@ -1,11 +1,11 @@
 ---
 type: spec
-description: "Bun.sqlite derived-state layer: rebuildable projection.db keyed by a four-part cache tuple vs durable answers/runs/outbox stores; FTS5 search"
 created: 2026-05-27
 updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
+description: "Bun.sqlite derived-state layer: rebuildable projection.db keyed by a four-part cache tuple vs durable answers/runs/outbox stores; FTS5 search"
 ---
 
 # Projection store

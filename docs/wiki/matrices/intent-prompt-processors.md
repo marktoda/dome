@@ -1,10 +1,10 @@
 ---
 type: matrix
-description: "Maps user intents (capture, maintain, recall, schedule) to the handling processor, its phase, prompt source, and effects emitted."
 created: 2026-05-27
 updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: Maps user intents (capture, maintain, recall, schedule) to the handling processor, its phase, prompt source, and effects emitted.
 ---
 
 # Intent × prompt × processor matrix

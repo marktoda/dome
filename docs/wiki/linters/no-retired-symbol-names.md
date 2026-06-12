@@ -1,10 +1,10 @@
 ---
 type: linter
-description: "Greps wiki docs for retired v0.5 names (Tool, Hook, Workflow, dead invariants) so normative pages cannot drift back to the old substrate."
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: Greps wiki docs for retired v0.5 names (Tool, Hook, Workflow, dead invariants) so normative pages cannot drift back to the old substrate.
 status: v1 (proposed; lockstep-check landing in Phase 1 of implementation)
 ---
 

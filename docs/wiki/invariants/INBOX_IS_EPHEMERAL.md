@@ -1,10 +1,10 @@
 ---
 type: invariant
-description: "Files in inbox/<bucket> must be ingested within 168h; dome.agent.inbox-stale-check emits inbox.stale warning diagnostics for lingering files"
 created: 2026-05-27
 updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: Files in inbox/<bucket> must be ingested within 168h; dome.agent.inbox-stale-check emits inbox.stale warning diagnostics for lingering files
 enforced_by:
   - tests/harness/scenarios/cli-surface/capture-ingest-captured-block.scenario.test.ts
 tier: shipped-default

@@ -1,11 +1,11 @@
 ---
 type: spec
-description: "The Processor type — snapshot in, effects out — across adoption/garden/view phases with five trigger kinds; replaces v0.5 Tools/Hooks/Workflows"
 created: 2026-05-27
 updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
+description: The Processor type — snapshot in, effects out — across adoption/garden/view phases with five trigger kinds; replaces v0.5 Tools/Hooks/Workflows
 ---
 
 # Processors

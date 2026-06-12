@@ -1,11 +1,11 @@
 ---
 type: gotcha
-description: "After a bundle upgrade, projection.db retains facts from the old processor version, mixing old- and new-format facts in query results."
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
+description: After a bundle upgrade, projection.db retains facts from the old processor version, mixing old- and new-format facts in query results.
 enforced_at: src/projections/db.ts
 enforced_at_status: shipped
 first_observed: 2026-05-27 (anticipated; surfaced in v1 design)

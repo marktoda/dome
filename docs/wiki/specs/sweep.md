@@ -1,10 +1,10 @@
 ---
 type: spec
-description: "Nightly dome.agent.sweep integration: deterministic queue, settlement via destination sources: links (ledger advisory), safe cursor, escalation"
 created: 2026-06-10
 updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-06-09-meaning-consolidation-claims-and-sweeper]]"
+description: "Nightly dome.agent.sweep integration: deterministic queue, settlement via destination sources: links (ledger advisory), safe cursor, escalation"
 ---
 
 # Sweep

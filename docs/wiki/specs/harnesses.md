@@ -1,11 +1,11 @@
 ---
 type: spec
-description: "How agentic harnesses (Claude Code etc.) connect: the four-surface compiler-boundary contract — AGENTS.md, CLI, compiler host, dome sync"
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
+description: "How agentic harnesses (Claude Code etc.) connect: the four-surface compiler-boundary contract — AGENTS.md, CLI, compiler host, dome sync"
 ---
 
 # Harnesses

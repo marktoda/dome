@@ -1,6 +1,5 @@
 ---
 type: spec
-description: "Daily note as product surface: normative section and block-ownership tables, 24-hour edition choreography, wake-tick ordering, degradation ladder"
 created: 2026-06-10
 updated: 2026-06-12
 sources:
@@ -8,6 +7,7 @@ sources:
   - "[[wiki/specs/task-lifecycle]]"
   - "[[wiki/specs/autonomous-agents]]"
   - "[[wiki/specs/sweep]]"
+description: "Daily note as product surface: normative section and block-ownership tables, 24-hour edition choreography, wake-tick ordering, degradation ladder"
 ---
 
 # Daily surface

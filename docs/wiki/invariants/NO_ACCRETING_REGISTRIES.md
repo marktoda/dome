@@ -1,10 +1,10 @@
 ---
 type: invariant
-description: "No vault file's contract is append-forever: indexes render from description: frontmatter, activity is git history; grants fence log.md/indexes"
 created: 2026-06-11
 updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-06-11-dome-v1-plan]]"
+description: "No vault file's contract is append-forever: indexes render from description: frontmatter, activity is git history; grants fence log.md/indexes"
 enforced_by:
   - tests/invariants/no-accreting-registries.test.ts
   - tests/extensions/dome.agent/grant-aware-tools.test.ts

@@ -1,10 +1,10 @@
 ---
 type: invariant
-description: "Every processor invocation writes one RunRecord row to runs.db with a terminal status, even when failed, skipped, timed out, or cancelled"
 created: 2026-05-27
 updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: Every processor invocation writes one RunRecord row to runs.db with a terminal status, even when failed, skipped, timed out, or cancelled
 enforced_by:
   - tests/ledger/runs.test.ts
   - tests/processors/runtime-ledger.test.ts

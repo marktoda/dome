@@ -1,11 +1,11 @@
 ---
 type: gotcha
-description: "Malformed config/manifest/state YAML or JSON skipping Zod boundary parsing explodes deep downstream with errors that blame the wrong code."
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
+description: Malformed config/manifest/state YAML or JSON skipping Zod boundary parsing explodes deep downstream with errors that blame the wrong code.
 enforced_at: src/extensions/loader.ts
 first_observed: 2026-05-27
 severity: medium

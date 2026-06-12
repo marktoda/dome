@@ -1,11 +1,13 @@
 ---
 type: synthesis
-description: "Positions Dome against Mem, Tana, Granola, Obsidian, etc.: invariant-enforcing compiled memory that mounts under existing tools."
+tags:
+  - positioning
 created: 2026-05-25
-updated: 2026-05-25
-sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
+updated: 2026-06-12
+sources:
+  - "[[cohesive/brainstorms/2026-05-25-dome-vision]]"
+description: "Positions Dome against Mem, Tana, Granola, Obsidian, etc.: invariant-enforcing compiled memory that mounts under existing tools."
 status: draft
-tags: ["positioning"]
 ---
 
 # Why Dome vs. Mem / Tana / Granola / others

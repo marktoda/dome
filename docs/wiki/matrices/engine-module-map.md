@@ -1,10 +1,10 @@
 ---
 type: matrix
-description: "Maps every src/engine/ module to its layer (core/garden/operational/host) — the placement table the import-direction linter enforces."
 created: 2026-06-10
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/reviews/2026-06-10-oop-abstraction-layers-architecture-review]]"
+description: Maps every src/engine/ module to its layer (core/garden/operational/host) — the placement table the import-direction linter enforces.
 ---
 
 # Engine module map

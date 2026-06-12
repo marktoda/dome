@@ -1,11 +1,11 @@
 ---
 type: gotcha
-description: "Operator surfaces (doctor checks, diagnostic repair hints) hardcode first-party bundle lists, so third-party bundles render second-class."
 created: 2026-06-10
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[wiki/specs/sdk-surface]]"
 coverage: off-matrix
+description: Operator surfaces (doctor checks, diagnostic repair hints) hardcode first-party bundle lists, so third-party bundles render second-class.
 enforced_at: tests/extensions/loader.test.ts
 first_observed: 2026-06-10 (architecture review; loops + shared_config converted same day)
 ---

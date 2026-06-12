@@ -1,6 +1,5 @@
 ---
 type: spec
-description: "Agent-as-processor framework: the ctx.modelInvoke.step tool-loop seam, shipped ingest/consolidate/brief/sweep agents, grant-as-boundary writes"
 created: 2026-06-08
 updated: 2026-06-12
 sources:
@@ -8,6 +7,7 @@ sources:
   - "[[wedge]]"
   - "[[wiki/specs/processors]]"
   - "[[wiki/specs/capabilities]]"
+description: "Agent-as-processor framework: the ctx.modelInvoke.step tool-loop seam, shipped ingest/consolidate/brief/sweep agents, grant-as-boundary writes"
 ---
 
 # Autonomous agents
