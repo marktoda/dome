@@ -52,6 +52,7 @@
 //     outer try/catch wraps any leaked throw as a `scheduler.crashed`
 //     diagnostic so the operator surface is honest.
 
+import { compareStrings } from "../../core/compare";
 import {
   diagnosticEffect,
   type DiagnosticEffect,
@@ -270,12 +271,25 @@ async function runSchedulerInner(opts: {
     }
   }
 
-  for (const { processor, phase, cron } of candidates) {
-    if (signal?.aborted === true) {
-      skipped.push({ processorId: processor.id, reason: "cancelled" });
-      break;
-    }
+  // ----- Evaluation pass ------------------------------------------------
+  // Decide which candidates are due BEFORE dispatching any of them, so the
+  // dispatch pass can run in deterministic cron-time order. A wake-tick
+  // burst (the laptop slept through several crons; missed intervals collapse
+  // to one fire each) must dispatch simultaneously-due processors in the
+  // order their crons came due — sources fetch (05:10) before index render
+  // (05:15) before the brief (05:30) — not in registry (alphabetical-by-id)
+  // order. Tiebreak for equal due times: processor id.
+  const due: {
+    readonly processor: Processor<unknown>;
+    readonly phase: "garden";
+    readonly cron: string;
+    readonly previousLastFire: string | null;
+    /** When this fire came due. Brand-new processors (no cursor, no ledger
+     * history) became due "now" — they sort after every missed cron. */
+    readonly dueAt: Date;
+  }[] = [];
 
+  for (const { processor, phase, cron } of candidates) {
     let parsed: ParsedCron;
     try {
       parsed = parseCron(cron);
@@ -310,21 +324,30 @@ async function runSchedulerInner(opts: {
     //      nextFire from now, and do not retroactively fire.
     //   3. Cursor exists, cron matches: compute nextFire(parsed, lastFireDate);
     //      fire if nextFire <= nowDate.
-    let shouldFire: boolean;
-    let previousLastFire: string | null;
     if (cursor === null) {
       const ledgerLastFire =
         ledger === undefined
           ? null
           : latestScheduleRunStartedAt(ledger, processor.id);
       if (ledgerLastFire === null) {
-        shouldFire = true;
-        previousLastFire = null;
+        due.push({
+          processor,
+          phase,
+          cron,
+          previousLastFire: null,
+          dueAt: nowDate,
+        });
       } else {
-        previousLastFire = ledgerLastFire;
         const nextFireDate = nextFire(parsed, new Date(ledgerLastFire));
-        shouldFire = nextFireDate.getTime() <= nowDate.getTime();
-        if (!shouldFire) {
+        if (nextFireDate.getTime() <= nowDate.getTime()) {
+          due.push({
+            processor,
+            phase,
+            cron,
+            previousLastFire: ledgerLastFire,
+            dueAt: nextFireDate,
+          });
+        } else {
           // Re-seed the cursor so the next tick reads case 3 directly.
           upsertCursor(projection, {
             processorId: processor.id,
@@ -332,10 +355,10 @@ async function runSchedulerInner(opts: {
             lastFire: ledgerLastFire,
             nextFire: nextFireDate.toISOString(),
           });
+          skipped.push({ processorId: processor.id, reason: "not-due" });
         }
       }
     } else if (cursor.cron !== cron) {
-      previousLastFire = cursor.lastFire;
       upsertCursor(projection, {
         processorId: processor.id,
         cron,
@@ -343,18 +366,38 @@ async function runSchedulerInner(opts: {
         nextFire: nextFire(parsed, nowDate).toISOString(),
       });
       skipped.push({ processorId: processor.id, reason: "cron-changed" });
-      continue;
     } else {
-      previousLastFire = cursor.lastFire;
-      const lastFireDate = new Date(cursor.lastFire);
-      const nextFireDate = nextFire(parsed, lastFireDate);
-      shouldFire = nextFireDate.getTime() <= nowDate.getTime();
+      const nextFireDate = nextFire(parsed, new Date(cursor.lastFire));
+      if (nextFireDate.getTime() <= nowDate.getTime()) {
+        due.push({
+          processor,
+          phase,
+          cron,
+          previousLastFire: cursor.lastFire,
+          dueAt: nextFireDate,
+        });
+      } else {
+        skipped.push({ processorId: processor.id, reason: "not-due" });
+      }
     }
+  }
 
-    if (!shouldFire) {
-      skipped.push({ processorId: processor.id, reason: "not-due" });
-      continue;
+  due.sort(
+    (a, b) =>
+      a.dueAt.getTime() - b.dueAt.getTime() ||
+      compareStrings(a.processor.id, b.processor.id),
+  );
+
+  // ----- Dispatch pass --------------------------------------------------
+  for (const { processor, phase, cron, previousLastFire } of due) {
+    if (signal?.aborted === true) {
+      skipped.push({ processorId: processor.id, reason: "cancelled" });
+      break;
     }
+    // parseCron succeeded in the evaluation pass; re-parse for the cursor
+    // computation below (cheap, and keeps the due entry free of parser
+    // state).
+    const parsed = parseCron(cron);
 
     let success: boolean;
     try {
