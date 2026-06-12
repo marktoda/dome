@@ -374,6 +374,10 @@ function knownFieldsFor(schema: PageTypeSchema): ReadonlySet<string> {
     "updated",
     "sources",
     "tags",
+    // description is universal because the missing-description nudge asks
+    // every required-mode page for one regardless of type — extension types
+    // must not be flagged for complying.
+    "description",
     ...schema.required,
     ...schema.optional,
   ]);

@@ -10,6 +10,28 @@ import { makeProcessorContext } from "../../src/processors/context";
 const HEAD_COMMIT = commitOid("2222222222222222222222222222222222222222");
 
 const MISSING_DESCRIPTION_CODE = "dome.markdown.missing-description";
+const UNKNOWN_FIELD_CODE = "dome.markdown.unknown-frontmatter-field";
+
+describe("dome.markdown.lint-frontmatter — description is universally known", () => {
+  // The missing-description nudge fires on every required-mode page
+  // regardless of type, so `description:` must be a known field on every
+  // page type — including vault-local extension types that don't declare
+  // it in frontmatter_extras. Otherwise the two rules contradict: comply
+  // with the nudge and unknown-frontmatter-field flags the result.
+  test("extension-type page with description gets no unknown-field finding", async () => {
+    const diagnostics = await runLint({
+      ".dome/page-types.yaml": "extensions:\n  - name: spec\n",
+      "wiki/specs/with-desc.md":
+        '---\ntype: spec\ndescription: "what this spec pins"\n---\n# S\n',
+    });
+    expect(
+      diagnostics.some((d) => d.code === UNKNOWN_FIELD_CODE),
+    ).toBe(false);
+    expect(
+      diagnostics.some((d) => d.code === MISSING_DESCRIPTION_CODE),
+    ).toBe(false);
+  });
+});
 
 describe("dome.markdown.lint-frontmatter — missing description (gradual-fill nudge)", () => {
   test("wiki page without description gets an info-severity missing-description finding", async () => {
