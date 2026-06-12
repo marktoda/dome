@@ -9,8 +9,8 @@ import type {
   ManifestGrantEntry,
   ManifestGrantEntryRequirement,
 } from "../../extensions/manifest-schema";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
 import { Database } from "bun:sqlite";
 
 import { computeAnswersSchemaHash } from "../../answers/db";
@@ -270,6 +270,20 @@ export type HealthFinding =
       };
     }
   | {
+      readonly code: "sources.fetch-script-missing";
+      readonly severity: "warning";
+      readonly subject: "config";
+      readonly id: string;
+      readonly message: string;
+      readonly recovery: string;
+      readonly sources: {
+        /** The enabled subscription's kind (the config map key). */
+        readonly kind: string;
+        /** The script path the subscription command references. */
+        readonly scriptPath: string;
+      };
+    }
+  | {
       readonly code: "daily.edition-not-compiled";
       readonly severity: "warning";
       readonly subject: "daily";
@@ -317,6 +331,7 @@ export type HealthSummary = {
   readonly modelProviderKeyMissing: number;
   readonly dailyPathMismatch: number;
   readonly sourcesTimeoutDefault: number;
+  readonly sourcesFetchScriptMissing: number;
   readonly dailyEditionNotCompiled: number;
   readonly dailyCalendarSourceMissing: number;
 };
@@ -447,6 +462,23 @@ export async function collectHealthReport(opts: {
           externalHandlerTimeoutConfigured:
             opts.externalHandlerTimeoutConfigured === true,
         });
+  const sourcesFetchScript =
+    opts.extensionConfigFor === undefined
+      ? []
+      : sourcesFetchScriptFindings({
+          extensions: opts.extensions,
+          extensionConfigFor: opts.extensionConfigFor,
+          scriptIsFile: (scriptPath) => {
+            const resolved = isAbsolute(scriptPath)
+              ? scriptPath
+              : join(opts.vaultPath, scriptPath);
+            try {
+              return statSync(resolved).isFile();
+            } catch {
+              return false;
+            }
+          },
+        });
   const dailyEdition =
     opts.registry === undefined
       ? []
@@ -468,6 +500,7 @@ export async function collectHealthReport(opts: {
     ...modelProviderProbe,
     ...dailyPathMismatch,
     ...sourcesTimeout,
+    ...sourcesFetchScript,
     ...dailyEdition,
     ...failedOutbox.map(outboxFinding),
     ...stuckPendingOutbox.map(stuckPendingOutboxFinding),
@@ -528,6 +561,7 @@ function buildHealthReport(
       modelProviderKeyMissing: count("model.provider-key-missing"),
       dailyPathMismatch: count("config.daily-path-mismatch"),
       sourcesTimeoutDefault: count("config.sources-timeout-default"),
+      sourcesFetchScriptMissing: count("sources.fetch-script-missing"),
       dailyEditionNotCompiled: count("daily.edition-not-compiled"),
       dailyCalendarSourceMissing: count("daily.calendar-source-missing"),
     }),
@@ -901,6 +935,23 @@ export function sourcesHandlerTimeoutFindings(opts: {
 function enabledSubscriptionKinds(
   config: Readonly<Record<string, unknown>>,
 ): ReadonlyArray<string> {
+  return Object.freeze(
+    enabledSubscriptionEntries(config).map((entry) => entry.kind),
+  );
+}
+
+/**
+ * The `enabled: true` entries of
+ * `extensions.dome.sources.config.subscriptions`, sorted by kind.
+ * Fallback-not-crash like `enabledSubscriptionKinds` (which derives from
+ * this): junk shapes yield no entries.
+ */
+function enabledSubscriptionEntries(
+  config: Readonly<Record<string, unknown>>,
+): ReadonlyArray<{
+  readonly kind: string;
+  readonly subscription: Readonly<Record<string, unknown>>;
+}> {
   const raw = config.subscriptions;
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
     return Object.freeze([]);
@@ -908,15 +959,99 @@ function enabledSubscriptionKinds(
   return Object.freeze(
     Object.entries(raw as Record<string, unknown>)
       .filter(
-        ([, entry]) =>
-          entry !== null &&
-          typeof entry === "object" &&
-          !Array.isArray(entry) &&
-          (entry as Record<string, unknown>).enabled === true,
+        (pair): pair is [string, Record<string, unknown>] => {
+          const entry = pair[1];
+          return (
+            entry !== null &&
+            typeof entry === "object" &&
+            !Array.isArray(entry) &&
+            (entry as Record<string, unknown>).enabled === true
+          );
+        },
       )
-      .map(([kind]) => kind)
-      .sort(compareStrings),
+      .map(([kind, subscription]) => Object.freeze({ kind, subscription }))
+      .sort((a, b) => compareStrings(a.kind, b.kind)),
   );
+}
+
+/**
+ * The missing-fetch-script probe (`sources.fetch-script-missing`): an
+ * enabled dome.sources subscription whose command references a script file
+ * that is missing (or not a regular file) fails on every scheduled fetch.
+ * Doctor says so up front — kind, path, and the `dome init --with-source`
+ * recovery — instead of leaving the owner to decode failed outbox rows the
+ * next morning.
+ *
+ * STATIC by design: doctor never executes the fetch command (it would hit
+ * Slack/calendar for real). The script reference is derived without running
+ * anything: command[0] when it contains a path separator, else command[1]
+ * for the standard `["sh", ".dome/bin/fetch-<kind>.sh"]` interpreter shape
+ * (skipping flag arguments). Commands with no checkable reference — bare
+ * PATH lookups, `sh -c` inline scripts — are skipped: a false positive on a
+ * working command would be worse than silence, and their failures still
+ * surface through the outbox findings.
+ */
+export function sourcesFetchScriptFindings(opts: {
+  readonly extensions: ReadonlyArray<{ readonly name: string }>;
+  readonly extensionConfigFor: (
+    extensionId: string,
+  ) => Readonly<Record<string, unknown>>;
+  /** Whether `path` (vault-relative or absolute) is an existing regular file. */
+  readonly scriptIsFile: (path: string) => boolean;
+}): ReadonlyArray<HealthFinding> {
+  if (!opts.extensions.some((e) => e.name === "dome.sources")) {
+    return Object.freeze([]);
+  }
+  const findings: HealthFinding[] = [];
+  for (const { kind, subscription } of enabledSubscriptionEntries(
+    opts.extensionConfigFor("dome.sources"),
+  )) {
+    const scriptPath = referencedScriptPath(subscription.command);
+    if (scriptPath === null) continue;
+    if (opts.scriptIsFile(scriptPath)) continue;
+    findings.push(
+      Object.freeze({
+        code: "sources.fetch-script-missing" as const,
+        severity: "warning" as const,
+        subject: "config" as const,
+        id: `sources_fetch:${kind}`,
+        message:
+          `The enabled dome.sources "${kind}" subscription's fetch command ` +
+          `references ${scriptPath}, which is missing or not a regular ` +
+          "file — every scheduled fetch will fail.",
+        recovery:
+          `Run \`dome init --with-source ${kind}\` to scaffold the shipped ` +
+          `fetch adapter (shipped kinds: calendar, slack) and review it ` +
+          `before relying on it, write your own script at ${scriptPath}, ` +
+          "or fix the subscription command in .dome/config.yaml.",
+        sources: Object.freeze({ kind, scriptPath }),
+      }),
+    );
+  }
+  return Object.freeze(findings);
+}
+
+/**
+ * The script file a subscription command references, if any can be derived
+ * statically: command[0] when it carries a path separator (a direct script
+ * invocation), else command[1] when command[0] is a bare interpreter name
+ * and command[1] looks like a path rather than a flag. Null means "nothing
+ * checkable" — never a finding.
+ */
+function referencedScriptPath(command: unknown): string | null {
+  if (!Array.isArray(command)) return null;
+  const first = command[0];
+  if (typeof first !== "string" || first.length === 0) return null;
+  if (first.includes("/")) return first;
+  const second = command[1];
+  if (
+    typeof second === "string" &&
+    !second.startsWith("-") &&
+    second.includes("/")
+  ) {
+    return second;
+  }
+  return null;
 }
 
 // ----- Daily-edition choreography probes --------------------------------------
