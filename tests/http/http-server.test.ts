@@ -9,7 +9,7 @@
 // and question lists).
 
 import { afterAll, beforeEach, afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -356,6 +356,161 @@ describe("questions and resolve", () => {
       expect(status).toBe(404);
       expect(json.schema).toBe("dome.answer/v1");
       expect(json.error).toBe("question-not-found");
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+// ----- Request-body size cap -----------------------------------------------------------
+
+function rawInboxFiles(vault: string): string[] {
+  const dir = join(vault, "inbox", "raw");
+  return existsSync(dir) ? readdirSync(dir).sort() : [];
+}
+
+describe("request-body size cap", () => {
+  test(
+    "an oversized fixed-length capture POST is 413 and writes nothing",
+    async () => {
+      const f = await fixture();
+      const headBefore = (await log({ path: f.vault, depth: 1 }))[0]?.oid;
+      const filesBefore = rawInboxFiles(f.vault);
+
+      // Default cap is 1 MiB; send a body comfortably over it. The test
+      // fixture's Bun.serve does NOT set maxRequestBodySize, so this
+      // exercises the handler's own content-length gate end to end.
+      const { status, json } = await post("/capture", {
+        text: "x".repeat(1_200_000),
+        title: "way too big",
+      });
+      expect(status).toBe(413);
+      expect(json.status).toBe("error");
+      expect(json.error).toBe("payload-too-large");
+
+      const headAfter = (await log({ path: f.vault, depth: 1 }))[0]?.oid;
+      expect(headAfter).toBe(headBefore);
+      expect(rawInboxFiles(f.vault)).toEqual(filesBefore);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "a chunked body with no content-length is capped by the stream byte budget",
+    async () => {
+      const f = await fixture();
+      // Direct handler call with a small cap: a streamed Request carries no
+      // content-length header, so only the bounded read can stop it (Bun's
+      // maxRequestBodySize does not enforce on chunked bodies — verified
+      // against Bun 1.2.x).
+      const handler = createDomeHttpServer({
+        vaultPath: f.vault,
+        token: TOKEN,
+        maxBodyBytes: 64,
+      });
+      const filesBefore = rawInboxFiles(f.vault);
+      const payload = JSON.stringify({ text: "y".repeat(500) });
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const bytes = new TextEncoder().encode(payload);
+          for (let i = 0; i < bytes.length; i += 50) {
+            controller.enqueue(bytes.slice(i, i + 50));
+          }
+          controller.close();
+        },
+      });
+      const res = await handler.fetch(
+        new Request("http://dome.test/capture", {
+          method: "POST",
+          headers: { authorization: `Bearer ${TOKEN}` },
+          body: stream,
+        }),
+      );
+      expect(res.status).toBe(413);
+      const json = (await res.json()) as Record<string, unknown>;
+      expect(json.error).toBe("payload-too-large");
+      expect(rawInboxFiles(f.vault)).toEqual(filesBefore);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "a small body under a custom cap flows through unaffected",
+    async () => {
+      const f = await fixture();
+      const handler = createDomeHttpServer({
+        vaultPath: f.vault,
+        token: TOKEN,
+        maxBodyBytes: 64,
+      });
+      // 25 bytes < 64: the cap must not interfere — this reaches the
+      // ordinary resolve path (unknown id → 404 answer envelope).
+      const res = await handler.fetch(
+        new Request("http://dome.test/resolve", {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${TOKEN}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ id: 999_999, value: "x" }),
+        }),
+      );
+      expect(res.status).toBe(404);
+      const json = (await res.json()) as Record<string, unknown>;
+      expect(json.error).toBe("question-not-found");
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+// ----- Mutex concurrency ---------------------------------------------------------------
+
+describe("mutex concurrency", () => {
+  test(
+    "8 parallel mixed requests all succeed and the capture lands exactly once",
+    async () => {
+      const f = await fixture();
+      const captureSlug = "parallel-mutex-probe";
+      const captureMessage = "capture: parallel mutex capture";
+
+      // Fire everything at once: reads that open the vault runtime, the
+      // status snapshot, and TWO captures sharing one captureId. The mutex
+      // must serialize them: every request succeeds, and the second capture
+      // sees the first's file through the dedup scan (`duplicate`) instead
+      // of racing it past the scan and double-filing.
+      const captureBody = {
+        text: "parallel mutex capture",
+        captureId: captureSlug,
+      };
+      const results = await Promise.all([
+        get("/query?text=omega"),
+        get("/query?text=launch%20roadmap"),
+        get(`/tasks?date=${TODAY}`),
+        get("/tasks"),
+        get("/status"),
+        get("/doc?path=wiki/project-omega.md"),
+        post("/capture", captureBody),
+        post("/capture", captureBody),
+      ]);
+
+      for (const r of results) expect(r.status).toBe(200);
+      const captureStatuses = [results[6].json.status, results[7].json.status];
+      expect(captureStatuses.sort()).toEqual(["captured", "duplicate"]);
+
+      // No interleaving corruption: exactly one capture file for the id,
+      // and both responses point at it.
+      const landed = rawInboxFiles(f.vault).filter((name) =>
+        name.endsWith(`-${captureSlug}.md`),
+      );
+      expect(landed.length).toBe(1);
+      expect(results[6].json.path).toBe(`inbox/raw/${landed[0]}`);
+      expect(results[7].json.path).toBe(`inbox/raw/${landed[0]}`);
+
+      // …and exactly one capture commit, sitting on an intact history.
+      const entries = await log({ path: f.vault, depth: 50 });
+      const captureCommits = entries.filter((e) =>
+        e.commit.message.startsWith(captureMessage),
+      );
+      expect(captureCommits.length).toBe(1);
     },
     TEST_TIMEOUT_MS,
   );

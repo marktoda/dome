@@ -70,6 +70,15 @@ const SERVER_SCHEMA = "dome.http/v1";
 const DOCUMENT_SCHEMA = "dome.http.document/v1";
 const QUESTIONS_SCHEMA = "dome.http.questions/v1";
 
+/**
+ * Default request-body cap (1 MiB) — far above any honest capture, far below
+ * anything that could pressure a 24/7 LaunchAgent's memory. The handler owns
+ * this check (content-length gate + bounded stream read) because Bun's
+ * `maxRequestBodySize` does not enforce on chunked bodies (verified against
+ * Bun 1.2.x); `dome http` still sets Bun's limit as a backstop.
+ */
+export const DEFAULT_MAX_BODY_BYTES = 1_048_576;
+
 
 // ----- Public types ---------------------------------------------------------
 
@@ -78,6 +87,13 @@ export type DomeHttpServerOptions = {
   readonly bundlesRoot?: string | undefined;
   /** Bearer token every request must present. Must be non-empty. */
   readonly token: string;
+  /**
+   * Reject POST bodies larger than this with 413 `payload-too-large`
+   * (default `DEFAULT_MAX_BODY_BYTES`, 1 MiB). Enforced on the declared
+   * `content-length` when present and by a bounded stream read otherwise,
+   * so chunked bodies cannot bypass it.
+   */
+  readonly maxBodyBytes?: number | undefined;
 };
 
 export type DomeHttpServer = {
@@ -97,8 +113,15 @@ export function createDomeHttpServer(
   if (opts.token.trim().length === 0) {
     throw new Error("dome http: a non-empty bearer token is required");
   }
+  if (
+    opts.maxBodyBytes !== undefined &&
+    (!Number.isInteger(opts.maxBodyBytes) || opts.maxBodyBytes <= 0)
+  ) {
+    throw new Error("dome http: maxBodyBytes must be a positive integer");
+  }
   const vault = opts.vaultPath;
   const bundlesRoot = opts.bundlesRoot;
+  const maxBodyBytes = opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   const tokenDigest = sha256(opts.token);
   const enqueue = makeVaultMutex();
 
@@ -146,7 +169,9 @@ export function createDomeHttpServer(
         return jsonResponse(200, { schema: SERVER_SCHEMA, server: "dome", vault });
 
       case "POST /capture": {
-        const body = await jsonBody(request);
+        const read = await jsonBody(request, maxBodyBytes);
+        if (read.kind === "too-large") return payloadTooLargeResponse(maxBodyBytes);
+        const body = read.body;
         if (body === null || typeof body.text !== "string" || body.text.trim().length === 0) {
           return errorResponse(400, "capture-usage", "POST /capture requires a JSON body with non-empty `text` (optional `title`, `captureId`).");
         }
@@ -261,7 +286,9 @@ export function createDomeHttpServer(
         });
 
       case "POST /resolve": {
-        const body = await jsonBody(request);
+        const read = await jsonBody(request, maxBodyBytes);
+        if (read.kind === "too-large") return payloadTooLargeResponse(maxBodyBytes);
+        const body = read.body;
         const id = typeof body?.id === "number" && Number.isInteger(body.id) && body.id > 0
           ? body.id
           : null;
@@ -353,17 +380,71 @@ function sha256(value: string): Buffer {
   return createHash("sha256").update(value, "utf8").digest();
 }
 
+type JsonBodyRead =
+  | { readonly kind: "ok"; readonly body: Record<string, unknown> | null }
+  | { readonly kind: "too-large" };
+
+/**
+ * Read and parse a JSON request body without ever buffering more than
+ * `maxBytes` (`request.json()` / `request.text()` are unbounded). Two
+ * layers, both required:
+ *
+ *   1. A declared `content-length` over the cap answers `too-large`
+ *      before reading anything.
+ *   2. The body stream is read with a byte budget, so chunked or
+ *      lying-content-length bodies are cut off at the cap too. (Bun's
+ *      `maxRequestBodySize` does not enforce on chunked bodies as of
+ *      Bun 1.2.x — this read is the real guarantee on every host.)
+ *
+ * Malformed JSON / non-object payloads come back as `body: null`, exactly
+ * like the previous `request.json()` failure path.
+ */
 async function jsonBody(
   request: Request,
-): Promise<Record<string, unknown> | null> {
-  try {
-    const parsed: unknown = await request.json();
-    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
+  maxBytes: number,
+): Promise<JsonBodyRead> {
+  const declared = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    return { kind: "too-large" };
   }
+  if (request.body === null) return { kind: "ok", body: null };
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > maxBytes) {
+        await reader.cancel();
+        return { kind: "too-large" };
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  try {
+    const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    return {
+      kind: "ok",
+      body:
+        parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : null,
+    };
+  } catch {
+    return { kind: "ok", body: null };
+  }
+}
+
+function payloadTooLargeResponse(maxBytes: number): Response {
+  return errorResponse(
+    413,
+    "payload-too-large",
+    `request body exceeds the ${maxBytes}-byte limit.`,
+  );
 }
 
 function jsonResponse(status: number, data: unknown): Response {

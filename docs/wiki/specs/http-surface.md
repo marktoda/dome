@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-10
-updated: 2026-06-11
+updated: 2026-06-12
 sources:
   - "[[wiki/specs/capture]]"
   - "[[wiki/specs/sdk-surface]]"
@@ -49,7 +49,7 @@ below. One vault per process.
 
 Errors are JSON envelopes (`{status: "error", error, message}`) with honest
 HTTP codes: 400 usage, 401 auth, 404 missing, 409 unworkable git state,
-503 adopted-ref churn, 500 the rest.
+413 oversized body, 503 adopted-ref churn, 500 the rest.
 
 ## The cockpit page (`GET /today`)
 
@@ -115,6 +115,20 @@ Binds `127.0.0.1` by default; `--host` points it at a private
 `DOME_HTTP_TOKEN`; the server refuses to start without one. This is an
 owner-trust-domain surface like `dome mcp` — a hosted multi-tenant variant
 is hosted-protected (v1.5) territory and out of scope.
+
+### Request-body cap
+
+Even inside the trust domain, the server runs 24/7 and must not buffer
+unbounded bodies: POST bodies over `maxBodyBytes` (default 1 MiB,
+`DEFAULT_MAX_BODY_BYTES`) answer `413` `payload-too-large` with the standard
+error envelope, before anything is written to the vault. The handler owns
+the check — a declared `content-length` over the cap is rejected without
+reading, and the body stream is read with a byte budget so chunked or
+lying-length bodies cut off at the cap on any host. `dome http` additionally
+sets Bun's `maxRequestBodySize` (at twice the cap) as a backstop; Bun's
+limit alone is not sufficient because Bun 1.2.x does not enforce it on
+chunked bodies, and Bun's own rejection is a bare 413 without the envelope.
+Tests: `tests/http/http-server.test.ts` §"request-body size cap".
 
 ## Boundary notes
 
