@@ -17,7 +17,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { findGitRoot } from "../../git";
-import { createDomeHttpServer } from "../../http/server";
+import { createDomeHttpServer, DEFAULT_MAX_BODY_BYTES } from "../../http/server";
 import { resolveVaultPath } from "../../surface/resolve-vault";
 import { EX_USAGE } from "../exit-codes";
 
@@ -77,6 +77,13 @@ export async function runHttp(options: RunHttpOptions = {}): Promise<number> {
     const server = Bun.serve({
       hostname: options.host ?? DEFAULT_HOST,
       port,
+      // Defense-in-depth backstop above the handler's own 1 MiB cap: the
+      // handler answers 413 with the JSON error envelope (and is the only
+      // layer that catches chunked bodies — Bun 1.2.x does not enforce
+      // maxRequestBodySize on them); Bun's limit just hard-stops a
+      // pathological declared content-length with a bare 413 should the
+      // handler check ever regress.
+      maxRequestBodySize: DEFAULT_MAX_BODY_BYTES * 2,
       fetch: handler.fetch,
     });
     console.error(
