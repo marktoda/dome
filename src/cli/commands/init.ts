@@ -732,10 +732,12 @@ only the always-relevant summary here.
 
 This page is propose-only for Dome: agents read it but never auto-write
 it. Edit it yourself, or accept a Dome question that proposes a change.
-One exception: when you answer "promote" to a preference-promotion
-question, Dome maintains a marker-delimited promoted-preferences block
-under Standing preferences. Leave that block's markers alone; everything
-outside them is yours.
+Two exceptions, each a marker-delimited generated block Dome maintains:
+the promoted-preferences block under Standing preferences (written only
+when you answer "promote" to a preference-promotion question) and the
+active-projects block under Active projects (refreshed nightly from your
+open loops). Leave both blocks' markers alone; everything outside them
+is yours.
 -->
 
 ## Who I am
