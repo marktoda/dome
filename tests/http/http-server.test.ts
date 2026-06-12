@@ -462,6 +462,60 @@ describe("request-body size cap", () => {
   );
 });
 
+// ----- Mutex concurrency ---------------------------------------------------------------
+
+describe("mutex concurrency", () => {
+  test(
+    "8 parallel mixed requests all succeed and the capture lands exactly once",
+    async () => {
+      const f = await fixture();
+      const captureSlug = "parallel-mutex-probe";
+      const captureMessage = "capture: parallel mutex capture";
+
+      // Fire everything at once: reads that open the vault runtime, the
+      // status snapshot, and TWO captures sharing one captureId. The mutex
+      // must serialize them: every request succeeds, and the second capture
+      // sees the first's file through the dedup scan (`duplicate`) instead
+      // of racing it past the scan and double-filing.
+      const captureBody = {
+        text: "parallel mutex capture",
+        captureId: captureSlug,
+      };
+      const results = await Promise.all([
+        get("/query?text=omega"),
+        get("/query?text=launch%20roadmap"),
+        get(`/tasks?date=${TODAY}`),
+        get("/tasks"),
+        get("/status"),
+        get("/doc?path=wiki/project-omega.md"),
+        post("/capture", captureBody),
+        post("/capture", captureBody),
+      ]);
+
+      for (const r of results) expect(r.status).toBe(200);
+      const captureStatuses = [results[6].json.status, results[7].json.status];
+      expect(captureStatuses.sort()).toEqual(["captured", "duplicate"]);
+
+      // No interleaving corruption: exactly one capture file for the id,
+      // and both responses point at it.
+      const landed = rawInboxFiles(f.vault).filter((name) =>
+        name.endsWith(`-${captureSlug}.md`),
+      );
+      expect(landed.length).toBe(1);
+      expect(results[6].json.path).toBe(`inbox/raw/${landed[0]}`);
+      expect(results[7].json.path).toBe(`inbox/raw/${landed[0]}`);
+
+      // …and exactly one capture commit, sitting on an intact history.
+      const entries = await log({ path: f.vault, depth: 50 });
+      const captureCommits = entries.filter((e) =>
+        e.commit.message.startsWith(captureMessage),
+      );
+      expect(captureCommits.length).toBe(1);
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
 // ----- Fallthrough -------------------------------------------------------------------
 
 describe("fallthrough", () => {
