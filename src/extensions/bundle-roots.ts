@@ -45,6 +45,20 @@ export function resolveShippedModelProvidersRoot(): string {
   return fileURLToPath(url);
 }
 
+/**
+ * Returns the absolute path to the SDK's shipped source-handler templates
+ * directory (`<SDK>/assets/source-handlers/`). Same resolution story as
+ * `resolveShippedBundlesRoot`. The templates are shipped data —
+ * `dome init --with-source <kind>` copies one into the vault as
+ * `.dome/bin/fetch-<kind>.sh` — and are never imported by any `src/`
+ * module (they are shell scripts the vault owner reviews before enabling
+ * the matching dome.sources subscription).
+ */
+export function resolveShippedSourceHandlersRoot(): string {
+  const url = new URL("../../assets/source-handlers", import.meta.url);
+  return fileURLToPath(url);
+}
+
 export function resolveVaultLocalBundlesRoot(vaultPath: string): string {
   return join(vaultPath, ".dome", "extensions");
 }

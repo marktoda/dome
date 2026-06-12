@@ -32,6 +32,17 @@ describe("default vault config", () => {
     );
   });
 
+  test("source-subscription YAML round-trips to the typed defaults", () => {
+    expect(
+      parseYaml(defaultConfigYaml({ sources: ["calendar", "slack"] })),
+    ).toEqual(defaultConfigRecord({ sources: ["calendar", "slack"] }));
+    // `calendar` already ships in the dome.sources default — requesting it
+    // is a no-op on the rendered config.
+    expect(defaultConfigYaml({ sources: ["calendar"] })).toBe(
+      defaultConfigYaml(),
+    );
+  });
+
   test("enabled first-party defaults grant every declared capability kind", async () => {
     const root = mkdtempSync(join(tmpdir(), "dome-default-config-"));
     try {

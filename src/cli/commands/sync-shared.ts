@@ -29,6 +29,7 @@ export {
   resolveBundleRoots,
   resolveShippedBundlesRoot,
   resolveShippedModelProvidersRoot,
+  resolveShippedSourceHandlersRoot,
   resolveVaultLocalBundlesRoot,
   type ResolvedBundleRoots,
 } from "../../extensions/bundle-roots";

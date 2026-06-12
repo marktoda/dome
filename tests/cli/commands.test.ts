@@ -19,7 +19,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, statSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -45,6 +45,7 @@ import { runSync } from "../../src/cli/commands/sync";
 import {
   resolveShippedBundlesRoot,
   resolveShippedModelProvidersRoot,
+  resolveShippedSourceHandlersRoot,
 } from "../../src/cli/commands/sync-shared";
 import {
   defaultModelProviderConfig,
@@ -575,6 +576,153 @@ describe("runInit", () => {
     }
   });
 
+  test("--with-source scaffolds fetch adapters + disabled subscription stanzas (fresh vault)", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cli-init-sources-"));
+    try {
+      const code = await runInit({
+        path: target,
+        withSource: ["calendar", "slack"],
+      });
+      expect(code).toBe(0);
+
+      const configPath = join(target, ".dome", "config.yaml");
+      const calendarScript = join(target, ".dome", "bin", "fetch-calendar.sh");
+      const slackScript = join(target, ".dome", "bin", "fetch-slack.sh");
+      expect(existsSync(calendarScript)).toBe(true);
+      expect(existsSync(slackScript)).toBe(true);
+
+      // Executable bit: the subscription command is `sh .dome/bin/...`, but
+      // the scaffolded script must also be directly runnable.
+      expect(statSync(calendarScript).mode & 0o111).not.toBe(0);
+      expect(statSync(slackScript).mode & 0o111).not.toBe(0);
+
+      // Byte-for-byte copies of the shipped templates — init copies data,
+      // it does not generate code.
+      const handlersRoot = resolveShippedSourceHandlersRoot();
+      expect(await readFile(calendarScript, "utf8")).toBe(
+        await readFile(join(handlersRoot, "claude-calendar.sh"), "utf8"),
+      );
+      expect(await readFile(slackScript, "utf8")).toBe(
+        await readFile(join(handlersRoot, "claude-slack.sh"), "utf8"),
+      );
+
+      // Config carries BOTH subscription stanzas, each enabled: false (the
+      // consent flip stays with the owner), with the standard schedule /
+      // output_path / command.
+      const configBody = await readFile(configPath, "utf8");
+      expect(parseYaml(configBody)).toEqual(
+        defaultConfigRecord({ sources: ["calendar", "slack"] }),
+      );
+      const parsedConfig = record(parseYaml(configBody));
+      const sources = record(record(parsedConfig.extensions)["dome.sources"]);
+      const subscriptions = record(record(sources.config).subscriptions);
+      expect(subscriptions.calendar).toEqual({
+        enabled: false,
+        schedule: "10 5 * * *",
+        output_path: "sources/calendar/{date}.md",
+        command: ["sh", ".dome/bin/fetch-calendar.sh"],
+      });
+      expect(subscriptions.slack).toEqual({
+        enabled: false,
+        schedule: "15 5 * * *",
+        output_path: "sources/slack/{date}.md",
+        command: ["sh", ".dome/bin/fetch-slack.sh"],
+      });
+
+      // The scaffold commit includes the scripts (mirrors model-provider).
+      const head = await currentSha(target);
+      expect(head).not.toBeNull();
+      if (head !== null) {
+        expect(
+          await readBlob({
+            path: target,
+            commit: head,
+            filepath: ".dome/bin/fetch-slack.sh",
+          }),
+        ).toBe(await readFile(slackScript, "utf8"));
+      }
+
+      // Idempotent re-run: nothing changes, no new commit.
+      expect(
+        await runInit({ path: target, withSource: ["calendar", "slack"] }),
+      ).toBe(0);
+      expect(await readFile(configPath, "utf8")).toBe(configBody);
+      expect(await currentSha(target)).toBe(head);
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  test("--with-source slack on an EXISTING vault adds script + stanza without touching anything else", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cli-init-sources-existing-"));
+    try {
+      // A plain vault first (the work-vault use case).
+      expect(await runInit({ path: target })).toBe(0);
+      const configPath = join(target, ".dome", "config.yaml");
+      const agentsBody = await readFile(join(target, "AGENTS.md"), "utf8");
+      const head = await currentSha(target);
+
+      expect(await runInit({ path: target, withSource: ["slack"] })).toBe(0);
+
+      const slackScript = join(target, ".dome", "bin", "fetch-slack.sh");
+      expect(existsSync(slackScript)).toBe(true);
+      expect(statSync(slackScript).mode & 0o111).not.toBe(0);
+
+      const parsedConfig = record(
+        parseYaml(await readFile(configPath, "utf8")),
+      );
+      const sources = record(record(parsedConfig.extensions)["dome.sources"]);
+      const subscriptions = record(record(sources.config).subscriptions);
+      expect(record(subscriptions.slack).enabled).toBe(false);
+      // The pre-existing calendar default stanza is untouched.
+      expect(subscriptions.calendar).toEqual({
+        enabled: false,
+        schedule: "10 5 * * *",
+        output_path: "sources/calendar/{date}.md",
+        command: ["sh", ".dome/bin/fetch-calendar.sh"],
+      });
+      // Everything else parses identically to the defaults with slack added.
+      expect(parseYaml(await readFile(configPath, "utf8"))).toEqual(
+        defaultConfigRecord({ sources: ["slack"] }),
+      );
+      // Orientation untouched; no new commit (existing vault, HEAD already
+      // resolved — committing the new files stays with the owner).
+      expect(await readFile(join(target, "AGENTS.md"), "utf8")).toBe(agentsBody);
+      expect(await currentSha(target)).toBe(head);
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  test("--with-source never overwrites an existing script or flips an existing enabled", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cli-init-sources-owned-"));
+    try {
+      expect(await runInit({ path: target, withSource: ["slack"] })).toBe(0);
+
+      // Owner reviews the script, edits it, and flips consent on.
+      const slackScript = join(target, ".dome", "bin", "fetch-slack.sh");
+      const ownScript = "#!/bin/sh\necho mine\n";
+      await writeFile(slackScript, ownScript, "utf8");
+      const configPath = join(target, ".dome", "config.yaml");
+      const root = record(parseYaml(await readFile(configPath, "utf8")));
+      const sources = record(record(root.extensions)["dome.sources"]);
+      const subscriptions = record(record(sources.config).subscriptions);
+      record(subscriptions.slack).enabled = true;
+      const { stringify } = await import("yaml");
+      await writeFile(configPath, stringify(root), "utf8");
+
+      expect(await runInit({ path: target, withSource: ["slack"] })).toBe(0);
+
+      expect(await readFile(slackScript, "utf8")).toBe(ownScript);
+      const after = record(parseYaml(await readFile(configPath, "utf8")));
+      const afterSources = record(record(after.extensions)["dome.sources"]);
+      const afterSubs = record(record(afterSources.config).subscriptions);
+      expect(record(afterSubs.slack).enabled).toBe(true);
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
   test("--json emits a stable initialization summary", async () => {
     const target = mkdtempSync(join(tmpdir(), "cli-init-json-"));
     try {
@@ -594,6 +742,7 @@ describe("runInit", () => {
       expect(parsed.steps.signals_md).toBe("created");
       expect(parsed.steps.initial_commit).toBe("created");
       expect(parsed.steps.model_provider).toBe("skipped (not requested)");
+      expect(parsed.steps.sources).toBe("skipped (not requested)");
     } finally {
       await rm(target, { recursive: true, force: true });
     }
