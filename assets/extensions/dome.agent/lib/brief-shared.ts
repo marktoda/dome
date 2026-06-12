@@ -151,6 +151,105 @@ function parseMeetingLine(raw: string): CalendarMeeting | null {
   return Object.freeze({ time, title, attendees: Object.freeze(attendees) });
 }
 
+// ----- Slack digest parsing (defensive — the file is untrusted input) --------
+
+export type SlackDigestEntry = {
+  readonly channel: string | null;
+  readonly time: string | null;
+  readonly text: string;
+};
+
+export type SlackDigest = {
+  readonly mentions: ReadonlyArray<SlackDigestEntry>;
+  readonly dms: ReadonlyArray<SlackDigestEntry>;
+  readonly channels: ReadonlyArray<SlackDigestEntry>;
+};
+
+const MAX_SLACK_ITEMS_PER_SECTION = 15;
+const MAX_SLACK_TEXT_CHARS = 240;
+
+/**
+ * Parse a `sources/slack/YYYY-MM-DD.md` file per the vault-layout slack-day
+ * shape: optional frontmatter, three optional `## Mentions` /
+ * `## Direct messages` / `## Channels` sections, entries as top-level `- `
+ * items with an optional `[#channel]`/`[DM]` prefix and optional `HH:MM`
+ * time. Defensive by contract — mirrors `parseCalendarDay`: frontmatter and
+ * unknown headings are skipped, items outside a known section are dropped,
+ * unparseable items degrade to text-only entries, counts and text lengths
+ * are capped, and the output is data for a prompt, never instructions.
+ */
+export function parseSlackDigest(content: string): SlackDigest {
+  const mentions: SlackDigestEntry[] = [];
+  const dms: SlackDigestEntry[] = [];
+  const channels: SlackDigestEntry[] = [];
+  const sections: Record<string, SlackDigestEntry[]> = {
+    mentions,
+    "direct messages": dms,
+    channels,
+  };
+  let current: SlackDigestEntry[] | null = null;
+  const lines = content.split(/\r?\n/);
+  let inFrontmatter = false;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (i === 0 && line.trim() === "---") {
+      inFrontmatter = true;
+      continue;
+    }
+    if (inFrontmatter) {
+      if (line.trim() === "---") inFrontmatter = false;
+      continue;
+    }
+    const heading = /^##\s+(.+?)\s*$/.exec(line);
+    if (heading !== null) {
+      current = sections[(heading[1] ?? "").toLowerCase()] ?? null;
+      continue;
+    }
+    if (current === null || current.length >= MAX_SLACK_ITEMS_PER_SECTION) {
+      continue;
+    }
+    const item = /^\s*[-*]\s+(\S.*)$/.exec(line);
+    if (item === null) continue;
+    const entry = parseSlackEntryLine(item[1] ?? "");
+    if (entry !== null) current.push(entry);
+  }
+  return Object.freeze({
+    mentions: Object.freeze(mentions),
+    dms: Object.freeze(dms),
+    channels: Object.freeze(channels),
+  });
+}
+
+function parseSlackEntryLine(raw: string): SlackDigestEntry | null {
+  let rest = raw.trim();
+  if (rest.length === 0) return null;
+
+  let channel: string | null = null;
+  const channelMatch = /^\[([^\]]+)\]\s*(.*)$/.exec(rest);
+  if (
+    channelMatch !== null &&
+    (channelMatch[1] ?? "").trim().length > 0 &&
+    (channelMatch[2] ?? "").trim().length > 0
+  ) {
+    channel = (channelMatch[1] ?? "").trim();
+    rest = (channelMatch[2] ?? "").trim();
+  }
+
+  let time: string | null = null;
+  const timeMatch = /^(\d{1,2}:\d{2})\s+(.*)$/.exec(rest);
+  if (timeMatch !== null && (timeMatch[2] ?? "").trim().length > 0) {
+    time = timeMatch[1] ?? null;
+    rest = (timeMatch[2] ?? "").trim();
+  }
+
+  if (rest.length === 0) return null;
+  const text =
+    rest.length > MAX_SLACK_TEXT_CHARS
+      ? `${rest.slice(0, MAX_SLACK_TEXT_CHARS - 1)}…`
+      : rest;
+  return Object.freeze({ channel, time, text });
+}
+
 // ----- Block plumbing --------------------------------------------------------
 //
 // Bounding is delegated to the line-anchored scanner in
