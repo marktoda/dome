@@ -556,7 +556,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       evidence: [
         { kind: "path", pattern: "wiki/dailies/*.md" },
         { kind: "path", pattern: "inbox/processed/*.md" },
-        { kind: "path", pattern: "sweep-ledger.md" },
+        { kind: "path", pattern: "meta/sweep-ledger.md" },
         { kind: "operational", name: "questions" },
         { kind: "operational", name: "diagnostics" },
         { kind: "operational", name: "runs" },
@@ -568,7 +568,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       surfaces: [
         { kind: "path", pattern: "wiki/entities/*.md" },
         { kind: "path", pattern: "wiki/concepts/*.md" },
-        { kind: "path", pattern: "sweep-ledger.md" },
+        { kind: "path", pattern: "meta/sweep-ledger.md" },
         { kind: "status", name: "check" },
       ],
       settlement: {
@@ -601,7 +601,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         { kind: "path", pattern: "sources/calendar/*.md" },
         // The 03:00 sweep's advisory ledger — the edition's deterministic
         // "Integrated overnight" digest renders today's run section from it.
-        { kind: "path", pattern: "sweep-ledger.md" },
+        { kind: "path", pattern: "meta/sweep-ledger.md" },
         { kind: "operational", name: "runs" },
         { kind: "operational", name: "diagnostics" },
       ],
