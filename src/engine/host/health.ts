@@ -337,6 +337,40 @@ export type HealthSummary = {
 };
 
 /**
+ * Finding code → HealthSummary count field. The single bookkeeping
+ * surface for per-code counts: `buildHealthReport` derives the summary's
+ * count fields from this table, and the `satisfies` clause enforces at
+ * compile time that every finding code has exactly one summary field
+ * (and that the field exists on HealthSummary). Row order is the JSON
+ * key order of the emitted summary — `dome doctor --json` is a pinned
+ * surface, so append-only edits here must keep field order in mind.
+ */
+const SUMMARY_FIELD_BY_CODE = Object.freeze({
+  "outbox.failed": "failedOutbox",
+  "outbox.pending-stuck": "stuckPendingOutbox",
+  "run.orphan": "orphanRuns",
+  "run.latest-problem": "failedRuns",
+  "processor.quarantined": "quarantinedProcessors",
+  "projection.cache-key-drift": "projectionCacheDrift",
+  "adopted-ref.diverged": "adoptedRefDivergence",
+  "instructions.drift": "instructionDrift",
+  "operational.schema-mismatch": "operationalSchemaMismatch",
+  "capability.grant-missing": "capabilityGrantGaps",
+  "capability.grant-entry-missing": "capabilityGrantEntryGaps",
+  "model.provider-missing": "modelProviderMissing",
+  "model.provider-unreachable": "modelProviderUnreachable",
+  "model.provider-key-missing": "modelProviderKeyMissing",
+  "config.daily-path-mismatch": "dailyPathMismatch",
+  "config.sources-timeout-default": "sourcesTimeoutDefault",
+  "sources.fetch-script-missing": "sourcesFetchScriptMissing",
+  "daily.edition-not-compiled": "dailyEditionNotCompiled",
+  "daily.calendar-source-missing": "dailyCalendarSourceMissing",
+} as const) satisfies Readonly<Record<HealthFinding["code"], keyof HealthSummary>>;
+
+type CodeSummaryField =
+  (typeof SUMMARY_FIELD_BY_CODE)[HealthFinding["code"]];
+
+/**
  * Result of the doctor-side model provider probe, supplied by the caller
  * (the probe spawns the configured provider command, so it lives at the
  * `dome doctor` boundary, not inside this read-only module).
@@ -531,8 +565,19 @@ function buildHealthReport(
   const errorCount = findings.filter((f) => f.severity === "error").length;
   const warningCount = findings.filter((f) => f.severity === "warning").length;
   const infoCount = findings.filter((f) => f.severity === "info").length;
-  const count = (code: HealthFinding["code"]): number =>
-    findings.filter((f) => f.code === code).length;
+  // Per-code counts derive from SUMMARY_FIELD_BY_CODE; Object.entries
+  // iterates in declaration order, so the emitted JSON field order is the
+  // table's row order (the pinned `dome doctor --json` summary shape).
+  const codeCounts = Object.fromEntries(
+    (
+      Object.entries(SUMMARY_FIELD_BY_CODE) as Array<
+        [HealthFinding["code"], CodeSummaryField]
+      >
+    ).map(([code, field]) => [
+      field,
+      findings.filter((f) => f.code === code).length,
+    ]),
+  ) as Record<CodeSummaryField, number>;
 
   return Object.freeze({
     // Info findings are FYI, never ill health: a report whose only findings
@@ -545,25 +590,7 @@ function buildHealthReport(
       errorCount,
       warningCount,
       infoCount,
-      failedOutbox: count("outbox.failed"),
-      stuckPendingOutbox: count("outbox.pending-stuck"),
-      orphanRuns: count("run.orphan"),
-      failedRuns: count("run.latest-problem"),
-      quarantinedProcessors: count("processor.quarantined"),
-      projectionCacheDrift: count("projection.cache-key-drift"),
-      adoptedRefDivergence: count("adopted-ref.diverged"),
-      instructionDrift: count("instructions.drift"),
-      operationalSchemaMismatch: count("operational.schema-mismatch"),
-      capabilityGrantGaps: count("capability.grant-missing"),
-      capabilityGrantEntryGaps: count("capability.grant-entry-missing"),
-      modelProviderMissing: count("model.provider-missing"),
-      modelProviderUnreachable: count("model.provider-unreachable"),
-      modelProviderKeyMissing: count("model.provider-key-missing"),
-      dailyPathMismatch: count("config.daily-path-mismatch"),
-      sourcesTimeoutDefault: count("config.sources-timeout-default"),
-      sourcesFetchScriptMissing: count("sources.fetch-script-missing"),
-      dailyEditionNotCompiled: count("daily.edition-not-compiled"),
-      dailyCalendarSourceMissing: count("daily.calendar-source-missing"),
+      ...codeCounts,
     }),
     findings: Object.freeze([...findings]),
   });
