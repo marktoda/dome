@@ -48,13 +48,19 @@ scenario(
 
     const result = await h.tick();
     expect(result.adopted).toBe(true);
-    expect(result.diagnosticCount).toBe(0);
+    // The page carries no `description:`, so the missing-description info
+    // nudge fires once per fixed-point iteration; nothing else does.
+    expect(result.diagnosticCount).toBe(result.iterations);
     expect(result.iterations).toBeGreaterThan(1);
 
     await h
       .expectProjection()
       .diagnostics({ code: "dome.markdown.stale-updated" })
       .toHaveCount(0);
+    await h
+      .expectProjection()
+      .diagnostics({ code: "dome.markdown.missing-description", severity: "info" })
+      .toHaveCount(1);
     await h.expectFile("wiki/project-alpha.md").toNotContain("updated: 2026-05-01");
     await h.expectFile("wiki/project-alpha.md").toMatch(/^updated: \d{4}-\d{2}-\d{2}$/m);
     await h
@@ -98,7 +104,9 @@ scenario(
 
     const result = await h.tick();
     expect(result.adopted).toBe(true);
-    expect(result.diagnosticCount).toBe(0);
+    // 180 description-less pages × one missing-description info nudge per
+    // fixed-point iteration; nothing else fires.
+    expect(result.diagnosticCount).toBe(180 * result.iterations);
 
     await h
       .expectLedger({ processorId: "dome.markdown.normalize-frontmatter" })

@@ -101,7 +101,17 @@ scenario(
     };
     expect(cleanPayload.pending_commits).toBe(0);
     expect(cleanPayload.failed_runs).toBe(0);
-    expect(cleanPayload.diagnostics).toBe(0);
+    // The fixture pages carry no `description:` frontmatter, so every durable
+    // diagnostic is the missing-description info nudge — nothing
+    // attention-grade.
+    expect(cleanPayload.diagnostics).toBe(5);
+    await h
+      .expectProjection()
+      .diagnostics({
+        code: "dome.markdown.missing-description",
+        severity: "info",
+      })
+      .toHaveCount(5);
 
     const today = await h.runCli([
       "run",
@@ -243,7 +253,16 @@ scenario(
     };
     expect(statusPayload.pending_commits).toBe(0);
     expect(statusPayload.failed_runs).toBe(0);
-    expect(statusPayload.diagnostics).toBe(0);
+    // As in the host-off scenario: only missing-description info nudges from
+    // the description-less fixture pages.
+    expect(statusPayload.diagnostics).toBe(3);
+    await h
+      .expectProjection()
+      .diagnostics({
+        code: "dome.markdown.missing-description",
+        severity: "info",
+      })
+      .toHaveCount(3);
     expect(statusPayload.questions).toBe(0);
 
     const prep = await h.runCli(["run", "prep", "--date", "2026-01-08"]);

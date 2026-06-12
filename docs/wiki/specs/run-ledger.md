@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-01
+updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -136,7 +136,7 @@ The engine prunes rows older than the policy at the start of each `dome sync`. P
 ## What the ledger cannot do
 
 - **Replace git trailers.** Successful engine commits MUST carry the four Dome-* trailers in their message body. The ledger is the audit surface; the trailers are the durable-in-git provenance surface. Both are required.
-- **Depend on a shipped markdown log.** `log.md` is a planned human-readable projection of the ledger, but the `dome.log` bundle is not shipped in the current v1 cut. Today the run ledger is the structured audit surface and engine commit trailers are the durable-in-git provenance surface. When `dome.log` ships, removing or corrupting `log.md` should rebuild it from the ledger; corrupting the ledger would require a lossy rebuild from git trailers.
+- **Project into a markdown log.** The once-planned `dome.log` projection of the ledger into `log.md` is retired per [[wiki/invariants/NO_ACCRETING_REGISTRIES]] — `log.md` is frozen. The run ledger is the structured audit surface, engine commit trailers (with the narrative commit body per [[wiki/specs/adoption]] §"Engine commit trailers") are the durable-in-git provenance surface, and `dome log` joins the two on demand ([[wiki/specs/cli]] §"`dome log`"). Corrupting the ledger would require a lossy rebuild from git trailers.
 - **Survive vault deletion.** The ledger lives in `<vault>/.dome/state/`; it's a per-vault history. Multi-vault aggregation is not in scope.
 
 ## Related

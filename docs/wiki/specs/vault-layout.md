@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-09
+updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -25,8 +25,9 @@ A Dome vault is a git repository ([[wiki/invariants/VAULT_IS_GIT_REPO]]) contain
   raw/                # immutable raw captures (per RAW_IS_IMMUTABLE)
   notes/              # user-authored content Dome reads but does not write
   inbox/              # ephemeral drop-zones for intake (per INBOX_IS_EPHEMERAL)
-  log.md              # append-only projection of the run ledger (per LOG_IS_APPEND_ONLY)
-  index.md            # projection of wiki/ catalogue
+  log.md              # frozen history — activity lives in git, via `dome log` (per NO_ACCRETING_REGISTRIES)
+  index.md            # generated render of the wiki/ catalogue (dome.markdown.render-index)
+  index-<category>.md # per-category catalog shards (same renderer; -N suffix on overflow)
   core.md             # always-loaded core memory page (see §"core.md" below)
 ```
 
@@ -99,7 +100,7 @@ inbox/
   processed/   # where dome.agent.ingest archives successfully-processed captures
 ```
 
-Files in `inbox/<bucket>/` (except `inbox/review/` and `inbox/processed/`) are the trigger surface for that bucket's ingest processor via `signal:file.created` + a bucket path pattern. The shipped `dome.agent.ingest` processor handles `inbox/raw/*.md` — it runs a tool-use loop to read the raw source, create/update wiki pages (source, entities, concepts) with bidirectional wikilinks, update `index.md` and `log.md`, route action-items to the daily note or entity pages, and archive the raw file to `inbox/processed/`. All edits land as one `PatchEffect`. The shipped `dome.agent.inbox-stale-check` processor emits `inbox.stale` warnings for old files that remain under active inbox buckets. Pinned by [[wiki/invariants/INBOX_IS_EPHEMERAL]] — inbox files are expected to move out or surface a recoverable diagnostic. See [[wiki/specs/autonomous-agents]] for the full agent framework and ingest workflow.
+Files in `inbox/<bucket>/` (except `inbox/review/` and `inbox/processed/`) are the trigger surface for that bucket's ingest processor via `signal:file.created` + a bucket path pattern. The shipped `dome.agent.ingest` processor handles `inbox/raw/*.md` — it runs a tool-use loop to read the raw source, create/update wiki pages (source, entities, concepts) with bidirectional wikilinks and one-line `description:` frontmatter (the index renders from it — agents never edit index files or `log.md`), route action-items to the daily note or entity pages, and archive the raw file to `inbox/processed/`. All edits land as one `PatchEffect`. The shipped `dome.agent.inbox-stale-check` processor emits `inbox.stale` warnings for old files that remain under active inbox buckets. Pinned by [[wiki/invariants/INBOX_IS_EPHEMERAL]] — inbox files are expected to move out or surface a recoverable diagnostic. See [[wiki/specs/autonomous-agents]] for the full agent framework and ingest workflow.
 
 `inbox/review/` is the planned destination for dedicated lint reports. It is **not** an intake (no processor runs on writes to it). The user reviews lint reports there; applied findings produce engine commits annotating the report once the fuller lint workflow ships.
 
@@ -250,17 +251,52 @@ derives rebuildable `dome.preference.*` facts from it; malformed lines
 degrade to one info diagnostic, never a crash. Append-only is convention
 (legibility + stable line refs), not broker-enforced in v1.
 
-## `log.md` — append-only run-projection
+## `log.md` — frozen history
 
-`log.md` is a reserved markdown projection of the run ledger ([[wiki/specs/run-ledger]]) — the human-readable view of "what did Dome do." The planned `dome.log` adoption-phase processor will maintain it with `owns.path: ["log.md"]` capability ([[wiki/specs/capabilities]] §"owns.path").
+`log.md` is **frozen** (2026-06-11). The vault's activity record is git
+history: every garden patch-application commit carries the PatchEffect's
+sanitized narrative `reason` in its body plus the four `Dome-*` trailers
+([[wiki/specs/adoption]] §"Engine commit trailers"), and `dome log`
+([[wiki/specs/cli]] §"`dome log`") renders that history joined with the run
+ledger. Nothing appends to `log.md`: no charter instructs it, the `dome.agent`
+`patch.auto` grants exclude it (read stays granted — it remains background
+context), and the grant-aware agent tools deny writes at tool time. Frozen
+means no accretion and no model writes, not byte-immutability: the
+deterministic source-preserving hygiene passes (wikilink repair, frontmatter
+normalization) retain their covering `**/*.md` grants by design, so a page
+rename does not strand broken links in the archive. Existing
+content stays archived in place; vaults may rename it
+(`log-archive-through-<date>.md`) but no rotation machinery exists.
 
-Append-only: `dome.log` adds entries; nothing rewrites entries. Pinned by [[wiki/invariants/LOG_IS_APPEND_ONLY]]. Reconstruction from the ledger is planned through a repair/rebuild path once `dome.log` ships.
+The previously planned `dome.log` append-projection bundle is retired —
+pinned by [[wiki/invariants/NO_ACCRETING_REGISTRIES]], which supersedes the
+[[wiki/invariants/LOG_IS_APPEND_ONLY]] plan (frozen is append-only's
+degenerate case: zero appends).
 
-## `index.md` — wiki catalogue
+## `index.md` — generated wiki catalogue
 
-`index.md` is a reserved markdown catalogue of every wiki page, partitioned by section. The planned `dome.index` adoption-phase processor will maintain it with `owns.path: ["index.md"]` capability.
+`index.md` and its per-category shards (`index-<category>.md`,
+`index-<category>-N.md` on overflow) are **generated renders**, compiled by
+the garden processor `dome.markdown.render-index` (cron `15 5 * * *` plus
+wiki create/delete signals) from each page's one-line `description:`
+frontmatter — the source of truth, projected as `dome.page.description` facts
+and nudged by the info-severity `dome.markdown.missing-description` lint. The
+catalog lives inside a `dome.markdown:index-catalog` generated block; owner
+prose outside the block survives every rewrite. Pages opt out with
+`index: false` frontmatter; a vault whose index stays curated disables
+rendering outright with an explicitly empty `index_categories: {}` in
+`dome.markdown`'s config (this docs vault does exactly that). The category
+map and shard size are configurable (`index_categories` — replaces the
+defaults, doesn't merge; `index_shard_budget_chars`).
 
-Once `dome.index` ships, it should be rebuildable through `dome rebuild` when stale. (The pre-recut `dome doctor --rebuild-index` flag is retired in favor of the unified `dome rebuild` scope plus, in v1.x, `dome rebuild --target index` if a scoped rebuild is needed.)
+No model or agent edits an index file: the renderer is deterministic
+(matching catalog → zero effects), and everything else is fenced out by the
+same grant + tool-time exclusions as `log.md`. Pinned by
+[[wiki/invariants/NO_ACCRETING_REGISTRIES]]. The previously planned
+`dome.index` owns-path bundle is retired; staleness self-heals on the next
+render tick rather than through `dome rebuild`. A one-shot migration script
+(`scripts/migrate-index-descriptions.ts`) parses an existing hand-curated
+`index.md` into per-page `description:` frontmatter.
 
 ## `.dome/` — configuration + derived state
 
@@ -435,8 +471,8 @@ The capability broker enforces ownership. Default rules:
 
 | Path | Owner |
 |---|---|
-| `index.md` | planned `dome.index` (via `owns.path`) |
-| `log.md` | planned `dome.log` (via `owns.path`) |
+| `index.md`, `index-*.md` | `dome.markdown.render-index` (via `patch.auto`) — generated renders; agent grants exclude them |
+| `log.md` | no agent or model-class writer; nothing appends entries — frozen history per [[wiki/invariants/NO_ACCRETING_REGISTRIES]] (deterministic source-preserving hygiene passes like wikilink repair retain covering grants by design); activity is git via `dome log` |
 | `raw/**` | nobody — immutable per [[wiki/invariants/RAW_IS_IMMUTABLE]] |
 | `core.md` | propose-only — agents read it; `dome.agent.preference-promotion-answer` is the sole auto-writer via a narrow per-processor grant ([[wiki/specs/preferences]]) |
 | `preferences/signals.md` | shared append surface — the three `dome.agent` charters, the promotion answer handler, foreground agents, and the owner all append signal lines (§"`preferences/signals.md`") |
@@ -445,7 +481,7 @@ The capability broker enforces ownership. Default rules:
 | `notes/**/*.md` | `dome.agent.ingest` (via `patch.auto`, within grant) — grant-as-boundary |
 | `inbox/processed/**` | `dome.agent.ingest` (via `patch.auto`) |
 
-Plugin / third-party bundles should not grant themselves `owns.path` on shipped-default reserved paths (`index.md`, `log.md`). The broker enforces `owns.path` at patch-routing time; stricter config-load validation is future hardening.
+Plugin / third-party bundles should not grant themselves write capability over the reserved registry paths (`index.md`, `index-*.md`, `log.md`) — the index files belong to the deterministic renderer and `log.md` is frozen, per [[wiki/invariants/NO_ACCRETING_REGISTRIES]]. The broker enforces `owns.path` at patch-routing time; stricter config-load validation is future hardening.
 
 ## Why this layout
 
@@ -467,3 +503,4 @@ Four properties make the layout self-defending:
 - [[wiki/invariants/VAULT_IS_GIT_REPO]] — the vault root is a git repo
 - [[wiki/invariants/INBOX_IS_EPHEMERAL]] — inbox bucket files are expected to move
 - [[wiki/invariants/RAW_IS_IMMUTABLE]] — raw immutability target and enforcement plan
+- [[wiki/invariants/NO_ACCRETING_REGISTRIES]] — index files are renders, `log.md` is frozen, activity is git history

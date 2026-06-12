@@ -1,6 +1,6 @@
 # Dome design substrate — Index
 
-The catalog of all wiki pages in this vault. In the current SDK it is maintained manually; a future `dome.index` bundle may own regeneration.
+The catalog of all wiki pages in this vault. This vault's index is **curated by hand** — `dome.markdown.render-index` is disabled here via the explicit empty `index_categories: {}` config (see [[wiki/specs/vault-layout]] §"`index.md` — generated wiki catalogue" for the generated-render default).
 
 This vault is the Dome project's own design substrate — a Dome instance dogfooding Dome itself.
 
@@ -25,7 +25,7 @@ New to the vocabulary? [[glossary]] is the one-page map: the four core types, th
 - [[wiki/specs/embeddings]] — Banked dense-retrieval design (not implemented): `dome.model-provider.embed/v1` envelope; `model.embed` capability; `embeddings.db` as the recomputable-cache store class; brute-force-cosine third RRF channel; gated on the `retrieval-misses.md` log.
 - [[wiki/specs/capabilities]] — Seventeen capability tiers; manifest declarations; vault grants; broker enforcement at one chokepoint.
 - [[wiki/specs/run-ledger]] — RunRecord per processor invocation; CapabilityUse; dual provenance with engine commit trailers.
-- [[wiki/specs/cli]] — The Dome CLI: primary compiler loop (`serve` / `sync` / `status` / `check` / `resolve`), capture ingress (`capture`), adopted-state recall surfaces (`query`, `export-context`), and hidden advanced/compatibility commands (`inspect`, `doctor`, `lint`, `answer`, `run`, `rebuild`, daily view wrappers).
+- [[wiki/specs/cli]] — The Dome CLI: primary compiler loop (`serve` / `sync` / `status` / `check` / `resolve`), capture ingress (`capture`), adopted-state recall surfaces (`query`, `export-context`, the CLI-native activity view `log`), and hidden advanced/compatibility commands (`inspect`, `doctor`, `lint`, `answer`, `run`, `rebuild`, daily view wrappers).
 - [[wiki/specs/capture]] — The capture loop end-to-end: `dome capture`, the raw-capture file shape under `inbox/raw/`, the phone/voice ingress recipe (what ships vs. what the user assembles), and the remote-capture seam contract (commit-or-nothing; owner trust domain; `performCapture` as reference implementation).
 - [[wiki/specs/foreground-compiler-workflow]] — Day-to-day Claude Code workflow with `dome serve`, commit-boundary compilation, host-off catch-up, and the recovery loop.
 - [[wiki/specs/mcp-surface]] — MCP server: the shipped `dome mcp` stdio adapter (wedge Phase 5) — typed capture/query/export_context/status/check/resolve/tasks/brief tools over the same handlers the CLI uses.
@@ -58,9 +58,10 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/invariants/EFFECTS_ARE_THE_ONLY_PROCESSOR_OUTPUT]] — *(axiom)* `Processor.run(ctx)` returns `Promise<Effect[]>`; no direct mutation surface.
 - [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]] — *(axiom)* Every ExternalActionEffect is inserted into `outbox.db` before the external call; idempotency keys deduplicate retries.
 - [[wiki/invariants/INBOX_IS_EPHEMERAL]] — *(shipped default)* Intake bucket files should move/delete on processing; stale-inbox diagnostics surface lingering files.
-- [[wiki/invariants/LOG_IS_APPEND_ONLY]] — *(axiom target)* future `log.md` projection mutated only by `dome.log`'s append-only adoption processor; current v1 uses run ledger + git trailers.
+- [[wiki/invariants/LOG_IS_APPEND_ONLY]] — *(axiom)* `log.md` entries are never rewritten; the planned `dome.log` append projection is retired — `log.md` is frozen and activity is git history, superseded by NO_ACCRETING_REGISTRIES.
 - [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — *(axiom)* Markdown + git are canonical knowledge; `.dome/state/` is operational/derived state.
 - [[wiki/invariants/MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS]] — *(axiom)* A garden-phase `model.invoke` processor never declares `graph.write`; model judgment surfaces as a question (durable via `answers.db`) or a regenerated surface patch, never a `FactEffect` that would vanish on rebuild.
+- [[wiki/invariants/NO_ACCRETING_REGISTRIES]] — *(shipped default)* every central vault artifact is curated source-of-truth markdown or a deterministic render from per-item sources; index files render from `description:` frontmatter, the activity log is git history (`dome log`), `log.md` is frozen.
 - [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]] — *(axiom)* `projection.db` can be wiped and rebuilt from the adopted commit + processor set.
 - [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]] — *(axiom)* Every trusted-state mutation routes through an internally-constructed Proposal and the adoption loop; no direct-write SDK API.
 - [[wiki/invariants/RAW_IS_IMMUTABLE]] — *(axiom)* Raw files are immutable after creation; broker raw-patch denial plus `dome.markdown.raw-immutable` block committed mutations.

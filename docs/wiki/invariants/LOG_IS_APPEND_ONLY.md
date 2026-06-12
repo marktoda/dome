@@ -4,9 +4,10 @@ created: 2026-05-27
 updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+  - "[[cohesive/brainstorms/2026-06-11-dome-v1-plan]]"
 enforced_by:
-  - tests/integration/no-direct-mutation-outside-boundaries.test.ts
-  - tests/engine/capability-broker.test.ts
+  - tests/invariants/no-accreting-registries.test.ts
+  - tests/extensions/dome.agent/grant-aware-tools.test.ts
 tier: axiom
 ---
 
@@ -14,42 +15,23 @@ tier: axiom
 
 **Tier:** Axiom — non-disable-able.
 
-**Statement:** `<vault>/log.md` is a projection of the run ledger. The only processor authorized to write to it is `dome.log.append-log` (the adoption-phase processor in the `dome.log` first-party bundle, granted `owns.path: ["log.md"]` in shipped-default vault config). It only appends new entries to the end of the file; entries are never modified or deleted in place.
+**Statement:** Entries in `<vault>/log.md` are never modified or deleted in place. As of 2026-06-11 the file is **frozen** — the strongest (degenerate) form of append-only: zero appends. The freeze contract is about accretion and model writes, not byte-immutability: no agent or model-class processor writes `log.md`, and nothing appends entries to it; the vault's activity record is git history (engine commit bodies carry the patch narrative per [[wiki/specs/adoption]] §"Engine commit trailers", rendered by `dome log`), and existing `log.md` content is preserved history. Deterministic source-preserving hygiene passes (`dome.markdown.repair-wikilinks`, `normalize-frontmatter`, `refresh-updated`, and the wikilink validators) retain their covering `**/*.md` grants by design — a page rename must not strand broken links in frozen history.
 
-**Implementation status:** Axiom target, not shipped in current v1. The run ledger and git trailers are shipped audit surfaces, but the `dome.log` bundle, `dome.log.append-log` processor, and default `owns.path: ["log.md"]` grant are still planned. Treat the enforcement description below as the implementation plan for the future markdown log projection.
+**Superseded direction (2026-06-11):** the originally planned `dome.log` bundle — an adoption-phase `append-log` processor projecting the run ledger into `log.md` under an `owns.path: ["log.md"]` grant — is **retired**, not deferred. [[wiki/invariants/NO_ACCRETING_REGISTRIES]] is the superseding rule: no file's maintenance contract is "append entries forever," and the three jobs the markdown log was meant to do are covered without it:
 
-**Why:** The log is the audit trail's human-readable surface. Operations on the vault are reconstructable from the log alone, without the run ledger SQLite file. If entries could be rewritten, the history-of-record property dissolves and trust falls.
+- **Narrative activity** rides the engine commit body (the PatchEffect's sanitized `reason`; agents feed it from their final message) and replicates with every vault clone — better durability than the gitignored `runs.db` the projection would have re-narrated.
+- **Queryable history** is `dome log` (`--since` / `--processor` / `--grep`), joining `Dome-*` trailers with the run ledger.
+- **Non-commit events** (failed runs, denials, quarantines) stay in `runs.db` and surface through `dome check` / `dome inspect` — they never needed a markdown registry.
 
-**Target structural enforcement:** Two layers:
+The accepted regression: commit messages are not FTS-indexed; activity lookup is `dome log`, not `dome query`. The accepted trade: a vault read without git tooling loses the activity narrative — outweighed by deleting the standing chore of a model re-narrating what the engine already recorded.
 
-1. **`owns.path` capability for `dome.log`.** The shipped-default `.dome/config.yaml` grants `dome.log` an `owns.path: ["log.md"]` capability (per [[wiki/specs/capabilities]] §"owns.path"). Any other processor's PatchEffect touching `log.md` is rejected by the broker with `code: "capability-deny-owns-path"`.
-2. **The `dome.log.append-log` processor's `run()` body only emits append-shaped patches.** The patch's unified-diff payload always shows additions at end-of-file; the processor's idempotency contract (per [[wiki/specs/processors]] §"Idempotency") means re-running it against the same RunRecord input produces no patch (the row is already appended).
+**Structural enforcement:** the freeze fences in `tests/invariants/no-accreting-registries.test.ts` — no `dome.agent` lib module instructs `log.md` appends; the `dome.agent` manifest, shipped-default vault-config grant, and tool-local writable-path mirrors all exclude `log.md` from `patch.auto` (read stays granted); across every first-party manifest, no processor holding `model.invoke` may hold `patch.auto` covering `log.md` or the index files, and no processor of any class may name `log.md` as a targeted patch path; the grant-aware tools deny a stray write at tool time (`tests/extensions/dome.agent/grant-aware-tools.test.ts`). What the fence deliberately does **not** forbid: the deterministic source-preserving hygiene passes' covering `**/*.md` grants — they may retarget a wikilink or normalize frontmatter inside frozen history, but no surface appends entries and no model-class processor can touch the file at all.
 
-Together: no other processor can write `log.md` (capability fence); the authorized processor cannot rewrite existing content (append-only patch shape, enforced by the processor's structure and exercised by its test).
-
-**Counter-example:** A "log compaction" extension decides `log.md` is too large and wants to rewrite it with summarized entries. The extension's bundle manifest requests `owns.path: ["log.md"]`. Once `dome.log` ships, the ownership boundary should reject this overlap before the processor can mutate `log.md` directly. The right design: a separate adoption-phase processor with `patch.auto: ["log-archive/**"]` capability that writes frozen rollups to `log-archive/YYYY-MM.md`; the original `log.md` is never mutated in place.
-
-**Required test guarantee:** `tests/invariants/log-is-append-only.test.ts` should run a representative ingest sequence through the engine once `dome.log` ships, capture the post-run `log.md` byte length, run more operations, and assert the post-op-N `log.md` byte-prefix matches the pre-op-N content unchanged. It should also assert that no Effect outside the `dome.log` bundle results in a `log.md` mutation. The current test is only an AC3 doc-existence stub.
-
-## Why not just `git log`?
-
-A fair question: every engine commit carries the four Dome-* trailers per [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]; `git log --grep="^Dome-Run:"` returns the engine history; the run ledger SQLite carries the enriched per-run data (cost, capability uses, error). Why also maintain `log.md`?
-
-Three jobs `log.md` does that `git log` (alone) cannot:
-
-- **Self-describing markdown.** The vault must be usable from the markdown alone. A user reading the vault in Obsidian, grepping with `rg`, browsing on GitHub's web UI, or unpacking a `tar` archive that excluded `.git/` still sees the operation history via `log.md`. `git log` requires the git tooling chain and a `.git/` directory; outside that environment it doesn't exist. The `log.md` projection honors [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — the vault is canonical without auxiliary indexes or auxiliary tooling.
-
-- **Catches events that don't produce git commits.** Failed processor runs, denied capability uses, quarantined processors, blocked proposals — all land as RunRecord rows in `runs.db`, and `dome.log.append-log` projects them into `log.md`. They do not appear in `git log` (no commit fired). Without `log.md`, those events would have nowhere to land that survives `runs.db` deletion.
-
-- **Catastrophic recovery surface.** If `.git/` corrupts or the user accidentally `rm -rf .git/`, the operation history survives in `log.md` (which is part of the committed vault, so it's also in `.git/` — but the human-readable surface persists as a file the user can read even mid-recovery). Similarly, if `runs.db` is wiped, the `log.md` projection survives until the next `--repair` (which would re-project from the now-empty ledger).
-
-The cost is intentional duplication: the run ledger (the structured, queryable source) plus `log.md` (the human-readable, durable-in-markdown projection). `dome.log.append-log` keeps them aligned automatically; the user never maintains the alignment by hand. `log.md` is the *narrative* layer; the run ledger is the *structured-audit* layer; git trailers are the *durable-in-git* provenance layer. All three are useful; none is sufficient alone.
+**Counter-example:** A "log compaction" extension decides `log.md` is too large and wants to rewrite it with summarized entries. Wrong twice over: no agent or model-class surface holds (or should request) write capability over `log.md` — the only covering grants are deterministic source-preserving hygiene passes, which never add, remove, or summarize entries — and the compaction itself would rewrite history-of-record. If a vault wants the file out of the way, the owner renames it (`log-archive-through-<date>.md`) as an ordinary human commit — Dome ships no rotation machinery.
 
 **Related:**
+- [[wiki/invariants/NO_ACCRETING_REGISTRIES]] — the superseding rule
+- [[wiki/specs/vault-layout]] §"`log.md` — frozen history"
+- [[wiki/specs/cli]] §"`dome log`" — the activity surface
 - [[wiki/specs/run-ledger]] — the structured audit source
-- [[wiki/specs/processors]] §"First-party processors" — the `dome.log` bundle
-- [[wiki/specs/capabilities]] §"owns.path"
-- [[wiki/invariants/EVERY_EFFECT_IS_LEDGERED]]
-- [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]
-- [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]
-- [[wiki/matrices/projection-table-x-owner]] — the per-path/table writer map
+- [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]] — the provenance layer `dome log` reads

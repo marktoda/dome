@@ -35,6 +35,7 @@ describe("bin/dome process boundary", () => {
       "resolve",
       "query",
       "today",
+      "log",
       "export-context",
       "serve",
       "install",

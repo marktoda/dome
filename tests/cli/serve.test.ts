@@ -263,16 +263,26 @@ describe("runServe smoke", () => {
     expect(status.adopted).toBe(newSha);
     expect(status.pending_runs).toBe(0);
     expect(status.failed_runs).toBe(0);
-    if (status.diagnostics !== 0) {
-      captured.out = [];
-      captured.err = [];
-      await runInspect({
-        subject: "diagnostics",
-        vault: f.vaultPath,
-        bundlesRoot: f.bundlesRoot,
-        json: true,
-      });
-      throw new Error(`unexpected diagnostics: ${captured.out.join("\n")}`);
+    // The two committed wiki pages carry no `description:` frontmatter, so
+    // the only durable diagnostics are the missing-description info nudges
+    // (one per page). Anything else is adoption noise — pin it exactly.
+    expect(status.diagnostics).toBe(2);
+    captured.out = [];
+    captured.err = [];
+    await runInspect({
+      subject: "diagnostics",
+      vault: f.vaultPath,
+      bundlesRoot: f.bundlesRoot,
+      json: true,
+    });
+    const diagnosticRows = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly severity: string;
+      readonly code: string;
+    }>;
+    expect(diagnosticRows).toHaveLength(2);
+    for (const row of diagnosticRows) {
+      expect(row.severity).toBe("info");
+      expect(row.code).toBe("dome.markdown.missing-description");
     }
     expect(status.questions).toBe(0);
     expect(status.outbox_pending).toBe(0);

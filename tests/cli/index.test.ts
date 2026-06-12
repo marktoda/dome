@@ -45,6 +45,7 @@ describe("runCli", () => {
         "resolve",
         "query",
         "today",
+        "log",
         "recipe",
         "export-context",
         "serve",

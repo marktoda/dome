@@ -701,6 +701,116 @@ async function latestFileInfoByPath(opts: {
   return Object.freeze(entries);
 }
 
+/**
+ * One commit record from `logWithTrailers`. `body` is the raw `%b` body —
+ * for engine commits it still carries the Dome-* trailer block; consumers
+ * that render narratives strip it (src/surface/activity.ts). `domeRun` /
+ * `domeExtension` are the parsed trailer values (null when absent), so
+ * callers never re-parse trailers out of the body text.
+ */
+export type TrailerLogEntry = {
+  readonly sha: string;
+  /** ISO-8601 committer timestamp (`%ct`). */
+  readonly at: string;
+  readonly subject: string;
+  readonly body: string;
+  readonly domeRun: string | null;
+  readonly domeExtension: string | null;
+};
+
+/**
+ * Read commit history (newest-first) with the Dome-Run / Dome-Extension
+ * trailers pre-parsed — the read surface behind `dome log`. Same native-git
+ * trailer technique as `latestFileInfoByPath` above: `%x1e` record
+ * separator, `%x1f` field separators, `%(trailers:key=...,valueonly)` for
+ * the trailer values (verified against git 2.50.x). `%b` rides last in the
+ * record so its embedded newlines never collide with the field separators.
+ *
+ * Scoped to the vault prefix when the vault sits inside an outer repo (the
+ * dogfood case), exactly like the other native-git helpers. Returns an
+ * empty array for a repo with no commits yet.
+ */
+export async function logWithTrailers(opts: {
+  readonly path: string;
+  readonly limit?: number;
+  /** Anything `git log --since` accepts (ISO dates included). */
+  readonly since?: string;
+}): Promise<ReadonlyArray<TrailerLogEntry>> {
+  const { root, prefix } = await resolveGitContext(opts.path);
+  const args = [
+    "-C",
+    root,
+    "log",
+    "--pretty=format:%x1e%H%x1f%ct%x1f"
+      + "%(trailers:key=Dome-Run,valueonly,separator=%x0c)%x1f"
+      + "%(trailers:key=Dome-Extension,valueonly,separator=%x0c)%x1f"
+      + "%s%x1f%b",
+  ];
+  if (opts.limit !== undefined) {
+    args.push("-n", String(opts.limit));
+  }
+  if (opts.since !== undefined) {
+    args.push(`--since=${opts.since}`);
+  }
+  args.push("HEAD");
+  if (prefix !== "") {
+    args.push("--", prefix);
+  }
+
+  let output: string;
+  try {
+    output = await runNativeGit(args);
+  } catch (e) {
+    // A freshly-init'd repo has no HEAD to log from; that is "no activity",
+    // not an error.
+    if (
+      e instanceof Error &&
+      /unknown revision|bad revision|does not have any commits/i.test(e.message)
+    ) {
+      return Object.freeze([]);
+    }
+    throw e;
+  }
+
+  const entries: TrailerLogEntry[] = [];
+  for (const record of output.split("\x1e")) {
+    if (record.length === 0) continue;
+    const parts = record.split("\x1f");
+    if (parts.length < 6) continue;
+    const [sha, timestamp, runTrailer, extensionTrailer, subject] = parts;
+    // `%b` is the final field; rejoin defensively in case a body ever
+    // contains the unit separator itself.
+    const body = parts.slice(5).join("\x1f");
+    if (sha === undefined || timestamp === undefined || subject === undefined) {
+      continue;
+    }
+    const seconds = Number(timestamp);
+    if (!Number.isFinite(seconds)) continue;
+    entries.push(
+      Object.freeze({
+        sha,
+        at: new Date(seconds * 1000).toISOString(),
+        subject,
+        body: body.replace(/\n+$/, ""),
+        domeRun: firstTrailerValue(runTrailer),
+        domeExtension: firstTrailerValue(extensionTrailer),
+      }),
+    );
+  }
+  return Object.freeze(entries);
+}
+
+/**
+ * First value of a `%(trailers:...,valueonly,separator=%x0c)` field —
+ * engine commits carry exactly one of each Dome-* trailer, so additional
+ * values (a hand-crafted duplicate trailer) are ignored rather than joined.
+ */
+function firstTrailerValue(field: string | undefined): string | null {
+  if (field === undefined) return null;
+  const first = field.split("\x0c")[0]?.trim() ?? "";
+  return first.length === 0 ? null : first;
+}
+
 async function runNativeGit(args: ReadonlyArray<string>): Promise<string> {
   const proc = Bun.spawn(["git", ...args], {
     stdout: "pipe",

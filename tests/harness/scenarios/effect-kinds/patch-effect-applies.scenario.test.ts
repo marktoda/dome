@@ -114,7 +114,10 @@ scenario(
 
     const result = await h.tick();
     expect(result.adopted).toBe(false);
-    expect(result.diagnosticCount).toBe(1);
+    // One blocking materialize conflict plus the missing-description info
+    // nudges the new page's lint iterations emit (the page carries no
+    // `description:` frontmatter).
+    expect(result.diagnosticCount).toBe(3);
     await h
       .expectProjection()
       .diagnostics({

@@ -63,6 +63,56 @@ describe("finishAgentRun", () => {
     expect(questions).toHaveLength(1);
   });
 
+  test("a final model text rides the patch reason as the run narrative", () => {
+    const effects = finishAgentRun({
+      state: stateWith({ writes: [["wiki/a.md", "A"]] }),
+      stopReason: "final",
+      sourceRefs: refs,
+      patchReason: "dome.agent: test run",
+      truncatedMessage: "unused",
+      finalText:
+        "Integrated the standup notes into wiki/entities/acme.md\nand archived the source.",
+    });
+    const patch = effects.find((e) => e.kind === "patch");
+    expect(patch?.kind === "patch" && patch.reason).toBe(
+      "dome.agent: test run: Integrated the standup notes into wiki/entities/acme.md and archived the source.",
+    );
+  });
+
+  test("the final-text narrative is flattened and capped at 200 chars", () => {
+    const effects = finishAgentRun({
+      state: stateWith({ writes: [["wiki/a.md", "A"]] }),
+      stopReason: "final",
+      sourceRefs: refs,
+      patchReason: "dome.agent: test run",
+      truncatedMessage: "unused",
+      finalText: `  ${"word ".repeat(100)}  `,
+    });
+    const patch = effects.find((e) => e.kind === "patch");
+    if (patch?.kind !== "patch") throw new Error("expected a patch");
+    expect(patch.reason).toBe(
+      `dome.agent: test run: ${"word ".repeat(100).trim().slice(0, 200)}`,
+    );
+    expect(patch.reason).not.toContain("\n");
+  });
+
+  test("absent or blank final text leaves the static patch reason alone", () => {
+    for (const finalText of [undefined, null, "", "   \n\t "]) {
+      const effects = finishAgentRun({
+        state: stateWith({ writes: [["wiki/a.md", "A"]] }),
+        stopReason: "final",
+        sourceRefs: refs,
+        patchReason: "dome.agent: test run",
+        truncatedMessage: "unused",
+        finalText,
+      });
+      const patch = effects.find((e) => e.kind === "patch");
+      expect(patch?.kind === "patch" && patch.reason).toBe(
+        "dome.agent: test run",
+      );
+    }
+  });
+
   test("emits no PatchEffect when the run accumulated no edits", () => {
     const effects = finishAgentRun({
       state: stateWith({ questions: ["anything to do?"] }),

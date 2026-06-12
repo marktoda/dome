@@ -22,6 +22,7 @@ import { runInstall, runRestart, runUninstall } from "./commands/install";
 import { runDoctor } from "./commands/doctor";
 import { runInspect } from "./commands/inspect";
 import { runLint, type LintFailOn } from "./commands/lint";
+import { runLog } from "./commands/log";
 import { runQuery } from "./commands/query";
 import { runReanchor } from "./commands/reanchor";
 import { runRecipe } from "./commands/recipe";
@@ -399,6 +400,28 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           json: options.json,
           watch: options.watch,
           interval: options.interval,
+        }),
+      );
+    });
+
+  program
+    .command("log")
+    .description("Show vault activity: git history joined with the engine ledger.")
+    .option("--since <date>", "Only show commits newer than this date.")
+    .option("--processor <id>", "Only show engine entries from this processor.")
+    .option("--grep <text>", "Filter entries by subject/body substring.")
+    .option("--limit <n>", "Maximum entries to show.", parsePositiveIntegerOption)
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .action(async (options: LogCliOptions) => {
+      setExitCode(
+        await runLog({
+          vault: options.vault,
+          since: options.since,
+          processor: options.processor,
+          grep: options.grep,
+          limit: options.limit,
+          json: options.json,
         }),
       );
     });
@@ -786,6 +809,15 @@ type TodayCliOptions = {
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;
+};
+
+type LogCliOptions = {
+  readonly since?: string;
+  readonly processor?: string;
+  readonly grep?: string;
+  readonly limit?: number;
+  readonly json?: boolean;
+  readonly vault?: string;
 };
 
 type ExportContextCliOptions = {

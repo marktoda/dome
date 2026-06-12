@@ -469,7 +469,7 @@ function taskTurn(input: {
     `Today's daily note path: ${input.todayPath} (already prepared with the brief marker blocks — read it first).`,
     input.yesterdayExists
       ? `Yesterday's daily note path: ${input.yesterdayPath}.`
-      : `Yesterday's daily note (${input.yesterdayPath}) does not exist; ground the yesterday block in recently adopted pages via log.md instead.`,
+      : `Yesterday's daily note (${input.yesterdayPath}) does not exist; ground the yesterday block in recently touched pages instead — searchVault for \`updated: ${formatDate(previousLocalDate(input.today))}\` and \`updated: ${date}\` (wiki pages stamp updated: frontmatter dates), then readPage the interesting ones. log.md is frozen history, never a freshness signal.`,
   ];
   if (input.meetings === null) {
     lines.push(

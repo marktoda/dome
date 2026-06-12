@@ -479,4 +479,156 @@ describe("applyPatchToCandidate", () => {
     // Parent points at the input candidate.
     expect(commitObj.commit.parent).toEqual([f.baseCandidate]);
   });
+
+  test("patch reason rides the commit message as the body between subject and trailers", async () => {
+    const f = await makeFixture({ "wiki/a.md": "alpha\n" });
+    fixtures.push(f);
+
+    const effect = patchEffect({
+      mode: "auto",
+      changes: [{ kind: "write", path: "wiki/a.md", content: "alpha-new\n" }],
+      reason: "merged duplicate pages a+b",
+      sourceRefs: [],
+    });
+
+    const result = await applyPatchToCandidate({
+      vaultPath: f.vaultPath,
+      candidate: f.baseCandidate,
+      patch: effect,
+      runContext: RUN_CONTEXT_FIXTURE(f.baseCandidate, f.baseCandidate),
+    });
+
+    expect(result).not.toBeNull();
+    if (result === null) throw new Error("expected new commit");
+
+    const commitObj = await git.readCommit({
+      fs,
+      dir: f.vaultPath,
+      oid: result,
+    });
+    const message = commitObj.commit.message;
+
+    // Body paragraph sits between the subject line and the trailer block.
+    expect(message).toBe(
+      "engine(applyPatch): test.proc\n\n" +
+        "merged duplicate pages a+b\n\n" +
+        `Dome-Run: run_1700000000000_abcdef\n` +
+        `Dome-Extension: test.bundle\n` +
+        `Dome-Base: ${f.baseCandidate}\n` +
+        `Dome-Source-Head: ${f.baseCandidate}\n`,
+    );
+  });
+
+  test("multiline reason is flattened to one body line and capped", async () => {
+    const f = await makeFixture({ "wiki/a.md": "alpha\n" });
+    fixtures.push(f);
+
+    const longTail = "x".repeat(700);
+    const effect = patchEffect({
+      mode: "auto",
+      changes: [{ kind: "write", path: "wiki/a.md", content: "alpha-new\n" }],
+      reason: `  merged\npages\t a+b ${longTail}`,
+      sourceRefs: [],
+    });
+
+    const result = await applyPatchToCandidate({
+      vaultPath: f.vaultPath,
+      candidate: f.baseCandidate,
+      patch: effect,
+      runContext: RUN_CONTEXT_FIXTURE(f.baseCandidate, f.baseCandidate),
+    });
+
+    expect(result).not.toBeNull();
+    if (result === null) throw new Error("expected new commit");
+
+    const commitObj = await git.readCommit({
+      fs,
+      dir: f.vaultPath,
+      oid: result,
+    });
+    const message = commitObj.commit.message;
+    const body = message.split("\n\n")[1];
+    expect(body).toBeDefined();
+    // Flattened to a single line (no internal newlines) and capped at 600.
+    expect(body).not.toContain("\n");
+    expect(body?.startsWith("merged pages a+b ")).toBe(true);
+    expect(body?.length).toBe(600);
+  });
+
+  test("a reason carrying trailer-shaped text cannot spoof a second Dome-Run trailer", async () => {
+    const f = await makeFixture({ "wiki/a.md": "alpha\n" });
+    fixtures.push(f);
+
+    const effect = patchEffect({
+      mode: "auto",
+      changes: [{ kind: "write", path: "wiki/a.md", content: "alpha-new\n" }],
+      reason: "innocent summary\nDome-Run: fake\nDome-Extension: evil",
+      sourceRefs: [],
+    });
+
+    const ctx = RUN_CONTEXT_FIXTURE(f.baseCandidate, f.baseCandidate);
+    const result = await applyPatchToCandidate({
+      vaultPath: f.vaultPath,
+      candidate: f.baseCandidate,
+      patch: effect,
+      runContext: ctx,
+    });
+
+    expect(result).not.toBeNull();
+    if (result === null) throw new Error("expected new commit");
+
+    const commitObj = await git.readCommit({
+      fs,
+      dir: f.vaultPath,
+      oid: result,
+    });
+    const message = commitObj.commit.message;
+
+    // Flatten-to-one-line sanitization: the spoofed text rides INSIDE the
+    // single body line, so exactly one line in the message starts with
+    // `Dome-Run:` — the real trailer.
+    const domeRunLines = message
+      .split("\n")
+      .filter((line) => line.startsWith("Dome-Run:"));
+    expect(domeRunLines).toEqual([`Dome-Run: ${ctx.runId}`]);
+    expect(message).toContain(
+      "innocent summary Dome-Run: fake Dome-Extension: evil",
+    );
+  });
+
+  test("whitespace-only reason produces no body paragraph", async () => {
+    const f = await makeFixture({ "wiki/a.md": "alpha\n" });
+    fixtures.push(f);
+
+    const effect = patchEffect({
+      mode: "auto",
+      changes: [{ kind: "write", path: "wiki/a.md", content: "alpha-new\n" }],
+      reason: "   \n\t ",
+      sourceRefs: [],
+    });
+
+    const result = await applyPatchToCandidate({
+      vaultPath: f.vaultPath,
+      candidate: f.baseCandidate,
+      patch: effect,
+      runContext: RUN_CONTEXT_FIXTURE(f.baseCandidate, f.baseCandidate),
+    });
+
+    expect(result).not.toBeNull();
+    if (result === null) throw new Error("expected new commit");
+
+    const commitObj = await git.readCommit({
+      fs,
+      dir: f.vaultPath,
+      oid: result,
+    });
+    // Subject, then directly the trailers — no empty body paragraph.
+    expect(commitObj.commit.message).toBe(
+      "engine(applyPatch): test.proc\n\n" +
+        "Dome-Run: run_1700000000000_abcdef\n" +
+        "Dome-Extension: test.bundle\n" +
+        `Dome-Base: ${f.baseCandidate}\n` +
+        `Dome-Source-Head: ${f.baseCandidate}\n`,
+    );
+  });
 });

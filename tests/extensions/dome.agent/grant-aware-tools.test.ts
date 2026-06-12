@@ -79,6 +79,40 @@ describe("ingest tools enforce the patch.auto grant at tool time", () => {
     expect(state.edits.size).toBe(0);
   });
 
+  // log.md is frozen and index.md is generated from description: frontmatter
+  // (read grant only — the core-memory.ts grant shape). The broker verdict is
+  // per-PatchEffect (all-or-nothing), so a stray write must die at the tool,
+  // not poison the whole batched patch.
+  test("writePage rejects log.md and index.md without recording an edit", async () => {
+    const tools = makeIngestTools({ reader: reader({}) });
+    const state = freshState();
+    for (const path of ["log.md", "index.md"]) {
+      const out = await tool(tools, "writePage").execute(
+        { path, content: "x" },
+        state,
+      );
+      expect(out).toStartWith("error:");
+      expect(out).toContain(path);
+    }
+    expect(state.edits.size).toBe(0);
+  });
+
+  test("appendToPage rejects log.md and index.md without recording an edit", async () => {
+    const tools = makeIngestTools({
+      reader: reader({ "log.md": "history", "index.md": "catalog" }),
+    });
+    const state = freshState();
+    for (const path of ["log.md", "index.md"]) {
+      const out = await tool(tools, "appendToPage").execute(
+        { path, content: "x" },
+        state,
+      );
+      expect(out).toStartWith("error:");
+      expect(out).toContain(path);
+    }
+    expect(state.edits.size).toBe(0);
+  });
+
   test("archiveSource rejects a path outside inbox/raw/", async () => {
     const tools = makeIngestTools({ reader: reader({ "wiki/a.md": "body" }) });
     const state = freshState();
@@ -117,6 +151,41 @@ describe("consolidator tools enforce the patch.auto grant at tool time", () => {
       state,
     );
     expect(out).toStartWith("error:");
+    expect(state.edits.size).toBe(0);
+  });
+
+  // Same tool-time fence as ingest: index.md/log.md are read-only for the
+  // consolidator (the index regenerates itself; log.md is frozen history),
+  // and the all-or-nothing PatchEffect verdict means the denial must land
+  // at the tool, where the model can self-correct.
+  test("writePage rejects log.md and index.md without recording an edit", async () => {
+    const tools = makeConsolidatorTools({
+      reader: reader({}),
+      ledgerPath: "consolidation-ledger.md",
+    });
+    const state = freshState();
+    for (const path of ["log.md", "index.md"]) {
+      const out = await tool(tools, "writePage").execute(
+        { path, content: "x" },
+        state,
+      );
+      expect(out).toStartWith("error:");
+      expect(out).toContain(path);
+    }
+    expect(state.edits.size).toBe(0);
+  });
+
+  test("deletePage rejects log.md and index.md without recording an edit", async () => {
+    const tools = makeConsolidatorTools({
+      reader: reader({ "log.md": "history", "index.md": "catalog" }),
+      ledgerPath: "consolidation-ledger.md",
+    });
+    const state = freshState();
+    for (const path of ["log.md", "index.md"]) {
+      const out = await tool(tools, "deletePage").execute({ path }, state);
+      expect(out).toStartWith("error:");
+      expect(out).toContain(path);
+    }
     expect(state.edits.size).toBe(0);
   });
 

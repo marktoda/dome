@@ -41,6 +41,10 @@ dome today [--date <yyyy-mm-dd>] [--limit <n>] [--watch] [--interval <seconds>] 
                                 Render today's action surface (open tasks,
                                 follow-ups, questions) — the terminal cockpit.
                                 --watch re-renders on an interval until ctrl-c.
+dome log [--since <date>] [--processor <id>] [--grep <text>] [--limit <n>] [--json]
+                                Vault activity: git history joined with the
+                                run ledger. Engine commit bodies carry the
+                                patch narrative (log.md is frozen).
 dome serve [--vault <path>] [--daemon] [--poll-interval-ms <n>] [-v|--verbose]
            [--filter-processor <glob>] [-q|--quiet]
                                 Run the local compiler host. Polls refs/heads/<branch>
@@ -73,7 +77,7 @@ dome recipe <kind> [--url <base>]
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
 
 - **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, and `dome resolve`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records an owner or agent answer to a Dome-raised decision and dispatches answer handlers.
-- **Adopted-state recall surfaces:** `dome query` and `dome export-context` are the normal explicit read views when the user or a foreground agent asks for recall, planning, agenda context, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands.
+- **Adopted-state recall surfaces:** `dome query` and `dome export-context` are the normal explicit read views when the user or a foreground agent asks for recall, planning, agenda context, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands. `dome log` is the activity-recall sibling with a CLI-native posture (the `dome status` stance — no runtime, no view boundary): it reads git history directly and joins the run ledger (§"`dome log`").
 - **Advanced/debug and compatibility surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer`, `dome run`, `dome rebuild`, and `dome reanchor` remain available for detailed state inspection, extension development, maintenance, and explicit recovery. They are hidden from top-level help and are not the normal Claude Code workflow.
 
 `dome doctor` is read-only in V1. The `--repair` flag is a reserved surface for
@@ -1191,6 +1195,49 @@ clear gating, sleep cadence, flag exclusivity).
 Exit codes: 0 on success; 64 (EX_USAGE) on `--watch` + `--json`, a missing
 `today` view processor, or an unusable adopted ref; 1 on runtime or dispatch
 failure.
+
+### `dome log [--since <date>] [--processor <id>] [--grep <text>] [--limit <n>] [--json]`
+
+The vault's activity view — newest-first git history joined with the run
+ledger. Per [[wiki/invariants/NO_ACCRETING_REGISTRIES]] the activity log is
+not a file agents append to (`log.md` is frozen); it is a render over the two
+surfaces that already record everything: git commits (engine commits carry
+the `Dome-*` trailers per [[wiki/specs/adoption]] §"Engine commit trailers",
+and their bodies carry the PatchEffect's narrative `reason`) and `runs.db`
+(the `Dome-Run` trailer equals `runs.id` — the dual-surface join key per
+[[wiki/specs/run-ledger]]).
+
+**CLI-native posture** (the `dome status` stance): read-only, no runtime
+lock, no Proposal, no view-command boundary. The collector is
+`buildActivityLog` in `src/surface/activity.ts` (shared surface — MCP/HTTP
+adapters can adopt it later); git spawning stays inside `src/git.ts`. A vault
+whose `runs.db` does not exist yet (or fails to open) still renders — engine
+entries simply carry `run: null`; the CLI never scaffolds state in a vault it
+only reads.
+
+Each entry carries the commit SHA, ISO timestamp, an `engine`/`human` author
+discriminator (engine iff a non-empty `Dome-Run` trailer is present), the
+subject, the body with the `Dome-*` trailer block stripped, and — when the
+ledger join lands — the run's status, duration, and cost. Text mode renders
+one block per entry (`when · author · subject` headline, muted narrative
+body, muted `run <id> <status> · 3.2s · $0.04` line).
+
+- `--since <date>` — lower time bound; anything `git log --since` accepts.
+- `--processor <id>` — keep engine entries only, matched against the joined
+  run row's processor id, the `Dome-Extension` trailer, or the commit
+  subject (engine(applyPatch) subjects carry the processor id verbatim).
+- `--grep <text>` — case-insensitive substring filter over subject + body.
+- `--limit <n>` — maximum entries (default 30). Maps to git's `-n` only when
+  no post-filter runs; a filtered read walks the (since-bounded) history so
+  filters see past the first `limit` commits. Deliberate scope cut: no
+  pagination beyond this.
+- `--json` — emit the structured `dome.log/v1` payload (`{ schema,
+  entries }`).
+
+Tests: `tests/cli/commands/log.test.ts` and `tests/surface/activity.test.ts`.
+
+Exit codes: 0 on a clean read (including an empty history); 1 when the vault
+has no git history surface (not a repo) or the activity read fails.
 
 ### `dome recipe <kind> [--url <base>]`
 

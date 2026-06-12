@@ -1,7 +1,7 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 ---
@@ -30,8 +30,8 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 | Intent | Status | Processor | Phase | Prompt source | Effects emitted |
 |---|---|---|---|---|---|
 | "Cross-reference new entity mentions" | planned | `dome.links.cross-reference` | garden | none (rule-based, no LLM) | PatchEffect (insert wikilinks) |
-| "Update the index" | planned | `dome.index.update-index` | adoption | none | PatchEffect (rewrite index.md) |
-| "Append run records to log.md" | planned | `dome.log.append-log` | adoption | none | PatchEffect (append log.md row) |
+| "Update the index" | shipped | `dome.markdown.render-index` | garden (cron `15 5 * * *` + wiki create/delete signals) | none (deterministic render from `description:` frontmatter) | PatchEffect (rewrite the `dome.markdown:index-catalog` block in `index.md` + category shards), info DiagnosticEffect on marker anomalies |
+| "What did Dome do?" | shipped | `dome log` (CLI-native — no processor; git history joined with the run ledger) | — | none | none (read-only; `log.md` is frozen per NO_ACCRETING_REGISTRIES) |
 | "Index explicit wiki-page tasks/followups" | shipped | `dome.daily.task-index`, `dome.daily.ambiguous-followup-answer` | adoption + garden answer | none | FactEffect (`dome.daily.open_task`, `dome.daily.followup`), QuestionEffect for ambiguous prose follow-ups, answer-triggered PatchEffect to write accepted prose follow-ups back into markdown |
 | "Show today's action surface" | hidden compatibility | `dome.daily.today` | view (hidden command wrapper / `dome run today`) | none | ViewEffect (structured daily note, open tasks, followups, questions) |
 | "Lint the wiki for issues" | shipped | `dome.lint.report` | view (command via `dome lint`) | none (projection diagnostics + deterministic adopted-state checks) | ViewEffect (structured lint report) |

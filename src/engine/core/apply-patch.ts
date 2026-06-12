@@ -172,9 +172,11 @@ export async function applyPatchToCandidate(
   // 4. Write the new commit. `writeCommit` accepts a CommitObject directly —
   //    we don't go through `git.commit` because that path requires staging
   //    via the index, which would touch the working tree.
+  const body = commitBodyFromReason(opts.patch.reason);
   const message = composeCommitMessage({
     verb: "engine(applyPatch)",
     subject: opts.runContext.processorId,
+    ...(body !== undefined ? { body } : {}),
     touchedPaths: [], // unused by composeCommitMessage when only verb/subject are set
     runContext: {
       runId: opts.runContext.runId,
@@ -206,6 +208,18 @@ export async function applyPatchToCandidate(
   });
 
   return commitOid(newCommitOid);
+}
+
+/**
+ * The PatchEffect's `reason` is the narrative activity log (NO_ACCRETING_REGISTRIES:
+ * git history replaces log.md). Bound and sanitize: single paragraph, no
+ * trailer-spoofing `Key: value` line starts, hard cap to keep messages sane.
+ */
+const REASON_BODY_MAX_CHARS = 600;
+function commitBodyFromReason(reason: string): string | undefined {
+  const flat = reason.replace(/\s+/g, " ").trim();
+  if (flat.length === 0) return undefined;
+  return flat.slice(0, REASON_BODY_MAX_CHARS);
 }
 
 // ----- tree rebuild ---------------------------------------------------------
