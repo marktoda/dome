@@ -2,10 +2,11 @@
 type: source
 created: 2026-05-27
 updated: 2026-06-11
-sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
-url: "https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f"
-author: "Andrej Karpathy"
+sources:
+  - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+author: Andrej Karpathy
 external: true
+url: https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f
 ---
 
 # Karpathy LLM Wiki gist
