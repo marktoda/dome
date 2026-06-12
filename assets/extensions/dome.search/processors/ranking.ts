@@ -79,12 +79,9 @@ const TYPE_WEIGHTS = Object.freeze(new Map<string, number>([
 export const SEARCH_OPEN_LOOP_PREDICATES = Object.freeze([
   "dome.daily.open_task",
   "dome.daily.followup",
-  "dome.intake.task",
-  "dome.intake.followup",
 ]);
 
 export const SEARCH_DECISION_PREDICATES = Object.freeze([
-  "dome.intake.decision",
   "dome.daily.decision",
 ]);
 
