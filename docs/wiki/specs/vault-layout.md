@@ -260,7 +260,11 @@ sanitized narrative `reason` in its body plus the four `Dome-*` trailers
 ([[wiki/specs/cli]] §"`dome log`") renders that history joined with the run
 ledger. Nothing appends to `log.md`: no charter instructs it, the `dome.agent`
 `patch.auto` grants exclude it (read stays granted — it remains background
-context), and the grant-aware agent tools deny writes at tool time. Existing
+context), and the grant-aware agent tools deny writes at tool time. Frozen
+means no accretion and no model writes, not byte-immutability: the
+deterministic source-preserving hygiene passes (wikilink repair, frontmatter
+normalization) retain their covering `**/*.md` grants by design, so a page
+rename does not strand broken links in the archive. Existing
 content stays archived in place; vaults may rename it
 (`log-archive-through-<date>.md`) but no rotation machinery exists.
 
@@ -468,7 +472,7 @@ The capability broker enforces ownership. Default rules:
 | Path | Owner |
 |---|---|
 | `index.md`, `index-*.md` | `dome.markdown.render-index` (via `patch.auto`) — generated renders; agent grants exclude them |
-| `log.md` | nobody — frozen history per [[wiki/invariants/NO_ACCRETING_REGISTRIES]]; activity is git via `dome log` |
+| `log.md` | no agent or model-class writer; nothing appends entries — frozen history per [[wiki/invariants/NO_ACCRETING_REGISTRIES]] (deterministic source-preserving hygiene passes like wikilink repair retain covering grants by design); activity is git via `dome log` |
 | `raw/**` | nobody — immutable per [[wiki/invariants/RAW_IS_IMMUTABLE]] |
 | `core.md` | propose-only — agents read it; `dome.agent.preference-promotion-answer` is the sole auto-writer via a narrow per-processor grant ([[wiki/specs/preferences]]) |
 | `preferences/signals.md` | shared append surface — the three `dome.agent` charters, the promotion answer handler, foreground agents, and the owner all append signal lines (§"`preferences/signals.md`") |

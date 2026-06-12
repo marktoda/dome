@@ -70,7 +70,7 @@ Implementation status: the core type exists as a planned API, but region parsing
 
 ### `owns.path`
 
-Whole-file ownership. Other processors' PatchEffects touching an owned path are rejected once the owning bundle and grants are present. No shipped first-party bundle uses it today: the anticipated owners (`dome.index` over `index.md`, `dome.log` over `log.md`) are retired per [[wiki/invariants/NO_ACCRETING_REGISTRIES]] — index files are renders maintained by `dome.markdown.render-index` under ordinary `patch.auto`, and `log.md` is frozen with no writer at all. The capability remains the right shape for a third-party bundle that genuinely needs exclusive write over one file.
+Whole-file ownership. Other processors' PatchEffects touching an owned path are rejected once the owning bundle and grants are present. No shipped first-party bundle uses it today: the anticipated owners (`dome.index` over `index.md`, `dome.log` over `log.md`) are retired per [[wiki/invariants/NO_ACCRETING_REGISTRIES]] — index files are renders maintained by `dome.markdown.render-index` under ordinary `patch.auto`, and `log.md` is frozen with no agent or model-class writer — nothing appends entries; only deterministic source-preserving hygiene passes (wikilink repair, frontmatter normalization) retain covering grants, by design. The capability remains the right shape for a third-party bundle that genuinely needs exclusive write over one file.
 
 Path ownership replaces v0.5's `INDEX_AND_LOG_ARE_DISPATCHER_OWNED` invariant — same property, expressed as a capability rather than a hard-coded refusal in the writer layer.
 

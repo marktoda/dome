@@ -137,9 +137,11 @@ Trailers sit after a blank line per `git interpret-trailers` convention. They ar
 trailer block, a garden patch-application commit carries the PatchEffect's
 sanitized `reason` (`commitBodyFromReason` in
 `src/engine/core/apply-patch.ts`): all whitespace runs flattened to single
-spaces (one paragraph — no line can start with `Key: value`, so a reason
-cannot spoof a trailer), hard-capped at 600 characters, omitted entirely when
-the reason is blank. Per [[wiki/invariants/NO_ACCRETING_REGISTRIES]] this
+spaces (one paragraph), hard-capped at 600 characters, omitted entirely when
+the reason is blank. A reason cannot spoof a trailer regardless of shape:
+`git interpret-trailers` parses trailers from the message's **last** block,
+and the trailer block always follows the body after its own blank-line
+separator — the body never ends the message. Per [[wiki/invariants/NO_ACCRETING_REGISTRIES]] this
 narrative is the activity log — git history replaces the retired `log.md`
 appends — and `dome log` ([[wiki/specs/cli]] §"`dome log`") renders it joined
 with the run ledger. The `dome.agent` processors feed it from the model's

@@ -3,8 +3,14 @@
 // frontmatter and the activity log is git history, so no first-party agent
 // surface may treat either as an accreting registry.
 //
-// Four layers, each read from the REAL artifact:
-//   1. No dome.agent charter instructs log.md appends or index-file edits.
+// The freeze contract is about ACCRETION and MODEL writes, not
+// byte-immutability: deterministic source-preserving hygiene passes
+// (repair-wikilinks, normalize-frontmatter, refresh-updated, the wikilink
+// validators) deliberately retain covering "**/*.md" grants — a page rename
+// must not strand broken links in frozen history. What the fence forbids:
+//
+//   1. No module in the dome.agent bundle lib instructs log.md appends or
+//      index-file edits (every .ts under lib/, not just charters).
 //   2. The dome.agent manifest's patch.auto grants exclude log.md and index
 //      files (checked with the broker's own glob matcher, so a covering
 //      pattern like "**/*.md" cannot sneak the paths back in).
@@ -12,6 +18,11 @@
 //      (bundle grant and every per-processor replacement grant).
 //   4. The bundle-local writable-path mirrors the grant-aware tools enforce
 //      at tool time exclude them.
+//   5. Across EVERY first-party manifest: no processor holding model.invoke
+//      may hold patch.auto covering log.md or index files; no processor of
+//      any class may name log.md as a targeted patch path; and the only
+//      processor that names index files as targeted patch paths is
+//      dome.markdown.render-index.
 //
 // Behavioral coverage lives in tests/extensions/dome.agent/
 // grant-aware-tools.test.ts (tool-time denial), tests/extensions/
@@ -19,7 +30,7 @@
 // tests/cli/commands/log.test.ts (dome log is the activity surface).
 
 import { describe, expect, test } from "bun:test";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { parse as parseYaml } from "yaml";
@@ -41,8 +52,9 @@ import { globMatch } from "../../src/engine/core/glob-cache";
 import { parseManifest } from "../../src/extensions/manifest-schema";
 
 const REPO_ROOT = join(import.meta.dir, "..", "..");
-const AGENT_BUNDLE = join(REPO_ROOT, "assets", "extensions", "dome.agent");
-const CHARTER_DIR = join(AGENT_BUNDLE, "lib");
+const EXTENSIONS_DIR = join(REPO_ROOT, "assets", "extensions");
+const AGENT_BUNDLE = join(EXTENSIONS_DIR, "dome.agent");
+const AGENT_LIB_DIR = join(AGENT_BUNDLE, "lib");
 
 /**
  * Representative registry paths: the root index, both default category
@@ -59,6 +71,24 @@ const REGISTRY_PATHS: ReadonlyArray<string> = Object.freeze([
   "index-entities-2.md",
 ]);
 
+const INDEX_REGISTRY_PATHS: ReadonlyArray<string> = REGISTRY_PATHS.filter(
+  (path) => path !== "log.md",
+);
+
+/**
+ * Control path for the targeted-vs-generic distinction: a pattern that also
+ * covers an arbitrary root-level page (e.g. "**\/*.md") is a generic hygiene
+ * glob whose registry coverage is by design (source-preserving passes must
+ * follow renames into frozen history); a pattern that matches a registry
+ * path but NOT this control (e.g. "index.md", "index-*.md", "log.md") is a
+ * targeted registry grant.
+ */
+const GENERIC_CONTROL_PATH = "some-ordinary-page.md";
+
+function isGenericPattern(pattern: string): boolean {
+  return globMatch(pattern, GENERIC_CONTROL_PATH);
+}
+
 function expectNoRegistryCoverage(
   patterns: ReadonlyArray<string>,
   where: string,
@@ -72,15 +102,84 @@ function expectNoRegistryCoverage(
   }
 }
 
-describe("NO_ACCRETING_REGISTRIES", () => {
-  test("no dome.agent charter instructs log.md appends or index-file edits", () => {
-    const charterFiles = readdirSync(CHARTER_DIR).filter(
-      (f) => f.endsWith("-charter.ts") || f === "agent-preamble.ts",
-    );
-    expect(charterFiles.length).toBeGreaterThanOrEqual(4);
+type ManifestProcessor = {
+  readonly bundleId: string;
+  readonly id: string;
+  readonly hasModelInvoke: boolean;
+  readonly patchAutoPaths: ReadonlyArray<string>;
+};
 
-    for (const file of charterFiles) {
-      const text = readFileSync(join(CHARTER_DIR, file), "utf8");
+function loadFirstPartyProcessors(): ReadonlyArray<ManifestProcessor> {
+  const processors: ManifestProcessor[] = [];
+  for (const entry of readdirSync(EXTENSIONS_DIR).sort()) {
+    const manifestPath = join(EXTENSIONS_DIR, entry, "manifest.yaml");
+    if (!existsSync(manifestPath)) continue;
+    const parsed = parseManifest(parseYaml(readFileSync(manifestPath, "utf8")));
+    expect(parsed.ok, `${entry}/manifest.yaml must parse`).toBe(true);
+    if (!parsed.ok) continue;
+    for (const processor of parsed.value.processors) {
+      const patchAutoPaths: string[] = [];
+      let hasModelInvoke = false;
+      for (const capability of processor.capabilities) {
+        if (capability.kind === "model.invoke") hasModelInvoke = true;
+        if (capability.kind !== "patch.auto") continue;
+        const paths = (capability as { readonly paths?: ReadonlyArray<string> })
+          .paths;
+        if (Array.isArray(paths)) patchAutoPaths.push(...paths);
+      }
+      processors.push({
+        bundleId: parsed.value.id,
+        id: processor.id,
+        hasModelInvoke,
+        patchAutoPaths,
+      });
+    }
+  }
+  return processors;
+}
+
+/**
+ * Negative-cue exemption for the prose fence, tightened: a registry mention
+ * is exempt only when the freeze vocabulary appears within the 40 characters
+ * PRECEDING it ("never edit index files", "no appends land in log.md").
+ * A trailing negation does not exempt — "Append each run summary to log.md
+ * and never skip it" fails the fence.
+ */
+const NEGATIVE_CUE = /never|nothing|frozen|read-only|generated/i;
+const REGISTRY_MENTION = /log\.md|index(?:\.md| files?)/i;
+
+function isExemptMention(line: string, matchIndex: number, matchText: string): boolean {
+  const mention = REGISTRY_MENTION.exec(matchText);
+  if (mention === null) return false;
+  const mentionStart = matchIndex + mention.index;
+  const mentionEnd = mentionStart + mention[0].length;
+  const window = line.slice(Math.max(0, mentionStart - 40), mentionEnd);
+  return NEGATIVE_CUE.test(window);
+}
+
+function expectNoWriteInstruction(
+  line: string,
+  pattern: RegExp,
+  message: string,
+): void {
+  const match = pattern.exec(line);
+  if (match === null) return;
+  expect(
+    isExemptMention(line, match.index, match[0]),
+    `${message}: ${line.trim()}`,
+  ).toBe(true);
+}
+
+describe("NO_ACCRETING_REGISTRIES", () => {
+  test("no dome.agent lib module instructs log.md appends or index-file edits", () => {
+    const libFiles = readdirSync(AGENT_LIB_DIR).filter((f) => f.endsWith(".ts"));
+    // Every .ts under lib/ — charters, preambles, tools, harness — not just
+    // the *-charter.ts naming convention. Floor guards against the discovery
+    // glob silently going empty.
+    expect(libFiles.length).toBeGreaterThanOrEqual(10);
+
+    for (const file of libFiles) {
+      const text = readFileSync(join(AGENT_LIB_DIR, file), "utf8");
 
       // No tool-call-shaped writes to the frozen log or the index renders.
       expect(text, `${file} calls appendToPage on log.md`).not.toMatch(
@@ -91,35 +190,79 @@ describe("NO_ACCRETING_REGISTRIES", () => {
       );
 
       // No prose instruction to append the log or maintain index files.
-      // Line-scoped, with a negative-context allowlist so the freeze
-      // vocabulary itself ("log.md is FROZEN history — nothing appends to
-      // it", "never edit index files") does not trip the fence.
+      // Line-scoped; the only exemption is freeze vocabulary within the 40
+      // chars preceding the registry mention (see isExemptMention).
       for (const line of text.split("\n")) {
-        const benign =
-          /frozen|never|nothing|no log\.md|read-only|generated|is the catalog/i;
-        if (benign.test(line)) continue;
-        expect(
+        expectNoWriteInstruction(
           line,
-          `${file} instructs appending to log.md: ${line.trim()}`,
-        ).not.toMatch(/append\w*[^.\n]{0,80}\blog\.md/i);
-        expect(
+          /append\w*[^.\n]{0,80}\blog\.md/i,
+          `${file} instructs appending to log.md`,
+        );
+        expectNoWriteInstruction(
           line,
-          `${file} instructs editing index files: ${line.trim()}`,
-        ).not.toMatch(
           /\b(?:edit|update|maintain|add(?: \w+){0,3} to)\b[^.\n]{0,80}\bindex(?:\.md| files?)/i,
+          `${file} instructs editing index files`,
         );
       }
     }
 
     // Positive pins on the replacement vocabulary, so a wholesale charter
     // rewrite cannot quietly drop the contract along with the old chore.
-    const ingest = readFileSync(join(CHARTER_DIR, "ingest-charter.ts"), "utf8");
+    const ingest = readFileSync(join(AGENT_LIB_DIR, "ingest-charter.ts"), "utf8");
     expect(ingest).toMatch(/never edit index files/i);
     const consolidate = readFileSync(
-      join(CHARTER_DIR, "consolidate-charter.ts"),
+      join(AGENT_LIB_DIR, "consolidate-charter.ts"),
       "utf8",
     );
     expect(consolidate).toMatch(/log\.md.*frozen/is);
+  });
+
+  test("no model.invoke processor in any first-party manifest holds patch.auto over log.md or index files", () => {
+    const processors = loadFirstPartyProcessors();
+    const modelProcessors = processors.filter((p) => p.hasModelInvoke);
+    // ingest, consolidate, brief, sweep, warden.integrity.
+    expect(modelProcessors.length).toBeGreaterThanOrEqual(5);
+
+    for (const processor of modelProcessors) {
+      expectNoRegistryCoverage(
+        processor.patchAutoPaths,
+        `${processor.bundleId} model-class processor ${processor.id}`,
+      );
+    }
+  });
+
+  test("only dome.markdown.render-index names index files as targeted patch paths; nobody targets log.md", () => {
+    const processors = loadFirstPartyProcessors();
+    expect(processors.length).toBeGreaterThanOrEqual(10);
+
+    let renderIndexTargets = 0;
+    for (const processor of processors) {
+      for (const pattern of processor.patchAutoPaths) {
+        if (isGenericPattern(pattern)) continue; // hygiene glob — by design
+
+        // log.md has no targeted patcher of any class: frozen history's only
+        // legitimate writers are the generic source-preserving passes.
+        expect(
+          globMatch(pattern, "log.md"),
+          `${processor.bundleId}/${processor.id} names log.md as a patch target via "${pattern}"`,
+        ).toBe(false);
+
+        // Index files' only targeted patcher beyond generic hygiene passes
+        // is the deterministic renderer.
+        const targetsIndex = INDEX_REGISTRY_PATHS.some((path) =>
+          globMatch(pattern, path),
+        );
+        if (!targetsIndex) continue;
+        expect(
+          processor.id,
+          `${processor.bundleId}/${processor.id} names index files as a patch target via "${pattern}" — only dome.markdown.render-index may`,
+        ).toBe("dome.markdown.render-index");
+        renderIndexTargets += 1;
+      }
+    }
+    // The renderer's own grant ("index.md", "index-*.md") must stay visible
+    // to this fence — if it vanishes, the exclusivity claim is untested.
+    expect(renderIndexTargets).toBeGreaterThanOrEqual(2);
   });
 
   test("dome.agent manifest patch.auto grants exclude log.md and index files", () => {

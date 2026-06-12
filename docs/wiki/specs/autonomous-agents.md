@@ -56,7 +56,7 @@ The bundle library at `assets/extensions/dome.agent/lib/agent-loop.ts` provides 
 ```ts
 type AgentDefinition = {
   id: string;                       // e.g. "dome.agent.ingest"
-  charter: string;                  // system-prompt file content — the agent's instructions
+  charter: string;                  // system-prompt text — the agent's instructions
   trigger: ProcessorTrigger;
   tools: AgentTool[];               // { schema, execute(input, ctx) }
   budget: { maxSteps: number };
@@ -81,7 +81,7 @@ Translation to effects: the `EditAccumulator` (`path → finalContent | delete`)
 
 - **Phase / kind:** garden, `kind: llm`.
 - **Trigger:** a change touching `inbox/raw/*.md`. Idempotent by consumption — the agent archives the raw file in its patch, so a converged source does not re-fire.
-- **Charter:** the Ingest workflow: read the raw source → create a `wiki/sources/<slug>` summary page → create or update entity/concept pages with bidirectional `[[wikilinks]]` → set a one-line `description:` in each new page's frontmatter (the index is generated from it — the charter says "never edit index files") → route action-items into today's daily `## Captured today` block or an entity's `## Open threads` → archive the raw file. The charter is data (a bundled `.md` prompt file), not code. The agent's **final message is the run's activity record**: the charter instructs one tight closing line (what landed where), and the harness appends its flattened 200-char excerpt to the static patch reason, so it rides the engine commit body per [[wiki/specs/adoption]] §"Engine commit trailers" — there is no `log.md` append ([[wiki/invariants/NO_ACCRETING_REGISTRIES]]).
+- **Charter:** the Ingest workflow: read the raw source → create a `wiki/sources/<slug>` summary page → create or update entity/concept pages with bidirectional `[[wikilinks]]` → set a one-line `description:` in each new page's frontmatter (the index is generated from it — the charter says "never edit index files") → route action-items into today's daily `## Captured today` block or an entity's `## Open threads` → archive the raw file. The charter is prompt text, not code-with-privilege (concretely: a string exported from a bundle TS module, `lib/ingest-charter.ts` — data fed to the model, carrying no capability of its own). The agent's **final message is the run's activity record**: the charter instructs one tight closing line (what landed where), and the harness appends its flattened 200-char excerpt to the static patch reason, so it rides the engine commit body per [[wiki/specs/adoption]] §"Engine commit trailers" — there is no `log.md` append ([[wiki/invariants/NO_ACCRETING_REGISTRIES]]).
 
 **Tool surface:**
 
