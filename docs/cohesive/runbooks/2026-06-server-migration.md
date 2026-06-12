@@ -123,3 +123,25 @@ reaches it only after a restart. (Plan:
 Later (defer to chunk 3b): `dome init --refresh-instructions` so the vault's
 AGENTS.md mentions `dome log` — the init template does not yet cover
 log.md/`dome log`, so refreshing today would change nothing.
+
+## Chunk 3b — core.md activation (work vault)
+
+Operator steps after the chunk-3b merge. This composes with the pending
+chunk-3a migration above — do both in one sitting. Order between them doesn't
+matter, but finish both before (or together with) the daemon restart.
+
+1. Grant the new processor. The work vault's config has a user-owned
+   `processors:` block, so the new per-processor default grant does NOT
+   propagate — on the first 05:20 tick the active-projects patch is
+   capability-denied (harmless but noisy, and the feature stays inert). Add
+   under `extensions.dome.agent.processors`:
+
+       dome.agent.active-projects:
+         grant:
+           read: [core.md, "wiki/dailies/*.md"]
+           patch.auto: [core.md]
+
+2. Seed the core page: `dome recipe core-seed` and do the interview to fill
+   Who I am + Standing preferences.
+3. Verify: `dome doctor` flags the missing grant until step 1 is done; once
+   it's clean, the next 05:20 tick writes the active-projects block.

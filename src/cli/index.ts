@@ -622,7 +622,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
   program
     .command("recipe <kind>")
     .description(
-      "Print a client setup recipe (available: ios — voice capture via Shortcuts).",
+      "Print a setup recipe (available: ios — voice capture via Shortcuts; core-seed — owner interview for core.md).",
     )
     .option(
       "--url <base>",

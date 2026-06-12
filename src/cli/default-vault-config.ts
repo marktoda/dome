@@ -94,9 +94,10 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
       {
         // core.md is deliberately read-only here (the canonical propose-only
         // grant shape): agents read core memory every run but never
-        // auto-write it. Keep core.md out of the bundle patch.auto — the M5
-        // preference-promotion answer handler is its sole auto-writer via
-        // the narrow per-processor replacement grant below.
+        // auto-write it. Keep core.md out of the bundle patch.auto — its
+        // only gated writers are the two block-scoped processors with the
+        // narrow per-processor replacement grants below (each owns a
+        // distinct generated block; everything else is propose-only).
         read: [
           "wiki/**/*.md",
           "notes/**/*.md",
@@ -131,13 +132,21 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
         "question.ask": true,
       },
       {
-        // The single-auto-writer exception (memory decision 4): the
-        // promotion question WAS the owner review, so the answer handler —
-        // and only it — may auto-write core.md. Replacement grant: exactly
-        // the core page + the signals page (rejection tombstones).
+        // The two-gated-writers contract (memory decision 4 evolved;
+        // wiki/specs/preferences.md): core.md's only auto-writers are these
+        // two deterministic processors, each owning ONE distinct generated
+        // block. The promotion answer handler owns promoted-preferences
+        // (the promotion question WAS the owner review); active-projects
+        // owns the active-projects block. Replacement grants stay exact:
+        // the core page (+ the signals page for rejection tombstones) and,
+        // for active-projects, the dailies its tallies are derived from.
         "dome.agent.preference-promotion-answer": Object.freeze({
           read: ["core.md", "preferences/signals.md"],
           "patch.auto": ["core.md", "preferences/signals.md"],
+        }),
+        "dome.agent.active-projects": Object.freeze({
+          read: ["core.md", "wiki/dailies/*.md"],
+          "patch.auto": ["core.md"],
         }),
       },
     ),

@@ -29,6 +29,7 @@ describe("agent prompt regression", () => {
       consolidateCharter({
         ledgerPath: "wiki/meta/consolidation-ledger.md",
         maxChangedFiles: MAX_CHANGED_FILES,
+        targets: ["wiki/"],
       }),
     ).toMatchSnapshot();
   });

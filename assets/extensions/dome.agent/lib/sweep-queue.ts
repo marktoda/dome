@@ -290,7 +290,10 @@ type LedgerInfo = { settled: boolean; failedCount: number };
  * ledger row is redundant when the link landed and exactly wrong when the
  * integration's sub-proposal was rejected (the row would suppress the
  * re-queue forever). `no-op`/`questioned` rows settle (they only save
- * re-judging); `failed` rows never settle and count toward escalation.
+ * re-judging); `failed` rows never settle and count toward escalation;
+ * `escalated` rows settle terminally — the pair stops consuming attempts
+ * and stops holding the cursor back, and becomes eligible again only when
+ * the owner hand-deletes the escalated row from the ledger.
  */
 function ledgerInfo(
   ledger: ParsedSweepLedger,
@@ -301,7 +304,11 @@ function ledgerInfo(
   let failedCount = 0;
   for (const row of ledger.settlements) {
     if (row.material === materialWithoutMd && row.destination === destWithoutMd) {
-      if (row.disposition === "no-op" || row.disposition === "questioned") {
+      if (
+        row.disposition === "no-op" ||
+        row.disposition === "questioned" ||
+        row.disposition === "escalated"
+      ) {
         settled = true;
       } else if (row.disposition === "failed") {
         failedCount += 1;

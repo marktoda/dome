@@ -1,6 +1,7 @@
-// dome.agent.preference-promotion-answer — the single auto-writer to core.md
-// (memory-quality M5, docs/wiki/specs/preferences.md §"The single-auto-writer
-// exception"; memory decision 4: the question WAS the review).
+// dome.agent.preference-promotion-answer — the gated core.md writer that
+// owns the promoted-preferences block (memory-quality M5,
+// docs/wiki/specs/preferences.md §"Two gated writers, block-scoped";
+// memory decision 4: the question WAS the review).
 //
 // On `promote`: re-derives the topic's candidate state from the CURRENT
 // snapshot, verifies the rule hash in the question's idempotency key still

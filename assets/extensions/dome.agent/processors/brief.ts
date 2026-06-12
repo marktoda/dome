@@ -13,8 +13,10 @@
 // the dome.agent.brief markers can land, only in the daily note, and every
 // bullet must carry a [[wikilink]] source ref; ungrounded bullets are
 // stripped and re-emitted as QuestionEffects. One PatchEffect (auto) per
-// run; a mid-run throw rolls the whole run back (create-daily recreates the
-// skeleton at 06:00).
+// run; a mid-run throw rolls the model's work back atomically and recovers
+// with deterministic effects only: a fallback stub spliced into the brief's
+// yesterday block plus an acknowledgeable brief-failed question (no answer
+// handler — resolution is the acknowledgment).
 
 import {
   diagnosticEffect,
@@ -212,15 +214,62 @@ const brief = defineProcessorImplementation({
         state,
       });
     } catch (error) {
-      // Atomic per run: drop ALL edits (including the seeded skeleton —
-      // create-daily recreates it at 06:00) and surface only a diagnostic.
+      // Atomic per run: drop ALL of the model's edits (a mid-run throw means
+      // unknown partial state) and surface a diagnostic. Recovery is
+      // effects-only and fully deterministic — nothing from the agent loop
+      // carries over:
+      //   (a) a fallback PatchEffect splices a failure stub into the brief's
+      //       own yesterday block of the daily (the pre-run `prepared`
+      //       content — existing daily or the freshly re-seeded skeleton —
+      //       is deterministic, so a same-day refailure REPLACES the stub
+      //       via the marker splice rather than appending a second copy);
+      //   (b) a QuestionEffect (idempotency `dome.agent.brief-failed:<date>`)
+      //       the owner or an agent acknowledges. There is deliberately NO
+      //       answer handler: resolving the question IS the durable
+      //       acknowledgment — "retried" records that someone re-ran the
+      //       brief, "skip-today" records the day was let go; nothing fires
+      //       on either answer.
       const message = error instanceof Error ? error.message : String(error);
+      const todayDate = formatDate(today);
+      const flattened = flattenErrorMessage(message);
+      const stub = [
+        YESTERDAY_BLOCK.start,
+        "### Yesterday",
+        `_Morning brief failed (${flattened}). Yesterday's note: [[${yesterdayPath.replace(/\.md$/, "")}]]. Retry: \`dome run dome.agent.brief\`._`,
+        YESTERDAY_BLOCK.end,
+      ].join("\n");
+      const fallback = replaceBriefBlock({
+        content: prepared,
+        markers: YESTERDAY_BLOCK,
+        section: stub,
+        heading: "Start Here",
+      });
       return Object.freeze([
         ...configDiagnostics,
         diagnosticEffect({
           severity: "warning",
           code: "dome.agent.brief-failed",
           message: `dome.agent.brief failed (${message}); run rolled back, no edits applied.`,
+          sourceRefs,
+        }),
+        ...(existing === null || fallback !== existing
+          ? [
+              patchEffect({
+                mode: "auto",
+                changes: [{ kind: "write", path: todayPath, content: fallback }],
+                reason: `dome.agent: brief failed — deterministic fallback stub into ${todayPath}`,
+                sourceRefs,
+              }),
+            ]
+          : []),
+        questionEffect({
+          question: `Morning brief for ${todayDate} failed (${flattened}). Retry with \`dome run dome.agent.brief\` and answer "retried", or answer "skip-today" to let the day go.`,
+          options: ["retried", "skip-today"],
+          idempotencyKey: `dome.agent.brief-failed:${todayDate}`,
+          metadata: {
+            automationPolicy: "agent-safe",
+            recommendedAnswer: "retried",
+          },
           sourceRefs,
         }),
       ]);
@@ -402,6 +451,20 @@ const brief = defineProcessorImplementation({
 });
 
 export default brief;
+
+/** The fallback-stub error cap (chars) — one readable parenthetical, not a stack dump. */
+const FLATTENED_ERROR_MAX_CHARS = 120;
+
+/**
+ * Flatten an error message for inline interpolation into the fallback stub:
+ * whitespace runs (including newlines) collapse to single spaces and the
+ * result is capped at FLATTENED_ERROR_MAX_CHARS with an ellipsis.
+ */
+function flattenErrorMessage(message: string): string {
+  const flat = message.replace(/\s+/g, " ").trim();
+  if (flat.length <= FLATTENED_ERROR_MAX_CHARS) return flat;
+  return `${flat.slice(0, FLATTENED_ERROR_MAX_CHARS - 1)}…`;
+}
 
 function ensureBriefBlocks(input: {
   readonly content: string;

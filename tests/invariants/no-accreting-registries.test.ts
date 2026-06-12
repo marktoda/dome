@@ -85,6 +85,24 @@ const INDEX_REGISTRY_PATHS: ReadonlyArray<string> = REGISTRY_PATHS.filter(
  */
 const GENERIC_CONTROL_PATH = "some-ordinary-page.md";
 
+/**
+ * The two-gated-writers contract for core.md (wiki/specs/preferences.md):
+ * exactly these processors hold patch.auto over core.md, pinned EXACTLY, and
+ * every core.md patch.auto holder must own a DISTINCT generated block name —
+ * promotion-answer owns `dome.agent:promoted-preferences`, active-projects
+ * owns `dome.agent:active-projects`. Adding a third writer (or widening
+ * either grant) must update this table deliberately, with its own block.
+ */
+const CORE_MD_WRITER_GRANTS: Readonly<
+  Record<string, ReadonlyArray<string>>
+> = Object.freeze({
+  "dome.agent.preference-promotion-answer": Object.freeze([
+    "core.md",
+    "preferences/signals.md",
+  ]),
+  "dome.agent.active-projects": Object.freeze(["core.md"]),
+});
+
 function isGenericPattern(pattern: string): boolean {
   return globMatch(pattern, GENERIC_CONTROL_PATH);
 }
@@ -265,6 +283,35 @@ describe("NO_ACCRETING_REGISTRIES", () => {
     expect(renderIndexTargets).toBeGreaterThanOrEqual(2);
   });
 
+  test("across every first-party manifest, only the pinned two-writer table names core.md as a patch target", () => {
+    // The bundle-scoped pins below can't see a core.md patch.auto declared in
+    // a DIFFERENT bundle's manifest, so this layer sweeps every first-party
+    // manifest the same way the index-files exclusivity test does: no
+    // processor outside CORE_MD_WRITER_GRANTS may name core.md as a targeted
+    // patch path. Generic hygiene globs ("**/*.md") are exempt by the same
+    // targeted-vs-generic control as index files — dome.markdown's
+    // deterministic source-preserving passes still cover core.md by design
+    // (the known gap recorded in wiki/specs/preferences.md §"Follow-ups").
+    const processors = loadFirstPartyProcessors();
+    expect(processors.length).toBeGreaterThanOrEqual(10);
+
+    let pinnedWriterTargets = 0;
+    for (const processor of processors) {
+      for (const pattern of processor.patchAutoPaths) {
+        if (isGenericPattern(pattern)) continue; // hygiene glob — by design
+        if (!globMatch(pattern, "core.md")) continue;
+        expect(
+          processor.id in CORE_MD_WRITER_GRANTS,
+          `${processor.bundleId}/${processor.id} names core.md as a patch target via "${pattern}" — only the two-gated-writers table (wiki/specs/preferences.md) may`,
+        ).toBe(true);
+        pinnedWriterTargets += 1;
+      }
+    }
+    // Both pinned writers' manifest grants must stay visible to this fence —
+    // if either vanishes, the exclusivity claim is untested.
+    expect(pinnedWriterTargets).toBeGreaterThanOrEqual(2);
+  });
+
   test("dome.agent manifest patch.auto grants exclude log.md and index files", () => {
     const parsed = parseManifest(
       parseYaml(readFileSync(join(AGENT_BUNDLE, "manifest.yaml"), "utf8")),
@@ -282,9 +329,10 @@ describe("NO_ACCRETING_REGISTRIES", () => {
         expect(Array.isArray(paths), `${processor.id} patch.auto has paths`).toBe(
           true,
         );
-        if (processor.id === "dome.agent.preference-promotion-answer") {
-          // The single-auto-writer exception covers core.md + signals only.
-          expect(paths).toEqual(["core.md", "preferences/signals.md"]);
+        const pinnedWriterGrant = CORE_MD_WRITER_GRANTS[processor.id];
+        if (pinnedWriterGrant !== undefined) {
+          // A gated core.md writer: grant pinned EXACTLY (two-writer table).
+          expect(paths).toEqual([...pinnedWriterGrant]);
           continue;
         }
         expectNoRegistryCoverage(paths ?? [], `${processor.id} manifest grant`);
@@ -317,8 +365,9 @@ describe("NO_ACCRETING_REGISTRIES", () => {
     for (const [processorId, grant] of Object.entries(agent.processors ?? {})) {
       const patchAuto = grant["patch.auto"];
       if (!Array.isArray(patchAuto)) continue;
-      if (processorId === "dome.agent.preference-promotion-answer") {
-        expect(patchAuto).toEqual(["core.md", "preferences/signals.md"]);
+      const pinnedWriterGrant = CORE_MD_WRITER_GRANTS[processorId];
+      if (pinnedWriterGrant !== undefined) {
+        expect(patchAuto).toEqual([...pinnedWriterGrant]);
         continue;
       }
       expectNoRegistryCoverage(
@@ -326,6 +375,11 @@ describe("NO_ACCRETING_REGISTRIES", () => {
         `default-vault-config replacement grant for ${processorId}`,
       );
     }
+    // Both gated writers must actually appear in the shipped replacement
+    // grants — if one vanishes, the exact-pin above silently stops checking.
+    expect(Object.keys(agent.processors ?? {}).sort()).toEqual(
+      Object.keys(CORE_MD_WRITER_GRANTS).sort(),
+    );
   });
 
   test("grant-aware tool writable-path mirrors exclude log.md and index files", () => {

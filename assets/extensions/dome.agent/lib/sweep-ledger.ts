@@ -5,12 +5,19 @@
 // authoritative in the destination's sources: frontmatter, and the queue
 // IGNORES "integrated" ledger rows entirely (the row is redundant when the
 // link landed and exactly wrong when the integration's sub-proposal was
-// rejected); the ledger's no-op/questioned lines only save re-judging, and
+// rejected); the ledger's no-op/questioned lines only save re-judging,
 // "failed" rows never settle (they count toward the escalate-after-3
-// contract). Strict grammar, degrade on malformed lines (problems, never
-// throws) — mirrors preferences-shared.
+// contract), and an "escalated" row is the threshold's terminal record —
+// it settles the pair (queue exclusion + cursor advance) until the owner
+// hand-deletes the row. Strict grammar, degrade on malformed lines
+// (problems, never throws) — mirrors preferences-shared.
 
-export type SweepDisposition = "integrated" | "no-op" | "questioned" | "failed";
+export type SweepDisposition =
+  | "integrated"
+  | "no-op"
+  | "questioned"
+  | "failed"
+  | "escalated";
 
 export type SweepSettlement = {
   readonly material: string;
@@ -52,7 +59,7 @@ function isValidDate(date: string): boolean {
 const CURSOR_RE = /^cursor::\s*(\d{4}-\d{2}-\d{2})\s*$/;
 const CURSOR_LINE_RE = /^cursor::/;
 const SETTLEMENT_RE =
-  /^-\s+\[\[([^\]]+)\]\]\s+->\s+\[\[([^\]]+)\]\]\s+::\s+(integrated|no-op|questioned|failed)\s*$/;
+  /^-\s+\[\[([^\]]+)\]\]\s+->\s+\[\[([^\]]+)\]\]\s+::\s+(integrated|no-op|questioned|failed|escalated)\s*$/;
 const RUN_HEADING_RE = /^##\s+Run\s+(\d{4}-\d{2}-\d{2})\s*$/;
 
 export function parseSweepLedger(content: string): ParsedSweepLedger {

@@ -12,8 +12,12 @@
 //
 //   dome.agent.sweep:escalate:<material>-><dest>
 //     Options ["skip"] only; no proposedSection in metadata. The answer itself
-//     closes the question — the `questioned` ledger row already settles the
-//     pair, so this handler records nothing for any answer value.
+//     closes the question — the pair is already settled in the ledger (an
+//     `escalated` row for the repeated-failure threshold; a `questioned` row
+//     for the oversized-page guards), so this handler records nothing for any
+//     answer value and never re-queues the pair. Re-eligibility after an
+//     escalation is deliberately manual: the owner hand-deletes the
+//     `escalated` row from the ledger (no retry-granted flow).
 //
 // Settlement note: for uncertain→integrate, no ledger update is emitted here.
 // The pair's `:: questioned` row already prevents re-queueing by the sweep
@@ -196,7 +200,10 @@ const sweepAnswer = defineProcessorImplementation({
     }
 
     // Escalation questions carry only "skip"; the answer itself closes the
-    // question and the `questioned` ledger row already settles the pair.
+    // question and the ledger row (escalated for the failure threshold,
+    // questioned for the size guards) already settles the pair — nothing to
+    // emit, nothing re-queues. The owner re-arms an escalated pair only by
+    // hand-deleting its row from the ledger.
     if (keyKind === "escalate") {
       return Object.freeze([]);
     }

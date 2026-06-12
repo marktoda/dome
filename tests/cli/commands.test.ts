@@ -380,6 +380,23 @@ describe("runInit", () => {
       // The skeleton must itself respect the core-size lint budget.
       expect(coreBody.length).toBeLessThan(6_000);
 
+      // preferences/signals.md — the append-only preference-signal surface
+      // (commented header quoting the signal grammar; first-write-only).
+      const signalsPath = join(target, "preferences", "signals.md");
+      expect(existsSync(signalsPath)).toBe(true);
+      const signalsBody = await readFile(signalsPath, "utf8");
+      expect(signalsBody).toContain("# Preference signals");
+      expect(signalsBody).toContain(
+        "- YYYY-MM-DD + <topic-slug>:: <rule> (source: [[page]])",
+      );
+      expect(signalsBody).toContain("appended, never edited");
+      // The header must stay parser-inert: parsePreferenceSignals treats any
+      // trimmed line starting with `- ` as a signal candidate and reports
+      // grammar misses as problems — so the template may not contain one.
+      for (const line of signalsBody.split("\n")) {
+        expect(line.trim().startsWith("- ")).toBe(false);
+      }
+
       const agentsPath = join(target, "AGENTS.md");
       expect(existsSync(agentsPath)).toBe(true);
       const agentsBody = await readFile(agentsPath, "utf8");
@@ -412,6 +429,22 @@ describe("runInit", () => {
       expect(agentsBody).toContain("<!-- BEGIN user-prose -->");
       expect(agentsBody).toContain("<!-- END user-prose -->");
       expect(agentsBody).not.toContain("git worktree add");
+      // Foreground signal contract: a managed "Preference signals" section
+      // with the exact grammar, explicit-statements-only rule, and the
+      // owner-mediated promotion boundary.
+      expect(agentsBody).toContain("## Preference signals");
+      expect(agentsBody).toContain(
+        "- YYYY-MM-DD + <topic-slug>:: <rule> (source: [[page]])",
+      );
+      expect(agentsBody).toContain("never infer");
+      expect(agentsBody).toContain("owner-mediated");
+      // The grammar is quoted exactly once (template length discipline).
+      expect(
+        agentsBody.split("- YYYY-MM-DD + <topic-slug>::").length,
+      ).toBe(2);
+      // `dome log` is the activity view (3a deferred item).
+      expect(agentsBody).toContain("dome log");
+      expect(agentsBody).toContain("activity view");
 
       const claudePath = join(target, "CLAUDE.md");
       expect(existsSync(claudePath)).toBe(true);
@@ -444,6 +477,13 @@ describe("runInit", () => {
         expect(
           await readBlob({ path: target, commit: head, filepath: "core.md" }),
         ).toBe(coreBody);
+        expect(
+          await readBlob({
+            path: target,
+            commit: head,
+            filepath: "preferences/signals.md",
+          }),
+        ).toBe(signalsBody);
       }
 
       // The SDK-shipped bundles are still loadable from the resolved
@@ -551,6 +591,7 @@ describe("runInit", () => {
       expect(parsed.vault).toBe(target);
       expect(parsed.steps.config_yaml).toBe("created");
       expect(parsed.steps.core_md).toBe("created");
+      expect(parsed.steps.signals_md).toBe("created");
       expect(parsed.steps.initial_commit).toBe("created");
       expect(parsed.steps.model_provider).toBe("skipped (not requested)");
     } finally {
@@ -566,6 +607,7 @@ describe("runInit", () => {
       const agentsPath = join(target, "AGENTS.md");
       const claudePath = join(target, "CLAUDE.md");
       const corePath = join(target, "core.md");
+      const signalsPath = join(target, "preferences", "signals.md");
       const configPath = join(target, ".dome", "config.yaml");
       const firstAgents = await readFile(agentsPath, "utf8");
       const firstClaude = await readFile(claudePath, "utf8");
@@ -583,15 +625,22 @@ describe("runInit", () => {
       const mutatedClaude = `${firstClaude}\nPersonal Claude Code reminder.\n`;
       const mutatedCore =
         "# Core memory\n\n## Who I am\nMark — builds Dome.\n";
+      // signals.md is append-only owner data — accumulated signal lines
+      // must survive re-init byte-for-byte (no refresh path, like core.md).
+      const mutatedSignals =
+        (await readFile(signalsPath, "utf8")) +
+        "- 2026-06-11 + filing:: meeting notes go under wiki/meetings\n";
       await writeFile(agentsPath, mutatedAgents, "utf8");
       await writeFile(claudePath, mutatedClaude, "utf8");
       await writeFile(corePath, mutatedCore, "utf8");
+      await writeFile(signalsPath, mutatedSignals, "utf8");
 
       expect(await runInit({ path: target })).toBe(0);
 
       const secondAgents = await readFile(agentsPath, "utf8");
       const secondClaude = await readFile(claudePath, "utf8");
       const secondCore = await readFile(corePath, "utf8");
+      const secondSignals = await readFile(signalsPath, "utf8");
       const secondConfig = await readFile(configPath, "utf8");
       const secondHead = await currentSha(target);
 
@@ -600,11 +649,13 @@ describe("runInit", () => {
       expect(secondAgents).toBe(mutatedAgents);
       expect(secondClaude).toBe(mutatedClaude);
       expect(secondCore).toBe(mutatedCore);
+      expect(secondSignals).toBe(mutatedSignals);
       expect(secondConfig).toBe(firstConfig);
       expect(secondHead).toBe(firstHead);
 
-      // A refresh re-run also leaves core.md alone — `--refresh-config` /
-      // `--refresh-instructions` have no core.md path.
+      // A refresh re-run also leaves core.md and signals.md alone —
+      // `--refresh-config` / `--refresh-instructions` have no path to
+      // either (both are owner data).
       expect(
         await runInit({
           path: target,
@@ -613,6 +664,7 @@ describe("runInit", () => {
         }),
       ).toBe(0);
       expect(await readFile(corePath, "utf8")).toBe(mutatedCore);
+      expect(await readFile(signalsPath, "utf8")).toBe(mutatedSignals);
     } finally {
       await rm(target, { recursive: true, force: true });
     }
@@ -756,6 +808,12 @@ describe("runInit", () => {
       expect(agents).toContain("My private vault notes.");
       expect(agents).not.toContain("# Old managed heading");
       expect(agents).not.toContain("doctor --show");
+      // The refresh adds the newer managed sections to an older vault while
+      // the user prose above survived untouched.
+      expect(agents).toContain("## Preference signals");
+      expect(agents).toContain("dome log");
+      // And the refresh run scaffolds the signal surface an old vault lacks.
+      expect(existsSync(join(target, "preferences", "signals.md"))).toBe(true);
 
       const firstAgents = agents;
       expect(await runInit({ path: target, refreshInstructions: true })).toBe(0);
@@ -1162,9 +1220,9 @@ describe("runInspect", () => {
     const agentBundle = bundles.find((row) => row.bundle === "dome.agent");
     expect(agentBundle).toEqual(
       expect.objectContaining({
-        processors: 9,
+        processors: 10,
         adoption: 0,
-        garden: 9,
+        garden: 10,
         view: 0,
         model_processors: 4,
         model: "granted-no-provider",
@@ -1465,8 +1523,8 @@ describe("runInspect", () => {
         loaded: false,
         inventory: "manifest",
         version: "0.4.1",
-        processors: 9,
-        garden: 9,
+        processors: 10,
+        garden: 10,
         model_processors: 4,
         model: "disabled-no-provider",
       }),

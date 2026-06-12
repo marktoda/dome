@@ -2,7 +2,8 @@
 //
 // One library, three consumers: the dome.agent.preference-signals counter
 // (facts), dome.agent.preference-promotion (questions), and
-// dome.agent.preference-promotion-answer (the single auto-writer to core.md).
+// dome.agent.preference-promotion-answer (the gated core.md writer that
+// owns the promoted-preferences block).
 // Everything here is a pure function of file contents — no clock, no model,
 // no I/O — so the counter's `dome.preference.*` facts are rebuildable by
 // construction per [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]].

@@ -13,6 +13,7 @@
 //   - `.dome/config.yaml`  — extension activation + grants
 //   - `.gitignore`         — engine-managed
 //   - `core.md`            — always-loaded core memory page (commented skeleton)
+//   - `preferences/signals.md` — append-only preference-signal log (commented header)
 //   - `AGENTS.md`          — orientation surface
 //   - `CLAUDE.md`          — Claude Code shim importing AGENTS.md
 //
@@ -49,6 +50,8 @@
 //   - `git init` is already idempotent.
 //   - Directory creation uses `mkdir({recursive: true})`.
 //   - `core.md`: skip if exists — never overwrite the user's core memory.
+//   - `preferences/signals.md`: skip if exists — the signal log is
+//     append-only owner data; init never overwrites it.
 //   - `config.yaml`: skip if exists, unless `--refresh-config` is set. That
 //     opt-in path adds missing first-party default bundle stanzas and fills
 //     missing default grant keys for enabled first-party bundles without
@@ -126,6 +129,7 @@ type InitSummary = {
   readonly modelProvider: StepOutcome;
   readonly gitignore: StepOutcome;
   readonly coreMd: StepOutcome;
+  readonly signalsMd: StepOutcome;
   readonly agentsMd: StepOutcome;
   readonly claudeMd: StepOutcome;
   readonly initialCommit: StepOutcome;
@@ -147,6 +151,7 @@ type InitJsonResult =
         readonly model_provider: StepOutcome;
         readonly gitignore: StepOutcome;
         readonly core_md: StepOutcome;
+        readonly signals_md: StepOutcome;
         readonly agents_md: StepOutcome;
         readonly claude_md: StepOutcome;
         readonly initial_commit: StepOutcome;
@@ -241,6 +246,16 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
       CORE_MD_TEMPLATE,
     );
 
+    // 5c. Write `preferences/signals.md`, the append-only preference-signal
+    //     log, as a commented header explaining the signal grammar. Like
+    //     core.md it is owner data: first-write-only, NO refresh path —
+    //     accumulated signal lines must never be clobbered.
+    await ensureDir(join(vaultPath, "preferences"));
+    const signalsOutcome = await writeIfMissing(
+      join(vaultPath, "preferences", "signals.md"),
+      SIGNALS_MD_TEMPLATE,
+    );
+
     // 6. Write `AGENTS.md` (first-write-only by default; explicit refresh
     //    repairs old orientation files without dropping user prose).
     const agentsPath = join(vaultPath, "AGENTS.md");
@@ -291,6 +306,7 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
       modelProvider: modelProviderOutcome,
       gitignore: gitignoreOutcome,
       coreMd: coreOutcome,
+      signalsMd: signalsOutcome,
       agentsMd: agentsOutcome,
       claudeMd: claudeOutcome,
       initialCommit: initialCommitOutcome,
@@ -561,6 +577,7 @@ function initialCommitFiles(
     "AGENTS.md",
     "CLAUDE.md",
     "core.md",
+    "preferences/signals.md",
     ".dome/config.yaml",
     // Commit the inbox keepers so a freshly-initialized vault has a clean
     // working tree (untracked files would read as dirty in `dome status`).
@@ -632,6 +649,7 @@ function initStepRows(s: InitSummary): {
     [".dome/model-provider.ts", s.modelProvider],
     [".gitignore", s.gitignore],
     ["core.md", s.coreMd],
+    ["preferences/signals.md", s.signalsMd],
     ["AGENTS.md", s.agentsMd],
     ["CLAUDE.md", s.claudeMd],
     ["initial commit", s.initialCommit],
@@ -668,6 +686,7 @@ function summaryToJson(s: InitSummary): InitJsonResult {
       model_provider: s.modelProvider,
       gitignore: s.gitignore,
       core_md: s.coreMd,
+      signals_md: s.signalsMd,
       agents_md: s.agentsMd,
       claude_md: s.claudeMd,
       initial_commit: s.initialCommit,
@@ -713,10 +732,12 @@ only the always-relevant summary here.
 
 This page is propose-only for Dome: agents read it but never auto-write
 it. Edit it yourself, or accept a Dome question that proposes a change.
-One exception: when you answer "promote" to a preference-promotion
-question, Dome maintains a marker-delimited promoted-preferences block
-under Standing preferences. Leave that block's markers alone; everything
-outside them is yours.
+Two exceptions, each a marker-delimited generated block Dome maintains:
+the promoted-preferences block under Standing preferences (written only
+when you answer "promote" to a preference-promotion question) and the
+active-projects block under Active projects (refreshed nightly from your
+open loops). Leave both blocks' markers alone; everything outside them
+is yours.
 -->
 
 ## Who I am
@@ -724,6 +745,23 @@ outside them is yours.
 ## Active projects
 
 ## Standing preferences
+`;
+
+// The preferences/signals.md template — the append-only preference-signal
+// log, per preferences.md §signal grammar. Like core.md it is owner data:
+// first-write-only, no refresh path. The header is a heading + HTML comment
+// only — `parsePreferenceSignals` treats any line starting with `- ` as a
+// signal candidate, so the grammar example must stay inline prose.
+const SIGNALS_MD_TEMPLATE = `# Preference signals
+
+<!--
+Append-only log of explicit owner corrections of agent behavior. One dated
+line per signal: \`- YYYY-MM-DD + <topic-slug>:: <rule> (source: [[page]])\`
+(\`-\` instead of \`+\` for evidence against a previously-signaled rule;
+reuse existing topic slugs). Lines are appended, never edited or reordered.
+Dome tallies signals and asks the owner before promoting a recurring rule
+into core.md.
+-->
 `;
 
 // The AGENTS.md template — orientation surface for agentic harnesses. The
@@ -794,6 +832,8 @@ Primary compiler commands:
 
 Optional adopted-state views:
 
+- \`dome log\` - the vault's activity view: git history joined with the run
+  ledger, showing what you and Dome changed and when.
 - \`dome query <text>\` - search adopted markdown and related extracted facts.
 - \`dome export-context <topic>\` - portable source-backed context packet for
   another Claude session or review.
@@ -863,6 +903,18 @@ fields.
 - Always answer through \`dome resolve <id> <value>\`. Do not edit
   \`.dome/state/\` or use \`dome answer\` in the normal workflow.
 
+## Preference signals
+
+When the owner EXPLICITLY expresses a durable preference or corrects agent
+behavior in conversation (filing location, naming, formatting, scope), append
+one well-formed signal line to \`preferences/signals.md\`:
+\`- YYYY-MM-DD + <topic-slug>:: <rule> (source: [[page]])\` (\`-\` for evidence
+against a previously-signaled rule; reuse existing topic slugs). Only explicit
+statements — never infer preferences from silence. Promotion stays
+owner-mediated: Dome tallies signals and asks the owner before promoting a
+rule into \`core.md\` — never write \`core.md\` or its promoted-preferences
+block yourself.
+
 ## Vault conventions
 
 - \`wiki/\` is the main markdown knowledge base. Pages can link with
@@ -876,14 +928,8 @@ fields.
   notes directly under \`wiki/\` or \`notes/\`.
 - \`inbox/processed/\` is where \`dome.agent\` archives captures it has
   ingested and integrated into generated wiki material.
-- \`preferences/signals.md\` records explicit owner corrections of agent
-  behavior (filing location, naming, formatting, scope) as append-only dated
-  lines: \`- YYYY-MM-DD + <topic-slug>:: <the corrected rule, one line>
-  (source: [[<page>]])\` (\`-\` for evidence against a previously-signaled
-  rule; reuse existing topic slugs). When the user corrects how the vault
-  should be maintained, append one signal line. Dome tallies signals and asks
-  the owner before promoting a rule into \`core.md\` — never write \`core.md\`
-  or its promoted-preferences block yourself.
+- \`preferences/signals.md\` is the append-only preference-signal log — see
+  "Preference signals" above for when and how to append to it.
 - \`.dome/config.yaml\` controls enabled extension bundles and grants.
 - \`.dome/state/\` contains derived SQLite state for projections, outbox, and the
   run ledger. Do not edit or commit it.
@@ -927,6 +973,7 @@ Includes:
 - AGENTS.md (orientation surface for Claude Code and other harnesses)
 - CLAUDE.md (Claude Code shim importing AGENTS.md)
 - core.md (always-loaded core memory skeleton — propose-only for Dome)
+- preferences/signals.md (append-only preference-signal log, commented header)
 - .gitignore (ignores .dome/state/)
 - .dome/config.yaml (extension activation + engine settings)
 

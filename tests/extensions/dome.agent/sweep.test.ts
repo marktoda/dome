@@ -417,10 +417,39 @@ describe("dome.agent.sweep", () => {
     const escRefs = qs[0]!.sourceRefs.map((r) => (r as { path: string }).path);
     expect(escRefs).toContain(MATERIAL);
     expect(escRefs).toContain(DEST);
+    // The run writes an `escalated` row alongside the question: the pair
+    // settles (stops consuming attempts) and the cursor advances past it.
     const ledger = patchFor(effects, LEDGER);
     expect(ledger).toContain(
-      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: questioned",
+      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: escalated",
     );
+    expect(ledger).toContain("cursor:: 2026-06-09");
+    expect(patchFor(effects, DEST)).toBeNull();
+  });
+
+  test("an escalated pair stays settled on the next run: no re-question, no model call, cursor free to advance", async () => {
+    const escalatedLedger = [
+      "# Sweep ledger",
+      "",
+      "## Run 2026-06-07",
+      "",
+      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: failed",
+      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: failed",
+      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: failed",
+      "",
+      "## Run 2026-06-08",
+      "",
+      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: escalated",
+      "",
+    ].join("\n");
+    const ctx = makeCtx({
+      files: { ...BASE_FILES, [LEDGER]: escalatedLedger },
+      stepFn: THROWING_STEP, // the settled pair must never reach the model
+    });
+    const effects = await sweep.run(ctx);
+    // The pair is settled: no question, no destination patch. Re-eligibility
+    // is the owner hand-deleting the escalated row from the ledger.
+    expect(questions(effects)).toHaveLength(0);
     expect(patchFor(effects, DEST)).toBeNull();
   });
 

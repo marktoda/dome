@@ -14,6 +14,8 @@
 export function consolidateCharter(opts: {
   readonly ledgerPath: string;
   readonly maxChangedFiles: number;
+  /** Path prefixes in scope for hunting/merging/tidying (consolidate_targets config; default whole-wiki). */
+  readonly targets: ReadonlyArray<string>;
 }): string {
   const ledger = opts.ledgerPath;
   return [
@@ -21,6 +23,7 @@ export function consolidateCharter(opts: {
     "",
     "## Scope: recent drift only (critical)",
     `You run every night, so each run is SMALL and bounded to what drifted since your last run. Read \`${ledger}\` first: its last-run date is your recency cutoff. Hunt only among (a) pages touched since that cutoff (their frontmatter \`updated:\` dates are the signal — see "How to hunt") and (b) newly ingested pages (fresh ingest is where new duplicates are born). Do NOT start whole-vault sweeps. If nothing drifted since the last run, update the ledger's run date and stop — a no-op night is a good night.`,
+    `Your consolidation scope is pages under: ${opts.targets.join(", ")}. Hunt, merge, tidy, and supersede ONLY pages under these prefixes; everything else in the vault is read-only context for you tonight.`,
     "",
     "## The map (start here, don't read everything)",
     "- `index.md` is the catalog: one line per page (path + description), grouped by type. Read it to place a suspect cheaply.",

@@ -40,8 +40,37 @@ describe("dome recipe ios", () => {
     expect(logs.join("\n")).toContain(":3663/capture");
   });
 
-  test("unknown kind is a usage error", async () => {
+  test("unknown kind is a usage error listing both kinds", async () => {
     expect(await runRecipe({ kind: "android" })).toBe(64);
     expect(errors.join("\n")).toContain("unknown recipe");
+    expect(errors.join("\n")).toContain("available: ios, core-seed");
+  });
+});
+
+describe("dome recipe core-seed", () => {
+  test("prints the owner interview prompt for seeding core.md", async () => {
+    expect(await runRecipe({ kind: "core-seed" })).toBe(0);
+    const out = logs.join("\n");
+
+    // The three core.md sections, by name.
+    expect(out).toContain("## Who I am");
+    expect(out).toContain("## Active projects");
+    expect(out).toContain("## Standing preferences");
+
+    // The pasteable interview prompt covers role/team/preferences/focus...
+    expect(out).toContain("role");
+    expect(out).toContain("team");
+    expect(out).toContain("standing preferences");
+    expect(out).toContain("focused on");
+
+    // ...drafts only the two owner-authored sections, for owner edit...
+    expect(out).toContain("for my edit and approval");
+
+    // ...and carries the guardrails: size budget, marker-delimited blocks
+    // are off-limits, Active projects is generated.
+    expect(out).toContain("6,000-character budget");
+    expect(out).toContain("NEVER write inside marker-delimited");
+    expect(out).toContain("generated");
+    expect(out).toContain("do not hand-author");
   });
 });

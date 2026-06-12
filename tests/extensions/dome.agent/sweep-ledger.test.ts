@@ -45,6 +45,32 @@ describe("parseSweepLedger", () => {
     expect(parsed.settlements[0]?.disposition).toBe("failed");
   });
 
+  test("escalated disposition round-trips through renderSweepRun and the parser", () => {
+    const rows: ReadonlyArray<{
+      material: string;
+      destination: string;
+      disposition: SweepDisposition;
+    }> = [
+      {
+        material: "wiki/dailies/2026-06-08",
+        destination: "wiki/entities/x",
+        disposition: "escalated",
+      },
+    ];
+    const rendered = renderSweepRun({ date: "2026-06-09", rows });
+    expect(rendered).toContain(
+      "- [[wiki/dailies/2026-06-08]] -> [[wiki/entities/x]] :: escalated",
+    );
+    const parsed = parseSweepLedger(rendered);
+    expect(parsed.problems).toHaveLength(0);
+    expect(parsed.settlements).toHaveLength(1);
+    expect(parsed.settlements[0]).toEqual({
+      material: "wiki/dailies/2026-06-08",
+      destination: "wiki/entities/x",
+      disposition: "escalated",
+    });
+  });
+
   test("malformed lines degrade to problems, never throw", () => {
     const parsed = parseSweepLedger("cursor:: not-a-date\n- broken line ::\n");
     expect(parsed.cursor).toBeNull();
