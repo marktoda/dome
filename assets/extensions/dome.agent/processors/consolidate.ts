@@ -136,6 +136,7 @@ const consolidate = defineProcessorImplementation({
         stopReason: result.stopReason,
         sourceRefs,
         patchReason: "dome.agent: consolidate vault",
+        finalText: result.finalText,
         truncatedMessage: `dome.agent.consolidate hit the ${MAX_STEPS}-step budget; partial cleanup applied, resume next run.`,
         cap: {
           maxChangedFiles: MAX_CHANGED_FILES,

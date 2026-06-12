@@ -65,6 +65,9 @@ const ingest = defineProcessorImplementation({
     const state: AgentRunState = { edits: new Map(), questions: [] };
     const effects: Effect[] = [...pre.effects];
     let truncated = false;
+    // The most recent non-blank final message across the batch — the
+    // narrative `finishAgentRun` appends to the cumulative patch's reason.
+    let lastFinalText: string | null = null;
 
     for (const sourcePath of rawPaths) {
       const source = await ctx.snapshot.readFile(sourcePath);
@@ -101,6 +104,9 @@ const ingest = defineProcessorImplementation({
           state,
         });
         if (result.stopReason === "budget") truncated = true;
+        if (result.finalText !== null && result.finalText.trim() !== "") {
+          lastFinalText = result.finalText;
+        }
         // INBOX_IS_EPHEMERAL: a finished loop that leaves the source in
         // inbox/raw is a silent no-op — the run records "succeeded" with
         // nothing landed and the model's reasoning lost. Surface it with the
@@ -143,6 +149,7 @@ const ingest = defineProcessorImplementation({
         stopReason: truncated ? "budget" : "final",
         sourceRefs,
         patchReason: `dome.agent: ingest ${rawPaths.length} source${rawPaths.length === 1 ? "" : "s"}`,
+        finalText: lastFinalText,
         truncatedMessage: `dome.agent: ingest hit the ${MAX_STEPS}-step budget before finishing; partial edits were applied.`,
       }),
     );

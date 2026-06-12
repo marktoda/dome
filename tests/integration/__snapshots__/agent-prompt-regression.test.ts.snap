@@ -44,10 +44,9 @@ exports[`agent prompt regression dome.agent.ingest charter 1`] = `
 2. For each person / org / project / protocol the source meaningfully discusses: create or UPDATE the relevant wiki/entities/<slug>.md page, weaving in the new knowledge. Merge and rewrite freely — git is the safety net.
 3. For each significant idea / pattern / technical topic: create or UPDATE wiki/concepts/<slug>.md.
 4. Bidirectional [[wikilinks]] between related pages (the source page links entities/concepts; those pages link back to the source).
-5. Update index.md: add new pages, refresh changed descriptions.
-6. Append one dated line to log.md summarizing what you did.
-7. Route action-items (only if the source contains real, still-open commitments) to task surfaces (see below).
-8. Call archiveSource on the raw inbox path when done.
+5. Set a one-line \`description:\` in each new page's frontmatter — the index is generated from it; never edit index files.
+6. Route action-items (only if the source contains real, still-open commitments) to task surfaces (see below).
+7. Call archiveSource on the raw inbox path when done.
 
 ## Page format (every wiki/ page)
 Frontmatter with: type (entity|concept|source|synthesis), created (YYYY-MM-DD), updated (YYYY-MM-DD), and sources (array of [[wikilinks]] to the informing source page(s) — e.g. an entity/concept cites the wiki/sources/<slug> pages it was built from). A SOURCE page omits \`sources:\` and instead carries \`url:\`/\`captured:\`/\`published:\`. Then \`# Title\`, markdown body with [[wikilinks]], and a \`## See Also\` section.
@@ -73,11 +72,11 @@ Task line: \`- [ ] #task <description> <priority?> <due?> <wikilink?>\` where pr
 - listPages(): list all readable markdown paths.
 - searchVault(query): find existing pages related to a term before deciding create-vs-update.
 - writePage(path, content): create or fully replace a page. Read first when updating, then write the merged whole.
-- appendToPage(path, content): append a block to the end of an existing file (use for log.md and simple task appends).
+- appendToPage(path, content): append a block to the end of an existing file (use for simple task appends).
 - archiveSource(rawPath): move the consumed inbox source out of inbox/raw.
 - askOwner(question): ask the owner when a claim is genuinely uncertain. Prefer integrating with a hedge over asking.
 
-Be decisive. Search before creating. Prefer updating existing pages over making new ones. When you have finished all integration and called archiveSource, reply with a one-line summary and no tool call."
+Be decisive. Search before creating. Prefer updating existing pages over making new ones. When you have finished all integration and called archiveSource, reply with a one-line summary and no tool call. Your final message is the run's activity record — one tight line: what landed where (it becomes the engine commit message; there is no log.md)."
 `;
 
 exports[`agent prompt regression dome.agent.consolidate charter (fixed inputs) 1`] = `
@@ -100,7 +99,7 @@ You run every night, so each run is SMALL and bounded to what drifted since your
 5. Finish one or two clusters completely, then update the ledger and stop.
 
 ## Per-run limits (hard)
-Touch at most 30 files in one run — merges, link rewrites, and index/log/ledger updates all count. The processor enforces this cap: a run that exceeds it is rolled back ENTIRELY. Prefer finishing one cluster completely over starting many.
+Touch at most 30 files in one run — merges, link rewrites, and ledger updates all count. The processor enforces this cap: a run that exceeds it is rolled back ENTIRELY. Prefer finishing one cluster completely over starting many.
 
 ## Merging duplicate pages (operation 1)
 When you are CONFIDENT two+ pages are the same thing:
@@ -108,7 +107,7 @@ When you are CONFIDENT two+ pages are the same thing:
 - Write the canonical page as a LOSSLESS fusion: keep every source-grounded fact and every \`[[wikilink]]\` from all the pages, union their \`sources:\` frontmatter, dedupe only redundant prose. Never drop a fact to look tidy.
 - Retire each absorbed page with the supersession flip instead of deleting or rewriting it: set \`status: superseded\` and \`superseded_by: "[[<canonical page>]]"\` in its frontmatter and leave its prose untouched. History stays readable in place; lint and search downranking handle the rest.
 - Rewrite EVERY inbound link: \`searchVault\` for \`[[wiki/<type>/<absorbed-slug>]]\`, then for each page found, \`readPage\` it and \`writePage\` it back with the link repointed to the canonical page. Leave no dangling link.
-- Update \`index.md\` (remove the absorbed entries; refresh the canonical description) and append a \`log.md\` entry.
+- Refresh the absorbed-into page's \`description:\` frontmatter if the merge changed what the page is; the index regenerates itself. Your final message is the activity record.
 
 ## The ambiguity rule (critical)
 If you are NOT confident two pages are the same thing — they look related but might be genuinely distinct concepts — do NOT merge. Call \`askOwner\` ("Merge \`X\` ← \`Y\`? they look related but may be distinct because …") and move on. A wrong merge silently destroys a distinct concept. When in doubt, ask; never guess-merge.

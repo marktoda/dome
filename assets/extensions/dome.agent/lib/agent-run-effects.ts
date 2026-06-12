@@ -76,6 +76,24 @@ export type AgentRunNoOp = {
 
 const FINAL_TEXT_EXCERPT_CHARS = 300;
 
+/** First ~200 chars of the final text, flattened, appended to the static reason. */
+const NARRATIVE_MAX_CHARS = 200;
+
+/**
+ * `<static reason>: <flattened final text>` when a final model text exists;
+ * the static reason alone otherwise. The narrative ends up in the engine
+ * commit body via the PatchEffect's `reason`.
+ */
+function patchNarrative(
+  patchReason: string,
+  finalText: string | null | undefined,
+): string {
+  if (finalText === undefined || finalText === null) return patchReason;
+  const flat = finalText.replace(/\s+/g, " ").trim();
+  if (flat.length === 0) return patchReason;
+  return `${patchReason}: ${flat.slice(0, NARRATIVE_MAX_CHARS)}`;
+}
+
 /**
  * The model's final message, bounded for a diagnostic. "(none)" when the
  * model produced no text — still worth surfacing: a no-op with no
@@ -102,6 +120,14 @@ export function finishAgentRun(opts: {
   readonly stopReason: AgentRunResult["stopReason"];
   readonly sourceRefs: ReadonlyArray<SourceRef>;
   readonly patchReason: string;
+  /**
+   * The model's final message, when the run produced one. It becomes the
+   * patch narrative: the PatchEffect's `reason` rides the engine commit body
+   * (NO_ACCRETING_REGISTRIES: git history is the activity log, there is no
+   * log.md), so the final text — flattened and bounded — is appended to the
+   * static `patchReason`. Absent/blank final text leaves the static reason.
+   */
+  readonly finalText?: string | null | undefined;
   readonly truncatedMessage: string;
   readonly cap?: AgentRunCap;
   /**
@@ -146,7 +172,7 @@ export function finishAgentRun(opts: {
       patchEffect({
         mode: "auto",
         changes,
-        reason: opts.patchReason,
+        reason: patchNarrative(opts.patchReason, opts.finalText),
         sourceRefs: opts.sourceRefs,
       }),
     );
