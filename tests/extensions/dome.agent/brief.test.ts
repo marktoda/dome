@@ -442,7 +442,11 @@ describe("dome.agent.brief", () => {
     ).toBe(false);
   });
 
-  test("a non-append or malformed signals-page edit is dropped as out-of-scope", async () => {
+  test("a non-append or malformed signals-page edit is rejected at the tool boundary", async () => {
+    // signalsAppendOnlyGuard rejects the rewrite mid-loop (self-correctable),
+    // so the edit never reaches the run state — no signals change in the
+    // patch and no out-of-scope diagnostic (the post-run splice guard stays
+    // as defense in depth but has nothing to drop).
     const ctx = makeCtx({
       files: {
         [YESTERDAY_PATH]: YESTERDAY_DAILY,
@@ -467,12 +471,13 @@ describe("dome.agent.brief", () => {
     const effects = await brief.run(ctx);
     const patch = patchOf(effects);
     expect(patch?.changes.map((c) => String(c.path))).toEqual([TODAY_PATH]);
-    const diag = effects.find(
-      (e) =>
-        e.kind === "diagnostic" &&
-        (e as DiagnosticEffect).code === "dome.agent.brief-out-of-scope",
-    ) as DiagnosticEffect;
-    expect(diag.message).toContain("preferences/signals.md");
+    expect(
+      effects.some(
+        (e) =>
+          e.kind === "diagnostic" &&
+          (e as DiagnosticEffect).code === "dome.agent.brief-out-of-scope",
+      ),
+    ).toBe(false);
   });
 
   test("out-of-grant edits are rejected at the tool boundary and never reach the run state", async () => {
