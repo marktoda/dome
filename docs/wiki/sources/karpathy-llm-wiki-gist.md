@@ -1,7 +1,7 @@
 ---
 type: source
 created: 2026-05-27
-updated: 2026-05-29
+updated: 2026-06-11
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 url: "https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f"
 author: "Andrej Karpathy"
@@ -28,7 +28,7 @@ Most claims survive directly:
 - ✓ Raw sources immutable ([[wiki/invariants/RAW_IS_IMMUTABLE]]).
 - ✓ LLM-maintained wiki layer (garden-LLM processors per [[wiki/specs/processors]] §"Garden phase").
 - ✓ Prompt as contract — garden-LLM processors carry their prompts alongside the processor source at `assets/extensions/<bundle>/processors/<name>.prompt.md`.
-- △ Index + log as canonical files — Dome preserves these as optional/planned markdown projections. The shipped v1 path currently relies on adopted refs, the run ledger, projections, and search first; `dome.index` and `dome.log` are planned only if humans actually need those files.
+- △ Index + log as canonical files — resolved differently (2026-06-11, per [[wiki/invariants/NO_ACCRETING_REGISTRIES]]): the index ships as a deterministic render from per-page `description:` frontmatter (`dome.markdown.render-index`), while the log does not exist as a maintained file at all — `log.md` is frozen and activity is git history via `dome log`.
 - △ Operations: ingest, query, lint — query ships through `dome.search`; lint ships as an adopted-state `dome.lint` report; richer intake and lint apply flows remain on the v1 roadmap.
 
 Some are revised:

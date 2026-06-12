@@ -81,7 +81,7 @@ Translation to effects: the `EditAccumulator` (`path → finalContent | delete`)
 
 - **Phase / kind:** garden, `kind: llm`.
 - **Trigger:** a change touching `inbox/raw/*.md`. Idempotent by consumption — the agent archives the raw file in its patch, so a converged source does not re-fire.
-- **Charter:** the Ingest workflow: read the raw source → create a `wiki/sources/<slug>` summary page → create or update entity/concept pages with bidirectional `[[wikilinks]]` → update `index.md` → append `log.md` → route action-items into today's daily `## Captured today` block or an entity's `## Open threads` → archive the raw file. The charter is data (a bundled `.md` prompt file), not code.
+- **Charter:** the Ingest workflow: read the raw source → create a `wiki/sources/<slug>` summary page → create or update entity/concept pages with bidirectional `[[wikilinks]]` → set a one-line `description:` in each new page's frontmatter (the index is generated from it — the charter says "never edit index files") → route action-items into today's daily `## Captured today` block or an entity's `## Open threads` → archive the raw file. The charter is data (a bundled `.md` prompt file), not code. The agent's **final message is the run's activity record**: the charter instructs one tight closing line (what landed where), and the harness appends its flattened 200-char excerpt to the static patch reason, so it rides the engine commit body per [[wiki/specs/adoption]] §"Engine commit trailers" — there is no `log.md` append ([[wiki/invariants/NO_ACCRETING_REGISTRIES]]).
 
 **Tool surface:**
 
@@ -91,7 +91,7 @@ Translation to effects: the `EditAccumulator` (`path → finalContent | delete`)
 | `readPage(path)` | read |
 | `searchVault(query)` | read (content substring match) |
 | `writePage(path, content)` | write (accumulate create/replace) |
-| `appendToPage(path, content)` | write (accumulate append; used for `log.md` and task lines on the daily / an entity's `## Open threads` — daily appends ride the captured-tasks seam) |
+| `appendToPage(path, content)` | write (accumulate append; used for task lines on the daily / an entity's `## Open threads` — daily appends ride the captured-tasks seam) |
 | `archiveSource(rawPath)` | write (accumulate move `inbox/raw/x` → `inbox/processed/x` + delete the raw) |
 | `askOwner(question)` | question (`QuestionEffect`) |
 
@@ -101,9 +101,17 @@ Task-routing has no dedicated tool: the agent `appendToPage`s a `#task` line, gu
 
 - `read`: `wiki/**/*.md`, `notes/**/*.md`, `inbox/**/*.md`, `index.md`, `log.md`, `core.md`, `preferences/signals.md`
 - `model.invoke`: `{ maxDailyCostUsd: 5 }` · harness `budget.maxSteps: 25` — the declared cap bounds ingest's OWN daily spend; the extension-wide pool is the vault grant's job ([[wiki/specs/capabilities]] §"model.invoke"), so this no longer needs to clear sweep+consolidate's nightly burn
-- `patch.auto`: `wiki/**/*.md`, `notes/**/*.md`, `index.md`, `log.md`, `inbox/processed/*.md`, `inbox/raw/*.md`, `preferences/signals.md`  (`raw/**` is deliberately absent — see §"Grant-as-boundary")
+- `patch.auto`: `wiki/**/*.md`, `notes/**/*.md`, `inbox/processed/*.md`, `inbox/raw/*.md`, `preferences/signals.md`  (`raw/**` is deliberately absent — see §"Grant-as-boundary"; `index.md` and `log.md` are deliberately absent too, the same read-only grant shape as `core.md`: the index is a generated render of `description:` frontmatter and `log.md` is frozen history per [[wiki/invariants/NO_ACCRETING_REGISTRIES]])
 - `question.ask: true`
 - **NOT `graph.write`** — required by `MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS`
+
+**Tool-time denial backs the grant.** The broker verdict is per-PatchEffect
+and all-or-nothing, so a stray `writePage("index.md", …)` late in a run would
+poison the whole batched patch. The grant-aware tools therefore mirror the
+`patch.auto` grant in a bundle-local constant (`INGEST_WRITABLE_PATHS` /
+`CONSOLIDATE_WRITABLE_PATHS`, pinned to the manifest by the manifest-sync
+test) and reject `index.md` / `log.md` / out-of-grant paths at tool time —
+a self-correctable tool error mid-loop instead of a dead run.
 
 The agent's durable output is markdown written via `PatchEffect` — source-of-truth and rebuild-safe.
 
@@ -144,15 +152,15 @@ The stale-inbox diagnostic processor (`inbox.stale` warning after 168 h) was pre
 The consolidator is the **contractive counterweight** to ingest: a nightly vault-janitor that keeps the knowledge graph from sprawling. It is a second `AgentDefinition` on the same framework — no new primitive.
 
 - **Trigger:** `schedule` only (`0 2 * * *`, nightly — promoted from the original weekly `0 4 * * 1` cadence by the [[wedge]] phase-4 sleep-time-compute loop). It runs **one agent loop per tick** (no per-source iteration). There is intentionally **no `command` trigger** — command triggers are view-phase/read-only, and the consolidator is a writing garden processor; on-demand garden invocation is future work.
-- **Charter scope: recent drift, not whole-vault sweeps.** Nightly cadence multiplies the janitor's blast radius, so the charter bounds each run to what drifted since the ledger's last recorded run: recently-touched pages (via `log.md` and the ledger's last-run date) plus newly ingested captures. The original weekly coverage-cursor crawl over the whole vault is retired; a run that finds no recent drift converges as a no-op.
+- **Charter scope: recent drift, not whole-vault sweeps.** Nightly cadence multiplies the janitor's blast radius, so the charter bounds each run to what drifted since the ledger's last recorded run: recently-touched pages (every wiki page stamps `created:`/`updated:` frontmatter dates, so `searchVault` for each `updated: YYYY-MM-DD` since the ledger's last-run cutoff lists them — `log.md` is frozen history and never a freshness signal) plus newly ingested captures. The original weekly coverage-cursor crawl over the whole vault is retired; a run that finds no recent drift converges as a no-op.
 - **Scope (contractive):** (1) merge duplicate / near-duplicate pages into one canonical page (retire the absorbed page with the supersession status flip — `status: superseded` + `superseded_by: "[[<canonical>]]"` per [[wiki/specs/page-schema]] §"Supersession (ADR pattern)" — and rewrite every inbound `[[wikilink]]`), (2) tidy within-page append-drift into one coherent page, and (3) retire outdated pages with the same status flip (`## Superseded` section-move for mixed pages). It does **not** reorganize, split, or re-home content, and it does not delete or rewrite superseded prose — `deletePage` is reserved for pages that should never have existed (empty stubs, accidental files).
 - **Posture:** auto-merge + commit, with one guardrail — merges are **lossless for source-grounded facts** (fuse, never drop), and a **genuinely ambiguous** merge raises a `QuestionEffect` (`askOwner`) instead of guessing. Confident cases are automatic; only the rare ambiguous one asks.
-- **Navigation, not whole-vault reads:** the agent's "map" is the vault's own `index.md` (catalog) + `log.md` (history); it `searchVault`s for suspects and `readPage`s only the finalist cluster. There is no bespoke candidate-finder — judgment is the agent's, the tools are general primitives (`readPage`, `listPages`, `searchVault`, `writePage`, the new `deletePage`, `askOwner`).
+- **Navigation, not whole-vault reads:** the agent's "map" is the vault's own `index.md` (the generated catalog — one line per page from `description:` frontmatter) plus `updated:` frontmatter recency searches; it `searchVault`s for suspects and `readPage`s only the finalist cluster. There is no bespoke candidate-finder — judgment is the agent's, the tools are general primitives (`readPage`, `listPages`, `searchVault`, `writePage`, the new `deletePage`, `askOwner`).
 - **Cross-run memory:** a ledger file (default top-level `consolidation-ledger.md`, sibling of `log.md`, outside `wiki/`) records each run's date (the recency cutoff for the next run), merges done, and pairs judged *not* duplicates (so they're never re-litigated). The path is configurable via `extensions.dome.agent.config.consolidation_ledger_path` (a relative vault `.md` path; default `consolidation-ledger.md`). A malformed value (non-string, non-`.md`, absolute, or path-escaping) does not crash the nightly run: the processor falls back to the default path and emits a `dome.agent.consolidate-config-invalid` warning diagnostic. A custom path requires matching `read` + `patch.auto` grant entries in `.dome/config.yaml` — grants are static globs, so the processor cannot widen its own write boundary by config.
 - **Per-run caps (hard):** `maxSteps: 50`, `maxDailyCostUsd: 10`, and a hard patch cap of **30 changed files per run** enforced in processor code — a run whose accumulated edits exceed the cap is rolled back entirely (questions survive; a `dome.agent.consolidate-overreach` warning diagnostic is emitted). A single cumulative `PatchEffect` per run.
 - **Atomic per run:** a mid-run throw can leave a half-done merge (a page flipped to superseded before its inbound links were rewritten), so the consolidator drops all partial edits on throw and emits only a `dome.agent.consolidate-failed` diagnostic. Budget truncation is not a throw — its partial work is intended and lands with a truncation diagnostic.
 - **No silent no-ops:** a run that ends `final` with zero edits and zero questions emits a `dome.agent.consolidate-no-op` **info** diagnostic carrying the model's final text (300-char excerpt) — a quiet night is legitimate (info never raises attention), but the model's "nothing to do" reasoning is preserved instead of discarded. Same blind-spot fix as ingest's `dome.agent.source-unarchived`.
-- **Grant:** `read` + `patch.auto` over `wiki/**/*.md`, `index.md`, `log.md`, `consolidation-ledger.md`, `preferences/signals.md` (plus `read` over `core.md` — never `patch.auto`, per §"Core-memory injection"); `model.invoke`; `question.ask`. **Not `graph.write`.**
+- **Grant:** `read` over `wiki/**/*.md`, `index.md`, `log.md`, `consolidation-ledger.md`, `preferences/signals.md`, `core.md`; `patch.auto` over `wiki/**/*.md`, `consolidation-ledger.md`, `preferences/signals.md` only — `index.md` and `log.md` are read-only (the `core.md` grant shape, per [[wiki/invariants/NO_ACCRETING_REGISTRIES]]; the grant-aware tools also deny them at tool time, see §"`dome.agent.ingest`"); `model.invoke`; `question.ask`. **Not `graph.write`.**
 
 ## `dome.agent.brief` — the third agent (morning brief)
 

@@ -1,7 +1,7 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-06-09
+updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 ---
@@ -27,8 +27,6 @@ assets with harness coverage. Rows marked `planned` are not shipped assets.
 | **`dome.warden`** | shipped | — | `integrity` (signal `document.changed` on `wiki/**/*.md`), `integrity-answer` (answer trigger) | — |
 | **`dome.search`** | shipped | shipped: `index-text`; planned: embeddings / refresh jobs | — | shipped: `query`, `export-context` |
 | **`dome.sources`** | shipped | — | `fetch` (cron `*/15 * * * *`, subscription scheduler for committed external feeds — [[wiki/specs/sources]]; cheap no-op when no subscription is due) | — |
-| **`dome.index`** | planned | `update-index` | — | — |
-| **`dome.log`** | planned | `append-log` | — | — |
 | **`dome.links`** | planned | — | `cross-reference` | — |
 | **`dome.agent`** | shipped | — | shipped: `ingest` (model-driven raw-capture agent loop), `inbox-stale-check` (cron `0 * * * *`), `consolidate` (cron `0 2 * * *`, nightly recent-drift janitor), `sweep` (cron `0 3 * * *`, nightly meaning integration), `sweep-answer` (answer-triggered), `brief` (cron `30 5 * * *`, morning-brief composer), `preference-signals` (deterministic/rebuild-eligible preference counter facts), `preference-promotion` (deterministic owner-needed promotion questions), `preference-promotion-answer` (answer trigger; core.md's single auto-writer) | — |
 | **`dome.migrate`** | planned | — | — | `migrate-vault` |
@@ -59,14 +57,11 @@ Adding a first-party processor:
 
 Lockstep coverage: `tests/integration/bundle-matrix-lockstep.test.ts` parses this matrix and asserts every active shipped processor listed here matches the corresponding first-party bundle manifest. Planned entries are documentation-of-intent until promoted to shipped status with assets and tests.
 
-## Why not collapse `dome.markdown` and `dome.index` into one bundle
+## Retired: `dome.index` and `dome.log`
 
-`dome.markdown` parses + validates; `dome.index` maintains `index.md`. They're separated because:
-- `dome.markdown` is the shipped-default validator. Disabling it means accepting unstructured markdown — a user choice.
-- `dome.index` is the index maintainer. Disabling it means `index.md` won't update — a different user choice.
-- Combining them would force a single on/off; the separation keeps each as an independent capability the user grants or revokes.
+The previously planned `dome.index` (index maintainer) and `dome.log` (run-ledger → `log.md` projection) bundles are **retired** per [[wiki/invariants/NO_ACCRETING_REGISTRIES]] (2026-06-11). The index files are generated renders compiled by `dome.markdown.render-index` from per-page `description:` frontmatter, and the activity log is git history — engine commit bodies carry the patch narrative, surfaced by `dome log` ([[wiki/specs/cli]] §"`dome log`"). `log.md` is frozen.
 
-Same reasoning for `dome.log` (log maintenance), `dome.links` (cross-referencing), `dome.search` (search + embeddings). Each is a coherent unit of behavior the user can enable or disable independently.
+The bundle-granularity reasoning still holds for the remaining planned bundles — `dome.links` (cross-referencing), `dome.search` (search + embeddings) each stay a coherent unit of behavior the user can enable or disable independently.
 
 ## Related
 

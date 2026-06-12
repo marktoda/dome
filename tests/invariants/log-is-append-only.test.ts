@@ -1,10 +1,11 @@
 // Lockstep marker for invariant LOG_IS_APPEND_ONLY.
 //
 // The substrate spec at docs/wiki/invariants/LOG_IS_APPEND_ONLY.md
-// describes the rule; the structural enforcement lives in the v1
-// engine + storage layer code under src/{core,engine,processors,
-// ledger,projections,outbox}/ and the tests under the matching
-// tests/ directories.
+// describes the rule. As of 2026-06-11 log.md is FROZEN (zero appends —
+// the degenerate append-only case; the planned dome.log projection is
+// retired per NO_ACCRETING_REGISTRIES), so the behavioral enforcement
+// lives in tests/invariants/no-accreting-registries.test.ts and
+// tests/extensions/dome.agent/grant-aware-tools.test.ts.
 //
 // This file exists as the AC3-lockstep indirection: adding or removing
 // the invariant doc requires explicit substrate work (touching this

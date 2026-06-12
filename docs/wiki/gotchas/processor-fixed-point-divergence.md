@@ -1,7 +1,7 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
@@ -51,7 +51,7 @@ dome sync: blocked main: proposal prop_1748... (1 diagnostic)
 
 - **Frontmatter ordering churn.** `dome.markdown.parse` emits a patch normalizing frontmatter order (alphabetical by key); `acme.intake.normalize-aliases` emits a patch updating the `aliases:` field but produces it in a different order. Each invalidates the other's normalization. Fix: `acme.intake` defers to `dome.markdown`'s ordering convention — emits aliases in alphabetical order to begin with.
 
-- **Index rewriting on its own write.** `dome.index.update-index` emits a patch to `index.md`. The patched tree now has `index.md` changed; if `dome.index`'s trigger was `signal:file.modified` for `index.md` itself, it would re-fire. The `dome.index` trigger is correctly scoped (`signal:file.modified` for `wiki/**`, NOT for `index.md`), so this scenario doesn't fire — but it's the canonical "processor reads its own output" pattern to avoid.
+- **Index rewriting on its own write.** `dome.markdown.render-index` emits patches to `index.md` and the category shards. The patched tree now has those files changed; if the renderer's triggers matched the index files themselves, every render would re-fire it. The trigger is correctly scoped (wiki create/delete signals + cron, NOT the index files), and the render is a fixed point by construction — a matching catalog yields zero effects — but it's the canonical "processor reads its own output" pattern to avoid.
 
 - **Cross-bundle backlink loop.** A third-party bundle `acme.recommendations` adds suggestions to entity pages on `signal:file.created` for `wiki/entities/**`. The suggestion-write fires `signal:file.modified` for the same entity; `dome.links.cross-reference` reacts (looking for new mentions) and emits a patch adding backlinks; the backlink-write re-fires `signal:file.modified`; `acme.recommendations` reacts again. The cap catches this. Fix: scope `acme.recommendations` to fire only on `signal:file.created` (not `modified`).
 

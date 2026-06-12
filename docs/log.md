@@ -1,5 +1,11 @@
 # Dome design substrate — Log
 
+> **FROZEN (2026-06-11).** Nothing appends to this file anymore. The vault's
+> activity record is git history — engine commit bodies carry the patch
+> narrative, and `dome log` renders it joined with the run ledger. Per
+> [[wiki/invariants/NO_ACCRETING_REGISTRIES]]; see [[wiki/specs/vault-layout]]
+> §"`log.md` — frozen history". Entries below are preserved history.
+
 Append-only chronological record of operations on this vault. Each entry is parseable with `grep "^## \[" log.md`.
 
 Verbs: `bootstrap`, `ingest`, `update`, `query`, `lint`.

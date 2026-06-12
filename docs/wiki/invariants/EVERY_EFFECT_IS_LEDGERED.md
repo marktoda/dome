@@ -1,7 +1,7 @@
 ---
 type: invariant
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 enforced_by:
@@ -24,7 +24,7 @@ This invariant replaces v0.5's `EVERY_WRITE_IS_LOGGED`. The shape generalized: t
 
 1. **The engine applier writes an audit record per effect.** `src/engine/core/apply-effect.ts` calls the appropriate sink for each Effect kind: `ledger.recordEffect()` for the effect hash; `projections.facts.insert()` for FactEffects; `outbox.insert()` for ExternalActionEffects; `commitEngineChange()` carries the run id in the trailer for adopting PatchEffects.
 2. **Per [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]**, the RunRecord row carries `effect_hashes_json` — a sha256 list of every emitted effect for the run. Joined back to projection tables by the per-effect lookup, the union is the complete audit history.
-3. **`log.md` is a projection of the run ledger** reserved for the planned `dome.log` adoption-phase processor. The user-facing `log.md` view should be reconstructable from `runs.db` + `outbox.db` once that bundle ships; today the ledger DB and `dome inspect runs` are the implemented audit surfaces.
+3. **The human-readable activity view is `dome log`**, joining engine commit trailers (and narrative commit bodies) with the run ledger on demand — the ledger DB and `dome inspect runs` are the structured audit surfaces. The once-planned `dome.log` markdown projection is retired per [[wiki/invariants/NO_ACCRETING_REGISTRIES]]; `log.md` is frozen.
 4. **The engine/storage tests exercise audit landings by sink.** `tests/engine/adopt-capability-uses.test.ts` verifies capability-use ledger rows for adoption PatchEffects, `tests/engine/model-invoke.test.ts` verifies runtime capability-use audit rows, `tests/outbox/dispatch.test.ts` covers ExternalActionEffect outbox rows, and projection/answer tests cover durable projection landings.
 
 **Counter-example:** A processor emits a `FactEffect` outside its declared `graph.write` namespace. The broker denies the effect (per [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]]); the denial itself is ledgered as a `capability_uses` row with `outcome: "denied"`. Even the rejected emission is auditable — there is no path from "processor emitted X" to "no audit record."
