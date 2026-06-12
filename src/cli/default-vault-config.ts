@@ -109,11 +109,13 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
           "core.md",
           "preferences/signals.md",
         ],
+        // index.md and log.md are deliberately absent here (read stays
+        // above): the index is a generated projection of description
+        // frontmatter and the activity log is git history — agents read
+        // them for context but never write them.
         "patch.auto": [
           "wiki/**/*.md",
           "notes/**/*.md",
-          "index.md",
-          "log.md",
           "consolidation-ledger.md",
           "sweep-ledger.md",
           "inbox/processed/*.md",

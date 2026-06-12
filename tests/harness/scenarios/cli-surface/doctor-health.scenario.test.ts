@@ -363,7 +363,7 @@ scenario(
     expect(report.status).toBe("unhealthy");
     // Every capability kind is granted — the kind-level probe stays quiet.
     expect(report.summary.capabilityGrantGaps).toBe(0);
-    expect(report.summary.capabilityGrantEntryGaps).toBe(7);
+    expect(report.summary.capabilityGrantEntryGaps).toBe(8);
 
     const entryGaps = report.findings.filter(
       (finding) => finding.code === "capability.grant-entry-missing",
@@ -378,6 +378,7 @@ scenario(
       "dome.daily.attention-discount",
       "dome.markdown.core-size",
       "dome.markdown.page-status",
+      "dome.markdown.render-index",
     ]);
     expect(entryGaps.every((finding) => finding.severity === "warning")).toBe(
       true,
@@ -414,6 +415,21 @@ scenario(
     expect(coreSize?.recovery).toContain(
       'Add "core.md" to extensions.dome.markdown.grant.read',
     );
+
+    // The index-projection rollout (v1 chunk 3a): a pre-existing vault whose
+    // dome.markdown patch.auto never gained index.md/index-*.md gets a
+    // doctor finding instead of silent capability-denies on render-index.
+    const renderIndex = entryGaps.find(
+      (finding) =>
+        finding.capability?.processorId === "dome.markdown.render-index",
+    );
+    expect(renderIndex?.recovery).toContain(
+      'Add "index.md" and "index-*.md" to extensions.dome.markdown.grant.patch.auto',
+    );
+    expect(renderIndex?.capability?.missingEntries).toEqual([
+      { kind: "patch.auto", target: "index.md" },
+      { kind: "patch.auto", target: "index-*.md" },
+    ]);
   },
 );
 
