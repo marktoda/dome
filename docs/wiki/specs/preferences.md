@@ -13,12 +13,14 @@ sources:
 This spec is normative for Dome's preference-promotion mechanism (memory-quality
 plan [[memory]] M5): how owner corrections become **signals** in markdown, how a
 deterministic dream pass tallies them into **counter facts**, when a candidate
-rule becomes a **promotion question**, and how the answer-mediated handler —
+rule becomes a **promotion question**, how the answer-mediated handler —
 one of `core.md`'s two gated writers — lands a **promoted preference** or a
-**rejection tombstone**. No new primitive: two deterministic garden processors
-plus one answer handler, all in the `dome.agent` bundle. This spec also pins
-the **two-gated-writers contract** governing every `core.md` auto-writer
-(§"Two gated writers, block-scoped").
+**rejection tombstone**, and how a promoted rule whose confidence decays is
+**demoted** back out through the same machinery (§"Demotion"). No new
+primitive: two deterministic garden processors plus one answer handler, all in
+the `dome.agent` bundle. This spec also pins the **two-gated-writers
+contract** governing every `core.md` auto-writer (§"Two gated writers,
+block-scoped").
 
 Decision 6 of the [[memory]] ledger is the contract: **promotion is
 counter-based** (3 same-sign signals in 30 days → candidate; Wilson 95% lower
@@ -176,7 +178,8 @@ call the same functions.
 
 A second deterministic garden processor (read + `question.ask`; signal
 triggers on `preferences/signals.md` and `core.md`) emits one `QuestionEffect`
-per **candidate** topic:
+per **candidate** topic (and one per decayed **promoted** topic —
+§"Demotion"):
 
 - **Condition** — state `candidate` exactly: ≥ 3 same-sign (`+`) signals in
   the 30-day window AND not already promoted (the `core.md` block is checked)
@@ -196,12 +199,15 @@ per **candidate** topic:
 
 ## The answer handler — `dome.agent.preference-promotion-answer`
 
-Garden processor with an `answer` trigger
-(`questionProcessorId: dome.agent.preference-promotion`, key prefix
-`dome.agent.preference-promotion:`). It re-derives the topic's candidate state
-from the **current snapshot** (same shared lib) and verifies the rule hash in
-the question key still matches; a stale question (signals moved on) yields an
-`info` diagnostic and no write.
+Garden processor with **two** `answer` triggers, both on
+`questionProcessorId: dome.agent.preference-promotion`: key prefix
+`dome.agent.preference-promotion:` routes promotion answers (this section) and
+key prefix `dome.agent.preference-demotion:` routes demotion answers
+(§"Demotion") — the SAME gated writer handles both paths, so the
+two-gated-writers contract is untouched. For promotion answers it re-derives
+the topic's candidate state from the **current snapshot** (same shared lib)
+and verifies the rule hash in the question key still matches; a stale
+question (signals moved on) yields an `info` diagnostic and no write.
 
 **On `promote`** — one `PatchEffect (mode: "auto")` splicing the rule into
 `core.md`'s promoted-preferences generated block:
@@ -242,6 +248,71 @@ The tombstone is an ordinary `-` line whose rule text is exactly
 topic's state becomes `rejected` permanently — the promotion processor stops
 re-proposing it. (Rebuttal without the owner: ≥ 3 `-` signals in the window
 retire the topic to `rebutted` for as long as the window holds them.)
+
+## Demotion — pruning decayed promoted rules
+
+Promoted preferences demote by the **same Wilson × freshness math that
+promoted them** — owner-mediated, handled by the same two processors (the v1
+plan's WS1 fix 4; no third writer, no new grant).
+
+**Candidate math.** A topic is a demotion candidate when its state is
+`promoted` AND its recomputed confidence — the formula above, evaluated
+against the current signals page — has fallen below the floor
+`DEMOTE_BELOW_CONFIDENCE = 0.15`. Freshness alone gets there: no signals for
+90 days → freshness 0 → confidence 0. Wilson alone gets there too: fresh
+counter-evidence (e.g. 1 `+` vs 2 `−` in window ≈ 0.06) demotes without
+waiting for staleness. A promoted block entry with **no signal history at
+all** (typed in by hand) is out of scope — there is nothing to recompute
+from, so it is never proposed for demotion.
+
+**The question** (emitted by `dome.agent.preference-promotion`):
+
+- **Idempotency key** — `dome.agent.preference-demotion:<topic>:<rule-hash>`,
+  where the hash is the FNV-1a of the **promoted block's rule text** (what
+  `demote` would splice out), not the latest signal's — a re-promoted or
+  edited entry changes the hash and asks fresh.
+- **Options** — `demote`, `keep`.
+- **Metadata** — `automationPolicy: "owner-needed"` (same rationale as
+  promotion: the answer changes agent behavior on every future run),
+  `recommendedAnswer: "demote"`, `confidence` = the recomputed value.
+- **SourceRefs** — the promoted entry's `core.md` line, then any in-window
+  signal lines (often none — staleness is the usual decay path).
+
+**On `demote`** — one `PatchEffect (mode: "auto")` with up to two changes:
+the entry is spliced **out** of the promoted block (markers and sibling
+entries preserved; the marker pair survives even when the last entry goes)
+and a minus signal is appended to `preferences/signals.md`:
+
+```markdown
+- 2026-06-12 - filing:: demoted by owner (confidence decayed)
+```
+
+This is **deliberately NOT the rejection tombstone**. `rejected by owner`
+retires a topic permanently; the demotion line is an ordinary `−` signal, so
+the topic re-enters the lifecycle at `building` and **re-earns candidacy if
+supporting corrections re-accrue** — decay is evidence the rule went stale,
+not an owner verdict against it. Retry-idempotent change-by-change: an
+already-removed entry and an already-present minus line each drop out of the
+change set, down to zero effects on a full retry.
+
+**On `keep`** — one `PatchEffect (mode: "auto")` appending a fresh plus
+signal reaffirming the block's rule verbatim (source suffix omitted — the
+answer is the source):
+
+```markdown
+- 2026-06-12 + filing:: meeting notes go under notes/, not entities/
+```
+
+Freshness resets and confidence climbs back over the floor, so `keep`
+naturally suppresses re-asks. Retry-idempotent on the exact same-day
+duplicate line.
+
+**Stale-question guard** (the promotion handler's pattern): the handler
+re-reads the promoted block from the current snapshot — when the topic's
+entry is gone (and the demote was not already applied) or its rule text no
+longer hashes to the key's hash, it emits the
+`stale-question` `info` diagnostic and writes nothing; a still-decayed entry
+raises a fresh question.
 
 ## Two gated writers, block-scoped (the two-gated-writers contract)
 
@@ -307,6 +378,14 @@ owner corrects agent behavior
                 block-scoped — §"Two gated writers, block-scoped")
       reject  → handler appends a tombstone; topic retired
   → counter sees promoted/rejected state and stays quiet
+  → … time passes; the promoted rule's confidence decays below 0.15
+    (staleness or counter-evidence — §"Demotion")
+  → dome.agent.preference-promotion: demotion QuestionEffect (owner-needed)
+  → owner answers
+      demote → handler splices the entry OUT + appends a minus signal
+               (NOT a tombstone — the topic can re-earn promotion)
+      keep   → handler appends a reaffirming plus signal; confidence resets
+  → demoted topics re-enter at `building`; kept topics stay promoted
 ```
 
 ## Follow-ups — the full OSB lifecycle

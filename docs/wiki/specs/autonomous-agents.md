@@ -13,7 +13,7 @@ sources:
 
 This spec is normative for Dome's autonomous-agent capability — the framework, the `ctx.modelInvoke.step` seam, and the shipped agents (`dome.agent.ingest`, `dome.agent.consolidate`, `dome.agent.brief`, `dome.agent.sweep` with its answer handler `dome.agent.sweep-answer`). It introduces no new core primitive: an **agent is a processor too** — the same observation that "a warden is a processor" (see [[wiki/specs/task-lifecycle]] §"Wardens") now applies to processors that drive a full tool-use loop.
 
-The `dome.agent` bundle also ships four **deterministic** (non-LLM) processors: three for preference promotion — `preference-signals`, `preference-promotion`, and `preference-promotion-answer` — normative at [[wiki/specs/preferences]], plus `dome.agent.active-projects`, the core-memory renderer specced at §"`dome.agent.active-projects`" below. They share the bundle because they configure or maintain agent context (the promoted block and the active-projects block ride every agent run via core-memory injection), but they are ordinary deterministic processors, not agents.
+The `dome.agent` bundle also ships four **deterministic** (non-LLM) processors: three for the preference lifecycle — `preference-signals` (counter facts), `preference-promotion` (promotion questions for candidates AND demotion questions for promoted rules whose confidence has decayed below the floor), and `preference-promotion-answer` (the gated writer handling promote/reject and demote/keep) — normative at [[wiki/specs/preferences]], plus `dome.agent.active-projects`, the core-memory renderer specced at §"`dome.agent.active-projects`" below. They share the bundle because they configure or maintain agent context (the promoted block and the active-projects block ride every agent run via core-memory injection), but they are ordinary deterministic processors, not agents.
 
 ## The agent-as-processor model
 
@@ -323,7 +323,7 @@ consolidate appends land through the normal cumulative PatchEffect. Agents
 - [[wiki/specs/processors]] — the Processor type; phases; `kind: llm`
 - [[wiki/specs/capabilities]] — `model.invoke`, `patch.auto`, `question.ask`, `graph.write`
 - [[wiki/specs/effects]] — `PatchEffect`, `QuestionEffect`, `DiagnosticEffect`
-- [[wiki/specs/preferences]] — preference promotion: signals, counter facts, promotion questions; the two-gated-writers contract every `core.md` auto-writer (including `active-projects`) lives under
+- [[wiki/specs/preferences]] — the preference lifecycle: signals, counter facts, promotion questions, owner-mediated demotion of decayed promoted rules; the two-gated-writers contract every `core.md` auto-writer (including `active-projects`) lives under
 - [[wiki/specs/sweep]] — the nightly meaning-integration sweep: queue, settlement, dispositions (including the `escalated` terminal record for poison pairs)
 - [[wiki/specs/task-lifecycle]] — the warden pattern; wardens and agents are both processors
 - [[wiki/specs/daily-surface]] — the daily note as a product surface: section contract, block ownership, choreography, degradation ladder, the `dome.daily.edition` loop
