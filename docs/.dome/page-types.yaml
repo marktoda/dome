@@ -24,6 +24,10 @@ extensions:
       tier: axiom | shipped-default | opt-in | deferred
       severity: required | recommended
       coverage: off-matrix | matrix | deferred
+      # enforced_by is the canonical coverage field per
+      # wiki/specs/sdk-surface.md — a list of repo-relative test files,
+      # verified by tests/integration/invariant-coverage.test.ts.
+      enforced_by: <list of test paths>
       enforced_at: <path>
       enforced_at_status: shipped | implemented | partial | deferred
   - name: matrix  # behavior matrices (tool × invariant, intent × prompt, event × payload)

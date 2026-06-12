@@ -18,9 +18,6 @@ extensions:
     grant:
       read:
         - "wiki/**/*.md"
-        # core.md feeds the dome.markdown.core-size lint; without this entry
-        # the lint's effective read scope is empty and it never fires.
-        - "core.md"
         - ".dome/page-types.yaml"
         - "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"
         - "raw/**"
@@ -55,17 +52,10 @@ extensions:
       graph.write:
         - "dome.graph.*"
 
-  dome.daily:
-    enabled: true
-    grant:
-      read:
-        - "wiki/**/*.md"
-      patch.auto:
-        - "wiki/**/*.md"
-      graph.write:
-        - "dome.daily.*"
-        - "dome.attention.*"
-      question.ask: true
+  # dome.daily is intentionally not enabled. This is a project/design vault:
+  # daily notes only produced empty scaffolds here (no capture, no tasks, no
+  # meetings) plus two engine commits of churn per day. The daily surface is
+  # dogfooded in the personal work vault instead.
 
   dome.search:
     enabled: true
