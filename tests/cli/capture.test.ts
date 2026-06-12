@@ -9,7 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -538,6 +538,46 @@ describe("performCapture seam extensions", () => {
     expect((await headCommit(vault)).oid).toBe(headAfterFirst);
   });
 
+  test("a retry after the capture was ingested and archived to inbox/processed still answers duplicate", async () => {
+    const vault = await initVault();
+
+    const first = await performCapture(
+      { text: "captured then ingested", vault, captureId: "phone-arch-1" },
+      clock,
+    );
+    expect(first.kind).toBe("captured");
+    if (first.kind !== "captured") return;
+
+    // Simulate ingestion's archival: the raw capture moves to
+    // inbox/processed with its basename preserved (vault-tools'
+    // archiveSource shape).
+    const basename = first.result.path.replace(/^inbox\/raw\//, "");
+    await mkdir(join(vault, "inbox", "processed"), { recursive: true });
+    await rename(
+      join(vault, first.result.path),
+      join(vault, "inbox", "processed", basename),
+    );
+    const headAfterArchive = (await headCommit(vault)).oid;
+
+    // The queued copy arrives late (the cross-channel race): same id,
+    // later stamp. A raw-only dedup scan would double-file here.
+    const later = { now: () => new Date(2026, 5, 9, 23, 45, 0) };
+    const second = await performCapture(
+      { text: "captured then ingested", vault, captureId: "phone-arch-1" },
+      later,
+    );
+
+    expect(second.kind).toBe("duplicate");
+    if (second.kind !== "duplicate") return;
+    expect(second.path).toBe(`inbox/processed/${basename}`);
+    // Nothing written, nothing committed.
+    const rawFiles = (await readdir(join(vault, "inbox", "raw"))).filter((f) =>
+      f.endsWith(".md"),
+    );
+    expect(rawFiles).toEqual([]);
+    expect((await headCommit(vault)).oid).toBe(headAfterArchive);
+  });
+
   test("different captureIds file separately", async () => {
     const vault = await initVault();
 
@@ -554,5 +594,68 @@ describe("performCapture seam extensions", () => {
     expect(b.kind).toBe("captured");
     if (a.kind !== "captured" || b.kind !== "captured") return;
     expect(a.result.path).not.toBe(b.result.path);
+  });
+});
+
+// ----- --capture-id through runCapture (the CLI binding) ----------------------
+//
+// The queue-drain seam: `dome capture --file <f> --capture-id <stem>` must be
+// idempotent across a crash between the capture and the queue-file delete —
+// the re-run answers duplicate AND exits 0, so the drain still deletes its
+// queue file (docs/wiki/specs/capture.md §"Retry semantics").
+
+describe("runCapture --capture-id", () => {
+  test("captureId drives the slug from the CLI path", async () => {
+    const vault = await initVault();
+
+    expect(
+      await runCapture(
+        { text: "queued thought", vault, captureId: "2026-06-09-2311-abcd1234" },
+        clock,
+      ),
+    ).toBe(0);
+    expect(
+      existsSync(join(vault, `inbox/raw/${STAMP}-2026-06-09-2311-abcd1234.md`)),
+    ).toBe(true);
+  });
+
+  test("a captureId retry exits 0 and reports the duplicate without writing", async () => {
+    const vault = await initVault();
+
+    expect(
+      await runCapture({ text: "once", vault, captureId: "drain-dup-1" }, clock),
+    ).toBe(0);
+    const headAfterFirst = (await headCommit(vault)).oid;
+    logs = [];
+
+    const later = { now: () => new Date(2026, 5, 9, 23, 59, 0) };
+    expect(
+      await runCapture({ text: "once", vault, captureId: "drain-dup-1" }, later),
+    ).toBe(0);
+    expect(logs.join("\n")).toContain(
+      `duplicate of inbox/raw/${STAMP}-drain-dup-1.md`,
+    );
+    expect((await headCommit(vault)).oid).toBe(headAfterFirst);
+  });
+
+  test("a captureId retry with --json emits the duplicate document", async () => {
+    const vault = await initVault();
+
+    expect(
+      await runCapture({ text: "json once", vault, captureId: "drain-json-1" }, clock),
+    ).toBe(0);
+    logs = [];
+
+    expect(
+      await runCapture(
+        { text: "json once", vault, captureId: "drain-json-1", json: true },
+        clock,
+      ),
+    ).toBe(0);
+    const payload = JSON.parse(logs.join("\n")) as Record<string, unknown>;
+    expect(payload.schema).toBe("dome.capture/v1");
+    expect(payload.status).toBe("duplicate");
+    expect(payload.capture_id).toBe("drain-json-1");
+    expect(payload.path).toBe(`inbox/raw/${STAMP}-drain-json-1.md`);
   });
 });

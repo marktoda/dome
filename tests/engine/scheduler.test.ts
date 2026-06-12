@@ -531,6 +531,94 @@ describe("runScheduler — executor-result telemetry", () => {
 });
 
 
+describe("runScheduler — same-tick ordering", () => {
+  // The laptop wake-tick fires every missed cron in ONE tick (missed
+  // intervals collapse). When several processors are simultaneously due —
+  // sources fetch (05:10), index render (05:15), brief (05:30) — the burst
+  // must dispatch them in cron-time order, not registry (alphabetical-by-id)
+  // order: the morning choreography assumes earlier crons ran first.
+  test("simultaneously-due processors fire in cron-time order, not registry order", async () => {
+    const dispatched: string[] = [];
+    const makeDue = (id: string, cron: string): Processor =>
+      defineProcessor({
+        id,
+        version: "0.0.1",
+        phase: "garden",
+        triggers: [{ kind: "schedule", cron }],
+        capabilities: [],
+        run: async () => {
+          dispatched.push(id);
+          return [];
+        },
+      });
+    // Alphabetical-by-id order (brief, index, sources) is the REVERSE of
+    // cron-time order (sources 05:10, index 05:15, brief 05:30), so a
+    // registry-order dispatch fails this test.
+    const processors = [
+      makeDue("test.wake.brief", "30 5 * * *"),
+      makeDue("test.wake.index", "15 5 * * *"),
+      makeDue("test.wake.sources", "10 5 * * *"),
+    ];
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+    // All three are due: last fire was 24h before NOW, so exactly one
+    // 05:xx occurrence falls in the window for each.
+    for (const p of processors) {
+      const trigger = p.triggers[0];
+      upsertCursor(fixture.projection, {
+        processorId: p.id,
+        cron: trigger?.kind === "schedule" ? trigger.cron : "",
+        lastFire: "2026-05-27T12:00:00.000Z",
+        nextFire: "2026-05-28T12:00:00.000Z",
+      });
+    }
+
+    const result = await runWithProcessor(fixture, processors);
+
+    expect(dispatched).toEqual([
+      "test.wake.sources",
+      "test.wake.index",
+      "test.wake.brief",
+    ]);
+    expect(result.fired.map((f) => f.processorId)).toEqual([
+      "test.wake.sources",
+      "test.wake.index",
+      "test.wake.brief",
+    ]);
+  });
+
+  test("equal due times tiebreak deterministically by processor id", async () => {
+    const dispatched: string[] = [];
+    const makeDue = (id: string): Processor =>
+      defineProcessor({
+        id,
+        version: "0.0.1",
+        phase: "garden",
+        triggers: [{ kind: "schedule", cron: "10 5 * * *" }],
+        capabilities: [],
+        run: async () => {
+          dispatched.push(id);
+          return [];
+        },
+      });
+    const processors = [makeDue("test.tie.b"), makeDue("test.tie.a")];
+    const fixture = await makeFixture();
+    fixtures.push(fixture);
+    for (const p of processors) {
+      upsertCursor(fixture.projection, {
+        processorId: p.id,
+        cron: "10 5 * * *",
+        lastFire: "2026-05-27T12:00:00.000Z",
+        nextFire: "2026-05-28T12:00:00.000Z",
+      });
+    }
+
+    await runWithProcessor(fixture, processors);
+
+    expect(dispatched).toEqual(["test.tie.a", "test.tie.b"]);
+  });
+});
+
 describe("runScheduler — cursor reconstruction from the run ledger", () => {
   // Projection state is rebuildable by design, so a rebuild wipes
   // schedule_cursors. Without a fallback, every scheduled processor looks
@@ -666,7 +754,7 @@ async function makeLedger(root: string): Promise<LedgerDb> {
 
 async function runWithProcessor(
   fixture: Fixture,
-  processor: Processor,
+  processor: Processor | ReadonlyArray<Processor>,
   sinkOverrides: Partial<ReturnType<typeof noopSinks>> = {},
   schedulerOverrides: {
     readonly resolveGrants?: () => ReadonlyArray<Capability>;
@@ -682,7 +770,9 @@ async function runWithProcessor(
     readonly ledger?: LedgerDb;
   } = {},
 ) {
-  const registryResult = buildRegistry([processor]);
+  const registryResult = buildRegistry(
+    Array.isArray(processor) ? processor : [processor],
+  );
   if (!registryResult.ok) {
     throw new Error(`registry build failed: ${registryResult.error.kind}`);
   }

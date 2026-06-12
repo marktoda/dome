@@ -47,6 +47,7 @@ export async function runCapture(
       text: options.text,
       file: options.file,
       title: options.title,
+      captureId: options.captureId,
       vault: options.vault,
     },
     deps,
@@ -61,8 +62,8 @@ export async function runCapture(
     return outcome.exitCode;
   }
   if (outcome.kind === "duplicate") {
-    // Unreachable from CLI flags today (no --capture-id option); handled for
-    // exhaustiveness so a future flag cannot silently fall through.
+    // A `--capture-id` retry that already landed: success (exit 0), nothing
+    // written — the caller (e.g. the queue drain) may safely discard its copy.
     if (json) {
       console.log(formatJson(captureJsonDocument(outcome)));
     } else {

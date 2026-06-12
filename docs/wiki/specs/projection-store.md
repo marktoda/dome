@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -298,6 +298,8 @@ CREATE TABLE schedule_cursors (
 ```
 
 The at-most-once-per-sync clamp for missed intervals ([[wiki/gotchas/scheduled-hook-idempotency]] — name carried forward, semantics unchanged) is enforced by the engine: it updates `last_fire` to the current time, not the missed-interval time, so multiple missed intervals collapse to one fire. If a processor's cron expression changes, the engine preserves `last_fire`, updates the stored cron and `next_fire` from the current tick time, and skips immediate retroactive execution.
+
+When several processors come due on the same tick (the wake-tick burst: a host slept through several crons and each missed interval collapsed to one fire), dispatch order is **cron-time order** — each processor's computed due time, processor id as the tiebreak, with a brand-new processor (no cursor, no ledger history) due "now" and therefore sorting after every missed cron — never registry order. The choreography this preserves is at [[wiki/specs/daily-surface]] §"Wake-tick choreography".
 
 **Rebuild recovery.** Cursor rows reset with the projection cache, but a wiped
 cursor must not make a scheduled processor look brand new ("new fires on the
