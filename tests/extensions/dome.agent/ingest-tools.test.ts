@@ -42,11 +42,13 @@ describe("ingest tools", () => {
   });
 
   test("appendToPage appends to current snapshot content", async () => {
-    const tools = makeIngestTools({ reader: reader({ "log.md": "line1" }) });
+    const tools = makeIngestTools({
+      reader: reader({ "wiki/concepts/a.md": "line1" }),
+    });
     const t = tools.find((x) => x.schema.name === "appendToPage")!;
     const state = freshState();
-    await t.execute({ path: "log.md", content: "line2" }, state);
-    const edit = state.edits.get("log.md");
+    await t.execute({ path: "wiki/concepts/a.md", content: "line2" }, state);
+    const edit = state.edits.get("wiki/concepts/a.md");
     expect(edit?.kind === "write" && edit.content).toBe("line1\nline2");
   });
 

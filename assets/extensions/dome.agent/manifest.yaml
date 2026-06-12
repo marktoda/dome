@@ -28,12 +28,14 @@ processors:
           # Preference signals (M5): appended within the normal grant when
           # the owner's content corrects agent behavior.
           - "preferences/signals.md"
+      # index.md and log.md are read-only above (the core.md grant shape):
+      # the index regenerates from description: frontmatter, log.md is
+      # frozen history. The grant-aware tools deny them at tool time so a
+      # stray write cannot poison the all-or-nothing PatchEffect verdict.
       - kind: patch.auto
         paths:
           - "wiki/**/*.md"
           - "notes/**/*.md"
-          - "index.md"
-          - "log.md"
           - "inbox/processed/*.md"
           - "inbox/raw/*.md"
           - "preferences/signals.md"
@@ -91,11 +93,13 @@ processors:
           # Owner core memory — read-only by design (propose-only page).
           - "core.md"
           - "preferences/signals.md"
+      # index.md and log.md are read-only above (the core.md grant shape):
+      # the index regenerates from description: frontmatter, log.md is
+      # frozen history. The grant-aware tools deny them at tool time so a
+      # stray write cannot poison the all-or-nothing PatchEffect verdict.
       - kind: patch.auto
         paths:
           - "wiki/**/*.md"
-          - "index.md"
-          - "log.md"
           - "consolidation-ledger.md"
           - "preferences/signals.md"
       - kind: model.invoke

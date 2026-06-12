@@ -32,12 +32,17 @@ export type { VaultReader } from "./vault-tools";
  * Bundle-local mirror of the `dome.agent.ingest` manifest `patch.auto`
  * grant. Pinned to manifest.yaml by the grant-aware-tools manifest-sync
  * test — edit both together.
+ *
+ * `index.md` and `log.md` are deliberately absent (read grant only, like
+ * core.md — the core-memory.ts grant shape): the index is generated from
+ * page `description:` frontmatter and log.md is frozen history. The broker
+ * verdict is per-PatchEffect (all-or-nothing), so a stray write to either
+ * must die HERE at the tool — self-correctable mid-loop — not poison the
+ * whole batched patch.
  */
 export const INGEST_WRITABLE_PATHS: ReadonlyArray<string> = Object.freeze([
   "wiki/**/*.md",
   "notes/**/*.md",
-  "index.md",
-  "log.md",
   "inbox/processed/*.md",
   "inbox/raw/*.md",
   "preferences/signals.md",

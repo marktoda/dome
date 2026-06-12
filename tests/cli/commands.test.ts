@@ -1219,14 +1219,14 @@ describe("runInspect", () => {
     expect(ingest?.grant_scopes).toContain("read:core.md,inbox/**/*.md");
     expect(ingest?.grant_scopes).toContain("wiki/**/*.md");
     expect(ingest?.grant_scopes).toContain("patch.auto:");
+    // index.md/log.md are read-only for agents (the core.md grant shape):
+    // the index regenerates from description: frontmatter, log.md is frozen.
     expect(ingest?.grant_details).toContainEqual({
       kind: "patch.auto",
       scope: "paths",
       values: [
         "inbox/processed/*.md",
         "inbox/raw/*.md",
-        "index.md",
-        "log.md",
         "notes/**/*.md",
         "preferences/signals.md",
         "wiki/**/*.md",
