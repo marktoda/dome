@@ -10,7 +10,9 @@ import { join } from "node:path";
 
 import { runInit } from "../../src/cli/commands/init";
 import { runSync } from "../../src/cli/commands/sync";
+import { composeCommitMessage, DOME_TRAILER_KEYS } from "../../src/engine-commit";
 import { add, commit } from "../../src/git";
+import { makeRunContext } from "../../src/run-context";
 import { buildActivityLog } from "../../src/surface/activity";
 
 function localDateString(date: Date = new Date()): string {
@@ -128,4 +130,23 @@ describe("buildActivityLog", () => {
     const epoch = await buildActivityLog({ vault: v, since: "1970-01-01" });
     expect(epoch.length).toBeGreaterThan(0);
   }, 120_000);
+});
+
+describe("DOME_TRAILER_KEYS lockstep", () => {
+  test("every trailer key composeCommitMessage writes appears in the list", () => {
+    // stripDomeTrailers builds its line matcher from DOME_TRAILER_KEYS; this
+    // pins the writer and the list together so a new trailer cannot leak
+    // into `dome log` bodies unstripped.
+    const message = composeCommitMessage({
+      verb: "adopt",
+      subject: "x",
+      touchedPaths: [],
+      runContext: makeRunContext({ extensionId: "test.ext", base: "b", sourceHead: "h" }),
+    });
+    const trailerBlock = message.split("\n\n").at(-1) ?? "";
+    const keys = trailerBlock
+      .split("\n")
+      .map((line) => line.slice(0, line.indexOf(":")));
+    expect(keys).toEqual([...DOME_TRAILER_KEYS]);
+  });
 });
