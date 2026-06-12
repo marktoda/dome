@@ -147,6 +147,7 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
           "consolidation-ledger.md",
           "sweep-ledger.md",
           "sources/calendar/*.md",
+          "sources/slack/*.md",
           "core.md",
           "preferences/signals.md",
         ],

@@ -167,8 +167,15 @@ and the subscriptions block reads
 
 `.dome/bin/fetch-calendar.sh` exists (the shipped claude-calendar template)
 and `sources/calendar/` holds fetched days through `2026-06-11.md` — so the
-calendar feed is being fetched by the dome.sources subscription running that
-script, end to end. `engine.external_handler_timeout_ms: 300000` is already
+**fetch side** is verified: the dome.sources subscription runs the script and
+commits the day files. The **weave side is NOT verified** — the vault's
+user-owned `dome.agent` grant read list lacks `sources/calendar/*.md`, and
+processor snapshots are grant-scoped (manifest capability ∩ vault grant;
+a miss returns null silently, no diagnostic), so the 05:30 brief cannot read
+the fetched calendar files at all. The rich Meetings sections in current
+dailies come from something else, not the brief's calendar weave —
+fetch-works ≠ weave-works. Step 3 below closes this for calendar AND slack.
+`engine.external_handler_timeout_ms: 300000` is already
 set (no `config.sources-timeout-default` finding expected). Note: as of this
 check the config carries **no hand-written YAML comments**, so the rewrite
 hazard below is currently moot for this vault — but re-verify with
@@ -195,13 +202,26 @@ Slack enablement, in order:
          command: ["sh", ".dome/bin/fetch-slack.sh"]
 
    Either way the changes land uncommitted — review `git diff` and commit.
-3. **Review the script — it is the consent surface.** Read
+3. **Grant the brief read access to BOTH source feeds.** The work vault's
+   `dome.agent` grant is user-owned, so the shipped default's new read
+   entries do NOT propagate — and without the grant the brief's snapshot
+   silently omits the files (no diagnostic, the weave just never happens;
+   this is how the calendar weave has been silently ungranted, see the
+   pre-check above). Under `extensions.dome.agent.grant.read` in
+   `~/vaults/work/.dome/config.yaml`, add both lines:
+
+       - "sources/calendar/*.md"
+       - "sources/slack/*.md"
+
+   Commit. After this step (plus a restart) the calendar weave starts
+   working for the first time, independent of slack enablement.
+4. **Review the script — it is the consent surface.** Read
    `.dome/bin/fetch-slack.sh` end to end, especially the prompt: the fetch is
    headless `claude -p` running **as you**, with your Slack MCP, summarizing
    mentions/DMs/channels since the previous evening into a committed vault
    file. Adjust the prompt (channel scope, item cap) to taste before
    enabling.
-4. **Confirm headless `claude` + Slack MCP work on the daemon host.** Smoke
+5. **Confirm headless `claude` + Slack MCP work on the daemon host.** Smoke
    test as the daemon's user:
    `claude -p --output-format text "list my Slack MCP tools"` — it must
    answer without an interactive login and must actually have the Slack MCP
@@ -210,8 +230,8 @@ Slack enablement, in order:
    and Slack MCP configuration for the service user — none of that travels
    with the vault clone. Budget this as a separate setup step on the server;
    until it's done, do not flip `enabled` there.
-5. Flip `enabled: true` on the slack stanza, commit, `dome restart`.
-6. Verify: `dome doctor` — it flags `sources.fetch-script-missing` if the
+6. Flip `enabled: true` on the slack stanza, commit, `dome restart`.
+7. Verify: `dome doctor` — it flags `sources.fetch-script-missing` if the
    stanza was enabled before the script landed (and is the fast check that
    the wiring is sane). Next morning, watch outbox health: `dome check`
    surfaces a terminally-failed fetch with a recovery question;

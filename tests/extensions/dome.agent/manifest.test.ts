@@ -10,6 +10,13 @@ import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 
 import {
+  DEFAULT_SOURCE_KINDS,
+  defaultSourceSubscription,
+  FIRST_PARTY_EXTENSION_DEFAULTS,
+} from "../../../src/cli/default-vault-config";
+import type { Capability } from "../../../src/core/processor";
+import { readablePath } from "../../../src/engine/core/path-capabilities";
+import {
   parseManifest,
   type Manifest,
 } from "../../../src/extensions/manifest-schema";
@@ -208,6 +215,7 @@ describe("dome.agent manifest cadence + grants", () => {
     const read = brief?.capabilities.find((c) => c.kind === "read");
     const readPaths = read?.kind === "read" ? read.paths : [];
     expect(readPaths).toContain("sources/calendar/*.md");
+    expect(readPaths).toContain("sources/slack/*.md");
     // The questions batch is scope-filtered by this grant: ingest's askOwner
     // questions ref inbox/raw/*.md and consolidate's ref the ledger, so both
     // must be readable or the brief silently drops agent-raised questions.
@@ -219,5 +227,48 @@ describe("dome.agent manifest cadence + grants", () => {
       // (the splice guard enforces the append shape in processor code).
       ["notes/*.md", "preferences/signals.md", "wiki/dailies/*.md"],
     );
+  });
+
+  test("every shipped source kind's day-file is readable by the brief through declared ∩ granted", async () => {
+    // Grant/manifest lockstep, exercised through the REAL runtime gate:
+    // scopeSnapshotForProcessor admits a path only when `readablePath` finds
+    // it in the manifest capability ∩ the vault grant, and a miss returns
+    // null SILENTLY — the brief just never sees the feed, with no diagnostic.
+    // Declaring a source in the manifest alone (or granting it alone) is
+    // invisible in unit tests that hand the processor a pre-scoped snapshot,
+    // which is exactly how the slack feed shipped unreadable. Deriving the
+    // day-file from each subscription's output_path makes this fail for the
+    // next sources kind too, until BOTH lists name it.
+    const manifest = await loadManifest();
+    const declared =
+      manifest.processors.find((p) => p.id === "dome.agent.brief")
+        ?.capabilities ?? [];
+    expect(declared.length).toBeGreaterThan(0);
+    const defaultRead = FIRST_PARTY_EXTENSION_DEFAULTS.find(
+      (entry) => entry.id === "dome.agent",
+    )?.grant.read;
+    expect(Array.isArray(defaultRead)).toBe(true);
+    const granted: ReadonlyArray<Capability> = [
+      { kind: "read", paths: defaultRead as ReadonlyArray<string> },
+    ];
+
+    expect(DEFAULT_SOURCE_KINDS).toEqual(["calendar", "slack"]);
+    for (const kind of DEFAULT_SOURCE_KINDS) {
+      const outputPath = defaultSourceSubscription(kind).output_path;
+      expect(typeof outputPath, `${kind} subscription must declare output_path`).toBe("string");
+      const dayFile = String(outputPath).replace("{date}", "2026-06-12");
+      expect(
+        readablePath(dayFile, declared, granted),
+        `${dayFile} must be readable by dome.agent.brief: add sources/${kind}/*.md to BOTH the manifest read capability and the dome.agent default grant read list`,
+      ).not.toBeNull();
+    }
+    // Pin the two concrete paths the review found broken, independent of the
+    // output_path derivation above.
+    for (const path of [
+      "sources/calendar/2026-06-12.md",
+      "sources/slack/2026-06-12.md",
+    ]) {
+      expect(readablePath(path, declared, granted)).not.toBeNull();
+    }
   });
 });

@@ -129,6 +129,7 @@ processors:
           - "index.md"
           - "log.md"
           - "sources/calendar/*.md"
+          - "sources/slack/*.md"
           # The questions batch is scope-filtered by this read grant: a
           # question whose sourceRefs include an unreadable path is dropped
           # from ctx.projection.questions. Ingest's askOwner questions ref
