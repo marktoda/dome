@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-09
-updated: 2026-06-11
+updated: 2026-06-12
 sources:
   - "[[wedge]]"
   - "[[v1]]"
@@ -102,9 +102,11 @@ ingested and the todo shows up in the morning. **What ships** is everything
 from the dictated text onward: the HTTP capture route (`dome http`'s
 `POST /capture`, [[wiki/specs/http-surface]]), `dome capture`, the ambient
 daemon (`dome install`), ingest, and stale-capture diagnostics. **What you
-assemble** is one iOS Shortcut on the phone — and `dome recipe ios` prints
-the exact build steps. There is no shipped transcription and no file-watcher
-on the inbox — the git commit is the trigger boundary, deliberately.
+assemble** is one iOS Shortcut on the phone — `dome recipe ios` prints the
+exact build steps — plus, for a laptop-resident daemon, the queue-fallback
+drain that `dome recipe capture-queue` prints (§"The iCloud queue fallback").
+There is no shipped transcription and no file-watcher on the inbox — the git
+commit is the trigger boundary, deliberately.
 
 ### A. iOS Shortcut over HTTP (recommended)
 
@@ -113,10 +115,12 @@ URL** posting `{text, captureId}` to the vault machine's `dome http` surface
 (bearer token in a header, Tailscale-class network — see
 [[wiki/specs/http-surface]] §"Trust domain"). Dictation happens on-device;
 the route writes the raw-capture file with `source: http` frontmatter and
-commits it, exactly like `dome capture`. A Shortcut-generated UUID bound to
-`captureId` makes flaky-network retries idempotent (§"Retry semantics",
-below) — the retry answers `status: "duplicate"` instead of filing the
-thought twice.
+commits it, exactly like `dome capture`. A Shortcut-generated
+`<timestamp>-<uuid>` string bound to `captureId` makes flaky-network retries
+idempotent (§"Retry semantics", below) — the retry answers
+`status: "duplicate"` instead of filing the thought twice — and the same
+string doubles as the queue filename in the fallback below, so both channels
+dedupe against each other.
 
 ```bash
 dome recipe ios --url http://<your-server>:3663
@@ -128,6 +132,44 @@ the home screen. The recipe is normative in [[wiki/specs/cli]]
 §"`dome recipe`"; it lives next to the CLI so it cannot drift from the HTTP
 surface. No SSH, no Mac-side shell — and the Action button / Apple Watch can
 trigger the Shortcut directly.
+
+### The iCloud queue fallback (eventually consistent)
+
+The HTTP path assumes a reachable host, and on a laptop-resident daemon that
+assumption fails nightly — the lid is closed. The shipped Shortcut is
+therefore **queue-first**: before the POST, it saves the dictation as
+`DomeCaptures/<timestamp>-<uuid>.md` in iCloud Drive, and deletes that file
+only after the POST succeeds. The ordering is forced by Shortcuts' failure
+semantics: there is no try/catch — when "Get Contents of URL" hits an
+unreachable host the Shortcut simply STOPS, so the only failure branch
+available is whatever already ran before the failing action. Save first and
+the stop *is* the failure branch: the file waits in the queue, the capture is
+never lost, merely late.
+
+The laptop half is `dome recipe capture-queue` ([[wiki/specs/cli]]
+§"`dome recipe`"): it installs the shipped drain script
+(`assets/source-handlers/drain-captures.sh`, copied to `<vault>/.dome/bin/` —
+SDK-shipped vault-side data, the model-provider-template precedent) plus a
+launchd `StartInterval` LaunchAgent that sweeps the queue every 15 minutes,
+with missed intervals coalescing into one run on wake. Per `*.md` queue file
+the drain runs `dome capture --file <f> --capture-id <stem>`; exit 0 — which
+covers both `captured` and `duplicate` — deletes the queue file, non-zero
+keeps it for the next interval's retry. Not-yet-downloaded iCloud
+placeholders (`.<name>.md.icloud`) get a best-effort `brctl download` and are
+picked up on a later interval. The drain is deliberately a recipe-installed
+external job, **not** a `dome.sources` subscription — the why is recorded at
+[[wiki/specs/sources]] §"What is deliberately NOT a subscription: the
+capture-queue drain".
+
+**One id, two channels.** The Shortcut builds a single `<timestamp>-<uuid>`
+string and uses it as BOTH the POST body's `captureId` AND the queue filename
+stem; the drain derives its `--capture-id` from that stem. Whichever channel
+lands first wins and the other answers `duplicate` (still success), so a
+capture that raced both channels — or a drain re-run after a crash between
+`dome capture` and the queue-file delete — never double-files. The cost of
+queue-first is eventual consistency: a capture made while the laptop sleeps
+sits in iCloud until the first drain interval after wake, instead of landing
+instantly.
 
 The assemblies below remain workable fallbacks for vaults without the HTTP
 surface, in increasing self-sufficiency:
@@ -171,8 +213,10 @@ dome capture --file ~/Sync/captures/2026-06-09-thought.txt
 
 which writes the properly-shaped raw capture and commits it. Automating the
 sweep (a cron/launchd job that runs `dome capture --file` over new files in
-the staging folder) is user-assembled today; a shipped inbox file-watcher is
-an explicit non-goal for Phase 3 (see Follow-ups).
+the staging folder) is user-assembled in the general case — but the iCloud
+Drive instance of this assembly now ships assembled, as the queue fallback's
+drain (§"The iCloud queue fallback"; `dome recipe capture-queue`). A shipped
+inbox file-watcher remains an explicit non-goal for Phase 3 (see Follow-ups).
 
 ### D. Direct git from the phone
 
@@ -231,7 +275,11 @@ client-supplied `captureId`; it drives the filename slug, and an existing
 file for the same id answers `status: "duplicate"` with the original path —
 nothing written, nothing committed. Clients without an id accept duplicate
 risk; ingest tolerates duplicates either way. Implemented in
-`performCapture` (`source` + `captureId` options).
+`performCapture` (`source` + `captureId` options). The CLI exposes the same
+key as `dome capture --capture-id <id>` ([[wiki/specs/cli]]
+§"`dome capture`") — the queue drain's idempotency seam — and a `duplicate`
+answer is success (exit 0), so the drain deletes its queue copy on either
+outcome and a crash between capture and delete never double-files.
 
 **Shipped form.** Form 2 below shipped first (2026-06-10): `dome http`
 carries `POST /capture` alongside the read routes — see
