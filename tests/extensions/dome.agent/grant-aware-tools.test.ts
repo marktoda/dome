@@ -228,6 +228,64 @@ describe("brief tools enforce the patch.auto grant at tool time", () => {
     );
     expect(state.edits.size).toBe(2);
   });
+
+  // Mirrors the ingest/consolidate signals guard: a malformed signals write
+  // must die AT THE TOOL (self-correctable mid-loop), not rely on the brief
+  // processor's post-run splice guard silently dropping it.
+  describe("signals-page append-only guard", () => {
+    const EXISTING = [
+      "- 2026-06-01 + filing:: notes go under notes/",
+      "- 2026-06-02 - filing:: rejected by owner",
+    ].join("\n");
+
+    test("writePage rejects a rewrite that drops the owner tombstone", async () => {
+      const tools = makeBriefTools({
+        reader: reader({ "preferences/signals.md": EXISTING }),
+      });
+      const state = freshState();
+      const out = await tool(tools, "writePage").execute(
+        {
+          path: "preferences/signals.md",
+          content: "- 2026-06-01 + filing:: notes go under notes/",
+        },
+        state,
+      );
+      expect(out).toContain("append-only");
+      expect(state.edits.has("preferences/signals.md")).toBe(false);
+    });
+
+    test("appendToPage rejects malformed signal lines and prose", async () => {
+      const tools = makeBriefTools({
+        reader: reader({ "preferences/signals.md": EXISTING }),
+      });
+      const state = freshState();
+      const out = await tool(tools, "appendToPage").execute(
+        { path: "preferences/signals.md", content: "the owner prefers tidy notes" },
+        state,
+      );
+      expect(out).toContain("append-only");
+      expect(state.edits.has("preferences/signals.md")).toBe(false);
+    });
+
+    test("appendToPage accepts a well-formed signal line", async () => {
+      const tools = makeBriefTools({
+        reader: reader({ "preferences/signals.md": EXISTING }),
+      });
+      const state = freshState();
+      const out = await tool(tools, "appendToPage").execute(
+        {
+          path: "preferences/signals.md",
+          content: "- 2026-06-09 + naming:: kebab-case slugs",
+        },
+        state,
+      );
+      expect(out).toBe("appended to preferences/signals.md");
+      const edit = state.edits.get("preferences/signals.md");
+      expect(edit?.kind === "write" && edit.content).toBe(
+        `${EXISTING}\n- 2026-06-09 + naming:: kebab-case slugs`,
+      );
+    });
+  });
 });
 
 describe("writable-glob constants mirror manifest.yaml patch.auto grants", () => {

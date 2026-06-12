@@ -14,7 +14,7 @@
 // failure) instead of silently spending money.
 //
 // Tests that need provider behavior keep working: they inject scripted
-// command providers (tests/cli/commands.test.ts doctor fixtures,
+// command providers (tests/cli/commands/doctor.test.ts fixtures,
 // v1-dogfood-preflight's stub) or build child env explicitly with their own
 // overrides last (tests/assets/anthropic-model-provider.test.ts). The
 // opt-in REAL smoke path lives outside `bun test` (scripts/v1-llm-smoke.ts).

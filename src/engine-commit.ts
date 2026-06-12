@@ -53,6 +53,18 @@ export async function commitEngineChange(
 }
 
 /**
+ * The four Dome-* trailer keys composeCommitMessage writes, in order.
+ * Surfaces that need to recognize (e.g. strip) the trailer lines build
+ * their matching from this list so it cannot drift from the writer.
+ */
+export const DOME_TRAILER_KEYS = Object.freeze([
+  "Dome-Run",
+  "Dome-Extension",
+  "Dome-Base",
+  "Dome-Source-Head",
+] as const);
+
+/**
  * Compose `<verb>: <subject>\n\n<body?>\n\n<trailers>`. The trailers sit
  * after a blank separator from the body per `git interpret-trailers`
  * convention; `git interpret-trailers --parse <msg>` round-trips the four
@@ -61,12 +73,13 @@ export async function commitEngineChange(
  */
 export function composeCommitMessage(input: EngineCommitInput): string {
   const subject = `${input.verb}: ${input.subject}`;
-  const trailers = [
-    `Dome-Run: ${input.runContext.runId}`,
-    `Dome-Extension: ${input.runContext.extensionId}`,
-    `Dome-Base: ${input.runContext.base}`,
-    `Dome-Source-Head: ${input.runContext.sourceHead}`,
-  ].join("\n");
+  const values: Record<(typeof DOME_TRAILER_KEYS)[number], string> = {
+    "Dome-Run": input.runContext.runId,
+    "Dome-Extension": input.runContext.extensionId,
+    "Dome-Base": input.runContext.base,
+    "Dome-Source-Head": input.runContext.sourceHead,
+  };
+  const trailers = DOME_TRAILER_KEYS.map((key) => `${key}: ${values[key]}`).join("\n");
 
   if (input.body !== undefined && input.body.length > 0) {
     return `${subject}\n\n${input.body}\n\n${trailers}`;

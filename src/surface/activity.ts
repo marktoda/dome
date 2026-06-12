@@ -21,6 +21,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import { DOME_TRAILER_KEYS } from "../engine-commit";
 import { logWithTrailers, type TrailerLogEntry } from "../git";
 import { openLedgerDb, type LedgerDb } from "../ledger/db";
 import { getRun, type RunId, type RunRow, type RunStatus } from "../ledger/runs";
@@ -174,13 +175,16 @@ function matchesGrep(row: JoinedRow, grep: string | undefined): boolean {
 
 /**
  * Drop the Dome-* trailer lines from a commit body (`%b` includes them).
- * Targeted at the four trailer keys composeCommitMessage writes — prose
- * paragraphs that merely mention "Dome-Run:" mid-line survive.
+ * Targeted at exactly the trailer keys composeCommitMessage writes
+ * (DOME_TRAILER_KEYS) — prose paragraphs that merely mention "Dome-Run:"
+ * mid-line survive.
  */
+const DOME_TRAILER_LINE = new RegExp(`^(?:${DOME_TRAILER_KEYS.join("|")}):`);
+
 function stripDomeTrailers(body: string): string {
   return body
     .split("\n")
-    .filter((line) => !/^Dome-(Run|Extension|Base|Source-Head):/.test(line))
+    .filter((line) => !DOME_TRAILER_LINE.test(line))
     .join("\n")
     .trim();
 }

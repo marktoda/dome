@@ -19,8 +19,8 @@ import { globMatch } from "../../../../src/engine/core/glob-cache";
  * Bundle-local mirror of the `dome.agent.sweep` manifest `patch.auto` grant.
  * Pinned to manifest.yaml by the grant-aware-tools manifest-sync test —
  * edit both together. The per-item editDestination scope is narrower still
- * (exactly one path per run); this constant exists for the grant-pinning test
- * in Task 4.
+ * (exactly one path per run); this constant exists so the manifest-sync
+ * test can pin the grant.
  */
 export const SWEEP_WRITABLE_PATHS: ReadonlyArray<string> = Object.freeze([
   "wiki/entities/**/*.md",
@@ -53,9 +53,10 @@ export function makeSweepTools(opts: {
 }): ReadonlyArray<AgentTool> {
   const { reader, destination, onQuestion } = opts;
 
-  // Item 8: programming-error guard — destination must be in the grant at
-  // build time. The processor should never construct tools for an out-of-grant
-  // path; catching this at construction time surfaces the bug immediately.
+  // Programming-error guard: the destination must be in the grant at build
+  // time. The processor should never construct tools for an out-of-grant
+  // path; throwing at construction time surfaces the bug immediately instead
+  // of letting every editDestination call fail with a confusing denial.
   const destinationInGrant = SWEEP_WRITABLE_PATHS.some((pattern) =>
     globMatch(pattern, destination),
   );
@@ -85,7 +86,9 @@ export function makeSweepTools(opts: {
     execute: async (input, state) => {
       const { path, content } = input as { path: string; content: string };
 
-      // Item 2: input validation — non-empty strings required, no state mutation on failure
+      // Validate before touching state: both fields must be non-empty
+      // strings, so a malformed call returns a self-correctable error
+      // without recording a partial edit.
       if (typeof path !== "string" || path.length === 0) {
         return "error: path must be a non-empty string";
       }
@@ -93,7 +96,7 @@ export function makeSweepTools(opts: {
         return "error: content must be a non-empty string";
       }
 
-      // Item 1: strict path equality — no glob matching. The destination is a
+      // Strict path equality — no glob matching. The destination is a
       // known singleton; vault filenames can contain glob metachars (e.g.
       // "acme-[v2].md") which would admit writes to unintended siblings if we
       // used glob matching here. Strict equality is the only safe check.
@@ -128,7 +131,9 @@ export function makeSweepTools(opts: {
         proposedSection: string;
       };
 
-      // Item 2: input validation — non-empty strings required, callback NOT invoked on failure
+      // Validate before invoking the callback: both fields must be
+      // non-empty strings, so a malformed call cannot raise an empty
+      // owner question.
       if (typeof summary !== "string" || summary.length === 0) {
         return "error: summary must be a non-empty string";
       }
