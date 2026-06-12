@@ -14,10 +14,17 @@
 // (what `demote` would splice out), not the latest signal's.
 //
 // Idempotency: promotion keys are
-// `dome.agent.preference-promotion:<topic>:<rule-hash>`, demotion keys are
-// `dome.agent.preference-demotion:<topic>:<rule-hash>` — one open question
-// per topic + rule (re-emission refreshes the open row; an answered row
-// stays answered, so there is no re-ask), and a changed rule asks fresh.
+// `dome.agent.preference-promotion:<topic>:<rule-hash>:<epoch>`, demotion
+// keys are `dome.agent.preference-demotion:<topic>:<rule-hash>:<epoch>` —
+// one open question per topic + rule + signal epoch (re-emission refreshes
+// the open row; an answered row stays answered, settling that EPISODE). A
+// changed rule asks fresh via the hash; a changed evidence situation — a
+// `keep` reaffirmation, post-demote re-accrual with identical phrasing —
+// asks fresh via the epoch salt (`signalEpoch`: newest in-window signal
+// date, or `stale-<last-signal-date>` for pure freshness decay). Without
+// the salt, answered-row permanence dead-ended two lifecycle legs: one
+// `keep` exempted a rule from decay review forever, and a re-accrued
+// candidate with the original phrasing could never re-fire its question.
 // Both change agent behavior on every future run, so the metadata is
 // `automationPolicy: "owner-needed"`: never auto-resolved — the owner
 // decides. Confidence is the Wilson 95% lower bound × 90-day freshness from
@@ -42,6 +49,7 @@ import {
   PREFERENCE_WINDOW_DAYS,
   promotedPreferenceEntries,
   promotionQuestionKey,
+  signalEpoch,
   type PreferenceTopic,
   type PromotedPreferenceEntry,
 } from "../lib/preferences-shared";
@@ -68,6 +76,7 @@ const preferencePromotion = defineProcessorImplementation({
             idempotencyKey: promotionQuestionKey({
               topic: topic.topic,
               ruleHash: topic.ruleHash,
+              epoch: signalEpoch(topic),
             }),
             sourceRefs: topic.evidence.map((signal) =>
               ctx.sourceRef(PREFERENCE_SIGNALS_PATH, {
@@ -101,6 +110,7 @@ const preferencePromotion = defineProcessorImplementation({
           idempotencyKey: demotionQuestionKey({
             topic: topic.topic,
             ruleHash: fnv1aHex(entry.rule),
+            epoch: signalEpoch(topic),
           }),
           sourceRefs: [
             // The promoted block's core.md line, then the in-window signal

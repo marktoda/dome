@@ -69,7 +69,10 @@ const preferencePromotionAnswer = defineProcessorImplementation({
     const answer = input.answer.trim().toLowerCase();
 
     // Demotion keys (WS1 pruning) route to the second answer path — same
-    // gated writer, same narrow grant, different key family.
+    // gated writer, same narrow grant, different key family. Both parsers
+    // ignore the trailing signal-epoch segment (and tolerate legacy
+    // un-salted keys): the handler re-derives all state from the current
+    // snapshot, so the epoch matters only for question identity.
     const demotionTarget = demotionTargetFromKey(input.question.idempotencyKey);
     if (demotionTarget !== null) {
       if (answer !== "demote" && answer !== "keep") return Object.freeze([]);

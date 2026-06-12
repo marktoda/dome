@@ -187,15 +187,57 @@ per **candidate** topic (and one per decayed **promoted** topic —
 - **Question** — proposes the candidate rule **verbatim**, quoting the
   in-window evidence lines.
 - **Options** — `promote`, `reject`.
-- **Idempotency key** — `dome.agent.preference-promotion:<topic>:<rule-hash>`
-  (an 8-hex FNV-1a hash of the rule text). One open question per
-  topic + rule; re-emission refreshes the open row (projection-table
-  semantics), an answered row stays answered — no re-ask, no duplicate while
-  open. A *changed* candidate rule changes the hash and asks fresh.
+- **Idempotency key** —
+  `dome.agent.preference-promotion:<topic>:<rule-hash>:<epoch>` (an 8-hex
+  FNV-1a hash of the rule text, salted with the **signal epoch** — see
+  §"The signal epoch salt"). One open question per topic + rule + epoch;
+  re-emission refreshes the open row (projection-table semantics), an
+  answered row stays answered — it settles that *episode*, not the topic
+  forever. A *changed* candidate rule changes the hash and asks fresh;
+  signals re-accrued after a demotion change the epoch and ask fresh **even
+  when the canonical rule text is identical** — without the salt, the
+  answered promote row from the first episode would swallow every later
+  re-candidacy with the same phrasing, making the demote → re-earn leg
+  unreachable in practice.
 - **Metadata** — `automationPolicy: "owner-needed"` (promotions change agent
   behavior — the owner decides; never auto-resolved), `confidence` from the
   formula above, and an `ownerNeededReason`.
 - **SourceRefs** — one per quoted evidence line in `preferences/signals.md`.
+
+### The signal epoch salt
+
+Answered question rows are **permanent per idempotency key** — that is what
+makes "the question was the review" durable. But resolution must be durable
+*per episode*, not eternal: the same topic + rule can legitimately come up
+for review again when the evidence situation recurs (a kept rule decays
+again; a demoted rule re-earns candidacy). Both key families therefore carry
+a trailing **epoch** segment (`signalEpoch` in the shared library):
+
+```
+epoch = newest in-window signal date            (any signals in the window)
+      | "stale-" + the topic's last signal date (pure freshness decay —
+                                                 every signal is outside
+                                                 the 30-day window)
+```
+
+The epoch is deterministic from `preferences/signals.md` alone (the
+reference date that defines "in window" is itself the newest signal date in
+the file), so re-emission over the same snapshot reuses the same key —
+idempotency within an episode is preserved. The epoch changes exactly when
+the topic's evidence situation changes: a `keep` reaffirmation or re-accrued
+corrections append newer dates, opening a fresh key for the next episode.
+The `stale-` form pins *which* staleness episode is under review (the last
+signal date before decay); demotion candidates always carry at least one
+signal — hand-typed block entries without signal history are out of scope —
+so the date always exists.
+
+The answer handler parses keys tolerantly: the epoch segment is ignored
+(state is re-derived from the current snapshot at answer time), and legacy
+un-salted keys still parse — a pre-salt answered row is an unreachable dead
+key, and an answer somehow raised against one routes to the stale-question
+guard rather than being treated as foreign. The answer-trigger routing in
+the manifest matches on the key *prefix* only, which the salt does not
+touch.
 
 ## The answer handler — `dome.agent.preference-promotion-answer`
 
@@ -267,10 +309,17 @@ from, so it is never proposed for demotion.
 
 **The question** (emitted by `dome.agent.preference-promotion`):
 
-- **Idempotency key** — `dome.agent.preference-demotion:<topic>:<rule-hash>`,
-  where the hash is the FNV-1a of the **promoted block's rule text** (what
-  `demote` would splice out), not the latest signal's — a re-promoted or
-  edited entry changes the hash and asks fresh.
+- **Idempotency key** —
+  `dome.agent.preference-demotion:<topic>:<rule-hash>:<epoch>`, where the
+  hash is the FNV-1a of the **promoted block's rule text** (what `demote`
+  would splice out), not the latest signal's — a re-promoted or edited entry
+  changes the hash and asks fresh — and the epoch is the signal-epoch salt
+  (§"The signal epoch salt"). The salt is what makes `keep` an
+  episode-scoped answer: a kept rule's reaffirmation signal carries a newer
+  date, so the *next* decay episode salts a fresh key and asks again.
+  Without it, one `keep` exempted the rule from decay review permanently —
+  the rule hash never changes on `keep`, and the answered row is permanent
+  per key.
 - **Options** — `demote`, `keep`.
 - **Metadata** — `automationPolicy: "owner-needed"` (same rationale as
   promotion: the answer changes agent behavior on every future run),
@@ -303,9 +352,19 @@ answer is the source):
 - 2026-06-12 + filing:: meeting notes go under notes/, not entities/
 ```
 
-Freshness resets and confidence climbs back over the floor, so `keep`
-naturally suppresses re-asks. Retry-idempotent on the exact same-day
-duplicate line.
+What suppresses the re-ask is the **answered question row** — permanent per
+idempotency key, so the episode the owner just ruled on never re-fires. The
+fresh plus signal *usually* also lifts confidence back over the floor: in
+the pure-staleness path freshness resets to 1.0 and Wilson(1, 1) ≈ 0.21 >
+0.15. Against live counter-evidence it may not — the 1 `+` vs 2 `−` example
+above sits at ≈ 0.06, and one reaffirmation only reaches Wilson(2, 4) ≈
+0.15, the floor's exact edge; more counter-evidence keeps it under. When
+the topic is *still* a demotion candidate after the reaffirmation, the
+newer signal date is a new epoch and the question re-fires under a fresh
+key — honestly so: the evidence situation has genuinely moved since the
+owner answered. Either way, the next decay episode (whenever it comes)
+salts a fresh key and is asked anew; `keep` settles one episode, never a
+permanent exemption. Retry-idempotent on the exact same-day duplicate line.
 
 **Stale-question guard** (the promotion handler's pattern): the handler
 re-reads the promoted block from the current snapshot — when the topic's
@@ -384,8 +443,12 @@ owner corrects agent behavior
   → owner answers
       demote → handler splices the entry OUT + appends a minus signal
                (NOT a tombstone — the topic can re-earn promotion)
-      keep   → handler appends a reaffirming plus signal; confidence resets
-  → demoted topics re-enter at `building`; kept topics stay promoted
+      keep   → handler appends a reaffirming plus signal; the answered row
+               settles THIS episode only
+  → demoted topics re-enter at `building` — re-accrued corrections (even
+    with identical rule text) carry a new signal epoch, so promotion asks
+    fresh; kept topics stay promoted — the next decay episode salts a new
+    key and asks again
 ```
 
 ## Follow-ups — the full OSB lifecycle

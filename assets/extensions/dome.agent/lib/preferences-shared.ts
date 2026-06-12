@@ -689,20 +689,51 @@ export function fnv1aHex(text: string): string {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
-/** `dome.agent.preference-promotion:<topic>:<rule-hash>`. */
+/**
+ * The signal epoch that salts both question-key families: the topic's
+ * newest in-window signal date when any exists, else
+ * `stale-<last-signal-date>` (pure freshness decay — every signal sits
+ * outside the 30-day window; demotion candidates always carry at least one
+ * signal, so the last date always exists). Deterministic for a given
+ * signals.md content: both branches derive from the parsed signals alone
+ * (the reference date that defines "in window" is itself the newest signal
+ * date in the file).
+ *
+ * Why the salt exists: answered question rows are permanent per
+ * idempotency key. Un-salted keys made one answer eternal — a single
+ * `keep` exempted a rule from all future decay review (the rule hash never
+ * changes), and a post-demote re-accrual with identical canonical phrasing
+ * collided with the already-answered promote row and never re-fired. The
+ * epoch changes exactly when the topic's evidence situation changes (a
+ * `keep` reaffirmation or re-accrued corrections append newer dates), so an
+ * answered row settles that EPISODE, not the topic forever.
+ */
+export function signalEpoch(
+  topic: Pick<PreferenceTopic, "evidence" | "lastSignal">,
+): string {
+  const newestInWindow = topic.evidence.at(-1)?.date;
+  return newestInWindow ?? `stale-${topic.lastSignal}`;
+}
+
+/** `dome.agent.preference-promotion:<topic>:<rule-hash>:<epoch>`. */
 export function promotionQuestionKey(input: {
   readonly topic: string;
   readonly ruleHash: string;
+  readonly epoch: string;
 }): string {
-  return `${PREFERENCE_PROMOTION_KEY_PREFIX}${input.topic}:${input.ruleHash}`;
+  return `${PREFERENCE_PROMOTION_KEY_PREFIX}${input.topic}:${input.ruleHash}:${input.epoch}`;
 }
 
-/** `dome.agent.preference-demotion:<topic>:<rule-hash>` (the BLOCK's rule). */
+/**
+ * `dome.agent.preference-demotion:<topic>:<rule-hash>:<epoch>` (the BLOCK's
+ * rule, salted with the signal epoch — see `signalEpoch`).
+ */
 export function demotionQuestionKey(input: {
   readonly topic: string;
   readonly ruleHash: string;
+  readonly epoch: string;
 }): string {
-  return `${PREFERENCE_DEMOTION_KEY_PREFIX}${input.topic}:${input.ruleHash}`;
+  return `${PREFERENCE_DEMOTION_KEY_PREFIX}${input.topic}:${input.ruleHash}:${input.epoch}`;
 }
 
 /** Parse a promotion-question key back to its target; null when foreign. */
@@ -719,13 +750,25 @@ export function demotionTargetFromKey(
   return targetFromPrefixedKey(PREFERENCE_DEMOTION_KEY_PREFIX, idempotencyKey);
 }
 
+/**
+ * `<topic>:<rule-hash>` with an optional trailing `:<epoch>` segment
+ * (`YYYY-MM-DD` or `stale-YYYY-MM-DD`). The epoch is parsed but DISCARDED:
+ * the answer handler re-derives all state from the current snapshot, so the
+ * epoch only matters for question identity, never for answer handling. The
+ * optional group also keeps legacy un-salted keys parseable — pre-salt
+ * answered rows are unreachable dead keys, but an answer against one still
+ * routes to the stale-question guard instead of being treated as foreign.
+ */
+const KEY_TARGET_RE =
+  /^([a-z0-9]+(?:-[a-z0-9]+)*):([0-9a-f]{8})(?::(?:stale-)?\d{4}-\d{2}-\d{2})?$/;
+
 function targetFromPrefixedKey(
   prefix: string,
   idempotencyKey: string,
 ): { readonly topic: string; readonly ruleHash: string } | null {
   if (!idempotencyKey.startsWith(prefix)) return null;
   const rest = idempotencyKey.slice(prefix.length);
-  const match = /^([a-z0-9]+(?:-[a-z0-9]+)*):([0-9a-f]{8})$/.exec(rest);
+  const match = KEY_TARGET_RE.exec(rest);
   if (match === null) return null;
   return Object.freeze({
     topic: match[1] as string,
@@ -762,8 +805,10 @@ export function demotionSignalLine(input: {
 /**
  * The `keep` answer's fresh plus signal reaffirming the promoted rule
  * verbatim (source suffix omitted — the answer itself is the source).
- * Resetting freshness lifts confidence back above the demotion floor, so
- * `keep` naturally suppresses re-asks.
+ * What suppresses re-asks is the answered question row (permanent per
+ * idempotency key); the fresh signal date is also a new signal epoch, so
+ * the NEXT decay episode gets a fresh epoch-salted key and asks again —
+ * `keep` settles one episode, never grants a permanent exemption.
  */
 export function reaffirmationSignalLine(input: {
   readonly date: string;

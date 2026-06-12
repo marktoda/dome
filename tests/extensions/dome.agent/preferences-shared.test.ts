@@ -30,6 +30,7 @@ import {
   rejectionTombstoneLine,
   renderPromotedLine,
   removePromotedPreference,
+  signalEpoch,
   splicePromotedPreference,
   wilsonLowerBound,
 } from "../../../assets/extensions/dome.agent/lib/preferences-shared";
@@ -480,14 +481,47 @@ describe("promoted-block marker injection (defense in depth)", () => {
 });
 
 describe("promotion-question keys", () => {
-  test("round-trips topic + rule hash", () => {
+  test("round-trips topic + rule hash; the epoch segment is parsed but discarded", () => {
     const hash = fnv1aHex("the rule");
-    const key = promotionQuestionKey({ topic: "filing", ruleHash: hash });
-    expect(key).toBe(`dome.agent.preference-promotion:filing:${hash}`);
+    const key = promotionQuestionKey({
+      topic: "filing",
+      ruleHash: hash,
+      epoch: "2026-06-09",
+    });
+    expect(key).toBe(
+      `dome.agent.preference-promotion:filing:${hash}:2026-06-09`,
+    );
     expect(promotionTargetFromKey(key)).toEqual({
       topic: "filing",
       ruleHash: hash,
     });
+  });
+
+  test("the epoch salts question identity: a new evidence episode is a new key", () => {
+    const hash = fnv1aHex("the rule");
+    const first = promotionQuestionKey({
+      topic: "filing",
+      ruleHash: hash,
+      epoch: "2026-06-09",
+    });
+    const reAccrued = promotionQuestionKey({
+      topic: "filing",
+      ruleHash: hash,
+      epoch: "2026-09-20",
+    });
+    // Identical topic + rule, different episode → distinct keys, so the
+    // answered first-episode row cannot swallow the re-fired question.
+    expect(reAccrued).not.toBe(first);
+    expect(promotionTargetFromKey(reAccrued)).toEqual(
+      promotionTargetFromKey(first),
+    );
+  });
+
+  test("legacy un-salted keys still parse (dead rows route to the stale guard, not foreign)", () => {
+    const hash = fnv1aHex("the rule");
+    expect(
+      promotionTargetFromKey(`dome.agent.preference-promotion:filing:${hash}`),
+    ).toEqual({ topic: "filing", ruleHash: hash });
   });
 
   test("foreign or malformed keys parse to null", () => {
@@ -495,6 +529,39 @@ describe("promotion-question keys", () => {
     expect(
       promotionTargetFromKey("dome.agent.preference-promotion:Filing:zz"),
     ).toBeNull();
+    expect(
+      promotionTargetFromKey(
+        "dome.agent.preference-promotion:filing:0a1b2c3d:not-a-date",
+      ),
+    ).toBeNull();
+  });
+
+  test("signalEpoch: newest in-window date, or stale-<last-signal> for pure freshness decay", () => {
+    // In-window evidence present: the newest in-window date wins.
+    const fresh = collectPreferenceTopics({
+      signalsContent: [
+        "- 2026-06-01 + filing:: the rule",
+        "- 2026-06-09 + filing:: the rule",
+      ].join("\n"),
+      coreContent: null,
+    }).topics[0];
+    expect(fresh).toBeDefined();
+    expect(signalEpoch(fresh as NonNullable<typeof fresh>)).toBe("2026-06-09");
+
+    // Every filing signal outside the window (a later signal elsewhere moves
+    // the reference date): the stale form pins the last signal date.
+    const stale = collectPreferenceTopics({
+      signalsContent: [
+        "- 2026-01-01 + filing:: the rule",
+        "- 2026-01-09 + filing:: the rule",
+        "- 2026-06-09 + naming:: kebab-case slugs",
+      ].join("\n"),
+      coreContent: null,
+    }).topics.find((t) => t.topic === "filing");
+    expect(stale).toBeDefined();
+    expect(signalEpoch(stale as NonNullable<typeof stale>)).toBe(
+      "stale-2026-01-09",
+    );
   });
 
   test("fnv1aHex is stable and 8 hex chars", () => {
@@ -640,8 +707,14 @@ describe("promoted-block entries + demotion (WS1 pruning)", () => {
   });
 
   test("demotion keys round-trip and stay disjoint from promotion keys", () => {
-    const key = demotionQuestionKey({ topic: "filing", ruleHash: "0a1b2c3d" });
-    expect(key).toBe("dome.agent.preference-demotion:filing:0a1b2c3d");
+    const key = demotionQuestionKey({
+      topic: "filing",
+      ruleHash: "0a1b2c3d",
+      epoch: "stale-2026-01-09",
+    });
+    expect(key).toBe(
+      "dome.agent.preference-demotion:filing:0a1b2c3d:stale-2026-01-09",
+    );
     expect(demotionTargetFromKey(key)).toEqual({
       topic: "filing",
       ruleHash: "0a1b2c3d",
@@ -650,13 +723,21 @@ describe("promoted-block entries + demotion (WS1 pruning)", () => {
     expect(promotionTargetFromKey(key)).toBeNull();
     expect(
       demotionTargetFromKey(
-        promotionQuestionKey({ topic: "filing", ruleHash: "0a1b2c3d" }),
+        promotionQuestionKey({
+          topic: "filing",
+          ruleHash: "0a1b2c3d",
+          epoch: "2026-06-09",
+        }),
       ),
     ).toBeNull();
     expect(demotionTargetFromKey("dome.health.outbox-recovery:x")).toBeNull();
     expect(
       demotionTargetFromKey("dome.agent.preference-demotion:Filing:zz"),
     ).toBeNull();
+    // Legacy un-salted demotion keys still parse (dead rows, not foreign).
+    expect(
+      demotionTargetFromKey("dome.agent.preference-demotion:filing:0a1b2c3d"),
+    ).toEqual({ topic: "filing", ruleHash: "0a1b2c3d" });
   });
 
   test("the demotion signal line parses as a minus signal — deliberately NOT an owner rejection", () => {
