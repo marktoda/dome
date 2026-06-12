@@ -1,0 +1,1003 @@
+// `dome inspect` — end-to-end tests (split from tests/cli/commands.test.ts; shared setup lives in ./fixture.ts).
+
+import { describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
+import { runInspect } from "../../../src/cli/commands/inspect";
+import { runSync } from "../../../src/cli/commands/sync";
+import {
+  defaultConfigYaml,
+} from "../../../src/cli/default-vault-config";
+
+import {
+  diagnosticEffect,
+  questionEffect,
+} from "../../../src/core/effect";
+import { commitOid, sourceRef } from "../../../src/core/source-ref";
+import { commit } from "../../../src/git";
+import { openProjectionDb } from "../../../src/projections/db";
+import {
+  insertDiagnostic,
+} from "../../../src/projections/diagnostics";
+import {
+  insertQuestion,
+} from "../../../src/projections/questions";
+
+import {
+  captured,
+  fixtures,
+  installConsoleCapture,
+  installFixtureCleanup,
+  makeFixture,
+} from "./fixture";
+
+installConsoleCapture();
+installFixtureCleanup();
+
+// ----- runInspect -----------------------------------------------------------
+//
+// `dome inspect <subject>` is the v1.0 read surface for the operational
+// substrate (renamed from the pre-recut `dome doctor --show <subject>`
+// shape per [[wiki/specs/cli]] §"dome inspect"). Subject is positional,
+// not a flag; each subject is backed by an existing runtime/query surface.
+
+describe("runInspect", () => {
+  test("subjects 'bundles' and 'processors' expose the loaded feature surface", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(
+      await runInspect({
+        subject: "bundles",
+        vault: f.vaultPath,
+        json: true,
+      }),
+    ).toBe(0);
+    const bundles = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly bundle: string;
+      readonly processors: number;
+      readonly adoption: number;
+      readonly garden: number;
+      readonly view: number;
+      readonly command_views: number;
+      readonly model_processors: number;
+      readonly model: string;
+    }>;
+    const agentBundle = bundles.find((row) => row.bundle === "dome.agent");
+    expect(agentBundle).toEqual(
+      expect.objectContaining({
+        processors: 10,
+        adoption: 0,
+        garden: 10,
+        view: 0,
+        model_processors: 4,
+        model: "granted-no-provider",
+      }),
+    );
+    const dailyBundle = bundles.find((row) => row.bundle === "dome.daily");
+    expect(dailyBundle?.command_views).toBe(3);
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "processors",
+        vault: f.vaultPath,
+        json: true,
+      }),
+    ).toBe(0);
+    const processors = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly processor: string;
+      readonly bundle: string;
+      readonly version: string;
+      readonly phase: string;
+      readonly triggers: string;
+      readonly commands: string;
+      readonly capabilities: string;
+      readonly bundle_grants: string;
+      readonly grant_scopes: string;
+      readonly grant_details: ReadonlyArray<{
+        readonly kind: string;
+        readonly scope: string;
+        readonly values: ReadonlyArray<string>;
+      }>;
+      readonly execution: string;
+      readonly model: string;
+    }>;
+    const ingest = processors.find(
+      (row) => row.processor === "dome.agent.ingest",
+    );
+    expect(ingest).toEqual(
+      expect.objectContaining({
+        bundle: "dome.agent",
+        version: "0.3.0",
+        phase: "garden",
+        triggers: "signal",
+        execution: "llm",
+        model: "granted-no-provider",
+      }),
+    );
+    expect(ingest?.capabilities).toContain("model.invoke");
+    expect(ingest?.bundle_grants).toContain("model.invoke");
+    // core.md leads the sorted read scope (core memory is read-only by
+    // design — it must never show up under patch.auto).
+    expect(ingest?.grant_scopes).toContain("read:core.md,inbox/**/*.md");
+    expect(ingest?.grant_scopes).toContain("wiki/**/*.md");
+    expect(ingest?.grant_scopes).toContain("patch.auto:");
+    // index.md/log.md are read-only for agents (the core.md grant shape):
+    // the index regenerates from description: frontmatter, log.md is frozen.
+    expect(ingest?.grant_details).toContainEqual({
+      kind: "patch.auto",
+      scope: "paths",
+      values: [
+        "inbox/processed/*.md",
+        "inbox/raw/*.md",
+        "notes/**/*.md",
+        "preferences/signals.md",
+        "wiki/**/*.md",
+      ],
+    });
+    expect(ingest?.grant_details).toContainEqual({
+      kind: "model.invoke",
+      scope: "maxDailyCostUsd",
+      values: ["5"],
+    });
+
+    const markdownRepair = processors.find(
+      (row) => row.processor === "dome.markdown.repair-wikilinks",
+    );
+    expect(markdownRepair?.grant_scopes).toContain("patch.auto:**/*.md");
+
+    const healthRecovery = processors.find(
+      (row) => row.processor === "dome.health.outbox-recovery-questions",
+    );
+    expect(healthRecovery?.grant_scopes).toContain("read:**");
+    expect(healthRecovery?.grant_scopes).toContain("outbox.read:failed");
+    expect(healthRecovery?.grant_details).toContainEqual({
+      kind: "outbox.read",
+      scope: "statuses",
+      values: ["failed"],
+    });
+
+    const query = processors.find(
+      (row) => row.processor === "dome.search.query",
+    );
+    expect(query).toEqual(
+      expect.objectContaining({
+        phase: "view",
+        triggers: "command",
+        commands: "query",
+        model: "none",
+      }),
+    );
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "processors",
+        vault: f.vaultPath,
+        model: true,
+        json: true,
+      }),
+    ).toBe(0);
+    const modelProcessors = JSON.parse(
+      captured.out.join("\n"),
+    ) as ReadonlyArray<{
+      readonly processor: string;
+      readonly model: string;
+    }>;
+    expect(modelProcessors.length).toBe(5);
+    expect(modelProcessors.map((row) => row.processor).sort()).toEqual([
+      "dome.agent.brief",
+      "dome.agent.consolidate",
+      "dome.agent.ingest",
+      "dome.agent.sweep",
+      "dome.warden.integrity",
+    ]);
+    expect(modelProcessors.every((row) => row.model !== "none")).toBe(true);
+  });
+
+  test("subject 'facts' exposes source-backed projection fact provenance", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeFile(
+      join(f.vaultPath, "wiki/new.md"),
+      "# New\n\nSee [[seed]] for the source note.\n",
+    );
+    await commit({
+      path: f.vaultPath,
+      message: "link seed note\n",
+      files: ["wiki/new.md"],
+    });
+
+    expect(await runSync({ vault: f.vaultPath, json: true, quiet: true })).toBe(
+      0,
+    );
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "facts",
+        vault: f.vaultPath,
+        predicate: "dome.graph.links_to",
+        subjectKind: "page",
+        subjectId: "wiki/new.md",
+        json: true,
+      }),
+    ).toBe(0);
+    const rows = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly id: number;
+      readonly subject: string;
+      readonly predicate: string;
+      readonly object: string;
+      readonly assertion: string;
+      readonly processor: string;
+      readonly run: string;
+      readonly adopted: string;
+      readonly source_refs: string;
+    }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        subject: "page:wiki/new.md",
+        predicate: "dome.graph.links_to",
+        object: "seed",
+        assertion: "extracted",
+        processor: "dome.graph.links",
+      }),
+    );
+    expect(rows[0]?.id).toBeGreaterThan(0);
+    expect(rows[0]?.run).toMatch(/^run_/);
+    expect(rows[0]?.adopted).toMatch(/^[0-9a-f]{40}$/);
+    expect(rows[0]?.source_refs).toContain("wiki/new.md:3");
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "facts",
+        vault: f.vaultPath,
+        predicate: "dome.graph.tagged",
+        json: true,
+      }),
+    ).toBe(0);
+    expect(JSON.parse(captured.out.join("\n"))).toEqual([]);
+  });
+
+  test("subject 'patches' exposes generated markdown change provenance", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    expect(await runSync({ vault: f.vaultPath, json: true, quiet: true })).toBe(
+      0,
+    );
+
+    await writeFile(
+      join(f.vaultPath, "wiki/messy.md"),
+      "---\nid: messy\ntype: page\n---\n# Messy\n",
+    );
+    await commit({
+      path: f.vaultPath,
+      message: "add messy frontmatter\n",
+      files: ["wiki/messy.md"],
+    });
+
+    expect(await runSync({ vault: f.vaultPath, json: true, quiet: true })).toBe(
+      0,
+    );
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "patches",
+        vault: f.vaultPath,
+        processor: "dome.markdown.normalize-frontmatter",
+        json: true,
+      }),
+    ).toBe(0);
+    const rows = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly id: number;
+      readonly run: string;
+      readonly processor: string;
+      readonly phase: string;
+      readonly status: string;
+      readonly capability: string;
+      readonly outcome: string;
+      readonly paths: string;
+      readonly input: string;
+      readonly output: string;
+      readonly effect_hashes: number;
+    }>;
+    const messyPatch = rows.find((row) => row.paths === "wiki/messy.md");
+    expect(messyPatch).toBeDefined();
+    expect(messyPatch).toEqual(
+      expect.objectContaining({
+        processor: "dome.markdown.normalize-frontmatter",
+        phase: "adoption",
+        status: "succeeded",
+        capability: "patch.auto",
+        outcome: "allowed",
+        paths: "wiki/messy.md",
+        effect_hashes: 1,
+      }),
+    );
+    expect(messyPatch?.id).toBeGreaterThan(0);
+    expect(messyPatch?.run).toMatch(/^run_/);
+    expect(messyPatch?.input).toMatch(/^[0-9a-f]{12}$/);
+    expect(messyPatch?.output).toMatch(/^[0-9a-f]{12}$/);
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "patches",
+        vault: f.vaultPath,
+        processor: "dome.nope",
+        json: true,
+      }),
+    ).toBe(0);
+    expect(JSON.parse(captured.out.join("\n"))).toEqual([]);
+  });
+
+  test("subject 'bundles' shows configured disabled bundles without loading them", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await mkdir(join(f.vaultPath, ".dome"), { recursive: true });
+    await writeFile(
+      join(f.vaultPath, ".dome", "config.yaml"),
+      defaultConfigYaml(),
+    );
+
+    expect(
+      await runInspect({
+        subject: "bundles",
+        vault: f.vaultPath,
+        json: true,
+      }),
+    ).toBe(0);
+    const bundles = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly bundle: string;
+      readonly status: string;
+      readonly loaded: boolean;
+      readonly inventory: string;
+      readonly version: string;
+      readonly processors: number;
+      readonly garden: number;
+      readonly model_processors: number;
+      readonly model: string;
+    }>;
+    const agent = bundles.find((row) => row.bundle === "dome.agent");
+    expect(agent).toEqual(
+      expect.objectContaining({
+        status: "disabled",
+        loaded: false,
+        inventory: "manifest",
+        version: "0.4.1",
+        processors: 10,
+        garden: 10,
+        model_processors: 4,
+        model: "disabled-no-provider",
+      }),
+    );
+    const search = bundles.find((row) => row.bundle === "dome.search");
+    expect(search).toEqual(
+      expect.objectContaining({
+        status: "enabled",
+        loaded: true,
+        processors: 3,
+      }),
+    );
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "processors",
+        vault: f.vaultPath,
+        json: true,
+      }),
+    ).toBe(0);
+    const processors = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly processor: string;
+    }>;
+    expect(
+      processors.some((row) => row.processor.startsWith("dome.agent.")),
+    ).toBe(false);
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "processors",
+        vault: f.vaultPath,
+        model: true,
+        json: true,
+      }),
+    ).toBe(0);
+    expect(JSON.parse(captured.out.join("\n"))).toEqual([]);
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "bundles",
+        vault: f.vaultPath,
+        model: true,
+        json: true,
+      }),
+    ).toBe(0);
+    const modelBundles = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly bundle: string;
+      readonly status: string;
+      readonly loaded: boolean;
+      readonly model_processors: number;
+      readonly model: string;
+    }>;
+    expect(modelBundles).toEqual([
+      expect.objectContaining({
+        bundle: "dome.agent",
+        status: "disabled",
+        loaded: false,
+        model_processors: 4,
+        model: "disabled-no-provider",
+      }),
+      expect.objectContaining({
+        bundle: "dome.warden",
+        status: "disabled",
+        loaded: false,
+        model_processors: 1,
+        model: "disabled-no-provider",
+      }),
+    ]);
+  });
+
+  test("--model filter is only valid for bundle and processor metadata", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(
+      await runInspect({
+        subject: "runs",
+        vault: f.vaultPath,
+        model: true,
+        json: true,
+      }),
+    ).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "--model is only valid for the bundles and processors subjects",
+    );
+  });
+
+  test("subject 'bundles' reads disabled local manifests without importing modules", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    const bundleDir = join(f.vaultPath, ".dome", "extensions", "custom.disabled");
+    await mkdir(join(bundleDir, "processors"), { recursive: true });
+    await writeFile(
+      join(f.vaultPath, ".dome", "config.yaml"),
+      [
+        "extensions:",
+        "  custom.disabled:",
+        "    enabled: false",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(
+      join(bundleDir, "manifest.json"),
+      JSON.stringify(
+        {
+          id: "custom.disabled",
+          version: "1.2.3",
+          processors: [
+            {
+              id: "custom.disabled.missing-module",
+              version: "0.0.1",
+              phase: "garden",
+              triggers: [{ kind: "schedule", cron: "* * * * *" }],
+              capabilities: [{ kind: "model.invoke", maxDailyCostUsd: 1 }],
+              execution: { class: "llm" },
+              module: "processors/missing-module.ts",
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    expect(
+      await runInspect({
+        subject: "bundles",
+        vault: f.vaultPath,
+        json: true,
+      }),
+    ).toBe(0);
+    const bundles = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly bundle: string;
+      readonly status: string;
+      readonly loaded: boolean;
+      readonly inventory: string;
+      readonly version: string;
+      readonly processors: number;
+      readonly model_processors: number;
+      readonly model: string;
+    }>;
+    expect(bundles).toContainEqual(
+      expect.objectContaining({
+        bundle: "custom.disabled",
+        status: "disabled",
+        loaded: false,
+        inventory: "manifest",
+        version: "1.2.3",
+        processors: 1,
+        model_processors: 1,
+        model: "disabled-no-provider",
+      }),
+    );
+  });
+
+  test("subject 'runs' returns 0 on a fresh vault with an empty-table message", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const code = await runInspect({ subject: "runs", vault: f.vaultPath });
+    expect(code).toBe(0);
+    expect(captured.out.join("\n")).toContain("(no rows)");
+  });
+
+  test("subject 'diagnostics' returns source locations", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "test.diagnostic",
+          message: "Needs a source location",
+          sourceRefs: [
+            sourceRef({
+              commit: commitOid(f.headSha),
+              path: "wiki/new.md",
+              range: {
+                startLine: 3,
+                endLine: 5,
+              },
+            }),
+          ],
+        }),
+        processorId: "test.cli",
+        runId: "run-cli-diagnostic",
+        proposalId: "prop_cli",
+        adoptedCommit: commitOid(f.headSha),
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(
+      await runInspect({
+        subject: "diagnostics",
+        vault: f.vaultPath,
+        json: true,
+      }),
+    ).toBe(0);
+    const rows = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly id: number;
+      readonly code: string;
+      readonly processor: string;
+      readonly run: string;
+      readonly proposal: string;
+      readonly adopted: string;
+      readonly source_refs: string;
+    }>;
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        code: "test.diagnostic",
+        processor: "test.cli",
+        run: "run-cli-diagnostic",
+        proposal: "prop_cli",
+      }),
+    );
+    expect(rows[0]?.id).toBeGreaterThan(0);
+    expect(rows[0]?.adopted).toBe(f.headSha);
+    expect(rows[0]?.source_refs).toContain("wiki/new.md:3-5");
+  });
+
+  test("diagnostics --summary groups by severity and code", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "test.repeated",
+          message: "First repeated diagnostic",
+          sourceRefs: [
+            sourceRef({ commit: commitOid(f.headSha), path: "wiki/new.md" }),
+          ],
+        }),
+        processorId: "test.cli",
+        proposalId: "prop_cli_summary",
+        adoptedCommit: commitOid(f.headSha),
+      });
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "test.repeated",
+          message: "Second repeated diagnostic",
+          sourceRefs: [
+            sourceRef({ commit: commitOid(f.headSha), path: "wiki/seed.md" }),
+          ],
+        }),
+        processorId: "test.cli",
+        proposalId: "prop_cli_summary",
+        adoptedCommit: commitOid(f.headSha),
+      });
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "error",
+          code: "test.single",
+          message: "Single diagnostic",
+          sourceRefs: [
+            sourceRef({ commit: commitOid(f.headSha), path: "wiki/other.md" }),
+          ],
+        }),
+        processorId: "test.other",
+        proposalId: "prop_cli_summary",
+        adoptedCommit: commitOid(f.headSha),
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(
+      await runInspect({
+        subject: "diagnostics",
+        vault: f.vaultPath,
+        summary: true,
+        json: true,
+      }),
+    ).toBe(0);
+    const payload = JSON.parse(captured.out.join("\n")) as {
+      readonly total: number;
+      readonly group_count: number;
+      readonly groups: ReadonlyArray<{
+        readonly severity: string;
+        readonly code: string;
+        readonly count: number;
+        readonly first_source_refs: string;
+      }>;
+    };
+    expect(payload.total).toBe(3);
+    expect(payload.group_count).toBe(2);
+    expect(payload.groups[0]).toEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "test.single",
+        count: 1,
+      }),
+    );
+    expect(payload.groups[1]).toEqual(
+      expect.objectContaining({
+        severity: "warning",
+        code: "test.repeated",
+        count: 2,
+      }),
+    );
+    expect(payload.groups[1]?.first_source_refs).toContain("wiki/seed.md");
+  });
+
+  test("diagnostics filters by severity, code, and processor", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "warning",
+          code: "test.keep",
+          message: "Keep this diagnostic",
+          sourceRefs: [
+            sourceRef({ commit: commitOid(f.headSha), path: "wiki/new.md" }),
+          ],
+        }),
+        processorId: "test.keep",
+        proposalId: "prop_cli_filters",
+        adoptedCommit: commitOid(f.headSha),
+      });
+      insertDiagnostic(projection.value.db, {
+        effect: diagnosticEffect({
+          severity: "error",
+          code: "test.drop",
+          message: "Drop this diagnostic",
+          sourceRefs: [
+            sourceRef({ commit: commitOid(f.headSha), path: "wiki/seed.md" }),
+          ],
+        }),
+        processorId: "test.drop",
+        proposalId: "prop_cli_filters",
+        adoptedCommit: commitOid(f.headSha),
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    expect(
+      await runInspect({
+        subject: "diagnostics",
+        vault: f.vaultPath,
+        severity: "warning",
+        code: "test.keep",
+        processor: "test.keep",
+        json: true,
+      }),
+    ).toBe(0);
+    const rows = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly severity: string;
+      readonly code: string;
+      readonly message: string;
+    }>;
+    expect(rows).toEqual([
+      expect.objectContaining({
+        severity: "warning",
+        code: "test.keep",
+        message: "Keep this diagnostic",
+      }),
+    ]);
+  });
+
+  test("subjects 'questions' and 'outbox' both return 0", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(
+      await runInspect(
+        { subject: "questions", vault: f.vaultPath },
+      ),
+    ).toBe(0);
+    expect(
+      await runInspect(
+        { subject: "outbox", vault: f.vaultPath },
+      ),
+    ).toBe(0);
+  });
+
+  test("subject 'questions' exposes producer and source provenance", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      const adopted = commitOid(f.headSha);
+      insertQuestion(projection.value.db, {
+        effect: questionEffect({
+          question: "Resolve this source-backed uncertainty?",
+          sourceRefs: [
+            sourceRef({
+              commit: adopted,
+              path: "wiki/new.md",
+              range: { startLine: 1, endLine: 1 },
+            }),
+          ],
+          idempotencyKey: "inspect-question-provenance",
+          metadata: {
+            risk: "low",
+            confidence: 0.9,
+            automationPolicy: "agent-safe",
+          },
+        }),
+        processorId: "test.question",
+        runId: "run-cli-question",
+        adoptedCommit: adopted,
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "questions",
+        vault: f.vaultPath,
+        json: true,
+      }),
+    ).toBe(0);
+    const rows = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly question: string;
+      readonly processor: string;
+      readonly run: string;
+      readonly adopted: string;
+      readonly source_refs: string;
+    }>;
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        question: "Resolve this source-backed uncertainty?",
+        processor: "test.question",
+        run: "run-cli-question",
+        adopted: f.headSha,
+      }),
+    );
+    expect(rows[0]?.source_refs).toContain("wiki/new.md:1");
+  });
+
+  test("corrupt operational JSON returns a clear state-read failure", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(
+      await runInspect(
+        { subject: "outbox", vault: f.vaultPath },
+      ),
+    ).toBe(0);
+    const db = new Database(join(f.vaultPath, ".dome", "state", "outbox.db"));
+    try {
+      const now = new Date().toISOString();
+      db.query(
+        "INSERT INTO outbox (capability, idempotency_key, payload_json, source_refs, status, attempts, max_attempts, enqueued_at, next_attempt_at, run_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ).run(
+        "calendar.write",
+        "bad-json",
+        "{not-json",
+        "[]",
+        "pending",
+        0,
+        3,
+        now,
+        now,
+        "run_bad_json",
+      );
+    } finally {
+      db.close();
+    }
+
+    const code = await runInspect(
+      { subject: "outbox", vault: f.vaultPath },
+    );
+    expect(code).toBe(1);
+    expect(captured.err.join("\n")).toContain("state read failed");
+    expect(captured.err.join("\n")).toContain(
+      "operational database may be corrupt",
+    );
+  });
+
+  test("missing positional subject returns 64 (EX_USAGE)", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(await runInspect({ vault: f.vaultPath })).toBe(64);
+  });
+
+  test("unknown subject returns 64", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(
+      await runInspect({ subject: "garbage", vault: f.vaultPath }),
+    ).toBe(64);
+  });
+
+  test("malformed --limit returns 64 before opening runtime", async () => {
+    expect(await runInspect({ subject: "runs", limit: "10x" })).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "--limit must be a positive integer",
+    );
+  });
+
+  test("diagnostic-only flags reject other subjects", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(
+      await runInspect({
+        subject: "runs",
+        vault: f.vaultPath,
+        summary: true,
+      }),
+    ).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "only valid for the diagnostics subject",
+    );
+
+    captured.err = [];
+    expect(
+      await runInspect({
+        subject: "runs",
+        vault: f.vaultPath,
+        processor: "dome.markdown.normalize-frontmatter",
+      }),
+    ).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "--processor is only valid for the diagnostics and patches subjects",
+    );
+  });
+
+  test("fact-only flags reject other subjects", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(
+      await runInspect({
+        subject: "runs",
+        vault: f.vaultPath,
+        predicate: "dome.graph.links_to",
+      }),
+    ).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "only valid for the facts subject",
+    );
+  });
+
+  test("invalid fact filters return 64", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(
+      await runInspect({
+        subject: "facts",
+        vault: f.vaultPath,
+        subjectKind: "file",
+        subjectId: "wiki/seed.md",
+      }),
+    ).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "--subject-kind must be one of page, task, entity",
+    );
+
+    captured.err = [];
+    expect(
+      await runInspect({
+        subject: "facts",
+        vault: f.vaultPath,
+        subjectKind: "page",
+      }),
+    ).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "--subject-kind and --subject-id must be provided together",
+    );
+  });
+
+  test("invalid diagnostic severity returns 64", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(
+      await runInspect({
+        subject: "diagnostics",
+        vault: f.vaultPath,
+        severity: "fatal",
+      }),
+    ).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "--severity must be one of info, warning, error, block",
+    );
+  });
+});
+
