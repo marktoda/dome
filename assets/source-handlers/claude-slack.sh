@@ -1,0 +1,105 @@
+#!/bin/sh
+# claude-slack.sh — dome.sources fetch-command template (slack kind).
+#
+# This file is SDK-shipped vault-side data, not SDK code (the model-provider
+# template precedent: nothing under src/ executes it). Copy it into your
+# vault — conventionally `.dome/bin/fetch-slack.sh` — adjust the FETCH
+# section, and name it in the subscription:
+#
+#   extensions:
+#     dome.sources:
+#       config:
+#         subscriptions:
+#           slack:
+#             enabled: true
+#             schedule: "15 5 * * *"
+#             output_path: "sources/slack/{date}.md"
+#             command: ["sh", ".dome/bin/fetch-slack.sh"]
+#
+# Requires the `claude` CLI with the OWNER's Slack MCP server connected on
+# the machine the daemon runs on: the FETCH below runs headless Claude AS
+# the owner. This script is the consent surface — copying it into the vault,
+# reading the prompt, and flipping `enabled: true` is what authorizes the
+# overnight Slack read. Review the prompt before you enable it.
+#
+# Contract with the dome.sources handler (wiki/specs/sources.md):
+#   - Invoked from the VAULT ROOT as: <command...> <date> <output_path>
+#     ($1 = YYYY-MM-DD, $2 = vault-relative output path).
+#   - Fetch the overnight digest, write $2 in the slack-day shape
+#     (wiki/specs/vault-layout.md §"sources/"), and COMMIT it as an
+#     ordinary git commit (a non-engine commit the daemon adopts).
+#   - If $2 ALREADY EXISTS, skip the fetch and just commit it: a prior
+#     attempt wrote the file but its commit failed (gpg/hook failure,
+#     killed mid-script). The handler verifies completion against HEAD and
+#     retries exactly for this case — the retry is commit-only, never a
+#     second fetch.
+#   - Commit with a PATHSPEC (`git commit -m ... -- "$f"`) so a human's
+#     concurrently staged work is never swept into the fetch commit.
+#   - Exit non-zero on ANY failure so the outbox records the attempt and
+#     retries; never commit a partial or empty-because-broken file.
+#   - The attempt is bounded by engine.external_handler_timeout_ms
+#     (default 30s). A headless-model fetch like the default below needs
+#     that raised in .dome/config.yaml (e.g. 300000). `dome doctor`
+#     reminds you while it is unset.
+
+set -eu
+
+d="$1"
+f="$2"
+
+# Pathspec-scoped landing: stages and commits ONLY the fetched file, so
+# anything a human has staged stays out of this commit.
+land() {
+  git add -- "$f"
+  git commit -m "slack: overnight digest for $d" -- "$f"
+}
+
+# ----- COMMIT-ONLY RETRY -------------------------------------------------------
+# The file exists but the handler still dispatched us: a prior attempt's
+# commit failed. Don't fetch again — commit what's there and exit.
+if [ -e "$f" ]; then
+  land
+  exit 0
+fi
+
+mkdir -p "$(dirname "$f")"
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+
+# ----- FETCH (adjust to taste) ----------------------------------------------
+# Default: headless Claude with the owner's Slack MCP. Swap this block for a
+# deterministic exporter if you prefer — anything that emits the slack-day
+# markdown shape on stdout works.
+claude -p --output-format text "Summarize my Slack activity since the \
+previous local evening — messages that mention me, my direct messages, and \
+the high-traffic channels I am in — as a Dome slack-day markdown file for \
+$d, and output ONLY that document, NOTHING else. Exact shape: a YAML \
+frontmatter block with 'type: slack-day' and 'date: $d', then '# Slack $d', \
+then up to three sections — '## Mentions', '## Direct messages', \
+'## Channels' — each holding one '- ' list item per line shaped like \
+'- [#channel] HH:MM author: \"message\"' (use '[DM]' instead of '[#channel]' \
+for direct messages; under '## Channels' a one-line activity summary per \
+channel is fine). OMIT empty sections entirely, keep every item to one line, \
+and cap the whole digest at roughly 30 items. If there is nothing to report, \
+emit the frontmatter and heading only." > "$tmp"
+
+# ----- VALIDATE ---------------------------------------------------------------
+# Refuse to commit something that is not a slack-day file (a model refusal,
+# an error page, an empty fetch).
+head -n 1 "$tmp" | grep -q '^---$' || {
+  echo "fetch-slack: output is not a slack-day file (no frontmatter)" >&2
+  exit 1
+}
+grep -q "^date: $d$" "$tmp" || {
+  echo "fetch-slack: output frontmatter does not carry date: $d" >&2
+  exit 1
+}
+grep -q "^# Slack $d$" "$tmp" || {
+  echo "fetch-slack: output does not carry the '# Slack $d' heading" >&2
+  exit 1
+}
+
+# ----- LAND (ordinary non-engine commit; the daemon adopts it) ----------------
+mv "$tmp" "$f"
+trap - EXIT
+land
