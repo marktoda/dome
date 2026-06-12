@@ -283,6 +283,35 @@ describe("NO_ACCRETING_REGISTRIES", () => {
     expect(renderIndexTargets).toBeGreaterThanOrEqual(2);
   });
 
+  test("across every first-party manifest, only the pinned two-writer table names core.md as a patch target", () => {
+    // The bundle-scoped pins below can't see a core.md patch.auto declared in
+    // a DIFFERENT bundle's manifest, so this layer sweeps every first-party
+    // manifest the same way the index-files exclusivity test does: no
+    // processor outside CORE_MD_WRITER_GRANTS may name core.md as a targeted
+    // patch path. Generic hygiene globs ("**/*.md") are exempt by the same
+    // targeted-vs-generic control as index files — dome.markdown's
+    // deterministic source-preserving passes still cover core.md by design
+    // (the known gap recorded in wiki/specs/preferences.md §"Follow-ups").
+    const processors = loadFirstPartyProcessors();
+    expect(processors.length).toBeGreaterThanOrEqual(10);
+
+    let pinnedWriterTargets = 0;
+    for (const processor of processors) {
+      for (const pattern of processor.patchAutoPaths) {
+        if (isGenericPattern(pattern)) continue; // hygiene glob — by design
+        if (!globMatch(pattern, "core.md")) continue;
+        expect(
+          processor.id in CORE_MD_WRITER_GRANTS,
+          `${processor.bundleId}/${processor.id} names core.md as a patch target via "${pattern}" — only the two-gated-writers table (wiki/specs/preferences.md) may`,
+        ).toBe(true);
+        pinnedWriterTargets += 1;
+      }
+    }
+    // Both pinned writers' manifest grants must stay visible to this fence —
+    // if either vanishes, the exclusivity claim is untested.
+    expect(pinnedWriterTargets).toBeGreaterThanOrEqual(2);
+  });
+
   test("dome.agent manifest patch.auto grants exclude log.md and index files", () => {
     const parsed = parseManifest(
       parseYaml(readFileSync(join(AGENT_BUNDLE, "manifest.yaml"), "utf8")),
