@@ -16,6 +16,7 @@ import { withCoreMemory } from "../lib/core-memory";
 import { makeIngestTools, type CapturedTasksRouting } from "../lib/ingest-tools";
 import { INGEST_CHARTER } from "../lib/ingest-charter";
 import { agentPreamble } from "../lib/agent-preamble";
+import { resolveModelOverride, withStepModel } from "../lib/model-override";
 
 const MAX_STEPS = 25;
 
@@ -32,11 +33,25 @@ const ingest = defineProcessorImplementation({
     if (rawPaths.length === 0) return Object.freeze([]);
     const sourceRefs = rawPaths.map((p) => ctx.sourceRef(p));
 
-    // step check + coreMemorySection read + core-problem diagnostic.
-    // No per-processor config problems to pass (ingest has no extra config).
-    const pre = await agentPreamble(ctx, [], sourceRefs);
+    // step check + coreMemorySection read + config-problem diagnostics
+    // (the model_overrides routing entry is ingest's only extra config).
+    const modelOverride = resolveModelOverride(ctx.extensionConfig, "ingest");
+    const pre = await agentPreamble(
+      ctx,
+      [
+        {
+          problem: modelOverride.problem,
+          code: "dome.agent.model-config-invalid",
+          sourceRefs,
+        },
+      ],
+      sourceRefs,
+    );
     if (pre.kind === "no-model") return Object.freeze([]);
-    const { step, core } = pre;
+    const { core } = pre;
+    // Per-processor model routing: the resolved override rides every step()
+    // call via the provider-neutral `model` field.
+    const step = withStepModel(pre.step, modelOverride.model);
 
     // Today's daily — the captured-tasks landing zone. Same settings-derived
     // path computation as the brief and create-daily (a `daily_path` override

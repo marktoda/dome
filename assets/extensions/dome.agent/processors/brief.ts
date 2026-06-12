@@ -51,6 +51,7 @@ import {
 import { BRIEF_CHARTER } from "../lib/brief-charter";
 import { withCoreMemory } from "../lib/core-memory";
 import { agentPreamble } from "../lib/agent-preamble";
+import { resolveModelOverride, withStepModel } from "../lib/model-override";
 import {
   INTEGRATED_BLOCK,
   MEETINGS_BLOCK,
@@ -174,11 +175,26 @@ const brief = defineProcessorImplementation({
       slackExists: slackContent !== null,
     });
 
-    // step check + coreMemorySection read + core-problem diagnostic.
-    // No per-processor config problems to pass (brief has no extra config).
-    const pre = await agentPreamble(ctx, [], sourceRefs);
+    // step check + coreMemorySection read + config-problem diagnostics
+    // (the model_overrides routing entry is the brief's only extra config
+    // beyond the shared daily-path settings).
+    const modelOverride = resolveModelOverride(ctx.extensionConfig, "brief");
+    const pre = await agentPreamble(
+      ctx,
+      [
+        {
+          problem: modelOverride.problem,
+          code: "dome.agent.model-config-invalid",
+          sourceRefs,
+        },
+      ],
+      sourceRefs,
+    );
     if (pre.kind === "no-model") return Object.freeze([]);
-    const { step, core } = pre;
+    const { core } = pre;
+    // Per-processor model routing: the resolved override rides every step()
+    // call via the provider-neutral `model` field.
+    const step = withStepModel(pre.step, modelOverride.model);
     const configDiagnostics: Effect[] = [...pre.effects];
 
     // Seed the accumulator with the prepared daily so the model's readPage

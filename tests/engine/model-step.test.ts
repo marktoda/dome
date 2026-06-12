@@ -136,6 +136,52 @@ describe("modelInvokeForProcessor.step", () => {
     expect(uses.filter((u) => u === "allowed")).toHaveLength(2);
   });
 
+  // Per-processor model routing (dome.agent model_overrides / dome.warden
+  // model_override) rides the existing step({model}) field. These two tests
+  // pin the allowlist semantics that routing leans on: with NO modelAllowlist
+  // on either the declared or granted capability (the dome.agent/dome.warden
+  // manifests declare none), an arbitrary requested model flows to the
+  // provider unchecked; when an allowlist IS granted, an out-of-list override
+  // is denied — routing cannot bypass the allowlist.
+
+  test("step passes an arbitrary requested model through when NO allowlist is declared", async () => {
+    const seen: Array<string | undefined> = [];
+    const stepProvider: ModelStepProvider = async (request) => {
+      seen.push(request.model);
+      return { text: "done" };
+    };
+    const fn = build({ stepProvider });
+    const result = await fn!.step!({
+      messages: [{ role: "user", content: "go" }],
+      tools: [],
+      model: "claude-haiku-4-5",
+    });
+    expect(result.text).toBe("done");
+    expect(seen).toEqual(["claude-haiku-4-5"]);
+  });
+
+  test("step denies a requested model outside the declared ∩ granted allowlist", async () => {
+    const stepProvider: ModelStepProvider = async () => ({ text: "done" });
+    const fn = modelInvokeForProcessor({
+      phase: "garden",
+      processorId: "test.agent",
+      declared: [{ kind: "model.invoke" }],
+      granted: [{ kind: "model.invoke", modelAllowlist: ["claude-sonnet-4-6"] }],
+      policy,
+      signal: new AbortController().signal,
+      stepProvider,
+      spentUsdTodayByProcessor: () => 0,
+      spentUsdTodayByExtension: () => 0,
+    });
+    await expect(
+      fn!.step!({
+        messages: [{ role: "user", content: "go" }],
+        tools: [],
+        model: "claude-haiku-4-5",
+      }),
+    ).rejects.toThrow(/denied model 'claude-haiku-4-5'/);
+  });
+
   test("step does NOT retry a second consecutive provider failure", async () => {
     let calls = 0;
     const stepProvider: ModelStepProvider = async () => {

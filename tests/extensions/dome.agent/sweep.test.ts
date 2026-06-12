@@ -35,6 +35,7 @@ const SCHEDULE_INPUT = { kind: "schedule", cron: "0 3 * * *", firedAt: FIRED_AT 
 
 type StepFn = (input: {
   readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+  readonly model?: string;
 }) => Promise<ModelStepResult>;
 
 function makeCtx(opts: {
@@ -605,6 +606,48 @@ describe("dome.agent.sweep", () => {
     expect(diag).toBeDefined();
     expect(diag!.message).toContain("sweep_ledger_path");
     expect(patchFor(effects, LEDGER)).not.toBeNull(); // default path used
+  });
+
+  test("model_overrides.sweep routes every step call", async () => {
+    const seen: Array<string | undefined> = [];
+    const stepFn: StepFn = async (input) => {
+      seen.push(input.model);
+      return { text: "done" };
+    };
+    const effects = await sweep.run(
+      makeCtx({
+        files: BASE_FILES,
+        extensionConfig: { model_overrides: { sweep: "claude-haiku-4-5" } },
+        stepFn,
+      }),
+    );
+    expect(seen.length).toBeGreaterThan(0);
+    expect(new Set(seen)).toEqual(new Set(["claude-haiku-4-5"]));
+    expect(
+      diagnostics(effects).some((d) => d.code === "dome.agent.model-config-invalid"),
+    ).toBe(false);
+  });
+
+  test("malformed model_overrides.sweep degrades to the provider default with a warning", async () => {
+    const seen: Array<string | undefined> = [];
+    const stepFn: StepFn = async (input) => {
+      seen.push(input.model);
+      return { text: "done" };
+    };
+    const effects = await sweep.run(
+      makeCtx({
+        files: BASE_FILES,
+        extensionConfig: { model_overrides: { sweep: "  " } },
+        stepFn,
+      }),
+    );
+    // Degrade, not crash: the night proceeds on the provider default model.
+    expect(new Set(seen)).toEqual(new Set([undefined]));
+    const diag = diagnostics(effects).find(
+      (d) => d.code === "dome.agent.model-config-invalid",
+    );
+    expect(diag?.severity).toBe("warning");
+    expect(diag?.message).toContain("model_overrides.sweep");
   });
 
   test("core.md rides the task turn as a data-framed block", async () => {

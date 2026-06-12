@@ -26,6 +26,7 @@ import matter from "gray-matter";
 import { z } from "zod";
 
 import {
+  diagnosticEffect,
   questionEffect,
   type Effect,
   type QuestionAutomationPolicy,
@@ -89,8 +90,29 @@ const integrity = defineProcessorImplementation({
     const modelInvoke = ctx.modelInvoke;
     if (modelInvoke === undefined) return [];
 
+    const wikiPaths = ctx.changedPaths.filter(isWikiMarkdownPath).sort();
+    const firstPath = wikiPaths[0];
+    if (firstPath === undefined) return [];
+
+    // Per-warden model routing (`extensions.dome.warden.config.model_override`):
+    // the resolved model rides every structured() call via the provider-neutral
+    // `model` field. Same degrade-not-crash idiom as the dome.agent config
+    // reads — a malformed value falls back to the provider default with ONE
+    // warning diagnostic per run, never a crashed review.
+    const override = resolveModelOverride(ctx.extensionConfig);
+
     const effects: Effect[] = [];
-    for (const path of ctx.changedPaths.filter(isWikiMarkdownPath).sort()) {
+    if (override.problem !== null) {
+      effects.push(
+        diagnosticEffect({
+          severity: "warning",
+          code: "dome.warden.model-config-invalid",
+          message: override.problem,
+          sourceRefs: [ctx.sourceRef(firstPath)],
+        }),
+      );
+    }
+    for (const path of wikiPaths) {
       const content = await ctx.snapshot.readFile(path);
       if (content === null) continue;
 
@@ -100,6 +122,7 @@ const integrity = defineProcessorImplementation({
           schemaName: MODEL_SCHEMA,
           prompt: promptForPage(path, content),
           parse: parseIntegrityResult,
+          ...(override.model !== undefined ? { model: override.model } : {}),
         });
       } catch {
         // Model unavailable (no provider) or errored for this page — skip it.
@@ -145,6 +168,36 @@ const integrity = defineProcessorImplementation({
 });
 
 export default integrity;
+
+type ModelOverrideResolution = {
+  readonly model: string | undefined;
+  readonly problem: string | null;
+};
+
+/**
+ * Resolve `extensions.dome.warden.config.model_override` (a single model
+ * string for the warden's structured calls). Unset → no model field (the
+ * provider's default); malformed → default + a `problem` the run surfaces as
+ * the `dome.warden.model-config-invalid` warning. Kept local to the bundle —
+ * the dome.agent helper resolves a per-processor map, this is one string.
+ */
+function resolveModelOverride(
+  config: Readonly<Record<string, unknown>> | undefined,
+): ModelOverrideResolution {
+  const raw = config?.model_override;
+  if (raw === undefined) {
+    return Object.freeze({ model: undefined, problem: null });
+  }
+  if (typeof raw !== "string" || raw.trim().length === 0) {
+    return Object.freeze({
+      model: undefined,
+      problem:
+        "dome.warden config model_override must be a non-empty model " +
+        "string; ignoring it (provider default model)",
+    });
+  }
+  return Object.freeze({ model: raw.trim(), problem: null });
+}
 
 function isWikiMarkdownPath(path: string): boolean {
   return /^wiki\/.+\.md$/i.test(path);

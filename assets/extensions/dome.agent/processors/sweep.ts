@@ -39,6 +39,7 @@ import {
 } from "../lib/agent-loop";
 import { withCoreMemory } from "../lib/core-memory";
 import { agentPreamble } from "../lib/agent-preamble";
+import { resolveModelOverride, withStepModel } from "../lib/model-override";
 import { sweepCharter } from "../lib/sweep-charter";
 import {
   parseSweepLedger,
@@ -401,7 +402,9 @@ const sweep = defineProcessorImplementation({
     const ledgerRefs = [ctx.sourceRef(ledgerPath)];
 
     // step check + coreMemorySection read + config-problem diagnostics
-    // (all four sweep config problems share the same code).
+    // (the four sweep config problems share the same code; model routing
+    // has its own).
+    const modelOverride = resolveModelOverride(ctx.extensionConfig, "sweep");
     const pre = await agentPreamble(
       ctx,
       [
@@ -409,11 +412,15 @@ const sweep = defineProcessorImplementation({
         { problem: windowDays.problem, code: "dome.agent.sweep-config-invalid", sourceRefs: ledgerRefs },
         { problem: maxItems.problem, code: "dome.agent.sweep-config-invalid", sourceRefs: ledgerRefs },
         { problem: targets.problem, code: "dome.agent.sweep-config-invalid", sourceRefs: ledgerRefs },
+        { problem: modelOverride.problem, code: "dome.agent.model-config-invalid", sourceRefs: ledgerRefs },
       ],
       ledgerRefs,
     );
     if (pre.kind === "no-model") return Object.freeze([]);
-    const { step, core } = pre;
+    const { core } = pre;
+    // Per-processor model routing: the resolved override rides every step()
+    // call via the provider-neutral `model` field.
+    const step = withStepModel(pre.step, modelOverride.model);
     const effects: Effect[] = [...pre.effects];
 
     const today = formatDate(localDateParts(ctx.now()));
