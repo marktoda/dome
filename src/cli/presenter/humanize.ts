@@ -28,3 +28,12 @@ export function relativeTime(
 export function shortOid(oid: string | null | undefined, fallback = "none"): string {
   return oid === null || oid === undefined ? fallback : oid.slice(0, 7);
 }
+
+/**
+ * USD with four decimal places — model spend per run is fractions of a
+ * cent, so the two-decimal convention would render most rows as $0.00.
+ */
+export function usd(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "-";
+  return `$${value.toFixed(4)}`;
+}

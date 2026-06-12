@@ -320,6 +320,26 @@ export type SumCostUsdByProcessorPrefixOpts = {
   readonly sinceIso: string;
 };
 
+/**
+ * One row of the per-processor spend aggregation backing
+ * `dome inspect cost` (docs/wiki/specs/run-ledger.md §"Query surface
+ * (CLI)"). `runs` counts cost-bearing runs only — rows whose `cost_usd`
+ * is NULL never billed a provider and are not spend evidence.
+ */
+export type ProcessorCostRow = {
+  readonly processorId: string;
+  readonly runs: number;
+  readonly totalCostUsd: number;
+  readonly todayCostUsd: number;
+};
+
+export type AggregateCostUsdByProcessorOpts = {
+  /** ISO-8601 lower bound on `started_at` — the report window. */
+  readonly sinceIso: string;
+  /** ISO-8601 start-of-local-day — the "today" split inside the window. */
+  readonly todayIso: string;
+};
+
 // ----- SQL ------------------------------------------------------------------
 
 const INSERT_QUEUED_SQL = `
@@ -421,6 +441,22 @@ WHERE started_at >= ?
   AND (processor_id = ? OR substr(processor_id, 1, ?) = ?)
 `.trim();
 
+// Sibling of SUM_COST_USD_BY_PROCESSOR_PREFIX_SQL: same `cost_usd IS NOT
+// NULL` posture and `started_at >= ?` bound, grouped per processor for the
+// `dome inspect cost` report. Placeholders bind in textual order: the
+// today-split bound (SELECT clause) first, then the window bound (WHERE).
+const AGGREGATE_COST_USD_BY_PROCESSOR_SQL = `
+SELECT processor_id,
+       COUNT(*) AS runs,
+       COALESCE(SUM(cost_usd), 0) AS total_cost_usd,
+       COALESCE(SUM(CASE WHEN started_at >= ? THEN cost_usd ELSE 0 END), 0) AS today_cost_usd
+FROM runs
+WHERE started_at >= ?
+  AND cost_usd IS NOT NULL
+GROUP BY processor_id
+ORDER BY total_cost_usd DESC, processor_id ASC
+`.trim();
+
 const ORPHAN_RUNS_SQL = `
 ${SELECT_BASE_SQL}
 WHERE status = 'running' AND started_at < ?
@@ -513,6 +549,13 @@ type RunSummaryRawRow = {
 
 type SumCostRawRow = {
   readonly cost_usd: number | null;
+};
+
+type ProcessorCostRawRow = {
+  readonly processor_id: string;
+  readonly runs: number;
+  readonly total_cost_usd: number;
+  readonly today_cost_usd: number;
 };
 
 type CountRawRow = {
@@ -853,6 +896,42 @@ export function sumCostUsdByProcessorPrefix(
     );
   const first = rows[0];
   return first?.cost_usd ?? 0;
+}
+
+/**
+ * Per-processor spend aggregation over the report window — the query
+ * surface behind `dome inspect cost`. Only cost-bearing rows participate
+ * (same posture as `sumCostUsdByProcessorPrefix`): a NULL `cost_usd`
+ * means the run never billed a provider. `todayCostUsd` re-splits the
+ * same rows at `todayIso` so the report can show "since midnight" next
+ * to the window total without a second query.
+ */
+export function aggregateCostUsdByProcessor(
+  db: LedgerDb,
+  opts: AggregateCostUsdByProcessorOpts,
+): ReadonlyArray<ProcessorCostRow> {
+  const rows = db.raw
+    .query<ProcessorCostRawRow, [string, string]>(
+      AGGREGATE_COST_USD_BY_PROCESSOR_SQL,
+    )
+    .all(opts.todayIso, opts.sinceIso);
+  return mapRows(rows, (row) =>
+    Object.freeze({
+      processorId: row.processor_id,
+      runs: row.runs,
+      totalCostUsd: row.total_cost_usd,
+      todayCostUsd: row.today_cost_usd,
+    }),
+  );
+}
+
+/**
+ * Local-midnight boundary shared by every "today's spend" consumer: the
+ * runtime's budget scopes and the `dome inspect cost` report must agree
+ * on what "today" means, so the boundary lives beside the spend queries.
+ */
+export function startOfLocalDay(now: Date): Date {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
 const LATEST_SCHEDULE_RUN_SQL = `

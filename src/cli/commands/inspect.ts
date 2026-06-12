@@ -16,6 +16,13 @@
 //   - `quarantine`  → `executionState.quarantines()`
 //   - `bundles`     → configured/loaded extension bundle summary
 //   - `processors`  → loaded processor/automation summary
+//   - `cost`        → `aggregateCostUsdByProcessor(ledger)` — spend report
+//                     over the run ledger's `cost_usd` (`--days N`,
+//                     default 7). Unlike the other subjects this does NOT
+//                     open the vault runtime: it opens runs.db read-only
+//                     and mirrors `dome log`'s refuse-to-scaffold posture
+//                     (a vault without a ledger gets a clean zero table,
+//                     not a freshly created database file).
 //
 // Exit codes:
 //   - 0 always on a clean read — including empty result sets.
@@ -42,8 +49,10 @@
 // `dome doctor` namespace is reserved for the v1.x health-check verb;
 // this surface is the read half.
 
-import { basename } from "node:path";
+import { existsSync } from "node:fs";
+import { basename, join } from "node:path";
 
+import { compareStrings } from "../../core/compare";
 import type {
   DiagnosticEffect,
   FactEffect,
@@ -63,7 +72,13 @@ import {
   type LoadBundlesError,
 } from "../../extensions/loader";
 import { queryPatchRecords } from "../../ledger/capability-uses";
-import { queryRuns } from "../../ledger/runs";
+import { openLedgerDb, type LedgerDb } from "../../ledger/db";
+import {
+  aggregateCostUsdByProcessor,
+  queryRuns,
+  startOfLocalDay,
+  type ProcessorCostRow,
+} from "../../ledger/runs";
 import {
   queryDiagnosticRecords,
   type DiagnosticsFilter,
@@ -92,6 +107,7 @@ import {
   resolveCaps,
   section,
   table,
+  usd,
   type KvRow,
 } from "../presenter";
 import { parsePositiveIntegerValue } from "../parse-options";
@@ -105,6 +121,7 @@ import {
 // ----- Constants ------------------------------------------------------------
 
 const DEFAULT_LIMIT = 20;
+const DEFAULT_COST_DAYS = 7;
 const VALID_SUBJECTS = new Set<string>([
   "bundles",
   "processors",
@@ -115,7 +132,11 @@ const VALID_SUBJECTS = new Set<string>([
   "questions",
   "outbox",
   "quarantine",
+  "cost",
 ]);
+
+/** JSON envelope schema for `dome inspect cost --json`. */
+export const INSPECT_COST_SCHEMA = "dome.inspect.cost/v1";
 const VALID_DIAGNOSTIC_SEVERITIES = new Set([
   "info",
   "warning",
@@ -137,6 +158,7 @@ export type RunInspectOptions = {
   readonly subjectKind?: string | undefined;
   readonly subjectId?: string | undefined;
   readonly model?: boolean | undefined;
+  readonly days?: string | number | boolean | undefined;
 };
 
 // ----- runInspect --------------------------------------------------------------
@@ -154,13 +176,13 @@ export async function runInspect(
   const subject = options.subject;
   if (typeof subject !== "string" || subject.length === 0) {
     console.error(
-      "dome inspect: subject is required. Subjects: bundles, processors, runs, patches, facts, diagnostics, questions, outbox, quarantine.",
+      "dome inspect: subject is required. Subjects: bundles, processors, runs, patches, facts, diagnostics, questions, outbox, quarantine, cost.",
     );
     return 64;
   }
   if (!VALID_SUBJECTS.has(subject)) {
     console.error(
-      `dome inspect: unknown subject '${subject}'. Available: bundles, processors, runs, patches, facts, diagnostics, questions, outbox, quarantine.`,
+      `dome inspect: unknown subject '${subject}'. Available: bundles, processors, runs, patches, facts, diagnostics, questions, outbox, quarantine, cost.`,
     );
     return 64;
   }
@@ -170,6 +192,15 @@ export async function runInspect(
   const limit = parseLimit(options.limit, defaultLimitForSubject(subject));
   if (limit === null) {
     console.error("dome inspect: --limit must be a positive integer.");
+    return 64;
+  }
+  if (options.days !== undefined && subject !== "cost") {
+    console.error("dome inspect: --days is only valid for the cost subject.");
+    return 64;
+  }
+  const days = parsePositiveIntegerValue(options.days, DEFAULT_COST_DAYS);
+  if (days === null) {
+    console.error("dome inspect: --days must be a positive integer.");
     return 64;
   }
   const diagnosticOptions = parseDiagnosticOptions({
@@ -204,6 +235,16 @@ export async function runInspect(
       "dome inspect: --model is only valid for the bundles and processors subjects.",
     );
     return 64;
+  }
+
+  // The spend report is ledger-only — no runtime open, no scaffolding.
+  if (subject === "cost") {
+    return runInspectCost({
+      vaultPath,
+      days,
+      limit,
+      json: options.json === true,
+    });
   }
 
   const bundleRoots = resolveBundleRoots({
@@ -253,6 +294,239 @@ export async function runInspect(
   } finally {
     await runtime.close();
   }
+}
+
+// ----- cost subject ----------------------------------------------------------
+//
+// `dome inspect cost [--days N]` — the spend report. Ledger-only: the
+// other subjects open the vault runtime (which initializes the
+// operational databases), but a spend *read* must not scaffold state in
+// a vault it only observes, so this path mirrors `dome log`'s
+// refuse-to-scaffold ledger open (src/surface/activity.ts): a missing
+// runs.db short-circuits to a clean zero report.
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+type CostSubtotal = {
+  readonly runs: number;
+  readonly total_cost_usd: number;
+  readonly today_cost_usd: number;
+};
+
+type CostExtensionRow = CostSubtotal & { readonly extension: string };
+type CostProcessorReportRow = CostExtensionRow & { readonly processor: string };
+
+type CostReport = {
+  readonly days: number;
+  readonly since: string;
+  readonly today: string;
+  readonly processors: ReadonlyArray<CostProcessorReportRow>;
+  readonly extensions: ReadonlyArray<CostExtensionRow>;
+  readonly total: CostSubtotal;
+};
+
+type CostLedgerOpen =
+  | { readonly kind: "open"; readonly db: LedgerDb }
+  | { readonly kind: "absent" }
+  | { readonly kind: "error"; readonly message: string };
+
+async function runInspectCost(opts: {
+  readonly vaultPath: string;
+  readonly days: number;
+  readonly limit: number;
+  readonly json: boolean;
+}): Promise<number> {
+  const ledger = await openCostLedgerReadOnly(opts.vaultPath);
+  if (ledger.kind === "error") {
+    console.error(
+      `dome inspect cost: state read failed. The run ledger may be corrupt: ${ledger.message}`,
+    );
+    return 1;
+  }
+
+  const now = new Date();
+  const sinceIso = new Date(now.getTime() - opts.days * DAY_MS).toISOString();
+  const todayIso = startOfLocalDay(now).toISOString();
+
+  let rows: ReadonlyArray<ProcessorCostRow> = [];
+  if (ledger.kind === "open") {
+    try {
+      rows = aggregateCostUsdByProcessor(ledger.db, { sinceIso, todayIso });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(
+        `dome inspect cost: state read failed. The operational database may be corrupt: ${msg}`,
+      );
+      return 1;
+    } finally {
+      ledger.db.close();
+    }
+  }
+
+  const report = buildCostReport({
+    days: opts.days,
+    since: sinceIso,
+    today: todayIso,
+    rows,
+    limit: opts.limit,
+  });
+  if (opts.json) {
+    console.log(formatJson({ schema: INSPECT_COST_SCHEMA, ...report }));
+  } else {
+    printCostText(report, opts.vaultPath);
+  }
+  return 0;
+}
+
+/**
+ * Open runs.db for the spend read, tolerating its absence. `openLedgerDb`
+ * would create a fresh file (CLI-native reads must not scaffold state),
+ * so a missing file short-circuits to the zero report; an open refusal
+ * (schema mismatch / corrupt file) is a hard error — unlike `dome log`'s
+ * garnish join, the ledger IS this subject's data.
+ */
+async function openCostLedgerReadOnly(
+  vaultPath: string,
+): Promise<CostLedgerOpen> {
+  const path = join(vaultPath, ".dome", "state", "runs.db");
+  if (!existsSync(path)) return { kind: "absent" };
+  const result = await openLedgerDb({ path });
+  if (!result.ok) return { kind: "error", message: result.error.kind };
+  return { kind: "open", db: result.value.db };
+}
+
+function buildCostReport(opts: {
+  readonly days: number;
+  readonly since: string;
+  readonly today: string;
+  readonly rows: ReadonlyArray<ProcessorCostRow>;
+  readonly limit: number;
+}): CostReport {
+  const processors = opts.rows.slice(0, opts.limit).map((row) =>
+    Object.freeze({
+      processor: row.processorId,
+      extension: extensionIdForProcessor(row.processorId),
+      runs: row.runs,
+      total_cost_usd: row.totalCostUsd,
+      today_cost_usd: row.todayCostUsd,
+    }),
+  );
+
+  // Subtotals and the grand total aggregate over ALL rows, not the
+  // `--limit` slice — a truncated table must not understate spend.
+  const byExtension = new Map<
+    string,
+    { runs: number; total: number; today: number }
+  >();
+  let totalRuns = 0;
+  let totalCost = 0;
+  let todayCost = 0;
+  for (const row of opts.rows) {
+    const extension = extensionIdForProcessor(row.processorId);
+    const acc = byExtension.get(extension) ?? { runs: 0, total: 0, today: 0 };
+    acc.runs += row.runs;
+    acc.total += row.totalCostUsd;
+    acc.today += row.todayCostUsd;
+    byExtension.set(extension, acc);
+    totalRuns += row.runs;
+    totalCost += row.totalCostUsd;
+    todayCost += row.todayCostUsd;
+  }
+  const extensions = [...byExtension.entries()]
+    .map(([extension, acc]) =>
+      Object.freeze({
+        extension,
+        runs: acc.runs,
+        total_cost_usd: acc.total,
+        today_cost_usd: acc.today,
+      }),
+    )
+    .sort((a, b) =>
+      a.total_cost_usd === b.total_cost_usd
+        ? compareStrings(a.extension, b.extension)
+        : b.total_cost_usd - a.total_cost_usd,
+    );
+
+  return Object.freeze({
+    days: opts.days,
+    since: opts.since,
+    today: opts.today,
+    processors: Object.freeze(processors),
+    extensions: Object.freeze(extensions),
+    total: Object.freeze({
+      runs: totalRuns,
+      total_cost_usd: totalCost,
+      today_cost_usd: todayCost,
+    }),
+  });
+}
+
+/**
+ * Ledger rows carry no extension column; subtotals group by the
+ * processor id's parent namespace (`dome.agent.ingest` → `dome.agent`),
+ * which equals the bundle id for every first-party bundle. An undotted
+ * id groups under itself.
+ */
+function extensionIdForProcessor(processorId: string): string {
+  const lastDot = processorId.lastIndexOf(".");
+  return lastDot <= 0 ? processorId : processorId.slice(0, lastDot);
+}
+
+function printCostText(report: CostReport, vaultPath: string): void {
+  const caps = resolveCaps();
+  const context = basename(vaultPath);
+  const lines: string[] = [];
+  const status =
+    report.processors.length === 0
+      ? { tone: "muted" as const, label: `no spend in ${report.days}d` }
+      : {
+          tone: "plain" as const,
+          label: `${report.days}d · ${usd(report.total.total_cost_usd)}`,
+        };
+  lines.push(headline({ cmd: "inspect cost", context }, status, caps));
+  lines.push("");
+  lines.push(
+    ...table(
+      report.processors as ReadonlyArray<Record<string, unknown>>,
+      columnsFor("cost"),
+      caps,
+    ),
+  );
+  if (report.extensions.length > 0) {
+    lines.push(
+      ...section(
+        "Extensions",
+        kv(
+          report.extensions.map((ext) => ({
+            label: ext.extension,
+            value: `${usd(ext.total_cost_usd)} · today ${usd(ext.today_cost_usd)} · ${ext.runs} runs`,
+          })),
+          caps,
+        ),
+        caps,
+      ),
+    );
+  }
+  lines.push(
+    ...section(
+      "Total",
+      kv(
+        [
+          { label: "window", value: usd(report.total.total_cost_usd) },
+          { label: "today", value: usd(report.total.today_cost_usd) },
+          { label: "runs", value: String(report.total.runs) },
+        ],
+        caps,
+      ),
+      caps,
+    ),
+  );
+  const hint = hiddenHint("cost");
+  if (hint.length > 0) {
+    lines.push("");
+    lines.push(`  ${paint(hint, "muted", caps)}`);
+  }
+  console.log(lines.join("\n"));
 }
 
 // ----- internals ------------------------------------------------------------
@@ -726,7 +1000,9 @@ function isFactSubjectKind(
 }
 
 function defaultLimitForSubject(subject: string): number {
-  if (subject === "bundles" || subject === "processors") {
+  // cost is a bounded aggregation (one row per cost-bearing processor),
+  // so like the metadata subjects it defaults to the full set.
+  if (subject === "bundles" || subject === "processors" || subject === "cost") {
     return Number.MAX_SAFE_INTEGER;
   }
   return DEFAULT_LIMIT;

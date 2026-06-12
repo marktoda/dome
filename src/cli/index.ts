@@ -207,9 +207,14 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .description("Read operational substrate rows.")
     .argument(
       "<subject>",
-      "bundles, processors, runs, patches, facts, diagnostics, questions, outbox, or quarantine.",
+      "bundles, processors, runs, patches, facts, diagnostics, questions, outbox, quarantine, or cost.",
     )
     .option("--limit <n>", "Maximum rows to show.", parsePositiveIntegerOption)
+    .option(
+      "--days <n>",
+      "Cost window in days (cost subject only; default 7).",
+      parsePositiveIntegerOption,
+    )
     .option("--summary", "Group diagnostics by severity and code.")
     .option("--severity <level>", "Filter diagnostics by severity.")
     .option("--code <code>", "Filter diagnostics by code.")
@@ -237,6 +242,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           subjectKind: options.subjectKind,
           subjectId: options.subjectId,
           model: options.model,
+          days: options.days,
         }),
       );
     });
@@ -758,6 +764,7 @@ type CheckCliOptions = {
 
 type InspectCliOptions = {
   readonly limit?: number;
+  readonly days?: number;
   readonly summary?: boolean;
   readonly severity?: string;
   readonly code?: string;

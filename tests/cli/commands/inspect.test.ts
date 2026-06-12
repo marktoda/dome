@@ -2,10 +2,11 @@
 
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { runInspect } from "../../../src/cli/commands/inspect";
+import { runInspect, INSPECT_COST_SCHEMA } from "../../../src/cli/commands/inspect";
 import { runSync } from "../../../src/cli/commands/sync";
 import {
   defaultConfigYaml,
@@ -17,6 +18,13 @@ import {
 } from "../../../src/core/effect";
 import { commitOid, sourceRef } from "../../../src/core/source-ref";
 import { commit } from "../../../src/git";
+import { openLedgerDb } from "../../../src/ledger/db";
+import {
+  insertQueued,
+  markRunning,
+  markSucceeded,
+  newRunId,
+} from "../../../src/ledger/runs";
 import { openProjectionDb } from "../../../src/projections/db";
 import {
   insertDiagnostic,
@@ -31,6 +39,7 @@ import {
   installConsoleCapture,
   installFixtureCleanup,
   makeFixture,
+  type Fixture,
 } from "./fixture";
 
 installConsoleCapture();
@@ -997,6 +1006,256 @@ describe("runInspect", () => {
     ).toBe(64);
     expect(captured.err.join("\n")).toContain(
       "--severity must be one of info, warning, error, block",
+    );
+  });
+});
+
+// ----- runInspect cost --------------------------------------------------------
+//
+// `dome inspect cost [--days N]` — spend observability over the run
+// ledger's `cost_usd` column. Read-only posture (mirrors `dome log`):
+// a vault without runs.db gets a clean zero table, and the command never
+// scaffolds the ledger file it only reads.
+
+type CostJsonReport = {
+  readonly schema: string;
+  readonly days: number;
+  readonly since: string;
+  readonly processors: ReadonlyArray<{
+    readonly processor: string;
+    readonly extension: string;
+    readonly runs: number;
+    readonly total_cost_usd: number;
+    readonly today_cost_usd: number;
+  }>;
+  readonly extensions: ReadonlyArray<{
+    readonly extension: string;
+    readonly runs: number;
+    readonly total_cost_usd: number;
+    readonly today_cost_usd: number;
+  }>;
+  readonly total: {
+    readonly runs: number;
+    readonly total_cost_usd: number;
+    readonly today_cost_usd: number;
+  };
+};
+
+/** Seed one terminal run row with a controlled cost + start time. */
+async function seedCostRun(
+  f: Fixture,
+  opts: {
+    readonly processorId: string;
+    readonly costUsd: number | null;
+    readonly startedAt: Date;
+  },
+): Promise<void> {
+  const ledger = await openLedgerDb({
+    path: join(f.vaultPath, ".dome", "state", "runs.db"),
+  });
+  if (!ledger.ok) throw new Error(`ledger open failed: ${ledger.error.kind}`);
+  try {
+    const id = newRunId(opts.startedAt);
+    insertQueued(ledger.value.db, {
+      id,
+      proposalId: null,
+      processorId: opts.processorId,
+      processorVersion: "0.0.1",
+      phase: "garden",
+      inputCommit: commitOid(f.headSha),
+      triggerKind: "schedule",
+      triggerPayload: null,
+      startedAt: opts.startedAt,
+    });
+    markRunning(ledger.value.db, id, opts.startedAt);
+    markSucceeded(ledger.value.db, {
+      id,
+      effectHashes: [],
+      costUsd: opts.costUsd,
+      durationMs: 10,
+      outputCommit: null,
+      finishedAt: opts.startedAt,
+    });
+  } finally {
+    ledger.value.db.close();
+  }
+}
+
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+
+describe("runInspect cost", () => {
+  test("missing ledger yields a clean zero table and is never scaffolded", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    const ledgerPath = join(f.vaultPath, ".dome", "state", "runs.db");
+    expect(existsSync(ledgerPath)).toBe(false);
+
+    expect(await runInspect({ subject: "cost", vault: f.vaultPath })).toBe(0);
+    expect(captured.out.join("\n")).toContain("(no rows)");
+    // Read-only posture: the read must not create runs.db.
+    expect(existsSync(ledgerPath)).toBe(false);
+
+    captured.out = [];
+    expect(
+      await runInspect({ subject: "cost", vault: f.vaultPath, json: true }),
+    ).toBe(0);
+    const report = JSON.parse(captured.out.join("\n")) as CostJsonReport;
+    expect(report.schema).toBe(INSPECT_COST_SCHEMA);
+    expect(report.days).toBe(7);
+    expect(report.processors).toEqual([]);
+    expect(report.extensions).toEqual([]);
+    expect(report.total).toEqual({
+      runs: 0,
+      total_cost_usd: 0,
+      today_cost_usd: 0,
+    });
+    expect(existsSync(ledgerPath)).toBe(false);
+  });
+
+  test("aggregates per-processor rows, extension subtotals, and a grand total", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    const now = new Date();
+    const today = new Date(now.getTime() - 1000);
+    const threeDaysAgo = new Date(now.getTime() - 3 * DAY_MS);
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * DAY_MS);
+
+    await seedCostRun(f, {
+      processorId: "dome.agent.ingest",
+      costUsd: 0.25,
+      startedAt: today,
+    });
+    await seedCostRun(f, {
+      processorId: "dome.agent.ingest",
+      costUsd: 0.5,
+      startedAt: threeDaysAgo,
+    });
+    await seedCostRun(f, {
+      processorId: "dome.warden.integrity",
+      costUsd: 0.125,
+      startedAt: today,
+    });
+    // Outside the default 7-day window.
+    await seedCostRun(f, {
+      processorId: "dome.agent.brief",
+      costUsd: 4,
+      startedAt: thirtyDaysAgo,
+    });
+    // Cost-free run: never shows up in the spend view.
+    await seedCostRun(f, {
+      processorId: "dome.graph.links",
+      costUsd: null,
+      startedAt: today,
+    });
+
+    expect(
+      await runInspect({ subject: "cost", vault: f.vaultPath, json: true }),
+    ).toBe(0);
+    const report = JSON.parse(captured.out.join("\n")) as CostJsonReport;
+    expect(report.schema).toBe(INSPECT_COST_SCHEMA);
+    expect(report.days).toBe(7);
+    // Ordered by total spend descending.
+    expect(report.processors.map((row) => row.processor)).toEqual([
+      "dome.agent.ingest",
+      "dome.warden.integrity",
+    ]);
+    expect(report.processors[0]).toEqual(
+      expect.objectContaining({
+        processor: "dome.agent.ingest",
+        extension: "dome.agent",
+        runs: 2,
+        total_cost_usd: 0.75,
+        today_cost_usd: 0.25,
+      }),
+    );
+    expect(report.processors[1]).toEqual(
+      expect.objectContaining({
+        processor: "dome.warden.integrity",
+        extension: "dome.warden",
+        runs: 1,
+        total_cost_usd: 0.125,
+        today_cost_usd: 0.125,
+      }),
+    );
+    expect(report.extensions).toEqual([
+      expect.objectContaining({
+        extension: "dome.agent",
+        runs: 2,
+        total_cost_usd: 0.75,
+        today_cost_usd: 0.25,
+      }),
+      expect.objectContaining({
+        extension: "dome.warden",
+        runs: 1,
+        total_cost_usd: 0.125,
+        today_cost_usd: 0.125,
+      }),
+    ]);
+    expect(report.total).toEqual({
+      runs: 3,
+      total_cost_usd: 0.875,
+      today_cost_usd: 0.375,
+    });
+
+    // Widening the window picks up the older brief run.
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "cost",
+        vault: f.vaultPath,
+        days: 60,
+        json: true,
+      }),
+    ).toBe(0);
+    const wide = JSON.parse(captured.out.join("\n")) as CostJsonReport;
+    expect(wide.days).toBe(60);
+    expect(wide.processors[0]).toEqual(
+      expect.objectContaining({
+        processor: "dome.agent.brief",
+        total_cost_usd: 4,
+        today_cost_usd: 0,
+      }),
+    );
+    expect(wide.total.total_cost_usd).toBeCloseTo(4.875, 10);
+    expect(wide.total.runs).toBe(4);
+  });
+
+  test("renders a human table with subtotals and total", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await seedCostRun(f, {
+      processorId: "dome.agent.ingest",
+      costUsd: 0.25,
+      startedAt: new Date(),
+    });
+
+    expect(await runInspect({ subject: "cost", vault: f.vaultPath })).toBe(0);
+    const out = captured.out.join("\n");
+    expect(out).toContain("dome.agent.ingest");
+    expect(out).toContain("$0.2500");
+    expect(out).toContain("EXTENSIONS");
+    expect(out).toContain("dome.agent");
+    expect(out).toContain("TOTAL");
+  });
+
+  test("--days validation: malformed value and non-cost subjects return 64", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(
+      await runInspect({ subject: "cost", vault: f.vaultPath, days: "7x" }),
+    ).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "--days must be a positive integer",
+    );
+
+    captured.err = [];
+    expect(
+      await runInspect({ subject: "runs", vault: f.vaultPath, days: 7 }),
+    ).toBe(64);
+    expect(captured.err.join("\n")).toContain(
+      "--days is only valid for the cost subject",
     );
   });
 });

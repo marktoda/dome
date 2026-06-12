@@ -120,6 +120,7 @@ import {
   markSkipped,
   markTerminal,
   newRunId,
+  startOfLocalDay,
   sumCostUsdByProcessorPrefix,
   type RunId,
   type TerminalMark,
@@ -1592,10 +1593,6 @@ function modelSpendForToday(opts: {
         sinceIso: startOfLocalDay(opts.now).toISOString(),
       });
   return persisted + opts.currentRunCostUsd;
-}
-
-function startOfLocalDay(now: Date): Date {
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
 /**
