@@ -284,3 +284,26 @@ the copy is refreshed — neither the merge nor the restart does that.
    should drop visibly against the prior night (`--days 2` isolates the
    comparison). The v1 plan's target this instruments: single-digit dollars
    per month.
+
+## Topology revision (2026-06-12) — laptop-first
+
+The server migration (§1–5 above) is DEFERRED, deliberately. The daemon stays
+on the laptop. §1–5 remain valid for the day remote MCP reopens the
+always-on-host question; nothing above is obsolete, just parked.
+
+Laptop-first setup (replaces §1–5 for now):
+
+1. Overnight gardens: schedule a daily wake so the 05:05–06:00 choreography
+   runs lid-closed (plugged in): `sudo pmset repeat wakeorpoweron MTWRFSU 05:05:00`
+   (verify: `pmset -g sched`).
+2. Wake-tick choreography + eventually-consistent capture: shipped by the
+   laptop-first hardening chunk (see plan
+   [[superpowers/plans/2026-06-12-v1-chunk7-laptop-first]]); `dome recipe ios`
+   prints the queue-fallback Shortcut.
+3. Slack OAuth happens HERE (the laptop is the daemon host): run `/mcp` in any
+   claude session, authorize claude.ai Slack, smoke-test headless
+   (`claude -p` with a Slack question), then flip
+   `subscriptions.slack.enabled: true` in the work vault config.
+4. Accepted costs while laptop-first: phone capture is eventually-consistent
+   (iCloud queue drained when the laptop wakes) rather than instant when the
+   laptop sleeps; remote MCP / voice Q&A deferred.
