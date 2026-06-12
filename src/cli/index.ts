@@ -148,6 +148,10 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .argument("[text]", "Capture text (omit to read stdin or use --file).")
     .option("--file <path>", "Read the capture body from a file.")
     .option("--title <title>", "Explicit capture title (drives the slug and heading).")
+    .option(
+      "--capture-id <id>",
+      "Retry-idempotency key: drives the filename slug; an existing capture for the same id answers duplicate.",
+    )
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     // Accepted for surface uniformity (callers append it to every command);
@@ -159,6 +163,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           text,
           file: options.file,
           title: options.title,
+          captureId: options.captureId,
           vault: options.vault,
           json: options.json,
         }),
@@ -714,6 +719,7 @@ type InitCliOptions = {
 type CaptureCliOptions = {
   readonly file?: string;
   readonly title?: string;
+  readonly captureId?: string;
   readonly json?: boolean;
   readonly vault?: string;
 };

@@ -556,3 +556,66 @@ describe("performCapture seam extensions", () => {
     expect(a.result.path).not.toBe(b.result.path);
   });
 });
+
+// ----- --capture-id through runCapture (the CLI binding) ----------------------
+//
+// The queue-drain seam: `dome capture --file <f> --capture-id <stem>` must be
+// idempotent across a crash between the capture and the queue-file delete —
+// the re-run answers duplicate AND exits 0, so the drain still deletes its
+// queue file (docs/wiki/specs/capture.md §"Retry semantics").
+
+describe("runCapture --capture-id", () => {
+  test("captureId drives the slug from the CLI path", async () => {
+    const vault = await initVault();
+
+    expect(
+      await runCapture(
+        { text: "queued thought", vault, captureId: "2026-06-09-2311-abcd1234" },
+        clock,
+      ),
+    ).toBe(0);
+    expect(
+      existsSync(join(vault, `inbox/raw/${STAMP}-2026-06-09-2311-abcd1234.md`)),
+    ).toBe(true);
+  });
+
+  test("a captureId retry exits 0 and reports the duplicate without writing", async () => {
+    const vault = await initVault();
+
+    expect(
+      await runCapture({ text: "once", vault, captureId: "drain-dup-1" }, clock),
+    ).toBe(0);
+    const headAfterFirst = (await headCommit(vault)).oid;
+    logs = [];
+
+    const later = { now: () => new Date(2026, 5, 9, 23, 59, 0) };
+    expect(
+      await runCapture({ text: "once", vault, captureId: "drain-dup-1" }, later),
+    ).toBe(0);
+    expect(logs.join("\n")).toContain(
+      `duplicate of inbox/raw/${STAMP}-drain-dup-1.md`,
+    );
+    expect((await headCommit(vault)).oid).toBe(headAfterFirst);
+  });
+
+  test("a captureId retry with --json emits the duplicate document", async () => {
+    const vault = await initVault();
+
+    expect(
+      await runCapture({ text: "json once", vault, captureId: "drain-json-1" }, clock),
+    ).toBe(0);
+    logs = [];
+
+    expect(
+      await runCapture(
+        { text: "json once", vault, captureId: "drain-json-1", json: true },
+        clock,
+      ),
+    ).toBe(0);
+    const payload = JSON.parse(logs.join("\n")) as Record<string, unknown>;
+    expect(payload.schema).toBe("dome.capture/v1");
+    expect(payload.status).toBe("duplicate");
+    expect(payload.capture_id).toBe("drain-json-1");
+    expect(payload.path).toBe(`inbox/raw/${STAMP}-drain-json-1.md`);
+  });
+});

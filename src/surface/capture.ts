@@ -69,20 +69,25 @@ export type RunCaptureOptions = {
   readonly text?: string | undefined;
   readonly file?: string | undefined;
   readonly title?: string | undefined;
+  /**
+   * Client-supplied retry-idempotency key ([[wiki/specs/capture]] §"Retry
+   * semantics"): it drives the filename slug, and an existing capture for
+   * the same id answers `duplicate` instead of writing. On the CLI this is
+   * `--capture-id` — the queue-drain seam (a re-run after a crash between
+   * capture and queue-file delete must not double-file).
+   */
+  readonly captureId?: string | undefined;
   readonly vault?: string | undefined;
   readonly json?: boolean | undefined;
 };
 
 /**
  * `performCapture` options — the CLI option set plus the remote-capture-seam
- * fields ([[wiki/specs/capture]] §"The remote-capture seam"): `source` is the
- * honest ingress channel written into frontmatter (default `cli`), and
- * `captureId` is the client-supplied retry-idempotency key that drives the
- * filename slug.
+ * field ([[wiki/specs/capture]] §"The remote-capture seam"): `source` is the
+ * honest ingress channel written into frontmatter (default `cli`).
  */
 export type PerformCaptureOptions = Omit<RunCaptureOptions, "json"> & {
   readonly source?: string | undefined;
-  readonly captureId?: string | undefined;
 };
 
 /** The successful capture, before any rendering. */
