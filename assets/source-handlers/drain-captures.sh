@@ -22,6 +22,9 @@
 #   - Per `*.md` queue file: `dome capture --file <f> --capture-id <stem>`.
 #     Exit 0 (captured OR duplicate) → delete the queue file; non-zero →
 #     keep it and retry next interval.
+#   - Zero-byte queue file → delete with a logged note, never retried:
+#     it carries nothing recoverable, and `dome capture` rejects an empty
+#     body (EX_USAGE), so keeping it would wedge the queue forever.
 #   - Idempotent across a crash between capture and delete: the captureId
 #     (= the filename stem) makes the re-run answer `duplicate`, which is
 #     still exit 0, so the queue file is still deleted — never double-filed.
@@ -48,6 +51,13 @@ status=0
 for f in "$QUEUE_DIR"/*.md; do
   [ -e "$f" ] || continue # unexpanded glob = empty queue → exit 0, silent
   id="$(basename "$f" .md)"
+  # Zero-byte file: nothing recoverable, and `dome capture` would reject it
+  # every interval (EX_USAGE) — delete it so it cannot wedge the queue.
+  if [ ! -s "$f" ]; then
+    echo "drain-captures: removed empty queue file $id (nothing to capture)"
+    rm -f -- "$f"
+    continue
+  fi
   if "$DOME_BIN" capture --file "$f" --capture-id "$id" ${DOME_VAULT:+--vault "$DOME_VAULT"}; then
     rm -f -- "$f"
   else

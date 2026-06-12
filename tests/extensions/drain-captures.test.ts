@@ -177,6 +177,20 @@ describe("drain-captures.sh (behavior against a real vault)", () => {
     expect(rawCaptures()).toEqual([]);
   });
 
+  test("a zero-byte queue file is deleted with a logged note instead of wedging the queue", async () => {
+    queueFile("2026-06-12-131500-0000aaaa.md", "");
+
+    const result = await drain();
+
+    // Without the guard this would exit non-zero every interval forever
+    // (`dome capture` rejects an empty body with EX_USAGE) and the file
+    // would never leave the queue.
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("empty queue file");
+    expect(readdirSync(queueDir)).toEqual([]);
+    expect(rawCaptures()).toEqual([]);
+  }, 20_000);
+
   test("empty queue dir exits 0 silently", async () => {
     const result = await drain();
     expect(result.exitCode).toBe(0);

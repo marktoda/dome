@@ -2014,4 +2014,42 @@ describe("dome.agent.brief — signal-triggered re-compose gate", () => {
     expect(await brief.run(ctx)).toEqual([]);
     expect(stepCalls).toBe(0);
   });
+
+  test("a failed re-compose never clobbers a successful brief: no patch, good blocks stay; diagnostic + question still emitted", async () => {
+    // A successful morning compose (sources record present, good yesterday
+    // body) → a late calendar file lands → the signal-triggered re-compose
+    // throws. The failure stub must NOT replace the good yesterday block:
+    // the honest minimal is no patch at all — the warning diagnostic and
+    // the brief-failed question carry the failure on their own.
+    const adopted = composedDaily({ calendar: false, slack: false });
+    const ctx = makeCtx({
+      files: {
+        [TODAY_PATH]: adopted,
+        [YESTERDAY_PATH]: YESTERDAY_DAILY,
+        [CALENDAR_PATH]: CALENDAR_FILE,
+      },
+      stepFn: async () => {
+        throw new Error("provider died mid re-compose");
+      },
+      input: GARDEN_INPUT,
+    });
+    const effects = await brief.run(ctx);
+
+    // No patch: the daily — including the good yesterday block body — is
+    // untouched.
+    expect(patchOf(effects)).toBeUndefined();
+
+    // The failure still surfaces: warning diagnostic + acknowledgeable
+    // question, same shapes as the first-compose failure path.
+    const diag = effects.find(
+      (e) =>
+        e.kind === "diagnostic" &&
+        (e as DiagnosticEffect).code === "dome.agent.brief-failed",
+    ) as DiagnosticEffect;
+    expect(diag).toBeDefined();
+    expect(diag.severity).toBe("warning");
+    const q = effects.find((e) => e.kind === "question") as QuestionEffect;
+    expect(q).toBeDefined();
+    expect(q.idempotencyKey).toBe("dome.agent.brief-failed:2026-06-09");
+  });
 });

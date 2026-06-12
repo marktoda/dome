@@ -302,9 +302,21 @@ const brief = defineProcessorImplementation({
       //       acknowledgment — "retried" records that someone re-ran the
       //       brief, "skip-today" records the day was let go; nothing fires
       //       on either answer.
+      //
+      // Re-compose exception: when the daily already carries a SUCCESSFUL
+      // compose (the sources-seen record is written only on success), the
+      // failure is a failed RE-compose — typically the late-source signal
+      // path — and the stub must not clobber the good yesterday/meetings
+      // bodies the morning compose landed. The honest minimal: keep the
+      // existing daily untouched (no patch at all — the good blocks ARE the
+      // content; a stub riding alongside would misreport the morning as
+      // failed) and let the warning diagnostic + brief-failed question
+      // carry the failure on their own.
       const message = error instanceof Error ? error.message : String(error);
       const todayDate = formatDate(today);
       const flattened = flattenErrorMessage(message);
+      const composedAlready =
+        existing !== null && parseBriefSourcesSeen(existing) !== null;
       const stub = [
         YESTERDAY_BLOCK.start,
         "### Yesterday",
@@ -325,7 +337,7 @@ const brief = defineProcessorImplementation({
           message: `dome.agent.brief failed (${message}); run rolled back, no edits applied.`,
           sourceRefs,
         }),
-        ...(existing === null || fallback !== existing
+        ...(!composedAlready && (existing === null || fallback !== existing)
           ? [
               patchEffect({
                 mode: "auto",

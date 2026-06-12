@@ -154,7 +154,10 @@ launchd `StartInterval` LaunchAgent that sweeps the queue every 15 minutes,
 with missed intervals coalescing into one run on wake. Per `*.md` queue file
 the drain runs `dome capture --file <f> --capture-id <stem>`; exit 0 — which
 covers both `captured` and `duplicate` — deletes the queue file, non-zero
-keeps it for the next interval's retry. Not-yet-downloaded iCloud
+keeps it for the next interval's retry. A zero-byte queue file is deleted
+with a logged note instead of retried: it carries nothing recoverable, and
+`dome capture` rejects an empty body every interval, so keeping it would
+wedge the queue forever. Not-yet-downloaded iCloud
 placeholders (`.<name>.md.icloud`) get a best-effort `brctl download` and are
 picked up on a later interval. The drain is deliberately a recipe-installed
 external job, **not** a `dome.sources` subscription — the why is recorded at
@@ -166,7 +169,11 @@ string and uses it as BOTH the POST body's `captureId` AND the queue filename
 stem; the drain derives its `--capture-id` from that stem. Whichever channel
 lands first wins and the other answers `duplicate` (still success), so a
 capture that raced both channels — or a drain re-run after a crash between
-`dome capture` and the queue-file delete — never double-files. The cost of
+`dome capture` and the queue-file delete — never double-files. The dedup
+scan covers `inbox/processed/` as well as `inbox/raw/` (ingestion archives a
+consumed capture with its basename preserved), so the guarantee holds even
+when the queue copy arrives after the original was already ingested and
+archived. The cost of
 queue-first is eventual consistency: a capture made while the laptop sleeps
 sits in iCloud until the first drain interval after wake, instead of landing
 instantly.
@@ -272,8 +279,9 @@ out of scope here.
 **Retry semantics.** Mobile callers retry on flaky networks, and a naive
 relay would file the same thought twice. The seam accepts an optional
 client-supplied `captureId`; it drives the filename slug, and an existing
-file for the same id answers `status: "duplicate"` with the original path —
-nothing written, nothing committed. Clients without an id accept duplicate
+file for the same id — in `inbox/raw/` or archived to `inbox/processed/` —
+answers `status: "duplicate"` with the original path — nothing written,
+nothing committed. Clients without an id accept duplicate
 risk; ingest tolerates duplicates either way. Implemented in
 `performCapture` (`source` + `captureId` options). The CLI exposes the same
 key as `dome capture --capture-id <id>` ([[wiki/specs/cli]]

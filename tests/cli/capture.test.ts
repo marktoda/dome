@@ -9,7 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -536,6 +536,46 @@ describe("performCapture seam extensions", () => {
     if (second.kind !== "duplicate") return;
     expect(second.path).toBe(first.result.path);
     expect((await headCommit(vault)).oid).toBe(headAfterFirst);
+  });
+
+  test("a retry after the capture was ingested and archived to inbox/processed still answers duplicate", async () => {
+    const vault = await initVault();
+
+    const first = await performCapture(
+      { text: "captured then ingested", vault, captureId: "phone-arch-1" },
+      clock,
+    );
+    expect(first.kind).toBe("captured");
+    if (first.kind !== "captured") return;
+
+    // Simulate ingestion's archival: the raw capture moves to
+    // inbox/processed with its basename preserved (vault-tools'
+    // archiveSource shape).
+    const basename = first.result.path.replace(/^inbox\/raw\//, "");
+    await mkdir(join(vault, "inbox", "processed"), { recursive: true });
+    await rename(
+      join(vault, first.result.path),
+      join(vault, "inbox", "processed", basename),
+    );
+    const headAfterArchive = (await headCommit(vault)).oid;
+
+    // The queued copy arrives late (the cross-channel race): same id,
+    // later stamp. A raw-only dedup scan would double-file here.
+    const later = { now: () => new Date(2026, 5, 9, 23, 45, 0) };
+    const second = await performCapture(
+      { text: "captured then ingested", vault, captureId: "phone-arch-1" },
+      later,
+    );
+
+    expect(second.kind).toBe("duplicate");
+    if (second.kind !== "duplicate") return;
+    expect(second.path).toBe(`inbox/processed/${basename}`);
+    // Nothing written, nothing committed.
+    const rawFiles = (await readdir(join(vault, "inbox", "raw"))).filter((f) =>
+      f.endsWith(".md"),
+    );
+    expect(rawFiles).toEqual([]);
+    expect((await headCommit(vault)).oid).toBe(headAfterArchive);
   });
 
   test("different captureIds file separately", async () => {
