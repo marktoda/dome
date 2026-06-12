@@ -1,5 +1,5 @@
 id: dome.agent
-version: 0.4.1
+version: 0.5.0
 processors:
   - id: dome.agent.ingest
     version: 0.3.0
@@ -260,7 +260,7 @@ processors:
     module: processors/preference-signals.ts
 
   - id: dome.agent.preference-promotion
-    version: 0.1.0
+    version: 0.2.0
     phase: garden
     triggers:
       - kind: signal
@@ -286,12 +286,18 @@ processors:
     module: processors/preference-promotion.ts
 
   - id: dome.agent.preference-promotion-answer
-    version: 0.1.1
+    version: 0.2.0
     phase: garden
     triggers:
       - kind: answer
         questionProcessorId: dome.agent.preference-promotion
         idempotencyKeyPrefix: "dome.agent.preference-promotion:"
+      # Demotion questions (WS1 pruning) come from the same emitter under a
+      # second key family; the SAME gated writer handles both — two answer
+      # paths, no third core.md writer, no grant change.
+      - kind: answer
+        questionProcessorId: dome.agent.preference-promotion
+        idempotencyKeyPrefix: "dome.agent.preference-demotion:"
     capabilities:
       # One of core.md's TWO gated writers (memory decision 4 evolved;
       # preferences.md §"The two-gated-writers contract"): the promotion

@@ -12,6 +12,7 @@ import preferencePromotionAnswer from "../../../assets/extensions/dome.agent/pro
 import preferenceSignals from "../../../assets/extensions/dome.agent/processors/preference-signals";
 import {
   demotionQuestionKey,
+  demotionSignalLine,
   fnv1aHex,
   parsePreferenceTopicFactValue,
   PROMOTED_PREFERENCES_END,
@@ -450,6 +451,35 @@ describe("dome.agent.preference-promotion-answer (the gated promoted-preferences
     matchedTriggers: [],
   });
 
+  // Demotion fixtures: filing is promoted but its signals are months older
+  // than the file's reference date (naming's fresh line), so confidence is 0.
+  const STALE_SIGNALS = [
+    "- 2026-01-01 + filing:: meeting notes go under notes/",
+    `- 2026-01-09 + filing:: ${CANDIDATE_RULE}`,
+    "- 2026-06-09 + naming:: kebab-case slugs",
+  ].join("\n");
+  const DECAYED_CORE = [
+    "# Core memory",
+    "",
+    "## Standing preferences",
+    "",
+    PROMOTED_PREFERENCES_START,
+    `- filing:: ${CANDIDATE_RULE} (confidence 0.44)`,
+    "- naming:: kebab-case slugs (confidence 0.52)",
+    PROMOTED_PREFERENCES_END,
+    "",
+  ].join("\n");
+  const demotionEnvelope = (answer: string) => ({
+    ...envelope(answer),
+    question: {
+      idempotencyKey: demotionQuestionKey({
+        topic: "filing",
+        ruleHash: fnv1aHex(CANDIDATE_RULE),
+      }),
+      sourceRefs: [],
+    },
+  });
+
   test("promote splices the rule into core.md's block (created when absent)", async () => {
     const effects = await run(preferencePromotionAnswer, {
       files: { "preferences/signals.md": THREE_PLUS },
@@ -643,6 +673,163 @@ describe("dome.agent.preference-promotion-answer (the gated promoted-preferences
       input: envelope("reject"),
     });
     expect(effects).toEqual([]);
+  });
+
+  test("demote removes the entry, appends the minus signal, and leaves siblings intact", async () => {
+    const effects = await run(preferencePromotionAnswer, {
+      files: {
+        "preferences/signals.md": STALE_SIGNALS,
+        "core.md": DECAYED_CORE,
+      },
+      input: demotionEnvelope("demote"),
+    });
+    const patches = effects.filter((e): e is PatchEffect => e.kind === "patch");
+    expect(patches).toHaveLength(1);
+    expect(patches[0]?.mode).toBe("auto");
+    const changes = patches[0]?.changes ?? [];
+    expect(changes.map((c) => String(c.path))).toEqual([
+      "core.md",
+      "preferences/signals.md",
+    ]);
+    const core = changes[0]?.kind === "write" ? changes[0].content : "";
+    // The entry is gone; the markers and the OTHER promoted entry survive.
+    expect(core).not.toContain("- filing::");
+    expect(core).toContain(PROMOTED_PREFERENCES_START);
+    expect(core).toContain(PROMOTED_PREFERENCES_END);
+    expect(core).toContain("- naming:: kebab-case slugs (confidence 0.52)");
+    const signals = changes[1]?.kind === "write" ? changes[1].content : "";
+    expect(signals).toBe(
+      `${STALE_SIGNALS}\n- 2026-06-12 - filing:: demoted by owner (confidence decayed)\n`,
+    );
+  });
+
+  test("demote is retry-idempotent: entry gone + minus signal present → zero effects", async () => {
+    const effects = await run(preferencePromotionAnswer, {
+      files: {
+        "preferences/signals.md": [
+          STALE_SIGNALS,
+          demotionSignalLine({ date: "2026-06-12", topic: "filing" }),
+        ].join("\n"),
+        "core.md": [
+          "# Core memory",
+          PROMOTED_PREFERENCES_START,
+          "- naming:: kebab-case slugs (confidence 0.52)",
+          PROMOTED_PREFERENCES_END,
+        ].join("\n"),
+      },
+      input: demotionEnvelope("demote"),
+    });
+    expect(effects).toEqual([]);
+  });
+
+  test("a partial demote retry (entry gone, signal missing) completes the append only", async () => {
+    // Entry present but the minus line already landed: finish the removal
+    // without duplicating the signal.
+    const effects = await run(preferencePromotionAnswer, {
+      files: {
+        "preferences/signals.md": [
+          STALE_SIGNALS,
+          demotionSignalLine({ date: "2026-06-12", topic: "filing" }),
+        ].join("\n"),
+        "core.md": DECAYED_CORE,
+      },
+      input: demotionEnvelope("demote"),
+    });
+    const patches = effects.filter((e): e is PatchEffect => e.kind === "patch");
+    expect(patches).toHaveLength(1);
+    expect(patches[0]?.changes.map((c) => String(c.path))).toEqual(["core.md"]);
+  });
+
+  test("keep appends a fresh reaffirming plus signal and leaves the block untouched", async () => {
+    const effects = await run(preferencePromotionAnswer, {
+      files: {
+        "preferences/signals.md": STALE_SIGNALS,
+        "core.md": DECAYED_CORE,
+      },
+      input: demotionEnvelope("keep"),
+    });
+    const patches = effects.filter((e): e is PatchEffect => e.kind === "patch");
+    expect(patches).toHaveLength(1);
+    const changes = patches[0]?.changes ?? [];
+    expect(changes.map((c) => String(c.path))).toEqual([
+      "preferences/signals.md",
+    ]);
+    const signals = changes[0]?.kind === "write" ? changes[0].content : "";
+    expect(signals).toBe(
+      `${STALE_SIGNALS}\n- 2026-06-12 + filing:: ${CANDIDATE_RULE}\n`,
+    );
+  });
+
+  test("keep is retry-idempotent: the exact same-day reaffirmation emits nothing", async () => {
+    const effects = await run(preferencePromotionAnswer, {
+      files: {
+        "preferences/signals.md": [
+          STALE_SIGNALS,
+          `- 2026-06-12 + filing:: ${CANDIDATE_RULE}`,
+        ].join("\n"),
+        "core.md": DECAYED_CORE,
+      },
+      input: demotionEnvelope("keep"),
+    });
+    expect(effects).toEqual([]);
+  });
+
+  test("stale demotion questions (topic un-promoted / rule drift) diagnose and never write", async () => {
+    // Topic no longer promoted (entry vanished, no demotion signal recorded).
+    const unPromoted = await run(preferencePromotionAnswer, {
+      files: {
+        "preferences/signals.md": STALE_SIGNALS,
+        "core.md": [
+          PROMOTED_PREFERENCES_START,
+          "- naming:: kebab-case slugs (confidence 0.52)",
+          PROMOTED_PREFERENCES_END,
+        ].join("\n"),
+      },
+      input: demotionEnvelope("demote"),
+    });
+    expect(unPromoted.filter((e) => e.kind === "patch")).toEqual([]);
+    expect(unPromoted).toEqual([
+      expect.objectContaining({
+        kind: "diagnostic",
+        severity: "info",
+        code: "dome.agent.preference-promotion-answer.stale-question",
+      }),
+    ]);
+
+    // The block's rule text changed since the question was asked.
+    for (const answer of ["demote", "keep"] as const) {
+      const drifted = await run(preferencePromotionAnswer, {
+        files: {
+          "preferences/signals.md": STALE_SIGNALS,
+          "core.md": [
+            PROMOTED_PREFERENCES_START,
+            "- filing:: a re-promoted different rule (confidence 0.44)",
+            PROMOTED_PREFERENCES_END,
+          ].join("\n"),
+        },
+        input: demotionEnvelope(answer),
+      });
+      expect(drifted.filter((e) => e.kind === "patch")).toEqual([]);
+      expect(drifted).toEqual([
+        expect.objectContaining({
+          kind: "diagnostic",
+          severity: "info",
+          code: "dome.agent.preference-promotion-answer.stale-question",
+        }),
+      ]);
+    }
+  });
+
+  test("unknown answers on demotion keys are ignored", async () => {
+    expect(
+      await run(preferencePromotionAnswer, {
+        files: {
+          "preferences/signals.md": STALE_SIGNALS,
+          "core.md": DECAYED_CORE,
+        },
+        input: demotionEnvelope("promote"),
+      }),
+    ).toEqual([]);
   });
 
   test("foreign keys and unknown answers are ignored; bad envelopes diagnose", async () => {

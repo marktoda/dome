@@ -13,6 +13,7 @@
 
 import { expect } from "bun:test";
 
+import { readBlob } from "../../../../src/git";
 import { scenario } from "../../index";
 
 const CANDIDATE_RULE = "meeting notes go under notes/, not entities/";
@@ -263,5 +264,100 @@ scenario(
       })
       .sort();
     expect(rebuiltStates).toEqual(["promoted", "rejected"]);
+
+    // ----- WS1 pruning: decay → demotion question → demote round trip -----
+    // A much newer signal elsewhere moves the deterministic reference date;
+    // filing's promoted rule decays past the 90-day freshness horizon
+    // (confidence 0 < the 0.15 floor) and raises ONE owner-needed demotion
+    // question. Resolving `demote` splices the entry out of core.md's block
+    // and records the re-promotable minus signal — deliberately NOT the
+    // rejection tombstone.
+    const adoptedBeforeDecay = await h.refs.adopted();
+    expect(adoptedBeforeDecay).not.toBeNull();
+    if (adoptedBeforeDecay === null) return;
+    const signalsNow = await readBlob({
+      path: h.vaultPath,
+      commit: adoptedBeforeDecay,
+      filepath: "preferences/signals.md",
+    });
+    expect(signalsNow).not.toBeNull();
+    await h.userCommit({
+      files: {
+        "preferences/signals.md": `${(signalsNow ?? "").replace(/\s+$/, "")}\n- 2026-09-15 + tagging:: tag sparingly\n`,
+      },
+      message: "months pass: a much later signal moves the reference date",
+    });
+    expect((await h.tick()).adopted).toBe(true);
+
+    const decayRows = JSON.parse(
+      (await h.runCli(["inspect", "questions", "--json"])).stdout,
+    ) as ReadonlyArray<QuestionRow>;
+    const demotionRows = decayRows.filter((row) =>
+      row.idempotency_key.startsWith("dome.agent.preference-demotion:"),
+    );
+    expect(demotionRows).toHaveLength(1);
+    const demotionRow = demotionRows[0];
+    expect(demotionRow?.status).toBe("open");
+    expect(demotionRow?.idempotency_key).toContain(":filing:");
+    expect(demotionRow?.metadata).toEqual(
+      expect.objectContaining({
+        automationPolicy: "owner-needed",
+        confidence: 0,
+      }),
+    );
+    if (demotionRow === undefined) return;
+
+    const demote = await h.runCli([
+      "resolve",
+      String(demotionRow.id),
+      "demote",
+      "--json",
+    ]);
+    expect(demote.exitCode).toBe(0);
+    expect(
+      (JSON.parse(demote.stdout) as { handlers: { status: string } }).handlers
+        .status,
+    ).toBe("handled");
+
+    const adoptedAfterDemote = await h.refs.adopted();
+    expect(adoptedAfterDemote).not.toBeNull();
+    if (adoptedAfterDemote === null) return;
+    await h
+      .expectFile("core.md", { atCommit: adoptedAfterDemote })
+      .toNotContain("- filing::");
+    await h
+      .expectFile("core.md", { atCommit: adoptedAfterDemote })
+      .toContain("<!-- dome.agent:promoted-preferences:start -->");
+    await h
+      .expectFile("preferences/signals.md", { atCommit: adoptedAfterDemote })
+      .toContain("- filing:: demoted by owner (confidence decayed)");
+
+    // Demoted ≠ rejected: the counter now reads filing as `building` (the
+    // topic can re-earn promotion), and no fresh demotion question appears
+    // for the now-absent entry.
+    expect((await h.tick()).adopted).toBe(true);
+    const finalDemotionRows = (
+      JSON.parse(
+        (await h.runCli(["inspect", "questions", "--json"])).stdout,
+      ) as ReadonlyArray<QuestionRow>
+    ).filter((row) =>
+      row.idempotency_key.startsWith("dome.agent.preference-demotion:"),
+    );
+    expect(finalDemotionRows).toHaveLength(1);
+    expect(finalDemotionRows[0]?.status).toBe("answered");
+    const filingState = h.projection.raw
+      .query<{ object_json: string }, []>(
+        "SELECT object_json FROM facts WHERE predicate = 'dome.preference.topic'",
+      )
+      .all()
+      .map((row) => {
+        const object = JSON.parse(row.object_json) as { value?: string };
+        return JSON.parse(object.value ?? "{}") as {
+          topic?: string;
+          state?: string;
+        };
+      })
+      .find((value) => value.topic === "filing");
+    expect(filingState?.state).toBe("building");
   },
 );
