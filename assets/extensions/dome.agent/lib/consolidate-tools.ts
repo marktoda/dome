@@ -25,7 +25,7 @@ import {
  */
 export const CONSOLIDATE_WRITABLE_PATHS: ReadonlyArray<string> = Object.freeze([
   "wiki/**/*.md",
-  "consolidation-ledger.md",
+  "meta/consolidation-ledger.md",
   "preferences/signals.md",
 ]);
 
@@ -33,7 +33,7 @@ export function makeConsolidatorTools(opts: {
   readonly reader: VaultReader;
   /**
    * The resolved consolidation ledger path. The manifest grant covers only
-   * the default `consolidation-ledger.md`; a config-overridden path needs a
+   * the default `meta/consolidation-ledger.md`; a config-overridden path needs a
    * matching vault grant for the broker, and threading it here keeps the
    * tool-time boundary in step with that grant.
    */

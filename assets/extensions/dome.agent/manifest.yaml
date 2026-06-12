@@ -90,7 +90,7 @@ processors:
           - "wiki/**/*.md"
           - "index.md"
           - "log.md"
-          - "consolidation-ledger.md"
+          - "meta/consolidation-ledger.md"
           # Owner core memory — read-only by design (propose-only page).
           - "core.md"
           - "preferences/signals.md"
@@ -101,7 +101,7 @@ processors:
       - kind: patch.auto
         paths:
           - "wiki/**/*.md"
-          - "consolidation-ledger.md"
+          - "meta/consolidation-ledger.md"
           - "preferences/signals.md"
       - kind: model.invoke
         maxDailyCostUsd: 10
@@ -137,7 +137,7 @@ processors:
           # both must be readable here. A custom consolidation_ledger_path
           # needs a matching grant (same rule as consolidate's own grant).
           - "inbox/**/*.md"
-          - "consolidation-ledger.md"
+          - "meta/consolidation-ledger.md"
           # Owner core memory — read-only by design (propose-only page).
           - "core.md"
           # Preference-promotion questions ref signal lines, so the brief's
@@ -145,9 +145,9 @@ processors:
           - "preferences/signals.md"
           # Sweep ledger: the brief reads today's run section for the
           # "Integrated overnight" digest block (deterministic, never model-
-          # written). Default path is sweep-ledger.md; a custom sweep_ledger_path
+          # written). Default path is meta/sweep-ledger.md; a custom sweep_ledger_path
           # additionally needs a matching vault read grant in .dome/config.yaml.
-          - "sweep-ledger.md"
+          - "meta/sweep-ledger.md"
       # Deliberately narrower than ingest: the brief writes ONLY the daily
       # note (wiki/dailies default template or a notes/ daily_path override)
       # plus validated signal-line appends (the splice guard drops any
@@ -181,7 +181,7 @@ processors:
           - "inbox/processed/*.md"
           - "index.md"
           - "core.md"
-          - "sweep-ledger.md"
+          - "meta/sweep-ledger.md"
       # Deliberately NARROWER than the read grant and matching the default
       # sweep_targets globs — the broker enforces what the charter promises
       # (each per-item agent run is narrower still: exactly one destination).
@@ -191,7 +191,7 @@ processors:
         paths:
           - "wiki/entities/**/*.md"
           - "wiki/concepts/**/*.md"
-          - "sweep-ledger.md"
+          - "meta/sweep-ledger.md"
       - kind: model.invoke
         maxDailyCostUsd: 10
       - kind: question.ask
@@ -212,7 +212,7 @@ processors:
       - kind: read
         paths:
           - "wiki/**/*.md"
-          - "sweep-ledger.md"
+          - "meta/sweep-ledger.md"
       - kind: patch.auto
         paths:
           - "wiki/entities/**/*.md"

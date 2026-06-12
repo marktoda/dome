@@ -15,7 +15,7 @@ import { INGEST_CHARTER } from "../../../assets/extensions/dome.agent/lib/ingest
 
 describe("dome.agent charters — supersession convention", () => {
   const consolidate = consolidateCharter({
-    ledgerPath: "consolidation-ledger.md",
+    ledgerPath: "meta/consolidation-ledger.md",
     maxChangedFiles: 30,
     targets: ["wiki/"],
   });
@@ -65,7 +65,7 @@ describe("dome.agent charters — supersession convention", () => {
 
 describe("dome.agent charters — preference signals (M5)", () => {
   const consolidate = consolidateCharter({
-    ledgerPath: "consolidation-ledger.md",
+    ledgerPath: "meta/consolidation-ledger.md",
     maxChangedFiles: 30,
     targets: ["wiki/"],
   });
