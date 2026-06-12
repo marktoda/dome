@@ -1,10 +1,11 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
+description: Queries right after adoption can miss slow garden work (LLM intake, scheduled jobs) still draining, so derived state reads stale.
 enforced_at: src/engine/core/adopt.ts
 enforced_at_status: deferred
 first_observed: 2026-05-27

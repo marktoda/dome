@@ -1,9 +1,10 @@
 ---
 type: spec
 created: 2026-06-09
-updated: 2026-06-09
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-06-09-meaning-consolidation-claims-and-sweeper]]"
+description: Claim-line grammar (bold key, as-of date, ^c anchor) and the dome.claims stamp/index processors; supersession is an in-place edit under one anchor
 ---
 
 # Claims

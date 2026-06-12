@@ -1,9 +1,10 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: Crosses Effect kind with processor phase to give each pair's engine routing destination, including which pairs reject as phase-mismatch.
 ---
 
 # Effect router targets

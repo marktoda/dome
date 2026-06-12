@@ -1,9 +1,10 @@
 ---
 type: invariant
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: ExternalActionEffects insert an outbox.db row before dispatch — idempotency keys, retries, crash recovery; no fire-and-forget external calls
 enforced_by:
   - tests/outbox/dispatch.test.ts
   - tests/harness/scenarios/effect-routing/health-outbox-recovery.scenario.test.ts

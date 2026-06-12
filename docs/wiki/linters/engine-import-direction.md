@@ -1,9 +1,10 @@
 ---
 type: linter
 created: 2026-06-10
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/reviews/2026-06-10-oop-abstraction-layers-architecture-review]]"
+description: Checks src/engine/ files sit in core/garden/operational/host layer dirs and never import upward, keeping the engine's layer DAG real.
 ---
 
 # engine-import-direction

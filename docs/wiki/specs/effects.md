@@ -1,10 +1,11 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
+description: Closed eleven-kind Effect union with per-kind routing and severity semantics; pins whole-content FileChange patches over unified diffs
 ---
 
 # Effects

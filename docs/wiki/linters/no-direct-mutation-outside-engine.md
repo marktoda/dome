@@ -1,9 +1,10 @@
 ---
 type: linter
 created: 2026-05-27
-updated: 2026-06-09
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: Flags mutation calls (Bun.write, writeFile, SQL INSERT/UPDATE, git.commit) outside the engine — catches call sites the import linter misses.
 status: v1 (proposed; lockstep check ships in Phase 1 of implementation)
 ---
 

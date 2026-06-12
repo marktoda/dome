@@ -1,10 +1,11 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
+description: Adoption of a multi-page PatchEffect can block midway (crash, kill, diagnostic), leaving some pages updated and others not.
 enforced_at: src/engine/core/adopt.ts
 enforced_at_status: implemented
 first_observed: 2026-05-27

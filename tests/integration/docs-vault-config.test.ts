@@ -1,8 +1,9 @@
 // The docs/ dogfood vault's .dome/config.yaml is itself substrate: it must
-// keep the grant entries the memory-quality processors depend on. These pins
-// load the REAL docs vault policy and assert the load-bearing entries, so a
-// config edit that silently kills a lint (the dead-core-size-lint shape) or
-// reintroduces the lint-supersession false warning fails CI.
+// keep the grant entries the memory-quality processors depend on — and stay
+// free of personal-vault grants that don't apply to a design vault. These
+// pins load the REAL docs vault policy and assert the load-bearing entries,
+// so a config edit that reintroduces the lint-supersession false warning or
+// a stale personal-surface grant fails CI.
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
@@ -24,11 +25,17 @@ async function docsGrants(
 }
 
 describe("docs vault config (the dogfood vault's own grants)", () => {
-  test("dome.markdown bundle read grant covers core.md — the core-size lint must fire", async () => {
+  test("dome.markdown bundle read grant does NOT cover core.md — design vault has no personal surfaces", async () => {
+    // core.md belongs to the personal-vault preference loop (gated core.md
+    // writers per wiki/specs/preferences.md) and never existed in the docs
+    // vault. The 2026-06-12 dogfood cleanup removed the grant alongside
+    // dome.daily for the same reason: this is a project/design vault. If
+    // core.md is ever introduced here, restore the read grant so the
+    // core-size lint fires (its effective read scope is empty without it).
     const granted = await docsGrants("dome.markdown.core-size");
     expect(
       pathCapabilityMatches("read", requireVaultPath("core.md"), granted),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   test("lint-supersession's read override covers root-level forward targets", async () => {

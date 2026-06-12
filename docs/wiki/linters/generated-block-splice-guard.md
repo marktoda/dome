@@ -1,11 +1,12 @@
 ---
 type: linter
 created: 2026-06-10
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[wiki/specs/task-lifecycle]]"
   - "[[wiki/specs/autonomous-agents]]"
   - "[[wiki/specs/preferences]]"
+description: Requires any file touching dome generated-block markers to import src/core/generated-block, after three marker-injection bugs shipped.
 status: v1 (implemented)
 ---
 

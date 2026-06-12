@@ -6,6 +6,7 @@ sources:
   - "[[memory]]"
   - "[[wiki/specs/autonomous-agents]]"
   - "[[wiki/specs/vault-layout]]"
+description: "Preference lifecycle: append-only signals, counter-based promotion (3 signals/30d, Wilson bound), owner-mediated demotion, two gated core.md writers"
 ---
 
 # Preference promotion

@@ -4,6 +4,7 @@ created: 2026-05-27
 updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: Every emitted Effect leaves an audit record (run-ledger hashes, projection/outbox rows, commit trailers); even denied effects are logged
 enforced_by:
   - tests/engine/apply-effect.test.ts
   - tests/ledger/runs.test.ts

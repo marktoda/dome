@@ -3,9 +3,10 @@ type: concept
 tags:
   - product-framing
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: "Dome's product framing: an ambient, local-first AI companion that maintains your thinking over years — not a notes app, chatbot, or KB."
 status: stable
 ---
 

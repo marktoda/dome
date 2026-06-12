@@ -17,7 +17,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { findGitRoot } from "../../git";
-import { createDomeHttpServer } from "../../http/server";
+import { createDomeHttpServer, DEFAULT_MAX_BODY_BYTES } from "../../http/server";
 import { resolveVaultPath } from "../../surface/resolve-vault";
 import { EX_USAGE } from "../exit-codes";
 
@@ -31,6 +31,19 @@ export type RunHttpOptions = {
   readonly port?: string | number | undefined;
   readonly host?: string | undefined;
   readonly token?: string | undefined;
+  /**
+   * Test-only seam: aborting this signal stops the listener and resolves
+   * runHttp with exit 0, exactly like SIGINT/SIGTERM. The CLI never passes
+   * it — production shutdown stays signal-driven.
+   */
+  readonly signal?: AbortSignal | undefined;
+  /**
+   * Test-only seam: observes the bound listener once it is up (ephemeral
+   * `--port 0` discovery). The CLI never passes it.
+   */
+  readonly onReady?:
+    | ((server: { readonly hostname: string; readonly port: number }) => void)
+    | undefined;
 };
 
 /**
@@ -77,15 +90,38 @@ export async function runHttp(options: RunHttpOptions = {}): Promise<number> {
     const server = Bun.serve({
       hostname: options.host ?? DEFAULT_HOST,
       port,
+      // Defense-in-depth backstop above the handler's own 1 MiB cap: the
+      // handler answers 413 with the JSON error envelope (and is the only
+      // layer that catches chunked bodies — Bun 1.2.x does not enforce
+      // maxRequestBodySize on them); Bun's limit just hard-stops a
+      // pathological declared content-length with a bare 413 should the
+      // handler check ever regress.
+      maxRequestBodySize: DEFAULT_MAX_BODY_BYTES * 2,
       fetch: handler.fetch,
     });
     console.error(
       `dome http: serving vault ${vaultPath} on http://${server.hostname}:${server.port} (bearer-token auth)`,
     );
+    options.onReady?.({ hostname: server.hostname ?? "", port: server.port ?? 0 });
 
+    // Wait for shutdown: SIGINT/SIGTERM in production, the test-only abort
+    // signal in tests. Listeners are removed on the way out so repeated
+    // runHttp invocations in one process (the test suite) don't accumulate.
     await new Promise<void>((done) => {
-      process.once("SIGINT", () => done());
-      process.once("SIGTERM", () => done());
+      const finish = (): void => {
+        process.removeListener("SIGINT", finish);
+        process.removeListener("SIGTERM", finish);
+        done();
+      };
+      process.once("SIGINT", finish);
+      process.once("SIGTERM", finish);
+      if (options.signal !== undefined) {
+        if (options.signal.aborted) {
+          finish();
+          return;
+        }
+        options.signal.addEventListener("abort", finish, { once: true });
+      }
     });
     server.stop(true);
     return 0;

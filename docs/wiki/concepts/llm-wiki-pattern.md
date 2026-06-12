@@ -1,10 +1,14 @@
 ---
 type: concept
+tags:
+  - inspiration
+  - architecture
 created: 2026-05-27
-updated: 2026-05-27
-sources: ["[[wiki/sources/karpathy-llm-wiki-gist]]"]
+updated: 2026-06-12
+sources:
+  - "[[wiki/sources/karpathy-llm-wiki-gist]]"
+description: Karpathy's pattern of an LLM compiling immutable raw sources into a linked markdown wiki; Dome productizes it with enforced invariants.
 status: stable
-tags: ["inspiration", "architecture"]
 ---
 
 # LLM Wiki pattern

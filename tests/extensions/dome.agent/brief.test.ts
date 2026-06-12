@@ -7,8 +7,10 @@ import { parse as parseYaml } from "yaml";
 import brief from "../../../assets/extensions/dome.agent/processors/brief";
 import {
   groundBriefBlockBody,
+  parseBriefSourcesSeen,
   parseCalendarDay,
   parseSlackDigest,
+  sourcesBriefSection,
 } from "../../../assets/extensions/dome.agent/lib/brief-shared";
 import { FIRST_PARTY_EXTENSION_DEFAULTS } from "../../../src/cli/default-vault-config";
 import { readablePath } from "../../../src/engine/core/path-capabilities";
@@ -1773,5 +1775,281 @@ describe("brief integrated overnight digest (wired)", () => {
     const integratedSection = content.slice(integratedStart, integratedEnd);
     expect(integratedSection).not.toContain("injected");
     expect(integratedSection).toContain("alice-henshaw");
+  });
+});
+
+// ----- Wake-tick choreography: signal-triggered re-compose gate ---------------
+//
+// The laptop wake-tick fires the brief in the same burst as the calendar/
+// slack fetch emission, but the fetches complete async (outbox → command →
+// commit → adoption), so a wake-tick brief can compose sourceless. The brief
+// gains file.created signal triggers on the source day-files; the signal
+// handler is a deterministic, model-free gate. Derivation: every successful
+// compose records which source day-files it SAW in the dome.agent.brief:
+// sources generated block (the meetings block's presence is a dishonest
+// proxy — an empty calendar produces no block — and Slack has no mechanical
+// footprint at all). Re-compose iff a today-source file exists that the
+// record says the compose did NOT see. Bound: the re-compose records the
+// source as seen, so per source kind at most one signal-triggered re-run a
+// day. The no-op path must be FREE: zero effects, zero model calls.
+
+const GARDEN_INPUT = {
+  kind: "garden",
+  matchedTriggers: [
+    {
+      trigger: {
+        kind: "signal",
+        name: "file.created",
+        pathPattern: "sources/calendar/*.md",
+      },
+      matchedSignals: [],
+    },
+  ],
+};
+
+/** A daily as a successful sourceless compose left it: brief blocks + a sources record. */
+function composedDaily(seen: { calendar: boolean; slack: boolean }): string {
+  return [
+    "---",
+    "type: daily",
+    "---",
+    "",
+    "# 2026-06-09",
+    "",
+    "## Start Here",
+    "",
+    "<!-- dome.agent.brief:yesterday:start -->",
+    "### Yesterday",
+    "- Shipped the capture loop (from [[wiki/dailies/2026-06-08]])",
+    "<!-- dome.agent.brief:yesterday:end -->",
+    "",
+    sourcesBriefSection(seen),
+    "",
+  ].join("\n");
+}
+
+describe("dome.agent.brief — sources-seen record", () => {
+  test("a compose records which source day-files it saw", async () => {
+    const ctx = makeCtx({
+      files: {
+        [YESTERDAY_PATH]: YESTERDAY_DAILY,
+        [CALENDAR_PATH]: CALENDAR_FILE,
+      },
+      steps: [{ text: "done" }],
+    });
+    const content = writtenDaily(await brief.run(ctx));
+    expect(parseBriefSourcesSeen(content)).toEqual({
+      calendar: true,
+      slack: false,
+    });
+  });
+
+  test("a sourceless compose records both sources absent", async () => {
+    const ctx = makeCtx({
+      files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
+      steps: [{ text: "done" }],
+    });
+    const content = writtenDaily(await brief.run(ctx));
+    expect(parseBriefSourcesSeen(content)).toEqual({
+      calendar: false,
+      slack: false,
+    });
+  });
+
+  test("the failure-stub path records no sources (failed briefs are not auto-retried by signals)", async () => {
+    const ctx = makeCtx({
+      files: { [YESTERDAY_PATH]: YESTERDAY_DAILY, [CALENDAR_PATH]: CALENDAR_FILE },
+      stepFn: async () => {
+        throw new Error("model exploded");
+      },
+    });
+    const content = writtenDaily(await brief.run(ctx));
+    expect(content).toContain("Morning brief failed");
+    expect(parseBriefSourcesSeen(content)).toBeNull();
+  });
+});
+
+describe("dome.agent.brief — signal-triggered re-compose gate", () => {
+  test("signal before today's brief composed: zero effects, no model call", async () => {
+    let stepCalls = 0;
+    const ctx = makeCtx({
+      files: { [CALENDAR_PATH]: CALENDAR_FILE },
+      stepFn: async () => {
+        stepCalls += 1;
+        return { text: "done" };
+      },
+      input: GARDEN_INPUT,
+    });
+    expect(await brief.run(ctx)).toEqual([]);
+    expect(stepCalls).toBe(0);
+  });
+
+  test("signal when the daily already reflects the source: zero effects, no model call", async () => {
+    let stepCalls = 0;
+    const ctx = makeCtx({
+      files: {
+        [TODAY_PATH]: composedDaily({ calendar: true, slack: false }),
+        [CALENDAR_PATH]: CALENDAR_FILE,
+      },
+      stepFn: async () => {
+        stepCalls += 1;
+        return { text: "done" };
+      },
+      input: GARDEN_INPUT,
+    });
+    expect(await brief.run(ctx)).toEqual([]);
+    expect(stepCalls).toBe(0);
+  });
+
+  test("signal when no today-source file exists: zero effects, no model call", async () => {
+    let stepCalls = 0;
+    const ctx = makeCtx({
+      files: { [TODAY_PATH]: composedDaily({ calendar: false, slack: false }) },
+      stepFn: async () => {
+        stepCalls += 1;
+        return { text: "done" };
+      },
+      input: GARDEN_INPUT,
+    });
+    expect(await brief.run(ctx)).toEqual([]);
+    expect(stepCalls).toBe(0);
+  });
+
+  test("a today-source landing after a sourceless compose re-composes with the source", async () => {
+    const modelDoc = [
+      "<!-- dome.agent.brief:meetings:start -->",
+      "### Today's Meetings",
+      "- 09:00–09:30 — Team standup (from [[sources/calendar/2026-06-09]])",
+      "<!-- dome.agent.brief:meetings:end -->",
+    ].join("\n");
+    const ctx = makeCtx({
+      files: {
+        [TODAY_PATH]: composedDaily({ calendar: false, slack: false }),
+        [YESTERDAY_PATH]: YESTERDAY_DAILY,
+        [CALENDAR_PATH]: CALENDAR_FILE,
+      },
+      steps: [
+        {
+          toolCalls: [
+            { id: "1", name: "writePage", input: { path: TODAY_PATH, content: modelDoc } },
+          ],
+        },
+        { text: "done" },
+      ],
+      input: GARDEN_INPUT,
+    });
+    const effects = await brief.run(ctx);
+    const content = writtenDaily(effects);
+    expect(content).toContain("- 09:00–09:30 — Team standup");
+    // The re-compose records the calendar as seen — the second signal no-ops.
+    expect(parseBriefSourcesSeen(content)).toEqual({
+      calendar: true,
+      slack: false,
+    });
+  });
+
+  test("after the re-compose, a second signal is a free no-op (the re-run bound)", async () => {
+    let stepCalls = 0;
+    const ctx = makeCtx({
+      files: {
+        [TODAY_PATH]: composedDaily({ calendar: true, slack: false }),
+        [YESTERDAY_PATH]: YESTERDAY_DAILY,
+        [CALENDAR_PATH]: CALENDAR_FILE,
+      },
+      stepFn: async () => {
+        stepCalls += 1;
+        return { text: "done" };
+      },
+      input: GARDEN_INPUT,
+    });
+    expect(await brief.run(ctx)).toEqual([]);
+    expect(stepCalls).toBe(0);
+  });
+
+  test("a late slack digest alone triggers the re-compose", async () => {
+    const ctx = makeCtx({
+      files: {
+        [TODAY_PATH]: composedDaily({ calendar: true, slack: false }),
+        [YESTERDAY_PATH]: YESTERDAY_DAILY,
+        [CALENDAR_PATH]: CALENDAR_FILE,
+        [SLACK_PATH]: SLACK_FILE,
+      },
+      steps: [{ text: "done" }],
+      input: GARDEN_INPUT,
+    });
+    const effects = await brief.run(ctx);
+    const content = writtenDaily(effects);
+    expect(parseBriefSourcesSeen(content)).toEqual({
+      calendar: true,
+      slack: true,
+    });
+  });
+
+  test("signal after a FAILED brief: zero effects (recovery stays with the question)", async () => {
+    // The failure stub writes the daily but records no sources block.
+    let stepCalls = 0;
+    const failedDaily = [
+      "---",
+      "type: daily",
+      "---",
+      "",
+      "# 2026-06-09",
+      "",
+      "## Start Here",
+      "",
+      "<!-- dome.agent.brief:yesterday:start -->",
+      "### Yesterday",
+      "_Morning brief failed (model exploded). Yesterday's note: [[wiki/dailies/2026-06-08]]. Retry: `dome run dome.agent.brief`._",
+      "<!-- dome.agent.brief:yesterday:end -->",
+      "",
+    ].join("\n");
+    const ctx = makeCtx({
+      files: { [TODAY_PATH]: failedDaily, [CALENDAR_PATH]: CALENDAR_FILE },
+      stepFn: async () => {
+        stepCalls += 1;
+        return { text: "done" };
+      },
+      input: GARDEN_INPUT,
+    });
+    expect(await brief.run(ctx)).toEqual([]);
+    expect(stepCalls).toBe(0);
+  });
+
+  test("a failed re-compose never clobbers a successful brief: no patch, good blocks stay; diagnostic + question still emitted", async () => {
+    // A successful morning compose (sources record present, good yesterday
+    // body) → a late calendar file lands → the signal-triggered re-compose
+    // throws. The failure stub must NOT replace the good yesterday block:
+    // the honest minimal is no patch at all — the warning diagnostic and
+    // the brief-failed question carry the failure on their own.
+    const adopted = composedDaily({ calendar: false, slack: false });
+    const ctx = makeCtx({
+      files: {
+        [TODAY_PATH]: adopted,
+        [YESTERDAY_PATH]: YESTERDAY_DAILY,
+        [CALENDAR_PATH]: CALENDAR_FILE,
+      },
+      stepFn: async () => {
+        throw new Error("provider died mid re-compose");
+      },
+      input: GARDEN_INPUT,
+    });
+    const effects = await brief.run(ctx);
+
+    // No patch: the daily — including the good yesterday block body — is
+    // untouched.
+    expect(patchOf(effects)).toBeUndefined();
+
+    // The failure still surfaces: warning diagnostic + acknowledgeable
+    // question, same shapes as the first-compose failure path.
+    const diag = effects.find(
+      (e) =>
+        e.kind === "diagnostic" &&
+        (e as DiagnosticEffect).code === "dome.agent.brief-failed",
+    ) as DiagnosticEffect;
+    expect(diag).toBeDefined();
+    expect(diag.severity).toBe("warning");
+    const q = effects.find((e) => e.kind === "question") as QuestionEffect;
+    expect(q).toBeDefined();
+    expect(q.idempotencyKey).toBe("dome.agent.brief-failed:2026-06-09");
   });
 });

@@ -65,6 +65,7 @@ export const YESTERDAY_BLOCK: BriefBlockMarkers = Object.freeze({
 export const MEETINGS_BLOCK: BriefBlockMarkers = briefBlock("meetings");
 export const QUESTIONS_BLOCK: BriefBlockMarkers = briefBlock("questions");
 export const INTEGRATED_BLOCK: BriefBlockMarkers = briefBlock("integrated");
+export const SOURCES_BLOCK: BriefBlockMarkers = briefBlock("sources");
 
 export const BRIEF_YESTERDAY_START = YESTERDAY_BLOCK.start;
 export const BRIEF_YESTERDAY_END = YESTERDAY_BLOCK.end;
@@ -486,6 +487,68 @@ export function staleLoopsTaskLines(
     ),
     "These have been surfaced repeatedly without action: compress them into a single stale-loops summary bullet in the yesterday block (cite the origin pages) or raise ONE askOwner question — do not repeat them at full prominence.",
   ]);
+}
+
+// ----- Sources-seen record (deterministic) ------------------------------------
+//
+// The wake-tick choreography gate's derivation ([[wiki/specs/daily-surface]]
+// §wake-tick choreography). A wake-tick burst can compose the brief before
+// the async calendar/slack fetch lands (outbox → command → commit →
+// adoption), so the brief gains file.created signal triggers on the source
+// day-files — and the signal handler needs a deterministic, model-free way
+// to decide "does today's daily already reflect this source?".
+//
+// Why a recorded line and not pure content inference: the meetings block's
+// presence is a dishonest proxy (a present-but-empty calendar legitimately
+// produces NO meetings block), and the Slack digest has no mechanical
+// footprint at all — the model weaves it into the yesterday block. So every
+// successful compose records exactly which source day-files it SAW in a
+// tiny brief-owned generated block. Seen-at-compose-time is the gate's
+// whole state: source day-files are per-date, so once a source is recorded
+// seen, signals for that kind no-op for the rest of the day (the re-run
+// bound). The failure-stub path deliberately does NOT write this block —
+// a failed brief's recovery stays with its acknowledgeable question, never
+// an automatic signal-triggered retry.
+
+export type BriefSourcesSeen = {
+  readonly calendar: boolean;
+  readonly slack: boolean;
+};
+
+const SOURCES_SEEN = "✓";
+const SOURCES_ABSENT = "—";
+
+/**
+ * Render the sources-seen record block. One italic line; ✓ means the source
+ * day-file existed when the brief composed, — means it was absent.
+ */
+export function sourcesBriefSection(seen: BriefSourcesSeen): string {
+  const flag = (s: boolean): string => (s ? SOURCES_SEEN : SOURCES_ABSENT);
+  return [
+    SOURCES_BLOCK.start,
+    `_Sources: calendar ${flag(seen.calendar)} · slack ${flag(seen.slack)}_`,
+    SOURCES_BLOCK.end,
+  ].join("\n");
+}
+
+/**
+ * Parse the sources-seen record out of a daily note. `null` when the block
+ * is absent or unparseable — both mean "no successful compose recorded
+ * sources today", which the signal gate treats as no-op (corruption never
+ * triggers a model run).
+ */
+export function parseBriefSourcesSeen(
+  content: string,
+): BriefSourcesSeen | null {
+  const body = extractBriefBlockBody(content, SOURCES_BLOCK);
+  if (body === null) return null;
+  const calendar = new RegExp(`calendar (${SOURCES_SEEN}|${SOURCES_ABSENT})`).exec(body);
+  const slack = new RegExp(`slack (${SOURCES_SEEN}|${SOURCES_ABSENT})`).exec(body);
+  if (calendar === null || slack === null) return null;
+  return Object.freeze({
+    calendar: calendar[1] === SOURCES_SEEN,
+    slack: slack[1] === SOURCES_SEEN,
+  });
 }
 
 // ----- Overnight integration digest (deterministic) --------------------------

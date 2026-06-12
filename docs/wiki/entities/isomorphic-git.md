@@ -1,10 +1,16 @@
 ---
 type: entity
+aliases:
+  - isomorphic-git
+tags:
+  - library
+  - dependency
 created: 2026-05-25
-updated: 2026-05-29
-sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]", "[[wiki/sources/isomorphic-git-library]]"]
-aliases: ["isomorphic-git"]
-tags: ["library", "dependency"]
+updated: 2026-06-12
+sources:
+  - "[[cohesive/brainstorms/2026-05-25-dome-vision]]"
+  - "[[wiki/sources/isomorphic-git-library]]"
+description: Pure-JS git implementation the Dome SDK uses to speak the .git format from Bun without requiring a git binary.
 ---
 
 # isomorphic-git

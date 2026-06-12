@@ -4,6 +4,7 @@ created: 2026-05-27
 updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: Every vault write (human, agent, processor) becomes a Proposal run through the engine adoption loop; un-adopted commits are draft state
 enforced_by:
   - tests/integration/no-direct-mutation-outside-boundaries.test.ts
   - tests/engine/apply-effect.test.ts

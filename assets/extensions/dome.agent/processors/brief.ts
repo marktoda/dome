@@ -56,14 +56,17 @@ import {
   INTEGRATED_BLOCK,
   MEETINGS_BLOCK,
   QUESTIONS_BLOCK,
+  SOURCES_BLOCK,
   YESTERDAY_BLOCK,
   extractBriefBlockBody,
   groundBriefBlockBody,
   integratedBriefSection,
+  parseBriefSourcesSeen,
   parseCalendarDay,
   parseSlackDigest,
   questionsBriefSection,
   replaceBriefBlock,
+  sourcesBriefSection,
   staleLoopsFromFacts,
   staleLoopsTaskLines,
   type BriefStaleLoop,
@@ -88,13 +91,26 @@ type ScheduleInput = {
   readonly firedAt: string;
 };
 
+/**
+ * A signal-triggered garden dispatch (file.created on the calendar/slack
+ * source day-files — the wake-tick late-source triggers). The envelope's
+ * matchedTriggers are not consulted: the gate re-derives everything from
+ * TODAY's files, so a signal for a backfilled past date naturally no-ops
+ * (today's sources and today's daily are unchanged by it).
+ */
+type SignalInput = {
+  readonly kind: "garden";
+};
+
 const brief = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
-    const input = parseScheduleInput(ctx.input);
+    const input = parseBriefInput(ctx.input);
     if (input === null) return Object.freeze([]);
+    const firedAt =
+      input.kind === "schedule" ? input.firedAt : ctx.now().toISOString();
 
     const settings = dailyPathSettings(ctx.extensionConfig);
-    const today = localDateParts(new Date(input.firedAt));
+    const today = localDateParts(new Date(firedAt));
     const yesterday = previousLocalDate(today);
     const todayPath = dailyPath(today, settings);
     const yesterdayPath = dailyPath(yesterday, settings);
@@ -112,6 +128,32 @@ const brief = defineProcessorImplementation({
     const slackContent = await ctx.snapshot.readFile(slackPath);
     const slack =
       slackContent === null ? null : parseSlackDigest(slackContent);
+
+    // Wake-tick choreography gate (signal-triggered runs ONLY — the 05:30
+    // cron path below this block is byte-identical to the pre-gate brief).
+    // A wake-tick burst can compose the brief before the async calendar/
+    // slack fetch lands; the file.created signal on the source day-file is
+    // the late arrival's knock. Deterministic and model-free: re-compose
+    // iff a today-source file exists that today's daily's sources-seen
+    // record (the dome.agent.brief:sources block every successful compose
+    // writes — see brief-shared.ts for why content inference is dishonest)
+    // says the compose did NOT see. Everything else is ZERO effects:
+    //   - no daily / no sources record → the brief hasn't successfully
+    //     composed today; the cron (or a manual `dome run`) owns the first
+    //     compose, and a failed brief's recovery stays with its question;
+    //   - all present sources recorded seen → already reflected.
+    // Bound: the re-compose records the source as seen, so per source kind
+    // at most one signal-triggered re-run per day (~$0.25 each).
+    if (input.kind === "garden") {
+      const seen = existing === null ? null : parseBriefSourcesSeen(existing);
+      if (seen === null) return Object.freeze([]);
+      const calendarPending = !seen.calendar && calendarContent !== null;
+      const slackPending = !seen.slack && slackContent !== null;
+      if (!calendarPending && !slackPending) return Object.freeze([]);
+      // A late source landed that the daily does not reflect: fall through
+      // to the normal compose — its idempotent splice machinery handles the
+      // rewrite.
+    }
 
     // Sweep ledger: read the advisory ledger and pull today's run rows for the
     // "Integrated overnight" digest block. The ledger path is resolved via the
@@ -260,9 +302,21 @@ const brief = defineProcessorImplementation({
       //       acknowledgment — "retried" records that someone re-ran the
       //       brief, "skip-today" records the day was let go; nothing fires
       //       on either answer.
+      //
+      // Re-compose exception: when the daily already carries a SUCCESSFUL
+      // compose (the sources-seen record is written only on success), the
+      // failure is a failed RE-compose — typically the late-source signal
+      // path — and the stub must not clobber the good yesterday/meetings
+      // bodies the morning compose landed. The honest minimal: keep the
+      // existing daily untouched (no patch at all — the good blocks ARE the
+      // content; a stub riding alongside would misreport the morning as
+      // failed) and let the warning diagnostic + brief-failed question
+      // carry the failure on their own.
       const message = error instanceof Error ? error.message : String(error);
       const todayDate = formatDate(today);
       const flattened = flattenErrorMessage(message);
+      const composedAlready =
+        existing !== null && parseBriefSourcesSeen(existing) !== null;
       const stub = [
         YESTERDAY_BLOCK.start,
         "### Yesterday",
@@ -283,7 +337,7 @@ const brief = defineProcessorImplementation({
           message: `dome.agent.brief failed (${message}); run rolled back, no edits applied.`,
           sourceRefs,
         }),
-        ...(existing === null || fallback !== existing
+        ...(!composedAlready && (existing === null || fallback !== existing)
           ? [
               patchEffect({
                 mode: "auto",
@@ -339,6 +393,23 @@ const brief = defineProcessorImplementation({
         heading: block.heading,
       });
     }
+
+    // Sources-seen record — deterministic, never model-written. Records
+    // which source day-files THIS compose saw; the signal gate above reads
+    // it to decide whether a late-landing source warrants a re-compose.
+    // Spliced before the questions/integrated blocks (their afterBlock
+    // anchors insert between the yesterday block and this record), so the
+    // record renders last in the Start Here section.
+    composed = replaceBriefBlock({
+      content: composed,
+      markers: SOURCES_BLOCK,
+      section: sourcesBriefSection({
+        calendar: calendarContent !== null,
+        slack: slackContent !== null,
+      }),
+      heading: "Start Here",
+      afterBlock: YESTERDAY_BLOCK,
+    });
 
     // The one allowed edit outside the daily note: an append of well-formed
     // preference-signal lines (wiki/specs/preferences.md — the charter's
@@ -419,6 +490,7 @@ const brief = defineProcessorImplementation({
       MEETINGS_BLOCK,
       QUESTIONS_BLOCK,
       INTEGRATED_BLOCK,
+      SOURCES_BLOCK,
     ].map(
       (markers) => ({ owner: markers.owner, block: markers.block }),
     );
@@ -636,9 +708,15 @@ function taskTurn(input: {
   return lines.join("\n");
 }
 
-function parseScheduleInput(input: unknown): ScheduleInput | null {
+function parseBriefInput(input: unknown): ScheduleInput | SignalInput | null {
   if (input === null || typeof input !== "object") return null;
   const record = input as Record<string, unknown>;
+  if (record.kind === "garden") {
+    // The garden envelope (signal-triggered dispatch). Only its kind
+    // matters: the gate re-derives everything from today's files.
+    if (!Array.isArray(record.matchedTriggers)) return null;
+    return Object.freeze({ kind: "garden" });
+  }
   if (record.kind !== "schedule") return null;
   if (typeof record.cron !== "string") return null;
   if (typeof record.firedAt !== "string") return null;

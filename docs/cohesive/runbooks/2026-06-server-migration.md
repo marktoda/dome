@@ -293,13 +293,32 @@ always-on-host question; nothing above is obsolete, just parked.
 
 Laptop-first setup (replaces §1–5 for now):
 
-1. Overnight gardens: schedule a daily wake so the 05:05–06:00 choreography
-   runs lid-closed (plugged in): `sudo pmset repeat wakeorpoweron MTWRFSU 05:05:00`
-   (verify: `pmset -g sched`).
+1. Overnight gardens — OWNER CHOICE (2026-06-12): wake-tick catch-up. The
+   missed 02:00–06:00 crons fire as an ordered burst when the laptop wakes;
+   the brief composes while you pour coffee and re-splices if the calendar
+   fetch lands late (chunk 7 hardening). The optional alternative — a firmware
+   wake so mornings compose before you sit down — remains one line away:
+   `sudo pmset repeat wakeorpoweron MTWRFSU 05:05:00` (verify: pmset -g sched;
+   undo: sudo pmset repeat cancel).
 2. Wake-tick choreography + eventually-consistent capture: shipped by the
-   laptop-first hardening chunk (see plan
-   [[superpowers/plans/2026-06-12-v1-chunk7-laptop-first]]); `dome recipe ios`
-   prints the queue-fallback Shortcut.
+   laptop-first hardening chunk (plan
+   [[superpowers/plans/2026-06-12-v1-chunk7-laptop-first]]). The scheduler's
+   cron-order wake dispatch and the brief's late-source re-compose are code —
+   live after `dome restart`, no setup. The capture queue needs two:
+   - Rebuild the phone Shortcut with the queue fallback:
+     `dome recipe ios --url http://<laptop-tailscale>:3663` and follow it —
+     the rebuilt Shortcut saves to iCloud Drive `DomeCaptures/` BEFORE the
+     POST and deletes on success, so captures survive a sleeping/unreachable
+     laptop. Create the `DomeCaptures` folder once (recipe step 2 names the
+     two candidate locations — iCloud Drive root vs the Shortcuts container).
+   - Install the laptop-side drain: `dome recipe capture-queue` and follow
+     it — copies the shipped `drain-captures.sh` into `<vault>/.dome/bin/`,
+     then the `com.dome.drain-captures` LaunchAgent (StartInterval 900 +
+     RunAtLoad; WorkingDirectory = the vault) sweeps the queue through
+     `dome capture --file --capture-id` every 15 min and on wake;
+     `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.dome.drain-captures.plist`
+     to load. Smoke test per the recipe's step 5 (drop a file in the queue,
+     run the script by hand, confirm one inbox/raw/ capture + queue empty).
 3. Slack OAuth happens HERE (the laptop is the daemon host): run `/mcp` in any
    claude session, authorize claude.ai Slack, smoke-test headless
    (`claude -p` with a Slack question), then flip

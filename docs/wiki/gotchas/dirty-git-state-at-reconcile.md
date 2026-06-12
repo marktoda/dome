@@ -1,10 +1,11 @@
 ---
 type: gotcha
 created: 2026-05-25
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-25-dome-vision]]"
 coverage: off-matrix
+description: Running dome sync mid-merge/rebase or with staged changes makes it process conflict noise or refuse; needs clean-git-state guarding.
 enforced_at: src/cli/commands/sync.ts
 enforced_at_status: partial
 first_observed: 2026-05-25

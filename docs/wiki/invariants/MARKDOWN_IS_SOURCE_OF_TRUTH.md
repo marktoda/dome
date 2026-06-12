@@ -4,6 +4,7 @@ created: 2026-05-27
 updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: Markdown plus git history is the canonical knowledge state; projection.db is derived and rebuildable, nothing canonical lives in .dome/state/
 enforced_by:
   - tests/harness/scenarios/cli-surface/rebuild-projection.scenario.test.ts
   - tests/harness/scenarios/effect-kinds/snapshot-reads-candidate-not-working-tree.scenario.test.ts

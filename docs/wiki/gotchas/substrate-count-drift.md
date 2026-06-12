@@ -1,10 +1,11 @@
 ---
 type: gotcha
 created: 2026-05-26
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/reviews/2026-05-26-dome-v0.5-cohesion-architecture-review]]"
 coverage: off-matrix
+description: Prose-inlined substrate counts ('12 invariants') drift from the canonical registry or array they describe, so readers act on wrong numbers.
 enforced_at: tests/integration/substrate-counts.test.ts
 enforced_at_status: implemented
 first_observed: 2026-05-26

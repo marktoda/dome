@@ -1,11 +1,12 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-09
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
   - "[[memory]]"
+description: "Frontmatter contract: required type (singular of wiki directory), created/updated drift lint, four default page types plus extension types"
 ---
 
 # Page schema

@@ -1,11 +1,12 @@
 ---
 type: invariant
 created: 2026-06-09
-updated: 2026-06-09
+updated: 2026-06-12
 sources:
   - "[[wiki/specs/embeddings]]"
   - "[[memory]]"
 coverage: deferred
+description: "Deferred: embeddings.db vectors are deletable rank-only cache, never fact sources; planned fences keep them outside rebuild and Effects"
 enforced_at_status: deferred
 tier: deferred
 ---

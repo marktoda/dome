@@ -5,6 +5,7 @@ updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[cohesive/brainstorms/2026-06-11-dome-v1-plan]]"
+description: log.md is frozen history — no appends, and no model-class writer holds a covering grant; activity now rides engine commit bodies via dome log
 enforced_by:
   - tests/invariants/no-accreting-registries.test.ts
   - tests/extensions/dome.agent/grant-aware-tools.test.ts

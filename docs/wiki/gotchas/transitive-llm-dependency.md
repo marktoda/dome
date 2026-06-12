@@ -1,10 +1,11 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-06-09
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
+description: Importing only Submit/Recall from @dome/sdk still pulls @ai-sdk/anthropic and MCP SDK transitively, bloating LLM-free consumer bundles.
 enforced_at: tests/integration/bundle-deps.test.ts
 first_observed: 2026-05-26 (closed at v0.5+phase1+phase3; pin maintained in v1)
 severity: high

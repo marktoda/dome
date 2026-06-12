@@ -1,9 +1,10 @@
 ---
 type: invariant
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: Engine adoption/patch commits carry the four Dome-* trailers via composeCommitMessage, making engine vs user history greppable in git log
 enforced_by:
   - tests/engine/finalize-journal.test.ts
   - tests/engine/adopt-output-commit.test.ts

@@ -1,10 +1,11 @@
 ---
 type: gotcha
 created: 2026-05-28
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[v1]]"
 coverage: off-matrix
+description: Garden patches that trigger more garden patches recurse to the cascade depth cap (10), emitting a garden.cascade-cap warning and halting.
 enforced_at: src/engine/garden/garden.ts
 first_observed: 2026-05-28 (Phase 4a' implementation)
 severity: medium

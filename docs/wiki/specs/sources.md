@@ -6,6 +6,7 @@ sources:
   - "[[daily]]"
   - "[[wiki/specs/daily-surface]]"
   - "[[wiki/specs/vault-layout]]"
+description: "dome.sources subscriptions: consent in config, engine-scheduled fetches via the outbox; the fetch command, not the engine, writes sources/ files"
 ---
 
 # Sources subscriptions
@@ -137,6 +138,25 @@ Slack (and Granola, and any conversational feed) is **supported but default-off*
 
 What ships is the template plus the scaffolding, never the consent: `dome init --with-source slack` copies the template to `.dome/bin/fetch-slack.sh` and ensures the subscription stanza with `enabled: false` ([[wiki/specs/cli]] §"`dome init`" — scaffolding never flips an existing `enabled`). The template's fetch is headless `claude -p` with the owner's Slack MCP server — it reads Slack **as the owner** — prompting for an overnight digest (mentions, DMs, high-traffic channels since the previous local evening) in the slack-day shape normative at [[wiki/specs/vault-layout]] §"`sources/slack/YYYY-MM-DD.md`". The **consent surface is the script plus the flip**: reading the prompt (which is the entire fetch) and setting `enabled: true` is what authorizes the overnight Slack read; revocation is the same one-line flip as any subscription. The template validates before committing — first line `---`, frontmatter `date: <d>`, heading `# Slack <d>` — so a model refusal, an error page, or an empty fetch exits non-zero into the ordinary outbox retry instead of landing in the vault. Downstream, `dome.agent.brief` parses the committed digest defensively and injects it as data, never instructions ([[wiki/specs/autonomous-agents]] §"`dome.agent.brief`").
 
+## What is deliberately NOT a subscription: the capture-queue drain
+
+The iCloud capture-queue drain ([[wiki/specs/capture]] §"The iCloud queue
+fallback") looks subscription-shaped — a periodic external job feeding the
+vault — and is deliberately not one. The subscription contract above is
+structural, not stylistic: **one output file per period**, with due-ness
+derived from `(cron, firedAt)`, done-ness from that file's snapshot presence
+(skip-if-present), and completion HEAD-verified against that exact path after
+the command exits. The drain violates every clause: it produces many files
+per run (zero on most runs), reads a queue directory *outside* the vault, and
+has no single `output_path` to skip on or verify against. So it ships as a
+recipe-installed launchd interval job (`dome recipe capture-queue` —
+[[wiki/specs/cli]] §"`dome recipe`"), the same manual-unit precedent as the
+`dome-http` service unit, with `dome capture --capture-id` as its idempotency
+seam instead of the outbox key. Wedging it in here would mean loosening
+`output_path` into a directory contract and skip-if-present into a per-file
+scan — don't. The next many-files-per-period feed should reach for the
+external-job precedent, not this spec.
+
 ## What this kills, vault-side
 
 A vault adopting subscriptions deletes its calendar launchd timer (the plist + the out-of-band log it wrote). The script survives — moved to `.dome/bin/`, trimmed to the command contract — but its *scheduling, retry, audit, and revocation* all move inside Dome: `dome inspect outbox` shows every fetch attempt; `dome check` surfaces terminal failures with a recovery question; disabling is a one-line config flip.
@@ -158,3 +178,4 @@ A vault adopting subscriptions deletes its calendar launchd timer (the plist + t
 - [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]] — insert-before-call, idempotency, recovery
 - [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]] — why the command (not the engine) commits the file
 - [[wiki/gotchas/outbox-stuck]] — what a terminally-failed fetch looks like and how it recovers
+- [[wiki/specs/capture]] §"The iCloud queue fallback" — the many-files external job that deliberately stays outside this contract

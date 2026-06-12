@@ -1,9 +1,10 @@
 ---
 type: invariant
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: Wiping projection.db and running dome rebuild restores facts/diagnostics/search/questions from the adopted commit plus answers.db rehydration
 enforced_by:
   - tests/harness/scenarios/cli-surface/rebuild-projection.scenario.test.ts
   - tests/projections/sinks.test.ts

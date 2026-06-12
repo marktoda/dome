@@ -1,10 +1,11 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
+description: Moving markSucceeded after makeClosureCommit conflates per-run and adoption state machines, orphaning broker-rejected runs as bogus failures.
 enforced_at: src/ledger/runs.ts
 first_observed: 2026-05-27 (anticipated; surfaced in v1 design)
 severity: medium

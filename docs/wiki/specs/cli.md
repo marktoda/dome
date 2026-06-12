@@ -5,6 +5,7 @@ updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
+description: "Normative command-by-command CLI spec: capture, sync, status, check, resolve, query, today, log, serve/install, mcp, http, recipe and more"
 ---
 
 # CLI
@@ -20,10 +21,13 @@ engine-control verbs such as `sync`, `serve`, and `rebuild`.
 ```text
 dome init [path] [--with-model-provider anthropic]
                                 Initialize a new vault.
-dome capture [text] [--file <path>] [--title <t>] [--json]
+dome capture [text] [--file <path>] [--title <t>] [--capture-id <id>] [--json]
                                 Frictionless capture: write a timestamped raw
                                 source into inbox/raw/ and commit it on the
                                 current branch. Returns immediately.
+                                --capture-id is the retry-idempotency key: an
+                                existing capture for the same id answers
+                                duplicate (still exit 0), nothing written.
 dome sync [--json] [-v|--verbose] [--filter-processor <glob>] [-q|--quiet]
                                 Catch-up: construct Proposal from working-tree HEAD; adopt.
 dome status [--loops] [--probe] [--json]
@@ -69,10 +73,12 @@ dome http [--vault <path>] [--port <port>] [--host <host>] [--token <token>]
                                 plus the GET /today HTML cockpit.
                                 The daemon still owns compilation.
 dome recipe <kind> [--url <base>]
-                                Print a setup recipe. v1 ships two kinds:
+                                Print a setup recipe. v1 ships three kinds:
                                 ios — voice capture via an iOS Shortcut against
-                                the dome http surface; core-seed — the owner
-                                interview that seeds core.md.
+                                the dome http surface, queue-first with the
+                                iCloud fallback; capture-queue — the laptop-side
+                                launchd drain for that queue; core-seed — the
+                                owner interview that seeds core.md.
 ```
 
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
@@ -89,7 +95,7 @@ routing and capability checks.
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, and `dome today` — command-triggered view-phase processors invoked through the shared view-command boundary. `dome today` is the dedicated cockpit wrapper over the `dome.daily.today` view; the other daily planning processors (`prep`, `agenda-with`) remain available through `dome run` for tests/debugging without dedicated top-level CLI verbs.
 - **Capture ingress:** `dome capture` — the frictionless write-side entry point ([[wedge]] §"Phase 3 — Capture loop"). It writes a timestamped raw source into `inbox/raw/` and lands it as an ordinary human commit on the current branch; adoption and `dome.agent.ingest` handle everything after the commit boundary. See [[wiki/specs/capture]] for the capture-loop spec and the phone/voice ingress recipe.
 - **Lifecycle:** `dome init` — vault construction; `dome install` / `dome restart` / `dome uninstall` — ambient service lifecycle for the local compiler host (a launchd LaunchAgent on macOS, a systemd `--user` unit on Linux, both around `dome serve`, per [[wedge]] §"Phase 1 — Ambient daemon"). Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
-- **Protocol adapters:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"; [[wiki/specs/mcp-surface]]) — and `dome http` — the HTTP read+capture surface and first shipped form of the remote-capture seam ([[wiki/specs/http-surface]]). Both are thin adapters over the public `openVault` wrapper plus the protocol-neutral `src/surface/` collectors. `dome recipe` prints client-side setup text (`ios`: the iOS Shortcut against `dome http`; `core-seed`: the owner interview that seeds `core.md` — §"`dome recipe`").
+- **Protocol adapters:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"; [[wiki/specs/mcp-surface]]) — and `dome http` — the HTTP read+capture surface and first shipped form of the remote-capture seam ([[wiki/specs/http-surface]]). Both are thin adapters over the public `openVault` wrapper plus the protocol-neutral `src/surface/` collectors. `dome recipe` prints client-side setup text (`ios`: the queue-first iOS Shortcut against `dome http`; `capture-queue`: the laptop-side iCloud queue drain; `core-seed`: the owner interview that seeds `core.md` — §"`dome recipe`").
 
 Planned dedicated view aliases such as `dome stats` are not Commander bindings
 yet. Until they ship, their processors are invoked through `dome run
@@ -289,7 +295,7 @@ Exit codes: 0 on success (including idempotent re-runs); 1 on
 unexpected I/O failure; 64 (EX_USAGE) on malformed path argument or an
 unknown `--with-source` kind.
 
-### `dome capture [text] [--file <path>] [--title <t>] [--vault <path>] [--json]`
+### `dome capture [text] [--file <path>] [--title <t>] [--capture-id <id>] [--vault <path>] [--json]`
 
 Frictionless capture into the inbox — the Phase 3 wedge command ([[wedge]]
 §"Phase 3 — Capture loop"). It takes a thought from anywhere (argument, file,
@@ -328,6 +334,18 @@ The target path is `inbox/raw/<YYYY-MM-DD-HHmm>-<slug>.md`:
   commit message.
 - Collisions disambiguate deterministically: if the target path already exists
   in the working tree, `-2` is appended, then `-3`, and so on.
+
+`--capture-id <id>` is the CLI binding of the remote-capture seam's
+retry-idempotency key ([[wiki/specs/capture]] §"Retry semantics"). When given,
+the id — not the title — drives the slug (same sanitization rules), and an
+existing `inbox/raw/` capture whose filename slug already matches answers
+**duplicate** instead of writing: exit 0, nothing written, nothing committed.
+Text output prints `dome capture: duplicate of <path>`; `--json` emits
+`{ "schema": "dome.capture/v1", "status": "duplicate", "vault", "path",
+"capture_id" }`. Duplicate-as-success is the seam the queue drain relies on
+([[wiki/specs/capture]] §"The iCloud queue fallback"): a drain re-run after a
+crash between capture and queue-file delete still exits 0, so the queue file
+is still deleted — never double-filed.
 
 The written file is the documented raw-capture shape (normative in
 [[wiki/specs/capture]] §"Raw capture file shape"): a frontmatter block with
@@ -394,9 +412,10 @@ and agent wrappers append it to every CLI invocation, like the runtime-opening
 commands' shared flag) and ignored: capture never loads bundles or opens the
 runtime.
 
-Exit codes: 0 on success; 64 (EX_USAGE) on empty input, text+`--file`
-conflict, TTY-with-no-input, uninitialized vault, no commits, or detached
-HEAD; 1 on an unreadable `--file` path or unexpected I/O failure.
+Exit codes: 0 on success (including a `--capture-id` duplicate); 64
+(EX_USAGE) on empty input, text+`--file` conflict, TTY-with-no-input,
+uninitialized vault, no commits, or detached HEAD; 1 on an unreadable
+`--file` path or unexpected I/O failure.
 
 ### `dome sync [--vault <path>] [--bundles-root <path>] [--json] [-v|--verbose] [--filter-processor <glob>] [-q|--quiet]`
 
@@ -1290,16 +1309,38 @@ Prints a setup recipe — plain text on stdout, by design: recipes change when
 the surfaces they describe change, so they ship next to the CLI instead of in
 docs that can drift. It never opens the vault or the runtime.
 
-`<kind>` selects the recipe. v1 ships two:
+`<kind>` selects the recipe. v1 ships three:
 
 **`ios`** — the iOS Shortcut that voice-captures into `POST /capture` (the
 WS3-capture deliverable; see [[wiki/specs/capture]] §"Phone and voice ingress
 (recipe)"). The printed text covers the prerequisites (a running `dome http`
-bound to a Tailscale-class interface; the phone on the same network), the
-Shortcut build steps (Dictate Text → Get Contents of URL with the bearer
-header and a UUID-bound `captureId` for idempotent retries → notification), a
-copyable `curl` verification command, and the `GET /today?token=…` cockpit
-URL.
+bound to a Tailscale-class interface; the phone on the same network; a
+`DomeCaptures` folder in iCloud Drive for the queue fallback) and the
+Shortcut build steps: Dictate Text, then a `<timestamp>-<uuid>` capture id
+shared by the POST body's `captureId` and the queue filename (so both
+channels dedupe to one capture), then **Save File into `DomeCaptures/`
+before the POST** — queue-first, because Shortcuts has no try/catch and an
+unreachable host simply stops the Shortcut, so the pre-saved file is the only
+failure branch ([[wiki/specs/capture]] §"The iCloud queue fallback") — then
+Get Contents of URL with the bearer header, then Delete Files on success.
+Plus a copyable `curl` verification command and the `GET /today?token=…`
+cockpit URL.
+
+**`capture-queue`** — the laptop half of the queue fallback: the printed text
+installs the shipped drain script (`assets/source-handlers/drain-captures.sh`,
+copied to `<vault>/.dome/bin/`; the recipe interpolates the real shipped
+path) and a launchd LaunchAgent (`com.dome.drain-captures`, `StartInterval`
+900 + `RunAtLoad`, `WorkingDirectory` = the vault root so `dome capture`
+resolves the vault), covers the two possible queue locations (the iCloud
+Drive root vs. the Shortcuts container), and ends with a smoke test. Drain
+semantics — one `dome capture --file <f> --capture-id <stem>` per queue
+file; exit 0 (captured *or* duplicate) deletes the file, non-zero keeps it
+for the next interval; `.icloud` placeholders get a best-effort
+`brctl download` — are normative at [[wiki/specs/capture]] §"The iCloud
+queue fallback". Deliberately a recipe-installed external job (the manual
+`dome-http` unit precedent), not a `dome.sources` subscription — the why is
+recorded at [[wiki/specs/sources]] §"What is deliberately NOT a
+subscription: the capture-queue drain".
 
 **`core-seed`** — the owner interview that seeds `core.md`, the always-loaded
 core memory page ([[wiki/specs/vault-layout]] §"`core.md`"). The printed text

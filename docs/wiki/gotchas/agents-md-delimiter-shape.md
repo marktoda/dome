@@ -1,10 +1,11 @@
 ---
 type: gotcha
 created: 2026-05-26
-updated: 2026-06-02
+updated: 2026-06-12
 sources:
   - "[[cohesive/reviews/2026-05-26-dome-v0.5-to-v1-readiness-architecture-review]]"
 coverage: off-matrix
+description: Renaming user-prose delimiters in the AGENTS.md invariant page without updating init.ts breaks dome init --refresh-instructions refresh.
 enforced_at: tests/invariants/agents-md-is-orientation-surface.test.ts
 first_observed: 2026-05-26
 severity: high

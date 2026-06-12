@@ -1,11 +1,12 @@
 ---
 type: source
 created: 2026-05-25
-updated: 2026-05-25
+updated: 2026-06-12
 sources: []
-url: "https://isomorphic-git.org/"
-author: "William Hilton et al."
+author: William Hilton et al.
+description: "Project page for the pure-JS git library Dome depends on; takeaway: standard .git format, no binary needed, fast enough for Dome's use."
 external: true
+url: https://isomorphic-git.org/
 ---
 
 # isomorphic-git library (source page)

@@ -54,6 +54,14 @@ const EX_USAGE = 64;
 
 const RAW_INBOX_DIR = "inbox/raw";
 
+/**
+ * Where dome.agent archives consumed captures, basename preserved
+ * (vault-tools' archiveSource). The captureId-dedup scan must cover it:
+ * a queued copy re-captured AFTER the original was ingested and archived
+ * would otherwise double-file.
+ */
+const PROCESSED_INBOX_DIR = "inbox/processed";
+
 /** Slug length cap, per the spec ("capped at 48 chars"). */
 const SLUG_MAX_CHARS = 48;
 
@@ -69,20 +77,25 @@ export type RunCaptureOptions = {
   readonly text?: string | undefined;
   readonly file?: string | undefined;
   readonly title?: string | undefined;
+  /**
+   * Client-supplied retry-idempotency key ([[wiki/specs/capture]] §"Retry
+   * semantics"): it drives the filename slug, and an existing capture for
+   * the same id answers `duplicate` instead of writing. On the CLI this is
+   * `--capture-id` — the queue-drain seam (a re-run after a crash between
+   * capture and queue-file delete must not double-file).
+   */
+  readonly captureId?: string | undefined;
   readonly vault?: string | undefined;
   readonly json?: boolean | undefined;
 };
 
 /**
  * `performCapture` options — the CLI option set plus the remote-capture-seam
- * fields ([[wiki/specs/capture]] §"The remote-capture seam"): `source` is the
- * honest ingress channel written into frontmatter (default `cli`), and
- * `captureId` is the client-supplied retry-idempotency key that drives the
- * filename slug.
+ * field ([[wiki/specs/capture]] §"The remote-capture seam"): `source` is the
+ * honest ingress channel written into frontmatter (default `cli`).
  */
 export type PerformCaptureOptions = Omit<RunCaptureOptions, "json"> & {
   readonly source?: string | undefined;
-  readonly captureId?: string | undefined;
 };
 
 /** The successful capture, before any rendering. */
@@ -448,18 +461,26 @@ function realStdin(): CaptureStdin {
 }
 
 /**
- * Find an existing raw capture whose filename slug matches — the
+ * Find an existing capture whose filename slug matches — the
  * captureId-idempotency lookup. Filenames are `<YYYY-MM-DD-HHmm>-<slug>.md`,
  * so the stamp prefix is matched structurally and the slug exactly.
+ *
+ * Scans BOTH `inbox/raw/` and `inbox/processed/`: ingestion archives a
+ * consumed capture to processed with its basename preserved, so a raw-only
+ * scan would let a queued copy re-captured after ingestion double-file.
+ * Either directory may be absent (a vault that has never archived, or a
+ * bare vault before the first capture) — a missing dir is simply skipped.
  */
 function findCaptureBySlug(vaultPath: string, slug: string): string | null {
-  const dir = join(vaultPath, RAW_INBOX_DIR);
-  if (!existsSync(dir)) return null;
   const pattern = new RegExp(
     `^\\d{4}-\\d{2}-\\d{2}-\\d{4}-${escapeRegExp(slug)}\\.md$`,
   );
-  for (const name of readdirSync(dir)) {
-    if (pattern.test(name)) return `${RAW_INBOX_DIR}/${name}`;
+  for (const dirRel of [RAW_INBOX_DIR, PROCESSED_INBOX_DIR]) {
+    const dir = join(vaultPath, dirRel);
+    if (!existsSync(dir)) continue;
+    for (const name of readdirSync(dir)) {
+      if (pattern.test(name)) return `${dirRel}/${name}`;
+    }
   }
   return null;
 }

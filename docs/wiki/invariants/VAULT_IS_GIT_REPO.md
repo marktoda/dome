@@ -4,6 +4,7 @@ created: 2026-05-25
 updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-25-dome-vision]]"
+description: Every vault is a git repo — openVault refuses non-git directories with vault-not-git-repo; dome init runs git init and the initial commit
 enforced_by:
   - tests/vault/vault.test.ts
   - tests/git.test.ts

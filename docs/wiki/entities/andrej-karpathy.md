@@ -1,10 +1,16 @@
 ---
 type: entity
+aliases:
+  - Karpathy
+tags:
+  - researcher
+  - inspiration
 created: 2026-05-25
-updated: 2026-05-25
-sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]", "[[wiki/sources/karpathy-llm-wiki-gist]]"]
-aliases: ["Karpathy"]
-tags: ["researcher", "inspiration"]
+updated: 2026-06-12
+sources:
+  - "[[cohesive/brainstorms/2026-05-25-dome-vision]]"
+  - "[[wiki/sources/karpathy-llm-wiki-gist]]"
+description: "AI researcher whose LLM Wiki gist inspired Dome's compilation model: immutable raws compiled by an LLM into a linked markdown wiki."
 ---
 
 # Andrej Karpathy

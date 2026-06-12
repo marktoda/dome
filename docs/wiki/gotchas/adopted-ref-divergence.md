@@ -1,10 +1,11 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/delta-ledgers/2026-05-27-phase-1-3-adopted-ref-and-patch-trailers]]"
 coverage: off-matrix
+description: History rewrite (force-push/reset) puts refs/dome/adopted outside HEAD ancestry; dome sync refuses to advance and serve pauses adoption.
 enforced_at: src/adopted-ref.ts
 severity: medium
 ---

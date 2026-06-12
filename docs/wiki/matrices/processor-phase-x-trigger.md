@@ -1,9 +1,10 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+description: Crosses processor phases with trigger kinds (signal/path/schedule/answer/command) — which pairs the manifest validator allows, and why.
 ---
 
 # Processor phase × trigger matrix

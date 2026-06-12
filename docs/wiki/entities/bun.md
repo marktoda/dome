@@ -1,9 +1,13 @@
 ---
 type: entity
+tags:
+  - runtime
+  - toolkit
 created: 2026-05-25
-updated: 2026-05-29
-sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
-tags: ["runtime", "toolkit"]
+updated: 2026-06-12
+sources:
+  - "[[cohesive/brainstorms/2026-05-25-dome-vision]]"
+description: JavaScript runtime and toolkit powering Dome's v1 SDK/CLI; chosen for native TS, built-in tests, and single-binary compile.
 ---
 
 # Bun

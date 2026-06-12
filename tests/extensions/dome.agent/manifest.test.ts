@@ -68,12 +68,29 @@ describe("dome.agent manifest cadence + grants", () => {
     );
   });
 
-  test("brief runs daily at 05:30, before create-daily's 06:00 tick", async () => {
+  test("brief runs daily at 05:30 and re-composes on late source day-files", async () => {
     const manifest = await loadManifest();
     const brief = manifest.processors.find((p) => p.id === "dome.agent.brief");
     expect(brief).toBeDefined();
     expect(brief?.phase).toBe("garden");
-    expect(brief?.triggers).toEqual([{ kind: "schedule", cron: "30 5 * * *" }]);
+    // The 05:30 cron composes the morning; the file.created signals on the
+    // source day-files are the wake-tick choreography triggers (a wake-tick
+    // burst can compose the brief before the async calendar/slack fetch
+    // lands — the signal lets the brief's deterministic gate re-compose
+    // exactly once per late-landing source kind).
+    expect(brief?.triggers).toEqual([
+      { kind: "schedule", cron: "30 5 * * *" },
+      {
+        kind: "signal",
+        name: "file.created",
+        pathPattern: "sources/calendar/*.md",
+      },
+      {
+        kind: "signal",
+        name: "file.created",
+        pathPattern: "sources/slack/*.md",
+      },
+    ]);
     expect(brief?.execution?.class).toBe("llm");
     expect(brief?.module).toBe("processors/brief.ts");
   });

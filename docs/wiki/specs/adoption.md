@@ -5,6 +5,7 @@ updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
+description: Fixed-point adoption loop, fast-forward-only refs/dome/adopted cursor, Dome-* commit trailers, and the dome sync/status entrypoints
 ---
 
 # Adoption

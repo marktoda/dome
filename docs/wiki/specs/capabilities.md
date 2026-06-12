@@ -5,6 +5,7 @@ updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
+description: "Capability broker: seventeen tiers, manifest-declared x vault-granted intersection, enforced at the single enforceCapability chokepoint"
 ---
 
 # Capabilities

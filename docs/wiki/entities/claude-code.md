@@ -1,10 +1,16 @@
 ---
 type: entity
+aliases:
+  - Claude Code
+  - Anthropic CLI
+tags:
+  - harness
+  - agent-runtime
 created: 2026-05-25
-updated: 2026-05-29
-sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
-aliases: ["Claude Code", "Anthropic CLI"]
-tags: ["harness", "agent-runtime"]
+updated: 2026-06-12
+sources:
+  - "[[cohesive/brainstorms/2026-05-25-dome-vision]]"
+description: Anthropic's CLI agent and Dome v1's reference harness; edits the vault with native file/git tools and the compiler host adopts the result.
 ---
 
 # Claude Code

@@ -5,6 +5,7 @@ updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
+description: Adoption loop hits MAX_ITER (100) when processors keep emitting new effects; the Proposal blocks with a fixed-point.divergence diagnostic.
 enforced_at: src/engine/core/adopt.ts
 enforced_at_status: implemented
 first_observed: 2026-05-27 (anticipated; surfaced in v1 design)
