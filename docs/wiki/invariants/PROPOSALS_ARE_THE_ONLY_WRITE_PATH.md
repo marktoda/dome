@@ -1,5 +1,6 @@
 ---
 type: invariant
+description: "Every vault mutation passes through a Proposal and adopt() in the engine; the SDK exports no direct-write API or privileged escape hatch"
 created: 2026-05-27
 updated: 2026-06-10
 sources:

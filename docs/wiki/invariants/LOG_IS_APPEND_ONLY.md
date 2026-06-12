@@ -1,5 +1,6 @@
 ---
 type: invariant
+description: "log.md is frozen history — no appends, and no model-class writer holds a covering grant; activity now rides engine commit bodies via dome log"
 created: 2026-05-27
 updated: 2026-06-11
 sources:

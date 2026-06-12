@@ -1,5 +1,6 @@
 ---
 type: invariant
+description: "Every vault is a git repo — openVault refuses non-git directories with vault-not-git-repo; dome init runs git init and the initial commit"
 created: 2026-05-25
 updated: 2026-06-11
 sources:

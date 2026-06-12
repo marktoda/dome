@@ -1,5 +1,6 @@
 ---
 type: spec
+description: "dome mcp stdio adapter: eight typed tools mirroring CLI --json documents over shared collectors; engine import graph stays MCP-free"
 created: 2026-05-27
 updated: 2026-06-10
 sources:

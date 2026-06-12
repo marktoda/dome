@@ -1,5 +1,6 @@
 ---
 type: invariant
+description: "Markdown plus git history is the canonical knowledge state; projection.db is derived and rebuildable, nothing canonical lives in .dome/state/"
 created: 2026-05-27
 updated: 2026-06-11
 sources:

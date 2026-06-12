@@ -1,5 +1,6 @@
 ---
 type: entity
+description: "Vendor-neutral protocol for AI tool access; in Dome v1 an optional adapter (dome mcp), not the load-bearing write path."
 aliases:
   - MCP
   - Model Context Protocol

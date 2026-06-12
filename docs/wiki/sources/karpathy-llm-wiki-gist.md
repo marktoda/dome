@@ -1,5 +1,6 @@
 ---
 type: source
+description: "Karpathy's gist defining the LLM Wiki pattern; maps which claims Dome keeps (immutable raws, prompt contract) and which it revises."
 created: 2026-05-27
 updated: 2026-06-11
 sources:

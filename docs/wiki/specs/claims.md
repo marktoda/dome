@@ -1,5 +1,6 @@
 ---
 type: spec
+description: "Claim-line grammar (bold key, as-of date, ^c anchor) and the dome.claims stamp/index processors; supersession is an in-place edit under one anchor"
 created: 2026-06-09
 updated: 2026-06-09
 sources:

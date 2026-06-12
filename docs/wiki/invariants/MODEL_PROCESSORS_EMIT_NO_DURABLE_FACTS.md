@@ -1,5 +1,6 @@
 ---
 type: invariant
+description: "Garden processors with model.invoke cannot declare graph.write; model judgment surfaces as questions or patches, never rebuild-lost FactEffects"
 created: 2026-06-03
 updated: 2026-06-10
 sources:

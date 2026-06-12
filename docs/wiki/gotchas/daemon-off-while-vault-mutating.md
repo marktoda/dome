@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "Vault keeps mutating while no compiler host runs; days of accumulated commits make the next serve/sync catch-up Proposal large and slow."
 created: 2026-05-27
 updated: 2026-06-10
 sources:

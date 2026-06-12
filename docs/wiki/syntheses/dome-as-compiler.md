@@ -1,5 +1,6 @@
 ---
 type: synthesis
+description: "Tests the 'compiler for your second brain' framing against real compilers; concludes Dome is closer to a language server + build system."
 created: 2026-05-28
 updated: 2026-05-28
 sources: ["[[VISION]]", "[[wiki/specs/adoption]]", "[[wiki/specs/harnesses]]", "[[wiki/specs/cli]]", "[[wiki/concepts/llm-wiki-pattern]]"]

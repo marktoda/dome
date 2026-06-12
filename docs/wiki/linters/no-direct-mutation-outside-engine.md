@@ -1,5 +1,6 @@
 ---
 type: linter
+description: "Flags mutation calls (Bun.write, writeFile, SQL INSERT/UPDATE, git.commit) outside the engine — catches call sites the import linter misses."
 created: 2026-05-27
 updated: 2026-06-09
 sources:

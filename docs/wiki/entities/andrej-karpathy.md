@@ -1,5 +1,6 @@
 ---
 type: entity
+description: "AI researcher whose LLM Wiki gist inspired Dome's compilation model: immutable raws compiled by an LLM into a linked markdown wiki."
 created: 2026-05-25
 updated: 2026-05-25
 sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]", "[[wiki/sources/karpathy-llm-wiki-gist]]"]

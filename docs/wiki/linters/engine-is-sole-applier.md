@@ -1,5 +1,6 @@
 ---
 type: linter
+description: "Forbids importing fs/bun:sqlite/git-write modules outside engine, projections, ledger, outbox — all mutation routes through the engine."
 created: 2026-05-27
 updated: 2026-06-10
 sources:

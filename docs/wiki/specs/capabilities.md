@@ -1,5 +1,6 @@
 ---
 type: spec
+description: "Capability broker: seventeen tiers, manifest-declared x vault-granted intersection, enforced at the single enforceCapability chokepoint"
 created: 2026-05-27
 updated: 2026-06-11
 sources:

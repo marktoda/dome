@@ -1,5 +1,6 @@
 ---
 type: invariant
+description: "Every processor invocation writes one RunRecord row to runs.db with a terminal status, even when failed, skipped, timed out, or cancelled"
 created: 2026-05-27
 updated: 2026-06-11
 sources:

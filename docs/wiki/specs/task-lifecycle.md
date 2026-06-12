@@ -1,5 +1,6 @@
 ---
 type: spec
+description: "Task substrate: move-stable ^block anchors, splice-guard generated blocks, stamp/reconcile/normalize, lastHumanChangedAt, attention discounting"
 created: 2026-06-03
 updated: 2026-06-11
 sources:

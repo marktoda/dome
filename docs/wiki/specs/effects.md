@@ -1,5 +1,6 @@
 ---
 type: spec
+description: "Closed eleven-kind Effect union with per-kind routing and severity semantics; pins whole-content FileChange patches over unified diffs"
 created: 2026-05-27
 updated: 2026-06-10
 sources:

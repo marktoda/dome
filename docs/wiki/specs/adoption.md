@@ -1,5 +1,6 @@
 ---
 type: spec
+description: "Fixed-point adoption loop, fast-forward-only refs/dome/adopted cursor, Dome-* commit trailers, and the dome sync/status entrypoints"
 created: 2026-05-27
 updated: 2026-06-11
 sources:

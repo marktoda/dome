@@ -1,5 +1,6 @@
 ---
 type: spec
+description: "Preference lifecycle: append-only signals, counter-based promotion (3 signals/30d, Wilson bound), owner-mediated demotion, two gated core.md writers"
 created: 2026-06-09
 updated: 2026-06-12
 sources:

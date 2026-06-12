@@ -1,5 +1,6 @@
 ---
 type: spec
+description: "Target public SDK API: sealed Vault/Proposal/Processor/Effect core, openVault as the standard entry point, bundle loading, shipped vs target shape"
 created: 2026-05-27
 updated: 2026-06-11
 sources:

@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "History rewrite (force-push/reset) puts refs/dome/adopted outside HEAD ancestry; dome sync refuses to advance and serve pauses adoption."
 created: 2026-05-27
 updated: 2026-06-10
 sources:

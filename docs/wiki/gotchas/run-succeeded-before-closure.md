@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "Moving markSucceeded after makeClosureCommit conflates per-run and adoption state machines, orphaning broker-rejected runs as bogus failures."
 created: 2026-05-27
 updated: 2026-06-10
 sources:

@@ -1,5 +1,6 @@
 ---
 type: source
+description: "Project page for the pure-JS git library Dome depends on; takeaway: standard .git format, no binary needed, fast enough for Dome's use."
 created: 2026-05-25
 updated: 2026-05-25
 sources: []

@@ -1,5 +1,6 @@
 ---
 type: spec
+description: "dome.sources subscriptions: consent in config, engine-scheduled fetches via the outbox; the fetch command, not the engine, writes sources/ files"
 created: 2026-06-10
 updated: 2026-06-12
 sources:

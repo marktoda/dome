@@ -1,5 +1,6 @@
 ---
 type: linter
+description: "Checks CLI/MCP/HTTP adapters never import each other and src/surface/ imports no adapter — each surface stays a thin peer over one boundary."
 created: 2026-06-10
 updated: 2026-06-10
 sources:

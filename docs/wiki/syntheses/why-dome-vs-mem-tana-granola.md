@@ -1,5 +1,6 @@
 ---
 type: synthesis
+description: "Positions Dome against Mem, Tana, Granola, Obsidian, etc.: invariant-enforcing compiled memory that mounts under existing tools."
 created: 2026-05-25
 updated: 2026-05-25
 sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]

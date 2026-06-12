@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "Prose-inlined substrate counts ('12 invariants') drift from the canonical registry or array they describe, so readers act on wrong numbers."
 created: 2026-05-26
 updated: 2026-06-10
 sources:

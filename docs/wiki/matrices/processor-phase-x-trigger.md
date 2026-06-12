@@ -1,5 +1,6 @@
 ---
 type: matrix
+description: "Crosses processor phases with trigger kinds (signal/path/schedule/answer/command) — which pairs the manifest validator allows, and why."
 created: 2026-05-27
 updated: 2026-06-10
 sources:

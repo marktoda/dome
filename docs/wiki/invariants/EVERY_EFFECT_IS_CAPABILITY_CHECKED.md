@@ -1,5 +1,6 @@
 ---
 type: invariant
+description: "Every processor Effect passes enforceCapability (allow/downgrade/deny) at the engine routing layer before application; decisions are ledgered"
 created: 2026-05-27
 updated: 2026-06-10
 sources:

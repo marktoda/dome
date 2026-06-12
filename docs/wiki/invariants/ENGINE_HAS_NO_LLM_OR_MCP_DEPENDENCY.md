@@ -1,5 +1,6 @@
 ---
 type: invariant
+description: "The @dome/sdk core entrypoint's static import graph pulls in no LLM or MCP packages; enforced by tests/integration/bundle-deps.test.ts"
 created: 2026-05-27
 updated: 2026-06-11
 sources:

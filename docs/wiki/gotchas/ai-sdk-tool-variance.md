@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "registry.ts double-casts AI SDK tool() through unknown plus an any,any satisfies, so tool input/output type mismatches compile silently."
 created: 2026-05-26
 updated: 2026-05-26
 sources: ["[[cohesive/reviews/2026-05-26-dome-v0.5-cohesion-architecture-review]]"]

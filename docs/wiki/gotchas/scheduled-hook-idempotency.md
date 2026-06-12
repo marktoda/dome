@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "After offline days, scheduled processors either duplicate per-missed-interval fires or silently skip catch-up; v1 clamps to once per sync."
 created: 2026-05-27
 updated: 2026-06-01
 sources:

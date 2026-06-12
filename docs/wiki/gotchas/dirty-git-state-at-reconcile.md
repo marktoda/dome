@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "Running dome sync mid-merge/rebase or with staged changes makes it process conflict noise or refuse; needs clean-git-state guarding."
 created: 2026-05-25
 updated: 2026-06-10
 sources:

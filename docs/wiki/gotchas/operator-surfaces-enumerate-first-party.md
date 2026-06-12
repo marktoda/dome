@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "Operator surfaces (doctor checks, diagnostic repair hints) hardcode first-party bundle lists, so third-party bundles render second-class."
 created: 2026-06-10
 updated: 2026-06-10
 sources:

@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "Importing only Submit/Recall from @dome/sdk still pulls @ai-sdk/anthropic and MCP SDK transitively, bloating LLM-free consumer bundles."
 created: 2026-05-27
 updated: 2026-06-09
 sources:

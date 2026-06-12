@@ -1,5 +1,6 @@
 ---
 type: invariant
+description: "Processor.run returns only Effect[] — no side effects; ProcessorContext has no writers and the processor-purity lint bans mutation imports"
 created: 2026-05-27
 updated: 2026-06-10
 sources:

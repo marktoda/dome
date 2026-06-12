@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "Model upgrades or prompt edits silently shift garden-LLM compilation behavior; no replay eval exists yet to catch extraction/routing drift."
 created: 2026-05-27
 updated: 2026-06-10
 sources:

@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "Malformed config/manifest/state YAML or JSON skipping Zod boundary parsing explodes deep downstream with errors that blame the wrong code."
 created: 2026-05-27
 updated: 2026-06-10
 sources:

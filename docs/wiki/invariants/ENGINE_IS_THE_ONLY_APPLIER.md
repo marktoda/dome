@@ -1,5 +1,6 @@
 ---
 type: invariant
+description: "All vault mutation runs through engine routing (apply-effect.ts, garden patch dispatch); no other module reaches fs/git/SQLite write primitives"
 created: 2026-05-27
 updated: 2026-06-10
 sources:

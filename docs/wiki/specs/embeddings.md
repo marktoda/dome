@@ -1,5 +1,6 @@
 ---
 type: spec
+description: "Banked, unimplemented dense-vector retrieval design — embed envelope, model.embed tier, recomputable embeddings.db — gated on logged BM25 misses"
 created: 2026-06-09
 updated: 2026-06-09
 sources:

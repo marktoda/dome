@@ -1,5 +1,6 @@
 ---
 type: spec
+description: "Frontmatter contract: required type (singular of wiki directory), created/updated drift lint, four default page types plus extension types"
 created: 2026-05-27
 updated: 2026-06-09
 sources:

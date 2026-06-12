@@ -1,5 +1,6 @@
 ---
 type: invariant
+description: "Wiping projection.db and running dome rebuild restores facts/diagnostics/search/questions from the adopted commit plus answers.db rehydration"
 created: 2026-05-27
 updated: 2026-06-10
 sources:

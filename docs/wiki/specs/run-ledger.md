@@ -1,5 +1,6 @@
 ---
 type: spec
+description: "runs.db audit ledger: one row per processor invocation plus CapabilityUse rows; complements Dome-* trailers and survives projection rebuilds"
 created: 2026-05-27
 updated: 2026-06-11
 sources:

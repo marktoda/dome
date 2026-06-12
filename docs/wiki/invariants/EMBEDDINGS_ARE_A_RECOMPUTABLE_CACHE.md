@@ -1,5 +1,6 @@
 ---
 type: invariant
+description: "Deferred: embeddings.db vectors are deletable rank-only cache, never fact sources; planned fences keep them outside rebuild and Effects"
 created: 2026-06-09
 updated: 2026-06-09
 sources:

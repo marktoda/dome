@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "Outbox rows stuck in status failed with high attempts; expected external actions (calendar, webhooks, notifications) never fire."
 created: 2026-05-27
 updated: 2026-06-02
 sources:

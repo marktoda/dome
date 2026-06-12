@@ -1,5 +1,6 @@
 ---
 type: invariant
+description: "Engine adoption/patch commits carry the four Dome-* trailers via composeCommitMessage, making engine vs user history greppable in git log"
 created: 2026-05-27
 updated: 2026-06-10
 sources:

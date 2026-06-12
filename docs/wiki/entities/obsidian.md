@@ -1,5 +1,6 @@
 ---
 type: entity
+description: "Markdown editor recommended as Dome's vault browser surface; not a harness — its native writes flow through the engine's adoption path."
 created: 2026-05-27
 updated: 2026-05-27
 sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]

@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "Native writes (Obsidian, vim, agent Write) are canonical but leave projections and adopted ref stale until the host or dome sync adopts them."
 created: 2026-05-27
 updated: 2026-05-29
 sources:

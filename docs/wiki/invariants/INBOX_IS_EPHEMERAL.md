@@ -1,5 +1,6 @@
 ---
 type: invariant
+description: "Files in inbox/<bucket> must be ingested within 168h; dome.agent.inbox-stale-check emits inbox.stale warning diagnostics for lingering files"
 created: 2026-05-27
 updated: 2026-06-11
 sources:

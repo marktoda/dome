@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "Renaming user-prose delimiters in the AGENTS.md invariant page without updating init.ts breaks dome init --refresh-instructions refresh."
 created: 2026-05-26
 updated: 2026-06-02
 sources:

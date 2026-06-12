@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "Non-idempotent processors emit different effects on identical (snapshot, input), causing duplicate facts, divergence, and rebuild mismatches."
 created: 2026-05-27
 updated: 2026-06-10
 sources:

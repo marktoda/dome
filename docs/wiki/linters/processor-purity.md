@@ -1,5 +1,6 @@
 ---
 type: linter
+description: "Forbids processor files importing fs, sqlite, git, or network modules — run(ctx) must emit Effects only, never side-effect past the engine."
 created: 2026-05-27
 updated: 2026-05-29
 status: v1 (implemented)

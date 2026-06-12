@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "Garden patches that trigger more garden patches recurse to the cascade depth cap (10), emitting a garden.cascade-cap warning and halting."
 created: 2026-05-28
 updated: 2026-06-10
 sources:

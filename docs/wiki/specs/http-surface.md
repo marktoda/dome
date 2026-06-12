@@ -1,5 +1,6 @@
 ---
 type: spec
+description: "dome http read+capture adapter: bearer-token JSON routes, the POST /capture seam, GET /today HTML cockpit with the lone query-token exception"
 created: 2026-06-10
 updated: 2026-06-11
 sources:

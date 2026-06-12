@@ -1,5 +1,6 @@
 ---
 type: matrix
+description: "Crosses Effect kind with processor phase to give each pair's engine routing destination, including which pairs reject as phase-mismatch."
 created: 2026-05-27
 updated: 2026-06-10
 sources:

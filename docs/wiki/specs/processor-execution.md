@@ -1,5 +1,6 @@
 ---
 type: spec
+description: "Processor runtime contract: one run state machine, phase-scoped timeouts, output validation, retry/quarantine policy, typed terminal outcomes"
 created: 2026-05-28
 updated: 2026-06-10
 sources:

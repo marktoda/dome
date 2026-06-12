@@ -1,5 +1,6 @@
 ---
 type: matrix
+description: "Crosses first-party dome.* bundles with adoption/garden/view phases — source of truth for which processor runs when, and on what cron."
 created: 2026-05-27
 updated: 2026-06-11
 sources:

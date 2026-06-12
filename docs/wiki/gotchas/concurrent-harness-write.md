@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "Concurrent writes from multiple surfaces (sessions, mobile, remote hosts) can overwrite each other; v1 lacks a single merge-boundary policy."
 created: 2026-05-25
 updated: 2026-05-29
 severity: medium

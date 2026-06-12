@@ -1,5 +1,6 @@
 ---
 type: entity
+description: "Dome SDK's implementation language; chosen for typed Effect/Event contracts, Zod schemas, and alignment with TS-based clients."
 created: 2026-05-25
 updated: 2026-05-25
 sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]

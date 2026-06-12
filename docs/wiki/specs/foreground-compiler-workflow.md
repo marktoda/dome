@@ -1,5 +1,6 @@
 ---
 type: spec
+description: "Day-to-day operating guide for running dome serve beside an agent session: commit-boundary loop, read-first context habit, host-off catch-up"
 created: 2026-05-29
 updated: 2026-06-01
 sources:

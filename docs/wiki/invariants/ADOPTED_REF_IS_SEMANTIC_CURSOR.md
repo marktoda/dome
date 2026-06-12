@@ -1,5 +1,6 @@
 ---
 type: invariant
+description: "refs/dome/adopted/<branch> is the only trusted-state cursor; advanced fast-forward-only by setAdoptedRef in src/engine/core/adopt.ts"
 created: 2026-05-27
 updated: 2026-06-10
 sources:

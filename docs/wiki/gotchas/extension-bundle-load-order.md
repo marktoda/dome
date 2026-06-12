@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "Bundle load order or colliding registry keys make openVault fail with bundle-load-failed/registry-build-failed; the vault won't open."
 created: 2026-05-27
 updated: 2026-06-10
 sources:

@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "After a bundle upgrade, projection.db retains facts from the old processor version, mixing old- and new-format facts in query results."
 created: 2026-05-27
 updated: 2026-06-10
 sources:

@@ -1,5 +1,6 @@
 ---
 type: invariant
+description: "Every vault write (human, agent, processor) becomes a Proposal run through the engine adoption loop; un-adopted commits are draft state"
 created: 2026-05-27
 updated: 2026-06-11
 sources:

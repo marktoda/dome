@@ -1,5 +1,6 @@
 ---
 type: concept
+description: "Dome's product framing: an ambient, local-first AI companion that maintains your thinking over years — not a notes app, chatbot, or KB."
 tags:
   - product-framing
 created: 2026-05-27

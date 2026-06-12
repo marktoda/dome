@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "Queries right after adoption can miss slow garden work (LLM intake, scheduled jobs) still draining, so derived state reads stale."
 created: 2026-05-27
 updated: 2026-06-10
 sources:

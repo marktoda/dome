@@ -1,5 +1,6 @@
 ---
 type: concept
+description: "Karpathy's pattern of an LLM compiling immutable raw sources into a linked markdown wiki; Dome productizes it with enforced invariants."
 created: 2026-05-27
 updated: 2026-05-27
 sources: ["[[wiki/sources/karpathy-llm-wiki-gist]]"]

@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "Projection schema version bump triggers an automatic projection.db rebuild on openVault; first open is slower, not a corruption sign."
 created: 2026-05-27T00:00:00.000Z
 updated: 2026-05-29T00:00:00.000Z
 sources:

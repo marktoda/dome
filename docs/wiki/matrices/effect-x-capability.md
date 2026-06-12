@@ -1,5 +1,6 @@
 ---
 type: matrix
+description: "Maps each Effect kind to the broker-required capability, its resource scope, and the denial or downgrade outcome when the grant is missing."
 created: 2026-05-27
 updated: 2026-06-10
 sources:

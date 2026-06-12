@@ -1,5 +1,6 @@
 ---
 type: matrix
+description: "Maps user intents (capture, maintain, recall, schedule) to the handling processor, its phase, prompt source, and effects emitted."
 created: 2026-05-27
 updated: 2026-06-11
 sources:

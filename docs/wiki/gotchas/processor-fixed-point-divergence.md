@@ -1,5 +1,6 @@
 ---
 type: gotcha
+description: "Adoption loop hits MAX_ITER (100) when processors keep emitting new effects; the Proposal blocks with a fixed-point.divergence diagnostic."
 created: 2026-05-27
 updated: 2026-06-11
 sources:

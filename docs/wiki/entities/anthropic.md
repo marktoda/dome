@@ -1,5 +1,6 @@
 ---
 type: entity
+description: "AI vendor of the Claude models and Claude Code; in Dome v1, LLM access enters only via garden processors with a host-provided provider."
 created: 2026-05-25
 updated: 2026-05-29
 sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]

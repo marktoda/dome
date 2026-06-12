@@ -1,5 +1,6 @@
 ---
 type: invariant
+description: "dome init scaffolds AGENTS.md (plus CLAUDE.md shim) as the agent orientation surface; refresh preserves the delimited user-prose block"
 created: 2026-05-27
 updated: 2026-06-11
 sources:

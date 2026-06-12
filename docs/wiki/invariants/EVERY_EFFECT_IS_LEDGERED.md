@@ -1,5 +1,6 @@
 ---
 type: invariant
+description: "Every emitted Effect leaves an audit record (run-ledger hashes, projection/outbox rows, commit trailers); even denied effects are logged"
 created: 2026-05-27
 updated: 2026-06-11
 sources:

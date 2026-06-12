@@ -1,5 +1,6 @@
 ---
 type: linter
+description: "Greps wiki docs for retired v0.5 names (Tool, Hook, Workflow, dead invariants) so normative pages cannot drift back to the old substrate."
 created: 2026-05-27
 updated: 2026-06-10
 sources:
