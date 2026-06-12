@@ -9,6 +9,10 @@ import { describe, expect, test } from "bun:test";
 import {
   appendSignalLine,
   collectPreferenceTopics,
+  DEMOTE_BELOW_CONFIDENCE,
+  demotionQuestionKey,
+  demotionSignalLine,
+  demotionTargetFromKey,
   fnv1aHex,
   isValidSignalsAppend,
   parsePreferenceSignals,
@@ -18,11 +22,14 @@ import {
   preferenceTopicFactValue,
   PROMOTED_PREFERENCES_END,
   PROMOTED_PREFERENCES_START,
+  promotedPreferenceEntries,
   promotedTopics,
   promotionQuestionKey,
   promotionTargetFromKey,
+  reaffirmationSignalLine,
   rejectionTombstoneLine,
   renderPromotedLine,
+  removePromotedPreference,
   splicePromotedPreference,
   wilsonLowerBound,
 } from "../../../assets/extensions/dome.agent/lib/preferences-shared";
@@ -541,5 +548,156 @@ describe("signals append validation (the brief's splice guard)", () => {
       }),
     ).toBe(false);
     expect(isValidSignalsAppend({ before, after: before })).toBe(false);
+  });
+});
+
+describe("promoted-block entries + demotion (WS1 pruning)", () => {
+  const CORE = [
+    "# Core memory",
+    "",
+    "## Standing preferences",
+    "",
+    PROMOTED_PREFERENCES_START,
+    "- filing:: meeting notes go under notes/, not entities/ (confidence 0.44)",
+    "- naming:: kebab-case slugs (confidence 0.52)",
+    PROMOTED_PREFERENCES_END,
+    "",
+    "Owner prose below the block.",
+  ].join("\n");
+
+  test("promotedPreferenceEntries parses topic, rule, and 1-based line; confidence suffix stripped", () => {
+    const entries = promotedPreferenceEntries(CORE);
+    expect(entries).toEqual([
+      {
+        topic: "filing",
+        rule: "meeting notes go under notes/, not entities/",
+        line: 6,
+      },
+      { topic: "naming", rule: "kebab-case slugs", line: 7 },
+    ]);
+  });
+
+  test("a hand-edited entry without the confidence suffix keeps its full rule text", () => {
+    const entries = promotedPreferenceEntries(
+      [
+        PROMOTED_PREFERENCES_START,
+        "- filing:: a rule someone typed by hand",
+        PROMOTED_PREFERENCES_END,
+      ].join("\n"),
+    );
+    expect(entries).toEqual([
+      { topic: "filing", rule: "a rule someone typed by hand", line: 2 },
+    ]);
+  });
+
+  test("null content, absent block, and empty block all parse to no entries", () => {
+    expect(promotedPreferenceEntries(null)).toEqual([]);
+    expect(promotedPreferenceEntries("# Core memory\n")).toEqual([]);
+    expect(
+      promotedPreferenceEntries(
+        [PROMOTED_PREFERENCES_START, PROMOTED_PREFERENCES_END].join("\n"),
+      ),
+    ).toEqual([]);
+  });
+
+  test("removePromotedPreference splices exactly the topic's line out", () => {
+    const next = removePromotedPreference({
+      coreContent: CORE,
+      topic: "filing",
+    });
+    expect(next).toContain(PROMOTED_PREFERENCES_START);
+    expect(next).toContain(PROMOTED_PREFERENCES_END);
+    expect(next).not.toContain("- filing::");
+    expect(next).toContain("- naming:: kebab-case slugs (confidence 0.52)");
+    expect(next).toContain("Owner prose below the block.");
+  });
+
+  test("removePromotedPreference is byte-identical for unknown topics or an absent block", () => {
+    expect(
+      removePromotedPreference({ coreContent: CORE, topic: "unknown" }),
+    ).toBe(CORE);
+    expect(
+      removePromotedPreference({
+        coreContent: "# Core memory\n",
+        topic: "filing",
+      }),
+    ).toBe("# Core memory\n");
+  });
+
+  test("removing the last entry keeps the (now empty) marker pair", () => {
+    const single = [
+      PROMOTED_PREFERENCES_START,
+      "- filing:: the only rule (confidence 0.44)",
+      PROMOTED_PREFERENCES_END,
+    ].join("\n");
+    const next = removePromotedPreference({
+      coreContent: single,
+      topic: "filing",
+    });
+    expect(next).toContain(PROMOTED_PREFERENCES_START);
+    expect(next).toContain(PROMOTED_PREFERENCES_END);
+    expect(next).not.toContain("- filing::");
+  });
+
+  test("demotion keys round-trip and stay disjoint from promotion keys", () => {
+    const key = demotionQuestionKey({ topic: "filing", ruleHash: "0a1b2c3d" });
+    expect(key).toBe("dome.agent.preference-demotion:filing:0a1b2c3d");
+    expect(demotionTargetFromKey(key)).toEqual({
+      topic: "filing",
+      ruleHash: "0a1b2c3d",
+    });
+    // The two key families never parse as each other.
+    expect(promotionTargetFromKey(key)).toBeNull();
+    expect(
+      demotionTargetFromKey(
+        promotionQuestionKey({ topic: "filing", ruleHash: "0a1b2c3d" }),
+      ),
+    ).toBeNull();
+    expect(demotionTargetFromKey("dome.health.outbox-recovery:x")).toBeNull();
+    expect(
+      demotionTargetFromKey("dome.agent.preference-demotion:Filing:zz"),
+    ).toBeNull();
+  });
+
+  test("the demotion signal line parses as a minus signal — deliberately NOT an owner rejection", () => {
+    const line = demotionSignalLine({ date: "2026-06-12", topic: "filing" });
+    expect(line).toBe(
+      "- 2026-06-12 - filing:: demoted by owner (confidence decayed)",
+    );
+    const parsed = parsePreferenceSignals(line);
+    expect(parsed.problems).toEqual([]);
+    expect(parsed.signals[0]).toEqual(
+      expect.objectContaining({
+        sign: "-",
+        topic: "filing",
+        rule: "demoted by owner (confidence decayed)",
+        ownerRejection: false, // re-candidacy stays possible
+      }),
+    );
+  });
+
+  test("the keep reaffirmation line parses as a plus signal carrying the rule verbatim", () => {
+    const line = reaffirmationSignalLine({
+      date: "2026-06-12",
+      topic: "filing",
+      rule: "meeting notes go under notes/, not entities/",
+    });
+    expect(line).toBe(
+      "- 2026-06-12 + filing:: meeting notes go under notes/, not entities/",
+    );
+    const parsed = parsePreferenceSignals(line);
+    expect(parsed.problems).toEqual([]);
+    expect(parsed.signals[0]).toEqual(
+      expect.objectContaining({
+        sign: "+",
+        topic: "filing",
+        rule: "meeting notes go under notes/, not entities/",
+        source: null,
+      }),
+    );
+  });
+
+  test("DEMOTE_BELOW_CONFIDENCE is the pinned 0.15 floor", () => {
+    expect(DEMOTE_BELOW_CONFIDENCE).toBe(0.15);
   });
 });

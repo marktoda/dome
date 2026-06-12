@@ -11,6 +11,7 @@ import preferencePromotion from "../../../assets/extensions/dome.agent/processor
 import preferencePromotionAnswer from "../../../assets/extensions/dome.agent/processors/preference-promotion-answer";
 import preferenceSignals from "../../../assets/extensions/dome.agent/processors/preference-signals";
 import {
+  demotionQuestionKey,
   fnv1aHex,
   parsePreferenceTopicFactValue,
   PROMOTED_PREFERENCES_END,
@@ -260,6 +261,157 @@ describe("dome.agent.preference-promotion (questions)", () => {
           "- 2026-05-09 + filing:: rule", // 31 days before the 06-09 reference
           "- 2026-06-01 + filing:: rule",
           "- 2026-06-09 + filing:: rule",
+        ].join("\n"),
+      },
+    });
+    expect(effects.filter((e) => e.kind === "question")).toEqual([]);
+  });
+
+  test("a promoted topic with decayed confidence raises one owner-needed demotion question", async () => {
+    // filing's signals are months older than the file's reference date (the
+    // newest signal anywhere — naming's), so freshness is 0 → confidence 0.
+    const effects = await run(preferencePromotion, {
+      files: {
+        "preferences/signals.md": [
+          "- 2026-01-01 + filing:: meeting notes go under notes/",
+          "- 2026-01-05 + filing:: meeting notes go under notes/",
+          `- 2026-01-09 + filing:: ${CANDIDATE_RULE}`,
+          "- 2026-06-09 + naming:: kebab-case slugs",
+        ].join("\n"),
+        "core.md": [
+          "# Core memory",
+          PROMOTED_PREFERENCES_START,
+          `- filing:: ${CANDIDATE_RULE} (confidence 0.44)`,
+          PROMOTED_PREFERENCES_END,
+        ].join("\n"),
+      },
+    });
+    const questions = effects.filter(
+      (e): e is QuestionEffect => e.kind === "question",
+    );
+    expect(questions).toHaveLength(1);
+    const question = questions[0];
+    expect(question?.idempotencyKey).toBe(
+      demotionQuestionKey({
+        topic: "filing",
+        ruleHash: fnv1aHex(CANDIDATE_RULE),
+      }),
+    );
+    expect(question?.options).toEqual(["demote", "keep"]);
+    expect(question?.question).toContain(CANDIDATE_RULE);
+    expect(question?.metadata).toEqual(
+      expect.objectContaining({
+        automationPolicy: "owner-needed",
+        recommendedAnswer: "demote",
+        confidence: 0,
+      }),
+    );
+    // The promoted block's core.md line anchors the question; no in-window
+    // signals exist, so it is the only sourceRef.
+    expect(question?.sourceRefs).toHaveLength(1);
+    expect(String(question?.sourceRefs[0]?.path)).toBe("core.md");
+    expect(question?.sourceRefs[0]?.range?.startLine).toBe(3);
+  });
+
+  test("the demotion key hashes the PROMOTED BLOCK's rule text, not the latest signal's", async () => {
+    const effects = await run(preferencePromotion, {
+      files: {
+        "preferences/signals.md": [
+          "- 2026-01-09 + filing:: a newer different wording",
+          "- 2026-06-09 + naming:: kebab-case slugs",
+        ].join("\n"),
+        "core.md": [
+          PROMOTED_PREFERENCES_START,
+          `- filing:: ${CANDIDATE_RULE} (confidence 0.44)`,
+          PROMOTED_PREFERENCES_END,
+        ].join("\n"),
+      },
+    });
+    const question = effects.find(
+      (e): e is QuestionEffect => e.kind === "question",
+    );
+    expect(question?.idempotencyKey).toBe(
+      demotionQuestionKey({
+        topic: "filing",
+        ruleHash: fnv1aHex(CANDIDATE_RULE),
+      }),
+    );
+  });
+
+  test("decayed-but-promoted with in-window counter-evidence quotes the evidence inert", async () => {
+    // 1 plus vs 2 minus in window: Wilson(1,3) ≈ 0.0615 < 0.15 with freshness
+    // 1.0 — Wilson alone can trigger demotion, not just staleness.
+    const effects = await run(preferencePromotion, {
+      files: {
+        "preferences/signals.md": [
+          `- 2026-06-05 + filing:: ${CANDIDATE_RULE}`,
+          "- 2026-06-07 - filing:: kept it under entities/ on purpose",
+          "- 2026-06-09 - filing:: again, entities/ was right",
+        ].join("\n"),
+        "core.md": [
+          PROMOTED_PREFERENCES_START,
+          `- filing:: ${CANDIDATE_RULE} (confidence 0.44)`,
+          PROMOTED_PREFERENCES_END,
+        ].join("\n"),
+      },
+    });
+    const question = effects.find(
+      (e): e is QuestionEffect => e.kind === "question",
+    );
+    expect(question).toBeDefined();
+    expect(question?.metadata?.confidence).toBeGreaterThan(0);
+    expect(question?.metadata?.confidence).toBeLessThan(0.15);
+    // core.md block line + the three in-window signal lines.
+    expect(question?.sourceRefs).toHaveLength(4);
+    expect(String(question?.sourceRefs[0]?.path)).toBe("core.md");
+    expect(
+      question?.sourceRefs
+        .slice(1)
+        .every((ref) => String(ref.path) === "preferences/signals.md"),
+    ).toBe(true);
+    // Quoted evidence renders inert: no column-0 list lines.
+    const lines = (question?.question ?? "").split("\n");
+    expect(lines.some((line) => line.startsWith("- "))).toBe(false);
+  });
+
+  test("healthy promoted topics and decayed non-promoted topics raise no demotion question", async () => {
+    // Healthy: fresh signals keep confidence at 0.4385 ≥ the 0.15 floor.
+    const healthy = await run(preferencePromotion, {
+      files: {
+        "preferences/signals.md": THREE_PLUS,
+        "core.md": [
+          PROMOTED_PREFERENCES_START,
+          `- filing:: ${CANDIDATE_RULE} (confidence 0.44)`,
+          PROMOTED_PREFERENCES_END,
+        ].join("\n"),
+      },
+    });
+    expect(healthy.filter((e) => e.kind === "question")).toEqual([]);
+
+    // Decayed but never promoted: stale signals alone ask nothing.
+    const unpromoted = await run(preferencePromotion, {
+      files: {
+        "preferences/signals.md": [
+          "- 2026-01-01 + filing:: old rule",
+          "- 2026-01-05 + filing:: old rule",
+          "- 2026-01-09 + filing:: old rule",
+          "- 2026-06-09 + naming:: kebab-case slugs",
+        ].join("\n"),
+      },
+    });
+    expect(unpromoted.filter((e) => e.kind === "question")).toEqual([]);
+  });
+
+  test("a promoted block entry with NO signal history is out of demotion's scope", async () => {
+    // Hand-added block entries have no signals to recompute confidence from;
+    // the topic never appears in the collection, so demotion stays quiet.
+    const effects = await run(preferencePromotion, {
+      files: {
+        "preferences/signals.md": "- 2026-06-09 + naming:: kebab-case slugs",
+        "core.md": [
+          PROMOTED_PREFERENCES_START,
+          "- handmade:: a rule typed straight into the block",
+          PROMOTED_PREFERENCES_END,
         ].join("\n"),
       },
     });

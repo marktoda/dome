@@ -46,6 +46,18 @@ export const PREFERENCE_TOPIC_PREDICATE = "dome.preference.topic";
 export const PREFERENCE_PROMOTION_KEY_PREFIX =
   "dome.agent.preference-promotion:";
 
+/** QuestionEffect idempotency-key prefix for demotion questions (WS1 pruning). */
+export const PREFERENCE_DEMOTION_KEY_PREFIX =
+  "dome.agent.preference-demotion:";
+
+/**
+ * A `promoted` topic whose recomputed confidence (same Wilson × freshness
+ * formula that promoted it) falls below this floor becomes a demotion
+ * candidate. Freshness alone gets there: no signals for 90 days → freshness
+ * 0 → confidence 0.
+ */
+export const DEMOTE_BELOW_CONFIDENCE = 0.15;
+
 /** The marker-delimited generated block in core.md (M3 reserved it; M5 owns it). */
 const PROMOTED_BLOCK_OWNER = "dome.agent";
 const PROMOTED_BLOCK_NAME = "promoted-preferences";
@@ -239,6 +251,8 @@ export function preferenceConfidence(input: {
 // ----- The promoted block in core.md ----------------------------------------
 
 const PROMOTED_LINE_RE = /^- ([a-z0-9]+(?:-[a-z0-9]+)*):: /;
+const PROMOTED_ENTRY_RE = /^- ([a-z0-9]+(?:-[a-z0-9]+)*):: (.+)$/;
+const CONFIDENCE_SUFFIX_RE = /\s*\(confidence \d+(?:\.\d+)?\)$/;
 
 /** Topic slugs currently in core.md's promoted-preferences block. */
 export function promotedTopics(
@@ -250,6 +264,67 @@ export function promotedTopics(
     if (match?.[1] !== undefined) out.add(match[1]);
   }
   return out;
+}
+
+/** One parsed entry of the promoted-preferences block in core.md. */
+export type PromotedPreferenceEntry = {
+  readonly topic: string;
+  /** Rule text with the trailing `(confidence 0.NN)` suffix stripped. */
+  readonly rule: string;
+  /** 1-based line number in core.md (sourceRef anchor for demotion questions). */
+  readonly line: number;
+};
+
+/**
+ * Parse the promoted-preferences block into entries (the demotion side of
+ * the lifecycle hashes and splices the BLOCK's rule text, not the latest
+ * signal's). The `(confidence 0.NN)` suffix `renderPromotedLine` appends is
+ * stripped; a hand-edited entry without it keeps its full rule text.
+ */
+export function promotedPreferenceEntries(
+  coreContent: string | null,
+): ReadonlyArray<PromotedPreferenceEntry> {
+  if (coreContent === null) return Object.freeze([]);
+  const bounds = promotedBlockBounds(coreContent);
+  if (bounds === null) return Object.freeze([]);
+  const lines = coreContent.split("\n");
+  const out: PromotedPreferenceEntry[] = [];
+  for (let i = bounds.startIndex + 1; i < bounds.endIndex; i += 1) {
+    const match = PROMOTED_ENTRY_RE.exec((lines[i] ?? "").trim());
+    if (match === null) continue;
+    const [, topic, rest] = match as unknown as [string, string, string];
+    out.push(
+      Object.freeze({
+        topic,
+        rule: rest.replace(CONFIDENCE_SUFFIX_RE, "").trim(),
+        line: i + 1,
+      }),
+    );
+  }
+  return Object.freeze(out);
+}
+
+/**
+ * Splice a topic's entry OUT of the promoted-preferences block (owner-
+ * mediated demotion). Block markers and every other line — including the
+ * marker pair itself when the last entry goes — are preserved verbatim.
+ * Byte-identical input is returned for an unknown topic or an absent block,
+ * so callers can use `next === coreContent` as the retry-idempotency check
+ * (same pattern as `splicePromotedPreference`).
+ */
+export function removePromotedPreference(input: {
+  readonly coreContent: string;
+  readonly topic: string;
+}): string {
+  const bounds = promotedBlockBounds(input.coreContent);
+  if (bounds === null) return input.coreContent;
+  const lines = input.coreContent.split("\n");
+  const kept = lines.filter((line, index) => {
+    if (index <= bounds.startIndex || index >= bounds.endIndex) return true;
+    return PROMOTED_LINE_RE.exec(line.trim())?.[1] !== input.topic;
+  });
+  if (kept.length === lines.length) return input.coreContent;
+  return kept.join("\n");
 }
 
 type PromotedBlockBounds = {
@@ -622,12 +697,34 @@ export function promotionQuestionKey(input: {
   return `${PREFERENCE_PROMOTION_KEY_PREFIX}${input.topic}:${input.ruleHash}`;
 }
 
+/** `dome.agent.preference-demotion:<topic>:<rule-hash>` (the BLOCK's rule). */
+export function demotionQuestionKey(input: {
+  readonly topic: string;
+  readonly ruleHash: string;
+}): string {
+  return `${PREFERENCE_DEMOTION_KEY_PREFIX}${input.topic}:${input.ruleHash}`;
+}
+
 /** Parse a promotion-question key back to its target; null when foreign. */
 export function promotionTargetFromKey(
   idempotencyKey: string,
 ): { readonly topic: string; readonly ruleHash: string } | null {
-  if (!idempotencyKey.startsWith(PREFERENCE_PROMOTION_KEY_PREFIX)) return null;
-  const rest = idempotencyKey.slice(PREFERENCE_PROMOTION_KEY_PREFIX.length);
+  return targetFromPrefixedKey(PREFERENCE_PROMOTION_KEY_PREFIX, idempotencyKey);
+}
+
+/** Parse a demotion-question key back to its target; null when foreign. */
+export function demotionTargetFromKey(
+  idempotencyKey: string,
+): { readonly topic: string; readonly ruleHash: string } | null {
+  return targetFromPrefixedKey(PREFERENCE_DEMOTION_KEY_PREFIX, idempotencyKey);
+}
+
+function targetFromPrefixedKey(
+  prefix: string,
+  idempotencyKey: string,
+): { readonly topic: string; readonly ruleHash: string } | null {
+  if (!idempotencyKey.startsWith(prefix)) return null;
+  const rest = idempotencyKey.slice(prefix.length);
   const match = /^([a-z0-9]+(?:-[a-z0-9]+)*):([0-9a-f]{8})$/.exec(rest);
   if (match === null) return null;
   return Object.freeze({
@@ -644,6 +741,36 @@ export function rejectionTombstoneLine(input: {
   readonly topic: string;
 }): string {
   return `- ${input.date} - ${input.topic}:: ${OWNER_REJECTION_RULE}`;
+}
+
+/**
+ * The rule text of the demotion minus signal. Deliberately NOT the rejection
+ * tombstone (`OWNER_REJECTION_RULE`): a demoted topic stays re-promotable —
+ * the minus signal records the decay-confirmed removal, and the topic
+ * re-earns candidacy if supporting corrections re-accrue.
+ */
+export const OWNER_DEMOTION_RULE = "demoted by owner (confidence decayed)";
+
+/** `- YYYY-MM-DD - <topic>:: demoted by owner (confidence decayed)`. */
+export function demotionSignalLine(input: {
+  readonly date: string;
+  readonly topic: string;
+}): string {
+  return `- ${input.date} - ${input.topic}:: ${OWNER_DEMOTION_RULE}`;
+}
+
+/**
+ * The `keep` answer's fresh plus signal reaffirming the promoted rule
+ * verbatim (source suffix omitted — the answer itself is the source).
+ * Resetting freshness lifts confidence back above the demotion floor, so
+ * `keep` naturally suppresses re-asks.
+ */
+export function reaffirmationSignalLine(input: {
+  readonly date: string;
+  readonly topic: string;
+  readonly rule: string;
+}): string {
+  return `- ${input.date} + ${input.topic}:: ${input.rule}`;
 }
 
 /** Append a line to the signals page (creates the file content when null). */
