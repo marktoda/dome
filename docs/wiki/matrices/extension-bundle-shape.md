@@ -4,7 +4,7 @@ created: 2026-05-27
 updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
-description: Crosses bundles with contribution kinds (page types, processors, handlers, grants) each provides; lockstep-tested against shipped assets.
+description: Which contributions (page types, processors, handlers, grants) each shipped bundle provides; lockstep-tested against the assets.
 ---
 
 # Extension bundle shape matrix
