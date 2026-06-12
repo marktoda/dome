@@ -641,7 +641,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
   program
     .command("recipe <kind>")
     .description(
-      "Print a setup recipe (available: ios — voice capture via Shortcuts; core-seed — owner interview for core.md).",
+      "Print a setup recipe (available: ios — voice capture via Shortcuts; capture-queue — the laptop-side iCloud queue drain; core-seed — owner interview for core.md).",
     )
     .option(
       "--url <base>",

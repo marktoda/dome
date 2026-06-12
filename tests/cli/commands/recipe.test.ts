@@ -69,7 +69,46 @@ describe("dome recipe ios", () => {
   test("unknown kind is a usage error listing the kinds", async () => {
     expect(await runRecipe({ kind: "android" })).toBe(64);
     expect(errors.join("\n")).toContain("unknown recipe");
-    expect(errors.join("\n")).toContain("available: ios, core-seed");
+    expect(errors.join("\n")).toContain(
+      "available: ios, capture-queue, core-seed",
+    );
+  });
+});
+
+describe("dome recipe capture-queue", () => {
+  test("prints the drain script install, the launchd plist, and the load steps", async () => {
+    expect(await runRecipe({ kind: "capture-queue" })).toBe(0);
+    const out = logs.join("\n");
+
+    // The shipped script, by its real resolved path, into .dome/bin/.
+    expect(out).toContain("assets/source-handlers/drain-captures.sh");
+    expect(out).toContain(".dome/bin/drain-captures.sh");
+    expect(out).toContain("chmod +x");
+
+    // Both queue-dir candidates (iCloud Drive root + the Shortcuts-folder
+    // fallback the Save File action may be restricted to).
+    expect(out).toContain("com~apple~CloudDocs/DomeCaptures");
+    expect(out).toContain(
+      "iCloud~is~workflow~my~workflows/Documents/DomeCaptures",
+    );
+
+    // The LaunchAgent: interval unit, vault as the working directory (how
+    // `dome capture` resolves the vault), PATH for the dome binary.
+    expect(out).toContain("<?xml version=");
+    expect(out).toContain("com.dome.drain-captures");
+    expect(out).toContain("<key>StartInterval</key><integer>900</integer>");
+    expect(out).toContain("<key>WorkingDirectory</key><string><vault></string>");
+    expect(out).toContain("RunAtLoad");
+    expect(out).toContain("launchctl bootstrap gui/$(id -u)");
+
+    // Smoke test + the idempotency story.
+    expect(out).toContain("drain-captures.sh");
+    expect(out).toContain("captureId = the filename stem");
+    expect(out).toContain("never double-files");
+
+    // The honest-wiring rationale: recipe, not a sources subscription.
+    expect(out).toContain("not a dome.sources subscription");
+    expect(out).toContain("one output file per period");
   });
 });
 

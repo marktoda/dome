@@ -1,8 +1,14 @@
 // cli/commands/recipe: `dome recipe <kind>` — client setup recipes.
 //
-// v1 ships two recipes:
+// v1 ships three recipes:
 //   - `ios` — the iOS Shortcut that voice-captures into POST /capture (the
-//     WS3-capture deliverable of the v1 plan).
+//     WS3-capture deliverable of the v1 plan), with the iCloud queue
+//     fallback for an unreachable host.
+//   - `capture-queue` — the laptop half of the queue fallback: the shipped
+//     drain script + the launchd interval LaunchAgent that sweeps iCloud
+//     Drive DomeCaptures/ into the vault. Deliberately a recipe, not a
+//     dome.sources subscription (the manual dome-http unit precedent): the
+//     subscription contract is one output file per period, a drain is many.
 //   - `core-seed` — the owner interview prompt that seeds core.md's two
 //     owner-authored sections in one foreground session (WS1 of the v1
 //     plan: core.md activation).
@@ -10,6 +16,9 @@
 // describe change, so they live next to the CLI rather than in docs that
 // can drift.
 
+import { join } from "node:path";
+
+import { resolveShippedSourceHandlersRoot } from "../../extensions/bundle-roots";
 import { EX_USAGE } from "../exit-codes";
 
 export type RecipeOptions = {
@@ -25,12 +34,16 @@ export async function runRecipe(options: RecipeOptions): Promise<number> {
     console.log(iosRecipe(base));
     return 0;
   }
+  if (options.kind === "capture-queue") {
+    console.log(captureQueueRecipe());
+    return 0;
+  }
   if (options.kind === "core-seed") {
     console.log(coreSeedRecipe());
     return 0;
   }
   console.error(
-    `dome recipe: unknown recipe '${options.kind}' (available: ios, core-seed)`,
+    `dome recipe: unknown recipe '${options.kind}' (available: ios, capture-queue, core-seed)`,
   );
   return EX_USAGE;
 }
@@ -92,6 +105,98 @@ The cockpit
   Open ${base}/today?token=<token> on any device in the trust domain for the
   self-refreshing today view (add it to the iPhone home screen via Safari →
   Share → Add to Home Screen).
+`;
+}
+
+function captureQueueRecipe(): string {
+  const shippedScript = join(
+    resolveShippedSourceHandlersRoot(),
+    "drain-captures.sh",
+  );
+  return `dome recipe: capture-queue — drain the iCloud capture queue into the vault
+
+What this is
+  The laptop half of eventually-consistent phone capture: when the iOS
+  Shortcut (\`dome recipe ios\`) cannot reach POST /capture, it leaves the
+  dictation as <timestamp>-<uuid>.md in iCloud Drive DomeCaptures/. This
+  recipe installs the shipped drain script and a launchd LaunchAgent that
+  sweeps the queue into the vault every 15 minutes (and on wake).
+
+  Deliberately a recipe, not a dome.sources subscription: the subscription
+  contract is one output file per period (skip-if-present, HEAD-verified —
+  docs/wiki/specs/sources.md), and a drain is many files per run from a
+  directory outside the vault. Manual unit, like the dome-http precedent.
+
+1. Install the drain script (shipped with the SDK):
+
+     mkdir -p <vault>/.dome/bin
+     cp "${shippedScript}" \\
+        <vault>/.dome/bin/drain-captures.sh
+     chmod +x <vault>/.dome/bin/drain-captures.sh
+
+2. Pick the queue directory — it must match where the Shortcut saves:
+     iCloud Drive root (the default the script assumes):
+       ~/Library/Mobile Documents/com~apple~CloudDocs/DomeCaptures
+     If the Shortcut's "Save File" only writes under iCloud Drive/Shortcuts,
+     create DomeCaptures there and use that path instead:
+       ~/Library/Mobile Documents/iCloud~is~workflow~my~workflows/Documents/DomeCaptures
+   Create the folder once (mkdir -p "<queue-dir>").
+
+3. Save the LaunchAgent at
+   ~/Library/LaunchAgents/com.dome.drain-captures.plist — fill in <vault>,
+   <queue-dir>, and <dome-bin-dir> (= dirname "$(command -v dome)"):
+
+     <?xml version="1.0" encoding="UTF-8"?>
+     <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+     <plist version="1.0">
+     <dict>
+       <key>Label</key><string>com.dome.drain-captures</string>
+       <key>ProgramArguments</key>
+       <array>
+         <string>/bin/sh</string>
+         <string><vault>/.dome/bin/drain-captures.sh</string>
+         <string><queue-dir></string>
+       </array>
+       <key>WorkingDirectory</key><string><vault></string>
+       <key>EnvironmentVariables</key>
+       <dict>
+         <key>PATH</key><string><dome-bin-dir>:/usr/local/bin:/usr/bin:/bin</string>
+       </dict>
+       <key>StartInterval</key><integer>900</integer>
+       <key>RunAtLoad</key><true/>
+       <key>StandardOutPath</key><string>/tmp/dome-drain-captures.log</string>
+       <key>StandardErrorPath</key><string>/tmp/dome-drain-captures.log</string>
+     </dict>
+     </plist>
+
+   (WorkingDirectory = the vault root is how \`dome capture\` finds the
+    vault; StartInterval 900 matches the 15-minute sources cadence, and
+    launchd coalesces missed intervals into one run on wake.)
+
+4. Load it:
+
+     launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.dome.drain-captures.plist
+
+   (After edits: launchctl bootout gui/$(id -u)/com.dome.drain-captures,
+    then bootstrap again. Status: launchctl print gui/$(id -u)/com.dome.drain-captures)
+
+5. Smoke test without waiting for the interval:
+
+     printf 'queue smoke test\\n' > "<queue-dir>/$(date +%Y-%m-%d-%H%M%S)-smoke.md"
+     cd <vault> && sh .dome/bin/drain-captures.sh "<queue-dir>"
+
+   → one new inbox/raw/ capture, committed; the queue file is gone.
+     Re-creating the same filename and re-running answers "duplicate" and
+     clears it again (captureId = the filename stem, so a crash between
+     capture and delete never double-files).
+
+Semantics
+  - Each *.md queue file becomes one \`dome capture\` (file body = capture
+    body, captureId = filename stem); success deletes the queue file.
+  - Failure (vault busy, dome not on PATH) keeps the file; the next
+    interval retries. Empty queue → exit 0, silent.
+  - Not-yet-downloaded iCloud placeholders (.<name>.md.icloud) get a
+    best-effort \`brctl download\` and are picked up on a later interval.
 `;
 }
 
