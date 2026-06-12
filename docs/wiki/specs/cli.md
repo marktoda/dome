@@ -236,7 +236,8 @@ The shipped initialization steps:
    CLAUDE.md when missing, preserving existing file content below it.
 9. Creates an initial scaffold commit (`dome init: initial scaffold`)
    staging `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `core.md`,
-   `preferences/signals.md`, and `.dome/config.yaml`, plus
+   `preferences/signals.md`, `.dome/config.yaml`, and the
+   `inbox/raw/.gitkeep` + `inbox/processed/.gitkeep` keepers, plus
    `.dome/model-provider.ts` when the provider scaffold was requested. Skipped if HEAD already resolves (re-init on a vault
    with commits is a no-op for this step).
 
