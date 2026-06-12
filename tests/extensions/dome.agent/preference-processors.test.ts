@@ -2,7 +2,8 @@
 // (docs/wiki/specs/preferences.md): the deterministic counter
 // (dome.agent.preference-signals), the promotion question emitter
 // (dome.agent.preference-promotion), and the answer handler
-// (dome.agent.preference-promotion-answer — core.md's single auto-writer).
+// (dome.agent.preference-promotion-answer — the gated core.md writer that
+// owns the promoted-preferences block; preferences.md §two-gated-writers).
 
 import { describe, expect, test } from "bun:test";
 
@@ -283,7 +284,7 @@ describe("dome.agent.preference-promotion (questions)", () => {
   });
 });
 
-describe("dome.agent.preference-promotion-answer (the single auto-writer)", () => {
+describe("dome.agent.preference-promotion-answer (the gated promoted-preferences writer)", () => {
   const key = promotionQuestionKey({
     topic: "filing",
     ruleHash: fnv1aHex(CANDIDATE_RULE),

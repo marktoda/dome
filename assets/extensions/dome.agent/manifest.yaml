@@ -387,7 +387,7 @@ doctor:
           target: preferences/signals.md
       why: >-
         owner-approved preference promotions cannot be written to core.md
-        (the single-auto-writer exception in wiki/specs/preferences.md)
+        (the two-gated-writers contract in wiki/specs/preferences.md)
       recovery: >-
         Add the per-processor replacement grant stanza in .dome/config.yaml:
         extensions.dome.agent.processors."dome.agent.preference-promotion-answer".grant

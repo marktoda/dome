@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-11
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -69,9 +69,10 @@ dome http [--vault <path>] [--port <port>] [--host <host>] [--token <token>]
                                 plus the GET /today HTML cockpit.
                                 The daemon still owns compilation.
 dome recipe <kind> [--url <base>]
-                                Print a client setup recipe. v1 ships one kind:
+                                Print a setup recipe. v1 ships two kinds:
                                 ios — voice capture via an iOS Shortcut against
-                                the dome http surface.
+                                the dome http surface; core-seed — the owner
+                                interview that seeds core.md.
 ```
 
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
@@ -88,7 +89,7 @@ routing and capability checks.
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, and `dome today` — command-triggered view-phase processors invoked through the shared view-command boundary. `dome today` is the dedicated cockpit wrapper over the `dome.daily.today` view; the other daily planning processors (`prep`, `agenda-with`) remain available through `dome run` for tests/debugging without dedicated top-level CLI verbs.
 - **Capture ingress:** `dome capture` — the frictionless write-side entry point ([[wedge]] §"Phase 3 — Capture loop"). It writes a timestamped raw source into `inbox/raw/` and lands it as an ordinary human commit on the current branch; adoption and `dome.agent.ingest` handle everything after the commit boundary. See [[wiki/specs/capture]] for the capture-loop spec and the phone/voice ingress recipe.
 - **Lifecycle:** `dome init` — vault construction; `dome install` / `dome restart` / `dome uninstall` — ambient service lifecycle for the local compiler host (a launchd LaunchAgent on macOS, a systemd `--user` unit on Linux, both around `dome serve`, per [[wedge]] §"Phase 1 — Ambient daemon"). Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
-- **Protocol adapters:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"; [[wiki/specs/mcp-surface]]) — and `dome http` — the HTTP read+capture surface and first shipped form of the remote-capture seam ([[wiki/specs/http-surface]]). Both are thin adapters over the public `openVault` wrapper plus the protocol-neutral `src/surface/` collectors. `dome recipe` prints the client-side setup text for those adapters (v1: the iOS Shortcut against `dome http`).
+- **Protocol adapters:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"; [[wiki/specs/mcp-surface]]) — and `dome http` — the HTTP read+capture surface and first shipped form of the remote-capture seam ([[wiki/specs/http-surface]]). Both are thin adapters over the public `openVault` wrapper plus the protocol-neutral `src/surface/` collectors. `dome recipe` prints client-side setup text (`ios`: the iOS Shortcut against `dome http`; `core-seed`: the owner interview that seeds `core.md` — §"`dome recipe`").
 
 Planned dedicated view aliases such as `dome stats` are not Commander bindings
 yet. Until they ship, their processors are invoked through `dome run
@@ -201,8 +202,17 @@ The shipped initialization steps:
    HTML comment explaining the propose-only convention (Dome agents read it
    every run but never auto-write it) and the ~6,000-character size budget
    the `dome.markdown.core-size` lint enforces. First-write-only — re-runs
-   never overwrite the user's core memory.
-7. Writes `<vault>/AGENTS.md` from the shipped orientation template
+   never overwrite the user's core memory. `dome recipe core-seed`
+   (§"`dome recipe`") prints the owner interview that seeds the two
+   owner-authored sections; `## Active projects` hosts the generated block
+   `dome.agent.active-projects` maintains.
+7. Writes `<vault>/preferences/signals.md`, the append-only
+   preference-signal log (per [[wiki/specs/vault-layout]]
+   §"`preferences/signals.md`" and [[wiki/specs/preferences]]), as a heading
+   plus a commented header explaining the signal grammar. Like `core.md` it
+   is owner data: first-write-only with NO refresh path — accumulated signal
+   lines are never clobbered.
+8. Writes `<vault>/AGENTS.md` from the shipped orientation template
    (per [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]]) and
    `<vault>/CLAUDE.md` as a small Claude Code shim importing `AGENTS.md`.
    Claude Code reads `CLAUDE.md`, so the shim is part of the v1 boot
@@ -210,17 +220,24 @@ The shipped initialization steps:
    `serve_status` from `dome status --json` at session start, using
    `dome sync --json` after commits when no foreground `dome serve` host is
    running and to use `query` / `export-context` as read-first context surfaces
-   for nontrivial vault work. First-write-only by default — re-runs preserve
+   for nontrivial vault work; the optional adopted-state views include
+   `dome log` (the activity view). The template also carries the foreground
+   "Preference signals" section — the standing instruction to append a
+   well-formed signal line to `preferences/signals.md` when the owner
+   explicitly expresses a durable preference or corrects agent behavior in
+   conversation, never writing `core.md` or its promoted block
+   ([[wiki/specs/preferences]] §"The signal convention").
+   First-write-only by default — re-runs preserve
    any local edits. `--refresh-instructions` is an explicit maintenance path
    for old orientation files: it replaces the managed AGENTS scaffold with the
    current shipped template while preserving the delimited user-prose block. If
    an older AGENTS file has no delimiters, its previous content is moved into
    the new user-prose block. The same flag prepends the `@AGENTS.md` shim to
    CLAUDE.md when missing, preserving existing file content below it.
-8. Creates an initial scaffold commit (`dome init: initial scaffold`)
-   staging `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `core.md`, and
-   `.dome/config.yaml`, plus `.dome/model-provider.ts` when the provider
-   scaffold was requested. Skipped if HEAD already resolves (re-init on a vault
+9. Creates an initial scaffold commit (`dome init: initial scaffold`)
+   staging `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `core.md`,
+   `preferences/signals.md`, and `.dome/config.yaml`, plus
+   `.dome/model-provider.ts` when the provider scaffold was requested. Skipped if HEAD already resolves (re-init on a vault
    with commits is a no-op for this step).
 
 Deferred to v1.1:
@@ -1241,20 +1258,34 @@ has no git history surface (not a repo) or the activity read fails.
 
 ### `dome recipe <kind> [--url <base>]`
 
-Prints a client setup recipe — plain text on stdout, by design: a recipe
-changes when the HTTP surface changes, so it ships next to the CLI instead of
-in a doc that can drift. It never opens the vault or the runtime.
+Prints a setup recipe — plain text on stdout, by design: recipes change when
+the surfaces they describe change, so they ship next to the CLI instead of in
+docs that can drift. It never opens the vault or the runtime.
 
-`<kind>` selects the recipe. v1 ships exactly one: `ios` — the iOS Shortcut
-that voice-captures into `POST /capture` (the WS3-capture deliverable; see
-[[wiki/specs/capture]] §"Phone and voice ingress (recipe)"). The printed text
-covers the prerequisites (a running `dome http` bound to a Tailscale-class
-interface; the phone on the same network), the Shortcut build steps (Dictate
-Text → Get Contents of URL with the bearer header and a UUID-bound
-`captureId` for idempotent retries → notification), a copyable `curl`
-verification command, and the `GET /today?token=…` cockpit URL.
+`<kind>` selects the recipe. v1 ships two:
 
-- `--url <base>` overrides the base URL baked into the printed recipe
+**`ios`** — the iOS Shortcut that voice-captures into `POST /capture` (the
+WS3-capture deliverable; see [[wiki/specs/capture]] §"Phone and voice ingress
+(recipe)"). The printed text covers the prerequisites (a running `dome http`
+bound to a Tailscale-class interface; the phone on the same network), the
+Shortcut build steps (Dictate Text → Get Contents of URL with the bearer
+header and a UUID-bound `captureId` for idempotent retries → notification), a
+copyable `curl` verification command, and the `GET /today?token=…` cockpit
+URL.
+
+**`core-seed`** — the owner interview that seeds `core.md`, the always-loaded
+core memory page ([[wiki/specs/vault-layout]] §"`core.md`"). The printed text
+explains the page's three sections (`## Who I am` and
+`## Standing preferences` are owner-authored; `## Active projects` is
+generated by `dome.agent.active-projects` and never hand-authored) and
+carries a paste-ready interview prompt for a foreground session (Claude Code
+or any agent harness): four questions asked one at a time, then a draft of
+ONLY the two owner-authored sections for the owner's edit and approval. The
+prompt's standing rules ride along — keep the page under the 6,000-character
+size budget, never write inside marker-delimited generated blocks, leave the
+`## Active projects` heading empty.
+
+- `--url <base>` overrides the base URL baked into the printed `ios` recipe
   (default `http://<your-server>:3663`; trailing slashes are stripped).
 - An unknown `<kind>` is a usage error: stderr names the available recipes
   and the command exits 64.

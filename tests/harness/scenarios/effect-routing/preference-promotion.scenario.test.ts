@@ -5,7 +5,7 @@
 // preferences/signals.md → the deterministic counter emits rebuildable
 // dome.preference.topic facts → 3 same-sign signals within 30 days raise ONE
 // owner-needed promotion question → resolving `promote` lands the rule in
-// core.md's generated block through the single-auto-writer answer handler
+// core.md's promoted-preferences block through the gated answer handler
 // (narrow per-processor grant) → the counter sees the promoted state and
 // stays quiet. Rejecting a second topic appends the owner tombstone and
 // retires it. The dome.agent bundle runs WITHOUT a model provider — the
@@ -18,8 +18,8 @@ import { scenario } from "../../index";
 const CANDIDATE_RULE = "meeting notes go under notes/, not entities/";
 
 // Bundle-level grant mirrors the shipped defaults (core.md read-only) plus
-// the per-processor replacement grant for the single auto-writer — the
-// canonical shape from preferences.md §"The single-auto-writer exception".
+// the per-processor replacement grant for the promotion answer handler —
+// the canonical shape from preferences.md §"Two gated writers, block-scoped".
 const CONFIG = `
 extensions:
   dome.agent:
@@ -161,8 +161,8 @@ scenario(
       ),
     ).toHaveLength(2);
 
-    // Promote `filing`: the answer handler — THE single auto-writer to
-    // core.md — splices the rule into the generated block.
+    // Promote `filing`: the answer handler — the gated writer of core.md's
+    // promoted-preferences block — splices the rule into the generated block.
     const promote = await h.runCli([
       "resolve",
       String(filing.id),

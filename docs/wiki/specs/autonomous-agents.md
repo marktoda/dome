@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-08
-updated: 2026-06-11
+updated: 2026-06-12
 sources:
   - "[[superpowers/specs/2026-06-08-autonomous-agents-ingest-design]]"
   - "[[wedge]]"
@@ -13,7 +13,7 @@ sources:
 
 This spec is normative for Dome's autonomous-agent capability — the framework, the `ctx.modelInvoke.step` seam, and the shipped agents (`dome.agent.ingest`, `dome.agent.consolidate`, `dome.agent.brief`, `dome.agent.sweep` with its answer handler `dome.agent.sweep-answer`). It introduces no new core primitive: an **agent is a processor too** — the same observation that "a warden is a processor" (see [[wiki/specs/task-lifecycle]] §"Wardens") now applies to processors that drive a full tool-use loop.
 
-The `dome.agent` bundle also ships three **deterministic** (non-LLM) processors for preference promotion — `preference-signals`, `preference-promotion`, and `preference-promotion-answer` — normative at [[wiki/specs/preferences]]. They share the bundle because promotion configures agent behavior (the promoted block rides every agent run via core-memory injection), but they are ordinary deterministic processors, not agents.
+The `dome.agent` bundle also ships four **deterministic** (non-LLM) processors: three for preference promotion — `preference-signals`, `preference-promotion`, and `preference-promotion-answer` — normative at [[wiki/specs/preferences]], plus `dome.agent.active-projects`, the core-memory renderer specced at §"`dome.agent.active-projects`" below. They share the bundle because they configure or maintain agent context (the promoted block and the active-projects block ride every agent run via core-memory injection), but they are ordinary deterministic processors, not agents.
 
 ## The agent-as-processor model
 
@@ -157,6 +157,7 @@ The consolidator is the **contractive counterweight** to ingest: a nightly vault
 - **Posture:** auto-merge + commit, with one guardrail — merges are **lossless for source-grounded facts** (fuse, never drop), and a **genuinely ambiguous** merge raises a `QuestionEffect` (`askOwner`) instead of guessing. Confident cases are automatic; only the rare ambiguous one asks.
 - **Navigation, not whole-vault reads:** the agent's "map" is the vault's own `index.md` (the generated catalog — one line per page from `description:` frontmatter) plus `updated:` frontmatter recency searches; it `searchVault`s for suspects and `readPage`s only the finalist cluster. There is no bespoke candidate-finder — judgment is the agent's, the tools are general primitives (`readPage`, `listPages`, `searchVault`, `writePage`, the new `deletePage`, `askOwner`).
 - **Cross-run memory:** a ledger file (default top-level `consolidation-ledger.md`, sibling of `log.md`, outside `wiki/`) records each run's date (the recency cutoff for the next run), merges done, and pairs judged *not* duplicates (so they're never re-litigated). The path is configurable via `extensions.dome.agent.config.consolidation_ledger_path` (a relative vault `.md` path; default `consolidation-ledger.md`). A malformed value (non-string, non-`.md`, absolute, or path-escaping) does not crash the nightly run: the processor falls back to the default path and emits a `dome.agent.consolidate-config-invalid` warning diagnostic. A custom path requires matching `read` + `patch.auto` grant entries in `.dome/config.yaml` — grants are static globs, so the processor cannot widen its own write boundary by config.
+- **Scope targets (`consolidate_targets`):** `extensions.dome.agent.config.consolidate_targets` narrows which path prefixes the run treats as in-scope for hunting, merging, tidying, and superseding — an exact mirror of sweep's `sweep_targets` rule ([[wiki/specs/sweep]] §"Config keys"). Default `["wiki/"]` (the whole wiki). The value must be a non-empty array of relative path prefixes, and every prefix must sit **inside the consolidator's `patch.auto` write grant** — the processor probes each prefix against the grant-aware tools' `CONSOLIDATE_WRITABLE_PATHS` mirror, because a target outside the grant would have `writePage` rejecting every merge under it mid-run. A malformed or grant-escaping value degrades to the default with a `dome.agent.consolidate-config-invalid` warning (the shared config-fallback temperament; the diagnostic code is shared with the ledger-path check). The resolved targets land in the charter as a standing scope rule: everything outside the prefixes is read-only context for the night.
 - **Per-run caps (hard):** `maxSteps: 50`, `maxDailyCostUsd: 10`, and a hard patch cap of **30 changed files per run** enforced in processor code — a run whose accumulated edits exceed the cap is rolled back entirely (questions survive; a `dome.agent.consolidate-overreach` warning diagnostic is emitted). A single cumulative `PatchEffect` per run.
 - **Atomic per run:** a mid-run throw can leave a half-done merge (a page flipped to superseded before its inbound links were rewritten), so the consolidator drops all partial edits on throw and emits only a `dome.agent.consolidate-failed` diagnostic. Budget truncation is not a throw — its partial work is intended and lands with a truncation diagnostic.
 - **No silent no-ops:** a run that ends `final` with zero edits and zero questions emits a `dome.agent.consolidate-no-op` **info** diagnostic carrying the model's final text (300-char excerpt) — a quiet night is legitimate (info never raises attention), but the model's "nothing to do" reasoning is preserved instead of discarded. Same blind-spot fix as ingest's `dome.agent.source-unarchived`.
@@ -181,7 +182,11 @@ The brief composer is the [[wedge]] phase-4 push surface: sleep-time compute aim
 - **Grounding rule (hard, enforced in code):** after the loop, the processor splices **only the model-filled brief blocks** back into the deterministic pre-run content — a block whose body the model left identical to the prepared content is skipped entirely, so the deterministic yesterday fallback is never mistaken for model output and stripped as ungrounded; model writes outside the markers (or to any file other than the daily note) never land (out-of-scope edits are dropped with a `dome.agent.brief-out-of-scope` warning). Inside the spliced blocks, any bullet carrying no `[[wikilink]]` source ref is stripped and re-emitted as a `QuestionEffect` (backtick code spans are stripped before the check — a backticked `` `[[x]]` `` does not ground a bullet). **Anything the model cannot ground becomes a question, not brief text.**
 - **Marker-injection guard (hard, enforced in code):** Dome's HTML comments are exclusively generated block markers, so the splice drops every model-body line matching `<!-- dome.* -->`. Without this, a body could smuggle a second copy of another block's marker pair (the deterministic pass replaces only the first occurrence, so the smuggled copy — e.g. a fabricated `dome.agent.brief:questions` block with fake `dome resolve` hints — would land verbatim) or inject `dome.daily:*` markers and corrupt carry-forward. Calendar files are untrusted input flowing into the model, so this is a live prompt-injection path, not a theoretical one.
 - **Calendar degradation:** when `sources/calendar/<today>.md` is absent, the meetings block is omitted entirely — no empty section, no hallucinated agenda. The calendar file is **untrusted input**: the processor parses it defensively (shape per [[wiki/specs/vault-layout]] §"`sources/` — committed external feeds") and hands the parsed meeting list to the model as data, never as instructions.
-- **Output shape:** ONE `PatchEffect(mode:"auto")` writing the daily note, plus `QuestionEffect`s (from `askOwner` and from ungrounded-bullet strips), plus a truncation diagnostic on budget exhaustion. **Atomic per run:** a mid-run throw drops all edits — including the skeleton, which `create-daily` recreates at 06:00 — and emits only a `dome.agent.brief-failed` diagnostic.
+- **Output shape:** ONE `PatchEffect(mode:"auto")` writing the daily note, plus `QuestionEffect`s (from `askOwner` and from ungrounded-bullet strips), plus a truncation diagnostic on budget exhaustion.
+- **Failure contract (roll-back-atomic, recover deterministically):** a mid-run throw means unknown partial state, so ALL of the model's edits roll back and nothing from the agent loop carries over. Recovery is effects-only and fully deterministic:
+  1. A `dome.agent.brief-failed` **warning diagnostic** records the failure (`run rolled back, no edits applied`).
+  2. A **fallback `PatchEffect`** splices a failure stub into the brief's own `dome.agent.brief:yesterday` block of the pre-run prepared content (the existing daily, or the freshly re-seeded skeleton when today's note was absent — so the day still starts with a complete deterministic daily rather than waiting for `create-daily` at 06:00). The stub names the flattened error (whitespace-collapsed, capped at 120 chars), links yesterday's note, and gives the retry command (`dome run dome.agent.brief`). Because the prepared content is deterministic, a same-day re-failure REPLACES the stub via the marker splice instead of appending a second copy; when the stub content equals the existing daily byte-for-byte, no patch is emitted.
+  3. An **acknowledgeable `QuestionEffect`** — idempotency key `dome.agent.brief-failed:<date>`, options `["retried", "skip-today"]`, `automationPolicy: "agent-safe"`, `recommendedAnswer: "retried"`. There is deliberately **no answer handler**: resolving the question IS the durable acknowledgment — `retried` records that someone re-ran the brief, `skip-today` records that the day was let go; nothing fires on either answer.
 - **Tool surface:** the ingest read tools plus the daily-note write — `readPage`, `listPages`, `searchVault`, `writePage`, `appendToPage`, `askOwner`. No `deletePage`, no `archiveSource`.
 - **Garden projection read:** the brief reads open questions through `ctx.projection`. The processor runtime threads the scoped read-only projection query view into **garden** contexts as well as view contexts (adoption stays snapshot-only for fixed-point determinism); see [[wiki/specs/processors]].
 - **Stale-loops context (deterministic pre-run):** the task turn lists every item whose `dome.attention.discount` fact (read from `ctx.projection.facts`, per [[wiki/specs/task-lifecycle]] §"Attention discounting") carries `discount ≥ 0.4` — rendered as `"<body>" (from <path>) — surfaced <N>x without action` and framed as DATA, not instructions. The charter's standing rule: compress these into a **single stale-loops summary bullet** in the yesterday block or raise **one** `askOwner` question — never re-list them at full prominence. The list itself is processor-derived; the model never invents or extends it.
@@ -228,14 +233,60 @@ start:
   declaration and in **no agent's `patch.auto` declaration** — the
   grant-aware write tools reject `core.md` at tool time and the broker would
   refuse it at apply time. Interactive bundles must keep `core.md` out of
-  `patch.auto` (the canonical grant shape). The **single shipped exception**
-  is the answer-mediated `dome.agent.preference-promotion-answer` handler
-  ([[memory]] decision 4: the question *was* the review), which declares
-  `patch.auto` over exactly `core.md` + `preferences/signals.md` and receives
-  a matching narrow per-processor replacement grant — see
-  [[wiki/specs/preferences]] §"The single-auto-writer exception". The
-  manifest lockstep test pins that no other processor in the bundle declares
-  `core.md` writable.
+  `patch.auto` (the canonical grant shape). The only shipped auto-writers
+  are the **two gated, block-scoped deterministic processors** ([[memory]]
+  decision 4, evolved): the answer-mediated
+  `dome.agent.preference-promotion-answer` handler (the question *was* the
+  review; owns the promoted-preferences block) and the
+  `dome.agent.active-projects` renderer (next section; owns the
+  active-projects block) — each declares a narrow `patch.auto` and receives
+  a matching per-processor replacement grant, and every `core.md` writer
+  must own a distinct generated block. The contract, the pinned writer
+  table, and the cross-bundle fence are normative at
+  [[wiki/specs/preferences]] §"Two gated writers, block-scoped".
+
+## `dome.agent.active-projects` — the core-memory renderer
+
+The second gated `core.md` writer: a **deterministic** garden processor (no
+model) that derives per-page open-loop tallies from the dailies and splices
+the rendered list into `core.md`'s `dome.agent:active-projects` generated
+block, under the `## Active projects` heading the init skeleton scaffolds.
+The point: unresolved work stays visible in the always-loaded core page —
+the 05:30 brief's core-memory injection reads fresh project tallies, not
+just the daily surface.
+
+- **Triggers:** cron `20 5 * * *` — after the 05:15 index render, before the
+  05:30 brief — plus a `document.changed` signal on `wiki/dailies/*.md`
+  (settling or surfacing an open loop is what moves the tallies).
+- **Grant:** `read` over exactly `core.md` + `wiki/dailies/*.md`;
+  `patch.auto` over exactly `core.md` (manifest declaration + the
+  per-processor replacement grant in the shipped vault config — the
+  two-gated-writers shape).
+- **Collection semantics** (reuses `dome.daily`'s source-backed open-loop
+  machinery — the same `open-loop-surface` parser carry-forward writes the
+  daily surface with, a cross-bundle lib import per the established
+  brief → `renderDailySkeleton` precedent):
+  - Each daily's `dome.daily:open-loops` block yields source-backed items
+    (`- [ ] body (from [[page]])`); the loop's **source page is the project
+    candidate**. Dailies themselves are never project pages.
+  - Loops dedupe across dailies by their stable identity and by normalized
+    body (the same dual-key dedupe carry-forward applies). A loop settled
+    (`[x]`/`[-]`) in **any** daily stops counting — today's checked-off copy
+    settles yesterday's surfaced one.
+  - Per page: distinct open-loop count + `lastTouched` (the newest
+    contributing daily's date).
+- **Render:** one `- [[<page>]] — <n> open loop(s), last touched <date>`
+  line per project, sorted by `(openLoops desc, lastTouched desc, page
+  asc)`, **capped at 5**; the empty tally renders a fixed empty-state line,
+  never an absent block.
+- **Posture:** diff-before-emit (byte-identical `core.md` → zero effects);
+  marker anomalies on its own block → info diagnostics and NO patch (the
+  render-index refuse-and-surface posture — a damaged block needs a human);
+  **absent `core.md` → clean no-op** — the page is owner-scaffolded by
+  `dome init` / seeded via `dome recipe core-seed` and never recreated by a
+  cron tick (recreating a deleted owner page nightly would be a patch-fight
+  with the owner). A malformed `core_path` config degrades to the default
+  with the shared `dome.agent.core-config-invalid` warning.
 
 ## Preference signals (charter convention)
 
@@ -261,7 +312,8 @@ consolidate appends land through the normal cumulative PatchEffect. Agents
 - [[wiki/specs/processors]] — the Processor type; phases; `kind: llm`
 - [[wiki/specs/capabilities]] — `model.invoke`, `patch.auto`, `question.ask`, `graph.write`
 - [[wiki/specs/effects]] — `PatchEffect`, `QuestionEffect`, `DiagnosticEffect`
-- [[wiki/specs/preferences]] — preference promotion: signals, counter facts, promotion questions, the single-auto-writer answer handler
+- [[wiki/specs/preferences]] — preference promotion: signals, counter facts, promotion questions; the two-gated-writers contract every `core.md` auto-writer (including `active-projects`) lives under
+- [[wiki/specs/sweep]] — the nightly meaning-integration sweep: queue, settlement, dispositions (including the `escalated` terminal record for poison pairs)
 - [[wiki/specs/task-lifecycle]] — the warden pattern; wardens and agents are both processors
 - [[wiki/specs/daily-surface]] — the daily note as a product surface: section contract, block ownership, choreography, degradation ladder, the `dome.daily.edition` loop
 - [[wiki/specs/vault-layout]] §"`sources/` — committed external feeds" — the calendar source-file shape the brief parses

@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-10
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-06-09-meaning-consolidation-claims-and-sweeper]]"
 ---
@@ -29,7 +29,7 @@ The deterministic sweep queue (pure library `lib/sweep-queue.ts`) decides *what*
 **Settlement skip (idempotency):** A (material, destination) pair is dropped when:
 
 1. The destination's frontmatter `sources:` list contains a wikilink to the material — this is the authoritative settlement check (markdown, not `.dome/state`).
-2. The ledger records a `no-op` or `questioned` disposition for the pair. `integrated` rows do **not** settle: the sources-link in the destination's frontmatter is the authoritative record for integrations — an `integrated` row without the link means the sub-proposal was rejected, and the pair must re-queue. `failed` rows also do **not** settle; the pair re-queues and the failed count increments toward escalation.
+2. The ledger records a `no-op`, `questioned`, or `escalated` disposition for the pair. `integrated` rows do **not** settle: the sources-link in the destination's frontmatter is the authoritative record for integrations — an `integrated` row without the link means the sub-proposal was rejected, and the pair must re-queue. `failed` rows also do **not** settle; the pair re-queues and the failed count increments toward escalation. `escalated` rows settle **terminally** — the pair stops consuming attempts and stops holding the cursor back; see §"Advisory ledger grammar".
 
 **Ranking and cap:** Items rank by `(materialDate desc, mentions desc, destination asc)` for full determinism. The queue is capped at `sweep_max_items` (default 20); over-cap items re-queue the next night. The processor emits an info diagnostic when the cap truncates the queue (no silent drops).
 
@@ -39,11 +39,11 @@ The deterministic sweep queue (pure library `lib/sweep-queue.ts`) decides *what*
 
 Settlement is the wikilink `[[material-path-without-.md]]` appearing in the destination page's frontmatter `sources:` list. This is written atomically in the same patch as the integration text, so it is always in sync. The four accepted link forms are `[[m]]`, `[[m|alias]]`, `[[m.md]]`, and `[[m.md|alias]]` — all matched by substring on each `sources:` list line in both the queue's frontmatter slice check (`isSettledBySources`) and the processor's enforcement function (`containsMaterialLink`).
 
-The advisory ledger's `integrated` rows are **record-only** — the queue does not settle on them. When the sub-proposal carrying the integration patch was rejected by the engine, the ledger row would be present but the sources link would be absent; treating the row as settled would suppress re-queueing forever. Only `no-op` and `questioned` ledger rows settle (they only save re-judging, never mask a failed write).
+The advisory ledger's `integrated` rows are **record-only** — the queue does not settle on them. When the sub-proposal carrying the integration patch was rejected by the engine, the ledger row would be present but the sources link would be absent; treating the row as settled would suppress re-queueing forever. Only `no-op`, `questioned`, and `escalated` ledger rows settle (`no-op`/`questioned` only save re-judging, never mask a failed write; `escalated` is the deliberate terminal record for a poison pair).
 
 ## Advisory ledger grammar
 
-The sweep ledger (`sweep-ledger.md`, config key `sweep_ledger_path`) is committed markdown. It is **advisory** — correctness never depends on it alone. Its purpose: carry the scan cursor, no-op records that save re-judging, and per-run sections the brief digest renders.
+The sweep ledger (`sweep-ledger.md`, config key `sweep_ledger_path`) is committed markdown. It is **advisory** — correctness never depends on it alone. Its purpose: carry the scan cursor, no-op records that save re-judging, escalated records (poison-pair terminal rows — hand-delete to re-arm), and per-run sections the brief digest renders.
 
 ```markdown
 # Sweep ledger
@@ -63,10 +63,13 @@ cursor:: 2026-06-09
 |---|---|
 | `integrated` | Model wrote a section + sources link; destination updated. |
 | `no-op` | Model made no edit (material had nothing meaningful for this destination). |
-| `questioned` | Uncertain; a QuestionEffect was emitted for the owner. |
-| `failed` | A run error occurred, or the shrink guard rejected the proposed edit; pair is not settled, re-queues. After 3 failures the processor escalates to a question instead. |
+| `questioned` | Uncertain, or a size guard refused to start the run; a QuestionEffect was emitted for the owner. Settles the pair (saves re-judging). |
+| `failed` | A run error occurred, or the shrink guard rejected the proposed edit; pair is not settled, re-queues. After 3 failures the processor escalates instead. |
+| `escalated` | The repeated-failure threshold's **terminal record**, written alongside the escalation question: the pair is settled — excluded from the queue, no longer holding the cursor back via its `materialDate` — and stops burning model budget. |
 
-The ledger is written once per run as a final advisory patch (cursor + run section). Its loss costs only re-judging already-settled pairs; settlement-by-sources in destination frontmatter holds.
+`questioned` and `escalated` deliberately mean different things even though both ride an escalation-shaped question: the **oversized-page guards** record `questioned` (the pair never reached the model for size reasons — a judgment-free refusal), while the **repeated-failure threshold** records `escalated` (the pair reached the model ≥ 3 times and kept failing — a poison pair). **Re-eligibility after an escalation is deliberately manual:** the owner hand-deletes the `escalated` row from the ledger; there is no retry-granted flow.
+
+The ledger is written once per run as a final advisory patch (cursor + run section). Its loss costs only re-judging already-settled pairs (and re-arming escalated pairs); settlement-by-sources in destination frontmatter holds.
 
 ## Safe-cursor contract
 
@@ -75,6 +78,7 @@ The processor must use `safeCursor({ today, oldestUnswept, oldestFailed })` when
 - The cursor may not advance past any dropped (over-cap) or failed material.
 - `oldestFailed` is the minimum `materialDate` among tonight's failed items (null if none).
 - The `windowDays` floor is the eventual decay backstop — even a very old failed pair cannot hold the cursor back indefinitely past the window floor.
+- A pair settled by an `escalated` row is no longer failed material: it stops feeding `oldestFailed`, so the cursor advances past it (that is half the point of the terminal record — the other half is queue exclusion).
 
 ## Per-item write vocabulary
 
@@ -102,12 +106,13 @@ The model must **not** delete or rewrite existing narrative prose, and must not 
 The sweep emits questions in two namespaces under the shared `dome.agent.sweep:` prefix:
 
 - `dome.agent.sweep:uncertain:<material>-><destination>` — uncertain-integration questions (options `["integrate", "skip"]`). The question carries `metadata.proposedSection` (capped at 4000 chars) so the answer handler can apply the integration without another model call.
-- `dome.agent.sweep:escalate:<material>-><destination>` — escalations after ≥3 failures (options `["skip"]` only; no `proposedSection`). The escalation carries `automationPolicy: "owner-needed"`.
+- `dome.agent.sweep:escalate:<material>-><destination>` — escalations (options `["skip"]` only; no `proposedSection`), raised by the repeated-failure threshold (≥ 3 failures; an `escalated` ledger row is written alongside) and by the oversized-page guards (a `questioned` row). The escalation carries `automationPolicy: "owner-needed"`.
 
 **Answer-handler semantics (`dome.agent.sweep-answer`):**
 
 - `integrate` answer on an `uncertain` key: the handler reads the destination, appends `metadata.proposedSection` as a dated section, runs `ensureSourcesLink`, and emits one auto patch. The `:: questioned` ledger row already settles the pair; once the patch lands, settlement-by-sources holds too.
-- `skip` answer on either key: no effects. The `questioned` ledger row prevents re-queueing.
+- `skip` answer on an `uncertain` key: no effects. The `questioned` ledger row prevents re-queueing.
+- Any answer on an `escalate` key: **no-op settle** — the handler records nothing and never re-queues the pair; the answer itself closes the question, and the ledger row (an `escalated` row for the failure threshold, a `questioned` row for the size guards) already settles the pair. The owner re-arms an escalated pair only by hand-deleting its row from the ledger.
 - Malformed metadata: warning diagnostic, no effects, never throws.
 
 **Retry idempotency:** Question idempotency keys carry the kind segment: `dome.agent.sweep:uncertain:<material>-><destination>` and `dome.agent.sweep:escalate:<material>-><destination>`. If the answer-handler fires more than once (at-least-once dispatch), the re-fire guard is section-text presence: the handler checks `existingContent.includes(proposedSection.trim())`. When the section is already present, no second append is emitted; `ensureSourcesLink` is still called, and a patch is emitted only when the sources link was somehow missing — exactly recovering the link-only failure mode.
@@ -119,6 +124,7 @@ The brief reads the sweep ledger and renders the most recent `## Run <date>` sec
 - `integrated` rows → `- [[destination]] ← [[material]]`
 - `questioned` rows → `- ⚠ pending your answer: [[destination]] ← [[material]]`
 - `no-op` and `failed` rows are not rendered (the brief is signal, not log).
+- `escalated` rows are not rendered either: the escalation's question already renders in the brief's deterministic open-questions block, and a second bullet would double-surface the same decision.
 
 When the ledger is absent or the current day has no run section, the block is omitted entirely.
 
@@ -140,7 +146,7 @@ All under `extensions.dome.agent.config` in `.dome/config.yaml`:
 | Processor | Phase | Trigger | Kind | Effect |
 |---|---|---|---|---|
 | `dome.agent.sweep` | garden | cron `0 3 * * *` | LLM | Per-queue-item auto patches + QuestionEffects + advisory ledger patch. |
-| `dome.agent.sweep-answer` | garden | answer (prefix `dome.agent.sweep:`) | deterministic | Apply owner-approved integrations or dismiss escalations; no ledger write (the `questioned` row already settles). |
+| `dome.agent.sweep-answer` | garden | answer (prefix `dome.agent.sweep:`) | deterministic | Apply owner-approved integrations or dismiss escalations; no ledger write (the `questioned`/`escalated` row already settles). |
 
 The pair is registered as the `dome.meaning.integration` maintenance loop.
 

@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-09
-updated: 2026-06-09
+updated: 2026-06-12
 sources:
   - "[[memory]]"
   - "[[wiki/specs/autonomous-agents]]"
@@ -13,10 +13,12 @@ sources:
 This spec is normative for Dome's preference-promotion mechanism (memory-quality
 plan [[memory]] M5): how owner corrections become **signals** in markdown, how a
 deterministic dream pass tallies them into **counter facts**, when a candidate
-rule becomes a **promotion question**, and how the answer-mediated handler — the
-single auto-writer to `core.md` — lands a **promoted preference** or a
+rule becomes a **promotion question**, and how the answer-mediated handler —
+one of `core.md`'s two gated writers — lands a **promoted preference** or a
 **rejection tombstone**. No new primitive: two deterministic garden processors
-plus one answer handler, all in the `dome.agent` bundle.
+plus one answer handler, all in the `dome.agent` bundle. This spec also pins
+the **two-gated-writers contract** governing every `core.md` auto-writer
+(§"Two gated writers, block-scoped").
 
 Decision 6 of the [[memory]] ledger is the contract: **promotion is
 counter-based** (3 same-sign signals in 30 days → candidate; Wilson 95% lower
@@ -26,7 +28,11 @@ bound × 90-day freshness as confidence), never one-shot LLM judgment.
 
 `preferences/signals.md` is an **append-only** markdown file of dated, signed
 signal lines. By the [[wiki/specs/vault-layout]] category table it is
-`external` — a documented convention, not a new category. One line per signal:
+`external` — a documented convention, not a new category. `dome init`
+scaffolds the file as a heading plus a commented grammar header
+(first-write-only — like `core.md`, accumulated signal lines are owner data
+and never clobbered on re-init; [[wiki/specs/cli]] §"`dome init`"). One line
+per signal:
 
 ```markdown
 - 2026-06-09 + filing:: meeting notes go under notes/, not entities/ (source: [[wiki/dailies/2026-06-09]])
@@ -77,8 +83,14 @@ marker-injection gotcha).
   dropped as out-of-scope). Owner rejection tombstones can therefore never be
   rewritten or deleted by a model.
 - **Foreground agents** (Claude Code et al.): the vault `AGENTS.md` template
-  documents the same convention — append a signal line when the owner corrects
-  vault-maintenance behavior.
+  carries a dedicated managed "Preference signals" section — append a signal
+  line when the owner **explicitly** expresses a durable preference or
+  corrects agent behavior in conversation; only explicit statements, never
+  preferences inferred from silence. The conversation layer is where most
+  preferences are actually uttered, so the foreground contract is a primary
+  signal source, not an afterthought. The section also restates the
+  promotion boundary: foreground agents never write `core.md` or its
+  promoted block.
 - **The answer handler** appends rejection tombstones (below).
 
 **Out of scope (follow-up):** git-derived signals — revert detection (owner
@@ -231,24 +243,55 @@ topic's state becomes `rejected` permanently — the promotion processor stops
 re-proposing it. (Rebuttal without the owner: ≥ 3 `-` signals in the window
 retire the topic to `rebutted` for as long as the window holds them.)
 
-## The single-auto-writer exception (decision 4)
+## Two gated writers, block-scoped (the two-gated-writers contract)
 
 `core.md` is **propose-only for interactive agents**: it appears in every
-agent's `read` declaration and in **no other** `patch.auto` declaration. The
-promotion answer handler is the one exception — the question *was* the review,
-so its write is owner-mediated by construction. The grant shape:
+agent's `read` declaration and — outside the table below — in **no**
+`patch.auto` declaration. Exactly two gated writers exist (decision 4 of the
+[[memory]] ledger, evolved), both deterministic, each owning **one distinct
+generated block** and touching nothing outside its markers:
 
-- **Manifest** — `dome.agent.preference-promotion-answer` declares `read` +
-  `patch.auto` over exactly `core.md` and `preferences/signals.md`.
+| Writer | Block owned | Grant (`read` / `patch.auto`) |
+|---|---|---|
+| `dome.agent.preference-promotion-answer` | `dome.agent:promoted-preferences` (this spec; plus rejection tombstones appended to `preferences/signals.md`) | `core.md`, `preferences/signals.md` / `core.md`, `preferences/signals.md` |
+| `dome.agent.active-projects` | `dome.agent:active-projects` ([[wiki/specs/autonomous-agents]] §"`dome.agent.active-projects`") | `core.md`, `wiki/dailies/*.md` / `core.md` |
+
+Each writer is gated in its own way: the promotion answer handler writes only
+on an owner answer — the promotion question *was* the review, so the write is
+owner-mediated by construction. The active-projects renderer is a pure
+projection of the dailies' open-loop state — no model judgment, no new
+content, diff-before-emit — so its gate is determinism plus block scope.
+
+**The rule for any future writer:** every `core.md` `patch.auto` holder must
+own a **distinct generated block name**. Block-disjoint writers cannot fight
+over a region; owner prose outside the markers is untouchable by all of them.
+A third writer means a third block — and a deliberate edit to every pin
+below.
+
+The grant shape:
+
+- **Manifest** — each writer declares `read` + `patch.auto` over exactly the
+  paths in the table; nothing wider.
 - **Vault config** — the bundle-level `dome.agent` grant keeps `core.md` out
-  of `patch.auto` (the canonical propose-only shape); the handler gets a
+  of `patch.auto` (the canonical propose-only shape); each writer gets a
   **per-processor replacement grant** under
-  `extensions.dome.agent.processors.dome.agent.preference-promotion-answer.grant`
-  with the same narrow pair. The broker resolves grants per processor
-  (`grantsForProcessor`), so every other processor's `core.md` patch is still
-  downgraded/denied.
-- The manifest lockstep test pins the exception: `core.md` in the `patch.auto`
-  declaration of exactly this one processor, bundle-wide.
+  `extensions.dome.agent.processors.<id>.grant` with the same narrow paths.
+  The broker resolves grants per processor (`grantsForProcessor`), so every
+  other processor's `core.md` patch is still downgraded/denied.
+- **The fence pins the writer table exactly.** The
+  NO_ACCRETING_REGISTRIES structural fence
+  (`tests/invariants/no-accreting-registries.test.ts`) carries the two-entry
+  writer table as `CORE_MD_WRITER_GRANTS` and asserts (a) each writer's
+  manifest grant and shipped replacement grant equal the table byte-for-byte,
+  (b) both writers actually appear in the shipped config (a vanished entry
+  cannot silently stop being checked), and (c) **across every first-party
+  manifest — not just `dome.agent`'s** — no processor outside the table names
+  `core.md` as a targeted `patch.auto` path, so a writer smuggled in through
+  a different bundle's manifest fails the same fence. Generic hygiene globs
+  (`**/*.md`) are exempt by the targeted-vs-generic control — that is the
+  recorded `dome.markdown` known gap in §"Follow-ups" below. The bundle's own
+  manifest lockstep test additionally pins that `core.md` appears in exactly
+  these two `patch.auto` declarations bundle-wide.
 
 ## Lifecycle summary
 
@@ -260,7 +303,8 @@ owner corrects agent behavior
   → dome.agent.preference-promotion: QuestionEffect (owner-needed,
     confidence = Wilson × freshness)
   → owner answers
-      promote → handler splices core.md's promoted block (sole auto-writer)
+      promote → handler splices core.md's promoted block (gated writer,
+                block-scoped — §"Two gated writers, block-scoped")
       reject  → handler appends a tombstone; topic retired
   → counter sees promoted/rejected state and stays quiet
 ```
@@ -297,7 +341,8 @@ Banked as future pressure, in dependency order:
 
 - [[memory]] — the plan of record; decisions 4 and 6
 - [[wiki/specs/autonomous-agents]] §"Core-memory injection (`core.md`)" — the
-  propose-only grant shape this spec's handler excepts
+  propose-only grant shape the two gated writers except, and
+  §"`dome.agent.active-projects`" — the other gated writer
 - [[wiki/specs/vault-layout]] §"`core.md`" and §"`preferences/signals.md`" —
   file conventions
 - [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]] — why the counter is

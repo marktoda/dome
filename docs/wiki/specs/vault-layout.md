@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-11
+updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -177,13 +177,31 @@ File shape — plain markdown, no required frontmatter:
 ## Standing preferences
 ```
 
-One **generated block** is machine-managed: the marker-delimited
-promoted-preferences region (`<!-- dome.agent:promoted-preferences:start -->`
-/ `<!-- dome.agent:promoted-preferences:end -->`) maintained by the
-preference-promotion answer handler per [[wiki/specs/preferences]] — one
-sorted line per promoted rule (`- <topic>:: <rule> (confidence 0.NN)`). The
-handler creates the block after the `## Standing preferences` heading when
-absent. Everything outside the markers is human prose.
+`## Who I am` and `## Standing preferences` are owner-authored; `dome recipe
+core-seed` prints the owner-interview prompt that drafts both in one
+foreground session ([[wiki/specs/cli]] §"`dome recipe`"). `## Active
+projects` is **generated** — its content is the machine-managed block below;
+the owner does not hand-author it.
+
+Two **generated blocks** are machine-managed, each by its own gated writer
+(the two-gated-writers contract, [[wiki/specs/preferences]] §"Two gated
+writers, block-scoped"):
+
+- The marker-delimited promoted-preferences region
+  (`<!-- dome.agent:promoted-preferences:start -->` /
+  `<!-- dome.agent:promoted-preferences:end -->`) maintained by the
+  preference-promotion answer handler per [[wiki/specs/preferences]] — one
+  sorted line per promoted rule (`- <topic>:: <rule> (confidence 0.NN)`).
+  The handler creates the block after the `## Standing preferences` heading
+  when absent.
+- The `dome.agent:active-projects` region maintained by the deterministic
+  `dome.agent.active-projects` renderer per [[wiki/specs/autonomous-agents]]
+  §"`dome.agent.active-projects`" — one line per project page with current
+  open loops, spliced under the `## Active projects` heading the init
+  skeleton ships. The renderer refreshes an existing `core.md` only; it
+  never recreates a deleted page.
+
+Everything outside the markers is human prose.
 
 **Size budget.** Core memory must stay small enough to load everywhere — it
 is prepended to every agent run, so it is a context line-item, not a junk
@@ -202,11 +220,13 @@ it explicitly (a vault that narrows the markdown read scope, e.g. to
 `core.md` but never auto-write it: include `core.md` in the bundle's `read`
 grant and **exclude it from every `patch.auto` grant**. Agents that want to
 change core memory propose — a review patch or a `QuestionEffect` — and the
-owner edits the page or accepts the proposal. The single auto-writer is the
-shipped `dome.agent.preference-promotion-answer` handler (the question *was*
-the review), which receives a narrow per-processor replacement grant — see
-[[wiki/specs/preferences]] §"The single-auto-writer exception". This is
-decision 4 of the [[memory]] plan ledger.
+owner edits the page or accepts the proposal. The only auto-writers are the
+two gated, block-scoped processors above — `preference-promotion-answer`
+(the question *was* the review) and the deterministic `active-projects`
+renderer — each via a narrow per-processor replacement grant, each owning a
+distinct generated block; see [[wiki/specs/preferences]] §"Two gated
+writers, block-scoped". This is decision 4 of the [[memory]] plan ledger,
+evolved.
 
 **Known gap: `dome.markdown`'s default `patch.auto: ["**/*.md"]` still
 covers `core.md`** — deliberately, for now. Excluding it cannot produce the
@@ -228,14 +248,18 @@ writers, the exclusion waits for the garden propose review queue — tracked
 as a follow-up in [[wiki/specs/preferences]] §"Follow-ups".
 
 `dome init` scaffolds a commented `core.md` skeleton (first-write-only, never
-overwritten on re-run) — see [[wiki/specs/cli]] §"dome init".
+overwritten on re-run) — see [[wiki/specs/cli]] §"dome init". `dome recipe
+core-seed` is the seeding path for the owner-authored sections.
 
 ## `preferences/signals.md` — preference signals (convention)
 
 `preferences/signals.md` is the **append-only preference-signal page** for
 the promotion mechanism specced at [[wiki/specs/preferences]]. By the
 category table above, `preferences/` is `external` — a documented convention,
-not a new category. One dated, signed line per signal:
+not a new category. `dome init` scaffolds it as a heading plus a commented
+grammar header (first-write-only — like `core.md` it is owner data; re-init
+never clobbers accumulated signal lines, and there is no refresh path). One
+dated, signed line per signal:
 
 ```markdown
 - 2026-06-09 + filing:: meeting notes go under notes/, not entities/ (source: [[wiki/dailies/2026-06-09]])
@@ -474,7 +498,7 @@ The capability broker enforces ownership. Default rules:
 | `index.md`, `index-*.md` | `dome.markdown.render-index` (via `patch.auto`) — generated renders; agent grants exclude them |
 | `log.md` | no agent or model-class writer; nothing appends entries — frozen history per [[wiki/invariants/NO_ACCRETING_REGISTRIES]] (deterministic source-preserving hygiene passes like wikilink repair retain covering grants by design); activity is git via `dome log` |
 | `raw/**` | nobody — immutable per [[wiki/invariants/RAW_IS_IMMUTABLE]] |
-| `core.md` | propose-only — agents read it; `dome.agent.preference-promotion-answer` is the sole auto-writer via a narrow per-processor grant ([[wiki/specs/preferences]]) |
+| `core.md` | propose-only — agents read it; the only auto-writers are the two gated block-scoped processors (`dome.agent.preference-promotion-answer` → promoted-preferences block; `dome.agent.active-projects` → active-projects block), each via a narrow per-processor grant ([[wiki/specs/preferences]] §"Two gated writers, block-scoped") |
 | `preferences/signals.md` | shared append surface — the three `dome.agent` charters, the promotion answer handler, foreground agents, and the owner all append signal lines (§"`preferences/signals.md`") |
 | `wiki/**/*.md` | open; `dome.daily.ambiguous-followup-answer` also has `patch.auto` for accepted follow-ups |
 | `wiki/**/*.md` | `dome.agent.ingest` (via `patch.auto`, within grant) |
