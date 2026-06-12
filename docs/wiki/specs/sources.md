@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-10
-updated: 2026-06-10
+updated: 2026-06-12
 sources:
   - "[[daily]]"
   - "[[wiki/specs/daily-surface]]"
@@ -76,6 +76,8 @@ next fetch tick                         sees the file in the snapshot → emits 
 
 Failure at the handler follows ordinary outbox retry semantics (bounded exponential backoff, `maxAttempts` 3 default); terminal failure is visible in `dome check` / `dome inspect outbox` and recoverable through the `dome.health` outbox-recovery questions, exactly like every other external action. Nothing about the outbox state machine is special-cased.
 
+One failure class is caught **before any fetch ever runs**: `dome doctor` raises a `sources.fetch-script-missing` **warning** when an enabled subscription's command references a script file that is missing or not a regular file — the stanza-enabled-but-script-never-scaffolded gap, which would otherwise fail every scheduled fetch and only surface as decoded outbox rows the next morning. The probe is static by design (doctor never executes a fetch command — it would hit Slack or the calendar for real): the script reference is derived from the command shape alone — `command[0]` when it carries a path separator, else `command[1]` for the standard `["sh", ".dome/bin/fetch-<kind>.sh"]` interpreter shape, skipping flag arguments. Commands with no checkable reference (bare PATH lookups, `sh -c` inline scripts) are silently unprobed — a false positive on a working command would be worse than silence, and their failures still surface through the outbox findings. The finding's recovery text names `dome init --with-source <kind>` (see [[wiki/specs/cli]] §"`dome init`").
+
 ## `dome.sources.fetch` — the scheduled processor
 
 Garden phase, `schedule` trigger `*/15 * * * *`, deterministic execution class, no model. Each tick:
@@ -124,14 +126,16 @@ The refusal is loud by design (a failed row, not a silent skip): a row that stop
 
 ## The shipped calendar template
 
-The SDK ships `assets/source-handlers/claude-calendar.sh` — a fetch-command template, not SDK code (the model-provider-template precedent: shipped executable vault-side data, never imported by `src/`). Rollout copies it into the vault (conventionally `.dome/bin/fetch-calendar.sh`), adjusts the fetch line (headless `claude -p`, `gcalcli`, EventKit — whatever the vault already uses), and names it in the subscription's `command`. The template enforces the command contract: write `sources/calendar/<date>.md` in the [[wiki/specs/vault-layout]] calendar-day shape, commit it with a pathspec-scoped commit, exit non-zero on any failure (so the outbox sees it) — and when the output file already exists, skip the fetch entirely and just commit it (the commit-only retry for a prior attempt whose commit failed).
+The SDK ships `assets/source-handlers/claude-calendar.sh` — a fetch-command template, not SDK code (the model-provider-template precedent: shipped executable vault-side data, never imported by `src/`). `dome init --with-source calendar` performs the copy (to `.dome/bin/fetch-calendar.sh`, executable, first-write-only) and ensures the disabled subscription stanza ([[wiki/specs/cli]] §"`dome init`"); the owner adjusts the fetch line (headless `claude -p`, `gcalcli`, EventKit — whatever the vault already uses) and flips `enabled: true`. The template enforces the command contract: write `sources/calendar/<date>.md` in the [[wiki/specs/vault-layout]] calendar-day shape, commit it with a pathspec-scoped commit, exit non-zero on any failure (so the outbox sees it) — and when the output file already exists, skip the fetch entirely and just commit it (the commit-only retry for a prior attempt whose commit failed).
 
 ## The Slack stance
 
-Slack (and Granola, and any conversational feed) is **supported but default-off**: a `slack` subscription is just another map entry (`output_path: "sources/slack/{date}.md"`, a vault-assembled fetch command), and the default config ships *no* Slack entry at all. Two reasons, recorded:
+Slack (and Granola, and any conversational feed) is **supported but default-off**: a `slack` subscription is just another map entry (`output_path: "sources/slack/{date}.md"`, schedule `"15 5 * * *"` — after the calendar, before the brief), and the default config ships *no* Slack entry at all. Two reasons, recorded:
 
 1. **Interactive fetching stays in foreground rituals.** "What did I miss in #team-x" is a conversation with context and follow-ups — that belongs to a foreground agent session (the `/morning`-style rituals), not a cron. Subscriptions are for feeds whose value is *being there before you ask* (the agenda at 05:10).
-2. **Volume and sensitivity.** A daily Slack digest committed to the vault is a bigger consent decision than a calendar agenda; it must be a deliberate per-vault opt-in with a vault-authored command, never a shipped default.
+2. **Volume and sensitivity.** A daily Slack digest committed to the vault is a bigger consent decision than a calendar agenda; it must be a deliberate per-vault opt-in with a **vault-adopted** fetch command — a shipped template (`assets/source-handlers/claude-slack.sh`) the owner reviews and enables — never a shipped-on default.
+
+What ships is the template plus the scaffolding, never the consent: `dome init --with-source slack` copies the template to `.dome/bin/fetch-slack.sh` and ensures the subscription stanza with `enabled: false` ([[wiki/specs/cli]] §"`dome init`" — scaffolding never flips an existing `enabled`). The template's fetch is headless `claude -p` with the owner's Slack MCP server — it reads Slack **as the owner** — prompting for an overnight digest (mentions, DMs, high-traffic channels since the previous local evening) in the slack-day shape normative at [[wiki/specs/vault-layout]] §"`sources/slack/YYYY-MM-DD.md`". The **consent surface is the script plus the flip**: reading the prompt (which is the entire fetch) and setting `enabled: true` is what authorizes the overnight Slack read; revocation is the same one-line flip as any subscription. The template validates before committing — first line `---`, frontmatter `date: <d>`, heading `# Slack <d>` — so a model refusal, an error page, or an empty fetch exits non-zero into the ordinary outbox retry instead of landing in the vault. Downstream, `dome.agent.brief` parses the committed digest defensively and injects it as data, never instructions ([[wiki/specs/autonomous-agents]] §"`dome.agent.brief`").
 
 ## What this kills, vault-side
 
@@ -147,8 +151,8 @@ A vault adopting subscriptions deletes its calendar launchd timer (the plist + t
 
 ## Related
 
-- [[wiki/specs/vault-layout]] §"`sources/`" — the committed-feed category and the calendar-day file shape
-- [[wiki/specs/daily-surface]] — the 05:10 calendar row in the 24-hour choreography; the meetings-block degradation
+- [[wiki/specs/vault-layout]] §"`sources/`" — the committed-feed category and the calendar-day / slack-day file shapes
+- [[wiki/specs/daily-surface]] — the 05:10 calendar and opt-in 05:15 slack rows in the 24-hour choreography; the meetings-block degradation
 - [[wiki/specs/effects]] §"ExternalActionEffect" — the effect shape and outbox routing
 - [[wiki/specs/capabilities]] §"external" — the grant tier; bundle handler binding
 - [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]] — insert-before-call, idempotency, recovery

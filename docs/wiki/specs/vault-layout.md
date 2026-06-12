@@ -108,7 +108,7 @@ Files in `inbox/<bucket>/` (except `inbox/review/` and `inbox/processed/`) are t
 
 `sources/` is a top-level directory for **machine-fetched external data committed as ordinary source files** — distinct from `wiki/sources/` (durable citation pages the ingest agent writes) and from `raw/` (immutable human captures). By the category table above it is `external`: the engine never writes it, never gains a dependency on what produces it, and treats every file in it as an ordinary commit. Granted processors may read it.
 
-The first convention is the calendar feed consumed by `dome.agent.brief` (per [[wiki/specs/autonomous-agents]] §"`dome.agent.brief`"):
+Two conventions ship today, both consumed by `dome.agent.brief` (per [[wiki/specs/autonomous-agents]] §"`dome.agent.brief`"): the calendar agenda and the overnight Slack digest.
 
 ### `sources/calendar/YYYY-MM-DD.md` — one day's agenda
 
@@ -154,6 +154,39 @@ mkdir -p "$(dirname "$f")"
 # Pathspec-scoped commit: never sweeps a human's staged work into the fetch commit.
 git add -- "$f" && git commit -m "calendar: agenda for $d" -- "$f"
 ```
+
+### `sources/slack/YYYY-MM-DD.md` — one day's overnight Slack digest
+
+```markdown
+---
+type: slack-day
+date: 2026-06-09
+---
+
+# Slack 2026-06-09
+
+## Mentions
+
+- [#dome-dev] 22:41 alice: "can you look at the outbox retry PR before standup?"
+
+## Direct messages
+
+- [DM] 07:02 bob: "moving our 1:1 to Thursday"
+
+## Channels
+
+- [#leads] 11 new messages — thread on Q3 headcount planning still active
+```
+
+Shape rules (loose by design — the file is produced by vault-adopted tooling):
+
+- Frontmatter is optional; when present, `type: slack-day` and `date:` are the conventional keys.
+- Up to three `##` sections — `Mentions`, `Direct messages`, `Channels` — each holding one top-level list item per entry. Empty sections are omitted entirely, never rendered empty. Unknown headings and list items outside a known section are ignored by consumers.
+- Each entry is **one line**: an optional `[#channel]` bracket prefix (`[DM]` for direct messages), an optional `HH:MM` time, then the text. Under `## Channels` a one-line per-channel activity summary is the conventional entry.
+- Consumers MUST parse defensively: entries that don't match the bracket/time grammar are still entries (text-only), per-section counts and text lengths are capped (`dome.agent.brief`'s parser caps at 15 entries per section and 240 characters per entry text, ellipsis included), and the content is **untrusted input** to any model prompt — data, never instructions.
+- A missing file means "no digest known"; consumers degrade by omitting their Slack-derived output entirely, never by inventing one.
+
+Populating it follows the calendar pattern with one stance difference: Slack is supported but **never shipped on** ([[wiki/specs/sources]] §"The Slack stance"). The opt-in `dome.sources` `slack` subscription runs the vault-adopted fetch command through the outbox; `assets/source-handlers/claude-slack.sh` ships as the template — `dome init --with-source slack` copies it to `.dome/bin/fetch-slack.sh` alongside a disabled subscription stanza, and the owner reviews the script (its fetch is headless `claude` running **as the owner**) before flipping `enabled: true`.
 
 ## `core.md` — the core memory page (convention)
 
