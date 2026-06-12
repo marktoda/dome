@@ -293,9 +293,13 @@ always-on-host question; nothing above is obsolete, just parked.
 
 Laptop-first setup (replaces §1–5 for now):
 
-1. Overnight gardens: schedule a daily wake so the 05:05–06:00 choreography
-   runs lid-closed (plugged in): `sudo pmset repeat wakeorpoweron MTWRFSU 05:05:00`
-   (verify: `pmset -g sched`).
+1. Overnight gardens — OWNER CHOICE (2026-06-12): wake-tick catch-up. The
+   missed 02:00–06:00 crons fire as an ordered burst when the laptop wakes;
+   the brief composes while you pour coffee and re-splices if the calendar
+   fetch lands late (chunk 7 hardening). The optional alternative — a firmware
+   wake so mornings compose before you sit down — remains one line away:
+   `sudo pmset repeat wakeorpoweron MTWRFSU 05:05:00` (verify: pmset -g sched;
+   undo: sudo pmset repeat cancel).
 2. Wake-tick choreography + eventually-consistent capture: shipped by the
    laptop-first hardening chunk (plan
    [[superpowers/plans/2026-06-12-v1-chunk7-laptop-first]]). The scheduler's
