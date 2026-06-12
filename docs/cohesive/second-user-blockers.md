@@ -1,0 +1,53 @@
+---
+type: ledger
+tags: [v1, ws6, second-user, onboarding]
+created: 2026-06-12
+status: accumulating
+sources:
+  - "[[cohesive/brainstorms/2026-06-11-dome-v1-plan]]"
+  - "[[cohesive/runbooks/2026-06-server-migration]]"
+  - "[[superpowers/plans/2026-06-11-v1-chunk1-server-capture-cockpit]]"
+  - "[[superpowers/plans/2026-06-11-v1-chunk3a-index-projection-git-log]]"
+  - "[[superpowers/plans/2026-06-12-v1-chunk3b-core-activation-resilience]]"
+  - "[[superpowers/plans/2026-06-12-v1-chunk4-sources-slack]]"
+---
+
+# Second-user blockers ledger
+
+The WS6 input artifact promised by the v1 plan ([[cohesive/brainstorms/2026-06-11-dome-v1-plan]] §Scope decision, §WS6): every "a second user would hit this" hazard recorded one line at a time as WS1–5 land. Burning this list down is the v1 exit gate — one person who is not the owner installs Dome (`dome init` → daemon → capture → first morning brief) using only the docs.
+
+**Convention:** one line per hazard, with a source pointer. Append as new hazards surface; strike through (with a pointer to the fix) when burned down. Don't editorialize entries after the fact — this is an accumulating ledger, not a synthesis.
+
+## Install & distribution
+
+- No versioned release artifact: install = clone the repo + `bun install`; updates = `git pull` + manual `dome restart`, and merged code reaches a running daemon only after that restart — an unplanned restart mid-migration can load new processors against an unmigrated vault ([[cohesive/runbooks/2026-06-server-migration]] §Chunk 3a WARNING).
+- The HTTP surface has no `dome install` story: a hand-written `dome-http.service` systemd unit with a hand-plumbed `DOME_HTTP_TOKEN` (chunk1 plan Task 10 "Server migration runbook"; [[cohesive/runbooks/2026-06-server-migration]] §3).
+- `loginctl enable-linger $USER` is a manual Linux prerequisite for user services surviving logout — deliberately not automated by `dome install` (chunk1 plan Tasks 2/10; runbook §1).
+- `dome recipe ios --url` needs a hand-supplied server address; nothing discovers or validates it (chunk1 plan Task 8).
+- A vault inheriting global GPG commit signing breaks non-interactive engine/fetch commits — first seen in the 2026-06-02 LLM smoke (vault inherited signing and failed before Dome ran; [[cohesive/reviews/2026-06-02-v1-work-vault-dogfood-ledger]] §operational result); the sources spec treats gpg failure only as a retryable "did not commit" ([[wiki/specs/sources]] §command owns the write). A second user with `commit.gpgsign=true` hits this on day one.
+
+## Configuration footguns
+
+- `dome init --with-source` / `--with-model-provider` rewrites `.dome/config.yaml` through YAML parse/stringify, which **deletes every hand-written comment** in the file (runbook §Chunk 4 step 2 LOUD WARNING).
+- Per-processor default grants do NOT propagate to a vault whose config carries a user-owned `processors:`/grant block — every new shipped processor arrives capability-denied or silently inert until the grant is hand-added (runbook §Chunk 3b step 1, §Chunk 4 step 3; chunk3b plan Task 4).
+- Grant-scoped snapshot misses are silent: manifest capability ∩ vault grant returning null produces no diagnostic, so a starving processor just never acts — this is how the owner's calendar weave was silently ungranted for weeks (runbook §Chunk 4 pre-check: "fetch-works ≠ weave-works").
+- `index_categories` config REPLACES the defaults rather than merging, so adding one category requires re-listing all of them; defaults hardcode the `wiki/entities|concepts|syntheses` layout and a differently-shaped vault drops pages from the rendered catalog (chunk3a plan Task 4; runbook §Chunk 3a step 4).
+
+## Daemon-host environment dependencies
+
+- The claude-calendar/claude-slack fetch templates require a `claude` CLI install, auth, and the relevant MCP connection **on the daemon host, as the service user** — none of which travels with a vault clone; after a server migration this is a whole separate setup step (chunk4 plan Task 5; runbook §Chunk 4 step 5).
+- The consent surface for source fetches is a shell script the user must read and edit (`.dome/bin/fetch-*.sh` runs headless Claude *as them*) — workable for the owner, embarrassing as a second user's first-week task (chunk4 plan Task 1; [[wiki/specs/sources]] slack stance).
+
+## Security posture to document
+
+- The cockpit token rides in a query parameter (`/today?token=…`), visible in URLs and server logs — acceptable only inside a loopback/Tailscale trust domain, and a second user must be told that boundary explicitly before exposing the port (chunk1 plan Task 7 design note).
+
+## Manual operator surgery
+
+- The index/log migration for pre-existing vaults is an operator-run script tuned to the owner's vault (expected counts, two named divergent pages picked by hand) plus a hand-`git mv` log freeze — a second user adopting an existing vault has no generic path (chunk3a plan Task 12; runbook §Chunk 3a steps 2–7).
+- Re-eligibility of an escalated (poison) sweep pair = the owner hand-deletes the `escalated` ledger row; documented-by-spec manual file surgery (chunk3b plan Task 6 deliberate cut).
+- core.md personalization requires the owner to run the `dome recipe core-seed` interview and paste it into a foreground session — fine, but it must appear in the install docs or the brief stays generic (chunk3b plan Task 2).
+
+## Resolved
+
+- ~~`dome install` was launchd-only~~ — Linux systemd --user backend shipped behind the same verbs (`src/cli/commands/install-systemd.ts`; chunk1).
