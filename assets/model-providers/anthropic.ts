@@ -42,6 +42,20 @@
 // - ANTHROPIC_INPUT_COST_PER_MTOK / ANTHROPIC_OUTPUT_COST_PER_MTOK
 //   Override the built-in per-MTok price table. Reporting costUsd is what
 //   makes Dome's maxDailyCostUsd capability caps effective.
+// - DOME_DISABLE_PROMPT_CACHE=1  Escape hatch: drop the cache_control
+//   breakpoints below and send the legacy uncached wire shape.
+//
+// Prompt caching (step envelope only): each `step` request marks the stable
+// prefix — the system charter block and the LAST tools[] entry — with
+// `cache_control: {type: "ephemeral"}` (5-minute TTL). The agent loop resends
+// the full history every step with a constant charter and tool set, so steps
+// 2..N read the prefix from cache at ~0.1x the input rate instead of
+// reprocessing it. One-shot `request` envelopes have no reusable prefix and
+// stay uncached. Mechanics verified 2026-06: cache_control is GA on the
+// Messages API under `anthropic-version: 2023-06-01` — no beta header and no
+// version bump needed (response parsing unaffected). Prefixes below the
+// model's minimum cacheable length silently don't cache (usage just reports
+// zero cache tokens); cost math handles both shapes.
 //
 // Abort semantics: Dome kills this process when the calling processor's
 // signal aborts; no in-script handling is needed.
@@ -99,6 +113,11 @@ type AnthropicResponse = {
   readonly usage?: {
     readonly input_tokens?: number;
     readonly output_tokens?: number;
+    // Present when the request carried cache_control breakpoints. Cached
+    // tokens are EXCLUDED from input_tokens: total prompt size is
+    // input + cache_creation + cache_read.
+    readonly cache_creation_input_tokens?: number;
+    readonly cache_read_input_tokens?: number;
   };
 };
 
@@ -107,6 +126,13 @@ const DEFAULT_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6";
 const MAX_TOKENS = positiveIntegerEnv("ANTHROPIC_MAX_TOKENS", 8192);
 const BASE_URL = (process.env.ANTHROPIC_BASE_URL ?? "https://api.anthropic.com")
   .replace(/\/+$/, "");
+const PROMPT_CACHE_ENABLED = process.env.DOME_DISABLE_PROMPT_CACHE !== "1";
+
+// Anthropic prompt-cache pricing, relative to the model's input rate:
+// writing a prefix to the cache bills at 1.25x (5-minute ephemeral TTL),
+// reading it back at 0.1x. Output tokens are unaffected.
+const CACHE_WRITE_INPUT_MULTIPLIER = 1.25;
+const CACHE_READ_INPUT_MULTIPLIER = 0.1;
 
 // Built-in per-MTok USD prices for known model families (longest prefix
 // wins). Every prefix is explicit — no family catch-all, because pricing
@@ -216,19 +242,31 @@ async function runStep(request: StepRequest): Promise<{
     .map((m) => m.content)
     .join("\n\n");
 
+  // Cache breakpoints on the step envelope's stable prefix: tools render
+  // before system in the cache key, so a breakpoint on the LAST tool plus one
+  // on the system block covers the whole constant prefix; the per-step
+  // message history stays after the last breakpoint. See the header comment
+  // for mechanics + the DOME_DISABLE_PROMPT_CACHE escape hatch.
   const body: Record<string, unknown> = {
     model,
     max_tokens: MAX_TOKENS,
     messages: request.messages
       .filter((m) => m.role !== "system")
       .map(toAnthropicMessage),
-    tools: request.tools.map((t) => ({
+    tools: request.tools.map((t, index) => ({
       name: t.name,
       description: t.description,
       input_schema: t.inputSchema,
+      ...(PROMPT_CACHE_ENABLED && index === request.tools.length - 1
+        ? { cache_control: { type: "ephemeral" } }
+        : {}),
     })),
   };
-  if (system.length > 0) body.system = system;
+  if (system.length > 0) {
+    body.system = PROMPT_CACHE_ENABLED
+      ? [{ type: "text", text: system, cache_control: { type: "ephemeral" } }]
+      : system;
+  }
 
   const parsed = await callMessages(body);
   const blocks = parsed.content ?? [];
@@ -394,8 +432,17 @@ function costFromUsage(
   }
   const prices = pricesFor(model);
   if (prices === undefined) return undefined;
+  // Cache fields are absent on uncached responses (and on older API shapes)
+  // — treat absent as zero so the legacy math is unchanged. input_tokens
+  // excludes cached tokens, so the three input tiers are additive.
+  const cacheCreation = usage.cache_creation_input_tokens ?? 0;
+  const cacheRead = usage.cache_read_input_tokens ?? 0;
   return (
     (usage.input_tokens / 1_000_000) * prices.inputPerMtok +
+    (cacheCreation / 1_000_000) *
+      prices.inputPerMtok *
+      CACHE_WRITE_INPUT_MULTIPLIER +
+    (cacheRead / 1_000_000) * prices.inputPerMtok * CACHE_READ_INPUT_MULTIPLIER +
     (usage.output_tokens / 1_000_000) * prices.outputPerMtok
   );
 }
