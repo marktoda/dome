@@ -110,8 +110,9 @@ processors:
     capabilities:
       - kind: read
         paths: ["**/*.md"]
+      # index-*.md (root) is the LEGACY shard layout — retained so retirement can delete old shards; drop in a later release.
       - kind: patch.auto
-        paths: ["index.md", "index-*.md"]
+        paths: ["index.md", "index-*.md", "meta/index-*.md"]
     module: processors/render-index.ts
 
   - id: dome.markdown.normalize-frontmatter
@@ -273,13 +274,13 @@ doctor:
         - kind: patch.auto
           target: index.md
         - kind: patch.auto
-          target: index-*.md
+          target: meta/index-*.md
       why: >-
         the generated index projection is never written, so index.md and its
-        per-category shards go stale while agents no longer maintain them by
-        hand
+        per-category shards under meta/ go stale while agents no longer
+        maintain them by hand
       recovery: >-
-        Add "index.md" and "index-*.md" to
+        Add "index.md", "index-*.md", and "meta/index-*.md" to
         extensions.dome.markdown.grant.patch.auto in .dome/config.yaml.
     - processorId: dome.markdown.page-status
       entries:

@@ -5,7 +5,11 @@
 // are RENDERS: the processor rewrites the dome.markdown:index-catalog block
 // in each file (preserving any human prose outside it) and retires shards
 // that are no longer produced — splicing the block OUT when prose surrounds
-// it, deleting only files that are nothing but our block (whitespace aside).
+// it, deleting only files that are nothing but our block and its rendered title
+// (whitespace aside).
+// Category shards render under meta/ (meta/index-entities.md); the root map
+// index.md stays at the vault root. LEGACY root-level shards from before the
+// meta/ move (index-entities.md) are retired on the first post-upgrade run.
 // Pinned by NO_ACCRETING_REGISTRIES — nothing
 // ever appends to these files; every run rewrites them whole and diffs
 // against the snapshot, so a matching catalog yields zero effects.
@@ -33,6 +37,7 @@ import {
 import {
   INDEX_CATALOG_BLOCK,
   INDEX_CATALOG_OWNER,
+  META_DIR,
   renderIndexFiles,
   type IndexEntry,
 } from "../lib/index-render";
@@ -48,10 +53,26 @@ const DEFAULT_SHARD_BUDGET = 24_000;
 const CONFIG_INVALID_CODE = "dome.markdown.render-index-config-invalid";
 /** Shared with simplify-indexes; dedup happens at the diagnostics sink. */
 const ANOMALY_CODE = "dome.markdown.generated-block-anomaly";
-/** Root-level generated shard names: `index.md`, `index-entities.md`, `index-entities-2.md`. */
-const SHARD_NAME_RE = /^index(-[a-z0-9-]+)?\.md$/;
+/**
+ * Generated shard names the retirement scan owns: the root map `index.md`,
+ * current shards `meta/index-<category>.md` (+`-N` overflow), and LEGACY
+ * root-level shards (`index-entities.md`) from before the meta/ move —
+ * matched so the first post-upgrade run retires them. Anchored at ^ so
+ * directory navigation pages (`wiki/entities/index.md`) never match.
+ * Interpolating META_DIR is safe only because it is metachar-free.
+ */
+const SHARD_NAME_RE = new RegExp(`^(?:${META_DIR}/)?index(-[a-z0-9-]+)?\\.md$`);
 /** Category names become `index-<category>.md` filenames and wikilinks. */
 const CATEGORY_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
+/**
+ * The renderer's own shard title (`# Index — entities`, `# Index — entities
+ * (2/3)`) sits OUTSIDE the generated block (see wrapBlock in
+ * lib/index-render.ts), so a retired render's remainder is the bare title,
+ * not empty. A title-only remainder is still entirely ours — delete, don't
+ * leave a heading stub. Anything else outside the block is human prose and
+ * survives via splice.
+ */
+const GENERATED_TITLE_RE = /^# Index(?: — [^\n]+)?$/;
 
 type CategoriesResolution = {
   /** Path-prefix → category name. */
@@ -178,12 +199,13 @@ const renderIndex = defineProcessorImplementation({
       changes.push({ kind: "write", path: file, content: next });
     }
 
-    // Stale shards: a previously rendered root-level index file no longer
-    // produced. Only files carrying our generated block are ours (a human
-    // file that merely matches the name pattern is never touched). When the
-    // file is nothing but our block — whitespace aside — delete it; when
-    // human prose lives outside the block, splice the block OUT instead so
-    // the prose survives.
+    // Stale shards: a previously rendered index file no longer produced —
+    // covers both the legacy root layout (index-entities.md) and the current
+    // meta/ layout (meta/index-entities.md). Only files carrying our generated
+    // block are ours (a human file that merely matches the name pattern is
+    // never touched). When the file is nothing but our block and its rendered
+    // title — whitespace aside — delete it; when human prose lives outside the
+    // block, splice the block OUT instead so the prose survives.
     for (const path of markdownPaths) {
       if (!SHARD_NAME_RE.test(path) || path in rendered) continue;
       const existing = await ctx.snapshot.readFile(path);
@@ -197,7 +219,8 @@ const renderIndex = defineProcessorImplementation({
       if (scan.range === null) continue;
       const before = existing.slice(0, scan.range.start);
       const after = existing.slice(scan.range.end);
-      if (`${before}${after}`.trim().length === 0) {
+      const remainder = `${before}${after}`.trim();
+      if (remainder.length === 0 || GENERATED_TITLE_RE.test(remainder)) {
         changes.push({ kind: "delete", path });
         continue;
       }

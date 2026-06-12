@@ -32,9 +32,9 @@ describe("dome.markdown.render-index", () => {
     expect(patch.mode).toBe("auto");
     const byPath = changesByPath(patch);
     expect([...byPath.keys()].sort()).toEqual([
-      "index-concepts.md",
-      "index-entities.md",
       "index.md",
+      "meta/index-concepts.md",
+      "meta/index-entities.md",
     ]);
 
     // Contents match the pure renderer byte-for-byte.
@@ -51,12 +51,12 @@ describe("dome.markdown.render-index", () => {
       expect(change.content).toBe(expected[path] as string);
     }
 
-    const entities = byPath.get("index-entities.md");
+    const entities = byPath.get("meta/index-entities.md");
     expect(entities?.kind === "write" && entities.content).toContain(
       "- [[wiki/entities/a]] — Engineer",
     );
     // Missing description still indexes the page, with the muted placeholder.
-    const concepts = byPath.get("index-concepts.md");
+    const concepts = byPath.get("meta/index-concepts.md");
     expect(concepts?.kind === "write" && concepts.content).toContain(
       "- [[wiki/concepts/b]] — *(no description yet)*",
     );
@@ -69,7 +69,7 @@ describe("dome.markdown.render-index", () => {
     });
 
     const patch = expectPatch(effects, 0);
-    const entities = changesByPath(patch).get("index-entities.md");
+    const entities = changesByPath(patch).get("meta/index-entities.md");
     expect(entities?.kind === "write" && entities.content).toContain(
       "wiki/entities/a",
     );
@@ -104,7 +104,7 @@ describe("dome.markdown.render-index", () => {
   test("human prose outside the generated block is preserved", async () => {
     const effects = await runRenderIndex({
       "wiki/entities/a.md": "---\ndescription: Engineer\n---\n\n# A\n",
-      "index-entities.md": [
+      "meta/index-entities.md": [
         "Hand notes.",
         "",
         START,
@@ -117,7 +117,7 @@ describe("dome.markdown.render-index", () => {
     });
 
     const patch = expectPatch(effects, 0);
-    const change = changesByPath(patch).get("index-entities.md");
+    const change = changesByPath(patch).get("meta/index-entities.md");
     expect(change?.kind).toBe("write");
     if (change?.kind !== "write") return;
     expect(change.content.startsWith("Hand notes.")).toBe(true);
@@ -152,6 +152,26 @@ describe("dome.markdown.render-index", () => {
       );
     }
     expect(byPath.has("index-handmade.md")).toBe(false);
+  });
+
+  test("legacy root shards are retired when the catalog renders under meta/", async () => {
+    const effects = await runRenderIndex({
+      "wiki/entities/a.md": "---\ndescription: Engineer\n---\n\n# A\n",
+      // Pre-meta/ render at the old root location, heading + block (exactly
+      // what the old renderer produced via wrapBlock) → deleted, not stubbed.
+      "index-entities.md": `# Index — entities\n\n${START}\n- [[wiki/entities/a]] — Engineer\n${END}\n`,
+      // Legacy overflow shard with the paginated title form → deleted too.
+      "index-entities-2.md": `# Index — entities (2/2)\n\n${START}\n- [[wiki/entities/z]] — Gone\n${END}\n`,
+      // Stale shard at the NEW location, entirely ours → deleted too.
+      "meta/index-old.md": `${START}\n- [[wiki/old/x]] — Gone\n${END}\n`,
+    });
+
+    const patch = expectPatch(effects, 0);
+    const byPath = changesByPath(patch);
+    expect(byPath.get("index-entities.md")?.kind).toBe("delete");
+    expect(byPath.get("index-entities-2.md")?.kind).toBe("delete");
+    expect(byPath.get("meta/index-old.md")?.kind).toBe("delete");
+    expect(byPath.get("meta/index-entities.md")?.kind).toBe("write");
   });
 
   test("half-open markers: info diagnostic surfaces, file is left untouched", async () => {
@@ -213,7 +233,7 @@ describe("dome.markdown.render-index", () => {
     );
     const patch = expectPatch(overridden, 0);
     const byPath = changesByPath(patch);
-    expect([...byPath.keys()].sort()).toEqual(["index-notes.md", "index.md"]);
+    expect([...byPath.keys()].sort()).toEqual(["index.md", "meta/index-notes.md"]);
 
     // Malformed override: defaults win and a warning diagnostic surfaces.
     const degraded = await runRenderIndex(
@@ -228,8 +248,8 @@ describe("dome.markdown.render-index", () => {
     }
     const degradedPatch = expectPatch(degraded, 2);
     expect([...changesByPath(degradedPatch).keys()].sort()).toEqual([
-      "index-entities.md",
       "index.md",
+      "meta/index-entities.md",
     ]);
   });
 });

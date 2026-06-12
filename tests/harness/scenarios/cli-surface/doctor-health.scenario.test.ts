@@ -419,18 +419,18 @@ scenario(
     );
 
     // The index-projection rollout (v1 chunk 3a): a pre-existing vault whose
-    // dome.markdown patch.auto never gained index.md/index-*.md gets a
+    // dome.markdown patch.auto never gained index.md/meta/index-*.md gets a
     // doctor finding instead of silent capability-denies on render-index.
     const renderIndex = entryGaps.find(
       (finding) =>
         finding.capability?.processorId === "dome.markdown.render-index",
     );
     expect(renderIndex?.recovery).toContain(
-      'Add "index.md" and "index-*.md" to extensions.dome.markdown.grant.patch.auto',
+      'Add "index.md", "index-*.md", and "meta/index-*.md" to extensions.dome.markdown.grant.patch.auto',
     );
     expect(renderIndex?.capability?.missingEntries).toEqual([
       { kind: "patch.auto", target: "index.md" },
-      { kind: "patch.auto", target: "index-*.md" },
+      { kind: "patch.auto", target: "meta/index-*.md" },
     ]);
 
     // The brief's sources reads (v1 chunk 4): this fixture grants the
