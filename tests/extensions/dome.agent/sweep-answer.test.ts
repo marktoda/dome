@@ -213,7 +213,7 @@ describe("skip answer", () => {
 // ---------------------------------------------------------------------------
 
 describe("escalate-key answer", () => {
-  test("any answer value → zero effects", async () => {
+  test("any answer value → zero effects (the escalated ledger row stands; no re-queue)", async () => {
     for (const answer of ["skip", "integrate", "whatever"]) {
       const ctx = makeCtx({
         files: { [DEST]: DEST_CONTENT },

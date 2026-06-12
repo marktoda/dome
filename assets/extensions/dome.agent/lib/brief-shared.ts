@@ -398,6 +398,8 @@ export function staleLoopsTaskLines(
  *   - `integrated` → `- [[<destination>]] ← [[<material>]]`
  *   - `questioned` → `- ⚠ pending your answer: [[<destination>]] ← [[<material>]]`
  *   - `no-op` and `failed` → omitted (signal, not log)
+ *   - `escalated` → omitted (its question already renders in the
+ *     deterministic open-questions block; a second bullet would double-surface)
  *
  * Paths are stored without `.md` in the ledger (see sweep.ts `withoutMd`).
  *
@@ -417,7 +419,8 @@ export function integratedBriefSection(
         `- ⚠ pending your answer: [[${row.destination}]] ← [[${row.material}]]`,
       );
     }
-    // no-op and failed: omitted (signal, not log)
+    // no-op, failed, escalated: omitted (signal, not log; the escalated
+    // pair's question renders in the open-questions block already)
   }
   if (bullets.length === 0) return null;
   const lines = [

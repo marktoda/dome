@@ -9,8 +9,9 @@
 // frontmatter — written atomically with the integration patch itself and
 // enforced deterministically here via `ensureSourcesLink` even when the model
 // forgets. The committed ledger (default sweep-ledger.md) is ADVISORY: it
-// carries the scan cursor, no-op/questioned rows (saves re-judging), and the
-// per-run section the brief digest renders; its loss is harmless. Its
+// carries the scan cursor, no-op/questioned rows (saves re-judging),
+// escalated rows (poison-pair terminal records — hand-delete to re-arm), and
+// the per-run section the brief digest renders; its loss is harmless. Its
 // `integrated` rows are record-only — the queue never settles on them (the
 // sources: link is authoritative; a row without the link means the
 // sub-proposal was rejected and the pair must re-queue).
@@ -483,7 +484,12 @@ const sweep = defineProcessorImplementation({
       const itemRefs = [ctx.sourceRef(item.material), ctx.sourceRef(item.destination)];
 
       // Escalation contract: a pair that keeps failing stops burning model
-      // budget and goes to the owner instead of retrying forever.
+      // budget and goes to the owner instead of retrying forever. The
+      // `escalated` ledger row is the threshold's terminal record, written
+      // alongside the question: it settles the pair (queue exclusion + the
+      // cursor no longer held back by its materialDate). Re-eligibility is
+      // deliberately manual — the owner hand-deletes the escalated row from
+      // the ledger; there is no retry-granted flow.
       if (item.failedCount >= ESCALATE_AFTER_FAILURES) {
         effects.push(
           questionEffect({
@@ -498,7 +504,7 @@ const sweep = defineProcessorImplementation({
             sourceRefs: itemRefs,
           }),
         );
-        ledgerRows.push({ ...row, disposition: "questioned" });
+        ledgerRows.push({ ...row, disposition: "escalated" });
         continue;
       }
 

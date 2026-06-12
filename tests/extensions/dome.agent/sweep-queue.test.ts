@@ -90,6 +90,26 @@ describe("buildSweepQueue", () => {
     expect(q.items[0]).toEqual(expect.objectContaining({ failedCount: 1 }));
   });
 
+  test("an escalated row settles the pair: excluded from the queue even with prior failed rows", () => {
+    const vault = files({
+      "wiki/dailies/2026-06-09.md": "Met [[wiki/entities/alice-henshaw]].",
+      "wiki/entities/alice-henshaw.md": "# Alice Henshaw\n",
+    });
+    const escalated = parseSweepLedger(
+      [
+        "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: failed",
+        "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: failed",
+        "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: failed",
+        "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: escalated",
+        "",
+      ].join("\n"),
+    );
+    const q = buildSweepQueue({ ...DEFAULTS, ...vault, today: TODAY, ledger: escalated });
+    expect(q.items).toHaveLength(0);
+    // Settled means the pair also stops holding the cursor back.
+    expect(q.oldestUnswept).toBeNull();
+  });
+
   test("today's daily, pre-window dailies, and non-target links are excluded", () => {
     const vault = files({
       "wiki/dailies/2026-06-10.md": "Today: [[wiki/entities/alice-henshaw]].",
