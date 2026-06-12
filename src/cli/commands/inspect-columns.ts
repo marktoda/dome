@@ -9,7 +9,7 @@
 // get a muted footer hint naming what was dropped and how to retrieve it.
 
 import type { Column } from "../presenter";
-import { durationMs, relativeTime } from "../presenter";
+import { durationMs, relativeTime, usd } from "../presenter";
 
 // We work with generic Row records throughout, as inspect.ts defines
 // Row = Record<string, unknown>.
@@ -413,6 +413,48 @@ const QUARANTINE_HINT =
   "trigger hash, quarantine id, version hidden → --json";
 
 // ---------------------------------------------------------------------------
+// cost
+// ---------------------------------------------------------------------------
+
+function usdCell(fieldName: string): (r: Row) => { text: string } {
+  return (r) => {
+    const value = r[fieldName];
+    return { text: typeof value === "number" ? usd(value) : "-" };
+  };
+}
+
+const COST_COLUMNS: ReadonlyArray<Column<Row>> = [
+  {
+    header: "PROCESSOR",
+    get: (r) => ({ text: str(r["processor"]) }),
+    priority: 1,
+  },
+  {
+    header: "RUNS",
+    get: (r) => ({
+      text: String(typeof r["runs"] === "number" ? r["runs"] : "-"),
+    }),
+    priority: 2,
+    align: "right" as const,
+  },
+  {
+    header: "TOTAL",
+    get: usdCell("total_cost_usd"),
+    priority: 3,
+    align: "right" as const,
+  },
+  {
+    header: "TODAY",
+    get: usdCell("today_cost_usd"),
+    priority: 4,
+    align: "right" as const,
+  },
+];
+
+const COST_HINT =
+  "window bounds + full precision → --json; per-run rows → dome inspect runs";
+
+// ---------------------------------------------------------------------------
 // diagnostic-summary (groups table)
 // ---------------------------------------------------------------------------
 
@@ -476,6 +518,8 @@ export function columnsFor(subject: string): ReadonlyArray<Column<Row>> {
       return OUTBOX_COLUMNS;
     case "quarantine":
       return QUARANTINE_COLUMNS;
+    case "cost":
+      return COST_COLUMNS;
     default:
       return [];
   }
@@ -501,6 +545,8 @@ export function hiddenHint(subject: string): string {
       return OUTBOX_HINT;
     case "quarantine":
       return QUARANTINE_HINT;
+    case "cost":
+      return COST_HINT;
     default:
       return "";
   }

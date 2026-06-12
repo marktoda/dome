@@ -108,12 +108,14 @@ The engine writes `queued` rows synchronously when enqueueing; updates to `runni
 
 The cost surface backs `model.invoke.maxDailyCostUsd` enforcement (per [[wiki/specs/capabilities]] §"model.invoke"). The runtime sums `cost_usd` for the processor's extension-id prefix since local midnight, adds the current run's in-memory cost, and denies further model calls once the bundle's effective daily cap is spent.
 
+The same column feeds the `dome inspect cost` report ([[wiki/specs/cli]] §"`dome inspect`"): per-processor windowed totals and extension subtotals with a since-midnight split, using the same local-midnight boundary as the budget scopes, so the report and the caps agree on what "today" means. Only cost-bearing rows participate — a NULL `cost_usd` means the run never billed a provider.
+
 ## Query surface (CLI)
 
 ```text
 dome inspect runs                        # recent runs across all processors
 dome inspect runs
-dome inspect cost                        # per-processor spend, current day + last 7 days (v1.x subject)
+dome inspect cost [--days N]             # per-processor spend + extension subtotals + grand total, today split (window default 7 days)
 dome doctor                              # reports orphan running rows and other health findings
 ```
 

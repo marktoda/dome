@@ -14,6 +14,7 @@ function makeCtx(opts: {
   extensionConfig?: Record<string, unknown>;
   stepFn?: (input: {
     readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    readonly model?: string;
   }) => Promise<ModelStepResult>;
 }): ProcessorContext {
   const modelInvoke =
@@ -502,5 +503,51 @@ describe("dome.agent.consolidate", () => {
     expect(diag).toBeDefined();
     expect(diag.severity).toBe("warning");
     expect(diag.message).toContain("must be a string");
+  });
+
+  test("model_overrides.consolidate routes every step call", async () => {
+    const seen: Array<string | undefined> = [];
+    const effects = await consolidate.run(
+      makeCtx({
+        files: { "index.md": "x" },
+        extensionConfig: { model_overrides: { consolidate: "claude-haiku-4-5" } },
+        stepFn: async (input) => {
+          seen.push(input.model);
+          return { text: "done" };
+        },
+      }),
+    );
+    expect(seen.length).toBeGreaterThan(0);
+    expect(new Set(seen)).toEqual(new Set(["claude-haiku-4-5"]));
+    expect(
+      effects.some(
+        (e) =>
+          e.kind === "diagnostic" &&
+          (e as DiagnosticEffect).code === "dome.agent.model-config-invalid",
+      ),
+    ).toBe(false);
+  });
+
+  test("malformed model_overrides degrades to the provider default with a warning", async () => {
+    const seen: Array<string | undefined> = [];
+    const effects = await consolidate.run(
+      makeCtx({
+        files: { "index.md": "x" },
+        extensionConfig: { model_overrides: "claude-haiku-4-5" },
+        stepFn: async (input) => {
+          seen.push(input.model);
+          return { text: "done" };
+        },
+      }),
+    );
+    // Degrade, not crash: the run proceeds on the provider default model.
+    expect(new Set(seen)).toEqual(new Set([undefined]));
+    const diag = effects.find(
+      (e) =>
+        e.kind === "diagnostic" &&
+        (e as DiagnosticEffect).code === "dome.agent.model-config-invalid",
+    ) as DiagnosticEffect | undefined;
+    expect(diag?.severity).toBe("warning");
+    expect(diag?.message).toContain("model_overrides must be an object");
   });
 });

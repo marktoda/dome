@@ -238,3 +238,49 @@ Slack enablement, in order:
    `dome inspect outbox` shows per-attempt detail. First digest lands as
    `sources/slack/<date>.md` committed by the script and woven into the
    05:30 brief.
+
+## Chunk 5 — economics (work vault)
+
+Operator steps after the chunk-5 merge (prompt caching in the provider
+template, per-processor model routing, `dome inspect cost`). Routing and the
+inspect subject are SDK/bundle code — they reach the daemon only after
+`dome restart`, as always. The provider template is different: the vault runs
+its own **copy** at `.dome/model-provider.ts`, so caching arrives only when
+the copy is refreshed — neither the merge nor the restart does that.
+
+1. Re-copy the provider template. Diff first in case the vault copy was
+   customized (`ANTHROPIC_*` env tweaks live in config, but the script itself
+   may have been edited):
+
+       diff ~/vaults/work/.dome/model-provider.ts <dome-dev>/assets/model-providers/anthropic.ts
+       cp <dome-dev>/assets/model-providers/anthropic.ts ~/vaults/work/.dome/model-provider.ts
+
+   Commit. The script is spawned fresh per model call, so no restart is
+   needed for this file — the next call sends `cache_control` breakpoints and
+   reports cache-tier-aware `costUsd`. If anything looks off,
+   `DOME_DISABLE_PROMPT_CACHE=1` in the daemon environment restores the
+   legacy wire shape without touching the file.
+2. Optional model routing — the owner's quality call; defaults are fine and
+   routing ships unset. The recommendation: haiku-class for the mechanical
+   loops (ingest, sweep), provider default for the judgment-heavy ones
+   (consolidate, brief). Under `extensions.dome.agent.config` in
+   `~/vaults/work/.dome/config.yaml`:
+
+       model_overrides:
+         ingest: claude-haiku-4-5
+         sweep: claude-haiku-4-5
+
+   Leave `consolidate`/`brief` out of the map. The warden equivalent is
+   `extensions.dome.warden.config.model_override` (single value). A typo
+   cannot break the night: malformed values degrade to the default with one
+   `dome.agent.model-config-invalid` / `dome.warden.model-config-invalid`
+   warning. Commit.
+3. `dome restart` to load the merged routing + CLI code.
+4. Verify after the next nightly run:
+   `dome inspect cost --vault ~/vaults/work` — per-processor spend over the
+   last 7 days with a today split, extension subtotals, grand total. Steps
+   2..N of the agent loops should now bill the charter+tools prefix at the
+   cache-read rate, so a post-merge nightly's ingest/consolidate run cost
+   should drop visibly against the prior night (`--days 2` isolates the
+   comparison). The v1 plan's target this instruments: single-digit dollars
+   per month.

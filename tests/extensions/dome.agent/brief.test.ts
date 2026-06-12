@@ -41,9 +41,11 @@ const SCHEDULE_INPUT = {
 
 function makeCtx(opts: {
   files: Record<string, string>;
+  extensionConfig?: Record<string, unknown>;
   steps?: ReadonlyArray<ModelStepResult>;
   stepFn?: (input: {
     readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    readonly model?: string;
   }) => Promise<ModelStepResult>;
   input?: unknown;
   questions?: ReadonlyArray<{
@@ -109,7 +111,7 @@ function makeCtx(opts: {
     now: () => new Date(FIRED_AT),
     signal: new AbortController().signal,
     capabilities: {} as never,
-    extensionConfig: {},
+    extensionConfig: opts.extensionConfig ?? {},
     ...(modelInvoke !== undefined ? { modelInvoke } : {}),
     ...(projection !== undefined ? { projection } : {}),
     sourceRef: (path: string) => ({ path }) as never,
@@ -1065,6 +1067,52 @@ describe("dome.agent.brief", () => {
     const content = writtenDaily(await brief.run(ctx));
     expect(content).toContain("My own precious prose.");
     expect(content).toContain("- Grounded (from [[wiki/dailies/2026-06-08]])");
+  });
+
+  test("model_overrides.brief routes every step call", async () => {
+    const seen: Array<string | undefined> = [];
+    const effects = await brief.run(
+      makeCtx({
+        files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
+        extensionConfig: { model_overrides: { brief: "claude-haiku-4-5" } },
+        stepFn: async (input) => {
+          seen.push(input.model);
+          return { text: "done" };
+        },
+      }),
+    );
+    expect(seen.length).toBeGreaterThan(0);
+    expect(new Set(seen)).toEqual(new Set(["claude-haiku-4-5"]));
+    expect(
+      effects.some(
+        (e) =>
+          e.kind === "diagnostic" &&
+          (e as DiagnosticEffect).code === "dome.agent.model-config-invalid",
+      ),
+    ).toBe(false);
+  });
+
+  test("malformed model_overrides.brief degrades to the provider default with a warning", async () => {
+    const seen: Array<string | undefined> = [];
+    const effects = await brief.run(
+      makeCtx({
+        files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
+        extensionConfig: { model_overrides: { brief: 42 } },
+        stepFn: async (input) => {
+          seen.push(input.model);
+          return { text: "done" };
+        },
+      }),
+    );
+    // Degrade, not crash: the morning brief still runs on the default model.
+    expect(new Set(seen)).toEqual(new Set([undefined]));
+    const diag = effects.find(
+      (e) =>
+        e.kind === "diagnostic" &&
+        (e as DiagnosticEffect).code === "dome.agent.model-config-invalid",
+    ) as DiagnosticEffect | undefined;
+    expect(diag?.severity).toBe("warning");
+    expect(diag?.message).toContain("model_overrides.brief");
   });
 });
 

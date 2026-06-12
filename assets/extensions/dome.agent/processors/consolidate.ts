@@ -21,6 +21,7 @@ import {
 import { consolidateCharter } from "../lib/consolidate-charter";
 import { formatDate, localDateParts } from "../../dome.daily/processors/daily-paths";
 import { agentPreamble } from "../lib/agent-preamble";
+import { resolveModelOverride, withStepModel } from "../lib/model-override";
 import { globMatch } from "../../../../src/engine/core/glob-cache";
 
 const MAX_STEPS = 50;
@@ -144,17 +145,23 @@ const consolidate = defineProcessorImplementation({
 
     // step check + coreMemorySection read + config-problem diagnostics
     // (ledger path + targets problems share the consolidate-config-invalid
-    // code; core-config-invalid is the preamble's own).
+    // code; model routing has its own; core-config-invalid is the
+    // preamble's own).
+    const modelOverride = resolveModelOverride(ctx.extensionConfig, "consolidate");
     const pre = await agentPreamble(
       ctx,
       [
         { problem: ledger.problem, code: "dome.agent.consolidate-config-invalid", sourceRefs },
         { problem: targets.problem, code: "dome.agent.consolidate-config-invalid", sourceRefs },
+        { problem: modelOverride.problem, code: "dome.agent.model-config-invalid", sourceRefs },
       ],
       sourceRefs,
     );
     if (pre.kind === "no-model") return Object.freeze([]);
-    const { step, core } = pre;
+    const { core } = pre;
+    // Per-processor model routing: the resolved override rides every step()
+    // call via the provider-neutral `model` field.
+    const step = withStepModel(pre.step, modelOverride.model);
     const configDiagnostics: Effect[] = [...pre.effects];
 
     const tools = makeConsolidatorTools({

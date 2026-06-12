@@ -516,6 +516,49 @@ engine-side `maxDailyCostUsd` capability caps ([[wiki/specs/capabilities]]
 template-side handling: the engine kills the spawned command when the
 processor's signal aborts.
 
+Prompt caching (step envelope only): each `dome.model-provider.step/v1`
+request marks the stable prefix — the system charter block and the **last**
+`tools[]` entry — with `cache_control: { type: "ephemeral" }` (5-minute TTL).
+The agent loop ([[wiki/specs/autonomous-agents]] §"The `ctx.modelInvoke.step`
+seam") resends a constant charter and tool set every step, so steps 2..N read
+the prefix from cache instead of reprocessing it. One-shot `request/v1`
+envelopes have no reusable prefix and stay uncached. Mechanics verified
+2026-06: `cache_control` is **GA on the Messages API under
+`anthropic-version: 2023-06-01`** — no beta header, no version bump, and
+response parsing is unaffected. A prefix below the model's minimum cacheable
+length silently doesn't cache (usage just reports zero cache tokens), and
+`DOME_DISABLE_PROMPT_CACHE=1` is the escape hatch that drops the breakpoints
+and restores the legacy uncached wire shape.
+
+Cache cost math: when breakpoints were sent, the response's `usage` carries
+two extra fields — `cache_creation_input_tokens` bills at **1.25×** the
+model's input rate (the cache write) and `cache_read_input_tokens` at
+**0.1×** (the read). `input_tokens` *excludes* cached tokens, so the three
+input tiers are additive on top of the output-token cost; absent cache fields
+degrade to the legacy two-term math, so one cost function serves cached and
+uncached responses. Cache-discounted costs ride the same `costUsd` →
+`maxDailyCostUsd` path as before — budget-scope math is undisturbed.
+
+**Caching is additive; the protocol is untouched.** The three envelope
+schemas are byte-unchanged and the engine has no caching knobs:
+`cache_control` exists only inside the template's Anthropic wire request. An
+older vault copy of the provider (without caching) keeps working against the
+current engine, and the current template keeps working against older
+envelopes. Because the provider file is a vault-side **copy**, a vault picks
+up caching by re-copying the template (`cp assets/model-providers/anthropic.ts
+<vault>/.dome/model-provider.ts`), not by upgrading the SDK.
+
+**Message Batches API — recorded deferral (2026-06).** The 50%-off async
+Batches API was considered for the agent workload and deferred: agent loops
+are *sequential* — step N+1's messages contain step N's tool results, so the
+steps of one run cannot be batched, and an up-to-24-hour async turnaround
+cannot sit inside a loop. The only batchable shipped calls are warden
+one-shots ([[wiki/specs/task-lifecycle]] §"Wardens"), whose volume today does
+not justify an async submit/poll bridge through the command-provider
+protocol. Revisit if warden volume grows. This supersedes the v1 plan's WS2
+batch premise, which assumed a mostly single-shot workload; caching + routing
+are the economics levers that shipped.
+
 The SDK side of the probe is `probeCommandModelProvider` in
 `src/engine/host/command-model-provider.ts`; `dome doctor` consumes it and renders
 the outcome taxonomy (responsive / probe-unsupported / spawn-failed /

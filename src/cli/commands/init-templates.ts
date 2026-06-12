@@ -156,7 +156,8 @@ Advanced/debug commands:
   compatibility, and extension development, but they are not the normal Claude
   Code workflow.
 - Useful inspect subjects are \`bundles\`, \`processors\`, \`runs\`, \`patches\`,
-  \`facts\`, \`diagnostics\`, \`questions\`, \`outbox\`, and \`quarantine\`.
+  \`facts\`, \`diagnostics\`, \`questions\`, \`outbox\`, \`quarantine\`, and
+  \`cost\`.
 
 Do not call Dome after every edit. Dome works at the git commit boundary.
 

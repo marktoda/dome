@@ -197,6 +197,82 @@ describe("dome.warden.integrity", () => {
     expect(await integrity.run(ctx)).toEqual([]);
   });
 
+  test("model_override routes every structured call", async () => {
+    const path = "wiki/concepts/x.md";
+    const seen: Array<string | undefined> = [];
+    const structured = async <T,>(
+      input: ModelInvokeStructuredInput<T>,
+    ): Promise<T> => {
+      seen.push(input.model);
+      return input.parse({ findings: [] });
+    };
+    const modelInvoke = Object.assign(
+      async (): Promise<string> => {
+        throw new Error("text invoke not used by integrity warden");
+      },
+      { structured },
+    ) as ModelInvokeFn;
+    const effects = await integrity.run(
+      makeProcessorContext({
+        snapshot: fakeSnapshot({ path, content: "# X\n" }),
+        changedPaths: [path],
+        proposal: makeManualProposal({
+          base: HEAD_COMMIT,
+          head: HEAD_COMMIT,
+          branch: "main",
+        }),
+        runId: "run-integrity-model-override",
+        signal: new AbortController().signal,
+        input: { kind: "garden", matchedTriggers: [] } as unknown,
+        modelInvoke,
+        extensionConfig: { model_override: "claude-haiku-4-5" },
+      }),
+    );
+    expect(seen).toEqual(["claude-haiku-4-5"]);
+    expect(effects).toEqual([]);
+  });
+
+  test("malformed model_override degrades to the provider default with ONE warning", async () => {
+    const path = "wiki/concepts/x.md";
+    const seen: Array<string | undefined> = [];
+    const structured = async <T,>(
+      input: ModelInvokeStructuredInput<T>,
+    ): Promise<T> => {
+      seen.push(input.model);
+      return input.parse({ findings: [] });
+    };
+    const modelInvoke = Object.assign(
+      async (): Promise<string> => {
+        throw new Error("text invoke not used by integrity warden");
+      },
+      { structured },
+    ) as ModelInvokeFn;
+    const effects = await integrity.run(
+      makeProcessorContext({
+        snapshot: fakeSnapshot({ path, content: "# X\n" }),
+        changedPaths: [path],
+        proposal: makeManualProposal({
+          base: HEAD_COMMIT,
+          head: HEAD_COMMIT,
+          branch: "main",
+        }),
+        runId: "run-integrity-model-override-bad",
+        signal: new AbortController().signal,
+        input: { kind: "garden", matchedTriggers: [] } as unknown,
+        modelInvoke,
+        extensionConfig: { model_override: 42 },
+      }),
+    );
+    // Degrade, not crash: the review still ran on the provider default.
+    expect(seen).toEqual([undefined]);
+    const diags = effects.filter((e) => e.kind === "diagnostic");
+    expect(diags).toHaveLength(1);
+    const diag = diags[0] as { code: string; severity: string; message: string };
+    expect(diag.code).toBe("dome.warden.model-config-invalid");
+    expect(diag.severity).toBe("warning");
+    expect(diag.message).toContain("model_override");
+  });
+
   test("same content twice → same idempotencyKey (settles by content hash)", async () => {
     const path = "wiki/entities/danny.md";
     const content =

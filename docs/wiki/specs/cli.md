@@ -1586,11 +1586,13 @@ Exit codes: 0 on success; 64 (EX_USAGE) on detached HEAD, no commits,
 uninitialized adopted ref, **not diverged**, or a `--to` target not reachable
 from HEAD; 1 on runtime-open or ref-write failure.
 
-### `dome inspect <subject> [--limit <n>] [--model] [--json]`
+### `dome inspect <subject> [--limit <n>] [--days <n>] [--model] [--json]`
 
 Read-only view over the operational substrate. The command opens the
 runtime (so the operational databases are initialized) but does not submit a
-Proposal, does not invoke any processor, and does not mutate state.
+Proposal, does not invoke any processor, and does not mutate state. The one
+exception to the runtime open is the `cost` subject, which is ledger-only —
+see its entry below.
 
 Subjects (v1.0):
 
@@ -1630,11 +1632,27 @@ Subjects (v1.0):
 - `outbox` — pending / failed external actions from `outbox.db`.
 - `quarantine` — quarantined processor triggers from processor execution state,
   including the `quarantine_id` generation token used for safe reset.
+- `cost` — per-processor model spend aggregated from `runs.db`'s `cost_usd`
+  over a `--days <n>` window (default 7): cost-bearing run count, window
+  total, and today's spend per processor, plus extension subtotals (grouped
+  by the processor id's parent namespace) and a grand total. The today split
+  uses the same local-midnight boundary as the `maxDailyCostUsd` budget
+  scopes ([[wiki/specs/run-ledger]] §"Cost tracking"), so the report and the
+  caps agree on what "today" means. Unlike the other subjects, `cost` does
+  not open the vault runtime: it opens the run ledger **read-only** and
+  mirrors `dome log`'s refuse-to-scaffold posture — a vault without
+  `runs.db` gets a clean zero table, never a freshly created database file.
+  `--json` emits a `dome.inspect.cost/v1` envelope (`schema`, `days`,
+  `since`, `today`, `processors`, `extensions`, `total`) rather than bare
+  rows. `--days` is a cost-only flag, so `dome inspect runs --days 7` is a
+  usage error.
 
 `--limit <n>` caps the row count. Operational row subjects default to 20;
-`bundles` and `processors` default to the full loaded runtime set because they
-are bounded by enabled extension metadata rather than unbounded operational
-history. `--model` is valid for `bundles` and `processors`: on `bundles` it
+`bundles`, `processors`, and `cost` default to the full set because they
+are bounded (extension metadata, or one row per cost-bearing processor)
+rather than unbounded operational history. A `--limit` on `cost` truncates
+the processor table without changing the subtotals or the grand total — a
+sliced table must not understate spend. `--model` is valid for `bundles` and `processors`: on `bundles` it
 shows bundles that declare model-capable processors, including disabled
 manifest-only bundles; on `processors` it shows currently loaded processors
 whose model status is not `none`. `--json` emits structured rows for
@@ -1661,8 +1679,8 @@ processors. `dome inspect bundles --model --json` is the broader inventory
 answer that also covers configured-but-disabled optional bundles.
 
 Exit codes: 0 on a clean read (including empty result sets); 1 on
-runtime-open failure; 64 (EX_USAGE) on unknown subject or malformed
-`--limit`.
+runtime-open failure (or, for `cost`, a present-but-unopenable ledger); 64
+(EX_USAGE) on unknown subject or malformed `--limit` / `--days`.
 
 **Two producers, one table.** The `diagnostics` subject surfaces rows
 from both engine-emitted DiagnosticEffects (structural failures like
@@ -1675,7 +1693,7 @@ producer id or a real processor id. A future `source` column proposal
 makes this distinction queryable — see [[wiki/specs/projection-store]]
 §"Tables — diagnostics".
 
-Future subjects (v1.x): `cost`, `orphan-runs`, `recent-activity`,
+Future subjects (v1.x): `orphan-runs`, `recent-activity`,
 `recent-processor-divergence`. Adding a subject is one new query
 function + one case in the dispatcher; no new CLI surface per subject.
 

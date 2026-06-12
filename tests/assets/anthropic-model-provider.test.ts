@@ -120,6 +120,7 @@ async function runTemplate(
     ANTHROPIC_BASE_URL: UNROUTABLE_BASE_URL,
     ANTHROPIC_INPUT_COST_PER_MTOK: undefined,
     ANTHROPIC_OUTPUT_COST_PER_MTOK: undefined,
+    DOME_DISABLE_PROMPT_CACHE: undefined,
     ...env,
   };
   const proc = Bun.spawn([process.execPath, TEMPLATE_PATH], {
@@ -346,10 +347,19 @@ describe("assets/model-providers/anthropic.ts", () => {
     expect(response.costUsd).toBeCloseTo(0.003, 10);
 
     // The provider-neutral step request maps faithfully onto the Anthropic
-    // Messages wire format.
+    // Messages wire format. The step envelope's stable prefix (system charter
+    // + tool schemas) carries cache_control breakpoints by default: the agent
+    // loop resends the full history every step, so the prefix is cache-hot by
+    // construction.
     const sent = fake.requests[0];
     if (sent === undefined) throw new Error("expected one request");
-    expect(sent.body.system).toBe("You are the ingest agent.");
+    expect(sent.body.system).toEqual([
+      {
+        type: "text",
+        text: "You are the ingest agent.",
+        cache_control: { type: "ephemeral" },
+      },
+    ]);
     expect(sent.body.tools).toEqual([
       {
         name: "readPage",
@@ -359,6 +369,7 @@ describe("assets/model-providers/anthropic.ts", () => {
           properties: { path: { type: "string" } },
           required: ["path"],
         },
+        cache_control: { type: "ephemeral" },
       },
     ]);
     expect(sent.body.messages).toEqual([
@@ -386,6 +397,163 @@ describe("assets/model-providers/anthropic.ts", () => {
         ],
       },
     ]);
+  });
+
+  // ----- prompt caching (step envelope only) --------------------------------
+  //
+  // Mechanics verified against the current API docs (2026-06): cache_control
+  // {type:"ephemeral"} is GA on the Messages API under anthropic-version
+  // 2023-06-01 — no beta header, no version bump (response parsing is
+  // unaffected). Pricing: cache writes bill at 1.25x the input rate (5-min
+  // TTL), cache reads at 0.1x, reported via usage.cache_creation_input_tokens
+  // / usage.cache_read_input_tokens.
+
+  const STEP_ENVELOPE_TWO_TOOLS = Object.freeze({
+    schema: "dome.model-provider.step/v1",
+    messages: [
+      { role: "system", content: "You are the sweep agent." },
+      { role: "user", content: "Sweep tonight's queue." },
+    ],
+    tools: [
+      {
+        name: "readPage",
+        description: "Read a vault page",
+        inputSchema: { type: "object" },
+      },
+      {
+        name: "writePage",
+        description: "Write a vault page",
+        inputSchema: { type: "object" },
+      },
+    ],
+  });
+
+  function stepUsageResponse(
+    usage: Record<string, number>,
+  ): Record<string, unknown> {
+    return {
+      content: [{ type: "text", text: "done" }],
+      model: "claude-sonnet-4-6",
+      usage,
+    };
+  }
+
+  test("step/v1: cache_control marks the stable prefix — system block + LAST tool only", async () => {
+    const fake = fakeAnthropic(() =>
+      messagesResponse(
+        stepUsageResponse({ input_tokens: 10, output_tokens: 10 }),
+      ),
+    );
+
+    const run = await runTemplate(STEP_ENVELOPE_TWO_TOOLS, {
+      ANTHROPIC_API_KEY: "sk-test",
+      ANTHROPIC_BASE_URL: fake.url,
+    });
+    expect(run.stderr).toBe("");
+    expect(run.exitCode).toBe(0);
+
+    const sent = fake.requests[0];
+    if (sent === undefined) throw new Error("expected one request");
+
+    // One breakpoint on the system block, one on the LAST tools[] entry —
+    // a breakpoint covers everything rendered before it (tools render before
+    // system), so these two cache the whole stable prefix.
+    expect(sent.body.system).toEqual([
+      {
+        type: "text",
+        text: "You are the sweep agent.",
+        cache_control: { type: "ephemeral" },
+      },
+    ]);
+    const tools = sent.body.tools as Array<Record<string, unknown>>;
+    expect(tools).toHaveLength(2);
+    expect("cache_control" in (tools[0] ?? {})).toBe(false);
+    expect(tools[1]?.cache_control).toEqual({ type: "ephemeral" });
+
+    // The volatile suffix (messages) never carries breakpoints.
+    expect(JSON.stringify(sent.body.messages)).not.toContain("cache_control");
+  });
+
+  test("step/v1: cache_creation_input_tokens price at 1.25x input; cache_read_input_tokens at 0.1x", async () => {
+    // Sonnet 4.6 rates: $3/MTok in, $15/MTok out.
+    // Creation: 1000/1M*3 + 1500/1M*3*1.25 + 100/1M*15 = 0.010125
+    // Read:     1000/1M*3 + 1500/1M*3*0.1  + 100/1M*15 = 0.00495
+    const cases: ReadonlyArray<{
+      usage: Record<string, number>;
+      expected: number;
+    }> = [
+      {
+        usage: {
+          input_tokens: 1000,
+          cache_creation_input_tokens: 1500,
+          cache_read_input_tokens: 0,
+          output_tokens: 100,
+        },
+        expected: 0.010125,
+      },
+      {
+        usage: {
+          input_tokens: 1000,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 1500,
+          output_tokens: 100,
+        },
+        expected: 0.00495,
+      },
+    ];
+    for (const { usage, expected } of cases) {
+      const fake = fakeAnthropic(() => messagesResponse(stepUsageResponse(usage)));
+      const run = await runTemplate(STEP_ENVELOPE_TWO_TOOLS, {
+        ANTHROPIC_API_KEY: "sk-test",
+        ANTHROPIC_BASE_URL: fake.url,
+      });
+      expect(run.exitCode).toBe(0);
+      expect(
+        parseModelStepResponse(JSON.parse(run.stdout)).costUsd,
+      ).toBeCloseTo(expected, 10);
+    }
+  });
+
+  test("step/v1: DOME_DISABLE_PROMPT_CACHE=1 keeps the legacy uncached wire shape", async () => {
+    const fake = fakeAnthropic(() =>
+      messagesResponse(
+        stepUsageResponse({ input_tokens: 10, output_tokens: 10 }),
+      ),
+    );
+
+    const run = await runTemplate(STEP_ENVELOPE_TWO_TOOLS, {
+      ANTHROPIC_API_KEY: "sk-test",
+      ANTHROPIC_BASE_URL: fake.url,
+      DOME_DISABLE_PROMPT_CACHE: "1",
+    });
+    expect(run.exitCode).toBe(0);
+
+    const sent = fake.requests[0];
+    if (sent === undefined) throw new Error("expected one request");
+    // Legacy shape: plain string system, no cache_control anywhere.
+    expect(sent.body.system).toBe("You are the sweep agent.");
+    expect(JSON.stringify(sent.body)).not.toContain("cache_control");
+  });
+
+  test("request/v1: the one-shot envelope stays uncached (no cache_control)", async () => {
+    const fake = fakeAnthropic(() =>
+      messagesResponse({
+        content: [{ type: "text", text: "ok" }],
+        model: "claude-sonnet-4-6",
+        usage: { input_tokens: 10, output_tokens: 10 },
+      }),
+    );
+
+    const run = await runTemplate(
+      { schema: "dome.model-provider.request/v1", prompt: "hi" },
+      { ANTHROPIC_API_KEY: "sk-test", ANTHROPIC_BASE_URL: fake.url },
+    );
+    expect(run.exitCode).toBe(0);
+    // One-shot calls have no reusable prefix across requests — a breakpoint
+    // would only pay the 1.25x write premium with zero reads.
+    expect(JSON.stringify(fake.requests[0]?.body)).not.toContain(
+      "cache_control",
+    );
   });
 
   test("probe/v1: responsive via probeCommandModelProvider, no network call, key present", async () => {

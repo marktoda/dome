@@ -49,6 +49,16 @@ type ModelStepResponse = {
 
 The loop itself — the `while` over step results — lives in the bundle harness, not behind the seam. The seam abstracts the hard part (tool-call wire protocol); the trivial `while` stays in bundle code where it can be tested with a scripted fake model.
 
+**The step prefix is cacheable — and caching lives provider-side.** Every loop step resends the full conversation with a constant charter (system) and tool set, so the step envelope's stable prefix is ideal prompt-cache material. The caching contract belongs entirely to the provider template ([[wiki/specs/sdk-surface]] §"Model provider scaffold and probe"): the shipped Anthropic provider marks the charter block and the last tool entry with `cache_control` breakpoints and folds the cache pricing tiers into the `costUsd` it reports. The step envelope schema is byte-unchanged and the engine has no caching knobs — a provider that doesn't cache keeps working, and cache-discounted costs flow through the same `costUsd` → budget-scope path as uncached ones.
+
+## Per-processor model routing (`model_overrides`)
+
+The step envelope has always carried an optional provider-neutral `model` field; routing gives vault config a way to set it per agent. `extensions.dome.agent.config.model_overrides` maps the four routable agent keys — `ingest`, `consolidate`, `brief`, `sweep` — to model strings, and the shared resolver (`lib/model-override.ts`, the `consolidate_targets` degrade-not-crash idiom) injects the resolved model into every `step()` call. Unset → no `model` field, i.e. the provider's default model. A malformed map or entry never crashes a nightly run: the processor falls back to the default and emits one `dome.agent.model-config-invalid` warning diagnostic. The warden mirrors the shape with the single-value `extensions.dome.warden.config.model_override` for its structured calls (warning code `dome.warden.model-config-invalid`).
+
+Routing cannot bypass the model allowlist: the engine still intersects the declared and granted `modelAllowlist` before every provider call ([[wiki/specs/capabilities]] §"model.invoke"). The shipped `dome.agent` / `dome.warden` manifests declare no allowlist, so an override flows through; a vault grant that does declare one denies an out-of-list override at call time. Nothing engine-side changed for routing.
+
+Routing ships **unset** — per-model output quality is the owner's call (the deployment runbook recommends haiku-class for the mechanical ingest/sweep loops and the provider default for consolidate/brief). One operational note: the provider's prompt cache is per-model, so switching a processor's model mid-day starts that loop's next run with a cold cache prefix.
+
 ## The loop harness and `AgentDefinition`
 
 The bundle library at `assets/extensions/dome.agent/lib/agent-loop.ts` provides the shared harness. Each agent is declared as an `AgentDefinition`:

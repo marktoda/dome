@@ -14,6 +14,7 @@ function makeCtx(opts: {
   steps?: ReadonlyArray<ModelStepResult>;
   stepFn?: (input: {
     readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    readonly model?: string;
   }) => Promise<ModelStepResult>;
 }): ProcessorContext {
   let i = 0;
@@ -397,5 +398,52 @@ describe("dome.agent.ingest", () => {
           (e as DiagnosticEffect).code === "dome.agent.source-unarchived",
       ),
     ).toBe(false);
+  });
+
+  test("model_overrides.ingest routes every step call", async () => {
+    const seen: Array<string | undefined> = [];
+    const ctx = makeCtx({
+      files: { "inbox/raw/x.md": "body" },
+      changedPaths: ["inbox/raw/x.md"],
+      extensionConfig: { model_overrides: { ingest: "claude-haiku-4-5" } },
+      stepFn: async (input) => {
+        seen.push(input.model);
+        return { text: "done" };
+      },
+    });
+    const effects = await ingest.run(ctx);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(new Set(seen)).toEqual(new Set(["claude-haiku-4-5"]));
+    expect(
+      effects.some(
+        (e) =>
+          e.kind === "diagnostic" &&
+          (e as DiagnosticEffect).code === "dome.agent.model-config-invalid",
+      ),
+    ).toBe(false);
+  });
+
+  test("malformed model_overrides degrades to the provider default with a warning", async () => {
+    const seen: Array<string | undefined> = [];
+    const ctx = makeCtx({
+      files: { "inbox/raw/x.md": "body" },
+      changedPaths: ["inbox/raw/x.md"],
+      extensionConfig: { model_overrides: { ingest: 42 } },
+      stepFn: async (input) => {
+        seen.push(input.model);
+        return { text: "done" };
+      },
+    });
+    const effects = await ingest.run(ctx);
+    // Degrade, not crash: the run proceeds on the provider default model.
+    expect(seen.length).toBeGreaterThan(0);
+    expect(new Set(seen)).toEqual(new Set([undefined]));
+    const diag = effects.find(
+      (e) =>
+        e.kind === "diagnostic" &&
+        (e as DiagnosticEffect).code === "dome.agent.model-config-invalid",
+    ) as DiagnosticEffect | undefined;
+    expect(diag?.severity).toBe("warning");
+    expect(diag?.message).toContain("model_overrides.ingest");
   });
 });
