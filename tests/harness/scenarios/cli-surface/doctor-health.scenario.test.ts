@@ -363,7 +363,7 @@ scenario(
     expect(report.status).toBe("unhealthy");
     // Every capability kind is granted — the kind-level probe stays quiet.
     expect(report.summary.capabilityGrantGaps).toBe(0);
-    expect(report.summary.capabilityGrantEntryGaps).toBe(9);
+    expect(report.summary.capabilityGrantEntryGaps).toBe(10);
 
     const entryGaps = report.findings.filter(
       (finding) => finding.code === "capability.grant-entry-missing",
@@ -372,6 +372,7 @@ scenario(
       entryGaps.map((finding) => finding.capability?.processorId).sort(),
     ).toEqual([
       "dome.agent.active-projects",
+      "dome.agent.brief",
       "dome.agent.brief",
       "dome.agent.brief",
       "dome.agent.preference-promotion-answer",
@@ -431,6 +432,24 @@ scenario(
       { kind: "patch.auto", target: "index.md" },
       { kind: "patch.auto", target: "index-*.md" },
     ]);
+
+    // The brief's sources reads (v1 chunk 4): this fixture grants the
+    // calendar glob but not slack, so the calendar row stays quiet (entry
+    // covered) while the slack row names the exact YAML to add — instead
+    // of the brief's overnight Slack weave silently rendering nothing.
+    const slackSource = entryGaps.find((finding) =>
+      finding.id.includes("sources/slack"),
+    );
+    expect(slackSource?.capability?.processorId).toBe("dome.agent.brief");
+    expect(slackSource?.recovery).toContain(
+      'Add "sources/slack/*.md" to extensions.dome.agent.grant.read',
+    );
+    expect(slackSource?.capability?.missingEntries).toEqual([
+      { kind: "read", target: "sources/slack/2026-01-01.md" },
+    ]);
+    expect(
+      entryGaps.some((finding) => finding.id.includes("sources/calendar")),
+    ).toBe(false);
   },
 );
 
@@ -639,6 +658,11 @@ scenario(
           "        - \"log.md\"",
           "        - \"preferences/signals.md\"",
           "        - \"core.md\"",
+          // The brief's sources reads: granting both globs keeps this
+          // scenario's grant-entry probe quiet so the model-provider
+          // finding is the only one.
+          "        - \"sources/calendar/*.md\"",
+          "        - \"sources/slack/*.md\"",
           "      patch.auto:",
           "        - \"wiki/**/*.md\"",
           "        - \"notes/**/*.md\"",

@@ -366,6 +366,26 @@ doctor:
       recovery: >-
         Add "preferences/signals.md" to extensions.dome.agent.grant.read
         and extensions.dome.agent.grant.patch.auto in .dome/config.yaml.
+    - processorId: dome.agent.brief
+      entries:
+        - kind: read
+          target: sources/calendar/2026-01-01.md
+      why: >-
+        calendar source days are grant-scoped out of the brief's snapshot,
+        so the daily Meetings weave silently renders nothing
+      recovery: >-
+        Add "sources/calendar/*.md" to extensions.dome.agent.grant.read in
+        .dome/config.yaml.
+    - processorId: dome.agent.brief
+      entries:
+        - kind: read
+          target: sources/slack/2026-01-01.md
+      why: >-
+        Slack digest days are grant-scoped out of the brief's snapshot, so
+        the overnight Slack weave silently renders nothing
+      recovery: >-
+        Add "sources/slack/*.md" to extensions.dome.agent.grant.read in
+        .dome/config.yaml.
     - processorId: dome.agent.preference-signals
       entries:
         - kind: graph.write
