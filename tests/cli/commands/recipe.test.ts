@@ -35,12 +35,38 @@ describe("dome recipe ios", () => {
     expect(out).toContain("/today?token="); // the cockpit pointer
   });
 
+  test("carries the iCloud queue fallback for an unreachable host", async () => {
+    expect(await runRecipe({ kind: "ios" })).toBe(0);
+    const out = logs.join("\n");
+
+    // Queue-first, phrased the way Shortcuts actually works: no try/catch —
+    // a failed "Get Contents of URL" STOPS the shortcut, so the file saved
+    // before the POST is the failure branch.
+    expect(out).toContain("Save File");
+    expect(out).toContain("iCloud Drive");
+    expect(out).toContain("DomeCaptures");
+    expect(out).toContain("no try/catch");
+    expect(out).toContain("STOPS the shortcut");
+
+    // The queue filename is <timestamp>-<uuid>.md, and the SAME string is
+    // the POST captureId — either delivery channel dedupes to one capture.
+    expect(out).toContain("UUID");
+    expect(out).toContain("yyyy-MM-dd-HHmmss");
+    expect(out).toContain("[Formatted Date]-[UUID]");
+    expect(out).toContain("DomeCaptures/[Text].md");
+    expect(out).toContain("captureId → Text");
+
+    // Happy path clears the queue entry; the drain recipe is named.
+    expect(out).toContain("Delete Files");
+    expect(out).toContain("dome recipe capture-queue");
+  });
+
   test("defaults the base URL to the default port", async () => {
     expect(await runRecipe({ kind: "ios" })).toBe(0);
     expect(logs.join("\n")).toContain(":3663/capture");
   });
 
-  test("unknown kind is a usage error listing both kinds", async () => {
+  test("unknown kind is a usage error listing the kinds", async () => {
     expect(await runRecipe({ kind: "android" })).toBe(64);
     expect(errors.join("\n")).toContain("unknown recipe");
     expect(errors.join("\n")).toContain("available: ios, core-seed");

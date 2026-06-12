@@ -44,19 +44,41 @@ Prerequisites
      (bind a Tailscale interface, never a public one — see
       docs/wiki/specs/http-surface.md "Trust domain")
   2. Your phone is on the same Tailscale network.
+  3. (Queue fallback) A "DomeCaptures" folder in iCloud Drive, drained on
+     the laptop by \`dome recipe capture-queue\` — captures survive the
+     host being asleep or unreachable.
 
 Build the Shortcut (Shortcuts app → + → rename to "Dome Capture")
   1. Add action: "Dictate Text"
-  2. Add action: "Get Contents of URL"
+  2. Add action: "UUID"
+  3. Add action: "Format Date"
+       Date: Current Date, Date Format: Custom → yyyy-MM-dd-HHmmss
+  4. Add action: "Text" → [Formatted Date]-[UUID]
+     (the capture id — ONE string shared by the POST body and the queue
+      filename, so a retry through either channel dedupes to one capture)
+  5. Add action: "Save File"
+       File: Dictated Text       Service: iCloud Drive
+       Ask Where to Save: Off    Destination Path: DomeCaptures/[Text].md
+     (queue first. Shortcuts has no try/catch: when "Get Contents of URL"
+      hits an unreachable host it STOPS the shortcut — that stop is the
+      failure branch, and the file saved here is what survives it. If
+      "Save File" only offers the iCloud Drive/Shortcuts folder, create
+      DomeCaptures inside it and point the drain there — see
+      \`dome recipe capture-queue\` step 2.)
+  6. Add action: "Get Contents of URL"
        URL:     ${base}/capture
        Method:  POST
        Headers: Authorization → Bearer <token>
        Request Body: JSON
          text      → Dictated Text   (the variable from step 1)
-         captureId → Shortcut Input? No — add a "UUID" action before this
-                     step and bind captureId → UUID (makes retries idempotent)
-  3. Add action: "Show Notification" → "Captured ✓"
-  4. (Optional) Settings → Action Button → assign "Dome Capture".
+         captureId → Text            (the variable from step 4)
+  7. Add action: "Delete Files" → File (from "Save File"),
+       Confirm Before Deleting: Off
+     (the POST landed, so the queue entry is cleared. If step 6 failed,
+      the shortcut already stopped and the file waits in DomeCaptures/
+      for the laptop-side drain — eventually consistent, never lost.)
+  8. Add action: "Show Notification" → "Captured ✓"
+  9. (Optional) Settings → Action Button → assign "Dome Capture".
      The same Shortcut works from the Apple Watch Shortcuts complication.
 
 Verify from any shell on the Tailscale network
