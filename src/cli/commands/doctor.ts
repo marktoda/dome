@@ -186,6 +186,7 @@ function printDoctorText(
                 `storage ${report.summary.operationalSchemaMismatch} · ` +
                 `grants ${report.summary.capabilityGrantGaps} kind · ` +
                 `${report.summary.capabilityGrantEntryGaps} entry · ` +
+                `${report.summary.capabilityGrantStarvation} starved · ` +
                 `daily_path ${report.summary.dailyPathMismatch} · ` +
                 `edition ${report.summary.dailyEditionNotCompiled} missed · ` +
                 `calendar ${report.summary.dailyCalendarSourceMissing} missing · ` +

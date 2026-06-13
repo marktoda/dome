@@ -87,6 +87,7 @@ const DOCTOR_SUMMARY_KEYS = Object.freeze([
   "operationalSchemaMismatch",
   "capabilityGrantGaps",
   "capabilityGrantEntryGaps",
+  "capabilityGrantStarvation",
   "modelProviderMissing",
   "modelProviderUnreachable",
   "modelProviderKeyMissing",

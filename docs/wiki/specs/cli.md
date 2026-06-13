@@ -1758,6 +1758,21 @@ grant), doctor raises a `capability.grant-entry-missing` warning whose
 recovery text names the exact YAML to add — `dome init --refresh-config`
 fills only missing keys and never merges entries into existing grant lists,
 so these gaps are otherwise silent (see `docs/memory.md` §"Vault rollout").
+Beyond the hand-curated rows, the **general grant-starvation probe**
+(`capability.grant-starved`, **info**) covers every loaded processor: for
+each manifest-declared `read` / `patch.auto` pattern it derives a
+representative concrete path (glob segments replaced with literals,
+sanity-checked against the broker's own matcher) and reports the patterns
+whose representative the effective grant — per-processor replacement grants
+included — does not cover. Info severity because narrowed grants can be
+deliberate; two suppressions keep it honest: a pattern a hand-curated
+`doctor.grantEntries` row already watches is skipped (hand rows keep their
+curated messaging), and a grant that deliberately narrows WITHIN a declared
+pattern (some granted pattern's representative falls inside it, e.g.
+`wiki/entities/**/*.md` under declared `wiki/**/*.md`) is treated as a
+choice, not starvation — only a declared pattern with zero grant
+intersection (the silently-ungranted calendar-weave failure mode) is
+reported.
 It also reports
 enabled/granted model-capable processors when the vault has no configured or
 host-injected model provider, and — when both `dome.daily` and `dome.agent`

@@ -411,7 +411,10 @@ describe("runCheck", () => {
         "  dome.markdown:",
         "    enabled: true",
         "    grant:",
-        '      read: ["**/*.md"]',
+        // Mirror the manifest's full declared read set — a narrowed grant
+        // would (deliberately) raise info-severity capability.grant-starved
+        // findings, and this test pins the findings list exactly.
+        '      read: ["**/*.md", "core.md", ".dome/page-types.yaml", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}", "raw/**"]',
         '      patch.auto: ["**/*.md"]',
         '      graph.write: ["dome.page.*"]',
         "      question.ask: true",
