@@ -334,6 +334,101 @@ process.exit(1);
     expect(out).toContain("exited 1");
     expect(out).toContain("unsupported Dome model provider request schema");
   });
+
+  // ----- finding primitive rendering -----------------------------------------
+
+  test("human mode renders findings via the finding primitive (new anatomy)", async () => {
+    // Trigger a capability.grant-entry-missing finding by enabling dome.markdown
+    // but omitting core.md from the read grant — same config trick as check test.
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfigBody(
+      f,
+      [
+        "extensions:",
+        "  dome.markdown:",
+        "    enabled: true",
+        "    grant:",
+        '      read: ["wiki/**/*.md", ".dome/page-types.yaml", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}", "raw/**"]',
+        '      patch.auto: ["**/*.md"]',
+        '      graph.write: ["dome.page.*"]',
+        "      question.ask: true",
+        "",
+      ].join("\n"),
+    );
+
+    expect(await runDoctor({ vault: f.vaultPath })).toBe(0);
+    const out = captured.out.join("\n");
+
+    // New anatomy: severity-glyph + code (unicode=false in test env, so ASCII "!")
+    // The capability finding should be present
+    expect(out).toContain("capability.grant-entry-missing");
+    // processor-id subject (not "config") via subjectFor()
+    expect(out).toContain("dome.markdown.core-size");
+    // Old run-on format must be gone
+    expect(out).not.toContain("[warning]");
+    expect(out).not.toMatch(/^\s+recovery:/m);
+    // fix: labeled line must be present
+    expect(out).toContain("fix    ");
+  });
+
+  test("human mode renders capability finding header with processor id, not 'config'", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfigBody(
+      f,
+      [
+        "extensions:",
+        "  dome.markdown:",
+        "    enabled: true",
+        "    grant:",
+        '      read: ["wiki/**/*.md", ".dome/page-types.yaml", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}", "raw/**"]',
+        '      patch.auto: ["**/*.md"]',
+        '      graph.write: ["dome.page.*"]',
+        "      question.ask: true",
+        "",
+      ].join("\n"),
+    );
+
+    expect(await runDoctor({ vault: f.vaultPath })).toBe(0);
+    const out = captured.out.join("\n");
+
+    // The header must carry the processor id, not "config"
+    expect(out).toContain("dome.markdown.core-size");
+    expect(out).not.toMatch(/capability\.grant-entry-missing\s*[-·]\s*config/);
+  });
+
+  // ----- breakdown line dimZeros --------------------------------------------
+
+  test("breakdown line still contains every term (dimZeros stable layout)", async () => {
+    // seedUnhealthyOperationalState gives us findings, so the AT A GLANCE
+    // breakdown line is rendered. Verify every fixed term is present even
+    // when most counts are zero (dimZeros must not drop terms).
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+    await seedUnhealthyOperationalState(f);
+
+    expect(await runDoctor({ vault: f.vaultPath, orphanThresholdMs: 0 })).toBe(0);
+    const out = captured.out.join("\n");
+
+    // All terms must be present — none removed by dimZeros
+    expect(out).toContain("outbox");
+    expect(out).toContain("failed");
+    expect(out).toContain("stuck");
+    expect(out).toContain("orphans");
+    expect(out).toContain("runs");
+    expect(out).toContain("quarantine");
+    expect(out).toContain("projection");
+    expect(out).toContain("git");
+    expect(out).toContain("instructions");
+    expect(out).toContain("storage");
+    expect(out).toContain("grants");
+    expect(out).toContain("daily_path");
+    expect(out).toContain("edition");
+    expect(out).toContain("calendar");
+    expect(out).toContain("model");
+  });
 });
 
 type DoctorProbeJson = {

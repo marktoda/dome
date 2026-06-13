@@ -7,9 +7,9 @@ import { basename } from "node:path";
 
 import {
   DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
-  type HealthFinding,
   type HealthReport,
 } from "../../engine/host/health";
+import { findingLines } from "./health-finding-view";
 import { emitRuntimeOpenFailure } from "../command-error";
 import {
   buildCheckReport,
@@ -32,7 +32,6 @@ import {
 } from "../human-output";
 import {
   bullets,
-  finding,
   footer,
   headline,
   kv,
@@ -41,7 +40,6 @@ import {
   section,
   statusValue,
   type Caps,
-  type Finding,
   type KvRow,
   type Status,
 } from "../presenter";
@@ -263,47 +261,6 @@ function formatLoops(
 ): string {
   if (loops === null) return "unavailable";
   return formatMaintenanceLoopSummaryLine(loops);
-}
-
-const SEVERITY_ORDER: Record<string, number> = {
-  block: 0,
-  error: 0,
-  warning: 1,
-  info: 2,
-};
-
-function subjectFor(hf: HealthFinding): string | undefined {
-  if (
-    hf.code === "capability.grant-missing" ||
-    hf.code === "capability.grant-entry-missing" ||
-    hf.code === "capability.grant-starved"
-  ) {
-    return hf.capability.processorId;
-  }
-  return hf.subject;
-}
-
-function findingLines(findings: ReadonlyArray<HealthFinding>, caps: Caps): ReadonlyArray<string> {
-  if (findings.length === 0) return [];
-  const sorted = [...findings].sort(
-    (a, b) => (SEVERITY_ORDER[a.severity] ?? 1) - (SEVERITY_ORDER[b.severity] ?? 1),
-  );
-  const rendered: string[][] = sorted.map((hf) => {
-    const f: Finding = {
-      severity: hf.severity,
-      code: hf.code,
-      subject: subjectFor(hf),
-      what: hf.message,
-      fix: hf.recovery,
-    };
-    return [...finding(f, caps)];
-  });
-  const lines: string[] = [];
-  for (let i = 0; i < rendered.length; i++) {
-    if (i > 0) lines.push("");
-    lines.push(...(rendered[i] ?? []));
-  }
-  return lines;
 }
 
 function diagnosticLines(
