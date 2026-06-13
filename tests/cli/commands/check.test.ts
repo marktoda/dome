@@ -1158,5 +1158,110 @@ describe("runCheck", () => {
       },
     ]);
   });
+
+  test("human mode renders capability finding header with processor id, not 'config'", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    // Enable dome.markdown but omit core.md from the read grant — this
+    // triggers a capability.grant-entry-missing finding for
+    // dome.markdown.core-size (processorId, not "config").
+    await writeDoctorConfigBody(
+      f,
+      [
+        "extensions:",
+        "  dome.markdown:",
+        "    enabled: true",
+        "    grant:",
+        // Intentionally use wiki/**/*.md (not **/*.md) so core.md is not
+        // covered — dome.markdown.core-size raises capability.grant-entry-missing
+        // because the read kind is granted but the core.md entry is not covered.
+        '      read: ["wiki/**/*.md", ".dome/page-types.yaml", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}", "raw/**"]',
+        '      patch.auto: ["**/*.md"]',
+        '      graph.write: ["dome.page.*"]',
+        "      question.ask: true",
+        "",
+      ].join("\n"),
+    );
+
+    expect(await runCheck({ vault: f.vaultPath })).toBe(0);
+    const out = captured.out.join("\n");
+
+    // The header must carry the processor id, not the literal "config"
+    // subject stored in the HealthFinding. In a non-TTY env, unicode=false,
+    // so the separator is ASCII "-".
+    expect(out).toContain("dome.markdown.core-size");
+    expect(out).not.toMatch(/capability\.grant-entry-missing\s*[-·]\s*config/);
+    // The finding code must still appear
+    expect(out).toContain("capability.grant-entry-missing");
+  });
+
+  test("human mode renders engine findings via the finding primitive", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfigBody(
+      f,
+      [
+        "extensions:",
+        "  dome.markdown:",
+        "    enabled: true",
+        "    grant:",
+        '      read: ["**/*.md", "core.md", ".dome/page-types.yaml", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}", "raw/**"]',
+        '      patch.auto: ["**/*.md"]',
+        '      graph.write: ["dome.page.*"]',
+        "      question.ask: true",
+        "",
+      ].join("\n"),
+    );
+
+    const ledger = await openLedgerDb({
+      path: join(f.vaultPath, ".dome", "state", "runs.db"),
+    });
+    if (!ledger.ok) {
+      throw new Error(`ledger open failed: ${ledger.error.kind}`);
+    }
+    try {
+      const runId = newRunId(new Date(10), () => "chkfnd");
+      insertQueued(ledger.value.db, {
+        id: runId,
+        proposalId: null,
+        processorId: "dome.markdown.validate-wikilinks",
+        processorVersion: "0.0.1",
+        phase: "garden",
+        inputCommit: commitOid(f.headSha),
+        triggerKind: "schedule",
+        triggerPayload: { test: "finding-render" },
+        startedAt: new Date(10),
+      });
+      markRunning(ledger.value.db, runId, new Date(11));
+      markTimedOut(ledger.value.db, {
+        id: runId,
+        error: {
+          code: "processor.timeout",
+          message: "still timed out",
+          retryable: true,
+          phase: "garden",
+          processorId: "dome.markdown.validate-wikilinks",
+        },
+        durationMs: 10000,
+        finishedAt: new Date(12),
+      });
+    } finally {
+      ledger.value.db.close();
+    }
+
+    expect(await runCheck({ vault: f.vaultPath })).toBe(0);
+    const out = captured.out.join("\n");
+
+    // New anatomy: severity-glyph + code + sep + subject (unicode or ASCII glyphs)
+    // In a non-TTY test environment caps.unicode=false so glyphs are ASCII: x and -
+    expect(out).toMatch(/[x✗]\s+run\.latest-problem.*[-·].*runs/);
+    // fix: label present
+    expect(out).toContain("fix    ");
+    // Old run-on prefix must be gone
+    expect(out).not.toContain("[error]");
+    expect(out).not.toContain("[warning]");
+    // recovery: label must be gone
+    expect(out).not.toMatch(/^\s+recovery:/m);
+  });
 });
 
