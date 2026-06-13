@@ -6,7 +6,7 @@ sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
   - "[[wedge]]"
-description: "Vault directory contract: wiki/raw/notes/inbox roots and category table; raw immutable, notes never engine-written, sources/ a committed feed"
+description: "Vault directory contract: wiki/raw/notes/inbox/meta roots and category table; raw immutable, notes never engine-written, meta/ generated bookkeeping, sources/ a committed feed"
 ---
 
 # Vault layout
