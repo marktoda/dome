@@ -148,6 +148,16 @@ export class HarnessImpl implements Harness {
     const clock = opts.clock ?? new TestClock();
 
     await initRepo(vaultPath, branch);
+    // Env insulation: a dev machine with global commit.gpgsign=true would
+    // otherwise leak doctor's git.commit-signing info finding into every
+    // scenario vault (and signing failures into any shelled git commit).
+    // Scenarios probing the signing finding set the LOCAL key themselves.
+    await git.setConfig({
+      fs,
+      dir: vaultPath,
+      path: "commit.gpgsign",
+      value: "false",
+    });
 
     // Write initialFiles + the initial commit. The initial commit is
     // structurally important — most scenarios assume HEAD exists, and

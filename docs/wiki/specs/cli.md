@@ -162,9 +162,11 @@ The shipped initialization steps:
    first-party configs: it adds missing first-party default bundle stanzas and
    fills missing first-party default grant keys for already enabled first-party
    bundles while preserving existing grant values, explicitly disabled bundles,
-   and third-party bundle config. When it changes the file, it rewrites the YAML
-   into normalized form so stale comments from older generated configs do not
-   contradict the active grants. It deliberately does NOT merge new entries
+   and third-party bundle config. When it changes the file, it edits through
+   the yaml Document API: only the inserted stanzas/keys are new text, and
+   hand-written comments and formatting on untouched nodes are preserved
+   (caveat: an inline comment trailing a block-collection key moves to the
+   next line — never deleted). It deliberately does NOT merge new entries
    into grant lists the vault already carries — grant lists are user-owned
    config and auto-merging is too risky. The detection half lives in
    `dome doctor`'s `capability.grant-entry-missing` probe, which names the
@@ -216,13 +218,13 @@ The shipped initialization steps:
    `dome init --with-source <kind>` on an existing vault is the supported
    wiring path; on a vault with commits the resulting script + config changes
    are left **uncommitted** for the owner to review (the scaffold commit in
-   step 9 only fires on a fresh repo). **Sharp edge:** inserting a missing
-   stanza rewrites `.dome/config.yaml` through YAML parse/stringify, which
-   **deletes hand-written comments** anywhere in the file (pre-existing
-   behavior shared with the `--with-model-provider` stanza insert) — on a
-   hand-commented config, commit first and re-add the comments, or
-   hand-insert the stanza instead and use `--with-source` only for the
-   script copy.
+   step 9 only fires on a fresh repo). Stanza inserts (shared with the
+   `--with-model-provider` insert and the `--refresh-config` fill) edit
+   `.dome/config.yaml` through the yaml Document API and **preserve
+   hand-written comments and formatting** on untouched nodes. One documented
+   caveat (yaml@2.9): an inline comment trailing a block-collection key
+   (`calendar: # note`) is repositioned onto the next line — never
+   deleted.
 5. Writes `<vault>/.gitignore` (ignores `.dome/state/` per
    [[wiki/specs/vault-layout]] §"Git repository structure"). First-write-only.
 6. Writes `<vault>/core.md`, the always-loaded core memory page (per
@@ -1324,9 +1326,12 @@ unreachable host simply stops the Shortcut, so the pre-saved file is the only
 failure branch ([[wiki/specs/capture]] §"The iCloud queue fallback") — then
 Get Contents of URL with the bearer header, then Delete Files on success.
 Plus a copyable `curl` verification command and the `GET /today?token=…`
-cockpit URL.
+cockpit URL. The queue this Shortcut leaves behind is drained by its sibling
+recipe, `dome recipe capture-queue`; once captures flow, the brief they feed
+is only as personal as `core.md` — seed it with `dome recipe core-seed`.
 
-**`capture-queue`** — the laptop half of the queue fallback: the printed text
+**`capture-queue`** — the laptop half of the queue fallback whose phone half
+is the `ios` recipe's Shortcut: the printed text
 installs the shipped drain script (`assets/source-handlers/drain-captures.sh`,
 copied to `<vault>/.dome/bin/`; the recipe interpolates the real shipped
 path) and a launchd LaunchAgent (`com.dome.drain-captures`, `StartInterval`
@@ -1352,16 +1357,22 @@ or any agent harness): four questions asked one at a time, then a draft of
 ONLY the two owner-authored sections for the owner's edit and approval. The
 prompt's standing rules ride along — keep the page under the 6,000-character
 size budget, never write inside marker-delimited generated blocks, leave the
-`## Active projects` heading empty.
+`## Active projects` heading empty. The natural install order runs `ios` →
+`capture-queue` → `core-seed`: capture ingress first, then the queue drain
+behind it, then the core memory the resulting briefs draw on.
 
 - `--url <base>` overrides the base URL baked into the printed `ios` recipe
-  (default `http://<your-server>:3663`; trailing slashes are stripped).
+  (default `http://<your-server>:3663`; trailing slashes are stripped). The
+  value must parse as an http(s) URL — anything else (a bare `host:port`
+  typo, a non-http scheme) is a usage error: stderr carries the corrective
+  message, nothing is printed to stdout, and the command exits 64.
 - An unknown `<kind>` is a usage error: stderr names the available recipes
   and the command exits 64.
 
 Tests: `tests/cli/commands/recipe.test.ts`.
 
-Exit codes: 0 on success; 64 (EX_USAGE) on an unknown recipe kind.
+Exit codes: 0 on success; 64 (EX_USAGE) on an unknown recipe kind or a
+`--url` that is not an http(s) URL.
 
 ### `dome run <name> [--json] [-- <processor flags>]`
 
@@ -1756,6 +1767,21 @@ grant), doctor raises a `capability.grant-entry-missing` warning whose
 recovery text names the exact YAML to add — `dome init --refresh-config`
 fills only missing keys and never merges entries into existing grant lists,
 so these gaps are otherwise silent (see `docs/memory.md` §"Vault rollout").
+Beyond the hand-curated rows, the **general grant-starvation probe**
+(`capability.grant-starved`, **info**) covers every loaded processor: for
+each manifest-declared `read` / `patch.auto` pattern it derives a
+representative concrete path (glob segments replaced with literals,
+sanity-checked against the broker's own matcher) and reports the patterns
+whose representative the effective grant — per-processor replacement grants
+included — does not cover. Info severity because narrowed grants can be
+deliberate; two suppressions keep it honest: a pattern a hand-curated
+`doctor.grantEntries` row already watches is skipped (hand rows keep their
+curated messaging), and a grant that deliberately narrows WITHIN a declared
+pattern (some granted pattern's representative falls inside it, e.g.
+`wiki/entities/**/*.md` under declared `wiki/**/*.md`) is treated as a
+choice, not starvation — only a declared pattern with zero grant
+intersection (the silently-ungranted calendar-weave failure mode) is
+reported.
 It also reports
 enabled/granted model-capable processors when the vault has no configured or
 host-injected model provider, and — when both `dome.daily` and `dome.agent`
@@ -1779,6 +1805,19 @@ bare interpreter name, skipping flag arguments), and commands with no
 checkable reference — bare PATH lookups, `sh -c` inline scripts — are
 silently unprobed rather than false-positived; their failures still surface
 through the outbox findings ([[wiki/specs/sources]] §"The flow").
+When the vault's **effective** `git config commit.gpgsign` resolves true
+(probed at the doctor boundary by spawning native git, so local/global/
+system scopes resolve exactly as a shelled `git commit` would see them —
+the inherited-global case is the day-one hazard), doctor raises a
+`git.commit-signing` **info** finding. Purely informational: Dome's own
+commit paths are immune (engine adoption commits and `dome capture` use
+isomorphic-git, which never invokes gpg; the shipped dome.sources fetch
+templates commit with `git -c commit.gpgsign=false` —
+[[wiki/specs/sources]] §"The handler contract"), and the finding names the
+still-affected paths (the owner's own `git commit`, custom vault-side
+scripts shelling plain `git commit`) with `git config --local
+commit.gpgsign false` as the opt-out if the owner wants unsigned human
+commits too — their call.
 The implementation lives in `src/engine/host/health.ts`.
 
 **Model-provider probe.** When `.dome/config.yaml` carries a

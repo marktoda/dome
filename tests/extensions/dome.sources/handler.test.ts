@@ -361,6 +361,47 @@ describe("the shipped claude-calendar.sh template", () => {
     );
   });
 
+  test("gpg immunity: lands unsigned even when the vault config demands commit signing", async () => {
+    // The second-user day-one hazard: a vault inheriting commit.gpgsign=true
+    // (usually from the global config) would make a plain `git commit` try
+    // to sign — non-interactive, no agent, fetch dies. The template's land()
+    // commits with `-c commit.gpgsign=false`, so a broken gpg setup can
+    // never reach it: point gpg.program at a nonexistent binary and the
+    // commit must still land, unsigned.
+    git("config", "commit.gpgsign", "true");
+    git("config", "gpg.program", "/nonexistent/gpg-not-here");
+    mkdirSync(join(vaultPath, "sources", "calendar"), { recursive: true });
+    writeFileSync(
+      join(vaultPath, OUTPUT_PATH),
+      "---\ntype: calendar-day\ndate: 2026-06-10\n---\n\n# Calendar 2026-06-10\n",
+    );
+    const template = join(
+      import.meta.dir,
+      "..",
+      "..",
+      "..",
+      "assets",
+      "source-handlers",
+      "claude-calendar.sh",
+    );
+    const proc = Bun.spawn(["sh", template, PAYLOAD.date, OUTPUT_PATH], {
+      cwd: vaultPath,
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "pipe",
+      env: { ...process.env, PATH: "/usr/bin:/bin" },
+    });
+    const [exitCode, stderrText] = await Promise.all([
+      proc.exited,
+      new Response(proc.stderr).text(),
+    ]);
+    expect(stderrText).toBe("");
+    expect(exitCode).toBe(0);
+    expect(inHead(OUTPUT_PATH)).toBe(true);
+    // The landed commit is unsigned (no gpgsig header on the object).
+    expect(git("cat-file", "commit", "HEAD")).not.toContain("gpgsig");
+  });
+
   test("pathspec commit: staged human work is never swept into the fetch commit", async () => {
     // A human has STAGED unrelated work when the fetch lands. The
     // template's `git commit -- "$f"` must commit only the agenda.
@@ -443,8 +484,34 @@ describe("the shipped claude-slack.sh template", () => {
     expect(text).toContain("grep -q '^---$'");
     expect(text).toContain('grep -q "^date: $d$"');
     expect(text).toContain('grep -q "^# Slack $d$"');
-    // LAND: pathspec-scoped commit with the slack commit subject.
-    expect(text).toContain('git commit -m "slack: overnight digest for $d" -- "$f"');
+    // LAND: pathspec-scoped, signing-immune commit with the slack subject.
+    expect(text).toContain(
+      'git -c commit.gpgsign=false commit -m "slack: overnight digest for $d" -- "$f"',
+    );
+  });
+
+  test("gpg immunity: lands unsigned even when the vault config demands commit signing", async () => {
+    // Same hazard + fix as the calendar template (see that test): land()
+    // must be immune to inherited commit.gpgsign=true.
+    git("config", "commit.gpgsign", "true");
+    git("config", "gpg.program", "/nonexistent/gpg-not-here");
+    mkdirSync(join(vaultPath, "sources", "slack"), { recursive: true });
+    writeFileSync(join(vaultPath, SLACK_OUTPUT), SLACK_DAY_FILE);
+    const proc = Bun.spawn(["sh", template, SLACK_DATE, SLACK_OUTPUT], {
+      cwd: vaultPath,
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "pipe",
+      env: { ...process.env, PATH: "/usr/bin:/bin" },
+    });
+    const [exitCode, stderrText] = await Promise.all([
+      proc.exited,
+      new Response(proc.stderr).text(),
+    ]);
+    expect(stderrText).toBe("");
+    expect(exitCode).toBe(0);
+    expect(inHead(SLACK_OUTPUT)).toBe(true);
+    expect(git("cat-file", "commit", "HEAD")).not.toContain("gpgsig");
   });
 
   test("commit-only retry: when the output file already exists the template commits it without fetching", async () => {

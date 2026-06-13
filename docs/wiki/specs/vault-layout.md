@@ -368,8 +368,11 @@ prose outside the block survives every rewrite. Pages opt out with
 `index: false` frontmatter; a vault whose index stays curated disables
 rendering outright with an explicitly empty `index_categories: {}` in
 `dome.markdown`'s config (this docs vault does exactly that). The category
-map and shard size are configurable (`index_categories` — replaces the
-defaults, doesn't merge; `index_shard_budget_chars`).
+map and shard size are configurable (`index_categories`,
+`index_shard_budget_chars`). A non-empty `index_categories` map MERGES over
+the defaults — adding `notes/: notes` keeps the wiki categories — and a
+prefix mapped to `false` removes that default (mapping every default to
+`false` empties the merge, the same opt-out as explicit `{}`).
 
 No model or agent edits an index file: the renderer is deterministic
 (matching catalog → zero effects), and everything else is fenced out by the

@@ -442,6 +442,138 @@ describe("runInit", () => {
     }
   });
 
+  // ----- comment-preserving config edits -----------------------------------
+  //
+  // The init ensure-paths (`--with-model-provider`, `--with-source`,
+  // `--refresh-config`) edit `.dome/config.yaml` through the yaml package's
+  // Document API (parseDocument → targeted edits → stringify), which keeps
+  // hand-written comments and formatting intact instead of round-tripping
+  // through plain objects (which deleted every comment). Documented caveat
+  // (empirically observed against yaml@2.9; deliberately absent from the
+  // fixture below, which asserts byte-for-byte line preservation): an inline
+  // comment trailing a block-collection KEY (`calendar: # note`) is
+  // repositioned onto the next line; it is never deleted. Comments above
+  // lines and inline after scalar values survive byte-for-byte.
+
+  const COMMENTED_CONFIG = [
+    "# top-of-file comment the owner wrote",
+    "extensions:",
+    "  # daily bundle — hand-tuned by the owner",
+    "  dome.daily:",
+    "    enabled: true # keep on",
+    "    grant:",
+    "      read:",
+    '        - "wiki/**/*.md" # only the wiki',
+    "  dome.sources:",
+    "    enabled: true",
+    "    config:",
+    "      subscriptions:",
+    "        calendar:",
+    "          # the owner's hand-tuned schedule",
+    "          enabled: true",
+    '          schedule: "10 5 * * *"',
+    '          output_path: "sources/calendar/{date}.md"',
+    '          command: ["sh", ".dome/bin/fetch-calendar.sh"]',
+    "    grant:",
+    '      read: ["sources/**/*.md"]',
+    "engine:",
+    "  max_iterations: 25 # owner note",
+    "",
+  ].join("\n");
+
+  /** Every line of `original` appears in `after`, in order (insert-only edit). */
+  function expectLinesPreservedInOrder(original: string, after: string): void {
+    const afterLines = after.split("\n");
+    let cursor = 0;
+    for (const line of original.split("\n")) {
+      const found = afterLines.indexOf(line, cursor);
+      expect(found).toBeGreaterThanOrEqual(cursor);
+      cursor = found + 1;
+    }
+  }
+
+  test("--with-source slack preserves hand-written comments (insert-only edit)", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cli-init-comments-source-"));
+    try {
+      await mkdir(join(target, ".dome"), { recursive: true });
+      const configPath = join(target, ".dome", "config.yaml");
+      await writeFile(configPath, COMMENTED_CONFIG, "utf8");
+
+      expect(await runInit({ path: target, withSource: ["slack"] })).toBe(0);
+
+      const after = await readFile(configPath, "utf8");
+      // Every original line — comments included — survives in order; the
+      // slack stanza is the only addition.
+      expectLinesPreservedInOrder(COMMENTED_CONFIG, after);
+      const subscriptions = record(
+        record(
+          record(record(record(parseYaml(after)).extensions)["dome.sources"])
+            .config,
+        ).subscriptions,
+      );
+      expect(subscriptions.slack).toEqual({
+        enabled: false,
+        schedule: "15 5 * * *",
+        output_path: "sources/slack/{date}.md",
+        command: ["sh", ".dome/bin/fetch-slack.sh"],
+      });
+      // The hand-tuned calendar stanza is byte-untouched (still enabled).
+      expect(record(subscriptions.calendar).enabled).toBe(true);
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  test("--with-model-provider preserves hand-written comments (insert-only edit)", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cli-init-comments-provider-"));
+    try {
+      await mkdir(join(target, ".dome"), { recursive: true });
+      const configPath = join(target, ".dome", "config.yaml");
+      await writeFile(configPath, COMMENTED_CONFIG, "utf8");
+
+      expect(await runInit({ path: target, modelProvider: "anthropic" })).toBe(
+        0,
+      );
+
+      const after = await readFile(configPath, "utf8");
+      expectLinesPreservedInOrder(COMMENTED_CONFIG, after);
+      expect(record(parseYaml(after)).model_provider).toEqual(
+        defaultModelProviderConfig("anthropic"),
+      );
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  test("--refresh-config preserves hand-written comments while filling defaults", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cli-init-comments-refresh-"));
+    try {
+      await mkdir(join(target, ".dome"), { recursive: true });
+      const configPath = join(target, ".dome", "config.yaml");
+      await writeFile(configPath, COMMENTED_CONFIG, "utf8");
+
+      expect(await runInit({ path: target, refreshConfig: true })).toBe(0);
+
+      const after = await readFile(configPath, "utf8");
+      expectLinesPreservedInOrder(COMMENTED_CONFIG, after);
+      const refreshed = record(parseYaml(after));
+      const extensions = record(refreshed.extensions);
+      // Missing first-party stanzas were filled ...
+      expect(record(extensions["dome.lint"]).enabled).toBe(true);
+      expect(record(extensions["dome.markdown"]).enabled).toBe(true);
+      // ... missing grant keys on the enabled commented bundle were filled ...
+      expect(record(record(extensions["dome.daily"]).grant)["patch.auto"])
+        .toEqual(["wiki/**/*.md", "notes/*.md"]);
+      // ... and the owner's narrowed read grant value was NOT changed.
+      expect(record(record(extensions["dome.daily"]).grant).read).toEqual([
+        "wiki/**/*.md",
+      ]);
+      expect(record(refreshed.engine).max_iterations).toBe(25);
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
   test("--json emits a stable initialization summary", async () => {
     const target = mkdtempSync(join(tmpdir(), "cli-init-json-"));
     try {

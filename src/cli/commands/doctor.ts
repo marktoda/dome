@@ -118,9 +118,16 @@ export async function runDoctor(
       });
     }
 
+    // Probe the vault's EFFECTIVE commit.gpgsign (local + inherited global
+    // config — the global inheritance is the day-one hazard). Doctor is the
+    // probe verb; `dome check` reuses the HealthReport machinery without
+    // spawning git.
+    const commitSigningEnabled = await vaultCommitSigningEnabled(runtime.path);
+
     const report = await collectHealthReport({
       ...runtimeHealthReportInputs(runtime),
       ...(modelProviderProbe !== undefined ? { modelProviderProbe } : {}),
+      ...(commitSigningEnabled !== undefined ? { commitSigningEnabled } : {}),
       orphanRunThresholdMs: orphanThresholdMs,
     });
     if (options.json === true) {
@@ -186,6 +193,7 @@ function printDoctorText(
                 `storage ${report.summary.operationalSchemaMismatch} · ` +
                 `grants ${report.summary.capabilityGrantGaps} kind · ` +
                 `${report.summary.capabilityGrantEntryGaps} entry · ` +
+                `${report.summary.capabilityGrantStarvation} starved · ` +
                 `daily_path ${report.summary.dailyPathMismatch} · ` +
                 `edition ${report.summary.dailyEditionNotCompiled} missed · ` +
                 `calendar ${report.summary.dailyCalendarSourceMissing} missing · ` +
@@ -242,4 +250,40 @@ function parseNonNegativeInteger(
   fallback: number,
 ): number | null {
   return parseNonNegativeIntegerValue(raw, fallback);
+}
+
+/**
+ * The vault's effective `git config commit.gpgsign`, read by spawning
+ * native git so local/global/system scopes resolve exactly as a shelled
+ * `git commit` would see them. `--type=bool` has git itself canonicalize
+ * every truthy spelling (`yes`/`on`/`1`/`true`) to the literal `true`.
+ * Returns false when the key is unset (git exits 1) or carries a value git
+ * cannot canonicalize, and undefined when git itself cannot be spawned —
+ * undefined suppresses the probe rather than guessing.
+ */
+async function vaultCommitSigningEnabled(
+  vaultPath: string,
+): Promise<boolean | undefined> {
+  try {
+    const proc = Bun.spawn(
+      [
+        "git",
+        "-C",
+        vaultPath,
+        "config",
+        "--get",
+        "--type=bool",
+        "commit.gpgsign",
+      ],
+      { stdin: "ignore", stdout: "pipe", stderr: "ignore" },
+    );
+    const [stdout, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      proc.exited,
+    ]);
+    if (exitCode !== 0) return false; // unset key → exit 1
+    return stdout.trim() === "true";
+  } catch {
+    return undefined;
+  }
 }

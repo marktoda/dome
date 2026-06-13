@@ -20,6 +20,7 @@ export function runtimeHealthReportInputs(runtime: VaultRuntime) {
     capabilityPolicyHash: runtime.capabilityPolicyHash,
     registry: runtime.registry,
     resolveGrants: runtime.resolveGrants,
+    extensionIdFor: runtime.extensionIdFor,
     extensionConfigFor: runtime.extensionConfigFor,
     doctorGrantEntries: runtime.doctorGrantEntries,
     modelProviderConfigured: runtime.modelProvider !== undefined,

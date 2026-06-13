@@ -222,19 +222,57 @@ describe("dome.markdown.render-index", () => {
     expect(effects).toHaveLength(0);
   });
 
-  test("config overrides categories and budget; malformed config degrades to defaults", async () => {
-    // Valid override: only notes/ is indexed.
-    const overridden = await runRenderIndex(
+  test("non-empty index_categories merges over the defaults", async () => {
+    // Adding `notes/: notes` does NOT replace the wiki defaults — the merged
+    // map indexes both the added prefix and the default categories.
+    const merged = await runRenderIndex(
       {
         "notes/idea.md": "---\ndescription: An idea\n---\n\n# Idea\n",
         "wiki/entities/a.md": "---\ndescription: Engineer\n---\n\n# A\n",
       },
       { index_categories: { "notes/": "notes" } },
     );
-    const patch = expectPatch(overridden, 0);
-    const byPath = changesByPath(patch);
-    expect([...byPath.keys()].sort()).toEqual(["index.md", "meta/index-notes.md"]);
+    const patch = expectPatch(merged, 0);
+    expect([...changesByPath(patch).keys()].sort()).toEqual([
+      "index.md",
+      "meta/index-entities.md",
+      "meta/index-notes.md",
+    ]);
+  });
 
+  test("mapping a prefix to false removes that default from the merge", async () => {
+    // entities/ is dropped; concepts/ stays a default; notes/ is added.
+    const effects = await runRenderIndex(
+      {
+        "notes/idea.md": "---\ndescription: An idea\n---\n\n# Idea\n",
+        "wiki/entities/a.md": "---\ndescription: Engineer\n---\n\n# A\n",
+        "wiki/concepts/b.md": "# B\n",
+      },
+      { index_categories: { "notes/": "notes", "wiki/entities/": false } },
+    );
+    const patch = expectPatch(effects, 0);
+    expect([...changesByPath(patch).keys()].sort()).toEqual([
+      "index.md",
+      "meta/index-concepts.md",
+      "meta/index-notes.md",
+    ]);
+
+    // Removing EVERY default with false entries empties the merged map —
+    // the same deliberate opt-out as the explicit-{} switch: zero effects.
+    const disabled = await runRenderIndex(
+      { "wiki/entities/a.md": "---\ndescription: Engineer\n---\n\n# A\n" },
+      {
+        index_categories: {
+          "wiki/entities/": false,
+          "wiki/concepts/": false,
+          "wiki/syntheses/": false,
+        },
+      },
+    );
+    expect(disabled).toHaveLength(0);
+  });
+
+  test("config overrides budget; malformed config degrades to defaults", async () => {
     // Malformed override: defaults win and a warning diagnostic surfaces.
     const degraded = await runRenderIndex(
       { "wiki/entities/a.md": "---\ndescription: Engineer\n---\n\n# A\n" },

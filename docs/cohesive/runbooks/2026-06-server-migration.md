@@ -103,9 +103,13 @@ reaches it only after a restart. (Plan:
    catalog. If wanted, add to `~/vaults/work/.dome/config.yaml` under
    `extensions.dome.markdown`:
 
-       config: { index_categories: { "wiki/entities/": "entities", "wiki/concepts/": "concepts", "wiki/syntheses/": "syntheses", "wiki/sources/": "sources" } }
+       config: { index_categories: { "wiki/sources/": "sources" } }
 
-   NOTE: the map REPLACES the defaults, so all four prefixes must be listed.
+   NOTE: a non-empty map MERGES over the defaults (chunk8 Task 4), so the one
+   `wiki/sources/` line keeps entities/concepts/syntheses too; listing all
+   four prefixes explicitly (as the work vault does) behaves identically. A
+   prefix mapped to `false` removes that default; explicit `{}` still
+   disables rendering outright.
 5. `dome restart` — the daemon must restart to pick up the new processors from
    the dev tree.
 6. `render-index` produces `index.md` + shards on the next garden tick (05:15
@@ -176,24 +180,24 @@ the fetched calendar files at all. The rich Meetings sections in current
 dailies come from something else, not the brief's calendar weave —
 fetch-works ≠ weave-works. Step 3 below closes this for calendar AND slack.
 `engine.external_handler_timeout_ms: 300000` is already
-set (no `config.sources-timeout-default` finding expected). Note: as of this
-check the config carries **no hand-written YAML comments**, so the rewrite
-hazard below is currently moot for this vault — but re-verify with
-`grep '#' ~/vaults/work/.dome/config.yaml` immediately before step 2, since
-comments may have been added since.
+set (no `config.sources-timeout-default` finding expected). Note: the
+comment-deletion rewrite hazard that used to live in step 2 was fixed in v1
+chunk 8 (`dome init` config edits now go through the yaml Document API and
+preserve hand-written comments), so no pre-check grep is needed anymore.
 
 Slack enablement, in order:
 
 1. Commit any outstanding `.dome/config.yaml` changes first, so the next
    step's rewrite is reviewable as a clean diff.
-2. ⚠️ **LOUD WARNING — config rewrite.**
-   `dome init --with-source slack ~/vaults/work` inserts the slack stanza by
-   rewriting `config.yaml` through YAML parse/stringify, which **DELETES
-   every hand-written comment in the file** (pre-existing
-   `--with-model-provider` behavior). Use it only on a comment-free config
-   (verified in the pre-check above). If comments are present, hand-insert
-   the stanza instead and run `--with-source slack` anyway just for the
-   script copy — an existing stanza is left byte-untouched. The stanza:
+2. **Config insert — comment-safe since v1 chunk 8.**
+   `dome init --with-source slack ~/vaults/work` inserts the slack stanza
+   through the yaml package's Document API (`parseDocument` → targeted node
+   edits), so **hand-written comments and formatting survive** — the old
+   parse/stringify rewrite that deleted every comment is gone (fixed
+   alongside `--with-model-provider` and `--refresh-config`). One pinned
+   caveat: an inline comment trailing a block-collection KEY
+   (`calendar: # note`) is repositioned onto the next line — never deleted.
+   An existing stanza is still left byte-untouched. The stanza it inserts:
 
        slack:
          enabled: false
@@ -215,6 +219,17 @@ Slack enablement, in order:
 
    Commit. After this step (plus a restart) the calendar weave starts
    working for the first time, independent of slack enablement.
+3b. **GPG note — the templates self-protect now.** The shipped fetch
+   templates' `land()` commits with `git -c commit.gpgsign=false` (v1
+   chunk 8), so a vault inheriting global `commit.gpgsign=true` can no
+   longer kill the non-interactive fetch commit — no manual
+   `-c commit.gpgsign=false` or vault-local signing override is needed for
+   the subscription path anymore. If the vault's `.dome/bin/fetch-*.sh`
+   copies predate this, re-copy from `assets/source-handlers/` (or add the
+   flag by hand). Engine commits and `dome capture` were always immune
+   (isomorphic-git never signs); `dome doctor` now reports an info
+   `git.commit-signing` finding when the effective config signs, naming
+   the immune vs affected paths.
 4. **Review the script — it is the consent surface.** Read
    `.dome/bin/fetch-slack.sh` end to end, especially the prompt: the fetch is
    headless `claude -p` running **as you**, with your Slack MCP, summarizing

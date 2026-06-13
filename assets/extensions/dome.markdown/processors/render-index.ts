@@ -87,7 +87,9 @@ function categoriesFromConfig(config?: ExtensionConfig): CategoriesResolution {
   }
   // An explicitly empty map is a deliberate "rendering disabled" switch for
   // vaults whose indexes are curated by hand — honored as-is, never degraded
-  // to defaults and never warned about.
+  // to defaults and never warned about. A NON-empty map MERGES over the
+  // defaults (so adding `notes/: notes` keeps the wiki categories); mapping
+  // a prefix to `false` removes that default from the merged result.
   const valid =
     typeof raw === "object" &&
     raw !== null &&
@@ -100,22 +102,32 @@ function categoriesFromConfig(config?: ExtensionConfig): CategoriesResolution {
         !prefix.startsWith("/") &&
         !prefix.includes("\\") &&
         !prefix.includes("..") &&
-        typeof category === "string" &&
-        CATEGORY_NAME_RE.test(category),
+        (category === false ||
+          (typeof category === "string" && CATEGORY_NAME_RE.test(category))),
     );
   if (!valid) {
     return Object.freeze({
       value: DEFAULT_CATEGORIES,
       problem:
         "dome.markdown config index_categories must map relative path prefixes " +
-        "to slug category names; falling back to " +
+        "to slug category names (or false to drop a default); falling back to " +
         Object.keys(DEFAULT_CATEGORIES).join(", "),
     });
   }
-  return Object.freeze({
-    value: Object.freeze({ ...(raw as Record<string, string>) }),
-    problem: null,
-  });
+  const entries = Object.entries(raw as Record<string, string | false>);
+  if (entries.length === 0) {
+    // The explicit-{} opt-out: an empty value, NOT defaults.
+    return Object.freeze({ value: Object.freeze({}), problem: null });
+  }
+  const merged: Record<string, string> = { ...DEFAULT_CATEGORIES };
+  for (const [prefix, category] of entries) {
+    if (category === false) {
+      delete merged[prefix];
+    } else {
+      merged[prefix] = category;
+    }
+  }
+  return Object.freeze({ value: Object.freeze(merged), problem: null });
 }
 
 type BudgetResolution = {
@@ -144,9 +156,10 @@ function budgetFromConfig(config?: ExtensionConfig): BudgetResolution {
 const renderIndex = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const categories = categoriesFromConfig(ctx.extensionConfig);
-    // Explicitly empty `index_categories: {}` disables rendering outright:
-    // zero categories → zero effects (defaults are never empty, so an empty
-    // resolved map can only come from a deliberate opt-out).
+    // An empty resolved map disables rendering outright: zero categories →
+    // zero effects. Defaults are never empty, so emptiness only comes from a
+    // deliberate opt-out — explicit `index_categories: {}`, or a map whose
+    // `false` entries remove every default.
     if (Object.keys(categories.value).length === 0) return Object.freeze([]);
     const budget = budgetFromConfig(ctx.extensionConfig);
 

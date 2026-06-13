@@ -35,8 +35,9 @@ import type {
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import { countCommitsOnlyIn, currentSha, isAncestor } from "../../git";
 import type { Capability } from "../../core/processor";
-import { canonicalVaultPath } from "../../core/vault-path";
+import { canonicalVaultPath, type VaultPath } from "../../core/vault-path";
 import { graphWriteCovers } from "../core/capability-broker";
+import { globMatch } from "../core/glob-cache";
 import { pathCapabilityMatches } from "../core/path-capabilities";
 import type { ProcessorRegistry } from "../../processors/registry";
 import type { ModelProviderProbeResult } from "./command-model-provider";
@@ -210,6 +211,22 @@ export type HealthFinding =
       };
     }
   | {
+      readonly code: "capability.grant-starved";
+      readonly severity: "info";
+      readonly subject: "config";
+      readonly id: string;
+      readonly message: string;
+      readonly recovery: string;
+      readonly capability: {
+        readonly processorId: string;
+        readonly extensionId: string;
+        readonly starved: ReadonlyArray<{
+          readonly kind: "read" | "patch.auto";
+          readonly pattern: string;
+        }>;
+      };
+    }
+  | {
       readonly code: "model.provider-missing";
       readonly severity: "warning";
       readonly subject: "config";
@@ -308,6 +325,14 @@ export type HealthFinding =
         /** The brief's two most recent run days (local YYYY-MM-DD, newest first). */
         readonly briefRunDates: ReadonlyArray<string>;
       };
+    }
+  | {
+      readonly code: "git.commit-signing";
+      readonly severity: "info";
+      readonly subject: "git";
+      readonly id: "commit_gpgsign";
+      readonly message: string;
+      readonly recovery: string;
     };
 
 export type HealthSummary = {
@@ -326,6 +351,7 @@ export type HealthSummary = {
   readonly operationalSchemaMismatch: number;
   readonly capabilityGrantGaps: number;
   readonly capabilityGrantEntryGaps: number;
+  readonly capabilityGrantStarvation: number;
   readonly modelProviderMissing: number;
   readonly modelProviderUnreachable: number;
   readonly modelProviderKeyMissing: number;
@@ -334,6 +360,7 @@ export type HealthSummary = {
   readonly sourcesFetchScriptMissing: number;
   readonly dailyEditionNotCompiled: number;
   readonly dailyCalendarSourceMissing: number;
+  readonly gitCommitSigning: number;
 };
 
 /**
@@ -357,6 +384,7 @@ const SUMMARY_FIELD_BY_CODE = Object.freeze({
   "operational.schema-mismatch": "operationalSchemaMismatch",
   "capability.grant-missing": "capabilityGrantGaps",
   "capability.grant-entry-missing": "capabilityGrantEntryGaps",
+  "capability.grant-starved": "capabilityGrantStarvation",
   "model.provider-missing": "modelProviderMissing",
   "model.provider-unreachable": "modelProviderUnreachable",
   "model.provider-key-missing": "modelProviderKeyMissing",
@@ -365,6 +393,7 @@ const SUMMARY_FIELD_BY_CODE = Object.freeze({
   "sources.fetch-script-missing": "sourcesFetchScriptMissing",
   "daily.edition-not-compiled": "dailyEditionNotCompiled",
   "daily.calendar-source-missing": "dailyCalendarSourceMissing",
+  "git.commit-signing": "gitCommitSigning",
 } as const) satisfies Readonly<Record<HealthFinding["code"], keyof HealthSummary>>;
 
 type CodeSummaryField =
@@ -406,6 +435,8 @@ export async function collectHealthReport(opts: {
   readonly resolveGrants?: (
     processorId: string,
   ) => ReadonlyArray<Capability>;
+  /** Processor → bundle id map (recovery wording for grant findings). */
+  readonly extensionIdFor?: (processorId: string) => string;
   readonly extensionConfigFor?: (
     extensionId: string,
   ) => Readonly<Record<string, unknown>>;
@@ -419,6 +450,13 @@ export async function collectHealthReport(opts: {
   /** Composed manifest doctor contributions (`runtime.doctorGrantEntries`). */
   readonly doctorGrantEntries?: ReadonlyArray<ManifestGrantEntryRequirement>;
   readonly modelProviderProbe?: ModelProviderProbeInput;
+  /**
+   * The vault's effective `git config commit.gpgsign`, probed at the
+   * `dome doctor` boundary (this module never spawns git). Undefined →
+   * not probed (e.g. `dome check`); true → the `git.commit-signing`
+   * info finding.
+   */
+  readonly commitSigningEnabled?: boolean;
   readonly now?: Date;
   readonly orphanRunThresholdMs?: number;
   readonly pendingOutboxThresholdMs?: number;
@@ -467,6 +505,17 @@ export async function collectHealthReport(opts: {
           registry: opts.registry,
           resolveGrants: opts.resolveGrants,
           requirements: opts.doctorGrantEntries ?? [],
+        });
+  const capabilityGrantStarvation =
+    opts.registry === undefined || opts.resolveGrants === undefined
+      ? []
+      : capabilityGrantStarvationFindings({
+          registry: opts.registry,
+          resolveGrants: opts.resolveGrants,
+          requirements: opts.doctorGrantEntries ?? [],
+          ...(opts.extensionIdFor !== undefined
+            ? { extensionIdFor: opts.extensionIdFor }
+            : {}),
         });
   const modelProvider =
     opts.registry === undefined || opts.resolveGrants === undefined
@@ -526,16 +575,23 @@ export async function collectHealthReport(opts: {
             ),
         });
 
+  const commitSigning =
+    opts.commitSigningEnabled === true
+      ? [commitSigningFinding()]
+      : [];
+
   const findings: HealthFinding[] = [
     ...storageSchema,
     ...capabilityGrants,
     ...capabilityGrantEntries,
+    ...capabilityGrantStarvation,
     ...modelProvider,
     ...modelProviderProbe,
     ...dailyPathMismatch,
     ...sourcesTimeout,
     ...sourcesFetchScript,
     ...dailyEdition,
+    ...commitSigning,
     ...failedOutbox.map(outboxFinding),
     ...stuckPendingOutbox.map(stuckPendingOutboxFinding),
     ...orphaned.map(orphanFinding),
@@ -730,6 +786,157 @@ function formatGrantEntries(entries: ReadonlyArray<GrantEntry>): string {
   return entries
     .map((entry) => `'${entry.kind}' over '${entry.target}'`)
     .join(", ");
+}
+
+// ----- General grant-starvation probe ------------------------------------------
+//
+// Grant-scoped snapshot misses are silent: a processor whose manifest
+// declares a `read`/`patch.auto` pattern the vault grant does not cover just
+// never sees the files (manifest ∩ grant = ∅, no diagnostic) — this is how
+// the owner's calendar weave was silently ungranted for weeks. Unlike the
+// hand-curated `doctor.grantEntries` rows above, this probe is GENERAL: it
+// derives a representative concrete path from every declared pattern of
+// every loaded processor and reports the patterns whose representative the
+// effective grant misses. Info severity by design — narrowed grants can be
+// deliberate, and the effective grant already respects per-processor
+// replacement grants (capability-policy resolves a replacement grant INSTEAD
+// of the bundle grant, so a narrow replacement is judged against itself).
+// Hand rows keep precedence: a pattern that covers a hand-row entry's target
+// for the same processor + kind is skipped here (the hand row carries the
+// curated messaging for that gap).
+
+const STARVATION_KINDS = ["read", "patch.auto"] as const;
+type StarvationKind = (typeof STARVATION_KINDS)[number];
+
+export function capabilityGrantStarvationFindings(opts: {
+  readonly registry: ProcessorRegistry;
+  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
+  /** Hand-curated rows (`doctor.grantEntries`) — these keep precedence. */
+  readonly requirements: ReadonlyArray<ManifestGrantEntryRequirement>;
+  /** Processor → bundle id (recovery wording); falls back to processor id. */
+  readonly extensionIdFor?: (processorId: string) => string;
+}): ReadonlyArray<HealthFinding> {
+  const findings: HealthFinding[] = [];
+  for (const processor of [...opts.registry.all()].sort((a, b) =>
+    compareStrings(a.id, b.id),
+  )) {
+    const granted = opts.resolveGrants(processor.id);
+    const grantedKinds = capabilityKinds(granted);
+    const handEntries = opts.requirements
+      .filter((requirement) => requirement.processorId === processor.id)
+      .flatMap((requirement) => requirement.entries);
+    const starved: Array<{ kind: StarvationKind; pattern: string }> = [];
+    for (const capability of processor.capabilities) {
+      if (capability.kind !== "read" && capability.kind !== "patch.auto") {
+        continue;
+      }
+      const kind: StarvationKind = capability.kind;
+      // A wholly missing kind is `capability.grant-missing`'s finding.
+      if (!grantedKinds.has(kind)) continue;
+      for (const pattern of capability.paths) {
+        // Hand-row precedence: the curated row already watches this gap.
+        if (
+          handEntries.some(
+            (entry) => entry.kind === kind && globMatch(pattern, entry.target),
+          )
+        ) {
+          continue;
+        }
+        const representative = representativeTargetForPattern(pattern);
+        // Nothing checkable derivable from the pattern — never a finding.
+        if (representative === null) continue;
+        if (pathCapabilityMatches(kind, representative, granted)) continue;
+        // Deliberate-narrowing suppression: a granted pattern strictly
+        // WITHIN the declared pattern (e.g. grant wiki/entities/**/*.md
+        // under declared wiki/**/*.md) means the processor acts on the
+        // granted subset — narrowed by choice, not silently starving. Only
+        // a declared pattern with ZERO grant intersection (the
+        // calendar-weave failure mode) is reported.
+        if (grantNarrowsWithin(kind, pattern, granted)) continue;
+        starved.push({ kind, pattern });
+      }
+    }
+    if (starved.length === 0) continue;
+    const extensionId = opts.extensionIdFor?.(processor.id) ?? processor.id;
+    findings.push(
+      Object.freeze({
+        code: "capability.grant-starved" as const,
+        severity: "info" as const,
+        subject: "config" as const,
+        id: [
+          processor.id,
+          ...starved.map((entry) => `${entry.kind}:${entry.pattern}`),
+        ].join("|"),
+        message:
+          `Processor ${processor.id} declares ` +
+          starved
+            .map((entry) => `'${entry.kind}' over '${entry.pattern}'`)
+            .join(", ") +
+          " but the effective vault grant does not cover " +
+          `${starved.length === 1 ? "that pattern" : "those patterns"}; ` +
+          "grant-scoped snapshots silently omit the matching files, so the " +
+          "processor never acts on them.",
+        recovery:
+          "If the narrowing is deliberate, ignore this info finding. " +
+          `Otherwise add the missing pattern(s) under ` +
+          `extensions.${extensionId}.grant.<kind> in .dome/config.yaml — or ` +
+          `under extensions.${extensionId}.processors.` +
+          `"${processor.id}".grant when the vault carries a per-processor ` +
+          "replacement grant for it.",
+        capability: Object.freeze({
+          processorId: processor.id,
+          extensionId,
+          starved: Object.freeze(
+            starved.map((entry) =>
+              Object.freeze({ kind: entry.kind, pattern: entry.pattern }),
+            ),
+          ),
+        }),
+      }),
+    );
+  }
+  return Object.freeze(findings);
+}
+
+/**
+ * True when some granted pattern of `kind` lies WITHIN the declared
+ * pattern — detected by deriving the granted pattern's representative path
+ * and asking whether the declared pattern matches it. Partial coverage
+ * means the processor does act inside the granted subset, so the gap is a
+ * deliberate narrowing rather than silent starvation.
+ */
+function grantNarrowsWithin(
+  kind: StarvationKind,
+  declaredPattern: string,
+  granted: ReadonlyArray<Capability>,
+): boolean {
+  for (const cap of granted) {
+    if (cap.kind !== kind) continue;
+    for (const grantedPattern of cap.paths) {
+      const representative = representativeTargetForPattern(grantedPattern);
+      if (representative === null) continue;
+      if (globMatch(declaredPattern, representative)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Derive a concrete vault path that `pattern` matches, by replacing glob
+ * constructs with literals: the first alternative of each `{a,b}` group,
+ * `probe` for `*`/`**` runs, `x` for `?`. The derivation is sanity-checked
+ * against the broker's own matcher — a pattern whose derived literal it
+ * does not match (exotic character classes, etc.) yields null, and null
+ * means "nothing checkable", never a finding.
+ */
+function representativeTargetForPattern(pattern: string): VaultPath | null {
+  const literal = pattern
+    .replace(/\{([^{}]*)\}/g, (_match, body: string) => body.split(",")[0] ?? "")
+    .replace(/\*+/g, "probe")
+    .replace(/\?/g, "x");
+  const path = canonicalVaultPath(literal);
+  if (path === null) return null;
+  return globMatch(pattern, path) ? path : null;
 }
 
 function modelProviderFindings(opts: {
@@ -1184,6 +1391,43 @@ export function dailyEditionFindings(opts: {
   }
 
   return Object.freeze(findings);
+}
+
+/**
+ * The `git.commit-signing` info finding (the day-one GPG hazard from the
+ * second-user ledger): the vault's effective git config — usually the
+ * inherited global config — enables commit signing. Dome's own commit
+ * paths are immune (engine adoption commits and `dome capture` go through
+ * isomorphic-git, which never invokes gpg; the shipped dome.sources fetch
+ * templates commit with `git -c commit.gpgsign=false`), so this is purely
+ * informational: it names the still-affected paths (the owner's own
+ * `git commit` and any custom vault-side script shelling plain
+ * `git commit`) instead of letting a non-interactive signing failure
+ * surface as a mystery later.
+ */
+function commitSigningFinding(): HealthFinding {
+  return Object.freeze({
+    code: "git.commit-signing" as const,
+    severity: "info" as const,
+    subject: "git" as const,
+    id: "commit_gpgsign" as const,
+    message:
+      "This vault's effective git config sets commit.gpgsign=true (often " +
+      "inherited from the global config). Dome's own commit paths are " +
+      "immune — engine adoption commits and `dome capture` use " +
+      "isomorphic-git (which never invokes gpg), and the shipped " +
+      "dome.sources fetch templates commit with `git -c " +
+      "commit.gpgsign=false`. Affected: your own `git commit` and any " +
+      "custom vault-side script that shells out to plain `git commit` — " +
+      "those will try to sign, and a missing key or absent agent fails " +
+      "the commit non-interactively.",
+    recovery:
+      "Informational — signing your own commits is your call. If an " +
+      "unattended script's commits fail on signing, add `-c " +
+      "commit.gpgsign=false` to its git commit invocation, or run " +
+      "`git config --local commit.gpgsign false` in the vault to keep " +
+      "human commits unsigned here too.",
+  });
 }
 
 /**

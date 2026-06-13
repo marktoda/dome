@@ -2,6 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
+import { execFileSync } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -41,6 +42,66 @@ describe("runDoctor", () => {
     expect(out).toContain("ok");
     expect(out).toContain("FINDINGS");
     expect(out).toContain("none");
+  });
+
+  test("effective commit.gpgsign truthy raises the git.commit-signing info finding (status stays ok)", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+    // The fixture insulates with local commit.gpgsign=false; flip it back
+    // to model a vault inheriting global signing (the day-one hazard).
+    // "yes" rather than "true": git accepts yes/on/1/true as boolean
+    // spellings, and the probe must register all of them (--type=bool).
+    execFileSync("git", ["-C", f.vaultPath, "config", "commit.gpgsign", "yes"]);
+
+    expect(await runDoctor({ vault: f.vaultPath, json: true })).toBe(0);
+    const blob = captured.out.find((line) => line.includes("\"status\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as {
+      readonly status: string;
+      readonly summary: {
+        readonly infoCount: number;
+        readonly gitCommitSigning: number;
+      };
+      readonly findings: ReadonlyArray<{
+        readonly code: string;
+        readonly severity: string;
+        readonly message: string;
+        readonly recovery: string;
+      }>;
+    };
+    // Info severity: signing is the owner's call; the report stays ok.
+    expect(parsed.status).toBe("ok");
+    expect(parsed.summary.gitCommitSigning).toBe(1);
+    const finding = parsed.findings.find(
+      (row) => row.code === "git.commit-signing",
+    );
+    expect(finding).toBeDefined();
+    expect(finding?.severity).toBe("info");
+    // The message explains which paths are immune vs affected.
+    expect(finding?.message).toContain("isomorphic-git");
+    expect(finding?.message).toContain("commit.gpgsign=false");
+    expect(finding?.recovery).toContain("git config --local commit.gpgsign false");
+  });
+
+  test("unset / false commit.gpgsign raises no git.commit-signing finding", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    expect(await runDoctor({ vault: f.vaultPath, json: true })).toBe(0);
+    const blob = captured.out.find((line) => line.includes("\"status\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as {
+      readonly summary: { readonly gitCommitSigning: number };
+      readonly findings: ReadonlyArray<{ readonly code: string }>;
+    };
+    expect(parsed.summary.gitCommitSigning).toBe(0);
+    expect(
+      parsed.findings.some((row) => row.code === "git.commit-signing"),
+    ).toBe(false);
   });
 
   test("--json reports failed outbox, orphan runs, and quarantines", async () => {

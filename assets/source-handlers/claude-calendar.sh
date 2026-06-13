@@ -23,8 +23,9 @@
 #     (wiki/specs/vault-layout.md §"sources/"), and COMMIT it as an
 #     ordinary git commit (a non-engine commit the daemon adopts).
 #   - If $2 ALREADY EXISTS, skip the fetch and just commit it: a prior
-#     attempt wrote the file but its commit failed (gpg/hook failure,
-#     killed mid-script). The handler verifies completion against HEAD and
+#     attempt wrote the file but its commit failed (hook failure, killed
+#     mid-script; signing is disabled per-commit below, so gpg cannot be
+#     the cause). The handler verifies completion against HEAD and
 #     retries exactly for this case — the retry is commit-only, never a
 #     second fetch.
 #   - Commit with a PATHSPEC (`git commit -m ... -- "$f"`) so a human's
@@ -42,10 +43,14 @@ d="$1"
 f="$2"
 
 # Pathspec-scoped landing: stages and commits ONLY the fetched file, so
-# anything a human has staged stays out of this commit.
+# anything a human has staged stays out of this commit. `-c
+# commit.gpgsign=false` makes the commit signing-immune: a vault inheriting
+# global commit.gpgsign=true would otherwise try to sign non-interactively
+# and die (vault-data commits are engine-class — unsigned, like the
+# engine's own isomorphic-git commits).
 land() {
   git add -- "$f"
-  git commit -m "calendar: agenda for $d" -- "$f"
+  git -c commit.gpgsign=false commit -m "calendar: agenda for $d" -- "$f"
 }
 
 # ----- COMMIT-ONLY RETRY -------------------------------------------------------
