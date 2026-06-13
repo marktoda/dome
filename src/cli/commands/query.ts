@@ -157,18 +157,21 @@ export function formatQueryResult(data: unknown, caps: Caps, vault?: string): st
     const crumb = m.breadcrumb !== null && m.breadcrumb.startsWith(titlePrefix)
       ? m.breadcrumb.slice(titlePrefix.length)
       : m.breadcrumb;
+    const crumbVal = crumb !== null && crumb !== m.title && crumb.length > 0
+      ? crumb
+      : undefined;
+    const snippetVal = m.snippet.length > 0 ? stripFtsMarkers(m.snippet) : undefined;
+    const sourceRefVal = m.sourceRefs.length > 0
+      ? formatSourceRef(m.sourceRefs[0]!)
+      : undefined;
     const rendered = matchPrimitive(
       {
         rank: i + 1,
         title: m.title,
         path: m.path,
-        breadcrumb: crumb !== null && crumb !== m.title && crumb.length > 0
-          ? crumb
-          : undefined,
-        snippet: m.snippet.length > 0 ? stripFtsMarkers(m.snippet) : undefined,
-        sourceRef: m.sourceRefs.length > 0
-          ? formatSourceRef(m.sourceRefs[0]!)
-          : undefined,
+        ...(crumbVal !== undefined ? { breadcrumb: crumbVal } : {}),
+        ...(snippetVal !== undefined ? { snippet: snippetVal } : {}),
+        ...(sourceRefVal !== undefined ? { sourceRef: sourceRefVal } : {}),
       },
       caps,
     );
@@ -502,22 +505,6 @@ function numberValue(value: unknown): number | null {
     : null;
 }
 
-function summarizeLabels(
-  labels: ReadonlyArray<string>,
-  limit: number,
-): string {
-  const counts = new Map<string, number>();
-  for (const label of labels) {
-    counts.set(label, (counts.get(label) ?? 0) + 1);
-  }
-
-  const rendered = [...counts.entries()]
-    .slice(0, limit)
-    .map(([label, count]) => count === 1 ? label : `${label} x${count}`);
-  const omitted = counts.size - rendered.length;
-  if (omitted > 0) rendered.push(`+${omitted} more`);
-  return rendered.join(", ");
-}
 
 function formatSourceRef(ref: QuerySourceRef): string {
   const range = ref.range === undefined

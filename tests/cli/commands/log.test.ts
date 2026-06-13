@@ -123,7 +123,7 @@ describe("dome log", () => {
 // Unit tests for formatEntry — exercise relative-time and trailer-stripping
 // without spinning up a full vault. `now` is injected so results are stable.
 
-const CAPS_PLAIN = { color: false as const, unicode: false as const };
+const CAPS_PLAIN = { color: false as const, unicode: false as const, width: 80 as const };
 
 // A timestamp 2 hours in the past relative to our fixed `now`.
 const FIXED_NOW = new Date("2026-06-13T12:00:00Z");
@@ -137,6 +137,7 @@ const BASE_ENTRY = {
   body: "",
   run: null,
   runId: null,
+  extensionId: null,
 };
 
 describe("formatEntry (unit)", () => {

@@ -1176,9 +1176,8 @@ dome lint - work                                                    ! 3 findings
     issues    3 total · 0 block · 0 error · 3 warning · 0 info
 
   ISSUES
-    ! dome.markdown.broken-wikilink                  wiki/projects/platform.md
+    ! dome.markdown.broken-wikilink · wiki/projects/platform.md
         Broken wikilink: [[missing]]
-        wiki/projects/platform.md:14-14 @ 41a98c2
 
 --------------------------------------------------------------------------------
 ! 3 findings

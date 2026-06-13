@@ -32,6 +32,7 @@ function makeRanking(opts: {
     score: opts.score,
     ftsRank: opts.ftsRank,
     reasons: Object.freeze(opts.reasons),
+    recencyFactor: 1,
     signals: Object.freeze([]),
   });
 }
@@ -40,7 +41,7 @@ function makeFact(predicate: string, object: string) {
   return Object.freeze({
     predicate,
     object,
-    assertion: "asserted" as const,
+    assertion: "explicit" as const,
     sourceRefs: Object.freeze([makeRef("wiki/page.md")]),
   });
 }
@@ -191,6 +192,6 @@ describe("packet-render markdown output", () => {
   test("raw ranking.reasons still contains recency decay (--json data layer intact)", () => {
     // Confirm the structured data carries the full reasons; only the render is filtered.
     expect(ENTRY.ranking.reasons).toContain("recency decay x0.98");
-    expect(OVERVIEW.readFirst[0].reason).toMatch(/recency decay/);
+    expect(OVERVIEW.readFirst[0]!.reason).toMatch(/recency decay/);
   });
 });

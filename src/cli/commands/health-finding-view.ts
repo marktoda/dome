@@ -42,10 +42,11 @@ export function findingLines(
     (a, b) => (SEVERITY_ORDER[a.severity] ?? 1) - (SEVERITY_ORDER[b.severity] ?? 1),
   );
   const rendered: string[][] = sorted.map((hf) => {
+    const subject = subjectFor(hf);
     const f: Finding = {
       severity: hf.severity,
       code: hf.code,
-      subject: subjectFor(hf),
+      ...(subject !== undefined ? { subject } : {}),
       what: hf.message,
       fix: hf.recovery,
     };
