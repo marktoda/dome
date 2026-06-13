@@ -21,10 +21,13 @@ import { formatJson } from "../../surface/format";
 import { formatSeverity } from "../human-output";
 import {
   bullets,
+  dimZeros,
   footer,
   headline,
+  humanizeCommand,
   kv,
   nextActions,
+  relativeTime,
   resolveCaps,
   section,
   statusValue,
@@ -91,7 +94,19 @@ function printStatusText(
     headline({ cmd: "status", context: basename(s.vault) }, head, caps),
   ];
 
-  lines.push(...section("Next", nextActions(s.next_actions, caps), caps));
+  lines.push(
+    ...section(
+      "Next",
+      nextActions(
+        s.next_actions.map((a) => ({
+          command: a.command === null ? null : humanizeCommand(a.command),
+          description: a.description,
+        })),
+        caps,
+      ),
+      caps,
+    ),
+  );
 
   lines.push(
     ...section(
@@ -134,11 +149,11 @@ function printStatusText(
       "Engine",
       kv(
         [
-          { label: "last sync", value: s.last_sync ?? "(never)", tone: "muted" },
-          { label: "runs", value: `${formatPendingRuns(s)} pending · ${s.failed_runs} failed` },
-          { label: "outbox", value: `${s.outbox_pending} pending · ${s.outbox_failed} failed` },
+          { label: "last sync", value: s.last_sync === null ? "(never)" : relativeTime(s.last_sync), tone: "muted" },
+          { label: "runs", value: dimZeros([`${formatPendingRuns(s)} pending`, `${s.failed_runs} failed`], caps) },
+          { label: "outbox", value: dimZeros([`${s.outbox_pending} pending`, `${s.outbox_failed} failed`], caps) },
           { label: "quarantine", value: String(s.quarantined) },
-          { label: "loops", value: formatMaintenanceLoopSummaryLine(s.maintenance_loops) },
+          { label: "loops", value: formatMaintenanceLoopSummaryLine(s.maintenance_loops, caps) },
           ...(s.service_status === "unsupported"
             ? []
             : [{ label: "service", value: formatServiceLine(s) } satisfies KvRow]),

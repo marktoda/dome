@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { pad, truncate, visibleWidth } from "../../../src/cli/presenter/width";
+import { pad, truncate, visibleWidth, wrap } from "../../../src/cli/presenter/width";
 import { headline, kv, section, statusValue } from "../../../src/cli/presenter/primitives";
 
 describe("visibleWidth", () => {
@@ -17,6 +17,21 @@ describe("pad", () => {
   });
   test("never truncates a too-long string", () => {
     expect(pad("abcdef", 3)).toBe("abcdef");
+  });
+});
+
+describe("wrap", () => {
+  test("returns a single line when within width", () => {
+    expect(wrap("hello world", 20)).toEqual(["hello world"]);
+  });
+  test("breaks on word boundaries at the width", () => {
+    expect(wrap("alpha beta gamma delta", 11)).toEqual(["alpha beta", "gamma delta"]);
+  });
+  test("keeps an over-long single word on its own line", () => {
+    expect(wrap("supercalifragilistic word", 10)).toEqual(["supercalifragilistic", "word"]);
+  });
+  test("empty string yields one empty line", () => {
+    expect(wrap("", 10)).toEqual([""]);
   });
 });
 
@@ -144,7 +159,7 @@ describe("tree", () => {
   });
 });
 
-import { table, type Column } from "../../../src/cli/presenter/primitives";
+import { dimZeros, finding, match, table, type Column, type Finding, type MatchView } from "../../../src/cli/presenter/primitives";
 
 type Row = { name: string; phase: string };
 const COLS: Column<Row>[] = [
@@ -188,5 +203,134 @@ describe("table", () => {
     expect(lines.length).toBe(2);
     expect(lines[0]).toContain("A");
     expect(lines[0]).toContain("C");
+  });
+});
+
+describe("finding", () => {
+  const UNI = { color: false, unicode: true, width: 80 };
+  test("renders glyph+code+subject header, what, and fix", () => {
+    const f: Finding = {
+      severity: "warning",
+      code: "capability.grant-entry-missing",
+      subject: "dome.markdown.core-size",
+      what: "core.md is declared 'read' but the vault grant doesn't cover it",
+      fix: "add \"core.md\" to extensions.dome.markdown.grant.read",
+    };
+    expect(finding(f, UNI)).toEqual([
+      "  ⚠ capability.grant-entry-missing · dome.markdown.core-size",
+      "      core.md is declared 'read' but the vault grant doesn't cover it",
+      "      fix    add \"core.md\" to extensions.dome.markdown.grant.read",
+    ]);
+  });
+
+  test("omits subject separator when no subject, and renders note before fix", () => {
+    const f: Finding = {
+      severity: "info",
+      code: "capability.grant-starved",
+      what: "'index-*.md' is not covered by the effective grant",
+      note: "grant-scoped snapshots silently omit matching files",
+      fix: "add the pattern under …grant.<kind>",
+    };
+    expect(finding(f, UNI)).toEqual([
+      "  • capability.grant-starved",
+      "      'index-*.md' is not covered by the effective grant",
+      "      note   grant-scoped snapshots silently omit matching files",
+      "      fix    add the pattern under …grant.<kind>",
+    ]);
+  });
+
+  test("wraps a long what line with a hanging indent at the content column", () => {
+    const narrow = { color: false, unicode: true, width: 34 };
+    const f: Finding = {
+      severity: "error",
+      code: "x.y",
+      what: "alpha beta gamma delta epsilon zeta",
+    };
+    expect(finding(f, narrow)).toEqual([
+      "  ✗ x.y",
+      "      alpha beta gamma delta",
+      "      epsilon zeta",
+    ]);
+  });
+
+  test("block severity renders the ✗ glyph like error", () => {
+    const f: Finding = { severity: "block", code: "x.y", what: "boom" };
+    expect(finding(f, UNI)).toEqual(["  ✗ x.y", "      boom"]);
+  });
+
+  test("long fix wraps with continuation lines at col 13 (not under the label)", () => {
+    // width=24: textIndent = 6 + 4 + 3 = 13 spaces; avail = 24 - 13 = 11
+    // "one two three four" → first chunk fits "one two" (7 ≤ 11), next word "three" would make 13 > 11
+    // continuation: 13 spaces then "three four"
+    const narrow = { color: false, unicode: true, width: 24 };
+    const f: Finding = { severity: "error", code: "x.y", what: "boom", fix: "one two three four" };
+    expect(finding(f, narrow)).toEqual([
+      "  ✗ x.y",
+      "      boom",
+      "      fix    one two",
+      "             three four",
+    ]);
+  });
+});
+
+describe("match", () => {
+  const wide = { color: false, unicode: true, width: 60 };
+  test("rank+title left, path right-aligned, breadcrumb, snippet, source ref", () => {
+    const m: MatchView = {
+      rank: 1,
+      title: "Effect router targets",
+      path: "wiki/matrices/effect-router-targets.md",
+      breadcrumb: "Phase compatibility precedes capability enforcement",
+      snippet: "the rejected effect is not applied",
+      sourceRef: "ba1de2b · lines 46–56",
+    };
+    expect(match(m, wide)).toEqual([
+      "  1  Effect router …  wiki/matrices/effect-router-targets.md",
+      "     › Phase compatibility precedes capability enforcement",
+      "     the rejected effect is not applied",
+      "     ba1de2b · lines 46–56",
+    ]);
+  });
+
+  test("omits breadcrumb/snippet/source lines when absent", () => {
+    const m: MatchView = { rank: 2, title: "SDK surface", path: "wiki/specs/sdk-surface.md" };
+    expect(match(m, wide)).toEqual([
+      "  2  SDK surface                   wiki/specs/sdk-surface.md",
+    ]);
+  });
+
+  test("rank 10 breadcrumb indents to match the left-column width (6 spaces)", () => {
+    // left = "  10  " = 6 chars; indent must be 6 spaces to stay under the title
+    const m: MatchView = {
+      rank: 10,
+      title: "Effect router targets",
+      path: "wiki/matrices/effect-router-targets.md",
+      breadcrumb: "Phase compatibility precedes capability enforcement",
+    };
+    const lines = match(m, wide);
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+    const breadcrumbLine = lines[1]!;
+    const leadingSpaces = breadcrumbLine.match(/^( *)/)?.[1] ?? "";
+    expect(leadingSpaces).toBe("      "); // exactly 6 spaces
+  });
+});
+
+const COLOR = { color: true, unicode: true, width: 80 };
+
+describe("dimZeros", () => {
+  test("joins terms with the separator and no color when color:false", () => {
+    expect(dimZeros(["9 known", "0 attention", "2 partial"], ASCII)).toBe(
+      "9 known · 0 attention · 2 partial",
+    );
+  });
+  test("paints only the zero terms muted when color:true", () => {
+    const out = dimZeros(["0 failed", "1 live"], COLOR);
+    expect(out).toContain("1 live");
+    expect(out.indexOf("1 live")).toBe(out.lastIndexOf("1 live"));
+    expect(out).toContain("\x1b[");
+    expect(out).toContain("0 failed");
+  });
+  test("treats a bare 0 and 0-prefixed counts as zero, but not 10", () => {
+    expect(dimZeros(["10 known", "0"], ASCII)).toBe("10 known · 0");
   });
 });

@@ -549,6 +549,29 @@ describe("runInspect", () => {
     expect(captured.out.join("\n")).toContain("(no rows)");
   });
 
+  test("verdict header: non-empty result uses bullet glyph, empty result uses pending/muted glyph", async () => {
+    // 'bundles' always returns rows (SDK ships first-party bundles).
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(await runInspect({ subject: "bundles", vault: f.vaultPath })).toBe(0);
+    const withRows = captured.out.join("\n");
+    // ASCII caps (non-TTY): bullet tone → "*", muted/pending tone → "o".
+    // Unicode caps (TTY): bullet tone → "•", muted/pending tone → "○".
+    // Test env is non-TTY → ASCII glyphs. The first line is the headline.
+    const firstLine = withRows.split("\n")[0] ?? "";
+    expect(firstLine).toContain("* "); // bullet glyph (info/plain tone)
+    expect(firstLine).toContain("rows");
+
+    captured.out = [];
+    // 'questions' on a fresh vault has no rows.
+    expect(await runInspect({ subject: "questions", vault: f.vaultPath })).toBe(0);
+    const empty = captured.out.join("\n");
+    const emptyFirstLine = empty.split("\n")[0] ?? "";
+    expect(emptyFirstLine).toContain("o "); // pending glyph (muted tone)
+    expect(emptyFirstLine).toContain("no rows");
+  });
+
   test("subject 'diagnostics' returns source locations", async () => {
     const f = await makeFixture();
     fixtures.push(f);

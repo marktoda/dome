@@ -10,9 +10,10 @@ import { basename } from "node:path";
 
 import {
   firstPartyViewNotFoundMessage,
-  runStructuredViewCommand,
+  runSharedViewCommand,
   structuredViewBrokerMessages,
 } from "../../surface/view";
+import { validateStructuredRun } from "../../surface/adapter";
 import { FIRST_PARTY_VIEWS } from "../../surface/view-catalog";
 import {
   printViewCommandError,
@@ -20,6 +21,7 @@ import {
 } from "./view-shared";
 import { formatJson } from "../../surface/format";
 import {
+  finding,
   footer,
   headline,
   kv,
@@ -82,43 +84,135 @@ async function renderTodayOnce(
 ): Promise<RenderOutcome> {
   const vaultPath = resolveVaultPath(options.vault);
   try {
-    const run = await runStructuredViewCommand({
+    const run = await runSharedViewCommand({
       commandLabel: "dome today",
       commandName: FIRST_PARTY_VIEWS.today.command,
-      expectedViewName: FIRST_PARTY_VIEWS.today.viewName,
-      expectedSchema: FIRST_PARTY_VIEWS.today.schema,
       commandArgs: Object.freeze({
         ...(options.date !== undefined ? { date: options.date } : {}),
         ...(options.limit !== undefined ? { limit: options.limit } : {}),
       }),
       vault: options.vault,
       bundlesRoot: options.bundlesRoot,
-      notFoundMessage: firstPartyViewNotFoundMessage({
-        commandLabel: "dome today",
-        bundleId: FIRST_PARTY_VIEWS.today.bundleId,
-        processorName: FIRST_PARTY_VIEWS.today.processorName,
-      }),
-      noStructuredResultMessage:
-        "dome today: today processor returned no structured result.",
     });
-    if (run.kind === "error") {
+
+    // not-found: dome.daily is not installed — render verdict header + finding
+    // instead of the bare run-on sentence the notFoundMessage would produce.
+    if (run.kind === "not-found") {
+      if (options.json === true) {
+        printViewCommandError({
+          commandLabel: "dome today",
+          json: true,
+          messages: [
+            firstPartyViewNotFoundMessage({
+              commandLabel: "dome today",
+              bundleId: FIRST_PARTY_VIEWS.today.bundleId,
+              processorName: FIRST_PARTY_VIEWS.today.processorName,
+            }),
+          ],
+        });
+        return { kind: "error", exitCode: 64 };
+      }
+      const caps = resolveCaps();
+      const lines = [
+        headline(
+          { cmd: "today", context: basename(vaultPath) },
+          { tone: "err", label: "not available" },
+          caps,
+        ),
+        "",
+        ...finding(
+          {
+            severity: "error",
+            code: "dome.daily not installed",
+            what: "no today processor is enabled for this vault",
+            fix: "dome init --refresh-config   (adds current first-party defaults)",
+          },
+          caps,
+        ),
+      ];
+      console.log(lines.join("\n"));
+      return { kind: "error", exitCode: 64 };
+    }
+
+    if (run.kind === "usage-error") {
       printViewCommandError({
         commandLabel: "dome today",
         json: options.json === true,
-        messages: run.messages,
+        messages: [run.message],
       });
-      return { kind: "error", exitCode: run.exitCode };
+      return { kind: "error", exitCode: 64 };
     }
+    if (run.kind === "runtime-error") {
+      printViewCommandError({
+        commandLabel: "dome today",
+        json: options.json === true,
+        messages: [run.message],
+      });
+      return { kind: "error", exitCode: 1 };
+    }
+    if (run.kind === "failed") {
+      const messages = [
+        `dome today: processor '${run.processorId}' finished with ${run.executionStatus}.`,
+      ];
+      if (run.executionError !== null) {
+        messages.push(
+          `dome today: ${run.executionError.code}: ${run.executionError.message}`,
+        );
+      }
+      for (const d of run.diagnostics) {
+        messages.push(
+          `dome today: diagnostic [${d.severity}] ${d.code}: ${d.message}`,
+        );
+      }
+      printViewCommandError({
+        commandLabel: "dome today",
+        json: options.json === true,
+        messages,
+      });
+      return { kind: "error", exitCode: 1 };
+    }
+
+    // run.kind === "ok" — validate the structured view.
+    const validated = validateStructuredRun(
+      { views: run.views, structured: run.structured },
+      {
+        viewName: FIRST_PARTY_VIEWS.today.viewName,
+        schema: FIRST_PARTY_VIEWS.today.schema,
+      },
+    );
+    if (validated.kind === "problem") {
+      const msg = (() => {
+        switch (validated.problem.kind) {
+          case "no-structured-result":
+            return "dome today: today processor returned no structured result.";
+          case "multiple-views":
+            return `dome today: expected exactly one view '${FIRST_PARTY_VIEWS.today.viewName}', got ${validated.problem.count}.`;
+          case "wrong-view":
+            return `dome today: expected view '${FIRST_PARTY_VIEWS.today.viewName}', got '${validated.problem.got}'.`;
+          case "wrong-schema":
+            return `dome today: expected structured schema '${FIRST_PARTY_VIEWS.today.schema}', got '${validated.problem.got}'.`;
+          default:
+            return "dome today: today processor returned no structured result.";
+        }
+      })();
+      printViewCommandError({
+        commandLabel: "dome today",
+        json: options.json === true,
+        messages: [msg],
+      });
+      return { kind: "error", exitCode: 1 };
+    }
+
     // TODO: suppress repeated broker diagnostics across watch iterations.
     printViewCommandMessages(
       structuredViewBrokerMessages("dome today", run.brokerDiagnostics),
     );
     if (options.json === true) {
-      return { kind: "ok", text: formatJson(run.data) };
+      return { kind: "ok", text: formatJson(validated.data) };
     }
     return {
       kind: "ok",
-      text: formatTodayResult(run.data, resolveCaps(), vaultPath),
+      text: formatTodayResult(validated.data, resolveCaps(), vaultPath),
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

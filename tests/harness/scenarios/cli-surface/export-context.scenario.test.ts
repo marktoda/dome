@@ -100,7 +100,7 @@ scenario(
     expect(text.stdout).toContain("## Unresolved Questions");
     expect(text.stdout).toContain("## Active Diagnostics");
     expect(text.stdout).toContain("wiki/project-alpha.md");
-    expect(text.stdout).toContain("- Ranking:");
+    expect(text.stdout).toContain("- Relevance:");
     expect(text.stdout).toContain("alpha launch ownership model");
     expect(text.stdout).toContain("SourceRefs:");
     expect(text.stdout).toContain("Summary:");

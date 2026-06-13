@@ -7,9 +7,9 @@ import { basename } from "node:path";
 
 import {
   DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
-  type HealthFinding,
   type HealthReport,
 } from "../../engine/host/health";
+import { findingLines } from "./health-finding-view";
 import { emitRuntimeOpenFailure } from "../command-error";
 import {
   buildCheckReport,
@@ -157,7 +157,7 @@ function renderCheckReport(
           },
           {
             label: "loops",
-            value: formatLoops(report.maintenance_loops),
+            value: formatLoops(report.maintenance_loops, caps),
             tone: "plain",
           },
         ],
@@ -258,21 +258,10 @@ function formatDecisions(report: CheckDecisionReport | null): string {
 
 function formatLoops(
   loops: ReadonlyArray<MaintenanceLoopSummary> | null,
+  caps: Caps,
 ): string {
   if (loops === null) return "unavailable";
-  return formatMaintenanceLoopSummaryLine(loops);
-}
-
-function findingLines(findings: ReadonlyArray<HealthFinding>, _caps: Caps): ReadonlyArray<string> {
-  if (findings.length === 0) return [];
-  const lines: string[] = [];
-  for (const finding of findings) {
-    lines.push(
-      `  - [${formatSeverity(finding.severity)}] ${finding.code}: ${finding.message}`,
-    );
-    lines.push(`    recovery: ${finding.recovery}`);
-  }
-  return lines;
+  return formatMaintenanceLoopSummaryLine(loops, caps);
 }
 
 function diagnosticLines(

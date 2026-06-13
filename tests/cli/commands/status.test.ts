@@ -382,7 +382,7 @@ describe("runStatus", () => {
     expect(await runStatus({ vault: f.vaultPath })).toBe(0);
     const text = captured.out.join("\n");
     expect(text).toContain("inbox 1 (1 raw)");
-    expect(text).toContain("dome inspect bundles --json");
+    expect(text).toContain("dome inspect bundles");
   });
 
   test("--json routes waiting raw captures before sync when intake lacks a model provider", async () => {
@@ -595,7 +595,7 @@ describe("runStatus", () => {
 
     const staleOut = captured.out.join("\n");
     expect(staleOut).toContain("runs"); expect(staleOut).toContain("2 total (1 stale) pending · 0 failed");
-    expect(staleOut).toContain("dome check --json");
+    expect(staleOut).toContain("dome check");
   });
 
   test("--json last_sync ignores newer view processor runs", async () => {
@@ -1837,6 +1837,88 @@ describe("runStatus", () => {
     expect(cache).not.toBeNull();
     expect(cache?.result.status).toBe("spawn-failed");
     expect(cache?.command).toEqual(["/nonexistent/dome-test-provider"]);
+  });
+
+  // ----- Task 7: relative time, dimmed zeros, humanized next-action ----------
+
+  test("last_sync renders as relative time and hides the raw ISO in text mode", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    // Seed a past sync run so last_sync is a real ISO timestamp.
+    const ledger = await openLedgerDb({
+      path: join(f.vaultPath, ".dome", "state", "runs.db"),
+    });
+    expect(ledger.ok).toBe(true);
+    if (!ledger.ok) return;
+    const adoptedCommit = commitOid(f.headSha);
+    // Two hours in the past
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    try {
+      const runId = newRunId(twoHoursAgo, () => "relsyn");
+      insertQueued(ledger.value.db, {
+        id: runId,
+        proposalId: null,
+        processorId: "test.relative.sync",
+        processorVersion: "0.0.1",
+        phase: "garden",
+        inputCommit: adoptedCommit,
+        triggerKind: "schedule",
+        triggerPayload: { test: "relative" },
+        startedAt: twoHoursAgo,
+      });
+      markRunning(ledger.value.db, runId, twoHoursAgo);
+      markSucceeded(ledger.value.db, {
+        id: runId,
+        effectHashes: [],
+        costUsd: null,
+        durationMs: 1,
+        outputCommit: null,
+        finishedAt: twoHoursAgo,
+      });
+    } finally {
+      ledger.value.db.close();
+    }
+
+    expect(await runStatus({ vault: f.vaultPath })).toBe(0);
+
+    const out = captured.out.join("\n");
+    // Should contain a relative time shape, not the raw ISO
+    expect(out).toMatch(/\d+[mhd] ago|just now/);
+    // The raw ISO string (starting with the year) must not appear
+    expect(out).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+  });
+
+  test("next-action command is humanized (--json stripped) in text mode", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    // Fresh vault has sync_needed attention, which generates a next action with
+    // command "dome sync --json". In text mode it should be stripped to "dome sync".
+    expect(await runStatus({ vault: f.vaultPath })).toBe(0);
+
+    const out = captured.out.join("\n");
+    // Humanized command present
+    expect(out).toContain("dome sync");
+    // Raw --json form must not appear in the text output
+    expect(out).not.toContain("dome sync --json");
+  });
+
+  test("runs and outbox rows dim zero terms in text mode", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    // Fresh vault: pending_runs=0, failed_runs=0, outbox_pending=0, outbox_failed=0.
+    // In no-color test mode dimZeros returns the plain joined string.
+    expect(await runStatus({ vault: f.vaultPath })).toBe(0);
+
+    const out = captured.out.join("\n");
+    // runs row: "0 pending · 0 failed" (both terms dimmed when zero)
+    expect(out).toContain("runs");
+    expect(out).toMatch(/runs.*0 pending ·.*0 failed/s);
+    // outbox row: "0 pending · 0 failed"
+    expect(out).toContain("outbox");
+    expect(out).toMatch(/outbox.*0 pending ·.*0 failed/s);
   });
 
   // The "status after a submit reports the advanced adopted ref" test

@@ -3,10 +3,11 @@
 import { basename } from "node:path";
 
 import { formatJson } from "../../surface/format";
-import { formatSeverity } from "../human-output";
 import { parsePositiveIntegerValue } from "../parse-options";
 import {
   bullets,
+  dimZeros,
+  finding,
   footer,
   headline,
   kv,
@@ -103,16 +104,16 @@ export async function runLint(
   }
 }
 
-type LintSeverity = "info" | "warning" | "error" | "block";
+export type LintSeverity = "info" | "warning" | "error" | "block";
 
-type LintIssueData = {
+export type LintIssueData = {
   readonly severity: LintSeverity;
   readonly code: string;
   readonly message: string;
   readonly sourceRefs: ReadonlyArray<{ readonly path: string; readonly commit: string }>;
 };
 
-type LintData = {
+export type LintData = {
   readonly status: "pass" | "fail";
   readonly failOn: string;
   readonly checked: { readonly markdownFiles: number };
@@ -128,7 +129,7 @@ type LintData = {
   readonly issues: ReadonlyArray<LintIssueData>;
 };
 
-function parseLintData(data: unknown): LintData {
+export function parseLintData(data: unknown): LintData {
   if (data === null || typeof data !== "object") {
     throw new Error("lint structured data must be an object.");
   }
@@ -176,7 +177,7 @@ function parseLintData(data: unknown): LintData {
   });
 }
 
-function renderLintText(data: LintData, vaultPath: string): string {
+export function renderLintText(data: LintData, vaultPath: string): string {
   const caps = resolveCaps();
 
   const headStatus: Status = data.status === "pass"
@@ -196,12 +197,16 @@ function renderLintText(data: LintData, vaultPath: string): string {
           { label: "fail-on", value: data.failOn },
           {
             label: "issues",
-            value:
-              `${data.counts.total} total · ` +
-              `${data.counts.block} block · ` +
-              `${data.counts.error} error · ` +
-              `${data.counts.warning} warning · ` +
-              `${data.counts.info} info`,
+            value: dimZeros(
+              [
+                `${data.counts.total} total`,
+                `${data.counts.block} block`,
+                `${data.counts.error} error`,
+                `${data.counts.warning} warning`,
+                `${data.counts.info} info`,
+              ],
+              caps,
+            ),
           },
         ],
         caps,
@@ -210,22 +215,50 @@ function renderLintText(data: LintData, vaultPath: string): string {
     ),
   );
 
-  const issueBullets: string[] = [];
-  for (const issue of data.issues) {
-    issueBullets.push(
-      `[${formatSeverity(issue.severity)}] ${issue.code}: ${issue.message}`,
+  // Local copy — not imported from health-finding-view — because lint treats
+  // `block` and `error` as distinct severities (0 vs 1), whereas the health
+  // bridge collapses both to 0 so check/doctor sort them as peers.
+  const SEVERITY_ORDER: Record<LintSeverity, number> = {
+    block: 0,
+    error: 1,
+    warning: 2,
+    info: 3,
+  };
+  const sortedIssues = data.issues.slice().sort(
+    (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
+  );
+  const issueLines: string[] = [];
+  for (let i = 0; i < sortedIssues.length; i++) {
+    const issue = sortedIssues[i]!;
+    if (i > 0) issueLines.push("");
+    const subject = issue.sourceRefs.length > 0 ? issue.sourceRefs[0]!.path : issue.code;
+    issueLines.push(
+      ...finding(
+        {
+          severity: issue.severity,
+          code: issue.code,
+          subject,
+          what: issue.message,
+        },
+        caps,
+      ),
     );
-    for (const ref of issue.sourceRefs) {
-      issueBullets.push(`  ${ref.path} @ ${ref.commit.slice(0, 7)}`);
-    }
   }
   if (data.omittedIssues > 0) {
     const noun = data.omittedIssues === 1 ? "issue" : "issues";
-    issueBullets.push(
-      `... ${data.omittedIssues} more ${noun} (use --limit ${data.counts.total} to show all)`,
+    // Leading 2 spaces: section() will add another 2, landing the line at column 4
+    // alongside the rest of the finding body.
+    issueLines.push(
+      `  ... ${data.omittedIssues} more ${noun} (use --limit ${data.counts.total} to show all)`,
     );
   }
-  lines.push(...section("Issues", bullets(issueBullets, caps), caps));
+  // When there are no issues, use bullets() for the dim "none" empty state.
+  // When issues exist, pass finding lines directly to section() (they already carry their own indent).
+  if (issueLines.length === 0) {
+    lines.push(...section("Issues", bullets([], caps), caps));
+  } else {
+    lines.push(...section("Issues", issueLines, caps));
+  }
 
   const footerStatus: Status = data.status === "pass"
     ? { tone: "ok", label: "pass" }

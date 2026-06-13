@@ -77,10 +77,11 @@ scenario(
     const text = await h.runCli(["query", "alpha launch"]);
     expect(text.exitCode).toBe(0);
     expect(text.stderr).toBe("");
-    expect(text.stdout).toContain("source:");
-    expect(text.stdout).toContain("why:");
+    // source rendered inline by match primitive (no "source:" prefix)
     expect(text.stdout).toContain("wiki/project-alpha.md");
-    expect(text.stdout).toContain("dome.graph.tagged x2");
+    // telemetry (why:, facts:) goes to --json only
+    expect(text.stdout).not.toContain("why:");
+    expect(text.stdout).not.toContain("dome.graph.tagged");
     expect(text.stdout).toContain("questions:");
     expect(text.stdout).toContain("resolve: dome resolve ");
 
@@ -167,9 +168,9 @@ scenario(
     ]);
     expect(limitedText.exitCode).toBe(0);
     expect(limitedText.stderr).toBe("");
-    expect(limitedText.stdout).toContain(
-      "more adopted-state matches exist; increase --limit to show more",
-    );
+    // new summary line when hasMore: "showing N, raise with --limit"
+    expect(limitedText.stdout).toContain("showing");
+    expect(limitedText.stdout).toContain("--limit");
 
     const limitedJson = await h.runCli([
       "query",
@@ -436,8 +437,9 @@ scenario(
     expect(text.exitCode).toBe(0);
     expect(text.stderr).toBe("");
     expect(text.stdout).toContain("wiki/signal-only.md");
-    expect(text.stdout).toContain("why: open-loop topic match");
-    expect(text.stdout).toContain("dome.daily.open_task");
+    // telemetry (why:, facts:) goes to --json only
+    expect(text.stdout).not.toContain("why:");
+    expect(text.stdout).not.toContain("dome.daily.open_task");
 
     const cli = await h.runCli(["query", "alpha launch", "--json", "--limit", "3"]);
     expect(cli.exitCode).toBe(0);
@@ -582,9 +584,9 @@ scenario(
     const sectionText = await h.runCli(["query", "launch checklist"]);
     expect(sectionText.exitCode).toBe(0);
     expect(sectionText.stderr).toBe("");
-    expect(sectionText.stdout).toContain(
-      "section: Danny Rosen › Rollout Notes",
-    );
+    // breadcrumb rendered by match primitive: title prefix stripped, leaving
+    // just the section name with › prefix (new design: "Danny Rosen › " trimmed)
+    expect(sectionText.stdout).toContain("› Rollout Notes");
 
     const sectionJson = await h.runCli(["query", "launch checklist", "--json"]);
     const sectionPayload = JSON.parse(sectionJson.stdout) as {

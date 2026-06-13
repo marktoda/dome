@@ -504,14 +504,41 @@ and a human operator get one useful first glance, not two separate
 commands. Text mode renders a compact dashboard:
 
 ```text
-DOME status
-vault     /Users/mark/vaults/work
-git       branch main | head 41a98c2 | adopted 41a98c2 | sync ok | pending 0
-draft     0 modified | 0 untracked
-content   1,247 pages | wiki 1,247 | notes 87 | inbox 14 (2 raw) | links 8,143 | raw 412 files (2.4 MB)
-engine    last sync 2026-05-28T12:34:56.000Z | pending 0 | failed 0 | serve running
-health    projection fresh | diagnostics 0 | questions 0 | outbox 2 pending / 0 failed | quarantine 0
-loops     5 known | 2 quiet | 0 attention | 1 drift | 1 partial | 1 inactive
+dome status - work                                             ! needs attention
+
+  NEXT
+    > dome sync   Run one compiler tick to adopt pending commits or drain
+                  due operational work.
+
+  AT A GLANCE
+    sync          ! needed
+    projection    √ fresh
+    draft         √ clean
+    diagnostics   √ 0
+    questions     √ 0
+    serve         o off
+
+  VAULT
+    path      ~/vaults/work
+    branch    main
+    head      41a98c2
+    adopted   41a98c2
+    pending   3
+    content   1,247 pages · wiki 1,247 · notes 87 · inbox 14 · links 8,143 · raw 412 files (2.4 MB)
+
+  ENGINE
+    last sync    2h ago
+    runs         0 pending · 0 failed
+    outbox       2 pending · 0 failed
+    quarantine   0
+    loops        5 known · 2 quiet · 0 attention · 1 drift · 1 partial · 1 inactive
+    service      not installed
+
+  DIAGNOSTICS
+    none
+
+--------------------------------------------------------------------------------
+! 1 item needs attention
 ```
 
 `--loops` expands text mode with one row per maintenance loop: state, goal,
@@ -1045,26 +1072,26 @@ shared view-command boundary resolves the adopted commit and rebuilds
 processor-version hash is stale. Output (text mode):
 
 ```text
-4 adopted-state match(es) for "platform ownership"
+dome query - docs                                              √ 4 matches
 
-1. Platform Team Ownership (wiki/syntheses/platform-team-ownership.md)
-   section: Platform Team Ownership › Decisions
-   Atlas owns runtime; platform owns infrastructure boundaries...
-   why: project page; 2 open loops; decision (score 17, fts -2.41)
-   SourceRefs:
-     - wiki/syntheses/platform-team-ownership.md:14-22 @ 41a98c2
-   facts: dome.graph.tagged, dome.daily.followup x2
-   diagnostics: dome.markdown.broken-wikilink
-   Questions:
-     - [#42] Possible follow-up in wiki/syntheses/platform-team-ownership.md:19...
-       resolve: dome resolve 42 <track|ignore>
+  "platform ownership" — 4 matches
 
-2. 2026-05-23 (wiki/dailies/2026-05-23.md)
-   Discussed platform ownership with Danny...
-   SourceRefs:
-     - wiki/dailies/2026-05-23.md:48-52 @ 41a98c2
+  MATCHES
+    1  Platform Team Ownership      wiki/syntheses/platform-team-ownership.md
+       › Decisions
+       Atlas owns runtime; platform owns infrastructure boundaries...
+       wiki/syntheses/platform-team-ownership.md:14-22 @ 41a98c2
+       questions:
+         • [#42] Possible follow-up in wiki/syntheses/...
+           policy: owner-needed
+           resolve: dome resolve 42 <track|ignore>
 
-(more adopted-state matches exist; increase --limit to show more)
+    2  2026-05-23                                   wiki/dailies/2026-05-23.md
+       Discussed platform ownership with Danny...
+       wiki/dailies/2026-05-23.md:48-52 @ 41a98c2
+
+--------------------------------------------------------------------------------
+√ 4 matches
 ```
 
 `--json` emits the structured `dome.search.query/v1` payload. Every match
@@ -1073,8 +1100,9 @@ SearchDocumentEffect. FTS rows are heading-section granular (per
 [[wiki/specs/projection-store]] §"fts_documents"); the processor collapses
 section hits to the best section per page and each match carries that
 section's `sectionId` and `breadcrumb` (`<page title> › <heading path>`) plus
-section-ranged SourceRefs. Text mode prints the breadcrumb as the `section:`
-line when the best hit is a non-intro section. The processor fetches an
+section-ranged SourceRefs. Text mode prints the breadcrumb as an indented
+`› <section name>` line (the page title prefix is stripped) when the best hit
+is a non-intro section. The processor fetches an
 expanded FTS candidate set and
 also recalls exact-path documents when projection memory has a topic-matched
 open loop, decision, unresolved question, or active diagnostic for that page.
@@ -1140,14 +1168,19 @@ state.
 Default text output renders a compact report:
 
 ```text
-DOME lint
-status   pass | fail-on error
-checked  1247 markdown files
-issues   3 total | 0 block | 0 error | 3 warning | 0 info
+dome lint - work                                                    ! 3 findings
 
-Issues
-  - [warning] dome.markdown.broken-wikilink: Broken wikilink: [[missing]]
-    wiki/projects/platform.md:14-14 @ 41a98c2
+  CHECKED
+    files     1,247 markdown
+    fail-on   error
+    issues    3 total · 0 block · 0 error · 3 warning · 0 info
+
+  ISSUES
+    ! dome.markdown.broken-wikilink · wiki/projects/platform.md
+        Broken wikilink: [[missing]]
+
+--------------------------------------------------------------------------------
+! 3 findings
 ```
 
 `--fail-on` defines the exit threshold. Values are `info`, `warning`, `error`,
@@ -1190,7 +1223,8 @@ parsed `📅` due-date and priority glyph markers are rendered as bracketed
 Search-match entries use the same expanded candidate ranking as `dome query`:
 section-granular FTS hits collapsed to the best section per page (entries
 carry `sectionId` + `breadcrumb`, and the rendered packet prints the
-breadcrumb as a `Section:` line), one-hop `dome.graph.links_to` expansion
+breadcrumb as a `- Section: <page title> › <heading path>` line), one-hop
+`dome.graph.links_to` expansion
 fused via reciprocal-rank fusion (k=60), and the top-N recency decay pass.
 The packet can
 also recall exact-path documents when projection memory has a topic-matched
@@ -1207,7 +1241,7 @@ packets also parse the recalled daily surface's hand-authored open checkboxes,
 directives, and generated source-backed open-loop rows into the overview's
 `Open Loops` section, preserving both the daily surface line SourceRef and the
 backing source SourceRef for generated rows. Read-first reasons, per-entry
-`Ranking` lines, and the overview's `Recall Signals` section expose the
+`- Relevance:` lines, and the overview's `Recall Signals` section expose the
 source-backed signals that promoted an entry. Entries are also
 bounded by `--limit`; the structured JSON includes `shown.entries`,
 `hasMore.entries`, `overview`, per-entry `ranking`, and text mode prints an
@@ -1285,8 +1319,10 @@ Each entry carries the commit SHA, ISO timestamp, an `engine`/`human` author
 discriminator (engine iff a non-empty `Dome-Run` trailer is present), the
 subject, the body with the `Dome-*` trailer block stripped, and — when the
 ledger join lands — the run's status, duration, and cost. Text mode renders
-one block per entry (`when · author · subject` headline, muted narrative
-body, muted `run <id> <status> · 3.2s · $0.04` line).
+one block per entry: a `<relative-time> · <author> · <subject>` headline
+(relative time such as `2h ago`, `just now`; ISO timestamp available via
+`--json`), the commit body sans Dome trailers in muted text, and — for engine
+entries — a muted `run <id> <status> · 3.2s · $0.04` line.
 
 - `--since <date>` — lower time bound; anything `git log --since` accepts.
 - `--processor <id>` — keep engine entries only, matched against the joined

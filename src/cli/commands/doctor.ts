@@ -21,9 +21,9 @@ import { writeModelProviderProbeCache } from "../../engine/host/model-provider-p
 import { openVaultRuntime } from "../../engine/host/vault-runtime";
 import { emitRuntimeOpenFailure } from "../command-error";
 import { formatJson } from "../../surface/format";
-import { formatSeverity } from "../human-output";
 import {
   bullets,
+  dimZeros,
   footer,
   headline,
   kv,
@@ -31,6 +31,7 @@ import {
   section,
   type Status,
 } from "../presenter";
+import { findingLines } from "./health-finding-view";
 import { resolveBundleRoots } from "./sync-shared";
 import { parseNonNegativeIntegerValue } from "../parse-options";
 
@@ -161,14 +162,28 @@ function printDoctorText(
   if (report.findings.length === 0) {
     lines.push(...section("Findings", bullets([], caps), caps));
   } else {
-    const findingBullets: string[] = [];
-    for (const finding of report.findings) {
-      findingBullets.push(
-        `[${formatSeverity(finding.severity)}] ${finding.code}: ${finding.message}`,
-      );
-      findingBullets.push(`  recovery: ${finding.recovery}`);
-    }
-    lines.push(...section("Findings", findingBullets.map((l) => `  ${l}`), caps));
+    lines.push(...section("Findings", findingLines(report.findings, caps), caps));
+
+    const breakdownTerms: ReadonlyArray<string> = [
+      `outbox ${report.summary.failedOutbox} failed`,
+      `${report.summary.stuckPendingOutbox} stuck`,
+      `orphans ${report.summary.orphanRuns}`,
+      `runs ${report.summary.failedRuns} failed`,
+      `quarantine ${report.summary.quarantinedProcessors}`,
+      `projection ${report.summary.projectionCacheDrift}`,
+      `git ${report.summary.adoptedRefDivergence}`,
+      `instructions ${report.summary.instructionDrift}`,
+      `storage ${report.summary.operationalSchemaMismatch}`,
+      `grants ${report.summary.capabilityGrantGaps} kind`,
+      `${report.summary.capabilityGrantEntryGaps} entry`,
+      `${report.summary.capabilityGrantStarvation} starved`,
+      `daily_path ${report.summary.dailyPathMismatch}`,
+      `edition ${report.summary.dailyEditionNotCompiled} missed`,
+      `calendar ${report.summary.dailyCalendarSourceMissing} missing`,
+      `model ${report.summary.modelProviderMissing} missing`,
+      `${report.summary.modelProviderUnreachable} unreachable`,
+      `${report.summary.modelProviderKeyMissing} keyless`,
+    ];
 
     lines.push(
       ...section(
@@ -181,25 +196,7 @@ function printDoctorText(
             },
             {
               label: "findings",
-              value:
-                `outbox ${report.summary.failedOutbox} failed · ` +
-                `${report.summary.stuckPendingOutbox} stuck · ` +
-                `orphans ${report.summary.orphanRuns} · ` +
-                `runs ${report.summary.failedRuns} failed · ` +
-                `quarantine ${report.summary.quarantinedProcessors} · ` +
-                `projection ${report.summary.projectionCacheDrift} · ` +
-                `git ${report.summary.adoptedRefDivergence} · ` +
-                `instructions ${report.summary.instructionDrift} · ` +
-                `storage ${report.summary.operationalSchemaMismatch} · ` +
-                `grants ${report.summary.capabilityGrantGaps} kind · ` +
-                `${report.summary.capabilityGrantEntryGaps} entry · ` +
-                `${report.summary.capabilityGrantStarvation} starved · ` +
-                `daily_path ${report.summary.dailyPathMismatch} · ` +
-                `edition ${report.summary.dailyEditionNotCompiled} missed · ` +
-                `calendar ${report.summary.dailyCalendarSourceMissing} missing · ` +
-                `model ${report.summary.modelProviderMissing} missing · ` +
-                `${report.summary.modelProviderUnreachable} unreachable · ` +
-                `${report.summary.modelProviderKeyMissing} keyless`,
+              value: dimZeros(breakdownTerms, caps),
             },
           ],
           caps,

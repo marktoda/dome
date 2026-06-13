@@ -13,7 +13,7 @@ import {
 } from "../../surface/activity";
 import { COMMAND_ERROR_SCHEMA } from "../../surface/command-error";
 import { formatJson } from "../../surface/format";
-import { paint, resolveCaps, type Caps } from "../presenter";
+import { paint, relativeTime, resolveCaps, stripTrailers, type Caps } from "../presenter";
 
 export const LOG_SCHEMA = "dome.log/v1";
 
@@ -83,9 +83,14 @@ function printLogText(entries: ReadonlyArray<ActivityEntry>, caps: Caps): void {
   console.log(blocks.join("\n\n"));
 }
 
-function formatEntry(entry: ActivityEntry, caps: Caps): string {
-  const lines = [`${entry.when} · ${entry.author} · ${entry.subject}`];
-  for (const bodyLine of entry.body.split("\n")) {
+export function formatEntry(
+  entry: ActivityEntry,
+  caps: Caps,
+  now: Date = new Date(),
+): string {
+  const lines = [`${relativeTime(entry.when, now)} · ${entry.author} · ${entry.subject}`];
+  const strippedBody = stripTrailers(entry.body);
+  for (const bodyLine of strippedBody.split("\n")) {
     if (bodyLine.trim().length === 0) continue;
     lines.push(paint(`  ${bodyLine}`, "muted", caps));
   }

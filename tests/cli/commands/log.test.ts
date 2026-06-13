@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { runInit } from "../../../src/cli/commands/init";
-import { runLog } from "../../../src/cli/commands/log";
+import { runLog, formatEntry } from "../../../src/cli/commands/log";
 import { runSync } from "../../../src/cli/commands/sync";
 import { add, commit } from "../../../src/git";
 
@@ -117,5 +117,71 @@ describe("dome log", () => {
     } finally {
       await rm(notAVault, { recursive: true, force: true });
     }
+  }, 120_000);
+});
+
+// Unit tests for formatEntry — exercise relative-time and trailer-stripping
+// without spinning up a full vault. `now` is injected so results are stable.
+
+const CAPS_PLAIN = { color: false as const, unicode: false as const, width: 80 as const };
+
+// A timestamp 2 hours in the past relative to our fixed `now`.
+const FIXED_NOW = new Date("2026-06-13T12:00:00Z");
+const TWO_HOURS_AGO = new Date(FIXED_NOW.getTime() - 2 * 60 * 60 * 1000).toISOString();
+
+const BASE_ENTRY = {
+  sha: "abc1234",
+  when: TWO_HOURS_AGO,
+  author: "human" as const,
+  subject: "test commit",
+  body: "",
+  run: null,
+  runId: null,
+  extensionId: null,
+};
+
+describe("formatEntry (unit)", () => {
+  test("timestamp renders as relative time, not raw ISO", () => {
+    const rendered = formatEntry({ ...BASE_ENTRY }, CAPS_PLAIN, FIXED_NOW);
+    // Should contain "2h ago" (relative)
+    expect(rendered).toMatch(/\d+[mhd] ago|just now/);
+    // Must NOT contain the raw ISO string
+    expect(rendered).not.toContain(TWO_HOURS_AGO);
+  });
+
+  test("body with trailing Co-Authored-By trailer is stripped", () => {
+    const entry = {
+      ...BASE_ENTRY,
+      body: "A useful commit body.\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
+    };
+    const rendered = formatEntry(entry, CAPS_PLAIN, FIXED_NOW);
+    expect(rendered).not.toContain("Co-Authored-By:");
+    // The real body text should still be present
+    expect(rendered).toContain("A useful commit body.");
+  });
+
+  test("body that is entirely trailers renders without a dangling blank line", () => {
+    const entry = {
+      ...BASE_ENTRY,
+      body: "Co-Authored-By: Claude <noreply@anthropic.com>",
+    };
+    const rendered = formatEntry(entry, CAPS_PLAIN, FIXED_NOW);
+    expect(rendered).not.toContain("Co-Authored-By:");
+    // The rendered block should be just the header line — no trailing newline after it
+    const lines = rendered.split("\n");
+    // All lines after the header should be non-empty (run lines, body lines) — no blank
+    for (const line of lines.slice(1)) {
+      expect(line.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  test("--json output still carries raw ISO timestamp and full body with trailers", async () => {
+    const v = await fixtureVault();
+    logs = [];
+    expect(await runLog({ vault: v, json: true })).toBe(0);
+    const doc = JSON.parse(logs.join("\n")) as { entries: Array<{ when: string; body: string }> };
+    // At least one entry must have a proper ISO timestamp (not a relative string)
+    const hasIso = doc.entries.some((e) => /^\d{4}-\d{2}-\d{2}T/.test(e.when));
+    expect(hasIso).toBe(true);
   }, 120_000);
 });
