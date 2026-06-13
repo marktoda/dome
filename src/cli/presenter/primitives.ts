@@ -158,6 +158,44 @@ export function finding(f: Finding, caps: Caps): ReadonlyArray<string> {
   return out;
 }
 
+export type MatchView = {
+  readonly rank: number;
+  readonly title: string;
+  readonly path: string;
+  readonly breadcrumb?: string;
+  readonly snippet?: string;
+  readonly sourceRef?: string;
+};
+
+/**
+ * Render one search match: `rank  title` on the left with `path` right-aligned
+ * to the terminal width, then optional indented breadcrumb (`›`), snippet, and
+ * a compact source ref. Ranking telemetry and facts live in `--json`.
+ */
+export function match(m: MatchView, caps: Caps): ReadonlyArray<string> {
+  const left = `  ${m.rank}  `;
+  const indent = " ".repeat(left.length);
+  const gap = 2;
+  const pathWidth = visibleWidth(m.path);
+  const titleBudget = Math.max(4, caps.width - left.length - pathWidth - gap);
+  const title = truncate(m.title, titleBudget, caps.unicode);
+  const used = left.length + visibleWidth(title);
+  const spacer = " ".repeat(Math.max(gap, caps.width - used - pathWidth));
+  const out: string[] = [`${left}${title}${spacer}${paint(m.path, "muted", caps)}`];
+  if (m.breadcrumb !== undefined) {
+    out.push(`${indent}${paint(`› ${m.breadcrumb}`, "muted", caps)}`);
+  }
+  if (m.snippet !== undefined) {
+    for (const line of wrap(m.snippet, Math.max(8, caps.width - indent.length))) {
+      out.push(`${indent}${line}`);
+    }
+  }
+  if (m.sourceRef !== undefined) {
+    out.push(`${indent}${paint(m.sourceRef, "ident", caps)}`);
+  }
+  return out;
+}
+
 export type Cell = { readonly text: string; readonly tone?: Tone };
 export type Column<R> = {
   readonly header: string;

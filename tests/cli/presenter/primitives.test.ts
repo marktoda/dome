@@ -159,7 +159,7 @@ describe("tree", () => {
   });
 });
 
-import { dimZeros, finding, table, type Column, type Finding } from "../../../src/cli/presenter/primitives";
+import { dimZeros, finding, match, table, type Column, type Finding, type MatchView } from "../../../src/cli/presenter/primitives";
 
 type Row = { name: string; phase: string };
 const COLS: Column<Row>[] = [
@@ -270,6 +270,48 @@ describe("finding", () => {
       "      fix    one two",
       "             three four",
     ]);
+  });
+});
+
+describe("match", () => {
+  const wide = { color: false, unicode: true, width: 60 };
+  test("rank+title left, path right-aligned, breadcrumb, snippet, source ref", () => {
+    const m: MatchView = {
+      rank: 1,
+      title: "Effect router targets",
+      path: "wiki/matrices/effect-router-targets.md",
+      breadcrumb: "Phase compatibility precedes capability enforcement",
+      snippet: "the rejected effect is not applied",
+      sourceRef: "ba1de2b · lines 46–56",
+    };
+    expect(match(m, wide)).toEqual([
+      "  1  Effect router …  wiki/matrices/effect-router-targets.md",
+      "     › Phase compatibility precedes capability enforcement",
+      "     the rejected effect is not applied",
+      "     ba1de2b · lines 46–56",
+    ]);
+  });
+
+  test("omits breadcrumb/snippet/source lines when absent", () => {
+    const m: MatchView = { rank: 2, title: "SDK surface", path: "wiki/specs/sdk-surface.md" };
+    expect(match(m, wide)).toEqual([
+      "  2  SDK surface                   wiki/specs/sdk-surface.md",
+    ]);
+  });
+
+  test("rank 10 breadcrumb indents to match the left-column width (6 spaces)", () => {
+    // left = "  10  " = 6 chars; indent must be 6 spaces to stay under the title
+    const m: MatchView = {
+      rank: 10,
+      title: "Effect router targets",
+      path: "wiki/matrices/effect-router-targets.md",
+      breadcrumb: "Phase compatibility precedes capability enforcement",
+    };
+    const lines = match(m, wide);
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+    const breadcrumbLine = lines[1]!;
+    const leadingSpaces = breadcrumbLine.match(/^( *)/)?.[1] ?? "";
+    expect(leadingSpaces).toBe("      "); // exactly 6 spaces
   });
 });
 
