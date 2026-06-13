@@ -275,17 +275,25 @@ the copy is refreshed — neither the merge nor the restart does that.
    reports cache-tier-aware `costUsd`. If anything looks off,
    `DOME_DISABLE_PROMPT_CACHE=1` in the daemon environment restores the
    legacy wire shape without touching the file.
-2. Optional model routing — the owner's quality call; defaults are fine and
-   routing ships unset. The recommendation: haiku-class for the mechanical
-   loops (ingest, sweep), provider default for the judgment-heavy ones
-   (consolidate, brief). Under `extensions.dome.agent.config` in
-   `~/vaults/work/.dome/config.yaml`:
+2. Model routing — **recommended opt-in** (the owner's quality call; routing
+   still ships unset so it stays explicit). The 2026-06-12 cost reading
+   (`dome inspect cost --days 7` on the work vault: ~$5–8/day, ~$170/month at
+   that rate — see [[cohesive/brainstorms/2026-06-11-dome-v1-plan]] §"WS2
+   target REVISED") puts spend an order of magnitude over the single-digit
+   target, so the levers are worth pulling: route haiku-class for the
+   mechanical loops (ingest, sweep — together ~40% of spend), keep the
+   provider default for the judgment-heavy ones (consolidate, brief). Under
+   `extensions.dome.agent.config` in `~/vaults/work/.dome/config.yaml`:
 
        model_overrides:
          ingest: claude-haiku-4-5
          sweep: claude-haiku-4-5
 
-   Leave `consolidate`/`brief` out of the map. The warden equivalent is
+   **Tradeoff (named honestly):** haiku is weaker at the sweep's
+   supersession/merge judgment than the frontier default — this is why it is
+   an opt-in, not a shipped default, and why `consolidate`/`brief` stay off the
+   map. Watch the next few sweep runs for misjudged merges after flipping it;
+   back the override out if quality regresses. The warden equivalent is
    `extensions.dome.warden.config.model_override` (single value). A typo
    cannot break the night: malformed values degrade to the default with one
    `dome.agent.model-config-invalid` / `dome.warden.model-config-invalid`

@@ -116,6 +116,39 @@ Binds `127.0.0.1` by default; `--host` points it at a private
 owner-trust-domain surface like `dome mcp` — a hosted multi-tenant variant
 is hosted-protected (v1.5) territory and out of scope.
 
+### One shared bearer token (the v1 contract)
+
+The token is a **single static shared bearer** for the whole surface: one
+secret, configured once on the host, presented by every caller (header on
+every route, `?token=` on `GET /today`). There is no per-device issuance, no
+per-device identity, and no rotation primitive — rotating means editing
+`DOME_HTTP_TOKEN` (or `--token`) and restarting, which invalidates every
+device at once.
+
+This is a **deliberate v1 scope cut, not an oversight.** The v1 plan's scope
+decision floated "per-device token issuance/rotation from day one"
+([[cohesive/brainstorms/2026-06-11-dome-v1-plan]] §Scope decision, §WS3); v1
+ships the single token instead, and this section is its normative record. The
+reasoning:
+
+- **The multi-device driver is remote MCP, which is deferred.** Per-device
+  tokens earn their keep when distinct, possibly-non-owner devices each hold
+  credentials that can be revoked independently — the remote-MCP /
+  claude.ai-connector world. That world is explicitly deferred for v1
+  ([[cohesive/brainstorms/2026-06-11-dome-v1-plan]] §WS3: remote MCP needs a
+  public always-on endpoint; the always-on-host decision reopens with it).
+  Until then every credential holder is the owner inside one
+  loopback/Tailscale trust domain (§"Trust domain"), where a shared secret and
+  a same-network exposure boundary are the actual security contract.
+- **Issuance/rotation lands with or before remote MCP**, not on its own
+  schedule. When a credential might belong to a device the owner does not
+  physically control, per-device issuance and independent revocation become
+  load-bearing and ship as part of (or ahead of) opening the surface beyond
+  the trust domain — the same gate that reopens the exposure decision.
+
+The accepted-for-v1 record is also in
+[[cohesive/second-user-blockers]] §"Security posture to document".
+
 ### Request-body cap
 
 Even inside the trust domain, the server runs 24/7 and must not buffer

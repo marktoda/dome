@@ -142,6 +142,7 @@ To keep the surface minimal:
 - **No engine-internal queries.** No run-ledger access (use `dome inspect runs` when needed).
 - **No multi-vault routing.** One vault per server process.
 - **No MCP resources or prompts in v1.** The `dome://page/<path>` / `dome://search?q=` resource URI map from the earlier draft remains target work for the `AbstractSurface.readResource` era; tools cover the wedge surface.
+- **No remote transport, and no per-device tokens.** v1 `dome mcp` is stdio-only: the server is launched locally by the vault owner and inherits the owner's trust domain (above), so it carries no network auth of its own. The remote MCP transport (streamable-HTTP / `mcp-remote` bridge over a bearer token) is deferred per [[cohesive/brainstorms/2026-06-11-dome-v1-plan]] §WS3, and so is per-device token issuance/rotation — single shared bearer is the v1 contract for the network surfaces, recorded normatively at [[wiki/specs/http-surface]] §"One shared bearer token (the v1 contract)". Issuance/rotation lands with or before remote MCP, the multi-device driver.
 
 ## Related
 

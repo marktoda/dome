@@ -1,7 +1,8 @@
 // dome.markdown.render-index — garden processor: compile the index catalog
 // from per-page `description:` frontmatter. Deterministic, snapshot-in →
-// patches-out (garden processors have no projection access; this reads
-// frontmatter directly, the same posture as simplify-indexes). Index files
+// patches-out: this reads frontmatter directly off the snapshot rather than
+// the projection, so the render stays a pure function of adopted markdown.
+// Index files
 // are RENDERS: the processor rewrites the dome.markdown:index-catalog block
 // in each file (preserving any human prose outside it) and retires shards
 // that are no longer produced — splicing the block OUT when prose surrounds
@@ -51,7 +52,7 @@ const DEFAULT_CATEGORIES: Readonly<Record<string, string>> = Object.freeze({
 });
 const DEFAULT_SHARD_BUDGET = 24_000;
 const CONFIG_INVALID_CODE = "dome.markdown.render-index-config-invalid";
-/** Shared with simplify-indexes; dedup happens at the diagnostics sink. */
+/** Shared generated-block anomaly code; dedup happens at the diagnostics sink. */
 const ANOMALY_CODE = "dome.markdown.generated-block-anomaly";
 /**
  * Generated shard names the retirement scan owns: the root map `index.md`,
@@ -202,8 +203,8 @@ const renderIndex = defineProcessorImplementation({
     for (const [file, content] of Object.entries(rendered)) {
       const existing = await ctx.snapshot.readFile(file);
       // Marker anomalies — half-open or smuggled markers — make `spliceInto`
-      // refuse; surface each as an info diagnostic (simplify-indexes' posture)
-      // so the damage is visible instead of a silent skip.
+      // refuse; surface each as an info diagnostic (the shared splice-guard
+      // posture) so the damage is visible instead of a silent skip.
       if (existing !== null) {
         effects.push(...anomalyDiagnostics(ctx, file, existing));
       }
@@ -271,8 +272,8 @@ function categoryFor(
   path: string,
   categories: Readonly<Record<string, string>>,
 ): string | null {
-  // Directory index pages (`wiki/entities/index.md`) are navigation owned by
-  // simplify-indexes, not content — never catalog entries.
+  // Directory index pages (`wiki/entities/index.md`) are navigation surfaces,
+  // not content — never catalog entries.
   if (path.endsWith("/index.md")) return null;
   const prefixes = Object.keys(categories).sort(
     (a, b) => b.length - a.length || compareStrings(a, b),
@@ -285,7 +286,7 @@ function categoryFor(
 
 /**
  * Info diagnostics for marker anomalies (half-open, smuggled, orphan markers)
- * on an existing index file — the same visibility posture as simplify-indexes:
+ * on an existing index file — the shared splice-guard visibility posture:
  * the splice/scan ignores anomalies by construction, but a refused or skipped
  * file must leave an auditable trace, never a silent drop.
  */
@@ -317,7 +318,7 @@ function safeFrontmatter(content: string): Readonly<Record<string, unknown>> {
  * Replace our block inside an existing file, preserving human prose around
  * it. Returns null (refuse to touch the page) when marker text appears
  * without a line-anchored pair — half-open or smuggled markers mean the page
- * needs a human, the same refusal posture as simplify-indexes.
+ * needs a human, the shared splice-guard refusal posture.
  */
 function spliceInto(existing: string, renderedWhole: string): string | null {
   const renderedScan = findGeneratedBlock(

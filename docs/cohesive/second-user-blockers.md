@@ -41,6 +41,7 @@ The WS6 input artifact promised by the v1 plan ([[cohesive/brainstorms/2026-06-1
 ## Security posture to document
 
 - ~~The cockpit token rides in a query parameter (`/today?token=…`), visible in URLs and server logs — acceptable only inside a loopback/Tailscale trust domain, and a second user must be told that boundary explicitly before exposing the port (chunk1 plan Task 7 design note).~~ Documented (chunk9): [[getting-started]] §8 states the query-param boundary explicitly — bearer token, loopback/Tailscale-class network only, never a public interface.
+- The network surfaces (`dome http`, future remote `dome mcp`) authenticate with a **single shared static bearer token**, not per-device tokens — the v1 plan floated "per-device issuance/rotation from day one" but v1 ships the one shared secret (rotation = edit the env + restart, invalidating every device at once). *Status: OPEN, accepted for v1 — the multi-device driver (remote MCP) is deferred, so a shared secret inside the loopback/Tailscale trust domain is the actual contract; per-device issuance/rotation lands with or before remote MCP. Recorded normatively at [[wiki/specs/http-surface]] §"One shared bearer token (the v1 contract)" (chunk10 Task 3).*
 
 ## Manual operator surgery
 

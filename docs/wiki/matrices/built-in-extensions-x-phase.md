@@ -19,7 +19,7 @@ assets with harness coverage. Rows marked `planned` are not shipped assets.
 
 | Bundle | Status | Adoption phase | Garden phase | View phase |
 |---|---|---|---|---|
-| **`dome.markdown`** | shipped | `validate-wikilinks`; `normalize-frontmatter`; `lint-frontmatter`; `page-status` (supersession facts); `lint-supersession`; `broken-images`; `duplicate-detection`; `stale-dates`; `raw-immutable`; `core-size` (core-memory size budget) | `ambiguous-wikilink-answer`; `repair-wikilinks` (cron `5 5 * * *`); `simplify-indexes` (cron `10 5 * * *`); `render-index` (cron `15 5 * * *`, index-catalog render from `description:` frontmatter); `duplicate-detection-answer`; `refresh-updated` (cron `0 5 * * *`) | `orphan-pages` |
+| **`dome.markdown`** | shipped | `validate-wikilinks`; `normalize-frontmatter`; `lint-frontmatter`; `page-status` (supersession facts); `lint-supersession`; `broken-images`; `duplicate-detection`; `stale-dates`; `raw-immutable`; `core-size` (core-memory size budget) | `ambiguous-wikilink-answer`; `repair-wikilinks` (cron `5 5 * * *`); `render-index` (cron `15 5 * * *`, index-catalog render from `description:` frontmatter); `duplicate-detection-answer`; `refresh-updated` (cron `0 5 * * *`) | `orphan-pages` |
 | **`dome.graph`** | shipped | `links`; `tag-index` | — | — |
 | **`dome.health`** | shipped | — | `outbox-recovery-questions`; `outbox-recovery-answer`; `quarantine-recovery-questions`; `quarantine-recovery-answer`; `orphan-run-recovery-questions`; `orphan-run-recovery-answer` | — |
 | **`dome.claims`** | shipped | shipped: `index` | shipped: `stamp` (claim-line anchor identity) | — |
