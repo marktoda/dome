@@ -42,11 +42,11 @@ export function renderMarkdown(
     }
     lines.push(`- Category: \`${entry.category}\``);
     if (entry.type !== null) lines.push(`- Type: \`${entry.type}\``);
-    if (entry.ranking.reasons.length > 0) {
-      lines.push(
-        `- Ranking: ${entry.ranking.reasons.join("; ")} ` +
-          `(score ${entry.ranking.score}, fts ${entry.ranking.ftsRank})`,
-      );
+    const displayReasons = entry.ranking.reasons.filter(
+      (r) => !/recency decay/i.test(r),
+    );
+    if (displayReasons.length > 0) {
+      lines.push(`- Relevance: ${displayReasons.join(" · ")}`);
     }
     lines.push("- SourceRefs:");
     for (const ref of entry.sourceRefs) {
@@ -124,8 +124,12 @@ function renderOverview(lines: string[], overview: ContextOverview): void {
   if (overview.readFirst.length > 0) {
     lines.push("## Read First");
     for (const [index, item] of overview.readFirst.entries()) {
+      // Strip telemetry segments (e.g. "; recency decay x0.98") from the pre-joined
+      // reason string at render time.  The structured item.reason field is preserved
+      // byte-identical for --json.
+      const displayReason = item.reason.replace(/;\s*recency decay[^;]*/gi, "");
       lines.push(
-        `${index + 1}. \`${item.path}\` - ${item.title} (${item.reason})`,
+        `${index + 1}. \`${item.path}\` - ${item.title} (${displayReason})`,
       );
     }
     lines.push("");
@@ -197,7 +201,7 @@ function appendMoreLine(
 ): void {
   const remaining = total - shown;
   if (remaining <= 0) return;
-  lines.push(`- ... ${remaining} more ${label}`);
+  lines.push(`- … and ${remaining} more ${label} (see --json)`);
 }
 
 function formatSourceRef(ref: SourceRef): string {
