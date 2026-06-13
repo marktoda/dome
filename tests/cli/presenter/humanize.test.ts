@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { durationMs, relativeTime, shortOid } from "../../../src/cli/presenter/humanize";
+import { durationMs, humanizeCommand, relativeTime, shortOid, stripTrailers } from "../../../src/cli/presenter/humanize";
 
 describe("durationMs", () => {
   test("sub-second rounds to integer ms", () => {
@@ -36,5 +36,31 @@ describe("shortOid", () => {
   });
   test("null uses the fallback", () => {
     expect(shortOid(null, "(none)")).toBe("(none)");
+  });
+});
+
+describe("humanizeCommand", () => {
+  test("strips a trailing --json suffix", () => {
+    expect(humanizeCommand("dome sync --json")).toBe("dome sync");
+  });
+  test("leaves a command without --json unchanged", () => {
+    expect(humanizeCommand("dome check")).toBe("dome check");
+  });
+  test("only strips --json at the end, not mid-command", () => {
+    expect(humanizeCommand("dome resolve q1 --json value")).toBe("dome resolve q1 --json value");
+  });
+});
+
+describe("stripTrailers", () => {
+  test("drops a trailing git trailer block", () => {
+    const body = "Fix the thing\n\nDetails here.\n\nCo-Authored-By: Claude <x@y.z>";
+    expect(stripTrailers(body)).toBe("Fix the thing\n\nDetails here.");
+  });
+  test("leaves a body with no trailers unchanged", () => {
+    expect(stripTrailers("Just a subject\n\nA paragraph.")).toBe("Just a subject\n\nA paragraph.");
+  });
+  test("strips multiple stacked trailers", () => {
+    const body = "Subject\n\nSigned-off-by: A <a@b>\nCo-Authored-By: B <b@c>";
+    expect(stripTrailers(body)).toBe("Subject");
   });
 });
