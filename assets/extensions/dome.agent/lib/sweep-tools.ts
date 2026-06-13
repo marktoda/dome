@@ -25,7 +25,7 @@ import { globMatch } from "../../../../src/engine/core/glob-cache";
 export const SWEEP_WRITABLE_PATHS: ReadonlyArray<string> = Object.freeze([
   "wiki/entities/**/*.md",
   "wiki/concepts/**/*.md",
-  "sweep-ledger.md",
+  "meta/sweep-ledger.md",
 ]);
 
 /**

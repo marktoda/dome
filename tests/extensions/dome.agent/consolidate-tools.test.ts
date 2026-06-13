@@ -15,7 +15,7 @@ describe("makeConsolidatorTools", () => {
   test("provides the consolidator tool set incl. deletePage, excl. inbox tools", async () => {
     const names = makeConsolidatorTools({
       reader: reader(),
-      ledgerPath: "consolidation-ledger.md",
+      ledgerPath: "meta/consolidation-ledger.md",
     })
       .map((t) => t.schema.name)
       .sort();
@@ -39,7 +39,7 @@ describe("consolidate signals-page append-only guard", () => {
   function tools(files: Record<string, string> = {}) {
     return makeConsolidatorTools({
       reader: reader(files),
-      ledgerPath: "consolidation-ledger.md",
+      ledgerPath: "meta/consolidation-ledger.md",
     });
   }
 

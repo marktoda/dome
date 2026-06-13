@@ -5,6 +5,10 @@
 // the markers. Determinism is load-bearing: same entries → byte-identical
 // output (the garden processor diffs against the snapshot to no-op).
 //
+// Category shards render under `meta/` (e.g. `meta/index-entities.md`). The
+// root map `index.md` stays at the vault root as the entry point; its
+// wikilinks to shards are path-qualified (`[[meta/index-entities]]`).
+//
 // NO_ACCRETING_REGISTRIES: these files are renders, not registries — nothing
 // ever appends to them; the renderer rewrites them whole from per-page
 // `description:` frontmatter.
@@ -30,16 +34,26 @@ export type IndexRenderConfig = {
 export const INDEX_CATALOG_OWNER = "dome.markdown";
 export const INDEX_CATALOG_BLOCK = "index-catalog";
 
+/**
+ * Vault-relative directory for generated bookkeeping surfaces. Category
+ * shards render here; the root map `index.md` stays at the vault root as
+ * the entry point. The directory is deliberately OUTSIDE wiki/: agent
+ * patch grants are wiki/**\/*.md plus enumerated files, so shards under
+ * meta/ sit outside every agent write glob by construction. (The root map
+ * itself is protected by grant omission, not location.)
+ */
+export const META_DIR = "meta";
+
 const MARKERS = generatedBlockMarkers(INDEX_CATALOG_OWNER, INDEX_CATALOG_BLOCK);
 
 type ShardSummary = {
   readonly category: string;
   readonly count: number;
-  /** Shard page names without the `.md` suffix, in page order. */
+  /** Path-qualified wikilink targets (shard paths without the `.md` suffix), in page order. */
   readonly shards: ReadonlyArray<string>;
 };
 
-/** Render all index files. Key = vault-relative filename, value = full content. */
+/** Render all index files. Key = vault-relative path, value = full content. */
 export function renderIndexFiles(
   entries: ReadonlyArray<IndexEntry>,
   config: IndexRenderConfig,
@@ -60,8 +74,9 @@ export function renderIndexFiles(
     const categoryEntries = byCategory.get(category) ?? [];
     const lines = categoryEntries.map(entryLine);
     const pages = paginate(lines, config.shardBudgetChars);
+    const stem = `${META_DIR}/index-${category}`;
     const shardNames = pages.map((_, i) =>
-      i === 0 ? `index-${category}.md` : `index-${category}-${i + 1}.md`,
+      i === 0 ? `${stem}.md` : `${stem}-${i + 1}.md`,
     );
     pages.forEach((pageLines, i) => {
       const name = shardNames[i] as string;

@@ -26,7 +26,7 @@ import { globMatch } from "../../../../src/engine/core/glob-cache";
 
 const MAX_STEPS = 50;
 export const MAX_CHANGED_FILES = 30;
-const DEFAULT_LEDGER_PATH = "consolidation-ledger.md";
+const DEFAULT_LEDGER_PATH = "meta/consolidation-ledger.md";
 const DEFAULT_TARGETS: ReadonlyArray<string> = Object.freeze(["wiki/"]);
 
 export type ConsolidationLedgerResolution = {
@@ -43,7 +43,7 @@ export type ConsolidationLedgerResolution = {
 /**
  * Resolve the consolidation ledger path from the extension config
  * (`extensions.dome.agent.config.consolidation_ledger_path`), defaulting to
- * the top-level `consolidation-ledger.md`. The path must be a relative vault
+ * `meta/consolidation-ledger.md`. The path must be a relative vault
  * `.md` path; a malformed value falls back to the default with a `problem`
  * the processor emits as a diagnostic. A custom path additionally requires
  * matching `read` + `patch.auto` grant entries in `.dome/config.yaml` —

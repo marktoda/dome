@@ -319,11 +319,11 @@ describe("dome.agent.consolidate", () => {
 
   test("consolidationLedgerPath validates config values and falls back instead of throwing", () => {
     expect(consolidationLedgerPath(undefined)).toEqual({
-      path: "consolidation-ledger.md",
+      path: "meta/consolidation-ledger.md",
       problem: null,
     });
     expect(consolidationLedgerPath({})).toEqual({
-      path: "consolidation-ledger.md",
+      path: "meta/consolidation-ledger.md",
       problem: null,
     });
     expect(
@@ -342,9 +342,9 @@ describe("dome.agent.consolidate", () => {
       const resolved = consolidationLedgerPath({
         consolidation_ledger_path: value,
       });
-      expect(resolved.path).toBe("consolidation-ledger.md");
+      expect(resolved.path).toBe("meta/consolidation-ledger.md");
       expect(resolved.problem).toContain(fragment);
-      expect(resolved.problem).toContain("falling back to consolidation-ledger.md");
+      expect(resolved.problem).toContain("falling back to meta/consolidation-ledger.md");
     }
   });
 
@@ -476,7 +476,7 @@ describe("dome.agent.consolidate", () => {
             {
               id: "1",
               name: "writePage",
-              input: { path: "consolidation-ledger.md", content: "# Ledger\n2026-06-09" },
+              input: { path: "meta/consolidation-ledger.md", content: "# Ledger\n2026-06-09" },
             },
           ],
         };
@@ -492,8 +492,8 @@ describe("dome.agent.consolidate", () => {
     // The run proceeded against the DEFAULT ledger path.
     const patch = effects.find((e) => e.kind === "patch") as PatchEffect;
     expect(patch).toBeDefined();
-    expect(patch.sourceRefs).toEqual([{ path: "consolidation-ledger.md" } as never]);
-    expect(seenTask[0]).toContain("consolidation-ledger.md");
+    expect(patch.sourceRefs).toEqual([{ path: "meta/consolidation-ledger.md" } as never]);
+    expect(seenTask[0]).toContain("meta/consolidation-ledger.md");
     // The malformed config surfaced as a warning diagnostic.
     const diag = effects.find(
       (e) =>
