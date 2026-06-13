@@ -448,11 +448,12 @@ describe("runInit", () => {
   // `--refresh-config`) edit `.dome/config.yaml` through the yaml package's
   // Document API (parseDocument → targeted edits → stringify), which keeps
   // hand-written comments and formatting intact instead of round-tripping
-  // through plain objects (which deleted every comment). Empirically pinned
-  // caveat (yaml@2.9): an inline comment trailing a block-collection KEY
-  // (`calendar: # note`) is repositioned onto the next line; it is never
-  // deleted. Comments above lines and inline after scalar values survive
-  // byte-for-byte.
+  // through plain objects (which deleted every comment). Documented caveat
+  // (empirically observed against yaml@2.9; deliberately absent from the
+  // fixture below, which asserts byte-for-byte line preservation): an inline
+  // comment trailing a block-collection KEY (`calendar: # note`) is
+  // repositioned onto the next line; it is never deleted. Comments above
+  // lines and inline after scalar values survive byte-for-byte.
 
   const COMMENTED_CONFIG = [
     "# top-of-file comment the owner wrote",

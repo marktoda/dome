@@ -44,13 +44,15 @@ describe("runDoctor", () => {
     expect(out).toContain("none");
   });
 
-  test("effective commit.gpgsign=true raises the git.commit-signing info finding (status stays ok)", async () => {
+  test("effective commit.gpgsign truthy raises the git.commit-signing info finding (status stays ok)", async () => {
     const f = await makeFixture();
     fixtures.push(f);
     await writeDoctorConfig(f);
     // The fixture insulates with local commit.gpgsign=false; flip it back
     // to model a vault inheriting global signing (the day-one hazard).
-    execFileSync("git", ["-C", f.vaultPath, "config", "commit.gpgsign", "true"]);
+    // "yes" rather than "true": git accepts yes/on/1/true as boolean
+    // spellings, and the probe must register all of them (--type=bool).
+    execFileSync("git", ["-C", f.vaultPath, "config", "commit.gpgsign", "yes"]);
 
     expect(await runDoctor({ vault: f.vaultPath, json: true })).toBe(0);
     const blob = captured.out.find((line) => line.includes("\"status\""));

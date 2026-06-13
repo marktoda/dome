@@ -255,16 +255,26 @@ function parseNonNegativeInteger(
 /**
  * The vault's effective `git config commit.gpgsign`, read by spawning
  * native git so local/global/system scopes resolve exactly as a shelled
- * `git commit` would see them. Returns false when the key is unset (git
- * exits 1), and undefined when git itself cannot be spawned — undefined
- * suppresses the probe rather than guessing.
+ * `git commit` would see them. `--type=bool` has git itself canonicalize
+ * every truthy spelling (`yes`/`on`/`1`/`true`) to the literal `true`.
+ * Returns false when the key is unset (git exits 1) or carries a value git
+ * cannot canonicalize, and undefined when git itself cannot be spawned —
+ * undefined suppresses the probe rather than guessing.
  */
 async function vaultCommitSigningEnabled(
   vaultPath: string,
 ): Promise<boolean | undefined> {
   try {
     const proc = Bun.spawn(
-      ["git", "-C", vaultPath, "config", "--get", "commit.gpgsign"],
+      [
+        "git",
+        "-C",
+        vaultPath,
+        "config",
+        "--get",
+        "--type=bool",
+        "commit.gpgsign",
+      ],
       { stdin: "ignore", stdout: "pipe", stderr: "ignore" },
     );
     const [stdout, exitCode] = await Promise.all([
@@ -272,7 +282,7 @@ async function vaultCommitSigningEnabled(
       proc.exited,
     ]);
     if (exitCode !== 0) return false; // unset key → exit 1
-    return stdout.trim().toLowerCase() === "true";
+    return stdout.trim() === "true";
   } catch {
     return undefined;
   }

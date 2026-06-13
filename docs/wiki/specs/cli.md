@@ -221,7 +221,7 @@ The shipped initialization steps:
    step 9 only fires on a fresh repo). Stanza inserts (shared with the
    `--with-model-provider` insert and the `--refresh-config` fill) edit
    `.dome/config.yaml` through the yaml Document API and **preserve
-   hand-written comments and formatting** on untouched nodes. One pinned
+   hand-written comments and formatting** on untouched nodes. One documented
    caveat (yaml@2.9): an inline comment trailing a block-collection key
    (`calendar: # note`) is repositioned onto the next line — never
    deleted.

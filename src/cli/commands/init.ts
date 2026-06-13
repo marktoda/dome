@@ -428,10 +428,10 @@ async function ensureConfigYaml(opts: {
 // package's Document API: parseDocument → targeted node edits → stringify.
 // Hand-written comments and formatting on untouched nodes survive — the
 // old parse/stringify-of-plain-objects rewrite deleted every comment in
-// the file (second-user blocker, fixed in v1 chunk 8). Known caveat
-// (yaml@2.9, pinned by tests/cli/commands/init.test.ts): an inline comment
-// trailing a block-collection KEY (`calendar: # note`) is repositioned to
-// the next line; it is never deleted.
+// the file (second-user blocker, fixed in v1 chunk 8). Known documented
+// caveat (empirically observed against yaml@2.9; not pinned by a test): an
+// inline comment trailing a block-collection KEY (`calendar: # note`) is
+// repositioned to the next line; it is never deleted.
 
 /** Parse the config body, requiring a top-level YAML mapping. */
 function parseConfigDocument(body: string): Document {
