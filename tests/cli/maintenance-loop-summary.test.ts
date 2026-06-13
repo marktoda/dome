@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { formatMaintenanceLoopDetailLines } from "../../src/cli/maintenance-loop-summary";
+import {
+  formatMaintenanceLoopDetailLines,
+  formatMaintenanceLoopSummaryLine,
+} from "../../src/cli/maintenance-loop-summary";
 import { collectMaintenanceLoopSummaries } from "../../src/surface/maintenance-loop-summary";
 import { diagnosticEffect, questionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
@@ -12,6 +15,13 @@ import type { QuestionRecord } from "../../src/projections/questions";
 const ASCII_CAPS = Object.freeze({
   color: false,
   unicode: false,
+  width: 120,
+});
+
+// Color caps — enables ANSI escapes so dimZeros paints zero-terms.
+const COLOR_CAPS = Object.freeze({
+  color: true,
+  unicode: true,
   width: 120,
 });
 
@@ -596,6 +606,59 @@ describe("formatMaintenanceLoopDetailLines", () => {
 
     expect(text).toContain("latest run: 2026-06-03T10:00:00.000Z");
     expect(text).toContain("last success: 2026-06-03T10:00:00.000Z");
+  });
+});
+
+describe("formatMaintenanceLoopSummaryLine", () => {
+  // Build a minimal loop set: 1 known, 1 quiet, 0 attention, 0 drift, 0 partial, 0 inactive.
+  const loop: MaintenanceLoop = {
+    ...LOOP,
+    processors: ["test.active-processor"],
+  };
+  const summaries = collectMaintenanceLoopSummaries({
+    loops: [loop],
+    activeProcessorIds: new Set(["test.active-processor"]),
+    diagnosticsByProcessor: () => [],
+    unresolvedQuestions: [],
+    runsByProcessor: () => [],
+  });
+
+  test("with ascii/no-color caps: every term is present in stable order", () => {
+    const line = formatMaintenanceLoopSummaryLine(summaries, ASCII_CAPS);
+    // All six terms must appear in order
+    expect(line).toContain("1 known");
+    expect(line).toContain("1 quiet");
+    expect(line).toContain("0 attention");
+    expect(line).toContain("0 drift");
+    expect(line).toContain("0 partial");
+    expect(line).toContain("0 inactive");
+    // Verify ordering via indexOf
+    expect(line.indexOf("known")).toBeLessThan(line.indexOf("quiet"));
+    expect(line.indexOf("quiet")).toBeLessThan(line.indexOf("attention"));
+    expect(line.indexOf("attention")).toBeLessThan(line.indexOf("drift"));
+    expect(line.indexOf("drift")).toBeLessThan(line.indexOf("partial"));
+    expect(line.indexOf("partial")).toBeLessThan(line.indexOf("inactive"));
+    // No ANSI escapes in plain mode
+    expect(line).not.toMatch(/\x1b\[/);
+  });
+
+  test("with color caps: zero terms carry an ANSI escape, non-zero terms do not start one", () => {
+    const line = formatMaintenanceLoopSummaryLine(summaries, COLOR_CAPS);
+    // All terms still present
+    expect(line).toContain("1 known");
+    expect(line).toContain("1 quiet");
+    expect(line).toContain("0 attention");
+    expect(line).toContain("0 drift");
+    // The line contains ANSI escapes (for zero-terms)
+    expect(line).toMatch(/\x1b\[/);
+    // The "1 known" substring appears without a leading ANSI escape immediately before it
+    // (i.e., the raw "1 known" chars are not painted — locate plain digits)
+    const plainOneKnown = line.includes("1 known");
+    expect(plainOneKnown).toBe(true);
+    // A zero term like "0 attention" is wrapped in ANSI — the ESC appears somewhere before it
+    const zeroIdx = line.indexOf("0 attention");
+    const ansiBeforeZero = line.slice(0, zeroIdx).includes("\x1b[");
+    expect(ansiBeforeZero).toBe(true);
   });
 });
 

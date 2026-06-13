@@ -157,7 +157,7 @@ function renderCheckReport(
           },
           {
             label: "loops",
-            value: formatLoops(report.maintenance_loops),
+            value: formatLoops(report.maintenance_loops, caps),
             tone: "plain",
           },
         ],
@@ -258,9 +258,10 @@ function formatDecisions(report: CheckDecisionReport | null): string {
 
 function formatLoops(
   loops: ReadonlyArray<MaintenanceLoopSummary> | null,
+  caps: Caps,
 ): string {
   if (loops === null) return "unavailable";
-  return formatMaintenanceLoopSummaryLine(loops);
+  return formatMaintenanceLoopSummaryLine(loops, caps);
 }
 
 function diagnosticLines(

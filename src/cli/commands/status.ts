@@ -153,7 +153,7 @@ function printStatusText(
           { label: "runs", value: dimZeros([`${formatPendingRuns(s)} pending`, `${s.failed_runs} failed`], caps) },
           { label: "outbox", value: dimZeros([`${s.outbox_pending} pending`, `${s.outbox_failed} failed`], caps) },
           { label: "quarantine", value: String(s.quarantined) },
-          { label: "loops", value: formatMaintenanceLoopSummaryLine(s.maintenance_loops) },
+          { label: "loops", value: formatMaintenanceLoopSummaryLine(s.maintenance_loops, caps) },
           ...(s.service_status === "unsupported"
             ? []
             : [{ label: "service", value: formatServiceLine(s) } satisfies KvRow]),

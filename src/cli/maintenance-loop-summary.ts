@@ -4,7 +4,7 @@
 // lives in src/surface/maintenance-loop-summary.ts; this module owns the
 // human-mode summary line and detail tree only.
 
-import { tree, type Caps } from "./presenter";
+import { dimZeros, tree, type Caps } from "./presenter";
 import type {
   MaintenanceLoopSettlementCheckSummary,
   MaintenanceLoopSummary,
@@ -12,6 +12,7 @@ import type {
 
 export function formatMaintenanceLoopSummaryLine(
   loops: ReadonlyArray<MaintenanceLoopSummary>,
+  caps: Caps,
 ): string {
   const counts = {
     quiet: 0,
@@ -23,7 +24,17 @@ export function formatMaintenanceLoopSummaryLine(
   for (const loop of loops) {
     counts[loop.state] += 1;
   }
-  return `${loops.length} known · ${counts.quiet} quiet · ${counts.attention} attention · ${counts.drift} drift · ${counts.partial} partial · ${counts.inactive} inactive`;
+  return dimZeros(
+    [
+      `${loops.length} known`,
+      `${counts.quiet} quiet`,
+      `${counts.attention} attention`,
+      `${counts.drift} drift`,
+      `${counts.partial} partial`,
+      `${counts.inactive} inactive`,
+    ],
+    caps,
+  );
 }
 
 export function formatMaintenanceLoopDetailLines(
