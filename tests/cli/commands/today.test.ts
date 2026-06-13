@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { runInit } from "../../../src/cli/commands/init";
 import { runSync } from "../../../src/cli/commands/sync";
 import { runToday } from "../../../src/cli/commands/today";
-import { add, commit } from "../../../src/git";
+import { add, commit, initRepo } from "../../../src/git";
 
 let logs: string[] = [];
 let errors: string[] = [];
@@ -139,5 +139,74 @@ describe("dome today --watch", () => {
     } finally {
       await rm(notAVault, { recursive: true, force: true });
     }
+  }, 120_000);
+});
+
+// ----- dome today: not-installed error state ----------------------------------
+//
+// When dome.daily is not installed (disabled in config), the not-found path
+// should render a verdict header + finding primitive instead of a bare run-on
+// sentence. A vault where dome.daily is disabled reproduces this path.
+
+describe("dome today: dome.daily not installed", () => {
+  let noDailyVault: string | null = null;
+
+  async function noDailyFixture(): Promise<string> {
+    if (noDailyVault !== null) return noDailyVault;
+    noDailyVault = mkdtempSync(join(tmpdir(), "dome-today-nodaily-"));
+    // Initialize a minimal git repo with a .dome/config.yaml that explicitly
+    // disables dome.daily so the today processor is not registered.
+    await initRepo(noDailyVault);
+    await mkdir(join(noDailyVault, ".dome", "state"), { recursive: true });
+    await mkdir(join(noDailyVault, "wiki"), { recursive: true });
+    // Config: dome.daily explicitly disabled; dome.graph still enabled
+    // so the vault opens normally.
+    await writeFile(
+      join(noDailyVault, ".dome", "config.yaml"),
+      [
+        "extensions:",
+        "  dome.graph:",
+        "    enabled: true",
+        "  dome.daily:",
+        "    enabled: false",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(join(noDailyVault, "wiki/seed.md"), "seed\n");
+    await commit({
+      path: noDailyVault,
+      message: "init no-daily vault\n",
+      files: ["wiki/seed.md", ".dome/config.yaml"],
+    });
+    expect(await runSync({ vault: noDailyVault, quiet: true })).toBe(0);
+    return noDailyVault;
+  }
+
+  afterAll(async () => {
+    if (noDailyVault !== null) {
+      await rm(noDailyVault, { recursive: true, force: true });
+      noDailyVault = null;
+    }
+  });
+
+  test("renders verdict header + finding instead of bare run-on sentence", async () => {
+    const v = await noDailyFixture();
+    logs = [];
+    const code = await runToday({ vault: v });
+    expect(code).toBe(64);
+    const out = logs.join("\n");
+    // Verdict header: contains "today" cmd and "not available" label.
+    expect(out).toContain("today");
+    expect(out).toContain("not available");
+    // Finding header: error glyph (ASCII "x" in non-TTY) + code.
+    expect(out).toContain("dome.daily not installed");
+    // Fix line:
+    expect(out).toContain("dome init --refresh-config");
+    // Old bare run-on sentence must be gone.
+    expect(out).not.toContain(
+      "dome.daily is not installed or no today processor is enabled",
+    );
+    // --json path is unchanged: not tested here, but the human path is
+    // confirmed above.
   }, 120_000);
 });
