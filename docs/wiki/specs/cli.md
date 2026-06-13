@@ -1326,9 +1326,12 @@ unreachable host simply stops the Shortcut, so the pre-saved file is the only
 failure branch ([[wiki/specs/capture]] §"The iCloud queue fallback") — then
 Get Contents of URL with the bearer header, then Delete Files on success.
 Plus a copyable `curl` verification command and the `GET /today?token=…`
-cockpit URL.
+cockpit URL. The queue this Shortcut leaves behind is drained by its sibling
+recipe, `dome recipe capture-queue`; once captures flow, the brief they feed
+is only as personal as `core.md` — seed it with `dome recipe core-seed`.
 
-**`capture-queue`** — the laptop half of the queue fallback: the printed text
+**`capture-queue`** — the laptop half of the queue fallback whose phone half
+is the `ios` recipe's Shortcut: the printed text
 installs the shipped drain script (`assets/source-handlers/drain-captures.sh`,
 copied to `<vault>/.dome/bin/`; the recipe interpolates the real shipped
 path) and a launchd LaunchAgent (`com.dome.drain-captures`, `StartInterval`
@@ -1354,16 +1357,22 @@ or any agent harness): four questions asked one at a time, then a draft of
 ONLY the two owner-authored sections for the owner's edit and approval. The
 prompt's standing rules ride along — keep the page under the 6,000-character
 size budget, never write inside marker-delimited generated blocks, leave the
-`## Active projects` heading empty.
+`## Active projects` heading empty. The natural install order runs `ios` →
+`capture-queue` → `core-seed`: capture ingress first, then the queue drain
+behind it, then the core memory the resulting briefs draw on.
 
 - `--url <base>` overrides the base URL baked into the printed `ios` recipe
-  (default `http://<your-server>:3663`; trailing slashes are stripped).
+  (default `http://<your-server>:3663`; trailing slashes are stripped). The
+  value must parse as an http(s) URL — anything else (a bare `host:port`
+  typo, a non-http scheme) is a usage error: stderr carries the corrective
+  message, nothing is printed to stdout, and the command exits 64.
 - An unknown `<kind>` is a usage error: stderr names the available recipes
   and the command exits 64.
 
 Tests: `tests/cli/commands/recipe.test.ts`.
 
-Exit codes: 0 on success; 64 (EX_USAGE) on an unknown recipe kind.
+Exit codes: 0 on success; 64 (EX_USAGE) on an unknown recipe kind or a
+`--url` that is not an http(s) URL.
 
 ### `dome run <name> [--json] [-- <processor flags>]`
 

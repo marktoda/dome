@@ -66,6 +66,29 @@ describe("dome recipe ios", () => {
     expect(logs.join("\n")).toContain(":3663/capture");
   });
 
+  test("trims trailing slashes off a valid --url", async () => {
+    expect(await runRecipe({ kind: "ios", url: "https://dome.example/" }))
+      .toBe(0);
+    const out = logs.join("\n");
+    expect(out).toContain("https://dome.example/capture");
+    expect(out).not.toContain("https://dome.example//capture");
+  });
+
+  test("a --url that is not an http(s) URL is a usage error", async () => {
+    // Not a URL at all (the bare-host typo), wrong scheme, and empty-host
+    // garbage all exit 64 with the corrective message — nothing is printed
+    // to stdout, so a piped consumer never sees a half-recipe.
+    for (const url of ["dome-server:3663", "ftp://dome-server:3663", "http://"]) {
+      logs = [];
+      errors = [];
+      expect(await runRecipe({ kind: "ios", url })).toBe(64);
+      expect(logs).toHaveLength(0);
+      const err = errors.join("\n");
+      expect(err).toContain("--url must be an http(s) URL");
+      expect(err).toContain(url);
+    }
+  });
+
   test("unknown kind is a usage error listing the kinds", async () => {
     expect(await runRecipe({ kind: "android" })).toBe(64);
     expect(errors.join("\n")).toContain("unknown recipe");

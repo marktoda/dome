@@ -29,8 +29,21 @@ export type RecipeOptions = {
 
 export async function runRecipe(options: RecipeOptions): Promise<number> {
   if (options.kind === "ios") {
-    const base = (options.url ?? "http://<your-server>:3663")
-      .replace(/\/+$/, "");
+    let base = "http://<your-server>:3663";
+    if (options.url !== undefined) {
+      // Trailing-slash trim first, then validate: --url must parse as an
+      // http(s) URL (the recipe interpolates it into POST targets and a
+      // curl command — a typo here ships a broken Shortcut).
+      const trimmed = options.url.replace(/\/+$/, "");
+      if (!isHttpUrl(trimmed)) {
+        console.error(
+          `dome recipe: --url must be an http(s) URL like ` +
+            `http://dome-server:3663 (got '${options.url}')`,
+        );
+        return EX_USAGE;
+      }
+      base = trimmed;
+    }
     console.log(iosRecipe(base));
     return 0;
   }
@@ -46,6 +59,16 @@ export async function runRecipe(options: RecipeOptions): Promise<number> {
     `dome recipe: unknown recipe '${options.kind}' (available: ios, capture-queue, core-seed)`,
   );
   return EX_USAGE;
+}
+
+function isHttpUrl(value: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === "http:" || parsed.protocol === "https:";
 }
 
 function iosRecipe(base: string): string {
