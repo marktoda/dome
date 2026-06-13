@@ -1,0 +1,236 @@
+---
+type: guide
+tags:
+  - onboarding
+  - second-user
+  - ws6
+created: 2026-06-12
+updated: 2026-06-12
+sources:
+  - "[[cohesive/second-user-blockers]]"
+  - "[[wiki/specs/cli]]"
+description: "Clone → vault → daemon → capture → first morning brief, every command verified against a scratch vault; the WS6 second-user walkthrough"
+---
+
+# Getting started
+
+Clone to first morning brief, in nine numbered steps. Written for someone with
+a Mac or Linux box and no Dome context. Every command below was run against a
+fresh scratch vault before it was written down; where something is rough, the
+guide says so instead of smoothing it over. Depth lives in the specs — this
+page links out rather than restating.
+
+## 1. Prerequisites
+
+- **macOS or Linux.** The daemon installs as a launchd LaunchAgent (macOS) or
+  a systemd `--user` unit (Linux). Windows is unsupported.
+- **[Bun](https://bun.sh) 1.x** — the only runtime dependency.
+- **A git identity** (`git config --global user.name` / `user.email`) — you
+  will be making ordinary git commits in your vault.
+- **An Anthropic API key** for the model-backed loops (ingest, nightly
+  consolidation, the morning brief). Everything deterministic works without
+  one; step 4 shows exactly how Dome behaves keyless, so you can try it
+  before paying.
+
+Honest note up front: **there is no release artifact yet.** Installing Dome
+means cloning the repo; updating means `git pull` + `dome restart` — and new
+code reaches a running daemon only after that restart.
+
+```sh
+git clone <dome-repo> ~/dome
+cd ~/dome && bun install
+export PATH="$HOME/dome/bin:$PATH"   # add to your shell profile too
+```
+
+`dome` is a Bun script at `bin/dome`; putting that directory on PATH is the
+whole install.
+
+## 2. Create the vault
+
+```sh
+dome init ~/vault --with-model-provider anthropic
+```
+
+This scaffolds a git repo containing: `AGENTS.md` + `CLAUDE.md` (the agent
+orientation surface — what a Claude Code session in this vault reads first),
+`core.md` (your always-loaded core memory, a commented skeleton for now),
+`preferences/signals.md` (append-only preference-signal log), `wiki/`,
+`notes/`, `inbox/raw/` + `inbox/processed/`, `.dome/config.yaml` (which
+extensions are on, with what grants), and a `.gitignore` for the derived
+`.dome/state/`. It ends with an initial commit. Re-runs are idempotent and
+never overwrite your edits.
+
+`--with-model-provider anthropic` copies a self-contained provider script to
+`.dome/model-provider.ts` and points `model_provider:` in the config at it.
+It speaks to the Anthropic Messages API with plain `fetch` and expects
+`ANTHROPIC_API_KEY` in the environment of whatever runs the compiler (step 3
+wires that into the daemon). Default model `claude-sonnet-4-6`; see
+[[wiki/specs/cli]] §"`dome init`" for the env overrides.
+
+**Optional sources** (you can come back to this later):
+
+```sh
+dome init ~/vault --with-source calendar   # and/or --with-source slack
+```
+
+Each drops a fetch script at `.dome/bin/fetch-<kind>.sh` and a subscription
+stanza in the config — **shipped `enabled: false`, always**. Scaffolding is
+not consent: the script runs headless Claude *as you* against your calendar
+or Slack MCP connection, so read it before flipping the flag. It also needs
+the `claude` CLI installed, authenticated, and MCP-connected **on the machine
+that runs the daemon** — none of that travels with the vault.
+[[wiki/specs/sources]] is the contract.
+
+## 3. Start the daemon
+
+Dome compiles your vault at the git commit boundary. The daemon is just
+`dome serve` kept alive by the OS:
+
+```sh
+cd ~/vault
+dome install --env ANTHROPIC_API_KEY=sk-ant-...
+dome install --status     # → installed yes, loaded yes
+```
+
+`--env` entries land in the service environment (use `--env-file` for a
+file of KEY=VALUE lines). The service survives crashes and reboots.
+
+- **macOS:** a LaunchAgent at `~/Library/LaunchAgents/com.dome.serve.<id>.plist`.
+- **Linux:** a systemd `--user` unit — plus one manual prerequisite Dome
+  deliberately does not automate: run `loginctl enable-linger $USER` once, or
+  the unit dies when you log out.
+
+Logs live at `<vault>/.dome/state/serve.log` on both platforms. After a
+`git pull` in the SDK repo, run `dome restart` to load the new code (the
+installed plist/unit and its `--env` values are reused as-is).
+
+## 4. Verify
+
+```sh
+dome doctor
+dome status
+```
+
+`dome doctor` is the read-only probe set. On a fresh vault expect:
+
+- `model.provider-key-missing` *(warning)* — until the key is present in the
+  environment doctor runs in. The daemon has its own environment (step 3);
+  this finding tells you which one is missing it.
+- `git.commit-signing` *(info)* — if your global git config sets
+  `commit.gpgsign=true`. Dome's own commits never invoke gpg, but your own
+  `git commit` in the vault will try to sign; the finding shows the opt-out.
+- `capability.grant-starved` *(info)* — a processor whose config grant gives
+  it nothing to act on. Zero on a fresh vault.
+
+`dome status` is the cheap pulse you (and any agent session) run at
+boundaries. Read the `NEXT` block — `next_actions` is the canonical "what
+now". First run says `sync needed`; either let the daemon's next tick handle
+it or run `dome sync` yourself. While the daemon is running, a manual
+`dome sync` may answer `branch main is already being processed by another
+Dome host` — that's the daemon holding the lock, not an error.
+
+## 5. First loop: capture
+
+```sh
+dome capture "hello dome"
+```
+
+This writes `inbox/raw/<date>-<slug>.md` and commits it — and that's all it
+does. The cycle in three sentences: every change to the vault is an ordinary
+git commit; the daemon notices the branch moved and runs the commit through
+the adoption loop (deterministic processors first, model-backed ones when
+enabled); adopted state is what `dome today`, `dome query`, and the brief are
+built from. Nothing you commit is rewritten behind your back — processors
+propose, the engine applies, git history is the audit trail.
+
+Captures are *digested* (filed into the wiki, archived to
+`inbox/processed/`) by `dome.agent.ingest`, and **`dome.agent` ships
+disabled** because it spends model dollars. `dome status` will nudge you when
+raw captures are waiting. To turn it on: edit `.dome/config.yaml`, set
+`enabled: true` under `extensions.dome.agent`, commit. Without a working API
+key the agent
+processors run and fail *visibly* — `dome check` shows
+`dome.agent.source-failed` warnings and your captures simply stay in
+`inbox/raw/` until the key works.
+
+Then look around:
+
+```sh
+dome today    # today's action surface (open tasks, follow-ups, questions)
+dome log      # vault activity: git history joined with the engine's run ledger
+```
+
+## 6. Personalize: seed core.md
+
+Without this step the morning brief stays generic — Dome knows your files
+but not your role, your people, or your rules.
+
+```sh
+dome recipe core-seed
+```
+
+It prints an interview prompt. Open your vault in Claude Code, paste the
+prompt, answer the questions, review the draft, commit. That seeds the two
+owner-authored sections of `core.md` (`## Who I am`, `## Standing
+preferences`); `## Active projects` is generated nightly — leave it alone.
+
+The standing contract from there: `core.md` is propose-only for Dome. Your
+foreground assistant logs explicit preferences and corrections as one-line
+signals in `preferences/signals.md` (the vault's `AGENTS.md` instructs it
+to); Dome tallies them and *asks you* before promoting a recurring rule into
+`core.md`. Promotion is owner-mediated, never automatic
+([[wiki/specs/preferences]]).
+
+## 7. The morning brief
+
+At **05:30** the brief agent fills the marker-delimited blocks in today's
+daily note (`wiki/dailies/<date>.md`) — yesterday's thread, what's on today —
+so the first read of the day is grounded and short. If the laptop was asleep
+at 05:30, it fires on wake instead (at most once per day); a wake-tick brief
+is normal, not a bug. When the calendar/slack sources from step 2 are
+enabled, their day-files feed it.
+
+When the brief *can't* run (bad key, network), it degrades honestly: a
+deterministic stub lands in the daily note, `dome check` carries a
+`dome.agent.brief-failed` warning, and an open question offers
+`dome resolve <id> retried` after you fix the cause — or `skip-today`.
+[[wiki/specs/daily-surface]] owns the choreography.
+
+## 8. Phone capture (optional)
+
+```sh
+dome recipe ios            # iOS Shortcut → POST /capture, queue-first
+dome recipe capture-queue  # laptop-side iCloud-queue drain (launchd)
+```
+
+Both print complete, self-contained setup walkthroughs against the
+`dome http` surface ([[wiki/specs/http-surface]]). Read the trust-domain
+paragraph before exposing anything: the HTTP surface authenticates with a
+single bearer token (`DOME_HTTP_TOKEN`), and the phone cockpit URL carries
+that token **as a query parameter** (`/today?token=…`) — visible in browser
+history and server logs. That is acceptable only inside a loopback or
+Tailscale-class private network. Bind a Tailscale interface, never a public
+one, and treat everyone inside the trust domain as the owner.
+
+## 9. Daily driving
+
+Your vault's own `AGENTS.md` is the session contract — Claude Code (or any
+harness) reads it and knows the loop: edit markdown, commit coherent units,
+let the daemon adopt, run `dome status` at session boundaries and follow
+`next_actions`. You don't run Dome commands after every edit; Dome works at
+the commit boundary.
+
+When status says attention remains, `dome check` explains it in one report —
+engine health, content diagnostics, open decisions — and every open question
+comes with its `dome resolve <id> <value>` command. Questions marked
+`owner-needed` are yours; agent-safe ones a vault-aware session may answer
+from sources.
+
+Sharp edges that are real and known: updating still means `git pull` +
+`dome restart` (§1); a handful of recovery situations (un-escalating a
+poisoned sweep pair, migrating a pre-Dome vault, the hand-written
+`dome-http` service unit) are operator surgery documented in the
+[[cohesive/runbooks/2026-06-server-migration|server-migration runbook]] and
+tracked honestly in [[cohesive/second-user-blockers]]. When something feels
+off, start with `dome doctor` and `dome check` — every failure mode you're
+likely to hit surfaces in one of the two.
