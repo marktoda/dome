@@ -61,10 +61,10 @@ describe("dome.agent manifest cadence + grants", () => {
       (c) => c.kind === "patch.auto",
     );
     expect(read?.kind === "read" ? read.paths : []).toContain(
-      "consolidation-ledger.md",
+      "meta/consolidation-ledger.md",
     );
     expect(patch?.kind === "patch.auto" ? patch.paths : []).toContain(
-      "consolidation-ledger.md",
+      "meta/consolidation-ledger.md",
     );
   });
 
@@ -245,7 +245,7 @@ describe("dome.agent manifest cadence + grants", () => {
     // questions ref inbox/raw/*.md and consolidate's ref the ledger, so both
     // must be readable or the brief silently drops agent-raised questions.
     expect(readPaths).toContain("inbox/**/*.md");
-    expect(readPaths).toContain("consolidation-ledger.md");
+    expect(readPaths).toContain("meta/consolidation-ledger.md");
     const patch = brief?.capabilities.find((c) => c.kind === "patch.auto");
     expect(patch?.kind === "patch.auto" ? [...patch.paths].sort() : []).toEqual(
       // The signals page rides along for validated signal-line appends only

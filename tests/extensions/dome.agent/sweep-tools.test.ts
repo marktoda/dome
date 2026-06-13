@@ -272,7 +272,7 @@ describe("SWEEP_WRITABLE_PATHS", () => {
   test("contains the manifest-mirror paths", () => {
     expect(SWEEP_WRITABLE_PATHS).toContain("wiki/entities/**/*.md");
     expect(SWEEP_WRITABLE_PATHS).toContain("wiki/concepts/**/*.md");
-    expect(SWEEP_WRITABLE_PATHS).toContain("sweep-ledger.md");
+    expect(SWEEP_WRITABLE_PATHS).toContain("meta/sweep-ledger.md");
   });
 
   test("is frozen", () => {

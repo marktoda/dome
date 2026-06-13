@@ -29,7 +29,7 @@ const TODAY = "2026-06-10";
 
 const MATERIAL = "wiki/dailies/2026-06-09.md";
 const DEST = "wiki/entities/alice-henshaw.md";
-const LEDGER = "sweep-ledger.md";
+const LEDGER = "meta/sweep-ledger.md";
 
 const SCHEDULE_INPUT = { kind: "schedule", cron: "0 3 * * *", firedAt: FIRED_AT };
 
@@ -1026,12 +1026,12 @@ describe("neverRegressCursor", () => {
 // ----- sweepLedgerPath (config resolution) ------------------------------------
 
 describe("sweepLedgerPath", () => {
-  test("defaults to sweep-ledger.md", () => {
+  test("defaults to meta/sweep-ledger.md", () => {
     expect(sweepLedgerPath(undefined)).toEqual({
-      path: "sweep-ledger.md",
+      path: "meta/sweep-ledger.md",
       problem: null,
     });
-    expect(sweepLedgerPath({}).path).toBe("sweep-ledger.md");
+    expect(sweepLedgerPath({}).path).toBe("meta/sweep-ledger.md");
   });
 
   test("accepts a valid relative .md path", () => {
@@ -1044,7 +1044,7 @@ describe("sweepLedgerPath", () => {
   test("malformed values fall back with a problem", () => {
     for (const bad of [42, "", "no-extension", "/abs/ledger.md", "../up.md", "a\\b.md"]) {
       const res = sweepLedgerPath({ sweep_ledger_path: bad });
-      expect(res.path).toBe("sweep-ledger.md");
+      expect(res.path).toBe("meta/sweep-ledger.md");
       expect(res.problem).not.toBeNull();
     }
   });

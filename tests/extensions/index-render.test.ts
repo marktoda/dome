@@ -16,22 +16,22 @@ describe("renderIndexFiles", () => {
   test("renders a root map plus one shard per non-empty category", () => {
     const files = renderIndexFiles(entries, { shardBudgetChars: 24_000 });
     expect(Object.keys(files).sort()).toEqual([
-      "index-concepts.md",
-      "index-entities.md",
       "index.md",
+      "meta/index-concepts.md",
+      "meta/index-entities.md",
     ]);
-    expect(files["index-entities.md"]).toContain(
+    expect(files["meta/index-entities.md"]).toContain(
       "- [[wiki/entities/alice]] — Engineer",
     );
-    expect(files["index.md"]).toContain("[[index-entities]]");
+    expect(files["index.md"]).toContain("[[meta/index-entities]]");
     expect(files["index.md"]).toContain("2"); // entity count in the root map
     // Every file's body lives inside the generated block markers.
     expect(files["index.md"]).toContain("<!-- dome.markdown:index-catalog:start -->");
     expect(files["index.md"]).toContain("<!-- dome.markdown:index-catalog:end -->");
-    expect(files["index-entities.md"]).toContain(
+    expect(files["meta/index-entities.md"]).toContain(
       "<!-- dome.markdown:index-catalog:start -->",
     );
-    expect(files["index-entities.md"]).toContain(
+    expect(files["meta/index-entities.md"]).toContain(
       "<!-- dome.markdown:index-catalog:end -->",
     );
   });
@@ -49,9 +49,9 @@ describe("renderIndexFiles", () => {
       category: "entities",
     }));
     const files = renderIndexFiles(many, { shardBudgetChars: 4_000 });
-    expect(files["index-entities.md"]).toBeDefined();
-    expect(files["index-entities-2.md"]).toBeDefined();
-    expect(files["index.md"]).toContain("[[index-entities-2]]");
+    expect(files["meta/index-entities.md"]).toBeDefined();
+    expect(files["meta/index-entities-2.md"]).toBeDefined();
+    expect(files["index.md"]).toContain("[[meta/index-entities-2]]");
   });
 
   test("empty input renders nothing (no empty registry files)", () => {
@@ -63,7 +63,7 @@ describe("renderIndexFiles", () => {
       [{ path: "wiki/entities/c.md", description: null, category: "entities" }],
       { shardBudgetChars: 24_000 },
     );
-    expect(files["index-entities.md"]).toContain(
+    expect(files["meta/index-entities.md"]).toContain(
       "- [[wiki/entities/c]] — *(no description yet)*",
     );
   });

@@ -129,7 +129,7 @@ describe("consolidator tools enforce the patch.auto grant at tool time", () => {
   test("writePage rejects notes/ (outside the consolidate grant)", async () => {
     const tools = makeConsolidatorTools({
       reader: reader({}),
-      ledgerPath: "consolidation-ledger.md",
+      ledgerPath: "meta/consolidation-ledger.md",
     });
     const state = freshState();
     const out = await tool(tools, "writePage").execute(
@@ -143,7 +143,7 @@ describe("consolidator tools enforce the patch.auto grant at tool time", () => {
   test("deletePage rejects an out-of-grant path", async () => {
     const tools = makeConsolidatorTools({
       reader: reader({}),
-      ledgerPath: "consolidation-ledger.md",
+      ledgerPath: "meta/consolidation-ledger.md",
     });
     const state = freshState();
     const out = await tool(tools, "deletePage").execute(
@@ -161,7 +161,7 @@ describe("consolidator tools enforce the patch.auto grant at tool time", () => {
   test("writePage rejects log.md and index.md without recording an edit", async () => {
     const tools = makeConsolidatorTools({
       reader: reader({}),
-      ledgerPath: "consolidation-ledger.md",
+      ledgerPath: "meta/consolidation-ledger.md",
     });
     const state = freshState();
     for (const path of ["log.md", "index.md"]) {
@@ -178,7 +178,7 @@ describe("consolidator tools enforce the patch.auto grant at tool time", () => {
   test("deletePage rejects log.md and index.md without recording an edit", async () => {
     const tools = makeConsolidatorTools({
       reader: reader({ "log.md": "history", "index.md": "catalog" }),
-      ledgerPath: "consolidation-ledger.md",
+      ledgerPath: "meta/consolidation-ledger.md",
     });
     const state = freshState();
     for (const path of ["log.md", "index.md"]) {

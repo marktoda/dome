@@ -44,7 +44,7 @@ The advisory ledger's `integrated` rows are **record-only** — the queue does n
 
 ## Advisory ledger grammar
 
-The sweep ledger (`sweep-ledger.md`, config key `sweep_ledger_path`) is committed markdown. It is **advisory** — correctness never depends on it alone. Its purpose: carry the scan cursor, no-op records that save re-judging, escalated records (poison-pair terminal rows — hand-delete to re-arm), and per-run sections the brief digest renders.
+The sweep ledger (`meta/sweep-ledger.md`, config key `sweep_ledger_path`) is committed markdown. It is **advisory** — correctness never depends on it alone. Its purpose: carry the scan cursor, no-op records that save re-judging, escalated records (poison-pair terminal rows — hand-delete to re-arm), and per-run sections the brief digest renders.
 
 ```markdown
 # Sweep ledger
@@ -135,7 +135,7 @@ All under `extensions.dome.agent.config` in `.dome/config.yaml`:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `sweep_ledger_path` | `sweep-ledger.md` | Vault-relative path to the advisory ledger markdown file. Custom paths must have matching `read` + `patch.auto` grant entries. |
+| `sweep_ledger_path` | `meta/sweep-ledger.md` | Vault-relative path to the advisory ledger markdown file. Custom paths must have matching `read` + `patch.auto` grant entries. |
 | `sweep_window_days` | `14` | Lookback window in days. Pairs older than `today − sweep_window_days` are not queued even if the cursor is older. |
 | `sweep_max_items` | `20` | Maximum queue items per night. Over-cap items re-queue the next night. |
 | `sweep_targets` | `["wiki/entities/", "wiki/concepts/"]` | Path prefixes for destination discovery. Must be a non-empty array of relative path prefixes. All entries must be covered by the bundle's `patch.auto` grant (broker-enforced). |

@@ -6,7 +6,7 @@ sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
   - "[[wedge]]"
-description: "Vault directory contract: wiki/raw/notes/inbox roots and category table; raw immutable, notes never engine-written, sources/ a committed feed"
+description: "Vault directory contract: wiki/raw/notes/inbox/meta roots and category table; raw immutable, notes never engine-written, meta/ generated bookkeeping, sources/ a committed feed"
 ---
 
 # Vault layout
@@ -26,13 +26,13 @@ A Dome vault is a git repository ([[wiki/invariants/VAULT_IS_GIT_REPO]]) contain
   raw/                # immutable raw captures (per RAW_IS_IMMUTABLE)
   notes/              # user-authored content Dome reads but does not write
   inbox/              # ephemeral drop-zones for intake (per INBOX_IS_EPHEMERAL)
+  meta/               # generated bookkeeping — index shards + processor ledgers (engine-written; see §"meta/")
   log.md              # frozen history — activity lives in git, via `dome log` (per NO_ACCRETING_REGISTRIES)
-  index.md            # generated render of the wiki/ catalogue (dome.markdown.render-index)
-  index-<category>.md # per-category catalog shards (same renderer; -N suffix on overflow)
+  index.md            # generated render of the wiki/ catalogue map (dome.markdown.render-index; shards live in meta/)
   core.md             # always-loaded core memory page (see §"core.md" below)
 ```
 
-`wiki/`, `raw/`, `notes/`, and `inbox/` are top-level directories. `log.md` and `index.md` are top-level files. Additional top-level directories that aren't recognized by Dome (e.g., the project's `cohesive/` substrate residue, `scripts/`, or anything else) are tolerated as **external** — readable, never written by the engine. `sources/` is one such external directory with a documented convention (see §"`sources/` — committed external feeds" below).
+`wiki/`, `raw/`, `notes/`, `inbox/`, and `meta/` are top-level directories. `log.md` and `index.md` are top-level files. Additional top-level directories that aren't recognized by Dome (e.g., the project's `cohesive/` substrate residue, `scripts/`, or anything else) are tolerated as **external** — readable, never written by the engine. `sources/` is one such external directory with a documented convention (see §"`sources/` — committed external feeds" below); `meta/` is the same convention with one carve-out — it IS engine-written, via explicit grants (see §"`meta/`" below).
 
 ## Category derivation
 
@@ -193,7 +193,7 @@ Populating it follows the calendar pattern with one stance difference: Slack is 
 
 `core.md` is a top-level markdown page carrying the owner's **always-loaded
 core memory**: identity, active projects, and standing preferences. By the
-category table above it is `external` — like `consolidation-ledger.md`, it is
+category table above it is `external` — like `meta/consolidation-ledger.md`, it is
 a documented convention, not a new category. Every `dome.agent` run (ingest,
 consolidate, brief) reads it at run start and prepends it to the agent's task
 context as data (see [[wiki/specs/autonomous-agents]] §"Core-memory injection
@@ -309,6 +309,28 @@ derives rebuildable `dome.preference.*` facts from it; malformed lines
 degrade to one info diagnostic, never a crash. Append-only is convention
 (legibility + stable line refs), not broker-enforced in v1.
 
+## `meta/` — generated bookkeeping (convention)
+
+`meta/` holds machine-owned bookkeeping files: the per-category index shards
+(`meta/index-<category>.md`, `-N` suffix on overflow, rendered by
+`dome.markdown.render-index` — see §"`index.md`" below) and the dome.agent
+cursor ledgers (`meta/consolidation-ledger.md`, `meta/sweep-ledger.md` —
+defaults; the `consolidation_ledger_path` / `sweep_ledger_path` config knobs
+still relocate them). By the category table above `meta/*` derives `external`
+— like `core.md`, this is a documented convention, not a new category, with
+one carve-out: unlike other external directories, `meta/` IS engine-written,
+via the explicit `patch.auto` grants each owner declares. Keeping the renders
+and ledgers OUTSIDE `wiki/` is load-bearing: agent write grants are
+`wiki/**`-shaped, so generated surfaces stay out of LLM blast radius by
+construction, not by guard code — pinned by
+[[wiki/invariants/NO_ACCRETING_REGISTRIES]]. The `index.md` catalogue map
+itself stays at the vault root (its links point into `meta/`); it is
+protected by grant *omission* — no agent grant covers it — not by location.
+Root-level shards (`index-entities.md`) are the pre-`meta/` legacy layout;
+the renderer retires them on the first run after upgrade (deleted when
+nothing but the generated block and rendered title remains, spliced clean
+when human prose surrounds it).
+
 ## `log.md` — frozen history
 
 `log.md` is **frozen** (2026-06-11). The vault's activity record is git
@@ -333,8 +355,10 @@ degenerate case: zero appends).
 
 ## `index.md` — generated wiki catalogue
 
-`index.md` and its per-category shards (`index-<category>.md`,
-`index-<category>-N.md` on overflow) are **generated renders**, compiled by
+`index.md` and its per-category shards (`meta/index-<category>.md`,
+`meta/index-<category>-N.md` on overflow — generated bookkeeping under
+`meta/`, per §"`meta/`" above; root-level shards are the legacy layout the
+renderer retires) are **generated renders**, compiled by
 the garden processor `dome.markdown.render-index` (cron `15 5 * * *` plus
 wiki create/delete signals) from each page's one-line `description:`
 frontmatter — the source of truth, projected as `dome.page.description` facts
@@ -529,7 +553,7 @@ The capability broker enforces ownership. Default rules:
 
 | Path | Owner |
 |---|---|
-| `index.md`, `index-*.md` | `dome.markdown.render-index` (via `patch.auto`) — generated renders; agent grants exclude them |
+| `index.md`, `meta/index-*.md` (+ legacy root `index-*.md` during retirement) | `dome.markdown.render-index` (via `patch.auto`) — generated renders; agent grants exclude them |
 | `log.md` | no agent or model-class writer; nothing appends entries — frozen history per [[wiki/invariants/NO_ACCRETING_REGISTRIES]] (deterministic source-preserving hygiene passes like wikilink repair retain covering grants by design); activity is git via `dome log` |
 | `raw/**` | nobody — immutable per [[wiki/invariants/RAW_IS_IMMUTABLE]] |
 | `core.md` | propose-only — agents read it; the only auto-writers are the two gated block-scoped processors (`dome.agent.preference-promotion-answer` → promoted-preferences block; `dome.agent.active-projects` → active-projects block), each via a narrow per-processor grant ([[wiki/specs/preferences]] §"Two gated writers, block-scoped") |
@@ -539,7 +563,7 @@ The capability broker enforces ownership. Default rules:
 | `notes/**/*.md` | `dome.agent.ingest` (via `patch.auto`, within grant) — grant-as-boundary |
 | `inbox/processed/**` | `dome.agent.ingest` (via `patch.auto`) |
 
-Plugin / third-party bundles should not grant themselves write capability over the reserved registry paths (`index.md`, `index-*.md`, `log.md`) — the index files belong to the deterministic renderer and `log.md` is frozen, per [[wiki/invariants/NO_ACCRETING_REGISTRIES]]. The broker enforces `owns.path` at patch-routing time; stricter config-load validation is future hardening.
+Plugin / third-party bundles should not grant themselves write capability over the reserved registry paths (`index.md`, `meta/index-*.md`, legacy root `index-*.md`, `log.md`) — the index files belong to the deterministic renderer and `log.md` is frozen, per [[wiki/invariants/NO_ACCRETING_REGISTRIES]]. The broker enforces `owns.path` at patch-routing time; stricter config-load validation is future hardening.
 
 ## Why this layout
 

@@ -57,8 +57,9 @@ const AGENT_BUNDLE = join(EXTENSIONS_DIR, "dome.agent");
 const AGENT_LIB_DIR = join(AGENT_BUNDLE, "lib");
 
 /**
- * Representative registry paths: the root index, both default category
- * shards, and an overflow shard. A patch.auto pattern set is clean only if
+ * Representative registry paths: the root index, the meta/ category shards
+ * (including an overflow shard), and a legacy root-level shard kept reserved
+ * through the retirement window. A patch.auto pattern set is clean only if
  * it matches none of them — checked with the broker's own matcher so a
  * broad covering glob fails the fence the same way an explicit literal
  * would.
@@ -66,9 +67,12 @@ const AGENT_LIB_DIR = join(AGENT_BUNDLE, "lib");
 const REGISTRY_PATHS: ReadonlyArray<string> = Object.freeze([
   "log.md",
   "index.md",
+  // Current shard locations under meta/:
+  "meta/index-entities.md",
+  "meta/index-concepts.md",
+  "meta/index-entities-2.md",
+  // Legacy root-level shard (retirement window — still reserved):
   "index-entities.md",
-  "index-concepts.md",
-  "index-entities-2.md",
 ]);
 
 const INDEX_REGISTRY_PATHS: ReadonlyArray<string> = REGISTRY_PATHS.filter(

@@ -8,7 +8,7 @@
 // Settlement is the material's wikilink in the destination's `sources:`
 // frontmatter — written atomically with the integration patch itself and
 // enforced deterministically here via `ensureSourcesLink` even when the model
-// forgets. The committed ledger (default sweep-ledger.md) is ADVISORY: it
+// forgets. The committed ledger (default meta/sweep-ledger.md) is ADVISORY: it
 // carries the scan cursor, no-op/questioned rows (saves re-judging),
 // escalated rows (poison-pair terminal records — hand-delete to re-arm), and
 // the per-run section the brief digest renders; its loss is harmless. Its
@@ -71,7 +71,7 @@ import { isModelExecutionError } from "../../../../src/engine/core/model-invoke"
 import { formatDate, localDateParts } from "../../dome.daily/processors/daily-paths";
 
 const MAX_STEPS = 8; // per item — one read + one write + slack
-const DEFAULT_LEDGER_PATH = "sweep-ledger.md";
+const DEFAULT_LEDGER_PATH = "meta/sweep-ledger.md";
 const DEFAULT_WINDOW_DAYS = 14;
 const DEFAULT_MAX_ITEMS = 20;
 const DEFAULT_TARGETS: ReadonlyArray<string> = Object.freeze([
@@ -97,8 +97,8 @@ export type SweepLedgerResolution = {
 
 /**
  * Resolve the sweep ledger path from the extension config
- * (`extensions.dome.agent.config.sweep_ledger_path`), defaulting to the
- * top-level `sweep-ledger.md`. Same validation rules as
+ * (`extensions.dome.agent.config.sweep_ledger_path`), defaulting to
+ * `meta/sweep-ledger.md`. Same validation rules as
  * `consolidationLedgerPath` in processors/consolidate.ts: relative vault `.md`
  * path; malformed values fall back to the default with a `problem` the
  * processor emits as a warning diagnostic. A custom path additionally requires

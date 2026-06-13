@@ -697,7 +697,7 @@ describe("dome.agent.brief", () => {
       diagnostics: () => [],
       questions: () => [
         rawQuestion(11, "Ingest: which entity owns this capture?", "inbox/raw/x.md"),
-        rawQuestion(12, "Consolidate: merge a into b?", "consolidation-ledger.md"),
+        rawQuestion(12, "Consolidate: merge a into b?", "meta/consolidation-ledger.md"),
         rawQuestion(13, "Hidden: refs an unreadable path", ".dome/state/secret.md"),
       ],
       searchDocuments: () => [],
@@ -1580,7 +1580,7 @@ describe("brief integrated overnight digest (wired)", () => {
     const ctx = makeCtx({
       files: {
         [YESTERDAY_PATH]: YESTERDAY_DAILY,
-        "sweep-ledger.md": SWEEP_LEDGER_TODAY,
+        "meta/sweep-ledger.md": SWEEP_LEDGER_TODAY,
       },
       steps: [{ text: "done" }],
     });
@@ -1617,7 +1617,7 @@ describe("brief integrated overnight digest (wired)", () => {
     const ctx = makeCtx({
       files: {
         [YESTERDAY_PATH]: YESTERDAY_DAILY,
-        "sweep-ledger.md": SWEEP_LEDGER_YESTERDAY_ONLY,
+        "meta/sweep-ledger.md": SWEEP_LEDGER_YESTERDAY_ONLY,
       },
       steps: [{ text: "done" }],
     });
@@ -1638,7 +1638,7 @@ describe("brief integrated overnight digest (wired)", () => {
     const ctx = makeCtx({
       files: {
         [YESTERDAY_PATH]: YESTERDAY_DAILY,
-        "sweep-ledger.md": ledger,
+        "meta/sweep-ledger.md": ledger,
       },
       steps: [{ text: "done" }],
     });
@@ -1650,7 +1650,7 @@ describe("brief integrated overnight digest (wired)", () => {
     const ctx = makeCtx({
       files: {
         [YESTERDAY_PATH]: YESTERDAY_DAILY,
-        "sweep-ledger.md": SWEEP_LEDGER_TODAY,
+        "meta/sweep-ledger.md": SWEEP_LEDGER_TODAY,
       },
       steps: [{ text: "done" }],
       questions: [
@@ -1684,7 +1684,7 @@ describe("brief integrated overnight digest (wired)", () => {
     const ctx = makeCtx({
       files: {
         [YESTERDAY_PATH]: YESTERDAY_DAILY,
-        "sweep-ledger.md": ledgerTwoRuns,
+        "meta/sweep-ledger.md": ledgerTwoRuns,
       },
       steps: [{ text: "done" }],
     });
@@ -1742,7 +1742,7 @@ describe("brief integrated overnight digest (wired)", () => {
     const ctx = makeCtx({
       files: {
         [YESTERDAY_PATH]: YESTERDAY_DAILY,
-        "sweep-ledger.md": SWEEP_LEDGER_TODAY,
+        "meta/sweep-ledger.md": SWEEP_LEDGER_TODAY,
       },
       steps: [
         {
