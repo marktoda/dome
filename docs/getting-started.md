@@ -27,7 +27,8 @@ page links out rather than restating.
 - **[Bun](https://bun.sh) 1.x** — the only runtime dependency.
 - **A git identity** (`git config --global user.name` / `user.email`) — you
   will be making ordinary git commits in your vault.
-- **An Anthropic API key** for the model-backed loops (ingest, nightly
+- **An Anthropic API key** (create one in the [Anthropic
+  Console](https://console.anthropic.com)) for the model-backed loops (ingest, nightly
   consolidation, the morning brief). Everything deterministic works without
   one; step 4 shows exactly how Dome behaves keyless, so you can try it
   before paying.
@@ -76,7 +77,9 @@ dome init ~/vault --with-source calendar   # and/or --with-source slack
 Each drops a fetch script at `.dome/bin/fetch-<kind>.sh` and a subscription
 stanza in the config — **shipped `enabled: false`, always**. Scaffolding is
 not consent: the script runs headless Claude *as you* against your calendar
-or Slack MCP connection, so read it before flipping the flag. It also needs
+or Slack MCP connection, so read it before flipping the flag — it lands
+untracked for exactly this reason, and `dome status` will nudge you to commit
+it once you have. It also needs
 the `claude` CLI installed, authenticated, and MCP-connected **on the machine
 that runs the daemon** — none of that travels with the vault.
 [[wiki/specs/sources]] is the contract.
@@ -124,8 +127,9 @@ dome status
 
 `dome status` is the cheap pulse you (and any agent session) run at
 boundaries. Read the `NEXT` block — `next_actions` is the canonical "what
-now". First run says `sync needed`; either let the daemon's next tick handle
-it or run `dome sync` yourself. While the daemon is running, a manual
+now". If the daemon hasn't caught up yet, status says `sync needed`; let its
+next tick handle it (it polls sub-second) or run `dome sync` yourself. While
+the daemon is running, a manual
 `dome sync` may answer `branch main is already being processed by another
 Dome host` — that's the daemon holding the lock, not an error.
 
@@ -135,7 +139,7 @@ Dome host` — that's the daemon holding the lock, not an error.
 dome capture "hello dome"
 ```
 
-This writes `inbox/raw/<date>-<slug>.md` and commits it — and that's all it
+This writes `inbox/raw/<date>-<time>-<slug>.md` and commits it — and that's all it
 does. The cycle in three sentences: every change to the vault is an ordinary
 git commit; the daemon notices the branch moved and runs the commit through
 the adoption loop (deterministic processors first, model-backed ones when
@@ -148,10 +152,10 @@ Captures are *digested* (filed into the wiki, archived to
 disabled** because it spends model dollars. `dome status` will nudge you when
 raw captures are waiting. To turn it on: edit `.dome/config.yaml`, set
 `enabled: true` under `extensions.dome.agent`, commit. Without a working API
-key the agent
-processors run and fail *visibly* — `dome check` shows
-`dome.agent.source-failed` warnings and your captures simply stay in
-`inbox/raw/` until the key works.
+key the agent processors run and fail *visibly* — `dome check` shows
+`dome.agent.*-failed` warnings (`source-failed` for a capture being ingested,
+`brief-failed` for the brief) and your captures simply stay in `inbox/raw/`
+until the key works.
 
 Then look around:
 
