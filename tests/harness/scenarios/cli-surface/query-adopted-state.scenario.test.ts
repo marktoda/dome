@@ -584,10 +584,9 @@ scenario(
     const sectionText = await h.runCli(["query", "launch checklist"]);
     expect(sectionText.exitCode).toBe(0);
     expect(sectionText.stderr).toBe("");
-    // breadcrumb rendered by match primitive with › prefix (not "section: " label)
-    expect(sectionText.stdout).toContain(
-      "› Danny Rosen › Rollout Notes",
-    );
+    // breadcrumb rendered by match primitive: title prefix stripped, leaving
+    // just the section name with › prefix (new design: "Danny Rosen › " trimmed)
+    expect(sectionText.stdout).toContain("› Rollout Notes");
 
     const sectionJson = await h.runCli(["query", "launch checklist", "--json"]);
     const sectionPayload = JSON.parse(sectionJson.stdout) as {
