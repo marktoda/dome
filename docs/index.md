@@ -6,6 +6,8 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 
 New to the vocabulary? [[glossary]] is the one-page map: the four core types, the engine vocabulary, the content conventions, and the overloaded words (loop, signal, settle) disambiguated.
 
+Installing Dome on your own machine? [[getting-started]] is the clone → vault → daemon → first-morning-brief walkthrough (the WS6 second-user script), every command verified against a scratch vault.
+
 ## Current Product Planning
 
 - [[v1]] — V1 design and plan: source-preserving convergent maintenance loops for Mark's work vault; processors remain the execution primitive, loops are the automation design unit.

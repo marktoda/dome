@@ -14,6 +14,14 @@ Planned companion entrypoints include MCP/protocol adapters and provider
 adapters for LLM-backed processors. They are not part of the current package
 exports.
 
+## Getting started
+
+Want to run Dome yourself — clone → vault → daemon → first morning brief?
+[`docs/getting-started.md`](docs/getting-started.md) is the walkthrough,
+written for someone with no Dome context and verified command-by-command
+against a scratch vault. Honest caveat up front: there is no release artifact
+yet; install is clone + `bun install`.
+
 ## For contributors and agents
 
 Start at [`AGENTS.md`](AGENTS.md) (also pointed at by [`CLAUDE.md`](CLAUDE.md) for Claude Code sessions). It carries orientation, the load-bearing rules (the named invariants, AC3 lockstep, the four-concept core), and the "Adding a new X" recipes for every common change shape.
