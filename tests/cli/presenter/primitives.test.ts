@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { pad, truncate, visibleWidth } from "../../../src/cli/presenter/width";
+import { pad, truncate, visibleWidth, wrap } from "../../../src/cli/presenter/width";
 import { headline, kv, section, statusValue } from "../../../src/cli/presenter/primitives";
 
 describe("visibleWidth", () => {
@@ -17,6 +17,21 @@ describe("pad", () => {
   });
   test("never truncates a too-long string", () => {
     expect(pad("abcdef", 3)).toBe("abcdef");
+  });
+});
+
+describe("wrap", () => {
+  test("returns a single line when within width", () => {
+    expect(wrap("hello world", 20)).toEqual(["hello world"]);
+  });
+  test("breaks on word boundaries at the width", () => {
+    expect(wrap("alpha beta gamma delta", 11)).toEqual(["alpha beta", "gamma delta"]);
+  });
+  test("keeps an over-long single word on its own line", () => {
+    expect(wrap("supercalifragilistic word", 10)).toEqual(["supercalifragilistic", "word"]);
+  });
+  test("empty string yields one empty line", () => {
+    expect(wrap("", 10)).toEqual([""]);
   });
 });
 
