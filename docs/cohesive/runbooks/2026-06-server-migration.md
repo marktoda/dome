@@ -103,9 +103,13 @@ reaches it only after a restart. (Plan:
    catalog. If wanted, add to `~/vaults/work/.dome/config.yaml` under
    `extensions.dome.markdown`:
 
-       config: { index_categories: { "wiki/entities/": "entities", "wiki/concepts/": "concepts", "wiki/syntheses/": "syntheses", "wiki/sources/": "sources" } }
+       config: { index_categories: { "wiki/sources/": "sources" } }
 
-   NOTE: the map REPLACES the defaults, so all four prefixes must be listed.
+   NOTE: a non-empty map MERGES over the defaults (chunk8 Task 4), so the one
+   `wiki/sources/` line keeps entities/concepts/syntheses too; listing all
+   four prefixes explicitly (as the work vault does) behaves identically. A
+   prefix mapped to `false` removes that default; explicit `{}` still
+   disables rendering outright.
 5. `dome restart` — the daemon must restart to pick up the new processors from
    the dev tree.
 6. `render-index` produces `index.md` + shards on the next garden tick (05:15

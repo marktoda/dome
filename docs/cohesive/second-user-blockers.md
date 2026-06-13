@@ -31,7 +31,7 @@ The WS6 input artifact promised by the v1 plan ([[cohesive/brainstorms/2026-06-1
 - `dome init --with-source` / `--with-model-provider` rewrites `.dome/config.yaml` through YAML parse/stringify, which **deletes every hand-written comment** in the file (runbook §Chunk 4 step 2 LOUD WARNING).
 - Per-processor default grants do NOT propagate to a vault whose config carries a user-owned `processors:`/grant block — every new shipped processor arrives capability-denied or silently inert until the grant is hand-added (runbook §Chunk 3b step 1, §Chunk 4 step 3; chunk3b plan Task 4).
 - Grant-scoped snapshot misses are silent: manifest capability ∩ vault grant returning null produces no diagnostic, so a starving processor just never acts — this is how the owner's calendar weave was silently ungranted for weeks (runbook §Chunk 4 pre-check: "fetch-works ≠ weave-works").
-- `index_categories` config REPLACES the defaults rather than merging, so adding one category requires re-listing all of them; defaults hardcode the `wiki/entities|concepts|syntheses` layout and a differently-shaped vault drops pages from the rendered catalog (chunk3a plan Task 4; runbook §Chunk 3a step 4).
+- ~~`index_categories` config REPLACES the defaults rather than merging, so adding one category requires re-listing all of them; defaults hardcode the `wiki/entities|concepts|syntheses` layout and a differently-shaped vault drops pages from the rendered catalog (chunk3a plan Task 4; runbook §Chunk 3a step 4).~~ Fixed (chunk8 Task 4): a non-empty map now merges over the defaults, a prefix mapped to `false` removes that default, and explicit `{}` still disables rendering ([[wiki/specs/vault-layout]] §index; `render-index.ts` config resolver).
 
 ## Daemon-host environment dependencies
 
