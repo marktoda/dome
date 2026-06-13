@@ -57,12 +57,24 @@ writes claim lines does so as ordinary proposed markdown, and this indexer
 extracts the facts from adopted pages, preserving
 [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]].
 
-## Anticipated consumers
+## Consumers
 
 The nightly sweeper (`dome.agent.sweep`, shipped — see [[wiki/specs/sweep]])
 supersedes claim values in place; `dome explain <page>#^c…` (planned) renders
-a claim's timeline from block git history; the warden contradiction pre-filter
-shortlists same-key/different-value claims across pages.
+a claim's timeline from block git history.
+
+The **integrity warden** (`dome.warden.integrity`, shipped — see
+[[wiki/specs/task-lifecycle]] §"Wardens") is the wired consumer of the
+`dome.claims.claim` facts. It reads them through its garden-phase
+`ctx.projection` view and runs a deterministic same-page,
+same-normalized-key/different-value contradiction PRE-FILTER before trusting
+the model: each mechanical collision becomes a high-risk contradiction
+QuestionEffect directly (no model needed), and the collision also gates the
+warden's noisier model findings (§"Wardens"). Cross-page contradiction
+remains the model's judgment; same-page key collision is the deterministic
+subset the facts make cheap. The warden still emits QuestionEffects only — it
+never writes a fact — so this consumer keeps
+[[wiki/invariants/MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS]] intact.
 
 ## Deferred
 

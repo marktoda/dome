@@ -15,13 +15,14 @@ import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 
 import integrity from "../../assets/extensions/dome.warden/processors/integrity";
-import type { Effect, QuestionEffect } from "../../src/core/effect";
+import type { Effect, FactEffect, QuestionEffect } from "../../src/core/effect";
 import { makeManualProposal } from "../../src/core/proposal";
 import { commitOid } from "../../src/core/source-ref";
 import {
   treeOid,
   type ModelInvokeFn,
   type ModelInvokeStructuredInput,
+  type ProjectionQueryView,
   type Snapshot,
 } from "../../src/core/processor";
 import { makeProcessorContext } from "../../src/processors/context";
@@ -38,23 +39,27 @@ type Finding = {
 
 describe("dome.warden.integrity", () => {
   test("drops low-risk findings — only risk >= medium becomes a question", async () => {
+    // Uses historical-as-ongoing (an un-suppressed class): the severity gate is
+    // what this test exercises. The noisy classes (self-corroborating /
+    // inference-as-fact) are gated separately by the collision pre-filter — see
+    // the suppression tests below.
     const effects = await runIntegrity({
       path: "wiki/concepts/x.md",
-      content: "# X\n\nAn unsourced inference and another.\n",
+      content: "# X\n\nAn event framed as ongoing and another.\n",
       findings: [
         {
-          kind: "inference-as-fact",
-          claim: "An unsourced inference",
+          kind: "historical-as-ongoing",
+          claim: "An event framed as ongoing",
           severity: "low",
           confidence: 0.6,
-          recommendedAnswer: "cite a source",
+          recommendedAnswer: "reframe as completed",
         },
         {
-          kind: "self-corroborating",
+          kind: "historical-as-ongoing",
           claim: "another",
           severity: "medium",
           confidence: 0.7,
-          recommendedAnswer: "cite a source",
+          recommendedAnswer: "reframe as completed",
         },
       ],
     });
@@ -296,12 +301,178 @@ describe("dome.warden.integrity", () => {
 
     expect(first[0]?.idempotencyKey).toBe(second[0]?.idempotencyKey);
   });
+
+  // ----- Claims-fact contradiction pre-filter (Task 2) --------------------
+
+  test("a real key-collision contradiction in claims facts surfaces a question — even when the model finds nothing", async () => {
+    const path = "wiki/concepts/migration.md";
+    const content =
+      "# Migration\n\n" +
+      "- **Status:** active\n" +
+      "- **Status:** shipped\n";
+    const effects = await runIntegrity({
+      path,
+      content,
+      findings: [],
+      claimFacts: [
+        claimFact(path, "Status", "active"),
+        claimFact(path, "Status", "shipped"),
+      ],
+    });
+    const questions = effects.filter(isQuestion);
+    expect(questions.length).toBe(1);
+    const q = questions[0];
+    if (q === undefined) throw new Error("expected a contradiction question");
+    expect(q.metadata?.risk).toBe("high");
+    expect(q.question.toLowerCase()).toContain("contradiction");
+    expect(q.question).toContain("Status");
+    // Questions-only: no fact/patch.
+    expect(effects.some((e) => e.kind === "fact")).toBe(false);
+    expect(effects.some((e) => e.kind === "patch")).toBe(false);
+    // Deterministic idempotencyKey keyed on the contradicted claim key.
+    expect(q.idempotencyKey).toContain("dome.warden.integrity:");
+    expect(q.idempotencyKey).toContain(":claim-collision:");
+  });
+
+  test("same key with one consistent value is NOT a collision — no question", async () => {
+    const path = "wiki/concepts/migration.md";
+    const effects = await runIntegrity({
+      path,
+      content: "# Migration\n\n- **Status:** shipped\n- **Status:** shipped\n",
+      findings: [],
+      claimFacts: [
+        claimFact(path, "Status", "shipped"),
+        claimFact(path, "Status", "shipped"),
+      ],
+    });
+    expect(effects.filter(isQuestion).length).toBe(0);
+  });
+
+  test("legitimate non-contradictory prose: a self-corroborating finding is suppressed without a collision backing", async () => {
+    const path = "wiki/concepts/x.md";
+    const effects = await runIntegrity({
+      path,
+      content: "# X\n\nA claim supported only by this vault.\n",
+      findings: [
+        {
+          kind: "self-corroborating",
+          claim: "A claim supported only by this vault",
+          severity: "medium",
+          confidence: 0.9,
+          recommendedAnswer: "cite an external source",
+        },
+        {
+          kind: "inference-as-fact",
+          claim: "An inferred fact",
+          severity: "high",
+          confidence: 0.9,
+          recommendedAnswer: "mark as inference",
+        },
+      ],
+      claimFacts: [],
+    });
+    // Both noisy-class findings are suppressed: no collision backs them.
+    expect(effects.filter(isQuestion).length).toBe(0);
+  });
+
+  test("a self-corroborating finding IS surfaced when a collision on the page backs it", async () => {
+    const path = "wiki/concepts/x.md";
+    const effects = await runIntegrity({
+      path,
+      content:
+        "# X\n\n- **Owner:** Ada\n- **Owner:** Grace\n\nA self-cited claim.\n",
+      findings: [
+        {
+          kind: "self-corroborating",
+          claim: "A self-cited claim",
+          severity: "medium",
+          confidence: 0.9,
+          recommendedAnswer: "cite an external source",
+        },
+      ],
+      claimFacts: [
+        claimFact(path, "Owner", "Ada"),
+        claimFact(path, "Owner", "Grace"),
+      ],
+    });
+    const questions = effects.filter(isQuestion);
+    // The deterministic collision question + the now-unsuppressed self-corroborating finding.
+    const kinds = questions.map((q) => q.idempotencyKey);
+    expect(kinds.some((k) => k.includes(":claim-collision:"))).toBe(true);
+    expect(kinds.some((k) => k.includes(":self-corroborating"))).toBe(true);
+  });
+
+  test("confidence below the floor → no question (model finding gated out)", async () => {
+    const path = "wiki/concepts/x.md";
+    const effects = await runIntegrity({
+      path,
+      content: "# X\n\nAn event framed as ongoing.\n",
+      findings: [
+        {
+          kind: "historical-as-ongoing",
+          claim: "An event framed as ongoing",
+          severity: "high",
+          confidence: 0.3,
+          recommendedAnswer: "reframe as completed",
+        },
+      ],
+      config: { question_confidence_floor: 0.6 },
+    });
+    expect(effects.filter(isQuestion).length).toBe(0);
+  });
+
+  test("confidence at/above the configured floor → question surfaces", async () => {
+    const path = "wiki/concepts/x.md";
+    const effects = await runIntegrity({
+      path,
+      content: "# X\n\nAn event framed as ongoing.\n",
+      findings: [
+        {
+          kind: "historical-as-ongoing",
+          claim: "An event framed as ongoing",
+          severity: "high",
+          confidence: 0.75,
+          recommendedAnswer: "reframe as completed",
+        },
+      ],
+      config: { question_confidence_floor: 0.7 },
+    });
+    expect(effects.filter(isQuestion).length).toBe(1);
+  });
+
+  test("malformed question_confidence_floor → conservative default + ONE warning, review still runs", async () => {
+    const path = "wiki/concepts/x.md";
+    const effects = await runIntegrity({
+      path,
+      content: "# X\n\nAn event framed as ongoing.\n",
+      findings: [
+        {
+          kind: "historical-as-ongoing",
+          claim: "An event framed as ongoing",
+          severity: "high",
+          confidence: 0.9,
+          recommendedAnswer: "reframe as completed",
+        },
+      ],
+      config: { question_confidence_floor: "nonsense" },
+    });
+    const diags = effects.filter((e) => e.kind === "diagnostic");
+    expect(diags).toHaveLength(1);
+    const diag = diags[0] as { code: string; severity: string; message: string };
+    expect(diag.code).toBe("dome.warden.confidence-config-invalid");
+    expect(diag.severity).toBe("warning");
+    expect(diag.message).toContain("question_confidence_floor");
+    // Degrade-not-crash: a high-confidence finding still surfaces under the default floor.
+    expect(effects.filter(isQuestion).length).toBe(1);
+  });
 });
 
 async function runIntegrity(opts: {
   readonly path: string;
   readonly content: string;
   readonly findings: ReadonlyArray<Finding>;
+  readonly claimFacts?: ReadonlyArray<FactEffect>;
+  readonly config?: Record<string, unknown>;
 }): Promise<ReadonlyArray<Effect>> {
   const ctx = makeProcessorContext({
     snapshot: fakeSnapshot(opts),
@@ -315,8 +486,39 @@ async function runIntegrity(opts: {
     signal: new AbortController().signal,
     input: { kind: "garden", matchedTriggers: [] } as unknown,
     modelInvoke: fakeModelInvoke(opts.findings),
+    ...(opts.claimFacts !== undefined
+      ? { projection: fakeProjection(opts.claimFacts) }
+      : {}),
+    ...(opts.config !== undefined ? { extensionConfig: opts.config } : {}),
   });
   return integrity.run(ctx);
+}
+
+/** A `dome.claims.claim` fact: object is canonical JSON {key, value, asOf?}. */
+function claimFact(path: string, key: string, value: string): FactEffect {
+  return {
+    kind: "fact",
+    subject: { kind: "page", path },
+    predicate: "dome.claims.claim",
+    object: { kind: "string", value: JSON.stringify({ key, value }) },
+    assertion: "extracted",
+    sourceRefs: [{ path } as unknown],
+  } as unknown as FactEffect;
+}
+
+/** Minimal projection that filters facts by predicate, mirroring the runtime. */
+function fakeProjection(facts: ReadonlyArray<FactEffect>): ProjectionQueryView {
+  return {
+    facts: (filter?: { readonly predicate?: string }) =>
+      facts.filter(
+        (f) =>
+          filter?.predicate === undefined || f.predicate === filter.predicate,
+      ),
+    diagnostics: () => [],
+    questions: () => [],
+    searchDocuments: () => [],
+    documentsByPath: () => [],
+  } as unknown as ProjectionQueryView;
 }
 
 function fakeSnapshot(opts: {
