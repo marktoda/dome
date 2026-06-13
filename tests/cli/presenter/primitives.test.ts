@@ -159,7 +159,7 @@ describe("tree", () => {
   });
 });
 
-import { table, type Column } from "../../../src/cli/presenter/primitives";
+import { dimZeros, table, type Column } from "../../../src/cli/presenter/primitives";
 
 type Row = { name: string; phase: string };
 const COLS: Column<Row>[] = [
@@ -203,5 +203,25 @@ describe("table", () => {
     expect(lines.length).toBe(2);
     expect(lines[0]).toContain("A");
     expect(lines[0]).toContain("C");
+  });
+});
+
+const COLOR = { color: true, unicode: true, width: 80 };
+
+describe("dimZeros", () => {
+  test("joins terms with the separator and no color when color:false", () => {
+    expect(dimZeros(["9 known", "0 attention", "2 partial"], ASCII)).toBe(
+      "9 known · 0 attention · 2 partial",
+    );
+  });
+  test("paints only the zero terms muted when color:true", () => {
+    const out = dimZeros(["0 failed", "1 live"], COLOR);
+    expect(out).toContain("1 live");
+    expect(out.indexOf("1 live")).toBe(out.lastIndexOf("1 live"));
+    expect(out).toContain("\x1b[");
+    expect(out).toContain("0 failed");
+  });
+  test("treats a bare 0 and 0-prefixed counts as zero, but not 10", () => {
+    expect(dimZeros(["10 known", "0"], ASCII)).toBe("10 known · 0");
   });
 });

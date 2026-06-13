@@ -102,6 +102,18 @@ export function tree(nodes: ReadonlyArray<TreeNode>, caps: Caps): ReadonlyArray<
   return out;
 }
 
+/**
+ * Join count terms with the `·` separator, painting any term whose count is
+ * zero in the muted tone so the eye skips it. Terms are never removed or
+ * reordered — layout stays stable. A term is "zero" when it starts with `0`
+ * not followed by another digit (so `0`, `0 failed` dim; `10 known` does not).
+ */
+export function dimZeros(terms: ReadonlyArray<string>, caps: Caps): string {
+  return terms
+    .map((t) => (/^0(?!\d)/.test(t) ? paint(t, "muted", caps) : t))
+    .join(" · ");
+}
+
 export type Cell = { readonly text: string; readonly tone?: Tone };
 export type Column<R> = {
   readonly header: string;
