@@ -238,3 +238,14 @@ poisoned sweep pair, migrating a pre-Dome vault, the hand-written
 tracked honestly in [[cohesive/second-user-blockers]]. When something feels
 off, start with `dome doctor` and `dome check` — every failure mode you're
 likely to hit surfaces in one of the two.
+
+**Adopting an existing vault?** Dome's lifecycle processors stamp stable
+identity anchors (`^c…` on claim lines, `^…` on task lines) as pages are
+edited — they fire on changed paths, not retroactively, so a vault with prior
+content keeps unanchored backlog until each page is next touched. To complete
+coverage in one pass, a one-time content commit that puts every page into a
+diff lets the garden stamp the backlog on the next tick; the
+[[wiki/specs/claims]] §"Backfilling coverage on an existing vault" gives the
+exact (idempotent, anchor-only) incantation. A fresh `dome init` vault — the
+path this guide walks — needs none of this; coverage accrues from the first
+edit.
