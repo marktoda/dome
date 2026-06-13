@@ -663,11 +663,13 @@ scenario(
           // finding is the only one.
           "        - \"sources/calendar/*.md\"",
           "        - \"sources/slack/*.md\"",
-          // The agent ledgers: granting both keeps this scenario's general
-          // grant-starvation probe (capability.grant-starved) quiet so the
-          // model-provider finding is the only one.
-          "        - \"consolidation-ledger.md\"",
-          "        - \"sweep-ledger.md\"",
+          // The agent ledgers (manifest-declared under meta/ since the
+          // generated-surface convention): granting both keeps this
+          // scenario's general grant-starvation probe
+          // (capability.grant-starved) quiet so the model-provider finding
+          // is the only one.
+          "        - \"meta/consolidation-ledger.md\"",
+          "        - \"meta/sweep-ledger.md\"",
           "      patch.auto:",
           "        - \"wiki/**/*.md\"",
           "        - \"notes/**/*.md\"",
@@ -676,8 +678,8 @@ scenario(
           "        - \"inbox/processed/*.md\"",
           "        - \"inbox/raw/*.md\"",
           "        - \"preferences/signals.md\"",
-          "        - \"consolidation-ledger.md\"",
-          "        - \"sweep-ledger.md\"",
+          "        - \"meta/consolidation-ledger.md\"",
+          "        - \"meta/sweep-ledger.md\"",
           // The deterministic preference counter declares graph.write
           // (dome.preference.*); granting the kind keeps this scenario's
           // capabilityGrantGaps at 0 so the model-provider finding is the

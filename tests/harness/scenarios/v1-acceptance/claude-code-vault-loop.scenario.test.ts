@@ -223,6 +223,11 @@ scenario(
   },
 );
 
+// Mirrors the shipped first-party defaults (src/cli/default-vault-config.ts)
+// closely enough that doctor's grant probes stay quiet: every manifest-declared
+// read/patch.auto pattern of the enabled bundles is granted (raw/** for
+// dome.markdown.raw-immutable; notes/*.md, the alternate daily_path shape, for
+// dome.daily) — the scenario pins findingCount 0.
 function v1Config(): string {
   return `
 extensions:
@@ -233,6 +238,7 @@ extensions:
         - "**/*.md"
         - ".dome/page-types.yaml"
         - "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"
+        - "raw/**"
       patch.auto: ["**/*.md"]
       graph.write: ["dome.page.*"]
       question.ask: true
@@ -252,7 +258,8 @@ extensions:
       read:
         - "wiki/**/*.md"
         - "wiki/dailies/*.md"
-      patch.auto: ["wiki/**/*.md"]
+        - "notes/*.md"
+      patch.auto: ["wiki/**/*.md", "notes/*.md"]
       graph.write: ["dome.daily.*", "dome.attention.*"]
       question.ask: true
   dome.lint:
