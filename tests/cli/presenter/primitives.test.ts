@@ -159,7 +159,7 @@ describe("tree", () => {
   });
 });
 
-import { dimZeros, table, type Column } from "../../../src/cli/presenter/primitives";
+import { dimZeros, finding, table, type Column, type Finding } from "../../../src/cli/presenter/primitives";
 
 type Row = { name: string; phase: string };
 const COLS: Column<Row>[] = [
@@ -203,6 +203,73 @@ describe("table", () => {
     expect(lines.length).toBe(2);
     expect(lines[0]).toContain("A");
     expect(lines[0]).toContain("C");
+  });
+});
+
+describe("finding", () => {
+  const UNI = { color: false, unicode: true, width: 80 };
+  test("renders glyph+code+subject header, what, and fix", () => {
+    const f: Finding = {
+      severity: "warning",
+      code: "capability.grant-entry-missing",
+      subject: "dome.markdown.core-size",
+      what: "core.md is declared 'read' but the vault grant doesn't cover it",
+      fix: "add \"core.md\" to extensions.dome.markdown.grant.read",
+    };
+    expect(finding(f, UNI)).toEqual([
+      "  ⚠ capability.grant-entry-missing · dome.markdown.core-size",
+      "      core.md is declared 'read' but the vault grant doesn't cover it",
+      "      fix    add \"core.md\" to extensions.dome.markdown.grant.read",
+    ]);
+  });
+
+  test("omits subject separator when no subject, and renders note before fix", () => {
+    const f: Finding = {
+      severity: "info",
+      code: "capability.grant-starved",
+      what: "'index-*.md' is not covered by the effective grant",
+      note: "grant-scoped snapshots silently omit matching files",
+      fix: "add the pattern under …grant.<kind>",
+    };
+    expect(finding(f, UNI)).toEqual([
+      "  • capability.grant-starved",
+      "      'index-*.md' is not covered by the effective grant",
+      "      note   grant-scoped snapshots silently omit matching files",
+      "      fix    add the pattern under …grant.<kind>",
+    ]);
+  });
+
+  test("wraps a long what line with a hanging indent at the content column", () => {
+    const narrow = { color: false, unicode: true, width: 34 };
+    const f: Finding = {
+      severity: "error",
+      code: "x.y",
+      what: "alpha beta gamma delta epsilon zeta",
+    };
+    expect(finding(f, narrow)).toEqual([
+      "  ✗ x.y",
+      "      alpha beta gamma delta",
+      "      epsilon zeta",
+    ]);
+  });
+
+  test("block severity renders the ✗ glyph like error", () => {
+    const f: Finding = { severity: "block", code: "x.y", what: "boom" };
+    expect(finding(f, UNI)).toEqual(["  ✗ x.y", "      boom"]);
+  });
+
+  test("long fix wraps with continuation lines at col 13 (not under the label)", () => {
+    // width=24: textIndent = 6 + 4 + 3 = 13 spaces; avail = 24 - 13 = 11
+    // "one two three four" → first chunk fits "one two" (7 ≤ 11), next word "three" would make 13 > 11
+    // continuation: 13 spaces then "three four"
+    const narrow = { color: false, unicode: true, width: 24 };
+    const f: Finding = { severity: "error", code: "x.y", what: "boom", fix: "one two three four" };
+    expect(finding(f, narrow)).toEqual([
+      "  ✗ x.y",
+      "      boom",
+      "      fix    one two",
+      "             three four",
+    ]);
   });
 });
 

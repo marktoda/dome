@@ -1,6 +1,6 @@
 import type { Caps } from "./caps";
-import { bold, glyph, paint, statusGlyph, type Tone } from "./theme";
-import { pad, truncate, visibleWidth } from "./width";
+import { bold, glyph, paint, severityTone, statusGlyph, type Severity, type Tone } from "./theme";
+import { pad, truncate, visibleWidth, wrap } from "./width";
 
 export type Status = { readonly tone: Tone; readonly label: string };
 
@@ -112,6 +112,50 @@ export function dimZeros(terms: ReadonlyArray<string>, caps: Caps): string {
   return terms
     .map((t) => (/^0(?!\d)/.test(t) ? paint(t, "muted", caps) : t))
     .join(" · ");
+}
+
+export type Finding = {
+  readonly severity: Severity;
+  readonly code: string;
+  readonly subject?: string;
+  readonly what: string;
+  readonly note?: string;
+  readonly fix?: string;
+};
+
+const FINDING_INDENT = "      "; // 6 spaces — content column
+const FINDING_LABEL_WIDTH = 4; // "note", "fix " padded equal
+
+function findingLabeledLines(label: string, text: string, caps: Caps): string[] {
+  const labelCell = paint(pad(label, FINDING_LABEL_WIDTH), "muted", caps);
+  const textIndent = " ".repeat(FINDING_INDENT.length + FINDING_LABEL_WIDTH + 3);
+  const avail = Math.max(8, caps.width - textIndent.length);
+  const [first, ...rest] = wrap(text, avail);
+  const out = [`${FINDING_INDENT}${labelCell}   ${first ?? ""}`];
+  for (const line of rest) out.push(`${textIndent}${line}`);
+  return out;
+}
+
+/**
+ * Render one diagnostic finding in the Rust/Elm anatomy: a severity-glyph +
+ * code (+ optional subject) header, a plain-language `what` line, then an
+ * optional dim `note` (why it matters) and `fix` (suggestion), each on its
+ * own line. The full original message lives in `--json`.
+ */
+export function finding(f: Finding, caps: Caps): ReadonlyArray<string> {
+  const tone = severityTone(f.severity);
+  const g = paint(statusGlyph(tone, caps), tone, caps);
+  const code = paint(f.code, tone, caps);
+  const header =
+    f.subject !== undefined
+      ? `  ${g} ${code} ${glyph("sep", caps)} ${paint(f.subject, "muted", caps)}`
+      : `  ${g} ${code}`;
+  const out: string[] = [header];
+  const whatAvail = Math.max(8, caps.width - FINDING_INDENT.length);
+  for (const line of wrap(f.what, whatAvail)) out.push(`${FINDING_INDENT}${line}`);
+  if (f.note !== undefined) out.push(...findingLabeledLines("note", f.note, caps));
+  if (f.fix !== undefined) out.push(...findingLabeledLines("fix", f.fix, caps));
+  return out;
 }
 
 export type Cell = { readonly text: string; readonly tone?: Tone };
