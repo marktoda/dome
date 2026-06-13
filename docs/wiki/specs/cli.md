@@ -1796,6 +1796,19 @@ bare interpreter name, skipping flag arguments), and commands with no
 checkable reference — bare PATH lookups, `sh -c` inline scripts — are
 silently unprobed rather than false-positived; their failures still surface
 through the outbox findings ([[wiki/specs/sources]] §"The flow").
+When the vault's **effective** `git config commit.gpgsign` resolves true
+(probed at the doctor boundary by spawning native git, so local/global/
+system scopes resolve exactly as a shelled `git commit` would see them —
+the inherited-global case is the day-one hazard), doctor raises a
+`git.commit-signing` **info** finding. Purely informational: Dome's own
+commit paths are immune (engine adoption commits and `dome capture` use
+isomorphic-git, which never invokes gpg; the shipped dome.sources fetch
+templates commit with `git -c commit.gpgsign=false` —
+[[wiki/specs/sources]] §"The handler contract"), and the finding names the
+still-affected paths (the owner's own `git commit`, custom vault-side
+scripts shelling plain `git commit`) with `git config --local
+commit.gpgsign false` as the opt-out if the owner wants unsigned human
+commits too — their call.
 The implementation lives in `src/engine/host/health.ts`.
 
 **Model-provider probe.** When `.dome/config.yaml` carries a

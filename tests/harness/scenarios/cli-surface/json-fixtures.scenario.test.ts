@@ -96,6 +96,7 @@ const DOCTOR_SUMMARY_KEYS = Object.freeze([
   "sourcesFetchScriptMissing",
   "dailyEditionNotCompiled",
   "dailyCalendarSourceMissing",
+  "gitCommitSigning",
 ]);
 
 const QUERY_KEYS = Object.freeze([

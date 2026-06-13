@@ -325,6 +325,14 @@ export type HealthFinding =
         /** The brief's two most recent run days (local YYYY-MM-DD, newest first). */
         readonly briefRunDates: ReadonlyArray<string>;
       };
+    }
+  | {
+      readonly code: "git.commit-signing";
+      readonly severity: "info";
+      readonly subject: "git";
+      readonly id: "commit_gpgsign";
+      readonly message: string;
+      readonly recovery: string;
     };
 
 export type HealthSummary = {
@@ -352,6 +360,7 @@ export type HealthSummary = {
   readonly sourcesFetchScriptMissing: number;
   readonly dailyEditionNotCompiled: number;
   readonly dailyCalendarSourceMissing: number;
+  readonly gitCommitSigning: number;
 };
 
 /**
@@ -384,6 +393,7 @@ const SUMMARY_FIELD_BY_CODE = Object.freeze({
   "sources.fetch-script-missing": "sourcesFetchScriptMissing",
   "daily.edition-not-compiled": "dailyEditionNotCompiled",
   "daily.calendar-source-missing": "dailyCalendarSourceMissing",
+  "git.commit-signing": "gitCommitSigning",
 } as const) satisfies Readonly<Record<HealthFinding["code"], keyof HealthSummary>>;
 
 type CodeSummaryField =
@@ -440,6 +450,13 @@ export async function collectHealthReport(opts: {
   /** Composed manifest doctor contributions (`runtime.doctorGrantEntries`). */
   readonly doctorGrantEntries?: ReadonlyArray<ManifestGrantEntryRequirement>;
   readonly modelProviderProbe?: ModelProviderProbeInput;
+  /**
+   * The vault's effective `git config commit.gpgsign`, probed at the
+   * `dome doctor` boundary (this module never spawns git). Undefined →
+   * not probed (e.g. `dome check`); true → the `git.commit-signing`
+   * info finding.
+   */
+  readonly commitSigningEnabled?: boolean;
   readonly now?: Date;
   readonly orphanRunThresholdMs?: number;
   readonly pendingOutboxThresholdMs?: number;
@@ -558,6 +575,11 @@ export async function collectHealthReport(opts: {
             ),
         });
 
+  const commitSigning =
+    opts.commitSigningEnabled === true
+      ? [commitSigningFinding()]
+      : [];
+
   const findings: HealthFinding[] = [
     ...storageSchema,
     ...capabilityGrants,
@@ -569,6 +591,7 @@ export async function collectHealthReport(opts: {
     ...sourcesTimeout,
     ...sourcesFetchScript,
     ...dailyEdition,
+    ...commitSigning,
     ...failedOutbox.map(outboxFinding),
     ...stuckPendingOutbox.map(stuckPendingOutboxFinding),
     ...orphaned.map(orphanFinding),
@@ -1368,6 +1391,43 @@ export function dailyEditionFindings(opts: {
   }
 
   return Object.freeze(findings);
+}
+
+/**
+ * The `git.commit-signing` info finding (the day-one GPG hazard from the
+ * second-user ledger): the vault's effective git config — usually the
+ * inherited global config — enables commit signing. Dome's own commit
+ * paths are immune (engine adoption commits and `dome capture` go through
+ * isomorphic-git, which never invokes gpg; the shipped dome.sources fetch
+ * templates commit with `git -c commit.gpgsign=false`), so this is purely
+ * informational: it names the still-affected paths (the owner's own
+ * `git commit` and any custom vault-side script shelling plain
+ * `git commit`) instead of letting a non-interactive signing failure
+ * surface as a mystery later.
+ */
+function commitSigningFinding(): HealthFinding {
+  return Object.freeze({
+    code: "git.commit-signing" as const,
+    severity: "info" as const,
+    subject: "git" as const,
+    id: "commit_gpgsign" as const,
+    message:
+      "This vault's effective git config sets commit.gpgsign=true (often " +
+      "inherited from the global config). Dome's own commit paths are " +
+      "immune — engine adoption commits and `dome capture` use " +
+      "isomorphic-git (which never invokes gpg), and the shipped " +
+      "dome.sources fetch templates commit with `git -c " +
+      "commit.gpgsign=false`. Affected: your own `git commit` and any " +
+      "custom vault-side script that shells out to plain `git commit` — " +
+      "those will try to sign, and a missing key or absent agent fails " +
+      "the commit non-interactively.",
+    recovery:
+      "Informational — signing your own commits is your call. If an " +
+      "unattended script's commits fail on signing, add `-c " +
+      "commit.gpgsign=false` to its git commit invocation, or run " +
+      "`git config --local commit.gpgsign false` in the vault to keep " +
+      "human commits unsigned here too.",
+  });
 }
 
 /**

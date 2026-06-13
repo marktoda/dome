@@ -25,6 +25,7 @@
 // Each test file calls the installers it needs at its own top level.
 
 import { afterEach, beforeEach } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -109,6 +110,11 @@ export type Fixture = {
 export async function makeFixture(): Promise<Fixture> {
   const vaultPath = mkdtempSync(join(tmpdir(), "cli-commands-"));
   await initRepo(vaultPath);
+  // Env insulation: a dev machine with global commit.gpgsign=true would
+  // otherwise leak doctor's git.commit-signing info finding (and gpg
+  // failures on shelled commits) into every fixture vault. Tests that
+  // exercise the signing probe flip the LOCAL key back to true themselves.
+  execFileSync("git", ["-C", vaultPath, "config", "commit.gpgsign", "false"]);
   await mkdir(join(vaultPath, "wiki"), { recursive: true });
 
   await writeFile(join(vaultPath, "wiki/seed.md"), "seed\n");

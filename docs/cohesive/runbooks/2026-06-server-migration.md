@@ -215,6 +215,17 @@ Slack enablement, in order:
 
    Commit. After this step (plus a restart) the calendar weave starts
    working for the first time, independent of slack enablement.
+3b. **GPG note — the templates self-protect now.** The shipped fetch
+   templates' `land()` commits with `git -c commit.gpgsign=false` (v1
+   chunk 8), so a vault inheriting global `commit.gpgsign=true` can no
+   longer kill the non-interactive fetch commit — no manual
+   `-c commit.gpgsign=false` or vault-local signing override is needed for
+   the subscription path anymore. If the vault's `.dome/bin/fetch-*.sh`
+   copies predate this, re-copy from `assets/source-handlers/` (or add the
+   flag by hand). Engine commits and `dome capture` were always immune
+   (isomorphic-git never signs); `dome doctor` now reports an info
+   `git.commit-signing` finding when the effective config signs, naming
+   the immune vs affected paths.
 4. **Review the script — it is the consent surface.** Read
    `.dome/bin/fetch-slack.sh` end to end, especially the prompt: the fetch is
    headless `claude -p` running **as you**, with your Slack MCP, summarizing

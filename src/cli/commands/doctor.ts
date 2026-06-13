@@ -118,9 +118,16 @@ export async function runDoctor(
       });
     }
 
+    // Probe the vault's EFFECTIVE commit.gpgsign (local + inherited global
+    // config — the global inheritance is the day-one hazard). Doctor is the
+    // probe verb; `dome check` reuses the HealthReport machinery without
+    // spawning git.
+    const commitSigningEnabled = await vaultCommitSigningEnabled(runtime.path);
+
     const report = await collectHealthReport({
       ...runtimeHealthReportInputs(runtime),
       ...(modelProviderProbe !== undefined ? { modelProviderProbe } : {}),
+      ...(commitSigningEnabled !== undefined ? { commitSigningEnabled } : {}),
       orphanRunThresholdMs: orphanThresholdMs,
     });
     if (options.json === true) {
@@ -243,4 +250,30 @@ function parseNonNegativeInteger(
   fallback: number,
 ): number | null {
   return parseNonNegativeIntegerValue(raw, fallback);
+}
+
+/**
+ * The vault's effective `git config commit.gpgsign`, read by spawning
+ * native git so local/global/system scopes resolve exactly as a shelled
+ * `git commit` would see them. Returns false when the key is unset (git
+ * exits 1), and undefined when git itself cannot be spawned — undefined
+ * suppresses the probe rather than guessing.
+ */
+async function vaultCommitSigningEnabled(
+  vaultPath: string,
+): Promise<boolean | undefined> {
+  try {
+    const proc = Bun.spawn(
+      ["git", "-C", vaultPath, "config", "--get", "commit.gpgsign"],
+      { stdin: "ignore", stdout: "pipe", stderr: "ignore" },
+    );
+    const [stdout, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      proc.exited,
+    ]);
+    if (exitCode !== 0) return false; // unset key → exit 1
+    return stdout.trim().toLowerCase() === "true";
+  } catch {
+    return undefined;
+  }
 }
