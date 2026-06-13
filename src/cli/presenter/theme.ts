@@ -66,3 +66,17 @@ export function statusGlyph(tone: Tone, caps: Caps): string {
 export function bold(text: string, caps: Caps): string {
   return caps.color ? c.bold(text) : text;
 }
+
+export type Severity = "block" | "error" | "warning" | "info";
+
+export function severityTone(severity: Severity): Tone {
+  switch (severity) {
+    case "block":
+    case "error":
+      return "err";
+    case "warning":
+      return "warn";
+    case "info":
+      return "info";
+  }
+}

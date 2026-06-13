@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { bold, glyph, paint, statusGlyph } from "../../../src/cli/presenter/theme";
+import { bold, glyph, paint, severityTone, statusGlyph } from "../../../src/cli/presenter/theme";
 
 const ASCII = { color: false, unicode: false, width: 80 };
 const UNI = { color: false, unicode: true, width: 80 };
@@ -58,5 +58,14 @@ describe("bold", () => {
     expect(out).not.toBe("hi");
     expect(out).toContain("hi");
     expect(out).toContain("\x1b[");
+  });
+});
+
+describe("severityTone", () => {
+  test("block and error map to err, warning to warn, info to info", () => {
+    expect(severityTone("block")).toBe("err");
+    expect(severityTone("error")).toBe("err");
+    expect(severityTone("warning")).toBe("warn");
+    expect(severityTone("info")).toBe("info");
   });
 });
