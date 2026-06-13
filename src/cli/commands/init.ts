@@ -77,7 +77,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { isMap, parseDocument, type Document, type YAMLMap } from "yaml";
 
 import { commit, currentSha, initRepo, isGitRepo } from "../../git";
 import {
@@ -413,16 +413,74 @@ async function ensureConfigYaml(opts: {
   if (!opts.refresh) return "skipped (already present)";
 
   const body = await readFile(opts.path, "utf8");
-  const root = recordFromYaml(parseYaml(body));
-  if (root === null) {
-    throw new Error(".dome/config.yaml must be a YAML mapping");
-  }
+  const doc = parseConfigDocument(body);
   const defaults = defaultConfigRecord();
 
-  const changed = refreshFirstPartyDefaultConfig(root, defaults);
+  const changed = refreshFirstPartyDefaultConfig(doc, defaults);
   if (!changed) return "skipped (already present)";
-  await writeFile(opts.path, stringifyYaml(root), "utf8");
+  await writeFile(opts.path, stringifyConfigDocument(doc), "utf8");
   return "updated";
+}
+
+// ----- Comment-preserving config edits ---------------------------------------
+//
+// Every config-ensure path edits `.dome/config.yaml` through the yaml
+// package's Document API: parseDocument → targeted node edits → stringify.
+// Hand-written comments and formatting on untouched nodes survive — the
+// old parse/stringify-of-plain-objects rewrite deleted every comment in
+// the file (second-user blocker, fixed in v1 chunk 8). Known caveat
+// (yaml@2.9, pinned by tests/cli/commands/init.test.ts): an inline comment
+// trailing a block-collection KEY (`calendar: # note`) is repositioned to
+// the next line; it is never deleted.
+
+/** Parse the config body, requiring a top-level YAML mapping. */
+function parseConfigDocument(body: string): Document {
+  const doc = parseDocument(body);
+  if (!isMap(doc.contents)) {
+    throw new Error(".dome/config.yaml must be a YAML mapping");
+  }
+  return doc;
+}
+
+/**
+ * Stringify with line folding disabled so long untouched lines (comments
+ * survive verbatim regardless) and long inserted scalars are never
+ * re-wrapped at the default 80-column width, and without flow-collection
+ * padding (`["sh", ...]`, not `[ "sh", ... ]`) to match the shipped
+ * default-config rendering in ../default-vault-config.ts.
+ */
+function stringifyConfigDocument(doc: Document): string {
+  return doc.toString({ lineWidth: 0, flowCollectionPadding: false });
+}
+
+/** `doc.contents` as a mapping (guaranteed by `parseConfigDocument`). */
+function configRoot(doc: Document): YAMLMap {
+  if (!isMap(doc.contents)) {
+    throw new Error(".dome/config.yaml must be a YAML mapping");
+  }
+  return doc.contents;
+}
+
+/**
+ * `map.get(key)` when the value is a mapping, else null — the Document-API
+ * analogue of `recordFromYaml(record[key])`.
+ */
+function mapAt(map: YAMLMap, key: string): YAMLMap | null {
+  const value = map.get(key);
+  return isMap(value) ? value : null;
+}
+
+/**
+ * Ensure `map[key]` is a mapping, creating (or replacing a non-mapping
+ * value with) an empty one when needed. Mirrors the previous plain-object
+ * behavior of `recordFromYaml(x) ?? (x = {})`.
+ */
+function ensureMapAt(doc: Document, map: YAMLMap, key: string): YAMLMap {
+  const existing = map.get(key);
+  if (isMap(existing)) return existing;
+  const created = doc.createNode({});
+  map.set(doc.createNode(key), created);
+  return created;
 }
 
 async function ensureModelProvider(opts: {
@@ -449,15 +507,16 @@ async function ensureModelProviderConfig(opts: {
   readonly provider: DefaultModelProvider;
 }): Promise<StepOutcome> {
   const body = await readFile(opts.path, "utf8");
-  const root = recordFromYaml(parseYaml(body));
-  if (root === null) {
-    throw new Error(".dome/config.yaml must be a YAML mapping");
-  }
-  if (recordFromYaml(root.model_provider) !== null) {
+  const doc = parseConfigDocument(body);
+  const root = configRoot(doc);
+  if (mapAt(root, "model_provider") !== null) {
     return "skipped (already present)";
   }
-  root.model_provider = defaultModelProviderConfig(opts.provider);
-  await writeFile(opts.path, stringifyYaml(root), "utf8");
+  root.set(
+    doc.createNode("model_provider"),
+    doc.createNode(defaultModelProviderConfig(opts.provider)),
+  );
+  await writeFile(opts.path, stringifyConfigDocument(doc), "utf8");
   return "updated";
 }
 
@@ -506,44 +565,34 @@ async function ensureSourceSubscriptionConfig(opts: {
   readonly kind: DefaultSourceKind;
 }): Promise<StepOutcome> {
   const body = await readFile(opts.path, "utf8");
-  const root = recordFromYaml(parseYaml(body));
-  if (root === null) {
-    throw new Error(".dome/config.yaml must be a YAML mapping");
-  }
-  let extensions = recordFromYaml(root.extensions);
-  if (extensions === null) {
-    extensions = {};
-    root.extensions = extensions;
-  }
-  if (!hasOwn(extensions, "dome.sources")) {
+  const doc = parseConfigDocument(body);
+  const root = configRoot(doc);
+  const extensions = ensureMapAt(doc, root, "extensions");
+  if (!extensions.has("dome.sources")) {
     // No dome.sources stanza at all (a pre-sources vault): insert the full
     // first-party default — the same whole-stanza fill `--refresh-config`
     // performs — then ensure the requested kind inside it.
-    extensions["dome.sources"] = defaultSourcesExtensionStanza();
+    extensions.set(
+      doc.createNode("dome.sources"),
+      doc.createNode(defaultSourcesExtensionStanza()),
+    );
   }
-  const sources = recordFromYaml(extensions["dome.sources"]);
+  const sources = mapAt(extensions, "dome.sources");
   if (sources === null) {
     throw new Error(
       "extensions.dome.sources in .dome/config.yaml must be a YAML mapping",
     );
   }
-  let config = recordFromYaml(sources.config);
-  if (config === null) {
-    config = {};
-    sources.config = config;
-  }
-  let subscriptions = recordFromYaml(config.subscriptions);
-  if (subscriptions === null) {
-    subscriptions = {};
-    config.subscriptions = subscriptions;
-  }
-  if (hasOwn(subscriptions, opts.kind)) {
+  const config = ensureMapAt(doc, sources, "config");
+  const subscriptions = ensureMapAt(doc, config, "subscriptions");
+  if (subscriptions.has(opts.kind)) {
     return "skipped (already present)";
   }
-  subscriptions[opts.kind] = structuredClone(
-    defaultSourceSubscription(opts.kind),
+  subscriptions.set(
+    doc.createNode(opts.kind),
+    doc.createNode(defaultSourceSubscription(opts.kind)),
   );
-  await writeFile(opts.path, stringifyYaml(root), "utf8");
+  await writeFile(opts.path, stringifyConfigDocument(doc), "utf8");
   return "updated";
 }
 
@@ -633,10 +682,10 @@ function extractManagedUserProseSection(body: string): string | null {
 }
 
 function refreshFirstPartyDefaultConfig(
-  root: Record<string, unknown>,
+  doc: Document,
   defaults: Record<string, unknown>,
 ): boolean {
-  const extensions = recordFromYaml(root.extensions);
+  const extensions = mapAt(configRoot(doc), "extensions");
   const defaultExtensions = recordFromYaml(defaults.extensions);
   if (extensions === null || defaultExtensions === null) return false;
 
@@ -644,45 +693,54 @@ function refreshFirstPartyDefaultConfig(
   for (const extensionId of Object.keys(defaultExtensions).sort()) {
     const defaultExtension = recordFromYaml(defaultExtensions[extensionId]);
     if (defaultExtension === null) continue;
-    if (!hasOwn(extensions, extensionId)) {
-      extensions[extensionId] = cloneYamlValue(defaultExtension);
+    if (!extensions.has(extensionId)) {
+      extensions.set(
+        doc.createNode(extensionId),
+        doc.createNode(defaultExtension),
+      );
       changed = true;
       continue;
     }
 
-    const extension = recordFromYaml(extensions[extensionId]);
+    const extension = mapAt(extensions, extensionId);
     if (extension === null) continue;
-    if (extension.enabled !== true) continue;
+    if (extension.get("enabled") !== true) continue;
 
     const defaultGrant = grantRecord(defaultExtension);
     if (defaultGrant === null) continue;
     const grantKey = grantKeyFor(extension);
-    const grant = grantRecord(extension) ?? {};
-    if (!hasOwn(extension, grantKey)) {
-      extension[grantKey] = grant;
+    if (!extension.has(grantKey)) {
+      extension.set(doc.createNode(grantKey), doc.createNode({}));
       changed = true;
     }
-
-    for (const key of Object.keys(defaultGrant).sort()) {
-      if (hasOwn(grant, key)) continue;
-      grant[key] = cloneYamlValue(defaultGrant[key]);
-      changed = true;
+    const grant = mapAt(extension, grantKey);
+    // A non-mapping grant value (`grant: off`) is user-owned config the
+    // refresh has no safe way to fill into — leave it alone.
+    if (grant !== null) {
+      for (const key of Object.keys(defaultGrant).sort()) {
+        if (grant.has(key)) continue;
+        grant.set(doc.createNode(key), doc.createNode(defaultGrant[key]));
+        changed = true;
+      }
     }
 
     // Per-processor replacement grants (e.g. the preference-promotion
     // answer handler's narrow core.md write) are filled wholesale when the
     // vault has no processors block; an existing block is user-owned.
     const defaultProcessors = recordFromYaml(defaultExtension.processors);
-    if (defaultProcessors !== null && !hasOwn(extension, "processors")) {
-      extension.processors = cloneYamlValue(defaultProcessors);
+    if (defaultProcessors !== null && !extension.has("processors")) {
+      extension.set(
+        doc.createNode("processors"),
+        doc.createNode(defaultProcessors),
+      );
       changed = true;
     }
   }
   return changed;
 }
 
-function grantKeyFor(extension: Record<string, unknown>): "grant" | "grants" {
-  return hasOwn(extension, "grants") && !hasOwn(extension, "grant")
+function grantKeyFor(extension: YAMLMap): "grant" | "grants" {
+  return extension.has("grants") && !extension.has("grant")
     ? "grants"
     : "grant";
 }
@@ -692,10 +750,6 @@ function grantRecord(
 ): Record<string, unknown> | null {
   const raw = hasOwn(extension, "grant") ? extension.grant : extension.grants;
   return recordFromYaml(raw);
-}
-
-function cloneYamlValue(value: unknown): unknown {
-  return structuredClone(value);
 }
 
 /**

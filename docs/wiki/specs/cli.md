@@ -162,9 +162,11 @@ The shipped initialization steps:
    first-party configs: it adds missing first-party default bundle stanzas and
    fills missing first-party default grant keys for already enabled first-party
    bundles while preserving existing grant values, explicitly disabled bundles,
-   and third-party bundle config. When it changes the file, it rewrites the YAML
-   into normalized form so stale comments from older generated configs do not
-   contradict the active grants. It deliberately does NOT merge new entries
+   and third-party bundle config. When it changes the file, it edits through
+   the yaml Document API: only the inserted stanzas/keys are new text, and
+   hand-written comments and formatting on untouched nodes are preserved
+   (caveat: an inline comment trailing a block-collection key moves to the
+   next line — never deleted). It deliberately does NOT merge new entries
    into grant lists the vault already carries — grant lists are user-owned
    config and auto-merging is too risky. The detection half lives in
    `dome doctor`'s `capability.grant-entry-missing` probe, which names the
@@ -216,13 +218,13 @@ The shipped initialization steps:
    `dome init --with-source <kind>` on an existing vault is the supported
    wiring path; on a vault with commits the resulting script + config changes
    are left **uncommitted** for the owner to review (the scaffold commit in
-   step 9 only fires on a fresh repo). **Sharp edge:** inserting a missing
-   stanza rewrites `.dome/config.yaml` through YAML parse/stringify, which
-   **deletes hand-written comments** anywhere in the file (pre-existing
-   behavior shared with the `--with-model-provider` stanza insert) — on a
-   hand-commented config, commit first and re-add the comments, or
-   hand-insert the stanza instead and use `--with-source` only for the
-   script copy.
+   step 9 only fires on a fresh repo). Stanza inserts (shared with the
+   `--with-model-provider` insert and the `--refresh-config` fill) edit
+   `.dome/config.yaml` through the yaml Document API and **preserve
+   hand-written comments and formatting** on untouched nodes. One pinned
+   caveat (yaml@2.9): an inline comment trailing a block-collection key
+   (`calendar: # note`) is repositioned onto the next line — never
+   deleted.
 5. Writes `<vault>/.gitignore` (ignores `.dome/state/` per
    [[wiki/specs/vault-layout]] §"Git repository structure"). First-write-only.
 6. Writes `<vault>/core.md`, the always-loaded core memory page (per

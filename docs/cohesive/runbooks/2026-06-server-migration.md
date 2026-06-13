@@ -176,24 +176,24 @@ the fetched calendar files at all. The rich Meetings sections in current
 dailies come from something else, not the brief's calendar weave —
 fetch-works ≠ weave-works. Step 3 below closes this for calendar AND slack.
 `engine.external_handler_timeout_ms: 300000` is already
-set (no `config.sources-timeout-default` finding expected). Note: as of this
-check the config carries **no hand-written YAML comments**, so the rewrite
-hazard below is currently moot for this vault — but re-verify with
-`grep '#' ~/vaults/work/.dome/config.yaml` immediately before step 2, since
-comments may have been added since.
+set (no `config.sources-timeout-default` finding expected). Note: the
+comment-deletion rewrite hazard that used to live in step 2 was fixed in v1
+chunk 8 (`dome init` config edits now go through the yaml Document API and
+preserve hand-written comments), so no pre-check grep is needed anymore.
 
 Slack enablement, in order:
 
 1. Commit any outstanding `.dome/config.yaml` changes first, so the next
    step's rewrite is reviewable as a clean diff.
-2. ⚠️ **LOUD WARNING — config rewrite.**
-   `dome init --with-source slack ~/vaults/work` inserts the slack stanza by
-   rewriting `config.yaml` through YAML parse/stringify, which **DELETES
-   every hand-written comment in the file** (pre-existing
-   `--with-model-provider` behavior). Use it only on a comment-free config
-   (verified in the pre-check above). If comments are present, hand-insert
-   the stanza instead and run `--with-source slack` anyway just for the
-   script copy — an existing stanza is left byte-untouched. The stanza:
+2. **Config insert — comment-safe since v1 chunk 8.**
+   `dome init --with-source slack ~/vaults/work` inserts the slack stanza
+   through the yaml package's Document API (`parseDocument` → targeted node
+   edits), so **hand-written comments and formatting survive** — the old
+   parse/stringify rewrite that deleted every comment is gone (fixed
+   alongside `--with-model-provider` and `--refresh-config`). One pinned
+   caveat: an inline comment trailing a block-collection KEY
+   (`calendar: # note`) is repositioned onto the next line — never deleted.
+   An existing stanza is still left byte-untouched. The stanza it inserts:
 
        slack:
          enabled: false
