@@ -380,7 +380,6 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.markdown.validate-wikilinks",
         "dome.markdown.ambiguous-wikilink-answer",
         "dome.markdown.repair-wikilinks",
-        "dome.markdown.simplify-indexes",
         "dome.markdown.render-index",
         "dome.markdown.normalize-frontmatter",
         "dome.markdown.lint-frontmatter",
