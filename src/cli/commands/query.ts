@@ -22,7 +22,7 @@ import {
   footer,
   glyph,
   headline,
-  kv,
+  match as matchPrimitive,
   paint,
   resolveCaps,
   section,
@@ -114,7 +114,7 @@ export async function runQuery(
   }
 }
 
-function formatQueryResult(data: unknown, caps: Caps, vault?: string): string {
+export function formatQueryResult(data: unknown, caps: Caps, vault?: string): string {
   const result = parseQueryResult(data);
   const n = result.matches.length;
   const matchLabel = n === 1 ? "match" : "matches";
@@ -130,13 +130,8 @@ function formatQueryResult(data: unknown, caps: Caps, vault?: string): string {
         caps,
       ),
     ];
-    lines.push(
-      ...section(
-        "Query",
-        kv([{ label: "text", value: `"${result.query}"`, tone: "plain" }], caps),
-        caps,
-      ),
-    );
+    const noMatchSummary = `"${result.query}" — 0 matches`;
+    lines.push("", `  ${paint(noMatchSummary, "muted", caps)}`);
     lines.push(...footer({ tone: "muted", label: "no matches" }, caps));
     return lines.join("\n");
   }
@@ -149,101 +144,60 @@ function formatQueryResult(data: unknown, caps: Caps, vault?: string): string {
     ),
   ];
 
-  lines.push(
-    ...section(
-      "Query",
-      kv(
-        [
-          { label: "text", value: `"${result.query}"`, tone: "plain" },
-          {
-            label: "shown",
-            value: `${result.shown.matches} ${result.shown.matches === 1 ? "match" : "matches"}`,
-          },
-          {
-            label: "limit",
-            value: result.limit === null ? "default" : String(result.limit),
-          },
-          { label: "has more", value: result.hasMore.matches ? "yes" : "no" },
-        ],
-        caps,
-      ),
-      caps,
-    ),
-  );
+  // Compact summary line — no QUERY kv block in human output.
+  // No total-count field exists on the result, so we only say "showing N"
+  // when hasMore is true (the caller can raise --limit to see more).
+  const summary = result.hasMore.matches
+    ? `"${result.query}" — showing ${result.shown.matches}, raise with --limit`
+    : `"${result.query}" — ${n} ${matchLabel}`;
+  lines.push("", `  ${paint(summary, "muted", caps)}`);
 
-  const matchLines: string[] = [];
-  for (const [index, match] of result.matches.entries()) {
-    matchLines.push(`${index + 1}. ${paint(match.title, "plain", caps)}`);
-    matchLines.push(`   ${paint("path:", "muted", caps)} ${match.path}`);
-    if (match.breadcrumb !== null && match.breadcrumb !== match.title) {
-      matchLines.push(
-        `   ${paint("section:", "muted", caps)} ${match.breadcrumb}`,
-      );
-    }
-    if (match.snippet.length > 0) {
-      matchLines.push(
-        `   ${paint("text:", "muted", caps)} ${stripFtsMarkers(match.snippet)}`,
-      );
-    }
-    if (match.ranking !== null && match.ranking.reasons.length > 0) {
-      const why =
-        `${match.ranking.reasons.join("; ")} ` +
-        `(score ${match.ranking.score}, fts ${match.ranking.ftsRank})`;
-      matchLines.push(`   ${paint("why:", "muted", caps)} ${why}`);
-    }
-    if (match.sourceRefs.length > 0) {
-      matchLines.push(
-        `   ${paint("source:", "muted", caps)} ${match.sourceRefs.map(formatSourceRef).join(", ")}`,
-      );
-    }
-    if (match.facts.length > 0) {
-      const facts = summarizeLabels(
-        match.facts.map((fact) => fact.predicate),
-        5,
-      );
-      matchLines.push(`   ${paint("facts:", "muted", caps)} ${facts}`);
-    }
-    if (match.diagnostics.length > 0) {
-      const diagnostics = summarizeLabels(
-        match.diagnostics.map((diagnostic) => diagnostic.code),
-        5,
-      );
-      matchLines.push(
-        `   ${paint("diagnostics:", "muted", caps)} ${diagnostics}`,
-      );
-    }
-    if (match.questions.length > 0) {
-      matchLines.push(`   ${paint("questions:", "muted", caps)}`);
-      for (const question of match.questions.slice(0, 5)) {
+  const matchLines = result.matches.flatMap((m, i) => {
+    const titlePrefix = `${m.title} › `;
+    const crumb = m.breadcrumb !== null && m.breadcrumb.startsWith(titlePrefix)
+      ? m.breadcrumb.slice(titlePrefix.length)
+      : m.breadcrumb;
+    const rendered = matchPrimitive(
+      {
+        rank: i + 1,
+        title: m.title,
+        path: m.path,
+        breadcrumb: crumb !== null && crumb !== m.title && crumb.length > 0
+          ? crumb
+          : undefined,
+        snippet: m.snippet.length > 0 ? stripFtsMarkers(m.snippet) : undefined,
+        sourceRef: m.sourceRefs.length > 0
+          ? formatSourceRef(m.sourceRefs[0]!)
+          : undefined,
+      },
+      caps,
+    );
+    // questions remain in human output (they are actionable, not telemetry)
+    const questionLines: string[] = [];
+    if (m.questions.length > 0) {
+      const indent = " ".repeat(7); // aligns under title for rank 1–9
+      questionLines.push(`${indent}${paint("questions:", "muted", caps)}`);
+      for (const question of m.questions.slice(0, 5)) {
         const refs =
           question.sourceRefs.length === 0
             ? ""
             : ` (${question.sourceRefs.map(formatSourceRef).join(", ")})`;
-        matchLines.push(
-          `     ${glyph("bullet", caps)} [#${question.id}] ${question.question}${refs}`,
+        questionLines.push(
+          `${indent}  ${glyph("bullet", caps)} [#${question.id}] ${question.question}${refs}`,
         );
-        matchLines.push(
-          `       ${paint("policy:", "muted", caps)} ${questionAutomationLabel(question.metadata)}`,
+        questionLines.push(
+          `${indent}    ${paint("policy:", "muted", caps)} ${questionAutomationLabel(question.metadata)}`,
         );
-        matchLines.push(
-          `       ${paint("resolve:", "muted", caps)} ${formatCommand(question.resolveCommand)}`,
+        questionLines.push(
+          `${indent}    ${paint("resolve:", "muted", caps)} ${formatCommand(question.resolveCommand)}`,
         );
       }
     }
-    if (index < result.matches.length - 1) matchLines.push("");
-  }
+    return [...rendered, ...questionLines, ""];
+  });
+  // Drop trailing blank line
+  if (matchLines[matchLines.length - 1] === "") matchLines.pop();
   lines.push(...section("Matches", matchLines, caps));
-
-  if (result.hasMore.matches) {
-    lines.push("");
-    lines.push(
-      paint(
-        "(more adopted-state matches exist; increase --limit to show more)",
-        "muted",
-        caps,
-      ),
-    );
-  }
 
   lines.push(...footer({ tone: "ok", label: `${n} ${matchLabel}` }, caps));
   return lines.join("\n");
