@@ -77,12 +77,22 @@ dome init ~/vault --with-source calendar   # and/or --with-source slack
 Each drops a fetch script at `.dome/bin/fetch-<kind>.sh` and a subscription
 stanza in the config — **shipped `enabled: false`, always**. Scaffolding is
 not consent: the script runs headless Claude *as you* against your calendar
-or Slack MCP connection, so read it before flipping the flag — it lands
-untracked for exactly this reason, and `dome status` will nudge you to commit
-it once you have. It also needs
-the `claude` CLI installed, authenticated, and MCP-connected **on the machine
-that runs the daemon** — none of that travels with the vault.
-[[wiki/specs/sources]] is the contract.
+or Slack connector, so read it before flipping the flag — it lands untracked
+for exactly this reason, and `dome status` will nudge you to commit it once
+you have.
+
+**Honest note: calendar and Slack are foreground by default.** The shipped
+scripts drive your **claude.ai connectors**, which load only in an interactive
+Claude session — *not* in the non-interactive `claude -p` the daemon spawns
+(this was verified; an interactive terminal made it look like it worked). So
+live calendar and Slack belong in your **morning foreground Claude session**,
+where the connectors are present — not in a daemon-automated subscription. The
+daemon-composed brief (step 7) covers your vault state and simply omits
+meetings/Slack when no day-file is present. To make a subscription genuinely
+daemon-driven, swap the script's FETCH block for a **deterministic** source
+that needs no interactive login (`icalBuddy` reading Calendar.app, or a direct
+API call with a file-stored token). [[wiki/specs/sources]]
+§"Connector-backed fetch is foreground-only" is the contract.
 
 ## 3. Start the daemon
 
@@ -191,8 +201,13 @@ At **05:30** the brief agent fills the marker-delimited blocks in today's
 daily note (`wiki/dailies/<date>.md`) — yesterday's thread, what's on today —
 so the first read of the day is grounded and short. If the laptop was asleep
 at 05:30, it fires on wake instead (at most once per day); a wake-tick brief
-is normal, not a bug. When the calendar/slack sources from step 2 are
-enabled, their day-files feed it.
+is normal, not a bug. The brief is built from your **vault state**, not live
+integrations: when a `sources/calendar/<date>.md` or `sources/slack/<date>.md`
+day-file is present it feeds the meetings/digest surfaces, and when it is
+absent the brief simply omits them — no error, no fabricated agenda. With the
+connector-backed scripts from step 2 left foreground (the default), those
+day-files are written in your morning session, not by the daemon; a daemon
+would populate them only with a deterministic fetcher swapped in.
 
 When the brief *can't* run (bad key, network), it degrades honestly: a
 deterministic stub lands in the daily note, `dome check` carries a
