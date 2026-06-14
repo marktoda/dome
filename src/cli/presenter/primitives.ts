@@ -42,6 +42,24 @@ export function section(
   return ["", `  ${heading}`, ...body.map((l) => `  ${l}`)];
 }
 
+/**
+ * One glyph-led status line: `  <glyph> <label>   <detail>`. Glyph is the
+ * tone's status glyph painted in the tone; label is padded to `labelWidth`
+ * and dim; detail is plain. No trailing whitespace when detail is empty.
+ */
+export function signalLine(
+  tone: Tone,
+  label: string,
+  detail: string,
+  labelWidth: number,
+  caps: Caps,
+): string {
+  const g = paint(statusGlyph(tone, caps), tone, caps);
+  if (detail.length === 0) return `  ${g} ${paint(label, "muted", caps)}`;
+  const lbl = paint(pad(label, labelWidth), "muted", caps);
+  return `  ${g} ${lbl}   ${detail}`;
+}
+
 export type KvRow = { readonly label: string; readonly value: string; readonly tone?: Tone };
 
 export function kv(rows: ReadonlyArray<KvRow>, caps: Caps): ReadonlyArray<string> {
@@ -120,6 +138,7 @@ export type Finding = {
   readonly subject?: string;
   readonly what: string;
   readonly note?: string;
+  readonly why?: string;
   readonly fix?: string;
 };
 
@@ -138,11 +157,13 @@ function findingLabeledLines(label: string, text: string, caps: Caps): string[] 
 
 /**
  * Render one diagnostic finding in the Rust/Elm anatomy: a severity-glyph +
- * code (+ optional subject) header, a plain-language `what` line, then an
- * optional dim `note` (why it matters) and `fix` (suggestion), each on its
- * own line. The full original message lives in `--json`.
+ * code (+ optional subject) header, a plain-language `what` line (always shown),
+ * then optional labeled lines. Under `verbose=false` (default) only `fix` appears;
+ * under `verbose=true` the `why` consequence line is inserted before `fix` for
+ * progressive disclosure. The legacy `note` field renders unconditionally when
+ * present (v1 compat). The full original message lives in `--json`.
  */
-export function finding(f: Finding, caps: Caps): ReadonlyArray<string> {
+export function finding(f: Finding, caps: Caps, verbose = false): ReadonlyArray<string> {
   const tone = severityTone(f.severity);
   const g = paint(statusGlyph(tone, caps), tone, caps);
   const code = paint(f.code, tone, caps);
@@ -154,6 +175,7 @@ export function finding(f: Finding, caps: Caps): ReadonlyArray<string> {
   const whatAvail = Math.max(8, caps.width - FINDING_INDENT.length);
   for (const line of wrap(f.what, whatAvail)) out.push(`${FINDING_INDENT}${line}`);
   if (f.note !== undefined) out.push(...findingLabeledLines("note", f.note, caps));
+  if (verbose && f.why !== undefined) out.push(...findingLabeledLines("why", f.why, caps));
   if (f.fix !== undefined) out.push(...findingLabeledLines("fix", f.fix, caps));
   return out;
 }
@@ -194,6 +216,16 @@ export function match(m: MatchView, caps: Caps): ReadonlyArray<string> {
     out.push(`${indent}${paint(m.sourceRef, "ident", caps)}`);
   }
   return out;
+}
+
+/**
+ * Collapse the set of healthy checks into one line. With names, lists them:
+ * `✓ a, b, c all clean`. With none given, the generic `✓ everything else clean`.
+ */
+export function rollup(cleanLabels: ReadonlyArray<string>, caps: Caps): string {
+  const g = paint(statusGlyph("ok", caps), "ok", caps);
+  if (cleanLabels.length === 0) return `  ${g} everything else clean`;
+  return `  ${g} ${cleanLabels.join(", ")} all clean`;
 }
 
 export type Cell = { readonly text: string; readonly tone?: Tone };

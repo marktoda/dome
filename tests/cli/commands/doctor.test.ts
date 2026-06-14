@@ -19,6 +19,7 @@ import {
   installFixtureCleanup,
   makeFixture,
   seedRecurringOutboxFailure,
+  seedRecurringTimeouts,
   seedUnhealthyOperationalState,
   writeDoctorConfig,
   writeDoctorConfigBody,
@@ -40,9 +41,11 @@ describe("runDoctor", () => {
     expect(code).toBe(0);
     const out = captured.out.join("\n");
     expect(out).toContain("dome doctor");
-    expect(out).toContain("ok");
-    expect(out).toContain("FINDINGS");
-    expect(out).toContain("none");
+    // New verdict: "healthy" for zero-finding vault
+    expect(out).toMatch(/healthy/);
+    // No ALLCAPS section headers in default mode
+    expect(out).not.toMatch(/^\s+FINDINGS\s*$/m);
+    expect(out).not.toMatch(/^\s+AT A GLANCE\s*$/m);
   });
 
   test("effective commit.gpgsign truthy raises the git.commit-signing info finding (status stays ok)", async () => {
@@ -176,6 +179,31 @@ describe("runDoctor", () => {
     );
     expect(recurring).toBeDefined();
     expect(recurring?.message.toLowerCase()).toContain("fails every run");
+  });
+
+  // ----- clean-rollup completeness (merged recurring-failure categories) -----
+  //
+  // The cleanCategories derivation must include ALL count fields that belong to
+  // a category, not just the ones that existed before the recurring-failure
+  // fields were added. Otherwise a vault with e.g. recurringTimeouts > 0 but
+  // orphanRuns == 0 && failedRuns == 0 would falsely list "runs" in the all-clean
+  // rollup while also raising a run.recurring-timeout finding.
+
+  test("recurring-timeout finding does not leave 'runs' in the all-clean rollup", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+    await seedRecurringTimeouts(f);
+
+    const code = await runDoctor({ vault: f.vaultPath });
+    expect(code).toBe(0);
+    const out = captured.out.join("\n");
+    // The run.recurring-timeout finding must be present
+    expect(out).toContain("run.recurring-timeout");
+    // "runs" must NOT appear in the "all clean" rollup line
+    expect(out).not.toMatch(/\bruns\b[^\n]*all clean/);
+    // The rollup line itself may still exist (other categories are clean)
+    expect(out).toMatch(/all clean/);
   });
 
   test("--json reports operational schema mismatches without opening runtime", async () => {
@@ -435,19 +463,19 @@ process.exit(1);
 
   // ----- breakdown line dimZeros --------------------------------------------
 
-  test("breakdown line still contains every term (dimZeros stable layout)", async () => {
-    // seedUnhealthyOperationalState gives us findings, so the AT A GLANCE
-    // breakdown line is rendered. Verify every fixed term is present even
-    // when most counts are zero (dimZeros must not drop terms).
+  test("verbose: breakdown line still contains every term (dimZeros stable layout)", async () => {
+    // seedUnhealthyOperationalState gives us findings, so the full dimZeros
+    // breakdown is rendered in verbose mode. Verify every fixed term is present
+    // even when most counts are zero (dimZeros must not drop terms).
     const f = await makeFixture();
     fixtures.push(f);
     await writeDoctorConfig(f);
     await seedUnhealthyOperationalState(f);
 
-    expect(await runDoctor({ vault: f.vaultPath, orphanThresholdMs: 0 })).toBe(0);
+    expect(await runDoctor({ vault: f.vaultPath, orphanThresholdMs: 0, verbose: true })).toBe(0);
     const out = captured.out.join("\n");
 
-    // All terms must be present — none removed by dimZeros
+    // All terms must be present in verbose output — none removed by dimZeros
     expect(out).toContain("outbox");
     expect(out).toContain("failed");
     expect(out).toContain("stuck");
@@ -463,6 +491,85 @@ process.exit(1);
     expect(out).toContain("edition");
     expect(out).toContain("calendar");
     expect(out).toContain("model");
+  });
+
+  // ----- default vs verbose rendering (T9) ------------------------------------
+
+  test("default: collapses breakdown to rollup, no ALLCAPS headers, no rule", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+    await seedUnhealthyOperationalState(f);
+
+    expect(await runDoctor({ vault: f.vaultPath, orphanThresholdMs: 0 })).toBe(0);
+    const out = captured.out.join("\n");
+
+    // Zero-term wall gone from default (only visible in verbose)
+    expect(out).not.toContain("0 stuck");
+    // Rollup present in default
+    expect(out).toMatch(/all clean/);
+    // No ALLCAPS section wrappers
+    expect(out).not.toMatch(/^\s+FINDINGS\s*$/m);
+    expect(out).not.toMatch(/^\s+AT A GLANCE\s*$/m);
+    // No full-width rule (10+ dash/─ run)
+    expect(out).not.toMatch(/[-─]{10,}/);
+  });
+
+  test("verbose: restores full breakdown and finding why", async () => {
+    // Trigger a capability.grant-entry-missing finding so there's a "why" field
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfigBody(
+      f,
+      [
+        "extensions:",
+        "  dome.markdown:",
+        "    enabled: true",
+        "    grant:",
+        '      read: ["wiki/**/*.md", ".dome/page-types.yaml", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}", "raw/**"]',
+        '      patch.auto: ["**/*.md"]',
+        '      graph.write: ["dome.page.*"]',
+        "      question.ask: true",
+        "",
+      ].join("\n"),
+    );
+
+    expect(await runDoctor({ vault: f.vaultPath, verbose: true })).toBe(0);
+    const out = captured.out.join("\n");
+
+    // Verbose restores the full dimZeros breakdown
+    expect(out).toContain("AT A GLANCE");
+    // Finding "why" labeled line is visible in verbose (detail rendered via findingLines verbose=true)
+    expect(out).toMatch(/why\s/);
+    // The why body explains the consequence (never fires — less likely to wrap at this point)
+    expect(out).toContain("never fires");
+  });
+
+  test("default: findings are terse (no why)", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfigBody(
+      f,
+      [
+        "extensions:",
+        "  dome.markdown:",
+        "    enabled: true",
+        "    grant:",
+        '      read: ["wiki/**/*.md", ".dome/page-types.yaml", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}", "raw/**"]',
+        '      patch.auto: ["**/*.md"]',
+        '      graph.write: ["dome.page.*"]',
+        "      question.ask: true",
+        "",
+      ].join("\n"),
+    );
+
+    expect(await runDoctor({ vault: f.vaultPath })).toBe(0);
+    const out = captured.out.join("\n");
+
+    // Default: no "why" lines shown
+    expect(out).not.toContain("core-memory size lint");
+    // But the finding itself is present
+    expect(out).toContain("capability.grant-entry-missing");
   });
 });
 

@@ -540,13 +540,16 @@ describe("runInspect", () => {
     );
   });
 
-  test("subject 'runs' returns 0 on a fresh vault with an empty-table message", async () => {
+  test("subject 'runs' returns 0 on a fresh vault with a single-line verdict", async () => {
     const f = await makeFixture();
     fixtures.push(f);
 
     const code = await runInspect({ subject: "runs", vault: f.vaultPath });
     expect(code).toBe(0);
-    expect(captured.out.join("\n")).toContain("(no rows)");
+    const out = captured.out.join("\n");
+    expect(out).toContain("no rows");
+    // Empty result: collapses to one non-blank line.
+    expect(out.split("\n").filter((l) => l.trim().length > 0).length).toBe(1);
   });
 
   test("verdict header: non-empty result uses bullet glyph, empty result uses pending/muted glyph", async () => {
@@ -1031,6 +1034,41 @@ describe("runInspect", () => {
       "--severity must be one of info, warning, error, block",
     );
   });
+
+  test("empty inspect subject collapses to a single verdict line", async () => {
+    // 'questions' on a fresh vault always has no rows.
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(await runInspect({ subject: "questions", vault: f.vaultPath })).toBe(0);
+    const out = captured.out.join("\n");
+    const nonBlank = out.split("\n").filter((l) => l.trim().length > 0);
+    expect(nonBlank.length).toBe(1);
+    expect(out).toContain("no rows");
+    // The old multi-line "(no rows)" table row must NOT appear.
+    expect(out).not.toContain("(no rows)");
+    // No hidden-fields footnote on an empty result.
+    expect(out).not.toContain("--json");
+  });
+
+  test("table column headers are lowercase for populated results", async () => {
+    // 'bundles' and 'processors' always have rows (SDK ships first-party bundles).
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    expect(await runInspect({ subject: "processors", vault: f.vaultPath })).toBe(0);
+    const processorsOut = captured.out.join("\n");
+    // Headers must be lowercase.
+    expect(processorsOut).toContain("processor");
+    expect(processorsOut).not.toContain("PROCESSOR");
+    expect(processorsOut).toContain("phase");
+    expect(processorsOut).not.toContain("PHASE");
+
+    captured.out = [];
+    expect(await runInspect({ subject: "runs", vault: f.vaultPath })).toBe(0);
+    // runs is empty on a fresh vault → single-line verdict; no header row.
+    // The column-header test uses 'processors' (always non-empty) above.
+  });
 });
 
 // ----- runInspect cost --------------------------------------------------------
@@ -1115,7 +1153,10 @@ describe("runInspect cost", () => {
     expect(existsSync(ledgerPath)).toBe(false);
 
     expect(await runInspect({ subject: "cost", vault: f.vaultPath })).toBe(0);
-    expect(captured.out.join("\n")).toContain("(no rows)");
+    const costOut = captured.out.join("\n");
+    expect(costOut).toContain("no spend");
+    // Empty cost: collapses to one non-blank line (no $0.0000 Total block).
+    expect(costOut.split("\n").filter((l) => l.trim().length > 0).length).toBe(1);
     // Read-only posture: the read must not create runs.db.
     expect(existsSync(ledgerPath)).toBe(false);
 
@@ -1260,6 +1301,21 @@ describe("runInspect cost", () => {
     expect(out).toContain("EXTENSIONS");
     expect(out).toContain("dome.agent");
     expect(out).toContain("TOTAL");
+  });
+
+  test("cost no-spend collapses to a single verdict line (no Total block)", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    // No ledger seeded — zero spend.
+    expect(await runInspect({ subject: "cost", vault: f.vaultPath })).toBe(0);
+    const out = captured.out.join("\n");
+    const nonBlank = out.split("\n").filter((l) => l.trim().length > 0);
+    expect(nonBlank.length).toBe(1);
+    expect(out).toContain("no spend");
+    // The old $0.0000 Total block must NOT appear.
+    expect(out).not.toContain("$0.0000");
+    // No (no rows) table row.
+    expect(out).not.toContain("(no rows)");
   });
 
   test("--days validation: malformed value and non-cost subjects return 64", async () => {

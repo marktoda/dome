@@ -159,7 +159,7 @@ describe("tree", () => {
   });
 });
 
-import { dimZeros, finding, match, table, type Column, type Finding, type MatchView } from "../../../src/cli/presenter/primitives";
+import { dimZeros, finding, match, rollup, signalLine, table, type Column, type Finding, type MatchView } from "../../../src/cli/presenter/primitives";
 
 type Row = { name: string; phase: string };
 const COLS: Column<Row>[] = [
@@ -271,6 +271,26 @@ describe("finding", () => {
       "             three four",
     ]);
   });
+
+  test("finding hides why by default, shows it under verbose", () => {
+    const f: Finding = {
+      severity: "warning", code: "x.y", subject: "p",
+      what: "core.md declared read but missing from the grant",
+      why: "the core-size lint never fires — read scope is empty",
+      fix: "add core.md to the grant",
+    };
+    expect(finding(f, UNI)).toEqual([
+      "  ⚠ x.y · p",
+      "      core.md declared read but missing from the grant",
+      "      fix    add core.md to the grant",
+    ]);
+    expect(finding(f, UNI, true)).toEqual([
+      "  ⚠ x.y · p",
+      "      core.md declared read but missing from the grant",
+      "      why    the core-size lint never fires — read scope is empty",
+      "      fix    add core.md to the grant",
+    ]);
+  });
 });
 
 describe("match", () => {
@@ -332,5 +352,33 @@ describe("dimZeros", () => {
   });
   test("treats a bare 0 and 0-prefixed counts as zero, but not 10", () => {
     expect(dimZeros(["10 known", "0"], ASCII)).toBe("10 known · 0");
+  });
+});
+
+describe("signalLine", () => {
+  const UNI = { color: false, unicode: true, width: 80 };
+  test("glyph leads, label in an aligned column, detail follows", () => {
+    // "sync" padded to 12 = "sync" + 8 spaces; then 3 spaces gap before detail
+    expect(signalLine("warn", "sync", "45 pending, synced 11h ago", 12, UNI))
+      .toBe("  ⚠ sync           45 pending, synced 11h ago");
+  });
+  test("ok tone uses the check glyph", () => {
+    // "draft" padded to 12 = "draft" + 7 spaces; then 3 spaces gap before detail
+    expect(signalLine("ok", "draft", "clean", 12, UNI))
+      .toBe("  ✓ draft          clean");
+  });
+  test("empty detail omits trailing spaces", () => {
+    expect(signalLine("muted", "serve", "", 12, UNI)).toBe("  ○ serve");
+  });
+});
+
+describe("rollup", () => {
+  const UNI = { color: false, unicode: true, width: 80 };
+  test("lists the clean categories after a check glyph", () => {
+    expect(rollup(["outbox", "runs", "quarantine"], UNI))
+      .toBe("  ✓ outbox, runs, quarantine all clean");
+  });
+  test("empty list yields the generic everything-else line", () => {
+    expect(rollup([], UNI)).toBe("  ✓ everything else clean");
   });
 });

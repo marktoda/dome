@@ -484,6 +484,10 @@ function printCostText(report: CostReport, vaultPath: string): void {
           label: `${report.days}d · ${usd(report.total.total_cost_usd)}`,
         };
   lines.push(headline({ cmd: "inspect cost", context }, status, caps));
+  if (report.processors.length === 0) {
+    console.log(lines.join("\n"));
+    return;
+  }
   lines.push("");
   lines.push(
     ...table(
@@ -831,6 +835,10 @@ function printTextResult(subject: string, result: InspectResult, vaultPath: stri
         ? { tone: "muted" as const, label: "no rows" }
         : { tone: "plain" as const, label: `${rowCount} rows` };
     lines.push(headline({ cmd: `inspect ${subject}`, context }, rowStatus, caps));
+    if (rowCount === 0) {
+      console.log(lines.join("\n"));
+      return;
+    }
     lines.push("");
     lines.push(
       ...table(result.rows as ReadonlyArray<Record<string, unknown>>, columnsFor(subject), caps),

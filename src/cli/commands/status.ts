@@ -22,14 +22,15 @@ import { formatSeverity } from "../human-output";
 import {
   bullets,
   dimZeros,
-  footer,
   headline,
   humanizeCommand,
   kv,
   nextActions,
   relativeTime,
   resolveCaps,
+  rollup,
   section,
+  signalLine,
   statusValue,
   type Caps,
   type KvRow,
@@ -60,8 +61,10 @@ export async function runStatus(
   if (options.json === true) {
     console.log(formatJson(outcome.snapshot));
   } else {
+    const verbose = options.verbose === true;
     printStatusText(outcome.snapshot, {
       showLoopDetails: options.loops === true,
+      verbose,
       caps: resolveCaps(),
     });
   }
@@ -74,130 +77,285 @@ export async function runStatus(
  * Render the snapshot as a compact dashboard. The rows intentionally
  * group facts by the question a user is asking: where is git, what is
  * in the vault, is the engine healthy?
+ *
+ * Default (verbose=false): signal-only — headline + attention signals +
+ * rollup of healthy categories. No section headers, no full-width rule.
+ *
+ * Verbose (verbose=true): full breakdown with VAULT, ENGINE, DIAGNOSTICS
+ * sections. Footer/rule removed from both paths.
  */
 function printStatusText(
   s: StatusSnapshot,
-  options: { readonly showLoopDetails: boolean; readonly caps: Caps },
+  options: { readonly showLoopDetails: boolean; readonly verbose: boolean; readonly caps: Caps },
 ): void {
   const caps = options.caps;
-  const glance = (label: string, st: Status): KvRow => ({
-    label,
-    value: statusValue(st, caps),
-    tone: "plain",
-  });
 
+  const n = s.attention.length;
   const head: Status = s.attention_required
-    ? { tone: "warn", label: "needs attention" }
-    : { tone: "ok", label: "ok" };
+    ? { tone: "warn", label: `${n} ${n === 1 ? "item needs" : "items need"} attention` }
+    : { tone: "ok", label: "healthy" };
 
   const lines: string[] = [
     headline({ cmd: "status", context: basename(s.vault) }, head, caps),
   ];
 
-  lines.push(
-    ...section(
-      "Next",
-      nextActions(
-        s.next_actions.map((a) => ({
-          command: a.command === null ? null : humanizeCommand(a.command),
-          description: a.description,
-        })),
-        caps,
-      ),
-      caps,
-    ),
-  );
+  if (!options.verbose) {
+    // ---- Default: signal-only view ----
+    if (s.attention_required) {
+      // Next-action line(s)
+      lines.push("");
+      lines.push(
+        ...nextActions(
+          s.next_actions.map((a) => ({
+            command: a.command === null ? null : humanizeCommand(a.command),
+            description: a.description,
+          })),
+          caps,
+        ),
+      );
 
-  lines.push(
-    ...section(
-      "At a glance",
-      kv(
-        [
-          glance("sync", syncTone(s)),
-          glance("projection", freshnessTone(s)),
-          glance("draft", draftStatus(s)),
-          glance("diagnostics", diagnosticStatus(s)),
-          glance("questions", countStatus(s.questions)),
-          glance("serve", serveStatus(s)),
-        ],
-        caps,
-      ),
-      caps,
-    ),
-  );
+      // Build the set of attention categories with label+detail, and the
+      // set of healthy category labels for the rollup.
+      const attentionSignals = buildAttentionSignals(s, caps);
+      const healthyLabels = buildHealthyLabels(s);
 
-  lines.push(
-    ...section(
-      "Vault",
-      kv(
-        [
-          { label: "path", value: tildify(s.vault), tone: "muted" },
-          { label: "branch", value: s.branch ?? "(detached)" },
-          { label: "head", value: shortOid(s.head, "(none)"), tone: "ident" },
-          { label: "adopted", value: shortOid(s.adopted, "(uninitialized)"), tone: "ident" },
-          { label: "pending", value: formatPendingCommits(s.pending_commits) },
-          { label: "content", value: formatContentSummary(s), tone: "muted" },
-        ],
-        caps,
-      ),
-      caps,
-    ),
-  );
+      lines.push("");
+      for (const sig of attentionSignals) lines.push(sig);
+      lines.push(rollup(healthyLabels, caps));
 
-  lines.push(
-    ...section(
-      "Engine",
-      kv(
-        [
-          { label: "last sync", value: s.last_sync === null ? "(never)" : relativeTime(s.last_sync), tone: "muted" },
-          { label: "runs", value: dimZeros([`${formatPendingRuns(s)} pending`, `${s.failed_runs} failed`], caps) },
-          { label: "outbox", value: dimZeros([`${s.outbox_pending} pending`, `${s.outbox_failed} failed`], caps) },
-          { label: "quarantine", value: String(s.quarantined) },
-          { label: "loops", value: formatMaintenanceLoopSummaryLine(s.maintenance_loops, caps) },
-          ...(s.service_status === "unsupported"
-            ? []
-            : [{ label: "service", value: formatServiceLine(s) } satisfies KvRow]),
-          ...(s.model_provider_configured
-            ? [{ label: "model", value: formatModelProviderLine(s) } satisfies KvRow]
-            : []),
-        ],
-        caps,
-      ),
-      caps,
-    ),
-  );
+      lines.push("");
+      lines.push(`  --verbose for full vault + engine`);
+    } else {
+      // All-clear: headline + one fingerprint line
+      lines.push("");
+      lines.push(buildFingerprintLine(s, caps));
+    }
+  } else {
+    // ---- Verbose: full breakdown (existing sections, no footer/rule) ----
+    const glance = (label: string, st: Status): KvRow => ({
+      label,
+      value: statusValue(st, caps),
+      tone: "plain",
+    });
 
-  if (options.showLoopDetails) {
     lines.push(
-      ...section("Loops", formatMaintenanceLoopDetailLines(s.maintenance_loops, caps), caps),
+      ...section(
+        "Next",
+        nextActions(
+          s.next_actions.map((a) => ({
+            command: a.command === null ? null : humanizeCommand(a.command),
+            description: a.description,
+          })),
+          caps,
+        ),
+        caps,
+      ),
     );
+
+    lines.push(
+      ...section(
+        "At a glance",
+        kv(
+          [
+            glance("sync", syncTone(s)),
+            glance("projection", freshnessTone(s)),
+            glance("draft", draftStatus(s)),
+            glance("diagnostics", diagnosticStatus(s)),
+            glance("questions", countStatus(s.questions)),
+            glance("serve", serveStatus(s)),
+          ],
+          caps,
+        ),
+        caps,
+      ),
+    );
+
+    lines.push(
+      ...section(
+        "Vault",
+        kv(
+          [
+            { label: "path", value: tildify(s.vault), tone: "muted" },
+            { label: "branch", value: s.branch ?? "(detached)" },
+            { label: "head", value: shortOid(s.head, "(none)"), tone: "ident" },
+            { label: "adopted", value: shortOid(s.adopted, "(uninitialized)"), tone: "ident" },
+            { label: "pending", value: formatPendingCommits(s.pending_commits) },
+            { label: "content", value: formatContentSummary(s), tone: "muted" },
+          ],
+          caps,
+        ),
+        caps,
+      ),
+    );
+
+    lines.push(
+      ...section(
+        "Engine",
+        kv(
+          [
+            { label: "last sync", value: s.last_sync === null ? "(never)" : relativeTime(s.last_sync), tone: "muted" },
+            { label: "runs", value: dimZeros([`${formatPendingRuns(s)} pending`, `${s.failed_runs} failed`], caps) },
+            { label: "outbox", value: dimZeros([`${s.outbox_pending} pending`, `${s.outbox_failed} failed`], caps) },
+            { label: "quarantine", value: String(s.quarantined) },
+            { label: "loops", value: formatMaintenanceLoopSummaryLine(s.maintenance_loops, caps) },
+            ...(s.service_status === "unsupported"
+              ? []
+              : [{ label: "service", value: formatServiceLine(s) } satisfies KvRow]),
+            ...(s.model_provider_configured
+              ? [{ label: "model", value: formatModelProviderLine(s) } satisfies KvRow]
+              : []),
+          ],
+          caps,
+        ),
+        caps,
+      ),
+    );
+
+    if (options.showLoopDetails) {
+      lines.push(
+        ...section("Loops", formatMaintenanceLoopDetailLines(s.maintenance_loops, caps), caps),
+      );
+    }
+
+    const diagnosticTop =
+      s.attention_diagnostics > 0 ? s.attention_diagnostic_summary : s.diagnostic_summary;
+    const diagnosticFocus =
+      s.attention_diagnostics > 0
+        ? s.attention_diagnostic_message_summary
+        : s.diagnostic_message_summary;
+    const diagnosticDisposition =
+      s.attention_diagnostics > 0
+        ? s.attention_diagnostic_disposition_summary
+        : s.diagnostic_disposition_summary;
+    const diagnosticLines = [
+      ...(diagnosticTop.groups.length > 0 ? [`top: ${formatDiagnosticTopLine(diagnosticTop)}`] : []),
+      ...(diagnosticFocus.groups.length > 0 ? [`fix: ${formatDiagnosticFocusLine(diagnosticFocus)}`] : []),
+      ...(diagnosticDisposition.groups.length > 0
+        ? [`plan: ${formatDiagnosticDispositionLine(diagnosticDisposition)}`]
+        : []),
+    ];
+    lines.push(...section("Diagnostics", bullets(diagnosticLines, caps), caps));
   }
 
-  const diagnosticTop =
-    s.attention_diagnostics > 0 ? s.attention_diagnostic_summary : s.diagnostic_summary;
-  const diagnosticFocus =
-    s.attention_diagnostics > 0
-      ? s.attention_diagnostic_message_summary
-      : s.diagnostic_message_summary;
-  const diagnosticDisposition =
-    s.attention_diagnostics > 0
-      ? s.attention_diagnostic_disposition_summary
-      : s.diagnostic_disposition_summary;
-  const diagnosticLines = [
-    ...(diagnosticTop.groups.length > 0 ? [`top: ${formatDiagnosticTopLine(diagnosticTop)}`] : []),
-    ...(diagnosticFocus.groups.length > 0 ? [`fix: ${formatDiagnosticFocusLine(diagnosticFocus)}`] : []),
-    ...(diagnosticDisposition.groups.length > 0
-      ? [`plan: ${formatDiagnosticDispositionLine(diagnosticDisposition)}`]
-      : []),
-  ];
-  lines.push(...section("Diagnostics", bullets(diagnosticLines, caps), caps));
-
-  const footerStatus: Status = s.attention_required
-    ? { tone: "warn", label: `${s.attention.length} ${s.attention.length === 1 ? "item needs" : "items need"} attention` }
-    : { tone: "ok", label: "all clear" };
-  lines.push(...footer(footerStatus, caps));
-
   console.log(lines.join("\n"));
+}
+
+// ----- signal-only helpers --------------------------------------------------
+
+type SignalEntry = { label: string; tone: import("../presenter").Tone; detail: string };
+
+/**
+ * Map each attention reason to a { label, tone, detail } triple. Reasons that
+ * belong to the same display row (e.g. dirty_modified + dirty_untracked both
+ * map to "draft") are de-duped: first occurrence wins.
+ */
+function attentionSignalEntries(s: StatusSnapshot, caps: Caps): ReadonlyArray<SignalEntry> {
+  const seen = new Set<string>();
+  const entries: SignalEntry[] = [];
+
+  function add(label: string, tone: import("../presenter").Tone, detail: string): void {
+    if (seen.has(label)) return;
+    seen.add(label);
+    entries.push({ label, tone, detail });
+  }
+
+  for (const reason of s.attention) {
+    if (reason === "sync_needed" || reason === "adopted_ref_diverged") {
+      const st = syncTone(s);
+      add("sync", st.tone as import("../presenter").Tone, st.label);
+    } else if (reason === "projection_stale") {
+      const st = freshnessTone(s);
+      add("projection", st.tone as import("../presenter").Tone, st.label);
+    } else if (reason === "dirty_modified" || reason === "dirty_untracked") {
+      const st = draftStatus(s);
+      add("draft", st.tone as import("../presenter").Tone, st.label);
+    } else if (reason === "diagnostics") {
+      const st = diagnosticStatus(s);
+      add("diagnostics", st.tone as import("../presenter").Tone, formatDiagnosticCount(s));
+    } else if (reason === "questions") {
+      add("questions", "warn", String(s.questions));
+    } else if (reason === "serve_stale") {
+      const st = serveStatus(s);
+      add("serve", st.tone as import("../presenter").Tone, st.label);
+    } else if (reason === "pending_runs" || reason === "failed_runs") {
+      add("runs", "warn", dimZeros([`${formatPendingRuns(s)} pending`, `${s.failed_runs} failed`], caps));
+    } else if (reason === "outbox_pending" || reason === "outbox_failed") {
+      add("outbox", "warn", dimZeros([`${s.outbox_pending} pending`, `${s.outbox_failed} failed`], caps));
+    } else if (reason === "quarantined") {
+      add("quarantine", "warn", String(s.quarantined));
+    } else if (reason === "service_not_loaded") {
+      add("service", "warn", "installed, not loaded");
+    } else if (reason === "model_provider_unreachable") {
+      add("model", "warn", `probe ${s.model_provider_probe_status ?? "failed"}`);
+    } else if (reason === "capture_loop_inactive") {
+      add("inbox", "warn", "capture loop inactive");
+    } else {
+      // Exhaustiveness guard: any unrecognised attention code must still
+      // produce a visible row so the header count never exceeds rendered rows.
+      add(reason, "warn", "");
+    }
+  }
+
+  return entries;
+}
+
+function buildAttentionSignals(s: StatusSnapshot, caps: Caps): ReadonlyArray<string> {
+  const entries = attentionSignalEntries(s, caps);
+  if (entries.length === 0) return [];
+  const labelWidth = entries.reduce((m, e) => Math.max(m, e.label.length), 0);
+  return entries.map((e) => signalLine(e.tone, e.label, e.detail, labelWidth, caps));
+}
+
+/**
+ * Return the display labels for categories that are NOT flagged in attention.
+ * We track a fixed ordered set of logical "slots"; any slot not covered by
+ * attention is considered healthy.
+ */
+function buildHealthyLabels(s: StatusSnapshot): ReadonlyArray<string> {
+  const attentionSet = new Set(s.attention);
+  const healthy: string[] = [];
+
+  const syncFlagged = attentionSet.has("sync_needed") || attentionSet.has("adopted_ref_diverged");
+  if (!syncFlagged) healthy.push("sync");
+
+  const projFlagged = attentionSet.has("projection_stale");
+  if (!projFlagged) healthy.push("projection");
+
+  const draftFlagged = attentionSet.has("dirty_modified") || attentionSet.has("dirty_untracked");
+  if (!draftFlagged) healthy.push("draft");
+
+  const diagFlagged = attentionSet.has("diagnostics");
+  if (!diagFlagged) healthy.push("diagnostics");
+
+  const qFlagged = attentionSet.has("questions");
+  if (!qFlagged) healthy.push("questions");
+
+  const serveFlagged = attentionSet.has("serve_stale");
+  if (!serveFlagged && s.serve_status !== "off") healthy.push("serve");
+
+  // For operational categories (runs, outbox, quarantine), only show in
+  // healthy rollup when the vault has been synced (last_sync != null),
+  // otherwise they'll all just be zeroes and add noise.
+  if (s.last_sync !== null) {
+    const runsFlagged = attentionSet.has("pending_runs") || attentionSet.has("failed_runs");
+    if (!runsFlagged) healthy.push("runs");
+
+    const outboxFlagged = attentionSet.has("outbox_pending") || attentionSet.has("outbox_failed");
+    if (!outboxFlagged) healthy.push("outbox");
+  }
+
+  return healthy;
+}
+
+/**
+ * One-line fingerprint for the all-clear state: synced time · page count · nothing pending.
+ */
+function buildFingerprintLine(s: StatusSnapshot, caps: Caps): string {
+  const syncPart = s.last_sync !== null ? `synced ${relativeTime(s.last_sync)}` : "never synced";
+  const pagesPart = `${s.content_pages} pages`;
+  const pendingPart = "nothing pending";
+  const detail = `${syncPart} · ${pagesPart} · ${pendingPart}`;
+  return signalLine("ok", "", detail, 0, caps);
 }
 
 function formatServiceLine(s: StatusSnapshot): string {

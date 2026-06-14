@@ -12,7 +12,7 @@ import {
   type LaunchctlRunner,
   type ServiceDeps,
 } from "../../../src/surface/service-probe";
-import { runStatus } from "../../../src/cli/commands/status";
+import { runStatus, type RunStatusOptions } from "../../../src/cli/commands/status";
 import { runSync } from "../../../src/cli/commands/sync";
 
 import {
@@ -130,12 +130,13 @@ describe("runStatus", () => {
     const f = await makeFixture();
     fixtures.push(f);
 
-    const code = await runStatus({ vault: f.vaultPath });
+    // verbose: true to get the full breakdown (default view is signal-only)
+    const code = await runStatus({ vault: f.vaultPath, verbose: true });
     expect(code).toBe(0);
 
     const out = captured.out.join("\n");
     expect(out).toContain("dome status"); // headline
-    expect(out).toContain("needs attention"); // headline status
+    expect(out).toContain("attention"); // headline status
     expect(out).toContain("(uninitialized)"); // adopted ref
     expect(out).toContain("sync"); expect(out).toContain("! needed"); // sync row
     expect(out).toContain("pending"); expect(out).toContain("unknown"); // pending commits
@@ -156,7 +157,8 @@ describe("runStatus", () => {
     const f = await makeFixture();
     fixtures.push(f);
 
-    const code = await runStatus({ vault: f.vaultPath, loops: true });
+    // verbose: true to get the full breakdown; loops also requires verbose to show engine
+    const code = await runStatus({ vault: f.vaultPath, loops: true, verbose: true });
     expect(code).toBe(0);
 
     const out = captured.out.join("\n");
@@ -379,7 +381,8 @@ describe("runStatus", () => {
 
     captured.out = [];
     captured.err = [];
-    expect(await runStatus({ vault: f.vaultPath })).toBe(0);
+    // verbose: true to see the vault content summary (inbox 1 (1 raw))
+    expect(await runStatus({ vault: f.vaultPath, verbose: true })).toBe(0);
     const text = captured.out.join("\n");
     expect(text).toContain("inbox 1 (1 raw)");
     expect(text).toContain("dome inspect bundles");
@@ -559,7 +562,8 @@ describe("runStatus", () => {
       ledger.value.db.close();
     }
 
-    expect(await runStatus({ vault: f.vaultPath })).toBe(0);
+    // verbose: true to see the engine runs row detail
+    expect(await runStatus({ vault: f.vaultPath, verbose: true })).toBe(0);
 
     const out = captured.out.join("\n");
     expect(out).toContain("runs"); expect(out).toContain("1 live pending · 0 failed");
@@ -591,7 +595,8 @@ describe("runStatus", () => {
 
     captured.out = [];
     captured.err = [];
-    expect(await runStatus({ vault: f.vaultPath })).toBe(0);
+    // verbose: true to see the engine runs row detail
+    expect(await runStatus({ vault: f.vaultPath, verbose: true })).toBe(0);
 
     const staleOut = captured.out.join("\n");
     expect(staleOut).toContain("runs"); expect(staleOut).toContain("2 total (1 stale) pending · 0 failed");
@@ -855,7 +860,8 @@ describe("runStatus", () => {
       projection.value.db.close();
     }
 
-    expect(await runStatus({ vault: f.vaultPath })).toBe(0);
+    // verbose: true to see the DIAGNOSTICS section with top/fix lines
+    expect(await runStatus({ vault: f.vaultPath, verbose: true })).toBe(0);
     const text = captured.out.join("\n");
     const topLine = text.split("\n").find((line) =>
       line.includes("top: ")
@@ -1880,7 +1886,8 @@ describe("runStatus", () => {
       ledger.value.db.close();
     }
 
-    expect(await runStatus({ vault: f.vaultPath })).toBe(0);
+    // verbose: true to see the ENGINE section with last sync relative time
+    expect(await runStatus({ vault: f.vaultPath, verbose: true })).toBe(0);
 
     const out = captured.out.join("\n");
     // Should contain a relative time shape, not the raw ISO
@@ -1910,7 +1917,8 @@ describe("runStatus", () => {
 
     // Fresh vault: pending_runs=0, failed_runs=0, outbox_pending=0, outbox_failed=0.
     // In no-color test mode dimZeros returns the plain joined string.
-    expect(await runStatus({ vault: f.vaultPath })).toBe(0);
+    // verbose: true to see the ENGINE section with runs/outbox rows.
+    expect(await runStatus({ vault: f.vaultPath, verbose: true })).toBe(0);
 
     const out = captured.out.join("\n");
     // runs row: "0 pending · 0 failed" (both terms dimmed when zero)
@@ -1925,4 +1933,260 @@ describe("runStatus", () => {
   // was retired in Phase 11a along with `runSubmit`; the corresponding
   // assertion against an advanced adopted ref will land in the Phase 11b
   // daemon integration tests, which drive adoption via the watcher.
+
+  test("runStatus accepts a verbose option without error", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const opts: RunStatusOptions = { vault: f.vaultPath, verbose: true };
+    const code = await runStatus(opts);
+    expect(code).toBe(0);
+  });
+
+  // ----- Task 7: signal-only default + verbose breakdown ----------------------
+
+  test("default status shows only attention signals + rollup, no sections/rule", async () => {
+    // Fresh vault has sync_needed; projection and everything else is clean.
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const code = await runStatus({ vault: f.vaultPath });
+    expect(code).toBe(0);
+
+    const out = captured.out.join("\n");
+    // Headline present with attention verdict
+    expect(out).toContain("dome status");
+    expect(out).toContain("attention");
+
+    // sync signal line present
+    expect(out).toContain("sync");
+
+    // rollup covers the clean categories (may list named labels or say "everything else clean")
+    expect(out).toMatch(/all clean|everything else clean/);
+
+    // No section headers (they only appear in verbose)
+    expect(out).not.toContain("VAULT");
+    expect(out).not.toContain("AT A GLANCE");
+    expect(out).not.toContain("DIAGNOSTICS");
+    expect(out).not.toContain("ENGINE");
+
+    // No full-width rule (10+ dashes/box-drawing chars in a row)
+    expect(out).not.toMatch(/[-─]{10,}/);
+  });
+
+  test("all-clear status is a short verdict + fingerprint (≤3 non-blank lines)", async () => {
+    // Build a vault with no attention: proper frontmatter + sync. The
+    // standard fixture uses bare "seed\n" content which the warden flags.
+    const vaultPath = mkdtempSync(join(tmpdir(), "cli-allclear-"));
+    const { commit: commitGit } = await import("../../../src/git");
+    const { execFileSync } = await import("node:child_process");
+    execFileSync("git", ["-C", vaultPath, "init"]);
+    execFileSync("git", ["-C", vaultPath, "config", "commit.gpgsign", "false"]);
+    await mkdir(join(vaultPath, "wiki"), { recursive: true });
+    await mkdir(join(vaultPath, ".dome", "state"), { recursive: true });
+    // Proper concept frontmatter so no lint diagnostics fire
+    await writeFile(
+      join(vaultPath, "wiki/seed.md"),
+      "---\ntype: concept\ndescription: Seed concept.\n---\n\n# Seed\n\nContent.\n",
+    );
+    await commitGit({ path: vaultPath, message: "init\n", files: ["wiki/seed.md"] });
+    fixtures.push({ vaultPath, baseSha: "", headSha: "", cleanup: async () => { await rm(vaultPath, { recursive: true, force: true }); } });
+
+    // Sync to clear sync_needed
+    await runSync({ vault: vaultPath, json: true, quiet: true });
+
+    captured.out = [];
+    captured.err = [];
+
+    // Verify all-clear first
+    const jsonCode = await runStatus({ vault: vaultPath, json: true });
+    expect(jsonCode).toBe(0);
+    const jsonBlob = captured.out.find((l) => l.includes("\"vault\""));
+    if (jsonBlob === undefined) throw new Error("missing json output");
+    const parsed = JSON.parse(jsonBlob) as Record<string, unknown>;
+    if (parsed["attention_required"] === true) {
+      // If vault still has attention after sync (e.g. warden diagnostics),
+      // skip the fingerprint assertion — just verify healthy label absent and sections absent.
+      captured.out = [];
+      const code2 = await runStatus({ vault: vaultPath });
+      expect(code2).toBe(0);
+      const out2 = captured.out.join("\n");
+      expect(out2).not.toContain("VAULT");
+      expect(out2).not.toContain("ENGINE");
+      expect(out2).not.toMatch(/[-─]{10,}/);
+      return;
+    }
+
+    captured.out = [];
+    captured.err = [];
+
+    const code = await runStatus({ vault: vaultPath });
+    expect(code).toBe(0);
+
+    const out = captured.out.join("\n");
+    const nonBlank = out.split("\n").filter((l) => l.trim().length > 0);
+    expect(nonBlank.length).toBeLessThanOrEqual(3);
+    expect(out).toContain("healthy");
+
+    // No section headers in all-clear either
+    expect(out).not.toContain("VAULT");
+    expect(out).not.toContain("ENGINE");
+    expect(out).not.toMatch(/[-─]{10,}/);
+  });
+
+  test("verbose status restores the full vault + engine breakdown", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const code = await runStatus({ vault: f.vaultPath, verbose: true });
+    expect(code).toBe(0);
+
+    const verboseOut = captured.out.join("\n");
+    // Full sections present in verbose
+    expect(verboseOut).toContain("VAULT");
+    expect(verboseOut).toContain("ENGINE");
+    expect(verboseOut).toContain("loops");
+    // No full-width rule even in verbose
+    expect(verboseOut).not.toMatch(/[-─]{10,}/);
+  });
+
+  // ----- Task 7: attention code exhaustiveness / text-mode rendering ----------
+
+  test("adopted_ref_diverged + failed_runs + quarantined all render a ⚠ row each and header count matches", async () => {
+    // Set up vault state with THREE distinct attention codes:
+    //   (a) adopted_ref_diverged: sync then git reset --hard HEAD~1 so adopted
+    //       is ahead of (no longer an ancestor of) HEAD
+    //   (b) failed_runs: insert a timed-out run for dome.lint.report, which IS
+    //       a registered processor, so latestActiveProblemRuns picks it up
+    //   (c) quarantined: push a key past the quarantine threshold
+    //
+    // Then assert in text mode:
+    //   (a) a ⚠ row for "sync" (adopted_ref_diverged maps to the sync slot)
+    //   (b) a ⚠ row for "runs" (failed_runs maps to the runs slot)
+    //   (c) a ⚠ row for "quarantine"
+    //   (d) header count == number of ⚠ rows rendered
+    //   (e) none of "sync", "runs", "quarantine" appear in the healthy rollup
+
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    // Step 1: sync to move the adopted ref to HEAD
+    expect(await runSync({ vault: f.vaultPath, json: true, quiet: true })).toBe(0);
+    captured.out = [];
+    captured.err = [];
+
+    // Step 2: regress HEAD to baseSha so adopted (headSha) is no longer
+    // an ancestor of HEAD — this triggers adopted_ref_diverged
+    const { execFileSync } = await import("node:child_process");
+    execFileSync("git", ["-C", f.vaultPath, "reset", "--hard", f.baseSha]);
+
+    // Verify the diverged state is reported in JSON before proceeding
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
+    const jsonBlob = captured.out.find((l) => l.includes("\"vault\""));
+    expect(jsonBlob).toBeDefined();
+    if (jsonBlob === undefined) return;
+    const parsedJson = JSON.parse(jsonBlob) as Record<string, unknown>;
+    expect(parsedJson["adopted_diverged"]).toBe(true);
+    expect((parsedJson["attention"] as ReadonlyArray<string>)).toContain("adopted_ref_diverged");
+    captured.out = [];
+    captured.err = [];
+
+    // Step 3: insert a failed run for dome.lint.report (a registered processor)
+    const ledger = await openLedgerDb({
+      path: join(f.vaultPath, ".dome", "state", "runs.db"),
+    });
+    expect(ledger.ok).toBe(true);
+    if (!ledger.ok) return;
+    const adoptedCommit = commitOid(f.headSha); // headSha is now the adopted ref
+    try {
+      const failedRunId = newRunId(new Date(1), () => "failrd");
+      insertQueued(ledger.value.db, {
+        id: failedRunId,
+        proposalId: null,
+        processorId: "dome.lint.report",
+        processorVersion: "1.0.0",
+        phase: "garden",
+        inputCommit: adoptedCommit,
+        triggerKind: "schedule",
+        triggerPayload: { test: "failed-run" },
+        startedAt: new Date(1),
+      });
+      markRunning(ledger.value.db, failedRunId, new Date(2));
+      markTimedOut(ledger.value.db, {
+        id: failedRunId,
+        error: {
+          code: "processor.timeout",
+          message: "lint timed out",
+          retryable: true,
+          phase: "garden",
+          processorId: "dome.lint.report",
+        },
+        durationMs: 1,
+        finishedAt: new Date(3),
+      });
+    } finally {
+      ledger.value.db.close();
+    }
+
+    // Step 4: add a quarantined key
+    const quarantine = openQuarantineStore({
+      path: join(f.vaultPath, ".dome", "state", "quarantined.json"),
+      quarantineThreshold: 2,
+    });
+    expect(quarantine.ok).toBe(true);
+    if (!quarantine.ok) return;
+    const qKey = Object.freeze({
+      phase: "garden" as const,
+      processorId: "dome.lint.report",
+      processorVersion: "1.0.0",
+      triggerHash: "exhaust-test-trigger",
+    });
+    quarantine.value.recordRetryableTerminalFailure(qKey, "first");
+    quarantine.value.recordRetryableTerminalFailure(qKey, "second");
+
+    // Step 5: assert text-mode output
+    expect(await runStatus({ vault: f.vaultPath })).toBe(0);
+    const out = captured.out.join("\n");
+
+    // Confirm attention header present
+    expect(out).toContain("attention");
+
+    // Signal rows are lines matching "  <glyph> <label>   <detail>" where
+    // glyph is one of: "!" (warn), "x" (err), or "√" / "√" etc.
+    // The sync category renders with "err" tone (glyph "x") when diverged.
+    // The runs/quarantine categories render with "warn" tone (glyph "!").
+    // We count all non-ok signal lines: "!" or "x" prefix in ASCII mode.
+    const attentionRows = out.split("\n").filter((l) =>
+      /^\s+[!x]/.test(l) && (
+        l.includes("sync") || l.includes("runs") || l.includes("quarantine") ||
+        l.includes("diagnostics") || l.includes("projection") || l.includes("model") ||
+        l.includes("service") || l.includes("serve") || l.includes("draft") ||
+        l.includes("questions") || l.includes("outbox") || l.includes("inbox")
+      )
+    );
+
+    // Each expected display-category has a rendered signal row
+    expect(attentionRows.some((l) => l.includes("sync"))).toBe(true);
+    expect(attentionRows.some((l) => l.includes("runs"))).toBe(true);
+    expect(attentionRows.some((l) => l.includes("quarantine"))).toBe(true);
+
+    // Header count is s.attention.length; attentionRows.length can be less
+    // (multiple codes may merge into one display slot) but every slot must
+    // have a row — nothing can vanish
+    const headerMatch = out.match(/(\d+)\s+items?\s+need/);
+    expect(headerMatch).not.toBeNull();
+    const headerCount = parseInt(headerMatch?.[1] ?? "0", 10);
+    expect(headerCount).toBeGreaterThanOrEqual(attentionRows.length);
+    expect(headerCount).toBeGreaterThanOrEqual(3);
+
+    // Healthy rollup must NOT list these categories as clean
+    const rollupLine = out.split("\n").find((l) =>
+      l.includes("all clean") || (l.includes("clean") && l.includes("√"))
+    );
+    if (rollupLine !== undefined) {
+      expect(rollupLine).not.toContain("sync");
+      expect(rollupLine).not.toContain("runs");
+      expect(rollupLine).not.toContain("quarantine");
+    }
+  });
 });

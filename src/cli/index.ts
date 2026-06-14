@@ -187,6 +187,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       "Age before a running row is reported as orphaned.",
       parseNonNegativeIntegerOption,
     )
+    .option("-v, --verbose", "Show the full breakdown.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -200,6 +201,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           attention: options.attention,
           limit: options.limit,
           orphanThresholdMs: options.orphanThresholdMs,
+          verbose: options.verbose,
           json: options.json,
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
@@ -255,6 +257,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
   program
     .command("doctor", { hidden: true })
     .description("Run engine-substrate health checks.")
+    .option("-v, --verbose", "Show the full breakdown.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -268,6 +271,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       setExitCode(
         await runDoctor({
           repair: options.repair,
+          verbose: options.verbose,
           json: options.json,
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
@@ -354,6 +358,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       parseLintFailOnOption,
     )
     .option("--limit <n>", "Maximum issues to show.", parsePositiveIntegerOption)
+    .option("-v, --verbose", "Show the full breakdown.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -362,6 +367,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
         await runLint({
           failOn: options.failOn,
           limit: options.limit,
+          verbose: options.verbose,
           json: options.json,
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
@@ -659,6 +665,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       "--probe",
       "Run a fresh model-provider probe (up to 8s) instead of the cached result.",
     )
+    .option("-v, --verbose", "Show the full breakdown.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -669,6 +676,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           bundlesRoot: options.bundlesRoot,
           loops: options.loops,
           probe: options.probe,
+          verbose: options.verbose,
           json: options.json,
         }),
       );
@@ -763,6 +771,7 @@ type CheckCliOptions = {
   readonly attention?: boolean;
   readonly limit?: number;
   readonly orphanThresholdMs?: number;
+  readonly verbose?: boolean;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;
@@ -786,6 +795,7 @@ type InspectCliOptions = {
 
 type DoctorCliOptions = {
   readonly repair?: boolean;
+  readonly verbose?: boolean;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;
@@ -809,6 +819,7 @@ type RunCliOptions = {
 type LintCliOptions = {
   readonly failOn?: LintFailOn;
   readonly limit?: number;
+  readonly verbose?: boolean;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;
@@ -875,6 +886,7 @@ type ServeCliOptions = {
 type StatusCliOptions = {
   readonly loops?: boolean;
   readonly probe?: boolean;
+  readonly verbose?: boolean;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;

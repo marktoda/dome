@@ -5,10 +5,8 @@ import { basename } from "node:path";
 import { formatJson } from "../../surface/format";
 import { parsePositiveIntegerValue } from "../parse-options";
 import {
-  bullets,
   dimZeros,
   finding,
-  footer,
   headline,
   kv,
   resolveCaps,
@@ -34,6 +32,7 @@ export type LintCommandOptions = {
   readonly vault?: string | undefined;
   readonly bundlesRoot?: string | undefined;
   readonly json?: boolean | undefined;
+  readonly verbose?: boolean | undefined;
   readonly limit?: string | number | boolean | undefined;
 };
 
@@ -89,7 +88,8 @@ export async function runLint(
       console.log(formatJson(run.data));
     } else {
       const vaultPath = resolveVaultPath(options.vault);
-      console.log(renderLintText(data, vaultPath));
+      const verbose = options.verbose === true;
+      console.log(renderLintText(data, vaultPath, verbose));
     }
     return data.status === "fail" ? 1 : 0;
   } catch (e) {
@@ -177,43 +177,57 @@ export function parseLintData(data: unknown): LintData {
   });
 }
 
-export function renderLintText(data: LintData, vaultPath: string): string {
+export function renderLintText(data: LintData, vaultPath: string, verbose: boolean = false): string {
   const caps = resolveCaps();
 
+  // Determine verdict status.
+  // Pass: single "✓ pass — N files, no issues" line.
+  // Issues: ⚠ warn tone if only warning/info; ✗ err tone if any block/error.
+  const hasBlockOrError = data.counts.block > 0 || data.counts.error > 0;
+  const n = data.counts.total;
+  const files = data.checked.markdownFiles;
+  const passLabel = n === 0
+    ? `pass — ${files} files, no issues`
+    : `pass — ${files} files, ${n} ${n === 1 ? "issue" : "issues"} below threshold`;
   const headStatus: Status = data.status === "pass"
-    ? { tone: "ok", label: "pass" }
-    : { tone: "err", label: "fail" };
+    ? { tone: "ok", label: passLabel }
+    : hasBlockOrError
+      ? { tone: "err", label: `${n} ${n === 1 ? "issue" : "issues"}` }
+      : { tone: "warn", label: `${n} ${n === 1 ? "issue" : "issues"}` };
 
   const lines: string[] = [
     headline({ cmd: "lint", context: basename(vaultPath) }, headStatus, caps),
   ];
 
-  lines.push(
-    ...section(
-      "Checked",
-      kv(
-        [
-          { label: "files", value: `${data.checked.markdownFiles} markdown` },
-          { label: "fail-on", value: data.failOn },
-          {
-            label: "issues",
-            value: dimZeros(
-              [
-                `${data.counts.total} total`,
-                `${data.counts.block} block`,
-                `${data.counts.error} error`,
-                `${data.counts.warning} warning`,
-                `${data.counts.info} info`,
-              ],
-              caps,
-            ),
-          },
-        ],
+  // Verbose: CHECKED section with files / fail-on / dimZeros breakdown.
+  if (verbose) {
+    lines.push(
+      ...section(
+        "Checked",
+        kv(
+          [
+            { label: "files", value: `${data.checked.markdownFiles} markdown` },
+            { label: "fail-on", value: data.failOn },
+            {
+              label: "issues",
+              value: dimZeros(
+                [
+                  `${data.counts.total} total`,
+                  `${data.counts.block} block`,
+                  `${data.counts.error} error`,
+                  `${data.counts.warning} warning`,
+                  `${data.counts.info} info`,
+                ],
+                caps,
+              ),
+            },
+          ],
+          caps,
+        ),
         caps,
       ),
-      caps,
-    ),
-  );
+    );
+  }
 
   // Local copy — not imported from health-finding-view — because lint treats
   // `block` and `error` as distinct severities (0 vs 1), whereas the health
@@ -224,46 +238,38 @@ export function renderLintText(data: LintData, vaultPath: string): string {
     warning: 2,
     info: 3,
   };
-  const sortedIssues = data.issues.slice().sort(
-    (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
-  );
-  const issueLines: string[] = [];
-  for (let i = 0; i < sortedIssues.length; i++) {
-    const issue = sortedIssues[i]!;
-    if (i > 0) issueLines.push("");
-    const subject = issue.sourceRefs.length > 0 ? issue.sourceRefs[0]!.path : issue.code;
-    issueLines.push(
-      ...finding(
-        {
-          severity: issue.severity,
-          code: issue.code,
-          subject,
-          what: issue.message,
-        },
-        caps,
-      ),
+
+  if (data.issues.length > 0) {
+    const sortedIssues = data.issues.slice().sort(
+      (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
     );
-  }
-  if (data.omittedIssues > 0) {
-    const noun = data.omittedIssues === 1 ? "issue" : "issues";
-    // Leading 2 spaces: section() will add another 2, landing the line at column 4
-    // alongside the rest of the finding body.
-    issueLines.push(
-      `  ... ${data.omittedIssues} more ${noun} (use --limit ${data.counts.total} to show all)`,
-    );
-  }
-  // When there are no issues, use bullets() for the dim "none" empty state.
-  // When issues exist, pass finding lines directly to section() (they already carry their own indent).
-  if (issueLines.length === 0) {
-    lines.push(...section("Issues", bullets([], caps), caps));
-  } else {
-    lines.push(...section("Issues", issueLines, caps));
+    // Render findings directly (no ISSUES section header) — matches check/doctor default.
+    for (let i = 0; i < sortedIssues.length; i++) {
+      const issue = sortedIssues[i]!;
+      lines.push("");
+      const subject = issue.sourceRefs.length > 0 ? issue.sourceRefs[0]!.path : issue.code;
+      lines.push(
+        ...finding(
+          {
+            severity: issue.severity,
+            code: issue.code,
+            subject,
+            what: issue.message,
+          },
+          caps,
+          verbose,
+        ),
+      );
+    }
+    if (data.omittedIssues > 0) {
+      const noun = data.omittedIssues === 1 ? "issue" : "issues";
+      lines.push(
+        `  ... ${data.omittedIssues} more ${noun} (use --limit ${data.counts.total} to show all)`,
+      );
+    }
   }
 
-  const footerStatus: Status = data.status === "pass"
-    ? { tone: "ok", label: "pass" }
-    : { tone: "err", label: "fail" };
-  lines.push(...footer(footerStatus, caps));
+  // No footer/rule — matches check/doctor style.
 
   return lines.join("\n");
 }

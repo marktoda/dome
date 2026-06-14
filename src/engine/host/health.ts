@@ -264,6 +264,8 @@ export type HealthFinding =
       readonly subject: "config";
       readonly id: string;
       readonly message: string;
+      /** Terse one-line claim (no consequence clause); absent when not authored. */
+      readonly summary?: string;
       readonly recovery: string;
       readonly capability: {
         readonly processorId: string;
@@ -276,6 +278,8 @@ export type HealthFinding =
       readonly subject: "config";
       readonly id: string;
       readonly message: string;
+      /** Terse one-line claim (no consequence clause); absent when not authored. */
+      readonly summary?: string;
       readonly recovery: string;
       readonly capability: {
         readonly processorId: string;
@@ -291,6 +295,8 @@ export type HealthFinding =
       readonly subject: "config";
       readonly id: string;
       readonly message: string;
+      /** Terse one-line claim (no consequence clause); absent when not authored. */
+      readonly summary?: string;
       readonly recovery: string;
       readonly capability: {
         readonly processorId: string;
@@ -791,6 +797,8 @@ function capabilityGrantFindings(opts: {
           `Processor ${processor.id} declares ` +
           `${formatList(missingKinds)} but the vault config does not grant ` +
           `${missingKinds.length === 1 ? "that capability" : "those capabilities"}.`,
+        summary:
+          `declares ${formatList(missingKinds)} with no vault grant`,
         recovery:
           "Update .dome/config.yaml to grant the capability, or disable the " +
           "processor/bundle if the missing capability is intentionally denied.",
@@ -869,6 +877,8 @@ export function capabilityGrantEntryFindings(opts: {
           " but the vault grant does not cover " +
           `${missing.length === 1 ? "that entry" : "those entries"}; ` +
           `${requirement.why}.`,
+        summary:
+          `${formatGrantEntriesTerse(missing)} declared but not covered by the vault grant`,
         recovery: requirement.recovery,
         capability: Object.freeze({
           processorId: requirement.processorId,
@@ -899,6 +909,12 @@ function grantEntryCovered(
 function formatGrantEntries(entries: ReadonlyArray<GrantEntry>): string {
   return entries
     .map((entry) => `'${entry.kind}' over '${entry.target}'`)
+    .join(", ");
+}
+
+function formatGrantEntriesTerse(entries: ReadonlyArray<GrantEntry>): string {
+  return entries
+    .map((entry) => `'${entry.target}' ('${entry.kind}')`)
     .join(", ");
 }
 
@@ -990,6 +1006,11 @@ export function capabilityGrantStarvationFindings(opts: {
           `${starved.length === 1 ? "that pattern" : "those patterns"}; ` +
           "grant-scoped snapshots silently omit the matching files, so the " +
           "processor never acts on them.",
+        summary:
+          starved
+            .map((entry) => `'${entry.pattern}' (${entry.kind})`)
+            .join(", ") +
+          " not covered by the effective vault grant",
         recovery:
           "If the narrowing is deliberate, ignore this info finding. " +
           `Otherwise add the missing pattern(s) under ` +

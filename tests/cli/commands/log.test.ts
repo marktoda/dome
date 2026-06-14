@@ -140,6 +140,13 @@ const BASE_ENTRY = {
   extensionId: null,
 };
 
+describe("formatEntry (unit) — calm style", () => {
+  test("renders no full-width rule", () => {
+    const rendered = formatEntry({ ...BASE_ENTRY }, CAPS_PLAIN, FIXED_NOW);
+    expect(rendered).not.toMatch(/[-─]{10,}/);
+  });
+});
+
 describe("formatEntry (unit)", () => {
   test("timestamp renders as relative time, not raw ISO", () => {
     const rendered = formatEntry({ ...BASE_ENTRY }, CAPS_PLAIN, FIXED_NOW);

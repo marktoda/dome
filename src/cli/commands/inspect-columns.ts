@@ -39,27 +39,27 @@ function sourceRefCell(fieldName: string): (r: Row) => { text: string; tone: "mu
 
 const PROCESSOR_COLUMNS: ReadonlyArray<Column<Row>> = [
   {
-    header: "PROCESSOR",
+    header: "processor",
     get: (r) => ({ text: str(r["processor"]) }),
     priority: 1,
   },
   {
-    header: "BUNDLE",
+    header: "bundle",
     get: (r) => ({ text: str(r["bundle"]) }),
     priority: 2,
   },
   {
-    header: "PHASE",
+    header: "phase",
     get: (r) => ({ text: str(r["phase"]) }),
     priority: 3,
   },
   {
-    header: "TRIGGERS",
+    header: "triggers",
     get: (r) => ({ text: str(r["triggers"]) }),
     priority: 4,
   },
   {
-    header: "MODEL",
+    header: "model",
     get: (r) => {
       const model = str(r["model"]);
       if (model === "none") return { text: model, tone: "muted" as const };
@@ -79,17 +79,17 @@ const PROCESSOR_HINT =
 
 const RUNS_COLUMNS: ReadonlyArray<Column<Row>> = [
   {
-    header: "PROCESSOR",
+    header: "processor",
     get: (r) => ({ text: str(r["processor"]) }),
     priority: 1,
   },
   {
-    header: "PHASE",
+    header: "phase",
     get: (r) => ({ text: str(r["phase"]) }),
     priority: 2,
   },
   {
-    header: "STATUS",
+    header: "status",
     get: (r) => {
       const status = str(r["status"]);
       if (status === "succeeded")
@@ -107,7 +107,7 @@ const RUNS_COLUMNS: ReadonlyArray<Column<Row>> = [
     priority: 3,
   },
   {
-    header: "WHEN",
+    header: "when",
     get: (r) => {
       const val = r["started_at"];
       return {
@@ -119,7 +119,7 @@ const RUNS_COLUMNS: ReadonlyArray<Column<Row>> = [
     priority: 4,
   },
   {
-    header: "TOOK",
+    header: "took",
     get: (r) => {
       const val = r["duration_ms"];
       return {
@@ -142,12 +142,12 @@ const RUNS_HINT =
 
 const BUNDLES_COLUMNS: ReadonlyArray<Column<Row>> = [
   {
-    header: "BUNDLE",
+    header: "bundle",
     get: (r) => ({ text: str(r["bundle"]) }),
     priority: 1,
   },
   {
-    header: "STATUS",
+    header: "status",
     get: (r) => {
       const status = str(r["status"]);
       if (status === "enabled") return { text: status, tone: "ok" as const };
@@ -157,7 +157,7 @@ const BUNDLES_COLUMNS: ReadonlyArray<Column<Row>> = [
     priority: 2,
   },
   {
-    header: "MODEL",
+    header: "model",
     get: (r) => {
       const model = str(r["model"]);
       if (model === "none") return { text: model, tone: "muted" as const };
@@ -167,7 +167,7 @@ const BUNDLES_COLUMNS: ReadonlyArray<Column<Row>> = [
     priority: 3,
   },
   {
-    header: "PROCESSORS",
+    header: "processors",
     get: (r) => ({
       text: String(typeof r["processors"] === "number" ? r["processors"] : "-"),
       tone: "plain" as const,
@@ -186,7 +186,7 @@ const BUNDLES_HINT =
 
 const DIAGNOSTICS_COLUMNS: ReadonlyArray<Column<Row>> = [
   {
-    header: "SEVERITY",
+    header: "severity",
     get: (r) => {
       const sev = str(r["severity"]);
       if (sev === "block" || sev === "error")
@@ -198,17 +198,17 @@ const DIAGNOSTICS_COLUMNS: ReadonlyArray<Column<Row>> = [
     priority: 1,
   },
   {
-    header: "CODE",
+    header: "code",
     get: (r) => ({ text: str(r["code"]) }),
     priority: 2,
   },
   {
-    header: "MESSAGE",
+    header: "message",
     get: (r) => ({ text: str(r["message"]) }),
     priority: 3,
   },
   {
-    header: "SOURCE",
+    header: "source",
     get: sourceRefCell("source_refs"),
     priority: 4,
   },
@@ -223,22 +223,22 @@ const DIAGNOSTICS_HINT =
 
 const FACTS_COLUMNS: ReadonlyArray<Column<Row>> = [
   {
-    header: "PREDICATE",
+    header: "predicate",
     get: (r) => ({ text: str(r["predicate"]) }),
     priority: 1,
   },
   {
-    header: "SUBJECT",
+    header: "subject",
     get: (r) => ({ text: str(r["subject"]) }),
     priority: 2,
   },
   {
-    header: "OBJECT",
+    header: "object",
     get: (r) => ({ text: str(r["object"]) }),
     priority: 3,
   },
   {
-    header: "SOURCE",
+    header: "source",
     get: sourceRefCell("source_refs"),
     priority: 4,
   },
@@ -253,22 +253,22 @@ const FACTS_HINT =
 
 const PATCHES_COLUMNS: ReadonlyArray<Column<Row>> = [
   {
-    header: "PROCESSOR",
+    header: "processor",
     get: (r) => ({ text: str(r["processor"]) }),
     priority: 1,
   },
   {
-    header: "PATH",
+    header: "path",
     get: (r) => ({ text: str(r["paths"]) }),
     priority: 2,
   },
   {
-    header: "CAPABILITY",
+    header: "capability",
     get: (r) => ({ text: str(r["capability"]) }),
     priority: 3,
   },
   {
-    header: "STATUS",
+    header: "status",
     get: (r) => {
       const status = str(r["status"]);
       if (status === "succeeded") return { text: status, tone: "ok" as const };
@@ -278,7 +278,7 @@ const PATCHES_COLUMNS: ReadonlyArray<Column<Row>> = [
     priority: 4,
   },
   {
-    header: "OUTCOME",
+    header: "outcome",
     get: (r) => ({ text: str(r["outcome"]) }),
     priority: 5,
   },
@@ -293,7 +293,7 @@ const PATCHES_HINT =
 
 const QUESTIONS_COLUMNS: ReadonlyArray<Column<Row>> = [
   {
-    header: "STATUS",
+    header: "status",
     get: (r) => {
       const status = str(r["status"]);
       if (status === "answered") return { text: status, tone: "ok" as const };
@@ -303,17 +303,17 @@ const QUESTIONS_COLUMNS: ReadonlyArray<Column<Row>> = [
     priority: 1,
   },
   {
-    header: "PROCESSOR",
+    header: "processor",
     get: (r) => ({ text: str(r["processor"]) }),
     priority: 2,
   },
   {
-    header: "QUESTION",
+    header: "question",
     get: (r) => ({ text: str(r["question"]) }),
     priority: 3,
   },
   {
-    header: "SOURCE",
+    header: "source",
     get: sourceRefCell("source_refs"),
     priority: 4,
   },
@@ -328,12 +328,12 @@ const QUESTIONS_HINT =
 
 const OUTBOX_COLUMNS: ReadonlyArray<Column<Row>> = [
   {
-    header: "CAPABILITY",
+    header: "capability",
     get: (r) => ({ text: str(r["capability"]) }),
     priority: 1,
   },
   {
-    header: "STATUS",
+    header: "status",
     get: (r) => {
       const status = str(r["status"]);
       if (status === "succeeded" || status === "dispatched")
@@ -345,7 +345,7 @@ const OUTBOX_COLUMNS: ReadonlyArray<Column<Row>> = [
     priority: 2,
   },
   {
-    header: "ATTEMPTS",
+    header: "attempts",
     get: (r) => ({
       text: String(typeof r["attempts"] === "number" ? r["attempts"] : "-"),
     }),
@@ -353,7 +353,7 @@ const OUTBOX_COLUMNS: ReadonlyArray<Column<Row>> = [
     align: "right" as const,
   },
   {
-    header: "WHEN",
+    header: "when",
     get: (r) => {
       const val = r["enqueued_at"];
       return {
@@ -374,17 +374,17 @@ const OUTBOX_HINT =
 
 const QUARANTINE_COLUMNS: ReadonlyArray<Column<Row>> = [
   {
-    header: "PROCESSOR",
+    header: "processor",
     get: (r) => ({ text: str(r["processor"]) }),
     priority: 1,
   },
   {
-    header: "PHASE",
+    header: "phase",
     get: (r) => ({ text: str(r["phase"]) }),
     priority: 2,
   },
   {
-    header: "FAILURES",
+    header: "failures",
     get: (r) => ({
       text: String(typeof r["failures"] === "number" ? r["failures"] : "-"),
     }),
@@ -392,12 +392,12 @@ const QUARANTINE_COLUMNS: ReadonlyArray<Column<Row>> = [
     align: "right" as const,
   },
   {
-    header: "REASON",
+    header: "reason",
     get: (r) => ({ text: str(r["reason"]) }),
     priority: 4,
   },
   {
-    header: "WHEN",
+    header: "when",
     get: (r) => {
       const val = r["quarantined_at"];
       return {
@@ -425,12 +425,12 @@ function usdCell(fieldName: string): (r: Row) => { text: string } {
 
 const COST_COLUMNS: ReadonlyArray<Column<Row>> = [
   {
-    header: "PROCESSOR",
+    header: "processor",
     get: (r) => ({ text: str(r["processor"]) }),
     priority: 1,
   },
   {
-    header: "RUNS",
+    header: "runs",
     get: (r) => ({
       text: String(typeof r["runs"] === "number" ? r["runs"] : "-"),
     }),
@@ -438,13 +438,13 @@ const COST_COLUMNS: ReadonlyArray<Column<Row>> = [
     align: "right" as const,
   },
   {
-    header: "TOTAL",
+    header: "total",
     get: usdCell("total_cost_usd"),
     priority: 3,
     align: "right" as const,
   },
   {
-    header: "TODAY",
+    header: "today",
     get: usdCell("today_cost_usd"),
     priority: 4,
     align: "right" as const,
@@ -460,7 +460,7 @@ const COST_HINT =
 
 export const DIAGNOSTIC_SUMMARY_COLUMNS: ReadonlyArray<Column<Row>> = [
   {
-    header: "SEVERITY",
+    header: "severity",
     get: (r) => {
       const sev = str(r["severity"]);
       if (sev === "block" || sev === "error")
@@ -472,12 +472,12 @@ export const DIAGNOSTIC_SUMMARY_COLUMNS: ReadonlyArray<Column<Row>> = [
     priority: 1,
   },
   {
-    header: "CODE",
+    header: "code",
     get: (r) => ({ text: str(r["code"]) }),
     priority: 2,
   },
   {
-    header: "COUNT",
+    header: "count",
     get: (r) => ({
       text: String(typeof r["count"] === "number" ? r["count"] : "-"),
     }),
@@ -485,7 +485,7 @@ export const DIAGNOSTIC_SUMMARY_COLUMNS: ReadonlyArray<Column<Row>> = [
     align: "right" as const,
   },
   {
-    header: "SOURCE",
+    header: "source",
     get: sourceRefCell("first_source_refs"),
     priority: 4,
   },

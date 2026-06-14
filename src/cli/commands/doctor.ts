@@ -22,12 +22,11 @@ import { openVaultRuntime } from "../../engine/host/vault-runtime";
 import { emitRuntimeOpenFailure } from "../command-error";
 import { formatJson } from "../../surface/format";
 import {
-  bullets,
   dimZeros,
-  footer,
   headline,
   kv,
   resolveCaps,
+  rollup,
   section,
   type Status,
 } from "../presenter";
@@ -43,6 +42,7 @@ export type RunDoctorOptions = {
   readonly vault?: string | undefined;
   readonly bundlesRoot?: string | undefined;
   readonly json?: boolean | undefined;
+  readonly verbose?: boolean | undefined;
   readonly orphanThresholdMs?: string | number | undefined;
 };
 
@@ -80,7 +80,8 @@ export async function runDoctor(
     if (options.json === true) {
       console.log(formatJson(storageReport));
     } else {
-      printDoctorText(storageReport, vaultPath);
+      const verbose = options.verbose === true;
+      printDoctorText(storageReport, vaultPath, undefined, verbose);
     }
     return 0;
   }
@@ -134,7 +135,8 @@ export async function runDoctor(
     if (options.json === true) {
       console.log(formatJson(report));
     } else {
-      printDoctorText(report, vaultPath, modelProviderProbe);
+      const verbose = options.verbose === true;
+      printDoctorText(report, vaultPath, modelProviderProbe, verbose);
     }
     return 0;
   } finally {
@@ -146,43 +148,81 @@ function printDoctorText(
   report: HealthReport,
   vaultPath: string,
   modelProviderProbe?: ModelProviderProbeInput,
+  verbose: boolean = false,
 ): void {
   const caps = resolveCaps();
-  // Info-only findings keep status "ok" but still deserve a visible label.
-  const headStatus: Status = report.status === "ok"
-    ? report.summary.findingCount === 0
-      ? { tone: "ok", label: "ok" }
-      : { tone: "ok", label: `${report.summary.infoCount} info` }
-    : { tone: "warn", label: `${report.summary.findingCount} finding${report.summary.findingCount === 1 ? "" : "s"}` };
+  const s = report.summary;
+
+  // Verdict header: problems = error+warning, notes = info.
+  const problems = s.errorCount + s.warningCount;
+  const notes = s.infoCount;
+  const headStatus: Status =
+    problems === 0 && notes === 0
+      ? { tone: "ok", label: "healthy" }
+      : (() => {
+          const parts: string[] = [];
+          if (problems > 0) parts.push(`${problems} ${problems === 1 ? "problem" : "problems"}`);
+          if (notes > 0) parts.push(`${notes} ${notes === 1 ? "note" : "notes"}`);
+          return { tone: "warn", label: parts.join(" · ") };
+        })();
 
   const lines: string[] = [
     headline({ cmd: "doctor", context: basename(vaultPath) }, headStatus, caps),
   ];
 
-  if (report.findings.length === 0) {
-    lines.push(...section("Findings", bullets([], caps), caps));
+  // Per-category zero-check for the rollup. A category is "clean" when all
+  // its counts are zero; unhealthy categories are represented by findings.
+  const cleanCategories: string[] = [];
+  if (s.failedOutbox + s.stuckPendingOutbox + s.recurringOutboxFailures === 0) cleanCategories.push("outbox");
+  if (s.orphanRuns + s.failedRuns + s.recurringTimeouts === 0) cleanCategories.push("runs");
+  if (s.quarantinedProcessors === 0) cleanCategories.push("quarantine");
+  if (s.projectionCacheDrift === 0) cleanCategories.push("projection");
+  if (s.adoptedRefDivergence + s.gitCommitSigning === 0) cleanCategories.push("git");
+  if (s.instructionDrift === 0) cleanCategories.push("instructions");
+  if (s.operationalSchemaMismatch === 0) cleanCategories.push("storage");
+  if (s.capabilityGrantGaps + s.capabilityGrantEntryGaps + s.capabilityGrantStarvation === 0) cleanCategories.push("grants");
+  if (s.dailyPathMismatch + s.dailyEditionNotCompiled + s.dailyCalendarSourceMissing === 0) cleanCategories.push("daily");
+  if (s.sourcesTimeoutDefault + s.sourcesFetchScriptMissing === 0) cleanCategories.push("sources");
+  if (s.modelProviderMissing + s.modelProviderUnreachable + s.modelProviderKeyMissing === 0) cleanCategories.push("model");
+  if (s.unreadableQuestions === 0) cleanCategories.push("decisions");
+
+  if (!verbose) {
+    // Default: headerless — findings directly, then a single rollup line.
+    // No ALLCAPS section wrappers, no footer, no rule.
+    const fl = findingLines(report.findings, caps, false);
+    if (fl.length > 0) {
+      lines.push("");
+      lines.push(...fl);
+    }
+    if (report.findings.length < 1 || cleanCategories.length > 0) {
+      lines.push("");
+      lines.push(rollup(cleanCategories, caps));
+    }
   } else {
-    lines.push(...section("Findings", findingLines(report.findings, caps), caps));
+    // Verbose: FINDINGS section + full AT A GLANCE breakdown.
+    if (report.findings.length > 0) {
+      lines.push(...section("Findings", findingLines(report.findings, caps, true), caps));
+    }
 
     const breakdownTerms: ReadonlyArray<string> = [
-      `outbox ${report.summary.failedOutbox} failed`,
-      `${report.summary.stuckPendingOutbox} stuck`,
-      `orphans ${report.summary.orphanRuns}`,
-      `runs ${report.summary.failedRuns} failed`,
-      `quarantine ${report.summary.quarantinedProcessors}`,
-      `projection ${report.summary.projectionCacheDrift}`,
-      `git ${report.summary.adoptedRefDivergence}`,
-      `instructions ${report.summary.instructionDrift}`,
-      `storage ${report.summary.operationalSchemaMismatch}`,
-      `grants ${report.summary.capabilityGrantGaps} kind`,
-      `${report.summary.capabilityGrantEntryGaps} entry`,
-      `${report.summary.capabilityGrantStarvation} starved`,
-      `daily_path ${report.summary.dailyPathMismatch}`,
-      `edition ${report.summary.dailyEditionNotCompiled} missed`,
-      `calendar ${report.summary.dailyCalendarSourceMissing} missing`,
-      `model ${report.summary.modelProviderMissing} missing`,
-      `${report.summary.modelProviderUnreachable} unreachable`,
-      `${report.summary.modelProviderKeyMissing} keyless`,
+      `outbox ${s.failedOutbox} failed`,
+      `${s.stuckPendingOutbox} stuck`,
+      `orphans ${s.orphanRuns}`,
+      `runs ${s.failedRuns} failed`,
+      `quarantine ${s.quarantinedProcessors}`,
+      `projection ${s.projectionCacheDrift}`,
+      `git ${s.adoptedRefDivergence}`,
+      `instructions ${s.instructionDrift}`,
+      `storage ${s.operationalSchemaMismatch}`,
+      `grants ${s.capabilityGrantGaps} kind`,
+      `${s.capabilityGrantEntryGaps} entry`,
+      `${s.capabilityGrantStarvation} starved`,
+      `daily_path ${s.dailyPathMismatch}`,
+      `edition ${s.dailyEditionNotCompiled} missed`,
+      `calendar ${s.dailyCalendarSourceMissing} missing`,
+      `model ${s.modelProviderMissing} missing`,
+      `${s.modelProviderUnreachable} unreachable`,
+      `${s.modelProviderKeyMissing} keyless`,
     ];
 
     lines.push(
@@ -192,7 +232,7 @@ function printDoctorText(
           [
             {
               label: "health",
-              value: `${report.summary.errorCount} error · ${report.summary.warningCount} warning · ${report.summary.infoCount} info`,
+              value: `${s.errorCount} error · ${s.warningCount} warning · ${s.infoCount} info`,
             },
             {
               label: "findings",
@@ -234,10 +274,7 @@ function printDoctorText(
     );
   }
 
-  const footerStatus: Status = report.status === "ok"
-    ? { tone: "ok", label: "all clear" }
-    : { tone: "warn", label: "needs attention" };
-  lines.push(...footer(footerStatus, caps));
+  // No footer or full-width rule in either default or verbose mode.
 
   console.log(lines.join("\n"));
 }
