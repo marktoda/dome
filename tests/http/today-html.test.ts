@@ -192,3 +192,30 @@ describe("renderTodayHtml", () => {
     expect(html).not.toContain('http-equiv="refresh"');
   });
 });
+
+describe("wikilink stripping (web cockpit)", () => {
+  test("still-open task text strips [[wikilinks]] (path → last segment, alias kept)", () => {
+    const html = renderTodayHtml(
+      { ...base, openTasks: [{ ...base.openTasks[0], text: "Talk to Eric [[wiki/entities/eric-sanchirico]] about [[wiki/x|the lane]]" }] },
+      { refreshSeconds: 15 },
+    );
+    expect(html).toContain("Talk to Eric eric-sanchirico about the lane");
+    expect(html).not.toContain("[[");
+  });
+  test("hero task text strips [[wikilinks]]", () => {
+    const html = renderTodayHtml(
+      { ...base, hero: { kind: "task", item: { ...taskFixture, text: "Decide [[wiki/routing-decision|the routing call]]" } } },
+      { refreshSeconds: 15 },
+    );
+    expect(html).toContain("Decide the routing call");
+    expect(html).not.toContain("[[");
+  });
+  test("question text strips [[wikilinks]]", () => {
+    const html = renderTodayHtml(
+      { ...base, questions: [{ ...base.questions[0], question: "Block on [[wiki/x|K-budget]]?" }] },
+      { refreshSeconds: 15 },
+    );
+    expect(html).toContain("Block on K-budget?");
+    expect(html).not.toContain("[[");
+  });
+});

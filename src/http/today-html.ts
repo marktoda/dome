@@ -610,7 +610,7 @@ function parseHero(raw: unknown): HeroItem | null {
   if (kind === "task") {
     const item = isRecord(raw.item) ? raw.item : null;
     if (item === null) return null;
-    const text = typeof item.text === "string" ? item.text : "";
+    const text = typeof item.text === "string" ? stripWikilinks(item.text) : "";
     if (text.length === 0) return null;
     return {
       kind: "task",
@@ -625,7 +625,7 @@ function parseHero(raw: unknown): HeroItem | null {
   if (kind === "question") {
     const item = isRecord(raw.item) ? raw.item : null;
     if (item === null) return null;
-    const question = typeof item.question === "string" ? item.question : "";
+    const question = typeof item.question === "string" ? stripWikilinks(item.question) : "";
     if (question.length === 0) return null;
     const options: string[] = Array.isArray(item.options)
       ? item.options.filter((o): o is string => typeof o === "string")
@@ -650,7 +650,7 @@ function rows(raw: unknown): ReadonlyArray<TaskRow> {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((item) => {
     const r = isRecord(item) ? item : {};
-    const text = typeof r.text === "string" ? r.text : "";
+    const text = typeof r.text === "string" ? stripWikilinks(r.text) : "";
     if (text.length === 0) return [];
     return [{
       text,
@@ -665,7 +665,7 @@ function questionRows(raw: unknown): ReadonlyArray<QuestionRow> {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((item) => {
     const r = isRecord(item) ? item : {};
-    const question = typeof r.question === "string" ? r.question : "";
+    const question = typeof r.question === "string" ? stripWikilinks(r.question) : "";
     if (question.length === 0) return [];
     const options: string[] = Array.isArray(r.options)
       ? r.options.filter((o): o is string => typeof o === "string")
@@ -690,4 +690,15 @@ function esc(value: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+// Render task/question/hero text without raw [[wikilink]] markup — `[[p|alias]]`
+// → `alias`, `[[path/to/page]]` → `page` (last segment). Mirrors the terminal
+// renderer's stripping (src/cli/commands/today.ts) so both surfaces read clean.
+function stripWikilinks(value: string): string {
+  return value
+    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2")
+    .replace(/\[\[([^\]]+)\]\]/g, (_m, target: string) => target.split("/").pop() ?? target)
+    .replace(/\s+/g, " ")
+    .trim();
 }
