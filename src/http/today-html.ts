@@ -1,8 +1,10 @@
 // http/today-html: pure renderer — dome.daily.today/v1 structured data →
-// a self-refreshing HTML cockpit page. No imports from the engine; consumed
-// only by the HTTP adapter's GET /today route. Auto-refresh is a plain
-// meta-refresh (the v1 plan's "dumb polling is acceptable" resolution); the
-// page reloads its own URL, so a ?token= query parameter survives reloads.
+// the "Briefing" HTML cockpit page. No imports from the engine; consumed only
+// by the HTTP adapter's GET /today route. The page server-renders the initial
+// paint, then an inline (dependency-free) script polls GET /tasks every
+// `refreshSeconds`, reloads on detected change, drives the live/reconnecting
+// state, and posts answers (/resolve) + captures (/capture) with the bearer
+// token read from the `?token=` query parameter (header-only on the POSTs).
 
 export type TodayHtmlOptions = {
   readonly refreshSeconds: number;

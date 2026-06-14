@@ -97,7 +97,7 @@ view). Existing fields (`openTasks`, `followups`, `questions`, `counts`,
 
 ```
 brief:    { text: string; sourceRef: SourceRef } | null
-calendar: { events: ReadonlyArray<{ time: string; title: string; meta: string | null }>;
+calendar: { events: ReadonlyArray<{ time: string; title: string; meta: string }>;  // meta: "" when none
             sourceRef: SourceRef } | null
 hero:     { kind: "task"; item: DailyTaskItem }
         | { kind: "question"; item: DailyQuestionItem }
