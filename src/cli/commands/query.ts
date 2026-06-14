@@ -19,7 +19,6 @@ import {
 import { formatJson } from "../../surface/format";
 import { formatCommand } from "../human-output";
 import {
-  footer,
   glyph,
   headline,
   match as matchPrimitive,
@@ -132,7 +131,6 @@ export function formatQueryResult(data: unknown, caps: Caps, vault?: string): st
     ];
     const noMatchSummary = `"${result.query}" — 0 matches`;
     lines.push("", `  ${paint(noMatchSummary, "muted", caps)}`);
-    lines.push(...footer({ tone: "muted", label: "no matches" }, caps));
     return lines.join("\n");
   }
 
@@ -202,7 +200,6 @@ export function formatQueryResult(data: unknown, caps: Caps, vault?: string): st
   if (matchLines[matchLines.length - 1] === "") matchLines.pop();
   lines.push(...section("Matches", matchLines, caps));
 
-  lines.push(...footer({ tone: "ok", label: `${n} ${matchLabel}` }, caps));
   return lines.join("\n");
 }
 

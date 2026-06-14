@@ -203,4 +203,23 @@ describe("formatQueryResult — human renderer", () => {
     expect(out).not.toContain("why:");
     expect(out).not.toContain("facts:");
   });
+
+  test("renders no full-width rule (calm style)", () => {
+    const data = makeQueryData({ matches: [MATCH_WITH_TELEMETRY] });
+    const out = formatQueryResult(data, CAPS);
+    expect(out).not.toMatch(/[-─]{10,}/);
+  });
+
+  test("n === 0 empty state renders no full-width rule", () => {
+    const data = makeQueryData({ matches: [] });
+    const out = formatQueryResult(data, CAPS);
+    expect(out).not.toMatch(/[-─]{10,}/);
+  });
+
+  test("verdict header contains match count", () => {
+    const data = makeQueryData({ matches: [MATCH_WITH_TELEMETRY] });
+    const out = formatQueryResult(data, CAPS);
+    // headline puts the status value (bullet + label) on the right; plain caps uses ASCII
+    expect(out).toMatch(/1 match/);
+  });
 });
