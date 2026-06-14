@@ -61,15 +61,40 @@ with their `dome resolve` hints, or "All clear" when nothing is open. This is
 the glanceable cockpit surface of the v1 plan; `dome today --watch` is its
 terminal sibling.
 
-Freshness is **dumb polling by design** (the v1 plan's open-questions
-resolution): the page carries a `<meta http-equiv="refresh">` that reloads
-its own URL. `?refresh=<seconds>` sets the cadence — a positive integer,
-default 15 when absent or unparseable; the renderer floors it at 1. Because
-the page reloads its own URL, a `?token=` parameter survives reloads.
+Freshness is **JS polling by design** (the v1 plan's "dumb polling is
+acceptable" resolution): the page ships a self-contained inline `<script>`
+that polls `GET /tasks` on an interval, diffs the fingerprint against the
+last result, and calls `location.reload()` when content changes. The script
+reads `?token=` from `location.search` at runtime so the parameter survives
+reloads without any server-side per-reload round-trip. There is no `<meta
+http-equiv="refresh">`. `?refresh=<seconds>` sets the poll cadence (JS
+`POLL_MS = refreshSeconds * 1000`) — a positive integer, default 15 when
+absent or unparseable; the renderer floors it at 1.
 
 The response is sent with `cache-control: no-store`: an authenticated page
-whose URL can carry `?token=`, and whose freshness contract is the
-meta-refresh — it must never be cached.
+whose URL can carry `?token=`, and whose freshness contract is the JS poll
+interval — it must never be cached.
+
+**Briefing panels.** The cockpit page includes three additive panels sourced
+from graph facts emitted by the `dome.agent` adoption extractors:
+
+- **Brief** — driven by `dome.agent.brief` facts (predicate `dome.agent.brief`);
+  `dome.agent.brief-index` extracts the `dome.agent.brief:today` block from each
+  adopted daily note and emits one fact carrying the stripped plain-text body +
+  a sourceRef. The panel is omitted when no fact exists for today.
+- **Calendar** — driven by `dome.agent.calendar.event` facts (predicate
+  `dome.agent.calendar.event`); `dome.agent.calendar-index` extracts events from
+  `sources/calendar/<date>.md` files and emits one fact per event. The panel is
+  omitted when no events exist for today.
+- **Hero** — the single highest-priority open task or question, derived from
+  the same `dome.daily.today/v1` view data as the rest of the page; no
+  separate fact.
+
+**Mutations via the query token.** The cockpit's inline script uses the `?token=`
+bearer to authorize mutations (`POST /capture` and `POST /resolve`) in addition
+to the read polls. This is an accepted trust boundary: the shared bearer already
+authorizes the page fetch; reusing it for mutations inside the same loopback/
+trusted-LAN session is the intended v1 contract (§"Trust domain").
 
 ### Query-token escape hatch (`GET /today`)
 
@@ -88,8 +113,9 @@ programmatic caller can set a header, so no other route has the
 browser-navigation excuse.
 
 Tests: `tests/http/http-server.test.ts` (§"GET /today" — header and query
-auth, GET-only scoping, refresh default/override, no-store) and
-`tests/http/today-html.test.ts` (renderer shape, escaping, refresh floor).
+auth, GET-only scoping, JS poll interval default/override, no-store, no
+meta-refresh) and `tests/http/today-html.test.ts` (renderer shape,
+escaping, poll-interval floor, no meta-refresh assertion).
 
 ## The capture route is the seam
 

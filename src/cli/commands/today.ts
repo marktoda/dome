@@ -314,7 +314,7 @@ type BriefField = {
 };
 
 type CalendarField = {
-  readonly events: ReadonlyArray<{ readonly time: string; readonly title: string; readonly meta: string | null }>;
+  readonly events: ReadonlyArray<{ readonly time: string; readonly title: string; readonly meta: string }>;
   readonly sourceRef: { readonly path: string };
 };
 
@@ -530,7 +530,7 @@ function parseCalendar(raw: unknown): CalendarField | null {
     const time = typeof ev.time === "string" ? ev.time : null;
     const title = typeof ev.title === "string" ? ev.title : null;
     if (time === null || title === null) return [];
-    const meta = typeof ev.meta === "string" ? ev.meta : null;
+    const meta = typeof ev.meta === "string" ? ev.meta : "";
     return [Object.freeze({ time, title, meta })];
   });
   if (events.length === 0) return null;

@@ -470,7 +470,7 @@ function renderCalendarHtml(events: ReadonlyArray<CalendarEvent>): string {
         <span class="cal-time">${esc(ev.time)}</span>
         <div class="cal-body">
           <div class="cal-title">${esc(ev.title)}</div>
-          ${ev.meta !== null ? `<div class="cal-meta">${esc(ev.meta)}</div>` : ""}
+          ${ev.meta.length > 0 ? `<div class="cal-meta">${esc(ev.meta)}</div>` : ""}
         </div>
       </div>`).join("");
 
@@ -562,7 +562,7 @@ type QuestionRow = {
 type CalendarEvent = {
   readonly time: string;
   readonly title: string;
-  readonly meta: string | null;
+  readonly meta: string;
 };
 
 type BriefField = {
@@ -591,7 +591,7 @@ function parseCalendar(raw: unknown): { readonly events: ReadonlyArray<CalendarE
     const time = typeof ev.time === "string" ? ev.time : null;
     const title = typeof ev.title === "string" ? ev.title : null;
     if (time === null || title === null) return [];
-    const meta = typeof ev.meta === "string" ? ev.meta : null;
+    const meta = typeof ev.meta === "string" ? ev.meta : "";
     return [{ time, title, meta }];
   });
   if (events.length === 0) return null;
