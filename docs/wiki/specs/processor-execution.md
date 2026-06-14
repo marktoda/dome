@@ -99,6 +99,18 @@ timeouts where the phase allows it. Adoption processors are always capped to
 deterministic execution; garden and view processors may request `llm` or
 `batch` when their capabilities and product role justify longer runs.
 
+Adoption stays the merge gate: its deterministic timeout DEFAULT is 10s to keep
+the common single-file path fast. A processor that performs a genuine
+whole-vault adoption scan (e.g. `dome.markdown.duplicate-detection`, which reads
+and parses every comparable page on each changed file) may request a larger
+`execution.timeoutMs`, clamped to the adoption deterministic ceiling
+(`ADOPTION_DETERMINISTIC_TIMEOUT_CEILING_MS`, 60s). The gate therefore stays
+bounded — it can never hang indefinitely — but is not pinned to 10s for the rare
+processor that legitimately needs headroom. A tighter vault
+`engine.processor_timeout_ms` cap still wins (it is a floor on the resolved
+bound, applied as a min). A request without an explicit `timeoutMs` resolves to
+the 10s default unchanged.
+
 Timeouts are enforced by the executor boundary, not by individual processors.
 A timed-out processor produces a `processor.timeout` diagnostic, the executor
 returns `status: "timed_out"`, and no returned Effects from that invocation

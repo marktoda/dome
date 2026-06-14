@@ -86,6 +86,40 @@ describe("loadBundles — shipped dome.lint bundle", () => {
     expect(trigger.kind).toBe("command");
   });
 
+  test("heavy whole-vault adoption scanners declare a deterministic timeout above the 10s default", async () => {
+    // The silent-wedge fix: dome.markdown.duplicate-detection (and its
+    // whole-vault-content-reading adoption siblings) re-read/parse every
+    // comparable page on each changed file, which blows the 10s adoption
+    // default on a large vault and silently wedges adoption. They must
+    // declare an explicit deterministic execution.timeoutMs > 10s; the
+    // loader binds it onto the processor, and resolveExecutionPolicy honors
+    // it up to the adoption ceiling. validate-wikilinks is deliberately NOT
+    // here — it lists paths but only reads CHANGED content, so the default
+    // still fits (no blanket bump).
+    const result = await loadBundles({ bundlesRoot: SHIPPED_BUNDLES_ROOT });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const markdown = result.value.find((b) => b.id === "dome.markdown");
+    expect(markdown).toBeDefined();
+    if (markdown === undefined) return;
+
+    const heavyScanners = [
+      "dome.markdown.duplicate-detection",
+      "dome.markdown.lint-supersession",
+      "dome.markdown.broken-images",
+    ];
+    for (const id of heavyScanners) {
+      const proc = markdown.processors.find((p) => p.id === id);
+      expect(proc, `expected ${id} in dome.markdown`).toBeDefined();
+      if (proc === undefined) continue;
+      expect(proc.phase).toBe("adoption");
+      expect(proc.execution?.class).toBe("deterministic");
+      expect(proc.execution?.timeoutMs ?? 0).toBeGreaterThan(10_000);
+      // Still bounded as the merge gate.
+      expect(proc.execution?.timeoutMs ?? Infinity).toBeLessThanOrEqual(60_000);
+    }
+  });
+
   test("flattenBundleProcessors flattens the per-bundle processors array", async () => {
     const result = await loadBundles({ bundlesRoot: SHIPPED_BUNDLES_ROOT });
     expect(result.ok).toBe(true);
