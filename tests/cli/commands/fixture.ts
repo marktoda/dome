@@ -39,8 +39,10 @@ import { openLedgerDb } from "../../../src/ledger/db";
 import {
   insertQueued,
   markRunning,
+  markTimedOut,
   newRunId,
 } from "../../../src/ledger/runs";
+import { DEFAULT_RECURRING_TIMEOUT_THRESHOLD } from "../../../src/engine/host/health";
 import { openOutboxDb } from "../../../src/outbox/db";
 import {
   insertPending,
@@ -263,6 +265,54 @@ export async function seedRecurringOutboxFailure(f: Fixture): Promise<void> {
     );
   } finally {
     outbox.value.db.close();
+  }
+}
+
+/**
+ * Seed `DEFAULT_RECURRING_TIMEOUT_THRESHOLD` timed_out runs for one processor,
+ * enough to trigger the `run.recurring-timeout` finding. The runs have no
+ * failed or orphan state so `orphanRuns` and `failedRuns` remain 0 — only
+ * `recurringTimeouts` will be nonzero. This proves the "runs" category must
+ * not land in the clean rollup when recurring-timeout fires.
+ */
+export async function seedRecurringTimeouts(f: Fixture): Promise<void> {
+  const adoptedCommit = commitOid(f.headSha);
+  const ledger = await openLedgerDb({
+    path: join(f.vaultPath, ".dome", "state", "runs.db"),
+  });
+  if (!ledger.ok) {
+    throw new Error(`ledger open failed: ${ledger.error.kind}`);
+  }
+  try {
+    for (let i = 0; i < DEFAULT_RECURRING_TIMEOUT_THRESHOLD; i++) {
+      const runId = newRunId(new Date(i + 1), () => `timeout-seed-${i}`);
+      insertQueued(ledger.value.db, {
+        id: runId,
+        proposalId: null,
+        processorId: "test.recurring-timeout-processor",
+        processorVersion: "0.0.1",
+        phase: "garden",
+        inputCommit: adoptedCommit,
+        triggerKind: "schedule",
+        triggerPayload: { test: true },
+        startedAt: new Date(i + 1),
+      });
+      markRunning(ledger.value.db, runId, new Date(i + 2));
+      markTimedOut(ledger.value.db, {
+        id: runId,
+        error: {
+          code: "processor.timeout",
+          message: "Processor exceeded timeout of 30000ms.",
+          retryable: false,
+          phase: "garden",
+          processorId: "test.recurring-timeout-processor",
+        },
+        durationMs: 30_000,
+        finishedAt: new Date(i + 3),
+      });
+    }
+  } finally {
+    ledger.value.db.close();
   }
 }
 

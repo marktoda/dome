@@ -173,8 +173,8 @@ function printDoctorText(
   // Per-category zero-check for the rollup. A category is "clean" when all
   // its counts are zero; unhealthy categories are represented by findings.
   const cleanCategories: string[] = [];
-  if (s.failedOutbox + s.stuckPendingOutbox === 0) cleanCategories.push("outbox");
-  if (s.orphanRuns + s.failedRuns === 0) cleanCategories.push("runs");
+  if (s.failedOutbox + s.stuckPendingOutbox + s.recurringOutboxFailures === 0) cleanCategories.push("outbox");
+  if (s.orphanRuns + s.failedRuns + s.recurringTimeouts === 0) cleanCategories.push("runs");
   if (s.quarantinedProcessors === 0) cleanCategories.push("quarantine");
   if (s.projectionCacheDrift === 0) cleanCategories.push("projection");
   if (s.adoptedRefDivergence + s.gitCommitSigning === 0) cleanCategories.push("git");
@@ -184,6 +184,7 @@ function printDoctorText(
   if (s.dailyPathMismatch + s.dailyEditionNotCompiled + s.dailyCalendarSourceMissing === 0) cleanCategories.push("daily");
   if (s.sourcesTimeoutDefault + s.sourcesFetchScriptMissing === 0) cleanCategories.push("sources");
   if (s.modelProviderMissing + s.modelProviderUnreachable + s.modelProviderKeyMissing === 0) cleanCategories.push("model");
+  if (s.unreadableQuestions === 0) cleanCategories.push("decisions");
 
   if (!verbose) {
     // Default: headerless — findings directly, then a single rollup line.

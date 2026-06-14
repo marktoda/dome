@@ -19,6 +19,7 @@ import {
   installFixtureCleanup,
   makeFixture,
   seedRecurringOutboxFailure,
+  seedRecurringTimeouts,
   seedUnhealthyOperationalState,
   writeDoctorConfig,
   writeDoctorConfigBody,
@@ -178,6 +179,31 @@ describe("runDoctor", () => {
     );
     expect(recurring).toBeDefined();
     expect(recurring?.message.toLowerCase()).toContain("fails every run");
+  });
+
+  // ----- clean-rollup completeness (merged recurring-failure categories) -----
+  //
+  // The cleanCategories derivation must include ALL count fields that belong to
+  // a category, not just the ones that existed before the recurring-failure
+  // fields were added. Otherwise a vault with e.g. recurringTimeouts > 0 but
+  // orphanRuns == 0 && failedRuns == 0 would falsely list "runs" in the all-clean
+  // rollup while also raising a run.recurring-timeout finding.
+
+  test("recurring-timeout finding does not leave 'runs' in the all-clean rollup", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+    await seedRecurringTimeouts(f);
+
+    const code = await runDoctor({ vault: f.vaultPath });
+    expect(code).toBe(0);
+    const out = captured.out.join("\n");
+    // The run.recurring-timeout finding must be present
+    expect(out).toContain("run.recurring-timeout");
+    // "runs" must NOT appear in the "all clean" rollup line
+    expect(out).not.toMatch(/\bruns\b[^\n]*all clean/);
+    // The rollup line itself may still exist (other categories are clean)
+    expect(out).toMatch(/all clean/);
   });
 
   test("--json reports operational schema mismatches without opening runtime", async () => {
