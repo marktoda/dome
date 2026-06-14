@@ -103,12 +103,12 @@ describe("loadBundles — shipped dome.lint bundle", () => {
     expect(markdown).toBeDefined();
     if (markdown === undefined) return;
 
-    const heavyScanners = [
+    const markdownHeavyScanners = [
       "dome.markdown.duplicate-detection",
       "dome.markdown.lint-supersession",
       "dome.markdown.broken-images",
     ];
-    for (const id of heavyScanners) {
+    for (const id of markdownHeavyScanners) {
       const proc = markdown.processors.find((p) => p.id === id);
       expect(proc, `expected ${id} in dome.markdown`).toBeDefined();
       if (proc === undefined) continue;
@@ -118,6 +118,25 @@ describe("loadBundles — shipped dome.lint bundle", () => {
       // Still bounded as the merge gate.
       expect(proc.execution?.timeoutMs ?? Infinity).toBeLessThanOrEqual(60_000);
     }
+
+    // dome.claims.index is the same failure class: a whole-vault adoption
+    // scanner (a fact per claim line across wiki+notes) that timed out under
+    // the 10s default on the 786-page live vault. It carries the same
+    // deterministic-timeout band-aid (see the manifest comment).
+    const claims = result.value.find((b) => b.id === "dome.claims");
+    expect(claims).toBeDefined();
+    if (claims === undefined) return;
+    const claimsIndex = claims.processors.find(
+      (p) => p.id === "dome.claims.index",
+    );
+    expect(claimsIndex, "expected dome.claims.index in dome.claims").toBeDefined();
+    if (claimsIndex === undefined) return;
+    expect(claimsIndex.phase).toBe("adoption");
+    expect(claimsIndex.execution?.class).toBe("deterministic");
+    expect(claimsIndex.execution?.timeoutMs ?? 0).toBeGreaterThan(10_000);
+    expect(claimsIndex.execution?.timeoutMs ?? Infinity).toBeLessThanOrEqual(
+      60_000,
+    );
   });
 
   test("flattenBundleProcessors flattens the per-bundle processors array", async () => {

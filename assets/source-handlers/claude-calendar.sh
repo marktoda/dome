@@ -63,7 +63,7 @@ fi
 
 mkdir -p "$(dirname "$f")"
 tmp="$(mktemp)"
-trap 'rm -f "$tmp"' EXIT
+trap 'rm -f "$tmp" "$tmp.repaired"' EXIT
 
 # ----- FETCH (adjust to taste) ----------------------------------------------
 # Default: headless Claude with calendar access (MCP or gcalcli underneath).
@@ -75,7 +75,51 @@ calendar-day markdown file and NOTHING else. Exact shape: a YAML frontmatter \
 block with 'type: calendar-day' and 'date: $d', then '# Calendar $d', then \
 one '- ' list item per meeting: optional HH:MM–HH:MM time, ' — ', the title, \
 and optional ' (attendees: a, b)'. If there are no meetings, emit the \
-frontmatter and heading only." > "$tmp"
+frontmatter and heading only. Do not wrap the output in code fences." > "$tmp"
+
+# ----- REPAIR -----------------------------------------------------------------
+# Deterministic normalization before the validation gate. Headless models
+# reliably return the CORRECT document but sometimes wrap it in a ``` (or
+# ```markdown) fence and/or prefix a chatty "Here's your calendar:" line, so a
+# fence or preamble — not broken content — sinks `head -n 1 | grep '^---$'`
+# every run. We do NOT trust prompt obedience; we strip the wrapping here:
+#   1. If the first non-blank line opens a fence (``` or ```markdown), drop it
+#      and a matching trailing ``` fence line.
+#   2. Then drop everything before the first '^---$' line (tolerates preamble).
+# The validation below is still the safety gate — genuinely broken output
+# (no frontmatter even after repair) keeps failing it.
+repair() {
+  awk '
+    { lines[NR] = $0 }
+    END {
+      start = 1
+      end = NR
+      # First and last non-blank lines.
+      first = 0; last = 0
+      for (i = 1; i <= NR; i++)
+        if (lines[i] ~ /[^ \t]/) { if (first == 0) first = i; last = i }
+      if (first == 0) exit            # all blank: leave the empty file to fail VALIDATE
+      # 1. Find a leading ``` (or ```markdown) fence OPENER: the fence line at
+      #    or just after any chatty preamble, but before the frontmatter fence.
+      opener = 0
+      for (i = first; i <= end; i++) {
+        if (lines[i] !~ /[^ \t]/) continue
+        if (lines[i] ~ /^---$/) break
+        if (lines[i] ~ /^[ \t]*```([Mm]arkdown)?[ \t]*$/) { opener = i; break }
+      }
+      # 2. If a fence opened, drop the opener and a matching trailing ``` closer.
+      if (opener > 0) {
+        start = opener + 1
+        if (lines[last] ~ /^[ \t]*```[ \t]*$/) end = last - 1
+      }
+      # 3. Drop any remaining preamble before the first frontmatter fence.
+      for (i = start; i <= end; i++) if (lines[i] ~ /^---$/) { start = i; break }
+      for (i = start; i <= end; i++) print lines[i]
+    }
+  ' "$tmp" > "$tmp.repaired"
+  mv "$tmp.repaired" "$tmp"
+}
+repair
 
 # ----- VALIDATE ---------------------------------------------------------------
 # Refuse to commit something that is not a calendar-day file (a model
