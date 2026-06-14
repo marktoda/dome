@@ -4,10 +4,15 @@
 // Triggered by `kind: answer` on dome.warden.integrity questions. The durable
 // answer already persists in answers.db and rehydrates on rebuild; this
 // handler exists so resolutions are routed and the open question settles. It
-// is a NORMAL (no-model) garden processor — it holds only `read`. For v1 it
-// emits an info diagnostic acknowledging the resolution, and emits nothing on
-// a malformed answer envelope. It never emits a FactEffect or a PatchEffect:
-// wardens are questions-only and the resolution itself is the durable record.
+// is a NORMAL (no-model) garden processor — it holds only `read`. It emits an
+// info diagnostic acknowledging the resolution, and emits nothing on a
+// malformed answer envelope. It never emits a FactEffect or a PatchEffect.
+//
+// This emit-info-only shape is TERMINAL by design, not a stub awaiting
+// follow-on repair: wardens are questions-only (the integrity check's value is
+// surfacing the question), and the owner's answer — durable in answers.db — is
+// itself the resolution. There is no auto-repair to build here; a fix, if
+// warranted, is an ordinary vault edit the owner/agent makes in response.
 
 import {
   diagnosticEffect,
