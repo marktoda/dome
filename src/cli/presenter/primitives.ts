@@ -138,6 +138,7 @@ export type Finding = {
   readonly subject?: string;
   readonly what: string;
   readonly note?: string;
+  readonly why?: string;
   readonly fix?: string;
 };
 
@@ -156,11 +157,13 @@ function findingLabeledLines(label: string, text: string, caps: Caps): string[] 
 
 /**
  * Render one diagnostic finding in the Rust/Elm anatomy: a severity-glyph +
- * code (+ optional subject) header, a plain-language `what` line, then an
- * optional dim `note` (why it matters) and `fix` (suggestion), each on its
- * own line. The full original message lives in `--json`.
+ * code (+ optional subject) header, a plain-language `what` line (always shown),
+ * then optional labeled lines. Under `verbose=false` (default) only `fix` appears;
+ * under `verbose=true` the `why` consequence line is inserted before `fix` for
+ * progressive disclosure. The legacy `note` field renders unconditionally when
+ * present (v1 compat). The full original message lives in `--json`.
  */
-export function finding(f: Finding, caps: Caps): ReadonlyArray<string> {
+export function finding(f: Finding, caps: Caps, verbose = false): ReadonlyArray<string> {
   const tone = severityTone(f.severity);
   const g = paint(statusGlyph(tone, caps), tone, caps);
   const code = paint(f.code, tone, caps);
@@ -172,6 +175,7 @@ export function finding(f: Finding, caps: Caps): ReadonlyArray<string> {
   const whatAvail = Math.max(8, caps.width - FINDING_INDENT.length);
   for (const line of wrap(f.what, whatAvail)) out.push(`${FINDING_INDENT}${line}`);
   if (f.note !== undefined) out.push(...findingLabeledLines("note", f.note, caps));
+  if (verbose && f.why !== undefined) out.push(...findingLabeledLines("why", f.why, caps));
   if (f.fix !== undefined) out.push(...findingLabeledLines("fix", f.fix, caps));
   return out;
 }

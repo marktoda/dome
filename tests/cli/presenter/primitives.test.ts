@@ -271,6 +271,26 @@ describe("finding", () => {
       "             three four",
     ]);
   });
+
+  test("finding hides why by default, shows it under verbose", () => {
+    const f: Finding = {
+      severity: "warning", code: "x.y", subject: "p",
+      what: "core.md declared read but missing from the grant",
+      why: "the core-size lint never fires — read scope is empty",
+      fix: "add core.md to the grant",
+    };
+    expect(finding(f, UNI)).toEqual([
+      "  ⚠ x.y · p",
+      "      core.md declared read but missing from the grant",
+      "      fix    add core.md to the grant",
+    ]);
+    expect(finding(f, UNI, true)).toEqual([
+      "  ⚠ x.y · p",
+      "      core.md declared read but missing from the grant",
+      "      why    the core-size lint never fires — read scope is empty",
+      "      fix    add core.md to the grant",
+    ]);
+  });
 });
 
 describe("match", () => {
