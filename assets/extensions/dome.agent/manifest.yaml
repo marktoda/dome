@@ -360,6 +360,28 @@ processors:
         namespaces: ["dome.agent.*"]
     module: processors/brief-index.ts
 
+  - id: dome.agent.calendar-index
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: signal
+        name: document.changed
+        pathPattern: "sources/calendar/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "sources/calendar/*.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "sources/calendar/*.md"
+    capabilities:
+      - kind: read
+        paths: ["sources/calendar/*.md"]
+      - kind: graph.write
+        namespaces: ["dome.agent.*"]
+    execution:
+      class: deterministic
+    module: processors/calendar-index.ts
+
   - id: dome.agent.active-projects
     version: 0.1.0
     phase: garden
