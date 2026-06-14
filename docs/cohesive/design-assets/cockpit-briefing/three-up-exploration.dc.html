@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/uniswap-design-system-b3ae1735-117f-4419-83ea-8acdca7c51e4/colors_and_type.css">
+<script src="_ds/uniswap-design-system-b3ae1735-117f-4419-83ea-8acdca7c51e4/_ds_bundle.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  .screen::-webkit-scrollbar { width: 0; height: 0; }
+  .reveal .src { opacity: 0; transition: opacity .14s ease; }
+  .reveal:hover .src { opacity: .55; }
+  details > summary { list-style: none; cursor: pointer; }
+  details > summary::-webkit-details-marker { display: none; }
+  details[open] .q-caret { transform: rotate(90deg); }
+  @keyframes domePulse { 0%,100% { opacity: .35; } 50% { opacity: 1; } }
+  @keyframes domeReconnect { 0%,100% { opacity: .4; } 50% { opacity: .9; } }
+</style>
+</helmet>
+
+<div class="dark" style="min-height:100vh;background:#0b0b0c;background-image:radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);background-size:24px 24px;color:#fff;font-family:var(--font-sans);font-weight:485;padding:60px 44px 140px;">
+<div style="max-width:1340px;margin:0 auto;">
+
+  <!-- ============ MASTHEAD ============ -->
+  <div style="display:flex;align-items:center;gap:11px;margin-bottom:18px;">
+    <span style="width:11px;height:11px;border-radius:9999px;background:#FF37C7;box-shadow:0 0 14px rgba(255,55,199,0.55);"></span>
+    <span style="font-size:21px;font-weight:535;letter-spacing:-0.01em;">Dome</span>
+    <span style="font-family:var(--font-mono);font-size:12px;color:rgba(255,255,255,0.38);">design spec · 2026-06-14</span>
+  </div>
+  <h1 style="font-size:46px;line-height:1.06;letter-spacing:-0.02em;font-weight:485;max-width:18ch;margin:0 0 16px;">One product, two media.</h1>
+  <p style="font-size:18px;line-height:1.55;color:rgba(255,255,255,0.65);max-width:62ch;margin:0;">The cockpit and the CLI show the same daily brief. They share one status vocabulary, one type system, and one rule about color — so moving between the terminal and the phone never feels like switching apps. Below: the shared language, three cockpit directions, the harmonized terminal, and the edge states where calm products win.</p>
+
+  <!-- ============ 01 · SHARED LANGUAGE ============ -->
+  <div style="margin-top:84px;display:flex;align-items:baseline;gap:14px;margin-bottom:8px;">
+    <span style="font-family:var(--font-mono);font-size:13px;color:rgba(255,255,255,0.38);">01</span>
+    <h2 style="font-size:24px;font-weight:485;letter-spacing:-0.01em;margin:0;">The shared status vocabulary</h2>
+  </div>
+  <p style="font-size:15px;color:rgba(255,255,255,0.5);max-width:64ch;margin:0 0 28px;">One meaning, two expressions. The terminal leads each line with a glyph (meaning never rides on color alone). The web mirrors it with a colored dot in the same position — the eye scans the same left edge in both media.</p>
+
+  <div style="background:#161616;border:1px solid rgba(255,255,255,0.08);border-radius:20px;overflow:hidden;max-width:860px;">
+    <div style="display:grid;grid-template-columns:1.1fr 0.9fr 0.9fr 2fr;gap:0;padding:13px 22px;border-bottom:1px solid rgba(255,255,255,0.08);font-family:var(--font-mono);font-size:11px;letter-spacing:0.04em;text-transform:uppercase;color:rgba(255,255,255,0.38);">
+      <span>state</span><span>terminal</span><span>web</span><span>when it appears</span>
+    </div>
+    <!-- rows -->
+    <div style="display:grid;grid-template-columns:1.1fr 0.9fr 0.9fr 2fr;align-items:center;padding:14px 22px;border-bottom:1px solid rgba(255,255,255,0.06);">
+      <span style="font-size:15px;">ok</span>
+      <span style="font-family:var(--font-mono);font-size:15px;color:#21C95E;">✓</span>
+      <span><span style="display:inline-block;width:9px;height:9px;border-radius:9999px;background:#21C95E;"></span></span>
+      <span style="font-size:14px;color:rgba(255,255,255,0.65);">a check passed · done · healthy</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1.1fr 0.9fr 0.9fr 2fr;align-items:center;padding:14px 22px;border-bottom:1px solid rgba(255,255,255,0.06);">
+      <span style="font-size:15px;">attention</span>
+      <span style="font-family:var(--font-mono);font-size:15px;color:#FFBF17;">⚠</span>
+      <span><span style="display:inline-block;width:9px;height:9px;border-radius:9999px;background:#FFBF17;"></span></span>
+      <span style="font-size:14px;color:rgba(255,255,255,0.65);">due today · pending · needs you soon</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1.1fr 0.9fr 0.9fr 2fr;align-items:center;padding:14px 22px;border-bottom:1px solid rgba(255,255,255,0.06);">
+      <span style="font-size:15px;">problem</span>
+      <span style="font-family:var(--font-mono);font-size:15px;color:#FF593C;">✗</span>
+      <span><span style="display:inline-block;width:9px;height:9px;border-radius:9999px;background:#FF593C;"></span></span>
+      <span style="font-size:14px;color:rgba(255,255,255,0.65);">overdue · error · broken link</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1.1fr 0.9fr 0.9fr 2fr;align-items:center;padding:14px 22px;border-bottom:1px solid rgba(255,255,255,0.06);">
+      <span style="font-size:15px;">info</span>
+      <span style="font-family:var(--font-mono);font-size:15px;color:rgba(255,255,255,0.55);">•</span>
+      <span><span style="display:inline-block;width:9px;height:9px;border-radius:9999px;background:rgba(255,255,255,0.5);"></span></span>
+      <span style="font-size:14px;color:rgba(255,255,255,0.65);">a neutral open item</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1.1fr 0.9fr 0.9fr 2fr;align-items:center;padding:14px 22px;border-bottom:1px solid rgba(255,255,255,0.06);">
+      <span style="font-size:15px;">empty</span>
+      <span style="font-family:var(--font-mono);font-size:15px;color:rgba(255,255,255,0.38);">○</span>
+      <span><span style="display:inline-block;width:9px;height:9px;border-radius:9999px;border:1.5px solid rgba(255,255,255,0.38);"></span></span>
+      <span style="font-size:14px;color:rgba(255,255,255,0.65);">nothing here · off · all-clear</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1.1fr 0.9fr 0.9fr 2fr;align-items:center;padding:14px 22px;border-bottom:1px solid rgba(255,255,255,0.06);">
+      <span style="font-size:15px;color:#FF37C7;">action</span>
+      <span style="font-family:var(--font-mono);font-size:15px;color:#FF37C7;">→</span>
+      <span style="color:#FF37C7;font-size:15px;">→</span>
+      <span style="font-size:14px;color:rgba(255,255,255,0.65);">the single next thing to do — the <span style="color:#FF37C7;">only</span> pink on screen</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1.1fr 0.9fr 0.9fr 2fr;align-items:center;padding:14px 22px;">
+      <span style="font-size:15px;">question</span>
+      <span style="font-family:var(--font-mono);font-size:15px;color:#3ADCFF;">?</span>
+      <span style="color:#3ADCFF;font-family:var(--font-mono);font-size:14px;">?</span>
+      <span style="font-size:14px;color:rgba(255,255,255,0.65);">Dome needs an answer from you</span>
+    </div>
+  </div>
+
+  <!-- type / color / spacing rules -->
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:18px;max-width:860px;margin-top:18px;">
+    <div style="background:#161616;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:18px 20px;">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.04em;text-transform:uppercase;color:rgba(255,255,255,0.38);margin-bottom:10px;">type</div>
+      <div style="font-size:14px;line-height:1.5;color:rgba(255,255,255,0.7);">Basel Grotesk for everything human. <span style="font-family:var(--font-mono);">InputMono</span> for source paths, commands &amp; the whole terminal — the mono is the visual thread between the two surfaces.</div>
+    </div>
+    <div style="background:#161616;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:18px 20px;">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.04em;text-transform:uppercase;color:rgba(255,255,255,0.38);margin-bottom:10px;">color</div>
+      <div style="font-size:14px;line-height:1.5;color:rgba(255,255,255,0.7);">Monochrome base + status colors only. Hot-pink <span style="color:#FF37C7;">#FF37C7</span> is reserved for the brand dot and the one next action — never decoration.</div>
+    </div>
+    <div style="background:#161616;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:18px 20px;">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.04em;text-transform:uppercase;color:rgba(255,255,255,0.38);margin-bottom:10px;">posture</div>
+      <div style="font-size:14px;line-height:1.5;color:rgba(255,255,255,0.7);">Verdict first, then collapse the calm. Healthy &amp; empty things shrink to one line. The same five words name items in both media: task · follow-up · question · meeting · reminder.</div>
+    </div>
+  </div>
+
+  <!-- ============ 02 · COCKPIT DIRECTIONS ============ -->
+  <div style="margin-top:96px;display:flex;align-items:baseline;gap:14px;margin-bottom:8px;">
+    <span style="font-family:var(--font-mono);font-size:13px;color:rgba(255,255,255,0.38);">02</span>
+    <h2 style="font-size:24px;font-weight:485;letter-spacing:-0.01em;margin:0;">The cockpit — three directions</h2>
+  </div>
+  <p style="font-size:15px;color:rgba(255,255,255,0.5);max-width:64ch;margin:0 0 36px;">Same brief, same vault data (2026-06-14). They differ on information architecture, density, and how much they lean on Dome's LLM synthesis versus pure structured data. Mix and match.</p>
+
+  <div style="display:flex;gap:48px;flex-wrap:wrap;align-items:flex-start;">
+
+    <!-- ===== DIRECTION A — SIGNAL LIST ===== -->
+    <div style="flex:0 0 auto;">
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px;">
+        <span style="font-family:var(--font-mono);font-size:12px;color:#FF37C7;">A</span>
+        <span style="font-size:16px;font-weight:535;">Signal list</span>
+      </div>
+      <p style="font-size:13px;color:rgba(255,255,255,0.45);max-width:36ch;margin:0 0 18px;line-height:1.45;">Sparsest. The CLI rendered for a phone — glyph-led lines, no prose, source on tap. For the user who already thinks in <span style="font-family:var(--font-mono);">dome today</span>.</p>
+      <!-- phone -->
+      <div style="width:372px;background:#000;border-radius:46px;padding:11px;box-shadow:0 34px 70px -24px rgba(0,0,0,0.85);">
+        <div class="screen" style="background:#131313;border-radius:36px;overflow:hidden;height:780px;display:flex;flex-direction:column;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:15px 26px 4px;font-family:var(--font-mono);font-size:12px;color:rgba(255,255,255,0.5);">
+            <span>9:41</span>
+            <span style="display:flex;align-items:center;gap:6px;"><span style="width:7px;height:7px;border-radius:9999px;background:#FF37C7;"></span>dome</span>
+          </div>
+          <div style="flex:1;overflow:auto;padding:18px 24px 26px;">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px;">
+              <span style="font-size:20px;letter-spacing:-0.01em;">Sat · Jun 14</span>
+              <span style="font-family:var(--font-mono);font-size:13px;color:#FF593C;">1 overdue · 5 open</span>
+            </div>
+            <!-- next action -->
+            <div style="display:flex;gap:10px;align-items:flex-start;padding:13px 14px;border:1px solid rgba(255,55,199,0.35);border-radius:14px;margin-bottom:24px;">
+              <span style="font-family:var(--font-mono);color:#FF37C7;font-size:15px;line-height:1.3;">→</span>
+              <span style="font-size:14px;line-height:1.35;color:#fff;">Decide Uniroute vs Guidestar vs MetaRouter <span style="color:#FF593C;">— overdue 4d</span></span>
+            </div>
+
+            <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.04em;text-transform:uppercase;color:rgba(255,255,255,0.35);margin-bottom:11px;">open</div>
+            <div style="display:flex;flex-direction:column;gap:13px;margin-bottom:24px;">
+              <div class="reveal" style="display:flex;gap:11px;align-items:flex-start;">
+                <span style="font-family:var(--font-mono);color:#FF593C;font-size:14px;">✗</span>
+                <div><div style="font-size:14px;line-height:1.4;">Uniroute vs Guidestar vs MetaRouter — decide w/ Cody + Hayden</div><div class="src" style="font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.55);margin-top:3px;">wiki/dailies/2026-06-14.md:53 · due Jun 10</div></div>
+              </div>
+              <div class="reveal" style="display:flex;gap:11px;align-items:flex-start;">
+                <span style="font-family:var(--font-mono);color:#FFBF17;font-size:14px;">⚠</span>
+                <div><div style="font-size:14px;line-height:1.4;">Eric “do you want this lane” before formalization</div><div class="src" style="font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.55);margin-top:3px;">wiki/dailies/2026-06-14.md:54 · due today</div></div>
+              </div>
+              <div class="reveal" style="display:flex;gap:11px;align-items:flex-start;">
+                <span style="font-family:var(--font-mono);color:rgba(255,255,255,0.5);font-size:14px;">•</span>
+                <div><div style="font-size:14px;line-height:1.4;">Siyu backstop reframing — K-budget gate + compliancev2</div><div class="src" style="font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.55);margin-top:3px;">wiki/dailies/2026-06-14.md:55</div></div>
+              </div>
+              <div class="reveal" style="display:flex;gap:11px;align-items:flex-start;">
+                <span style="font-family:var(--font-mono);color:rgba(255,255,255,0.5);font-size:14px;">•</span>
+                <div><div style="font-size:14px;line-height:1.4;">Add Linear Guidestar-launch checklist issue</div><div class="src" style="font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.55);margin-top:3px;">wiki/concepts/guidestar-launch-readiness.md</div></div>
+              </div>
+              <div class="reveal" style="display:flex;gap:11px;align-items:flex-start;">
+                <span style="font-family:var(--font-mono);color:rgba(255,255,255,0.5);font-size:14px;">•</span>
+                <div><div style="font-size:14px;line-height:1.4;">Routing-team verification discipline (30m)</div><div class="src" style="font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.55);margin-top:3px;">wiki/dailies/2026-06-14.md:57</div></div>
+              </div>
+            </div>
+
+            <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.04em;text-transform:uppercase;color:rgba(255,255,255,0.35);margin-bottom:11px;">needs you</div>
+            <details style="margin-bottom:24px;">
+              <summary style="display:flex;gap:11px;align-items:flex-start;">
+                <span style="font-family:var(--font-mono);color:#3ADCFF;font-size:14px;">?</span>
+                <div style="flex:1;"><div style="font-size:14px;line-height:1.4;">Is the K-budget admission gate a launch blocker for Guidestar?</div><div style="font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.4);margin-top:3px;">#7 · tap to resolve</div></div>
+              </summary>
+              <div style="margin:10px 0 0 25px;font-family:var(--font-mono);font-size:12px;color:rgba(255,255,255,0.8);background:#1F1F1F;border-radius:10px;padding:10px 12px;">dome resolve 7 <span style="color:rgba(255,255,255,0.45);">yes|no</span></div>
+            </details>
+
+            <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.04em;text-transform:uppercase;color:rgba(255,255,255,0.35);margin-bottom:11px;">today</div>
+            <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:24px;">
+              <div style="display:flex;gap:11px;align-items:baseline;"><span style="font-family:var(--font-mono);color:rgba(255,255,255,0.5);font-size:13px;">11:00</span><span style="font-size:14px;">Decision pre-read — focus block</span></div>
+              <div style="display:flex;gap:11px;align-items:baseline;"><span style="font-family:var(--font-mono);color:rgba(255,255,255,0.5);font-size:13px;">14:30</span><span style="font-size:14px;">Sync — Eric + Siyu</span></div>
+            </div>
+
+            <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.04em;text-transform:uppercase;color:rgba(255,255,255,0.35);margin-bottom:11px;">keeping in mind</div>
+            <div style="display:flex;flex-direction:column;gap:11px;">
+              <div style="display:flex;gap:11px;align-items:flex-start;"><span style="font-family:var(--font-mono);color:rgba(255,255,255,0.38);font-size:14px;">○</span><span style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.4;">Cody’s back Monday — the decision window closes today</span></div>
+              <div style="display:flex;gap:11px;align-items:flex-start;"><span style="font-family:var(--font-mono);color:rgba(255,255,255,0.38);font-size:14px;">○</span><span style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.4;">compliancev2 review unassigned (3d)</span></div>
+            </div>
+          </div>
+          <div style="padding:12px 24px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.4);">
+            <span style="width:6px;height:6px;border-radius:9999px;background:#21C95E;animation:domePulse 2.4s ease-in-out infinite;"></span>
+            updated 14s ago · refreshes every 15s
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== DIRECTION B — BRIEFING ===== -->
+    <div style="flex:0 0 auto;">
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px;">
+        <span style="font-family:var(--font-mono);font-size:12px;color:#FF37C7;">B</span>
+        <span style="font-size:16px;font-weight:535;">Briefing</span>
+      </div>
+      <p style="font-size:13px;color:rgba(255,255,255,0.45);max-width:36ch;margin:0 0 18px;line-height:1.45;">LLM-forward. A warm two-sentence read of the day up top, then structure underneath. Best first thing in the morning.</p>
+      <!-- phone -->
+      <div style="width:372px;background:#000;border-radius:46px;padding:11px;box-shadow:0 34px 70px -24px rgba(0,0,0,0.85);">
+        <div class="screen" style="background:#131313;border-radius:36px;overflow:hidden;height:780px;display:flex;flex-direction:column;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:15px 26px 4px;font-family:var(--font-mono);font-size:12px;color:rgba(255,255,255,0.5);">
+            <span>9:41</span>
+            <span style="display:flex;align-items:center;gap:6px;"><span style="width:7px;height:7px;border-radius:9999px;background:#FF37C7;"></span>dome</span>
+          </div>
+          <div style="flex:1;overflow:auto;padding:22px 24px 26px;">
+            <div style="font-family:var(--font-mono);font-size:12px;color:rgba(255,255,255,0.45);margin-bottom:5px;">Saturday · June 14</div>
+            <div style="font-size:25px;letter-spacing:-0.015em;line-height:1.1;margin-bottom:20px;">Good morning.</div>
+            <!-- LLM brief -->
+            <p style="font-size:16px;line-height:1.6;color:rgba(255,255,255,0.9);margin:0 0 18px;">Today comes down to one call: <span style="color:#fff;">Uniroute vs Guidestar vs MetaRouter</span>. It’s been open since Tuesday and Cody’s back Monday — so today’s your window to land it. Worth grabbing Eric and Siyu before you formalize. Two light things on the calendar, and one question from me.</p>
+            <!-- next action -->
+            <div style="display:flex;gap:10px;align-items:center;padding:12px 14px;border:1px solid rgba(255,55,199,0.35);border-radius:14px;margin-bottom:28px;">
+              <span style="font-family:var(--font-mono);color:#FF37C7;font-size:15px;">→</span>
+              <span style="font-size:14px;color:#fff;">Make the routing decision</span>
+              <span style="margin-left:auto;font-family:var(--font-mono);font-size:11px;color:#FF593C;">overdue 4d</span>
+            </div>
+
+            <div style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:14px;">On your calendar</div>
+            <div style="display:flex;flex-direction:column;gap:0;margin-bottom:28px;">
+              <div style="display:flex;gap:14px;align-items:flex-start;padding-bottom:16px;position:relative;">
+                <span style="font-family:var(--font-mono);font-size:13px;color:rgba(255,255,255,0.7);width:46px;flex:0 0 auto;">11:00</span>
+                <div style="border-left:1px solid rgba(255,255,255,0.12);padding-left:14px;flex:1;"><div style="font-size:14px;">Decision pre-read</div><div style="font-size:12px;color:rgba(255,255,255,0.45);margin-top:2px;">focus block · 1h</div></div>
+              </div>
+              <div style="display:flex;gap:14px;align-items:flex-start;">
+                <span style="font-family:var(--font-mono);font-size:13px;color:rgba(255,255,255,0.7);width:46px;flex:0 0 auto;">14:30</span>
+                <div style="border-left:1px solid rgba(255,255,255,0.12);padding-left:14px;flex:1;"><div style="font-size:14px;">Sync — Eric + Siyu</div><div style="font-size:12px;color:rgba(255,255,255,0.45);margin-top:2px;">Uniroute backstop · 30m</div></div>
+              </div>
+            </div>
+
+            <div style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:12px;">Dome needs you</div>
+            <details style="margin-bottom:28px;background:#1A1A1A;border-radius:14px;padding:14px 16px;">
+              <summary style="display:flex;gap:10px;align-items:flex-start;">
+                <span style="font-family:var(--font-mono);color:#3ADCFF;font-size:14px;">?</span>
+                <span style="flex:1;font-size:14px;line-height:1.4;">Is the K-budget admission gate a launch blocker for Guidestar?</span>
+                <span class="q-caret" style="font-family:var(--font-mono);color:rgba(255,255,255,0.4);font-size:13px;transition:transform .15s;">›</span>
+              </summary>
+              <div style="margin-top:12px;font-family:var(--font-mono);font-size:12px;color:rgba(255,255,255,0.8);background:#0d0d0d;border-radius:10px;padding:10px 12px;">dome resolve 7 <span style="color:rgba(255,255,255,0.45);">yes|no</span></div>
+            </details>
+
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;"><span style="font-size:13px;color:rgba(255,255,255,0.5);">Still open</span><span style="font-family:var(--font-mono);font-size:12px;color:rgba(255,255,255,0.35);">4</span></div>
+            <div style="display:flex;flex-direction:column;gap:11px;">
+              <div class="reveal" style="display:flex;gap:11px;align-items:flex-start;"><span style="font-family:var(--font-mono);color:#FFBF17;font-size:13px;">⚠</span><div style="flex:1;"><span style="font-size:14px;line-height:1.4;">Eric “do you want this lane” conversation</span><div class="src" style="font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.5);margin-top:2px;">2026-06-14.md:54 · due today</div></div></div>
+              <div class="reveal" style="display:flex;gap:11px;align-items:flex-start;"><span style="font-family:var(--font-mono);color:rgba(255,255,255,0.5);font-size:13px;">•</span><div style="flex:1;"><span style="font-size:14px;line-height:1.4;">Siyu backstop reframing conversation</span><div class="src" style="font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.5);margin-top:2px;">2026-06-14.md:55</div></div></div>
+              <div class="reveal" style="display:flex;gap:11px;align-items:flex-start;"><span style="font-family:var(--font-mono);color:rgba(255,255,255,0.5);font-size:13px;">•</span><div style="flex:1;"><span style="font-size:14px;line-height:1.4;">Add Linear Guidestar-launch checklist</span><div class="src" style="font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.5);margin-top:2px;">guidestar-launch-readiness.md</div></div></div>
+              <div class="reveal" style="display:flex;gap:11px;align-items:flex-start;"><span style="font-family:var(--font-mono);color:rgba(255,255,255,0.5);font-size:13px;">•</span><div style="flex:1;"><span style="font-size:14px;line-height:1.4;">Routing-team verification discipline (30m)</span><div class="src" style="font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.5);margin-top:2px;">2026-06-14.md:57</div></div></div>
+            </div>
+          </div>
+          <div style="padding:12px 24px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.4);">
+            <span style="width:6px;height:6px;border-radius:9999px;background:#21C95E;animation:domePulse 2.4s ease-in-out infinite;"></span>
+            updated 9s ago
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== DIRECTION C — BOARD (desktop) ===== -->
+    <div style="flex:1 1 560px;min-width:560px;">
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px;">
+        <span style="font-family:var(--font-mono);font-size:12px;color:#FF37C7;">C</span>
+        <span style="font-size:16px;font-weight:535;">Board</span>
+        <span style="font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.35);">second monitor</span>
+      </div>
+      <p style="font-size:13px;color:rgba(255,255,255,0.45);max-width:52ch;margin:0 0 18px;line-height:1.45;">Densest. Columns you can read across a room: what needs you, the day’s shape, what’s on your mind. One synthesis line at the top, structured data below.</p>
+      <!-- browser window -->
+      <div style="border-radius:16px;overflow:hidden;background:#0d0d0d;border:1px solid rgba(255,255,255,0.09);box-shadow:0 34px 70px -24px rgba(0,0,0,0.85);">
+        <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.07);">
+          <span style="width:11px;height:11px;border-radius:9999px;background:rgba(255,255,255,0.16);"></span>
+          <span style="width:11px;height:11px;border-radius:9999px;background:rgba(255,255,255,0.16);"></span>
+          <span style="width:11px;height:11px;border-radius:9999px;background:rgba(255,255,255,0.16);"></span>
+          <span style="margin-left:14px;font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.4);background:#1c1c1c;border-radius:8px;padding:5px 12px;">127.0.0.1:3663/today</span>
+        </div>
+        <div style="background:#131313;padding:26px 28px 30px;">
+          <!-- header -->
+          <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;">
+            <div>
+              <div style="font-family:var(--font-mono);font-size:12px;color:rgba(255,255,255,0.45);margin-bottom:4px;">Saturday · June 14</div>
+              <div style="font-size:26px;letter-spacing:-0.015em;">Here’s your day</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px;font-family:var(--font-mono);font-size:12px;">
+              <span style="color:#FF593C;">✗ 1 overdue</span>
+              <span style="color:rgba(255,255,255,0.6);">• 5 open</span>
+              <span style="color:#3ADCFF;">? 1</span>
+              <span style="color:rgba(255,255,255,0.6);">2 events</span>
+              <span style="display:flex;align-items:center;gap:6px;color:rgba(255,255,255,0.4);"><span style="width:6px;height:6px;border-radius:9999px;background:#21C95E;animation:domePulse 2.4s ease-in-out infinite;"></span>12s</span>
+            </div>
+          </div>
+          <!-- synthesis line -->
+          <p style="font-size:15px;line-height:1.5;color:rgba(255,255,255,0.7);margin:0 0 22px;max-width:88ch;">It’s really one decision today — Uniroute vs Guidestar vs MetaRouter, open since Tuesday and now overdue. Cody’s back Monday, so land it today and loop Eric + Siyu first.</p>
+
+          <div style="display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:18px;">
+            <!-- col 1 needs you -->
+            <div style="background:#1A1A1A;border-radius:18px;padding:20px;">
+              <div style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:16px;">Needs you now</div>
+              <div style="display:flex;gap:11px;align-items:flex-start;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,0.07);">
+                <span style="font-family:var(--font-mono);color:#FF593C;font-size:15px;">✗</span>
+                <div><div style="font-size:15px;line-height:1.35;">Decide Uniroute vs Guidestar vs MetaRouter</div><div style="font-size:12px;color:rgba(255,255,255,0.45);margin-top:4px;">with Cody + Hayden · <span style="color:#FF593C;">overdue 4d</span></div></div>
+              </div>
+              <div style="display:flex;gap:11px;align-items:flex-start;margin-bottom:16px;">
+                <span style="font-family:var(--font-mono);color:#FFBF17;font-size:15px;">⚠</span>
+                <div><div style="font-size:14px;line-height:1.35;">Eric “do you want this lane” talk</div><div style="font-size:12px;color:rgba(255,255,255,0.45);margin-top:4px;">before formalization · due today</div></div>
+              </div>
+              <details style="background:#0d0d0d;border-radius:12px;padding:13px 14px;">
+                <summary style="display:flex;gap:10px;align-items:flex-start;">
+                  <span style="font-family:var(--font-mono);color:#3ADCFF;font-size:14px;">?</span>
+                  <span style="flex:1;font-size:13px;line-height:1.4;">Is the K-budget gate a launch blocker for Guidestar?</span>
+                  <span class="q-caret" style="font-family:var(--font-mono);color:rgba(255,255,255,0.4);transition:transform .15s;">›</span>
+                </summary>
+                <div style="margin-top:10px;font-family:var(--font-mono);font-size:12px;color:rgba(255,255,255,0.8);">dome resolve 7 <span style="color:rgba(255,255,255,0.45);">yes|no</span></div>
+              </details>
+            </div>
+            <!-- col 2 today -->
+            <div style="background:#1A1A1A;border-radius:18px;padding:20px;">
+              <div style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:16px;">Today</div>
+              <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:16px;">
+                <span style="font-family:var(--font-mono);font-size:12px;color:rgba(255,255,255,0.6);width:42px;flex:0 0 auto;">11:00</span>
+                <div style="border-left:1px solid rgba(255,255,255,0.12);padding-left:12px;"><div style="font-size:13px;">Decision pre-read</div><div style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:2px;">focus · 1h</div></div>
+              </div>
+              <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:18px;">
+                <span style="font-family:var(--font-mono);font-size:12px;color:rgba(255,255,255,0.6);width:42px;flex:0 0 auto;">14:30</span>
+                <div style="border-left:1px solid rgba(255,255,255,0.12);padding-left:12px;"><div style="font-size:13px;">Sync — Eric + Siyu</div><div style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:2px;">backstop · 30m</div></div>
+              </div>
+              <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:9px;">due today</div>
+              <div style="display:flex;gap:9px;align-items:center;"><span style="font-family:var(--font-mono);color:#FFBF17;font-size:12px;">⚠</span><span style="font-size:13px;color:rgba(255,255,255,0.8);">Eric lane conversation</span></div>
+            </div>
+            <!-- col 3 top of mind -->
+            <div style="background:#1A1A1A;border-radius:18px;padding:20px;">
+              <div style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:16px;">Top of mind</div>
+              <div style="display:flex;flex-direction:column;gap:9px;margin-bottom:18px;">
+                <span style="font-size:13px;color:rgba(255,255,255,0.85);">Uniroute: backstop vs primary</span>
+                <span style="font-size:13px;color:rgba(255,255,255,0.85);">Guidestar launch readiness</span>
+                <span style="font-size:13px;color:rgba(255,255,255,0.85);">Verification discipline</span>
+              </div>
+              <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:10px;">reminders</div>
+              <div style="display:flex;flex-direction:column;gap:10px;">
+                <div style="display:flex;gap:9px;align-items:flex-start;"><span style="font-family:var(--font-mono);color:rgba(255,255,255,0.38);font-size:12px;">○</span><span style="font-size:12px;color:rgba(255,255,255,0.7);line-height:1.4;">Cody back Monday — window closes today</span></div>
+                <div style="display:flex;gap:9px;align-items:flex-start;"><span style="font-family:var(--font-mono);color:rgba(255,255,255,0.38);font-size:12px;">○</span><span style="font-size:12px;color:rgba(255,255,255,0.7);line-height:1.4;">compliancev2 review unassigned (3d)</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============ 03 · CLI ============ -->
+  <div style="margin-top:96px;display:flex;align-items:baseline;gap:14px;margin-bottom:8px;">
+    <span style="font-family:var(--font-mono);font-size:13px;color:rgba(255,255,255,0.38);">03</span>
+    <h2 style="font-size:24px;font-weight:485;letter-spacing:-0.01em;margin:0;">The CLI — same brief, harmonized</h2>
+  </div>
+  <p style="font-size:15px;color:rgba(255,255,255,0.5);max-width:64ch;margin:0 0 32px;">The signal-first system, validated and tightened. Verdict on line one, the one <span style="color:#FF37C7;">→ action</span> near the top, healthy things collapsed, <span style="font-family:var(--font-mono);">--verbose</span> for the rest. Same glyphs, same colors, same five item names as the web.</p>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:1100px;">
+
+    <!-- dome today -->
+    <div style="border-radius:14px;overflow:hidden;background:#0c0c0d;border:1px solid rgba(255,255,255,0.08);box-shadow:0 20px 44px -22px rgba(0,0,0,0.8);">
+      <div style="display:flex;align-items:center;gap:7px;padding:11px 15px;border-bottom:1px solid rgba(255,255,255,0.06);">
+        <span style="width:10px;height:10px;border-radius:9999px;background:rgba(255,255,255,0.14);"></span><span style="width:10px;height:10px;border-radius:9999px;background:rgba(255,255,255,0.14);"></span><span style="width:10px;height:10px;border-radius:9999px;background:rgba(255,255,255,0.14);"></span>
+        <span style="margin-left:10px;font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.35);">dome today</span>
+      </div>
+      <pre style="font-family:var(--font-mono);font-size:12.5px;line-height:1.75;margin:0;padding:18px 20px;color:rgba(255,255,255,0.82);white-space:pre-wrap;"><span style="color:rgba(255,255,255,0.55);">dome today · work</span>                  <span style="color:#FF593C;">✗ 1 overdue · 5 open</span>
+
+  <span style="color:#FF37C7;">→ dome decide uniroute</span>   strategic call due 4d ago
+
+  <span style="color:rgba(255,255,255,0.45);">today  Sat Jun 14 · 2 events, both light</span>
+
+  <span style="color:#FF593C;">✗</span> overdue   Uniroute vs Guidestar — decide w/ Cody
+  <span style="color:#FFBF17;">⚠</span> today     Eric “do you want this lane” talk
+  <span style="color:rgba(255,255,255,0.55);">•</span> open      Siyu reframing · Guidestar checklist · +1
+  <span style="color:#3ADCFF;">?</span> ask       <span style="color:rgba(255,255,255,0.55);">#7</span> K-budget gate a blocker?  <span style="color:rgba(255,255,255,0.5);">dome resolve 7</span>
+
+  <span style="color:#21C95E;">✓</span> everything else clear
+
+  <span style="color:rgba(255,255,255,0.4);">--verbose for full brief + sources</span></pre>
+    </div>
+
+    <!-- dome status -->
+    <div style="border-radius:14px;overflow:hidden;background:#0c0c0d;border:1px solid rgba(255,255,255,0.08);box-shadow:0 20px 44px -22px rgba(0,0,0,0.8);">
+      <div style="display:flex;align-items:center;gap:7px;padding:11px 15px;border-bottom:1px solid rgba(255,255,255,0.06);">
+        <span style="width:10px;height:10px;border-radius:9999px;background:rgba(255,255,255,0.14);"></span><span style="width:10px;height:10px;border-radius:9999px;background:rgba(255,255,255,0.14);"></span><span style="width:10px;height:10px;border-radius:9999px;background:rgba(255,255,255,0.14);"></span>
+        <span style="margin-left:10px;font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.35);">dome status</span>
+      </div>
+      <pre style="font-family:var(--font-mono);font-size:12.5px;line-height:1.75;margin:0;padding:18px 20px;color:rgba(255,255,255,0.82);white-space:pre-wrap;"><span style="color:rgba(255,255,255,0.55);">dome status · work</span>                <span style="color:#FFBF17;">⚠ 2 need attention</span>
+
+  <span style="color:#FF37C7;">→ dome sync</span>   adopt 45 pending · rebuild projection
+
+  <span style="color:#FFBF17;">⚠</span> sync        45 pending, synced 11h ago
+  <span style="color:#FFBF17;">⚠</span> projection  stale (cache drift)
+  <span style="color:#21C95E;">✓</span> everything else clean
+
+  <span style="color:rgba(255,255,255,0.4);">--verbose for full vault + engine</span></pre>
+    </div>
+
+    <!-- dome check (finding) -->
+    <div style="border-radius:14px;overflow:hidden;background:#0c0c0d;border:1px solid rgba(255,255,255,0.08);box-shadow:0 20px 44px -22px rgba(0,0,0,0.8);">
+      <div style="display:flex;align-items:center;gap:7px;padding:11px 15px;border-bottom:1px solid rgba(255,255,255,0.06);">
+        <span style="width:10px;height:10px;border-radius:9999px;background:rgba(255,255,255,0.14);"></span><span style="width:10px;height:10px;border-radius:9999px;background:rgba(255,255,255,0.14);"></span><span style="width:10px;height:10px;border-radius:9999px;background:rgba(255,255,255,0.14);"></span>
+        <span style="margin-left:10px;font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.35);">dome check</span>
+      </div>
+      <pre style="font-family:var(--font-mono);font-size:12.5px;line-height:1.75;margin:0;padding:18px 20px;color:rgba(255,255,255,0.82);white-space:pre-wrap;"><span style="color:rgba(255,255,255,0.55);">dome check · work</span>                 <span style="color:#FFBF17;">⚠ 1 finding</span>
+
+  <span style="color:#FFBF17;">⚠ DOME-204</span>  unresolved link   <span style="color:rgba(255,255,255,0.5);">2026-06-14.md:55</span>
+     “[[wiki/entities/siyu]]” points to a note
+     that doesn’t exist yet
+     <span style="color:#21C95E;">fix:</span> dome new wiki/entities/siyu
+
+  <span style="color:#21C95E;">✓</span> 1,204 files · 0 errors · else clean
+
+  <span style="color:rgba(255,255,255,0.4);">--verbose for why this matters</span></pre>
+    </div>
+
+    <!-- dome today all clear -->
+    <div style="border-radius:14px;overflow:hidden;background:#0c0c0d;border:1px solid rgba(255,255,255,0.08);box-shadow:0 20px 44px -22px rgba(0,0,0,0.8);">
+      <div style="display:flex;align-items:center;gap:7px;padding:11px 15px;border-bottom:1px solid rgba(255,255,255,0.06);">
+        <span style="width:10px;height:10px;border-radius:9999px;background:rgba(255,255,255,0.14);"></span><span style="width:10px;height:10px;border-radius:9999px;background:rgba(255,255,255,0.14);"></span><span style="width:10px;height:10px;border-radius:9999px;background:rgba(255,255,255,0.14);"></span>
+        <span style="margin-left:10px;font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.35);">dome today · all clear</span>
+      </div>
+      <pre style="font-family:var(--font-mono);font-size:12.5px;line-height:1.75;margin:0;padding:18px 20px;color:rgba(255,255,255,0.82);white-space:pre-wrap;"><span style="color:rgba(255,255,255,0.55);">dome today · work</span>                       <span style="color:#21C95E;">✓ all clear</span>
+
+  <span style="color:rgba(255,255,255,0.38);">○</span> nothing open · inbox empty
+  <span style="color:rgba(255,255,255,0.38);">○</span> last commit 2h ago
+
+  <span style="color:rgba(255,255,255,0.4);">you’re clear. go make something.</span></pre>
+    </div>
+
+  </div>
+
+  <!-- ============ 04 · EDGE STATES ============ -->
+  <div style="margin-top:96px;display:flex;align-items:baseline;gap:14px;margin-bottom:8px;">
+    <span style="font-family:var(--font-mono);font-size:13px;color:rgba(255,255,255,0.38);">04</span>
+    <h2 style="font-size:24px;font-weight:485;letter-spacing:-0.01em;margin:0;">Edge states</h2>
+  </div>
+  <p style="font-size:15px;color:rgba(255,255,255,0.5);max-width:64ch;margin:0 0 36px;">Where a calm product is won or lost. Shown on the Briefing direction (B).</p>
+
+  <div style="display:flex;gap:36px;flex-wrap:wrap;align-items:flex-start;">
+
+    <!-- all clear -->
+    <div>
+      <div style="font-size:14px;font-weight:535;margin-bottom:3px;">All clear</div>
+      <p style="font-size:12px;color:rgba(255,255,255,0.42);max-width:30ch;margin:0 0 14px;line-height:1.4;">A frequent, welcome state — not an error. Quiet, no pink, room to breathe.</p>
+      <div style="width:300px;background:#000;border-radius:42px;padding:9px;box-shadow:0 30px 60px -24px rgba(0,0,0,0.85);">
+        <div style="background:#131313;border-radius:34px;overflow:hidden;height:600px;display:flex;flex-direction:column;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 22px 4px;font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.5);"><span>9:41</span><span style="display:flex;align-items:center;gap:5px;"><span style="width:6px;height:6px;border-radius:9999px;background:#FF37C7;"></span>dome</span></div>
+          <div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;padding:0 28px;">
+            <div style="font-family:var(--font-mono);font-size:12px;color:rgba(255,255,255,0.45);margin-bottom:10px;">Saturday · June 14</div>
+            <div style="font-size:30px;letter-spacing:-0.02em;line-height:1.08;margin-bottom:16px;">You’re clear.</div>
+            <p style="font-size:15px;line-height:1.55;color:rgba(255,255,255,0.6);margin:0;">Nothing open, no questions, inbox empty. Last note 2 hours ago — go make something.</p>
+            <div style="display:flex;align-items:center;gap:9px;margin-top:24px;"><span style="font-family:var(--font-mono);color:#21C95E;font-size:14px;">✓</span><span style="font-size:13px;color:rgba(255,255,255,0.7);">vault healthy</span></div>
+          </div>
+          <div style="padding:12px 22px;display:flex;align-items:center;gap:7px;font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.35);"><span style="width:5px;height:5px;border-radius:9999px;background:#21C95E;animation:domePulse 2.4s ease-in-out infinite;"></span>updated 4s ago</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- single item -->
+    <div>
+      <div style="font-size:14px;font-weight:535;margin-bottom:3px;">A single item</div>
+      <p style="font-size:12px;color:rgba(255,255,255,0.42);max-width:30ch;margin:0 0 14px;line-height:1.4;">One thing, lots of air. The next action is the whole screen.</p>
+      <div style="width:300px;background:#000;border-radius:42px;padding:9px;box-shadow:0 30px 60px -24px rgba(0,0,0,0.85);">
+        <div style="background:#131313;border-radius:34px;overflow:hidden;height:600px;display:flex;flex-direction:column;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 22px 4px;font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.5);"><span>9:41</span><span style="display:flex;align-items:center;gap:5px;"><span style="width:6px;height:6px;border-radius:9999px;background:#FF37C7;"></span>dome</span></div>
+          <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 26px;">
+            <div style="font-family:var(--font-mono);font-size:12px;color:rgba(255,255,255,0.45);margin-bottom:6px;">Saturday · June 14</div>
+            <div style="font-size:15px;color:rgba(255,255,255,0.6);margin-bottom:26px;">Just one thing today.</div>
+            <div style="display:flex;gap:11px;align-items:flex-start;padding:16px;border:1px solid rgba(255,55,199,0.35);border-radius:16px;">
+              <span style="font-family:var(--font-mono);color:#FF37C7;font-size:15px;">→</span>
+              <div><div style="font-size:16px;line-height:1.35;">Reply to the vendor about pricing</div><div style="font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.5);margin-top:6px;">inbox/raw/2026-06-13-vendor.md</div></div>
+            </div>
+          </div>
+          <div style="padding:12px 22px;display:flex;align-items:center;gap:7px;font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.35);"><span style="width:5px;height:5px;border-radius:9999px;background:#21C95E;animation:domePulse 2.4s ease-in-out infinite;"></span>updated 11s ago</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- long list -->
+    <div>
+      <div style="font-size:14px;font-weight:535;margin-bottom:3px;">A long list</div>
+      <p style="font-size:12px;color:rgba(255,255,255,0.42);max-width:30ch;margin:0 0 14px;line-height:1.4;">Grouped by urgency; the far future collapses to a count. Never a wall.</p>
+      <div style="width:300px;background:#000;border-radius:42px;padding:9px;box-shadow:0 30px 60px -24px rgba(0,0,0,0.85);">
+        <div class="screen" style="background:#131313;border-radius:34px;overflow:hidden;height:600px;display:flex;flex-direction:column;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 22px 4px;font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.5);"><span>9:41</span><span style="display:flex;align-items:center;gap:5px;"><span style="width:6px;height:6px;border-radius:9999px;background:#FF37C7;"></span>dome</span></div>
+          <div style="flex:1;overflow:auto;padding:18px 22px 22px;">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px;"><span style="font-size:18px;">Sat · Jun 14</span><span style="font-family:var(--font-mono);font-size:12px;color:#FF593C;">23 open</span></div>
+            <div style="font-family:var(--font-mono);font-size:11px;color:#FF593C;margin-bottom:10px;">overdue · 2</div>
+            <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
+              <div style="display:flex;gap:10px;"><span style="font-family:var(--font-mono);color:#FF593C;font-size:13px;">✗</span><span style="font-size:13px;line-height:1.35;">Routing decision w/ Cody + Hayden</span></div>
+              <div style="display:flex;gap:10px;"><span style="font-family:var(--font-mono);color:#FF593C;font-size:13px;">✗</span><span style="font-size:13px;line-height:1.35;">Sign the MetaRouter SOW</span></div>
+            </div>
+            <div style="font-family:var(--font-mono);font-size:11px;color:#FFBF17;margin-bottom:10px;">today · 3</div>
+            <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
+              <div style="display:flex;gap:10px;"><span style="font-family:var(--font-mono);color:#FFBF17;font-size:13px;">⚠</span><span style="font-size:13px;line-height:1.35;">Eric lane conversation</span></div>
+              <div style="display:flex;gap:10px;"><span style="font-family:var(--font-mono);color:#FFBF17;font-size:13px;">⚠</span><span style="font-size:13px;line-height:1.35;">Guidestar checklist issue</span></div>
+              <div style="display:flex;gap:10px;"><span style="font-family:var(--font-mono);color:#FFBF17;font-size:13px;">⚠</span><span style="font-size:13px;line-height:1.35;">Siyu backstop reframing</span></div>
+            </div>
+            <div style="font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:10px;">this week · 4</div>
+            <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px;">
+              <div style="display:flex;gap:10px;"><span style="font-family:var(--font-mono);color:rgba(255,255,255,0.5);font-size:13px;">•</span><span style="font-size:13px;line-height:1.35;">Verification discipline writeup</span></div>
+              <div style="display:flex;gap:10px;"><span style="font-family:var(--font-mono);color:rgba(255,255,255,0.5);font-size:13px;">•</span><span style="font-size:13px;line-height:1.35;">compliancev2 review owner</span></div>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;padding:11px 12px;background:#1A1A1A;border-radius:12px;"><span style="font-family:var(--font-mono);color:rgba(255,255,255,0.4);font-size:13px;">+</span><span style="font-size:13px;color:rgba(255,255,255,0.6);">14 more, later this month</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- stale -->
+    <div>
+      <div style="font-size:14px;font-weight:535;margin-bottom:3px;">Stale / reconnecting</div>
+      <p style="font-size:12px;color:rgba(255,255,255,0.42);max-width:30ch;margin:0 0 14px;line-height:1.4;">Content dims and holds; a yellow line owns the moment. Last-known stays readable.</p>
+      <div style="width:300px;background:#000;border-radius:42px;padding:9px;box-shadow:0 30px 60px -24px rgba(0,0,0,0.85);">
+        <div style="background:#131313;border-radius:34px;overflow:hidden;height:600px;display:flex;flex-direction:column;position:relative;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 22px 4px;font-family:var(--font-mono);font-size:11px;color:rgba(255,255,255,0.5);"><span>9:41</span><span style="display:flex;align-items:center;gap:5px;"><span style="width:6px;height:6px;border-radius:9999px;background:#FF37C7;"></span>dome</span></div>
+          <div style="display:flex;align-items:center;gap:9px;margin:8px 22px 0;padding:10px 13px;background:rgba(255,191,23,0.1);border-radius:11px;">
+            <span style="width:7px;height:7px;border-radius:9999px;background:#FFBF17;animation:domeReconnect 1.1s ease-in-out infinite;"></span>
+            <span style="font-family:var(--font-mono);font-size:11px;color:#FFBF17;">reconnecting… last updated 2m ago</span>
+          </div>
+          <div style="flex:1;overflow:hidden;padding:20px 24px;opacity:0.4;">
+            <div style="font-size:18px;margin-bottom:16px;">Sat · Jun 14</div>
+            <p style="font-size:15px;line-height:1.6;color:rgba(255,255,255,0.9);margin:0 0 18px;">Today comes down to one call: Uniroute vs Guidestar vs MetaRouter…</p>
+            <div style="display:flex;gap:10px;margin-bottom:13px;"><span style="font-family:var(--font-mono);color:#FF593C;font-size:13px;">✗</span><span style="font-size:14px;">Routing decision w/ Cody</span></div>
+            <div style="display:flex;gap:10px;margin-bottom:13px;"><span style="font-family:var(--font-mono);color:#FFBF17;font-size:13px;">⚠</span><span style="font-size:14px;">Eric lane conversation</span></div>
+            <div style="display:flex;gap:10px;"><span style="font-family:var(--font-mono);color:rgba(255,255,255,0.5);font-size:13px;">•</span><span style="font-size:14px;">Siyu backstop reframing</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+</div>
+</x-dc>
+</body>
+</html>
