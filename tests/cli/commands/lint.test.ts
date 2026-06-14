@@ -81,38 +81,31 @@ const DIRTY_DATA: LintData = parseLintData({
 });
 
 describe("renderLintText (no-color caps)", () => {
-  test("breakdown contains every severity term even when all zero", () => {
+  // ── default (non-verbose) ──────────────────────────────────────────────────
+
+  test("pass is a single non-blank line (verdict only)", () => {
     const out = renderLintText(CLEAN_DATA, "/vault/path");
-    expect(out).toContain("0 total");
-    expect(out).toContain("0 block");
-    expect(out).toContain("0 error");
-    expect(out).toContain("0 warning");
-    expect(out).toContain("0 info");
+    const nonBlank = out.split("\n").filter((l) => l.trim().length > 0);
+    expect(nonBlank.length).toBe(1);
+    expect(out).toMatch(/pass — \d+ files, no issues/);
+    expect(out).not.toContain("CHECKED");
+    expect(out).not.toContain("ISSUES");
+    expect(out).not.toMatch(/[-─]{10,}/);
   });
 
-  test("empty Issues section shows 'none'", () => {
-    const out = renderLintText(CLEAN_DATA, "/vault/path");
-    expect(out).toContain("none");
-  });
-
-  test("breakdown contains non-zero counts when issues exist", () => {
+  test("issues default: no ISSUES/CHECKED section headers, no footer rule", () => {
     const out = renderLintText(DIRTY_DATA, "/vault/path");
-    expect(out).toContain("2 total");
-    expect(out).toContain("1 warning");
-    expect(out).toContain("1 info");
-    expect(out).toContain("0 block");
-    expect(out).toContain("0 error");
+    expect(out).not.toMatch(/^\s+ISSUES\s*$/m);
+    expect(out).not.toMatch(/^\s+CHECKED\s*$/m);
+    expect(out).not.toMatch(/[-─]{10,}/);
   });
 
-  test("issues render in finding anatomy: code header and what line", () => {
+  test("issues default: findings rendered directly (codes + messages present)", () => {
     const out = renderLintText(DIRTY_DATA, "/vault/path");
-    // finding primitive emits the code on the header line
     expect(out).toContain("dome.markdown.orphan");
     expect(out).toContain("dome.markdown.broken-wikilink");
-    // what lines — the messages
     expect(out).toContain("Page has no inbound links.");
     expect(out).toContain("Wikilink [[foo]] does not resolve.");
-    // subject — the file path from sourceRefs[0]
     expect(out).toContain("wiki/orphan.md");
     expect(out).toContain("wiki/notes.md");
   });
@@ -128,5 +121,40 @@ describe("renderLintText (no-color caps)", () => {
     const out = renderLintText(DIRTY_DATA, "/vault/path");
     expect(out).not.toMatch(/\[warning\]/);
     expect(out).not.toMatch(/\[info\]/);
+  });
+
+  // ── verbose ────────────────────────────────────────────────────────────────
+
+  test("verbose pass: CHECKED section with breakdown present", () => {
+    const out = renderLintText(CLEAN_DATA, "/vault/path", true);
+    expect(out).toContain("CHECKED");
+    expect(out).toContain("0 total");
+    expect(out).toContain("0 block");
+    expect(out).toContain("0 error");
+    expect(out).toContain("0 warning");
+    expect(out).toContain("0 info");
+  });
+
+  test("verbose pass: no footer rule", () => {
+    const out = renderLintText(CLEAN_DATA, "/vault/path", true);
+    expect(out).not.toMatch(/[-─]{10,}/);
+  });
+
+  test("verbose issues: CHECKED section present with breakdown", () => {
+    const out = renderLintText(DIRTY_DATA, "/vault/path", true);
+    expect(out).toContain("CHECKED");
+    expect(out).toContain("2 total");
+    expect(out).toContain("1 warning");
+    expect(out).toContain("1 info");
+    expect(out).toContain("0 block");
+    expect(out).toContain("0 error");
+  });
+
+  test("verbose issues: findings still rendered (codes + messages)", () => {
+    const out = renderLintText(DIRTY_DATA, "/vault/path", true);
+    expect(out).toContain("dome.markdown.orphan");
+    expect(out).toContain("dome.markdown.broken-wikilink");
+    expect(out).toContain("Page has no inbound links.");
+    expect(out).toContain("Wikilink [[foo]] does not resolve.");
   });
 });
