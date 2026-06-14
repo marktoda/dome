@@ -349,3 +349,29 @@ Laptop-first setup (replaces §1–5 for now):
 4. Accepted costs while laptop-first: phone capture is eventually-consistent
    (iCloud queue drained when the laptop wakes) rather than instant when the
    laptop sleeps; remote MCP / voice Q&A deferred.
+
+## Half B — operational cleanup (executed 2026-06-14)
+
+One-time live-vault cleanup + the WS5 fetch correction it surfaced.
+
+- **Verified Half A landed:** duplicate-detection/claims.index timeouts took (zero
+  post-restart timeouts); `dome.intake` orphan counter GC'd. The `run.recurring-timeout`
+  findings are pre-restart history decaying out of the window (revealed the old 10s cap
+  had stressed ~8 processors on this 786-page vault — evidence for the held
+  incremental-scan follow-up; nothing timing out now).
+- **Outbox drained:** 2 stale calendar rows abandoned, today's retried (proved the
+  fence-repair fix end-to-end via the daemon), 2 orphan runs failed. `outbox.recurring-failure`
+  + `run.orphan` findings cleared.
+- **Calendar fetch root cause = WS5 connector finding:** the daemon's headless `claude -p`
+  can't complete claude.ai connector MCP calls (connectors are interactive-session-bound;
+  researched + reproduced). It landed a misleading empty calendar. **Decision: calendar +
+  Slack are FOREGROUND rituals** (sources.md §"Connector-backed fetch is foreground-only").
+  Calendar subscription disabled in this vault; the empty file removed. Daemon composes
+  vault-state; live calendar/Slack come from the morning foreground Claude session.
+- **raw/-immutable re-fire:** resolved on its own (0 denials since restart — the triggering
+  content settled).
+- **PATH (Task 4):** moot — the only daemon-spawned `claude` was the calendar fetch, now
+  disabled; nothing the daemon runs needs `claude` on PATH.
+
+Owner items still open (phone-capture, not cleanup): Tailscale on → rebind the http
+listener; build the iOS Shortcut. (Slack OAuth no longer needed — Slack is foreground.)
