@@ -23,14 +23,13 @@ import {
   frontmatterEndLine,
   isValidatableMarkdownPath,
   addWikilinkStubRequest,
-  renderWikilinkStubPage,
+  orderedWikilinkStubRequests,
   stubCandidateForWikilinkTarget,
   wikilinkReplacementText,
+  wikilinkStubWrite,
   type WikilinkReplacement,
   type WikilinkStubRequest,
 } from "./wikilinks";
-
-import { compareStrings } from "../../../../src/core/compare";
 
 const MAX_REPAIRED_FILES_PER_RUN = 200;
 
@@ -113,17 +112,8 @@ const repairWikilinks = defineProcessorImplementation({
     }
 
     const hasStubChanges = stubRequests.size > 0;
-    for (const request of [...stubRequests.values()].sort((a, b) =>
-      compareStrings(a.candidate.path, b.candidate.path)
-    )) {
-      changes.push({
-        kind: "write",
-        path: request.candidate.path,
-        content: renderWikilinkStubPage({
-          candidate: request.candidate,
-          sourcePaths: request.sourcePaths,
-        }),
-      });
+    for (const request of orderedWikilinkStubRequests(stubRequests)) {
+      changes.push(wikilinkStubWrite(request));
       sourceRefs.push(...request.sourceRefs);
     }
 

@@ -57,15 +57,14 @@ import {
   frontmatterEndLine,
   isValidatableMarkdownPath,
   addWikilinkStubRequest,
-  renderWikilinkStubPage,
+  orderedWikilinkStubRequests,
   stubCandidateForWikilinkTarget,
   wikilinkFragmentSuffix,
   wikilinkReplacementText,
+  wikilinkStubWrite,
   type WikilinkStubRequest,
   type WikilinkReplacement,
 } from "./wikilinks";
-
-import { compareStrings } from "../../../../src/core/compare";
 
 // ----- Processor ------------------------------------------------------------
 
@@ -244,19 +243,10 @@ function wikilinkOption(candidate: string, rawTarget: string): string {
 function stubPatchEffect(
   requests: ReadonlyMap<string, WikilinkStubRequest<SourceRef>>,
 ): Effect {
-  const ordered = [...requests.values()].sort((a, b) =>
-    compareStrings(a.candidate.path, b.candidate.path)
-  );
+  const ordered = orderedWikilinkStubRequests(requests);
   return patchEffect({
     mode: "auto",
-    changes: ordered.map((request) => ({
-      kind: "write" as const,
-      path: request.candidate.path,
-      content: renderWikilinkStubPage({
-        candidate: request.candidate,
-        sourcePaths: request.sourcePaths,
-      }),
-    })),
+    changes: ordered.map((request) => wikilinkStubWrite(request)),
     reason: "dome.markdown: create source-backed wikilink stubs",
     sourceRefs: ordered.flatMap((request) => request.sourceRefs),
   });
