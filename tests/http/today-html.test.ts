@@ -9,6 +9,22 @@ import { renderTodayHtml } from "../../src/http/today-html";
 // A minimal SourceRef for fixtures.
 const ref = { path: "wiki/dailies/2026-06-14.md", lines: null, commit: "abc" };
 
+// Question fixture with options for Task 3 interactive tests.
+const questionFixture = {
+  id: 42,
+  question: "Should we proceed with option A?",
+  resolveCommand: "dome resolve 42 yes",
+  path: "wiki/dailies/2026-06-14.md",
+  line: 20,
+  source: "daily",
+  automationPolicy: "owner-needed",
+  options: ["yes", "no"],
+  metadata: null,
+  lastChangedAt: null,
+  evidenceLabel: "wiki/dailies/2026-06-14.md:20",
+  sourceRefs: [],
+};
+
 // A minimal task item that satisfies hero.item shape.
 const taskFixture = {
   text: "Make the routing decision",
@@ -60,9 +76,8 @@ const DATA = {
 };
 
 describe("renderTodayHtml", () => {
-  test("renders sections, escapes HTML, includes meta refresh", () => {
+  test("renders sections and escapes HTML", () => {
     const html = renderTodayHtml(DATA, { refreshSeconds: 15 });
-    expect(html).toContain('<meta http-equiv="refresh" content="15">');
     expect(html).toContain("ship &lt;the&gt; cockpit");      // escaped
     expect(html).toContain("2026-06-11");
     expect(html).toContain("Merge A into B?");
@@ -70,9 +85,10 @@ describe("renderTodayHtml", () => {
     expect(html).not.toContain("<the>");                      // no raw injection
   });
 
-  test("floors refreshSeconds at 1 and truncates fractions", () => {
-    expect(renderTodayHtml(DATA, { refreshSeconds: 0 })).toContain('content="1"');
-    expect(renderTodayHtml(DATA, { refreshSeconds: 2.9 })).toContain('content="2"');
+  test("floors refreshSeconds at 1 and truncates fractions (poll interval in JS)", () => {
+    // refreshSeconds is now wired into the inline JS poll interval, not meta refresh
+    expect(renderTodayHtml(DATA, { refreshSeconds: 0 })).toContain("1000");   // 1s * 1000ms
+    expect(renderTodayHtml(DATA, { refreshSeconds: 2.9 })).toContain("2000"); // 2s * 1000ms
   });
 
   test("tolerates malformed data with an empty-state page", () => {
@@ -156,8 +172,23 @@ describe("renderTodayHtml", () => {
     expect(html).toContain("2026-06-14");
   });
 
-  test("renders meta refresh tag with correct seconds", () => {
-    const html = renderTodayHtml(base, { refreshSeconds: 30 });
-    expect(html).toContain('<meta http-equiv="refresh" content="30">');
+  // ── Task 3: JS polling + interactivity ─────────────────────────────────
+
+  test("page ships JS that polls /tasks and reads the token from the query", () => {
+    const html = renderTodayHtml(base, { refreshSeconds: 15 });
+    expect(html).toContain("/tasks");
+    expect(html).toMatch(/Authorization[^\n]*Bearer/);
+    expect(html).toContain("location.search");
+  });
+
+  test("questions wire to /resolve and there is a capture control posting to /capture", () => {
+    const html = renderTodayHtml({ ...base, questions: [questionFixture] }, { refreshSeconds: 15 });
+    expect(html).toContain("/resolve");
+    expect(html).toContain("/capture");
+  });
+
+  test("the meta-refresh is removed in favor of JS polling", () => {
+    const html = renderTodayHtml(base, { refreshSeconds: 15 });
+    expect(html).not.toContain('http-equiv="refresh"');
   });
 });

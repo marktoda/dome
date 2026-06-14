@@ -117,6 +117,23 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
     .footer { display: flex; align-items: center; gap: 8px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: rgba(255,255,255,0.4); padding-top: 32px; border-top: 1px solid rgba(255,255,255,0.06); margin-top: 40px; }
     .live-dot { width: 6px; height: 6px; border-radius: 9999px; background: #21C95E; animation: domePulse 2.4s ease-in-out infinite; flex-shrink: 0; }
     @keyframes domePulse { 0%,100% { opacity: .35; } 50% { opacity: 1; } }
+
+    /* capture */
+    .capture-wrap { margin-top: 20px; }
+    #capture-toggle { background: none; border: 1px solid rgba(255,255,255,0.12); color: rgba(255,255,255,0.5); border-radius: 8px; padding: 7px 14px; font-family: ui-monospace,"SF Mono",Menlo,monospace; font-size: 12px; cursor: pointer; }
+    #capture-toggle:hover { border-color: rgba(255,255,255,0.3); color: rgba(255,255,255,0.8); }
+    #capture-box { display: none; flex-direction: column; gap: 8px; margin-top: 10px; }
+    #capture-input { background: #1A1A1A; border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; color: #fff; font-size: 15px; font-family: -apple-system,system-ui,sans-serif; padding: 10px 14px; resize: vertical; min-height: 72px; width: 100%; max-width: 600px; }
+    #capture-input:focus { outline: none; border-color: rgba(255,55,199,0.4); }
+    .capture-row { display: flex; align-items: center; gap: 10px; }
+    #capture-send { background: #FF37C7; border: none; border-radius: 8px; color: #fff; font-size: 13px; font-weight: 535; padding: 7px 16px; cursor: pointer; }
+    #capture-send:disabled { opacity: .5; cursor: default; }
+    #capture-status { font-family: ui-monospace,"SF Mono",Menlo,monospace; font-size: 12px; }
+
+    /* question answer buttons */
+    .q-options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .q-opt-btn { background: #222; border: 1px solid rgba(255,255,255,0.15); border-radius: 7px; color: rgba(255,255,255,0.85); font-size: 13px; font-family: ui-monospace,"SF Mono",Menlo,monospace; padding: 5px 12px; cursor: pointer; }
+    .q-opt-btn:hover { background: #2e2e2e; border-color: rgba(255,55,199,0.4); }
   `.trim();
 
   const mastheadHtml = `
@@ -161,21 +178,31 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
     : "";
 
   const footerHtml = `
+  <div class="capture-wrap">
+    <button id="capture-toggle">+ capture a thought</button>
+    <div id="capture-box">
+      <textarea id="capture-input" placeholder="What's on your mind?"></textarea>
+      <div class="capture-row">
+        <button id="capture-send">Send</button>
+        <span id="capture-status"></span>
+      </div>
+    </div>
+  </div>
   <div class="footer">
     <span class="live-dot"></span>
-    refreshes every ${refresh}s
-  </div>`;
+    updated just now</div>`;
 
   const bodyContent = isAllClear
     ? `${allClearHtml}`
     : `${briefHtml}
   ${heroHtml}${bandHtml}${stillOpenHtml}`;
 
+  const scriptHtml = buildScriptHtml(refresh, questions);
+
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="${refresh}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>dome today — ${esc(date)}</title>
 <style>
@@ -189,9 +216,217 @@ ${headerHtml}
 ${bodyContent}
 ${footerHtml}
 </div>
+${scriptHtml}
 </body>
 </html>
 `;
+}
+
+// ── Inline script ───────────────────────────────────────────────────────────
+
+/**
+ * Build the inline <script> block for JS polling, question answering, and
+ * capture. Dependency-free; token is read from location.search at runtime.
+ */
+function buildScriptHtml(
+  refreshSeconds: number,
+  questionRows: ReadonlyArray<QuestionRow>,
+): string {
+  // Embed the question IDs so the script knows which cards to wire up.
+  // JSON.stringify is safe here — these are numbers, not user strings.
+  const questionIdsJson = JSON.stringify(questionRows.map((q) => q.id));
+  const pollMs = refreshSeconds * 1000;
+
+  return `<script>
+(function () {
+  // ── Token ──────────────────────────────────────────────────────────────
+  var params = new URLSearchParams(location.search);
+  var token = params.get('token') || '';
+
+  // ── State ──────────────────────────────────────────────────────────────
+  var lastFingerprint = '';
+  var lastUpdatedAt = Date.now();
+  var questionIds = ${questionIdsJson};
+  var POLL_MS = ${pollMs};
+
+  // ── Footer live indicator ──────────────────────────────────────────────
+  var liveDot = document.querySelector('.live-dot');
+  var footer = document.querySelector('.footer');
+
+  function setLive(alive) {
+    if (!liveDot) return;
+    liveDot.style.background = alive ? '#21C95E' : '#888';
+    liveDot.style.boxShadow = alive ? '' : 'none';
+  }
+
+  function updateFooterText(stale) {
+    if (!footer) return;
+    var secs = Math.round((Date.now() - lastUpdatedAt) / 1000);
+    var ago = secs < 60 ? secs + 's ago' : Math.round(secs / 60) + 'm ago';
+    var textNode = footer.lastChild;
+    if (textNode && textNode.nodeType === 3) {
+      textNode.textContent = stale
+        ? ' reconnecting… last updated ' + ago
+        : ' updated ' + ago;
+    }
+  }
+
+  // ── Stale banner ──────────────────────────────────────────────────────
+  var bannerEl = null;
+  function showStaleBanner() {
+    if (bannerEl) return;
+    bannerEl = document.createElement('div');
+    bannerEl.style.cssText = [
+      'position:fixed','top:0','left:0','right:0',
+      'background:rgba(30,30,30,.95)','color:rgba(255,255,255,.6)',
+      'font-family:ui-monospace,"SF Mono",Menlo,monospace',
+      'font-size:12px','text-align:center','padding:7px',
+      'z-index:9999','letter-spacing:.02em',
+    ].join(';');
+    bannerEl.textContent = 'reconnecting…';
+    document.body.prepend(bannerEl);
+    document.querySelector('.page') && (document.querySelector('.page').style.opacity = '.55');
+  }
+  function hideStaleBanner() {
+    if (bannerEl) { bannerEl.remove(); bannerEl = null; }
+    document.querySelector('.page') && (document.querySelector('.page').style.opacity = '');
+  }
+
+  // ── Polling ───────────────────────────────────────────────────────────
+  function fingerprint(data) {
+    return JSON.stringify(data);
+  }
+
+  function poll() {
+    fetch('/tasks', {
+      headers: { 'Authorization': 'Bearer ' + token },
+    }).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    }).then(function (data) {
+      hideStaleBanner();
+      setLive(true);
+      lastUpdatedAt = Date.now();
+      var fp = fingerprint(data);
+      if (lastFingerprint && fp !== lastFingerprint) {
+        // Content changed — let the server re-render (one rendering path).
+        location.reload();
+        return;
+      }
+      lastFingerprint = fp;
+    }).catch(function () {
+      setLive(false);
+      showStaleBanner();
+    });
+  }
+
+  // Initial poll + interval.
+  poll();
+  setInterval(poll, POLL_MS);
+
+  // Tick the "updated Ns ago" every 5 s.
+  setInterval(function () { updateFooterText(!!bannerEl); }, 5000);
+
+  // ── Answer questions ───────────────────────────────────────────────────
+  function resolveQuestion(id, value, cardEl) {
+    fetch('/resolve', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ id: id, value: value }),
+    }).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      // Optimistic removal: hide the card immediately.
+      if (cardEl) {
+        cardEl.style.transition = 'opacity .2s';
+        cardEl.style.opacity = '0';
+        setTimeout(function () {
+          if (cardEl.parentNode) cardEl.parentNode.removeChild(cardEl);
+          // Trigger a reload to re-render from the server;
+          // small delay so the removal animation is visible first.
+          location.reload();
+        }, 350);
+      }
+    }).catch(function (err) {
+      // Surface the error inline near the card.
+      if (cardEl) {
+        var errEl = document.createElement('div');
+        errEl.style.cssText = 'font-size:12px;color:#FF593C;margin-top:6px;font-family:ui-monospace,"SF Mono",Menlo,monospace';
+        errEl.textContent = 'resolve failed — try again';
+        cardEl.appendChild(errEl);
+        setTimeout(function () { if (errEl.parentNode) errEl.remove(); }, 3000);
+      }
+    });
+  }
+
+  // Wire answer buttons to question cards.
+  // Cards are rendered with data-qid attributes by the server.
+  questionIds.forEach(function (id) {
+    var card = document.querySelector('[data-qid="' + id + '"]');
+    if (!card) return;
+    var btns = card.querySelectorAll('[data-qval]');
+    btns.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        resolveQuestion(id, btn.getAttribute('data-qval'), card);
+      });
+    });
+  });
+
+  // ── Capture ────────────────────────────────────────────────────────────
+  var captureToggle = document.getElementById('capture-toggle');
+  var captureBox = document.getElementById('capture-box');
+  var captureInput = document.getElementById('capture-input');
+  var captureSend = document.getElementById('capture-send');
+  var captureStatus = document.getElementById('capture-status');
+
+  if (captureToggle && captureBox) {
+    captureToggle.addEventListener('click', function () {
+      var hidden = captureBox.style.display === 'none' || captureBox.style.display === '';
+      captureBox.style.display = hidden ? 'flex' : 'none';
+      if (hidden && captureInput) captureInput.focus();
+    });
+  }
+
+  if (captureSend && captureInput) {
+    captureSend.addEventListener('click', function () { doCapture(); });
+    captureInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) doCapture();
+    });
+  }
+
+  function doCapture() {
+    var text = captureInput ? captureInput.value.trim() : '';
+    if (!text) return;
+    captureSend && (captureSend.disabled = true);
+    fetch('/capture', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text: text }),
+    }).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (captureInput) captureInput.value = '';
+      if (captureStatus) {
+        captureStatus.textContent = 'captured';
+        captureStatus.style.color = '#21C95E';
+        setTimeout(function () { if (captureStatus) captureStatus.textContent = ''; }, 2500);
+      }
+      if (captureBox) captureBox.style.display = 'none';
+    }).catch(function () {
+      if (captureStatus) {
+        captureStatus.textContent = 'capture failed — try again';
+        captureStatus.style.color = '#FF593C';
+      }
+    }).finally(function () {
+      captureSend && (captureSend.disabled = false);
+    });
+  }
+})();
+</script>`;
 }
 
 // ── Section renderers ───────────────────────────────────────────────────────
@@ -247,8 +482,14 @@ function renderCalendarHtml(events: ReadonlyArray<CalendarEvent>): string {
 }
 
 function renderQuestionsHtml(questions: ReadonlyArray<QuestionRow>): string {
-  const itemsHtml = questions.map((q) => `
-    <div class="question-card">
+  const itemsHtml = questions.map((q) => {
+    const optionsHtml = q.options.length > 0
+      ? `<div class="q-options">${q.options.map((opt) =>
+          `<button class="q-opt-btn" data-qval="${esc(opt)}">${esc(opt)}</button>`,
+        ).join("")}</div>`
+      : "";
+    return `
+    <div class="question-card" data-qid="${q.id}">
       <details>
         <summary>
           <span class="q-mark">?</span>
@@ -256,8 +497,10 @@ function renderQuestionsHtml(questions: ReadonlyArray<QuestionRow>): string {
           <span class="q-caret">&#8250;</span>
         </summary>
         <div class="q-cmd">${esc(q.resolveCommand)}</div>
+        ${optionsHtml}
       </details>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 
   return `<div>
     <div class="section-label">Dome needs you</div>
@@ -313,6 +556,7 @@ type QuestionRow = {
   readonly id: number;
   readonly question: string;
   readonly resolveCommand: string;
+  readonly options: ReadonlyArray<string>;
 };
 
 type CalendarEvent = {
@@ -381,6 +625,9 @@ function parseHero(raw: unknown): HeroItem | null {
     if (item === null) return null;
     const question = typeof item.question === "string" ? item.question : "";
     if (question.length === 0) return null;
+    const options: string[] = Array.isArray(item.options)
+      ? item.options.filter((o): o is string => typeof o === "string")
+      : [];
     return {
       kind: "question",
       item: {
@@ -389,6 +636,7 @@ function parseHero(raw: unknown): HeroItem | null {
         resolveCommand: typeof item.resolveCommand === "string"
           ? item.resolveCommand
           : "dome resolve <id> <value>",
+        options,
       },
     };
   }
@@ -417,10 +665,14 @@ function questionRows(raw: unknown): ReadonlyArray<QuestionRow> {
     const r = isRecord(item) ? item : {};
     const question = typeof r.question === "string" ? r.question : "";
     if (question.length === 0) return [];
+    const options: string[] = Array.isArray(r.options)
+      ? r.options.filter((o): o is string => typeof o === "string")
+      : [];
     return [{
       id: typeof r.id === "number" ? r.id : 0,
       question,
       resolveCommand: typeof r.resolveCommand === "string" ? r.resolveCommand : "dome resolve <id> <value>",
+      options,
     }];
   });
 }
