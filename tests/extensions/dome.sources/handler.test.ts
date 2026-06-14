@@ -109,6 +109,27 @@ function fakeCommand(script: string): ReadonlyArray<string> {
 }
 
 /**
+ * Install a fake `claude` on a throwaway bin dir and return a PATH that puts
+ * it ahead of the system tools the templates need (awk, git, sh). The fake
+ * ignores its args and prints `stdout` verbatim — the FETCH block in the
+ * shipped templates is `claude ... > "$tmp"`, so this is exactly what the
+ * REPAIR + VALIDATE steps then see. `printf %s` (no trailing newline) lets a
+ * case control its output bytes precisely.
+ */
+function fakeClaudePath(stdout: string): string {
+  const binDir = join(vaultPath, ".dome", "fakebin");
+  mkdirSync(binDir, { recursive: true });
+  const path = join(binDir, "claude");
+  // Single-quote the heredoc body so the payload is emitted literally.
+  writeFileSync(
+    path,
+    `#!/bin/sh\ncat <<'DOME_FAKE_CLAUDE_EOF'\n${stdout}\nDOME_FAKE_CLAUDE_EOF\n`,
+  );
+  chmodSync(path, 0o755);
+  return `${binDir}:/usr/bin:/bin`;
+}
+
+/**
  * Write the consent surface: `.dome/config.yaml` with one dome.sources
  * subscription. The handler re-derives the subscription from THIS file at
  * dispatch time; tests that want a consent mismatch pass different values
@@ -434,6 +455,86 @@ describe("the shipped claude-calendar.sh template", () => {
     const staged = git("diff", "--cached", "--name-only");
     expect(staged).toContain("notes.md");
   });
+
+  // ---- REPAIR (the live bug) ------------------------------------------------
+  // The headless model returns CORRECT content but sometimes wrapped in a ```
+  // fence and/or behind a chatty preamble, so the raw first line is the fence
+  // (not `---`) and VALIDATE fails every run — three outbox rows were wedged
+  // live. The deterministic REPAIR step between FETCH and VALIDATE normalizes
+  // the output; these drive the WHOLE template (FETCH via a fake `claude` →
+  // REPAIR → VALIDATE → LAND) so the gate stays a gate.
+  const calendarTemplate = join(
+    import.meta.dir,
+    "..",
+    "..",
+    "..",
+    "assets",
+    "source-handlers",
+    "claude-calendar.sh",
+  );
+  const CAL_DAY =
+    "---\ntype: calendar-day\ndate: 2026-06-10\n---\n\n# Calendar 2026-06-10";
+
+  async function runCalendar(fetchStdout: string) {
+    const proc = Bun.spawn(
+      ["sh", calendarTemplate, PAYLOAD.date, OUTPUT_PATH],
+      {
+        cwd: vaultPath,
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "pipe",
+        env: { ...process.env, PATH: fakeClaudePath(fetchStdout) },
+      },
+    );
+    const [exitCode, stderrText] = await Promise.all([
+      proc.exited,
+      new Response(proc.stderr).text(),
+    ]);
+    return { exitCode, stderrText };
+  }
+
+  test("REPAIR: fence-wrapped valid content is unwrapped, validates, and lands", async () => {
+    const { exitCode, stderrText } = await runCalendar(
+      "```\n" + CAL_DAY + "\n```",
+    );
+    expect(stderrText).toBe("");
+    expect(exitCode).toBe(0);
+    expect(inHead(OUTPUT_PATH)).toBe(true);
+    expect(git("show", `HEAD:${OUTPUT_PATH}`)).toBe(CAL_DAY + "\n");
+  });
+
+  test("REPAIR: a ```markdown fence behind a chatty preamble is stripped, validates, and lands", async () => {
+    const { exitCode, stderrText } = await runCalendar(
+      "Here's your calendar for today:\n```markdown\n" + CAL_DAY + "\n```",
+    );
+    expect(stderrText).toBe("");
+    expect(exitCode).toBe(0);
+    expect(inHead(OUTPUT_PATH)).toBe(true);
+    expect(git("show", `HEAD:${OUTPUT_PATH}`)).toBe(CAL_DAY + "\n");
+  });
+
+  test("REPAIR: bare preamble (no fence) before the frontmatter is dropped", async () => {
+    const { exitCode } = await runCalendar(
+      "Sure, here is the agenda:\n" + CAL_DAY,
+    );
+    expect(exitCode).toBe(0);
+    expect(git("show", `HEAD:${OUTPUT_PATH}`)).toBe(CAL_DAY + "\n");
+  });
+
+  test("REPAIR is not a bypass: genuinely broken output (no frontmatter even after repair) still fails the gate", async () => {
+    const { exitCode, stderrText } = await runCalendar(
+      "I'm sorry, I could not access your calendar today.",
+    );
+    expect(exitCode).not.toBe(0);
+    expect(stderrText).toContain("not a calendar-day file");
+    expect(inHead(OUTPUT_PATH)).toBe(false);
+  });
+
+  test("REPAIR: already-correct bare frontmatter passes through unchanged", async () => {
+    const { exitCode } = await runCalendar(CAL_DAY);
+    expect(exitCode).toBe(0);
+    expect(git("show", `HEAD:${OUTPUT_PATH}`)).toBe(CAL_DAY + "\n");
+  });
 });
 
 describe("the shipped claude-slack.sh template", () => {
@@ -556,6 +657,63 @@ describe("the shipped claude-slack.sh template", () => {
     expect(inHead("notes.md")).toBe(false); // still only staged
     const staged = git("diff", "--cached", "--name-only");
     expect(staged).toContain("notes.md");
+  });
+
+  // ---- REPAIR ---------------------------------------------------------------
+  // Same fragility as the calendar template (it validates `^---$` first line
+  // too): a fenced/preamble-wrapped slack-day document fails VALIDATE without
+  // the deterministic REPAIR step. Drive the whole template through a fake
+  // `claude` so REPAIR runs between FETCH and VALIDATE.
+  const SLACK_DAY =
+    "---\ntype: slack-day\ndate: 2026-06-10\n---\n\n# Slack 2026-06-10";
+
+  async function runSlack(fetchStdout: string) {
+    const proc = Bun.spawn(["sh", template, SLACK_DATE, SLACK_OUTPUT], {
+      cwd: vaultPath,
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "pipe",
+      env: { ...process.env, PATH: fakeClaudePath(fetchStdout) },
+    });
+    const [exitCode, stderrText] = await Promise.all([
+      proc.exited,
+      new Response(proc.stderr).text(),
+    ]);
+    return { exitCode, stderrText };
+  }
+
+  test("REPAIR: fence-wrapped valid content is unwrapped, validates, and lands", async () => {
+    const { exitCode, stderrText } = await runSlack(
+      "```\n" + SLACK_DAY + "\n```",
+    );
+    expect(stderrText).toBe("");
+    expect(exitCode).toBe(0);
+    expect(inHead(SLACK_OUTPUT)).toBe(true);
+    expect(git("show", `HEAD:${SLACK_OUTPUT}`)).toBe(SLACK_DAY + "\n");
+  });
+
+  test("REPAIR: a ```markdown fence behind a chatty preamble is stripped, validates, and lands", async () => {
+    const { exitCode, stderrText } = await runSlack(
+      "Here's your Slack digest:\n```markdown\n" + SLACK_DAY + "\n```",
+    );
+    expect(stderrText).toBe("");
+    expect(exitCode).toBe(0);
+    expect(git("show", `HEAD:${SLACK_OUTPUT}`)).toBe(SLACK_DAY + "\n");
+  });
+
+  test("REPAIR is not a bypass: genuinely broken output still fails the slack-day gate", async () => {
+    const { exitCode, stderrText } = await runSlack(
+      "I could not reach your Slack workspace this morning.",
+    );
+    expect(exitCode).not.toBe(0);
+    expect(stderrText).toContain("not a slack-day file");
+    expect(inHead(SLACK_OUTPUT)).toBe(false);
+  });
+
+  test("REPAIR: already-correct bare frontmatter passes through unchanged", async () => {
+    const { exitCode } = await runSlack(SLACK_DAY);
+    expect(exitCode).toBe(0);
+    expect(git("show", `HEAD:${SLACK_OUTPUT}`)).toBe(SLACK_DAY + "\n");
   });
 });
 

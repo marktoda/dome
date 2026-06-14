@@ -69,7 +69,7 @@ fi
 
 mkdir -p "$(dirname "$f")"
 tmp="$(mktemp)"
-trap 'rm -f "$tmp"' EXIT
+trap 'rm -f "$tmp" "$tmp.repaired"' EXIT
 
 # ----- FETCH (adjust to taste) ----------------------------------------------
 # Default: headless Claude with the owner's Slack MCP. Swap this block for a
@@ -86,7 +86,47 @@ then up to three sections — '## Mentions', '## Direct messages', \
 for direct messages; under '## Channels' a one-line activity summary per \
 channel is fine). OMIT empty sections entirely, keep every item to one line, \
 and cap the whole digest at roughly 30 items. If there is nothing to report, \
-emit the frontmatter and heading only." > "$tmp"
+emit the frontmatter and heading only. Do not wrap the output in code \
+fences." > "$tmp"
+
+# ----- REPAIR -----------------------------------------------------------------
+# Deterministic normalization before the validation gate. Headless models
+# reliably return the CORRECT document but sometimes wrap it in a ``` (or
+# ```markdown) fence and/or prefix a chatty "Here's your digest:" line, so a
+# fence or preamble — not broken content — sinks `head -n 1 | grep '^---$'`
+# every run. We do NOT trust prompt obedience; we strip the wrapping here:
+#   1. If the first non-blank line opens a fence (``` or ```markdown), drop it
+#      and a matching trailing ``` fence line.
+#   2. Then drop everything before the first '^---$' line (tolerates preamble).
+# The validation below is still the safety gate — genuinely broken output
+# (no frontmatter even after repair) keeps failing it.
+repair() {
+  awk '
+    { lines[NR] = $0 }
+    END {
+      start = 1
+      end = NR
+      first = 0; last = 0
+      for (i = 1; i <= NR; i++)
+        if (lines[i] ~ /[^ \t]/) { if (first == 0) first = i; last = i }
+      if (first == 0) exit            # all blank: leave the empty file to fail VALIDATE
+      opener = 0
+      for (i = first; i <= end; i++) {
+        if (lines[i] !~ /[^ \t]/) continue
+        if (lines[i] ~ /^---$/) break
+        if (lines[i] ~ /^[ \t]*```([Mm]arkdown)?[ \t]*$/) { opener = i; break }
+      }
+      if (opener > 0) {
+        start = opener + 1
+        if (lines[last] ~ /^[ \t]*```[ \t]*$/) end = last - 1
+      }
+      for (i = start; i <= end; i++) if (lines[i] ~ /^---$/) { start = i; break }
+      for (i = start; i <= end; i++) print lines[i]
+    }
+  ' "$tmp" > "$tmp.repaired"
+  mv "$tmp.repaired" "$tmp"
+}
+repair
 
 # ----- VALIDATE ---------------------------------------------------------------
 # Refuse to commit something that is not a slack-day file (a model refusal,
