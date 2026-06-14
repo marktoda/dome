@@ -52,12 +52,11 @@ describe("runCheck", () => {
     expect(await runCheck({ vault: f.vaultPath })).toBe(0);
     const out = captured.out.join("\n");
     expect(out).toContain("dome check");
-    expect(out).toContain("AT A GLANCE");
-    expect(out).toMatch(/status\s+.*ok/);
-    expect(out).toMatch(/engine\s+.*ok/);
-    expect(out).toContain("0 diagnostics");
-    expect(out).toContain("0 open questions");
-    expect(out).toContain("9 known");
+    // verdict-first: no engine findings → "all clear"
+    expect(out).toContain("all clear");
+    // AT A GLANCE is verbose-only
+    expect(out).not.toContain("AT A GLANCE");
+    // no loops detail section by default
     expect(out).not.toContain("  LOOPS\n");
   });
 
@@ -68,7 +67,7 @@ describe("runCheck", () => {
 
     expect(await runCheck({ vault: f.vaultPath, loops: true })).toBe(0);
     const out = captured.out.join("\n");
-    expect(out).toContain("9 known");
+    // loop detail rows are shown under --loops; "9 known" is AT A GLANCE (verbose-only)
     expect(out).toContain("  LOOPS\n");
     expect(out).toContain("[inactive] dome.capture.digest");
     expect(out).toContain("surfaces: path:wiki/sources/*.md");
@@ -286,12 +285,13 @@ describe("runCheck", () => {
     expect(await runCheck({ vault: f.vaultPath })).toBe(0);
     const text = captured.out.join("\n");
     expect(text).toContain("dome check");
-    expect(text).toMatch(/status\s+.*ok/);
-    expect(text).toContain(
-      "1 diagnostic · 0 attention items · showing none",
-    );
+    // verdict: info-only diagnostics do not trigger attention → "all clear"
+    expect(text).toContain("all clear");
+    // content section not shown (attention_diagnostics=0, no rows to show)
     expect(text).not.toContain("  CONTENT\n");
     expect(text).not.toContain("informational diagnostic");
+    // AT A GLANCE is verbose-only
+    expect(text).not.toContain("AT A GLANCE");
   });
 
   test("--json keeps source-less runtime diagnostics out of content repair", async () => {
@@ -750,8 +750,12 @@ describe("runCheck", () => {
     expect(text).toContain(
       "2x [warning] check.repeated: Repeated diagnostic",
     );
+    // NEXT description for the null-command action: no "; " separator, so
+    // firstClause returns the whole text minus trailing ".". The reference to
+    // "dome sync --json" in the description stays (humanizeCommand only applies
+    // to the command field, not the description).
     expect(text).toContain(
-      "Fix the listed source markdown diagnostics, commit the changes, then run dome sync --json.",
+      "Fix the listed source markdown diagnostics, commit the changes, then run dome sync",
     );
   });
 
@@ -972,7 +976,8 @@ describe("runCheck", () => {
     ).toBe(0);
     const text = captured.out.join("\n");
     expect(text).toContain("noise (2 items)");
-    expect(text).toContain("CONTENT");
+    // Default view is headerless — no CONTENT section label
+    expect(text).not.toMatch(/^\s+CONTENT\s*$/m);
     expect(text).toContain("dome.markdown.broken-wikilink");
     expect(text).toContain("dome.markdown.type-unknown");
   });
@@ -1033,9 +1038,8 @@ describe("runCheck", () => {
       }),
     ).toBe(0);
     const text = captured.out.join("\n");
-    expect(text).toContain(
-      "3 diagnostics · 3 attention items · showing 2/3 attention",
-    );
+    // CONTENT section header shows bounded count (diagnosticLines output)
+    expect(text).toContain("showing 2/3");
     expect(text).toContain(
       "... 1 more diagnostics (use --limit 3 to show all)",
     );
@@ -1341,6 +1345,111 @@ describe("runCheck", () => {
     expect(out).not.toContain("[warning]");
     // recovery: label must be gone
     expect(out).not.toMatch(/^\s+recovery:/m);
+  });
+
+  // ----- Task 8: verdict-first, terse default, one-line NEXT, no footer ------
+
+  test("check NEXT is one humanized line (no --json, no run-on); no footer", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await seedUnhealthyOperationalState(f);
+    await writeDoctorConfig(f);
+
+    expect(await runCheck({ vault: f.vaultPath })).toBe(0);
+    const out = captured.out.join("\n");
+
+    // Default view must be headerless — no NEXT or ENGINE section labels
+    expect(out).not.toMatch(/^\s+NEXT\s*$/m);
+    expect(out).not.toMatch(/^\s+ENGINE\s*$/m);
+
+    // Action line must appear directly (the → pointer glyph is present)
+    expect(out).toMatch(/[→>]\s+dome sync/);
+
+    // --json must not appear in the action command line itself
+    // (humanizeCommand strips it from the command; it may appear in fix: body text)
+    const actionLine = out.split("\n").find((l) => /[→>]\s+dome sync/.test(l)) ?? "";
+    expect(actionLine).not.toContain("--json");
+
+    // Engine findings must appear directly (without ENGINE header)
+    expect(out).toMatch(/outbox\.failed|run\.orphan|processor\.quarantined/);
+
+    // legacy engineStatus "finding(s)" string must be gone
+    expect(out).not.toContain("finding(s)");
+    // no full-width rule/footer (10+ consecutive dashes or box-drawing)
+    expect(out).not.toMatch(/[-─]{10,}/);
+    // AT A GLANCE block must be absent in default mode
+    expect(out).not.toContain("AT A GLANCE");
+  });
+
+  test("check default findings terse; verbose adds why + AT A GLANCE", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    // Trigger capability.grant-entry-missing for dome.markdown.core-size
+    await writeDoctorConfigBody(
+      f,
+      [
+        "extensions:",
+        "  dome.markdown:",
+        "    enabled: true",
+        "    grant:",
+        '      read: ["wiki/**/*.md", ".dome/page-types.yaml", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}", "raw/**"]',
+        '      patch.auto: ["**/*.md"]',
+        '      graph.write: ["dome.page.*"]',
+        "      question.ask: true",
+        "",
+      ].join("\n"),
+    );
+
+    // Default: terse — consequence clause ("core-memory size lint") hidden
+    captured.out = [];
+    expect(await runCheck({ vault: f.vaultPath })).toBe(0);
+    const defaultOut = captured.out.join("\n");
+    expect(defaultOut).not.toContain("core-memory size lint");
+    expect(defaultOut).not.toContain("AT A GLANCE");
+
+    // Verbose: why line shown + AT A GLANCE block present
+    captured.out = [];
+    expect(await runCheck({ vault: f.vaultPath, verbose: true })).toBe(0);
+    const verboseOut = captured.out.join("\n");
+    expect(verboseOut).toContain("core-memory size");
+    expect(verboseOut).toContain("AT A GLANCE");
+  });
+
+  test("check verdict header counts problems vs notes", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    // Enable dome.markdown with restricted grant to produce 1 warning finding
+    // (capability.grant-entry-missing = warning severity) — we need 3 warnings
+    // + 1 info. Use seedUnhealthyOperationalState which produces run failures
+    // (error-severity engine findings), then add a capability finding for info.
+    // Instead, use the simplest path: capability finding is warning. We need
+    // the fixture to produce exactly countable findings.
+    // writeDoctorConfigBody with restricted grant → 1 warning capability finding.
+    await writeDoctorConfigBody(
+      f,
+      [
+        "extensions:",
+        "  dome.markdown:",
+        "    enabled: true",
+        "    grant:",
+        '      read: ["wiki/**/*.md", ".dome/page-types.yaml", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}", "raw/**"]',
+        '      patch.auto: ["**/*.md"]',
+        '      graph.write: ["dome.page.*"]',
+        "      question.ask: true",
+        "",
+      ].join("\n"),
+    );
+
+    expect(await runCheck({ vault: f.vaultPath })).toBe(0);
+    const out = captured.out.join("\n");
+
+    // At least one warning finding → problems > 0
+    expect(out).toMatch(/\d+ problem/);
+    // Singular form when exactly 1
+    expect(out).toMatch(/1 problem\b/);
+    // If there are info findings (infoCount > 0) notes appear; otherwise not
+    // — for this fixture there are no info findings so "note" should not appear
+    expect(out).not.toMatch(/\d+ note/);
   });
 });
 

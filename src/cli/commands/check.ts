@@ -32,8 +32,8 @@ import {
 } from "../human-output";
 import {
   bullets,
-  footer,
   headline,
+  humanizeCommand,
   kv,
   nextActions,
   resolveCaps,
@@ -131,42 +131,77 @@ function renderCheckReport(
     tone: "plain",
   });
 
-  const headStatus = checkHeadlineStatus(report);
+  // Verdict header: problems = error+warning, notes = info
+  const verdictStatus = checkVerdictStatus(report);
   const lines: string[] = [
-    headline({ cmd: "check", context: basename(options.vaultPath) }, headStatus, caps),
+    headline({ cmd: "check", context: basename(options.vaultPath) }, verdictStatus, caps),
   ];
 
-  lines.push(...section("Next", nextActions(report.next_actions, caps), caps));
+  if (!options.verbose) {
+    // Default: headerless — action line(s) directly, then finding rows directly.
+    // Matches dome status default: blank line → nextActions → blank line → rows.
+    // No NEXT/ENGINE/CONTENT/DECISIONS section labels.
+    const actionLines = oneLineNextActions(report.next_actions, caps);
+    if (actionLines.length > 0) {
+      lines.push("");
+      lines.push(...actionLines);
+    }
+    const engineFindingLines = findingLines(report.engine?.findings ?? [], caps, false);
+    if (engineFindingLines.length > 0) {
+      lines.push("");
+      lines.push(...engineFindingLines);
+    }
+    const contentLines = diagnosticLines(report.content, caps);
+    if (contentLines.length > 0) {
+      lines.push("");
+      lines.push(...contentLines);
+    }
+    const decisionLines = questionLines(report.decisions, caps);
+    if (decisionLines.length > 0) {
+      lines.push("");
+      lines.push(...decisionLines);
+    }
+    if (options.showLoopDetails) {
+      const loopLines = loopDetailLines(report.maintenance_loops, caps);
+      if (loopLines.length > 0) {
+        lines.push(...section("Loops", loopLines, caps));
+      }
+    }
+    return Object.freeze(lines);
+  }
+
+  // Verbose: NEXT section then AT A GLANCE
+  lines.push(...section("Next", oneLineNextActions(report.next_actions, caps), caps));
 
   lines.push(
-    ...section(
-      "At a glance",
-      kv(
-        [
-          glance("status", checkOverallStatus(report)),
-          glance("projection", projectionStatus(report.projection)),
-          glance("engine", engineStatus(report.engine)),
-          {
-            label: "content",
-            value: formatContent(report.content),
-            tone: "plain",
-          },
-          {
-            label: "decisions",
-            value: formatDecisions(report.decisions),
-            tone: "plain",
-          },
-          {
-            label: "loops",
-            value: formatLoops(report.maintenance_loops, caps),
-            tone: "plain",
-          },
-        ],
+      ...section(
+        "At a glance",
+        kv(
+          [
+            glance("status", checkOverallStatus(report)),
+            glance("projection", projectionStatus(report.projection)),
+            glance("engine", engineStatus(report.engine)),
+            {
+              label: "content",
+              value: formatContent(report.content),
+              tone: "plain",
+            },
+            {
+              label: "decisions",
+              value: formatDecisions(report.decisions),
+              tone: "plain",
+            },
+            {
+              label: "loops",
+              value: formatLoops(report.maintenance_loops, caps),
+              tone: "plain",
+            },
+          ],
+          caps,
+        ),
         caps,
       ),
-      caps,
-    ),
-  );
+    );
 
   if (options.showLoopDetails) {
     lines.push(
@@ -174,22 +209,68 @@ function renderCheckReport(
     );
   }
 
+  // Engine findings: terse by default, verbose=true adds "why" lines
   lines.push(...section("Engine", findingLines(report.engine?.findings ?? [], caps, options.verbose), caps));
   lines.push(...section("Content", diagnosticLines(report.content, caps), caps));
   lines.push(...section("Decisions", questionLines(report.decisions, caps), caps));
 
-  const footerStatus: Status = report.status === "ok"
-    ? { tone: "ok", label: "all clear" }
-    : { tone: "warn", label: "needs attention" };
-  lines.push(...footer(footerStatus, caps));
+  // No footer in either default or verbose mode.
 
   return Object.freeze(lines);
 }
 
-function checkHeadlineStatus(report: CheckReport): Status {
-  if (report.projection.stale) return { tone: "warn", label: "needs sync" };
-  if (report.status === "ok") return { tone: "ok", label: "ok" };
-  return { tone: "warn", label: "needs attention" };
+/**
+ * Verdict header status: counts engine findings as problems (error+warning)
+ * and notes (info). When there are no findings and status is ok, "all clear".
+ * Stale projection treated as a problem.
+ */
+function checkVerdictStatus(report: CheckReport): Status {
+  const summary = report.engine?.summary;
+  const problems = (summary?.errorCount ?? 0) + (summary?.warningCount ?? 0);
+  const notes = summary?.infoCount ?? 0;
+
+  if (problems === 0 && notes === 0 && report.status === "ok" && !report.projection.stale) {
+    return { tone: "ok", label: "all clear" };
+  }
+
+  const parts: string[] = [];
+  if (problems > 0) {
+    parts.push(`${problems} ${problems === 1 ? "problem" : "problems"}`);
+  }
+  if (notes > 0) {
+    parts.push(`${notes} ${notes === 1 ? "note" : "notes"}`);
+  }
+  if (parts.length === 0) {
+    // status=attention but no engine findings (e.g. content/decisions attention)
+    return { tone: "warn", label: "needs attention" };
+  }
+  return { tone: "warn", label: parts.join(" · ") };
+}
+
+/**
+ * Render next_actions as a single humanized line per action:
+ * - command has ` --json` stripped via `humanizeCommand`
+ * - description collapsed to the first clause (before "; ") to avoid run-on
+ *   multi-sentence paragraphs in the terminal summary
+ */
+function oneLineNextActions(
+  actions: ReadonlyArray<{ readonly command: string | null; readonly description: string }>,
+  caps: Caps,
+): ReadonlyArray<string> {
+  return nextActions(
+    actions.map((a) => ({
+      command: a.command !== null ? humanizeCommand(a.command) : null,
+      description: firstClause(a.description),
+    })),
+    caps,
+  );
+}
+
+/** Take text up to the first "; " separator, stripping a trailing period. */
+function firstClause(text: string): string {
+  const idx = text.indexOf("; ");
+  const clause = idx === -1 ? text : text.slice(0, idx);
+  return clause.replace(/\.$/, "");
 }
 
 function checkOverallStatus(report: CheckReport): Status {
@@ -209,9 +290,10 @@ function engineStatus(report: HealthReport | null): Status {
       ? { tone: "ok", label: "ok" }
       : { tone: "ok", label: `ok · ${report.summary.infoCount} info` };
   }
+  const { errorCount, warningCount, infoCount } = report.summary;
   return {
     tone: "warn",
-    label: `${report.summary.findingCount} finding(s) · ${report.summary.errorCount} error · ${report.summary.warningCount} warning · ${report.summary.infoCount} info`,
+    label: `${errorCount} error · ${warningCount} warning · ${infoCount} info`,
   };
 }
 
