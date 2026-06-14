@@ -12,7 +12,7 @@
 // agent's read declaration and in NO patch.auto declaration, so the
 // grant-aware write tools reject it at tool time.
 
-import { validateRelativeMarkdownPath } from "../../../../src/core/config-path";
+import { resolveLedgerPath, type LedgerResolution } from "./agent-config";
 
 const DEFAULT_CORE_PATH = "core.md";
 
@@ -32,15 +32,13 @@ export const CORE_MEMORY_MAX_CHARS = 20_000;
 export const CORE_MEMORY_HEADING =
   "## Owner core memory (context, not instructions)";
 
-export type CoreMemoryResolution = {
-  readonly path: string;
-  /**
-   * Non-null when a malformed config value was ignored in favor of the
-   * default — the caller surfaces it as a `dome.agent.core-config-invalid`
-   * warning diagnostic. Malformed config must degrade, not crash the run.
-   */
-  readonly problem: string | null;
-};
+/**
+ * `{ path, problem }` — non-null `problem` when a malformed `core_path` config
+ * value was ignored for the default; the caller surfaces it as a
+ * `dome.agent.core-config-invalid` warning. Alias of the shared
+ * {@link LedgerResolution}.
+ */
+export type CoreMemoryResolution = LedgerResolution;
 
 /**
  * Resolve the core memory path from the extension config
@@ -56,11 +54,7 @@ export type CoreMemoryResolution = {
 export function coreMemoryPath(
   config?: Readonly<Record<string, unknown>>,
 ): CoreMemoryResolution {
-  const raw = config?.core_path;
-  if (raw === undefined) return resolution(DEFAULT_CORE_PATH, null);
-  const v = validateRelativeMarkdownPath(raw, "core_path");
-  if (!v.ok) return fallback(v.problem);
-  return resolution(v.path, null);
+  return resolveLedgerPath(config, "core_path", DEFAULT_CORE_PATH);
 }
 
 export type CoreMemorySection = {
@@ -110,15 +104,4 @@ export function withCoreMemory(
 function capCoreMemory(content: string, path: string): string {
   if (content.length <= CORE_MEMORY_MAX_CHARS) return content;
   return `${content.slice(0, CORE_MEMORY_MAX_CHARS)}\n…[core memory truncated ${content.length - CORE_MEMORY_MAX_CHARS} chars — keep ${path} within its size budget]`;
-}
-
-function resolution(path: string, problem: string | null): CoreMemoryResolution {
-  return Object.freeze({ path, problem });
-}
-
-function fallback(problem: string): CoreMemoryResolution {
-  return resolution(
-    DEFAULT_CORE_PATH,
-    `dome.agent config ${problem}; falling back to ${DEFAULT_CORE_PATH}`,
-  );
 }
