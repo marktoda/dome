@@ -331,6 +331,35 @@ processors:
           - "preferences/signals.md"
     module: processors/preference-promotion-answer.ts
 
+  - id: dome.agent.brief-index
+    version: 0.1.0
+    phase: adoption
+    triggers:
+      - kind: signal
+        name: document.changed
+        pathPattern: "wiki/dailies/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "wiki/dailies/*.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "wiki/dailies/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "notes/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "notes/*.md"
+      - kind: signal
+        name: file.deleted
+        pathPattern: "notes/*.md"
+    capabilities:
+      - kind: read
+        paths: ["wiki/dailies/*.md", "notes/*.md"]
+      - kind: graph.write
+        namespaces: ["dome.agent.*"]
+    module: processors/brief-index.ts
+
   - id: dome.agent.active-projects
     version: 0.1.0
     phase: garden

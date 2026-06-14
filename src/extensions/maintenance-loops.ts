@@ -341,6 +341,10 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.daily.agenda-with",
         "dome.daily.carry-forward",
         "dome.agent.brief",
+        // Adoption-phase extractor: reads dome.agent.brief:today block from
+        // an adopted daily and emits a dome.agent.brief FACT so view
+        // processors (CB-T8) consume a durable projection, not raw markdown.
+        "dome.agent.brief-index",
         // Projects the dailies' open-loop tallies into core.md's
         // active-projects generated block (the second gated core.md writer)
         // — unresolved work stays visible in the always-loaded core page,
