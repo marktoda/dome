@@ -16,11 +16,14 @@
 #             output_path: "sources/slack/{date}.md"
 #             command: ["sh", ".dome/bin/fetch-slack.sh"]
 #
-# Requires the `claude` CLI with the OWNER's Slack MCP server connected on
-# the machine the daemon runs on: the FETCH below runs headless Claude AS
-# the owner. This script is the consent surface — copying it into the vault,
-# reading the prompt, and flipping `enabled: true` is what authorizes the
-# overnight Slack read. Review the prompt before you enable it.
+# The default FETCH runs `claude -p` AS the owner against the owner's
+# claude.ai Slack connector (the connector is the "Slack MCP" surface in the
+# claude.ai session). That connector loads only in an INTERACTIVE login
+# session — see the WARNING block below; it does NOT load in the daemon's
+# non-interactive `claude -p`, so the default is a foreground/example fetch,
+# not a working daemon one. This script is the consent surface either way —
+# copying it into the vault, reading the prompt, and flipping `enabled: true`
+# is what authorizes the Slack read. Review the prompt before you enable it.
 #
 # Contract with the dome.sources handler (wiki/specs/sources.md):
 #   - Invoked from the VAULT ROOT as: <command...> <date> <output_path>
@@ -42,6 +45,30 @@
 #     (default 30s). A headless-model fetch like the default below needs
 #     that raised in .dome/config.yaml (e.g. 300000). `dome doctor`
 #     reminds you while it is unset.
+#
+# ┌─ WARNING: the default FETCH below is FOREGROUND-ONLY ───────────────────────┐
+# │ The default FETCH runs headless `claude -p` against the owner's claude.ai   │
+# │ Slack connector. That works in an INTERACTIVE terminal — a full OAuth-      │
+# │ subscription login session — and ONLY there. It does NOT work when this     │
+# │ script is spawned by the daemon (launchd/systemd → non-interactive          │
+# │ `claude -p`): claude.ai connectors are bound to the interactive login       │
+# │ session and never load in a daemon-spawned headless run, which returns      │
+# │ empty or "not logged in". This was verified — the interactive terminal      │
+# │ made it LOOK like a working daemon fetcher; it is not one.                  │
+# │                                                                             │
+# │ Consequences:                                                               │
+# │   - As shipped, this template is a FOREGROUND/example reference: Slack      │
+# │     belongs in your morning foreground Claude session, where the connector  │
+# │     is loaded. The daemon-composed brief covers vault state and gracefully  │
+# │     omits the Slack digest when no slack day-file is present.               │
+# │   - For DAEMON / scheduled use, replace the FETCH block with a              │
+# │     DETERMINISTIC source that needs no interactive session: a direct Slack  │
+# │     Web API call with a file-stored token. Anything that emits the          │
+# │     slack-day markdown shape on stdout without depending on a connector     │
+# │     login works.                                                            │
+# │ The scaffolding below (REPAIR / VALIDATE / LAND) is sound for any fetcher;  │
+# │ only the connector-backed FETCH line is foreground-bound.                   │
+# └─────────────────────────────────────────────────────────────────────────────┘
 
 set -eu
 
@@ -72,9 +99,13 @@ tmp="$(mktemp)"
 trap 'rm -f "$tmp" "$tmp.repaired"' EXIT
 
 # ----- FETCH (adjust to taste) ----------------------------------------------
-# Default: headless Claude with the owner's Slack MCP. Swap this block for a
-# deterministic exporter if you prefer — anything that emits the slack-day
-# markdown shape on stdout works.
+# Default: headless Claude against the owner's claude.ai Slack connector.
+# FOREGROUND-ONLY — see the WARNING header: this works in an interactive
+# `claude` session but NOT when the daemon spawns it (connectors are bound to
+# the interactive login). For daemon/scheduled use SWAP this block for a
+# deterministic exporter — a direct Slack Web API call with a file-stored
+# token — anything that emits the slack-day markdown shape on stdout without a
+# connector login works.
 claude -p --output-format text "Summarize my Slack activity since the \
 previous local evening — messages that mention me, my direct messages, and \
 the high-traffic channels I am in — as a Dome slack-day markdown file for \

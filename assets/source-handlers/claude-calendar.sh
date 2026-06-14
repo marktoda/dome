@@ -36,6 +36,31 @@
 #     (default 30s). A headless-model fetch like the default below needs
 #     that raised in .dome/config.yaml (e.g. 300000). `dome doctor`
 #     reminds you while it is unset.
+#
+# ┌─ WARNING: the default FETCH below is FOREGROUND-ONLY ───────────────────────┐
+# │ The default FETCH runs headless `claude -p` against the owner's claude.ai   │
+# │ connectors (Google Calendar). That works in an INTERACTIVE terminal — a     │
+# │ full OAuth-subscription login session — and ONLY there. It does NOT work    │
+# │ when this script is spawned by the daemon (launchd/systemd → non-           │
+# │ interactive `claude -p`): claude.ai connectors are bound to the interactive │
+# │ login session and never load in a daemon-spawned headless run, which        │
+# │ returns empty or "not logged in". This was verified — the interactive       │
+# │ terminal made it LOOK like a working daemon fetcher; it is not one.         │
+# │                                                                             │
+# │ Consequences:                                                               │
+# │   - As shipped, this template is a FOREGROUND/example reference: live       │
+# │     calendar belongs in your morning foreground Claude session, where the   │
+# │     connectors are loaded. The daemon-composed brief covers vault state     │
+# │     (yesterday digest, open loops, questions) and gracefully omits          │
+# │     meetings when no calendar day-file is present.                          │
+# │   - For DAEMON / scheduled use, replace the FETCH block with a              │
+# │     DETERMINISTIC source that needs no interactive session: `icalBuddy`     │
+# │     reading Calendar.app on macOS, or a direct Calendar API call with a     │
+# │     file-stored token. Anything that emits the calendar-day markdown shape  │
+# │     on stdout without depending on a connector login works.                 │
+# │ The scaffolding below (REPAIR / VALIDATE / LAND) is sound for any fetcher;  │
+# │ only the connector-backed FETCH line is foreground-bound.                   │
+# └─────────────────────────────────────────────────────────────────────────────┘
 
 set -eu
 
@@ -66,10 +91,13 @@ tmp="$(mktemp)"
 trap 'rm -f "$tmp" "$tmp.repaired"' EXIT
 
 # ----- FETCH (adjust to taste) ----------------------------------------------
-# Default: headless Claude with calendar access (MCP or gcalcli underneath).
-# Swap this block for a direct `gcalcli agenda ... | awk ...` pipeline or an
-# EventKit script if you prefer a deterministic fetcher — anything that
-# emits the calendar-day markdown shape on stdout works.
+# Default: headless Claude against the owner's claude.ai calendar connector.
+# FOREGROUND-ONLY — see the WARNING header: this works in an interactive
+# `claude` session but NOT when the daemon spawns it (connectors are bound to
+# the interactive login). For daemon/scheduled use SWAP this block for a
+# deterministic fetcher — `icalBuddy` reading Calendar.app, a `gcalcli agenda
+# ... | awk ...` pipeline, or an EventKit script — anything that emits the
+# calendar-day markdown shape on stdout without a connector login works.
 claude -p --output-format text "Print today's ($d) calendar agenda as a Dome \
 calendar-day markdown file and NOTHING else. Exact shape: a YAML frontmatter \
 block with 'type: calendar-day' and 'date: $d', then '# Calendar $d', then \
