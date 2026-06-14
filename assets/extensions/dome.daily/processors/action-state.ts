@@ -119,6 +119,65 @@ export type DailyQuestionItem = {
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
+// ---------------------------------------------------------------------------
+// Hero selection — discount-aware "most important item right now" for the
+// cockpit briefing surface.
+// ---------------------------------------------------------------------------
+
+export type DailyHero =
+  | { readonly kind: "task"; readonly item: DailyTaskItem }
+  | { readonly kind: "question"; readonly item: DailyQuestionItem };
+
+/**
+ * Tasks discounted at or above this level are ineligible for hero status.
+ * Value mirrors the zombie-suppression threshold used in display ordering.
+ */
+const HERO_DISCOUNT_FLOOR = 0.5;
+
+const HERO_PRIORITY_WEIGHT: Record<DailyTaskPriority, number> = {
+  highest: 5,
+  high: 4,
+  medium: 3,
+  low: 2,
+  lowest: 1,
+};
+
+/**
+ * Select the single most-important action item for the cockpit briefing:
+ * 1. Highest-priority non-discounted overdue task (discount < 0.5).
+ * 2. Fallback: first `owner-needed` question (needs human judgment).
+ * 3. Fallback: soonest upcoming non-discounted dated task.
+ * 4. null — nothing qualifies.
+ */
+export function selectHero(input: {
+  readonly openTasks: ReadonlyArray<DailyTaskItem>;
+  readonly questions: ReadonlyArray<DailyQuestionItem>;
+  readonly today: string;
+}): DailyHero | null {
+  const eligible = input.openTasks.filter(
+    (t) => (t.attention?.discount ?? 0) < HERO_DISCOUNT_FLOOR,
+  );
+
+  const overdue = eligible
+    .filter((t) => t.dueDate !== null && t.dueDate < input.today)
+    .sort((a, b) => heroRank(b) - heroRank(a));
+  if (overdue[0] !== undefined) return { kind: "task", item: overdue[0] };
+
+  const ownerQ = input.questions.find((q) => q.automationPolicy === "owner-needed");
+  if (ownerQ !== undefined) return { kind: "question", item: ownerQ };
+
+  const soonest = eligible
+    .filter((t) => t.dueDate !== null)
+    .sort((a, b) => (a.dueDate! < b.dueDate! ? -1 : 1));
+  if (soonest[0] !== undefined) return { kind: "task", item: soonest[0] };
+
+  return null;
+}
+
+function heroRank(t: DailyTaskItem): number {
+  return t.priority !== null ? (HERO_PRIORITY_WEIGHT[t.priority] ?? 0) : 0;
+}
+
 export async function collectDailyActionState(
   ctx: ProcessorContext,
   date: DailyDate,

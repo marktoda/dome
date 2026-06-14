@@ -10,13 +10,43 @@ import {
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
+import type { SourceRef } from "../../../../src/core/source-ref";
 import {
   collectDailyActionState,
   inputDateOrLocalToday,
   parseInputLimit,
   selectDailyActionRows,
+  selectHero,
   uniqueSourceRefs,
+  type DailyHero,
 } from "./action-state";
+
+// ---------------------------------------------------------------------------
+// Cockpit briefing fields — wired to real facts in a later task; always null
+// here so the doc schema is stable from the start.
+// ---------------------------------------------------------------------------
+
+/**
+ * Narrative brief block — populated by the dome.agent.brief processor (CB-T8).
+ * Null until that processor runs.
+ */
+export type DailyBriefField = {
+  readonly text: string;
+  readonly sourceRef: SourceRef;
+} | null;
+
+/**
+ * Calendar event block — populated by the dome.agent.calendar.event processor
+ * (CB-T8). Null until that processor runs.
+ */
+export type DailyCalendarField = {
+  readonly events: ReadonlyArray<{
+    readonly time: string;
+    readonly title: string;
+    readonly meta: string | null;
+  }>;
+  readonly sourceRef: SourceRef;
+} | null;
 
 const SCHEMA = "dome.daily.today/v1";
 const DEFAULT_LIMIT = 12;
@@ -47,6 +77,15 @@ const today = defineProcessorImplementation({
       ...followups.flatMap((task) => task.sourceRefs),
       ...questions.flatMap((question) => question.sourceRefs),
     ]);
+    // Hero uses the full (non-display-limited) lists so it is not biased by the
+    // per-source display cap. brief/calendar are always null here; wired in CB-T8.
+    const hero: DailyHero | null = selectHero({
+      openTasks: actionState.openTasks,
+      questions: actionState.questions,
+      today: actionState.date,
+    });
+    const brief: DailyBriefField = null;
+    const calendar: DailyCalendarField = null;
     const data = Object.freeze({
       schema: SCHEMA,
       date: actionState.date,
@@ -60,6 +99,9 @@ const today = defineProcessorImplementation({
       openTasks,
       followups,
       questions,
+      brief,
+      calendar,
+      hero,
     });
 
     const effect: ViewEffect = viewEffect({
