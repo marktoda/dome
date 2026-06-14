@@ -347,6 +347,14 @@ function outputResult(input: {
     });
   }
 
+  // Emit-time validation: every effect is parsed against the strict
+  // `EffectSchema` here, at the emitting processor's own boundary. For a
+  // QuestionEffect this means an unmodeled metadata key (one the `.strict()`
+  // QuestionEffectSchema rejects) fails LOUDLY and ATTRIBUTABLY as
+  // `processor.invalid-output` naming `input.processorId` — it never reaches
+  // the `questions` table to poison a later read. The effect schema and the
+  // projection read schema (src/projections/questions.ts) are kept in lockstep
+  // so a key valid at emit also rehydrates on read.
   const effects: Array<Effect> = [];
   for (let index = 0; index < effectCount; index++) {
     let parsed: ReturnType<typeof EffectSchema.safeParse>;
