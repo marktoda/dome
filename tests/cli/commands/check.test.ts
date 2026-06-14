@@ -1195,6 +1195,85 @@ describe("runCheck", () => {
     expect(out).toContain("capability.grant-entry-missing");
   });
 
+  test("capability finding shows terse summary by default, full message under verbose", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    // Enable dome.markdown but omit core.md from the read grant — triggers
+    // capability.grant-entry-missing for dome.markdown.core-size.
+    await writeDoctorConfigBody(
+      f,
+      [
+        "extensions:",
+        "  dome.markdown:",
+        "    enabled: true",
+        "    grant:",
+        '      read: ["wiki/**/*.md", ".dome/page-types.yaml", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}", "raw/**"]',
+        '      patch.auto: ["**/*.md"]',
+        '      graph.write: ["dome.page.*"]',
+        "      question.ask: true",
+        "",
+      ].join("\n"),
+    );
+
+    // Default (non-verbose): terse summary shown, consequence clause hidden.
+    captured.out = [];
+    expect(await runCheck({ vault: f.vaultPath })).toBe(0);
+    const defaultRender = captured.out.join("\n");
+
+    expect(defaultRender).toContain("core.md");
+    expect(defaultRender).not.toContain("core-memory size lint");
+
+    // Verbose: full message shown as the "why" line (consequence clause visible).
+    captured.out = [];
+    expect(await runCheck({ vault: f.vaultPath, verbose: true })).toBe(0);
+    const verboseRender = captured.out.join("\n");
+
+    expect(verboseRender).toContain("core.md");
+    expect(verboseRender).toContain("core-memory size");
+  });
+
+  test("--json capability finding carries both message (full) and summary (terse)", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    // Enable dome.markdown but omit core.md — triggers capability.grant-entry-missing
+    // for dome.markdown.core-size with both message and summary authored.
+    await writeDoctorConfigBody(
+      f,
+      [
+        "extensions:",
+        "  dome.markdown:",
+        "    enabled: true",
+        "    grant:",
+        '      read: ["wiki/**/*.md", ".dome/page-types.yaml", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}", "raw/**"]',
+        '      patch.auto: ["**/*.md"]',
+        '      graph.write: ["dome.page.*"]',
+        "      question.ask: true",
+        "",
+      ].join("\n"),
+    );
+
+    expect(await runCheck({ vault: f.vaultPath, json: true })).toBe(0);
+    const blob = captured.out.find((l) => l.includes("\"schema\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    const engine = record(parsed["engine"]);
+    const findings = engine["findings"] as ReadonlyArray<Record<string, unknown>>;
+    const capFinding = findings.find(
+      (x) => x["code"] === "capability.grant-entry-missing",
+    );
+    expect(capFinding).toBeDefined();
+    if (capFinding === undefined) return;
+    // message: full consequence clause present
+    expect(typeof capFinding["message"]).toBe("string");
+    expect(capFinding["message"] as string).toContain("core-memory size");
+    // summary: terse, leads with entry, no consequence clause
+    expect(typeof capFinding["summary"]).toBe("string");
+    const summary = capFinding["summary"] as string;
+    expect(summary).toContain("core.md");
+    expect(summary).not.toContain("core-memory size");
+  });
+
   test("human mode renders engine findings via the finding primitive", async () => {
     const f = await makeFixture();
     fixtures.push(f);

@@ -151,7 +151,6 @@ function printDoctorText(
   modelProviderProbe?: ModelProviderProbeInput,
   verbose: boolean = false,
 ): void {
-  void verbose; // reserved for future task — not yet used to change output
   const caps = resolveCaps();
   // Info-only findings keep status "ok" but still deserve a visible label.
   const headStatus: Status = report.status === "ok"
@@ -167,7 +166,7 @@ function printDoctorText(
   if (report.findings.length === 0) {
     lines.push(...section("Findings", bullets([], caps), caps));
   } else {
-    lines.push(...section("Findings", findingLines(report.findings, caps), caps));
+    lines.push(...section("Findings", findingLines(report.findings, caps, verbose), caps));
 
     const breakdownTerms: ReadonlyArray<string> = [
       `outbox ${report.summary.failedOutbox} failed`,

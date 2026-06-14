@@ -174,7 +174,7 @@ function renderCheckReport(
     );
   }
 
-  lines.push(...section("Engine", findingLines(report.engine?.findings ?? [], caps), caps));
+  lines.push(...section("Engine", findingLines(report.engine?.findings ?? [], caps, options.verbose), caps));
   lines.push(...section("Content", diagnosticLines(report.content, caps), caps));
   lines.push(...section("Decisions", questionLines(report.decisions, caps), caps));
 

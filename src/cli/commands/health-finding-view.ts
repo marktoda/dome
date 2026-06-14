@@ -32,10 +32,16 @@ export function subjectFor(hf: HealthFinding): string | undefined {
  * Render a list of HealthFindings through the `finding` presenter primitive:
  * severity-sorted, blank line between findings, old `[severity] code:` / `recovery:`
  * run-on format replaced with the Rust/Elm anatomy.
+ *
+ * When `verbose` is false (default): shows the terse `summary` as `what` (if
+ * present), else the full `message`. When `verbose` is true: also adds `why`
+ * set to the full `message` (only when a `summary` exists — otherwise `what`
+ * already is the full message and a redundant `why` would repeat it).
  */
 export function findingLines(
   findings: ReadonlyArray<HealthFinding>,
   caps: Caps,
+  verbose: boolean = false,
 ): ReadonlyArray<string> {
   if (findings.length === 0) return [];
   const sorted = [...findings].sort(
@@ -43,14 +49,21 @@ export function findingLines(
   );
   const rendered: string[][] = sorted.map((hf) => {
     const subject = subjectFor(hf);
+    const hasSummary =
+      (hf.code === "capability.grant-missing" ||
+        hf.code === "capability.grant-entry-missing" ||
+        hf.code === "capability.grant-starved") &&
+      hf.summary !== undefined;
+    const what = hasSummary ? (hf as { summary: string }).summary : hf.message;
     const f: Finding = {
       severity: hf.severity,
       code: hf.code,
       ...(subject !== undefined ? { subject } : {}),
-      what: hf.message,
+      what,
+      ...(verbose && hasSummary ? { why: hf.message } : {}),
       fix: hf.recovery,
     };
-    return [...finding(f, caps)];
+    return [...finding(f, caps, verbose)];
   });
   const lines: string[] = [];
   for (let i = 0; i < rendered.length; i++) {
