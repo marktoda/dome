@@ -40,12 +40,14 @@ import {
 } from "../../src/projections/diagnostics";
 import {
   answerQuestionById,
+  countUnrehydratableQuestions,
   getQuestionRecord,
   answerQuestion,
   insertQuestion,
   queryQuestionRecords,
   queryQuestions,
   resolveStaleQuestions,
+  type SkippedQuestionRow,
 } from "../../src/projections/questions";
 import {
   claimNextEligibleJob,
@@ -1134,6 +1136,10 @@ describe("questions accessor", () => {
   });
 
   it("question reads validate metadata JSON instead of casting", () => {
+    // A row whose metadata_json carries an INVALID VALUE (not just an unknown
+    // key) is still a poison row: it must be skipped + surfaced, never cast
+    // through unvalidated. We assert it does not appear in the rehydrated set
+    // and is reported to the skip sink with a validation message.
     insertQuestion(db, {
       effect: questionEffect({
         question: "what is the dueDate?",
@@ -1149,9 +1155,123 @@ describe("questions accessor", () => {
       .query("UPDATE questions SET metadata_json = ? WHERE idempotency_key = ?")
       .run(JSON.stringify({ risk: "weird" }), "q-invalid-metadata");
 
-    expect(() => queryQuestionRecords(db)).toThrow(
+    const skipped: Array<SkippedQuestionRow> = [];
+    const records = queryQuestionRecords(db, undefined, (s) =>
+      skipped.push(s),
+    );
+    expect(records).toEqual([]);
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0]?.idempotencyKey).toBe("q-invalid-metadata");
+    expect(skipped[0]?.processorId).toBe("p1");
+    expect(skipped[0]?.reason).toContain(
       "questions.metadata_json failed validation",
     );
+  });
+
+  it("failure-isolating read skips an older-build poison row and still returns the healthy rows", () => {
+    // The regression that bit prod: one row written by an older build carries a
+    // metadata key the current strict schema rejects. The whole-table read must
+    // NOT throw — the poison row drops itself (surfaced), the rest rehydrate, so
+    // the operational tick completes and auto-resolution proceeds for the
+    // healthy questions.
+    insertQuestion(db, {
+      effect: questionEffect({
+        question: "healthy A?",
+        sourceRefs: [REF],
+        idempotencyKey: "q-healthy-a",
+        metadata: { risk: "low", confidence: 0.9, automationPolicy: "agent-safe" },
+      }),
+      processorId: "p-healthy",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
+    insertQuestion(db, {
+      effect: questionEffect({
+        question: "poison?",
+        sourceRefs: [REF],
+        idempotencyKey: "q-poison",
+        metadata: { risk: "low" },
+      }),
+      processorId: "p-old-build",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
+    insertQuestion(db, {
+      effect: questionEffect({
+        question: "healthy B?",
+        sourceRefs: [REF],
+        idempotencyKey: "q-healthy-b",
+      }),
+      processorId: "p-healthy",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
+    // Simulate an older build whose schema allowed a now-removed metadata key.
+    db.raw
+      .query("UPDATE questions SET metadata_json = ? WHERE idempotency_key = ?")
+      .run(
+        JSON.stringify({ risk: "low", legacyUnknownKey: "from-old-build" }),
+        "q-poison",
+      );
+
+    const skipped: Array<SkippedQuestionRow> = [];
+    // The operational tick reads with `{ resolved: false }`
+    // (question-auto-resolution.ts:83) — use the same filter so this is the
+    // faithful regression for the tick-abort the diagnostic found.
+    const records = queryQuestionRecords(db, { resolved: false }, (s) =>
+      skipped.push(s),
+    );
+
+    expect(records.map((r) => r.effect.idempotencyKey).sort()).toEqual([
+      "q-healthy-a",
+      "q-healthy-b",
+    ]);
+    // The healthy agent-safe row still carries the metadata auto-resolution
+    // needs — i.e. the tick proceeds for it instead of aborting on the poison.
+    const healthyA = records.find(
+      (r) => r.effect.idempotencyKey === "q-healthy-a",
+    );
+    expect(healthyA?.effect.metadata?.automationPolicy).toBe("agent-safe");
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0]?.idempotencyKey).toBe("q-poison");
+    expect(skipped[0]?.processorId).toBe("p-old-build");
+    // The poison row is NOT deleted — it stays in the DB for later repair.
+    expect(countUnrehydratableQuestions(db)).toBe(1);
+    const rawCount = db.raw
+      .query<{ readonly n: number }, []>("SELECT COUNT(*) AS n FROM questions")
+      .get();
+    expect(rawCount?.n).toBe(3);
+  });
+
+  it("a current-build question round-trips with no false skips", () => {
+    insertQuestion(db, {
+      effect: questionEffect({
+        question: "normal?",
+        sourceRefs: [REF],
+        idempotencyKey: "q-normal",
+        options: ["a", "b"],
+        metadata: {
+          risk: "low",
+          confidence: 0.95,
+          recommendedAnswer: "a",
+          automationPolicy: "agent-safe",
+        },
+      }),
+      processorId: "p1",
+      runId: "run-test-fixture",
+      adoptedCommit: ADOPTED,
+    });
+    const skipped: Array<SkippedQuestionRow> = [];
+    const records = queryQuestionRecords(db, undefined, (s) => skipped.push(s));
+    expect(skipped).toEqual([]);
+    expect(records).toHaveLength(1);
+    expect(records[0]?.effect.metadata).toEqual({
+      risk: "low",
+      confidence: 0.95,
+      recommendedAnswer: "a",
+      automationPolicy: "agent-safe",
+    });
+    expect(countUnrehydratableQuestions(db)).toBe(0);
   });
 
   it("answerQuestionById validates options and records the answer", () => {

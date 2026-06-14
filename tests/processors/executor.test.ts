@@ -143,6 +143,44 @@ describe("executeProcessor", () => {
     expect(result.diagnostic.message).toContain("effect[1]");
   });
 
+  test("QuestionEffect with an unmodeled metadata key is rejected at emit, attributable to the processor", async () => {
+    // Emit-time validation (the (a) half of chunk-11 Task 1): a processor that
+    // emits a QuestionEffect carrying a metadata key the strict
+    // QuestionEffectSchema does not model must fail LOUDLY and ATTRIBUTABLY at
+    // its own effect — never reaching the questions table to poison a later
+    // read. The bad key is raw (the typed constructor cannot express it).
+    const processorId = "test.executor.bad-question-metadata";
+    const hostileQuestion = {
+      kind: "question",
+      question: "is this ok?",
+      sourceRefs: [],
+      idempotencyKey: "q-bad-meta",
+      metadata: { risk: "low", unmodeledLegacyKey: "boom" },
+    };
+    // Guard: the schema genuinely rejects this shape (mirror of the read schema).
+    expect(EffectSchema.safeParse(hostileQuestion).success).toBe(false);
+
+    const result = await executeProcessor({
+      processorId,
+      phase: "garden",
+      runId: RUN_ID,
+      makeContext: contextWithSignal,
+      policy: {
+        class: "background",
+        timeoutMs: 100,
+        lateEffectBehavior: "discard",
+      },
+      run: async () => [hostileQuestion as unknown as Effect],
+    });
+
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") return;
+    expect(result.error.code).toBe("processor.invalid-output");
+    expect(result.error.processorId).toBe(processorId);
+    expect(result.error.message).toContain("effect[0]");
+    expect("effects" in result).toBe(false);
+  });
+
   test("source-backed patch output policy rejects empty PatchEffect provenance", async () => {
     const result = await executeProcessor({
       processorId: "test.executor.model-patch-policy",

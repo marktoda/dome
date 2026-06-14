@@ -13,7 +13,7 @@ import {
   markAnswerHandlersFailed,
   markAnswerHandlersHandled,
 } from "../../answers/question-answers";
-import type { DiagnosticEffect } from "../../core/effect";
+import { diagnosticEffect, type DiagnosticEffect } from "../../core/effect";
 import type {
   Capability,
   OperationalQueryView,
@@ -80,16 +80,45 @@ export async function runQuestionAutoResolution(opts: {
 }): Promise<QuestionAutoResolutionResult> {
   if (!opts.config.enabled) return emptyResult(false);
 
-  const openQuestions = queryQuestionRecords(opts.projection, {
-    resolved: false,
-  });
-  if (openQuestions.length === 0) return emptyResult(true);
+  const diagnostics: DiagnosticEffect[] = [];
+  // Failure-isolating read: a poison row (e.g. an older-build row whose
+  // metadata fails the current strict schema) is skipped instead of throwing,
+  // so one unreadable row can never abort the tick and halt auto-resolution for
+  // every healthy question. The skip is surfaced as a warning diagnostic
+  // (host-rendered, not swallowed); the row stays in the DB for repair/rebuild.
+  const openQuestions = queryQuestionRecords(
+    opts.projection,
+    { resolved: false },
+    (skippedRow) => {
+      diagnostics.push(
+        diagnosticEffect({
+          severity: "warning",
+          code: "question.unreadable-row",
+          message:
+            `Skipped unreadable question row id=${skippedRow.id} ` +
+            `(processor ${skippedRow.processorId}, key ${skippedRow.idempotencyKey}): ` +
+            `${skippedRow.reason}. The row is retained; rebuild the projection ` +
+            `or repair the emitting processor to clear it.`,
+          sourceRefs: [],
+        }),
+      );
+    },
+  );
+  if (openQuestions.length === 0) {
+    return freezeResult({
+      enabled: true,
+      considered: 0,
+      answered: 0,
+      skipped: 0,
+      handlerFailed: 0,
+      diagnostics,
+    });
+  }
 
   let considered = 0;
   let answered = 0;
   let skipped = 0;
   let handlerFailed = 0;
-  const diagnostics: DiagnosticEffect[] = [];
 
   for (const question of openQuestions) {
     if (opts.signal?.aborted === true) break;

@@ -41,3 +41,24 @@ Turn "ask once per failed row, forever" into one root-cause-shaped finding.
 Full `bun test` + `bun run typecheck`. Confirm no-accreting-registries / two-writer / invariant fences green. Final review (especially Task 1 correctness — the tick-isolation must genuinely not lose data, and emit-time validation must be attributable). Restart the work-vault daemon after merge so the fixes go live (Task 2's timeout + Task 1's isolation directly address its live debris). `--no-ff` merge.
 
 Note: this is Half A. Half B (work-vault ops cleanup — calendar fetcher hardening, drain stale rows, launchd PATH, raw/-refire trace) is a separate pragmatic pass, not in this plan.
+
+## Deferred follow-up
+
+**Make the whole-vault adoption scanners incremental (removes the Task 2 band-aid).**
+Task 2 raised the adoption deterministic timeout ceiling to 60s and gave
+`dome.markdown.duplicate-detection` (30s), `lint-supersession` (30s), and
+`broken-images` (20s) explicit `execution.timeoutMs` requests. That stops the
+silent wedge but does not fix the root cause: these scanners are not
+incremental. Each one does an unconditional whole-vault read + `gray-matter`
+parse of EVERY page on EVERY adoption tick — e.g. `duplicate-detection.ts:38-39`
+lists every markdown file and `readComparablePages(ctx, allMarkdown)` parses each
+— so cost scales with vault size, not
+with the size of the change. Worse, the scanner runs once per fixed-point
+iteration, so the whole-vault cost is amplified up to ~3× per adoption.
+
+The durable fix: scan only the changed pages, and resolve duplicate/supersession
+candidates by normalized title from a cached or projected title index instead of
+re-reading and re-parsing the whole vault each tick. That drops the per-tick cost
+back under the 10s deterministic default and lets the elevated timeouts (and the
+60s ceiling headroom they lean on) go away. Until then the ceiling is load-bearing
+on large vaults — don't lower it without doing the incremental work first.

@@ -99,6 +99,30 @@ timeouts where the phase allows it. Adoption processors are always capped to
 deterministic execution; garden and view processors may request `llm` or
 `batch` when their capabilities and product role justify longer runs.
 
+Adoption stays the merge gate: its deterministic timeout DEFAULT is 10s to keep
+the common single-file path fast. A processor that performs a genuine
+whole-vault adoption scan (e.g. `dome.markdown.duplicate-detection`, which reads
+and parses every comparable page on each changed file) may request a larger
+`execution.timeoutMs`, clamped to the adoption deterministic ceiling
+(`ADOPTION_DETERMINISTIC_TIMEOUT_CEILING_MS`, 60s). The gate therefore stays
+bounded — it can never hang indefinitely — but is not pinned to 10s for the rare
+processor that legitimately needs headroom. A tighter vault
+`engine.processor_timeout_ms` cap still wins (it is a ceiling on the resolved
+bound, applied as a `min`, so the tighter vault cap caps the requested value). A
+request without an explicit `timeoutMs` resolves to the 10s default unchanged.
+
+> **Deviation (v1 chunk 11, Task 2):** the 60s ceiling and the explicit 30s/20s
+> requests on `dome.markdown.duplicate-detection`, `lint-supersession`, and
+> `broken-images` are a band-aid, not the durable fix. Those scanners are not
+> yet incremental: each does an unconditional whole-vault read + `gray-matter`
+> parse of every page on every adoption tick (cost scales with vault size, not
+> change size) and runs once per fixed-point iteration (up to ~3× per
+> adoption). The ceiling buys headroom so large vaults stop silently wedging,
+> but the real fix is making those scanners incremental — scan only changed
+> pages and resolve candidates from a cached/projected index — which drops the
+> cost back under the 10s default and lets these timeouts go away. Tracked in
+> the chunk 11 plan's deferred follow-up.
+
 Timeouts are enforced by the executor boundary, not by individual processors.
 A timed-out processor produces a `processor.timeout` diagnostic, the executor
 returns `status: "timed_out"`, and no returned Effects from that invocation

@@ -68,10 +68,10 @@ describe("resolveExecutionPolicy", () => {
     expect(result.error.code).toBe("execution-policy.phase-class-denied");
   });
 
-  test("adoption deterministic timeout cannot grow beyond default phase cap", () => {
+  test("adoption keeps the 10s deterministic default when no timeout is requested", () => {
     const result = resolveExecutionPolicy({
       phase: "adoption",
-      request: { class: "deterministic", timeoutMs: 60_000 },
+      request: { class: "deterministic" },
       vaultCap: undefined,
     });
 
@@ -79,6 +79,36 @@ describe("resolveExecutionPolicy", () => {
     if (!result.ok) return;
     expect(result.value.class).toBe("deterministic");
     expect(result.value.timeoutMs).toBe(10_000);
+  });
+
+  test("adoption honors an explicit larger deterministic timeout up to the adoption ceiling", () => {
+    // A genuine whole-vault adoption scan (dome.markdown.duplicate-detection)
+    // needs headroom over the 10s default; the merge gate still stays bounded.
+    const result = resolveExecutionPolicy({
+      phase: "adoption",
+      request: { class: "deterministic", timeoutMs: 30_000 },
+      vaultCap: undefined,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.class).toBe("deterministic");
+    expect(result.value.timeoutMs).toBe(30_000);
+  });
+
+  test("adoption deterministic timeout cannot grow beyond the adoption ceiling", () => {
+    // The bound is raised from the 10s default to a 60s ceiling, but adoption
+    // remains the merge gate: an unbounded request is still clamped.
+    const result = resolveExecutionPolicy({
+      phase: "adoption",
+      request: { class: "deterministic", timeoutMs: 600_000 },
+      vaultCap: undefined,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.class).toBe("deterministic");
+    expect(result.value.timeoutMs).toBe(60_000);
   });
 
   test("adoption deterministic timeout still respects tighter vault cap", () => {

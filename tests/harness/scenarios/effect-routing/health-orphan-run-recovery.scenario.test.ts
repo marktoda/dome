@@ -80,6 +80,24 @@ extensions:
     });
     markRunning(h.ledger, orphanId, startedAt);
 
+    // Self-referential orphan containment (Task 4b): the orphan-run-recovery
+    // processor's OWN runs can go orphan (minute cron). Seed one — the detector
+    // must NOT raise a question about itself, or it pelts the question pile
+    // every minute, while the real test.orphaned still surfaces.
+    const selfOrphanId = newRunId(startedAt, () => "ffffff");
+    insertQueued(h.ledger, {
+      id: selfOrphanId,
+      proposalId: null,
+      processorId: "dome.health.orphan-run-recovery-questions",
+      processorVersion: "0.1.1",
+      phase: "garden",
+      inputCommit: commitOid(adopted),
+      triggerKind: "schedule",
+      triggerPayload: null,
+      startedAt,
+    });
+    markRunning(h.ledger, selfOrphanId, startedAt);
+
     await h.advance(60_000);
     const drained = await h.drainOperationalWork();
     expect(drained.scheduler.fired.map((fire) => fire.processorId)).toContain(
@@ -89,6 +107,12 @@ extensions:
       .expectProjection()
       .questions()
       .toContainQuestion(`Run ${orphanId} for processor test.orphaned`);
+
+    // No question about the detector's own orphaned run.
+    const selfQuestions = queryQuestionRecords(h.projection).filter((q) =>
+      q.effect.question.includes(selfOrphanId),
+    );
+    expect(selfQuestions).toEqual([]);
 
     insertQuestion(h.projection, {
       processorId: "test.forged-question",

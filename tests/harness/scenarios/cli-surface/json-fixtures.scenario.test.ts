@@ -97,6 +97,9 @@ const DOCTOR_SUMMARY_KEYS = Object.freeze([
   "dailyEditionNotCompiled",
   "dailyCalendarSourceMissing",
   "gitCommitSigning",
+  "recurringOutboxFailures",
+  "unreadableQuestions",
+  "recurringTimeouts",
 ]);
 
 const QUERY_KEYS = Object.freeze([

@@ -13,7 +13,11 @@ import type {
   OperationalQueryView,
 } from "../../core/processor";
 import type { LedgerDb } from "../../ledger/db";
-import { orphanRuns, type RunRow } from "../../ledger/runs";
+import {
+  orphanRuns,
+  ORPHAN_RECOVERY_EXCLUDED_PROCESSOR_PREFIXES,
+  type RunRow,
+} from "../../ledger/runs";
 import type { OutboxDb } from "../../outbox/db";
 import { queryOutbox, type OutboxRow } from "../../outbox/dispatch";
 import type {
@@ -41,10 +45,18 @@ export function buildOperationalQueryView(opts: {
       ),
     orphanRuns: (filter) =>
       Object.freeze(
+        // `ctx.operational.orphanRuns()` feeds the dome.health orphan-run
+        // recovery processor, so it excludes the recovery processors' own
+        // runs — the detector must not raise self-referential questions about
+        // its minute-cadence runs (Task 4b).
         orphanRuns(
           opts.ledger,
           normalizeOrphanRunAgeMs(filter?.runningOlderThanMs),
           now(),
+          {
+            excludeProcessorIdPrefixes:
+              ORPHAN_RECOVERY_EXCLUDED_PROCESSOR_PREFIXES,
+          },
         ).map(toOperationalRunRow),
       ),
   });

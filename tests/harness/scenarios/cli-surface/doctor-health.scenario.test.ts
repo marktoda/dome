@@ -131,8 +131,14 @@ scenario(
     expect(report.summary.quarantinedProcessors).toBe(1);
     expect(report.summary.projectionCacheDrift).toBe(1);
     expect(report.summary.instructionDrift).toBe(1);
+    // The seeded failed row was enqueued at the TestClock epoch (2026-01-01),
+    // so against the doctor's real-wall-clock read it is far past the 1h
+    // recurring-failure window — it is BOTH the per-row `outbox.failed` retry
+    // question AND the `outbox.recurring-failure` root-cause finding (fix the
+    // command). A genuinely fresh transient failure would not raise the latter.
     expect(report.findings.map((finding) => finding.code)).toEqual([
       "outbox.failed",
+      "outbox.recurring-failure",
       "outbox.pending-stuck",
       "run.orphan",
       "processor.quarantined",

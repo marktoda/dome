@@ -19,9 +19,12 @@ import { computeLedgerSchemaHash } from "../../ledger/db";
 import {
   latestActiveProblemRuns,
   orphanRuns,
+  ORPHAN_RECOVERY_EXCLUDED_PROCESSOR_PREFIXES,
   queryRunSummaries,
   type RunRow,
+  type RunSummaryRow,
 } from "../../ledger/runs";
+import { countUnrehydratableQuestions } from "../../projections/questions";
 import { nextFire, parseCron } from "../operational/cron";
 import type { OutboxDb } from "../../outbox/db";
 import { computeOutboxSchemaHash } from "../../outbox/db";
@@ -46,6 +49,26 @@ import { compareStrings } from "../../core/compare";
 
 export const DEFAULT_ORPHAN_RUN_THRESHOLD_MS = 5 * 60 * 1000;
 export const DEFAULT_PENDING_OUTBOX_THRESHOLD_MS = 30 * 60 * 1000;
+/**
+ * A failed outbox row whose enqueue age exceeds this window is treated as a
+ * recurring (fix-the-command) failure rather than a fresh transient. One hour
+ * is comfortably past the dispatch retry backoff plus a round of the
+ * minute-cadence dome.health recovery loop, so a row still failing this long
+ * after first enqueue is not a blip.
+ */
+export const DEFAULT_RECURRING_OUTBOX_FAILURE_THRESHOLD_MS = 60 * 60 * 1000;
+/**
+ * How many `timed_out` runs for one processor (within the scanned window)
+ * constitute a recurring-timeout finding. Two clears a single unlucky blip
+ * while still firing early on a genuine wedge (the live duplicate-detection
+ * timed out ~30+ times).
+ */
+export const DEFAULT_RECURRING_TIMEOUT_THRESHOLD = 2;
+/**
+ * How many recent runs the recurring-timeout probe scans. Bounded so the
+ * health tick stays cheap; large enough to catch a minute-cadence loop.
+ */
+export const RECURRING_TIMEOUT_SCAN_LIMIT = 200;
 const SQLITE_BUSY_TIMEOUT_MS = 5_000;
 
 export type HealthFinding =
@@ -133,6 +156,58 @@ export type HealthFinding =
         OutboxRow,
         "id" | "capability" | "idempotencyKey" | "attempts" | "nextAttemptAt"
       >;
+    }
+  | {
+      // A failed outbox row that has stayed failed well beyond its retry
+      // budget — a fetcher/command that keeps re-failing on re-emit (the live
+      // calendar fetch exits 1 every run), NOT a fresh transient. One
+      // root-cause finding ("fix the command") distinct from the per-row
+      // `outbox.failed` retry-or-abandon question.
+      readonly code: "outbox.recurring-failure";
+      readonly severity: "error";
+      readonly subject: "outbox";
+      readonly id: string;
+      readonly message: string;
+      readonly recovery: string;
+      readonly outbox: Pick<
+        OutboxRow,
+        | "id"
+        | "capability"
+        | "idempotencyKey"
+        | "attempts"
+        | "maxAttempts"
+        | "lastError"
+        | "enqueuedAt"
+      >;
+    }
+  | {
+      // N question rows can't be rehydrated (older-build/poison rows the
+      // failure-isolating read skips). One finding for the whole backlog
+      // rather than a stderr-only signal.
+      readonly code: "questions.unreadable-backlog";
+      readonly severity: "warning";
+      readonly subject: "questions";
+      readonly id: "unreadable_questions";
+      readonly message: string;
+      readonly recovery: string;
+      readonly questions: {
+        readonly unreadableCount: number;
+      };
+    }
+  | {
+      // One processor's runs repeatedly hit `timed_out` — raise its timeout or
+      // scope it. Turns a silent serve.log timeout loop into one finding.
+      readonly code: "run.recurring-timeout";
+      readonly severity: "warning";
+      readonly subject: "runs";
+      readonly id: string;
+      readonly message: string;
+      readonly recovery: string;
+      readonly run: {
+        readonly processorId: string;
+        readonly timedOutCount: number;
+        readonly lastTimedOutAt: string | null;
+      };
     }
   | {
       readonly code: "projection.cache-key-drift";
@@ -361,6 +436,9 @@ export type HealthSummary = {
   readonly dailyEditionNotCompiled: number;
   readonly dailyCalendarSourceMissing: number;
   readonly gitCommitSigning: number;
+  readonly recurringOutboxFailures: number;
+  readonly unreadableQuestions: number;
+  readonly recurringTimeouts: number;
 };
 
 /**
@@ -394,6 +472,9 @@ const SUMMARY_FIELD_BY_CODE = Object.freeze({
   "daily.edition-not-compiled": "dailyEditionNotCompiled",
   "daily.calendar-source-missing": "dailyCalendarSourceMissing",
   "git.commit-signing": "gitCommitSigning",
+  "outbox.recurring-failure": "recurringOutboxFailures",
+  "questions.unreadable-backlog": "unreadableQuestions",
+  "run.recurring-timeout": "recurringTimeouts",
 } as const) satisfies Readonly<Record<HealthFinding["code"], keyof HealthSummary>>;
 
 type CodeSummaryField =
@@ -460,6 +541,8 @@ export async function collectHealthReport(opts: {
   readonly now?: Date;
   readonly orphanRunThresholdMs?: number;
   readonly pendingOutboxThresholdMs?: number;
+  readonly recurringOutboxFailureThresholdMs?: number;
+  readonly recurringTimeoutThreshold?: number;
 }): Promise<HealthReport> {
   const now = opts.now ?? new Date();
   const orphanRunThresholdMs =
@@ -469,7 +552,35 @@ export async function collectHealthReport(opts: {
   const failedOutbox = queryOutbox(opts.outbox, { status: "failed" });
   const stuckPendingOutbox = queryOutbox(opts.outbox, { status: "pending" })
     .filter((row) => isStuckPendingOutbox(row, now, pendingOutboxThresholdMs));
-  const orphaned = orphanRuns(opts.ledger, orphanRunThresholdMs, now);
+  // Self-referential orphan containment (Task 4b): the run.orphan finding is a
+  // recovery surface, so it excludes the dome.health recovery processors' own
+  // minute-cadence runs — otherwise the orphan-run detector raises a finding
+  // about itself. A genuinely stuck health run is still visible via
+  // `dome inspect orphan-runs` (which calls orphanRuns unfiltered).
+  const orphaned = orphanRuns(opts.ledger, orphanRunThresholdMs, now, {
+    excludeProcessorIdPrefixes: ORPHAN_RECOVERY_EXCLUDED_PROCESSOR_PREFIXES,
+  });
+  // Recurring-failure surfaces (Task 3): one root-cause finding instead of a
+  // growing question stack / silent serve.log loop. All read-only and cheap.
+  const recurringOutboxFailures = recurringOutboxFailureFindings({
+    failedOutbox,
+    now,
+    ...(opts.recurringOutboxFailureThresholdMs !== undefined
+      ? { thresholdMs: opts.recurringOutboxFailureThresholdMs }
+      : {}),
+  });
+  const unreadableQuestions = unreadableQuestionBacklogFindings({
+    unrehydratableCount: countUnrehydratableQuestions(opts.projection),
+  });
+  const recurringTimeouts = recurringTimeoutFindings({
+    recentTimedOutRuns: queryRunSummaries(opts.ledger, {
+      status: "timed_out",
+      limit: RECURRING_TIMEOUT_SCAN_LIMIT,
+    }),
+    ...(opts.recurringTimeoutThreshold !== undefined
+      ? { threshold: opts.recurringTimeoutThreshold }
+      : {}),
+  });
   // A latest-failure finding for a processor that is no longer registered
   // (bundle retired or disabled) can never be superseded by a newer run —
   // it would hold attention_required hostage forever (the stale
@@ -593,10 +704,13 @@ export async function collectHealthReport(opts: {
     ...dailyEdition,
     ...commitSigning,
     ...failedOutbox.map(outboxFinding),
+    ...recurringOutboxFailures,
     ...stuckPendingOutbox.map(stuckPendingOutboxFinding),
     ...orphaned.map(orphanFinding),
     ...failedRuns.map(latestProblemRunFinding),
+    ...recurringTimeouts,
     ...quarantined.map(quarantineFinding),
+    ...unreadableQuestions,
     ...projectionDrift,
     ...(adoptedDivergence === null ? [] : [adoptedDivergence]),
     ...instructionDrift,
@@ -1555,6 +1669,161 @@ function stuckPendingOutboxFinding(row: OutboxRow): HealthFinding {
       nextAttemptAt: row.nextAttemptAt,
     }),
   });
+}
+
+/**
+ * Recurring-outbox-failure findings: a `failed` row (always past max attempts,
+ * since the dispatcher only marks `failed` once `attempts >= maxAttempts`) that
+ * has stayed failed well beyond its retry budget is a fetcher/command that
+ * keeps re-failing on re-emit, not a fresh transient. The observable is enqueue
+ * age: the row resets `attempts`/`status` on each recovery retry but never
+ * `enqueued_at`, so a row whose `enqueuedAt` is older than the recurrence
+ * window has survived its retry backoff plus a round of the minute-cadence
+ * dome.health recovery loop and is still failing — that is the
+ * fix-the-command signal. A freshly-failed row stays the per-row
+ * `outbox.failed` retry-or-abandon question (the normal transient path).
+ */
+export function recurringOutboxFailureFindings(opts: {
+  readonly failedOutbox: ReadonlyArray<OutboxRow>;
+  readonly now: Date;
+  readonly thresholdMs?: number;
+}): ReadonlyArray<HealthFinding> {
+  const thresholdMs =
+    opts.thresholdMs ?? DEFAULT_RECURRING_OUTBOX_FAILURE_THRESHOLD_MS;
+  const findings: HealthFinding[] = [];
+  for (const row of opts.failedOutbox) {
+    const enqueued = Date.parse(row.enqueuedAt);
+    // An unparseable timestamp is treated as recurring — a row we cannot age
+    // is not a fresh transient we can vouch for.
+    const recurring =
+      !Number.isFinite(enqueued) ||
+      opts.now.getTime() - enqueued >= thresholdMs;
+    if (!recurring) continue;
+    findings.push(
+      Object.freeze({
+        code: "outbox.recurring-failure" as const,
+        severity: "error" as const,
+        subject: "outbox" as const,
+        id: row.idempotencyKey,
+        message:
+          `Outbox row ${row.id} (${row.capability}) fails every run — it has ` +
+          `been in the failed state since ${row.enqueuedAt} despite the ` +
+          `recovery loop, so retrying will not help; the command/fetcher ` +
+          `behind it needs fixing` +
+          (row.lastError === null ? "." : ` (last error: ${row.lastError}).`),
+        recovery:
+          "This is not a transient blip: fix the failing command/fetcher " +
+          "(for a dome.sources feed, run its fetch command manually from the " +
+          "vault root to reproduce, then repair the script or its config in " +
+          ".dome/config.yaml), or abandon the row via the dome.health " +
+          "outbox-recovery question if the action is no longer wanted. Use " +
+          "`dome inspect outbox` for row-level detail.",
+        outbox: Object.freeze({
+          id: row.id,
+          capability: row.capability,
+          idempotencyKey: row.idempotencyKey,
+          attempts: row.attempts,
+          maxAttempts: row.maxAttempts,
+          lastError: row.lastError,
+          enqueuedAt: row.enqueuedAt,
+        }),
+      }),
+    );
+  }
+  return Object.freeze(findings);
+}
+
+/**
+ * The unreadable-question-backlog finding: when `countUnrehydratableQuestions`
+ * (Task 1's primitive) reports N > 0 poison/older-build rows that the
+ * failure-isolating read skips, raise ONE finding so the backlog is visible on
+ * the doctor/check surface instead of being a stderr-only skip signal. Rebuild
+ * re-derives questions from adopted markdown and reapplies durable answers, so
+ * it is the repair.
+ */
+export function unreadableQuestionBacklogFindings(opts: {
+  readonly unrehydratableCount: number;
+}): ReadonlyArray<HealthFinding> {
+  if (opts.unrehydratableCount <= 0) return Object.freeze([]);
+  return Object.freeze([
+    Object.freeze({
+      code: "questions.unreadable-backlog" as const,
+      severity: "warning" as const,
+      subject: "questions" as const,
+      id: "unreadable_questions" as const,
+      message:
+        `${opts.unrehydratableCount} question row(s) cannot be read ` +
+        "(their stored metadata fails the current strict schema — typically " +
+        "rows written by an older build). They are skipped on read so the " +
+        "operational tick still completes and other questions auto-resolve, " +
+        "but they cannot be surfaced or resolved until repaired.",
+      recovery:
+        "Run `dome rebuild` to re-derive question rows from adopted markdown " +
+        "(durable answers are reapplied from answers.db); the unreadable " +
+        "rows are regenerated in the current schema.",
+      questions: Object.freeze({ unreadableCount: opts.unrehydratableCount }),
+    }),
+  ]);
+}
+
+/**
+ * Recurring-processor-timeout findings: group recent `timed_out` runs by
+ * processor; a processor at or above the threshold gets ONE finding ("raise its
+ * timeout or scope it") rather than the silent serve.log loop. Cheap — derived
+ * from a bounded `queryRunSummaries(status: "timed_out")` scan the caller
+ * supplies; no extra aggregation query.
+ */
+export function recurringTimeoutFindings(opts: {
+  readonly recentTimedOutRuns: ReadonlyArray<RunSummaryRow>;
+  readonly threshold?: number;
+}): ReadonlyArray<HealthFinding> {
+  const threshold = opts.threshold ?? DEFAULT_RECURRING_TIMEOUT_THRESHOLD;
+  const byProcessor = new Map<
+    string,
+    { count: number; lastTimedOutAt: string | null }
+  >();
+  for (const run of opts.recentTimedOutRuns) {
+    if (run.status !== "timed_out") continue;
+    const entry = byProcessor.get(run.processorId) ?? {
+      count: 0,
+      lastTimedOutAt: null,
+    };
+    entry.count += 1;
+    // queryRunSummaries returns newest-first, so the first seen is the latest.
+    if (entry.lastTimedOutAt === null) {
+      entry.lastTimedOutAt = run.finishedAt ?? run.startedAt;
+    }
+    byProcessor.set(run.processorId, entry);
+  }
+  const findings: HealthFinding[] = [];
+  for (const processorId of [...byProcessor.keys()].sort(compareStrings)) {
+    const entry = byProcessor.get(processorId);
+    if (entry === undefined || entry.count < threshold) continue;
+    findings.push(
+      Object.freeze({
+        code: "run.recurring-timeout" as const,
+        severity: "warning" as const,
+        subject: "runs" as const,
+        id: processorId,
+        message:
+          `Processor ${processorId} has timed out ${entry.count} time(s) ` +
+          "recently — its runs repeatedly exceed their execution timeout, " +
+          "which silently blocks the work they do (adoption-phase timeouts " +
+          "block trusted-state advance).",
+        recovery:
+          "Raise the processor's execution.timeoutMs in its bundle manifest " +
+          "(adoption deterministic timeouts are bounded by the adoption " +
+          "ceiling) or scope its work to the changed paths instead of the " +
+          "whole vault. Use `dome inspect runs --status timed_out` for detail.",
+        run: Object.freeze({
+          processorId,
+          timedOutCount: entry.count,
+          lastTimedOutAt: entry.lastTimedOutAt,
+        }),
+      }),
+    );
+  }
+  return Object.freeze(findings);
 }
 
 function orphanFinding(row: RunRow): HealthFinding {

@@ -25,7 +25,6 @@ import {
   parseOptionalJsonColumn,
   parseSourceRefsColumn,
 } from "../sqlite/row-json";
-import { mapRows } from "../sqlite/rows";
 import type { ProjectionDb } from "./db";
 
 // ----- Public types ---------------------------------------------------------
@@ -254,14 +253,47 @@ export function queryQuestions(
 }
 
 /**
+ * A row that failed rehydration and was skipped by the failure-isolating
+ * read. The row is still physically present in the `questions` table — it is
+ * skipped, not deleted — so it can be surfaced (logged, counted, raised as a
+ * health finding) and later repaired/rebuilt rather than silently lost.
+ */
+export type SkippedQuestionRow = {
+  readonly id: number;
+  readonly idempotencyKey: string;
+  readonly processorId: string;
+  readonly reason: string;
+};
+
+/**
+ * Optional sink for poison rows skipped during a failure-isolating read. The
+ * projection layer never logs directly (the engine host-boundary purity fence
+ * forbids `console.*` here); instead the host wires a sink that surfaces the
+ * skip — logs it once per key and/or raises a health-visible signal. Omitted →
+ * the row is still observable via `countUnrehydratableQuestions`.
+ */
+export type QuestionReadSkipSink = (skipped: SkippedQuestionRow) => void;
+
+/**
  * Read durable question rows, optionally filtered by resolution status.
  * This is the operational surface used by CLI/recovery flows that need
  * stable row ids and answer metadata; processor QueryViews should normally
  * keep using `queryQuestions`, which exposes only the Effect-level contract.
+ *
+ * Failure-isolating: a single row that fails rehydration (e.g. an older-build
+ * row whose `metadata_json` carries a key the current strict schema rejects)
+ * is SKIPPED — not thrown — so one poison row can never abort the operational
+ * tick and halt auto-resolution for every healthy question. The skipped row is
+ * reported to `onSkip` (the host logs/surfaces it) and stays in the DB for
+ * later repair; it is never silently swallowed. A row written by the current
+ * build always rehydrates (emit-time validation in src/processors/executor.ts
+ * rejects unmodeled metadata at the emitting processor's own effect), so only
+ * genuinely malformed/legacy rows skip.
  */
 export function queryQuestionRecords(
   db: ProjectionDb,
   filter?: QuestionsFilter,
+  onSkip?: QuestionReadSkipSink,
 ): ReadonlyArray<QuestionRecord> {
   let rows: ReadonlyArray<QuestionRow>;
   if (filter?.resolved === true) {
@@ -271,7 +303,45 @@ export function queryQuestionRecords(
   } else {
     rows = db.raw.query<QuestionRow, []>(QUERY_ALL_SQL).all();
   }
-  return mapRows(rows, rowToQuestionRecord);
+  const records: Array<QuestionRecord> = [];
+  for (const row of rows) {
+    let record: QuestionRecord;
+    try {
+      record = rowToQuestionRecord(row);
+    } catch (e) {
+      onSkip?.(
+        Object.freeze({
+          id: row.id,
+          idempotencyKey: row.idempotency_key,
+          processorId: row.processor_id,
+          reason: e instanceof Error ? e.message : String(e),
+        }),
+      );
+      continue;
+    }
+    records.push(record);
+  }
+  return Object.freeze(records);
+}
+
+/**
+ * Count question rows that fail rehydration (poison rows). This re-reads the
+ * `questions` table and attempts to rehydrate each row, returning how many
+ * would be skipped by `queryQuestionRecords`. Used by the health surface to
+ * raise a single visible finding for an unreadable backlog rather than letting
+ * the skip be a stderr-only signal.
+ */
+export function countUnrehydratableQuestions(db: ProjectionDb): number {
+  const rows = db.raw.query<QuestionRow, []>(QUERY_ALL_SQL).all();
+  let count = 0;
+  for (const row of rows) {
+    try {
+      rowToQuestionRecord(row);
+    } catch {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 /**
