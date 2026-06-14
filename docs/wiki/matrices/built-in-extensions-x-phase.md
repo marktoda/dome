@@ -1,7 +1,7 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-06-11
+updated: 2026-06-13
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 description: Crosses first-party dome.* bundles with adoption/garden/view phases — source of truth for which processor runs when, and on what cron.
