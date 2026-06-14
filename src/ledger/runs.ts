@@ -971,14 +971,45 @@ export function latestScheduleRunStartedAt(
  * Wired to `dome inspect orphan-runs` (per spec §"Query surface
  * (CLI)" + §"Run lifecycle"). The returned array is frozen.
  */
+/**
+ * Processor-id prefixes the orphan-run RECOVERY path excludes from detection
+ * to contain self-referential growth: the dome.health recovery processors run
+ * on a minute cron and their own runs can go orphan, so detecting them would
+ * mint a fresh "mark this orphan failed?" question about the detector itself
+ * every minute. Inspection surfaces deliberately do NOT apply this, so a
+ * genuinely stuck health run remains operator-visible.
+ */
+export const ORPHAN_RECOVERY_EXCLUDED_PROCESSOR_PREFIXES = Object.freeze([
+  "dome.health.",
+]);
+
 export function orphanRuns(
   db: LedgerDb,
   runningOlderThanMs: number,
   now: Date,
+  opts?: {
+    /**
+     * Processor-id prefixes to exclude. The RECOVERY surfaces pass
+     * `["dome.health."]` so the orphan-run detector never raises a
+     * self-referential question about its OWN minute-cadence runs (the
+     * dome.health recovery processors are the machinery doing the detecting).
+     * Raw callers (e.g. `dome inspect orphan-runs`) pass nothing, so a
+     * genuinely stuck health run stays visible to an operator — the exclusion
+     * narrows the auto-question path, it does not blind inspection.
+     */
+    readonly excludeProcessorIdPrefixes?: ReadonlyArray<string>;
+  },
 ): ReadonlyArray<RunRow> {
   const cutoff = new Date(now.getTime() - runningOlderThanMs).toISOString();
   const rows = db.raw.query<RunRawRow, [string]>(ORPHAN_RUNS_SQL).all(cutoff);
-  return mapRows(rows, rowToRunRow);
+  const mapped = mapRows(rows, rowToRunRow);
+  const prefixes = opts?.excludeProcessorIdPrefixes ?? [];
+  if (prefixes.length === 0) return mapped;
+  return Object.freeze(
+    mapped.filter(
+      (row) => !prefixes.some((prefix) => row.processorId.startsWith(prefix)),
+    ),
+  );
 }
 
 /**

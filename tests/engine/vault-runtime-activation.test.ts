@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -122,6 +128,109 @@ extensions:
       });
       expect(runtimeResult.value.pageTypes.types.has("enabled-type")).toBe(true);
       expect(runtimeResult.value.pageTypes.types.has("disabled-type")).toBe(false);
+    } finally {
+      await runtimeResult.value.close();
+    }
+  });
+});
+
+describe("openVaultRuntime registry-orphan GC", () => {
+  test("prunes a retired-bundle counter on open, keeps enabled + disabled", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-runtime-gc-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome", "state"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+extensions:
+  enabled.bundle:
+    enabled: true
+    grant: {}
+  disabled.bundle:
+    enabled: false
+    grant: {}
+`,
+      "utf8",
+    );
+    // Seed quarantined.json directly with three counters: enabled (registered),
+    // disabled (configured-but-off), retired (neither). Only the retired one
+    // should be GC'd on open.
+    writeFileSync(
+      join(root, ".dome", "state", "quarantined.json"),
+      JSON.stringify({
+        version: 1,
+        entries: [
+          {
+            phase: "garden",
+            processorId: "enabled.bundle.worker",
+            processorVersion: "0.1.0",
+            triggerHash: "h-enabled",
+            consecutiveRetryableFailures: 2,
+          },
+          {
+            phase: "garden",
+            processorId: "disabled.bundle.worker",
+            processorVersion: "0.1.0",
+            triggerHash: "h-disabled",
+            consecutiveRetryableFailures: 2,
+          },
+          {
+            phase: "garden",
+            processorId: "retired.bundle.worker",
+            processorVersion: "0.1.0",
+            triggerHash: "h-retired",
+            consecutiveRetryableFailures: 2,
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const enabled = defineProcessor({
+      id: "enabled.bundle.worker",
+      version: "0.1.0",
+      phase: "garden",
+      triggers: [{ kind: "schedule", cron: "* * * * *" }],
+      capabilities: [],
+      run: async () => [],
+    });
+    const disabled = defineProcessor({
+      id: "disabled.bundle.worker",
+      version: "0.1.0",
+      phase: "garden",
+      triggers: [{ kind: "schedule", cron: "* * * * *" }],
+      capabilities: [],
+      run: async () => [],
+    });
+    const registryResult = buildRegistry([enabled, disabled]);
+    expect(registryResult.ok).toBe(true);
+    if (!registryResult.ok) return;
+
+    const runtimeResult = await openVaultRuntime({
+      vaultPath: root,
+      registry: registryResult.value,
+      extensions: [
+        { name: "enabled.bundle", version: "0.1.0" },
+        { name: "disabled.bundle", version: "0.1.0" },
+      ],
+      processorVersions: [
+        { id: "enabled.bundle.worker", version: "0.1.0" },
+        { id: "disabled.bundle.worker", version: "0.1.0" },
+      ],
+    });
+    expect(runtimeResult.ok).toBe(true);
+    if (!runtimeResult.ok) return;
+    try {
+      // Read the persisted file back: the retired counter is gone, the
+      // enabled and the registered-but-disabled counters survive.
+      const after = JSON.parse(
+        readFileSync(join(root, ".dome", "state", "quarantined.json"), "utf8"),
+      ) as { entries: ReadonlyArray<{ processorId: string }> };
+      const ids = after.entries.map((e) => e.processorId).sort();
+      expect(ids).toEqual([
+        "disabled.bundle.worker",
+        "enabled.bundle.worker",
+      ]);
     } finally {
       await runtimeResult.value.close();
     }

@@ -19,6 +19,7 @@ import { computeLedgerSchemaHash } from "../../ledger/db";
 import {
   latestActiveProblemRuns,
   orphanRuns,
+  ORPHAN_RECOVERY_EXCLUDED_PROCESSOR_PREFIXES,
   queryRunSummaries,
   type RunRow,
   type RunSummaryRow,
@@ -551,7 +552,14 @@ export async function collectHealthReport(opts: {
   const failedOutbox = queryOutbox(opts.outbox, { status: "failed" });
   const stuckPendingOutbox = queryOutbox(opts.outbox, { status: "pending" })
     .filter((row) => isStuckPendingOutbox(row, now, pendingOutboxThresholdMs));
-  const orphaned = orphanRuns(opts.ledger, orphanRunThresholdMs, now);
+  // Self-referential orphan containment (Task 4b): the run.orphan finding is a
+  // recovery surface, so it excludes the dome.health recovery processors' own
+  // minute-cadence runs — otherwise the orphan-run detector raises a finding
+  // about itself. A genuinely stuck health run is still visible via
+  // `dome inspect orphan-runs` (which calls orphanRuns unfiltered).
+  const orphaned = orphanRuns(opts.ledger, orphanRunThresholdMs, now, {
+    excludeProcessorIdPrefixes: ORPHAN_RECOVERY_EXCLUDED_PROCESSOR_PREFIXES,
+  });
   // Recurring-failure surfaces (Task 3): one root-cause finding instead of a
   // growing question stack / silent serve.log loop. All read-only and cheap.
   const recurringOutboxFailures = recurringOutboxFailureFindings({

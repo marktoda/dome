@@ -65,6 +65,13 @@ extensions:
       run.read: ["running"]
       run.recover: ["fail"]
       question.ask: true
+  # The synthetic 'test' bundle the seeded gauntlet counters belong to:
+  # configured so the registry-orphan GC treats test.gauntlet-* as known and
+  # leaves their quarantine counters intact (an unconfigured bundle's counter
+  # would be pruned as a retired-bundle orphan on runtime open).
+  test:
+    enabled: false
+    grant: {}
 `,
         "AGENTS.md": [
           "# This is a Dome vault.",

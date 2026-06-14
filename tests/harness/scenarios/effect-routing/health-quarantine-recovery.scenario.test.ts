@@ -37,6 +37,12 @@ extensions:
       quarantine.read: true
       question.ask: true
       quarantine.recover: ["reset"]
+  # The synthetic 'test' bundle the seeded quarantine belongs to: configured
+  # (so the registry-orphan GC treats test.quarantined as a known — if absent
+  # from config, the GC would prune its counter as a retired-bundle orphan).
+  test:
+    enabled: false
+    grant: {}
 `,
       },
     },

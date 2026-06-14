@@ -52,6 +52,18 @@ export type ProcessorExecutionState = {
   readonly clearQuarantineIfCurrent: (
     expected: ProcessorQuarantineClearExpectation,
   ) => boolean;
+  /**
+   * Registry-orphan GC: drop every counter (quarantine or sub-threshold
+   * failure count) whose `processorId` is not a KNOWN processor — i.e. its
+   * bundle is no longer installed/registered. `isKnownProcessor` MUST be
+   * derived from the full installed registry (enabled + disabled), never the
+   * policy-filtered enabled-only set: a registered-but-disabled processor's
+   * counter is preserved so re-enabling the bundle finds its history intact.
+   * Returns how many counters were pruned; persists once iff any were.
+   */
+  readonly pruneUnknownProcessors: (
+    isKnownProcessor: (processorId: string) => boolean,
+  ) => number;
 };
 
 type MutableEntry = {
@@ -197,6 +209,19 @@ export function buildProcessorExecutionState(opts?: {
       persist();
       return true;
     },
+    pruneUnknownProcessors: (isKnownProcessor) => {
+      sync();
+      let removed = 0;
+      for (const id of [...entries.keys()]) {
+        const processorId = processorIdFromKeyId(id);
+        if (processorId === null) continue;
+        if (isKnownProcessor(processorId)) continue;
+        entries.delete(id);
+        removed += 1;
+      }
+      if (removed > 0) persist();
+      return removed;
+    },
   });
 }
 
@@ -240,6 +265,14 @@ function keyId(key: ProcessorExecutionKey): string {
     key.processorVersion,
     key.triggerHash,
   ].join("\0");
+}
+
+/** The processorId component of a `keyId`, or null if the id is malformed. */
+function processorIdFromKeyId(id: string): string | null {
+  const processorId = id.split("\0")[1];
+  return processorId === undefined || processorId.length === 0
+    ? null
+    : processorId;
 }
 
 function freezeSnapshot(

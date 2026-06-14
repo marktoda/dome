@@ -365,6 +365,27 @@ export async function openVaultRuntime(
   });
   if (!operationalState.ok) return operationalState;
 
+  // Registry-orphan GC: drop execution-state counters (quarantined.json) for
+  // processors whose bundle is no longer installed (the stale
+  // dome.intake.synthesize-rollup counter that lived forever). A
+  // registered-but-DISABLED bundle is still configured, so its counters are
+  // preserved — `isKnownProcessor` treats a processor as known when its bundle
+  // is configured (enabled or disabled) OR it is in the resolved registry.
+  //
+  // Conservatively gated: only prune when we actually established a non-empty
+  // known set (config found + at least one configured extension or a non-empty
+  // registry). A missing/empty config is almost always a read edge rather than
+  // a deliberate full retirement, and pruning everything then would silently
+  // discard live recovery state.
+  if (
+    policy.foundConfig &&
+    (policy.configuredExtensions.length > 0 || resolved.value.registry.size > 0)
+  ) {
+    operationalState.value.executionState.pruneUnknownProcessors(
+      isKnownProcessorFor(policy, resolved.value.registry),
+    );
+  }
+
   return ok(buildVaultRuntime({
     opts,
     policy,
@@ -941,6 +962,33 @@ function buildPageTypeRegistryForExtensionPageTypes(
     );
   }
   return result.value;
+}
+
+/**
+ * Predicate for the registry-orphan GC: a processor is KNOWN (its counter is
+ * preserved) when it is in the resolved (enabled) registry OR its bundle is
+ * configured at all — a disabled bundle still appears in
+ * `policy.configuredExtensions`, so its processors survive (re-enabling finds
+ * its history intact). Only a processor whose bundle is neither registered nor
+ * configured (genuinely retired/uninstalled) is unknown and gets pruned.
+ * Processor ids are bundle-namespaced (`<extensionId>.<name>`), matching the
+ * prefix convention in `inferProcessorExtensionIds`.
+ */
+function isKnownProcessorFor(
+  policy: CapabilityPolicy,
+  registry: ProcessorRegistry,
+): (processorId: string) => boolean {
+  const configuredExtensionIds = policy.configuredExtensions.map(
+    (status) => status.id,
+  );
+  return (processorId: string): boolean => {
+    if (registry.get(processorId) !== undefined) return true;
+    return configuredExtensionIds.some(
+      (extensionId) =>
+        processorId === extensionId ||
+        processorId.startsWith(`${extensionId}.`),
+    );
+  };
 }
 
 function inferProcessorExtensionIds(
