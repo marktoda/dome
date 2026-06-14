@@ -42,12 +42,12 @@ import {
   diagnosticEffect,
   patchEffect,
   type Effect,
-  type QuestionEffect,
 } from "../../../../src/core/effect";
 import {
   defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
+import { parseAnswerInput } from "../lib/answer-input";
 
 import { ensureSourcesLink } from "./sweep";
 
@@ -64,46 +64,8 @@ function discriminateKey(key: string): KeyKind {
   return "unknown";
 }
 
-// ----- Input envelope --------------------------------------------------------
-
-type AnswerInput = {
-  readonly question: {
-    readonly idempotencyKey: string;
-    readonly sourceRefs: QuestionEffect["sourceRefs"];
-    readonly metadata?: Readonly<Record<string, unknown>>;
-  };
-  readonly answer: string;
-  readonly answeredAt: string;
-};
-
-function parseAnswerInput(input: unknown): AnswerInput | null {
-  if (input === null || typeof input !== "object") return null;
-  const record = input as Record<string, unknown>;
-  const question = record.question;
-  if (question === null || typeof question !== "object") return null;
-  const questionRecord = question as Record<string, unknown>;
-  if (typeof questionRecord.idempotencyKey !== "string") return null;
-  if (!Array.isArray(questionRecord.sourceRefs)) return null;
-  if (typeof record.answer !== "string") return null;
-  if (typeof record.answeredAt !== "string") return null;
-  if (Number.isNaN(Date.parse(record.answeredAt))) return null;
-  const metadata =
-    questionRecord.metadata !== null &&
-    typeof questionRecord.metadata === "object"
-      ? (questionRecord.metadata as Readonly<Record<string, unknown>>)
-      : undefined;
-  const questionField: AnswerInput["question"] = Object.freeze({
-    idempotencyKey: questionRecord.idempotencyKey,
-    sourceRefs:
-      questionRecord.sourceRefs as AnswerInput["question"]["sourceRefs"],
-    ...(metadata !== undefined ? { metadata } : {}),
-  });
-  return Object.freeze({
-    question: questionField,
-    answer: record.answer,
-    answeredAt: record.answeredAt,
-  });
-}
+// Input envelope parsing (question + answer + answeredAt) is shared via
+// lib/answer-input.ts — see parseAnswerInput.
 
 // ----- Metadata validation for uncertain→integrate ---------------------------
 

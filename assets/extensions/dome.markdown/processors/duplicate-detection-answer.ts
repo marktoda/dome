@@ -1,5 +1,18 @@
-// dome.markdown.duplicate-detection-answer — records source-preserving
-// duplicate consolidation decisions.
+// dome.markdown.duplicate-detection-answer — records a source-preserving
+// duplicate consolidation DECISION; it does not perform the merge.
+//
+// Triggered by `kind: answer` on dome.markdown.duplicate-detection questions:
+//   - "keep separate" → no-op (the question settles; nothing is written).
+//   - "merge" → writes ONE new review scaffold page (a dated page with the two
+//     source paths and a "Consolidation Notes" TODO section), idempotently
+//     (skips if that review page already exists, or if a source page has since
+//     vanished). It deliberately does NOT rewrite or delete either source page.
+//
+// The actual consolidation is a separate, deliberate step taken by a human or
+// agent against that scaffold — keeping it source-preserving and out of an
+// auto-merge that could silently lose content. The processor name says
+// "answer", not "merge", for exactly this reason: it routes the decision and
+// stages the work, it does not execute it.
 
 import { createHash } from "node:crypto";
 import { posix } from "node:path";

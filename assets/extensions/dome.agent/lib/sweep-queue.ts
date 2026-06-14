@@ -224,12 +224,35 @@ function titleMentionDestinations(
 // ----- Settlement checks ----------------------------------------------------
 
 /**
- * Return true when the destination's frontmatter `sources:` block already
- * contains a wikilink to the material. Matches:
+ * Single source of truth for the four wikilink forms that count as a
+ * settlement link to `materialWithoutMd` on one line:
  *   [[material]]              (exact)
  *   [[material|display text]] (display-text alias)
  *   [[material.md]]           (.md suffix)
  *   [[material.md|display]]   (both)
+ *
+ * Shared by `isSettledBySources` (the queue's settlement scan) and the sweep
+ * processor's deterministic settlement guarantee (`ensureSourcesLink`), so
+ * detection and enforcement can never accept different forms — a drift that
+ * would otherwise double-add or wrongly skip a settlement record.
+ */
+export function lineHasMaterialLink(
+  line: string,
+  materialWithoutMd: string,
+): boolean {
+  const withMd = `${materialWithoutMd}.md`;
+  return (
+    line.includes(`[[${materialWithoutMd}]]`) ||
+    line.includes(`[[${materialWithoutMd}|`) ||
+    line.includes(`[[${withMd}]]`) ||
+    line.includes(`[[${withMd}|`)
+  );
+}
+
+/**
+ * Return true when the destination's frontmatter `sources:` block already
+ * contains a wikilink to the material (any of the four forms accepted by
+ * {@link lineHasMaterialLink}).
  *
  * We do a cheap frontmatter slice (lines between the leading `---` pair) — no
  * YAML parse. Leading blank lines before the opening `---` are tolerated.
@@ -263,17 +286,8 @@ function isSettledBySources(destContent: string, materialWithoutMd: string): boo
       inSourcesBlock = false;
     }
 
-    if (inSourcesBlock) {
-      // Match [[material]], [[material|...]], [[material.md]], [[material.md|...]]
-      const materialWithMd = `${materialWithoutMd}.md`;
-      if (
-        line.includes(`[[${materialWithoutMd}]]`) ||
-        line.includes(`[[${materialWithoutMd}|`) ||
-        line.includes(`[[${materialWithMd}]]`) ||
-        line.includes(`[[${materialWithMd}|`)
-      ) {
-        return true;
-      }
+    if (inSourcesBlock && lineHasMaterialLink(line, materialWithoutMd)) {
+      return true;
     }
   }
   return false;

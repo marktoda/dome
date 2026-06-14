@@ -108,8 +108,14 @@ export function wikilinkTargetFromFrontmatterValue(
 
 /**
  * 1-indexed line of a top-level frontmatter key, or null when the content
- * has no frontmatter block or the key is absent. Mirrors the lookup in
- * dome.markdown.stale-dates so diagnostics anchor identically.
+ * has no frontmatter block or the key is absent.
+ *
+ * Deliberately NOT the shared lib/frontmatter-keys helper: this variant
+ * anchors to column 0 (`^<key>\s*:`, top-level keys only), whereas the shared
+ * helper tolerates leading indentation (`^\s*<key>\s*:`). Supersession fields
+ * (`status:`, `superseded_by:`) are top-level by convention, so the stricter
+ * match is intentional — folding it into the shared helper would change which
+ * line indented keys resolve to.
  */
 export function frontmatterKeyLine(
   content: string,

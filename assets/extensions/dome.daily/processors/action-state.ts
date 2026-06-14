@@ -998,6 +998,22 @@ function locationLabel(input: {
   return input.line === null ? input.path : `${input.path}:${input.line}`;
 }
 
+/**
+ * The source label for a rendered action row: the item's `evidenceLabel` when
+ * present, else its `path[:line]` location. Shared by the prep and agenda-with
+ * view renderers (today is structured-only and does not use it).
+ */
+export function sourceLabel(item: {
+  readonly path: string;
+  readonly line: number | null;
+  readonly evidenceLabel?: string;
+}): string {
+  if (item.evidenceLabel !== undefined && item.evidenceLabel.length > 0) {
+    return item.evidenceLabel;
+  }
+  return locationLabel({ path: item.path, line: item.line });
+}
+
 function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()

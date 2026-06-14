@@ -6,6 +6,7 @@
 // lets processors differ only in policy: adoption emits diagnostics/questions,
 // while scheduled maintenance only patches already-obvious managed-page drift.
 
+import { compareStrings } from "../../../../src/core/compare";
 import {
   reorderFrontmatterKeys,
   stringifyFrontmatter,
@@ -301,6 +302,48 @@ export function addWikilinkStubRequest<TSourceRef>(
     sourcePaths: [...existing.sourcePaths, input.sourcePath],
     sourceRefs: [...existing.sourceRefs, input.sourceRef],
   });
+}
+
+/**
+ * A single stub-page write derived from a {@link WikilinkStubRequest}. Plain
+ * `{ kind: "write" }` shape so this module stays decoupled from the engine's
+ * `FileChangeInput` type; callers spread it into their PatchEffect changes.
+ */
+export type WikilinkStubWrite = {
+  readonly kind: "write";
+  readonly path: string;
+  readonly content: string;
+};
+
+/**
+ * Stub requests sorted into deterministic emission order (by candidate path).
+ * Both the adoption validator and the scheduled repairer accumulate stub
+ * requests in a Map and must emit them in the same order so PatchEffect
+ * content stays byte-stable across runs.
+ */
+export function orderedWikilinkStubRequests<TSourceRef>(
+  requests: ReadonlyMap<string, WikilinkStubRequest<TSourceRef>>,
+): ReadonlyArray<WikilinkStubRequest<TSourceRef>> {
+  return [...requests.values()].sort((a, b) =>
+    compareStrings(a.candidate.path, b.candidate.path)
+  );
+}
+
+/**
+ * The stub-page write for a single request: renders the stub body and pairs it
+ * with its target path. Shared so both processors render stubs identically.
+ */
+export function wikilinkStubWrite<TSourceRef>(
+  request: WikilinkStubRequest<TSourceRef>,
+): WikilinkStubWrite {
+  return {
+    kind: "write",
+    path: request.candidate.path,
+    content: renderWikilinkStubPage({
+      candidate: request.candidate,
+      sourcePaths: request.sourcePaths,
+    }),
+  };
 }
 
 function isFrontmatterLine(

@@ -29,16 +29,15 @@ import {
 import type { SourceRef } from "../../../../src/core/source-ref";
 
 import { settledActionItemsFromMarkdown } from "./action-extraction";
-import { dailyPath, dailyPathSettings, localDateParts } from "./daily-paths";
+import {
+  dailyPath,
+  dailyPathSettings,
+  localDateParts,
+  parseScheduleInput,
+} from "./daily-paths";
 import { closeScaffoldSection, ensureCloseScaffoldSection } from "./daily-scaffold";
 import { DAILY_GENERATED_BLOCKS, type DailyCloseDoneCandidate } from "./daily-types";
 import { openLoopSurfaceKey, openSourceBackedOpenLoopsFromMarkdown, settledSourceBackedOpenLoopsFromMarkdown } from "./open-loop-surface";
-
-type ScheduleInput = {
-  readonly kind: "schedule";
-  readonly cron: string;
-  readonly firedAt: string;
-};
 
 /**
  * The evening gate: the close fires only within its evening window
@@ -174,18 +173,4 @@ function closeSourceRefs(
       })
     ),
   ]);
-}
-
-function parseScheduleInput(input: unknown): ScheduleInput | null {
-  if (input === null || typeof input !== "object") return null;
-  const record = input as Record<string, unknown>;
-  if (record.kind !== "schedule") return null;
-  if (typeof record.cron !== "string") return null;
-  if (typeof record.firedAt !== "string") return null;
-  if (Number.isNaN(new Date(record.firedAt).getTime())) return null;
-  return Object.freeze({
-    kind: "schedule",
-    cron: record.cron,
-    firedAt: new Date(record.firedAt).toISOString(),
-  });
 }

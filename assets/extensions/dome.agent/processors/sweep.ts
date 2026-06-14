@@ -21,7 +21,12 @@
 // — never past cap-dropped or failed-tonight material, so those pairs stay
 // eligible on subsequent runs. The windowDays floor is the decay backstop.
 
-import { validateRelativeMarkdownPath } from "../../../../src/core/config-path";
+import {
+  positiveIntConfig,
+  resolveLedgerPath,
+  resolveTargets,
+  type LedgerResolution,
+} from "../lib/agent-config";
 import {
   diagnosticEffect,
   patchEffect,
@@ -49,6 +54,7 @@ import {
 } from "../lib/sweep-ledger";
 import {
   buildSweepQueue,
+  lineHasMaterialLink,
   safeCursor,
   type SweepQueueItem,
 } from "../lib/sweep-queue";
@@ -66,7 +72,6 @@ function capMaterialRead(content: string): string {
   if (content.length <= MATERIAL_READ_CHARS) return content;
   return `${content.slice(0, MATERIAL_READ_CHARS)}\n…[truncated ${content.length - MATERIAL_READ_CHARS} chars — read a more specific section if needed]`;
 }
-import { globMatch } from "../../../../src/engine/core/glob-cache";
 import { isModelExecutionError } from "../../../../src/engine/core/model-invoke";
 import { formatDate, localDateParts } from "../../dome.daily/processors/daily-paths";
 
@@ -87,130 +92,36 @@ const PROPOSED_SECTION_MAX_CHARS = 4000;
  * cap at 200 code points, strip C0 controls (newline becomes a space). */
 const SUMMARY_MAX_CODE_POINTS = 200;
 
-// ----- Config resolution (degrade-not-crash, consolidate's rule) -------------
+// ----- Config resolution (degrade-not-crash; shared via lib/agent-config) ----
 
-export type SweepLedgerResolution = {
-  readonly path: string;
-  /** Non-null when a malformed config value was ignored for the default. */
-  readonly problem: string | null;
-};
+/** @deprecated alias retained for callers/tests; see {@link LedgerResolution}. */
+export type SweepLedgerResolution = LedgerResolution;
 
 /**
  * Resolve the sweep ledger path from the extension config
  * (`extensions.dome.agent.config.sweep_ledger_path`), defaulting to
- * `meta/sweep-ledger.md`. Same validation rules as
- * `consolidationLedgerPath` in processors/consolidate.ts: relative vault `.md`
- * path; malformed values fall back to the default with a `problem` the
- * processor emits as a warning diagnostic. A custom path additionally requires
- * matching `read` + `patch.auto` grant entries in `.dome/config.yaml`.
+ * `meta/sweep-ledger.md`. Thin wrapper over the shared {@link resolveLedgerPath}.
  */
 export function sweepLedgerPath(
   config?: Readonly<Record<string, unknown>>,
 ): SweepLedgerResolution {
-  const raw = config?.sweep_ledger_path;
-  if (raw === undefined) return Object.freeze({ path: DEFAULT_LEDGER_PATH, problem: null });
-  const v = validateRelativeMarkdownPath(raw, "sweep_ledger_path");
-  if (!v.ok) return ledgerFallback(v.problem);
-  return Object.freeze({ path: v.path, problem: null });
+  return resolveLedgerPath(config, "sweep_ledger_path", DEFAULT_LEDGER_PATH);
 }
 
-function ledgerFallback(problem: string): SweepLedgerResolution {
-  return Object.freeze({
-    path: DEFAULT_LEDGER_PATH,
-    problem: `dome.agent config ${problem}; falling back to ${DEFAULT_LEDGER_PATH}`,
-  });
-}
-
-type NumberResolution = { readonly value: number; readonly problem: string | null };
-
-function positiveIntConfig(
-  config: Readonly<Record<string, unknown>> | undefined,
-  key: string,
-  fallback: number,
-): NumberResolution {
-  const raw = config?.[key];
-  if (raw === undefined) return Object.freeze({ value: fallback, problem: null });
-  if (typeof raw !== "number" || !Number.isInteger(raw) || raw <= 0) {
-    return Object.freeze({
-      value: fallback,
-      problem: `dome.agent config ${key} must be a positive integer; falling back to ${fallback}`,
-    });
-  }
-  return Object.freeze({ value: raw, problem: null });
-}
-
-type TargetsResolution = {
-  readonly value: ReadonlyArray<string>;
-  readonly problem: string | null;
-};
-
-function sweepTargets(
-  config?: Readonly<Record<string, unknown>>,
-): TargetsResolution {
-  const raw = config?.sweep_targets;
-  if (raw === undefined) return Object.freeze({ value: DEFAULT_TARGETS, problem: null });
-  const valid =
-    Array.isArray(raw) &&
-    raw.length > 0 &&
-    raw.every(
-      (t) =>
-        typeof t === "string" &&
-        t.length > 0 &&
-        t.trim() === t &&
-        !t.startsWith("/") &&
-        !t.includes("\\") &&
-        !t.includes(".."),
-    );
-  if (!valid) {
-    return Object.freeze({
-      value: DEFAULT_TARGETS,
-      problem:
-        "dome.agent config sweep_targets must be a non-empty array of relative path prefixes; " +
-        `falling back to ${DEFAULT_TARGETS.join(", ")}`,
-    });
-  }
-  // Grant-mirror validation: every target prefix must be covered by the
-  // sweep's patch.auto grant (SWEEP_WRITABLE_PATHS), or makeSweepTools would
-  // throw its programming-error guard mid-night for every destination under
-  // the foreign prefix. Probe with a representative page path directly under
-  // the prefix — `**` matches zero or more segments, so coverage of the probe
-  // implies coverage of every `.md` under the prefix.
-  const uncovered = (raw as ReadonlyArray<string>).filter(
-    (t) =>
-      !SWEEP_WRITABLE_PATHS.some((pattern) =>
-        globMatch(pattern, `${t}__sweep-probe__.md`),
-      ),
-  );
-  if (uncovered.length > 0) {
-    return Object.freeze({
-      value: DEFAULT_TARGETS,
-      problem:
-        `dome.agent config sweep_targets contains prefixes outside the sweep write grant ` +
-        `(${uncovered.join(", ")} vs ${SWEEP_WRITABLE_PATHS.join(", ")}); ` +
-        `falling back to ${DEFAULT_TARGETS.join(", ")}`,
-    });
-  }
-  return Object.freeze({ value: raw as ReadonlyArray<string>, problem: null });
+/**
+ * Resolve `sweep_targets` (the destination-page prefixes the night integrates
+ * into), validated against the sweep's `SWEEP_WRITABLE_PATHS` patch.auto grant
+ * — an uncovered prefix would make `makeSweepTools` throw its programming-error
+ * guard mid-night for every destination under it. Malformed values degrade to
+ * the entities/concepts default with a `problem`.
+ */
+function sweepTargets(config?: Readonly<Record<string, unknown>>) {
+  return resolveTargets(config, "sweep_targets", DEFAULT_TARGETS, SWEEP_WRITABLE_PATHS);
 }
 
 // ----- Deterministic settlement guarantee ------------------------------------
 
 const SOURCES_KEY_RE = /^sources:(.*)$/;
-
-/**
- * Mirror of `isSettledBySources` (lib/sweep-queue.ts): the four wikilink forms
- * that settle a pair. Keeping the accepted forms identical means this
- * enforcement never double-adds an entry the queue would already honor.
- */
-function containsMaterialLink(line: string, materialWithoutMd: string): boolean {
-  const withMd = `${materialWithoutMd}.md`;
-  return (
-    line.includes(`[[${materialWithoutMd}]]`) ||
-    line.includes(`[[${materialWithoutMd}|`) ||
-    line.includes(`[[${withMd}]]`) ||
-    line.includes(`[[${withMd}|`)
-  );
-}
 
 /**
  * Guarantee the destination content carries the settlement record: a
@@ -260,7 +171,7 @@ export function ensureSourcesLink(content: string, materialPath: string): string
       let blockEnd = sourcesIdx + 1;
       while (blockEnd < close && !/^\S/.test(lines[blockEnd]!)) blockEnd += 1;
       for (let i = sourcesIdx; i < blockEnd; i++) {
-        if (containsMaterialLink(lines[i]!, link)) return content; // settled already
+        if (lineHasMaterialLink(lines[i]!, link)) return content; // settled already
       }
       const keyLine = lines[sourcesIdx]!;
       const rest = (SOURCES_KEY_RE.exec(keyLine)?.[1] ?? "").trim();

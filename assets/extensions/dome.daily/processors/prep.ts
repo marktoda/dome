@@ -18,6 +18,7 @@ import {
   inputDateOrLocalToday,
   parseInputLimit,
   selectDailyActionRows,
+  sourceLabel,
   uniqueSourceRefs,
   type DailyActionState,
   type DailyDueCounts,
@@ -434,13 +435,3 @@ function singularLabel(label: string): string {
   return label;
 }
 
-function sourceLabel(item: {
-  readonly path: string;
-  readonly line: number | null;
-  readonly evidenceLabel?: string;
-}): string {
-  if (item.evidenceLabel !== undefined && item.evidenceLabel.length > 0) {
-    return item.evidenceLabel;
-  }
-  return item.line === null ? item.path : `${item.path}:${item.line}`;
-}

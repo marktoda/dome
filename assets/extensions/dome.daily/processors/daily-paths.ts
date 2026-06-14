@@ -125,3 +125,31 @@ export function isValidDailyDate(date: DailyDate): boolean {
     normalized.dd === date.dd
   );
 }
+
+/**
+ * The scheduled-fire envelope every dome.daily schedule-only processor
+ * (create-daily, carry-forward, close-scaffold) receives. The shape is the
+ * engine's scheduler input contract; the parse below is the shared, defensive
+ * narrowing — a non-schedule input (or an unparseable `firedAt`) yields null
+ * so the caller can no-op, and a valid one is normalized to a frozen ISO
+ * `firedAt` before the clock→date conversion through localDateParts.
+ */
+export type ScheduleInput = {
+  readonly kind: "schedule";
+  readonly cron: string;
+  readonly firedAt: string;
+};
+
+export function parseScheduleInput(input: unknown): ScheduleInput | null {
+  if (input === null || typeof input !== "object") return null;
+  const record = input as Record<string, unknown>;
+  if (record.kind !== "schedule") return null;
+  if (typeof record.cron !== "string") return null;
+  if (typeof record.firedAt !== "string") return null;
+  if (Number.isNaN(new Date(record.firedAt).getTime())) return null;
+  return Object.freeze({
+    kind: "schedule",
+    cron: record.cron,
+    firedAt: new Date(record.firedAt).toISOString(),
+  });
+}

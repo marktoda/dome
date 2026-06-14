@@ -1,7 +1,13 @@
 import matter from "gray-matter";
 import YAML from "yaml";
 
+import { frontmatterKeyLine } from "../lib/frontmatter-keys";
 import { dateOnly, daysBetween } from "./frontmatter-dates";
+
+// Re-exported so existing importers (e.g. dome.markdown.refresh-updated) keep
+// resolving `frontmatterKeyLine` from this module after the helper moved to
+// the shared lib.
+export { frontmatterKeyLine };
 
 // Canonical frontmatter key order for managed markdown pages. Keys not listed
 // here are preserved and sorted after the fixed identity/provenance keys.
@@ -96,17 +102,6 @@ export function updatedDateDriftsFrom(
   return daysBetween(current, expectedDate) > MAX_UPDATED_DRIFT_DAYS;
 }
 
-export function frontmatterKeyLine(content: string, key: string): number | null {
-  if (!content.startsWith("---")) return null;
-  const lines = content.split(/\r?\n/);
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    if (line.trim() === "---" || line.trim() === "...") return null;
-    if (new RegExp(`^\\s*${escapeRegExp(key)}\\s*:`).test(line)) return i + 1;
-  }
-  return null;
-}
-
 function matterFileIsEmpty(file: matter.GrayMatterFile<string>): boolean {
   return (file as matter.GrayMatterFile<string> & { readonly isEmpty?: boolean })
     .isEmpty === true;
@@ -153,8 +148,4 @@ function formatYamlDate(value: Date): string {
     return value.toISOString().slice(0, 10);
   }
   return value.toISOString();
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

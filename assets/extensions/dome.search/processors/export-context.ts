@@ -58,10 +58,19 @@ import {
   topicRelevantItems,
 } from "./topic-relevance";
 import { renderMarkdown, SCHEMA, MAX_RELATED_ROWS } from "./packet-render";
+import {
+  clampLimit,
+  commandArgsRecord,
+  flagsRecord,
+  numberValue,
+  questionSearchText,
+  stringValue,
+} from "./search-input";
 
 import { compareStrings } from "../../../../src/core/compare";
 
 const DEFAULT_LIMIT = 8;
+const MAX_LIMIT = 25;
 const MAX_ENTRY_SUMMARY_ROWS = 5;
 const MAX_RECALL_PATHS = 24;
 
@@ -816,18 +825,13 @@ function uniqueRecallSignals(
 }
 
 function parseInput(input: unknown): ExportInput {
-  const envelope = input !== null && typeof input === "object"
-    ? input as Record<string, unknown>
-    : {};
-  const record = envelope.commandArgs !== null &&
-    typeof envelope.commandArgs === "object"
-    ? envelope.commandArgs as Record<string, unknown>
-    : envelope;
-  const flags = record.flags !== null && typeof record.flags === "object"
-    ? record.flags as Record<string, unknown>
-    : {};
+  const record = commandArgsRecord(input);
+  const flags = flagsRecord(record);
   const topic = stringValue(record.topic) ?? stringValue(flags.topic) ?? "";
-  const limit = clampLimit(numberValue(record.limit) ?? numberValue(flags.limit));
+  const limit = clampLimit(
+    numberValue(record.limit) ?? numberValue(flags.limit),
+    { defaultLimit: DEFAULT_LIMIT, maxLimit: MAX_LIMIT },
+  );
   return Object.freeze({ topic, limit });
 }
 
@@ -888,35 +892,8 @@ function diagnosticSearchText(diagnostic: ContextDiagnostic): string {
   return `${diagnostic.code} ${diagnostic.message}`;
 }
 
-function questionSearchText(question: ContextQuestion): string {
-  return [
-    question.question,
-    ...question.options,
-    question.metadata?.recommendedAnswer ?? "",
-    question.metadata?.ownerNeededReason ?? "",
-  ].join(" ");
-}
-
 function compactText(text: string): string {
   const normalized = text.replace(/\s+/g, " ").trim();
   if (normalized.length <= 220) return normalized;
   return `${normalized.slice(0, 217).trimEnd()}...`;
-}
-
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0
-    ? value.trim()
-    : null;
-}
-
-function numberValue(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value !== "string" || value.trim().length === 0) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function clampLimit(raw: number | null): number {
-  if (raw === null || !Number.isFinite(raw)) return DEFAULT_LIMIT;
-  return Math.max(1, Math.min(25, Math.trunc(raw)));
 }

@@ -26,7 +26,6 @@ import {
   diagnosticEffect,
   patchEffect,
   type Effect,
-  type QuestionEffect,
 } from "../../../../src/core/effect";
 import { generatedBlockAnomalyDiagnostics } from "../../../../src/core/generated-block-diagnostics";
 import {
@@ -34,6 +33,7 @@ import {
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
+import { parseAnswerInput, type AnswerInput } from "../lib/answer-input";
 import { coreMemoryPath } from "../lib/core-memory";
 import {
   appendSignalLine,
@@ -328,33 +328,5 @@ function coreAnomalyDiagnostics(
   });
 }
 
-type AnswerInput = {
-  readonly question: {
-    readonly idempotencyKey: string;
-    readonly sourceRefs: QuestionEffect["sourceRefs"];
-  };
-  readonly answer: string;
-  readonly answeredAt: string;
-};
-
-function parseAnswerInput(input: unknown): AnswerInput | null {
-  if (input === null || typeof input !== "object") return null;
-  const record = input as Record<string, unknown>;
-  const question = record.question;
-  if (question === null || typeof question !== "object") return null;
-  const questionRecord = question as Record<string, unknown>;
-  if (typeof questionRecord.idempotencyKey !== "string") return null;
-  if (!Array.isArray(questionRecord.sourceRefs)) return null;
-  if (typeof record.answer !== "string") return null;
-  if (typeof record.answeredAt !== "string") return null;
-  if (Number.isNaN(Date.parse(record.answeredAt))) return null;
-  return Object.freeze({
-    question: Object.freeze({
-      idempotencyKey: questionRecord.idempotencyKey,
-      sourceRefs:
-        questionRecord.sourceRefs as AnswerInput["question"]["sourceRefs"],
-    }),
-    answer: record.answer,
-    answeredAt: record.answeredAt,
-  });
-}
+// Input envelope parsing (question + answer + answeredAt) is shared via
+// lib/answer-input.ts — see parseAnswerInput / AnswerInput.

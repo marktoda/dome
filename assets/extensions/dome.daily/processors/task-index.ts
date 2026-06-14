@@ -11,14 +11,12 @@ import {
 } from "../../../../src/core/processor";
 
 import { actionItemsFromMarkdown, ambiguousFollowupsFromMarkdown } from "./action-extraction";
+import { FOLLOWUP_PREDICATE, OPEN_TASK_PREDICATE } from "./action-state";
 import { openLoopStableId, taskStableId } from "./open-loop-surface";
 import {
   AMBIGUOUS_FOLLOWUP_OPTIONS,
   ambiguousFollowupQuestionKey,
 } from "./ambiguous-followup-shared";
-
-const OPEN_TASK_PREDICATE = "dome.daily.open_task";
-const FOLLOWUP_PREDICATE = "dome.daily.followup";
 
 const taskIndex = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {

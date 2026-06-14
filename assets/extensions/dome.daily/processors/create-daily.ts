@@ -20,7 +20,13 @@ import {
   attentionAdjustedRecencyIso,
   collectAttentionDiscounts,
 } from "./attention-shared";
-import { dailyPath, dailyPathSettings, localDateParts, previousLocalDate } from "./daily-paths";
+import {
+  dailyPath,
+  dailyPathSettings,
+  localDateParts,
+  parseScheduleInput,
+  previousLocalDate,
+} from "./daily-paths";
 import {
   ensureYesterdayFallbackSection,
   previousDailyDigest,
@@ -40,12 +46,6 @@ import {
   rankDailyOpenLoopSurfaceItems,
   replaceOpenLoopSurfaceSection,
 } from "./open-loop-surface";
-
-type ScheduleInput = {
-  readonly kind: "schedule";
-  readonly cron: string;
-  readonly firedAt: string;
-};
 
 const createDaily = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
@@ -173,18 +173,4 @@ function createDailySourceRefs(input: {
     );
   }
   return Object.freeze(refs);
-}
-
-function parseScheduleInput(input: unknown): ScheduleInput | null {
-  if (input === null || typeof input !== "object") return null;
-  const record = input as Record<string, unknown>;
-  if (record.kind !== "schedule") return null;
-  if (typeof record.cron !== "string") return null;
-  if (typeof record.firedAt !== "string") return null;
-  if (Number.isNaN(new Date(record.firedAt).getTime())) return null;
-  return Object.freeze({
-    kind: "schedule",
-    cron: record.cron,
-    firedAt: new Date(record.firedAt).toISOString(),
-  });
 }

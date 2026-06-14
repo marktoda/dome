@@ -18,6 +18,7 @@ import {
   defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
+import { frontmatterKeyLine } from "../lib/frontmatter-keys";
 import { dateOnly, daysBetween } from "./frontmatter-dates";
 import { frontmatterLintModeForPath } from "./path-policy";
 
@@ -89,21 +90,6 @@ function extractUpdatedDate(content: string): UpdatedDate | null {
   if (date === null) return null;
   const line = frontmatterKeyLine(content, "updated") ?? 1;
   return { date, line };
-}
-
-function frontmatterKeyLine(content: string, key: string): number | null {
-  if (!content.startsWith("---")) return null;
-  const lines = content.split(/\r?\n/);
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    if (line.trim() === "---" || line.trim() === "...") return null;
-    if (new RegExp(`^\\s*${escapeRegExp(key)}\\s*:`).test(line)) return i + 1;
-  }
-  return null;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function shouldDiagnoseStaleDates(ctx: ProcessorContext): boolean {
