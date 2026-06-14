@@ -214,6 +214,16 @@ export function match(m: MatchView, caps: Caps): ReadonlyArray<string> {
   return out;
 }
 
+/**
+ * Collapse the set of healthy checks into one line. With names, lists them:
+ * `✓ a, b, c all clean`. With none given, the generic `✓ everything else clean`.
+ */
+export function rollup(cleanLabels: ReadonlyArray<string>, caps: Caps): string {
+  const g = paint(statusGlyph("ok", caps), "ok", caps);
+  if (cleanLabels.length === 0) return `  ${g} everything else clean`;
+  return `  ${g} ${cleanLabels.join(", ")} all clean`;
+}
+
 export type Cell = { readonly text: string; readonly tone?: Tone };
 export type Column<R> = {
   readonly header: string;

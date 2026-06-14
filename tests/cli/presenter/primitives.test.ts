@@ -159,7 +159,7 @@ describe("tree", () => {
   });
 });
 
-import { dimZeros, finding, match, signalLine, table, type Column, type Finding, type MatchView } from "../../../src/cli/presenter/primitives";
+import { dimZeros, finding, match, rollup, signalLine, table, type Column, type Finding, type MatchView } from "../../../src/cli/presenter/primitives";
 
 type Row = { name: string; phase: string };
 const COLS: Column<Row>[] = [
@@ -349,5 +349,16 @@ describe("signalLine", () => {
   });
   test("empty detail omits trailing spaces", () => {
     expect(signalLine("muted", "serve", "", 12, UNI)).toBe("  ○ serve");
+  });
+});
+
+describe("rollup", () => {
+  const UNI = { color: false, unicode: true, width: 80 };
+  test("lists the clean categories after a check glyph", () => {
+    expect(rollup(["outbox", "runs", "quarantine"], UNI))
+      .toBe("  ✓ outbox, runs, quarantine all clean");
+  });
+  test("empty list yields the generic everything-else line", () => {
+    expect(rollup([], UNI)).toBe("  ✓ everything else clean");
   });
 });
