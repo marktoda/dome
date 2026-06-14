@@ -1242,14 +1242,19 @@ view's normative behavior); this verb owns CLI ergonomics and rendering. It
 routes through the same shared view-command boundary and validates the same
 one-view/effect-name/schema contract as the other dedicated wrappers.
 
-Default text output renders a presenter-style dashboard: a `today` headline
-with the vault basename and an `all clear` / `<n> open` status, a `Day`
-section with the target date, then `Open tasks`, `Follow-ups`, and
-`Questions` sections (each omitted when empty). Task rows render as
-checkboxes with muted due-date and `path:line` location annotations; question
-rows carry the durable row id and the ready-to-run `dome resolve <id>
-<value>` hint. When a section was truncated by `--limit`, a muted
-`(showing <n> of <m>)` note follows the rows, using the view's total counts.
+Default text output uses the **Briefing v2 presenter** (CB-T4): a `dome
+today` headline with the vault basename, then immediately a verdict line
+(`√ all clear` or `x <n> overdue · <m> open`). When anything is open, a
+**hero pill** follows — the single highest-priority item (the overdue or
+due-today task with the nearest due date, or the oldest open question when
+no task qualifies) rendered with an arrow glyph. Grouped summary lines then
+show overdue tasks, due-today tasks, and open-items in compact inline form
+(`· item1 · item2 · +N`). `--verbose` adds the `brief` narrative panel
+(from the `dome.agent.brief` fact, when present) before the task groups and
+the calendar event count line; the default compact view omits both. There
+is no `Open tasks` / `Follow-ups` / `Questions` section header rendering in
+v2 — items are bucketed inline into the summary row. `dome decide` is not
+emitted.
 
 - `--date <yyyy-mm-dd>` and `--limit <n>` pass through to the view's
   `date` / `limit` command args (same semantics as `dome run today`).

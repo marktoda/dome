@@ -543,7 +543,10 @@ describe("GET /today", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
     const html = await res.text();
     expect(html).toContain("ship the http surface");
-    expect(html).toContain('http-equiv="refresh"');
+    // CB-T3: the page now JS-polls; there is no <meta http-equiv="refresh">
+    expect(html).not.toContain('http-equiv="refresh"');
+    expect(html).toContain("POLL_MS");
+    expect(html).toContain("setInterval(poll,");
   }, TEST_TIMEOUT_MS);
 
   test("accepts ?token= on /today only", async () => {
@@ -568,15 +571,17 @@ describe("GET /today", () => {
   test("honors ?refresh= seconds", async () => {
     const f = await fixture();
     const res = await fetch(`${f.baseUrl}/today?token=${TOKEN}&refresh=30`);
-    expect(await res.text()).toContain('content="30"');
+    // CB-T3: JS polling — ?refresh= controls POLL_MS (refreshSeconds * 1000)
+    expect(await res.text()).toContain("POLL_MS = 30000");
   }, TEST_TIMEOUT_MS);
 
   test("absent or garbage ?refresh= falls back to 15 seconds", async () => {
     const f = await fixture();
+    // CB-T3: JS polling — default POLL_MS = 15 * 1000 = 15000
     const absent = await fetch(`${f.baseUrl}/today?token=${TOKEN}`);
-    expect(await absent.text()).toContain('content="15"');
+    expect(await absent.text()).toContain("POLL_MS = 15000");
 
     const garbage = await fetch(`${f.baseUrl}/today?token=${TOKEN}&refresh=banana`);
-    expect(await garbage.text()).toContain('content="15"');
+    expect(await garbage.text()).toContain("POLL_MS = 15000");
   }, TEST_TIMEOUT_MS);
 });

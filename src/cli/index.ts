@@ -412,6 +412,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       "Watch refresh interval (default 5).",
       parsePositiveIntegerOption,
     )
+    .option("-v, --verbose", "Show full brief prose and source paths.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -425,6 +426,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           json: options.json,
           watch: options.watch,
           interval: options.interval,
+          verbose: options.verbose,
         }),
       );
     });
@@ -840,6 +842,7 @@ type TodayCliOptions = {
   readonly watch?: boolean;
   readonly interval?: number;
   readonly json?: boolean;
+  readonly verbose?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;
 };

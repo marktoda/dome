@@ -57,6 +57,7 @@ import {
   MEETINGS_BLOCK,
   QUESTIONS_BLOCK,
   SOURCES_BLOCK,
+  TODAY_BLOCK,
   YESTERDAY_BLOCK,
   extractBriefBlockBody,
   groundBriefBlockBody,
@@ -323,8 +324,16 @@ const brief = defineProcessorImplementation({
         `_Morning brief failed (${flattened}). Yesterday's note: [[${yesterdayPath.replace(/\.md$/, "")}]]. Retry: \`dome run dome.agent.brief\`._`,
         YESTERDAY_BLOCK.end,
       ].join("\n");
-      const fallback = replaceBriefBlock({
+      // The today block is model-written with no fallback prose: omit it from
+      // the failure stub so only the yesterday failure message is shown.
+      const withoutToday = replaceBriefBlock({
         content: prepared,
+        markers: TODAY_BLOCK,
+        section: null,
+        heading: "Start Here",
+      });
+      const fallback = replaceBriefBlock({
+        content: withoutToday,
         markers: YESTERDAY_BLOCK,
         section: stub,
         heading: "Start Here",
@@ -371,6 +380,7 @@ const brief = defineProcessorImplementation({
     let composed = prepared;
     const ungrounded: string[] = [];
     const spliceBlocks = [
+      { markers: TODAY_BLOCK, heading: "Start Here" },
       { markers: YESTERDAY_BLOCK, heading: "Start Here" },
       ...(meetings !== null && meetings.length > 0
         ? [{ markers: MEETINGS_BLOCK, heading: "Meetings" }]
@@ -486,6 +496,7 @@ const brief = defineProcessorImplementation({
     // the composed result (what persists) keeps both sides auditable;
     // duplicates dedupe locally by message and at the diagnostics sink.
     const briefBlocks = [
+      TODAY_BLOCK,
       YESTERDAY_BLOCK,
       MEETINGS_BLOCK,
       QUESTIONS_BLOCK,
@@ -576,12 +587,23 @@ function ensureBriefBlocks(input: {
   readonly yesterdaySection: string;
 }): string {
   let content = input.content;
+  // Seed the today block first (directly under ## Start Here) so it sits at
+  // the top of the section. The yesterday block is then anchored after it.
+  if (extractBriefBlockBody(content, TODAY_BLOCK) === null) {
+    content = replaceBriefBlock({
+      content,
+      markers: TODAY_BLOCK,
+      section: [TODAY_BLOCK.start, TODAY_BLOCK.end].join("\n"),
+      heading: "Start Here",
+    });
+  }
   if (extractBriefBlockBody(content, YESTERDAY_BLOCK) === null) {
     content = replaceBriefBlock({
       content,
       markers: YESTERDAY_BLOCK,
       section: input.yesterdaySection,
       heading: "Start Here",
+      afterBlock: TODAY_BLOCK,
     });
   }
   if (
@@ -699,7 +721,7 @@ function taskTurn(input: {
   lines.push(...staleLoopsTaskLines(input.staleLoops));
   lines.push(
     "",
-    "Fill the yesterday block" +
+    "Fill the today block (dome.agent.brief:today) with a warm, forward-looking 2–3 sentence framing of today, grounded with [[wikilinks]] to relevant pages. Then fill the yesterday block" +
       (input.meetings !== null && input.meetings.length > 0
         ? " and the meetings block"
         : "") +

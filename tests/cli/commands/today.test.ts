@@ -2,6 +2,8 @@
 // real temp vault, real sync, captured console (pattern from tests/http).
 
 import { afterAll, beforeEach, afterEach, describe, expect, test } from "bun:test";
+import { resolveCaps, stripWikilinks } from "../../../src/cli/presenter";
+import { formatTodayResult } from "../../../src/cli/commands/today";
 import { mkdtempSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -209,4 +211,392 @@ describe("dome today: dome.daily not installed", () => {
     // --json path is unchanged: not tested here, but the human path is
     // confirmed above.
   }, 120_000);
+});
+
+// ----- dome today: Briefing terminal restyle (v2 presenter) -------------------
+//
+// These tests drive the new formatTodayResult shape: verdict-first headline,
+// hero action line, glyph-grouped tasks, ? ask line, rollup, verbose gate.
+// They use caps with unicode:false (ASCII glyphs) so assertions work without
+// exact glyph matching.
+
+const ASCII_CAPS = resolveCaps({ isTTY: false });
+
+describe("dome today: Briefing terminal restyle", () => {
+  test("verdict-first headline has 'today ·' and overdue/open verdict", () => {
+    const data = {
+      date: "2026-06-14",
+      hero: null,
+      brief: null,
+      calendar: null,
+      openTasks: [
+        { text: "review routing decision", path: "wiki/tasks.md", line: 1, dueDate: "2026-06-10" },
+      ],
+      followups: [],
+      questions: [],
+      counts: {},
+      dueCounts: {},
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(out).toMatch(/today\s*[·\-]\s*vault/);
+    expect(out).toMatch(/overdue|open/);
+    expect(out).not.toContain("dome decide");
+  });
+
+  test("hero task line renders with '>' pointer and urgency, no dome decide", () => {
+    const data = {
+      date: "2026-06-14",
+      hero: {
+        kind: "task",
+        item: {
+          text: "make the routing decision",
+          path: "wiki/tasks.md",
+          line: 1,
+          dueDate: "2026-06-10",
+        },
+      },
+      brief: null,
+      calendar: null,
+      openTasks: [],
+      followups: [],
+      questions: [],
+      counts: {},
+      dueCounts: {},
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(out).toContain(">");                          // ASCII pointer glyph
+    expect(out).toContain("make the routing decision");
+    expect(out).toMatch(/overdue/);
+    expect(out).not.toContain("dome decide");
+  });
+
+  test("hero question line renders with '>' and dome resolve, no dome decide", () => {
+    const data = {
+      date: "2026-06-14",
+      hero: {
+        kind: "question",
+        item: {
+          id: 7,
+          question: "K-budget gate a blocker?",
+          resolveCommand: "dome resolve 7 yes",
+          options: [],
+        },
+      },
+      brief: null,
+      calendar: null,
+      openTasks: [],
+      followups: [],
+      questions: [
+        {
+          id: 7,
+          question: "K-budget gate a blocker?",
+          resolveCommand: "dome resolve 7 yes",
+          options: [],
+        },
+      ],
+      counts: {},
+      dueCounts: {},
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(out).toContain(">");
+    expect(out).toContain("dome resolve");
+    expect(out).not.toContain("dome decide");
+  });
+
+  test("full brief prose is hidden by default, shown under verbose", () => {
+    const BRIEF = "A long analysis paragraph about today's priorities.";
+    const data = {
+      date: "2026-06-14",
+      hero: null,
+      brief: {
+        text: BRIEF,
+        sourceRef: { path: "wiki/brief.md" },
+      },
+      calendar: null,
+      openTasks: [],
+      followups: [],
+      questions: [],
+      counts: {},
+      dueCounts: {},
+    };
+    const defaultOut = formatTodayResult(data, ASCII_CAPS, "/vault");
+    const verboseOut = formatTodayResult(data, ASCII_CAPS, "/vault", { verbose: true });
+    expect(defaultOut).not.toContain(BRIEF);
+    expect(verboseOut).toContain(BRIEF);
+    // Default output hints about --verbose
+    expect(defaultOut).toContain("--verbose");
+  });
+
+  test("all-clear renders calm verdict with no tasks", () => {
+    const data = {
+      date: "2026-06-14",
+      hero: null,
+      brief: null,
+      calendar: null,
+      openTasks: [],
+      followups: [],
+      questions: [],
+      counts: {},
+      dueCounts: {},
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(out).toMatch(/all clear/);
+    expect(out).not.toContain("dome decide");
+  });
+
+  test("calendar summary line rendered when calendar present", () => {
+    const data = {
+      date: "2026-06-14",
+      hero: null,
+      brief: null,
+      calendar: {
+        events: [
+          { time: "10:00", title: "Team sync", meta: null },
+          { time: "14:00", title: "Design review", meta: "30min" },
+        ],
+        sourceRef: { path: "wiki/calendar.md" },
+      },
+      openTasks: [],
+      followups: [],
+      questions: [],
+      counts: {},
+      dueCounts: {},
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(out).toMatch(/today|2026-06-14/);
+    expect(out).toMatch(/2\s*event/);
+  });
+
+  test("glyph-grouped task rows: overdue, today, open", () => {
+    const data = {
+      date: "2026-06-14",
+      hero: null,
+      brief: null,
+      calendar: null,
+      openTasks: [
+        { text: "overdue task", path: "wiki/tasks.md", line: 1, dueDate: "2026-06-10" },
+        { text: "due today task", path: "wiki/tasks.md", line: 2, dueDate: "2026-06-14" },
+        { text: "open task", path: "wiki/tasks.md", line: 3, dueDate: null },
+      ],
+      followups: [],
+      questions: [],
+      counts: {},
+      dueCounts: {},
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    // overdue group uses x glyph (ASCII), today group uses !, open group uses *
+    expect(out).toMatch(/x\s+overdue/i);
+    expect(out).toMatch(/!\s+today/i);
+    expect(out).toMatch(/\*\s+open/i);
+    expect(out).toContain("overdue task");
+    expect(out).toContain("due today task");
+    expect(out).toContain("open task");
+  });
+
+  test("? ask line shows top question with dome resolve; +N if more", () => {
+    const data = {
+      date: "2026-06-14",
+      hero: null,
+      brief: null,
+      calendar: null,
+      openTasks: [],
+      followups: [],
+      questions: [
+        { id: 7, question: "K-budget gate a blocker?", resolveCommand: "dome resolve 7 yes", options: [] },
+        { id: 8, question: "Second question", resolveCommand: "dome resolve 8 no", options: [] },
+      ],
+      counts: {},
+      dueCounts: {},
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(out).toContain("?");
+    expect(out).toContain("K-budget gate a blocker?");
+    expect(out).toContain("dome resolve 7");
+    // Second question collapsed
+    expect(out).not.toContain("Second question");
+    expect(out).toContain("+1");
+  });
+
+  test("rollup line 'everything else clean' always appears when tasks exist", () => {
+    const data = {
+      date: "2026-06-14",
+      hero: null,
+      brief: null,
+      calendar: null,
+      openTasks: [
+        { text: "some task", path: "wiki/tasks.md", line: 1, dueDate: null },
+      ],
+      followups: [],
+      questions: [],
+      counts: {},
+      dueCounts: {},
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(out).toContain("everything else clean");
+  });
+});
+
+// ----- stripWikilinks unit tests ---------------------------------------------
+
+describe("stripWikilinks", () => {
+  test("[[path|Alias]] → Alias", () => {
+    expect(stripWikilinks("[[wiki/entities/robinhood-chain|Robinhood Chain]]")).toBe("Robinhood Chain");
+  });
+
+  test("[[path/to/page]] → last segment", () => {
+    expect(stripWikilinks("[[wiki/entities/dinari]]")).toBe("dinari");
+  });
+
+  test("bare [[page]] → page", () => {
+    expect(stripWikilinks("[[robinhood-chain]]")).toBe("robinhood-chain");
+  });
+
+  test("wikilinks embedded in sentence are replaced in-place", () => {
+    expect(stripWikilinks("Ask [[wiki/entities/dinari|Dinari]]: can a pool work?")).toBe(
+      "Ask Dinari: can a pool work?",
+    );
+  });
+
+  test("multiple wikilinks in one string", () => {
+    expect(
+      stripWikilinks("[[wiki/x|X]] and [[wiki/y|Y]]"),
+    ).toBe("X and Y");
+  });
+
+  test("no wikilinks → string unchanged (modulo trim)", () => {
+    expect(stripWikilinks("plain label")).toBe("plain label");
+  });
+
+  test("collapses extra whitespace left by removal", () => {
+    const result = stripWikilinks("Task: check  [[wiki/x]]  stuff");
+    expect(result).toBe("Task: check x stuff");
+  });
+});
+
+// ----- wikilink stripping in formatTodayResult --------------------------------
+
+describe("dome today: wikilink stripping in rendered output", () => {
+  test("hero task with wikilinks renders alias not raw markup", () => {
+    const data = {
+      date: "2026-06-14",
+      hero: {
+        kind: "task",
+        item: {
+          text: "Partner call: confirm [[wiki/entities/robinhood-chain|RH Chain]] launch",
+          path: "wiki/tasks.md",
+          line: 1,
+          dueDate: "2026-06-10",
+        },
+      },
+      brief: null,
+      calendar: null,
+      openTasks: [],
+      followups: [],
+      questions: [],
+      counts: {},
+      dueCounts: {},
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(out).toContain("RH Chain");
+    expect(out).not.toContain("[[");
+    expect(out).not.toContain("]]");
+  });
+
+  test("hero task overdue shows day count (overdue Nd), not bare 'overdue'", () => {
+    const data = {
+      date: "2026-06-14",
+      hero: {
+        kind: "task",
+        item: {
+          text: "Overdue task",
+          path: "wiki/tasks.md",
+          line: 1,
+          dueDate: "2026-06-10",
+        },
+      },
+      brief: null,
+      calendar: null,
+      openTasks: [],
+      followups: [],
+      questions: [],
+      counts: {},
+      dueCounts: {},
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    // Should show "overdue 4d" (4 days from 2026-06-10 to 2026-06-14)
+    expect(out).toMatch(/overdue \d+d/);
+  });
+
+  test("grouped task row truncates long label with ellipsis", () => {
+    const longText =
+      "Partner call: confirm RH Chain launch-day token catalog — which issuers should be on the initial list for the mainnet debut";
+    const data = {
+      date: "2026-06-14",
+      hero: null,
+      brief: null,
+      calendar: null,
+      openTasks: [
+        { text: longText, path: "wiki/tasks.md", line: 1, dueDate: "2026-06-10" },
+      ],
+      followups: [],
+      questions: [],
+      counts: {},
+      dueCounts: {},
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    // The full text is NOT present verbatim (it's truncated)
+    expect(out).not.toContain(longText);
+    // But the truncated version ends with ellipsis
+    expect(out).toContain("…");
+  });
+
+  test("grouped task row strips wikilinks from label", () => {
+    const data = {
+      date: "2026-06-14",
+      hero: null,
+      brief: null,
+      calendar: null,
+      openTasks: [
+        {
+          text: "Ask [[wiki/entities/dinari|Dinari]]: can a pool work?",
+          path: "wiki/tasks.md",
+          line: 1,
+          dueDate: "2026-06-10",
+        },
+      ],
+      followups: [],
+      questions: [],
+      counts: {},
+      dueCounts: {},
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(out).toContain("Dinari");
+    expect(out).not.toContain("[[");
+    expect(out).not.toContain("]]");
+  });
+
+  test("? ask question strips wikilinks", () => {
+    const data = {
+      date: "2026-06-14",
+      hero: null,
+      brief: null,
+      calendar: null,
+      openTasks: [],
+      followups: [],
+      questions: [
+        {
+          id: 7,
+          question: "Is [[wiki/entities/robinhood-chain|RH Chain]] ready?",
+          resolveCommand: "dome resolve 7 yes",
+          options: [],
+        },
+      ],
+      counts: {},
+      dueCounts: {},
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(out).toContain("RH Chain");
+    expect(out).not.toContain("[[");
+    expect(out).not.toContain("]]");
+  });
 });

@@ -62,6 +62,7 @@ export const YESTERDAY_BLOCK: BriefBlockMarkers = Object.freeze({
   start: EDITION_YESTERDAY_BLOCK.start,
   end: EDITION_YESTERDAY_BLOCK.end,
 });
+export const TODAY_BLOCK: BriefBlockMarkers = briefBlock("today");
 export const MEETINGS_BLOCK: BriefBlockMarkers = briefBlock("meetings");
 export const QUESTIONS_BLOCK: BriefBlockMarkers = briefBlock("questions");
 export const INTEGRATED_BLOCK: BriefBlockMarkers = briefBlock("integrated");

@@ -1778,6 +1778,138 @@ describe("brief integrated overnight digest (wired)", () => {
   });
 });
 
+// ----- dome.agent.brief:today narrative block ---------------------------------
+//
+// A warm, forward-looking 2–3 sentence framing of today, spliced at the TOP of
+// ## Start Here (above the yesterday block), model-written + grounded (same
+// grounding rule: every bullet must carry a [[wikilink]]). Omitted when the
+// model is unavailable (degradation: omission, no fallback prose). Same
+// compose pass, same grounding, same degradation ladder as the other blocks.
+
+import {
+  TODAY_BLOCK,
+  YESTERDAY_BLOCK,
+} from "../../../assets/extensions/dome.agent/lib/brief-shared";
+
+describe("dome.agent.brief:today narrative block", () => {
+  test("grounded model output lands in a today block at the TOP of Start Here (above yesterday)", async () => {
+    const modelDoc = [
+      "<!-- dome.agent.brief:today:start -->",
+      "Today is a focused day on shipping [[wiki/projects/cockpit]] — two key meetings and clear runway for deep work on [[wiki/projects/dome-sdk]].",
+      "<!-- dome.agent.brief:today:end -->",
+      "<!-- dome.agent.brief:yesterday:start -->",
+      "### Yesterday",
+      "- Shipped the capture loop (from [[wiki/dailies/2026-06-08]])",
+      "<!-- dome.agent.brief:yesterday:end -->",
+    ].join("\n");
+    const ctx = makeCtx({
+      files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
+      steps: [
+        {
+          toolCalls: [
+            { id: "1", name: "writePage", input: { path: TODAY_PATH, content: modelDoc } },
+          ],
+        },
+        { text: "done" },
+      ],
+    });
+    const effects = await brief.run(ctx);
+    const content = writtenDaily(effects);
+
+    // The today block is present
+    expect(content).toContain("dome.agent.brief:today");
+    expect(content).toContain("focused day on shipping");
+
+    // today block appears BEFORE yesterday block (at the top of Start Here)
+    const todayIdx = content.indexOf(TODAY_BLOCK.start);
+    const yesterdayIdx = content.indexOf(YESTERDAY_BLOCK.start);
+    expect(todayIdx).toBeGreaterThan(-1);
+    expect(yesterdayIdx).toBeGreaterThan(-1);
+    expect(todayIdx).toBeLessThan(yesterdayIdx);
+
+    // today block is inside ## Start Here
+    const startHereIdx = content.indexOf("## Start Here");
+    expect(startHereIdx).toBeGreaterThan(-1);
+    expect(todayIdx).toBeGreaterThan(startHereIdx);
+  });
+
+  test("ungrounded sentences in the today block are stripped and become QuestionEffects", async () => {
+    const modelDoc = [
+      "<!-- dome.agent.brief:today:start -->",
+      "- Grounded: focus on [[wiki/projects/cockpit]] today.",
+      "- Ungrounded sentence with no wiki link at all.",
+      "<!-- dome.agent.brief:today:end -->",
+    ].join("\n");
+    const ctx = makeCtx({
+      files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
+      steps: [
+        {
+          toolCalls: [
+            { id: "1", name: "writePage", input: { path: TODAY_PATH, content: modelDoc } },
+          ],
+        },
+        { text: "done" },
+      ],
+    });
+    const effects = await brief.run(ctx);
+    const content = writtenDaily(effects);
+
+    // Grounded bullet survives
+    expect(content).toContain("Grounded: focus on [[wiki/projects/cockpit]] today.");
+    // Ungrounded bullet is stripped from the today block body
+    expect(content).not.toContain("Ungrounded sentence with no wiki link at all.");
+    // And becomes a QuestionEffect
+    const q = effects.find(
+      (e): e is QuestionEffect =>
+        e.kind === "question" &&
+        (e as QuestionEffect).question.includes("ungrounded"),
+    );
+    expect(q).toBeDefined();
+    expect(q!.question).toContain("Ungrounded sentence with no wiki link at all.");
+  });
+
+  test("when the model is unavailable (no model), the today block is omitted entirely (degradation: omission)", async () => {
+    // The no-model path: no stepFn wired → agentPreamble returns no-model → [] effects.
+    // But more precisely for this test: when model step throws mid-run,
+    // the today block should NOT appear in the fallback (degradation is omission).
+    const ctx = makeCtx({
+      files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
+      stepFn: async () => {
+        throw new Error("provider unavailable");
+      },
+    });
+    const effects = await brief.run(ctx);
+    // The fallback stub only contains the yesterday block failure message.
+    const content = writtenDaily(effects);
+    // The today block markers must NOT appear in the fallback content
+    expect(content).not.toContain("dome.agent.brief:today");
+    // But the fallback stub IS present (yesterday block contains the error)
+    expect(content).toContain("Morning brief failed");
+  });
+
+  test("model leaves the today block at its empty seed → no today content, no ungrounded questions", async () => {
+    // The model doesn't touch the today block → the seeded (empty) body
+    // is unchanged → grounding skips it (same logic as the yesterday fallback
+    // body skip). The today block markers appear but contain no bullets.
+    const ctx = makeCtx({
+      files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
+      steps: [{ text: "nothing to add" }],
+    });
+    const effects = await brief.run(ctx);
+    // No ungrounded questions for the today block seed
+    const ungroundedQs = effects.filter(
+      (e): e is QuestionEffect =>
+        e.kind === "question" &&
+        (e as QuestionEffect).question.includes("ungrounded"),
+    );
+    expect(ungroundedQs).toEqual([]);
+    // Exactly one today block (no duplication)
+    const content = writtenDaily(effects);
+    const todayBlockCount = (content.match(/dome\.agent\.brief:today:start/g) ?? []).length;
+    expect(todayBlockCount).toBe(1);
+  });
+});
+
 // ----- Wake-tick choreography: signal-triggered re-compose gate ---------------
 //
 // The laptop wake-tick fires the brief in the same burst as the calendar/

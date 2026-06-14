@@ -22,12 +22,14 @@ import {
 import { formatJson } from "../../surface/format";
 import {
   finding,
-  footer,
+  glyph,
   headline,
-  kv,
   paint,
   resolveCaps,
-  section,
+  rollup,
+  signalLine,
+  stripWikilinks,
+  truncate,
   type Caps,
 } from "../presenter";
 import { resolveVaultPath } from "../../surface/resolve-vault";
@@ -42,6 +44,8 @@ export type TodayCommandOptions = {
   readonly watch?: boolean | undefined;
   /** Watch re-render interval in seconds (default 5, min 1). */
   readonly interval?: number | undefined;
+  /** Show full brief prose + source paths. */
+  readonly verbose?: boolean | undefined;
 };
 
 /** Injectable watch-loop boundaries (tests). */
@@ -212,7 +216,9 @@ async function renderTodayOnce(
     }
     return {
       kind: "ok",
-      text: formatTodayResult(validated.data, resolveCaps(), vaultPath),
+      text: formatTodayResult(validated.data, resolveCaps(), vaultPath, {
+        verbose: options.verbose === true,
+      }),
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -298,90 +304,241 @@ type TodayQuestionRow = {
   readonly resolveCommand: string;
 };
 
-function formatTodayResult(data: unknown, caps: Caps, vault: string): string {
+type HeroItem =
+  | { readonly kind: "task"; readonly item: TodayTaskRow }
+  | { readonly kind: "question"; readonly item: TodayQuestionRow };
+
+type BriefField = {
+  readonly text: string;
+  readonly sourceRef: { readonly path: string };
+};
+
+type CalendarField = {
+  readonly events: ReadonlyArray<{ readonly time: string; readonly title: string; readonly meta: string }>;
+  readonly sourceRef: { readonly path: string };
+};
+
+export type FormatTodayOptions = {
+  readonly verbose?: boolean;
+};
+
+export function formatTodayResult(
+  data: unknown,
+  caps: Caps,
+  vault: string,
+  opts: FormatTodayOptions = {},
+): string {
   const record = isRecord(data) ? data : {};
   const date = typeof record.date === "string" ? record.date : "today";
   const openTasks = parseTaskRows(record.openTasks);
   const followups = parseTaskRows(record.followups);
   const questions = parseQuestionRows(record.questions);
+  const hero = parseHero(record.hero);
+  const brief = parseBrief(record.brief);
+  const calendar = parseCalendar(record.calendar);
   const counts = isRecord(record.counts) ? record.counts : {};
   const openTasksTotal = numberOr(counts.openTasks, openTasks.length);
   const followupsTotal = numberOr(counts.followups, followups.length);
   const questionsTotal = numberOr(counts.questions, questions.length);
-  const total = openTasksTotal + followupsTotal + questionsTotal;
-  const status = total === 0
-    ? { tone: "muted" as const, label: "all clear" }
-    : { tone: "ok" as const, label: `${total} open` };
+
+  // Count overdue tasks (dueDate < date)
+  const allTasks = [...openTasks, ...followups];
+  const overdueCount = allTasks.filter(
+    (t) => t.dueDate !== null && t.dueDate < date,
+  ).length;
+  const totalOpen = openTasksTotal + followupsTotal + questionsTotal;
+  const isAllClear = totalOpen === 0;
+
+  // Verdict header
+  const verdictLabel = isAllClear
+    ? "all clear"
+    : overdueCount > 0
+    ? `${overdueCount === 1 ? "1 overdue" : `${overdueCount} overdue`} · ${totalOpen} open`
+    : `${totalOpen} open`;
+  const verdictTone = isAllClear ? "ok" as const : overdueCount > 0 ? "err" as const : "warn" as const;
+  const status = { tone: verdictTone, label: verdictLabel };
+  const vaultName = basename(vault);
 
   const lines: string[] = [
-    headline({ cmd: "today", context: basename(vault) }, status, caps),
+    headline({ cmd: "today", context: vaultName }, status, caps),
+    "",
   ];
-  lines.push(
-    ...section(
-      "Day",
-      kv([{ label: "date", value: date, tone: "plain" }], caps),
-      caps,
-    ),
-  );
-  if (openTasks.length > 0) {
-    lines.push(
-      ...section(
-        "Open tasks",
-        [
-          ...openTasks.map((t) => taskLine(t, caps)),
-          ...truncationNote(openTasks.length, openTasksTotal, caps),
-        ],
-        caps,
-      ),
-    );
+
+  // Hero action line (→ / >) — never dome decide
+  if (hero !== null) {
+    if (hero.kind === "task") {
+      const item = hero.item;
+      const heroText = truncate(stripWikilinks(item.text), 60);
+      const urgency = item.dueDate === null
+        ? ""
+        : item.dueDate < date
+        ? `   ${paint(`overdue ${daysBetween(item.dueDate, date)}d`, "err", caps)}`
+        : item.dueDate === date
+        ? `   ${paint("due today", "warn", caps)}`
+        : `   ${paint(`due ${item.dueDate}`, "muted", caps)}`;
+      lines.push(`  ${glyph("pointer", caps)} ${heroText}${urgency}`);
+    } else {
+      const item = hero.item;
+      const questionText = truncate(stripWikilinks(item.question), 60);
+      lines.push(
+        `  ${glyph("pointer", caps)} dome resolve ${item.id}   ${paint(questionText, "muted", caps)}`,
+      );
+    }
+    lines.push("");
   }
-  if (followups.length > 0) {
+
+  // Calendar summary line
+  if (calendar !== null && calendar.events.length > 0) {
+    const n = calendar.events.length;
+    const evtSummary = `${n} ${n === 1 ? "event" : "events"}`;
     lines.push(
-      ...section(
-        "Follow-ups",
-        [
-          ...followups.map((t) => taskLine(t, caps)),
-          ...truncationNote(followups.length, followupsTotal, caps),
-        ],
-        caps,
-      ),
+      `  ${paint("today", "muted", caps)}  ${paint(date, "plain", caps)} · ${paint(evtSummary, "muted", caps)}`,
     );
+    lines.push("");
   }
-  if (questions.length > 0) {
-    lines.push(
-      ...section(
-        "Questions",
-        [
-          ...questions.flatMap((q) => [
-            `[#${q.id}] ${q.question}`,
-            `   ${paint("resolve:", "muted", caps)} ${q.resolveCommand}`,
-          ]),
-          ...truncationNote(questions.length, questionsTotal, caps),
-        ],
-        caps,
-      ),
+
+  if (!isAllClear) {
+    // Group all tasks by bucket
+    const LABEL_WIDTH = 6; // "today " padded
+    const overdueTasks = allTasks.filter(
+      (t) => t.dueDate !== null && t.dueDate < date,
     );
+    const dueTodayTasks = allTasks.filter(
+      (t) => t.dueDate !== null && t.dueDate === date,
+    );
+    const openTasksList = allTasks.filter(
+      (t) => t.dueDate === null || t.dueDate > date,
+    );
+
+    // Max 3 shown per group to keep it compact; overflow → +N in detail
+    const MAX_PER_GROUP = 3;
+
+    const TASK_LABEL_MAX = 56;
+    const taskLabel = (t: TodayTaskRow) =>
+      truncate(stripWikilinks(t.text), TASK_LABEL_MAX);
+
+    if (overdueTasks.length > 0) {
+      const shown = overdueTasks.slice(0, MAX_PER_GROUP);
+      const overflow = overdueTasks.length - shown.length;
+      const detail = shown.map(taskLabel).join(" · ") +
+        (overflow > 0 ? ` · +${overflow}` : "");
+      lines.push(signalLine("err", "overdue", detail, LABEL_WIDTH, caps));
+    }
+    if (dueTodayTasks.length > 0) {
+      const shown = dueTodayTasks.slice(0, MAX_PER_GROUP);
+      const overflow = dueTodayTasks.length - shown.length;
+      const detail = shown.map(taskLabel).join(" · ") +
+        (overflow > 0 ? ` · +${overflow}` : "");
+      lines.push(signalLine("warn", "today", detail, LABEL_WIDTH, caps));
+    }
+    if (openTasksList.length > 0) {
+      const MAX_OPEN = 3;
+      const shown = openTasksList.slice(0, MAX_OPEN);
+      const overflow = openTasksList.length - shown.length;
+      const detail = shown.map(taskLabel).join(" · ") +
+        (overflow > 0 ? ` · +${overflow}` : "");
+      lines.push(signalLine("plain", "open", detail, LABEL_WIDTH, caps));
+    }
+
+    // ? ask line — top question + +N if more
+    if (questions.length > 0) {
+      const top = questions[0]!;
+      const extra = questions.length - 1;
+      const extraNote = extra > 0 ? `   ${paint(`+${extra}`, "muted", caps)}` : "";
+      const questionLabel = truncate(stripWikilinks(top.question), TASK_LABEL_MAX);
+      lines.push(
+        `  ? ${paint("ask", "muted", caps)}   #${top.id} ${questionLabel}   ${paint(top.resolveCommand, "ident", caps)}${extraNote}`,
+      );
+    }
+
+    lines.push("");
+    lines.push(rollup([], caps));
   }
-  lines.push(...footer(status, caps));
+
+  // Brief prose: hidden by default, shown under --verbose
+  if (brief !== null) {
+    if (opts.verbose === true) {
+      lines.push("");
+      lines.push(`  ${paint("brief", "muted", caps)}   ${brief.text}`);
+      if (brief.sourceRef.path.length > 0) {
+        lines.push(`  ${paint(brief.sourceRef.path, "muted", caps)}`);
+      }
+    } else {
+      lines.push("");
+      lines.push(
+        `  ${paint("--verbose for full brief + sources", "muted", caps)}`,
+      );
+    }
+  }
+
   return lines.join("\n");
 }
 
-/** A muted `(showing N of M)` line when the section was truncated by limit. */
-function truncationNote(
-  shown: number,
-  total: number,
-  caps: Caps,
-): ReadonlyArray<string> {
-  if (total <= shown) return [];
-  return [paint(`(showing ${shown} of ${total})`, "muted", caps)];
+function parseHero(raw: unknown): HeroItem | null {
+  if (!isRecord(raw)) return null;
+  const kind = raw.kind;
+  if (kind === "task") {
+    const item = isRecord(raw.item) ? raw.item : null;
+    if (item === null) return null;
+    const text = typeof item.text === "string" ? item.text : "";
+    if (text.length === 0) return null;
+    return {
+      kind: "task",
+      item: {
+        text,
+        path: typeof item.path === "string" ? item.path : "",
+        line: typeof item.line === "number" ? item.line : null,
+        dueDate: typeof item.dueDate === "string" ? item.dueDate : null,
+      },
+    };
+  }
+  if (kind === "question") {
+    const item = isRecord(raw.item) ? raw.item : null;
+    if (item === null) return null;
+    const question = typeof item.question === "string" ? item.question : "";
+    if (question.length === 0) return null;
+    return {
+      kind: "question",
+      item: {
+        id: typeof item.id === "number" ? item.id : 0,
+        question,
+        resolveCommand: typeof item.resolveCommand === "string"
+          ? item.resolveCommand
+          : "dome resolve <id> <value>",
+      },
+    };
+  }
+  return null;
 }
 
-function taskLine(t: TodayTaskRow, caps: Caps): string {
-  const where = t.line === null ? t.path : `${t.path}:${t.line}`;
-  const due = t.dueDate === null
-    ? ""
-    : ` ${paint(`due ${t.dueDate}`, "muted", caps)}`;
-  return `- [ ] ${t.text}${due}  ${paint(where, "muted", caps)}`;
+function parseBrief(raw: unknown): BriefField | null {
+  if (!isRecord(raw)) return null;
+  const text = typeof raw.text === "string" ? raw.text : null;
+  if (text === null || text.length === 0) return null;
+  const sourceRef = isRecord(raw.sourceRef) ? raw.sourceRef : null;
+  const path = sourceRef !== null && typeof sourceRef.path === "string"
+    ? sourceRef.path
+    : "";
+  return { text, sourceRef: { path } };
+}
+
+function parseCalendar(raw: unknown): CalendarField | null {
+  if (!isRecord(raw)) return null;
+  if (!Array.isArray(raw.events)) return null;
+  const events = raw.events.flatMap((ev) => {
+    if (!isRecord(ev)) return [];
+    const time = typeof ev.time === "string" ? ev.time : null;
+    const title = typeof ev.title === "string" ? ev.title : null;
+    if (time === null || title === null) return [];
+    const meta = typeof ev.meta === "string" ? ev.meta : "";
+    return [Object.freeze({ time, title, meta })];
+  });
+  if (events.length === 0) return null;
+  const sourceRef = isRecord(raw.sourceRef) ? raw.sourceRef : null;
+  const path = sourceRef !== null && typeof sourceRef.path === "string"
+    ? sourceRef.path
+    : "";
+  return { events, sourceRef: { path } };
 }
 
 function parseTaskRows(raw: unknown): ReadonlyArray<TodayTaskRow> {
@@ -425,4 +582,15 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 function numberOr(v: unknown, fallback: number): number {
   return typeof v === "number" && Number.isFinite(v) ? v : fallback;
+}
+
+/**
+ * Number of calendar days from `earlier` to `later` (both "YYYY-MM-DD").
+ * Returns 0 if the date strings are equal or unparseable.
+ */
+function daysBetween(earlier: string, later: string): number {
+  const a = Date.parse(earlier);
+  const b = Date.parse(later);
+  if (Number.isNaN(a) || Number.isNaN(b) || b <= a) return 0;
+  return Math.round((b - a) / 86_400_000);
 }
