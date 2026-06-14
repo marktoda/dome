@@ -235,6 +235,64 @@ extensions:
       await runtimeResult.value.close();
     }
   });
+
+  test("does NOT prune when config was not found — a misread config can't nuke recovery state", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-runtime-gc-noconfig-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome", "state"), { recursive: true });
+    // No .dome/config.yaml: policy.foundConfig is false. The prune guard
+    // (foundConfig && (configuredExtensions || registry.size)) must short-
+    // circuit so a read edge / missing config never discards live recovery
+    // counters — including a counter for a processor that isn't in the
+    // supplied registry at all (which would otherwise look "unknown").
+    writeFileSync(
+      join(root, ".dome", "state", "quarantined.json"),
+      JSON.stringify({
+        version: 1,
+        entries: [
+          {
+            phase: "garden",
+            processorId: "retired.bundle.worker",
+            processorVersion: "0.1.0",
+            triggerHash: "h-retired",
+            consecutiveRetryableFailures: 2,
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const live = defineProcessor({
+      id: "enabled.bundle.worker",
+      version: "0.1.0",
+      phase: "garden",
+      triggers: [{ kind: "schedule", cron: "* * * * *" }],
+      capabilities: [],
+      run: async () => [],
+    });
+    const registryResult = buildRegistry([live]);
+    expect(registryResult.ok).toBe(true);
+    if (!registryResult.ok) return;
+
+    const runtimeResult = await openVaultRuntime({
+      vaultPath: root,
+      registry: registryResult.value,
+      extensions: [{ name: "enabled.bundle", version: "0.1.0" }],
+      processorVersions: [{ id: "enabled.bundle.worker", version: "0.1.0" }],
+    });
+    expect(runtimeResult.ok).toBe(true);
+    if (!runtimeResult.ok) return;
+    try {
+      // The retired counter survives untouched: prune was never invoked.
+      const after = JSON.parse(
+        readFileSync(join(root, ".dome", "state", "quarantined.json"), "utf8"),
+      ) as { entries: ReadonlyArray<{ processorId: string }> };
+      const ids = after.entries.map((e) => e.processorId).sort();
+      expect(ids).toEqual(["retired.bundle.worker"]);
+    } finally {
+      await runtimeResult.value.close();
+    }
+  });
 });
 
 describe("openVaultRuntime maintenance-loop composition", () => {
