@@ -49,6 +49,7 @@ import {
 } from "../lib/sweep-ledger";
 import {
   buildSweepQueue,
+  lineHasMaterialLink,
   safeCursor,
   type SweepQueueItem,
 } from "../lib/sweep-queue";
@@ -198,21 +199,6 @@ function sweepTargets(
 const SOURCES_KEY_RE = /^sources:(.*)$/;
 
 /**
- * Mirror of `isSettledBySources` (lib/sweep-queue.ts): the four wikilink forms
- * that settle a pair. Keeping the accepted forms identical means this
- * enforcement never double-adds an entry the queue would already honor.
- */
-function containsMaterialLink(line: string, materialWithoutMd: string): boolean {
-  const withMd = `${materialWithoutMd}.md`;
-  return (
-    line.includes(`[[${materialWithoutMd}]]`) ||
-    line.includes(`[[${materialWithoutMd}|`) ||
-    line.includes(`[[${withMd}]]`) ||
-    line.includes(`[[${withMd}|`)
-  );
-}
-
-/**
  * Guarantee the destination content carries the settlement record: a
  * `[[<material sans .md>]]` wikilink in the frontmatter `sources:` list.
  * Pure; exported for unit tests. Idempotent — if any of the four settlement
@@ -260,7 +246,7 @@ export function ensureSourcesLink(content: string, materialPath: string): string
       let blockEnd = sourcesIdx + 1;
       while (blockEnd < close && !/^\S/.test(lines[blockEnd]!)) blockEnd += 1;
       for (let i = sourcesIdx; i < blockEnd; i++) {
-        if (containsMaterialLink(lines[i]!, link)) return content; // settled already
+        if (lineHasMaterialLink(lines[i]!, link)) return content; // settled already
       }
       const keyLine = lines[sourcesIdx]!;
       const rest = (SOURCES_KEY_RE.exec(keyLine)?.[1] ?? "").trim();

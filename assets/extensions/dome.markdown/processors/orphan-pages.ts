@@ -127,7 +127,7 @@ const orphanPages = defineProcessorImplementation({
     const orphans: Array<{
       readonly path: string;
       readonly incomingLinkCount: 0;
-      readonly reason: "no incoming links" | "no incoming links and not in root index";
+      readonly reason: "no incoming links and not in root index";
     }> = [];
 
     let totalScanned = 0;

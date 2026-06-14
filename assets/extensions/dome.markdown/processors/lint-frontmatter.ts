@@ -15,11 +15,14 @@
 //   - Bounded cost: O(changed-files × frontmatter-size).
 //   - No LLM, no network, no patches.
 //
-// Scope decision (per the Phase 13a task spec): v1.0 ships WITHOUT
-// per-page-type schemas. `.dome/page-types.yaml` was retired in Phase 7b;
-// per-type schemas (e.g., "every `type: task` must have `dueDate`") are
-// Phase 13b+ work, when the page-types substrate lands. This processor
-// validates only the minimal core schema common to every page type.
+// Per-page-type schemas ARE shipped. Beyond the minimal core schema common
+// to every page type, this processor loads the vault's optional
+// `.dome/page-types.yaml`, merges it over `DEFAULT_PAGE_TYPE_REGISTRY`
+// (see `loadPageTypeRegistry`), and then `lintPageTypeFields` enforces each
+// type's required fields, flags unknown fields, and (when the registry sets
+// `enforceKnownTypes`) flags `type:` values that name no known page type.
+// A malformed or conflicting `page-types.yaml` itself surfaces as a finding
+// against that path. See [[wiki/specs/page-schema]] for the contract.
 //
 // Per [[wiki/matrices/processor-phase-x-trigger]], adoption-phase
 // processors may subscribe to `signal` triggers; we subscribe to
