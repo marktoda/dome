@@ -26,6 +26,21 @@ export type ExecutionPolicyError = {
   readonly message: string;
 };
 
+/**
+ * The hard ceiling for an adoption-phase deterministic timeout. Adoption is
+ * the merge gate, so its DEFAULT stays low (10s — see the deterministic class
+ * default) to keep the common single-file path fast. But a genuine whole-vault
+ * adoption scan (e.g. `dome.markdown.duplicate-detection`, which reads and
+ * parses every comparable page on each changed file) legitimately needs more
+ * than 10s on a large vault, and silently timing out ~every tick wedges
+ * adoption with zero health signal. A processor may therefore REQUEST a larger
+ * deterministic timeout via its manifest `execution.timeoutMs`, clamped to this
+ * ceiling — the gate stays bounded (it can never hang indefinitely), it just is
+ * not pinned to the 10s default for the rare processor that opts in. A tighter
+ * vault `processor_timeout_ms` cap still wins (it is a min, not a max).
+ */
+export const ADOPTION_DETERMINISTIC_TIMEOUT_CEILING_MS = 60_000;
+
 export const DEFAULT_EXECUTION_POLICY_BY_CLASS: Readonly<
   Record<ExecutionClass, ResolvedExecutionPolicy>
 > = Object.freeze({
@@ -93,9 +108,14 @@ export function resolveExecutionPolicy(opts: {
     lateEffectBehavior: defaults.lateEffectBehavior,
     modelCallTimeoutMs: opts.request?.modelCallTimeoutMs ?? defaults.modelCallTimeoutMs,
   };
+  // Adoption stays bounded as the merge gate, but the cap is the adoption
+  // ceiling (not the 10s default): a processor may request a longer
+  // deterministic timeout for a heavy whole-vault scan, clamped to the ceiling.
+  // With no explicit request the deterministic default (10s) flows through, so
+  // the common path is unchanged.
   const phaseTimeoutCap =
     opts.phase === "adoption"
-      ? DEFAULT_EXECUTION_POLICY_BY_CLASS.deterministic.timeoutMs
+      ? ADOPTION_DETERMINISTIC_TIMEOUT_CEILING_MS
       : undefined;
 
   const resolved: {

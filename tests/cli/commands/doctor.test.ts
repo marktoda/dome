@@ -18,6 +18,7 @@ import {
   installConsoleCapture,
   installFixtureCleanup,
   makeFixture,
+  seedRecurringOutboxFailure,
   seedUnhealthyOperationalState,
   writeDoctorConfig,
   writeDoctorConfigBody,
@@ -143,6 +144,40 @@ describe("runDoctor", () => {
       "run.orphan",
       "processor.quarantined",
     ]);
+  });
+
+  test("--json raises a recurring-failure finding for an aged failed outbox row", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+    await seedRecurringOutboxFailure(f);
+
+    const code = await runDoctor({ vault: f.vaultPath, json: true });
+    expect(code).toBe(0);
+    const blob = captured.out.find((line) => line.includes("\"status\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as {
+      readonly status: string;
+      readonly summary: {
+        readonly failedOutbox: number;
+        readonly recurringOutboxFailures: number;
+      };
+      readonly findings: ReadonlyArray<{
+        readonly code: string;
+        readonly message: string;
+      }>;
+    };
+    expect(parsed.status).toBe("unhealthy");
+    // The aged row is BOTH a per-row failed finding and a recurring root-cause
+    // finding — the recurring one carries the "fix the command" framing.
+    expect(parsed.summary.failedOutbox).toBe(1);
+    expect(parsed.summary.recurringOutboxFailures).toBe(1);
+    const recurring = parsed.findings.find(
+      (row) => row.code === "outbox.recurring-failure",
+    );
+    expect(recurring).toBeDefined();
+    expect(recurring?.message.toLowerCase()).toContain("fails every run");
   });
 
   test("--json reports operational schema mismatches without opening runtime", async () => {

@@ -788,6 +788,54 @@ describe("runs lifecycle", () => {
     expect(failOrphanedRuns(db, 60_000, now)).toBe(0);
   });
 
+  it("orphanRuns excludes self-referential dome.health recovery runs when asked", () => {
+    // The orphan-run-recovery processor runs on a minute cron; its OWN runs
+    // can go orphan and generate a self-referential question every minute. The
+    // recovery surfaces exclude dome.health.* so the detector never raises
+    // questions about itself — but a real (non-health) orphan still surfaces,
+    // and raw orphanRuns (the inspect surface) stays unfiltered.
+    const startedAt = new Date("2026-05-27T00:00:00.000Z");
+    const now = new Date("2026-05-27T00:05:00.000Z");
+
+    const realOrphan = newRunId(new Date(), () => "aaaaaa");
+    insertQueued(db, {
+      id: realOrphan,
+      proposalId: null,
+      processorId: "test.real-orphan",
+      processorVersion: "1.0.0",
+      phase: "garden",
+      inputCommit: INPUT_COMMIT,
+      triggerKind: "schedule",
+      triggerPayload: null,
+      startedAt,
+    });
+    markRunning(db, realOrphan, startedAt);
+
+    const healthOrphan = newRunId(new Date(), () => "bbbbbb");
+    insertQueued(db, {
+      id: healthOrphan,
+      proposalId: null,
+      processorId: "dome.health.orphan-run-recovery-questions",
+      processorVersion: "0.1.1",
+      phase: "garden",
+      inputCommit: INPUT_COMMIT,
+      triggerKind: "schedule",
+      triggerPayload: null,
+      startedAt,
+    });
+    markRunning(db, healthOrphan, startedAt);
+
+    // Unfiltered (inspect): sees both — a genuinely stuck health run is still
+    // visible to an operator.
+    expect(orphanRuns(db, 60_000, now).length).toBe(2);
+
+    // Recovery surface: dome.health.* excluded, the real orphan still raised.
+    const recovery = orphanRuns(db, 60_000, now, {
+      excludeProcessorIdPrefixes: ["dome.health."],
+    });
+    expect(recovery.map((r) => r.id)).toEqual([realOrphan]);
+  });
+
   it("failRunIfCurrent recovers only the matching running generation", () => {
     const id = newRunId(new Date(), () => "dddddd");
     const startedAt = new Date("2026-05-27T00:00:00.000Z");
