@@ -20,15 +20,15 @@ import {
   uniqueSourceRefs,
   type DailyHero,
 } from "./action-state";
+import type { FactEffect } from "../../../../src/core/effect";
 
 // ---------------------------------------------------------------------------
-// Cockpit briefing fields — wired to real facts in a later task; always null
-// here so the doc schema is stable from the start.
+// Cockpit briefing fields — assembled from projection facts (CB-T8).
 // ---------------------------------------------------------------------------
 
 /**
- * Narrative brief block — populated by the dome.agent.brief processor (CB-T8).
- * Null until that processor runs.
+ * Narrative brief block — assembled from dome.agent.brief facts by CB-T8.
+ * Null when no brief fact exists for today's daily note path.
  */
 export type DailyBriefField = {
   readonly text: string;
@@ -36,14 +36,15 @@ export type DailyBriefField = {
 } | null;
 
 /**
- * Calendar event block — populated by the dome.agent.calendar.event processor
- * (CB-T8). Null until that processor runs.
+ * Calendar event block — assembled from dome.agent.calendar.event facts by
+ * CB-T8. Null when no calendar event facts exist for today's calendar source
+ * path (sources/calendar/<date>.md).
  */
 export type DailyCalendarField = {
   readonly events: ReadonlyArray<{
     readonly time: string;
     readonly title: string;
-    readonly meta: string | null;
+    readonly meta: string;
   }>;
   readonly sourceRef: SourceRef;
 } | null;
@@ -78,14 +79,27 @@ const today = defineProcessorImplementation({
       ...questions.flatMap((question) => question.sourceRefs),
     ]);
     // Hero uses the full (non-display-limited) lists so it is not biased by the
-    // per-source display cap. brief/calendar are always null here; wired in CB-T8.
+    // per-source display cap.
     const hero: DailyHero | null = selectHero({
       openTasks: actionState.openTasks,
       questions: actionState.questions,
       today: actionState.date,
     });
-    const brief: DailyBriefField = null;
-    const calendar: DailyCalendarField = null;
+
+    // brief — assembled from the dome.agent.brief fact whose subject path
+    // matches today's daily note path (one fact per daily note, at most one match).
+    const brief: DailyBriefField = assembleBriefField(
+      ctx.projection?.facts({ predicate: "dome.agent.brief" }) ?? [],
+      actionState.daily.path,
+    );
+
+    // calendar — assembled from dome.agent.calendar.event facts whose subject
+    // path matches the sources/calendar/<date>.md path for today.
+    const calendarSourcePath = `sources/calendar/${actionState.date}.md`;
+    const calendar: DailyCalendarField = assembleCalendarField(
+      ctx.projection?.facts({ predicate: "dome.agent.calendar.event" }) ?? [],
+      calendarSourcePath,
+    );
     const data = Object.freeze({
       schema: SCHEMA,
       date: actionState.date,
@@ -116,5 +130,89 @@ const today = defineProcessorImplementation({
     return [effect];
   },
 });
+
+// ---------------------------------------------------------------------------
+// Brief + calendar assembly helpers (CB-T8)
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive the subject path from a fact: the fact's subject when it is a page
+ * ref, otherwise fall back to the first sourceRef's path.
+ */
+function factSubjectPath(fact: FactEffect): string {
+  if (fact.subject.kind === "page") return String(fact.subject.path);
+  return fact.sourceRefs[0]?.path as string ?? "";
+}
+
+/**
+ * Build the DailyBriefField from dome.agent.brief facts. Picks the single
+ * fact whose subject path matches today's daily note path. Returns null when
+ * no match exists (facts only — no markdown parsing).
+ */
+function assembleBriefField(
+  facts: ReadonlyArray<FactEffect>,
+  dailyNotePath: string,
+): DailyBriefField {
+  const match = facts.find(
+    (f) => factSubjectPath(f) === dailyNotePath,
+  );
+  if (match === undefined) return null;
+  const ref = match.sourceRefs[0];
+  if (ref === undefined) return null;
+  const text = match.object.kind === "string" ? match.object.value : "";
+  return Object.freeze({ text, sourceRef: Object.freeze(ref) });
+}
+
+/**
+ * Build the DailyCalendarField from dome.agent.calendar.event facts. Picks
+ * facts whose subject path matches the calendar source path for today. Each
+ * fact's object value is a tab-delimited "time\ttitle\tmeta" string; values
+ * without exactly two tabs are skipped defensively. Events are sorted by
+ * their time field. Returns null when there are no matching facts.
+ */
+function assembleCalendarField(
+  facts: ReadonlyArray<FactEffect>,
+  calendarSourcePath: string,
+): DailyCalendarField {
+  const matched = facts.filter(
+    (f) => factSubjectPath(f) === calendarSourcePath,
+  );
+  if (matched.length === 0) return null;
+
+  type CalendarEvent = {
+    readonly time: string;
+    readonly title: string;
+    readonly meta: string;
+  };
+
+  const events: CalendarEvent[] = [];
+  for (const fact of matched) {
+    const raw = fact.object.kind === "string" ? fact.object.value : "";
+    const parts = raw.split("\t");
+    // Require exactly three parts (two tab delimiters).
+    if (parts.length !== 3) continue;
+    const [time, title, meta] = parts;
+    if (time === undefined || title === undefined || meta === undefined) continue;
+    events.push(Object.freeze({ time, title, meta }));
+  }
+
+  if (events.length === 0) return null;
+
+  // Sort by time field; empty time (untimed events) sorts before all others.
+  events.sort((a, b) => {
+    if (a.time === b.time) return 0;
+    if (a.time === "") return -1;
+    if (b.time === "") return 1;
+    return a.time < b.time ? -1 : 1;
+  });
+
+  const ref = matched[0]!.sourceRefs[0];
+  if (ref === undefined) return null;
+
+  return Object.freeze({
+    events: Object.freeze(events),
+    sourceRef: Object.freeze(ref),
+  });
+}
 
 export default today;
