@@ -185,8 +185,12 @@ export function renderLintText(data: LintData, vaultPath: string, verbose: boole
   // Issues: ⚠ warn tone if only warning/info; ✗ err tone if any block/error.
   const hasBlockOrError = data.counts.block > 0 || data.counts.error > 0;
   const n = data.counts.total;
+  const files = data.checked.markdownFiles;
+  const passLabel = n === 0
+    ? `pass — ${files} files, no issues`
+    : `pass — ${files} files, ${n} ${n === 1 ? "issue" : "issues"} below threshold`;
   const headStatus: Status = data.status === "pass"
-    ? { tone: "ok", label: `pass — ${data.checked.markdownFiles} files, no issues` }
+    ? { tone: "ok", label: passLabel }
     : hasBlockOrError
       ? { tone: "err", label: `${n} ${n === 1 ? "issue" : "issues"}` }
       : { tone: "warn", label: `${n} ${n === 1 ? "issue" : "issues"}` };

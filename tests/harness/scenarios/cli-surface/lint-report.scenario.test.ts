@@ -35,18 +35,24 @@ scenario(
     const sync = await h.tick();
     expect(sync.adopted).toBe(true);
 
+    // v2 default: verdict-first headline, issues inline, no CHECKED section.
     const text = await h.runCli(["lint"]);
     expect(text.exitCode).toBe(0);
     expect(text.stderr).toBe("");
     expect(text.stdout).toContain("dome lint");
     expect(text.stdout).toContain("pass");
-    expect(text.stdout).toContain("CHECKED");
-    expect(text.stdout).toContain("fail-on");
-    expect(text.stdout).toContain("error");
     expect(text.stdout).toContain("dome.markdown.broken-wikilink");
     expect(text.stdout).toContain("dome.lint.empty-markdown-file");
     expect(text.stdout).toContain("wiki/bad.md");
     expect(text.stdout).toContain("wiki/empty.md");
+
+    // v2 --verbose: CHECKED section with fail-on / severity breakdown visible.
+    const textV = await h.runCli(["lint", "--verbose"]);
+    expect(textV.exitCode).toBe(0);
+    expect(textV.stderr).toBe("");
+    expect(textV.stdout).toContain("CHECKED");
+    expect(textV.stdout).toContain("fail-on");
+    expect(textV.stdout).toContain("error");
 
     const limitedText = await h.runCli(["lint", "--limit", "1"]);
     expect(limitedText.exitCode).toBe(0);

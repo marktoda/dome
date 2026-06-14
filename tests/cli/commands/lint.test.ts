@@ -56,6 +56,30 @@ const CLEAN_DATA: LintData = parseLintData({
   issues: [],
 });
 
+// LintData that passes (failOn=error) but still has warning/info issues.
+const PASS_WITH_ISSUES_DATA: LintData = parseLintData({
+  status: "pass",
+  failOn: "error",
+  checked: { markdownFiles: 7 },
+  counts: { total: 2, block: 0, error: 0, warning: 1, info: 1 },
+  shownIssues: 2,
+  omittedIssues: 0,
+  issues: [
+    {
+      severity: "info",
+      code: "dome.markdown.broken-wikilink",
+      message: "Wikilink [[bar]] does not resolve.",
+      sourceRefs: [{ path: "wiki/notes.md", commit: "aaa1111" }],
+    },
+    {
+      severity: "warning",
+      code: "dome.markdown.orphan",
+      message: "Page has no inbound links.",
+      sourceRefs: [{ path: "wiki/orphan.md", commit: "bbb2222" }],
+    },
+  ],
+});
+
 // LintData with one warning and one info issue.
 const DIRTY_DATA: LintData = parseLintData({
   status: "fail",
@@ -91,6 +115,21 @@ describe("renderLintText (no-color caps)", () => {
     expect(out).not.toContain("CHECKED");
     expect(out).not.toContain("ISSUES");
     expect(out).not.toMatch(/[-─]{10,}/);
+  });
+
+  test("pass with sub-threshold issues: header says 'below threshold', not 'no issues'", () => {
+    const out = renderLintText(PASS_WITH_ISSUES_DATA, "/vault/path");
+    expect(out).toContain("below threshold");
+    expect(out).not.toContain("no issues");
+    expect(out).toMatch(/pass — 7 files, 2 issues below threshold/);
+  });
+
+  test("pass with sub-threshold issues: individual issues still render in body", () => {
+    const out = renderLintText(PASS_WITH_ISSUES_DATA, "/vault/path");
+    expect(out).toContain("dome.markdown.orphan");
+    expect(out).toContain("dome.markdown.broken-wikilink");
+    expect(out).toContain("Page has no inbound links.");
+    expect(out).toContain("Wikilink [[bar]] does not resolve.");
   });
 
   test("issues default: no ISSUES/CHECKED section headers, no footer rule", () => {

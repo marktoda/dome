@@ -501,45 +501,25 @@ The health pulse for a vault. It is read-only and cheap enough for an
 agent or user to run at session start/end. Status intentionally combines
 the old "am I adopted?" pulse with cheap vault analytics so Claude Code
 and a human operator get one useful first glance, not two separate
-commands. Text mode renders a compact dashboard:
+commands. Text mode renders a signal-first summary by default:
 
 ```text
-dome status - work                                             ! needs attention
+dome status - work                                      ! 2 items need attention
 
-  NEXT
-    > dome sync   Run one compiler tick to adopt pending commits or drain
-                  due operational work.
+  > dome sync   Run one compiler tick to adopt pending commits or drain
+                due operational work.
+  > dome check --content --attention --limit 50   Review bounded actionable content diagnostics; fix the source markdown issue(s), commit, then run dome sync --json.
 
-  AT A GLANCE
-    sync          ! needed
-    projection    √ fresh
-    draft         √ clean
-    diagnostics   √ 0
-    questions     √ 0
-    serve         o off
+  ! sync          needed
+  ! diagnostics   12 (8 attention)
+  √ projection, draft, questions, runs, outbox all clean
 
-  VAULT
-    path      ~/vaults/work
-    branch    main
-    head      41a98c2
-    adopted   41a98c2
-    pending   3
-    content   1,247 pages · wiki 1,247 · notes 87 · inbox 14 · links 8,143 · raw 412 files (2.4 MB)
-
-  ENGINE
-    last sync    2h ago
-    runs         0 pending · 0 failed
-    outbox       2 pending · 0 failed
-    quarantine   0
-    loops        5 known · 2 quiet · 0 attention · 1 drift · 1 partial · 1 inactive
-    service      not installed
-
-  DIAGNOSTICS
-    none
-
---------------------------------------------------------------------------------
-! 1 item needs attention
+  --verbose for full vault + engine
 ```
+
+`--verbose` expands to the full dashboard with `NEXT`, `AT A GLANCE`, `VAULT`,
+and `ENGINE` sections (no footer rule). Use `--verbose` when you need the vault
+path, pending commit count, service state, or the per-loop breakdown.
 
 `--loops` expands text mode with one row per maintenance loop: state, goal,
 active/missing processors, diagnostic/question/problem-run counts, surfaces,
@@ -1089,9 +1069,6 @@ dome query - docs                                              √ 4 matches
     2  2026-05-23                                   wiki/dailies/2026-05-23.md
        Discussed platform ownership with Danny...
        wiki/dailies/2026-05-23.md:48-52 @ 41a98c2
-
---------------------------------------------------------------------------------
-√ 4 matches
 ```
 
 `--json` emits the structured `dome.search.query/v1` payload. Every match
@@ -1165,22 +1142,26 @@ adopted-state diagnostic projection plus deterministic snapshot checks through
 the normal view context; it does not scan the working tree and never mutates
 state.
 
-Default text output renders a compact report:
+Default text output renders verdict-first with issues inline, no footer rule:
 
 ```text
-dome lint - work                                                    ! 3 findings
+dome lint - work                                                 ⚠ 3 issues
 
-  CHECKED
-    files     1,247 markdown
-    fail-on   error
-    issues    3 total · 0 block · 0 error · 3 warning · 0 info
+  ! dome.markdown.broken-wikilink - wiki/projects/platform.md
+      Broken wikilink: [[missing]]
 
-  ISSUES
-    ! dome.markdown.broken-wikilink · wiki/projects/platform.md
-        Broken wikilink: [[missing]]
+  ! dome.markdown.missing-frontmatter - wiki/projects/platform.md
+      Markdown file has no YAML frontmatter block.
 
---------------------------------------------------------------------------------
-! 3 findings
+  ! dome.markdown.missing-frontmatter - wiki/notes/scratch.md
+      Markdown file has no YAML frontmatter block.
+```
+
+`--verbose` adds a `CHECKED` section (files, fail-on, issue counts) before the
+findings. When no issues exist, the default output collapses to one line:
+
+```text
+dome lint - work                                    √ pass — 1,247 files, no issues
 ```
 
 `--fail-on` defines the exit threshold. Values are `info`, `warning`, `error`,
