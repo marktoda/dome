@@ -42,6 +42,24 @@ export function section(
   return ["", `  ${heading}`, ...body.map((l) => `  ${l}`)];
 }
 
+/**
+ * One glyph-led status line: `  <glyph> <label>   <detail>`. Glyph is the
+ * tone's status glyph painted in the tone; label is padded to `labelWidth`
+ * and dim; detail is plain. No trailing whitespace when detail is empty.
+ */
+export function signalLine(
+  tone: Tone,
+  label: string,
+  detail: string,
+  labelWidth: number,
+  caps: Caps,
+): string {
+  const g = paint(statusGlyph(tone, caps), tone, caps);
+  if (detail.length === 0) return `  ${g} ${paint(label, "muted", caps)}`;
+  const lbl = paint(pad(label, labelWidth), "muted", caps);
+  return `  ${g} ${lbl}   ${detail}`;
+}
+
 export type KvRow = { readonly label: string; readonly value: string; readonly tone?: Tone };
 
 export function kv(rows: ReadonlyArray<KvRow>, caps: Caps): ReadonlyArray<string> {

@@ -159,7 +159,7 @@ describe("tree", () => {
   });
 });
 
-import { dimZeros, finding, match, table, type Column, type Finding, type MatchView } from "../../../src/cli/presenter/primitives";
+import { dimZeros, finding, match, signalLine, table, type Column, type Finding, type MatchView } from "../../../src/cli/presenter/primitives";
 
 type Row = { name: string; phase: string };
 const COLS: Column<Row>[] = [
@@ -332,5 +332,22 @@ describe("dimZeros", () => {
   });
   test("treats a bare 0 and 0-prefixed counts as zero, but not 10", () => {
     expect(dimZeros(["10 known", "0"], ASCII)).toBe("10 known · 0");
+  });
+});
+
+describe("signalLine", () => {
+  const UNI = { color: false, unicode: true, width: 80 };
+  test("glyph leads, label in an aligned column, detail follows", () => {
+    // "sync" padded to 12 = "sync" + 8 spaces; then 3 spaces gap before detail
+    expect(signalLine("warn", "sync", "45 pending, synced 11h ago", 12, UNI))
+      .toBe("  ⚠ sync           45 pending, synced 11h ago");
+  });
+  test("ok tone uses the check glyph", () => {
+    // "draft" padded to 12 = "draft" + 7 spaces; then 3 spaces gap before detail
+    expect(signalLine("ok", "draft", "clean", 12, UNI))
+      .toBe("  ✓ draft          clean");
+  });
+  test("empty detail omits trailing spaces", () => {
+    expect(signalLine("muted", "serve", "", 12, UNI)).toBe("  ○ serve");
   });
 });
