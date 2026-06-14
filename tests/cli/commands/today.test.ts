@@ -384,13 +384,10 @@ describe("dome today: Briefing terminal restyle", () => {
       dueCounts: {},
     };
     const out = formatTodayResult(data, ASCII_CAPS, "/vault");
-    // overdue group uses x glyph (ASCII), today group uses !, open group uses *
-    expect(out).toMatch(/x\s+overdue/i);
-    expect(out).toMatch(/!\s+today/i);
-    expect(out).toMatch(/\*\s+open/i);
-    expect(out).toContain("overdue task");
-    expect(out).toContain("due today task");
-    expect(out).toContain("open task");
+    // Flat list: one task per line, urgency glyph leads each (ASCII: x/!/*).
+    expect(out).toMatch(/\n\s+x overdue task/);
+    expect(out).toMatch(/\n\s+! due today task/);
+    expect(out).toMatch(/\n\s+\* open task/);
   });
 
   test("? ask line shows top question with dome resolve; +N if more", () => {
@@ -544,10 +541,10 @@ describe("dome today: wikilink stripping in rendered output", () => {
       dueCounts: {},
     };
     const out = formatTodayResult(data, ASCII_CAPS, "/vault");
-    // The full text is NOT present verbatim (it's truncated)
+    // The full text is NOT present verbatim (it's truncated to terminal width)
     expect(out).not.toContain(longText);
-    // But the truncated version ends with ellipsis
-    expect(out).toContain("…");
+    // ASCII caps → ASCII ellipsis
+    expect(out).toContain("...");
   });
 
   test("grouped task row strips wikilinks from label", () => {
@@ -598,5 +595,41 @@ describe("dome today: wikilink stripping in rendered output", () => {
     expect(out).toContain("RH Chain");
     expect(out).not.toContain("[[");
     expect(out).not.toContain("]]");
+  });
+});
+
+describe("dome today: flat signal-led task list", () => {
+  const mk = (text: string, dueDate: string | null) => ({ text, path: "wiki/t.md", line: 1, dueDate });
+  test("lists tasks one per line, urgency-glyph-led, capped with +N more", () => {
+    const open = Array.from({ length: 10 }, (_, i) => mk(`Open item ${i}`, null));
+    const data = {
+      date: "2026-06-14", hero: null, brief: null, calendar: null,
+      openTasks: [mk("Overdue thing", "2026-06-01"), ...open], followups: [], questions: [],
+      counts: { openTasks: 11 }, dueCounts: {},
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(out).toMatch(/\n  x Overdue thing/);
+    expect(out).toMatch(/\n  \* Open item 0/);
+    expect(out).toMatch(/\d+ more · dome today --verbose/);
+    expect(out).not.toContain("· +");
+    expect(out).not.toMatch(/^\s+x overdue\s/m);
+  });
+  test("--verbose uncaps the list (no +N more)", () => {
+    const open = Array.from({ length: 10 }, (_, i) => mk(`Open item ${i}`, null));
+    const data = { date: "2026-06-14", hero: null, brief: null, calendar: null, openTasks: open, followups: [], questions: [], counts: { openTasks: 10 }, dueCounts: {} };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault", { verbose: true });
+    expect(out).toContain("Open item 9");
+    expect(out).not.toMatch(/more · dome today --verbose/);
+  });
+  test("the hero task is not repeated in the list", () => {
+    const data = {
+      date: "2026-06-14", brief: null, calendar: null, questions: [], followups: [],
+      hero: { kind: "task", item: { text: "The hero task", path: "wiki/t.md", line: 1, dueDate: "2026-06-01" } },
+      openTasks: [mk("The hero task", "2026-06-01"), mk("Another task", "2026-06-01")],
+      counts: { openTasks: 2 }, dueCounts: {},
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect((out.match(/The hero task/g) || []).length).toBe(1);
+    expect(out).toContain("Another task");
   });
 });

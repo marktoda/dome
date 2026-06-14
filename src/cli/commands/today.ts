@@ -27,10 +27,11 @@ import {
   paint,
   resolveCaps,
   rollup,
-  signalLine,
+  statusGlyph,
   stripWikilinks,
   truncate,
   type Caps,
+  type Tone,
 } from "../presenter";
 import { resolveVaultPath } from "../../surface/resolve-vault";
 import { EX_USAGE } from "../exit-codes";
@@ -398,46 +399,30 @@ export function formatTodayResult(
   }
 
   if (!isAllClear) {
-    // Group all tasks by bucket
-    const LABEL_WIDTH = 6; // "today " padded
-    const overdueTasks = allTasks.filter(
-      (t) => t.dueDate !== null && t.dueDate < date,
-    );
-    const dueTodayTasks = allTasks.filter(
-      (t) => t.dueDate !== null && t.dueDate === date,
-    );
-    const openTasksList = allTasks.filter(
-      (t) => t.dueDate === null || t.dueDate > date,
-    );
+    // Flat, signal-led list: one task per line, the urgency glyph carries the
+    // bucket (✗ overdue / ⚠ today / • open), most-urgent first, truncated to
+    // the terminal width, capped with a "+N more" line (uncapped under --verbose).
+    // The hero task is already the → line above, so it's not repeated here.
+    const isHeroTask = (t: TodayTaskRow): boolean =>
+      hero !== null && hero.kind === "task" &&
+      hero.item.text === t.text && hero.item.path === t.path &&
+      hero.item.line === t.line;
+    const bucketed: ReadonlyArray<{ readonly t: TodayTaskRow; readonly tone: Tone }> = [
+      ...allTasks.filter((t) => t.dueDate !== null && t.dueDate < date).map((t) => ({ t, tone: "err" as Tone })),
+      ...allTasks.filter((t) => t.dueDate !== null && t.dueDate === date).map((t) => ({ t, tone: "warn" as Tone })),
+      ...allTasks.filter((t) => t.dueDate === null || t.dueDate > date).map((t) => ({ t, tone: "plain" as Tone })),
+    ].filter(({ t }) => !isHeroTask(t));
 
-    // Max 3 shown per group to keep it compact; overflow → +N in detail
-    const MAX_PER_GROUP = 3;
-
-    const TASK_LABEL_MAX = 56;
-    const taskLabel = (t: TodayTaskRow) =>
-      truncate(stripWikilinks(t.text), TASK_LABEL_MAX);
-
-    if (overdueTasks.length > 0) {
-      const shown = overdueTasks.slice(0, MAX_PER_GROUP);
-      const overflow = overdueTasks.length - shown.length;
-      const detail = shown.map(taskLabel).join(" · ") +
-        (overflow > 0 ? ` · +${overflow}` : "");
-      lines.push(signalLine("err", "overdue", detail, LABEL_WIDTH, caps));
+    const TASK_CAP = 7;
+    const cap = opts.verbose === true ? bucketed.length : TASK_CAP;
+    const taskWidth = Math.max(24, caps.width - 4); // "  <glyph> " leader = 4 cols
+    for (const { t, tone } of bucketed.slice(0, cap)) {
+      const g = paint(statusGlyph(tone, caps), tone, caps);
+      lines.push(`  ${g} ${truncate(stripWikilinks(t.text), taskWidth, caps.unicode)}`);
     }
-    if (dueTodayTasks.length > 0) {
-      const shown = dueTodayTasks.slice(0, MAX_PER_GROUP);
-      const overflow = dueTodayTasks.length - shown.length;
-      const detail = shown.map(taskLabel).join(" · ") +
-        (overflow > 0 ? ` · +${overflow}` : "");
-      lines.push(signalLine("warn", "today", detail, LABEL_WIDTH, caps));
-    }
-    if (openTasksList.length > 0) {
-      const MAX_OPEN = 3;
-      const shown = openTasksList.slice(0, MAX_OPEN);
-      const overflow = openTasksList.length - shown.length;
-      const detail = shown.map(taskLabel).join(" · ") +
-        (overflow > 0 ? ` · +${overflow}` : "");
-      lines.push(signalLine("plain", "open", detail, LABEL_WIDTH, caps));
+    const overflow = bucketed.length - Math.min(cap, bucketed.length);
+    if (overflow > 0) {
+      lines.push(`  ${paint(`… ${overflow} more · dome today --verbose`, "muted", caps)}`);
     }
 
     // ? ask line — top question + +N if more
@@ -445,7 +430,9 @@ export function formatTodayResult(
       const top = questions[0]!;
       const extra = questions.length - 1;
       const extraNote = extra > 0 ? `   ${paint(`+${extra}`, "muted", caps)}` : "";
-      const questionLabel = truncate(stripWikilinks(top.question), TASK_LABEL_MAX);
+      // Truncate the question so the `#id … resolveCommand` line stays on one row.
+      const askWidth = Math.max(24, caps.width - 40);
+      const questionLabel = truncate(stripWikilinks(top.question), askWidth);
       lines.push(
         `  ? ${paint("ask", "muted", caps)}   #${top.id} ${questionLabel}   ${paint(top.resolveCommand, "ident", caps)}${extraNote}`,
       );
