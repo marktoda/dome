@@ -17,6 +17,7 @@ import {
   inputDateOrLocalToday,
   parseInputLimit,
   parseInputString,
+  sourceLabel,
   uniqueSourceRefs,
   type DailyActionState,
   type DailyQuestionItem,
@@ -351,13 +352,3 @@ function stripFtsMarkers(snippet: string): string {
   return snippet.replace(/\[/g, "").replace(/\]/g, "");
 }
 
-function sourceLabel(item: {
-  readonly path: string;
-  readonly line: number | null;
-  readonly evidenceLabel?: string;
-}): string {
-  if (item.evidenceLabel !== undefined && item.evidenceLabel.length > 0) {
-    return item.evidenceLabel;
-  }
-  return item.line === null ? item.path : `${item.path}:${item.line}`;
-}
