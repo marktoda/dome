@@ -227,6 +227,45 @@ export async function seedUnhealthyOperationalState(f: Fixture): Promise<void> {
   quarantine.value.recordRetryableTerminalFailure(key, "second");
 }
 
+/**
+ * Seed a single failed outbox row whose `enqueued_at` is backdated well past
+ * the recurring-failure window — a fetcher/command that keeps re-failing, the
+ * `outbox.recurring-failure` (root-cause) finding's trigger. Distinct from
+ * `seedUnhealthyOperationalState`'s fresh failed row (which stays the per-row
+ * `outbox.failed` transient retry path).
+ */
+export async function seedRecurringOutboxFailure(f: Fixture): Promise<void> {
+  const adoptedCommit = commitOid(f.headSha);
+  const ref = sourceRef({ commit: adoptedCommit, path: "wiki/seed.md" });
+  const outbox = await openOutboxDb({
+    path: join(f.vaultPath, ".dome", "state", "outbox.db"),
+  });
+  if (!outbox.ok) {
+    throw new Error(`outbox open failed: ${outbox.error.kind}`);
+  }
+  try {
+    // Enqueued two hours ago — past the 1h recurrence window.
+    const longAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    insertPending(outbox.value.db, {
+      effect: externalActionEffect({
+        capability: "sources.fetch",
+        idempotencyKey: "dome.sources.fetch:calendar:recurring",
+        payload: { kind: "calendar" },
+        sourceRefs: [ref],
+      }),
+      runId: "run-recurring-fetch",
+      now: longAgo,
+    });
+    markOutboxFailed(
+      outbox.value.db,
+      "dome.sources.fetch:calendar:recurring",
+      "fetch command exited 1",
+    );
+  } finally {
+    outbox.value.db.close();
+  }
+}
+
 // ----- Doctor-style vault config writers (shared by check/doctor/status) -----
 
 export async function writeDoctorConfigBody(
