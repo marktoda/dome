@@ -5,12 +5,16 @@
 // and land as a single cumulative PatchEffect, hard-capped at
 // MAX_CHANGED_FILES per run (nightly cadence multiplies blast radius).
 
-import { validateRelativeMarkdownPath } from "../../../../src/core/config-path";
 import { diagnosticEffect, type Effect } from "../../../../src/core/effect";
 import {
   defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
+import {
+  resolveLedgerPath,
+  resolveTargets,
+  type LedgerResolution,
+} from "../lib/agent-config";
 import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
 import { finishAgentRun } from "../lib/agent-run-effects";
 import { withCoreMemory } from "../lib/core-memory";
@@ -22,118 +26,41 @@ import { consolidateCharter } from "../lib/consolidate-charter";
 import { formatDate, localDateParts } from "../../dome.daily/processors/daily-paths";
 import { agentPreamble } from "../lib/agent-preamble";
 import { resolveModelOverride, withStepModel } from "../lib/model-override";
-import { globMatch } from "../../../../src/engine/core/glob-cache";
 
 const MAX_STEPS = 50;
 export const MAX_CHANGED_FILES = 30;
 const DEFAULT_LEDGER_PATH = "meta/consolidation-ledger.md";
 const DEFAULT_TARGETS: ReadonlyArray<string> = Object.freeze(["wiki/"]);
 
-export type ConsolidationLedgerResolution = {
-  readonly path: string;
-  /**
-   * Non-null when a malformed config value was ignored in favor of the
-   * default — the caller surfaces it as a warning diagnostic. Malformed
-   * config must degrade, not crash the nightly run with a raw processor
-   * throw.
-   */
-  readonly problem: string | null;
-};
+/** @deprecated alias retained for callers/tests; see {@link LedgerResolution}. */
+export type ConsolidationLedgerResolution = LedgerResolution;
 
 /**
  * Resolve the consolidation ledger path from the extension config
  * (`extensions.dome.agent.config.consolidation_ledger_path`), defaulting to
- * `meta/consolidation-ledger.md`. The path must be a relative vault
- * `.md` path; a malformed value falls back to the default with a `problem`
- * the processor emits as a diagnostic. A custom path additionally requires
- * matching `read` + `patch.auto` grant entries in `.dome/config.yaml` —
- * grants are static globs, so config cannot widen the processor's write
- * boundary.
+ * `meta/consolidation-ledger.md`. Thin wrapper over the shared
+ * {@link resolveLedgerPath}.
  */
 export function consolidationLedgerPath(
   config?: Readonly<Record<string, unknown>>,
 ): ConsolidationLedgerResolution {
-  const raw = config?.consolidation_ledger_path;
-  if (raw === undefined) return resolution(DEFAULT_LEDGER_PATH, null);
-  const v = validateRelativeMarkdownPath(raw, "consolidation_ledger_path");
-  if (!v.ok) return fallback(v.problem);
-  return resolution(v.path, null);
+  return resolveLedgerPath(config, "consolidation_ledger_path", DEFAULT_LEDGER_PATH);
 }
-
-function resolution(
-  path: string,
-  problem: string | null,
-): ConsolidationLedgerResolution {
-  return Object.freeze({ path, problem });
-}
-
-function fallback(problem: string): ConsolidationLedgerResolution {
-  return resolution(
-    DEFAULT_LEDGER_PATH,
-    `dome.agent config ${problem}; falling back to ${DEFAULT_LEDGER_PATH}`,
-  );
-}
-
-type TargetsResolution = {
-  readonly value: ReadonlyArray<string>;
-  readonly problem: string | null;
-};
 
 /**
- * Resolve `consolidate_targets` (the path prefixes the run treats as
- * in-scope for drift hunting, merging, tidying, and superseding) — an exact
- * mirror of sweep's `sweep_targets` rule: same shape validation, same
- * grant-probe via globMatch, malformed values degrade to the whole-wiki
- * default with a `problem` the processor surfaces as the
- * `dome.agent.consolidate-config-invalid` warning.
+ * Resolve `consolidate_targets` (the path prefixes the run treats as in-scope
+ * for drift hunting, merging, tidying, and superseding), validated against the
+ * consolidator's `CONSOLIDATE_WRITABLE_PATHS` patch.auto grant. Malformed
+ * values degrade to the whole-wiki default with a `problem` the processor
+ * surfaces as the `dome.agent.consolidate-config-invalid` warning.
  */
-function consolidateTargets(
-  config?: Readonly<Record<string, unknown>>,
-): TargetsResolution {
-  const raw = config?.consolidate_targets;
-  if (raw === undefined) return Object.freeze({ value: DEFAULT_TARGETS, problem: null });
-  const valid =
-    Array.isArray(raw) &&
-    raw.length > 0 &&
-    raw.every(
-      (t) =>
-        typeof t === "string" &&
-        t.length > 0 &&
-        t.trim() === t &&
-        !t.startsWith("/") &&
-        !t.includes("\\") &&
-        !t.includes(".."),
-    );
-  if (!valid) {
-    return Object.freeze({
-      value: DEFAULT_TARGETS,
-      problem:
-        "dome.agent config consolidate_targets must be a non-empty array of relative path prefixes; " +
-        `falling back to ${DEFAULT_TARGETS.join(", ")}`,
-    });
-  }
-  // Grant-mirror validation: every target prefix must be covered by the
-  // consolidator's patch.auto grant (CONSOLIDATE_WRITABLE_PATHS), or the
-  // grant-aware writePage would reject every merge under the foreign prefix
-  // mid-run. Probe with a representative page path directly under the
-  // prefix — `**` matches zero or more segments, so coverage of the probe
-  // implies coverage of every `.md` under the prefix.
-  const uncovered = (raw as ReadonlyArray<string>).filter(
-    (t) =>
-      !CONSOLIDATE_WRITABLE_PATHS.some((pattern) =>
-        globMatch(pattern, `${t}__consolidate-probe__.md`),
-      ),
+function consolidateTargets(config?: Readonly<Record<string, unknown>>) {
+  return resolveTargets(
+    config,
+    "consolidate_targets",
+    DEFAULT_TARGETS,
+    CONSOLIDATE_WRITABLE_PATHS,
   );
-  if (uncovered.length > 0) {
-    return Object.freeze({
-      value: DEFAULT_TARGETS,
-      problem:
-        `dome.agent config consolidate_targets contains prefixes outside the consolidate write grant ` +
-        `(${uncovered.join(", ")} vs ${CONSOLIDATE_WRITABLE_PATHS.join(", ")}); ` +
-        `falling back to ${DEFAULT_TARGETS.join(", ")}`,
-    });
-  }
-  return Object.freeze({ value: raw as ReadonlyArray<string>, problem: null });
 }
 
 const consolidate = defineProcessorImplementation({
