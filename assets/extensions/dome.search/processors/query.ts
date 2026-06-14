@@ -18,7 +18,6 @@ import {
   groupByMatchingPath,
   questionItemFromProjection,
   uniqueSourceRefs,
-  type SearchQuestionItem,
 } from "./related";
 import { searchFactObjectLabel } from "./labels";
 import {
@@ -41,6 +40,14 @@ import {
   MAX_LINK_EXPANSION_PATHS,
 } from "./ranking";
 import { boundedTopicRows } from "./topic-relevance";
+import {
+  clampLimit,
+  commandArgsRecord,
+  flagsRecord,
+  numberValue,
+  questionSearchText,
+  stringValue,
+} from "./search-input";
 
 import { compareStrings } from "../../../../src/core/compare";
 
@@ -256,21 +263,16 @@ type QueryInput = {
 };
 
 function parseQueryInput(input: unknown): QueryInput {
-  const envelope = input !== null && typeof input === "object"
-    ? input as Record<string, unknown>
-    : {};
-  const record = envelope.commandArgs !== null &&
-    typeof envelope.commandArgs === "object"
-    ? envelope.commandArgs as Record<string, unknown>
-    : envelope;
-  const flags = record.flags !== null && typeof record.flags === "object"
-    ? record.flags as Record<string, unknown>
-    : {};
+  const record = commandArgsRecord(input);
+  const flags = flagsRecord(record);
 
   const text = stringValue(record.text) ?? stringValue(flags.q) ?? "";
   const category = stringValue(record.category) ?? stringValue(flags.category);
   const type = stringValue(record.type) ?? stringValue(flags.type);
-  const limit = clampLimit(numberValue(record.limit) ?? numberValue(flags.limit));
+  const limit = clampLimit(
+    numberValue(record.limit) ?? numberValue(flags.limit),
+    { defaultLimit: DEFAULT_LIMIT, maxLimit: MAX_LIMIT },
+  );
   return Object.freeze({
     text,
     ...(category !== null ? { category } : {}),
@@ -374,15 +376,6 @@ function isGraphFact(fact: FactEffect): boolean {
     fact.predicate === "dome.graph.tagged";
 }
 
-function questionSearchText(question: SearchQuestionItem): string {
-  return [
-    question.question,
-    ...question.options,
-    question.metadata?.recommendedAnswer ?? "",
-    question.metadata?.ownerNeededReason ?? "",
-  ].join(" ");
-}
-
 function matchSatisfiesFilters(
   match: SearchDocumentResult,
   input: QueryInput,
@@ -394,22 +387,4 @@ function matchSatisfiesFilters(
     return false;
   }
   return true;
-}
-
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0
-    ? value.trim()
-    : null;
-}
-
-function numberValue(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value !== "string" || value.trim().length === 0) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function clampLimit(raw: number | null): number {
-  if (raw === null || !Number.isFinite(raw)) return DEFAULT_LIMIT;
-  return Math.max(1, Math.min(MAX_LIMIT, Math.trunc(raw)));
 }

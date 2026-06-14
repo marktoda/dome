@@ -22,7 +22,13 @@ import {
   attentionAdjustedRecencyIso,
   collectAttentionDiscounts,
 } from "./attention-shared";
-import { dailyPath, dailyPathSettings, localDateParts, previousLocalDate } from "./daily-paths";
+import {
+  dailyPath,
+  dailyPathSettings,
+  localDateParts,
+  parseScheduleInput,
+  previousLocalDate,
+} from "./daily-paths";
 import {
   ensureYesterdayFallbackSection,
   previousDailyDigest,
@@ -145,31 +151,11 @@ const carryForward = defineProcessorImplementation({
 
 export default carryForward;
 
-type ScheduleInput = {
-  readonly kind: "schedule";
-  readonly cron: string;
-  readonly firedAt: string;
-};
-
 function targetDailyDate(ctx: ProcessorContext): DailyDate {
   const scheduled = parseScheduleInput(ctx.input);
   return localDateParts(
     scheduled === null ? ctx.now() : new Date(scheduled.firedAt),
   );
-}
-
-function parseScheduleInput(input: unknown): ScheduleInput | null {
-  if (input === null || typeof input !== "object") return null;
-  const record = input as Record<string, unknown>;
-  if (record.kind !== "schedule") return null;
-  if (typeof record.cron !== "string") return null;
-  if (typeof record.firedAt !== "string") return null;
-  if (Number.isNaN(new Date(record.firedAt).getTime())) return null;
-  return Object.freeze({
-    kind: "schedule",
-    cron: record.cron,
-    firedAt: new Date(record.firedAt).toISOString(),
-  });
 }
 
 async function collectOpenLoopSources(input: {
