@@ -60,8 +60,10 @@ export async function runStatus(
   if (options.json === true) {
     console.log(formatJson(outcome.snapshot));
   } else {
+    const verbose = options.verbose === true;
     printStatusText(outcome.snapshot, {
       showLoopDetails: options.loops === true,
+      verbose,
       caps: resolveCaps(),
     });
   }
@@ -77,7 +79,7 @@ export async function runStatus(
  */
 function printStatusText(
   s: StatusSnapshot,
-  options: { readonly showLoopDetails: boolean; readonly caps: Caps },
+  options: { readonly showLoopDetails: boolean; readonly verbose: boolean; readonly caps: Caps },
 ): void {
   const caps = options.caps;
   const glance = (label: string, st: Status): KvRow => ({

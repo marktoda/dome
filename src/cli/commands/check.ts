@@ -94,6 +94,7 @@ export async function runCheck(
 
   printReport(outcome.report, options.json === true, {
     showLoopDetails: options.loops === true,
+    verbose: options.verbose === true,
     vaultPath: resolveVaultPath(options.vault),
   });
   return 0;
@@ -108,7 +109,7 @@ function contentAttentionOnlyForRender(options: RunCheckOptions): boolean {
 function printReport(
   report: CheckReport,
   json: boolean,
-  options: { readonly showLoopDetails: boolean; readonly vaultPath: string },
+  options: { readonly showLoopDetails: boolean; readonly verbose: boolean; readonly vaultPath: string },
 ): void {
   if (json) {
     console.log(formatJson(report));
@@ -121,7 +122,7 @@ function printReport(
 
 function renderCheckReport(
   report: CheckReport,
-  options: { readonly showLoopDetails: boolean; readonly vaultPath: string; readonly caps: Caps },
+  options: { readonly showLoopDetails: boolean; readonly verbose: boolean; readonly vaultPath: string; readonly caps: Caps },
 ): ReadonlyArray<string> {
   const caps = options.caps;
   const glance = (label: string, st: Status): KvRow => ({

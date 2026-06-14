@@ -268,6 +268,7 @@ export type RunStatusOptions = {
   readonly bundlesRoot?: string | undefined;
   readonly json?: boolean | undefined;
   readonly loops?: boolean | undefined;
+  readonly verbose?: boolean | undefined;
   /** Run a fresh model-provider probe (up to 8s) instead of reading the cached last-probe result. */
   readonly probe?: boolean | undefined;
 };

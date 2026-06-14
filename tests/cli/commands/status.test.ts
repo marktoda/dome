@@ -12,7 +12,7 @@ import {
   type LaunchctlRunner,
   type ServiceDeps,
 } from "../../../src/surface/service-probe";
-import { runStatus } from "../../../src/cli/commands/status";
+import { runStatus, type RunStatusOptions } from "../../../src/cli/commands/status";
 import { runSync } from "../../../src/cli/commands/sync";
 
 import {
@@ -1925,4 +1925,13 @@ describe("runStatus", () => {
   // was retired in Phase 11a along with `runSubmit`; the corresponding
   // assertion against an advanced adopted ref will land in the Phase 11b
   // daemon integration tests, which drive adoption via the watcher.
+
+  test("runStatus accepts a verbose option without error", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const opts: RunStatusOptions = { vault: f.vaultPath, verbose: true };
+    const code = await runStatus(opts);
+    expect(code).toBe(0);
+  });
 });

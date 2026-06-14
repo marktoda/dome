@@ -43,6 +43,7 @@ export type RunDoctorOptions = {
   readonly vault?: string | undefined;
   readonly bundlesRoot?: string | undefined;
   readonly json?: boolean | undefined;
+  readonly verbose?: boolean | undefined;
   readonly orphanThresholdMs?: string | number | undefined;
 };
 
@@ -80,7 +81,8 @@ export async function runDoctor(
     if (options.json === true) {
       console.log(formatJson(storageReport));
     } else {
-      printDoctorText(storageReport, vaultPath);
+      const verbose = options.verbose === true;
+      printDoctorText(storageReport, vaultPath, undefined, verbose);
     }
     return 0;
   }
@@ -134,7 +136,8 @@ export async function runDoctor(
     if (options.json === true) {
       console.log(formatJson(report));
     } else {
-      printDoctorText(report, vaultPath, modelProviderProbe);
+      const verbose = options.verbose === true;
+      printDoctorText(report, vaultPath, modelProviderProbe, verbose);
     }
     return 0;
   } finally {
@@ -146,7 +149,9 @@ function printDoctorText(
   report: HealthReport,
   vaultPath: string,
   modelProviderProbe?: ModelProviderProbeInput,
+  verbose: boolean = false,
 ): void {
+  void verbose; // reserved for future task — not yet used to change output
   const caps = resolveCaps();
   // Info-only findings keep status "ok" but still deserve a visible label.
   const headStatus: Status = report.status === "ok"

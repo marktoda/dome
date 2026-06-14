@@ -73,6 +73,7 @@ export type RunCheckOptions = {
   readonly limit?: string | number | boolean | undefined;
   readonly orphanThresholdMs?: string | number | undefined;
   readonly loops?: boolean | undefined;
+  readonly verbose?: boolean | undefined;
 };
 
 export type CheckScopes = {

@@ -34,6 +34,7 @@ export type LintCommandOptions = {
   readonly vault?: string | undefined;
   readonly bundlesRoot?: string | undefined;
   readonly json?: boolean | undefined;
+  readonly verbose?: boolean | undefined;
   readonly limit?: string | number | boolean | undefined;
 };
 
@@ -89,7 +90,8 @@ export async function runLint(
       console.log(formatJson(run.data));
     } else {
       const vaultPath = resolveVaultPath(options.vault);
-      console.log(renderLintText(data, vaultPath));
+      const verbose = options.verbose === true;
+      console.log(renderLintText(data, vaultPath, verbose));
     }
     return data.status === "fail" ? 1 : 0;
   } catch (e) {
@@ -177,7 +179,8 @@ export function parseLintData(data: unknown): LintData {
   });
 }
 
-export function renderLintText(data: LintData, vaultPath: string): string {
+export function renderLintText(data: LintData, vaultPath: string, verbose: boolean = false): string {
+  void verbose; // reserved for future task — not yet used to change output
   const caps = resolveCaps();
 
   const headStatus: Status = data.status === "pass"
