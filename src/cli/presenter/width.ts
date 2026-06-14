@@ -30,6 +30,24 @@ export function truncate(text: string, width: number, unicode = true): string {
 }
 
 /**
+ * Strip Obsidian-style wikilinks from a string, leaving only the human-
+ * readable label:
+ *   [[path/to/page|Alias]]  →  Alias
+ *   [[path/to/page]]        →  page   (last path segment)
+ * Collapses runs of whitespace that result from the removal.
+ */
+export function stripWikilinks(s: string): string {
+  return s
+    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, (_m, _path, alias: string) => alias)
+    .replace(/\[\[([^\]]+)\]\]/g, (_m, path: string) => {
+      const seg = path.split("/").pop() ?? path;
+      return seg;
+    })
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+/**
  * Word-wrap plain (uncolored) text to a visible width. Words longer than
  * `width` get their own line rather than being split mid-word. Always
  * returns at least one line. Call before paint().
