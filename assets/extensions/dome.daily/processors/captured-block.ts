@@ -82,11 +82,12 @@ export function isCapturedTaskLine(line: string): boolean {
 }
 
 /**
- * Matches an already-present inline origin marker ` ([↗](target))`. Keyed on
- * the `↗` marker shape — NOT on the target — so a marker is detected whether
- * its target is a vault path (Phase 1) or an external URL (Phase 2 / Slack).
+ * Detects an already-present inline origin marker by its opening syntax
+ * `([↗](` — independent of the target's content, so idempotency holds even
+ * when the target is an external URL that may contain `)`. Keyed on the `↗`
+ * (U+2197) marker shape, never on the target.
  */
-export const ORIGIN_MARKER_RE = /\(\[↗\]\([^)]*\)\)/;
+export const ORIGIN_MARKER_RE = /\(\[↗\]\(/;
 
 /**
  * Stamp the inline task-origin marker ` ([↗](target))` onto a captured task
@@ -97,6 +98,8 @@ export const ORIGIN_MARKER_RE = /\(\[↗\]\([^)]*\)\)/;
  * path (Phase 1) or an external URL (Phase 2) — so the seam serves both
  * origins with one grammar. Spec: [[wiki/specs/daily-surface]] §"The ingest
  * tool seam".
+ * Callers passing a target that may contain `)` (a future external URL)
+ * should percent-encode it first; vault paths never contain `)`.
  */
 export function appendOriginMarker(line: string, target: string): string {
   if (target === "" || ORIGIN_MARKER_RE.test(line)) return line;

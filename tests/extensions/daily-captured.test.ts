@@ -512,4 +512,10 @@ describe("appendOriginMarker", () => {
     const line = appendOriginMarker("- [ ] #task reply", "inbox/processed/x.md");
     expect(isCapturedTaskLine(line)).toBe(true);
   });
+
+  test("idempotent even when the target contains a close-paren", () => {
+    const target = "https://x.example/a(b)";
+    const once = appendOriginMarker("- [ ] #task reply", target);
+    expect(appendOriginMarker(once, target)).toBe(once);
+  });
 });
