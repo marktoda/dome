@@ -59,6 +59,11 @@ when the note doesn't exist yet). From there the line is an ordinary task
 projects it, and `carry-forward` surfaces it in later dailies with
 provenance.
 
+The captured seam also stamps an inline ` ([↗](inbox/processed/<name>))`
+backlink to the archived capture on each lifted task line, so a TODO in the
+daily is one click from the thought it came from ([[wiki/specs/daily-surface]]
+§"The ingest tool seam").
+
 ## Raw capture file shape
 
 The shape `dome capture` writes — and the shape any other ingress (Shortcut,

@@ -1,6 +1,7 @@
 // Tool bindings for the ingest agent — composed from the shared vault-tools.
 import {
   appendCapturedTaskLines,
+  appendOriginMarker,
   CAPTURED_APPEND_MAX_LINES,
   CAPTURED_LINE_MAX_CHARS,
   isCapturedTaskLine,
@@ -59,6 +60,13 @@ export type CapturedTasksRouting = {
   readonly path: string;
   readonly today: DailyDate;
   readonly settings: DailyPathSettings;
+  /**
+   * Mutable per-source origin target the seam stamps onto each spliced task
+   * line as an inline ` ([↗](origin))` marker. Ingest sets it to the current
+   * capture's archived path before each source-loop iteration; absent/null =
+   * no marker. Phase 2 sets it to an external (Slack) permalink instead.
+   */
+  origin?: string | null;
 };
 
 export function makeIngestTools(opts: {
@@ -153,7 +161,17 @@ function capturedAwareAppendTool(opts: {
       const target = blank
         ? await todaySkeleton(capturedTasks, state, reader)
         : existing;
-      const next = appendCapturedTaskLines({ content: target, lines });
+      // Stamp the origin marker AFTER validation, so CAPTURED_LINE_MAX_CHARS
+      // measures only the model-authored text — the marker is seam overhead.
+      // A stamped line may exceed the cap by the marker's length; that is
+      // safe because isCapturedTaskLine gates only fresh model input, never
+      // re-validating already-committed stamped lines on read.
+      const origin = capturedTasks.origin ?? null;
+      const stamped =
+        origin === null
+          ? lines
+          : lines.map((line) => appendOriginMarker(line, origin));
+      const next = appendCapturedTaskLines({ content: target, lines: stamped });
       state.edits.set(path, { kind: "write", path, content: next });
       return `appended ${lines.length} task line(s) inside the '## Captured today' block of ${path}`;
     },

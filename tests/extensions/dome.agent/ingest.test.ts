@@ -446,4 +446,30 @@ describe("dome.agent.ingest", () => {
     expect(diag?.severity).toBe("warning");
     expect(diag?.message).toContain("model_overrides.ingest");
   });
+
+  test("a lifted captured task carries a backlink to the archived capture", async () => {
+    const raw = "inbox/raw/2026-06-08-jane.md";
+    const expectedDate = formatDate(localDateParts(new Date("2026-06-08T12:00:00Z")));
+    const dailyP = `wiki/dailies/${expectedDate}.md`;
+    const ctx = makeCtx({
+      files: { [raw]: "remember to reply to Jane" },
+      changedPaths: [raw],
+      steps: [
+        {
+          toolCalls: [
+            { id: "1", name: "appendToPage", input: { path: dailyP, content: "- [ ] #task reply to Jane" } },
+            { id: "2", name: "archiveSource", input: { rawPath: raw } },
+          ],
+        },
+        { text: "ingested" },
+      ],
+    });
+    const effects = await ingest.run(ctx);
+    const patch = effects.find((e) => e.kind === "patch") as PatchEffect;
+    const daily = patch.changes.find((c) => String(c.path) === dailyP);
+    expect(daily).toBeDefined();
+    expect(String(daily!.content)).toContain(
+      "- [ ] #task reply to Jane ([↗](inbox/processed/2026-06-08-jane.md))",
+    );
+  });
 });

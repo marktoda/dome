@@ -26,6 +26,16 @@ import {
 /** A `(from [[…]])` provenance suffix — the carry-forward COPY shape. */
 export const SOURCE_BACKED_SUFFIX_RE = /\(from \[\[[^\]\n]+\]\]\)\s*$/;
 
+/** The inline origin marker ` ([↗](target))` an ingested captured task carries
+ *  (see dome.daily captured-block `appendOriginMarker`). Stripped from the
+ *  SEMANTIC task body so it never enters stable-id hashes, reconcile keys, or
+ *  display text — while staying in the source markdown line. */
+const ORIGIN_MARKER_BODY_RE = /\s*\(\[↗\]\([^)]*\)\)/;
+
+export function stripOriginMarker(body: string): string {
+  return body.replace(ORIGIN_MARKER_BODY_RE, "");
+}
+
 export type SourceBackedCheckbox = {
   readonly line: number;
   readonly status: "open" | DailyOpenLoopSettlementStatus;
@@ -238,7 +248,7 @@ export function settledActionItemsFromMarkdown(
     if (sourceBackedCheckboxFromLine(base, i + 1) !== null) continue;
     const match = /^\s*[-*]\s+\[([xX-])\]\s+(\S.*?)\s*$/.exec(base);
     if (match === null) continue;
-    const body = semanticActionBody((match[2] ?? "").trim());
+    const body = semanticActionBody(stripOriginMarker((match[2] ?? "").trim()));
     if (body.length === 0) continue;
     items.push(
       Object.freeze({
@@ -357,8 +367,9 @@ function directiveActionItemFromLine(
 function taskBodyFromCheckboxLine(line: string): string {
   const base = stripCarryForwardSource(line);
   const withoutAnchor = parseBlockAnchor(base)?.withoutAnchor ?? base;
+  const withoutMarker = stripOriginMarker(withoutAnchor);
   return semanticActionBody(
-    withoutAnchor.replace(/^\s*[-*]\s+\[ \]\s+/, "").trim(),
+    withoutMarker.replace(/^\s*[-*]\s+\[ \]\s+/, "").trim(),
   );
 }
 
@@ -436,7 +447,7 @@ export function sourceBackedCheckboxFromLine(
   return Object.freeze({
     line: lineNumber,
     status: sourceBackedCheckboxStatus(state),
-    body: semanticActionBody(rawBody),
+    body: semanticActionBody(stripOriginMarker(rawBody)),
     followup: isExplicitFollowup(rawBody),
     sourcePath: normalizeSourcePath(sourcePath),
   });

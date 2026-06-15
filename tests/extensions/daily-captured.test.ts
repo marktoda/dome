@@ -15,9 +15,10 @@ import { describe, expect, test } from "bun:test";
 
 import normalizeTaskSyntaxProcessor from "../../assets/extensions/dome.daily/processors/normalize-task-syntax";
 import taskIndex from "../../assets/extensions/dome.daily/processors/task-index";
-import { actionItemsFromMarkdown, stampTaskAnchors } from "../../assets/extensions/dome.daily/processors/action-extraction";
+import { actionItemsFromMarkdown, settledActionItemsFromMarkdown, sourceBackedCheckboxFromLine, stampTaskAnchors, stripOriginMarker } from "../../assets/extensions/dome.daily/processors/action-extraction";
 import {
   appendCapturedTaskLines,
+  appendOriginMarker,
   CAPTURED_APPEND_MAX_LINES,
   CAPTURED_LINE_MAX_CHARS,
   isCapturedTaskLine,
@@ -482,5 +483,97 @@ describe("captured tasks are origins, not copies", () => {
     expect(sources.map((item) => item.body)).toContain("call the landlord");
     // The open-loops copy inside the generated block is NOT a source.
     expect(sources.map((item) => item.body)).not.toContain("surfaced copy");
+  });
+});
+
+describe("stripOriginMarker", () => {
+  test("removes a trailing origin marker, leaving the body", () => {
+    expect(stripOriginMarker("reply to Jane ([↗](inbox/processed/x.md))")).toBe("reply to Jane");
+  });
+  test("preserves user parentheses, stripping only the marker", () => {
+    expect(
+      stripOriginMarker("call Bob (re: the (nested) thing) ([↗](inbox/processed/x.md))"),
+    ).toBe("call Bob (re: the (nested) thing)");
+  });
+  test("a body with no marker is unchanged", () => {
+    expect(stripOriginMarker("plain body")).toBe("plain body");
+  });
+});
+
+describe("settledActionItemsFromMarkdown strips the origin marker", () => {
+  test("settled captured task body does not contain the origin marker", () => {
+    const content = [
+      "## Captured today",
+      "",
+      "<!-- dome.daily:captured:start -->",
+      "- [x] #task reply to Jane ([↗](inbox/processed/2026-06-14-jane.md)) ^t1a2b3c4d",
+      "<!-- dome.daily:captured:end -->",
+      "",
+    ].join("\n");
+    const settled = settledActionItemsFromMarkdown(content);
+    expect(settled).toHaveLength(1);
+    expect(settled[0]?.body).toBe("reply to Jane");
+    expect(settled[0]?.body).not.toContain("↗");
+    expect(settled[0]?.body).not.toContain("inbox/processed");
+  });
+});
+
+describe("appendOriginMarker", () => {
+  test("appends a clickable marker to a bare task line", () => {
+    expect(
+      appendOriginMarker("- [ ] #task reply to Jane", "inbox/processed/2026-06-14-jane.md"),
+    ).toBe("- [ ] #task reply to Jane ([↗](inbox/processed/2026-06-14-jane.md))");
+  });
+
+  test("places the marker before a trailing block anchor", () => {
+    expect(
+      appendOriginMarker("- [ ] #task reply to Jane ^a1b2", "inbox/processed/x.md"),
+    ).toBe("- [ ] #task reply to Jane ([↗](inbox/processed/x.md)) ^a1b2");
+  });
+
+  test("is idempotent — a line already carrying a marker is unchanged", () => {
+    const already = "- [ ] #task reply ([↗](inbox/processed/x.md))";
+    expect(appendOriginMarker(already, "inbox/processed/y.md")).toBe(already);
+  });
+
+  test("an empty target leaves the line unchanged", () => {
+    expect(appendOriginMarker("- [ ] #task reply", "")).toBe("- [ ] #task reply");
+  });
+
+  test("a marker-bearing line is still a valid captured task line", () => {
+    const line = appendOriginMarker("- [ ] #task reply", "inbox/processed/x.md");
+    expect(isCapturedTaskLine(line)).toBe(true);
+  });
+
+  test("idempotent even when the target contains a close-paren", () => {
+    const target = "https://x.example/a(b)";
+    const once = appendOriginMarker("- [ ] #task reply", target);
+    expect(appendOriginMarker(once, target)).toBe(once);
+  });
+});
+
+describe("sourceBackedCheckboxFromLine strips the origin marker from body", () => {
+  test("body does not contain the ↗ marker even when the carry-forward copy line carries one", () => {
+    // A carry-forward copy of a captured (Slack-origin) task can arrive with
+    // the inline origin marker still in the text — the strip must happen so
+    // the body that enters reconcile re-keying matches the stripped body from
+    // the source note.
+    const line =
+      "- [ ] #task reply to Jane ([↗](inbox/processed/2026-06-14-jane.md)) (from [[wiki/projects/alpha]])";
+    const result = sourceBackedCheckboxFromLine(line, 1);
+    expect(result).not.toBeNull();
+    expect(result!.body).toBe("reply to Jane");
+    expect(result!.body).not.toContain("↗");
+    expect(result!.body).not.toContain("inbox/processed");
+    // sourcePath and followup are unaffected
+    expect(result!.sourcePath).toBe("wiki/projects/alpha.md");
+    expect(result!.followup).toBe(false);
+  });
+
+  test("body without a marker is passed through unchanged", () => {
+    const line = "- [ ] plain task (from [[wiki/projects/beta]])";
+    const result = sourceBackedCheckboxFromLine(line, 5);
+    expect(result).not.toBeNull();
+    expect(result!.body).toBe("plain task");
   });
 });
