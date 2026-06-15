@@ -27,6 +27,12 @@ function isUtfLocale(env: Record<string, string | undefined>): boolean {
   return /utf-?8/i.test(locale);
 }
 
+/**
+ * Whether to emit OSC 8 hyperlinks. An explicit override wins over detection:
+ * `DOME_HYPERLINKS` (Dome-specific) takes precedence over the community
+ * `FORCE_HYPERLINK` convention; either forces on (or off when `0`/`false`),
+ * even when piped. Otherwise require a TTY and an allowlisted terminal.
+ */
 function supportsHyperlinks(
   stream: OutStream,
   env: Record<string, string | undefined>,
