@@ -13,18 +13,8 @@ import {
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
-import { claimsFromMarkdown, type ClaimLine } from "./claims-shared";
-
-const CLAIM_PREDICATE = "dome.claims.claim";
-
-/** Canonical JSON encoding of a claim for the fact object literal. */
-export function claimFactValue(claim: ClaimLine): string {
-  return JSON.stringify({
-    key: claim.key,
-    value: claim.value,
-    ...(claim.asOf !== null ? { asOf: claim.asOf } : {}),
-  });
-}
+import { claimsFromMarkdown } from "./claims-shared";
+import { CLAIM_PREDICATE, claimFactValue } from "./claim-fact";
 
 const claimIndex = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {

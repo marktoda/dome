@@ -2,7 +2,7 @@
 
 import type { FactEffect } from "../../../../src/core/effect";
 
-import { claimLabel, parseClaimFact } from "./claims-fact";
+import { claimLabel, parseClaimFact } from "../../dome.claims/processors/claim-fact";
 
 const TASK_METADATA_MARKER =
   /(?:^|\s)(?:\u{1F4C5}\s*\d{4}-\d{2}-\d{2}|\u{1F53A}|\u{23EB}|\u{1F53C}|\u{1F53D}|\u{23EC})(?=\s|$)/gu;

@@ -20,7 +20,7 @@ import {
   uniqueSourceRefs,
 } from "./related";
 import { searchFactObjectLabel } from "./labels";
-import { isClaimFact } from "./claims-fact";
+import { isClaimFact } from "../../dome.claims/processors/claim-fact";
 import {
   dailySurfaceRecallSignalsForTopic,
   filterDailyIntentSearchMatches,

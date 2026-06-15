@@ -20,7 +20,7 @@ import {
 import {
   searchFactObjectLabel,
 } from "./labels";
-import { parseClaimFact, type ClaimFact } from "./claims-fact";
+import { parseClaimFact, type ClaimFact } from "../../dome.claims/processors/claim-fact";
 import {
   dailySurfaceOpenLoopsForContext,
   type DailySurfaceContextOpenLoop,

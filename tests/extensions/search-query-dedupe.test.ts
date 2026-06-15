@@ -12,7 +12,7 @@ import exportContext from "../../assets/extensions/dome.search/processors/export
 import searchQuery, {
   factPriority,
 } from "../../assets/extensions/dome.search/processors/query";
-import { CLAIM_PREDICATE } from "../../assets/extensions/dome.search/processors/claims-fact";
+import { CLAIM_PREDICATE } from "../../assets/extensions/dome.claims/processors/claim-fact";
 import type { Effect, FactEffect, ViewEffect } from "../../src/core/effect";
 import {
   treeOid,

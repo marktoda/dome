@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   CLAIM_PREDICATE,
   parseClaimFact,
-} from "../../assets/extensions/dome.search/processors/claims-fact";
+} from "../../assets/extensions/dome.claims/processors/claim-fact";
 import { searchFactObjectLabel } from "../../assets/extensions/dome.search/processors/labels";
 import type { FactEffect } from "../../src/core/effect";
 

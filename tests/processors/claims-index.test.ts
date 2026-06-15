@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { claimFactValue } from "../../assets/extensions/dome.claims/processors/claim-index";
+import { claimFactValue } from "../../assets/extensions/dome.claims/processors/claim-fact";
 
 describe("claimFactValue", () => {
   test("encodes key, value, and asOf as canonical JSON", () => {

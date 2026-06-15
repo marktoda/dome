@@ -23,7 +23,7 @@ import type {
 } from "../../../../src/core/processor";
 
 import { compareStrings } from "../../../../src/core/compare";
-import { isClaimFact } from "./claims-fact";
+import { isClaimFact } from "../../dome.claims/processors/claim-fact";
 
 const MAX_SEARCH_CANDIDATES = 51;
 
