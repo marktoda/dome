@@ -67,7 +67,6 @@
 //     reasonably handle.
 
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { type Result, ok, err } from "../types";
@@ -79,6 +78,11 @@ import {
 import { configureSqliteConnection } from "../sqlite/connection";
 import { errorMessage } from "../sqlite/error-message";
 import { computeDdlHash, sha256Hex } from "../sqlite/hash";
+import {
+  applyDdlInTransaction,
+  ensureParentDir,
+  readStoredSchemaHash as readStoredSchemaHashFromTable,
+} from "../sqlite/open-store";
 
 import { compareStrings } from "../core/compare";
 
@@ -578,7 +582,7 @@ export async function openProjectionDb(
   //    `mkdir -p` semantics — no error if the directory already exists.
   const parent = dirname(opts.path);
   try {
-    mkdirSync(parent, { recursive: true });
+    ensureParentDir(opts.path);
   } catch (e) {
     return err({
       kind: "directory-create-failed",
@@ -608,7 +612,7 @@ export async function openProjectionDb(
   let hasExistingProjectionState: boolean;
   let schemaShapeMatches: boolean;
   try {
-    storedSchemaHash = readStoredSchemaHash(raw);
+    storedSchemaHash = readStoredSchemaHashFromTable(raw, "projection_meta");
     hasExistingProjectionState = projectionStateExists(raw);
     schemaShapeMatches = projectionSchemaShapeMatches(raw);
   } catch (e) {
@@ -626,9 +630,9 @@ export async function openProjectionDb(
   //    and defensive against a partial schema left by a prior crash).
   try {
     if (isSchemaChanged) {
-      applyDropAll(raw);
+      applyDdlInTransaction(raw, DROP_DDL);
     }
-    applyDdl(raw);
+    applyDdlInTransaction(raw, DDL);
   } catch (e) {
     raw.close();
     return err({ kind: "schema-init-failed", cause: errorMessage(e) });
@@ -734,8 +738,8 @@ export async function openProjectionDb(
  * quarantine state live outside this database.
  */
 export function resetProjectionDb(db: ProjectionDb): void {
-  applyDropAll(db.raw);
-  applyDdl(db.raw);
+  applyDdlInTransaction(db.raw, DROP_DDL);
+  applyDdlInTransaction(db.raw, DDL);
   insertFreshMetaRow(db.raw, computeSchemaHash());
 }
 
@@ -821,25 +825,6 @@ export function projectionRequiresRebuild(
 
 // ----- internals ------------------------------------------------------------
 
-/**
- * Apply every CREATE statement in `DDL`. Idempotent — every statement uses
- * `IF NOT EXISTS`, so re-applying on an already-populated database is a
- * no-op. Wrapped in a transaction so a mid-DDL failure leaves no half-
- * created tables (sqlite rolls back).
- */
-function applyDdl(db: Database): void {
-  db.run("BEGIN");
-  try {
-    for (const stmt of DDL) {
-      db.run(stmt);
-    }
-    db.run("COMMIT");
-  } catch (e) {
-    db.run("ROLLBACK");
-    throw e;
-  }
-}
-
 function projectionStateExists(db: Database): boolean {
   const placeholders = PROJECTION_TABLE_NAMES.map(() => "?").join(", ");
   const rows = db
@@ -853,52 +838,6 @@ function projectionStateExists(db: Database): boolean {
 
 function projectionSchemaShapeMatches(db: Database): boolean {
   return validateSqliteTableShapes(db, REQUIRED_TABLE_COLUMNS) === null;
-}
-
-/**
- * Drop every table + index per `DROP_DDL`. Used on schema-hash mismatch
- * before re-applying the current DDL. Wrapped in a transaction for the same
- * reason as `applyDdl`.
- */
-function applyDropAll(db: Database): void {
-  db.run("BEGIN");
-  try {
-    for (const stmt of DROP_DDL) {
-      db.run(stmt);
-    }
-    db.run("COMMIT");
-  } catch (e) {
-    db.run("ROLLBACK");
-    throw e;
-  }
-}
-
-/**
- * Detect whether `projection_meta` exists and, if so, return the stored
- * schema_hash. Returns `null` on either:
- *   - The table doesn't exist (fresh file).
- *   - The table exists but has zero rows (extremely-rare edge case where a
- *     prior open created the schema but crashed before inserting the row).
- *
- * The query against `sqlite_master` avoids a noisy SQLITE_ERROR that would
- * occur from SELECTing on a missing table.
- */
-function readStoredSchemaHash(db: Database): string | null {
-  const tableExists = db
-    .query<{ name: string }, []>(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='projection_meta'",
-    )
-    .all();
-  if (tableExists.length === 0) return null;
-
-  const rows = db
-    .query<{ schema_hash: string }, []>(
-      "SELECT schema_hash FROM projection_meta LIMIT 1",
-    )
-    .all();
-  const first = rows[0];
-  if (first === undefined) return null;
-  return first.schema_hash;
 }
 
 /**
