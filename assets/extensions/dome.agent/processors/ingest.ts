@@ -92,7 +92,8 @@ const ingest = defineProcessorImplementation({
       // file will occupy after archiveSource moves it out of inbox/raw.
       // Deterministic, so the link never points at the soon-deleted raw path.
       // Overwritten each iteration (null for non-inbox/raw sources).
-      capturedTasks.origin = archivedCapturePath(sourcePath);
+      const sourceUrl = extractCaptureSourceUrl(source);
+      capturedTasks.origin = sourceUrl ?? archivedCapturePath(sourcePath);
       if (source.length > MAX_SOURCE_CHARS) {
         // Escalate instead of running: an oversize capture would reach the
         // model truncated (integrating from a truncated head archives the
@@ -179,6 +180,18 @@ const ingest = defineProcessorImplementation({
 });
 
 export default ingest;
+
+// A capture's external source URL: `source_url:` frontmatter (primary), else the
+// first bare Slack URL in the body (fallback). Only https accepted.
+function extractCaptureSourceUrl(source: string): string | null {
+  const fm = /^---\n([\s\S]*?)\n---/.exec(source);
+  if (fm) {
+    const m = /^source_url:\s*(\S+)\s*$/m.exec(fm[1]!);
+    if (m && /^https:\/\//.test(m[1]!)) return m[1]!;
+  }
+  const slack = /\bhttps:\/\/[a-z0-9.-]*slack\.com\/\S+/i.exec(source);
+  return slack ? slack[0] : null;
+}
 
 function isRawCapturePath(path: string): boolean {
   return /^inbox\/raw\/[^/]+\.md$/.test(path);
