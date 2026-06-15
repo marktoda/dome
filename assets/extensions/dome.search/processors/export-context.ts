@@ -20,6 +20,7 @@ import {
 import {
   searchFactObjectLabel,
 } from "./labels";
+import { parseClaimFact, type ClaimFact } from "./claims-fact";
 import {
   dailySurfaceOpenLoopsForContext,
   type DailySurfaceContextOpenLoop,
@@ -103,6 +104,7 @@ const exportContext = defineProcessorImplementation({
       input.topic,
       ranked.entries,
       collected.recallSignalsByPath,
+      collected.factsByPath,
       dailySurfaceOpenLoops,
     );
 
@@ -114,6 +116,7 @@ const exportContext = defineProcessorImplementation({
           ...entry.diagnostics.flatMap((diagnostic) => diagnostic.sourceRefs),
           ...entry.questions.flatMap((question) => question.sourceRefs),
         ]),
+        ...overview.claims.flatMap((item) => item.sourceRefs),
         ...overview.openLoops.flatMap((item) => item.sourceRefs),
         ...overview.decisions.flatMap((item) => item.sourceRefs),
         ...overview.unresolvedQuestions.flatMap((item) => item.sourceRefs),
@@ -191,11 +194,20 @@ type PublicContextEntry = Omit<
 
 export type ContextOverview = {
   readonly readFirst: ReadonlyArray<ContextReadFirst>;
+  readonly claims: ReadonlyArray<ContextClaim>;
   readonly openLoops: ReadonlyArray<ContextOpenLoop>;
   readonly decisions: ReadonlyArray<ContextDecision>;
   readonly unresolvedQuestions: ReadonlyArray<ContextQuestionSummary>;
   readonly diagnostics: ReadonlyArray<ContextDiagnosticSummary>;
   readonly recallSignals: ReadonlyArray<ContextRecallSignalSummary>;
+};
+
+type ContextClaim = {
+  readonly path: string;
+  readonly key: string;
+  readonly value: string;
+  readonly asOf: string | null;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
 type ContextReadFirst = {
@@ -629,6 +641,7 @@ function buildOverview(
   topic: string,
   entries: ReadonlyArray<ContextEntry>,
   recallSignalsByPath: ReadonlyMap<string, ReadonlyArray<ContextRecallSignal>>,
+  factsByPath: ReadonlyMap<string, ReadonlyArray<FactEffect>>,
   pinnedOpenLoops: ReadonlyArray<PinnedContextOpenLoop> = Object.freeze([]),
 ): ContextOverview {
   return Object.freeze({
@@ -643,6 +656,9 @@ function buildOverview(
           sourceRefs: entry.sourceRefs,
         })
       ),
+    ),
+    claims: Object.freeze(
+      uniqueClaims(entries, factsByPath).slice(0, MAX_RELATED_ROWS),
     ),
     openLoops: Object.freeze(
       uniqueOpenLoops(entries, topic, pinnedOpenLoops).slice(
@@ -751,6 +767,59 @@ function uniqueDecisions(
     }
   }
   return Object.freeze(topicRelevantItems(out, topic, (item) => item.text));
+}
+
+// Local, dependency-free key normalization for claim dedupe identity. Kept
+// in dome.search (not imported from dome.claims) so this bundle stays
+// self-contained; lowercase+trim is sufficient for one-row-per-(path, key).
+function normalizeClaimKey(key: string): string {
+  return key.trim().toLowerCase();
+}
+
+// Latest-as-of comparison: null is treated as oldest; non-null ISO date
+// strings compare lexicographically (larger = newer). Returns true when
+// `candidate` is newer than (should supersede) `current`.
+function claimIsNewer(candidate: string | null, current: string | null): boolean {
+  if (candidate === null) return false;
+  if (current === null) return true;
+  return candidate > current;
+}
+
+function uniqueClaims(
+  entries: ReadonlyArray<ContextEntry>,
+  factsByPath: ReadonlyMap<string, ReadonlyArray<FactEffect>>,
+): ReadonlyArray<ContextClaim> {
+  // One row per (path, normalized key), keeping the latest as-of. Reads the
+  // raw page-subject facts the decisions bucket scores from — claim JSON only
+  // survives on the FactEffect, not the rendered ContextFact — and only for
+  // entries actually shown, mirroring uniqueDecisions' entry iteration.
+  const latestByKey = new Map<string, ContextClaim>();
+  for (const entry of entries) {
+    for (const fact of factsByPath.get(entry.path) ?? []) {
+      const claim: ClaimFact | null = parseClaimFact(fact);
+      if (claim === null) continue;
+      const key = `${entry.path} ${normalizeClaimKey(claim.key)}`;
+      const existing = latestByKey.get(key);
+      if (existing !== undefined && !claimIsNewer(claim.asOf, existing.asOf)) {
+        continue;
+      }
+      latestByKey.set(
+        key,
+        Object.freeze({
+          path: entry.path,
+          key: claim.key,
+          value: claim.value,
+          asOf: claim.asOf,
+          sourceRefs: Object.freeze([...fact.sourceRefs]),
+        }),
+      );
+    }
+  }
+  const out = [...latestByKey.values()].sort((a, b) =>
+    compareStrings(a.path, b.path) ||
+    compareStrings(normalizeClaimKey(a.key), normalizeClaimKey(b.key))
+  );
+  return Object.freeze(out);
 }
 
 function uniqueQuestions(

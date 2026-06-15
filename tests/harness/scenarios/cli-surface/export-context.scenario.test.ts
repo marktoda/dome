@@ -305,6 +305,90 @@ scenario(
 
 scenario(
   {
+    name:
+      "cli-surface: dome export-context surfaces a Current facts (claims) section",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "search-document" },
+      { kind: "effect", effect: "fact" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "capability", capability: "search.write" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+    ],
+    harness: {
+      bundles: ["dome.markdown", "dome.search", "dome.claims"],
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/projects/atlas.md":
+          "---\n" +
+          "type: project\n" +
+          "---\n" +
+          "# Atlas\n\n" +
+          "The atlas launch is underway.\n\n" +
+          "- **Status:** in design review *(as of 2026-06-12)* ^cAAAA\n" +
+          "- **Owner:** [[danny]] ^cBBBB\n",
+      },
+      message: "add atlas claims page",
+    });
+    const sync = await h.tick();
+    expect(sync.adopted).toBe(true);
+
+    const text = await h.runCli(["export-context", "atlas"]);
+    expect(text.exitCode).toBe(0);
+    expect(text.stderr).toBe("");
+    // The "Current facts" section surfaces the page's dated claim facts up
+    // front, one line per (path, key) at the latest as-of. The value carries
+    // the claim's verbatim `*(as of …)*` marker (claim-index stores it inline)
+    // and claimLabel() appends the structured `(as of …)` stamp.
+    expect(text.stdout).toContain("## Current facts");
+    expect(text.stdout).toContain(
+      "Status: in design review *(as of 2026-06-12)* (as of 2026-06-12) — wiki/projects/atlas.md",
+    );
+
+    const json = await h.runCli(["export-context", "atlas", "--json"]);
+    expect(json.exitCode).toBe(0);
+    expect(json.stderr).toBe("");
+    const payload = JSON.parse(json.stdout) as {
+      readonly overview: {
+        readonly claims: ReadonlyArray<{
+          readonly path: string;
+          readonly key: string;
+          readonly value: string;
+          readonly asOf: string | null;
+        }>;
+      };
+    };
+    expect(payload.overview.claims).toContainEqual(
+      expect.objectContaining({
+        path: "wiki/projects/atlas.md",
+        key: "Status",
+        value: "in design review *(as of 2026-06-12)*",
+        asOf: "2026-06-12",
+      }),
+    );
+    expect(payload.overview.claims).toContainEqual(
+      expect.objectContaining({
+        path: "wiki/projects/atlas.md",
+        key: "Owner",
+        value: "[[danny]]",
+        asOf: null,
+      }),
+    );
+  },
+);
+
+scenario(
+  {
     name: "cli-surface: dome export-context recalls current daily surface for daily-intent packets",
     tags: [
       { kind: "group", group: "cli-surface" },
