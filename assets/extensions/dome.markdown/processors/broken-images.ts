@@ -17,6 +17,7 @@ import {
   defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
+import { positionAt } from "../lib/position";
 
 const CODE_BROKEN_IMAGE = "dome.markdown.broken-image";
 
@@ -150,16 +151,3 @@ function isImagePath(path: string): boolean {
   return hasImageExtension(path);
 }
 
-function positionAt(content: string, offset: number): { line: number; col: number } {
-  let line = 1;
-  let col = 0;
-  for (let i = 0; i < offset && i < content.length; i++) {
-    if (content.charCodeAt(i) === 10 /* \n */) {
-      line += 1;
-      col = 0;
-    } else {
-      col += 1;
-    }
-  }
-  return { line, col };
-}

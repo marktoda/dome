@@ -1,5 +1,4 @@
 // daily-scaffold.ts — skeleton/close/yesterday/carried-forward rendering.
-// Moved verbatim from daily-shared.ts; no logic changes.
 
 import {
   findGeneratedBlock,

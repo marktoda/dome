@@ -24,6 +24,7 @@ import {
 } from "./ranking";
 
 import { compareStrings } from "../../../../src/core/compare";
+import { normalizedTokens } from "./search-input";
 
 export type SearchRecallSignal = SearchRankingRecallSignal & {
   readonly path: string;
@@ -320,14 +321,4 @@ function localDateString(date: Date): string {
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
-}
-
-function normalizedTokens(value: string): ReadonlyArray<string> {
-  return Object.freeze(
-    value
-      .toLowerCase()
-      .split(/[^a-z0-9]+/g)
-      .map((token) => token.trim())
-      .filter((token) => token.length > 0),
-  );
 }
