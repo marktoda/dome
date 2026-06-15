@@ -22,8 +22,9 @@ import { type DailyDate, type DailyOpenLoopSource, type DailyPathSettings } from
 import { openLoopIdentity, openLoopSurfaceKey, openSourceBackedOpenLoopsFromMarkdown } from "./open-loop-surface";
 
 import { compareStrings } from "../../../../src/core/compare";
-import { parseOriginMarker, stripOriginMarker } from "./action-extraction";
+import { parseOriginMarker } from "./action-extraction";
 
+// Fact value MAY carry a trailing ([↗](target)) origin marker; readers strip it for display/identity (see parseOriginMarker).
 export const OPEN_TASK_PREDICATE = "dome.daily.open_task";
 export const FOLLOWUP_PREDICATE = "dome.daily.followup";
 
@@ -419,7 +420,7 @@ function taskItemFromFact(input: {
   const factValue = literalToString(fact.object);
   // Parse origin out of the fact value; use the stripped body for display/metadata.
   const parsed = parseOriginMarker(factValue);
-  const body = parsed?.body ?? stripOriginMarker(factValue);
+  const body = parsed !== null ? parsed.body : factValue;
   const origin = parsed?.target;
   const metadata = taskMetadata(body);
   const line = ref?.range?.startLine ?? null;
@@ -705,6 +706,9 @@ function mergeDailyTaskItems(
       sourceRefs,
     }),
     sourceRefs,
+    ...((primary.origin ?? duplicate.origin) !== undefined
+      ? { origin: primary.origin ?? duplicate.origin }
+      : {}),
   });
 }
 

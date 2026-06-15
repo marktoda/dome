@@ -328,4 +328,64 @@ describe("dome.daily.today — task origin propagation", () => {
     expect(row).toBeDefined();
     expect(row.origin).toBe("https://slk/p1");
   });
+
+  test("dedup rescues origin: carried-forward open-loop + backlog fact keep origin after merge", async () => {
+    // This test targets the mergeDailyTaskItems dedup path.
+    //
+    // Scenario:
+    //   - The daily note's open-loops block carries a source-backed copy of a
+    //     task that originally lived in sources/projects/work.md:
+    //       "- [ ] review PR ([↗](https://slk/pr42)) (from [[sources/projects/work]])"
+    //     sourceBackedCheckboxFromLine strips the origin marker from the body,
+    //     so the parsed daily-surface item has text "review PR" and NO origin.
+    //
+    //   - A dome.daily.open_task fact for sources/projects/work.md carries the
+    //     raw value "review PR ([↗](https://slk/pr42))", so taskItemFromFact
+    //     sets origin = "https://slk/pr42".
+    //
+    //   - Both items have the same taskSurfaceKey ("review PR"), so
+    //     dedupeDailyTaskItems calls mergeDailyTaskItems.  Without the fix the
+    //     daily-surface item wins as primary and origin is silently dropped.
+    //     With the fix, origin is rescued from the duplicate (the fact item).
+    const SOURCE_PATH = "sources/projects/work.md";
+    const OPEN_LOOP_BODY = "review PR ([↗](https://slk/pr42))";
+    const ORIGIN_URL = "https://slk/pr42";
+
+    // Daily note with an open-loops generated block containing the source-backed
+    // carried-forward copy. The origin marker is kept in the raw line so the
+    // regex in sourceBackedCheckboxFromLine parses rawBody including it (then
+    // strips it), reproducing what carry-forward actually writes.
+    const dailyWithOpenLoop = [
+      "---",
+      "type: daily",
+      "---",
+      "",
+      "# 2026-06-14",
+      "",
+      "<!-- dome.daily:open-loops:start -->",
+      `- [ ] ${OPEN_LOOP_BODY} (from [[sources/projects/work]])`,
+      "<!-- dome.daily:open-loops:end -->",
+    ].join("\n");
+
+    const data = await runTodayRaw({
+      files: {
+        [DAILY_PATH]: dailyWithOpenLoop,
+        [SOURCE_PATH]: `- [ ] ${OPEN_LOOP_BODY}\n`,
+      },
+      facts: [
+        makeFact({
+          predicate: OPEN_TASK_PREDICATE,
+          subjectPath: SOURCE_PATH,
+          value: OPEN_LOOP_BODY,
+        }),
+      ],
+    });
+
+    const view = parseTodayView(data);
+    // After dedup, exactly one row for "review PR" should survive.
+    const rows = view.openTasks.filter((t) => t.text.includes("review PR"));
+    expect(rows).toHaveLength(1);
+    // That row must carry the rescued origin URL.
+    expect(rows[0]!.origin).toBe(ORIGIN_URL);
+  });
 });
