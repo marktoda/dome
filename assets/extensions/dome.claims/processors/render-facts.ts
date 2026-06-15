@@ -43,21 +43,26 @@ const ANOMALY_CODE = "dome.claims.generated-block-anomaly";
 const DEFAULT_MIN_CLAIMS = 3;
 
 /**
- * Strip a trailing inline `*(as of YYYY-MM-DD)*` marker from a claim value so
- * the dated suffix can be re-appended exactly once. Mirrors claims-shared's
- * AS_OF_RE; anchored to the end (with trailing whitespace tolerated) so only a
- * trailing marker is removed, never one embedded mid-value. Phase A hit a
- * doubled-date bug here.
+ * Strip an inline `*(as of YYYY-MM-DD)*` marker from a claim value, GLOBALLY
+ * and position-independently, so the dated suffix can be re-appended exactly
+ * once. A trailing anchor (`^c…`) is already removed by claims-shared, but the
+ * canonical superseded claim (sweep charter) leaves the marker MID-value with a
+ * `[[wikilink]]` AFTER it (e.g. `Active *(as of 2026-06-12)* [[meta/sources/x]]`).
+ * A trailing-anchored regex would miss that and re-append the date a second
+ * time — the Phase A doubled-date bug, reachable via the normal supersession
+ * path. Stripping every marker, wherever it sits, fixes it; the leftover
+ * whitespace is collapsed by the caller.
  */
-const TRAILING_AS_OF_RE = /\s*\*\(as of \d{4}-\d{2}-\d{2}\)\*\s*$/;
+const AS_OF_STRIP_RE = /\s*\*\(as of \d{4}-\d{2}-\d{2}\)\*/g;
 
 // ----- Pure renderers --------------------------------------------------------
 
 /**
  * Render the digest body: one line per claim in document order,
  * `- **Key** — value *(as of …)*? ([[page#^anchor]])?`. `cleanValue` strips
- * any trailing inline as-of marker and collapses whitespace, then the dated
- * suffix is re-appended from `claim.asOf` so the date appears exactly once.
+ * every inline as-of marker (wherever it sits) and collapses whitespace, then
+ * the dated suffix is re-appended from `claim.asOf` so the date appears exactly
+ * once — even for the sweep's mid-value marker + trailing wikilink shape.
  * BOLD KEY WITHOUT COLON, never `**Key:**`.
  */
 export function renderCurrentFactsBody(
@@ -67,7 +72,7 @@ export function renderCurrentFactsBody(
   return claims
     .map((claim) => {
       const cleanValue = claim.value
-        .replace(TRAILING_AS_OF_RE, "")
+        .replace(AS_OF_STRIP_RE, "")
         .replace(/\s+/g, " ")
         .trim();
       const asOf = claim.asOf === null ? "" : ` *(as of ${claim.asOf})*`;
@@ -139,7 +144,11 @@ function insertionOffset(content: string): number {
   return Math.min(offset, content.length);
 }
 
-/** Splice a fresh block in at `offset` with surrounding blank lines, tidied. */
+/**
+ * Splice a fresh block in at `offset` with surrounding blank lines, tidied.
+ * Accepted limitation: the spliced region uses LF line endings even if the
+ * surrounding document mixes CRLF.
+ */
 function insertBlock(content: string, block: string, offset: number): string {
   const before = content.slice(0, offset);
   const after = content.slice(offset);
@@ -201,7 +210,14 @@ const renderFacts = defineProcessorImplementation({
         const block = renderCurrentFactsBlock(claims, page);
         next = insertBlock(content, block, insertionOffset(content));
       } else if (!desired && range !== null) {
-        next = removeBlockAt(content, range.start, range.end);
+        const spliced = removeBlockAt(content, range.start, range.end);
+        // CONSCIOUS GUARD: removeBlockAt returns "" when the page was nothing
+        // but the block. A real content page is never block-only (the block is
+        // always spliced after frontmatter/H1), so this is practically
+        // unreachable — but rather than write an empty file (data loss) or
+        // delete the note (riskier still), we emit NO change for this page and
+        // leave it as-is. A whitespace-only result is treated the same.
+        next = spliced.trim().length === 0 ? null : spliced;
       }
       // !desired && absent → nothing.
 

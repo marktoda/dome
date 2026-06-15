@@ -169,6 +169,108 @@ describe("dome.claims.render-facts", () => {
     );
     expect(block.split("*(as of 2026-06-12)*").length - 1).toBe(1);
   });
+
+  test("mid-value as-of marker + trailing wikilink (real sweep shape): date appears EXACTLY ONCE, wikilink preserved", async () => {
+    // The canonical superseded claim (sweep charter): the `*(as of …)*` marker
+    // sits MID-value with a `[[wikilink]]` AFTER it. claims-shared strips only
+    // the trailing `^c…` anchor, so the marker stays embedded in `claim.value`.
+    // A trailing-anchored strip would miss it and the date would double.
+    const path = "wiki/notes/superseded.md";
+    const content = [
+      "# Superseded",
+      "",
+      "**Status:** Active *(as of 2026-06-12)* [[meta/sources/x]]",
+      "**Owner:** [[Mark]]",
+      "**Stage:** Build",
+      "",
+    ].join("\n");
+
+    const patch = expectPatch(await runRenderFacts([path], { [path]: content }), 0);
+    const change = patch.changes.find((c) => String(c.path) === path);
+    expect(change?.kind).toBe("write");
+    if (change?.kind !== "write") return;
+    const block = change.content.slice(
+      change.content.indexOf(START),
+      change.content.indexOf(END) + END.length,
+    );
+    // Date once, wikilink preserved, re-rendered with the marker at the end.
+    expect(block.split("*(as of 2026-06-12)*").length - 1).toBe(1);
+    expect(block).toContain("[[meta/sources/x]]");
+    expect(block).toContain("- **Status** — Active [[meta/sources/x]] *(as of 2026-06-12)*");
+  });
+
+  test("block-only page below threshold: splice-out is guarded (no empty-file write), zero effects", async () => {
+    // A page that is nothing but the block + heading (no frontmatter, no prose)
+    // drops below threshold. removeBlockAt would yield "" — but the conscious
+    // guard refuses to write an empty file (and refuses to delete the note),
+    // so the page gets no patch at all.
+    const path = "wiki/notes/block-only.md";
+    const content = [
+      START,
+      "## Current facts",
+      "",
+      "- **Status** — Active",
+      "- **Owner** — [[Mark]]",
+      "- **Stage** — Build",
+      END,
+      "",
+    ].join("\n");
+
+    const effects = await runRenderFacts([path], { [path]: content });
+    expect(effects).toHaveLength(0);
+  });
+
+  test("replace→replace idempotency: editing one claim re-renders the block once, re-run is a no-op", async () => {
+    const path = "wiki/notes/phoenix.md";
+    // Seed: a page that already carries a correct block.
+    const seeded = expectPatch(await runRenderFacts([path], { [path]: THREE_CLAIMS }), 0);
+    const seededWrite = seeded.changes.find((c) => String(c.path) === path);
+    expect(seededWrite?.kind).toBe("write");
+    if (seededWrite?.kind !== "write") return;
+
+    // Edit one claim's value in the human prose, keeping count >= threshold.
+    const edited = seededWrite.content.replace("**Stage:** Build", "**Stage:** Ship");
+
+    const first = expectPatch(await runRenderFacts([path], { [path]: edited }), 0);
+    const firstWrite = first.changes.find((c) => String(c.path) === path);
+    expect(firstWrite?.kind).toBe("write");
+    if (firstWrite?.kind !== "write") return;
+    // The re-rendered block reflects the edit.
+    const block = firstWrite.content.slice(
+      firstWrite.content.indexOf(START),
+      firstWrite.content.indexOf(END) + END.length,
+    );
+    expect(block).toContain("- **Stage** — Ship");
+
+    // Run AGAIN on that output → zero effects.
+    const second = await runRenderFacts([path], { [path]: firstWrite.content });
+    expect(second).toHaveLength(0);
+  });
+
+  test("no frontmatter and no H1: block inserted at top of body, idempotent on re-run", async () => {
+    const path = "wiki/notes/bare.md";
+    const content = [
+      "**Status:** Active",
+      "**Owner:** [[Mark]]",
+      "**Stage:** Build",
+      "",
+      "Some prose.",
+      "",
+    ].join("\n");
+
+    const patch = expectPatch(await runRenderFacts([path], { [path]: content }), 0);
+    const change = patch.changes.find((c) => String(c.path) === path);
+    expect(change?.kind).toBe("write");
+    if (change?.kind !== "write") return;
+    // No frontmatter / no H1 → block lands at the top of the body.
+    expect(change.content.startsWith(START)).toBe(true);
+    expect(change.content).toContain("## Current facts");
+    expect(change.content).toContain("Some prose.");
+
+    // Re-run on that output → zero effects.
+    const second = await runRenderFacts([path], { [path]: change.content });
+    expect(second).toHaveLength(0);
+  });
 });
 
 describe("renderCurrentFactsBody / renderCurrentFactsBlock (pure)", () => {
