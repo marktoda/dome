@@ -184,6 +184,16 @@ collapse far future to "+N more"), **stale/reconnecting** (a failed poll: conten
 dims and holds last-known; a yellow "reconnecting… last updated Nm ago" line owns
 the top — now genuinely driven by the JS poll).
 
+> **As shipped (2026-06-14, cockpit review fixes).** The web "Still open" list
+> now renders the long-list shape exactly as specced: tasks are grouped into
+> **overdue / today / this-week** urgency buckets, with everything further out
+> collapsed to a single "+N more, later" chip. **Count honesty** holds in both
+> surfaces — the header total and the "+N more" footer are computed off the same
+> *true* totals (web header e.g. "234 open" agrees with its "+218 more, later"
+> chip; terminal `dome today` header agrees with its "… N more" footer), so the
+> two numbers can never disagree. The terminal all-clear is the calm two-line
+> "everything else clean" state.
+
 ## Interactivity (JS; token from `?token=`, sent as a Bearer header)
 
 - **Poll**: fetch `GET /tasks` (the today JSON) every ~15s with the bearer
