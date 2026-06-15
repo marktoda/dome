@@ -474,7 +474,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       settlement: {
         key: "source path + normalized claim key + occurrence index",
         noOpWhen:
-          "every claim line in the page set carries its stable anchor and the facts projection reflects the current claim values",
+          "every claim line in the page set carries its stable anchor, the facts projection reflects the current claim values, and each claim-rich page's `## Current facts` digest is rendered current",
         checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [

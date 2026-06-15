@@ -1,5 +1,5 @@
 id: dome.claims
-version: 0.1.1
+version: 0.1.2
 processors:
   - id: dome.claims.stamp
     version: 0.1.0

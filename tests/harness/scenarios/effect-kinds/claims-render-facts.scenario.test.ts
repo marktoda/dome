@@ -84,11 +84,23 @@ scenario(
     await h.expectFile(path).toContain(START);
     await h.expectFile(path).toContain(END);
     await h.expectFile(path).toContain("## Current facts");
-    await h.expectFile(path).toContain("- **Status** — Active");
     await h.expectFile(path).toContain("- **Owner** — [[Mark]]");
     await h.expectFile(path).toContain("- **Stage** — Build");
-    // The inline as-of marker renders exactly once (no doubling).
-    await h.expectFile(path).toContain("*(as of 2026-06-12)*");
+    // The inline as-of marker renders exactly ONCE on the digest's Status line
+    // (the Phase A / Task 2 doubled-date bug). The regex matches the FULL
+    // rendered Status line: `- **Status** — Active *(as of 2026-06-12)*`,
+    // optionally followed by a ` ([[…]])` anchor backref, then end-of-line.
+    // Crucially it forbids a SECOND `*(as of …)*` between the first marker and
+    // the line end — so if the date were doubled
+    // (`… *(as of 2026-06-12)* *(as of 2026-06-12)*`) this assertion FAILS, the
+    // anchor-backref alternative cannot absorb a second dated marker.
+    await h
+      .expectFile(path)
+      .toMatch(
+        /- \*\*Status\*\* — Active \*\(as of 2026-06-12\)\*(?: \(\[\[[^\]\n]+\]\]\))?\n/,
+      );
+    // Belt-and-suspenders: the doubled-marker string never appears anywhere.
+    await h.expectFile(path).toNotContain("*(as of 2026-06-12)* *(as of 2026-06-12)*");
     // Frontmatter + H1 + original prose preserved.
     await h.expectFile(path).toContain("# Atlas");
     await h.expectFile(path).toContain("Some prose about Atlas.");
