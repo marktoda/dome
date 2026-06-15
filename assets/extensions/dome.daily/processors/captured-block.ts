@@ -11,6 +11,7 @@ import {
   fencedCodeBlockLineRanges,
   frontmatterLineRange,
 } from "../../../../src/core/markdown-scan";
+import { parseBlockAnchor } from "../../../../src/core/block-anchor";
 
 import {
   DAILY_OWNER,
@@ -78,6 +79,32 @@ export function isCapturedTaskLine(line: string): boolean {
   if (containsHtmlCommentDelimiter(line)) return false;
   if (SOURCE_BACKED_SUFFIX_RE.test(line)) return false;
   return true;
+}
+
+/**
+ * Matches an already-present inline origin marker ` ([↗](target))`. Keyed on
+ * the `↗` marker shape — NOT on the target — so a marker is detected whether
+ * its target is a vault path (Phase 1) or an external URL (Phase 2 / Slack).
+ */
+export const ORIGIN_MARKER_RE = /\(\[↗\]\([^)]*\)\)/;
+
+/**
+ * Stamp the inline task-origin marker ` ([↗](target))` onto a captured task
+ * line, placed after the description and before any trailing block anchor (so
+ * `dome.daily.stamp-block-id` / `normalize-task-syntax` keep the anchor as the
+ * trailing token). Idempotent: a line already carrying a marker, or an empty
+ * target, is returned unchanged. `target` is any string — a vault-relative
+ * path (Phase 1) or an external URL (Phase 2) — so the seam serves both
+ * origins with one grammar. Spec: [[wiki/specs/daily-surface]] §"The ingest
+ * tool seam".
+ */
+export function appendOriginMarker(line: string, target: string): string {
+  if (target === "" || ORIGIN_MARKER_RE.test(line)) return line;
+  const parsed = parseBlockAnchor(line);
+  if (parsed !== null) {
+    return `${parsed.withoutAnchor} ([↗](${target})) ^${parsed.id}`;
+  }
+  return `${line.trimEnd()} ([↗](${target}))`;
 }
 
 /**

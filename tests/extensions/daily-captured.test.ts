@@ -18,6 +18,7 @@ import taskIndex from "../../assets/extensions/dome.daily/processors/task-index"
 import { actionItemsFromMarkdown, stampTaskAnchors } from "../../assets/extensions/dome.daily/processors/action-extraction";
 import {
   appendCapturedTaskLines,
+  appendOriginMarker,
   CAPTURED_APPEND_MAX_LINES,
   CAPTURED_LINE_MAX_CHARS,
   isCapturedTaskLine,
@@ -482,5 +483,33 @@ describe("captured tasks are origins, not copies", () => {
     expect(sources.map((item) => item.body)).toContain("call the landlord");
     // The open-loops copy inside the generated block is NOT a source.
     expect(sources.map((item) => item.body)).not.toContain("surfaced copy");
+  });
+});
+
+describe("appendOriginMarker", () => {
+  test("appends a clickable marker to a bare task line", () => {
+    expect(
+      appendOriginMarker("- [ ] #task reply to Jane", "inbox/processed/2026-06-14-jane.md"),
+    ).toBe("- [ ] #task reply to Jane ([↗](inbox/processed/2026-06-14-jane.md))");
+  });
+
+  test("places the marker before a trailing block anchor", () => {
+    expect(
+      appendOriginMarker("- [ ] #task reply to Jane ^a1b2", "inbox/processed/x.md"),
+    ).toBe("- [ ] #task reply to Jane ([↗](inbox/processed/x.md)) ^a1b2");
+  });
+
+  test("is idempotent — a line already carrying a marker is unchanged", () => {
+    const already = "- [ ] #task reply ([↗](inbox/processed/x.md))";
+    expect(appendOriginMarker(already, "inbox/processed/y.md")).toBe(already);
+  });
+
+  test("an empty target leaves the line unchanged", () => {
+    expect(appendOriginMarker("- [ ] #task reply", "")).toBe("- [ ] #task reply");
+  });
+
+  test("a marker-bearing line is still a valid captured task line", () => {
+    const line = appendOriginMarker("- [ ] #task reply", "inbox/processed/x.md");
+    expect(isCapturedTaskLine(line)).toBe(true);
   });
 });
