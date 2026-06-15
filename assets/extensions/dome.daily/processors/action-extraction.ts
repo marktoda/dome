@@ -447,7 +447,7 @@ export function sourceBackedCheckboxFromLine(
   return Object.freeze({
     line: lineNumber,
     status: sourceBackedCheckboxStatus(state),
-    body: semanticActionBody(rawBody),
+    body: semanticActionBody(stripOriginMarker(rawBody)),
     followup: isExplicitFollowup(rawBody),
     sourcePath: normalizeSourcePath(sourcePath),
   });

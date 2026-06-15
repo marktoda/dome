@@ -15,7 +15,7 @@ import { describe, expect, test } from "bun:test";
 
 import normalizeTaskSyntaxProcessor from "../../assets/extensions/dome.daily/processors/normalize-task-syntax";
 import taskIndex from "../../assets/extensions/dome.daily/processors/task-index";
-import { actionItemsFromMarkdown, settledActionItemsFromMarkdown, stampTaskAnchors, stripOriginMarker } from "../../assets/extensions/dome.daily/processors/action-extraction";
+import { actionItemsFromMarkdown, settledActionItemsFromMarkdown, sourceBackedCheckboxFromLine, stampTaskAnchors, stripOriginMarker } from "../../assets/extensions/dome.daily/processors/action-extraction";
 import {
   appendCapturedTaskLines,
   appendOriginMarker,
@@ -549,5 +549,31 @@ describe("appendOriginMarker", () => {
     const target = "https://x.example/a(b)";
     const once = appendOriginMarker("- [ ] #task reply", target);
     expect(appendOriginMarker(once, target)).toBe(once);
+  });
+});
+
+describe("sourceBackedCheckboxFromLine strips the origin marker from body", () => {
+  test("body does not contain the ↗ marker even when the carry-forward copy line carries one", () => {
+    // A carry-forward copy of a captured (Slack-origin) task can arrive with
+    // the inline origin marker still in the text — the strip must happen so
+    // the body that enters reconcile re-keying matches the stripped body from
+    // the source note.
+    const line =
+      "- [ ] #task reply to Jane ([↗](inbox/processed/2026-06-14-jane.md)) (from [[wiki/projects/alpha]])";
+    const result = sourceBackedCheckboxFromLine(line, 1);
+    expect(result).not.toBeNull();
+    expect(result!.body).toBe("reply to Jane");
+    expect(result!.body).not.toContain("↗");
+    expect(result!.body).not.toContain("inbox/processed");
+    // sourcePath and followup are unaffected
+    expect(result!.sourcePath).toBe("wiki/projects/alpha.md");
+    expect(result!.followup).toBe(false);
+  });
+
+  test("body without a marker is passed through unchanged", () => {
+    const line = "- [ ] plain task (from [[wiki/projects/beta]])";
+    const result = sourceBackedCheckboxFromLine(line, 5);
+    expect(result).not.toBeNull();
+    expect(result!.body).toBe("plain task");
   });
 });
