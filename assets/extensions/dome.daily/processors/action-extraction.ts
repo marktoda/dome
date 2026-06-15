@@ -26,14 +26,39 @@ import {
 /** A `(from [[…]])` provenance suffix — the carry-forward COPY shape. */
 export const SOURCE_BACKED_SUFFIX_RE = /\(from \[\[[^\]\n]+\]\]\)\s*$/;
 
-/** The inline origin marker ` ([↗](target))` an ingested captured task carries
- *  (see dome.daily captured-block `appendOriginMarker`). Stripped from the
- *  SEMANTIC task body so it never enters stable-id hashes, reconcile keys, or
- *  display text — while staying in the source markdown line. */
-const ORIGIN_MARKER_BODY_RE = /\s*\(\[↗\]\([^)]*\)\)/;
+// ── The origin marker — ([↗](target)) — a task's source provenance ──────────
+// Canonical home (captured-block re-exports). The target is percent-encoded on
+// ( and ) so the body regex stays [^)]*-simple even for URLs with parentheses.
+export const ORIGIN_MARKER_RE = /\(\[↗\]\(/; // detection (opening syntax)
+const ORIGIN_MARKER_FULL_RE = /\s*\(\[↗\]\(([^)]*)\)\)/; // capture the encoded target
 
+function encodeTarget(target: string): string {
+  return target.replace(/\(/g, "%28").replace(/\)/g, "%29");
+}
+function decodeTarget(target: string): string {
+  return target.replace(/%28/g, "(").replace(/%29/g, ")");
+}
+
+/** Stamp ` ([↗](target))` onto a task line, before any trailing ^anchor.
+ *  Idempotent; empty target is a no-op; ( and ) in target are percent-encoded. */
+export function appendOriginMarker(line: string, target: string): string {
+  if (target === "" || ORIGIN_MARKER_RE.test(line)) return line;
+  const encoded = encodeTarget(target);
+  const parsed = parseBlockAnchor(line);
+  if (parsed !== null) return `${parsed.withoutAnchor} ([↗](${encoded})) ^${parsed.id}`;
+  return `${line.trimEnd()} ([↗](${encoded}))`;
+}
+
+/** Remove the origin marker from a string (body or whole line). No-op if absent. */
 export function stripOriginMarker(body: string): string {
-  return body.replace(ORIGIN_MARKER_BODY_RE, "");
+  return body.replace(ORIGIN_MARKER_FULL_RE, "");
+}
+
+/** Parse the origin out of a line: { body (marker removed), target (decoded) }, or null. */
+export function parseOriginMarker(line: string): { readonly body: string; readonly target: string } | null {
+  const m = ORIGIN_MARKER_FULL_RE.exec(line);
+  if (m === null || m[1] === undefined) return null;
+  return Object.freeze({ body: stripOriginMarker(line), target: decodeTarget(m[1]) });
 }
 
 export type SourceBackedCheckbox = {
