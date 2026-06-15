@@ -9,6 +9,7 @@
 // Pattern mirrors dome.daily/processors/task-index.ts.
 
 import { factEffect, type Effect } from "../../../../src/core/effect";
+import { stripWikilinks } from "../../../../src/core/wikilink";
 import {
   defineProcessorImplementation,
   type ProcessorContext,
@@ -28,28 +29,6 @@ function briefStableId(path: string): string {
   return `brief-index:${path}:${TODAY_BLOCK.owner}:${TODAY_BLOCK.block}`;
 }
 
-/**
- * Strip Obsidian-style wikilinks and collapse whitespace.
- *
- * - `[[path|alias]]` → `alias`
- * - `[[path]]`       → last segment of `path` (after the final `/`, drop `.md` if present)
- * - multiple spaces/newlines collapsed to a single space, result trimmed
- *
- * Defined locally to avoid importing from src/cli (layering violation).
- */
-export function stripWikilinks(text: string): string {
-  const stripped = text.replace(/\[\[([^\]]+)\]\]/g, (_match, inner: string) => {
-    const pipeIdx = inner.indexOf("|");
-    if (pipeIdx !== -1) {
-      return inner.slice(pipeIdx + 1);
-    }
-    // No alias: use the last path segment, dropping .md extension if present.
-    const segments = inner.split("/");
-    const last = segments[segments.length - 1] ?? inner;
-    return last.endsWith(".md") ? last.slice(0, -3) : last;
-  });
-  return stripped.replace(/\s+/g, " ").trim();
-}
 
 const briefIndex = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {

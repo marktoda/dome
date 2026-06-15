@@ -11,6 +11,7 @@ export type TodayHtmlOptions = {
 };
 
 import { BASEL_BOOK_WOFF2_B64, BASEL_MEDIUM_WOFF2_B64 } from "./today-fonts";
+import { stripWikilinks } from "../core/wikilink";
 
 // Self-contained @font-face: the design's Basel Grotesk (Book 485 / Medium 535),
 // base64-embedded so the page needs no external font requests. Mono stays the
@@ -716,13 +717,4 @@ function esc(value: string): string {
     .replaceAll("'", "&#39;");
 }
 
-// Render task/question/hero text without raw [[wikilink]] markup — `[[p|alias]]`
-// → `alias`, `[[path/to/page]]` → `page` (last segment). Mirrors the terminal
-// renderer's stripping (src/cli/commands/today.ts) so both surfaces read clean.
-function stripWikilinks(value: string): string {
-  return value
-    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2")
-    .replace(/\[\[([^\]]+)\]\]/g, (_m, target: string) => target.split("/").pop() ?? target)
-    .replace(/\s+/g, " ")
-    .trim();
-}
+// stripWikilinks imported from src/core/wikilink — canonical single copy.
