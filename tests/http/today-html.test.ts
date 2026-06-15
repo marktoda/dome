@@ -236,8 +236,39 @@ describe("dome today: web still-open true totals", () => {
     );
     // The still-open-count span should show the true count (50), not the list length (6)
     expect(html).toMatch(/class="still-open-count"[^>]*>\s*50\s*</);
-    // An overflow affordance (+44 more) should be present in the still-open section
-    expect(html).toMatch(/\+44 more|\+\d+ more/);
+    // An overflow affordance (+ N more, later) should be present in the still-open section
+    // The chip renders as <span>+</span><span>N more, later</span> — no leading + in label text
+    expect(html).toMatch(/\d+ more, later/);
+  });
+});
+
+describe("dome today: still-open urgency grouping", () => {
+  test("still-open groups by urgency with a far-future collapse chip", () => {
+    const mk = (t: string, due: string | null) => ({ text: t, path: "p", line: 1, dueDate: due });
+    const html = renderTodayHtml({ ...base, date: "2026-06-14",
+      openTasks: [mk("overdue one","2026-06-01"), mk("due-today one","2026-06-14"), mk("this-week one","2026-06-18"), mk("far one","2026-09-01"), mk("undated one", null)],
+      followups: [], questions: [],
+      counts: { openTasks: 5, followups: 0, questions: 0 }, hero: null }, { refreshSeconds: 15 });
+    expect(html).toMatch(/overdue/i);
+    expect(html).toMatch(/today/i);
+    expect(html).toMatch(/this week/i);
+    expect(html).toContain("overdue one");
+    expect(html).toContain("due-today one");
+    expect(html).toContain("this-week one");
+    // far-future + undated collapse into a "+N more, later" chip rather than listed inline
+    expect(html).toMatch(/more, later|later this month/i);
+    // chip must not render double-plus (e.g. "+ +2 more, later")
+    expect(html).not.toContain("+ +");
+    // chip renders as "+ N more, later" (icon span + count, no leading + in label)
+    expect(html).toMatch(/<span>\+<\/span><span>\d+ more, later<\/span>/);
+  });
+  test("all overdue → only the overdue group, no empty today/this-week headers", () => {
+    const mk = (t: string, due: string) => ({ text: t, path: "p", line: 1, dueDate: due });
+    const html = renderTodayHtml({ ...base, date: "2026-06-14",
+      openTasks: [mk("a","2026-06-01"), mk("b","2026-06-02")], followups: [], questions: [],
+      counts: { openTasks: 2, followups: 0, questions: 0 }, hero: null }, { refreshSeconds: 15 });
+    expect(html).toMatch(/overdue/i);
+    expect(html).not.toMatch(/this week/i); // empty buckets omitted
   });
 });
 

@@ -123,6 +123,11 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
     .reveal .src { opacity: 0; transition: opacity .14s ease; }
     .reveal:hover .src { opacity: .55; }
     .src { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 3px; }
+    .bucket-label { font-size: 0.7rem; font-family: ui-monospace, "SF Mono", Menlo, monospace; opacity: 0.7; margin: 8px 0 4px; }
+    .bucket-overdue { color: #FF593C; }
+    .bucket-today { color: #FFBF17; }
+    .bucket-week { color: #888; }
+    .still-open-more { display: flex; gap: 10px; align-items: center; padding: 11px 12px; background: #1A1A1A; border-radius: 12px; margin-top: 8px; font-size: 13px; color: rgba(255,255,255,0.6); font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 
     /* all-clear */
     .all-clear-wrap { display: flex; flex-direction: column; align-items: flex-start; padding: 40px 0; }
@@ -529,12 +534,44 @@ function renderQuestionsHtml(questions: ReadonlyArray<TodayQuestionRow>): string
   </div>`;
 }
 
+/**
+ * Add N calendar days to an ISO date string (YYYY-MM-DD).
+ * Uses plain arithmetic: no Date object needed, handles month/year rollover
+ * by using Date.UTC which normalises the overflow correctly.
+ */
+function addDays(isoDate: string, days: number): string {
+  const [y, m, d] = isoDate.split("-").map(Number) as [number, number, number];
+  const ts = Date.UTC(y, m - 1, d + days);
+  const dt = new Date(ts);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
 function renderStillOpenHtml(
   items: ReadonlyArray<TodayTaskRow>,
   today: string,
   trueCount: number,
 ): string {
-  const itemsHtml = items.map((t) => {
+  // Compute the week boundary: +7 calendar days from today.
+  const weekBound = addDays(today, 7);
+
+  // Bucket items by urgency.
+  const overdue = items.filter((t) => t.dueDate !== null && t.dueDate < today);
+  const todayItems = items.filter((t) => t.dueDate === today);
+  const thisWeek = items.filter(
+    (t) => t.dueDate !== null && t.dueDate > today && t.dueDate <= weekBound,
+  );
+  const laterItems = items.filter(
+    (t) => t.dueDate === null || t.dueDate > weekBound,
+  );
+
+  // trueCount is the total non-hero tasks from counts.*; items may be capped.
+  // laterChipCount = later items in the received list + the unseen tail.
+  const laterChipCount = laterItems.length + Math.max(0, trueCount - items.length);
+
+  function renderItem(t: TodayTaskRow): string {
     const glyph = taskGlyph(t, today);
     const where = t.line === null ? t.path : `${t.path}:${t.line}`;
     return `<div class="open-item reveal">
@@ -544,22 +581,46 @@ function renderStillOpenHtml(
           <div class="src">${esc(where)}</div>
         </div>
       </div>`;
-  }).join("\n      ");
+  }
 
-  // Show true total in the count badge. When the doc is display-capped, append
-  // a muted "+N more" affordance so the user knows the list is truncated.
-  const overflow = Math.max(0, trueCount - items.length);
-  const overflowHtml = overflow > 0
-    ? `\n  <div class="still-open-more">+${overflow} more</div>`
+  function renderBucket(
+    label: string,
+    cls: string,
+    bucketItems: ReadonlyArray<TodayTaskRow>,
+  ): string {
+    if (bucketItems.length === 0) return "";
+    const rows = bucketItems.map(renderItem).join("\n      ");
+    return `<div class="bucket-label ${cls}">${esc(label)} · ${bucketItems.length}</div>
+      <div class="still-open-grid">
+      ${rows}
+      </div>`;
+  }
+
+  const overdueHtml = renderBucket("overdue", "bucket-overdue", overdue);
+  const todayHtml = renderBucket("today", "bucket-today", todayItems);
+  const thisWeekHtml = renderBucket("this week", "bucket-week", thisWeek);
+
+  const chipHtml = laterChipCount > 0
+    ? `<div class="still-open-more"><span>+</span><span>${laterChipCount} more, later</span></div>`
     : "";
+
+  // Fall back to a flat list if all items are in the "later" bucket (no urgent items)
+  // — this keeps the chip intact but still shows a flat list for the common case where
+  // all displayed items are undated/far-future and only the chip is rendered.
+  const hasUrgentContent = overdueHtml.length > 0 || todayHtml.length > 0 || thisWeekHtml.length > 0;
+  const itemsHtml = hasUrgentContent
+    ? `${overdueHtml}${todayHtml}${thisWeekHtml}`
+    : items.map(renderItem).join("\n      ");
+
+  const gridOrBuckets = hasUrgentContent
+    ? itemsHtml
+    : `<div class="still-open-grid">${itemsHtml}</div>`;
 
   return `<div class="still-open-header">
     <span class="section-label" style="margin-bottom:0">Still open</span>
     <span class="still-open-count">${trueCount}</span>
   </div>
-  <div class="still-open-grid">
-      ${itemsHtml}
-  </div>${overflowHtml}`;
+  ${gridOrBuckets}${chipHtml}`;
 }
 
 function taskGlyph(
