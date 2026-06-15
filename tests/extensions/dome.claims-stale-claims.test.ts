@@ -235,6 +235,56 @@ describe("dome.claims.stale-claims — staleness filtering over asOf", () => {
     expect(data.staleClaims[0]?.daysStale).toBe(60);
   });
 
+  test("strips the inline *(as of …)* marker from value, keeping asOf structured", async () => {
+    // The indexer stores `value` WITH the inline marker and extracts `asOf`
+    // separately; the decoder must strip the marker so `value` is clean and not
+    // doubled. Without the strip this row's value would be the verbatim
+    // "Shipped *(as of 2026-01-01)*".
+    const { data } = await runStaleClaims({
+      facts: [
+        makeClaimFact({
+          path: "wiki/a.md",
+          key: "Status",
+          value: "Shipped *(as of 2026-01-01)*",
+          asOf: "2026-01-01", // 164 days → stale under horizon 120
+        }),
+      ],
+      config: { stale_claims_horizon_days: 120 },
+    });
+
+    expect(data.staleClaims).toHaveLength(1);
+    expect(data.staleClaims[0]?.value).toBe("Shipped");
+    expect(data.staleClaims[0]?.asOf).toBe("2026-01-01");
+  });
+
+  test("exact horizon boundary: daysStale === horizon is EXCLUDED, +1 is INCLUDED", async () => {
+    // now = 2026-06-14, horizon H = 120.
+    // "2026-02-14" is exactly 120 days before now → daysStale === 120 → EXCLUDED
+    //   (strict `> horizon`).
+    // "2026-02-13" is exactly 121 days before now → daysStale === 121 → INCLUDED.
+    const { data } = await runStaleClaims({
+      facts: [
+        makeClaimFact({
+          path: "wiki/at-horizon.md",
+          key: "Status",
+          value: "At horizon",
+          asOf: "2026-02-14",
+        }),
+        makeClaimFact({
+          path: "wiki/over-horizon.md",
+          key: "Status",
+          value: "Over horizon",
+          asOf: "2026-02-13",
+        }),
+      ],
+      config: { stale_claims_horizon_days: 120 },
+    });
+
+    expect(data.staleClaims).toHaveLength(1);
+    expect(data.staleClaims[0]?.path).toBe("wiki/over-horizon.md");
+    expect(data.staleClaims[0]?.daysStale).toBe(121);
+  });
+
   test("no stale claims yields an empty staleClaims array, not an error", async () => {
     const { view, data } = await runStaleClaims({
       facts: [

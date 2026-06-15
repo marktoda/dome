@@ -43,8 +43,13 @@ const MS_PER_DAY = 86_400_000;
 
 // ----- Claim decoder ---------------------------------------------------------
 // NOTE: mirrors assets/extensions/dome.search/processors/claims-fact.ts
-// (parseClaimFact). Kept local so dome.claims doesn't take a cross-extension
-// dependency on dome.search; consolidate later.
+// (parseClaimFact), including the inline `*(as of YYYY-MM-DD)*` marker strip on
+// `value`. The indexer stores the verbatim value WITH that marker and extracts
+// `asOf` separately, so an unstripped value would carry the date twice; the
+// strip keeps `value` clean alongside the structured `asOf`. Kept local so
+// dome.claims doesn't take a cross-extension dependency on dome.search. The
+// long-term fix is to move the canonical decoder into dome.claims (with
+// dome.search importing it) — a follow-on, not now.
 
 type ClaimFact = {
   readonly key: string;
@@ -69,7 +74,13 @@ function parseClaimFact(fact: FactEffect): ClaimFact | null {
     return null;
   }
   const asOf = typeof record.asOf === "string" ? record.asOf : null;
-  return { key: record.key, value: record.value, asOf };
+  // Strip the inline `*(as of YYYY-MM-DD)*` marker(s) so `value` is clean
+  // alongside the structured `asOf`; mirrors claims-fact.ts.
+  const value = record.value
+    .replace(/\s*\*\(as of \d{4}-\d{2}-\d{2}\)\*/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return { key: record.key, value, asOf };
 }
 
 // ----- Config resolution (degrade-not-crash) ---------------------------------
@@ -118,6 +129,9 @@ const staleClaims = defineProcessorImplementation({
       const asOfMs = Date.parse(claim.asOf);
       if (Number.isNaN(asOfMs)) continue; // unparseable date → skip defensively
 
+      // Date.parse of a bare `YYYY-MM-DD` is UTC midnight, so the staleness
+      // boundary is anchored at UTC midnight; sub-day skew is immaterial at this
+      // horizon (days).
       const daysStale = Math.floor((nowMs - asOfMs) / MS_PER_DAY);
       if (daysStale <= horizonDays) continue;
 
@@ -149,8 +163,11 @@ const staleClaims = defineProcessorImplementation({
       staleClaims: stale,
     };
 
-    // Scope = the SourceRefs of the stale claim facts, so the view consumer can
-    // navigate to each stale claim. When nothing is stale the scope is empty:
+    // Scope is built from each stale fact's own `sourceRefs` (preserving the
+    // claim's line range + `^c` anchor), so the view consumer can navigate to
+    // each stale claim — NOT synthesized at line 1 like orphan-pages, since here
+    // we have a precise per-claim anchor to cite. When nothing is stale the
+    // scope is empty:
     // ViewEffect.scope carries no min-length constraint (unlike FactEffect's
     // evidence requirement) and an empty view summarizes zero pages — there is
     // genuinely nothing to anchor to, and fabricating a vault-root SourceRef
