@@ -55,6 +55,19 @@ describe("parseClaimFact", () => {
     expect(parseClaimFact(claimFact("not json"))).toBeNull();
     expect(parseClaimFact(claimFact(JSON.stringify({ key: "x" })))).toBeNull(); // missing value
   });
+
+  test("returns null for a non-string object kind", () => {
+    const fact = {
+      ...claimFact("{}"),
+      object: { kind: "number", value: 5 },
+    } as FactEffect;
+    expect(parseClaimFact(fact)).toBeNull();
+  });
+
+  test("returns null when JSON parses to a non-object", () => {
+    expect(parseClaimFact(claimFact("[1,2]"))).toBeNull(); // array
+    expect(parseClaimFact(claimFact("42"))).toBeNull(); // number
+  });
 });
 
 describe("searchFactObjectLabel for claims", () => {

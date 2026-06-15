@@ -122,6 +122,37 @@ describe("dome.search ranking", () => {
     expect(withClaims.signals.some((s) => s.kind === "claim")).toBe(true);
   });
 
+  test("the claim signal is capped at weight 3 (4 claims do not exceed it)", () => {
+    const ranking = rankSearchCandidate({
+      match: match({ path: "wiki/projects/platform.md", rank: 2, type: null }),
+      facts: [
+        claimFact({ key: "Status", value: "shipping" }),
+        claimFact({ key: "Owner", value: "danny" }),
+        claimFact({ key: "Stage", value: "ga" }),
+        claimFact({ key: "Risk", value: "low" }),
+      ],
+      diagnostics: [],
+      questions: [],
+    });
+    const signal = ranking.signals.find((s) => s.kind === "claim");
+    expect(signal?.count).toBe(4);
+    expect(signal?.weight).toBe(3); // cap = 3
+  });
+
+  test("the claim signal contributes weight-per-item below the cap (2 claims → 2)", () => {
+    const ranking = rankSearchCandidate({
+      match: match({ path: "wiki/projects/platform.md", rank: 2, type: null }),
+      facts: [
+        claimFact({ key: "Status", value: "shipping" }),
+        claimFact({ key: "Owner", value: "danny" }),
+      ],
+      diagnostics: [],
+      questions: [],
+    });
+    const signal = ranking.signals.find((s) => s.kind === "claim");
+    expect(signal?.weight).toBe(2);
+  });
+
   test("sorts boosted matches ahead of weaker FTS-only matches", () => {
     const ftsOnly = {
       path: "wiki/fts-only.md",

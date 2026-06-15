@@ -169,4 +169,13 @@ describe("factPriority — claims", () => {
     expect(claim).toBeLessThan(factPriority(fact("dome.page.description")));
     expect(claim).toBeLessThan(factPriority(fact("dome.graph.links_to")));
   });
+
+  test("claims sit in the decision tier, not merely above generic facts", () => {
+    // isSearchDecisionFact keys purely on the dome.daily.decision predicate,
+    // so a bare fact with that predicate is a decision for priority purposes.
+    const claim = factPriority(
+      fact(CLAIM_PREDICATE, JSON.stringify({ key: "Status", value: "x" })),
+    );
+    expect(claim).toBe(factPriority(fact("dome.daily.decision")));
+  });
 });
