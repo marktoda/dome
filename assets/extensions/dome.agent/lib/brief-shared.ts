@@ -153,6 +153,7 @@ export type SlackDigestEntry = {
   readonly channel: string | null;
   readonly time: string | null;
   readonly text: string;
+  readonly permalink?: string;
 };
 
 export type SlackDigest = {
@@ -239,11 +240,24 @@ function parseSlackEntryLine(raw: string): SlackDigestEntry | null {
   }
 
   if (rest.length === 0) return null;
+
+  // Extract optional trailing permalink autolink <https://…> before capping text.
+  let permalink: string | undefined;
+  const permalinkMatch = /\s*<(https?:\/\/[^>\s]+)>\s*$/.exec(rest);
+  if (permalinkMatch !== null) {
+    permalink = permalinkMatch[1];
+    rest = rest.slice(0, permalinkMatch.index).trim();
+  }
+
   const text =
     rest.length > MAX_SLACK_TEXT_CHARS
       ? `${rest.slice(0, MAX_SLACK_TEXT_CHARS - 1)}…`
       : rest;
-  return Object.freeze({ channel, time, text });
+  return Object.freeze(
+    permalink !== undefined
+      ? { channel, time, text, permalink }
+      : { channel, time, text },
+  );
 }
 
 // ----- Block plumbing --------------------------------------------------------

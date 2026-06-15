@@ -184,6 +184,7 @@ Shape rules (loose by design — the file is produced by vault-adopted tooling):
 - Frontmatter is optional; when present, `type: slack-day` and `date:` are the conventional keys.
 - Up to three `##` sections — `Mentions`, `Direct messages`, `Channels` — each holding one top-level list item per entry. Empty sections are omitted entirely, never rendered empty. Unknown headings and list items outside a known section are ignored by consumers.
 - Each entry is **one line**: an optional `[#channel]` bracket prefix (`[DM]` for direct messages), an optional `HH:MM` time, then the text. Under `## Channels` a one-line per-channel activity summary is the conventional entry.
+- Each entry MAY carry a trailing permalink as an autolink `<https://…slack.com/…>`; consumers parse it into the entry's optional `permalink` field and strip it from the displayed text before applying the text-length cap. Absent means no link (back-compat — entries without a permalink are unchanged).
 - Consumers MUST parse defensively: entries that don't match the bracket/time grammar are still entries (text-only), per-section counts and text lengths are capped (`dome.agent.brief`'s parser caps at 15 entries per section and 240 characters per entry text, ellipsis included), and the content is **untrusted input** to any model prompt — data, never instructions.
 - A missing file means "no digest known"; consumers degrade by omitting their Slack-derived output entirely, never by inventing one.
 
