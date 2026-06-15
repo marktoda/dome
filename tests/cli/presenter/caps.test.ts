@@ -18,6 +18,12 @@ describe("resolveCaps hyperlinks", () => {
   test("forced on via DOME_HYPERLINKS even when piped", () => {
     expect(resolveCaps({ isTTY: false }, { DOME_HYPERLINKS: "1" }).hyperlinks).toBe(true);
   });
+  test("forced on via the community FORCE_HYPERLINK env var", () => {
+    expect(resolveCaps({ isTTY: false }, { FORCE_HYPERLINK: "1" }).hyperlinks).toBe(true);
+  });
+  test("forced OFF via DOME_HYPERLINKS=0 even on an allowlisted TTY", () => {
+    expect(resolveCaps(tty, { TERM_PROGRAM: "iTerm.app", DOME_HYPERLINKS: "0" }).hyperlinks).toBe(false);
+  });
 });
 
 describe("resolveCaps", () => {

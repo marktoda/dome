@@ -443,13 +443,14 @@ export function formatTodayResult(
       lines.push(`  ${paint(`… ${parts.join(" · ")} · dome today --verbose`, "muted", caps)}`);
     }
 
-    // ? ask line — top question + +N if more (unchanged)
+    // ? ask line — top question + +N if more. Shortened at a word/clause
+    // boundary (like the task rows), never chopped mid-word.
     if (questions.length > 0) {
       const top = questions[0]!;
       const extra = questions.length - 1;
       const extraNote = extra > 0 ? `   ${paint(`+${extra}`, "muted", caps)}` : "";
       const askWidth = Math.max(24, caps.width - 40);
-      const questionLabel = truncate(top.question, askWidth);
+      const questionLabel = shortenLabel(top.question, askWidth, caps.unicode);
       lines.push(
         `  ? ${paint("ask", "muted", caps)}   #${top.id} ${questionLabel}   ${paint(top.resolveCommand, "ident", caps)}${extraNote}`,
       );

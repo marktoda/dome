@@ -744,4 +744,19 @@ describe("formatTodayResult grouping + links", () => {
     const out = formatTodayResult(longLabel, narrow, "/v/work");
     for (const line of out.split("\n")) expect(visibleWidth(line)).toBeLessThanOrEqual(narrow.width);
   });
+
+  test("the ask line shortens the question at a word boundary (no mid-word cut)", () => {
+    const q = "should we escalate the routing retention decision to leadership before friday";
+    const d = doc({
+      openTasks: [],
+      questions: [{ id: 7, question: q, resolveCommand: "dome resolve 7", options: [] }],
+      counts: { openTasks: 0, followups: 0, questions: 1 },
+    });
+    const out = formatTodayResult(d, caps, "/v/work");
+    const askLine = out.split("\n").find((l) => l.includes("#7"))!;
+    expect(askLine).toContain("…");
+    const shown = askLine.match(/#7 (.+?)…/)![1]!.trim();
+    expect(q.startsWith(shown)).toBe(true);
+    expect(q[shown.length]).toBe(" "); // the cut fell on a word boundary
+  });
 });
