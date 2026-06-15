@@ -14,7 +14,6 @@ import {
   type Status,
 } from "../presenter";
 import {
-  firstPartyViewNotFoundMessage,
   runStructuredViewCommand,
   structuredViewBrokerMessages,
 } from "../../surface/view";
@@ -53,20 +52,13 @@ export async function runLint(
 
     const run = await runStructuredViewCommand({
       commandLabel: "dome lint",
-      commandName: "lint",
-      expectedViewName: FIRST_PARTY_VIEWS.lint.viewName,
-      expectedSchema: FIRST_PARTY_VIEWS.lint.schema,
+      entry: FIRST_PARTY_VIEWS.lint,
       commandArgs: Object.freeze({
         ...(options.failOn !== undefined ? { failOn: options.failOn } : {}),
         ...(limit !== null ? { limit } : {}),
       }),
       vault: options.vault,
       bundlesRoot: options.bundlesRoot,
-      notFoundMessage: firstPartyViewNotFoundMessage({
-        commandLabel: "dome lint",
-        bundleId: FIRST_PARTY_VIEWS.lint.bundleId,
-        processorName: FIRST_PARTY_VIEWS.lint.processorName,
-      }),
       noStructuredResultMessage:
         "dome lint: lint processor returned no structured result.",
     });

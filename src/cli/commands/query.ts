@@ -7,7 +7,6 @@
 import { basename } from "node:path";
 
 import {
-  firstPartyViewNotFoundMessage,
   runStructuredViewCommand,
   structuredViewBrokerMessages,
 } from "../../surface/view";
@@ -63,9 +62,7 @@ export async function runQuery(
   try {
     const run = await runStructuredViewCommand({
       commandLabel: "dome query",
-      commandName: "query",
-      expectedViewName: FIRST_PARTY_VIEWS.query.viewName,
-      expectedSchema: FIRST_PARTY_VIEWS.query.schema,
+      entry: FIRST_PARTY_VIEWS.query,
       commandArgs: Object.freeze({
         text,
         ...(options.category !== undefined ? { category: options.category } : {}),
@@ -74,11 +71,6 @@ export async function runQuery(
       }),
       vault: options.vault,
       bundlesRoot: options.bundlesRoot,
-      notFoundMessage: firstPartyViewNotFoundMessage({
-        commandLabel: "dome query",
-        bundleId: FIRST_PARTY_VIEWS.query.bundleId,
-        processorName: FIRST_PARTY_VIEWS.query.processorName,
-      }),
       noStructuredResultMessage:
         "dome query: query processor returned no structured result.",
     });

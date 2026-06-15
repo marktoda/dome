@@ -2,7 +2,6 @@
 
 import { formatJson } from "../../surface/format";
 import {
-  firstPartyViewNotFoundMessage,
   runStructuredViewCommand,
   structuredViewBrokerMessages,
 } from "../../surface/view";
@@ -39,20 +38,13 @@ export async function runExportContext(
   try {
     const run = await runStructuredViewCommand({
       commandLabel: "dome export-context",
-      commandName: "export-context",
-      expectedViewName: FIRST_PARTY_VIEWS.exportContext.viewName,
-      expectedSchema: FIRST_PARTY_VIEWS.exportContext.schema,
+      entry: FIRST_PARTY_VIEWS.exportContext,
       commandArgs: Object.freeze({
         topic,
         ...(options.limit !== undefined ? { limit: options.limit } : {}),
       }),
       vault: options.vault,
       bundlesRoot: options.bundlesRoot,
-      notFoundMessage: firstPartyViewNotFoundMessage({
-        commandLabel: "dome export-context",
-        bundleId: FIRST_PARTY_VIEWS.exportContext.bundleId,
-        processorName: FIRST_PARTY_VIEWS.exportContext.processorName,
-      }),
       noStructuredResultMessage:
         "dome export-context: processor returned no structured result.",
     });
