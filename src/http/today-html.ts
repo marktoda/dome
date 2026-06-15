@@ -10,17 +10,19 @@ export type TodayHtmlOptions = {
   readonly refreshSeconds: number;
 };
 
-import { BASEL_BOOK_WOFF2_B64, BASEL_MEDIUM_WOFF2_B64 } from "./today-fonts";
 import { addDays, daysBetween, parseTodayView, type TodayTaskRow, type TodayQuestionRow, type TodayCalendarEvent, type TodayHeroItem } from "../surface/today-view";
 
-// Self-contained @font-face: the design's Basel Grotesk (Book 485 / Medium 535),
-// base64-embedded so the page needs no external font requests. Mono stays the
-// system ui-monospace stack.
+// @font-face: the design's Basel Grotesk (Book 485 / Medium 535). The woff2
+// bytes are served from same-origin, year-cacheable routes (the HTTP adapter's
+// GET /today/fonts/basel-{book,medium}.woff2, fed by ./today-fonts) and url()'d
+// here — so the ~246KB of font bytes load once and cache, instead of being
+// re-inlined as base64 on every no-store /today reload. Mono stays the system
+// ui-monospace stack.
 const FONT_FACE = `
     @font-face { font-family: "Basel Grotesk"; font-weight: 485; font-display: swap;
-      src: url("data:font/woff2;base64,${BASEL_BOOK_WOFF2_B64}") format("woff2"); }
+      src: url("/today/fonts/basel-book.woff2") format("woff2"); }
     @font-face { font-family: "Basel Grotesk"; font-weight: 535; font-display: swap;
-      src: url("data:font/woff2;base64,${BASEL_MEDIUM_WOFF2_B64}") format("woff2"); }`;
+      src: url("/today/fonts/basel-medium.woff2") format("woff2"); }`;
 
 export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
   const refresh = Math.max(1, Math.floor(opts.refreshSeconds));

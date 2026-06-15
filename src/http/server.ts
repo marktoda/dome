@@ -62,6 +62,7 @@ import {
 } from "../surface/adapter";
 import { FIRST_PARTY_VIEWS, type FirstPartyViewEntry } from "../surface/view-catalog";
 import { renderTodayHtml } from "./today-html";
+import { BASEL_BOOK_WOFF2_B64, BASEL_MEDIUM_WOFF2_B64 } from "./today-fonts";
 import type { Vault } from "../vault";
 
 // ----- Constants ------------------------------------------------------------
@@ -335,6 +336,12 @@ export function createDomeHttpServer(
 
   const handle = async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
+    // The cockpit's @font-face url()s these two woff2 files; the browser
+    // requests them with NO Authorization header and NO ?token=, so they MUST
+    // be served before — and exempt from — the auth gate. They are
+    // non-sensitive static font bytes, scoped to these two exact paths only.
+    const font = fontResponse(request);
+    if (font !== null) return font;
     if (!authorized(request, tokenDigest) && !queryTokenAuthorized(request, url, tokenDigest)) {
       return errorResponse(401, "unauthorized", "missing or invalid bearer token.");
     }
@@ -350,6 +357,36 @@ export function createDomeHttpServer(
 }
 
 // ----- internals --------------------------------------------------------------
+
+/**
+ * Serve the cockpit's two Basel Grotesk woff2 files from same-origin, cacheable
+ * routes (`GET /today/fonts/basel-{book,medium}.woff2`). The CSS `url()`s these
+ * so the ~246KB of font bytes load once and cache for a year, instead of
+ * re-inlining as base64 on every `no-store` /today reload. Returns `null` for
+ * any other request so the caller falls through to the auth gate + router.
+ *
+ * Auth note: these are served BEFORE the auth gate because the browser fetches
+ * them from CSS with neither an Authorization header nor a ?token=. They are
+ * non-sensitive static font bytes; only these two exact GET paths are exempt.
+ */
+function fontResponse(request: Request): Response | null {
+  if (request.method !== "GET") return null;
+  const pathname = new URL(request.url).pathname;
+  const b64 =
+    pathname === "/today/fonts/basel-book.woff2"
+      ? BASEL_BOOK_WOFF2_B64
+      : pathname === "/today/fonts/basel-medium.woff2"
+        ? BASEL_MEDIUM_WOFF2_B64
+        : null;
+  if (b64 === null) return null;
+  return new Response(Buffer.from(b64, "base64"), {
+    status: 200,
+    headers: {
+      "content-type": "font/woff2",
+      "cache-control": "public, max-age=31536000, immutable",
+    },
+  });
+}
 
 /** Constant-time bearer check: compare SHA-256 digests, never raw strings. */
 function authorized(request: Request, tokenDigest: Buffer): boolean {

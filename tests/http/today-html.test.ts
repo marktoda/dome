@@ -295,11 +295,14 @@ describe("dome today: still-open urgency grouping", () => {
 });
 
 describe("Basel Grotesk fonts + hero polish", () => {
-  test("page embeds Basel Grotesk @font-face (base64 woff2, both weights)", () => {
+  test("page @font-face url()s the cacheable font routes (both weights), no base64", () => {
     const html = renderTodayHtml(base, { refreshSeconds: 15 });
     expect(html).toContain('@font-face');
     expect(html).toContain('font-family: "Basel Grotesk"');
-    expect(html).toContain("data:font/woff2;base64,");
+    // CB-T7: fonts now load from same-origin cacheable routes, not inline base64.
+    expect(html).not.toContain("data:font/woff2;base64,");
+    expect(html).toContain('url("/today/fonts/basel-book.woff2") format("woff2")');
+    expect(html).toContain('url("/today/fonts/basel-medium.woff2") format("woff2")');
     expect(html).toContain("font-weight: 485");
     expect(html).toContain("font-weight: 535");
     // body uses Basel first
