@@ -347,12 +347,12 @@ scenario(
     expect(text.exitCode).toBe(0);
     expect(text.stderr).toBe("");
     // The "Current facts" section surfaces the page's dated claim facts up
-    // front, one line per (path, key) at the latest as-of. The value carries
-    // the claim's verbatim `*(as of …)*` marker (claim-index stores it inline)
-    // and claimLabel() appends the structured `(as of …)` stamp.
+    // front, one line per (path, key) at the latest as-of. The decoder strips
+    // the claim-index's inline `*(as of …)*` marker so the value is clean, and
+    // claimLabel() appends a single structured `(as of …)` stamp — no doubling.
     expect(text.stdout).toContain("## Current facts");
     expect(text.stdout).toContain(
-      "Status: in design review *(as of 2026-06-12)* (as of 2026-06-12) — wiki/projects/atlas.md",
+      "Status: in design review (as of 2026-06-12) — wiki/projects/atlas.md",
     );
 
     const json = await h.runCli(["export-context", "atlas", "--json"]);
@@ -372,7 +372,7 @@ scenario(
       expect.objectContaining({
         path: "wiki/projects/atlas.md",
         key: "Status",
-        value: "in design review *(as of 2026-06-12)*",
+        value: "in design review",
         asOf: "2026-06-12",
       }),
     );

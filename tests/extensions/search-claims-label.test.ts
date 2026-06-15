@@ -26,6 +26,19 @@ describe("parseClaimFact", () => {
     expect(parsed).toEqual({ key: "Status", value: "in design review", asOf: "2026-06-12" });
   });
 
+  test("strips the inline as-of marker the indexer stores in value", () => {
+    const parsed = parseClaimFact(
+      claimFact(
+        JSON.stringify({
+          key: "Status",
+          value: "in design review *(as of 2026-06-12)*",
+          asOf: "2026-06-12",
+        }),
+      ),
+    );
+    expect(parsed).toEqual({ key: "Status", value: "in design review", asOf: "2026-06-12" });
+  });
+
   test("decodes a claim fact without an as-of date", () => {
     const parsed = parseClaimFact(
       claimFact(JSON.stringify({ key: "Owner", value: "[[danny]]" })),
@@ -49,6 +62,20 @@ describe("searchFactObjectLabel for claims", () => {
     expect(
       searchFactObjectLabel(
         claimFact(JSON.stringify({ key: "Status", value: "in design review", asOf: "2026-06-12" })),
+      ),
+    ).toBe("Status: in design review (as of 2026-06-12)");
+  });
+
+  test("renders a single as-of for the indexer's inline-marker value", () => {
+    expect(
+      searchFactObjectLabel(
+        claimFact(
+          JSON.stringify({
+            key: "Status",
+            value: "in design review *(as of 2026-06-12)*",
+            asOf: "2026-06-12",
+          }),
+        ),
       ),
     ).toBe("Status: in design review (as of 2026-06-12)");
   });

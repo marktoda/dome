@@ -31,11 +31,18 @@ export function parseClaimFact(fact: FactEffect): ClaimFact | null {
   if (typeof record.key !== "string" || typeof record.value !== "string") {
     return null;
   }
-  return Object.freeze({
-    key: record.key,
-    value: record.value,
-    asOf: typeof record.asOf === "string" ? record.asOf : null,
-  });
+  // The indexer (dome.claims.index) stores the claim's verbatim value, which
+  // retains the inline `*(as of YYYY-MM-DD)*` marker, alongside the extracted
+  // `asOf` date. The decoder strips that single marker so `value`/`asOf` are
+  // presented as clean, separate fields — otherwise claimLabel() would append
+  // `(as of …)` to a value that already carries the date, doubling it. The
+  // regex must mirror the indexer's AS_OF_RE in dome.claims/claims-shared.ts.
+  const asOf = typeof record.asOf === "string" ? record.asOf : null;
+  const value = record.value
+    .replace(/\*\(as of \d{4}-\d{2}-\d{2}\)\*/, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return Object.freeze({ key: record.key, value, asOf });
 }
 
 /** Human-legible one-line label: `Key: value (as of YYYY-MM-DD)`. */
