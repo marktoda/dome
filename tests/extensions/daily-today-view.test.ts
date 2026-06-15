@@ -10,7 +10,7 @@
 import { describe, expect, test } from "bun:test";
 
 import today from "../../assets/extensions/dome.daily/processors/today";
-import { OPEN_TASK_PREDICATE } from "../../assets/extensions/dome.daily/processors/action-state";
+import { OPEN_TASK_PREDICATE, TASK_ORIGIN_PREDICATE } from "../../assets/extensions/dome.daily/processors/action-state";
 import type { FactEffect, ViewEffect } from "../../src/core/effect";
 import { treeOid, type ProjectionQueryView, type Snapshot } from "../../src/core/processor";
 import { makeManualProposal } from "../../src/core/proposal";
@@ -39,6 +39,7 @@ function makeFact(opts: {
   predicate: string;
   subjectPath: string;
   value: string;
+  stableId?: string;
 }): FactEffect {
   return {
     kind: "fact",
@@ -46,7 +47,13 @@ function makeFact(opts: {
     predicate: opts.predicate,
     object: { kind: "string", value: opts.value },
     assertion: "extracted",
-    sourceRefs: [{ commit: HEAD_COMMIT, path: opts.subjectPath as never }],
+    sourceRefs: [
+      {
+        commit: HEAD_COMMIT,
+        path: opts.subjectPath as never,
+        ...(opts.stableId !== undefined ? { stableId: opts.stableId } : {}),
+      },
+    ],
   };
 }
 
@@ -309,17 +316,24 @@ describe("dome.daily.today — brief and calendar are null when no facts present
 
 describe("dome.daily.today — task origin propagation", () => {
   test("today view exposes a task's origin target", async () => {
-    // Seed a dome.daily.open_task fact whose value carries the origin marker,
-    // as task-index.ts will emit after Step 3.  The fact value is:
-    //   "reply to Jane ([↗](https://slk/p1))"
-    // which is what appendOriginMarker("reply to Jane", "https://slk/p1") produces.
+    // Under the new mechanism, the open_task fact value is a clean semantic body,
+    // and origin is carried by a parallel dome.daily.task_origin fact correlated
+    // by the same stableId on the sourceRef.
+    const TASK_STABLE_ID = "t-reply-jane-001";
     const data = await runTodayRaw({
       files: { [DAILY_PATH]: MINIMAL_DAILY },
       facts: [
         makeFact({
           predicate: OPEN_TASK_PREDICATE,
           subjectPath: DAILY_PATH,
-          value: "reply to Jane ([↗](https://slk/p1))",
+          value: "reply to Jane",
+          stableId: TASK_STABLE_ID,
+        }),
+        makeFact({
+          predicate: TASK_ORIGIN_PREDICATE,
+          subjectPath: DAILY_PATH,
+          value: "https://slk/p1",
+          stableId: TASK_STABLE_ID,
         }),
       ],
     });
@@ -332,7 +346,7 @@ describe("dome.daily.today — task origin propagation", () => {
   test("dedup rescues origin: carried-forward open-loop + backlog fact keep origin after merge", async () => {
     // This test targets the mergeDailyTaskItems dedup path.
     //
-    // Scenario:
+    // Scenario (new mechanism — clean fact values + parallel task_origin fact):
     //   - The daily note's open-loops block carries a source-backed copy of a
     //     task that originally lived in sources/projects/work.md:
     //       "- [ ] review PR ([↗](https://slk/pr42)) (from [[sources/projects/work]])"
@@ -340,16 +354,19 @@ describe("dome.daily.today — task origin propagation", () => {
     //     so the parsed daily-surface item has text "review PR" and NO origin.
     //
     //   - A dome.daily.open_task fact for sources/projects/work.md carries the
-    //     raw value "review PR ([↗](https://slk/pr42))", so taskItemFromFact
-    //     sets origin = "https://slk/pr42".
+    //     CLEAN value "review PR" (no marker).  A parallel dome.daily.task_origin
+    //     fact with the same stableId carries "https://slk/pr42", so
+    //     taskItemFromFact resolves origin = "https://slk/pr42" via originByStableId.
     //
     //   - Both items have the same taskSurfaceKey ("review PR"), so
-    //     dedupeDailyTaskItems calls mergeDailyTaskItems.  Without the fix the
-    //     daily-surface item wins as primary and origin is silently dropped.
+    //     dedupeDailyTaskItems calls mergeDailyTaskItems.  Without the dedup fix
+    //     the daily-surface item wins as primary and origin is silently dropped.
     //     With the fix, origin is rescued from the duplicate (the fact item).
     const SOURCE_PATH = "sources/projects/work.md";
-    const OPEN_LOOP_BODY = "review PR ([↗](https://slk/pr42))";
+    const CLEAN_TASK_BODY = "review PR";
+    const ORIGIN_MARKER_LINE = "review PR ([↗](https://slk/pr42))";
     const ORIGIN_URL = "https://slk/pr42";
+    const TASK_STABLE_ID = "t-review-pr-001";
 
     // Daily note with an open-loops generated block containing the source-backed
     // carried-forward copy. The origin marker is kept in the raw line so the
@@ -363,20 +380,31 @@ describe("dome.daily.today — task origin propagation", () => {
       "# 2026-06-14",
       "",
       "<!-- dome.daily:open-loops:start -->",
-      `- [ ] ${OPEN_LOOP_BODY} (from [[sources/projects/work]])`,
+      `- [ ] ${ORIGIN_MARKER_LINE} (from [[sources/projects/work]])`,
       "<!-- dome.daily:open-loops:end -->",
     ].join("\n");
 
     const data = await runTodayRaw({
       files: {
         [DAILY_PATH]: dailyWithOpenLoop,
-        [SOURCE_PATH]: `- [ ] ${OPEN_LOOP_BODY}\n`,
+        // The source file carries the clean body (the origin marker IS on the line
+        // in the actual source — task-index would emit clean fact + task_origin).
+        [SOURCE_PATH]: `- [ ] ${ORIGIN_MARKER_LINE}\n`,
       },
       facts: [
+        // open_task fact: clean value, stableId for correlation
         makeFact({
           predicate: OPEN_TASK_PREDICATE,
           subjectPath: SOURCE_PATH,
-          value: OPEN_LOOP_BODY,
+          value: CLEAN_TASK_BODY,
+          stableId: TASK_STABLE_ID,
+        }),
+        // task_origin fact: same stableId carries the URL
+        makeFact({
+          predicate: TASK_ORIGIN_PREDICATE,
+          subjectPath: SOURCE_PATH,
+          value: ORIGIN_URL,
+          stableId: TASK_STABLE_ID,
         }),
       ],
     });
