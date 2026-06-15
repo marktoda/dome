@@ -489,4 +489,17 @@ describe("captured seam origin marker", () => {
     expect(edit?.kind === "write" && edit.content).toContain("- [ ] #task plain");
     expect(edit?.kind === "write" && edit.content).not.toContain("↗");
   });
+
+  test("no marker when origin is absent (undefined)", async () => {
+    const tools = makeIngestTools({
+      reader: reader({}),
+      capturedTasks: { path: dailyP, today, settings }, // origin omitted
+    });
+    const t = tool(tools, "appendToPage");
+    const state = freshState();
+    await t.execute({ path: dailyP, content: "- [ ] #task plain" }, state);
+    const edit = state.edits.get(dailyP);
+    expect(edit?.kind === "write" && edit.content).toContain("- [ ] #task plain");
+    expect(edit?.kind === "write" && edit.content).not.toContain("↗");
+  });
 });

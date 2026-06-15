@@ -161,6 +161,11 @@ function capturedAwareAppendTool(opts: {
       const target = blank
         ? await todaySkeleton(capturedTasks, state, reader)
         : existing;
+      // Stamp the origin marker AFTER validation, so CAPTURED_LINE_MAX_CHARS
+      // measures only the model-authored text — the marker is seam overhead.
+      // A stamped line may exceed the cap by the marker's length; that is
+      // safe because isCapturedTaskLine gates only fresh model input, never
+      // re-validating already-committed stamped lines on read.
       const origin = capturedTasks.origin ?? null;
       const stamped =
         origin === null
