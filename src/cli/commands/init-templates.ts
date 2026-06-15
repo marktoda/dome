@@ -209,8 +209,9 @@ block yourself.
 
 - \`wiki/\` is the main markdown knowledge base. Pages can link with
   \`[[wikilinks]]\`.
-- \`notes/\` is available for loose markdown notes that do not yet belong in a
-  wiki page.
+- \`notes/\` is optional unstructured scratch for loose notes that don't yet
+  belong in a wiki page — not a parallel knowledge base. Prefer \`wiki/\` for
+  anything you want recalled.
 - \`inbox/raw/\` is the raw capture drop-zone for committed captures when
   \`dome.agent\` is enabled and model-ready. Before using it, run
   \`dome inspect bundles --json\` and check the \`dome.agent\` row reports
@@ -234,6 +235,22 @@ block yourself.
 - Every effect is capability-checked before it lands.
 - Projection state is rebuildable from adopted markdown.
 - Engine commits carry \`Dome-*\` trailers for auditability.
+
+## Keeping owned prose current
+
+Two kinds of content, opposite contracts:
+
+- **Sources & history** — \`raw/\`, \`notes/\`, historical dailies, the
+  preference-signal log, git history. Append or preserve; never overwrite.
+- **Owned prose** — \`wiki/\` pages you maintain, syntheses, page
+  \`description:\` frontmatter, and these instruction files. When an edit makes
+  an existing claim false, delete or replace it in the same edit — don't leave
+  the stale claim beside the new one. Git history keeps the prior version, so
+  you lose nothing by removing it from the live surface.
+
+Supersede a whole page with \`status: superseded\` + a \`superseded_by:\`
+forward-link, not a rewrite. Fix sentence-level staleness inline. "Append to be
+safe" is not safety when git already has your back — it is rot.
 
 ${userProseSection}
 `;
