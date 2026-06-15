@@ -26,6 +26,7 @@ const COMMAND_SCENARIO_FILES: ReadonlyMap<string, string> = new Map([
   ["orphan-pages", "effect-kinds/view-effect-via-dome-run.scenario.test.ts"],
   ["prep", "cli-surface/prep-view.scenario.test.ts"],
   ["query", "cli-surface/query-adopted-state.scenario.test.ts"],
+  ["stale-claims", "effect-kinds/stale-claims-via-dome-run.scenario.test.ts"],
   ["today", "cli-surface/today-task-view.scenario.test.ts"],
 ]);
 
