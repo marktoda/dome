@@ -455,7 +455,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
     freezeLoop({
       id: "dome.claim.coherence",
       goal:
-        "Structured claim lines on wiki and note pages are stamped with stable anchor ids and projected as queryable facts.",
+        "Structured claim lines on wiki and note pages are stamped with stable anchor ids, projected as queryable facts, and surfaced as an at-a-glance `## Current facts` digest on claim-rich pages.",
       evidence: [
         { kind: "path", pattern: "wiki/**/*.md" },
         { kind: "path", pattern: "notes/*.md" },
@@ -464,6 +464,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       processors: [
         "dome.claims.stamp",
         "dome.claims.index",
+        "dome.claims.render-facts",
       ],
       surfaces: [
         { kind: "projection", name: "facts" },
@@ -473,7 +474,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       settlement: {
         key: "source path + normalized claim key + occurrence index",
         noOpWhen:
-          "every claim line in the page set carries its stable anchor and the facts projection reflects the current claim values",
+          "every claim line in the page set carries its stable anchor, the facts projection reflects the current claim values, and each claim-rich page's `## Current facts` digest is rendered current",
         checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [

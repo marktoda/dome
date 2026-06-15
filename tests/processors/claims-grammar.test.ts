@@ -75,6 +75,50 @@ describe("claimsFromMarkdown", () => {
   test("bold emphasis without a trailing colon is not a claim", () => {
     expect(claimsFromMarkdown("**Important** this is just emphasis\n")).toHaveLength(0);
   });
+
+  test("claim lines inside a generated block are not parsed as claims", () => {
+    const content = [
+      "# Atlas",
+      "",
+      "<!-- dome.claims:current-facts:start -->",
+      "- **Status:** in design review *(as of 2026-06-12)* ^cAAAA",
+      "<!-- dome.claims:current-facts:end -->",
+      "",
+      "- **Owner:** [[danny]] ^cBBBB",
+    ].join("\n");
+    const claims = claimsFromMarkdown(content);
+    expect(claims.map((c) => c.key)).toEqual(["Owner"]);
+  });
+
+  test("a mid-line/prose mention of a start marker does NOT bound a block (line-anchored)", () => {
+    // The marker text appears INLINE inside a prose sentence, not as the whole
+    // line — so it is content, never a block boundary. The real claim below it
+    // is parsed normally. This pins the line-anchored guarantee.
+    const content = [
+      "# Atlas",
+      "",
+      "See the generated digest <!-- dome.claims:current-facts:start --> for the current snapshot.",
+      "",
+      "- **Owner:** [[danny]] ^cBBBB",
+    ].join("\n");
+    const claims = claimsFromMarkdown(content);
+    expect(claims.map((c) => c.key)).toEqual(["Owner"]);
+  });
+
+  test("an unterminated start marker bounds no block, so the claim below it IS parsed", () => {
+    const content = [
+      "# Atlas",
+      "",
+      "<!-- dome.claims:current-facts:start -->",
+      "- **Status:** in design review",
+    ].join("\n");
+    // The canonical generated-block primitive treats an unterminated start (no
+    // matching `:end`) as no block, so a stray marker never silently drops
+    // claims — the `**Status:**` line below it is parsed normally. This is
+    // safer than a hand-rolled "exclude to EOF" that would swallow real claims.
+    const claims = claimsFromMarkdown(content);
+    expect(claims.map((c) => c.key)).toEqual(["Status"]);
+  });
 });
 
 describe("stampClaimAnchors anchor dedup", () => {
