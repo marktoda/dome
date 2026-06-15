@@ -1,6 +1,25 @@
 import { describe, expect, test } from "bun:test";
 import { resolveCaps } from "../../../src/cli/presenter/caps";
 
+describe("resolveCaps hyperlinks", () => {
+  const tty = { isTTY: true, columns: 100 };
+  test("on for an allowlisted TERM_PROGRAM (iTerm)", () => {
+    expect(resolveCaps(tty, { TERM_PROGRAM: "iTerm.app", LANG: "en_US.UTF-8" }).hyperlinks).toBe(true);
+  });
+  test("on for kitty via TERM", () => {
+    expect(resolveCaps(tty, { TERM: "xterm-kitty" }).hyperlinks).toBe(true);
+  });
+  test("off for an unknown terminal", () => {
+    expect(resolveCaps(tty, { TERM_PROGRAM: "Apple_Terminal" }).hyperlinks).toBe(false);
+  });
+  test("off when not a TTY (piped) even on iTerm", () => {
+    expect(resolveCaps({ isTTY: false, columns: 100 }, { TERM_PROGRAM: "iTerm.app" }).hyperlinks).toBe(false);
+  });
+  test("forced on via DOME_HYPERLINKS even when piped", () => {
+    expect(resolveCaps({ isTTY: false }, { DOME_HYPERLINKS: "1" }).hyperlinks).toBe(true);
+  });
+});
+
 describe("resolveCaps", () => {
   const base = { isTTY: true, columns: 120 };
 

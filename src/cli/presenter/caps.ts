@@ -9,6 +9,8 @@ export type Caps = {
   readonly color: boolean;
   readonly unicode: boolean;
   readonly width: number;
+  /** Terminal supports OSC 8 hyperlinks. Independent of `color`, like `unicode`. */
+  readonly hyperlinks?: boolean;
 };
 
 type OutStream = { readonly isTTY?: boolean; readonly columns?: number };
@@ -23,6 +25,24 @@ function isForceColor(env: Record<string, string | undefined>): boolean {
 function isUtfLocale(env: Record<string, string | undefined>): boolean {
   const locale = env.LC_ALL ?? env.LC_CTYPE ?? env.LANG ?? "";
   return /utf-?8/i.test(locale);
+}
+
+function supportsHyperlinks(
+  stream: OutStream,
+  env: Record<string, string | undefined>,
+): boolean {
+  const force = env.DOME_HYPERLINKS ?? env.FORCE_HYPERLINK;
+  if (force !== undefined) {
+    return force.length > 0 && force !== "0" && force.toLowerCase() !== "false";
+  }
+  if (stream.isTTY !== true) return false;
+  const prog = env.TERM_PROGRAM ?? "";
+  if (prog === "iTerm.app" || prog === "WezTerm" || prog === "ghostty" || prog === "vscode") {
+    return true;
+  }
+  if (/kitty/i.test(env.TERM ?? "")) return true;
+  if (env.WT_SESSION !== undefined) return true; // Windows Terminal
+  return false;
 }
 
 /**
@@ -43,5 +63,5 @@ export function resolveCaps(
   const unicode = stream.isTTY === true && isUtfLocale(env);
   const width =
     typeof stream.columns === "number" && stream.columns > 0 ? stream.columns : DEFAULT_WIDTH;
-  return { color, unicode, width };
+  return { color, unicode, width, hyperlinks: supportsHyperlinks(stream, env) };
 }
