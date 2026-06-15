@@ -46,6 +46,10 @@ All three are **garden** (not adoption) phase. The reason is the capability-fail
 
 **Obsidian Tasks dashboards are left alone.** A file containing a fenced ` ```tasks ` query block is an Obsidian Tasks plugin dashboard — the plugin parses task lines and would be confused by an injected `^anchor`. All three rewriters skip such files entirely (`isObsidianTasksDashboard`), so a vault's `notes/tasks.md`-style query files stay user-maintained. This is interop, not a capability grant: the grant model matches paths with positive globs only (`notes/*.md` cannot subtract one file), so the exclusion lives in the processor logic. Read-only extraction (`task-index`) still projects those task lines into facts.
 
+## Task origin (source provenance)
+
+A task's origin — where it came from — is one inline marker, ` ([↗](target))`, where `target` is a vault-relative path (a capture file) or a percent-encoded external URL (e.g. a Slack permalink). The grammar is defined once in `action-extraction` (`appendOriginMarker`/`parseOriginMarker`/`stripOriginMarker`); the marker is stripped from the body used for identity, dedup, and reconcile keys, so origin never perturbs `^id` identity. Origin is projected as a parallel `dome.daily.task_origin` fact correlated to the task by stableId (the `open_task`/`followup` fact value stays the clean semantic body), surfaced as a structured field on the task, and rendered as one clickable `↗` affordance in `dome today` (the URL, or `file://` for a vault path). It is distinct from the `(from [[…]])` carry-forward *copy*-provenance suffix. Design: [[cohesive/brainstorms/2026-06-15-daily-phase2]].
+
 ## The `lastHumanChangedAt` freshness rule
 
 Daily open-loop recency ranking must reflect *human* edit recency, not engine churn. The problem: stamping a `^block-anchor` (or any garden patch) produces an engine commit, which would reset a naive "last changed" timestamp and make a stale task look fresh.

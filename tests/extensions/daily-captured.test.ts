@@ -15,7 +15,16 @@ import { describe, expect, test } from "bun:test";
 
 import normalizeTaskSyntaxProcessor from "../../assets/extensions/dome.daily/processors/normalize-task-syntax";
 import taskIndex from "../../assets/extensions/dome.daily/processors/task-index";
-import { actionItemsFromMarkdown, settledActionItemsFromMarkdown, sourceBackedCheckboxFromLine, stampTaskAnchors, stripOriginMarker } from "../../assets/extensions/dome.daily/processors/action-extraction";
+import {
+  actionItemsFromMarkdown,
+  appendOriginMarker as appendOriginMarkerPrimitive,
+  parseOriginMarker,
+  settledActionItemsFromMarkdown,
+  sourceBackedCheckboxFromLine,
+  stampTaskAnchors,
+  stripOriginMarker,
+  stripOriginMarker as stripOriginMarkerPrimitive,
+} from "../../assets/extensions/dome.daily/processors/action-extraction";
 import {
   appendCapturedTaskLines,
   appendOriginMarker,
@@ -575,5 +584,49 @@ describe("sourceBackedCheckboxFromLine strips the origin marker from body", () =
     const result = sourceBackedCheckboxFromLine(line, 5);
     expect(result).not.toBeNull();
     expect(result!.body).toBe("plain task");
+  });
+});
+
+describe("origin marker primitive", () => {
+  test("append + parse round-trips a plain vault path", () => {
+    const line = appendOriginMarkerPrimitive("- [ ] #task fix it", "inbox/processed/x.md");
+    expect(line).toBe("- [ ] #task fix it ([↗](inbox/processed/x.md))");
+    expect(parseOriginMarker(line)).toEqual({ body: "- [ ] #task fix it", target: "inbox/processed/x.md" });
+  });
+  test("percent-encodes ( and ) in the target so a URL with parens is safe", () => {
+    const url = "https://x.example/a(b)";
+    const line = appendOriginMarkerPrimitive("- [ ] #task reply", url);
+    expect(line).toContain("%28");
+    expect(line).toContain("%29");
+    expect(parseOriginMarker(line)!.target).toBe(url);
+    expect(stripOriginMarkerPrimitive(line)).toBe("- [ ] #task reply");
+  });
+  test("strip on a marker-free line is a no-op", () => {
+    expect(stripOriginMarkerPrimitive("- [ ] #task plain")).toBe("- [ ] #task plain");
+  });
+  test("append is idempotent (line already carrying a marker is unchanged)", () => {
+    const once = appendOriginMarkerPrimitive("- [ ] #task reply", "inbox/processed/x.md");
+    expect(appendOriginMarkerPrimitive(once, "inbox/processed/y.md")).toBe(once);
+  });
+  test("round-trips a target that already contains a percent-encoded sequence", () => {
+    const url = "https://x.example/a%28b%29c";
+    const line = appendOriginMarkerPrimitive("- [ ] #task reply", url);
+    expect(parseOriginMarker(line)!.target).toBe(url);
+    expect(stripOriginMarkerPrimitive(line)).toBe("- [ ] #task reply");
+  });
+});
+
+describe("action items carry origin", () => {
+  test("a captured task exposes its origin target, body stays marker-free", () => {
+    const md = "## Captured today\n\n- [ ] #task reply to Jane ([↗](https://uniswapteam.slack.com/archives/C0/p1)) ^t1a2b3c4\n";
+    const items = actionItemsFromMarkdown(md);
+    const item = items.find((i) => i.body.includes("reply to Jane"))!;
+    expect(item.body).toBe("reply to Jane");
+    expect(item.origin).toBe("https://uniswapteam.slack.com/archives/C0/p1");
+  });
+  test("a task with no marker has undefined origin", () => {
+    const md = "- [ ] #task plain ^t9z9z9z9\n";
+    const items = actionItemsFromMarkdown(md);
+    expect(items[0]!.origin).toBeUndefined();
   });
 });

@@ -28,6 +28,7 @@ import {
   glyph,
   headline,
   hyperlink,
+  originUrl,
   paint,
   resolveCaps,
   rollup,
@@ -382,8 +383,8 @@ export function formatTodayResult(
     const arrow = caps.unicode ? "↗" : "->";
 
     // Render one task row: clean sentence (links pulled out, shortened) + a
-    // trailing clickable affordance per link. The URL never enters the visible
-    // width, so it can never be sliced.
+    // trailing clickable affordance per link, then a single origin ↗ if set.
+    // The URL never enters the visible width, so it can never be sliced.
     const renderRow = (t: TodayTaskRow, tone: Tone): void => {
       const { text, links } = splitInlineLinks(t.text);
       const arrowWidth = visibleWidth(arrow); // ↗ (U+2197) is 2 cols, not 1
@@ -402,13 +403,19 @@ export function formatTodayResult(
           : 3 +
             affs.reduce((a, x) => a + visibleWidth(x.label) + arrowWidth, 0) +
             (affs.length - 1) * 2;
-      const label = shortenLabel(text, Math.max(0, taskWidth - linkReserve), caps.unicode);
+      // Reserve width for the origin ↗ affordance when present.
+      const originReserve = t.origin !== undefined ? 3 + arrowWidth : 0;
+      const label = shortenLabel(text, Math.max(0, taskWidth - linkReserve - originReserve), caps.unicode);
       const g = paint(statusGlyph(tone, caps), tone, caps);
       const affordances = affs
         .map((x) => paint(`${hyperlink(x.label, x.url, caps)}${arrow}`, "ident", caps))
         .join("  ");
-      const tail = affs.length > 0 ? `   ${affordances}` : "";
-      lines.push(`  ${g} ${label}${tail}`);
+      const inlineTail = affs.length > 0 ? `   ${affordances}` : "";
+      const originTail =
+        t.origin !== undefined
+          ? `   ${paint(hyperlink(arrow, originUrl(t.origin, vault), caps), "ident", caps)}`
+          : "";
+      lines.push(`  ${g} ${label}${inlineTail}${originTail}`);
     };
 
     const OVERDUE_CAP = 6;

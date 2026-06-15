@@ -167,7 +167,7 @@ function loadFirstPartyProcessors(): ReadonlyArray<ManifestProcessor> {
  * A trailing negation does not exempt — "Append each run summary to log.md
  * and never skip it" fails the fence.
  */
-const NEGATIVE_CUE = /never|nothing|frozen|read-only|generated/i;
+const NEGATIVE_CUE = /never|nothing|frozen|read-only|generated|do not|don't/i;
 const REGISTRY_MENTION = /log\.md|index(?:\.md| files?)/i;
 
 function isExemptMention(line: string, matchIndex: number, matchText: string): boolean {

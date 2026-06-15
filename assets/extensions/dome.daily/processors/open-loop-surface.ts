@@ -215,7 +215,7 @@ export function reconcileSettledOpenLoops(input: {
     const wantBody = reconcileBodyKey(target.body);
     const matches = actionItemsFromMarkdown(current).filter(
       (item) =>
-        item.origin === "checkbox" &&
+        item.kind === "checkbox" &&
         !consumed.has(item.line) &&
         reconcileBodyKey(item.body) === wantBody,
     );

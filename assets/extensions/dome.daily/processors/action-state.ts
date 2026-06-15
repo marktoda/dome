@@ -22,9 +22,11 @@ import { type DailyDate, type DailyOpenLoopSource, type DailyPathSettings } from
 import { openLoopIdentity, openLoopSurfaceKey, openSourceBackedOpenLoopsFromMarkdown } from "./open-loop-surface";
 
 import { compareStrings } from "../../../../src/core/compare";
-
+// Fact values are clean semantic bodies. Origin is carried by a parallel
+// dome.daily.task_origin fact, correlated by the task's stableId.
 export const OPEN_TASK_PREDICATE = "dome.daily.open_task";
 export const FOLLOWUP_PREDICATE = "dome.daily.followup";
+export const TASK_ORIGIN_PREDICATE = "dome.daily.task_origin";
 
 export type DailyActionState = {
   readonly date: string;
@@ -89,6 +91,8 @@ export type DailyTaskItem = {
   readonly attention: DailyTaskAttention | null;
   readonly evidenceLabel: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
+  /** Decoded URL/path from an inline `([↗](target))` origin marker, if present. */
+  readonly origin?: string;
 };
 
 export type DailyTaskAttention = {
@@ -215,6 +219,15 @@ export async function collectDailyActionState(
   const followupFacts = uniqueFactsByKey(ctx.projection.facts({
     predicate: FOLLOWUP_PREDICATE,
   }));
+  const originFacts = uniqueFactsByKey(ctx.projection.facts({
+    predicate: TASK_ORIGIN_PREDICATE,
+  }));
+  const originByStableId = new Map<string, string>();
+  for (const f of originFacts) {
+    const sid = f.sourceRefs[0]?.stableId;
+    const url = f.object.kind === "string" ? f.object.value : undefined;
+    if (sid !== undefined && url !== undefined) originByStableId.set(sid, url);
+  }
   const questionEffects = ctx.projection
     .questions({ resolved: false })
     .filter((question) => question.idempotencyKey.startsWith("dome.daily."));
@@ -243,6 +256,7 @@ export async function collectDailyActionState(
         dailyPath: path,
         sourceLastChangedAt,
         attentionDiscounts,
+        originByStableId,
       })
     ),
   ].sort(compareTaskItemsForDaily(path, settings));
@@ -255,6 +269,7 @@ export async function collectDailyActionState(
         dailyPath: path,
         sourceLastChangedAt,
         attentionDiscounts,
+        originByStableId,
       })
     ),
   ].sort(compareTaskItemsForDaily(path, settings));
@@ -409,16 +424,21 @@ function taskItemFromFact(input: {
   readonly dailyPath: string;
   readonly sourceLastChangedAt: ReadonlyMap<string, string>;
   readonly attentionDiscounts: ReadonlyMap<string, AttentionDiscount>;
+  readonly originByStableId: ReadonlyMap<string, string>;
 }): DailyTaskItem {
   const { fact } = input;
   const ref = fact.sourceRefs[0];
   const path = factSourcePath(fact);
-  const rawText = literalToString(fact.object);
-  const metadata = taskMetadata(rawText);
+  // The fact value is a clean semantic body (no origin marker).
+  const body = literalToString(fact.object);
+  // Correlate origin via the parallel dome.daily.task_origin fact using stableId.
+  const sid = ref?.stableId;
+  const origin = sid !== undefined ? input.originByStableId.get(sid) : undefined;
+  const metadata = taskMetadata(body);
   const line = ref?.range?.startLine ?? null;
   const sourceRefs = Object.freeze([...fact.sourceRefs]);
   return Object.freeze({
-    text: taskDisplayText(rawText),
+    text: taskDisplayText(body),
     path,
     line,
     source: sourceForPath(path, input.dailyPath),
@@ -428,10 +448,11 @@ function taskItemFromFact(input: {
     lastChangedAt: input.sourceLastChangedAt.get(path) ?? null,
     attention: taskAttention(input.attentionDiscounts, {
       sourcePath: path,
-      body: rawText,
+      body,
     }),
     evidenceLabel: actionEvidenceLabel({ path, line, sourceRefs }),
     sourceRefs,
+    ...(origin !== undefined ? { origin } : {}),
   });
 }
 
@@ -473,6 +494,7 @@ function taskItemFromDailySurface(input: {
       sourceRefs,
     }),
     sourceRefs,
+    ...(input.item.origin !== undefined ? { origin: input.item.origin } : {}),
   });
 }
 
@@ -696,6 +718,9 @@ function mergeDailyTaskItems(
       sourceRefs,
     }),
     sourceRefs,
+    ...((primary.origin ?? duplicate.origin) !== undefined
+      ? { origin: primary.origin ?? duplicate.origin }
+      : {}),
   });
 }
 

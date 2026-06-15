@@ -1246,6 +1246,54 @@ describe("parseSlackDigest (defensive)", () => {
     expect(digest.mentions[0]!.text.length).toBe(240);
     expect(digest.mentions[0]!.text.endsWith("…")).toBe(true);
   });
+
+  test("parses an optional trailing permalink autolink on a slack entry", () => {
+    const d = parseSlackDigest(
+      '---\ntype: slack-day\ndate: 2026-06-15\n---\n\n## Mentions\n\n- [#dome-dev] 22:41 alice: "look?" <https://uniswap.slack.com/archives/C0/p1>\n',
+    );
+    expect(d.mentions[0]!.permalink).toBe(
+      "https://uniswap.slack.com/archives/C0/p1",
+    );
+  });
+
+  test("permalink is stripped from the entry text (text excludes the URL)", () => {
+    const d = parseSlackDigest(
+      '## Mentions\n\n- [#dome-dev] 22:41 alice: "look?" <https://uniswap.slack.com/archives/C0/p1>\n',
+    );
+    expect(d.mentions[0]!.text).toBe('alice: "look?"');
+    expect(d.mentions[0]!.text).not.toContain("https://");
+  });
+
+  test("an entry without a permalink has undefined permalink (back-compat)", () => {
+    const d = parseSlackDigest('## Mentions\n\n- [#dome-dev] 22:41 alice: "look?"\n');
+    expect(d.mentions[0]!.permalink).toBeUndefined();
+  });
+
+  test("permalink cap applies to non-permalink text (permalink itself is not counted)", () => {
+    const long = "x".repeat(500);
+    const digest = parseSlackDigest(
+      ["## Mentions", `- ${long} <https://uniswap.slack.com/archives/C0/p1>`].join("\n"),
+    );
+    expect(digest.mentions[0]!.text.length).toBe(240);
+    expect(digest.mentions[0]!.permalink).toBe(
+      "https://uniswap.slack.com/archives/C0/p1",
+    );
+  });
+
+  test("permalink works in all three sections (dms, channels)", () => {
+    const d = parseSlackDigest(
+      [
+        "## Direct messages",
+        '- [DM] 08:00 bob: "hey" <https://uniswap.slack.com/archives/DM/p2>',
+        "## Channels",
+        "- [#general] summary <https://uniswap.slack.com/archives/C1/p3>",
+      ].join("\n"),
+    );
+    expect(d.dms[0]!.permalink).toBe("https://uniswap.slack.com/archives/DM/p2");
+    expect(d.channels[0]!.permalink).toBe(
+      "https://uniswap.slack.com/archives/C1/p3",
+    );
+  });
 });
 
 // ----- Slack digest consumption (wired) ---------------------------------------

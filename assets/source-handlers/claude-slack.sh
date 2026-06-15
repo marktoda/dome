@@ -113,9 +113,13 @@ $d, and output ONLY that document, NOTHING else. Exact shape: a YAML \
 frontmatter block with 'type: slack-day' and 'date: $d', then '# Slack $d', \
 then up to three sections — '## Mentions', '## Direct messages', \
 '## Channels' — each holding one '- ' list item per line shaped like \
-'- [#channel] HH:MM author: \"message\"' (use '[DM]' instead of '[#channel]' \
-for direct messages; under '## Channels' a one-line activity summary per \
-channel is fine). OMIT empty sections entirely, keep every item to one line, \
+'- [#channel] HH:MM author: \"message\" <permalink>' where <permalink> is the \
+Slack message permalink (obtain via chat.getPermalink or the connector's \
+message-link affordance) in angle-bracket autolink form, e.g. \
+'<https://<workspace>.slack.com/archives/<C…>/p<…>>'; omit the autolink only \
+when no permalink is available. Use '[DM]' instead of '[#channel]' for direct \
+messages; under '## Channels' a one-line activity summary per channel is fine. \
+OMIT empty sections entirely, keep every item to one line, \
 and cap the whole digest at roughly 30 items. If there is nothing to report, \
 emit the frontmatter and heading only. Do not wrap the output in code \
 fences." > "$tmp"

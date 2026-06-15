@@ -472,4 +472,46 @@ describe("dome.agent.ingest", () => {
       "- [ ] #task reply to Jane ([↗](inbox/processed/2026-06-08-jane.md))",
     );
   });
+
+  test("a capture with a source_url stamps the slack permalink as the task origin", async () => {
+    const raw = "inbox/raw/2026-06-08-jane.md";
+    const expectedDate = formatDate(localDateParts(new Date("2026-06-08T12:00:00Z")));
+    const dailyP = `wiki/dailies/${expectedDate}.md`;
+    const ctx = makeCtx({
+      files: { [raw]: "---\nsource_url: https://uniswapteam.slack.com/archives/C0/p1\n---\n\nreply to Jane" },
+      changedPaths: [raw],
+      steps: [
+        { toolCalls: [
+          { id: "1", name: "appendToPage", input: { path: dailyP, content: "- [ ] #task reply to Jane" } },
+          { id: "2", name: "archiveSource", input: { rawPath: raw } },
+        ] },
+        { text: "ingested" },
+      ],
+    });
+    const effects = await ingest.run(ctx);
+    const patch = effects.find((e) => e.kind === "patch") as PatchEffect;
+    const daily = patch.changes.find((c) => String(c.path) === dailyP)!;
+    expect(String(daily.content)).toContain("([↗](https://uniswapteam.slack.com/archives/C0/p1))");
+  });
+
+  test("a plain capture (no source_url) still stamps the archived-capture backlink", async () => {
+    const raw = "inbox/raw/2026-06-08-radiator.md";
+    const expectedDate = formatDate(localDateParts(new Date("2026-06-08T12:00:00Z")));
+    const dailyP = `wiki/dailies/${expectedDate}.md`;
+    const ctx = makeCtx({
+      files: { [raw]: "call the landlord about the radiator" },
+      changedPaths: [raw],
+      steps: [
+        { toolCalls: [
+          { id: "1", name: "appendToPage", input: { path: dailyP, content: "- [ ] #task call the landlord" } },
+          { id: "2", name: "archiveSource", input: { rawPath: raw } },
+        ] },
+        { text: "ingested" },
+      ],
+    });
+    const effects = await ingest.run(ctx);
+    const patch = effects.find((e) => e.kind === "patch") as PatchEffect;
+    const daily = patch.changes.find((c) => String(c.path) === dailyP)!;
+    expect(String(daily.content)).toContain("([↗](inbox/processed/2026-06-08-radiator.md))");
+  });
 });

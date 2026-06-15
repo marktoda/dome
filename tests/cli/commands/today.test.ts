@@ -760,3 +760,34 @@ describe("formatTodayResult grouping + links", () => {
     expect(q[shown.length]).toBe(" "); // the cut fell on a word boundary
   });
 });
+
+describe("today renders task origin as one affordance", () => {
+  const caps = { color: false, unicode: true, width: 80, hyperlinks: true } as const;
+  const doc = (over = {}) => ({
+    date: "2026-06-15",
+    openTasks: [
+      { text: "reply to Jane re: pricing", path: "p", line: 1, dueDate: "2026-06-13", origin: "https://slk/p1" },
+      { text: "fix the radiator", path: "p", line: 2, dueDate: "2026-06-13", origin: "inbox/processed/2026-06-14-radiator.md" },
+    ],
+    followups: [], questions: [], counts: { openTasks: 2, followups: 0, questions: 0 },
+    hero: null, brief: null, calendar: null, ...over,
+  });
+  test("a URL origin renders one ↗ hyperlink to the URL", () => {
+    const out = formatTodayResult(doc(), caps, "/v/work");
+    expect(out).toContain("\x1b]8;;https://slk/p1\x1b\\↗\x1b]8;;\x1b\\");
+  });
+  test("a vault-path origin renders a file:// ↗ hyperlink", () => {
+    const out = formatTodayResult(doc(), caps, "/v/work");
+    expect(out).toContain("file:///v/work/inbox/processed/2026-06-14-radiator.md");
+  });
+  test("no origin → no affordance", () => {
+    const out = formatTodayResult(doc({ openTasks: [{ text: "bare task", path: "p", line: 1, dueDate: "2026-06-13" }], counts: { openTasks: 1, followups: 0, questions: 0 } }), caps, "/v/work");
+    const line = out.split("\n").find((l) => l.includes("bare task"))!;
+    expect(line).not.toContain("↗");
+  });
+  test("origin affordance never pushes a line past caps.width", () => {
+    const narrow = { color: false, unicode: true, width: 50, hyperlinks: true } as const;
+    const out = formatTodayResult(doc(), narrow, "/v/work");
+    for (const line of out.split("\n")) expect(visibleWidth(line)).toBeLessThanOrEqual(narrow.width);
+  });
+});

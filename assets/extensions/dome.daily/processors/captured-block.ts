@@ -10,8 +10,6 @@ import {
   fencedCodeBlockLineRanges,
   frontmatterLineRange,
 } from "../../../../src/core/markdown-scan";
-import { parseBlockAnchor } from "../../../../src/core/block-anchor";
-
 import {
   DAILY_OWNER,
   CAPTURED_BLOCK,
@@ -27,6 +25,7 @@ import {
   isObsidianTasksDashboard,
   lineIsInsideRanges,
 } from "./action-extraction";
+export { appendOriginMarker, ORIGIN_MARKER_RE } from "./action-extraction";
 
 // ----- Captured today (the live capture landing zone) -----------------------
 //
@@ -78,35 +77,6 @@ export function isCapturedTaskLine(line: string): boolean {
   if (containsHtmlCommentDelimiter(line)) return false;
   if (SOURCE_BACKED_SUFFIX_RE.test(line)) return false;
   return true;
-}
-
-/**
- * Detects an already-present inline origin marker by its opening syntax
- * `([↗](` — independent of the target's content, so idempotency holds even
- * when the target is an external URL that may contain `)`. Keyed on the `↗`
- * (U+2197) marker shape, never on the target.
- */
-export const ORIGIN_MARKER_RE = /\(\[↗\]\(/;
-
-/**
- * Stamp the inline task-origin marker ` ([↗](target))` onto a captured task
- * line, placed after the description and before any trailing block anchor (so
- * `dome.daily.stamp-block-id` / `normalize-task-syntax` keep the anchor as the
- * trailing token). Idempotent: a line already carrying a marker, or an empty
- * target, is returned unchanged. `target` is any string — a vault-relative
- * path (Phase 1) or an external URL (Phase 2) — so the seam serves both
- * origins with one grammar. Spec: [[wiki/specs/daily-surface]] §"The ingest
- * tool seam".
- * Callers passing a target that may contain `)` (a future external URL)
- * should percent-encode it first; vault paths never contain `)`.
- */
-export function appendOriginMarker(line: string, target: string): string {
-  if (target === "" || ORIGIN_MARKER_RE.test(line)) return line;
-  const parsed = parseBlockAnchor(line);
-  if (parsed !== null) {
-    return `${parsed.withoutAnchor} ([↗](${target})) ^${parsed.id}`;
-  }
-  return `${line.trimEnd()} ([↗](${target}))`;
 }
 
 /**
