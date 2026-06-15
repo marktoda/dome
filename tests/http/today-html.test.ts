@@ -125,6 +125,15 @@ describe("renderTodayHtml", () => {
     expect(html).toContain("Make the routing decision");
   });
 
+  test("web hero shows the overdue day count", () => {
+    const html = renderTodayHtml(
+      { ...base, date: "2026-06-14",
+        hero: { kind: "task", item: { text: "x", path: "p", line: 1, dueDate: "2026-06-10" } } },
+      { refreshSeconds: 15 },
+    );
+    expect(html).toMatch(/overdue\s*4d/);
+  });
+
   test("escapes HTML in interpolated content", () => {
     const html = renderTodayHtml(
       { ...base, brief: { text: "<script>x</script>", sourceRef: ref } },

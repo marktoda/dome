@@ -11,7 +11,7 @@ export type TodayHtmlOptions = {
 };
 
 import { BASEL_BOOK_WOFF2_B64, BASEL_MEDIUM_WOFF2_B64 } from "./today-fonts";
-import { parseTodayView, type TodayTaskRow, type TodayQuestionRow, type TodayCalendarEvent, type TodayHeroItem } from "../surface/today-view";
+import { addDays, daysBetween, parseTodayView, type TodayTaskRow, type TodayQuestionRow, type TodayCalendarEvent, type TodayHeroItem } from "../surface/today-view";
 
 // Self-contained @font-face: the design's Basel Grotesk (Book 485 / Medium 535),
 // base64-embedded so the page needs no external font requests. Mono stays the
@@ -461,7 +461,7 @@ function renderHeroHtml(hero: TodayHeroItem, today: string): string {
     let urgencyHtml = "";
     if (item.dueDate !== null) {
       if (item.dueDate < today) {
-        urgencyHtml = `<span class="hero-urgency">overdue</span>`;
+        urgencyHtml = `<span class="hero-urgency">overdue ${daysBetween(item.dueDate, today)}d</span>`;
       } else if (item.dueDate === today) {
         urgencyHtml = `<span class="hero-urgency warn">due today</span>`;
       } else {
@@ -532,21 +532,6 @@ function renderQuestionsHtml(questions: ReadonlyArray<TodayQuestionRow>): string
     <div class="section-label">Dome needs you</div>
     ${itemsHtml}
   </div>`;
-}
-
-/**
- * Add N calendar days to an ISO date string (YYYY-MM-DD).
- * Uses plain arithmetic: no Date object needed, handles month/year rollover
- * by using Date.UTC which normalises the overflow correctly.
- */
-function addDays(isoDate: string, days: number): string {
-  const [y, m, d] = isoDate.split("-").map(Number) as [number, number, number];
-  const ts = Date.UTC(y, m - 1, d + days);
-  const dt = new Date(ts);
-  const yy = dt.getUTCFullYear();
-  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(dt.getUTCDate()).padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
 }
 
 function renderStillOpenHtml(

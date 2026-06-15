@@ -192,6 +192,40 @@ function parseHero(raw: unknown): TodayHeroItem | null {
   return null;
 }
 
+// ── Date helpers ────────────────────────────────────────────────────────────
+// One cluster of YYYY-MM-DD arithmetic, shared by both surfaces. UTC-based so
+// there is no DST / local-timezone off-by-one (2026-06-10 → 2026-06-14 == 4).
+
+/** Add N calendar days to an ISO date string (YYYY-MM-DD). */
+export function addDays(isoDate: string, days: number): string {
+  const [y, m, d] = isoDate.split("-").map(Number) as [number, number, number];
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+/**
+ * Whole calendar days from `earlier` to `later` (both "YYYY-MM-DD").
+ * UTC midnight diff — no off-by-one. Returns 0 if equal/reversed/unparseable.
+ */
+export function daysBetween(earlier: string, later: string): number {
+  const [ay, am, ad] = earlier.split("-").map(Number);
+  const [by, bm, bd] = later.split("-").map(Number);
+  if (
+    ay === undefined || am === undefined || ad === undefined ||
+    by === undefined || bm === undefined || bd === undefined ||
+    [ay, am, ad, by, bm, bd].some((n) => Number.isNaN(n))
+  ) {
+    return 0;
+  }
+  const a = Date.UTC(ay, am - 1, ad);
+  const b = Date.UTC(by, bm - 1, bd);
+  if (b <= a) return 0;
+  return Math.round((b - a) / 86_400_000);
+}
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v);
 }

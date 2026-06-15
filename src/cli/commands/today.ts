@@ -32,7 +32,7 @@ import {
   type Caps,
   type Tone,
 } from "../presenter";
-import { parseTodayView, type TodayTaskRow } from "../../surface/today-view";
+import { daysBetween, parseTodayView, type TodayTaskRow } from "../../surface/today-view";
 import { resolveVaultPath } from "../../surface/resolve-vault";
 import { EX_USAGE } from "../exit-codes";
 
@@ -354,6 +354,14 @@ export function formatTodayResult(
     lines.push("");
   }
 
+  // All-clear calm body: a quiet two-line state under the verdict header,
+  // not a bare one-liner. (No hero, no list — there is nothing open.)
+  if (isAllClear) {
+    lines.push(`  ${paint(glyph("pending", caps), "muted", caps)} nothing open · inbox empty`);
+    lines.push(`  ${paint("you're clear. go make something.", "muted", caps)}`);
+    lines.push("");
+  }
+
   // Calendar summary line
   if (calendar !== null && calendar.events.length > 0) {
     const n = calendar.events.length;
@@ -430,15 +438,4 @@ export function formatTodayResult(
   }
 
   return lines.join("\n");
-}
-
-/**
- * Number of calendar days from `earlier` to `later` (both "YYYY-MM-DD").
- * Returns 0 if the date strings are equal or unparseable.
- */
-function daysBetween(earlier: string, later: string): number {
-  const a = Date.parse(earlier);
-  const b = Date.parse(later);
-  if (Number.isNaN(a) || Number.isNaN(b) || b <= a) return 0;
-  return Math.round((b - a) / 86_400_000);
 }

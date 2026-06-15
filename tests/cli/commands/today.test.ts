@@ -344,6 +344,17 @@ describe("dome today: Briefing terminal restyle", () => {
     expect(out).not.toContain("dome decide");
   });
 
+  test("terminal all-clear renders the calm two-line body", () => {
+    const out = formatTodayResult(
+      { date: "2026-06-14", openTasks: [], followups: [], questions: [], counts: { openTasks: 0, followups: 0, questions: 0 }, brief: null, calendar: null, hero: null },
+      ASCII_CAPS,
+      "/vault",
+    );
+    expect(out).toMatch(/all clear/);
+    expect(out).toMatch(/nothing open|inbox/i);
+    expect(out).toMatch(/go make something|you're clear/i);
+  });
+
   test("calendar summary line rendered when calendar present", () => {
     const data = {
       date: "2026-06-14",
