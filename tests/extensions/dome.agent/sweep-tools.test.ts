@@ -389,6 +389,15 @@ describe("sweepCharter", () => {
     expect(charter).toContain("frontmatter");
   });
 
+  // Phase B: mint a new claim line for a load-bearing fact (one-per-key discipline)
+  test("claim-mint rule: promote a load-bearing fact to a new claim line", () => {
+    expect(charter).toContain("Promote a load-bearing fact to a new claim line");
+  });
+
+  test("claim-mint rule: preserves the one-claim-per-key discipline", () => {
+    expect(charter).toContain("never add a second line for the same key");
+  });
+
   test("contains the recordUncertainIntegration tool reference", () => {
     expect(charter).toContain("recordUncertainIntegration");
   });

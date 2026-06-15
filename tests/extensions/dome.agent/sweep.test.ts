@@ -249,6 +249,45 @@ describe("dome.agent.sweep", () => {
     expect(refPaths).toContain(DEST);
   });
 
+  test("claim mint: the model promotes a load-bearing fact to a new claim line — the patch carries it", async () => {
+    const updated = [
+      "---",
+      "type: entity",
+      "sources:",
+      '  - "[[wiki/dailies/2026-06-09]]"',
+      "---",
+      "",
+      "# Alice Henshaw",
+      "",
+      "**Status:** lead engineer on hooks *(as of 2026-06-09)*",
+      "",
+      "## 2026-05-20 — first met",
+      "Background chat.",
+      "",
+      "## 2026-06-09 — hooks discussion",
+      "Talked through the capture-hook design.",
+      "",
+    ].join("\n");
+    const ctx = makeCtx({
+      files: BASE_FILES,
+      steps: [
+        {
+          toolCalls: [
+            { id: "1", name: "editDestination", input: { path: DEST, content: updated } },
+          ],
+        },
+        { text: "integrated" },
+      ],
+    });
+    const effects = await sweep.run(ctx);
+    const dossier = patchFor(effects, DEST);
+    expect(dossier).not.toBeNull();
+    // The minted claim line rides through to the emitted PatchEffect content.
+    expect(dossier).toContain("**Status:** lead engineer on hooks *(as of 2026-06-09)*");
+    expect(dossier).toContain("## 2026-06-09 — hooks discussion");
+    expect(dossier).toBe(updated);
+  });
+
   test("settlement enforcement: when the model forgets the sources link, the processor adds it deterministically", async () => {
     const updatedNoSources = [
       "---",
