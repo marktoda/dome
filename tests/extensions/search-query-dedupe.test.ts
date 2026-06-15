@@ -9,7 +9,10 @@
 import { describe, expect, test } from "bun:test";
 
 import exportContext from "../../assets/extensions/dome.search/processors/export-context";
-import searchQuery from "../../assets/extensions/dome.search/processors/query";
+import searchQuery, {
+  factPriority,
+} from "../../assets/extensions/dome.search/processors/query";
+import { CLAIM_PREDICATE } from "../../assets/extensions/dome.search/processors/claims-fact";
 import type { Effect, FactEffect, ViewEffect } from "../../src/core/effect";
 import {
   treeOid,
@@ -144,5 +147,35 @@ describe("dome.search candidate dedupe (FTS hit linked from a top hit)", () => {
       paths.filter((path) => path === DUPLICATED_PATH),
     ).toHaveLength(1);
     expect(new Set(paths).size).toBe(paths.length);
+  });
+});
+
+function fact(predicate: string, value = "{}"): FactEffect {
+  return {
+    kind: "fact",
+    subject: { kind: "page", path: "p.md" },
+    predicate,
+    object: { kind: "string", value },
+    assertion: "extracted",
+    sourceRefs: [],
+  } as unknown as FactEffect;
+}
+
+describe("factPriority — claims", () => {
+  test("claims rank above generic facts and graph facts", () => {
+    const claim = factPriority(
+      fact(CLAIM_PREDICATE, JSON.stringify({ key: "Status", value: "x" })),
+    );
+    expect(claim).toBeLessThan(factPriority(fact("dome.page.description")));
+    expect(claim).toBeLessThan(factPriority(fact("dome.graph.links_to")));
+  });
+
+  test("claims sit in the decision tier, not merely above generic facts", () => {
+    // isSearchDecisionFact keys purely on the dome.daily.decision predicate,
+    // so a bare fact with that predicate is a decision for priority purposes.
+    const claim = factPriority(
+      fact(CLAIM_PREDICATE, JSON.stringify({ key: "Status", value: "x" })),
+    );
+    expect(claim).toBe(factPriority(fact("dome.daily.decision")));
   });
 });

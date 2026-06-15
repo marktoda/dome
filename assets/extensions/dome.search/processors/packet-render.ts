@@ -8,6 +8,7 @@ import type {
   ContextEntry,
   ContextOverview,
 } from "./export-context";
+import { claimLabel } from "./claims-fact";
 
 export const MAX_RELATED_ROWS = 8;
 export const SCHEMA = "dome.search.export-context/v1";
@@ -131,6 +132,14 @@ function renderOverview(lines: string[], overview: ContextOverview): void {
       lines.push(
         `${index + 1}. \`${item.path}\` - ${item.title} (${displayReason})`,
       );
+    }
+    lines.push("");
+  }
+
+  if (overview.claims.length > 0) {
+    lines.push("## Current facts");
+    for (const claim of overview.claims) {
+      lines.push(`- ${claimLabel(claim)} — ${claim.path}`);
     }
     lines.push("");
   }

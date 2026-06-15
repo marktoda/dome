@@ -23,6 +23,7 @@ import type {
 } from "../../../../src/core/processor";
 
 import { compareStrings } from "../../../../src/core/compare";
+import { isClaimFact } from "./claims-fact";
 
 const MAX_SEARCH_CANDIDATES = 51;
 
@@ -95,6 +96,7 @@ export type SearchRankingSignal = {
     | "page-type"
     | "open-loop"
     | "decision"
+    | "claim"
     | "question"
     | "diagnostic"
     | "graph"
@@ -190,6 +192,19 @@ export function rankSearchCandidate(input: SearchRankingInput): SearchRanking {
       count: input.facts.filter(isSearchDecisionFact).length,
       weightPerItem: 5,
       maxWeight: 10,
+    }),
+    // A page carrying claims is a consolidated, load-bearing page. This is a
+    // deliberately small structural nudge (weight 1, cap 3 — the lightest
+    // counted signal, matching the graph signal) layered onto the same signal
+    // sum as decisions/open-loops; claim line text already lives in the FTS
+    // body, so term-matching is covered and this must only NUDGE consolidated
+    // pages up, never dominate FTS relevance.
+    countedSignal({
+      kind: "claim",
+      label: "claim",
+      count: input.facts.filter(isSearchClaimFact).length,
+      weightPerItem: 1,
+      maxWeight: 3,
     }),
     countedSignal({
       kind: "question",
@@ -555,6 +570,16 @@ export function isSearchDecisionFact(
   fact: Pick<FactEffect, "predicate">,
 ): boolean {
   return SEARCH_DECISION_PREDICATE_SET.has(fact.predicate);
+}
+
+/**
+ * True when the fact is a decodable `dome.claims.claim` fact. Unlike the
+ * predicate-only signals, claims carry a JSON object that must parse, so this
+ * guards the optional object and defers the real decode to the shared
+ * `isClaimFact` (no re-decoding here).
+ */
+function isSearchClaimFact(fact: SearchRankingFact): boolean {
+  return fact.object !== undefined && isClaimFact(fact as FactEffect);
 }
 
 function recallRankingSignals(

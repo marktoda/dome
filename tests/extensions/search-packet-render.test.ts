@@ -92,6 +92,7 @@ const OVERVIEW: ContextOverview = Object.freeze({
       sourceRefs: ENTRY.sourceRefs,
     }),
   ]),
+  claims: Object.freeze([]),
   openLoops: Object.freeze([]),
   decisions: Object.freeze([]),
   unresolvedQuestions: Object.freeze([]),

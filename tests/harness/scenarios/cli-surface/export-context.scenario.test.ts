@@ -305,6 +305,143 @@ scenario(
 
 scenario(
   {
+    name:
+      "cli-surface: dome export-context surfaces a Current facts (claims) section",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "search-document" },
+      { kind: "effect", effect: "fact" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "capability", capability: "search.write" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+    ],
+    harness: {
+      bundles: ["dome.markdown", "dome.search", "dome.claims"],
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/projects/atlas.md":
+          "---\n" +
+          "type: project\n" +
+          "---\n" +
+          "# Atlas\n\n" +
+          "The atlas launch is underway.\n\n" +
+          // Two Status claims for the SAME key at DIFFERENT as-of dates. The
+          // overview dedupe must keep exactly the NEWER one (latest-as-of
+          // supersession), exercising the claimIsNewer === true replace path.
+          "- **Status:** kicked off *(as of 2026-05-01)* ^cAAAA\n" +
+          "- **Status:** in design review *(as of 2026-06-12)* ^cBBBB\n" +
+          "- **Owner:** [[danny]] ^cCCCC\n",
+        // A same-key (Status) claim on a DIFFERENT page survives as its own
+        // row — dedupe is keyed by (path, key), not key alone.
+        "wiki/projects/atlas-sidecar.md":
+          "---\n" +
+          "type: project\n" +
+          "---\n" +
+          "# Atlas Sidecar\n\n" +
+          "The atlas sidecar tracks a parallel workstream.\n\n" +
+          "- **Status:** blocked on review *(as of 2026-06-10)* ^cDDDD\n",
+      },
+      message: "add atlas claims page",
+    });
+    const sync = await h.tick();
+    expect(sync.adopted).toBe(true);
+
+    const text = await h.runCli(["export-context", "atlas"]);
+    expect(text.exitCode).toBe(0);
+    expect(text.stderr).toBe("");
+    // The "Current facts" section surfaces the page's dated claim facts up
+    // front, one line per (path, key) at the latest as-of. The decoder strips
+    // the claim-index's inline `*(as of …)*` marker so the value is clean, and
+    // claimLabel() appends a single structured `(as of …)` stamp — no doubling.
+    expect(text.stdout).toContain("## Current facts");
+    expect(text.stdout).toContain(
+      "Status: in design review (as of 2026-06-12) — wiki/projects/atlas.md",
+    );
+    // The superseded (older) Status value must not appear as a Current facts
+    // row. (The raw page body still echoes it in the Matches blockquote — that
+    // is the unprocessed source, not the deduped overview bucket — so we scope
+    // this assertion to the "## Current facts" section.)
+    const currentFactsSection = text.stdout.slice(
+      text.stdout.indexOf("## Current facts"),
+      // up to the next top-level section heading
+      text.stdout.indexOf("## Active Diagnostics"),
+    );
+    expect(currentFactsSection).toContain(
+      "Status: in design review (as of 2026-06-12) — wiki/projects/atlas.md",
+    );
+    expect(currentFactsSection).not.toContain("kicked off");
+    expect(currentFactsSection).not.toContain("as of 2026-05-01");
+
+    const json = await h.runCli(["export-context", "atlas", "--json"]);
+    expect(json.exitCode).toBe(0);
+    expect(json.stderr).toBe("");
+    const payload = JSON.parse(json.stdout) as {
+      readonly overview: {
+        readonly claims: ReadonlyArray<{
+          readonly path: string;
+          readonly key: string;
+          readonly value: string;
+          readonly asOf: string | null;
+        }>;
+      };
+    };
+
+    // Latest-as-of supersession: exactly ONE Status row for the atlas page,
+    // and it is the NEWER claim (in design review @ 2026-06-12), not the
+    // older one (kicked off @ 2026-05-01).
+    const atlasStatusRows = payload.overview.claims.filter((claim) =>
+      claim.path === "wiki/projects/atlas.md" && claim.key === "Status"
+    );
+    expect(atlasStatusRows).toHaveLength(1);
+    expect(atlasStatusRows[0]).toEqual(
+      expect.objectContaining({
+        path: "wiki/projects/atlas.md",
+        key: "Status",
+        value: "in design review",
+        asOf: "2026-06-12",
+      }),
+    );
+    expect(payload.overview.claims).not.toContainEqual(
+      expect.objectContaining({
+        path: "wiki/projects/atlas.md",
+        key: "Status",
+        value: "kicked off",
+      }),
+    );
+    expect(payload.overview.claims).toContainEqual(
+      expect.objectContaining({
+        path: "wiki/projects/atlas.md",
+        key: "Owner",
+        value: "[[danny]]",
+        asOf: null,
+      }),
+    );
+
+    // A same-key (Status) claim on a DIFFERENT page survives as its own row —
+    // dedupe identity is (path, key), so it is not collapsed into atlas's row.
+    expect(payload.overview.claims).toContainEqual(
+      expect.objectContaining({
+        path: "wiki/projects/atlas-sidecar.md",
+        key: "Status",
+        value: "blocked on review",
+        asOf: "2026-06-10",
+      }),
+    );
+  },
+);
+
+scenario(
+  {
     name: "cli-surface: dome export-context recalls current daily surface for daily-intent packets",
     tags: [
       { kind: "group", group: "cli-surface" },

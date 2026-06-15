@@ -20,6 +20,7 @@ import {
   uniqueSourceRefs,
 } from "./related";
 import { searchFactObjectLabel } from "./labels";
+import { isClaimFact } from "./claims-fact";
 import {
   dailySurfaceRecallSignalsForTopic,
   filterDailyIntentSearchMatches,
@@ -364,9 +365,10 @@ function compareFacts(a: FactEffect, b: FactEffect): number {
     compareStrings(searchFactObjectLabel(a), searchFactObjectLabel(b));
 }
 
-function factPriority(fact: FactEffect): number {
+export function factPriority(fact: FactEffect): number {
   if (isSearchOpenLoopFact(fact)) return 0;
   if (isSearchDecisionFact(fact)) return 1;
+  if (isClaimFact(fact)) return 1; // load-bearing; tie with decisions, break by predicate/label
   if (isGraphFact(fact)) return 3;
   return 2;
 }

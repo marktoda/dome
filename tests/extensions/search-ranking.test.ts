@@ -100,6 +100,59 @@ describe("dome.search ranking", () => {
     ]);
   });
 
+  test("claim-bearing pages get a modest additive nudge over claim-less ones", () => {
+    const baseInput = {
+      match: match({ path: "wiki/projects/platform.md", rank: 2, type: "project" }),
+      diagnostics: [] as const,
+      questions: [] as const,
+    };
+    const withClaims = rankSearchCandidate({
+      ...baseInput,
+      facts: [
+        claimFact({ key: "Status", value: "shipping" }),
+        claimFact({ key: "Owner", value: "danny" }),
+      ],
+    });
+    const withoutClaims = rankSearchCandidate({
+      ...baseInput,
+      facts: [],
+    });
+
+    expect(withClaims.score).toBeGreaterThan(withoutClaims.score);
+    expect(withClaims.signals.some((s) => s.kind === "claim")).toBe(true);
+  });
+
+  test("the claim signal is capped at weight 3 (4 claims do not exceed it)", () => {
+    const ranking = rankSearchCandidate({
+      match: match({ path: "wiki/projects/platform.md", rank: 2, type: null }),
+      facts: [
+        claimFact({ key: "Status", value: "shipping" }),
+        claimFact({ key: "Owner", value: "danny" }),
+        claimFact({ key: "Stage", value: "ga" }),
+        claimFact({ key: "Risk", value: "low" }),
+      ],
+      diagnostics: [],
+      questions: [],
+    });
+    const signal = ranking.signals.find((s) => s.kind === "claim");
+    expect(signal?.count).toBe(4);
+    expect(signal?.weight).toBe(3); // cap = 3
+  });
+
+  test("the claim signal contributes weight-per-item below the cap (2 claims → 2)", () => {
+    const ranking = rankSearchCandidate({
+      match: match({ path: "wiki/projects/platform.md", rank: 2, type: null }),
+      facts: [
+        claimFact({ key: "Status", value: "shipping" }),
+        claimFact({ key: "Owner", value: "danny" }),
+      ],
+      diagnostics: [],
+      questions: [],
+    });
+    const signal = ranking.signals.find((s) => s.kind === "claim");
+    expect(signal?.weight).toBe(2);
+  });
+
   test("sorts boosted matches ahead of weaker FTS-only matches", () => {
     const ftsOnly = {
       path: "wiki/fts-only.md",
@@ -481,6 +534,16 @@ function match(input: {
 
 function fact(predicate: string): Pick<FactEffect, "predicate"> {
   return Object.freeze({ predicate });
+}
+
+function claimFact(claim: { readonly key: string; readonly value: string }): {
+  readonly predicate: string;
+  readonly object: { readonly kind: "string"; readonly value: string };
+} {
+  return Object.freeze({
+    predicate: "dome.claims.claim",
+    object: { kind: "string" as const, value: JSON.stringify(claim) },
+  });
 }
 
 function statusFact(value: string): {
