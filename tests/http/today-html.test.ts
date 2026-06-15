@@ -260,7 +260,27 @@ describe("dome today: web still-open true totals", () => {
     expect(html).toMatch(/class="still-open-count"[^>]*>\s*50\s*</);
     // An overflow affordance (+ N more, later) should be present in the still-open section
     // The chip renders as <span>+</span><span>N more, later</span> — no leading + in label text
-    expect(html).toMatch(/\d+ more, later/);
+    // 6 undated rows shown inline + chip must equal trueCount=50 → chip reads exactly "44 more, later".
+    expect(html).toContain("44 more, later");
+    expect(html).not.toContain("50 more, later");
+  });
+
+  test("still-open fallback (all later) chip does not double-count shown items", () => {
+    // 6 undated tasks shown inline, true total 50 → chip must read exactly "44 more, later", never 50
+    const html = renderTodayHtml(
+      {
+        ...base,
+        date: "2026-06-14",
+        hero: null,
+        openTasks: Array.from({ length: 6 }, (_, i) => ({ text: `t${i}`, path: "p", line: i + 1, dueDate: null })),
+        followups: [],
+        questions: [],
+        counts: { openTasks: 50, followups: 0, questions: 0 },
+      },
+      { refreshSeconds: 15 },
+    );
+    expect(html).toContain("44 more, later");
+    expect(html).not.toContain("50 more, later");
   });
 });
 
@@ -283,6 +303,8 @@ describe("dome today: still-open urgency grouping", () => {
     expect(html).not.toContain("+ +");
     // chip renders as "+ N more, later" (icon span + count, no leading + in label)
     expect(html).toMatch(/<span>\+<\/span><span>\d+ more, later<\/span>/);
+    // trueCount=5, shown inline = overdue(1)+today(1)+thisWeek(1) = 3 → chip exactly "2 more, later"
+    expect(html).toContain("2 more, later");
   });
   test("all overdue → only the overdue group, no empty today/this-week headers", () => {
     const mk = (t: string, due: string) => ({ text: t, path: "p", line: 1, dueDate: due });

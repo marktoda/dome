@@ -577,13 +577,6 @@ function renderStillOpenHtml(
   const thisWeek = items.filter(
     (t) => t.dueDate !== null && t.dueDate > today && t.dueDate <= weekBound,
   );
-  const laterItems = items.filter(
-    (t) => t.dueDate === null || t.dueDate > weekBound,
-  );
-
-  // trueCount is the total non-hero tasks from counts.*; items may be capped.
-  // laterChipCount = later items in the received list + the unseen tail.
-  const laterChipCount = laterItems.length + Math.max(0, trueCount - items.length);
 
   function renderItem(t: TodayTaskRow): string {
     const glyph = taskGlyph(t, today);
@@ -614,10 +607,6 @@ function renderStillOpenHtml(
   const todayHtml = renderBucket("today", "bucket-today", todayItems);
   const thisWeekHtml = renderBucket("this week", "bucket-week", thisWeek);
 
-  const chipHtml = laterChipCount > 0
-    ? `<div class="still-open-more"><span>+</span><span>${laterChipCount} more, later</span></div>`
-    : "";
-
   // Fall back to a flat list if all items are in the "later" bucket (no urgent items)
   // — this keeps the chip intact but still shows a flat list for the common case where
   // all displayed items are undated/far-future and only the chip is rendered.
@@ -629,6 +618,18 @@ function renderStillOpenHtml(
   const gridOrBuckets = hasUrgentContent
     ? itemsHtml
     : `<div class="still-open-grid">${itemsHtml}</div>`;
+
+  // Derive the chip from what is actually rendered inline so the two branches can't
+  // disagree with the header: (items shown inline) + chipCount === trueCount.
+  // urgent branch shows only the overdue/today/this-week buckets; fallback shows all items.
+  const shownInline = hasUrgentContent
+    ? overdue.length + todayItems.length + thisWeek.length
+    : items.length;
+  const chipCount = Math.max(0, trueCount - shownInline);
+
+  const chipHtml = chipCount > 0
+    ? `<div class="still-open-more"><span>+</span><span>${chipCount} more, later</span></div>`
+    : "";
 
   return `<div class="still-open-header">
     <span class="section-label" style="margin-bottom:0">Still open</span>
