@@ -234,6 +234,17 @@ export function appendToPageTool(
   };
 }
 
+/**
+ * The deterministic raw→processed archive-path rewrite. Returns null for
+ * paths outside `inbox/raw/` (the only sources `archiveSource` moves).
+ * Shared by `archiveSourceTool` and ingest's per-source origin stamping so
+ * the marker target and the archive destination can never disagree.
+ */
+export function archivedCapturePath(rawPath: string): string | null {
+  if (!rawPath.startsWith("inbox/raw/")) return null;
+  return rawPath.replace(/^inbox\/raw\//, "inbox/processed/");
+}
+
 export function archiveSourceTool(
   reader: VaultReader,
   writable: WritablePaths,
@@ -248,10 +259,10 @@ export function archiveSourceTool(
       const { rawPath } = input as { rawPath: string };
       // Outside inbox/raw/ the processed-path rewrite is a no-op and the
       // write+delete on the SAME key would net out to deleting the source.
-      if (!rawPath.startsWith("inbox/raw/")) {
+      const processedPath = archivedCapturePath(rawPath);
+      if (processedPath === null) {
         return `error: archiveSource only archives inbox/raw/ sources; got ${rawPath}.`;
       }
-      const processedPath = rawPath.replace(/^inbox\/raw\//, "inbox/processed/");
       const denial =
         writeDenial(processedPath, writable) ?? writeDenial(rawPath, writable);
       if (denial !== null) return denial;

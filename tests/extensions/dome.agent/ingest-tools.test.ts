@@ -9,6 +9,7 @@ import { renderDailySkeleton } from "../../../assets/extensions/dome.daily/proce
 import { CAPTURED_END, CAPTURED_START } from "../../../assets/extensions/dome.daily/processors/daily-types";
 import { makeIngestTools } from "../../../assets/extensions/dome.agent/lib/ingest-tools";
 import type { AgentRunState } from "../../../assets/extensions/dome.agent/lib/agent-loop";
+import { archivedCapturePath } from "../../../assets/extensions/dome.agent/lib/vault-tools";
 
 function freshState(): AgentRunState {
   return { edits: new Map(), questions: [] };
@@ -433,5 +434,18 @@ describe("ingest captured-tasks daily seam", () => {
       state,
     );
     expect(out).toBe(`appended to ${TODAY_PATH}`);
+  });
+});
+
+describe("archivedCapturePath", () => {
+  test("rewrites inbox/raw to inbox/processed, preserving the basename", () => {
+    expect(archivedCapturePath("inbox/raw/2026-06-14-jane.md")).toBe(
+      "inbox/processed/2026-06-14-jane.md",
+    );
+  });
+
+  test("returns null for paths outside inbox/raw", () => {
+    expect(archivedCapturePath("wiki/concepts/a.md")).toBeNull();
+    expect(archivedCapturePath("inbox/processed/x.md")).toBeNull();
   });
 });
