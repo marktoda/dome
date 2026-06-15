@@ -33,10 +33,10 @@ export const ORIGIN_MARKER_RE = /\(\[↗\]\(/; // detection (opening syntax)
 const ORIGIN_MARKER_FULL_RE = /\s*\(\[↗\]\(([^)]*)\)\)/; // capture the encoded target
 
 function encodeTarget(target: string): string {
-  return target.replace(/\(/g, "%28").replace(/\)/g, "%29");
+  return target.replace(/%/g, "%25").replace(/\(/g, "%28").replace(/\)/g, "%29");
 }
 function decodeTarget(target: string): string {
-  return target.replace(/%28/g, "(").replace(/%29/g, ")");
+  return target.replace(/%28/g, "(").replace(/%29/g, ")").replace(/%25/g, "%");
 }
 
 /** Stamp ` ([↗](target))` onto a task line, before any trailing ^anchor.
@@ -54,7 +54,8 @@ export function stripOriginMarker(body: string): string {
   return body.replace(ORIGIN_MARKER_FULL_RE, "");
 }
 
-/** Parse the origin out of a line: { body (marker removed), target (decoded) }, or null. */
+/** Parse the origin out of a line: { body (marker removed), target (decoded) }, or null.
+ *  The returned `body` retains any trailing `^anchor` (only the marker is removed). */
 export function parseOriginMarker(line: string): { readonly body: string; readonly target: string } | null {
   const m = ORIGIN_MARKER_FULL_RE.exec(line);
   if (m === null || m[1] === undefined) return null;

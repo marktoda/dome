@@ -608,4 +608,10 @@ describe("origin marker primitive", () => {
     const once = appendOriginMarkerPrimitive("- [ ] #task reply", "inbox/processed/x.md");
     expect(appendOriginMarkerPrimitive(once, "inbox/processed/y.md")).toBe(once);
   });
+  test("round-trips a target that already contains a percent-encoded sequence", () => {
+    const url = "https://x.example/a%28b%29c";
+    const line = appendOriginMarkerPrimitive("- [ ] #task reply", url);
+    expect(parseOriginMarker(line)!.target).toBe(url);
+    expect(stripOriginMarkerPrimitive(line)).toBe("- [ ] #task reply");
+  });
 });
