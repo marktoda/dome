@@ -22,6 +22,14 @@ import type { ClaimLine } from "./claims-shared";
 
 export const CLAIM_PREDICATE = "dome.claims.claim";
 
+/**
+ * The inline `*(as of YYYY-MM-DD)*` claim-value marker, for GLOBAL stripping.
+ * Single source for both the decode-side clean (`parseClaimFact` here) and the
+ * render-side clean (`dome.claims.render-facts`), so the two can't drift. The
+ * date pattern mirrors the indexer's `AS_OF_RE` in ./claims-shared.
+ */
+export const AS_OF_MARKER_RE = /\s*\*\(as of \d{4}-\d{2}-\d{2}\)\*/g;
+
 export type ClaimFact = {
   readonly key: string;
   readonly value: string;
@@ -58,7 +66,7 @@ export function parseClaimFact(fact: FactEffect): ClaimFact | null {
   // alongside the structured `asOf` (see header). The leading `\s*` absorbs the
   // separating space; the `\s{2,}` collapse + trim tidy any residual run.
   const value = record.value
-    .replace(/\s*\*\(as of \d{4}-\d{2}-\d{2}\)\*/g, "")
+    .replace(AS_OF_MARKER_RE, "")
     .replace(/\s{2,}/g, " ")
     .trim();
   return Object.freeze({ key: record.key, value, asOf });

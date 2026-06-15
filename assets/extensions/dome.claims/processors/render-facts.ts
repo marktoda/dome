@@ -34,6 +34,7 @@ import {
   type ExtensionConfig,
   type ProcessorContext,
 } from "../../../../src/core/processor";
+import { AS_OF_MARKER_RE } from "./claim-fact";
 import { claimsFromMarkdown, type ClaimLine } from "./claims-shared";
 
 const OWNER = "dome.claims";
@@ -42,18 +43,17 @@ const HEADING = "## Current facts";
 const ANOMALY_CODE = "dome.claims.generated-block-anomaly";
 const DEFAULT_MIN_CLAIMS = 3;
 
-/**
- * Strip an inline `*(as of YYYY-MM-DD)*` marker from a claim value, GLOBALLY
- * and position-independently, so the dated suffix can be re-appended exactly
- * once. A trailing anchor (`^c…`) is already removed by claims-shared, but the
- * canonical superseded claim (sweep charter) leaves the marker MID-value with a
- * `[[wikilink]]` AFTER it (e.g. `Active *(as of 2026-06-12)* [[meta/sources/x]]`).
- * A trailing-anchored regex would miss that and re-append the date a second
- * time — the Phase A doubled-date bug, reachable via the normal supersession
- * path. Stripping every marker, wherever it sits, fixes it; the leftover
- * whitespace is collapsed by the caller.
- */
-const AS_OF_STRIP_RE = /\s*\*\(as of \d{4}-\d{2}-\d{2}\)\*/g;
+// The inline `*(as of YYYY-MM-DD)*` marker is stripped GLOBALLY and
+// position-independently (shared `AS_OF_MARKER_RE` from ./claim-fact) so the
+// dated suffix can be re-appended exactly once. A trailing anchor (`^c…`) is
+// already removed by claims-shared, but the canonical superseded claim (sweep
+// charter) leaves the marker MID-value with a `[[wikilink]]` AFTER it (e.g.
+// `Active *(as of 2026-06-12)* [[meta/sources/x]]`). A trailing-anchored regex
+// would miss that and re-append the date a second time — the Phase A
+// doubled-date bug, reachable via the normal supersession path. Stripping every
+// marker, wherever it sits, fixes it; the leftover whitespace is collapsed by
+// the caller. The shared regex keeps this in lockstep with the decode-side
+// strip in parseClaimFact.
 
 // ----- Pure renderers --------------------------------------------------------
 
@@ -72,7 +72,7 @@ export function renderCurrentFactsBody(
   return claims
     .map((claim) => {
       const cleanValue = claim.value
-        .replace(AS_OF_STRIP_RE, "")
+        .replace(AS_OF_MARKER_RE, "")
         .replace(/\s+/g, " ")
         .trim();
       const asOf = claim.asOf === null ? "" : ` *(as of ${claim.asOf})*`;
