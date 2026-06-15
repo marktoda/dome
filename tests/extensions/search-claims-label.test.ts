@@ -15,7 +15,7 @@ function claimFact(object: string): FactEffect {
     object: { kind: "string", value: object },
     assertion: "extracted",
     sourceRefs: [],
-  } as FactEffect;
+  } as unknown as FactEffect;
 }
 
 describe("parseClaimFact", () => {

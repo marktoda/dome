@@ -158,7 +158,7 @@ function fact(predicate: string, value = "{}"): FactEffect {
     object: { kind: "string", value },
     assertion: "extracted",
     sourceRefs: [],
-  } as FactEffect;
+  } as unknown as FactEffect;
 }
 
 describe("factPriority — claims", () => {
