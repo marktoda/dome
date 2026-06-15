@@ -15,7 +15,7 @@ import { describe, expect, test } from "bun:test";
 
 import normalizeTaskSyntaxProcessor from "../../assets/extensions/dome.daily/processors/normalize-task-syntax";
 import taskIndex from "../../assets/extensions/dome.daily/processors/task-index";
-import { actionItemsFromMarkdown, stampTaskAnchors } from "../../assets/extensions/dome.daily/processors/action-extraction";
+import { actionItemsFromMarkdown, settledActionItemsFromMarkdown, stampTaskAnchors, stripOriginMarker } from "../../assets/extensions/dome.daily/processors/action-extraction";
 import {
   appendCapturedTaskLines,
   appendOriginMarker,
@@ -483,6 +483,38 @@ describe("captured tasks are origins, not copies", () => {
     expect(sources.map((item) => item.body)).toContain("call the landlord");
     // The open-loops copy inside the generated block is NOT a source.
     expect(sources.map((item) => item.body)).not.toContain("surfaced copy");
+  });
+});
+
+describe("stripOriginMarker", () => {
+  test("removes a trailing origin marker, leaving the body", () => {
+    expect(stripOriginMarker("reply to Jane ([↗](inbox/processed/x.md))")).toBe("reply to Jane");
+  });
+  test("preserves user parentheses, stripping only the marker", () => {
+    expect(
+      stripOriginMarker("call Bob (re: the (nested) thing) ([↗](inbox/processed/x.md))"),
+    ).toBe("call Bob (re: the (nested) thing)");
+  });
+  test("a body with no marker is unchanged", () => {
+    expect(stripOriginMarker("plain body")).toBe("plain body");
+  });
+});
+
+describe("settledActionItemsFromMarkdown strips the origin marker", () => {
+  test("settled captured task body does not contain the origin marker", () => {
+    const content = [
+      "## Captured today",
+      "",
+      "<!-- dome.daily:captured:start -->",
+      "- [x] #task reply to Jane ([↗](inbox/processed/2026-06-14-jane.md)) ^t1a2b3c4d",
+      "<!-- dome.daily:captured:end -->",
+      "",
+    ].join("\n");
+    const settled = settledActionItemsFromMarkdown(content);
+    expect(settled).toHaveLength(1);
+    expect(settled[0]?.body).toBe("reply to Jane");
+    expect(settled[0]?.body).not.toContain("↗");
+    expect(settled[0]?.body).not.toContain("inbox/processed");
   });
 });
 

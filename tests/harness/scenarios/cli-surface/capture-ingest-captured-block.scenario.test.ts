@@ -144,7 +144,7 @@ scenario(
     expect(task).toBeGreaterThan(start);
     expect(task).toBeLessThan(end);
     expect(daily).toMatch(
-      new RegExp(`- \\[ \\] #task ${TASK_BODY}.*\\^t[0-9a-f]{8}`),
+      new RegExp(`- \\[ \\] #task ${TASK_BODY} \\(\\[↗\\]\\(inbox/processed/[^)]+\\.md\\)\\) \\^t[0-9a-f]{8}`),
     );
 
     // The raw capture was consumed (inbox is ephemeral) …
