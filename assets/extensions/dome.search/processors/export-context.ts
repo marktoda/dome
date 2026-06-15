@@ -771,9 +771,11 @@ function uniqueDecisions(
 
 // Local, dependency-free key normalization for claim dedupe identity. Kept
 // in dome.search (not imported from dome.claims) so this bundle stays
-// self-contained; lowercase+trim is sufficient for one-row-per-(path, key).
+// self-contained, but mirrors the canonical normalization in
+// dome.claims/processors/claims-shared.ts: lowercase, collapse internal
+// whitespace, then trim — so (path, key) identity matches the claim index.
 function normalizeClaimKey(key: string): string {
-  return key.trim().toLowerCase();
+  return key.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 // Latest-as-of comparison: null is treated as oldest; non-null ISO date
@@ -798,7 +800,7 @@ function uniqueClaims(
     for (const fact of factsByPath.get(entry.path) ?? []) {
       const claim: ClaimFact | null = parseClaimFact(fact);
       if (claim === null) continue;
-      const key = `${entry.path} ${normalizeClaimKey(claim.key)}`;
+      const key = `${entry.path}\u0000${normalizeClaimKey(claim.key)}`;
       const existing = latestByKey.get(key);
       if (existing !== undefined && !claimIsNewer(claim.asOf, existing.asOf)) {
         continue;
