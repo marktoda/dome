@@ -48,3 +48,13 @@ export function hyperlink(label: string, url: string, caps: Caps): string {
   if (caps.hyperlinks !== true || url.length === 0) return label;
   return `${OSC8}${url}${ST}${label}${OSC8}${ST}`;
 }
+
+/**
+ * Resolve a task origin target to a clickable URL: external URLs pass through;
+ * vault-relative paths become file://<vaultAbs>/<path>.
+ */
+export function originUrl(target: string, vaultAbs: string): string {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(target)) return target;
+  const clean = target.replace(/^\.?\/+/, "");
+  return `file://${vaultAbs.replace(/\/+$/, "")}/${clean}`;
+}
