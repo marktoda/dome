@@ -11,7 +11,7 @@ export type TodayHtmlOptions = {
 };
 
 import { BASEL_BOOK_WOFF2_B64, BASEL_MEDIUM_WOFF2_B64 } from "./today-fonts";
-import { stripWikilinks } from "../core/wikilink";
+import { parseTodayView, type TodayTaskRow, type TodayQuestionRow, type TodayCalendarEvent, type TodayHeroItem } from "../surface/today-view";
 
 // Self-contained @font-face: the design's Basel Grotesk (Book 485 / Medium 535),
 // base64-embedded so the page needs no external font requests. Mono stays the
@@ -24,14 +24,8 @@ const FONT_FACE = `
 
 export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
   const refresh = Math.max(1, Math.floor(opts.refreshSeconds));
-  const record = isRecord(data) ? data : {};
-  const date = typeof record.date === "string" ? record.date : "today";
-  const openTasks = rows(record.openTasks);
-  const followups = rows(record.followups);
-  const questions = questionRows(record.questions);
-  const brief = parseBrief(record.brief);
-  const calendar = parseCalendar(record.calendar);
-  const hero = parseHero(record.hero);
+  const view = parseTodayView(data);
+  const { date, openTasks, followups, questions, brief, calendar, hero } = view;
   const total = openTasks.length + followups.length + questions.length;
 
   // The hero task is already the pill above — don't repeat it in "Still open".
@@ -251,7 +245,7 @@ ${scriptHtml}
  */
 function buildScriptHtml(
   refreshSeconds: number,
-  questionRows: ReadonlyArray<QuestionRow>,
+  questionRows: ReadonlyArray<TodayQuestionRow>,
 ): string {
   // Embed the question IDs so the script knows which cards to wire up.
   // JSON.stringify is safe here — these are numbers, not user strings.
@@ -452,11 +446,7 @@ function buildScriptHtml(
 
 // ── Section renderers ───────────────────────────────────────────────────────
 
-type HeroItem =
-  | { readonly kind: "task"; readonly item: TaskRow }
-  | { readonly kind: "question"; readonly item: QuestionRow };
-
-function renderHeroHtml(hero: HeroItem, today: string): string {
+function renderHeroHtml(hero: TodayHeroItem, today: string): string {
   if (hero.kind === "task") {
     const item = hero.item;
     let urgencyHtml = "";
@@ -491,7 +481,7 @@ function clampText(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max - 1).trimEnd()}…`;
 }
 
-function renderCalendarHtml(events: ReadonlyArray<CalendarEvent>): string {
+function renderCalendarHtml(events: ReadonlyArray<TodayCalendarEvent>): string {
   const eventsHtml = events.map((ev) => `
       <div class="cal-event">
         <span class="cal-time">${esc(ev.time)}</span>
@@ -508,7 +498,7 @@ function renderCalendarHtml(events: ReadonlyArray<CalendarEvent>): string {
   </div>`;
 }
 
-function renderQuestionsHtml(questions: ReadonlyArray<QuestionRow>): string {
+function renderQuestionsHtml(questions: ReadonlyArray<TodayQuestionRow>): string {
   const itemsHtml = questions.map((q) => {
     const optionsHtml = q.options.length > 0
       ? `<div class="q-options">${q.options.map((opt) =>
@@ -535,7 +525,7 @@ function renderQuestionsHtml(questions: ReadonlyArray<QuestionRow>): string {
   </div>`;
 }
 
-function renderStillOpenHtml(items: ReadonlyArray<TaskRow>, today: string): string {
+function renderStillOpenHtml(items: ReadonlyArray<TodayTaskRow>, today: string): string {
   const itemsHtml = items.map((t) => {
     const glyph = taskGlyph(t, today);
     const where = t.line === null ? t.path : `${t.path}:${t.line}`;
@@ -558,7 +548,7 @@ function renderStillOpenHtml(items: ReadonlyArray<TaskRow>, today: string): stri
 }
 
 function taskGlyph(
-  t: TaskRow,
+  t: TodayTaskRow,
   today: string,
 ): { readonly char: string; readonly cls: string } {
   if (t.dueDate !== null && t.dueDate < today) {
@@ -570,144 +560,6 @@ function taskGlyph(
   return { char: "&#8226;", cls: "open" };
 }
 
-// ── Field types ─────────────────────────────────────────────────────────────
-
-type TaskRow = {
-  readonly text: string;
-  readonly path: string;
-  readonly line: number | null;
-  readonly dueDate: string | null;
-};
-
-type QuestionRow = {
-  readonly id: number;
-  readonly question: string;
-  readonly resolveCommand: string;
-  readonly options: ReadonlyArray<string>;
-};
-
-type CalendarEvent = {
-  readonly time: string;
-  readonly title: string;
-  readonly meta: string;
-};
-
-type BriefField = {
-  readonly text: string;
-  readonly sourceRef: { readonly path: string };
-};
-
-// ── Parsers ─────────────────────────────────────────────────────────────────
-
-function parseBrief(raw: unknown): BriefField | null {
-  if (!isRecord(raw)) return null;
-  const text = typeof raw.text === "string" ? raw.text : null;
-  if (text === null || text.length === 0) return null;
-  const sourceRef = isRecord(raw.sourceRef) ? raw.sourceRef : null;
-  const path = sourceRef !== null && typeof sourceRef.path === "string"
-    ? sourceRef.path
-    : "";
-  return { text, sourceRef: { path } };
-}
-
-function parseCalendar(raw: unknown): { readonly events: ReadonlyArray<CalendarEvent>; readonly sourceRef: { readonly path: string } } | null {
-  if (!isRecord(raw)) return null;
-  if (!Array.isArray(raw.events)) return null;
-  const events: CalendarEvent[] = raw.events.flatMap((ev) => {
-    if (!isRecord(ev)) return [];
-    const time = typeof ev.time === "string" ? ev.time : null;
-    const title = typeof ev.title === "string" ? ev.title : null;
-    if (time === null || title === null) return [];
-    const meta = typeof ev.meta === "string" ? ev.meta : "";
-    return [{ time, title, meta }];
-  });
-  if (events.length === 0) return null;
-  const sourceRef = isRecord(raw.sourceRef) ? raw.sourceRef : null;
-  const path = sourceRef !== null && typeof sourceRef.path === "string"
-    ? sourceRef.path
-    : "";
-  return { events, sourceRef: { path } };
-}
-
-function parseHero(raw: unknown): HeroItem | null {
-  if (!isRecord(raw)) return null;
-  const kind = raw.kind;
-  if (kind === "task") {
-    const item = isRecord(raw.item) ? raw.item : null;
-    if (item === null) return null;
-    const text = typeof item.text === "string" ? stripWikilinks(item.text) : "";
-    if (text.length === 0) return null;
-    return {
-      kind: "task",
-      item: {
-        text,
-        path: typeof item.path === "string" ? item.path : "",
-        line: typeof item.line === "number" ? item.line : null,
-        dueDate: typeof item.dueDate === "string" ? item.dueDate : null,
-      },
-    };
-  }
-  if (kind === "question") {
-    const item = isRecord(raw.item) ? raw.item : null;
-    if (item === null) return null;
-    const question = typeof item.question === "string" ? stripWikilinks(item.question) : "";
-    if (question.length === 0) return null;
-    const options: string[] = Array.isArray(item.options)
-      ? item.options.filter((o): o is string => typeof o === "string")
-      : [];
-    return {
-      kind: "question",
-      item: {
-        id: typeof item.id === "number" ? item.id : 0,
-        question,
-        resolveCommand: typeof item.resolveCommand === "string"
-          ? item.resolveCommand
-          : "dome resolve <id> <value>",
-        options,
-      },
-    };
-  }
-  return null;
-}
-
-// These parsers mirror src/cli/commands/today.ts's; extract to src/surface/ if a third full-shape consumer appears.
-function rows(raw: unknown): ReadonlyArray<TaskRow> {
-  if (!Array.isArray(raw)) return [];
-  return raw.flatMap((item) => {
-    const r = isRecord(item) ? item : {};
-    const text = typeof r.text === "string" ? stripWikilinks(r.text) : "";
-    if (text.length === 0) return [];
-    return [{
-      text,
-      path: typeof r.path === "string" ? r.path : "",
-      line: typeof r.line === "number" ? r.line : null,
-      dueDate: typeof r.dueDate === "string" ? r.dueDate : null,
-    }];
-  });
-}
-
-function questionRows(raw: unknown): ReadonlyArray<QuestionRow> {
-  if (!Array.isArray(raw)) return [];
-  return raw.flatMap((item) => {
-    const r = isRecord(item) ? item : {};
-    const question = typeof r.question === "string" ? stripWikilinks(r.question) : "";
-    if (question.length === 0) return [];
-    const options: string[] = Array.isArray(r.options)
-      ? r.options.filter((o): o is string => typeof o === "string")
-      : [];
-    return [{
-      id: typeof r.id === "number" ? r.id : 0,
-      question,
-      resolveCommand: typeof r.resolveCommand === "string" ? r.resolveCommand : "dome resolve <id> <value>",
-      options,
-    }];
-  });
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return v !== null && typeof v === "object" && !Array.isArray(v);
-}
-
 function esc(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -716,5 +568,3 @@ function esc(value: string): string {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
-
-// stripWikilinks imported from src/core/wikilink — canonical single copy.
