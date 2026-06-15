@@ -382,11 +382,16 @@ export function formatTodayResult(
     const TASK_CAP = 7;
     const cap = opts.verbose === true ? bucketed.length : TASK_CAP;
     const taskWidth = Math.max(24, caps.width - 4); // "  <glyph> " leader = 4 cols
-    for (const { t, tone } of bucketed.slice(0, cap)) {
+    const shownOpen = Math.min(cap, bucketed.length);
+    for (const { t, tone } of bucketed.slice(0, shownOpen)) {
       const g = paint(statusGlyph(tone, caps), tone, caps);
       lines.push(`  ${g} ${truncate(t.text, taskWidth, caps.unicode)}`);
     }
-    const overflow = bucketed.length - Math.min(cap, bucketed.length);
+    // True overflow: use the shared parser's true totals (counts.*) so that
+    // display-capped received lists don't report "1 more" when there are 200+.
+    const heroIsTask = hero !== null && hero.kind === "task";
+    const trueNonHeroTasks = (counts.openTasks + followupsTotal) - (heroIsTask ? 1 : 0);
+    const overflow = Math.max(0, trueNonHeroTasks - shownOpen);
     if (overflow > 0) {
       lines.push(`  ${paint(`… ${overflow} more · dome today --verbose`, "muted", caps)}`);
     }

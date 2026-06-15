@@ -110,7 +110,8 @@ describe("renderTodayHtml", () => {
 
   test("omits brief/calendar/hero when null and shows all-clear when nothing open", () => {
     const html = renderTodayHtml(
-      { ...base, brief: null, calendar: null, hero: null, openTasks: [], followups: [], questions: [] },
+      { ...base, brief: null, calendar: null, hero: null, openTasks: [], followups: [], questions: [],
+        counts: { openTasks: 0, followups: 0, questions: 0 } },
       { refreshSeconds: 15 },
     );
     expect(html).toContain("You&#39;re clear");
@@ -217,6 +218,26 @@ describe("wikilink stripping (web cockpit)", () => {
     );
     expect(html).toContain("Block on K-budget?");
     expect(html).not.toContain("[[");
+  });
+});
+
+describe("dome today: web still-open true totals", () => {
+  test("web still-open shows the true total + a +N more affordance", () => {
+    const html = renderTodayHtml(
+      {
+        ...base,
+        openTasks: Array.from({ length: 6 }, (_, i) => ({ text: `t${i}`, path: "p", line: i, dueDate: null })),
+        followups: [],
+        questions: [],
+        counts: { openTasks: 50, followups: 0, questions: 0 },
+        hero: null,
+      },
+      { refreshSeconds: 15 },
+    );
+    // The still-open-count span should show the true count (50), not the list length (6)
+    expect(html).toMatch(/class="still-open-count"[^>]*>\s*50\s*</);
+    // An overflow affordance (+44 more) should be present in the still-open section
+    expect(html).toMatch(/\+44 more|\+\d+ more/);
   });
 });
 

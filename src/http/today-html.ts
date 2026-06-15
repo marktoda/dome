@@ -25,8 +25,9 @@ const FONT_FACE = `
 export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
   const refresh = Math.max(1, Math.floor(opts.refreshSeconds));
   const view = parseTodayView(data);
-  const { date, openTasks, followups, questions, brief, calendar, hero } = view;
-  const total = openTasks.length + followups.length + questions.length;
+  const { date, openTasks, followups, questions, brief, calendar, hero, counts } = view;
+  // Use true totals from the shared parser counts (not the display-limited received lengths).
+  const total = counts.openTasks + counts.followups + counts.questions;
 
   // The hero task is already the pill above — don't repeat it in "Still open".
   const heroKey =
@@ -37,6 +38,9 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
     (t) => heroKey === null || `${t.path}:${t.line ?? ""}:${t.text}` !== heroKey,
   );
   const isAllClear = total === 0;
+  // True total for the "Still open" section (tasks + followups, hero shown separately).
+  const heroIsTask = hero !== null && hero.kind === "task";
+  const trueOpenCount = counts.openTasks + counts.followups - (heroIsTask ? 1 : 0);
 
   const style = `${FONT_FACE}
     * { box-sizing: border-box; }
@@ -181,7 +185,7 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
     : "";
 
   const stillOpenHtml = allItems.length > 0
-    ? renderStillOpenHtml(allItems, date)
+    ? renderStillOpenHtml(allItems, date, trueOpenCount)
     : "";
 
   const allClearHtml = isAllClear
@@ -525,7 +529,11 @@ function renderQuestionsHtml(questions: ReadonlyArray<TodayQuestionRow>): string
   </div>`;
 }
 
-function renderStillOpenHtml(items: ReadonlyArray<TodayTaskRow>, today: string): string {
+function renderStillOpenHtml(
+  items: ReadonlyArray<TodayTaskRow>,
+  today: string,
+  trueCount: number,
+): string {
   const itemsHtml = items.map((t) => {
     const glyph = taskGlyph(t, today);
     const where = t.line === null ? t.path : `${t.path}:${t.line}`;
@@ -538,13 +546,20 @@ function renderStillOpenHtml(items: ReadonlyArray<TodayTaskRow>, today: string):
       </div>`;
   }).join("\n      ");
 
+  // Show true total in the count badge. When the doc is display-capped, append
+  // a muted "+N more" affordance so the user knows the list is truncated.
+  const overflow = Math.max(0, trueCount - items.length);
+  const overflowHtml = overflow > 0
+    ? `\n  <div class="still-open-more">+${overflow} more</div>`
+    : "";
+
   return `<div class="still-open-header">
     <span class="section-label" style="margin-bottom:0">Still open</span>
-    <span class="still-open-count">${items.length}</span>
+    <span class="still-open-count">${trueCount}</span>
   </div>
   <div class="still-open-grid">
       ${itemsHtml}
-  </div>`;
+  </div>${overflowHtml}`;
 }
 
 function taskGlyph(
