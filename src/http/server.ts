@@ -57,6 +57,7 @@ import {
   makeVaultMutex,
   openVaultErrorKind,
   runCatalogView,
+  runtimeOpenFailureMessage,
   withVault as withVaultShared,
   type CatalogViewProblem,
 } from "../surface/adapter";
@@ -506,9 +507,7 @@ function commandErrorResponse(command: string, errorKind: string): Response {
     status: "error",
     command,
     error: errorKind,
-    message:
-      `dome ${command}: openVaultRuntime failed (${errorKind}). ` +
-      "Run `dome init` to initialize the vault.",
+    message: runtimeOpenFailureMessage(`dome ${command}`, errorKind),
   });
 }
 

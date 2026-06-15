@@ -91,11 +91,21 @@ INSERT OR IGNORE INTO diagnostics (
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
 `.trim();
 
-const QUERY_ALL_SQL = `
+// Latest-wins read of unresolved diagnostics. The mandatory predicate
+// (`d.resolved_at IS NULL` + the superseding `NOT EXISTS` subquery) is fixed;
+// the optional `d.severity = ?` / `d.processor_id = ?` filters are appended by
+// composition (see `diagnosticsFilterWhere`) so the four filter combinations
+// share one base. The mandatory predicate is split into a leading conjunct and
+// the trailing `NOT EXISTS` so optional filters slot between them, preserving
+// the original textual ordering (`resolved_at IS NULL [AND severity] [AND
+// processor_id] AND NOT EXISTS (...)`).
+const QUERY_PREFIX_SQL = `
 SELECT d.id, d.severity, d.code, d.message, d.source_refs, d.processor_id,
        d.run_id, d.proposal_id, d.adopted_commit, d.written_at, d.resolved_at
 FROM diagnostics d
-WHERE d.resolved_at IS NULL AND NOT EXISTS (
+WHERE d.resolved_at IS NULL`.trim();
+
+const QUERY_SUFFIX_SQL = `NOT EXISTS (
   SELECT 1
   FROM diagnostics newer
   WHERE newer.resolved_at IS NULL
@@ -104,57 +114,33 @@ WHERE d.resolved_at IS NULL AND NOT EXISTS (
     AND newer.subject_hash = d.subject_hash
     AND newer.id > d.id
 )
-ORDER BY d.id DESC
-`.trim();
+ORDER BY d.id DESC`;
 
-const QUERY_BY_SEVERITY_SQL = `
-SELECT d.id, d.severity, d.code, d.message, d.source_refs, d.processor_id,
-       d.run_id, d.proposal_id, d.adopted_commit, d.written_at, d.resolved_at
-FROM diagnostics d
-WHERE d.resolved_at IS NULL AND d.severity = ? AND NOT EXISTS (
-  SELECT 1
-  FROM diagnostics newer
-  WHERE newer.resolved_at IS NULL
-    AND newer.processor_id = d.processor_id
-    AND newer.code = d.code
-    AND newer.subject_hash = d.subject_hash
-    AND newer.id > d.id
-)
-ORDER BY d.id DESC
-`.trim();
-
-const QUERY_BY_PROCESSOR_SQL = `
-SELECT d.id, d.severity, d.code, d.message, d.source_refs, d.processor_id,
-       d.run_id, d.proposal_id, d.adopted_commit, d.written_at, d.resolved_at
-FROM diagnostics d
-WHERE d.resolved_at IS NULL AND d.processor_id = ? AND NOT EXISTS (
-  SELECT 1
-  FROM diagnostics newer
-  WHERE newer.resolved_at IS NULL
-    AND newer.processor_id = d.processor_id
-    AND newer.code = d.code
-    AND newer.subject_hash = d.subject_hash
-    AND newer.id > d.id
-)
-ORDER BY d.id DESC
-`.trim();
-
-const QUERY_BY_SEVERITY_AND_PROCESSOR_SQL = `
-SELECT d.id, d.severity, d.code, d.message, d.source_refs, d.processor_id,
-       d.run_id, d.proposal_id, d.adopted_commit, d.written_at, d.resolved_at
-FROM diagnostics d
-WHERE d.resolved_at IS NULL AND d.severity = ? AND d.processor_id = ?
-  AND NOT EXISTS (
-    SELECT 1
-    FROM diagnostics newer
-    WHERE newer.resolved_at IS NULL
-      AND newer.processor_id = d.processor_id
-      AND newer.code = d.code
-      AND newer.subject_hash = d.subject_hash
-      AND newer.id > d.id
-  )
-ORDER BY d.id DESC
-`.trim();
+/**
+ * Compose the optional severity/processor predicates plus the mandatory
+ * latest-wins `NOT EXISTS` tail into one query, binding params positionally in
+ * the same order the `?` placeholders appear. Values are NEVER interpolated —
+ * only `?` placeholders are composed; `params` carries the bound values.
+ */
+function diagnosticsQuery(
+  filter?: DiagnosticsFilter,
+): { readonly sql: string; readonly params: string[] } {
+  const optional: string[] = [];
+  const params: string[] = [];
+  if (filter?.severity !== undefined) {
+    optional.push("d.severity = ?");
+    params.push(filter.severity);
+  }
+  if (filter?.processorId !== undefined) {
+    optional.push("d.processor_id = ?");
+    params.push(filter.processorId);
+  }
+  const conjuncts = [...optional, QUERY_SUFFIX_SQL].join(" AND ");
+  return Object.freeze({
+    sql: `${QUERY_PREFIX_SQL} AND ${conjuncts}`,
+    params,
+  });
+}
 
 const RESOLVE_SQL = `
 UPDATE diagnostics
@@ -288,28 +274,8 @@ export function queryDiagnosticRecords(
   db: ProjectionDb,
   filter?: DiagnosticsFilter,
 ): ReadonlyArray<DiagnosticRecord> {
-  const severity = filter?.severity;
-  const processorId = filter?.processorId;
-
-  let rows: ReadonlyArray<DiagnosticRow>;
-  if (severity !== undefined && processorId !== undefined) {
-    rows = db.raw
-      .query<DiagnosticRow, [string, string]>(
-        QUERY_BY_SEVERITY_AND_PROCESSOR_SQL,
-      )
-      .all(severity, processorId);
-  } else if (severity !== undefined) {
-    rows = db.raw
-      .query<DiagnosticRow, [string]>(QUERY_BY_SEVERITY_SQL)
-      .all(severity);
-  } else if (processorId !== undefined) {
-    rows = db.raw
-      .query<DiagnosticRow, [string]>(QUERY_BY_PROCESSOR_SQL)
-      .all(processorId);
-  } else {
-    rows = db.raw.query<DiagnosticRow, []>(QUERY_ALL_SQL).all();
-  }
-
+  const { sql, params } = diagnosticsQuery(filter);
+  const rows = db.raw.query<DiagnosticRow, string[]>(sql).all(...params);
   return mapRows(rows, rowToDiagnosticRecord);
 }
 

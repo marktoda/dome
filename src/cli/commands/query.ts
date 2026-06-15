@@ -6,17 +6,9 @@
 
 import { basename } from "node:path";
 
-import {
-  firstPartyViewNotFoundMessage,
-  runStructuredViewCommand,
-  structuredViewBrokerMessages,
-} from "../../surface/view";
 import { FIRST_PARTY_VIEWS } from "../../surface/view-catalog";
-import {
-  printViewCommandError,
-  printViewCommandMessages,
-} from "./view-shared";
-import { formatJson } from "../../surface/format";
+import { printViewCommandError } from "./view-shared";
+import { runCliStructuredView } from "../structured-view-command";
 import { formatCommand } from "../human-output";
 import {
   glyph,
@@ -60,57 +52,23 @@ export async function runQuery(
     return 64;
   }
 
-  try {
-    const run = await runStructuredViewCommand({
-      commandLabel: "dome query",
-      commandName: "query",
-      expectedViewName: FIRST_PARTY_VIEWS.query.viewName,
-      expectedSchema: FIRST_PARTY_VIEWS.query.schema,
-      commandArgs: Object.freeze({
-        text,
-        ...(options.category !== undefined ? { category: options.category } : {}),
-        ...(options.type !== undefined ? { type: options.type } : {}),
-        ...(options.limit !== undefined ? { limit: options.limit } : {}),
-      }),
-      vault: options.vault,
-      bundlesRoot: options.bundlesRoot,
-      notFoundMessage: firstPartyViewNotFoundMessage({
-        commandLabel: "dome query",
-        bundleId: FIRST_PARTY_VIEWS.query.bundleId,
-        processorName: FIRST_PARTY_VIEWS.query.processorName,
-      }),
-      noStructuredResultMessage:
-        "dome query: query processor returned no structured result.",
-    });
-
-    if (run.kind === "error") {
-      printViewCommandError({
-        commandLabel: "dome query",
-        json: options.json === true,
-        messages: run.messages,
-      });
-      return run.exitCode;
-    }
-    printViewCommandMessages(
-      structuredViewBrokerMessages("dome query", run.brokerDiagnostics),
-    );
-
-    if (options.json === true) {
-      console.log(formatJson(run.data));
-    } else {
-      console.log(formatQueryResult(run.data, resolveCaps(), vaultPath));
-    }
-    return 0;
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    printViewCommandError({
-      commandLabel: "dome query",
-      json: options.json === true,
-      error: "query-failed",
-      messages: [`dome query: failed: ${msg}`],
-    });
-    return 1;
-  }
+  return runCliStructuredView({
+    commandLabel: "dome query",
+    entry: FIRST_PARTY_VIEWS.query,
+    commandArgs: Object.freeze({
+      text,
+      ...(options.category !== undefined ? { category: options.category } : {}),
+      ...(options.type !== undefined ? { type: options.type } : {}),
+      ...(options.limit !== undefined ? { limit: options.limit } : {}),
+    }),
+    vault: options.vault,
+    bundlesRoot: options.bundlesRoot,
+    json: options.json === true,
+    noStructuredResultMessage:
+      "dome query: query processor returned no structured result.",
+    failedError: "query-failed",
+    renderHuman: (data) => formatQueryResult(data, resolveCaps(), vaultPath),
+  });
 }
 
 export function formatQueryResult(data: unknown, caps: Caps, vault?: string): string {

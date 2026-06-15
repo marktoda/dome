@@ -2,7 +2,6 @@
 
 import { basename } from "node:path";
 
-import { formatJson } from "../../surface/format";
 import { parsePositiveIntegerValue } from "../parse-options";
 import {
   dimZeros,
@@ -13,16 +12,9 @@ import {
   section,
   type Status,
 } from "../presenter";
-import {
-  firstPartyViewNotFoundMessage,
-  runStructuredViewCommand,
-  structuredViewBrokerMessages,
-} from "../../surface/view";
 import { FIRST_PARTY_VIEWS } from "../../surface/view-catalog";
-import {
-  printViewCommandError,
-  printViewCommandMessages,
-} from "./view-shared";
+import { printViewCommandError } from "./view-shared";
+import { runCliStructuredView } from "../structured-view-command";
 
 import { resolveVaultPath } from "../../surface/resolve-vault";
 export type LintFailOn = "info" | "warning" | "error" | "block" | "never";
@@ -39,69 +31,38 @@ export type LintCommandOptions = {
 export async function runLint(
   options: LintCommandOptions = {},
 ): Promise<number> {
-  try {
-    const limit = parsePositiveIntegerValue(options.limit, null);
-    if (options.limit !== undefined && limit === null) {
-      printViewCommandError({
-        commandLabel: "dome lint",
-        json: options.json === true,
-        error: "lint-usage",
-        messages: ["dome lint: --limit must be a positive integer."],
-      });
-      return 64;
-    }
-
-    const run = await runStructuredViewCommand({
-      commandLabel: "dome lint",
-      commandName: "lint",
-      expectedViewName: FIRST_PARTY_VIEWS.lint.viewName,
-      expectedSchema: FIRST_PARTY_VIEWS.lint.schema,
-      commandArgs: Object.freeze({
-        ...(options.failOn !== undefined ? { failOn: options.failOn } : {}),
-        ...(limit !== null ? { limit } : {}),
-      }),
-      vault: options.vault,
-      bundlesRoot: options.bundlesRoot,
-      notFoundMessage: firstPartyViewNotFoundMessage({
-        commandLabel: "dome lint",
-        bundleId: FIRST_PARTY_VIEWS.lint.bundleId,
-        processorName: FIRST_PARTY_VIEWS.lint.processorName,
-      }),
-      noStructuredResultMessage:
-        "dome lint: lint processor returned no structured result.",
-    });
-
-    if (run.kind === "error") {
-      printViewCommandError({
-        commandLabel: "dome lint",
-        json: options.json === true,
-        messages: run.messages,
-      });
-      return run.exitCode;
-    }
-    printViewCommandMessages(
-      structuredViewBrokerMessages("dome lint", run.brokerDiagnostics),
-    );
-
-    const data = parseLintData(run.data);
-    if (options.json === true) {
-      console.log(formatJson(run.data));
-    } else {
-      const vaultPath = resolveVaultPath(options.vault);
-      const verbose = options.verbose === true;
-      console.log(renderLintText(data, vaultPath, verbose));
-    }
-    return data.status === "fail" ? 1 : 0;
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+  const limit = parsePositiveIntegerValue(options.limit, null);
+  if (options.limit !== undefined && limit === null) {
     printViewCommandError({
       commandLabel: "dome lint",
       json: options.json === true,
-      error: "lint-failed",
-      messages: [`dome lint: failed: ${msg}`],
+      error: "lint-usage",
+      messages: ["dome lint: --limit must be a positive integer."],
     });
-    return 1;
+    return 64;
   }
+
+  return runCliStructuredView({
+    commandLabel: "dome lint",
+    entry: FIRST_PARTY_VIEWS.lint,
+    commandArgs: Object.freeze({
+      ...(options.failOn !== undefined ? { failOn: options.failOn } : {}),
+      ...(limit !== null ? { limit } : {}),
+    }),
+    vault: options.vault,
+    bundlesRoot: options.bundlesRoot,
+    json: options.json === true,
+    noStructuredResultMessage:
+      "dome lint: lint processor returned no structured result.",
+    failedError: "lint-failed",
+    renderHuman: (data) =>
+      renderLintText(
+        parseLintData(data),
+        resolveVaultPath(options.vault),
+        options.verbose === true,
+      ),
+    successExitCode: (data) => (parseLintData(data).status === "fail" ? 1 : 0),
+  });
 }
 
 export type LintSeverity = "info" | "warning" | "error" | "block";

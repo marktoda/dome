@@ -23,6 +23,7 @@ import {
   section,
 } from "../presenter";
 
+import { openVaultErrorKind } from "../../surface/adapter";
 import { resolveVaultPath } from "../../surface/resolve-vault";
 import {
   ANSWER_SCHEMA,
@@ -61,9 +62,7 @@ export async function runAnswer(
     path: vaultPath,
     bundlesRoot: options.bundlesRoot,
     onOpenFailed: (error) => {
-      const errorKind = error.kind === "runtime-open-failed"
-        ? error.cause.kind
-        : error.kind;
+      const errorKind = openVaultErrorKind(error);
       printAnswerError({
         commandLabel,
         json: options.json === true,

@@ -9,11 +9,14 @@
 import { basename } from "node:path";
 
 import {
-  firstPartyViewNotFoundMessage,
   runSharedViewCommand,
   structuredViewBrokerMessages,
 } from "../../surface/view";
-import { validateStructuredRun } from "../../surface/adapter";
+import {
+  catalogViewProblemMessage,
+  validateStructuredRun,
+  viewNotFoundMessage,
+} from "../../surface/adapter";
 import { FIRST_PARTY_VIEWS } from "../../surface/view-catalog";
 import {
   printViewCommandError,
@@ -112,11 +115,7 @@ async function renderTodayOnce(
           commandLabel: "dome today",
           json: true,
           messages: [
-            firstPartyViewNotFoundMessage({
-              commandLabel: "dome today",
-              bundleId: FIRST_PARTY_VIEWS.today.bundleId,
-              processorName: FIRST_PARTY_VIEWS.today.processorName,
-            }),
+            viewNotFoundMessage("dome today", FIRST_PARTY_VIEWS.today),
           ],
         });
         return { kind: "error", exitCode: 64 };
@@ -190,24 +189,16 @@ async function renderTodayOnce(
       },
     );
     if (validated.kind === "problem") {
-      const msg = (() => {
-        switch (validated.problem.kind) {
-          case "no-structured-result":
-            return "dome today: today processor returned no structured result.";
-          case "multiple-views":
-            return `dome today: expected exactly one view '${FIRST_PARTY_VIEWS.today.viewName}', got ${validated.problem.count}.`;
-          case "wrong-view":
-            return `dome today: expected view '${FIRST_PARTY_VIEWS.today.viewName}', got '${validated.problem.got}'.`;
-          case "wrong-schema":
-            return `dome today: expected structured schema '${FIRST_PARTY_VIEWS.today.schema}', got '${validated.problem.got}'.`;
-          default:
-            return "dome today: today processor returned no structured result.";
-        }
-      })();
       printViewCommandError({
         commandLabel: "dome today",
         json: options.json === true,
-        messages: [msg],
+        messages: [
+          catalogViewProblemMessage(
+            "dome today",
+            FIRST_PARTY_VIEWS.today,
+            validated.problem,
+          ),
+        ],
       });
       return { kind: "error", exitCode: 1 };
     }

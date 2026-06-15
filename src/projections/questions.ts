@@ -103,35 +103,24 @@ ON CONFLICT(idempotency_key) DO UPDATE SET
 WHERE questions.answered_at IS NULL
 `.trim();
 
-const QUERY_ALL_SQL = `
+// Shared 12-column projection that maps positionally/by-name to QuestionRow →
+// rowToQuestionRecord. The four record-shaped reads (all / resolved /
+// unresolved / by-id) differ ONLY in the trailing WHERE/ORDER BY, composed
+// below. Keep this list IDENTICAL — drift breaks the decoder. (QUERY_BY_
+// PROCESSOR_SQL deliberately does NOT share this base: it projects a narrower
+// 3-column shape for the stale-question scan.)
+const SELECT_QUESTIONS_BASE = `
 SELECT id, question, options_json, metadata_json, source_refs, idempotency_key,
        processor_id, run_id, adopted_commit, asked_at, answered_at, answer
-FROM questions
-ORDER BY id
-`.trim();
+FROM questions`.trim();
 
-const QUERY_RESOLVED_SQL = `
-SELECT id, question, options_json, metadata_json, source_refs, idempotency_key,
-       processor_id, run_id, adopted_commit, asked_at, answered_at, answer
-FROM questions
-WHERE answered_at IS NOT NULL
-ORDER BY id
-`.trim();
+const QUERY_ALL_SQL = `${SELECT_QUESTIONS_BASE}\nORDER BY id`;
 
-const QUERY_UNRESOLVED_SQL = `
-SELECT id, question, options_json, metadata_json, source_refs, idempotency_key,
-       processor_id, run_id, adopted_commit, asked_at, answered_at, answer
-FROM questions
-WHERE answered_at IS NULL
-ORDER BY id
-`.trim();
+const QUERY_RESOLVED_SQL = `${SELECT_QUESTIONS_BASE}\nWHERE answered_at IS NOT NULL\nORDER BY id`;
 
-const QUERY_BY_ID_SQL = `
-SELECT id, question, options_json, metadata_json, source_refs, idempotency_key,
-       processor_id, run_id, adopted_commit, asked_at, answered_at, answer
-FROM questions
-WHERE id = ?
-`.trim();
+const QUERY_UNRESOLVED_SQL = `${SELECT_QUESTIONS_BASE}\nWHERE answered_at IS NULL\nORDER BY id`;
+
+const QUERY_BY_ID_SQL = `${SELECT_QUESTIONS_BASE}\nWHERE id = ?`;
 
 const ANSWER_SQL = `
 UPDATE questions

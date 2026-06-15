@@ -8,6 +8,7 @@
 // stdout on the most common failure mode, and MCP clients received
 // non-JSON fallback text.
 
+import { runtimeOpenFailureMessage } from "../surface/adapter";
 import { COMMAND_ERROR_SCHEMA } from "../surface/command-error";
 import { formatJson } from "../surface/format";
 
@@ -22,9 +23,10 @@ export function emitRuntimeOpenFailure(opts: {
   readonly json: boolean;
   readonly errorKind: string;
 }): 1 {
-  const message =
-    `dome ${opts.command}: openVaultRuntime failed (${opts.errorKind}). ` +
-    "Run `dome init` to initialize the vault.";
+  const message = runtimeOpenFailureMessage(
+    `dome ${opts.command}`,
+    opts.errorKind,
+  );
   if (opts.json) {
     console.log(
       formatJson({

@@ -13,7 +13,13 @@ import {
   type StructuredView,
   type VaultViewResult,
 } from "../vault";
-import { validateStructuredRun, vaultOpenFailureMessage } from "./adapter";
+import {
+  catalogViewProblemMessage,
+  validateStructuredRun,
+  vaultOpenFailureMessage,
+  viewNotFoundMessage,
+} from "./adapter";
+import type { FirstPartyViewEntry } from "./view-catalog";
 import { resolveVaultPath } from "./resolve-vault";
 
 export type ViewCommandOptions = {
@@ -49,10 +55,19 @@ export type ViewCommandRunResult =
       readonly brokerDiagnostics: ReadonlyArray<DiagnosticEffect>;
     };
 
-export type StructuredViewCommandOptions = ViewCommandOptions & {
-  readonly expectedViewName: string;
-  readonly expectedSchema: string;
-  readonly notFoundMessage: string;
+export type StructuredViewCommandOptions = {
+  readonly commandLabel: string;
+  readonly entry: FirstPartyViewEntry;
+  readonly commandArgs?: unknown;
+  readonly vault?: string | undefined;
+  readonly bundlesRoot?: string | undefined;
+  /**
+   * Per-caller override for the `no-structured-result` wording. The shared
+   * `catalogViewProblemMessage` would say
+   * "<label>: <processorName> processor returned no structured result.";
+   * some callers (e.g. export-context) ship a different sentence and we keep
+   * it byte-identical rather than re-render.
+   */
   readonly noStructuredResultMessage: string;
 };
 
@@ -68,20 +83,6 @@ export type StructuredViewCommandResult =
       readonly exitCode: number;
       readonly messages: ReadonlyArray<string>;
     };
-
-const OLD_FIRST_PARTY_CONFIG_HINT =
-  "For older vault configs, run `dome init --refresh-config` to add current first-party defaults.";
-
-export function firstPartyViewNotFoundMessage(opts: {
-  readonly commandLabel: string;
-  readonly bundleId: string;
-  readonly processorName: string;
-}): string {
-  return (
-    `${opts.commandLabel}: ${opts.bundleId} is not installed or no ` +
-    `${opts.processorName} processor is enabled. ${OLD_FIRST_PARTY_CONFIG_HINT}`
-  );
-}
 
 export async function runSharedViewCommand(
   opts: ViewCommandOptions,
@@ -158,8 +159,15 @@ function translateViewResult(
 export async function runStructuredViewCommand(
   opts: StructuredViewCommandOptions,
 ): Promise<StructuredViewCommandResult> {
+  const { commandLabel, entry } = opts;
   try {
-    const run = await runSharedViewCommand(opts);
+    const run = await runSharedViewCommand({
+      commandLabel,
+      commandName: entry.command,
+      commandArgs: opts.commandArgs,
+      vault: opts.vault,
+      bundlesRoot: opts.bundlesRoot,
+    });
     if (run.kind === "usage-error") {
       return structuredError(64, [run.message]);
     }
@@ -167,80 +175,57 @@ export async function runStructuredViewCommand(
       return structuredError(1, [run.message]);
     }
     if (run.kind === "not-found") {
-      return structuredError(64, [opts.notFoundMessage]);
+      return structuredError(64, [viewNotFoundMessage(commandLabel, entry)]);
     }
     if (run.kind === "failed") {
       const messages = [
-        `${opts.commandLabel}: processor '${run.processorId}' finished with ${run.executionStatus}.`,
+        // `catalogViewProblemMessage` renders only this first line; the
+        // structured CLI wrapper also surfaces the execution error + each
+        // diagnostic, so we expand them here rather than delegate.
+        catalogViewProblemMessage(commandLabel, entry, {
+          kind: "processor-failed",
+          processorId: run.processorId,
+          executionStatus: run.executionStatus,
+          executionError: run.executionError,
+          diagnostics: run.diagnostics,
+        }),
       ];
       if (run.executionError !== null) {
         messages.push(
-          `${opts.commandLabel}: ${run.executionError.code}: ${run.executionError.message}`,
+          `${commandLabel}: ${run.executionError.code}: ${run.executionError.message}`,
         );
       }
       for (const d of run.diagnostics) {
         messages.push(
-          `${opts.commandLabel}: diagnostic [${d.severity}] ${d.code}: ${d.message}`,
+          `${commandLabel}: diagnostic [${d.severity}] ${d.code}: ${d.message}`,
         );
       }
       return structuredError(1, messages);
     }
 
-    const viewResult = validateStructuredViewResult({ opts, run });
-    if (viewResult.kind === "error") return viewResult;
+    const validated = validateStructuredRun(
+      { views: run.views, structured: run.structured },
+      { viewName: entry.viewName, schema: entry.schema },
+    );
+    if (validated.kind === "problem") {
+      // `no-structured-result` keeps the per-caller override wording; every
+      // other problem renders through the shared `catalogViewProblemMessage`.
+      const message = validated.problem.kind === "no-structured-result"
+        ? opts.noStructuredResultMessage
+        : catalogViewProblemMessage(commandLabel, entry, validated.problem);
+      return structuredError(1, [message]);
+    }
 
     return Object.freeze({
       kind: "ok" as const,
-      data: viewResult.view.data,
-      view: viewResult.view,
+      // run.structured is non-null whenever validation succeeds.
+      data: validated.data,
+      view: run.structured as StructuredView,
       brokerDiagnostics: run.brokerDiagnostics,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return structuredError(1, [`${opts.commandLabel}: failed: ${msg}`]);
-  }
-}
-
-function validateStructuredViewResult(
-  input: {
-    readonly opts: StructuredViewCommandOptions;
-    readonly run: Extract<ViewCommandRunResult, { readonly kind: "ok" }>;
-  },
-):
-  | {
-      readonly kind: "ok";
-      readonly view: StructuredView;
-    }
-  | Extract<StructuredViewCommandResult, { readonly kind: "error" }> {
-  const { opts, run } = input;
-  const validated = validateStructuredRun(
-    { views: run.views, structured: run.structured },
-    { viewName: opts.expectedViewName, schema: opts.expectedSchema },
-  );
-  if (validated.kind === "ok") {
-    // run.structured is non-null whenever validation succeeds.
-    return Object.freeze({
-      kind: "ok" as const,
-      view: run.structured as StructuredView,
-    });
-  }
-  switch (validated.problem.kind) {
-    case "no-structured-result":
-      return structuredError(1, [opts.noStructuredResultMessage]);
-    case "multiple-views":
-      return structuredError(1, [
-        `${opts.commandLabel}: expected exactly one view '${opts.expectedViewName}', got ${validated.problem.count}.`,
-      ]);
-    case "wrong-view":
-      return structuredError(1, [
-        `${opts.commandLabel}: expected view '${opts.expectedViewName}', got '${validated.problem.got}'.`,
-      ]);
-    case "wrong-schema":
-      return structuredError(1, [
-        `${opts.commandLabel}: expected structured schema '${opts.expectedSchema}', got '${validated.problem.got}'.`,
-      ]);
-    default:
-      return structuredError(1, [opts.noStructuredResultMessage]);
+    return structuredError(1, [`${commandLabel}: failed: ${msg}`]);
   }
 }
 
