@@ -286,6 +286,43 @@ describe("brief tools enforce the patch.auto grant at tool time", () => {
       );
     });
   });
+
+  describe("addTask tool (capturedTasks seam)", () => {
+    const today = "wiki/dailies/2026-06-15.md";
+    const skeleton =
+      "# 2026-06-15\n\n## Captured today\n\n<!-- dome.daily:captured:start -->\n<!-- dome.daily:captured:end -->\n";
+
+    test("addTask stamps origin and writes the captured task into the daily overlay", async () => {
+      const tools = makeBriefTools({
+        reader: reader({ [today]: skeleton }),
+        capturedTasks: { path: today },
+      });
+      const addTask = tools.find((t) => t.schema.name === "addTask")!;
+      const state = freshState();
+      await addTask.execute({ task: "- [ ] #task reply to Jane", sourceUrl: "https://slk/p1" }, state);
+      const edit = state.edits.get(today);
+      expect(edit?.kind === "write" && edit.content).toContain(
+        "- [ ] #task reply to Jane ([↗](https://slk/p1))",
+      );
+    });
+
+    test("addTask returns a self-correctable error for a non-task line and writes nothing", async () => {
+      const tools = makeBriefTools({
+        reader: reader({ [today]: "<!-- dome.daily:captured:start -->\n<!-- dome.daily:captured:end -->\n" }),
+        capturedTasks: { path: today },
+      });
+      const addTask = tools.find((t) => t.schema.name === "addTask")!;
+      const state = freshState();
+      const out = await addTask.execute({ task: "just prose" }, state);
+      expect(out).toContain("error");
+      expect(state.edits.get(today)).toBeUndefined();
+    });
+
+    test("addTask is absent when capturedTasks is not provided (back-compat)", () => {
+      const tools = makeBriefTools({ reader: reader({}) });
+      expect(tools.find((t) => t.schema.name === "addTask")).toBeUndefined();
+    });
+  });
 });
 
 describe("writable-glob constants mirror manifest.yaml patch.auto grants", () => {
