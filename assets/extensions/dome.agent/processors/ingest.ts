@@ -17,6 +17,7 @@ import { makeIngestTools, type CapturedTasksRouting } from "../lib/ingest-tools"
 import { INGEST_CHARTER } from "../lib/ingest-charter";
 import { agentPreamble } from "../lib/agent-preamble";
 import { resolveModelOverride, withStepModel } from "../lib/model-override";
+import { archivedCapturePath } from "../lib/vault-tools";
 
 const MAX_STEPS = 25;
 
@@ -87,6 +88,11 @@ const ingest = defineProcessorImplementation({
     for (const sourcePath of rawPaths) {
       const source = await ctx.snapshot.readFile(sourcePath);
       if (source === null) continue;
+      // The marker target for tasks lifted from THIS source: the path the
+      // file will occupy after archiveSource moves it out of inbox/raw.
+      // Deterministic, so the link never points at the soon-deleted raw path.
+      // Overwritten each iteration (null for non-inbox/raw sources).
+      capturedTasks.origin = archivedCapturePath(sourcePath);
       if (source.length > MAX_SOURCE_CHARS) {
         // Escalate instead of running: an oversize capture would reach the
         // model truncated (integrating from a truncated head archives the

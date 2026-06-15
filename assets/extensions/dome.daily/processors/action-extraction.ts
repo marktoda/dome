@@ -357,8 +357,11 @@ function directiveActionItemFromLine(
 function taskBodyFromCheckboxLine(line: string): string {
   const base = stripCarryForwardSource(line);
   const withoutAnchor = parseBlockAnchor(base)?.withoutAnchor ?? base;
+  // Strip the inline origin marker ` ([↗](<target>))` so the semantic body
+  // is the human-readable task text, not a derivation that includes the link.
+  const withoutMarker = withoutAnchor.replace(/\s*\(\[↗\]\([^)]*\)\)/, "");
   return semanticActionBody(
-    withoutAnchor.replace(/^\s*[-*]\s+\[ \]\s+/, "").trim(),
+    withoutMarker.replace(/^\s*[-*]\s+\[ \]\s+/, "").trim(),
   );
 }
 
