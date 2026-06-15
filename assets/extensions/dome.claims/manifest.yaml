@@ -24,6 +24,29 @@ processors:
         paths: ["wiki/**/*.md", "notes/*.md"]
     module: processors/stamp-anchor.ts
 
+  - id: dome.claims.render-facts
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: document.changed
+        pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "wiki/**/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "notes/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "notes/*.md"
+    capabilities:
+      - kind: read
+        paths: ["wiki/**/*.md", "notes/*.md"]
+      - kind: patch.auto
+        paths: ["wiki/**/*.md", "notes/*.md"]
+    module: processors/render-facts.ts
+
   - id: dome.claims.index
     version: 0.1.0
     phase: adoption
