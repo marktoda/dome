@@ -1,15 +1,8 @@
 // cli/commands/export-context: source-backed markdown packets for handoff.
 
-import { formatJson } from "../../surface/format";
-import {
-  runStructuredViewCommand,
-  structuredViewBrokerMessages,
-} from "../../surface/view";
 import { FIRST_PARTY_VIEWS } from "../../surface/view-catalog";
-import {
-  printViewCommandError,
-  printViewCommandMessages,
-} from "./view-shared";
+import { printViewCommandError } from "./view-shared";
+import { runCliStructuredView } from "../structured-view-command";
 
 export type ExportContextCommandOptions = {
   readonly topic?: string | undefined;
@@ -35,48 +28,21 @@ export async function runExportContext(
     return 64;
   }
 
-  try {
-    const run = await runStructuredViewCommand({
-      commandLabel: "dome export-context",
-      entry: FIRST_PARTY_VIEWS.exportContext,
-      commandArgs: Object.freeze({
-        topic,
-        ...(options.limit !== undefined ? { limit: options.limit } : {}),
-      }),
-      vault: options.vault,
-      bundlesRoot: options.bundlesRoot,
-      noStructuredResultMessage:
-        "dome export-context: processor returned no structured result.",
-    });
-
-    if (run.kind === "error") {
-      printViewCommandError({
-        commandLabel: "dome export-context",
-        json: options.json === true,
-        messages: run.messages,
-      });
-      return run.exitCode;
-    }
-    printViewCommandMessages(
-      structuredViewBrokerMessages("dome export-context", run.brokerDiagnostics),
-    );
-
-    if (options.json === true) {
-      console.log(formatJson(run.data));
-    } else {
-      console.log(markdownFromData(run.data));
-    }
-    return 0;
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    printViewCommandError({
-      commandLabel: "dome export-context",
-      json: options.json === true,
-      error: "export-context-failed",
-      messages: [`dome export-context: failed: ${msg}`],
-    });
-    return 1;
-  }
+  return runCliStructuredView({
+    commandLabel: "dome export-context",
+    entry: FIRST_PARTY_VIEWS.exportContext,
+    commandArgs: Object.freeze({
+      topic,
+      ...(options.limit !== undefined ? { limit: options.limit } : {}),
+    }),
+    vault: options.vault,
+    bundlesRoot: options.bundlesRoot,
+    json: options.json === true,
+    noStructuredResultMessage:
+      "dome export-context: processor returned no structured result.",
+    failedError: "export-context-failed",
+    renderHuman: (data) => markdownFromData(data),
+  });
 }
 
 function markdownFromData(data: unknown): string {
