@@ -9,6 +9,7 @@ tags:
   - capture
   - brief
   - task-lifecycle
+  - cohesion
   - second-brain
 created: 2026-06-15
 updated: 2026-06-15
@@ -24,203 +25,212 @@ sources:
   - "[[wiki/specs/capture]]"
 ---
 
-# Daily Phase 2 — Slack source-links + content density
+# Daily Phase 2 — one task model: origin, creation, attention
 
-Approved design, 2026-06-15. Two coupled outcomes, planned together because both
-converge on the brief and the daily's task surface:
+Approved design, 2026-06-15. Revised after a full cohesion audit of the
+`dome.daily` plugin, the `dome.agent` daily-writers, and the daily-surface /
+task-lifecycle specs. **This Phase nets to a *smaller* surface, not a bigger one**:
+it unifies grammars and mechanisms that had started to fragment, fixes two latent
+bugs, finishes one half-built path, and deliberately cuts the one genuinely new
+concept.
 
-1. **Source-links for any finding.** Every Slack-derived TODO carries a clickable
-   backlink to its thread, *regardless of which path created it* — share/capture,
-   the morning Slack scrape (foreground), or the brief.
-2. **Content density at the source.** The daily gets materially less dense — short
-   scannable task labels, related open loops grouped, stale-overdue surfaced for a
-   decision — so `dome today` isn't just *rendered* calmly (Phase 1) but *is* calm.
+## The unified task model (the thing we are building toward)
 
-## What's already true (so we don't rebuild it)
+A daily task has exactly **four properties**, each owned by **one** mechanism, and
+every machine-created task flows through **one** creation seam. Phase 2 completes
+and unifies these axes — it does not add new ones.
 
-- **Render is universal and done** ([[cohesive/brainstorms/2026-06-15-dome-today-readability]]):
-  `dome today` turns *any* inline `[label](url)` in a task body into a clickable
-  `label↗` affordance — path-agnostic. Phase 2 is purely about getting the
-  permalink onto the line at creation, then reducing volume.
-- **Capture backlinks ship** ([[cohesive/brainstorms/2026-06-15-task-origin-links]]):
-  the captured-task seam stamps `([↗](target))` deterministically; the grammar
-  (`appendOriginMarker(line, target)`) already takes an arbitrary target.
-- **Attention-discount exists:** `dome.attention.discount` facts demote
-  surfaced-without-action loops; the brief already compresses stale loops into one
-  bullet or an `askOwner`.
-- **The captured-task seam is the safe task-creation path:** block-owned,
-  `^id`-anchored, deduped. The brief's "no checkboxes" rule is about its *summary*
-  blocks, not this seam.
+| Property | Single owner | Phase 2 work |
+|---|---|---|
+| **Identity** | `^id` block anchor (`stamp-block-id`) | none — already clean |
+| **Origin** (where it came from) | one inline marker `([↗](target))` + the captured-task **seam**; surfaced as one structured field | **unify** the grammar, fix bugs, make it a first-class field, render it uniformly, extend target to Slack URLs |
+| **Attention** (staleness) | `dome.attention.discount` facts → the brief's stale-loop pass | **finish** the half-built settle path |
+| **Label** (brevity) | task-creating charters + the seam's length cap | **dedupe** into one shared charter fragment |
+| **Creation seam** | the captured-task seam (`appendCapturedTaskLines` / `capturedAwareAppendTool`) | **one** caller becomes **two** (ingest + brief) |
 
-## Decision of record
+## What this cleans up (audit findings → fixes)
 
-Three coherent sub-projects, designed as one, executed in one pass with a clean
-merge per chunk:
-
-- **P1 — Slack source-link foundation** (low risk): permalinks available + a shared
-  convention, wired to the share/capture path.
-- **P2 — Brief findings → linked tasks + title brevity** (medium): the brief emits
-  actionable findings as short, source-linked `#task` lines through the captured
-  seam.
-- **P3 — Daily hygiene** (medium, meaning-loop): cluster related open loops and
-  surface stale-overdue, both owner-questions (propose-not-auto).
-
----
-
-## P1 — Slack source-link foundation
-
-Render already makes `[thread](url)` clickable; P1 makes the permalink *available*
-and gives every creator one way to stamp it.
-
-### P1.1 `slack-day` grammar — optional per-entry permalink
-[[wiki/specs/vault-layout]] §"`sources/slack/YYYY-MM-DD.md`". Each entry gains an
-**optional trailing autolink**:
-
-```markdown
-## Mentions
-- [#dome-dev] 22:41 alice: "look at the outbox retry PR?" <https://uniswap.slack.com/archives/C…/p…>
-```
-
-Backward-compatible: optional, the existing defensive parser ignores trailing
-tokens, and `parseSlackDigest` (brief.ts) keeps its 15-entry/240-char caps. The
-parser gains a `permalink?: string` field per entry, populated from a trailing
-`<https://…slack.com/…>` autolink when present.
-
-### P1.2 Fetch template emits permalinks
-`assets/source-handlers/claude-slack.sh`: the prompt instructs emitting each
-message's Slack permalink in the `<…>` autolink position (the Web API
-`chat.getPermalink` / connector read tools return it). Template-only; consent
-surface unchanged ([[wiki/specs/sources]] §"The Slack stance").
-
-### P1.3 Shared source-link convention
-The canonical way to attach a source to a task is **an inline markdown link in the
-task body** (rendered clickable by Phase 1). A tiny shared helper standardizes
-labels so every path looks identical:
-
-```ts
-// dome.daily — taskSourceLink: format an inline source link for a task body.
-// slack → "thread", a vault path → "↗", a doc/url → host-derived or "link".
-taskSourceLink(kind: "slack" | "capture" | "url", url: string): string  // → `[thread](url)` etc.
-```
-
-Captures keep the existing `([↗](path))` marker (capture path = a vault file);
-external sources use a descriptive label (`[thread](url)`). Both render clickable.
-
-### P1.4 Share/capture path stamps the URL
-Extends [[cohesive/brainstorms/2026-06-15-task-origin-links]] Phase 1. When a
-captured note carries a source URL — a `source_url:` frontmatter key, or a bare
-Slack/URL detected in the body — `dome.agent.ingest` sets the captured task's
-origin to that URL (a `[thread](url)` link) **instead of / in addition to** the
-archived-capture backlink. Guard: only `https://…slack.com/…` (and generic
-`https://`) targets are accepted as external; anything else falls back to the
-capture backlink. The seam already stamps an arbitrary target — this only changes
-*which* target ingest passes for a URL-bearing capture.
-
-**P1 ships:** clickable Slack backlinks for the two paths that already create tasks
-(share/capture + your foreground morning scrape, which now has permalinks in the
-digest), with no meaning-loop reversal.
+1. **Three inline-link grammars → two.** Shipped today: `(from [[…]])`
+   carry-forward *copy* suffix (internal, drives `reconcile`) and `([↗](target))`
+   *origin* marker (user-facing). The earlier draft would have added a **third**
+   (`[thread](url)` + a `taskSourceLink` helper). **Cut it.** Slack is just an
+   external *target* of the existing origin marker. The two surviving grammars are
+   distinct concepts (copy-provenance vs. source-provenance) and stay distinct.
+2. **One marker, two regexes, one bug.** `ORIGIN_MARKER_RE` (detect, in
+   captured-block) and `ORIGIN_MARKER_BODY_RE` (strip, in action-extraction) both
+   describe `([↗](…))` but live in different files; the strip regex's `[^)]*`
+   **breaks on a URL containing `)`** (a real Slack-permalink case). **Fix:** one
+   shared, `)`-safe definition, imported by both.
+3. **Origin renders two ways today — fix to one.** Capture markers are stripped
+   and *invisible* in `dome today`; hand-authored `[thread](url)` links *show*. The
+   cohesion rule (your call): **a task's origin renders as one clickable `↗`
+   affordance in `today`, whatever path created it** — and origin becomes a
+   first-class structured field so the render and the hash never fight.
+4. **Stale loops: finish, don't fork.** The brief already receives
+   `discount ≥ 0.4` items and is told to "raise one askOwner," but the question is
+   unstructured and has **no answer-handler**, so nothing settles. **Finish it**
+   into a structured settle question + handler. No new staleness channel.
+5. **Charter brevity instruction would be a 4th copy-paste.** preference-signals /
+   superseded-pages / untrusted-input are already duplicated across 3–4 charters.
+   **Fix:** one shared charter-fragment module; brevity lives there once.
+6. **Cut the clustering warden.** Auto-clustering related loops (a new warden + an
+   umbrella-page answer-handler) is the only net-new *concept* and the largest new
+   surface. **Deferred.** The stale-settle question may *note* related loops as
+   context, but Dome does not auto-group.
 
 ---
 
-## P2 — Brief findings → linked tasks + title brevity
+## P1 — Complete and unify the origin axis
 
-### P2.1 The brief may create findings-as-tasks (safely)
-Today the brief writes Slack as summary bullets only. P2 lets it surface genuinely
-*actionable* findings (a Slack mention asking you to do something, a meeting
-prep action) as `- [ ] #task <label> [thread](permalink)` lines — written through
-the **captured-task seam** (the same `appendToPage`→captured-block path ingest
-uses), NOT as summary bullets. Why this is safe: the seam is block-owned and the
-line becomes an `^id`-anchored origin extracted exactly once; the "no checkboxes"
-rule stays in force for the brief's *summary* blocks (yesterday / meetings), which
-remain plain `-` bullets. The brief charter gains: "an actionable Slack/meeting
-finding may be written as ONE captured `#task` line carrying its `[thread](url)`
-permalink via the captured-tasks tool; everything else stays a summary bullet."
+Render is already universal (Phase 1 today work turns any affordance clickable);
+P1 makes "origin" one coherent, first-class thing and lets Slack ride it.
 
-Dedup: the captured seam already rejects duplicate-shaped lines, and a finding
-re-seen on a later night matches an existing anchored task (reconcile), so a
-re-run does not double-create. The brief records surfaced findings to avoid
-re-emitting across nights (reuse the brief's existing seen-state / ledger posture).
+### P1.1 One shared marker primitive
+A single grammar `([↗](target))`, target = a vault-relative path **or** an
+external URL. One exported module owns three pure functions — `appendOriginMarker`,
+`hasOriginMarker`, `stripOriginMarker` (and `parseOriginMarker(line) → {body,
+target}`) — with **one** `)`-safe regex. `action-extraction` imports them; the
+duplicate `ORIGIN_MARKER_BODY_RE` is deleted. `)`-safety: match the whole
+`([↗](…))` to the final `))` (balanced), or require callers to percent-encode —
+the primitive does the encoding so callers can't get it wrong.
 
-### P2.2 Title brevity at the source
-The locus is the same task-writing seam. Task-creating charters (ingest **and**
-brief) get an explicit brevity instruction: **write a short, scannable label**
-(the imperative + the who/what, target ≤ ~80 visible cols); the long context
-belongs in the linked note/source, never the task line. Reuse the existing
-`CAPTURED_LINE_MAX_CHARS` posture as the hard cap; the charter guidance is the soft
-target. No new processor — this is charter + the existing seam cap. (Render's
-`shortenLabel` is the safety net; this reduces how often it must fire.)
+### P1.2 Origin as a first-class field
+`task-index` parses the origin target out of each task line via the shared
+primitive and carries it as a **structured field** on the `dome.daily.open_task` /
+`dome.daily.followup` projection; the marker is stripped from the body used for
+objectString / hashing / dedup / reconcile keys (as today). So identity is
+marker-free and origin is queryable — not smuggled in the display string.
+
+### P1.3 One render rule
+`today-view` carries `origin` onto `TodayTaskRow`; `formatTodayResult` renders it
+as **one** trailing `↗` affordance for every task that has one: an external URL →
+OSC 8 hyperlink to the URL; a vault path → OSC 8 hyperlink to `file://<abs>` so
+⌘-click opens the capture/note. Capture and Slack origins look and behave
+identically. (Obsidian keeps rendering the inline marker natively.)
+
+### P1.4 Slack permalinks available
+`slack-day` grammar gains an **optional trailing autolink** per entry
+(`… <https://…slack.com/…>`); backward-compatible (the defensive parser ignores
+unknown trailing tokens). `parseSlackDigest` gains a `permalink?` field.
+`claude-slack.sh` instructs emitting each message's permalink (Web API
+`chat.getPermalink` / connector tools return it). Template + grammar only.
+
+### P1.5 Creation wires the target
+`dome.agent.ingest` already stamps the origin via the seam. Extend: when a capture
+carries a source URL (`source_url:` frontmatter, or a bare Slack URL in the body),
+ingest passes that URL as the origin target (guard: `https://`, Slack-shaped
+preferred) instead of the archived-capture path. The seam already takes an
+arbitrary target — no seam change.
+
+**P1 ships:** capture *and* Slack origins, created by share/capture or your
+foreground scrape, render as one identical clickable `↗` in `dome today`. One
+grammar, one field, one render, one strip.
 
 ---
 
-## P3 — Daily hygiene (open-loop pass)
+## P2 — One task-creation seam (the brief joins ingest)
 
-Strengthen the brief's existing stale-loop pass into one **open-loop hygiene**
-step, propose-not-auto (aligned with the warden principle: model judgment
-transient, owner resolution durable; never auto-mutate the owner's tasks).
+### P2.1 The brief writes findings through the *same* seam
+The captured-task seam is the single sanctioned task-creation surface. The brief
+gains the same `capturedAwareAppendTool` ingest uses (extract it so both bundles
+construct it identically) and may write genuinely **actionable** Slack/meeting
+findings as `- [ ] #task <label> ([↗](permalink))` lines **through that seam** —
+never as checkboxes in its summary blocks. The "no checkboxes in summary blocks"
+rule (R3) stays in force; the seam's per-line validation is the injection/format
+fence for untrusted Slack text.
 
-### P3.1 Stale-overdue surfacing
-Deterministic input: tasks that are overdue beyond a threshold (default **14
-days**) and/or carry a high `dome.attention.discount`. The brief raises **one**
-owner question per night proposing a batch decision — close / defer / keep — over
-the stale set, citing the tasks (it already has the discount data in its task
-turn). No auto-close. This extends the brief's current "stale loops → one bullet
-or askOwner" into a structured, resolvable question.
+### P2.2 Required governance (the spec's own rule)
+daily-surface.md §"The section contract" is normative: *any* new daily-writer must
+claim a block-ownership + section-contract row before shipping. So P2 **must**
+update the `dome.daily:captured` block-ownership cell and the `## Captured today`
+section-contract row to name the brief as a co-writer-through-the-seam (alongside
+the skeleton and ingest). This is the mechanism that prevents the very accretion
+you're worried about — we use it.
 
-### P3.2 Related open-loop clustering
-The brief detects clusters of related open loops — shared entity, `[[wikilink]]`,
-or project (e.g. the routing-retention pile: Cody + Siyu + Charles + pod-level) —
-and raises **one** owner question proposing to group them under a single tracked
-thread (a wiki page / one umbrella task), never auto-merging. The grouping is the
-owner's call; the brief only proposes and, on a `group` answer, writes the umbrella
-(an answer-handler, like other wardens). Clustering signal: ≥3 open loops sharing
-an entity/wikilink within the active set.
+### P2.3 Cross-night dedup without a registry
+The brief must not re-emit the same finding nightly. Per `NO_ACCRETING_REGISTRIES`,
+the seen-state is **not** a vault ledger — it's the existing reconcile/anchor
+reality: a re-seen finding matches an already-`^id`-anchored task (the seam rejects
+dup-shaped lines; reconcile matches by body), so a second night does not
+double-create. A per-day brief-owned marker block records what was surfaced today
+(same posture as `dome.agent.brief:sources`).
 
-**P3 ships:** the daily stops accreting — stale items get a close/defer decision,
-related piles collapse to one thread — which is what actually shrinks 239 → legible.
+### P2.4 Brevity, once
+A shared charter-fragment ("write a short scannable label — imperative + who/what,
+≤ the seam cap; long context goes in the linked note, never the task line") is used
+by **both** ingest and brief. The existing duplicated fragments (preference-signals,
+superseded, untrusted-input) move into the same module in passing. Render's
+`shortenLabel` stays the safety net; this reduces how often it fires.
+
+---
+
+## P3 — Finish the attention/stale path (no new channel)
+
+The brief already gets `discount ≥ 0.4` items as deterministic pre-run DATA and is
+told to "raise one askOwner." P3 makes that **resolvable**:
+
+- **Structured settle question.** For tasks both heavily discounted (≥ 0.4) **and**
+  overdue beyond a threshold (default **14 days**), the brief raises **one**
+  `dome.agent.brief:settle-stale:<anchor>` question per night — options
+  close / defer / keep — carrying the task anchors in metadata. No auto-close
+  (propose-not-auto, R5).
+- **A deterministic answer-handler** (`settle-stale-answer`, the established
+  warden/answer pattern — like `sweep-answer`) applies the disposition: `close`
+  marks the origin line `[-]` (which `reconcile` then propagates), `defer` snoozes
+  (a due-date bump), `keep` records the acknowledgment so the question doesn't
+  recur. Model proposes; the answer disposes; only the disposition is durable
+  (`MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS`, R4).
+- The question **may list related loops** (shared entity/wikilink) as context to
+  help the batch decision — but Dome does not auto-group or auto-write umbrellas.
 
 ---
 
 ## Architecture & boundaries
 
-- **No new primitive.** P2/P3 are garden-phase brief behavior (autonomous-agent
-  model) + reused `dome.daily` seam/grammar. P1 is grammar + template + a shared
-  helper. ([[wiki/specs/autonomous-agents]], [[wiki/invariants/MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS]]
-  — questions are durable via answers.db, not facts.)
-- **Propose-not-auto** for every owner-facing decision (P3). The brief never
-  closes, merges, or deletes a task on its own.
-- **Source links are committed markdown** (render-agnostic, rebuild-safe) — never a
-  projection.
-- **Re-ingestion safety** is the load-bearing constraint for P2; the captured seam
-  + `^id` anchoring + reconcile provide it.
+- **No new primitive.** P1 = a shared pure module + a projection field + render.
+  P2 = the brief calling an existing seam. P3 = a structured question + a
+  deterministic answer-handler (the warden pattern). ([[wiki/specs/autonomous-agents]])
+- **Propose-not-auto** for every owner decision (P3); the brief never closes,
+  merges, defers, or deletes a task itself.
+- **Markdown is source of truth.** The origin marker lives in committed markdown;
+  the structured field is a rebuildable projection of it.
+- **Block ownership is the write boundary** — P2 updates the normative tables; the
+  brief writes the captured block only through the validated seam.
+- **Re-ingestion safety** (the load-bearing P2 constraint) comes from the seam +
+  `^id` anchoring + reconcile, exactly as for ingest.
 
 ## Decomposition into plans
 
-- **Plan 1 (P1):** slack-day grammar + parser field, `claude-slack.sh` template,
-  `taskSourceLink` helper, ingest URL-stamping for captures. Tests: parser permalink
-  extraction; helper labels; ingest stamps a `[thread](url)` for a `source_url:`
-  capture; render shows it clickable (integration).
-- **Plan 2 (P2):** captured-task tool added to the brief toolset; brief charter
-  findings-as-tasks + brevity; seen-state to avoid cross-night dup. Tests: brief
-  emits a captured `#task` with permalink through the seam; summary blocks stay
-  checkbox-free; re-run doesn't double-create; brevity cap enforced.
-- **Plan 3 (P3):** brief open-loop hygiene — stale-overdue question (threshold +
-  discount) and related-loop clustering question + group answer-handler. Tests:
-  stale set raises one question; cluster of ≥3 shared-entity loops raises one group
-  question; `group` answer writes the umbrella; no auto-mutation.
+- **Plan 1 — origin axis (the cohesion core):** shared marker primitive (one
+  `)`-safe regex; delete the duplicate); origin as a structured projection field;
+  one `today` render rule (URL + `file://`); `slack-day` permalink grammar + parser
+  field + `claude-slack.sh`; ingest wires URL targets from captures. Tests: parse
+  handles `)`-in-URL; capture & slack both render one clickable `↗` in today;
+  hashing/dedup unaffected by markers; slack-day parses with/without permalink.
+- **Plan 2 — one seam:** extract the captured-seam tool for shared use; brief emits
+  findings-as-tasks through it; block-ownership + section-contract table updates;
+  per-day seen-block; shared charter-fragment module (brevity + the deduped
+  fragments). Tests: brief task lands in the captured block with a permalink marker;
+  summary blocks stay checkbox-free; re-run doesn't double-create; cap enforced.
+- **Plan 3 — finish stale:** structured `settle-stale` question (discount + overdue
+  threshold) + `settle-stale-answer` handler (close/defer/keep). Tests: stale set
+  raises one structured question; each disposition applies correctly and is
+  idempotent; no auto-mutation without an answer.
 
-## Non-goals
-- No auto-close / auto-merge of tasks (always owner-decided).
-- No change to the page consolidator (`dome.agent.consolidate` stays page-only).
-- No new capture transport (the share path reuses existing `dome capture` +
-  `source_url:` frontmatter or an in-body URL).
-- Calendar/web-finding tasks beyond Slack are supported by the same grammar but not
-  separately specced here (Slack is the driving case).
+## Non-goals (what we are deliberately NOT building)
+- **No clustering warden / umbrella pages** (the one cut feature; deferrable later).
+- **No `[thread](url)` grammar or `taskSourceLink` helper** (folded into the one
+  origin marker).
+- **No new staleness channel** (we finish the existing one).
+- **No change to the page consolidator** (`dome.agent.consolidate` stays page-only).
+- **No new capture transport** (share path reuses `dome capture` + `source_url:`).
 
 ## Open decisions (flag for review)
-- **Stale threshold** = 14 days overdue (and/or discount ≥ hero floor). Adjustable.
-- **Cluster trigger** = ≥3 open loops sharing an entity/wikilink. Adjustable.
-- **Capture URL source** = `source_url:` frontmatter (explicit) vs. first bare URL
-  in the body (implicit). Spec picks `source_url:` as primary, in-body bare Slack
-  URL as a fallback.
-- **Brief task emission scope** = Slack + meeting actions only (not arbitrary
-  findings), to bound the no-checkbox reversal.
+- **Stale threshold** = 14 days overdue *and* discount ≥ 0.4. Adjustable.
+- **Capture URL source** = `source_url:` frontmatter (primary), bare in-body Slack
+  URL (fallback).
+- **Brief task-emission scope** = Slack mentions/DMs that read as a request + meeting
+  prep actions only (bounds the no-checkbox reversal).
+- **`file://` affordance for capture origins** in the terminal — included; if it
+  proves noisy we can fall back to "external URLs only render in `today`, capture
+  origins stay Obsidian-only" (your option B), a one-line render change.
