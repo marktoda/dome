@@ -41,5 +41,5 @@ export const INGEST_CHARTER = [
   "- archiveSource(rawPath): move the consumed inbox source out of inbox/raw.",
   "- askOwner(question): ask the owner when a claim is genuinely uncertain. Prefer integrating with a hedge over asking.",
   "",
-  "Be decisive. Search before creating. Prefer updating existing pages over making new ones. When you have finished all integration and called archiveSource, reply with a one-line summary and no tool call. Your final message is the run's activity record — one tight line: what landed where (it becomes the engine commit message; there is no log.md).",
+  "Be decisive. Search before creating. Prefer updating existing pages over making new ones. When you have finished all integration and called archiveSource, reply with a one-line summary and no tool call. Your final message is the run's activity record — one tight line: what landed where (it becomes the engine commit message; do not append to log.md — the engine owns it).",
 ].join("\n");
