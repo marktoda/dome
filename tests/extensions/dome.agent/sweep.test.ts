@@ -249,6 +249,10 @@ describe("dome.agent.sweep", () => {
     expect(refPaths).toContain(DEST);
   });
 
+  // The one-per-key discipline (never minting a second line for an existing
+  // key) is model judgment, not deterministic processor behavior — it is
+  // covered only by the charter-content assertion in sweep-tools.test.ts; this
+  // hermetic test, which scripts the model's output, cannot exercise it.
   test("claim mint: the model promotes a load-bearing fact to a new claim line — the patch carries it", async () => {
     const updated = [
       "---",

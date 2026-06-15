@@ -89,6 +89,33 @@ describe("claimsFromMarkdown", () => {
     const claims = claimsFromMarkdown(content);
     expect(claims.map((c) => c.key)).toEqual(["Owner"]);
   });
+
+  test("a mid-line/prose mention of a start marker does NOT bound a block (line-anchored)", () => {
+    // The marker text appears INLINE inside a prose sentence, not as the whole
+    // line — so it is content, never a block boundary. The real claim below it
+    // is parsed normally. This pins the line-anchored guarantee.
+    const content = [
+      "# Atlas",
+      "",
+      "See the generated digest <!-- dome.claims:current-facts:start --> for the current snapshot.",
+      "",
+      "- **Owner:** [[danny]] ^cBBBB",
+    ].join("\n");
+    const claims = claimsFromMarkdown(content);
+    expect(claims.map((c) => c.key)).toEqual(["Owner"]);
+  });
+
+  test("an unterminated start marker excludes every claim below it to EOF", () => {
+    const content = [
+      "# Atlas",
+      "",
+      "<!-- dome.claims:current-facts:start -->",
+      "- **Status:** in design review",
+    ].join("\n");
+    // No matching :end marker → the open block extends to EOF, so the claim
+    // line below the start marker is excluded.
+    expect(claimsFromMarkdown(content)).toHaveLength(0);
+  });
 });
 
 describe("stampClaimAnchors anchor dedup", () => {

@@ -34,8 +34,8 @@ const AS_OF_RE = /\*\(as of (\d{4}-\d{2}-\d{2})\)\*/;
 // Line-anchored dome generated-block markers (any owner/block). Mirrors
 // generated-block.ts's `isMarkerLine` discipline: the whole trimmed line must
 // be the marker, so a prose/fence/mid-line mention never bounds a block.
-const GENERATED_BLOCK_START_RE = /^<!--\s*dome[.\w]*:[\w-]+:start\s*-->$/;
-const GENERATED_BLOCK_END_RE = /^<!--\s*dome[.\w]*:[\w-]+:end\s*-->$/;
+const GENERATED_BLOCK_START_RE = /^<!--\s*dome(?:\.\w+)*:[\w-]+:start\s*-->$/;
+const GENERATED_BLOCK_END_RE = /^<!--\s*dome(?:\.\w+)*:[\w-]+:end\s*-->$/;
 
 export function claimsFromMarkdown(
   content: string,
