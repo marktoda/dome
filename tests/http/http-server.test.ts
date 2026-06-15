@@ -585,3 +585,33 @@ describe("GET /today", () => {
     expect(await garbage.text()).toContain("POLL_MS = 15000");
   }, TEST_TIMEOUT_MS);
 });
+
+// ----- Cacheable font routes (CB-T7) ------------------------------------------
+
+describe("GET /today/fonts/*.woff2", () => {
+  test("GET /today/fonts/basel-book.woff2 returns the font with an immutable long cache", async () => {
+    const f = await fixture();
+    const res = await fetch(`${f.baseUrl}/today/fonts/basel-book.woff2`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("font/woff2");
+    expect(res.headers.get("cache-control")).toMatch(/immutable|max-age=\d{6,}/);
+  }, TEST_TIMEOUT_MS);
+
+  test("/today HTML references font routes, not megabytes of base64", async () => {
+    const f = await fixture();
+    const res = await fetch(`${f.baseUrl}/today?token=${TOKEN}`);
+    const html = await res.text();
+    expect(html).toContain("/today/fonts/basel-book.woff2");
+    expect(html).not.toContain("data:font/woff2;base64,");
+    expect(html.length).toBeLessThan(60000); // ~25KB, not ~270KB
+  }, TEST_TIMEOUT_MS);
+
+  test("font route is served without authentication", async () => {
+    const f = await fixture();
+    // No Authorization header — a browser loading url() from CSS sends none.
+    const res = await fetch(`${f.baseUrl}/today/fonts/basel-medium.woff2`);
+    expect(res.status).toBe(200);
+  }, TEST_TIMEOUT_MS);
+});

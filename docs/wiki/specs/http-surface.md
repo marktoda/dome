@@ -32,8 +32,10 @@ documents the CLI emits under `--json`.
 ## Routes
 
 Every route requires `Authorization: Bearer <token>` (constant-time
-comparison; 401 otherwise) — with one scoped exception for `GET /today`,
-below. One vault per process.
+comparison; 401 otherwise) — with two scoped exceptions: `GET /today` accepts
+the token as `?token=` (below), and the two `GET /today/fonts/*.woff2` static
+asset routes are served fully **unauthenticated** (§"Cacheable font assets").
+One vault per process.
 
 | Route | Same path as | Result schema |
 |---|---|---|
@@ -43,6 +45,8 @@ below. One vault per process.
 | `GET /query?text=…` | `dome query --json` | `dome.search.query/v1` |
 | `GET /tasks?date=…` | `dome run today` | `dome.daily.today/v1` |
 | `GET /today?refresh=…` | the `dome.daily.today` view → `renderTodayHtml` | `text/html` cockpit page (`cache-control: no-store`) |
+| `GET /today/fonts/basel-book.woff2` | static Basel asset (cacheable) | `font/woff2` (immutable; **unauthenticated**) |
+| `GET /today/fonts/basel-medium.woff2` | static Basel asset (cacheable) | `font/woff2` (immutable; **unauthenticated**) |
 | `GET /doc?path=…` | `vault.readDocument` (adopted ref) | `dome.http.document/v1` |
 | `GET /questions` | `vault.listQuestions` (open only) | `dome.http.questions/v1` |
 | `POST /resolve` `{id, value}` | `dome resolve` | `dome.answer/v1` |
@@ -71,9 +75,45 @@ http-equiv="refresh">`. `?refresh=<seconds>` sets the poll cadence (JS
 `POLL_MS = refreshSeconds * 1000`) — a positive integer, default 15 when
 absent or unparseable; the renderer floors it at 1.
 
-The response is sent with `cache-control: no-store`: an authenticated page
+The poll **fingerprint projects only user-visible fields** — the task/question
+ids, titles, and urgency the page actually renders — never the volatile
+projection metadata (`attention`, `lastChangedAt`, and the like) that churns on
+every compiler tick without changing what the page shows. A naive whole-payload
+fingerprint reloaded the page on every background adoption; narrowing it to the
+visible projection means the page reloads only when the rendered content
+actually changes.
+
+Once the page loads, the inline script **scrubs `?token=` from the URL** via
+`history.replaceState` (the token is kept in the JS closure for the polls'
+`Authorization` header). The bearer survives in memory for the session; it no
+longer sits in the visible address bar or in any link copied off the loaded
+page.
+
+The HTML response is sent with `cache-control: no-store`: an authenticated page
 whose URL can carry `?token=`, and whose freshness contract is the JS poll
-interval — it must never be cached.
+interval — it must never be cached. (The font assets below are the deliberate
+exception — non-sensitive static bytes that *should* cache hard.)
+
+### Cacheable font assets (`GET /today/fonts/*.woff2`)
+
+The cockpit's CSS references the Basel typeface via two static routes —
+`GET /today/fonts/basel-book.woff2` and `GET /today/fonts/basel-medium.woff2`.
+They are served:
+
+- with `content-type: font/woff2`;
+- with `cache-control: public, max-age=31536000, immutable` — the fonts are
+  content-stable, so the browser fetches each once and never revalidates;
+- **unauthenticated** — these two GET routes (and only these) skip the bearer
+  check. A browser's CSS `url()` font fetch carries no `Authorization` header
+  and no cookies, so requiring a token would simply break font loading; the
+  bytes are non-sensitive public static assets, not vault data. Every other
+  route — including the `GET /today` HTML itself — keeps its bearer/query-token
+  auth.
+
+Pulling the fonts out of the HTML (they were previously inlined as base64)
+drops the `/today` page to ~25 KB and lets the browser cache the heavy font
+bytes across reloads instead of re-parsing them inside every poll-triggered
+page load.
 
 **Briefing panels.** The cockpit page includes three additive panels sourced
 from graph facts emitted by the `dome.agent` adoption extractors:

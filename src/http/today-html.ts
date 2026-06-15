@@ -10,28 +10,26 @@ export type TodayHtmlOptions = {
   readonly refreshSeconds: number;
 };
 
-import { BASEL_BOOK_WOFF2_B64, BASEL_MEDIUM_WOFF2_B64 } from "./today-fonts";
+import { addDays, daysBetween, parseTodayView, type TodayTaskRow, type TodayQuestionRow, type TodayCalendarEvent, type TodayHeroItem } from "../surface/today-view";
 
-// Self-contained @font-face: the design's Basel Grotesk (Book 485 / Medium 535),
-// base64-embedded so the page needs no external font requests. Mono stays the
-// system ui-monospace stack.
+// @font-face: the design's Basel Grotesk (Book 485 / Medium 535). The woff2
+// bytes are served from same-origin, year-cacheable routes (the HTTP adapter's
+// GET /today/fonts/basel-{book,medium}.woff2, fed by ./today-fonts) and url()'d
+// here — so the ~246KB of font bytes load once and cache, instead of being
+// re-inlined as base64 on every no-store /today reload. Mono stays the system
+// ui-monospace stack.
 const FONT_FACE = `
     @font-face { font-family: "Basel Grotesk"; font-weight: 485; font-display: swap;
-      src: url("data:font/woff2;base64,${BASEL_BOOK_WOFF2_B64}") format("woff2"); }
+      src: url("/today/fonts/basel-book.woff2") format("woff2"); }
     @font-face { font-family: "Basel Grotesk"; font-weight: 535; font-display: swap;
-      src: url("data:font/woff2;base64,${BASEL_MEDIUM_WOFF2_B64}") format("woff2"); }`;
+      src: url("/today/fonts/basel-medium.woff2") format("woff2"); }`;
 
 export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
   const refresh = Math.max(1, Math.floor(opts.refreshSeconds));
-  const record = isRecord(data) ? data : {};
-  const date = typeof record.date === "string" ? record.date : "today";
-  const openTasks = rows(record.openTasks);
-  const followups = rows(record.followups);
-  const questions = questionRows(record.questions);
-  const brief = parseBrief(record.brief);
-  const calendar = parseCalendar(record.calendar);
-  const hero = parseHero(record.hero);
-  const total = openTasks.length + followups.length + questions.length;
+  const view = parseTodayView(data);
+  const { date, openTasks, followups, questions, brief, calendar, hero, counts } = view;
+  // Use true totals from the shared parser counts (not the display-limited received lengths).
+  const total = counts.openTasks + counts.followups + counts.questions;
 
   // The hero task is already the pill above — don't repeat it in "Still open".
   const heroKey =
@@ -42,6 +40,9 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
     (t) => heroKey === null || `${t.path}:${t.line ?? ""}:${t.text}` !== heroKey,
   );
   const isAllClear = total === 0;
+  // True total for the "Still open" section (tasks + followups, hero shown separately).
+  const heroIsTask = hero !== null && hero.kind === "task";
+  const trueOpenCount = counts.openTasks + counts.followups - (heroIsTask ? 1 : 0);
 
   const style = `${FONT_FACE}
     * { box-sizing: border-box; }
@@ -124,6 +125,11 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
     .reveal .src { opacity: 0; transition: opacity .14s ease; }
     .reveal:hover .src { opacity: .55; }
     .src { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 3px; }
+    .bucket-label { font-size: 0.7rem; font-family: ui-monospace, "SF Mono", Menlo, monospace; opacity: 0.7; margin: 8px 0 4px; }
+    .bucket-overdue { color: #FF593C; }
+    .bucket-today { color: #FFBF17; }
+    .bucket-week { color: #888; }
+    .still-open-more { display: flex; gap: 10px; align-items: center; padding: 11px 12px; background: #1A1A1A; border-radius: 12px; margin-top: 8px; font-size: 13px; color: rgba(255,255,255,0.6); font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 
     /* all-clear */
     .all-clear-wrap { display: flex; flex-direction: column; align-items: flex-start; padding: 40px 0; }
@@ -186,7 +192,7 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
     : "";
 
   const stillOpenHtml = allItems.length > 0
-    ? renderStillOpenHtml(allItems, date)
+    ? renderStillOpenHtml(allItems, date, trueOpenCount)
     : "";
 
   const allClearHtml = isAllClear
@@ -250,7 +256,7 @@ ${scriptHtml}
  */
 function buildScriptHtml(
   refreshSeconds: number,
-  questionRows: ReadonlyArray<QuestionRow>,
+  questionRows: ReadonlyArray<TodayQuestionRow>,
 ): string {
   // Embed the question IDs so the script knows which cards to wire up.
   // JSON.stringify is safe here — these are numbers, not user strings.
@@ -262,6 +268,14 @@ function buildScriptHtml(
   // ── Token ──────────────────────────────────────────────────────────────
   var params = new URLSearchParams(location.search);
   var token = params.get('token') || '';
+  // Keep the token in this closure for the Authorization header on the
+  // resolve/capture POSTs, but scrub it from the address bar / history so it
+  // doesn't linger in the URL after the page reads it.
+  if (token) {
+    var u = new URL(location.href);
+    u.searchParams.delete('token');
+    history.replaceState(null, '', u.pathname + u.search + u.hash);
+  }
 
   // ── State ──────────────────────────────────────────────────────────────
   var lastFingerprint = '';
@@ -313,8 +327,27 @@ function buildScriptHtml(
   }
 
   // ── Polling ───────────────────────────────────────────────────────────
+  // Project ONLY user-visible fields so the fingerprint is stable across ticks
+  // when nothing on the page changed. Volatile bookkeeping (attention counters,
+  // lastChangedAt, impressions/lastShown) is deliberately excluded — including
+  // it would trigger spurious location.reload() flashes every poll.
   function fingerprint(data) {
-    return JSON.stringify(data);
+    data = data || {};
+    var hero = data.hero;
+    var heroItem = hero && hero.item;
+    var h = heroItem
+      ? [hero.kind, heroItem.text, heroItem.question, heroItem.dueDate]
+      : null;
+    var cal = (data.calendar && data.calendar.events) || null;
+    return JSON.stringify({
+      b: data.brief && data.brief.text,
+      h: h,
+      o: (data.openTasks || []).map(function (t) { return [t.text, t.dueDate]; }),
+      f: (data.followups || []).map(function (t) { return [t.text, t.dueDate]; }),
+      q: (data.questions || []).map(function (x) { return [x.id, x.question]; }),
+      c: data.counts,
+      cal: cal,
+    });
   }
 
   function poll() {
@@ -451,17 +484,13 @@ function buildScriptHtml(
 
 // ── Section renderers ───────────────────────────────────────────────────────
 
-type HeroItem =
-  | { readonly kind: "task"; readonly item: TaskRow }
-  | { readonly kind: "question"; readonly item: QuestionRow };
-
-function renderHeroHtml(hero: HeroItem, today: string): string {
+function renderHeroHtml(hero: TodayHeroItem, today: string): string {
   if (hero.kind === "task") {
     const item = hero.item;
     let urgencyHtml = "";
     if (item.dueDate !== null) {
       if (item.dueDate < today) {
-        urgencyHtml = `<span class="hero-urgency">overdue</span>`;
+        urgencyHtml = `<span class="hero-urgency">overdue ${daysBetween(item.dueDate, today)}d</span>`;
       } else if (item.dueDate === today) {
         urgencyHtml = `<span class="hero-urgency warn">due today</span>`;
       } else {
@@ -490,7 +519,7 @@ function clampText(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max - 1).trimEnd()}…`;
 }
 
-function renderCalendarHtml(events: ReadonlyArray<CalendarEvent>): string {
+function renderCalendarHtml(events: ReadonlyArray<TodayCalendarEvent>): string {
   const eventsHtml = events.map((ev) => `
       <div class="cal-event">
         <span class="cal-time">${esc(ev.time)}</span>
@@ -507,7 +536,7 @@ function renderCalendarHtml(events: ReadonlyArray<CalendarEvent>): string {
   </div>`;
 }
 
-function renderQuestionsHtml(questions: ReadonlyArray<QuestionRow>): string {
+function renderQuestionsHtml(questions: ReadonlyArray<TodayQuestionRow>): string {
   const itemsHtml = questions.map((q) => {
     const optionsHtml = q.options.length > 0
       ? `<div class="q-options">${q.options.map((opt) =>
@@ -534,8 +563,22 @@ function renderQuestionsHtml(questions: ReadonlyArray<QuestionRow>): string {
   </div>`;
 }
 
-function renderStillOpenHtml(items: ReadonlyArray<TaskRow>, today: string): string {
-  const itemsHtml = items.map((t) => {
+function renderStillOpenHtml(
+  items: ReadonlyArray<TodayTaskRow>,
+  today: string,
+  trueCount: number,
+): string {
+  // Compute the week boundary: +7 calendar days from today.
+  const weekBound = addDays(today, 7);
+
+  // Bucket items by urgency.
+  const overdue = items.filter((t) => t.dueDate !== null && t.dueDate < today);
+  const todayItems = items.filter((t) => t.dueDate === today);
+  const thisWeek = items.filter(
+    (t) => t.dueDate !== null && t.dueDate > today && t.dueDate <= weekBound,
+  );
+
+  function renderItem(t: TodayTaskRow): string {
     const glyph = taskGlyph(t, today);
     const where = t.line === null ? t.path : `${t.path}:${t.line}`;
     return `<div class="open-item reveal">
@@ -545,19 +588,58 @@ function renderStillOpenHtml(items: ReadonlyArray<TaskRow>, today: string): stri
           <div class="src">${esc(where)}</div>
         </div>
       </div>`;
-  }).join("\n      ");
+  }
+
+  function renderBucket(
+    label: string,
+    cls: string,
+    bucketItems: ReadonlyArray<TodayTaskRow>,
+  ): string {
+    if (bucketItems.length === 0) return "";
+    const rows = bucketItems.map(renderItem).join("\n      ");
+    return `<div class="bucket-label ${cls}">${esc(label)} · ${bucketItems.length}</div>
+      <div class="still-open-grid">
+      ${rows}
+      </div>`;
+  }
+
+  const overdueHtml = renderBucket("overdue", "bucket-overdue", overdue);
+  const todayHtml = renderBucket("today", "bucket-today", todayItems);
+  const thisWeekHtml = renderBucket("this week", "bucket-week", thisWeek);
+
+  // Fall back to a flat list if all items are in the "later" bucket (no urgent items)
+  // — this keeps the chip intact but still shows a flat list for the common case where
+  // all displayed items are undated/far-future and only the chip is rendered.
+  const hasUrgentContent = overdueHtml.length > 0 || todayHtml.length > 0 || thisWeekHtml.length > 0;
+  const itemsHtml = hasUrgentContent
+    ? `${overdueHtml}${todayHtml}${thisWeekHtml}`
+    : items.map(renderItem).join("\n      ");
+
+  const gridOrBuckets = hasUrgentContent
+    ? itemsHtml
+    : `<div class="still-open-grid">${itemsHtml}</div>`;
+
+  // Derive the chip from what is actually rendered inline so the two branches can't
+  // disagree with the header: (items shown inline) + chipCount === trueCount.
+  // urgent branch shows only the overdue/today/this-week buckets; fallback shows all items.
+  const shownInline = hasUrgentContent
+    ? overdue.length + todayItems.length + thisWeek.length
+    : items.length;
+  const chipCount = Math.max(0, trueCount - shownInline);
+
+  const chipHtml = chipCount > 0
+    ? `<div class="still-open-more"><span>+</span><span>${chipCount} more, later</span></div>`
+    : "";
 
   return `<div class="still-open-header">
     <span class="section-label" style="margin-bottom:0">Still open</span>
-    <span class="still-open-count">${items.length}</span>
+    <span class="still-open-count">${trueCount}</span>
   </div>
-  <div class="still-open-grid">
-      ${itemsHtml}
-  </div>`;
+  ${gridOrBuckets}${chipHtml}`;
 }
 
 function taskGlyph(
-  t: TaskRow,
+  t: TodayTaskRow,
   today: string,
 ): { readonly char: string; readonly cls: string } {
   if (t.dueDate !== null && t.dueDate < today) {
@@ -569,144 +651,6 @@ function taskGlyph(
   return { char: "&#8226;", cls: "open" };
 }
 
-// ── Field types ─────────────────────────────────────────────────────────────
-
-type TaskRow = {
-  readonly text: string;
-  readonly path: string;
-  readonly line: number | null;
-  readonly dueDate: string | null;
-};
-
-type QuestionRow = {
-  readonly id: number;
-  readonly question: string;
-  readonly resolveCommand: string;
-  readonly options: ReadonlyArray<string>;
-};
-
-type CalendarEvent = {
-  readonly time: string;
-  readonly title: string;
-  readonly meta: string;
-};
-
-type BriefField = {
-  readonly text: string;
-  readonly sourceRef: { readonly path: string };
-};
-
-// ── Parsers ─────────────────────────────────────────────────────────────────
-
-function parseBrief(raw: unknown): BriefField | null {
-  if (!isRecord(raw)) return null;
-  const text = typeof raw.text === "string" ? raw.text : null;
-  if (text === null || text.length === 0) return null;
-  const sourceRef = isRecord(raw.sourceRef) ? raw.sourceRef : null;
-  const path = sourceRef !== null && typeof sourceRef.path === "string"
-    ? sourceRef.path
-    : "";
-  return { text, sourceRef: { path } };
-}
-
-function parseCalendar(raw: unknown): { readonly events: ReadonlyArray<CalendarEvent>; readonly sourceRef: { readonly path: string } } | null {
-  if (!isRecord(raw)) return null;
-  if (!Array.isArray(raw.events)) return null;
-  const events: CalendarEvent[] = raw.events.flatMap((ev) => {
-    if (!isRecord(ev)) return [];
-    const time = typeof ev.time === "string" ? ev.time : null;
-    const title = typeof ev.title === "string" ? ev.title : null;
-    if (time === null || title === null) return [];
-    const meta = typeof ev.meta === "string" ? ev.meta : "";
-    return [{ time, title, meta }];
-  });
-  if (events.length === 0) return null;
-  const sourceRef = isRecord(raw.sourceRef) ? raw.sourceRef : null;
-  const path = sourceRef !== null && typeof sourceRef.path === "string"
-    ? sourceRef.path
-    : "";
-  return { events, sourceRef: { path } };
-}
-
-function parseHero(raw: unknown): HeroItem | null {
-  if (!isRecord(raw)) return null;
-  const kind = raw.kind;
-  if (kind === "task") {
-    const item = isRecord(raw.item) ? raw.item : null;
-    if (item === null) return null;
-    const text = typeof item.text === "string" ? stripWikilinks(item.text) : "";
-    if (text.length === 0) return null;
-    return {
-      kind: "task",
-      item: {
-        text,
-        path: typeof item.path === "string" ? item.path : "",
-        line: typeof item.line === "number" ? item.line : null,
-        dueDate: typeof item.dueDate === "string" ? item.dueDate : null,
-      },
-    };
-  }
-  if (kind === "question") {
-    const item = isRecord(raw.item) ? raw.item : null;
-    if (item === null) return null;
-    const question = typeof item.question === "string" ? stripWikilinks(item.question) : "";
-    if (question.length === 0) return null;
-    const options: string[] = Array.isArray(item.options)
-      ? item.options.filter((o): o is string => typeof o === "string")
-      : [];
-    return {
-      kind: "question",
-      item: {
-        id: typeof item.id === "number" ? item.id : 0,
-        question,
-        resolveCommand: typeof item.resolveCommand === "string"
-          ? item.resolveCommand
-          : "dome resolve <id> <value>",
-        options,
-      },
-    };
-  }
-  return null;
-}
-
-// These parsers mirror src/cli/commands/today.ts's; extract to src/surface/ if a third full-shape consumer appears.
-function rows(raw: unknown): ReadonlyArray<TaskRow> {
-  if (!Array.isArray(raw)) return [];
-  return raw.flatMap((item) => {
-    const r = isRecord(item) ? item : {};
-    const text = typeof r.text === "string" ? stripWikilinks(r.text) : "";
-    if (text.length === 0) return [];
-    return [{
-      text,
-      path: typeof r.path === "string" ? r.path : "",
-      line: typeof r.line === "number" ? r.line : null,
-      dueDate: typeof r.dueDate === "string" ? r.dueDate : null,
-    }];
-  });
-}
-
-function questionRows(raw: unknown): ReadonlyArray<QuestionRow> {
-  if (!Array.isArray(raw)) return [];
-  return raw.flatMap((item) => {
-    const r = isRecord(item) ? item : {};
-    const question = typeof r.question === "string" ? stripWikilinks(r.question) : "";
-    if (question.length === 0) return [];
-    const options: string[] = Array.isArray(r.options)
-      ? r.options.filter((o): o is string => typeof o === "string")
-      : [];
-    return [{
-      id: typeof r.id === "number" ? r.id : 0,
-      question,
-      resolveCommand: typeof r.resolveCommand === "string" ? r.resolveCommand : "dome resolve <id> <value>",
-      options,
-    }];
-  });
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return v !== null && typeof v === "object" && !Array.isArray(v);
-}
-
 function esc(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -714,15 +658,4 @@ function esc(value: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
-}
-
-// Render task/question/hero text without raw [[wikilink]] markup — `[[p|alias]]`
-// → `alias`, `[[path/to/page]]` → `page` (last segment). Mirrors the terminal
-// renderer's stripping (src/cli/commands/today.ts) so both surfaces read clean.
-function stripWikilinks(value: string): string {
-  return value
-    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2")
-    .replace(/\[\[([^\]]+)\]\]/g, (_m, target: string) => target.split("/").pop() ?? target)
-    .replace(/\s+/g, " ")
-    .trim();
 }

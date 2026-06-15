@@ -110,7 +110,8 @@ describe("renderTodayHtml", () => {
 
   test("omits brief/calendar/hero when null and shows all-clear when nothing open", () => {
     const html = renderTodayHtml(
-      { ...base, brief: null, calendar: null, hero: null, openTasks: [], followups: [], questions: [] },
+      { ...base, brief: null, calendar: null, hero: null, openTasks: [], followups: [], questions: [],
+        counts: { openTasks: 0, followups: 0, questions: 0 } },
       { refreshSeconds: 15 },
     );
     expect(html).toContain("You&#39;re clear");
@@ -122,6 +123,15 @@ describe("renderTodayHtml", () => {
       { refreshSeconds: 15 },
     );
     expect(html).toContain("Make the routing decision");
+  });
+
+  test("web hero shows the overdue day count", () => {
+    const html = renderTodayHtml(
+      { ...base, date: "2026-06-14",
+        hero: { kind: "task", item: { text: "x", path: "p", line: 1, dueDate: "2026-06-10" } } },
+      { refreshSeconds: 15 },
+    );
+    expect(html).toMatch(/overdue\s*4d/);
   });
 
   test("escapes HTML in interpolated content", () => {
@@ -191,6 +201,19 @@ describe("renderTodayHtml", () => {
     const html = renderTodayHtml(base, { refreshSeconds: 15 });
     expect(html).not.toContain('http-equiv="refresh"');
   });
+
+  // ── Task 6: narrow poll fingerprint + token scrub ──────────────────────
+
+  test("poll fingerprint excludes volatile attention/lastChangedAt fields", () => {
+    const html = renderTodayHtml(base, { refreshSeconds: 15 });
+    // fingerprint should project visible fields, not stringify the whole doc
+    expect(html).not.toContain("return JSON.stringify(data);");
+    expect(html).toMatch(/fingerprint/);
+  });
+  test("token is scrubbed from the URL after read", () => {
+    const html = renderTodayHtml(base, { refreshSeconds: 15 });
+    expect(html).toContain("history.replaceState");
+  });
 });
 
 describe("wikilink stripping (web cockpit)", () => {
@@ -220,12 +243,88 @@ describe("wikilink stripping (web cockpit)", () => {
   });
 });
 
+describe("dome today: web still-open true totals", () => {
+  test("web still-open shows the true total + a +N more affordance", () => {
+    const html = renderTodayHtml(
+      {
+        ...base,
+        openTasks: Array.from({ length: 6 }, (_, i) => ({ text: `t${i}`, path: "p", line: i, dueDate: null })),
+        followups: [],
+        questions: [],
+        counts: { openTasks: 50, followups: 0, questions: 0 },
+        hero: null,
+      },
+      { refreshSeconds: 15 },
+    );
+    // The still-open-count span should show the true count (50), not the list length (6)
+    expect(html).toMatch(/class="still-open-count"[^>]*>\s*50\s*</);
+    // An overflow affordance (+ N more, later) should be present in the still-open section
+    // The chip renders as <span>+</span><span>N more, later</span> — no leading + in label text
+    // 6 undated rows shown inline + chip must equal trueCount=50 → chip reads exactly "44 more, later".
+    expect(html).toContain("44 more, later");
+    expect(html).not.toContain("50 more, later");
+  });
+
+  test("still-open fallback (all later) chip does not double-count shown items", () => {
+    // 6 undated tasks shown inline, true total 50 → chip must read exactly "44 more, later", never 50
+    const html = renderTodayHtml(
+      {
+        ...base,
+        date: "2026-06-14",
+        hero: null,
+        openTasks: Array.from({ length: 6 }, (_, i) => ({ text: `t${i}`, path: "p", line: i + 1, dueDate: null })),
+        followups: [],
+        questions: [],
+        counts: { openTasks: 50, followups: 0, questions: 0 },
+      },
+      { refreshSeconds: 15 },
+    );
+    expect(html).toContain("44 more, later");
+    expect(html).not.toContain("50 more, later");
+  });
+});
+
+describe("dome today: still-open urgency grouping", () => {
+  test("still-open groups by urgency with a far-future collapse chip", () => {
+    const mk = (t: string, due: string | null) => ({ text: t, path: "p", line: 1, dueDate: due });
+    const html = renderTodayHtml({ ...base, date: "2026-06-14",
+      openTasks: [mk("overdue one","2026-06-01"), mk("due-today one","2026-06-14"), mk("this-week one","2026-06-18"), mk("far one","2026-09-01"), mk("undated one", null)],
+      followups: [], questions: [],
+      counts: { openTasks: 5, followups: 0, questions: 0 }, hero: null }, { refreshSeconds: 15 });
+    expect(html).toMatch(/overdue/i);
+    expect(html).toMatch(/today/i);
+    expect(html).toMatch(/this week/i);
+    expect(html).toContain("overdue one");
+    expect(html).toContain("due-today one");
+    expect(html).toContain("this-week one");
+    // far-future + undated collapse into a "+N more, later" chip rather than listed inline
+    expect(html).toMatch(/more, later|later this month/i);
+    // chip must not render double-plus (e.g. "+ +2 more, later")
+    expect(html).not.toContain("+ +");
+    // chip renders as "+ N more, later" (icon span + count, no leading + in label)
+    expect(html).toMatch(/<span>\+<\/span><span>\d+ more, later<\/span>/);
+    // trueCount=5, shown inline = overdue(1)+today(1)+thisWeek(1) = 3 → chip exactly "2 more, later"
+    expect(html).toContain("2 more, later");
+  });
+  test("all overdue → only the overdue group, no empty today/this-week headers", () => {
+    const mk = (t: string, due: string) => ({ text: t, path: "p", line: 1, dueDate: due });
+    const html = renderTodayHtml({ ...base, date: "2026-06-14",
+      openTasks: [mk("a","2026-06-01"), mk("b","2026-06-02")], followups: [], questions: [],
+      counts: { openTasks: 2, followups: 0, questions: 0 }, hero: null }, { refreshSeconds: 15 });
+    expect(html).toMatch(/overdue/i);
+    expect(html).not.toMatch(/this week/i); // empty buckets omitted
+  });
+});
+
 describe("Basel Grotesk fonts + hero polish", () => {
-  test("page embeds Basel Grotesk @font-face (base64 woff2, both weights)", () => {
+  test("page @font-face url()s the cacheable font routes (both weights), no base64", () => {
     const html = renderTodayHtml(base, { refreshSeconds: 15 });
     expect(html).toContain('@font-face');
     expect(html).toContain('font-family: "Basel Grotesk"');
-    expect(html).toContain("data:font/woff2;base64,");
+    // CB-T7: fonts now load from same-origin cacheable routes, not inline base64.
+    expect(html).not.toContain("data:font/woff2;base64,");
+    expect(html).toContain('url("/today/fonts/basel-book.woff2") format("woff2")');
+    expect(html).toContain('url("/today/fonts/basel-medium.woff2") format("woff2")');
     expect(html).toContain("font-weight: 485");
     expect(html).toContain("font-weight: 535");
     // body uses Basel first

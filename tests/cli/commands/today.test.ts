@@ -344,6 +344,17 @@ describe("dome today: Briefing terminal restyle", () => {
     expect(out).not.toContain("dome decide");
   });
 
+  test("terminal all-clear renders the calm two-line body", () => {
+    const out = formatTodayResult(
+      { date: "2026-06-14", openTasks: [], followups: [], questions: [], counts: { openTasks: 0, followups: 0, questions: 0 }, brief: null, calendar: null, hero: null },
+      ASCII_CAPS,
+      "/vault",
+    );
+    expect(out).toMatch(/all clear/);
+    expect(out).toMatch(/nothing open|inbox/i);
+    expect(out).toMatch(/go make something|you're clear/i);
+  });
+
   test("calendar summary line rendered when calendar present", () => {
     const data = {
       date: "2026-06-14",
@@ -631,5 +642,19 @@ describe("dome today: flat signal-led task list", () => {
     const out = formatTodayResult(data, ASCII_CAPS, "/vault");
     expect((out.match(/The hero task/g) || []).length).toBe(1);
     expect(out).toContain("Another task");
+  });
+  test("overflow count uses true totals not the display-limited list", () => {
+    // doc with counts.openTasks = 234 but openTasks list (received) only has 8 rows, hero null
+    // bucketed = 8 rows, cap = 7 shown → overflow from received list = 1 (wrong)
+    // true overflow = 234 - 7 = 227 (correct)
+    const data = {
+      date: "2026-06-14", hero: null, brief: null, calendar: null,
+      openTasks: Array.from({ length: 8 }, (_, i) => ({ text: `t${i}`, path: "p", line: i, dueDate: "2026-06-01" })),
+      followups: [], questions: [],
+      counts: { openTasks: 234, followups: 0, questions: 0 }, dueCounts: {},
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    // true overflow = 234 - 7 (cap) = 227 — NOT 1 (received list − cap)
+    expect(out).toMatch(/22\d more|2[23]\d more/);
   });
 });
