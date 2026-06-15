@@ -31,6 +31,12 @@ export type ClaimLine = {
 const CLAIM_LINE_RE = /^(\s*(?:[-*]\s+)?)\*\*([^*\n]+):\*\*\s+(\S.*)$/;
 const AS_OF_RE = /\*\(as of (\d{4}-\d{2}-\d{2})\)\*/;
 
+// Line-anchored dome generated-block markers (any owner/block). Mirrors
+// generated-block.ts's `isMarkerLine` discipline: the whole trimmed line must
+// be the marker, so a prose/fence/mid-line mention never bounds a block.
+const GENERATED_BLOCK_START_RE = /^<!--\s*dome[.\w]*:[\w-]+:start\s*-->$/;
+const GENERATED_BLOCK_END_RE = /^<!--\s*dome[.\w]*:[\w-]+:end\s*-->$/;
+
 export function claimsFromMarkdown(
   content: string,
 ): ReadonlyArray<ClaimLine> {
@@ -113,6 +119,28 @@ function excludedLineFlags(lines: ReadonlyArray<string>): boolean[] {
     for (let idx = startIdx; idx <= endIdx; idx += 1) {
       flags[idx] = true;
     }
+  }
+
+  // --- Generated blocks (any dome owner/block; markers inclusive) ---
+  // A deterministic `## Current facts` digest (and any other dome generated
+  // block) must never feed its own `**Key:**`-shaped lines back into the claim
+  // index. Line-anchored like generated-block.ts: the whole trimmed line must
+  // be a start/end marker. An unterminated start excludes to EOF, matching the
+  // frontmatter dialect above.
+  let blockStart = -1; // 0-based index of an open start marker, or -1
+  for (let i = 0; i < lines.length; i += 1) {
+    const trimmed = (lines[i] ?? "").trim();
+    if (blockStart === -1) {
+      if (GENERATED_BLOCK_START_RE.test(trimmed)) blockStart = i;
+      continue;
+    }
+    if (GENERATED_BLOCK_END_RE.test(trimmed)) {
+      for (let idx = blockStart; idx <= i; idx += 1) flags[idx] = true;
+      blockStart = -1;
+    }
+  }
+  if (blockStart !== -1) {
+    for (let idx = blockStart; idx < lines.length; idx += 1) flags[idx] = true;
   }
 
   return flags;

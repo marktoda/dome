@@ -75,6 +75,20 @@ describe("claimsFromMarkdown", () => {
   test("bold emphasis without a trailing colon is not a claim", () => {
     expect(claimsFromMarkdown("**Important** this is just emphasis\n")).toHaveLength(0);
   });
+
+  test("claim lines inside a generated block are not parsed as claims", () => {
+    const content = [
+      "# Atlas",
+      "",
+      "<!-- dome.claims:current-facts:start -->",
+      "- **Status:** in design review *(as of 2026-06-12)* ^cAAAA",
+      "<!-- dome.claims:current-facts:end -->",
+      "",
+      "- **Owner:** [[danny]] ^cBBBB",
+    ].join("\n");
+    const claims = claimsFromMarkdown(content);
+    expect(claims.map((c) => c.key)).toEqual(["Owner"]);
+  });
 });
 
 describe("stampClaimAnchors anchor dedup", () => {
