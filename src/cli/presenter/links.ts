@@ -3,6 +3,8 @@
 // label so the URL never consumes visible width or gets truncated, and render
 // them as OSC 8 terminal hyperlinks when the terminal supports it.
 
+import type { Caps } from "./caps";
+
 export type InlineLink = { readonly label: string; readonly url: string };
 
 // [label](url) — label has no newline/bracket; url has no whitespace or ')'.
@@ -31,4 +33,18 @@ export function splitInlineLinks(text: string): {
     .replace(/^\s*[·|]\s*/g, "")          // leading bullet/pipe separator
     .trim();
   return { text: cleaned, links };
+}
+
+const OSC8 = "\x1b]8;;";
+const ST = "\x1b\\";
+
+/**
+ * Render `label` as an OSC 8 terminal hyperlink to `url` when the terminal
+ * supports it (`caps.hyperlinks`), else return the bare `label`. The escape
+ * sequence carries zero visible columns, so width math must use the label
+ * width, not this string's length.
+ */
+export function hyperlink(label: string, url: string, caps: Caps): string {
+  if (caps.hyperlinks !== true || url.length === 0) return label;
+  return `${OSC8}${url}${ST}${label}${OSC8}${ST}`;
 }
