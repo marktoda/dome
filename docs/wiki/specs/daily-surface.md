@@ -144,6 +144,23 @@ The marker pair is still anomaly-scanned like every other dome.daily block (`DAI
 
 Other paths (entity `## Open threads` appends, wiki pages) are governed by the ordinary glob grant.
 
+**Origin marker.** When the seam splices a captured task line, it stamps an
+inline origin marker — ` ([↗](target))`, plain markdown, placed after the
+description and before any block anchor — naming where the task came from. In
+Phase 1 the target is the capture's *archived* path
+(`inbox/processed/<name>`), computed deterministically by the processor (never
+the model) so the link cannot point at the soon-deleted `inbox/raw/` path. The
+marker is stamped *after* the `CAPTURED_LINE_MAX_CHARS` / shape validation, so
+the cap measures the model-authored text and the marker is seam overhead; it is
+idempotent (a line already carrying a marker is left alone), and becomes
+ordinary source-of-truth markdown — so it survives `dome rebuild`. The marker
+lives in the markdown line (clickable in Obsidian) but is stripped from the
+*semantic task body* (`stripOriginMarker` in action-extraction) before that
+body enters stable-id hashes, reconcile keys, or display text — so identity and
+carry-forward matching are unaffected. The grammar takes an arbitrary target,
+so a future external origin (a Slack permalink) reuses the same marker with no
+new shape. Design: [[cohesive/brainstorms/2026-06-15-task-origin-links]].
+
 ### Captured-today heading repair
 
 Real pre-D3 vaults accumulated duplicate `# Captured today` / `## Captured today` headings at mismatched levels. `dome.daily.normalize-task-syntax` carries a deterministic repair for **today's daily only** (historical dailies are untouched — past notes stay append-only): duplicate captured-today headings are merged into the single owned section — the section already holding the `dome.daily:captured` block wins, else the first; the kept heading is normalized to `## Captured today`; every body line from the merged sections is preserved (task lines and anchors verbatim) and spliced into the block, with dome marker-comment lines dropped (smuggled pairs must not survive a merge). The repair is idempotent (one correct heading → no-op) and emits one `dome.daily.captured-heading-repair` info diagnostic when it fires.
