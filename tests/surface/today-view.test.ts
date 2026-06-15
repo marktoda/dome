@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parseTodayView } from "../../src/surface/today-view";
+import { parseTodayView, addDays } from "../../src/surface/today-view";
 
 test("parses tasks with wikilinks stripped + dueDate", () => {
   const v = parseTodayView({ date: "2026-06-14",
@@ -21,6 +21,16 @@ test("brief/calendar/hero null-safe + counts carried", () => {
   const v = parseTodayView({ date: "x", openTasks: [], followups: [], questions: [], counts: { openTasks: 3, followups: 1, questions: 2 }, brief: null, calendar: null, hero: null });
   expect(v.brief).toBeNull(); expect(v.calendar).toBeNull(); expect(v.hero).toBeNull();
   expect(v.counts).toEqual({ openTasks: 3, followups: 1, questions: 2 });
+});
+
+test("addDays: valid input produces correct result", () => {
+  expect(addDays("2026-06-28", 7)).toBe("2026-07-05");
+  expect(addDays("2026-12-31", 1)).toBe("2027-01-01");
+});
+
+test("addDays: malformed input returns the input unchanged (NaN-guard)", () => {
+  expect(addDays("not-a-date", 7)).toBe("not-a-date");
+  expect(addDays("2026-06", 7)).toBe("2026-06");
 });
 
 test("hero task text stripped of wikilinks", () => {

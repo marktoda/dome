@@ -198,7 +198,13 @@ function parseHero(raw: unknown): TodayHeroItem | null {
 
 /** Add N calendar days to an ISO date string (YYYY-MM-DD). */
 export function addDays(isoDate: string, days: number): string {
-  const [y, m, d] = isoDate.split("-").map(Number) as [number, number, number];
+  const [y, m, d] = isoDate.split("-").map(Number);
+  if (
+    y === undefined || m === undefined || d === undefined ||
+    [y, m, d].some((n) => Number.isNaN(n))
+  ) {
+    return isoDate;
+  }
   const dt = new Date(Date.UTC(y, m - 1, d + days));
   const yy = dt.getUTCFullYear();
   const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
