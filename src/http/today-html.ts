@@ -266,6 +266,14 @@ function buildScriptHtml(
   // ── Token ──────────────────────────────────────────────────────────────
   var params = new URLSearchParams(location.search);
   var token = params.get('token') || '';
+  // Keep the token in this closure for the Authorization header on the
+  // resolve/capture POSTs, but scrub it from the address bar / history so it
+  // doesn't linger in the URL after the page reads it.
+  if (token) {
+    var u = new URL(location.href);
+    u.searchParams.delete('token');
+    history.replaceState(null, '', u.pathname + u.search + u.hash);
+  }
 
   // ── State ──────────────────────────────────────────────────────────────
   var lastFingerprint = '';
@@ -317,8 +325,27 @@ function buildScriptHtml(
   }
 
   // ── Polling ───────────────────────────────────────────────────────────
+  // Project ONLY user-visible fields so the fingerprint is stable across ticks
+  // when nothing on the page changed. Volatile bookkeeping (attention counters,
+  // lastChangedAt, impressions/lastShown) is deliberately excluded — including
+  // it would trigger spurious location.reload() flashes every poll.
   function fingerprint(data) {
-    return JSON.stringify(data);
+    data = data || {};
+    var hero = data.hero;
+    var heroItem = hero && hero.item;
+    var h = heroItem
+      ? [hero.kind, heroItem.text, heroItem.question, heroItem.dueDate]
+      : null;
+    var cal = (data.calendar && data.calendar.events) || null;
+    return JSON.stringify({
+      b: data.brief && data.brief.text,
+      h: h,
+      o: (data.openTasks || []).map(function (t) { return [t.text, t.dueDate]; }),
+      f: (data.followups || []).map(function (t) { return [t.text, t.dueDate]; }),
+      q: (data.questions || []).map(function (x) { return [x.id, x.question]; }),
+      c: data.counts,
+      cal: cal,
+    });
   }
 
   function poll() {

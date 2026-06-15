@@ -201,6 +201,19 @@ describe("renderTodayHtml", () => {
     const html = renderTodayHtml(base, { refreshSeconds: 15 });
     expect(html).not.toContain('http-equiv="refresh"');
   });
+
+  // ── Task 6: narrow poll fingerprint + token scrub ──────────────────────
+
+  test("poll fingerprint excludes volatile attention/lastChangedAt fields", () => {
+    const html = renderTodayHtml(base, { refreshSeconds: 15 });
+    // fingerprint should project visible fields, not stringify the whole doc
+    expect(html).not.toContain("return JSON.stringify(data);");
+    expect(html).toMatch(/fingerprint/);
+  });
+  test("token is scrubbed from the URL after read", () => {
+    const html = renderTodayHtml(base, { refreshSeconds: 15 });
+    expect(html).toContain("history.replaceState");
+  });
 });
 
 describe("wikilink stripping (web cockpit)", () => {
