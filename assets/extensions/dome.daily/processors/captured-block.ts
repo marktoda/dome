@@ -270,6 +270,20 @@ function insertCapturedSection(input: {
   return `${input.content}${suffix}\n${CAPTURED_HEADING}\n\n${input.section}\n`;
 }
 
+/**
+ * The non-blank body lines inside the `dome.daily:captured` block (the task
+ * origins), in order. Empty array if the block is absent or its body is empty.
+ * Uses the same body-extent as {@link appendCapturedTaskLines}:
+ * `range.bodyStart` (immediately after the start-marker line) through
+ * `range.bodyEnd` (immediately before the end-marker line).
+ */
+export function capturedBlockBodyLines(content: string): ReadonlyArray<string> {
+  const range = findGeneratedBlock(content, DAILY_OWNER, CAPTURED_BLOCK).range;
+  if (range === null) return [];
+  const body = content.slice(range.bodyStart, range.bodyEnd);
+  return body.split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => l.trim() !== "");
+}
+
 function capturedBlockRange(content: string): GeneratedBlockRange | null {
   return findGeneratedBlock(content, DAILY_OWNER, CAPTURED_BLOCK).range;
 }

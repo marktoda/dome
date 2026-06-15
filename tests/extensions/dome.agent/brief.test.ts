@@ -1116,6 +1116,94 @@ describe("dome.agent.brief", () => {
     expect(diag?.severity).toBe("warning");
     expect(diag?.message).toContain("model_overrides.brief");
   });
+
+  test("brief surfaces an actionable finding as a captured task via addTask", async () => {
+    // Model calls: writePage (yesterday block) then addTask (the actionable
+    // finding). addTask reads the current overlay state (which already has the
+    // writePage content) and appends the task to the captured block; the brief's
+    // splice then adopts the validated captured-block task append.
+    const yesterdayDoc = [
+      "<!-- dome.agent.brief:yesterday:start -->",
+      "### Yesterday",
+      "- Shipped the capture loop (from [[wiki/dailies/2026-06-08]])",
+      "<!-- dome.agent.brief:yesterday:end -->",
+    ].join("\n");
+    const ctx = makeCtx({
+      files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
+      steps: [
+        {
+          toolCalls: [
+            { id: "1", name: "writePage", input: { path: TODAY_PATH, content: yesterdayDoc } },
+          ],
+        },
+        {
+          toolCalls: [
+            { id: "2", name: "addTask", input: { task: "- [ ] #task reply to alice re: outbox PR", sourceUrl: "https://slk/p9" } },
+          ],
+        },
+        { text: "done" },
+      ],
+    });
+    const effects = await brief.run(ctx);
+    const dailyContent = writtenDaily(effects);
+    // The captured task with the origin marker must land in the daily.
+    expect(dailyContent).toContain("- [ ] #task reply to alice re: outbox PR ([↗](https://slk/p9))");
+    // The task is inside the captured block.
+    const capturedStart = dailyContent.indexOf("<!-- dome.daily:captured:start -->");
+    const capturedEnd = dailyContent.indexOf("<!-- dome.daily:captured:end -->");
+    const taskPos = dailyContent.indexOf("- [ ] #task reply to alice re: outbox PR");
+    expect(capturedStart).toBeGreaterThan(-1);
+    expect(capturedEnd).toBeGreaterThan(capturedStart);
+    expect(taskPos).toBeGreaterThan(capturedStart);
+    expect(taskPos).toBeLessThan(capturedEnd);
+    // The yesterday block must NOT contain checkbox tasks.
+    const yesterdayStart = dailyContent.indexOf("<!-- dome.agent.brief:yesterday:start -->");
+    const yesterdayEnd = dailyContent.indexOf("<!-- dome.agent.brief:yesterday:end -->");
+    const yesterdayBody = dailyContent.slice(yesterdayStart, yesterdayEnd);
+    expect(yesterdayBody).not.toContain("- [ ]");
+    // One PatchEffect on today's daily.
+    const patches = effects.filter((e) => e.kind === "patch") as PatchEffect[];
+    expect(patches.length).toBe(1);
+    expect(patches[0]!.changes.map((c) => String(c.path))).toContain(TODAY_PATH);
+  });
+
+  test("brief discards a non-task line smuggled into the captured block via writePage", async () => {
+    // The model tries to smuggle a heading/prose line into the captured block
+    // WITHOUT going through addTask — via a raw writePage. The brief's splice
+    // guard must discard non-task smuggled content from the captured block.
+    // To smuggle: write the daily with the captured block containing a heading
+    // (not a task line) and a captured-look-alike that's actually prose.
+    const smuggledContent = [
+      "<!-- dome.agent.brief:yesterday:start -->",
+      "### Yesterday",
+      "- Real item (from [[wiki/dailies/2026-06-08]])",
+      "<!-- dome.agent.brief:yesterday:end -->",
+      "## Captured today",
+      "",
+      "<!-- dome.daily:captured:start -->",
+      "## Sneaky heading",
+      "- not a task line, just prose",
+      "<!-- dome.daily:captured:end -->",
+    ].join("\n");
+    const ctx = makeCtx({
+      files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
+      steps: [
+        {
+          toolCalls: [
+            { id: "1", name: "writePage", input: { path: TODAY_PATH, content: smuggledContent } },
+          ],
+        },
+        { text: "done" },
+      ],
+    });
+    const effects = await brief.run(ctx);
+    const dailyContent = writtenDaily(effects);
+    // The smuggled non-task content must NOT land in the composed daily.
+    expect(dailyContent).not.toContain("## Sneaky heading");
+    expect(dailyContent).not.toContain("- not a task line, just prose");
+    // The yesterday block's grounded content still lands.
+    expect(dailyContent).toContain("- Real item (from [[wiki/dailies/2026-06-08]])");
+  });
 });
 
 describe("groundBriefBlockBody (sanitization)", () => {
