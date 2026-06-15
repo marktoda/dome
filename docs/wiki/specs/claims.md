@@ -4,12 +4,12 @@ created: 2026-06-09
 updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-06-09-meaning-consolidation-claims-and-sweeper]]"
-description: Claim-line grammar (bold key, as-of date, ^c anchor) and the dome.claims stamp/index processors; supersession is an in-place edit under one anchor
+description: Claim-line grammar (bold key, as-of date, ^c anchor) and the dome.claims stamp/index/render-facts processors; supersession is an in-place edit under one anchor
 ---
 
 # Claims
 
-This spec is normative for the claim-line grammar and the dome.claims bundle's two processors.
+This spec is normative for the claim-line grammar and the dome.claims bundle's three processors.
 
 A **claim** is a vault-general markdown primitive — like wikilinks and task
 blocks — recognized by shape on any page matched by the bundle's globs
@@ -47,8 +47,17 @@ blocks — recognized by shape on any page matched by the bundle's globs
 |---|---|---|---|
 | `dome.claims.stamp` | garden | deterministic, `patch.auto` | Anchors claim lines lacking `^c…` ids; converges at depth 1. |
 | `dome.claims.index` | adoption | deterministic, `graph.write dome.claims.*` | One `dome.claims.claim` fact per claim line: object = JSON `{key, value, asOf?}`, sourceRef carries the line range and, when the line is anchored, the stableId. Facts replace per path on edit and clear on delete (the manifest's `file.deleted` triggers are load-bearing). |
+| `dome.claims.render-facts` | garden | deterministic, `patch.auto` | Compiles the `## Current facts` digest block (a `dome.claims:current-facts` generated block, presentational — not claim grammar) at the head of pages with ≥ `current_facts_min_claims` (default 3) claim lines; splices it out below threshold; idempotent. |
 
-The pair is registered as the `dome.claim.coherence` maintenance loop.
+The three are registered as the `dome.claim.coherence` maintenance loop.
+
+The digest is a **deterministic render from the page's own claim lines** — the
+same generated-block pattern as `index.md`/`active-projects`, holding to
+[[wiki/invariants/NO_ACCRETING_REGISTRIES]]: the block is replaced wholesale
+each pass, never accreted. It renders a presentational `- **Key** — value`
+shape (bold key **without** the colon) so it is never re-parsed as a claim and
+fed back into the index; for the same reason `claimsFromMarkdown` excludes the
+`dome.claims:current-facts` block region.
 
 ## Backfilling coverage on an existing vault
 
@@ -87,7 +96,7 @@ stamped the next time it is edited for any reason.)
 
 ## Invariant posture
 
-The engine never learns about claims: a markdown convention plus two
+The engine never learns about claims: a markdown convention plus three
 deterministic processors. Model processors still emit no durable facts
 ([[wiki/invariants/MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS]]) — any LLM that
 writes claim lines does so as ordinary proposed markdown, and this indexer
