@@ -219,3 +219,38 @@ describe("wikilink stripping (web cockpit)", () => {
     expect(html).not.toContain("[[");
   });
 });
+
+describe("Basel Grotesk fonts + hero polish", () => {
+  test("page embeds Basel Grotesk @font-face (base64 woff2, both weights)", () => {
+    const html = renderTodayHtml(base, { refreshSeconds: 15 });
+    expect(html).toContain('@font-face');
+    expect(html).toContain('font-family: "Basel Grotesk"');
+    expect(html).toContain("data:font/woff2;base64,");
+    expect(html).toContain("font-weight: 485");
+    expect(html).toContain("font-weight: 535");
+    // body uses Basel first
+    expect(html).toMatch(/font-family:\s*"Basel Grotesk",\s*-apple-system/);
+  });
+  test("hero task is not duplicated in the Still open list", () => {
+    const t0 = base.openTasks[0]!;
+    const heroTask = { ...t0, text: "The hero task", path: "wiki/t.md", line: 9 };
+    const html = renderTodayHtml(
+      { ...base,
+        openTasks: [heroTask, { ...t0, text: "Another open task", path: "wiki/t.md", line: 10 }],
+        hero: { kind: "task", item: { text: "The hero task", path: "wiki/t.md", line: 9, dueDate: t0.dueDate } },
+      },
+      { refreshSeconds: 15 },
+    );
+    expect((html.match(/The hero task/g) || []).length).toBe(1); // only the pill
+    expect(html).toContain("Another open task");
+  });
+  test("a very long hero text is clamped with an ellipsis", () => {
+    const long = "x".repeat(200);
+    const html = renderTodayHtml(
+      { ...base, hero: { kind: "task", item: { text: long, path: "p", line: 1, dueDate: null } } },
+      { refreshSeconds: 15 },
+    );
+    expect(html).not.toContain(long);
+    expect(html).toContain("…");
+  });
+});

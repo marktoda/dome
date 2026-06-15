@@ -10,6 +10,17 @@ export type TodayHtmlOptions = {
   readonly refreshSeconds: number;
 };
 
+import { BASEL_BOOK_WOFF2_B64, BASEL_MEDIUM_WOFF2_B64 } from "./today-fonts";
+
+// Self-contained @font-face: the design's Basel Grotesk (Book 485 / Medium 535),
+// base64-embedded so the page needs no external font requests. Mono stays the
+// system ui-monospace stack.
+const FONT_FACE = `
+    @font-face { font-family: "Basel Grotesk"; font-weight: 485; font-display: swap;
+      src: url("data:font/woff2;base64,${BASEL_BOOK_WOFF2_B64}") format("woff2"); }
+    @font-face { font-family: "Basel Grotesk"; font-weight: 535; font-display: swap;
+      src: url("data:font/woff2;base64,${BASEL_MEDIUM_WOFF2_B64}") format("woff2"); }`;
+
 export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
   const refresh = Math.max(1, Math.floor(opts.refreshSeconds));
   const record = isRecord(data) ? data : {};
@@ -22,10 +33,17 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
   const hero = parseHero(record.hero);
   const total = openTasks.length + followups.length + questions.length;
 
-  const allItems = [...openTasks, ...followups];
+  // The hero task is already the pill above — don't repeat it in "Still open".
+  const heroKey =
+    hero !== null && hero.kind === "task"
+      ? `${hero.item.path}:${hero.item.line ?? ""}:${hero.item.text}`
+      : null;
+  const allItems = [...openTasks, ...followups].filter(
+    (t) => heroKey === null || `${t.path}:${t.line ?? ""}:${t.text}` !== heroKey,
+  );
   const isAllClear = total === 0;
 
-  const style = `
+  const style = `${FONT_FACE}
     * { box-sizing: border-box; }
     html, body { margin: 0; }
     body {
@@ -33,7 +51,7 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
       background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
       background-size: 24px 24px;
       color: #fff;
-      font-family: -apple-system, system-ui, sans-serif;
+      font-family: "Basel Grotesk", -apple-system, system-ui, sans-serif;
       font-weight: 485;
       min-height: 100vh;
       padding: 40px 24px 100px;
@@ -452,7 +470,7 @@ function renderHeroHtml(hero: HeroItem, today: string): string {
     }
     return `<div class="hero">
     <span class="hero-arrow">&#8594;</span>
-    <span class="hero-text">${esc(item.text)}</span>
+    <span class="hero-text">${esc(clampText(item.text, 100))}</span>
     ${urgencyHtml}
   </div>
   `;
@@ -460,10 +478,16 @@ function renderHeroHtml(hero: HeroItem, today: string): string {
     const item = hero.item;
     return `<div class="hero">
     <span class="hero-arrow">&#8594;</span>
-    <span class="hero-text">${esc(item.question)}</span>
+    <span class="hero-text">${esc(clampText(item.question, 100))}</span>
   </div>
   `;
   }
+}
+
+// Clamp the hero pill text so a long task doesn't balloon the pill; the full
+// item is still in the list / --json.
+function clampText(value: string, max: number): string {
+  return value.length <= max ? value : `${value.slice(0, max - 1).trimEnd()}…`;
 }
 
 function renderCalendarHtml(events: ReadonlyArray<CalendarEvent>): string {
