@@ -55,7 +55,6 @@ export type RunCommandOptions = {
   readonly vault?: string | undefined;
   readonly bundlesRoot?: string | undefined;
   readonly json?: boolean | undefined;
-  readonly commandFlags?: Readonly<Record<string, string | boolean>> | undefined;
   readonly commandArgs?: {
     readonly raw: ReadonlyArray<string>;
     readonly flags: Readonly<Record<string, string | boolean | ReadonlyArray<string | boolean>>>;
@@ -100,7 +99,6 @@ export async function runRun(
   const commandArgs = Object.freeze({
     raw: Object.freeze([...(options.commandArgs?.raw ?? [])]),
     flags: Object.freeze({
-      ...(options.commandFlags ?? {}),
       ...(options.commandArgs?.flags ?? {}),
     }),
     positionals: Object.freeze([...(options.commandArgs?.positionals ?? [])]),

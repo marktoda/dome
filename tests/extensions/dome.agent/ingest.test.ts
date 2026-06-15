@@ -467,8 +467,8 @@ describe("dome.agent.ingest", () => {
     const effects = await ingest.run(ctx);
     const patch = effects.find((e) => e.kind === "patch") as PatchEffect;
     const daily = patch.changes.find((c) => String(c.path) === dailyP);
-    expect(daily).toBeDefined();
-    expect(String(daily!.content)).toContain(
+    expect(daily?.kind).toBe("write");
+    expect(daily && daily.kind === "write" ? daily.content : "").toContain(
       "- [ ] #task reply to Jane ([↗](inbox/processed/2026-06-08-jane.md))",
     );
   });
