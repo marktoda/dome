@@ -9,6 +9,7 @@
 // constructor helper; no filesystem, git, or sqlite dependencies.
 
 import { z } from "zod";
+import { brand, type Brand } from "./brand";
 import {
   requireVaultPath,
   VaultPathSchema,
@@ -24,10 +25,10 @@ import {
 // inside the helpers without touching the call sites.
 
 /** A 40-char hex SHA-1 identifying a git commit object. */
-export type CommitOid = string & { readonly __brand: "CommitOid" };
+export type CommitOid = Brand<string, "CommitOid">;
 
 /** A 40-char hex SHA-1 identifying a git blob object. */
-export type BlobOid = string & { readonly __brand: "BlobOid" };
+export type BlobOid = Brand<string, "BlobOid">;
 
 // ----- TextRange ------------------------------------------------------------
 
@@ -147,10 +148,10 @@ export function sourceRef(input: SourceRefInput): SourceRef {
 
 /** Brand a raw string as a CommitOid. v1 enforces only non-empty via the type system. */
 export function commitOid(s: string): CommitOid {
-  return s as CommitOid;
+  return brand<CommitOid>(s);
 }
 
 /** Brand a raw string as a BlobOid. */
 export function blobOid(s: string): BlobOid {
-  return s as BlobOid;
+  return brand<BlobOid>(s);
 }

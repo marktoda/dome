@@ -8,6 +8,20 @@
 
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import { countCommitsSince, currentSha, isAncestor } from "../../git";
+import type { CommitOid } from "../../core/source-ref";
+
+/**
+ * Resolve the latest adopted commit: prefer the optional live cursor callback
+ * (`currentAdopted`) when present, else fall back to the `adopted` ref passed
+ * at call construction. Shared by every garden/operational site that re-reads
+ * the adoption cursor inside a loop or after a sub-proposal spawn.
+ */
+export function resolveCurrentAdopted(
+  currentAdopted: (() => CommitOid) | undefined,
+  adopted: CommitOid,
+): CommitOid {
+  return currentAdopted?.() ?? adopted;
+}
 
 export type AdoptionStatus = {
   /** Current branch name; null on detached HEAD. */

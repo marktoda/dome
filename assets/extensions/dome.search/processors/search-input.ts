@@ -79,3 +79,18 @@ export function questionSearchText(question: QuestionSearchRow): string {
     question.metadata?.ownerNeededReason ?? "",
   ].join(" ");
 }
+
+/**
+ * Tokenize free text for topic matching: lowercase, split on non-alphanumeric
+ * runs, trim, drop empties, and freeze. Shared by the topic-relevance and
+ * recall surfaces so both project text into the same token vocabulary.
+ */
+export function normalizedTokens(value: string): ReadonlyArray<string> {
+  return Object.freeze(
+    value
+      .toLowerCase()
+      .split(/[^a-z0-9]+/g)
+      .map((token) => token.trim())
+      .filter((token) => token.length > 0),
+  );
+}

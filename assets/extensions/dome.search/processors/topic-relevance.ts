@@ -1,5 +1,7 @@
 // Shared topic-relevance helpers for query-time search surfaces.
 
+import { normalizedTokens } from "./search-input";
+
 const TOPIC_STOPWORDS: ReadonlySet<string> = new Set([
   "a",
   "an",
@@ -115,14 +117,4 @@ function topicRelevanceScore(
     if (tokens.has(token)) score += 1;
   }
   return score;
-}
-
-function normalizedTokens(value: string): ReadonlyArray<string> {
-  return Object.freeze(
-    value
-      .toLowerCase()
-      .split(/[^a-z0-9]+/g)
-      .map((token) => token.trim())
-      .filter((token) => token.length > 0),
-  );
 }

@@ -26,9 +26,7 @@
 import type {
   DiagnosticEffect,
   FactEffect,
-  NodeRef,
 } from "../core/effect";
-import { nodeRef } from "../core/effect";
 import type {
   ProjectionQueryView,
   ProjectionQuestion,
@@ -36,7 +34,13 @@ import type {
 
 import type { ProjectionDb } from "./db";
 import { queryDiagnostics } from "./diagnostics";
-import { allFacts, factsBySubject, factsByPredicate } from "./facts";
+import {
+  allFacts,
+  factsBySubject,
+  factsByPredicate,
+  predicateNamespace,
+  rebuildSubject,
+} from "./facts";
 import {
   queryQuestionRecords,
   type QuestionRecord,
@@ -114,7 +118,7 @@ function readFacts(
 
   if (hasSubject) {
     // subjectKind + subjectId both narrowed by the `hasSubject` check.
-    const subject = buildSubject(
+    const subject = rebuildSubject(
       filter.subjectKind as "page" | "task" | "entity",
       filter.subjectId as string,
     );
@@ -144,35 +148,6 @@ function questionProjectionResult(
     answeredAt: record.answeredAt,
     answer: record.answer,
   });
-}
-
-/**
- * Construct a NodeRef from a generic `(kind, id)` pair. Each NodeRef
- * variant carries the id under a different field name (`page.path`,
- * `task.stableId`, `entity.name`).
- */
-function buildSubject(
-  kind: "page" | "task" | "entity",
-  id: string,
-): NodeRef {
-  switch (kind) {
-    case "page":
-      return nodeRef({ kind: "page", path: id });
-    case "task":
-      return { kind: "task", stableId: id };
-    case "entity":
-      return { kind: "entity", name: id };
-  }
-}
-
-/**
- * Compute the namespace prefix from a predicate string. Mirrors the
- * `predicateNamespace` helper in `./facts` — the namespace is everything
- * before the last dot; a predicate with no dot is its own namespace.
- */
-function predicateNamespace(predicate: string): string {
-  const idx = predicate.lastIndexOf(".");
-  return idx === -1 ? predicate : predicate.slice(0, idx);
 }
 
 // ----- Re-exports for the runtime --------------------------------------------

@@ -37,6 +37,7 @@ import {
   linkExpansionChannel,
   rankSearchCandidate,
   isSearchDecisionFact,
+  isSearchGraphFact,
   isSearchOpenLoopFact,
   MAX_LINK_EXPANSION_PATHS,
 } from "./ranking";
@@ -369,13 +370,8 @@ export function factPriority(fact: FactEffect): number {
   if (isSearchOpenLoopFact(fact)) return 0;
   if (isSearchDecisionFact(fact)) return 1;
   if (isClaimFact(fact)) return 1; // load-bearing; tie with decisions, break by predicate/label
-  if (isGraphFact(fact)) return 3;
+  if (isSearchGraphFact(fact)) return 3;
   return 2;
-}
-
-function isGraphFact(fact: FactEffect): boolean {
-  return fact.predicate === "dome.graph.links_to" ||
-    fact.predicate === "dome.graph.tagged";
 }
 
 function matchSatisfiesFilters(

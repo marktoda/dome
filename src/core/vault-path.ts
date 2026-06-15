@@ -7,8 +7,9 @@
 // matching.
 
 import { z } from "zod";
+import { brand, type Brand } from "./brand";
 
-export type VaultPath = string & { readonly __brand: "VaultPath" };
+export type VaultPath = Brand<string, "VaultPath">;
 
 export type VaultPathParseError =
   | "empty"
@@ -52,7 +53,7 @@ export function parseVaultPath(raw: string): VaultPathParseResult {
   }
   return Object.freeze({
     ok: true,
-    path: segments.join("/") as VaultPath,
+    path: brand<VaultPath>(segments.join("/")),
   });
 }
 

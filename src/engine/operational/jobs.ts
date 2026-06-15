@@ -39,6 +39,7 @@ import type { ProcessorExecutionState } from "../../processors/execution-state";
 import type { ModelProvider, ModelStepProvider } from "../core/model-invoke";
 import type { TriggerMatch } from "../../processors/triggers";
 import type { ApplyEffectSinks } from "../core/apply-effect";
+import { resolveCurrentAdopted } from "../core/adoption-status";
 import {
   applyPatchToCandidate,
   type ApplyPatchInput,
@@ -186,7 +187,7 @@ async function runOneJob(opts: {
   readonly diagnostics: DiagnosticEffect[];
   readonly applyGardenPatch: (opts: ApplyPatchInput) => Promise<CommitOid | null>;
 }): Promise<JobDrainSummary> {
-  const inputAdopted = opts.currentAdopted?.() ?? opts.adopted;
+  const inputAdopted = resolveCurrentAdopted(opts.currentAdopted, opts.adopted);
   const snapshot = await makeSnapshot(
     opts.vault.path,
     inputAdopted,
@@ -283,17 +284,12 @@ async function runOneJob(opts: {
     });
   }
 
-  if (result.executionError?.code === "processor.quarantined") {
-    markJobFailed(opts.projection, opts.job.id, opts.now());
-    return Object.freeze({
-      jobId: opts.job.id,
-      processorId: opts.job.processorId,
-      status: "failed" as const,
-      runId: result.runId,
-    });
-  }
-
-  if (result.executionError?.retryable !== true) {
+  // Quarantined processors and non-retryable errors both fail the job
+  // terminally with the same failed-result shape.
+  if (
+    result.executionError?.code === "processor.quarantined" ||
+    result.executionError?.retryable !== true
+  ) {
     markJobFailed(opts.projection, opts.job.id, opts.now());
     return Object.freeze({
       jobId: opts.job.id,

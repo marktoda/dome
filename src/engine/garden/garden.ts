@@ -46,16 +46,20 @@ import type {
   QuestionEffect,
 } from "../../core/effect";
 import { diagnosticEffect } from "../../core/effect";
-import type { AdoptionResult, Proposal } from "../../core/proposal";
+import type { Proposal } from "../../core/proposal";
 import type { CommitOid } from "../../core/source-ref";
 import { applyEffect, type ApplyEffectSinks } from "../core/apply-effect";
 import { applyPatchToCandidate } from "../core/apply-patch";
 import type { SignalEvent } from "../core/compile-range";
 import { recordDiagnosticsViaSink } from "../core/diagnostics";
+import { resolveCurrentAdopted } from "../core/adoption-status";
 import { deriveExtensionId } from "../../extensions/id-helpers";
 import type { LedgerDb } from "../../ledger/db";
 import { routeGardenPatchForSubProposal } from "./garden-patch-router";
-import { spawnGardenSubProposal } from "./garden-sub-proposals";
+import {
+  spawnGardenSubProposal,
+  type AdoptSubProposalFn,
+} from "./garden-sub-proposals";
 import { recordEffectCapabilityUse } from "../core/effect-capability-use";
 import type { GardenPhaseRunner, GardenProcessorStart, RunId } from "../core/runner-contract";
 import type { EngineVault } from "../core/vault-shape";
@@ -143,13 +147,14 @@ export type GardenRunSummary = {
 
 /**
  * The callback signature the orchestrator invokes to adopt a sub-Proposal
- * spawned from a garden-emitted PatchEffect.
+ * spawned from a garden-emitted PatchEffect. Canonically defined in
+ * `garden-sub-proposals.ts` and re-exported here for the orchestrator's
+ * consumers (notably `compiler-host.ts`'s `runOneAdoption`).
  *
- * Wired by the caller (typically `compiler-host.ts`'s `runOneAdoption`)
- * to a recursive closure: the closure calls `adopt()` on the sub-Proposal,
- * then if adopted, calls `runGardenPhase()` again with `cascadeDepth + 1`
- * + the same closure. This is the structural recursion that lets garden
- * cascades unfold.
+ * Wired by the caller to a recursive closure: the closure calls `adopt()` on
+ * the sub-Proposal, then if adopted, calls `runGardenPhase()` again with
+ * `cascadeDepth + 1` + the same closure. This is the structural recursion
+ * that lets garden cascades unfold.
  *
  * The orchestrator does NOT inspect the returned `AdoptionResult` other
  * than to surface its successful-spawn count. Sub-Proposal failures (a
@@ -157,10 +162,7 @@ export type GardenRunSummary = {
  * and projection diagnostics like any other adoption block; they don't
  * propagate up to the parent garden run.
  */
-export type AdoptSubProposalFn = (
-  subProposal: Proposal,
-  cascadeDepth: number,
-) => Promise<AdoptionResult>;
+export type { AdoptSubProposalFn };
 
 // ----- runGardenPhase -------------------------------------------------------
 
@@ -538,7 +540,7 @@ async function runGardenPhaseInner(opts: {
       // conversion boundary used by garden, scheduler, queued jobs, and
       // answer handlers.
       for (const req of spawnQueue) {
-        const base = currentAdopted?.() ?? adopted;
+        const base = resolveCurrentAdopted(currentAdopted, adopted);
         const spawned = await spawnGardenSubProposal({
           vault,
           base,

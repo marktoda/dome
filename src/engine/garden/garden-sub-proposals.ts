@@ -18,7 +18,12 @@ import type { RunId } from "../core/runner-contract";
 import type { EngineVault } from "../core/vault-shape";
 import type { ApplyPatchInput } from "../core/apply-patch";
 
-export type AdoptGardenSubProposalFn = (
+/**
+ * Re-enter adoption for a garden-spawned sub-Proposal at the given cascade
+ * depth. The single canonical sub-Proposal adoption boundary, shared by the
+ * garden orchestrator, run routing, patch dispatch, and the compiler host.
+ */
+export type AdoptSubProposalFn = (
   proposal: Proposal,
   cascadeDepth: number,
 ) => Promise<AdoptionResult>;
@@ -45,7 +50,7 @@ export async function spawnGardenSubProposal(opts: {
   readonly cascadeDepth: number;
   readonly now?: () => Date;
   readonly applyPatch: (opts: ApplyPatchInput) => Promise<CommitOid | null>;
-  readonly adoptSubProposal: AdoptGardenSubProposalFn;
+  readonly adoptSubProposal: AdoptSubProposalFn;
 }): Promise<GardenSubProposalSpawnResult> {
   const newHead = await opts.applyPatch({
     vaultPath: opts.vault.path,

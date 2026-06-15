@@ -35,10 +35,7 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import type { CommitOid } from "./source-ref";
-import {
-  DiagnosticEffectSchema,
-  type DiagnosticEffect,
-} from "./effect";
+import type { DiagnosticEffect } from "./effect";
 
 // ----- ProposalSource -------------------------------------------------------
 
@@ -93,22 +90,6 @@ export type Proposal = {
   readonly source: ProposalSource;
   readonly metadata?: ProposalMetadata;
 };
-
-// ----- ProposalState --------------------------------------------------------
-
-/**
- * Lifecycle states a Proposal transitions through. The engine emits
- * `engine.proposal.<state>` events on every transition; the run ledger
- * records the full state history with timestamps. See
- * proposals.md §"Lifecycle states".
- */
-export type ProposalState =
-  | "constructed"
-  | "enqueued"
-  | "adopting"
-  | "adopted"
-  | "blocked"
-  | "failed";
 
 // ----- AdoptionResult -------------------------------------------------------
 
@@ -167,26 +148,6 @@ export const ProposalSchema = z
     head: z.string().min(1),
     source: ProposalSourceSchema,
     metadata: ProposalMetadataSchema.optional(),
-  })
-  .strict();
-
-export const ProposalStateSchema = z.enum([
-  "constructed",
-  "enqueued",
-  "adopting",
-  "adopted",
-  "blocked",
-  "failed",
-]);
-
-export const AdoptionResultSchema = z
-  .object({
-    proposalId: z.string().min(1),
-    adopted: z.boolean(),
-    adoptedRef: z.string().min(1),
-    diagnostics: z.array(DiagnosticEffectSchema),
-    closureCommitOid: z.string().min(1).nullable(),
-    iterations: z.number().int().nonnegative(),
   })
   .strict();
 

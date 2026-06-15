@@ -7,6 +7,7 @@
 // while scheduled maintenance only patches already-obvious managed-page drift.
 
 import { compareStrings } from "../../../../src/core/compare";
+import { positionAt } from "../lib/position";
 import {
   reorderFrontmatterKeys,
   stringifyFrontmatter,
@@ -464,23 +465,6 @@ function isOffsetInRanges(
   ranges: ReadonlyArray<OffsetRange>,
 ): boolean {
   return ranges.some((range) => offset >= range.start && offset < range.end);
-}
-
-function positionAt(
-  content: string,
-  offset: number,
-): { line: number; col: number } {
-  let line = 1;
-  let col = 0;
-  for (let i = 0; i < offset && i < content.length; i++) {
-    if (content.charCodeAt(i) === 10 /* \n */) {
-      line += 1;
-      col = 0;
-    } else {
-      col += 1;
-    }
-  }
-  return { line, col };
 }
 
 function buildBasenameIndex(

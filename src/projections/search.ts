@@ -5,16 +5,9 @@
 // enforcement. Processors never receive the SQLite handle.
 
 import type { SearchDocumentEffect } from "../core/effect";
-import {
-  blobOid,
-  commitOid,
-  sourceRef,
-  SourceRefSchema,
-  type CommitOid,
-  type SourceRef,
-  type TextRange,
-} from "../core/source-ref";
+import { type CommitOid } from "../core/source-ref";
 import type { SearchDocumentResult } from "../core/processor";
+import { parseSourceRefsColumn } from "../sqlite/row-json";
 import type { ProjectionDb } from "./db";
 
 // ----- Writes ---------------------------------------------------------------
@@ -240,33 +233,6 @@ function snippetFromBody(body: string): string {
   return `${normalized.slice(0, 177).trimEnd()}...`;
 }
 
-function parseSourceRefs(raw: string): ReadonlyArray<SourceRef> {
-  const parsed = JSON.parse(raw) as unknown;
-  const refs = SourceRefSchema.array().parse(parsed);
-  return Object.freeze(
-    refs.map((ref) =>
-      sourceRef({
-        commit: commitOid(ref.commit),
-        path: ref.path,
-        ...(ref.blob !== undefined ? { blob: blobOid(ref.blob) } : {}),
-        ...(ref.range !== undefined ? { range: textRange(ref.range) } : {}),
-        ...(ref.stableId !== undefined ? { stableId: ref.stableId } : {}),
-      }),
-    ),
-  );
-}
-
-function textRange(raw: {
-  readonly startLine: number;
-  readonly endLine: number;
-  readonly startChar?: number | undefined;
-  readonly endChar?: number | undefined;
-}): TextRange {
-  const range: { -readonly [K in keyof TextRange]: TextRange[K] } = {
-    startLine: raw.startLine,
-    endLine: raw.endLine,
-  };
-  if (raw.startChar !== undefined) range.startChar = raw.startChar;
-  if (raw.endChar !== undefined) range.endChar = raw.endChar;
-  return Object.freeze(range);
+function parseSourceRefs(raw: string) {
+  return parseSourceRefsColumn(raw, "fts_documents.source_refs");
 }

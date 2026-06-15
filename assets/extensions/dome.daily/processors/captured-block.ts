@@ -1,5 +1,4 @@
 // captured-block.ts — captured tasks block helpers.
-// Moved verbatim from daily-shared.ts; no logic changes.
 
 import {
   containsGeneratedBlockMarker,

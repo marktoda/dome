@@ -20,7 +20,7 @@ import type { LedgerDb } from "../../ledger/db";
 import { applyEffect, type ApplyEffectSinks } from "../core/apply-effect";
 import type { ApplyPatchInput } from "../core/apply-patch";
 import { dispatchGardenPatchEffect } from "./garden-patch-dispatch";
-import type { AdoptGardenSubProposalFn } from "./garden-sub-proposals";
+import type { AdoptSubProposalFn } from "./garden-sub-proposals";
 import { recordEffectCapabilityUse } from "../core/effect-capability-use";
 import type { RunnerResult } from "../core/runner-contract";
 import type { EngineVault } from "../core/vault-shape";
@@ -44,7 +44,7 @@ export async function routeGardenRunEffects(opts: {
     opts: ApplyPatchInput,
   ) => Promise<CommitOid | null>;
   readonly extensionIdFor: (processorId: string) => string;
-  readonly adoptSubProposal?: AdoptGardenSubProposalFn;
+  readonly adoptSubProposal?: AdoptSubProposalFn;
   readonly disabledDiagnostic: {
     readonly code: string;
     readonly message: string;

@@ -33,6 +33,7 @@ import type { ProcessorRegistry } from "../../processors/registry";
 import type { ModelProvider, ModelStepProvider } from "../core/model-invoke";
 import type { ApplyEffectSinks } from "../core/apply-effect";
 import type { ApplyPatchInput } from "../core/apply-patch";
+import { resolveCurrentAdopted } from "../core/adoption-status";
 import type { RuntimeQuestionAutoResolveConfig } from "../core/capability-policy";
 import { runQueuedJobs, type JobDrainResult } from "./jobs";
 import {
@@ -184,7 +185,7 @@ export async function runOperationalWork(opts: {
       : await runQuestionAutoResolution({
           config: opts.questionAutoResolve,
           vault: opts.vault,
-          adopted: opts.currentAdopted?.() ?? opts.adopted,
+          adopted: resolveCurrentAdopted(opts.currentAdopted, opts.adopted),
           registry: opts.registry,
           projection: opts.projection,
           answers: opts.answers,

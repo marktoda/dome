@@ -68,14 +68,8 @@ export const QUESTIONS_BLOCK: BriefBlockMarkers = briefBlock("questions");
 export const INTEGRATED_BLOCK: BriefBlockMarkers = briefBlock("integrated");
 export const SOURCES_BLOCK: BriefBlockMarkers = briefBlock("sources");
 
-export const BRIEF_YESTERDAY_START = YESTERDAY_BLOCK.start;
-export const BRIEF_YESTERDAY_END = YESTERDAY_BLOCK.end;
-export const BRIEF_MEETINGS_START = MEETINGS_BLOCK.start;
-export const BRIEF_MEETINGS_END = MEETINGS_BLOCK.end;
-export const BRIEF_QUESTIONS_START = QUESTIONS_BLOCK.start;
-export const BRIEF_QUESTIONS_END = QUESTIONS_BLOCK.end;
-export const BRIEF_INTEGRATED_START = INTEGRATED_BLOCK.start;
-export const BRIEF_INTEGRATED_END = INTEGRATED_BLOCK.end;
+const BRIEF_QUESTIONS_START = QUESTIONS_BLOCK.start;
+const BRIEF_QUESTIONS_END = QUESTIONS_BLOCK.end;
 
 // ----- Calendar parsing (defensive — the file is untrusted input) -----------
 

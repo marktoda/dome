@@ -16,10 +16,6 @@ export function makeExecutionError<T extends ProcessorExecutionError>(
   return Object.freeze({ ...input }) as T;
 }
 
-export function executionErrorToJson(error: ProcessorExecutionError): string {
-  return JSON.stringify(error);
-}
-
 export function diagnosticForExecutionError(
   error: ProcessorExecutionError,
 ): DiagnosticEffect {

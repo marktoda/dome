@@ -60,6 +60,7 @@ import {
 import type { AdoptionResult, Proposal } from "../../core/proposal";
 import type { CommitOid } from "../../core/source-ref";
 import type { ApplyEffectSinks } from "../core/apply-effect";
+import { resolveCurrentAdopted } from "../core/adoption-status";
 import {
   applyPatchToCandidate,
   type ApplyPatchInput,
@@ -401,7 +402,7 @@ async function runSchedulerInner(opts: {
 
     let success: boolean;
     try {
-      const inputAdopted = currentAdopted?.() ?? adopted;
+      const inputAdopted = resolveCurrentAdopted(currentAdopted, adopted);
       // Build the snapshot once per fire — same shape adoptionRunner /
       // gardenRunner construct, just resolved against the adopted commit
       // (schedule fires see the post-adoption snapshot).

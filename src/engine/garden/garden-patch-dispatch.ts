@@ -17,10 +17,11 @@ import type { LedgerDb } from "../../ledger/db";
 import type { ApplyEffectSinks } from "../core/apply-effect";
 import type { ApplyPatchInput } from "../core/apply-patch";
 import { recordEffectCapabilityUse } from "../core/effect-capability-use";
+import { resolveCurrentAdopted } from "../core/adoption-status";
 import { routeGardenPatchForSubProposal } from "./garden-patch-router";
 import {
   spawnGardenSubProposal,
-  type AdoptGardenSubProposalFn,
+  type AdoptSubProposalFn,
 } from "./garden-sub-proposals";
 import type { RunId } from "../core/runner-contract";
 import type { EngineVault } from "../core/vault-shape";
@@ -44,7 +45,7 @@ export async function dispatchGardenPatchEffect(opts: {
   readonly sinks: ApplyEffectSinks;
   readonly ledger?: LedgerDb;
   readonly diagnostics: DiagnosticEffect[];
-  readonly adoptSubProposal?: AdoptGardenSubProposalFn;
+  readonly adoptSubProposal?: AdoptSubProposalFn;
   readonly applyGardenPatch: (opts: ApplyPatchInput) => Promise<CommitOid | null>;
   readonly extensionId: string;
   readonly disabledDiagnostic: {
@@ -100,7 +101,7 @@ export async function dispatchGardenPatchEffect(opts: {
     });
   }
 
-  const adopted = opts.currentAdopted?.() ?? opts.adopted;
+  const adopted = resolveCurrentAdopted(opts.currentAdopted, opts.adopted);
   const spawned = await spawnGardenSubProposal({
     vault: opts.vault,
     base: adopted,

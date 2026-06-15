@@ -626,7 +626,7 @@ function countedSignal(input: {
   });
 }
 
-function isSearchGraphFact(
+export function isSearchGraphFact(
   fact: Pick<FactEffect, "predicate">,
 ): boolean {
   return (
