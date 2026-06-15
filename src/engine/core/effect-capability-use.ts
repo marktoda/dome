@@ -125,7 +125,13 @@ export function recordEffectCapabilityUse(opts: {
   });
 }
 
-function predicateNamespace(predicate: string): string | null {
+/**
+ * Extract the namespace prefix of a predicate. The predicate is
+ * `<namespace>.<key>` per capabilities.md §"graph.write"; the namespace is
+ * everything before the *last* `.`. Returns `null` for a predicate with no
+ * dot (no namespace). Shared with the capability broker (same core layer).
+ */
+export function predicateNamespace(predicate: string): string | null {
   const lastDot = predicate.lastIndexOf(".");
   if (lastDot <= 0) return null;
   return predicate.slice(0, lastDot);

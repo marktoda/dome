@@ -30,6 +30,7 @@ import type { ProcessorExecutionState } from "../../processors/execution-state";
 import type { ProcessorRegistry } from "../../processors/registry";
 import type { TriggerMatch } from "../../processors/triggers";
 import type { ApplyEffectSinks } from "../core/apply-effect";
+import { resolveCurrentAdopted } from "../core/adoption-status";
 import {
   applyPatchToCandidate,
   type ApplyPatchInput,
@@ -187,7 +188,7 @@ async function runAnswerHandlersInner(opts: {
     opts.applyGardenPatchToCandidate ?? applyPatchToCandidate;
 
   for (const candidate of candidates) {
-    const inputAdopted = opts.currentAdopted?.() ?? opts.adopted;
+    const inputAdopted = resolveCurrentAdopted(opts.currentAdopted, opts.adopted);
     const snapshot = await makeSnapshot(
       opts.vault.path,
       inputAdopted,

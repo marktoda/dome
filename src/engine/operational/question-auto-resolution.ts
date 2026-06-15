@@ -34,7 +34,9 @@ import type { ProcessorRegistry } from "../../processors/registry";
 import { makeSnapshot } from "../../processors/runtime";
 import type { ApplyEffectSinks } from "../core/apply-effect";
 import type { ApplyPatchInput } from "../core/apply-patch";
-import { runAnswerHandlers, type AnswerHandlerResult } from "./answers";
+import { resolveCurrentAdopted } from "../core/adoption-status";
+import { runAnswerHandlers } from "./answers";
+import type { RunnerExecutionStatus } from "../core/runner-contract";
 import type { ModelProvider, ModelStepProvider } from "../core/model-invoke";
 import { answerQuestionDurably } from "./question-answer-recording";
 import type { EngineVault } from "../core/vault-shape";
@@ -129,7 +131,7 @@ export async function runQuestionAutoResolution(opts: {
       question,
       config: opts.config,
       vaultPath: opts.vault.path,
-      adopted: opts.currentAdopted?.() ?? opts.adopted,
+      adopted: resolveCurrentAdopted(opts.currentAdopted, opts.adopted),
       resolveTree: opts.resolveTree,
     });
     if (plan === null) {
@@ -237,7 +239,7 @@ async function dispatchAutoAnswerHandlers(opts: {
   );
   const result = await runAnswerHandlers({
     vault: opts.vault,
-    adopted: opts.currentAdopted?.() ?? opts.adopted,
+    adopted: resolveCurrentAdopted(opts.currentAdopted, opts.adopted),
     registry: opts.registry,
     question: opts.question,
     sinks: opts.sinks,
@@ -292,7 +294,25 @@ async function dispatchAutoAnswerHandlers(opts: {
   });
 }
 
-function answerHandlerFailure(result: AnswerHandlerResult): string | null {
+/**
+ * The failure message (if any) of an answer-handler dispatch, by precedence:
+ *   1. a `answer.dispatch-crashed` diagnostic,
+ *   2. the first run that did not succeed,
+ *   3. the first error/block routing diagnostic.
+ *
+ * Shared by the operational auto-resolution pump and the host durable answer
+ * path (which unwraps its extra `.result` nesting at the call site). Takes the
+ * structural `{ diagnostics, runs }` so callers at any layer can pass their own
+ * result shape.
+ */
+export function answerHandlerFailure(result: {
+  readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
+  readonly runs: ReadonlyArray<{
+    readonly processorId: string;
+    readonly executionStatus: RunnerExecutionStatus;
+    readonly executionError?: { readonly message?: string };
+  }>;
+}): string | null {
   const crash = result.diagnostics.find(
     (diagnostic) => diagnostic.code === "answer.dispatch-crashed",
   );

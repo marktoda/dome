@@ -17,6 +17,7 @@ import {
   runAnswerHandlersForQuestion,
   type AnswerHandlersForQuestionResult,
 } from "./compiler-host";
+import { answerHandlerFailure } from "../operational/question-auto-resolution";
 export {
   answerQuestionDurably,
   type AnswerQuestionDurablyOpts,
@@ -53,7 +54,7 @@ export async function dispatchAnswerHandlersIfNeeded(opts: {
     return result;
   }
 
-  const failure = answerHandlerFailure(result);
+  const failure = answerHandlerFailure(result.result);
   if (failure !== null) {
     markAnswerHandlersFailed(opts.runtime.answersDb, {
       idempotencyKey,
@@ -68,29 +69,4 @@ export async function dispatchAnswerHandlersIfNeeded(opts: {
     handledAt: now().toISOString(),
   });
   return result;
-}
-
-function answerHandlerFailure(
-  result: Extract<AnswerHandlersForQuestionResult, { readonly kind: "handled" }>,
-): string | null {
-  const crash = result.result.diagnostics.find(
-    (diagnostic) => diagnostic.code === "answer.dispatch-crashed",
-  );
-  if (crash !== undefined) return crash.message;
-
-  const failedRun = result.result.runs.find(
-    (run) => run.executionStatus !== "succeeded",
-  );
-  if (failedRun !== undefined) {
-    return (
-      failedRun.executionError?.message ??
-      `answer handler ${failedRun.processorId} finished with ${failedRun.executionStatus}`
-    );
-  }
-
-  const routingDiagnostic = result.result.diagnostics.find(
-    (diagnostic) =>
-      diagnostic.severity === "error" || diagnostic.severity === "block",
-  );
-  return routingDiagnostic?.message ?? null;
 }
