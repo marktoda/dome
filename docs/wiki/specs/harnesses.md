@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-12
+updated: 2026-06-15
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -51,6 +51,32 @@ cd ~/vaults/work && dome sync
 ```
 
 Both write paths produce a Proposal internally, run the same adoption loop, and produce the same adoption result. There is no "trusted write" path that bypasses adoption.
+
+## Keeping owned prose current
+
+Agentic harnesses must keep the prose they own *current*, not accrete it. Two
+categories of vault content carry opposite editing contracts:
+
+- **Sources & history** — `raw/`, `notes/`, historical dailies, the
+  preference-signal log, and git history itself. Append or preserve; never
+  overwrite. These are the record.
+- **Owned prose** — `wiki/` pages the agent maintains, syntheses, page
+  `description:` frontmatter, and the instruction surfaces themselves
+  (`AGENTS.md` user-prose, command prompts, bundle charters). When an edit makes
+  an existing claim false or obsolete, the harness deletes or replaces it **in
+  the same edit** — it does not leave the stale claim sitting beside the new one.
+
+Whole-page supersession uses the existing vocabulary — `status: superseded` plus
+a `superseded_by:` forward-link — rather than rewriting a historical record in
+place. Sentence- or section-level staleness inside a page already being edited
+is simply fixed.
+
+This is safe because **git history is the preservation layer**: removing a stale
+claim from the live surface does not lose it. The same principle already froze
+`log.md` ([[wiki/invariants/LOG_IS_APPEND_ONLY]]) and forbids append-forever
+registries ([[wiki/invariants/NO_ACCRETING_REGISTRIES]]); this section
+generalizes it from derived artifacts to free prose. "I'd rather append to be
+safe" is not preservation when git already holds the prior version — it is rot.
 
 ## How a harness reads from the vault
 
