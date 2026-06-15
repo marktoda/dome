@@ -6,7 +6,6 @@
 // that survives projection rebuilds.
 
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { err, ok, type Result } from "../types";
@@ -17,6 +16,7 @@ import {
 import { configureSqliteConnection } from "../sqlite/connection";
 import { errorMessage } from "../sqlite/error-message";
 import { computeDdlHash } from "../sqlite/hash";
+import { applyDdlInTransaction, ensureParentDir } from "../sqlite/open-store";
 
 const DDL: ReadonlyArray<string> = Object.freeze([
   "CREATE TABLE IF NOT EXISTS answers_meta ("
@@ -103,7 +103,7 @@ export async function openAnswersDb(
 ): Promise<Result<OpenAnswersDbResult, AnswersDbError>> {
   const parent = dirname(opts.path);
   try {
-    mkdirSync(parent, { recursive: true });
+    ensureParentDir(opts.path);
   } catch (e) {
     return err({
       kind: "directory-create-failed",
@@ -132,7 +132,7 @@ export async function openAnswersDb(
         expected: schemaHash,
       });
     }
-    applyDdl(raw);
+    applyDdlInTransaction(raw, DDL);
     const shapeError = validateSqliteTableShapes(raw, REQUIRED_TABLE_SHAPES);
     if (shapeError !== null) {
       throw new Error(shapeError);
@@ -154,19 +154,6 @@ export async function openAnswersDb(
 
 export function computeAnswersSchemaHash(): string {
   return computeDdlHash(DDL);
-}
-
-function applyDdl(db: Database): void {
-  db.run("BEGIN");
-  try {
-    for (const stmt of DDL) {
-      db.run(stmt);
-    }
-    db.run("COMMIT");
-  } catch (e) {
-    db.run("ROLLBACK");
-    throw e;
-  }
 }
 
 function insertOrReplaceMetaRow(db: Database, schemaHash: string): void {

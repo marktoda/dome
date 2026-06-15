@@ -29,6 +29,22 @@ export function openVaultErrorKind(error: OpenVaultError): string {
 }
 
 /**
+ * The `openVaultRuntime failed (<kind>)` operator message keyed by a
+ * pre-flattened error kind — the form every adapter envelope that only
+ * carries the kind string (MCP/HTTP `commandError*`, the CLI's
+ * `emitRuntimeOpenFailure`) renders.
+ */
+export function runtimeOpenFailureMessage(
+  commandLabel: string,
+  errorKind: string,
+): string {
+  return (
+    `${commandLabel}: openVaultRuntime failed (${errorKind}). ` +
+    "Run `dome init` to initialize the vault."
+  );
+}
+
+/**
  * The standard operator message for a vault-open failure: the typed
  * `not-a-vault` explanation when the target isn't a vault, the
  * `dome init` hint otherwise.
@@ -39,8 +55,7 @@ export function vaultOpenFailureMessage(
 ): string {
   return error.kind === "not-a-vault"
     ? `${commandLabel}: ${error.message}`
-    : `${commandLabel}: openVaultRuntime failed (${error.cause.kind}). ` +
-      "Run `dome init` to initialize the vault.";
+    : runtimeOpenFailureMessage(commandLabel, error.cause.kind);
 }
 
 /**

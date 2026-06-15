@@ -2,7 +2,7 @@
 // real temp vault, real sync, captured console (pattern from tests/http).
 
 import { afterAll, beforeEach, afterEach, describe, expect, test } from "bun:test";
-import { resolveCaps, stripWikilinks } from "../../../src/cli/presenter";
+import { resolveCaps, stripWikilinks, visibleWidth } from "../../../src/cli/presenter";
 import { formatTodayResult } from "../../../src/cli/commands/today";
 import { mkdtempSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -654,7 +654,94 @@ describe("dome today: flat signal-led task list", () => {
       counts: { openTasks: 234, followups: 0, questions: 0 }, dueCounts: {},
     };
     const out = formatTodayResult(data, ASCII_CAPS, "/vault");
-    // true overflow = 234 - 7 (cap) = 227 — NOT 1 (received list − cap)
-    expect(out).toMatch(/22\d more|2[23]\d more/);
+    // true overflow: 8 received overdue, 6 shown → 2 more overdue;
+    // trueTotal=234, otherMore = (234−8)−0 = 226 → "226 more"
+    expect(out).toContain("2 more overdue");
+    expect(out).toContain("226 more");
+    expect(out).toContain("dome today --verbose");
+  });
+});
+
+describe("formatTodayResult grouping + links", () => {
+  const caps = { color: false, unicode: true, width: 80, hyperlinks: false } as const;
+  const doc = (over: Record<string, unknown> = {}) => ({
+    date: "2026-06-15",
+    openTasks: [
+      { text: "Reply to Charlie re: Shankman bar-raiser · [thread](https://uniswapteam.slack.com/archives/C0B81NJU/p123)", path: "wiki/dailies/2026-06-15.md", line: 4, dueDate: "2026-06-13" },
+      { text: "polish the AI recruiting round with Guillaume so the panel is consistent across domains", path: "p", line: 5, dueDate: "2026-06-15" },
+      { text: "draft the Q3 plan", path: "p", line: 6, dueDate: null },
+    ],
+    followups: [],
+    questions: [],
+    counts: { openTasks: 3, followups: 0, questions: 0 },
+    hero: null, brief: null, calendar: null,
+    ...over,
+  });
+
+  test("renders OVERDUE/TODAY/OPEN headers only for non-empty buckets", () => {
+    const out = formatTodayResult(doc(), caps, "/v/work");
+    expect(out).toContain("OVERDUE");
+    expect(out).toContain("TODAY");
+    expect(out).toContain("OPEN");
+  });
+
+  test("pulls the slack URL out of the line — no raw archives/ URL, link label survives", () => {
+    const out = formatTodayResult(doc(), caps, "/v/work");
+    expect(out).not.toContain("archives/C0B81NJU");
+    expect(out).not.toContain("https://uniswapteam.slack.com");
+    expect(out).toContain("thread");
+    expect(out).toContain("Reply to Charlie re: Shankman bar-raiser");
+  });
+
+  test("no task line is cut mid-word (no severed token before the ellipsis)", () => {
+    const narrow = { ...caps, width: 44 };
+    const out = formatTodayResult(doc(), narrow, "/v/work");
+    for (const line of out.split("\n").filter((l) => l.includes("…"))) {
+      const head = line.replace(/\s*….*$/, "");
+      expect(/[\p{L}\p{N}):—\-]$/u.test(head.trimEnd())).toBe(true);
+    }
+  });
+
+  test("honest overflow: many open tasks report a '… N more' line", () => {
+    const out = formatTodayResult(doc({ counts: { openTasks: 50, followups: 0, questions: 0 } }), caps, "/v/work");
+    expect(out).toMatch(/…\s.*more.*dome today --verbose/);
+  });
+
+  test("no rendered line exceeds caps.width even with link affordances", () => {
+    const narrow = { color: false, unicode: true, width: 50, hyperlinks: true } as const;
+    const out = formatTodayResult(doc(), narrow, "/v/work");
+    for (const line of out.split("\n")) {
+      expect(visibleWidth(line)).toBeLessThanOrEqual(narrow.width);
+    }
+  });
+
+  test("multi-link task rows never exceed caps.width", () => {
+    const narrow = { color: false, unicode: true, width: 50, hyperlinks: true } as const;
+    const multi = doc({
+      openTasks: [
+        {
+          text: "sync with the team about the launch plan [thread](https://a/1) [doc](https://b/2) [pr](https://c/3)",
+          path: "p", line: 1, dueDate: "2026-06-13",
+        },
+      ],
+      counts: { openTasks: 1, followups: 0, questions: 0 },
+    });
+    const out = formatTodayResult(multi, narrow, "/v/work");
+    for (const line of out.split("\n")) expect(visibleWidth(line)).toBeLessThanOrEqual(narrow.width);
+  });
+
+  test("a long link label is capped so the row fits caps.width", () => {
+    const narrow = { color: false, unicode: true, width: 40, hyperlinks: true } as const;
+    const longLabel = doc({
+      openTasks: [
+        {
+          text: "do it [this is an extremely long link label that would blow the line](https://x/y)",
+          path: "p", line: 1, dueDate: "2026-06-13",
+        },
+      ],
+      counts: { openTasks: 1, followups: 0, questions: 0 },
+    });
+    const out = formatTodayResult(longLabel, narrow, "/v/work");
+    for (const line of out.split("\n")) expect(visibleWidth(line)).toBeLessThanOrEqual(narrow.width);
   });
 });

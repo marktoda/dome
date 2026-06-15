@@ -83,17 +83,19 @@ const carryForward = defineProcessorImplementation({
       settings,
     });
 
-    const targetSettledItems = uniqueSettledOpenLoops(
+    const targetSettledItems = uniqueBy(
       settledSourceBackedOpenLoopsFromMarkdown({
         path: targetPath,
         content,
       }),
+      openLoopIdentity,
     );
-    const targetOpenItems = uniqueOpenLoops(
+    const targetOpenItems = uniqueBy(
       openSourceBackedOpenLoopsFromMarkdown({
         path: targetPath,
         content,
       }),
+      openLoopIdentity,
     );
     const settledKeys = await collectSettledOpenLoopIdentities({
       ctx,
@@ -341,29 +343,20 @@ function patchSourceRefs(
   ];
 }
 
-function uniqueSettledOpenLoops(
-  items: ReadonlyArray<DailySettledOpenLoopSource>,
-): ReadonlyArray<DailySettledOpenLoopSource> {
+// First-seen dedup over an arbitrary identity key. A Set preserves insertion
+// order, so the survivor of each identity is the first occurrence — matching
+// the two former twin helpers (uniqueOpenLoops / uniqueSettledOpenLoops) this
+// replaced, both of which keyed on openLoopIdentity.
+function uniqueBy<T>(
+  items: ReadonlyArray<T>,
+  key: (t: T) => string,
+): ReadonlyArray<T> {
   const seen = new Set<string>();
-  const out: DailySettledOpenLoopSource[] = [];
+  const out: T[] = [];
   for (const item of items) {
-    const key = openLoopIdentity(item);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(item);
-  }
-  return Object.freeze(out);
-}
-
-function uniqueOpenLoops(
-  items: ReadonlyArray<DailyOpenLoopSource>,
-): ReadonlyArray<DailyOpenLoopSource> {
-  const seen = new Set<string>();
-  const out: DailyOpenLoopSource[] = [];
-  for (const item of items) {
-    const key = openLoopIdentity(item);
-    if (seen.has(key)) continue;
-    seen.add(key);
+    const k = key(item);
+    if (seen.has(k)) continue;
+    seen.add(k);
     out.push(item);
   }
   return Object.freeze(out);

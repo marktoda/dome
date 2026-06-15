@@ -9,11 +9,14 @@
 import { basename } from "node:path";
 
 import {
-  firstPartyViewNotFoundMessage,
   runSharedViewCommand,
   structuredViewBrokerMessages,
 } from "../../surface/view";
-import { validateStructuredRun } from "../../surface/adapter";
+import {
+  catalogViewProblemMessage,
+  validateStructuredRun,
+  viewNotFoundMessage,
+} from "../../surface/adapter";
 import { FIRST_PARTY_VIEWS } from "../../surface/view-catalog";
 import {
   printViewCommandError,
@@ -24,11 +27,15 @@ import {
   finding,
   glyph,
   headline,
+  hyperlink,
   paint,
   resolveCaps,
   rollup,
+  shortenLabel,
+  splitInlineLinks,
   statusGlyph,
   truncate,
+  visibleWidth,
   type Caps,
   type Tone,
 } from "../presenter";
@@ -108,11 +115,7 @@ async function renderTodayOnce(
           commandLabel: "dome today",
           json: true,
           messages: [
-            firstPartyViewNotFoundMessage({
-              commandLabel: "dome today",
-              bundleId: FIRST_PARTY_VIEWS.today.bundleId,
-              processorName: FIRST_PARTY_VIEWS.today.processorName,
-            }),
+            viewNotFoundMessage("dome today", FIRST_PARTY_VIEWS.today),
           ],
         });
         return { kind: "error", exitCode: 64 };
@@ -186,24 +189,16 @@ async function renderTodayOnce(
       },
     );
     if (validated.kind === "problem") {
-      const msg = (() => {
-        switch (validated.problem.kind) {
-          case "no-structured-result":
-            return "dome today: today processor returned no structured result.";
-          case "multiple-views":
-            return `dome today: expected exactly one view '${FIRST_PARTY_VIEWS.today.viewName}', got ${validated.problem.count}.`;
-          case "wrong-view":
-            return `dome today: expected view '${FIRST_PARTY_VIEWS.today.viewName}', got '${validated.problem.got}'.`;
-          case "wrong-schema":
-            return `dome today: expected structured schema '${FIRST_PARTY_VIEWS.today.schema}', got '${validated.problem.got}'.`;
-          default:
-            return "dome today: today processor returned no structured result.";
-        }
-      })();
       printViewCommandError({
         commandLabel: "dome today",
         json: options.json === true,
-        messages: [msg],
+        messages: [
+          catalogViewProblemMessage(
+            "dome today",
+            FIRST_PARTY_VIEWS.today,
+            validated.problem,
+          ),
+        ],
       });
       return { kind: "error", exitCode: 1 };
     }
@@ -373,43 +368,86 @@ export function formatTodayResult(
   }
 
   if (!isAllClear) {
-    // Flat, signal-led list: one task per line, the urgency glyph carries the
-    // bucket (✗ overdue / ⚠ today / • open), most-urgent first, truncated to
-    // the terminal width, capped with a "+N more" line (uncapped under --verbose).
-    // The hero task is already the → line above, so it's not repeated here.
     const isHeroTask = (t: TodayTaskRow): boolean =>
       hero !== null && hero.kind === "task" &&
       hero.item.text === t.text && hero.item.path === t.path &&
       hero.item.line === t.line;
-    const bucketed: ReadonlyArray<{ readonly t: TodayTaskRow; readonly tone: Tone }> = [
-      ...allTasks.filter((t) => t.dueDate !== null && t.dueDate < date).map((t) => ({ t, tone: "err" as Tone })),
-      ...allTasks.filter((t) => t.dueDate !== null && t.dueDate === date).map((t) => ({ t, tone: "warn" as Tone })),
-      ...allTasks.filter((t) => t.dueDate === null || t.dueDate > date).map((t) => ({ t, tone: "plain" as Tone })),
-    ].filter(({ t }) => !isHeroTask(t));
 
-    const TASK_CAP = 7;
-    const cap = opts.verbose === true ? bucketed.length : TASK_CAP;
+    const nonHero = allTasks.filter((t) => !isHeroTask(t));
+    const overdue = nonHero.filter((t) => t.dueDate !== null && t.dueDate < date);
+    const dueToday = nonHero.filter((t) => t.dueDate !== null && t.dueDate === date);
+    const open = nonHero.filter((t) => t.dueDate === null || t.dueDate > date);
+
     const taskWidth = Math.max(24, caps.width - 4); // "  <glyph> " leader = 4 cols
-    const shownOpen = Math.min(cap, bucketed.length);
-    for (const { t, tone } of bucketed.slice(0, shownOpen)) {
+    const arrow = caps.unicode ? "↗" : "->";
+
+    // Render one task row: clean sentence (links pulled out, shortened) + a
+    // trailing clickable affordance per link. The URL never enters the visible
+    // width, so it can never be sliced.
+    const renderRow = (t: TodayTaskRow, tone: Tone): void => {
+      const { text, links } = splitInlineLinks(t.text);
+      const arrowWidth = visibleWidth(arrow); // ↗ (U+2197) is 2 cols, not 1
+      const MAX_LINK_LABEL = 24;
+      // Cap each affordance label, then reserve the EXACT visible width of the
+      // trailing affordances block — "   " + Σ(label + arrow) + (N-1)×"  " —
+      // measured against the capped labels, so the rendered tail and the
+      // reserve can never disagree (the OSC 8 escape itself is zero-width).
+      const affs = links.map((l) => ({
+        label: shortenLabel(l.label, MAX_LINK_LABEL, caps.unicode),
+        url: l.url,
+      }));
+      const linkReserve =
+        affs.length === 0
+          ? 0
+          : 3 +
+            affs.reduce((a, x) => a + visibleWidth(x.label) + arrowWidth, 0) +
+            (affs.length - 1) * 2;
+      const label = shortenLabel(text, Math.max(0, taskWidth - linkReserve), caps.unicode);
       const g = paint(statusGlyph(tone, caps), tone, caps);
-      lines.push(`  ${g} ${truncate(t.text, taskWidth, caps.unicode)}`);
-    }
-    // True overflow: use the shared parser's true totals (counts.*) so that
-    // display-capped received lists don't report "1 more" when there are 200+.
+      const affordances = affs
+        .map((x) => paint(`${hyperlink(x.label, x.url, caps)}${arrow}`, "ident", caps))
+        .join("  ");
+      const tail = affs.length > 0 ? `   ${affordances}` : "";
+      lines.push(`  ${g} ${label}${tail}`);
+    };
+
+    const OVERDUE_CAP = 6;
+    const TODAY_CAP = 4;
+    const OPEN_CAP = 4;
+    const capOf = (n: number): number => (opts.verbose === true ? Number.POSITIVE_INFINITY : n);
+
+    const section = (header: string, items: ReadonlyArray<TodayTaskRow>, capN: number, tone: Tone): number => {
+      if (items.length === 0) return 0;
+      lines.push(`  ${paint(header, "muted", caps)}`);
+      const shown = Math.min(capOf(capN), items.length);
+      for (const t of items.slice(0, shown)) renderRow(t, tone);
+      return shown;
+    };
+
+    const overdueShown = section("OVERDUE", overdue, OVERDUE_CAP, "err");
+    const todayShown = section("TODAY", dueToday, TODAY_CAP, "warn");
+    const openShown = section("OPEN", open, OPEN_CAP, "plain");
+
+    // Honest overflow using the view's TRUE totals (counts.*), not the received
+    // (possibly display-capped) arrays. Overdue is reported exactly (the verdict
+    // header already relies on the received list carrying all overdue); every
+    // other non-shown task folds into a single "more" so the math never lies.
     const heroIsTask = hero !== null && hero.kind === "task";
-    const trueNonHeroTasks = (counts.openTasks + followupsTotal) - (heroIsTask ? 1 : 0);
-    const overflow = Math.max(0, trueNonHeroTasks - shownOpen);
-    if (overflow > 0) {
-      lines.push(`  ${paint(`… ${overflow} more · dome today --verbose`, "muted", caps)}`);
+    const trueTotal = (counts.openTasks + followupsTotal) - (heroIsTask ? 1 : 0);
+    const overdueMore = Math.max(0, overdue.length - overdueShown);
+    const otherMore = Math.max(0, (trueTotal - overdue.length) - (todayShown + openShown));
+    if (overdueMore > 0 || otherMore > 0) {
+      const parts: string[] = [];
+      if (overdueMore > 0) parts.push(`${overdueMore} more overdue`);
+      if (otherMore > 0) parts.push(`${otherMore} more`);
+      lines.push(`  ${paint(`… ${parts.join(" · ")} · dome today --verbose`, "muted", caps)}`);
     }
 
-    // ? ask line — top question + +N if more
+    // ? ask line — top question + +N if more (unchanged)
     if (questions.length > 0) {
       const top = questions[0]!;
       const extra = questions.length - 1;
       const extraNote = extra > 0 ? `   ${paint(`+${extra}`, "muted", caps)}` : "";
-      // Truncate the question so the `#id … resolveCommand` line stays on one row.
       const askWidth = Math.max(24, caps.width - 40);
       const questionLabel = truncate(top.question, askWidth);
       lines.push(

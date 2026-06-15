@@ -87,7 +87,6 @@
 //     failures the caller can reasonably handle.
 
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { type Result, ok, err } from "../types";
@@ -98,6 +97,11 @@ import {
 import { configureSqliteConnection } from "../sqlite/connection";
 import { errorMessage } from "../sqlite/error-message";
 import { computeDdlHash } from "../sqlite/hash";
+import {
+  applyDdlInTransaction,
+  ensureParentDir,
+  readStoredSchemaHash as readStoredSchemaHashFromTable,
+} from "../sqlite/open-store";
 
 // ----- Schema DDL -----------------------------------------------------------
 //
@@ -327,7 +331,7 @@ export async function openLedgerDb(
   //    semantics — no error if the directory already exists.
   const parent = dirname(opts.path);
   try {
-    mkdirSync(parent, { recursive: true });
+    ensureParentDir(opts.path);
   } catch (e) {
     return err({
       kind: "directory-create-failed",
@@ -352,7 +356,7 @@ export async function openLedgerDb(
   const currentSchemaHash = computeLedgerSchemaHash();
   let storedSchemaHash: string | null;
   try {
-    storedSchemaHash = readStoredSchemaHash(raw);
+    storedSchemaHash = readStoredSchemaHashFromTable(raw, "ledger_meta");
   } catch (e) {
     raw.close();
     return err({ kind: "schema-init-failed", cause: errorMessage(e) });
@@ -376,7 +380,7 @@ export async function openLedgerDb(
         expected: currentSchemaHash,
       });
     }
-    applyDdl(raw);
+    applyDdlInTransaction(raw, DDL);
     const shapeError = validateSqliteTableShapes(raw, REQUIRED_TABLE_SHAPES);
     if (shapeError !== null) {
       throw new Error(shapeError);
@@ -416,55 +420,8 @@ export async function openLedgerDb(
 
 // ----- internals ------------------------------------------------------------
 
-/**
- * Apply every CREATE statement in `DDL`. Idempotent — every statement
- * uses `IF NOT EXISTS`, so re-applying on an already-populated database
- * is a no-op. Wrapped in a transaction so a mid-DDL failure leaves no
- * half-created tables (sqlite rolls back).
- */
-function applyDdl(db: Database): void {
-  db.run("BEGIN");
-  try {
-    for (const stmt of DDL) {
-      db.run(stmt);
-    }
-    db.run("COMMIT");
-  } catch (e) {
-    db.run("ROLLBACK");
-    throw e;
-  }
-}
-
 function enableForeignKeys(db: Database): void {
   db.run("PRAGMA foreign_keys = ON");
-}
-
-/**
- * Detect whether `ledger_meta` exists and, if so, return the stored
- * schema_hash. Returns `null` on either:
- *   - The table doesn't exist (fresh file).
- *   - The table exists but has zero rows (extremely-rare edge case where
- *     a prior open created the schema but crashed before inserting the row).
- *
- * The query against `sqlite_master` avoids a noisy SQLITE_ERROR that
- * would occur from SELECTing on a missing table.
- */
-function readStoredSchemaHash(db: Database): string | null {
-  const tableExists = db
-    .query<{ name: string }, []>(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='ledger_meta'",
-    )
-    .all();
-  if (tableExists.length === 0) return null;
-
-  const rows = db
-    .query<{ schema_hash: string }, []>(
-      "SELECT schema_hash FROM ledger_meta LIMIT 1",
-    )
-    .all();
-  const first = rows[0];
-  if (first === undefined) return null;
-  return first.schema_hash;
 }
 
 /**

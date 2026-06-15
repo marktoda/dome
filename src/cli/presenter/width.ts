@@ -29,6 +29,29 @@ export function truncate(text: string, width: number, unicode = true): string {
   return out + ell;
 }
 
+/**
+ * Shorten a one-line label to a visible width WITHOUT cutting mid-word.
+ * Builds up to the budget, backs off to the last word boundary, and — when a
+ * clause boundary (`:` or `—`) sits in the last ~40% of that head — cuts at the
+ * clause instead. Appends the ellipsis. Returns the input unchanged when it
+ * already fits. Call before paint(); operates on plain (uncolored) text.
+ */
+export function shortenLabel(text: string, width: number, unicode = true): string {
+  if (visibleWidth(text) <= width) return text;
+  const ell = unicode ? "…" : "...";
+  const budget = Math.max(0, width - ell.length);
+  let fit = "";
+  for (const ch of text) {
+    if (visibleWidth(fit + ch) > budget) break;
+    fit += ch;
+  }
+  const lastSpace = fit.lastIndexOf(" ");
+  let head = lastSpace > 0 ? fit.slice(0, lastSpace) : fit;
+  const clauseIdx = Math.max(head.lastIndexOf(":"), head.lastIndexOf("—"));
+  if (clauseIdx >= Math.floor(head.length * 0.6)) head = head.slice(0, clauseIdx + 1);
+  return `${head.trimEnd()}${ell}`;
+}
+
 // Re-export from the canonical home so the presenter barrel and any
 // existing callers that import from this module continue to work.
 export { stripWikilinks } from "../../core/wikilink";
