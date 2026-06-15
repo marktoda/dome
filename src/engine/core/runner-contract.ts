@@ -23,6 +23,7 @@
 //     Proposal, CommitOid) and the `SignalEvent` type from
 //     `./compile-range`, plus the `EngineVault` type from `./vault-shape`.
 
+import type { Brand } from "../../core/brand";
 import type { Effect } from "../../core/effect";
 import type { Capability, ProcessorPhase } from "../../core/processor";
 import type { Proposal } from "../../core/proposal";
@@ -46,7 +47,7 @@ import type { EngineVault } from "./vault-shape";
 // refuse arbitrary strings.
 
 /** A ledger run id, formatted `run_<unix-ms>_<6-char-rand>` per spec. */
-export type RunId = string & { readonly __brand: "RunId" };
+export type RunId = Brand<string, "RunId">;
 
 // ----- ProcessorExecutionError ---------------------------------------------
 

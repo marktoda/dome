@@ -28,6 +28,7 @@ const EXPECTED_RUNTIME_EXPORTS = new Set<string>([
   "outboxRecoveryEffect",
   "quarantineRecoveryEffect",
   "runRecoveryEffect",
+  "searchDocumentEffect",
 
   // Processor types + helpers.
   "defineProcessor",

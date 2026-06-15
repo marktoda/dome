@@ -33,6 +33,7 @@
 //     bundle-manifest loader.
 
 import { z } from "zod";
+import { brand, type Brand } from "./brand";
 import type {
   DiagnosticEffect,
   Effect,
@@ -53,11 +54,11 @@ import type { CommitOid, SourceRef, TextRange } from "./source-ref";
 // Use the `treeOid()` value helper below to brand an arbitrary string.
 
 /** A 40-char hex SHA-1 identifying a git tree object. */
-export type TreeOid = string & { readonly __brand: "TreeOid" };
+export type TreeOid = Brand<string, "TreeOid">;
 
 /** Brand a raw string as a TreeOid. v1 enforces only non-empty via the type system. */
 export function treeOid(s: string): TreeOid {
-  return s as TreeOid;
+  return brand<TreeOid>(s);
 }
 
 // ----- Snapshot -------------------------------------------------------------

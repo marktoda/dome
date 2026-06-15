@@ -58,6 +58,8 @@ export type {
   OutboxRecoveryEffect,
   QuarantineRecoveryEffect,
   RunRecoveryEffect,
+  SearchDocumentEffect,
+  SearchDocumentEffectInput,
   NodeRefInput,
 } from "./core/effect";
 export {
@@ -71,6 +73,7 @@ export {
   outboxRecoveryEffect,
   quarantineRecoveryEffect,
   runRecoveryEffect,
+  searchDocumentEffect,
 } from "./core/effect";
 
 export type {
