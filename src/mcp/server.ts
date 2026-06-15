@@ -59,6 +59,7 @@ import {
   makeVaultMutex,
   openVaultErrorKind,
   runCatalogView,
+  runtimeOpenFailureMessage,
   withVault as withVaultShared,
 } from "../surface/adapter";
 import { FIRST_PARTY_VIEWS } from "../surface/view-catalog";
@@ -143,9 +144,7 @@ function commandErrorResult(command: string, errorKind: string): ToolResult {
           status: "error",
           command,
           error: errorKind,
-          message:
-            `dome ${command}: openVaultRuntime failed (${errorKind}). ` +
-            "Run `dome init` to initialize the vault.",
+          message: runtimeOpenFailureMessage(`dome ${command}`, errorKind),
         }),
       },
     ],
