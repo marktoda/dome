@@ -10,11 +10,13 @@
 import { describe, expect, test } from "bun:test";
 
 import today from "../../assets/extensions/dome.daily/processors/today";
+import { OPEN_TASK_PREDICATE } from "../../assets/extensions/dome.daily/processors/action-state";
 import type { FactEffect, ViewEffect } from "../../src/core/effect";
 import { treeOid, type ProjectionQueryView, type Snapshot } from "../../src/core/processor";
 import { makeManualProposal } from "../../src/core/proposal";
 import { commitOid } from "../../src/core/source-ref";
 import { makeProcessorContext } from "../../src/processors/context";
+import { parseTodayView } from "../../src/surface/today-view";
 
 // ---------------------------------------------------------------------------
 // Fixed date anchor — 2026-06-14, which is also the date used across the
@@ -74,10 +76,10 @@ function makeSnapshot(
   });
 }
 
-async function runToday(opts: {
+async function runTodayRaw(opts: {
   files: Readonly<Record<string, string>>;
   facts: ReadonlyArray<FactEffect>;
-}): Promise<{ readonly brief: unknown; readonly calendar: unknown }> {
+}): Promise<Record<string, unknown>> {
   const ctx = makeProcessorContext({
     snapshot: makeSnapshot(opts.files),
     changedPaths: Object.freeze([]),
@@ -96,7 +98,14 @@ async function runToday(opts: {
   const view = effects.find((e): e is ViewEffect => e.kind === "view");
   if (view === undefined) throw new Error("no view effect emitted");
   if (view.content.kind !== "structured") throw new Error("not a structured view");
-  const data = view.content.data as Record<string, unknown>;
+  return view.content.data as Record<string, unknown>;
+}
+
+async function runToday(opts: {
+  files: Readonly<Record<string, string>>;
+  facts: ReadonlyArray<FactEffect>;
+}): Promise<{ readonly brief: unknown; readonly calendar: unknown }> {
+  const data = await runTodayRaw(opts);
   return { brief: data["brief"] ?? null, calendar: data["calendar"] ?? null };
 }
 
@@ -295,5 +304,28 @@ describe("dome.daily.today — brief and calendar are null when no facts present
     const c = calendar as { events: ReadonlyArray<unknown> };
     expect(b.text).toBe("A good day ahead.");
     expect(c.events).toHaveLength(1);
+  });
+});
+
+describe("dome.daily.today — task origin propagation", () => {
+  test("today view exposes a task's origin target", async () => {
+    // Seed a dome.daily.open_task fact whose value carries the origin marker,
+    // as task-index.ts will emit after Step 3.  The fact value is:
+    //   "reply to Jane ([↗](https://slk/p1))"
+    // which is what appendOriginMarker("reply to Jane", "https://slk/p1") produces.
+    const data = await runTodayRaw({
+      files: { [DAILY_PATH]: MINIMAL_DAILY },
+      facts: [
+        makeFact({
+          predicate: OPEN_TASK_PREDICATE,
+          subjectPath: DAILY_PATH,
+          value: "reply to Jane ([↗](https://slk/p1))",
+        }),
+      ],
+    });
+    const view = parseTodayView(data);
+    const row = view.openTasks.find((t) => t.text.includes("reply to Jane"))!;
+    expect(row).toBeDefined();
+    expect(row.origin).toBe("https://slk/p1");
   });
 });

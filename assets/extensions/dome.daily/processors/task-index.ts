@@ -10,7 +10,7 @@ import {
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
-import { actionItemsFromMarkdown, ambiguousFollowupsFromMarkdown } from "./action-extraction";
+import { actionItemsFromMarkdown, ambiguousFollowupsFromMarkdown, appendOriginMarker } from "./action-extraction";
 import { FOLLOWUP_PREDICATE, OPEN_TASK_PREDICATE } from "./action-state";
 import { openLoopStableId, taskStableId } from "./open-loop-surface";
 import {
@@ -32,11 +32,16 @@ const taskIndex = defineProcessorImplementation({
           ...(task.anchor !== undefined ? { anchor: task.anchor } : {}),
         });
         const ref = ctx.sourceRef(path, lineRange(task.line), stableId);
+        // Carry the origin marker on the fact value so readers can recover it;
+        // stableId is computed from the marker-free task.body (identity unchanged).
+        const objectValue = task.origin !== undefined
+          ? appendOriginMarker(task.body, task.origin)
+          : task.body;
         effects.push(
           factEffect({
             subject: { kind: "page", path },
             predicate: OPEN_TASK_PREDICATE,
-            object: { kind: "string", value: task.body },
+            object: { kind: "string", value: objectValue },
             assertion: "extracted",
             sourceRefs: [ref],
           }),
@@ -46,7 +51,7 @@ const taskIndex = defineProcessorImplementation({
             factEffect({
               subject: { kind: "page", path },
               predicate: FOLLOWUP_PREDICATE,
-              object: { kind: "string", value: task.body },
+              object: { kind: "string", value: objectValue },
               assertion: "extracted",
               sourceRefs: [ref],
             }),

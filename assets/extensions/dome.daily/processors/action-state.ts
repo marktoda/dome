@@ -22,6 +22,7 @@ import { type DailyDate, type DailyOpenLoopSource, type DailyPathSettings } from
 import { openLoopIdentity, openLoopSurfaceKey, openSourceBackedOpenLoopsFromMarkdown } from "./open-loop-surface";
 
 import { compareStrings } from "../../../../src/core/compare";
+import { parseOriginMarker, stripOriginMarker } from "./action-extraction";
 
 export const OPEN_TASK_PREDICATE = "dome.daily.open_task";
 export const FOLLOWUP_PREDICATE = "dome.daily.followup";
@@ -89,6 +90,8 @@ export type DailyTaskItem = {
   readonly attention: DailyTaskAttention | null;
   readonly evidenceLabel: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
+  /** Decoded URL/path from an inline `([↗](target))` origin marker, if present. */
+  readonly origin?: string;
 };
 
 export type DailyTaskAttention = {
@@ -413,12 +416,16 @@ function taskItemFromFact(input: {
   const { fact } = input;
   const ref = fact.sourceRefs[0];
   const path = factSourcePath(fact);
-  const rawText = literalToString(fact.object);
-  const metadata = taskMetadata(rawText);
+  const factValue = literalToString(fact.object);
+  // Parse origin out of the fact value; use the stripped body for display/metadata.
+  const parsed = parseOriginMarker(factValue);
+  const body = parsed?.body ?? stripOriginMarker(factValue);
+  const origin = parsed?.target;
+  const metadata = taskMetadata(body);
   const line = ref?.range?.startLine ?? null;
   const sourceRefs = Object.freeze([...fact.sourceRefs]);
   return Object.freeze({
-    text: taskDisplayText(rawText),
+    text: taskDisplayText(body),
     path,
     line,
     source: sourceForPath(path, input.dailyPath),
@@ -428,10 +435,11 @@ function taskItemFromFact(input: {
     lastChangedAt: input.sourceLastChangedAt.get(path) ?? null,
     attention: taskAttention(input.attentionDiscounts, {
       sourcePath: path,
-      body: rawText,
+      body,
     }),
     evidenceLabel: actionEvidenceLabel({ path, line, sourceRefs }),
     sourceRefs,
+    ...(origin !== undefined ? { origin } : {}),
   });
 }
 
@@ -473,6 +481,7 @@ function taskItemFromDailySurface(input: {
       sourceRefs,
     }),
     sourceRefs,
+    ...(input.item.origin !== undefined ? { origin: input.item.origin } : {}),
   });
 }
 

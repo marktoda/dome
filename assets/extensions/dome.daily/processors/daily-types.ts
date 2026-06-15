@@ -183,6 +183,8 @@ export type DailyOpenLoopSource = {
   readonly sourcePath: string;
   /** The origin line's stamped `^block-anchor` id, when it carries one. */
   readonly anchor?: string;
+  /** Decoded URL/path from an inline `([↗](target))` origin marker, if present. */
+  readonly origin?: string;
 };
 
 export type DailyOpenLoopCandidate = DailyOpenLoopSource & {

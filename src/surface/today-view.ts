@@ -18,6 +18,8 @@ export type TodayTaskRow = {
   readonly path: string;
   readonly line: number | null;
   readonly dueDate: string | null;
+  /** Decoded URL/path from an inline `([↗](target))` origin marker, if present. */
+  readonly origin?: string;
 };
 
 export type TodayQuestionRow = {
@@ -92,11 +94,13 @@ function parseTaskRows(raw: unknown): ReadonlyArray<TodayTaskRow> {
     const r = isRecord(item) ? item : {};
     const text = typeof r.text === "string" ? stripWikilinks(r.text) : "";
     if (text.length === 0) return [];
+    const origin = typeof r.origin === "string" ? r.origin : undefined;
     return [{
       text,
       path: typeof r.path === "string" ? r.path : "",
       line: typeof r.line === "number" ? r.line : null,
       dueDate: typeof r.dueDate === "string" ? r.dueDate : null,
+      ...(origin !== undefined ? { origin } : {}),
     }];
   });
 }
@@ -159,6 +163,7 @@ function parseHero(raw: unknown): TodayHeroItem | null {
     if (item === null) return null;
     const text = typeof item.text === "string" ? stripWikilinks(item.text) : "";
     if (text.length === 0) return null;
+    const heroOrigin = typeof item.origin === "string" ? item.origin : undefined;
     return {
       kind: "task",
       item: {
@@ -166,6 +171,7 @@ function parseHero(raw: unknown): TodayHeroItem | null {
         path: typeof item.path === "string" ? item.path : "",
         line: typeof item.line === "number" ? item.line : null,
         dueDate: typeof item.dueDate === "string" ? item.dueDate : null,
+        ...(heroOrigin !== undefined ? { origin: heroOrigin } : {}),
       },
     };
   }
