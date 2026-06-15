@@ -4,7 +4,7 @@ import {
   CAPTURED_APPEND_MAX_LINES,
   CAPTURED_LINE_MAX_CHARS,
 } from "../../../assets/extensions/dome.daily/processors/captured-block";
-import { dailyPath, dailyPathSettings } from "../../../assets/extensions/dome.daily/processors/daily-paths";
+import { dailyPath, dailyPathSettings, localDateParts } from "../../../assets/extensions/dome.daily/processors/daily-paths";
 import { renderDailySkeleton } from "../../../assets/extensions/dome.daily/processors/daily-scaffold";
 import { CAPTURED_END, CAPTURED_START } from "../../../assets/extensions/dome.daily/processors/daily-types";
 import { makeIngestTools } from "../../../assets/extensions/dome.agent/lib/ingest-tools";
@@ -447,5 +447,46 @@ describe("archivedCapturePath", () => {
   test("returns null for paths outside inbox/raw", () => {
     expect(archivedCapturePath("wiki/concepts/a.md")).toBeNull();
     expect(archivedCapturePath("inbox/processed/x.md")).toBeNull();
+  });
+});
+
+describe("captured seam origin marker", () => {
+  const settings = dailyPathSettings(undefined);
+  const today = localDateParts(new Date("2026-06-14T15:00:00.000Z"));
+  const dailyP = dailyPath(today, settings);
+
+  test("stamps the origin marker onto each spliced task line", async () => {
+    const tools = makeIngestTools({
+      reader: reader({}),
+      capturedTasks: {
+        path: dailyP,
+        today,
+        settings,
+        origin: "inbox/processed/2026-06-14-jane.md",
+      },
+    });
+    const t = tool(tools, "appendToPage");
+    const state = freshState();
+    await t.execute(
+      { path: dailyP, content: "- [ ] #task reply to Jane" },
+      state,
+    );
+    const edit = state.edits.get(dailyP);
+    expect(edit?.kind === "write" && edit.content).toContain(
+      "- [ ] #task reply to Jane ([↗](inbox/processed/2026-06-14-jane.md))",
+    );
+  });
+
+  test("no marker when origin is null", async () => {
+    const tools = makeIngestTools({
+      reader: reader({}),
+      capturedTasks: { path: dailyP, today, settings, origin: null },
+    });
+    const t = tool(tools, "appendToPage");
+    const state = freshState();
+    await t.execute({ path: dailyP, content: "- [ ] #task plain" }, state);
+    const edit = state.edits.get(dailyP);
+    expect(edit?.kind === "write" && edit.content).toContain("- [ ] #task plain");
+    expect(edit?.kind === "write" && edit.content).not.toContain("↗");
   });
 });
