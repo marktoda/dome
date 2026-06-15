@@ -105,16 +105,19 @@ describe("claimsFromMarkdown", () => {
     expect(claims.map((c) => c.key)).toEqual(["Owner"]);
   });
 
-  test("an unterminated start marker excludes every claim below it to EOF", () => {
+  test("an unterminated start marker bounds no block, so the claim below it IS parsed", () => {
     const content = [
       "# Atlas",
       "",
       "<!-- dome.claims:current-facts:start -->",
       "- **Status:** in design review",
     ].join("\n");
-    // No matching :end marker → the open block extends to EOF, so the claim
-    // line below the start marker is excluded.
-    expect(claimsFromMarkdown(content)).toHaveLength(0);
+    // The canonical generated-block primitive treats an unterminated start (no
+    // matching `:end`) as no block, so a stray marker never silently drops
+    // claims — the `**Status:**` line below it is parsed normally. This is
+    // safer than a hand-rolled "exclude to EOF" that would swallow real claims.
+    const claims = claimsFromMarkdown(content);
+    expect(claims.map((c) => c.key)).toEqual(["Status"]);
   });
 });
 

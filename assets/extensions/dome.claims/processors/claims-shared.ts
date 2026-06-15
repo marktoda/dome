@@ -12,6 +12,7 @@ import {
   contentAnchorId,
   parseBlockAnchor,
 } from "../../../../src/core/block-anchor";
+import { findAllGeneratedBlocks } from "../../../../src/core/generated-block";
 import { fencedCodeBlockLineRanges } from "../../../../src/core/markdown-scan";
 
 export type ClaimLine = {
@@ -31,17 +32,17 @@ export type ClaimLine = {
 const CLAIM_LINE_RE = /^(\s*(?:[-*]\s+)?)\*\*([^*\n]+):\*\*\s+(\S.*)$/;
 const AS_OF_RE = /\*\(as of (\d{4}-\d{2}-\d{2})\)\*/;
 
-// Line-anchored dome generated-block markers (any owner/block). Mirrors
-// generated-block.ts's `isMarkerLine` discipline: the whole trimmed line must
-// be the marker, so a prose/fence/mid-line mention never bounds a block.
-const GENERATED_BLOCK_START_RE = /^<!--\s*dome(?:\.\w+)*:[\w-]+:start\s*-->$/;
-const GENERATED_BLOCK_END_RE = /^<!--\s*dome(?:\.\w+)*:[\w-]+:end\s*-->$/;
+// The single dome generated block whose `**Key:**`-shaped digest lines must
+// never feed back into the claim index: the `## Current facts` block that
+// `dome.claims.render-facts` writes.
+const CURRENT_FACTS_OWNER = "dome.claims";
+const CURRENT_FACTS_BLOCK = "current-facts";
 
 export function claimsFromMarkdown(
   content: string,
 ): ReadonlyArray<ClaimLine> {
   const lines = content.split(/\r?\n/);
-  const excluded = excludedLineFlags(lines);
+  const excluded = excludedLineFlags(lines, content);
   const claims: ClaimLine[] = [];
   for (let i = 0; i < lines.length; i += 1) {
     if (excluded[i] === true) continue;
@@ -79,8 +80,16 @@ export function claimsFromMarkdown(
  * Frontmatter detection is handled locally: an unterminated `---` block is
  * treated as excluding all remaining lines (claims dialect), whereas the core
  * `frontmatterLineRange` would return `null` in that case (daily dialect).
+ *
+ * The `dome.claims:current-facts` generated block is excluded via the canonical
+ * `findAllGeneratedBlocks` primitive (the only sanctioned marker implementation,
+ * per the splice-guard fence). `content` is the original document text the
+ * primitive scans; `lines` is its `\r?\n`-split form used for the other dialects.
  */
-function excludedLineFlags(lines: ReadonlyArray<string>): boolean[] {
+function excludedLineFlags(
+  lines: ReadonlyArray<string>,
+  content: string,
+): boolean[] {
   const flags = new Array<boolean>(lines.length).fill(false);
 
   // --- Frontmatter (claims dialect: unterminated block excludes to EOF) ---
@@ -121,26 +130,26 @@ function excludedLineFlags(lines: ReadonlyArray<string>): boolean[] {
     }
   }
 
-  // --- Generated blocks (any dome owner/block; markers inclusive) ---
-  // A deterministic `## Current facts` digest (and any other dome generated
-  // block) must never feed its own `**Key:**`-shaped lines back into the claim
-  // index. Line-anchored like generated-block.ts: the whole trimmed line must
-  // be a start/end marker. An unterminated start excludes to EOF, matching the
-  // frontmatter dialect above.
-  let blockStart = -1; // 0-based index of an open start marker, or -1
-  for (let i = 0; i < lines.length; i += 1) {
-    const trimmed = (lines[i] ?? "").trim();
-    if (blockStart === -1) {
-      if (GENERATED_BLOCK_START_RE.test(trimmed)) blockStart = i;
-      continue;
+  // --- Generated block: dome.claims:current-facts (markers inclusive) ---
+  // The deterministic `## Current facts` digest that `dome.claims.render-facts`
+  // writes must never feed its own `**Key:**`-shaped lines back into the claim
+  // index. Scoped to exactly that owner/block via the canonical generated-block
+  // primitive (the only sanctioned marker implementation). The primitive is
+  // line-anchored, so a prose/fence/mid-line marker mention never bounds a
+  // block — and an UNTERMINATED start (no matching `:end`) yields NO range, so
+  // a stray start marker excludes nothing. That is intentionally safer than a
+  // hand-rolled "exclude to EOF": a stray marker can never silently drop real
+  // claims below it.
+  const factsBlocks = findAllGeneratedBlocks(
+    content,
+    CURRENT_FACTS_OWNER,
+    CURRENT_FACTS_BLOCK,
+  );
+  for (const range of factsBlocks) {
+    // range.startLine/endLine are 1-based; convert to 0-based indices.
+    for (let idx = range.startLine - 1; idx <= range.endLine - 1; idx += 1) {
+      flags[idx] = true;
     }
-    if (GENERATED_BLOCK_END_RE.test(trimmed)) {
-      for (let idx = blockStart; idx <= i; idx += 1) flags[idx] = true;
-      blockStart = -1;
-    }
-  }
-  if (blockStart !== -1) {
-    for (let idx = blockStart; idx < lines.length; idx += 1) flags[idx] = true;
   }
 
   return flags;
