@@ -72,7 +72,12 @@ import { dirname } from "node:path";
 
 import { type Result, ok, err } from "../types";
 import { commitOid, type CommitOid } from "../core/source-ref";
+import {
+  validateSqliteTableShapes,
+  type SqliteTableShape,
+} from "../sqlite-shape";
 import { configureSqliteConnection } from "../sqlite/connection";
+import { errorMessage } from "../sqlite/error-message";
 import { computeDdlHash, sha256Hex } from "../sqlite/hash";
 
 import { compareStrings } from "../core/compare";
@@ -255,10 +260,7 @@ const DROP_DDL: ReadonlyArray<string> = Object.freeze([
   "DROP TABLE IF EXISTS projection_meta",
 ]);
 
-const REQUIRED_TABLE_COLUMNS: ReadonlyArray<{
-  readonly table: string;
-  readonly columns: ReadonlyArray<string>;
-}> = Object.freeze([
+const REQUIRED_TABLE_COLUMNS: ReadonlyArray<SqliteTableShape> = Object.freeze([
   {
     table: "facts",
     columns: [
@@ -819,18 +821,6 @@ export function projectionRequiresRebuild(
 
 // ----- internals ------------------------------------------------------------
 
-function errorMessage(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === "string") return e;
-  // Last-resort stringification — better than `[object Object]` for the
-  // error-cause string the caller surfaces in a ToolError.
-  try {
-    return JSON.stringify(e);
-  } catch {
-    return String(e);
-  }
-}
-
 /**
  * Apply every CREATE statement in `DDL`. Idempotent — every statement uses
  * `IF NOT EXISTS`, so re-applying on an already-populated database is a
@@ -862,22 +852,7 @@ function projectionStateExists(db: Database): boolean {
 }
 
 function projectionSchemaShapeMatches(db: Database): boolean {
-  for (const { table, columns } of REQUIRED_TABLE_COLUMNS) {
-    const actual = tableColumns(db, table);
-    if (actual === null) return false;
-    for (const column of columns) {
-      if (!actual.has(column)) return false;
-    }
-  }
-  return true;
-}
-
-function tableColumns(db: Database, table: string): ReadonlySet<string> | null {
-  const rows = db
-    .query<{ name: string }, []>(`PRAGMA table_info(${table})`)
-    .all();
-  if (rows.length === 0) return null;
-  return new Set(rows.map((row) => row.name));
+  return validateSqliteTableShapes(db, REQUIRED_TABLE_COLUMNS) === null;
 }
 
 /**

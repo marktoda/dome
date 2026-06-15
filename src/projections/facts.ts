@@ -272,7 +272,7 @@ function subjectId(s: NodeRef): string {
  * segment (e.g., `dome.tasks.dueDate` → `dome.tasks`). A predicate with no
  * dot is its own namespace.
  */
-function predicateNamespace(predicate: string): string {
+export function predicateNamespace(predicate: string): string {
   const idx = predicate.lastIndexOf(".");
   return idx === -1 ? predicate : predicate.slice(0, idx);
 }
@@ -282,7 +282,7 @@ function predicateNamespace(predicate: string): string {
  * kind (a row corrupted at the SQL boundary — programmer error or external
  * tampering with the db file).
  */
-function rebuildSubject(kind: string, id: string): NodeRef {
+export function rebuildSubject(kind: string, id: string): NodeRef {
   switch (kind) {
     case "page":
       return nodeRef({ kind: "page", path: id });

@@ -85,6 +85,7 @@ import {
   type SqliteTableShape,
 } from "../sqlite-shape";
 import { configureSqliteConnection } from "../sqlite/connection";
+import { errorMessage } from "../sqlite/error-message";
 import { computeDdlHash } from "../sqlite/hash";
 
 const OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT =
@@ -366,16 +367,6 @@ export async function openOutboxDb(
 }
 
 // ----- internals ------------------------------------------------------------
-
-function errorMessage(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === "string") return e;
-  try {
-    return JSON.stringify(e);
-  } catch {
-    return String(e);
-  }
-}
 
 /**
  * Apply every CREATE statement in `DDL`. Idempotent — every statement

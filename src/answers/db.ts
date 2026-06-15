@@ -15,6 +15,7 @@ import {
   type SqliteTableShape,
 } from "../sqlite-shape";
 import { configureSqliteConnection } from "../sqlite/connection";
+import { errorMessage } from "../sqlite/error-message";
 import { computeDdlHash } from "../sqlite/hash";
 
 const DDL: ReadonlyArray<string> = Object.freeze([
@@ -188,14 +189,4 @@ function readStoredSchemaHash(db: Database): string | null {
     )
     .get();
   return row?.schema_hash ?? null;
-}
-
-function errorMessage(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === "string") return e;
-  try {
-    return JSON.stringify(e);
-  } catch {
-    return String(e);
-  }
 }
