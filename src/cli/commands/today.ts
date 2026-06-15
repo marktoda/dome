@@ -395,21 +395,28 @@ export function formatTodayResult(
     // width, so it can never be sliced.
     const renderRow = (t: TodayTaskRow, tone: Tone): void => {
       const { text, links } = splitInlineLinks(t.text);
-      const arrowWidth = caps.unicode ? 1 : 2; // "↗" is 1 col, "->" is 2
-      // Exact visible width of the trailing affordances block (the OSC 8
-      // escape itself is zero-width): "   " + Σ(label + arrow) + (N-1)×"  ".
+      const arrowWidth = visibleWidth(arrow); // ↗ (U+2197) is 2 cols, not 1
+      const MAX_LINK_LABEL = 24;
+      // Cap each affordance label, then reserve the EXACT visible width of the
+      // trailing affordances block — "   " + Σ(label + arrow) + (N-1)×"  " —
+      // measured against the capped labels, so the rendered tail and the
+      // reserve can never disagree (the OSC 8 escape itself is zero-width).
+      const affs = links.map((l) => ({
+        label: shortenLabel(l.label, MAX_LINK_LABEL, caps.unicode),
+        url: l.url,
+      }));
       const linkReserve =
-        links.length === 0
+        affs.length === 0
           ? 0
           : 3 +
-            links.reduce((a, l) => a + visibleWidth(l.label) + arrowWidth, 0) +
-            (links.length - 1) * 2;
-      const label = shortenLabel(text, Math.max(16, taskWidth - linkReserve), caps.unicode);
+            affs.reduce((a, x) => a + visibleWidth(x.label) + arrowWidth, 0) +
+            (affs.length - 1) * 2;
+      const label = shortenLabel(text, Math.max(0, taskWidth - linkReserve), caps.unicode);
       const g = paint(statusGlyph(tone, caps), tone, caps);
-      const affordances = links
-        .map((l) => paint(`${hyperlink(l.label, l.url, caps)}${arrow}`, "ident", caps))
+      const affordances = affs
+        .map((x) => paint(`${hyperlink(x.label, x.url, caps)}${arrow}`, "ident", caps))
         .join("  ");
-      const tail = links.length > 0 ? `   ${affordances}` : "";
+      const tail = affs.length > 0 ? `   ${affordances}` : "";
       lines.push(`  ${g} ${label}${tail}`);
     };
 

@@ -714,4 +714,34 @@ describe("formatTodayResult grouping + links", () => {
       expect(visibleWidth(line)).toBeLessThanOrEqual(narrow.width);
     }
   });
+
+  test("multi-link task rows never exceed caps.width", () => {
+    const narrow = { color: false, unicode: true, width: 50, hyperlinks: true } as const;
+    const multi = doc({
+      openTasks: [
+        {
+          text: "sync with the team about the launch plan [thread](https://a/1) [doc](https://b/2) [pr](https://c/3)",
+          path: "p", line: 1, dueDate: "2026-06-13",
+        },
+      ],
+      counts: { openTasks: 1, followups: 0, questions: 0 },
+    });
+    const out = formatTodayResult(multi, narrow, "/v/work");
+    for (const line of out.split("\n")) expect(visibleWidth(line)).toBeLessThanOrEqual(narrow.width);
+  });
+
+  test("a long link label is capped so the row fits caps.width", () => {
+    const narrow = { color: false, unicode: true, width: 40, hyperlinks: true } as const;
+    const longLabel = doc({
+      openTasks: [
+        {
+          text: "do it [this is an extremely long link label that would blow the line](https://x/y)",
+          path: "p", line: 1, dueDate: "2026-06-13",
+        },
+      ],
+      counts: { openTasks: 1, followups: 0, questions: 0 },
+    });
+    const out = formatTodayResult(longLabel, narrow, "/v/work");
+    for (const line of out.split("\n")) expect(visibleWidth(line)).toBeLessThanOrEqual(narrow.width);
+  });
 });
