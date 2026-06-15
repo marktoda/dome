@@ -4,12 +4,12 @@ created: 2026-06-09
 updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-06-09-meaning-consolidation-claims-and-sweeper]]"
-description: Claim-line grammar (bold key, as-of date, ^c anchor) and the dome.claims stamp/index/render-facts processors; supersession is an in-place edit under one anchor
+description: Claim-line grammar (bold key, as-of date, ^c anchor) and the dome.claims stamp/index/render-facts/stale-claims processors; supersession is an in-place edit under one anchor
 ---
 
 # Claims
 
-This spec is normative for the claim-line grammar and the dome.claims bundle's three processors.
+This spec is normative for the claim-line grammar and the dome.claims bundle's four processors.
 
 A **claim** is a vault-general markdown primitive — like wikilinks and task
 blocks — recognized by shape on any page matched by the bundle's globs
@@ -48,8 +48,11 @@ blocks — recognized by shape on any page matched by the bundle's globs
 | `dome.claims.stamp` | garden | deterministic, `patch.auto` | Anchors claim lines lacking `^c…` ids; converges at depth 1. |
 | `dome.claims.index` | adoption | deterministic, `graph.write dome.claims.*` | One `dome.claims.claim` fact per claim line: object = JSON `{key, value, asOf?}`, sourceRef carries the line range and, when the line is anchored, the stableId. Facts replace per path on edit and clear on delete (the manifest's `file.deleted` triggers are load-bearing). |
 | `dome.claims.render-facts` | garden | deterministic, `patch.auto` | Compiles the `## Current facts` digest block (a `dome.claims:current-facts` generated block, presentational — not claim grammar) at the head of pages with ≥ `current_facts_min_claims` (default 3) claim lines; splices it out below threshold; idempotent. |
+| `dome.claims.stale-claims` | view | deterministic, read-only | Lists claims whose `*(as of)*` is older than `stale_claims_horizon_days` (default 120), computed at command time from the injected clock (`ctx.now()`) — a `ViewEffect`, never a persisted fact; invoked via `dome run stale-claims`. |
 
-The three are registered as the `dome.claim.coherence` maintenance loop.
+The three state-maintaining processors are registered as the
+`dome.claim.coherence` maintenance loop; `stale-claims` is a read-only view,
+invoked on demand.
 
 The digest is a **deterministic render from the page's own claim lines** — the
 same generated-block pattern as `index.md`/`active-projects`, holding to
@@ -96,7 +99,7 @@ stamped the next time it is edited for any reason.)
 
 ## Invariant posture
 
-The engine never learns about claims: a markdown convention plus three
+The engine never learns about claims: a markdown convention plus four
 deterministic processors. Model processors still emit no durable facts
 ([[wiki/invariants/MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS]]) — any LLM that
 writes claim lines does so as ordinary proposed markdown, and this indexer
@@ -121,6 +124,25 @@ remains the model's judgment; same-page key collision is the deterministic
 subset the facts make cheap. The warden still emits QuestionEffects only — it
 never writes a fact — so this consumer keeps
 [[wiki/invariants/MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS]] intact.
+
+### Health
+
+Claim health splits into a **durable** signal and a **view-time** signal.
+`dome.claims.stale-claims` (`view`, invoked via `dome run stale-claims`) reads
+the durable `asOf` already on every claim fact — emitted clock-free by the
+adoption-phase indexer — and joins it against the current date at command time.
+Staleness can therefore never be a persisted fact: a rebuild at a later date
+would mint different rows from identical adopted markdown, so persisting it
+would break [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]]. It is a
+view-time signal by construction, the same rebuild-safe pattern as
+`dome.search`'s recency decay.
+
+Same-page contradiction (a same-normalized-key/different-value collision) ships
+today via the integrity warden's deterministic pre-filter (above). The
+remaining health items are still **deferred**: cross-page contradiction
+(model judgment, not the warden's mechanical subset); `dome explain
+<page>#^c…`, the claim-value timeline rendered from block git history; and
+brief-count weaving — surfacing the stale count in the morning brief.
 
 ## Deferred
 
