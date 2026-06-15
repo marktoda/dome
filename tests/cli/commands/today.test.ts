@@ -658,3 +658,49 @@ describe("dome today: flat signal-led task list", () => {
     expect(out).toMatch(/22\d more|2[23]\d more/);
   });
 });
+
+describe("formatTodayResult grouping + links", () => {
+  const caps = { color: false, unicode: true, width: 80, hyperlinks: false } as const;
+  const doc = (over: Record<string, unknown> = {}) => ({
+    date: "2026-06-15",
+    openTasks: [
+      { text: "Reply to Charlie re: Shankman bar-raiser · [thread](https://uniswapteam.slack.com/archives/C0B81NJU/p123)", path: "wiki/dailies/2026-06-15.md", line: 4, dueDate: "2026-06-13" },
+      { text: "polish the AI recruiting round with Guillaume so the panel is consistent across domains", path: "p", line: 5, dueDate: "2026-06-15" },
+      { text: "draft the Q3 plan", path: "p", line: 6, dueDate: null },
+    ],
+    followups: [],
+    questions: [],
+    counts: { openTasks: 3, followups: 0, questions: 0 },
+    hero: null, brief: null, calendar: null,
+    ...over,
+  });
+
+  test("renders OVERDUE/TODAY/OPEN headers only for non-empty buckets", () => {
+    const out = formatTodayResult(doc(), caps, "/v/work");
+    expect(out).toContain("OVERDUE");
+    expect(out).toContain("TODAY");
+    expect(out).toContain("OPEN");
+  });
+
+  test("pulls the slack URL out of the line — no raw archives/ URL, link label survives", () => {
+    const out = formatTodayResult(doc(), caps, "/v/work");
+    expect(out).not.toContain("archives/C0B81NJU");
+    expect(out).not.toContain("https://uniswapteam.slack.com");
+    expect(out).toContain("thread");
+    expect(out).toContain("Reply to Charlie re: Shankman bar-raiser");
+  });
+
+  test("no task line is cut mid-word (no severed token before the ellipsis)", () => {
+    const narrow = { ...caps, width: 44 };
+    const out = formatTodayResult(doc(), narrow, "/v/work");
+    for (const line of out.split("\n").filter((l) => l.includes("…"))) {
+      const head = line.replace(/\s*….*$/, "");
+      expect(/[\p{L}\p{N}):—\-]$/u.test(head.trimEnd())).toBe(true);
+    }
+  });
+
+  test("honest overflow: many open tasks report a '… N more' line", () => {
+    const out = formatTodayResult(doc({ counts: { openTasks: 50, followups: 0, questions: 0 } }), caps, "/v/work");
+    expect(out).toMatch(/…\s.*more.*dome today --verbose/);
+  });
+});
