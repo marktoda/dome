@@ -153,6 +153,8 @@ export type OpenTask = {
   readonly followup: boolean;
   /** The stamped `^block-anchor` id, if the line carries one. */
   readonly anchor?: string;
+  /** The decoded URL/path from an inline `([↗](target))` marker, if present. */
+  readonly origin?: string;
 };
 
 export type MarkdownActionItem = {
@@ -160,7 +162,10 @@ export type MarkdownActionItem = {
   readonly text: string;
   readonly body: string;
   readonly followup: boolean;
-  readonly origin: "checkbox" | "directive";
+  /** Discriminates checkbox tasks from directive (`todo:`/`follow-up:`) items. */
+  readonly kind: "checkbox" | "directive";
+  /** The decoded URL/path from an inline `([↗](target))` marker, if present. */
+  readonly origin?: string;
   /** The stamped `^block-anchor` id, if the line carries one. */
   readonly anchor?: string;
 };

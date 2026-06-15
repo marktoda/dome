@@ -98,7 +98,8 @@ export function actionItemsFromMarkdown(
           text: task.text,
           body: task.body,
           followup: task.followup,
-          origin: "checkbox" as const,
+          kind: "checkbox" as const,
+          ...(task.origin !== undefined ? { origin: task.origin } : {}),
           ...(task.anchor !== undefined ? { anchor: task.anchor } : {}),
         }),
       );
@@ -353,6 +354,7 @@ function isCheckboxLine(line: string): boolean {
 
 function openTaskFromLine(line: string, lineNumber: number): OpenTask {
   const anchor = parseBlockAnchor(stripCarryForwardSource(line))?.id;
+  const originParsed = parseOriginMarker(line);
   return Object.freeze({
     line: lineNumber,
     text: stripCarryForwardSource(line),
@@ -360,6 +362,7 @@ function openTaskFromLine(line: string, lineNumber: number): OpenTask {
     body: taskBodyFromCheckboxLine(line),
     followup: isExplicitFollowup(line),
     ...(anchor !== undefined ? { anchor } : {}),
+    ...(originParsed !== null ? { origin: originParsed.target } : {}),
   });
 }
 
@@ -385,7 +388,7 @@ function directiveActionItemFromLine(
       marker === "follow-up" ||
       marker === "followup" ||
       isExplicitFollowup(body),
-    origin: "directive",
+    kind: "directive" as const,
     ...(parsedAnchor !== null ? { anchor: parsedAnchor.id } : {}),
   });
 }
@@ -404,7 +407,7 @@ function isExplicitFollowup(line: string): boolean {
 }
 
 export function isSurfaceEligibleNonDailyAction(item: MarkdownActionItem): boolean {
-  if (item.origin === "directive") return true;
+  if (item.kind === "directive") return true;
   const line = item.text;
   return /(^|\s)#(?:task|follow-?up)(\s|$)/i.test(line) ||
     /(?:\u{1F53A}|\u{23EB}|\u{1F53C}|\u{23EC}|\u{1F4C5})/u.test(line) ||

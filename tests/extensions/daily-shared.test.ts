@@ -592,14 +592,14 @@ describe("dome.daily shared date helpers", () => {
         text: "TODO: Send budget update",
         body: "Send budget update",
         followup: false,
-        origin: "directive",
+        kind: "directive",
       },
       {
         line: 2,
         text: "- Follow up: Confirm Q3 plan with Eli",
         body: "Confirm Q3 plan with Eli",
         followup: true,
-        origin: "directive",
+        kind: "directive",
       },
     ]);
   });

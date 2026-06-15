@@ -615,3 +615,18 @@ describe("origin marker primitive", () => {
     expect(stripOriginMarkerPrimitive(line)).toBe("- [ ] #task reply");
   });
 });
+
+describe("action items carry origin", () => {
+  test("a captured task exposes its origin target, body stays marker-free", () => {
+    const md = "## Captured today\n\n- [ ] #task reply to Jane ([↗](https://uniswapteam.slack.com/archives/C0/p1)) ^t1a2b3c4\n";
+    const items = actionItemsFromMarkdown(md);
+    const item = items.find((i) => i.body.includes("reply to Jane"))!;
+    expect(item.body).toBe("reply to Jane");
+    expect(item.origin).toBe("https://uniswapteam.slack.com/archives/C0/p1");
+  });
+  test("a task with no marker has undefined origin", () => {
+    const md = "- [ ] #task plain ^t9z9z9z9\n";
+    const items = actionItemsFromMarkdown(md);
+    expect(items[0]!.origin).toBeUndefined();
+  });
+});
