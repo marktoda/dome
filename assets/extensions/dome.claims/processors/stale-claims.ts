@@ -23,7 +23,6 @@
 import {
   viewEffect,
   type Effect,
-  type FactEffect,
   type ViewEffect,
 } from "../../../../src/core/effect";
 import {
@@ -32,56 +31,20 @@ import {
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
+import { CLAIM_PREDICATE, parseClaimFact } from "./claim-fact";
+
 // ----- Constants ------------------------------------------------------------
 
 const VIEW_NAME = "dome.claims.stale-claims";
 const VIEW_SCHEMA = "dome.claims.stale-claims/v1";
 
-const CLAIM_PREDICATE = "dome.claims.claim";
 const DEFAULT_STALE_HORIZON_DAYS = 120;
 const MS_PER_DAY = 86_400_000;
 
-// ----- Claim decoder ---------------------------------------------------------
-// NOTE: mirrors assets/extensions/dome.search/processors/claims-fact.ts
-// (parseClaimFact), including the inline `*(as of YYYY-MM-DD)*` marker strip on
-// `value`. The indexer stores the verbatim value WITH that marker and extracts
-// `asOf` separately, so an unstripped value would carry the date twice; the
-// strip keeps `value` clean alongside the structured `asOf`. Kept local so
-// dome.claims doesn't take a cross-extension dependency on dome.search. The
-// long-term fix is to move the canonical decoder into dome.claims (with
-// dome.search importing it) — a follow-on, not now.
-
-type ClaimFact = {
-  readonly key: string;
-  readonly value: string;
-  readonly asOf: string | null;
-};
-
-/** Decode a `dome.claims.claim` fact, or null if it is not one / is malformed. */
-function parseClaimFact(fact: FactEffect): ClaimFact | null {
-  if (fact.predicate !== CLAIM_PREDICATE || fact.object.kind !== "string") {
-    return null;
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(fact.object.value);
-  } catch {
-    return null;
-  }
-  if (parsed === null || typeof parsed !== "object") return null;
-  const record = parsed as Record<string, unknown>;
-  if (typeof record.key !== "string" || typeof record.value !== "string") {
-    return null;
-  }
-  const asOf = typeof record.asOf === "string" ? record.asOf : null;
-  // Strip the inline `*(as of YYYY-MM-DD)*` marker(s) so `value` is clean
-  // alongside the structured `asOf`; mirrors claims-fact.ts.
-  const value = record.value
-    .replace(/\s*\*\(as of \d{4}-\d{2}-\d{2}\)\*/g, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-  return { key: record.key, value, asOf };
-}
+// The claim decoder (predicate + parseClaimFact, including the inline
+// `*(as of YYYY-MM-DD)*` marker strip) is the canonical one in ./claim-fact —
+// the same decode dome.search reads claim facts through, so staleness and the
+// search views can't drift on the fact shape.
 
 // ----- Config resolution (degrade-not-crash) ---------------------------------
 

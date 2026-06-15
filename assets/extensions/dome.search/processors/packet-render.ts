@@ -8,7 +8,7 @@ import type {
   ContextEntry,
   ContextOverview,
 } from "./export-context";
-import { claimLabel } from "./claims-fact";
+import { claimLabel } from "../../dome.claims/processors/claim-fact";
 
 export const MAX_RELATED_ROWS = 8;
 export const SCHEMA = "dome.search.export-context/v1";

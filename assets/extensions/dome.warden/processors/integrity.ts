@@ -47,6 +47,7 @@
 import matter from "gray-matter";
 import { z } from "zod";
 
+import { CLAIM_PREDICATE } from "../../dome.claims/processors/claim-fact";
 import { normalizeClaimKey } from "../../dome.claims/processors/claims-shared";
 import {
   diagnosticEffect,
@@ -63,8 +64,6 @@ import {
 import { shortHash } from "../../../../src/core/short-hash";
 
 const MODEL_SCHEMA = "dome.warden.integrity/v1";
-
-const CLAIM_PREDICATE = "dome.claims.claim";
 
 // Conservative default: medium-confidence model judgment is not enough to
 // interrupt the owner. A vault that wants the warden chattier lowers this.
