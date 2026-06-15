@@ -1,5 +1,5 @@
 id: dome.claims
-version: 0.1.2
+version: 0.1.3
 processors:
   - id: dome.claims.stamp
     version: 0.1.0
@@ -86,3 +86,14 @@ processors:
       class: deterministic
       timeoutMs: 30000
     module: processors/claim-index.ts
+
+  - id: dome.claims.stale-claims
+    version: 0.1.0
+    phase: view
+    triggers:
+      - kind: command
+        name: stale-claims
+    capabilities:
+      - kind: read
+        paths: ["wiki/**/*.md", "notes/*.md"]
+    module: processors/stale-claims.ts

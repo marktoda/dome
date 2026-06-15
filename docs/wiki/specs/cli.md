@@ -2357,8 +2357,8 @@ bindings. The intended shape is:
 
 Until these aliases ship, command-triggered view processors are invoked via
 `dome run <command-name>`. The shipped run-only first-party view commands are
-`dome run orphan-pages`, `dome run today`, `dome run prep`, and
-`dome run agenda-with`.
+`dome run orphan-pages`, `dome run stale-claims`, `dome run today`,
+`dome run prep`, and `dome run agenda-with`.
 
 ## Adding a new command
 
