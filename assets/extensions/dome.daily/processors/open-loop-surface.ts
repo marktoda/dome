@@ -426,17 +426,26 @@ function insertOpenLoopSurfaceSection(input: {
   return `${input.content}${suffix}\n## Open Loops\n\n${input.section}\n`;
 }
 
-function renderOpenLoopSource(item: DailyOpenLoopSource): string {
+// Render a source-backed open-loop line. The two former twin renderers
+// differed ONLY in the checkbox marker — open loops use a blank `[ ]`, settled
+// loops use `[x]` (resolved) / `[-]` (dismissed). The `#followup` prefix, body,
+// and `(from [[…]])` suffix are identical in both.
+function renderOpenLoopSourceLine(
+  item: { readonly followup: boolean; readonly body: string; readonly sourcePath: string },
+  marker: string,
+): string {
   const followup = item.followup ? "#followup " : "";
-  return `- [ ] ${followup}${item.body} (from [[${item.sourcePath.replace(/\.md$/, "")}]])`;
+  return `- [${marker}] ${followup}${item.body} (from [[${item.sourcePath.replace(/\.md$/, "")}]])`;
+}
+
+function renderOpenLoopSource(item: DailyOpenLoopSource): string {
+  return renderOpenLoopSourceLine(item, " ");
 }
 
 function renderSettledOpenLoopSource(
   item: DailySettledOpenLoopSource,
 ): string {
-  const followup = item.followup ? "#followup " : "";
-  const state = item.status === "dismissed" ? "-" : "x";
-  return `- [${state}] ${followup}${item.body} (from [[${item.sourcePath.replace(/\.md$/, "")}]])`;
+  return renderOpenLoopSourceLine(item, item.status === "dismissed" ? "-" : "x");
 }
 
 function stripCandidateMetadata(
