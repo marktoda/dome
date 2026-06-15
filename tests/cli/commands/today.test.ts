@@ -2,7 +2,7 @@
 // real temp vault, real sync, captured console (pattern from tests/http).
 
 import { afterAll, beforeEach, afterEach, describe, expect, test } from "bun:test";
-import { resolveCaps, stripWikilinks } from "../../../src/cli/presenter";
+import { resolveCaps, stripWikilinks, visibleWidth } from "../../../src/cli/presenter";
 import { formatTodayResult } from "../../../src/cli/commands/today";
 import { mkdtempSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -654,8 +654,11 @@ describe("dome today: flat signal-led task list", () => {
       counts: { openTasks: 234, followups: 0, questions: 0 }, dueCounts: {},
     };
     const out = formatTodayResult(data, ASCII_CAPS, "/vault");
-    // true overflow = 234 - 7 (cap) = 227 — NOT 1 (received list − cap)
-    expect(out).toMatch(/22\d more|2[23]\d more/);
+    // true overflow: 8 received overdue, 6 shown → 2 more overdue;
+    // trueTotal=234, otherMore = (234−8)−0 = 226 → "226 more"
+    expect(out).toContain("2 more overdue");
+    expect(out).toContain("226 more");
+    expect(out).toContain("dome today --verbose");
   });
 });
 
@@ -702,5 +705,13 @@ describe("formatTodayResult grouping + links", () => {
   test("honest overflow: many open tasks report a '… N more' line", () => {
     const out = formatTodayResult(doc({ counts: { openTasks: 50, followups: 0, questions: 0 } }), caps, "/v/work");
     expect(out).toMatch(/…\s.*more.*dome today --verbose/);
+  });
+
+  test("no rendered line exceeds caps.width even with link affordances", () => {
+    const narrow = { color: false, unicode: true, width: 50, hyperlinks: true } as const;
+    const out = formatTodayResult(doc(), narrow, "/v/work");
+    for (const line of out.split("\n")) {
+      expect(visibleWidth(line)).toBeLessThanOrEqual(narrow.width);
+    }
   });
 });

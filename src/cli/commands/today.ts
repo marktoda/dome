@@ -395,17 +395,27 @@ export function formatTodayResult(
     // width, so it can never be sliced.
     const renderRow = (t: TodayTaskRow, tone: Tone): void => {
       const { text, links } = splitInlineLinks(t.text);
-      const linkReserve = links.reduce((a, l) => a + visibleWidth(l.label) + 3, 0);
+      const arrowWidth = caps.unicode ? 1 : 2; // "↗" is 1 col, "->" is 2
+      // Exact visible width of the trailing affordances block (the OSC 8
+      // escape itself is zero-width): "   " + Σ(label + arrow) + (N-1)×"  ".
+      const linkReserve =
+        links.length === 0
+          ? 0
+          : 3 +
+            links.reduce((a, l) => a + visibleWidth(l.label) + arrowWidth, 0) +
+            (links.length - 1) * 2;
       const label = shortenLabel(text, Math.max(16, taskWidth - linkReserve), caps.unicode);
       const g = paint(statusGlyph(tone, caps), tone, caps);
       const affordances = links
         .map((l) => paint(`${hyperlink(l.label, l.url, caps)}${arrow}`, "ident", caps))
         .join("  ");
-      const tail = affordances.length > 0 ? `   ${affordances}` : "";
+      const tail = links.length > 0 ? `   ${affordances}` : "";
       lines.push(`  ${g} ${label}${tail}`);
     };
 
-    const OVERDUE_CAP = 6, TODAY_CAP = 4, OPEN_CAP = 4;
+    const OVERDUE_CAP = 6;
+    const TODAY_CAP = 4;
+    const OPEN_CAP = 4;
     const capOf = (n: number): number => (opts.verbose === true ? Number.POSITIVE_INFINITY : n);
 
     const section = (header: string, items: ReadonlyArray<TodayTaskRow>, capN: number, tone: Tone): number => {
