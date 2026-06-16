@@ -8,10 +8,23 @@
 
 import { createHash, timingSafeEqual } from "node:crypto";
 import {
+  ANSWER_SCHEMA,
+  answerHandlersJson,
+  questionRecordJson,
+} from "../surface/answer";
+import { captureJsonDocument, performCapture } from "../surface/capture";
+import {
+  catalogViewProblemMessage,
   makeVaultMutex,
   openVaultErrorKind,
+  runCatalogView,
+  runtimeOpenFailureMessage,
   withVault as withVaultShared,
+  type CatalogViewProblem,
 } from "../surface/adapter";
+import { COMMAND_ERROR_SCHEMA } from "../surface/command-error";
+import { FIRST_PARTY_VIEWS } from "../surface/view-catalog";
+import type { Vault } from "../vault";
 import type { TextStreamPart, ToolSet } from "ai";
 import { runAsk, runAskStream, type AskStream } from "./ask";
 import type { AskResult } from "./types";
@@ -131,6 +144,48 @@ function errorResponse(status: number, error: string, message: string): Response
   return jsonResponse(status, { schema: SCHEMA, status: "error", error, message });
 }
 
+/**
+ * Error envelope for the PWA data routes (POST /capture, GET /tasks,
+ * POST /resolve). These routes mirror `dome http` EXACTLY — including the
+ * error shape, which does NOT carry a `schema` field (unlike the ask-specific
+ * errorResponse above which adds `schema: "dome.ask/v1"`).
+ */
+function dataErrorResponse(status: number, error: string, message: string): Response {
+  return jsonResponse(status, { status: "error", error, message });
+}
+
+/** The vault-open failure envelope — same shape as the http server's. */
+function commandErrorResponse(command: string, errorKind: string): Response {
+  return jsonResponse(500, {
+    schema: COMMAND_ERROR_SCHEMA,
+    status: "error",
+    command,
+    error: errorKind,
+    message: runtimeOpenFailureMessage(`dome ${command}`, errorKind),
+  });
+}
+
+/** HTTP status semantics for a catalog-view problem (mirrors src/http/server.ts). */
+function viewProblemHttpStatus(problem: CatalogViewProblem): number {
+  switch (problem.kind) {
+    case "detached-head":
+    case "missing-adopted-ref":
+      return 409;
+    case "adopted-ref-unstable":
+      return 503;
+    case "view-not-found":
+      return 404;
+    default:
+      return 500;
+  }
+}
+
+function positiveInt(raw: string | null): number | null {
+  if (raw === null) return null;
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
 /** Constant-time bearer check: compare SHA-256 digests, never raw strings. */
 function authorized(request: Request, tokenDigest: Buffer): boolean {
   const header = request.headers.get("authorization") ?? "";
@@ -154,6 +209,22 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
   const enqueue = makeVaultMutex();
 
   const timeoutMs = opts.timeoutMs ?? 120_000;
+
+  // Vault-open wrapper for the data routes (mirrors src/http/server.ts's
+  // `withVault`): runs `fn` against an open VaultRuntime under the SAME mutex
+  // the ask routes use, mapping an open failure to the command-error envelope.
+  const withVault = async (
+    command: string,
+    fn: (v: Vault) => Promise<Response>,
+  ): Promise<Response> => {
+    const outcome = await withVaultShared(
+      { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
+      fn,
+    );
+    return outcome.kind === "open-failed"
+      ? commandErrorResponse(command, openVaultErrorKind(outcome.error))
+      : outcome.value;
+  };
 
   // Default ask: open the vault, run the AI SDK agent loop over its tools.
   const defaultAsk: AskImpl = async (question, signal) => {
@@ -412,7 +483,110 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
       });
     }
 
-    return errorResponse(404, "not-found", `no route for ${route}.`);
+    // ----- PWA data routes ---------------------------------------------------
+    //
+    // These mirror src/http/server.ts's `POST /capture`, `GET /tasks`, and
+    // `POST /resolve` EXACTLY — same parsing, same JSON shapes, same status
+    // codes — reusing the same shared `src/surface/` collectors under THIS
+    // server's single mutex (no delegation to `dome http`, which owns its own
+    // mutex). The PWA gets identical contracts whichever server it hits.
+
+    if (route === "POST /capture") {
+      const read = await jsonBody(request, maxBodyBytes);
+      if (read.kind === "too-large") {
+        return dataErrorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
+      }
+      const body = read.body;
+      if (body === null || typeof body.text !== "string" || body.text.trim().length === 0) {
+        return dataErrorResponse(400, "capture-usage", "POST /capture requires a JSON body with non-empty `text` (optional `title`, `captureId`).");
+      }
+      // performCapture is runtime-free (writes a raw file + a human commit) —
+      // no enqueue/withVault needed, same as the http server.
+      const outcome = await performCapture({
+        text: body.text,
+        ...(typeof body.title === "string" ? { title: body.title } : {}),
+        ...(typeof body.captureId === "string" ? { captureId: body.captureId } : {}),
+        vault: opts.vaultPath,
+        source: "http",
+      });
+      const doc = captureJsonDocument(outcome);
+      if (outcome.kind === "error") {
+        return jsonResponse(outcome.exitCode === 64 ? 400 : 500, doc);
+      }
+      return jsonResponse(200, doc);
+    }
+
+    if (route === "GET /tasks") {
+      const date = url.searchParams.get("date") ?? undefined;
+      const limit = positiveInt(url.searchParams.get("limit"));
+      const args = Object.freeze({
+        ...(date !== undefined ? { date } : {}),
+        ...(limit !== null ? { limit } : {}),
+      });
+      const outcome = await withVaultShared(
+        { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
+        (v) => runCatalogView(v, FIRST_PARTY_VIEWS.today, args),
+      );
+      if (outcome.kind === "open-failed") {
+        return commandErrorResponse("GET /tasks", openVaultErrorKind(outcome.error));
+      }
+      const run = outcome.value;
+      if (run.kind === "problem") {
+        return dataErrorResponse(
+          viewProblemHttpStatus(run.problem),
+          run.problem.kind,
+          catalogViewProblemMessage("GET /tasks", FIRST_PARTY_VIEWS.today, run.problem),
+        );
+      }
+      return jsonResponse(200, run.data);
+    }
+
+    if (route === "POST /resolve") {
+      const read = await jsonBody(request, maxBodyBytes);
+      if (read.kind === "too-large") {
+        return dataErrorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
+      }
+      const body = read.body;
+      const id = typeof body?.id === "number" && Number.isInteger(body.id) && body.id > 0
+        ? body.id
+        : null;
+      const value = typeof body?.value === "string" ? body.value.trim() : "";
+      if (id === null || value.length === 0) {
+        return dataErrorResponse(400, "resolve-usage", "POST /resolve requires a JSON body with a positive integer `id` and a non-empty `value`.");
+      }
+      return withVault("POST /resolve", async (v) => {
+        const outcome = await v.resolve(id, value);
+        switch (outcome.kind) {
+          case "not-found":
+            return jsonResponse(404, {
+              schema: ANSWER_SCHEMA,
+              status: "error",
+              error: "question-not-found",
+              message: `question ${id} was not found.`,
+            });
+          case "invalid-option":
+            return jsonResponse(400, {
+              schema: ANSWER_SCHEMA,
+              status: "invalid-option",
+              options: outcome.options,
+              question: questionRecordJson(outcome.record),
+            });
+          case "answered":
+          case "already-answered":
+            return jsonResponse(200, {
+              schema: ANSWER_SCHEMA,
+              status: outcome.kind,
+              question: questionRecordJson(outcome.record),
+              handlers:
+                outcome.handlers === null
+                  ? null
+                  : answerHandlersJson(outcome.handlers),
+            });
+        }
+      });
+    }
+
+    return dataErrorResponse(404, "not-found", `no route for ${route}.`);
   };
 
   const handle = async (request: Request): Promise<Response> => {
