@@ -446,6 +446,69 @@ describe("dome.daily.stale-task-warden", () => {
     }
   });
 
+  test("unanchored stale overdue task emits NO question (unactionable without anchor)", async () => {
+    // A task without a ^anchor is not yet stamped (stamp-block-id runs on the
+    // next cycle); it will become eligible once anchored.
+    const unanchoredBody = `Unanchored overdue task 📅 ${OVERDUE_15_DATE}`;
+    const files: Record<string, string> = {
+      "wiki/projects/unanchored.md": `# Unanchored\n\n- [ ] ${unanchoredBody}\n`,
+      "wiki/dailies/2026-06-15.md": dailyWithLoops("2026-06-15", []),
+    };
+    const snapshot = Object.freeze({
+      commit: HEAD_COMMIT,
+      tree: treeOid("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+      readFile: async (p: string) => files[p] ?? null,
+      listMarkdownFiles: async () => Object.freeze(Object.keys(files)),
+      getFileInfo: async (p: string) => {
+        if (!(p in files)) return null;
+        return Object.freeze({
+          lastChangedCommit: HEAD_COMMIT,
+          lastChangedAt: "2026-05-01T10:00:00.000Z",
+          lastHumanChangedAt: null,
+        });
+      },
+    });
+
+    const effects = await runWarden(snapshot);
+    const questions = effects.filter(
+      (e): e is QuestionEffect => e.kind === "question",
+    );
+    // No question: the task has no anchor so the answer handler cannot act on it.
+    expect(questions).toHaveLength(0);
+  });
+
+  test("same task WITH an anchor emits one question", async () => {
+    // Once anchored, the same task becomes eligible for a settle-stale question.
+    const anchoredBody = `Anchored overdue task 📅 ${OVERDUE_15_DATE}`;
+    const anchoredAnchor = "tanchor12345678";
+    const files: Record<string, string> = {
+      "wiki/projects/anchored.md": `# Anchored\n\n- [ ] ${anchoredBody} ^${anchoredAnchor}\n`,
+      "wiki/dailies/2026-06-15.md": dailyWithLoops("2026-06-15", []),
+    };
+    const snapshot = Object.freeze({
+      commit: HEAD_COMMIT,
+      tree: treeOid("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+      readFile: async (p: string) => files[p] ?? null,
+      listMarkdownFiles: async () => Object.freeze(Object.keys(files)),
+      getFileInfo: async (p: string) => {
+        if (!(p in files)) return null;
+        return Object.freeze({
+          lastChangedCommit: HEAD_COMMIT,
+          lastChangedAt: "2026-05-01T10:00:00.000Z",
+          lastHumanChangedAt: null,
+        });
+      },
+    });
+
+    const effects = await runWarden(snapshot);
+    const questions = effects.filter(
+      (e): e is QuestionEffect => e.kind === "question",
+    );
+    expect(questions).toHaveLength(1);
+    expect(questions[0]!.question).toContain(anchoredBody);
+    expect(questions[0]!.metadata?.material).toBe(anchoredAnchor);
+  });
+
   test("metadata: anchor is in material and recommendedAnswer is 'keep' for anchored task", async () => {
     // The overdue task in the fixture has OVERDUE_TASK_ANCHOR — verify it round-trips.
     const effects = await runWarden();

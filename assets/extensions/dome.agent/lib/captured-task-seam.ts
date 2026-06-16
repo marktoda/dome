@@ -31,5 +31,8 @@ export function spliceCapturedTask(input: {
   const stamped = input.sourceUrl !== undefined && input.sourceUrl !== ""
     ? appendOriginMarker(line, input.sourceUrl)
     : line;
+  if (!isCapturedTaskLine(stamped)) {
+    return { ok: false, error: "stamped task line failed validation (check the source URL)" };
+  }
   return { ok: true, content: appendCapturedTaskLines({ content: input.content, lines: [stamped] }) };
 }

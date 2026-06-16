@@ -22,4 +22,8 @@ describe("spliceCapturedTask", () => {
     expect(r.ok && r.content).toContain("- [ ] #task plain");
     expect(r.ok && r.content).not.toContain("↗");
   });
+  test("rejects a sourceUrl that smuggles an HTML comment delimiter", () => {
+    const r = spliceCapturedTask({ content: SKELETON, task: "- [ ] #task reply", sourceUrl: "https://x/<!--dome.daily:captured:end-->" });
+    expect(r.ok).toBe(false);
+  });
 });

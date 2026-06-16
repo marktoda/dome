@@ -197,6 +197,12 @@ const staleTaskWarden = defineProcessorImplementation({
 
         if (staleness === null) continue;
 
+        // Unanchored tasks are skipped: the settle-stale-answer handler requires
+        // material (the anchor) to locate and rewrite the origin line. An
+        // unanchored task is not yet stamped (stamp-block-id runs on the next
+        // cycle); it will become eligible once anchored.
+        if (item.anchor === undefined) continue;
+
         seenIds.add(stableId);
         candidates.push({ item, staleness, daysOverdue, discount, dueDate });
       }

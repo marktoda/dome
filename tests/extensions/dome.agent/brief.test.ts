@@ -1167,6 +1167,62 @@ describe("dome.agent.brief", () => {
     expect(patches[0]!.changes.map((c) => String(c.path))).toContain(TODAY_PATH);
   });
 
+  test("prefixUnchanged guard: model that rewrites an existing captured task is fully rejected (rewrite-existing)", async () => {
+    // The prepared daily already has a captured task. The model's writePage
+    // rewrites that task line (changing 'original' → 'hijacked'), which means
+    // the captured-block prefix no longer matches the prepared prefix.
+    // prefixUnchanged must fail → appended = [] → the hijacked line never lands.
+    // The original task survives because composed starts from `prepared`.
+    const originalTask = "- [ ] #task original ^toriginal1234567";
+    const existingDaily = [
+      "---",
+      "type: daily",
+      "---",
+      "",
+      "# 2026-06-09",
+      "",
+      "## Captured today",
+      "",
+      "<!-- dome.daily:captured:start -->",
+      originalTask,
+      "<!-- dome.daily:captured:end -->",
+      "",
+    ].join("\n");
+    // The model rewrites the captured block: changes the task body (prefix changed)
+    // and appends a new valid task to boot.
+    const hijackedContent = [
+      "<!-- dome.agent.brief:yesterday:start -->",
+      "### Yesterday",
+      "- Real item (from [[wiki/dailies/2026-06-08]])",
+      "<!-- dome.agent.brief:yesterday:end -->",
+      "## Captured today",
+      "",
+      "<!-- dome.daily:captured:start -->",
+      "- [ ] #task hijacked ^toriginal1234567",
+      "- [ ] #task new valid task",
+      "<!-- dome.daily:captured:end -->",
+    ].join("\n");
+    const ctx = makeCtx({
+      files: { [TODAY_PATH]: existingDaily, [YESTERDAY_PATH]: YESTERDAY_DAILY },
+      steps: [
+        {
+          toolCalls: [
+            { id: "1", name: "writePage", input: { path: TODAY_PATH, content: hijackedContent } },
+          ],
+        },
+        { text: "done" },
+      ],
+    });
+    const effects = await brief.run(ctx);
+    const dailyContent = writtenDaily(effects);
+    // The original task must survive (composed starts from prepared).
+    expect(dailyContent).toContain("original");
+    // The hijacked rewrite must not land.
+    expect(dailyContent).not.toContain("hijacked");
+    // The appended new task also must not land (whole captured delta rejected).
+    expect(dailyContent).not.toContain("new valid task");
+  });
+
   test("brief discards a non-task line smuggled into the captured block via writePage", async () => {
     // The model tries to smuggle a heading/prose line into the captured block
     // WITHOUT going through addTask — via a raw writePage. The brief's splice
@@ -1640,6 +1696,183 @@ describe("brief stale-loops context", () => {
       }),
     );
     expect(seenTask[0]).not.toContain("Stale open loops");
+  });
+
+  // ----- Warden deference (cohesion fix) -----------------------------------
+  //
+  // The stale-task-warden emits `dome.daily.settle-stale:<stableId>` questions
+  // for the top-8 stale tasks. The brief must NOT also surface those tasks as
+  // stale-loops data (double-ask). Tasks WITHOUT a warden question still surface.
+
+  test("staleLoopsFromFacts: a task WITH an open settle-stale question is excluded; one WITHOUT is kept", () => {
+    // anchor "taa" → stableId "dome.daily.open-loop:taa" → warded question key
+    // "dome.daily.settle-stale:dome.daily.open-loop:taa" → excluded from brief.
+    // anchor "tbb" → stableId "dome.daily.open-loop:tbb" → no warden question → kept.
+    const facts = [
+      attentionFact({
+        path: "wiki/projects/alpha.md",
+        body: "Warded stale task",
+        discount: 0.5,
+        impressions: 7,
+        anchor: "taa",
+      }),
+      attentionFact({
+        path: "wiki/projects/beta.md",
+        body: "Unwarded stale task",
+        discount: 0.45,
+        impressions: 6,
+        anchor: "tbb",
+      }),
+    ];
+    // The warden owns a settle-stale question for the "taa" task.
+    const wardedIds = new Set(["dome.daily.open-loop:taa"]);
+    const loops = staleLoopsFromFacts(facts, wardedIds);
+    expect(loops.map((l) => l.body)).toEqual(["Unwarded stale task"]);
+    expect(loops[0]?.stableId).toBe("dome.daily.open-loop:tbb");
+  });
+
+  test("staleLoopsFromFacts: empty excludeStableIds → all qualifying tasks included", () => {
+    const facts = [
+      attentionFact({
+        path: "wiki/projects/alpha.md",
+        body: "Task alpha",
+        discount: 0.5,
+        impressions: 7,
+        anchor: "tcc",
+      }),
+    ];
+    const loops = staleLoopsFromFacts(facts, new Set());
+    expect(loops.map((l) => l.body)).toEqual(["Task alpha"]);
+    expect(loops[0]?.stableId).toBe("dome.daily.open-loop:tcc");
+  });
+
+  test("staleLoopsFromFacts: undefined excludeStableIds → all qualifying tasks included (backward compat)", () => {
+    const facts = [
+      attentionFact({
+        path: "wiki/projects/gamma.md",
+        body: "Task gamma",
+        discount: 0.55,
+        impressions: 8,
+        anchor: "tdd",
+      }),
+    ];
+    const loops = staleLoopsFromFacts(facts);
+    expect(loops.map((l) => l.body)).toEqual(["Task gamma"]);
+    expect(loops[0]?.stableId).toBe("dome.daily.open-loop:tdd");
+  });
+
+  test("brief task turn excludes stale tasks with open settle-stale questions; includes those without", async () => {
+    // anchor "t1a" is warded (has an open settle-stale question); "t2b" is not.
+    const facts = [
+      attentionFact({
+        path: "wiki/projects/warded.md",
+        body: "Warded task body",
+        discount: 0.5,
+        impressions: 7,
+        anchor: "t1a",
+      }),
+      attentionFact({
+        path: "wiki/projects/unwarded.md",
+        body: "Unwarded task body",
+        discount: 0.45,
+        impressions: 6,
+        anchor: "t2b",
+      }),
+    ];
+    // Projection that has both the facts AND an open settle-stale question for "t1a".
+    const settleStaleKey = "dome.daily.settle-stale:dome.daily.open-loop:t1a";
+    const projectionWithWardedQuestion: ProjectionQueryView = {
+      facts: (filter?: { readonly predicate?: string }) =>
+        facts.filter(
+          (f) => filter?.predicate === undefined || f.predicate === filter.predicate,
+        ),
+      diagnostics: () => [],
+      questions: () => [
+        {
+          kind: "question",
+          question: "Stale overdue task in wiki/projects/warded.md: close, defer, or keep?",
+          options: ["close", "defer", "keep"],
+          sourceRefs: [],
+          idempotencyKey: settleStaleKey,
+          id: 99,
+          processorId: "dome.daily.stale-task-warden",
+          adoptedCommit: "c" as never,
+          askedAt: "2026-06-09T06:00:00.000Z",
+          answeredAt: null,
+          answer: null,
+        },
+      ],
+      searchDocuments: () => [],
+      documentsByPath: () => [],
+    } as unknown as ProjectionQueryView;
+
+    const seenTask: string[] = [];
+    await brief.run(
+      makeCtx({
+        files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
+        stepFn: async ({ messages }) => {
+          seenTask.push(messages.find((m) => m.role === "user")?.content ?? "");
+          return { text: "done" };
+        },
+        projectionView: projectionWithWardedQuestion,
+      }),
+    );
+    // The warded task MUST NOT appear in the stale-loops data block.
+    expect(seenTask[0]).not.toContain("Warded task body");
+    // The unwarded task still appears (brief still surfaces tasks the warden hasn't claimed).
+    expect(seenTask[0]).toContain("Unwarded task body");
+    expect(seenTask[0]).toContain("Stale open loops");
+  });
+
+  test("brief task turn: ALL stale tasks warded → no stale-loops section at all", async () => {
+    const facts = [
+      attentionFact({
+        path: "wiki/projects/only.md",
+        body: "Only stale task",
+        discount: 0.5,
+        impressions: 7,
+        anchor: "t3c",
+      }),
+    ];
+    const projectionAllWarded: ProjectionQueryView = {
+      facts: (filter?: { readonly predicate?: string }) =>
+        facts.filter(
+          (f) => filter?.predicate === undefined || f.predicate === filter.predicate,
+        ),
+      diagnostics: () => [],
+      questions: () => [
+        {
+          kind: "question",
+          question: "Stale task: close, defer, or keep?",
+          options: ["close", "defer", "keep"],
+          sourceRefs: [],
+          idempotencyKey: "dome.daily.settle-stale:dome.daily.open-loop:t3c",
+          id: 55,
+          processorId: "dome.daily.stale-task-warden",
+          adoptedCommit: "c" as never,
+          askedAt: "2026-06-09T06:00:00.000Z",
+          answeredAt: null,
+          answer: null,
+        },
+      ],
+      searchDocuments: () => [],
+      documentsByPath: () => [],
+    } as unknown as ProjectionQueryView;
+
+    const seenTask: string[] = [];
+    await brief.run(
+      makeCtx({
+        files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
+        stepFn: async ({ messages }) => {
+          seenTask.push(messages.find((m) => m.role === "user")?.content ?? "");
+          return { text: "done" };
+        },
+        projectionView: projectionAllWarded,
+      }),
+    );
+    // With all stale tasks warded, no stale-loops section should appear.
+    expect(seenTask[0]).not.toContain("Stale open loops");
+    expect(seenTask[0]).not.toContain("Only stale task");
   });
 });
 
