@@ -105,12 +105,49 @@ the **contract every client consumes**. Three faces of one boundary:
    the same `src/surface/` collectors ([[wiki/matrices/protocol-adapter]]); the
    engine never knows which client is calling. Adding a capability means adding
    a collector available to all adapters, not a CLI-only verb.
-3. **The git-native write path + adoption loop** — every client writes by
-   producing commits/captures; the engine adopts them identically regardless of
-   origin.
+3. **The git-native write path + adoption loop** — clients write by producing
+   commits (filesystem-native) or captures (remote); the engine adopts both
+   identically. Authoring a *page*, though, needs a checkout — see §"The
+   authoring boundary".
 
 Invest here, and every client gets better at once. Invest in one client's
 chrome, and only that client improves.
+
+## The authoring boundary — read everywhere, write where there's a checkout
+
+The contract is strong at *read* and deliberately narrow at *write*. Across the
+CLI, the `dome mcp` tools, and the HTTP API, a client can mutate vault state in
+exactly two ways: **capture** (append a raw note to `inbox/raw/`) and
+**resolve** (answer a question the engine already raised). There is no operation
+to create or edit a vault *page*: [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]]
+means real authoring happens as an ordinary `git commit` the daemon adopts —
+there is no `submitProposal` API.
+
+The consequence the taxonomy has to absorb: **authoring is bound to a co-located
+git checkout.** A filesystem-native harness (Claude Code on the desktop) has
+one, so it reads · searches · synthesizes · *writes* · captures. A client
+*without* a checkout — a phone app, a remote MCP client, the Claude iOS app —
+can only read · search · *capture*. So the full read/synthesize/write/capture
+loop in §"The primary client is an LLM agent" is the **desktop** story; off the
+desktop it is **read + ask + capture** until a checkout is reachable.
+
+This is a real fork, not a bug:
+
+- **Co-locate the agent with a checkout** (the intended path): a hosted,
+  Claude-Code-class agent runs on an always-on host beside the vault and the
+  daemon, reachable from the phone. Authoring stays filesystem + git; the phone
+  is a thin client to that agent. No new write contract — the work is the
+  always-on host, remote reach, and per-device tokens (all deferred today).
+- **Add a remote authoring operation** (a `propose-patch` verb over HTTP/MCP
+  that constructs a Proposal from a client-supplied patch). This is the
+  deliberate exception to "no `submitProposal`," opened only if phone-side page
+  authoring becomes a requirement.
+
+For v1 the phone client is **read + ask + capture** — a coherent, defensible
+scope. Phone-side authoring waits on one of the two forks above. And note that
+"ask" itself needs an agent *running somewhere*: the HTTP/MCP surfaces host no
+model, so synthesis comes from the client's agent (desktop Claude Code today; a
+reachable hosted agent for the phone — the same always-on-host dependency).
 
 ## What "ask" and "recall" mean under this model
 
