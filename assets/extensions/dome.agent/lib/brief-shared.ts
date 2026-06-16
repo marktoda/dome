@@ -427,6 +427,13 @@ export type BriefStaleLoop = {
   readonly body: string;
   readonly discount: number;
   readonly impressions: number;
+  /**
+   * The task's stable identity (`dome.daily.open-loop:<anchor>` for anchored
+   * tasks). Carried so the brief processor can cross-reference against open
+   * `dome.daily.settle-stale:<stableId>` questions from the stale-task-warden
+   * and skip tasks the warden already owns.
+   */
+  readonly stableId: string;
 };
 
 const MAX_STALE_LOOPS = 8;
@@ -440,6 +447,7 @@ const MAX_STALE_LOOPS = 8;
  */
 export function staleLoopsFromFacts(
   facts: ReadonlyArray<FactEffect>,
+  excludeStableIds?: ReadonlySet<string>,
 ): ReadonlyArray<BriefStaleLoop> {
   const out: BriefStaleLoop[] = [];
   const seen = new Set<string>();
@@ -457,12 +465,22 @@ export function staleLoopsFromFacts(
     const key = `${path} ${value.anchor}`;
     if (seen.has(key)) continue;
     seen.add(key);
+    // The stableId mirrors taskStableId({ anchor }) from open-loop-surface.ts:
+    // anchored tasks use `dome.daily.open-loop:<anchor>`, which is the same key
+    // the stale-task-warden embeds as the idempotencyKey suffix of its
+    // `dome.daily.settle-stale:<stableId>` questions. This is the join key.
+    const stableId = `dome.daily.open-loop:${value.anchor}`;
+    // Warden deference: if this task already has an open settle-stale question
+    // from the stale-task-warden, skip it here. The warden owns the structured
+    // ask; the brief surfacing the same task would be a redundant double-ask.
+    if (excludeStableIds?.has(stableId)) continue;
     out.push(
       Object.freeze({
         path,
         body: value.body,
         discount: value.discount,
         impressions: value.impressions,
+        stableId,
       }),
     );
   }

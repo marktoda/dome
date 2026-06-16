@@ -266,8 +266,25 @@ const brief = defineProcessorImplementation({
     // Stale-loops pre-run context: heavily-discounted open loops from the
     // deterministic dome.attention.discount facts (task-lifecycle §"Attention
     // discounting"). Read-only projection data — never model-derived.
+    //
+    // Warden deference: exclude tasks that already have an open
+    // `dome.daily.settle-stale:<stableId>` question — the stale-task-warden
+    // owns the structured close/defer/keep ask for those tasks; the brief
+    // surfacing the same task a second time would be an uncoordinated double-ask.
+    // The stableId in the warden's idempotencyKey suffix matches
+    // `dome.daily.open-loop:<anchor>`, which is exactly what staleLoopsFromFacts
+    // now computes per loop entry, so the exclusion set is the join key.
+    const openQuestionKeys = (ctx.projection?.questions({ resolved: false }) ?? [])
+      .map((q) => q.idempotencyKey);
+    const settleStalePrefix = "dome.daily.settle-stale:";
+    const wardedStableIds = new Set(
+      openQuestionKeys
+        .filter((k) => k.startsWith(settleStalePrefix))
+        .map((k) => k.slice(settleStalePrefix.length)),
+    );
     const staleLoops = staleLoopsFromFacts(
       ctx.projection?.facts({ predicate: ATTENTION_DISCOUNT_PREDICATE }) ?? [],
+      wardedStableIds,
     );
 
     let result;
