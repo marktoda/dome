@@ -80,6 +80,11 @@ import {
 import { sweepLedgerPath } from "./sweep";
 import { makeBriefTools } from "../lib/brief-tools";
 import {
+  appendCapturedTaskLines,
+  capturedBlockBodyLines,
+  isCapturedTaskLine,
+} from "../../dome.daily/processors/captured-block";
+import {
   isValidSignalsAppend,
   PREFERENCE_SIGNALS_PATH,
 } from "../lib/preferences-shared";
@@ -255,6 +260,7 @@ const brief = defineProcessorImplementation({
         readFile: (p) => ctx.snapshot.readFile(p),
         listMarkdownFiles: () => ctx.snapshot.listMarkdownFiles(),
       },
+      capturedTasks: { path: todayPath },
     });
 
     // Stale-loops pre-run context: heavily-discounted open loops from the
@@ -402,6 +408,27 @@ const brief = defineProcessorImplementation({
         section: `${block.markers.start}${grounded.kept}${block.markers.end}`,
         heading: block.heading,
       });
+    }
+
+    // Adopt ONLY validated captured-block task-line APPENDS the model made
+    // via addTask. The brief's safety model holds: everything else stays
+    // discarded. The model may only APPEND; if it rewrote or deleted any
+    // existing captured TASK line (prefixUnchanged fails) we adopt nothing.
+    // isCapturedTaskLine per line is the injection fence — prose, headings,
+    // and HTML-comment markers are rejected. The prefix check operates on task
+    // lines only (the hint comment in the skeleton is not a task line and must
+    // not prevent a clean append from being adopted). Append into `composed`
+    // (built from prepared), NOT modelContent.
+    const preparedTasks = capturedBlockBodyLines(prepared).filter(isCapturedTaskLine);
+    const modelTasks = capturedBlockBodyLines(modelContent).filter(isCapturedTaskLine);
+    const prefixUnchanged =
+      modelTasks.length >= preparedTasks.length &&
+      modelTasks.slice(0, preparedTasks.length).join("\n") === preparedTasks.join("\n");
+    const appended = prefixUnchanged
+      ? modelTasks.slice(preparedTasks.length)
+      : [];
+    if (appended.length > 0) {
+      composed = appendCapturedTaskLines({ content: composed, lines: appended });
     }
 
     // Sources-seen record — deterministic, never model-written. Records

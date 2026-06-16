@@ -28,6 +28,7 @@ import {
 import {
   appendCapturedTaskLines,
   appendOriginMarker,
+  capturedBlockBodyLines,
   CAPTURED_APPEND_MAX_LINES,
   CAPTURED_LINE_MAX_CHARS,
   isCapturedTaskLine,
@@ -628,5 +629,41 @@ describe("action items carry origin", () => {
     const md = "- [ ] #task plain ^t9z9z9z9\n";
     const items = actionItemsFromMarkdown(md);
     expect(items[0]!.origin).toBeUndefined();
+  });
+});
+
+describe("capturedBlockBodyLines", () => {
+  test("returns the non-blank body lines of a block with two task lines", () => {
+    // Build a minimal document with only two task lines inside the block (no
+    // hint comment) so the result is deterministic regardless of skeleton shape.
+    const content = [
+      "## Captured today",
+      "",
+      CAPTURED_START,
+      "- [ ] #task first task",
+      "- [ ] #task second task",
+      CAPTURED_END,
+      "",
+    ].join("\n");
+    const lines = capturedBlockBodyLines(content);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toBe("- [ ] #task first task");
+    expect(lines[1]).toBe("- [ ] #task second task");
+  });
+
+  test("returns the hint comment for a skeleton whose block is otherwise empty", () => {
+    const skeleton = renderDailySkeleton({
+      today: { yyyy: "2026", mm: "06", dd: "15" },
+      yesterday: null,
+    });
+    // The skeleton block contains exactly one non-blank line: the hint comment.
+    const lines = capturedBlockBodyLines(skeleton);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^<!--.*ingest.*-->$/i);
+  });
+
+  test("returns [] when the captured block is absent", () => {
+    const content = "# 2026-06-15\n\n## Start Here\n\n## Notes\n";
+    expect(capturedBlockBodyLines(content)).toEqual([]);
   });
 });

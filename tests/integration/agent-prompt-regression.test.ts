@@ -11,11 +11,21 @@ import { describe, expect, test } from "bun:test";
 import { BRIEF_CHARTER } from "../../assets/extensions/dome.agent/lib/brief-charter";
 import { INGEST_CHARTER } from "../../assets/extensions/dome.agent/lib/ingest-charter";
 import { consolidateCharter } from "../../assets/extensions/dome.agent/lib/consolidate-charter";
+import { BREVITY_FRAGMENT } from "../../assets/extensions/dome.agent/lib/charter-fragments";
 import { MAX_CHANGED_FILES } from "../../assets/extensions/dome.agent/processors/consolidate";
 import { sweepCharter } from "../../assets/extensions/dome.agent/lib/sweep-charter";
 import { promptForPage } from "../../assets/extensions/dome.warden/processors/integrity";
 
 describe("agent prompt regression", () => {
+  test("brief and ingest share one brevity fragment", () => {
+    expect(BRIEF_CHARTER).toContain(BREVITY_FRAGMENT);
+    expect(INGEST_CHARTER).toContain(BREVITY_FRAGMENT);
+  });
+
+  test("brief charter instructs surfacing actionable findings via addTask", () => {
+    expect(BRIEF_CHARTER).toContain("addTask");
+  });
+
   test("dome.agent.brief charter", () => {
     expect(BRIEF_CHARTER).toMatchSnapshot();
   });
