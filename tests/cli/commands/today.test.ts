@@ -1141,3 +1141,43 @@ describe("today entity grouping", () => {
     expect(out).toContain("plain task gamma");
   });
 });
+
+describe("dome today: inline-link ↗ is INSIDE the OSC 8 hyperlink", () => {
+  test("inline-link affordance puts the ↗ INSIDE the OSC 8 hyperlink (whole label clickable)", () => {
+    const caps = { color: false, unicode: true, width: 100, hyperlinks: true } as const;
+    const doc = {
+      date: "2026-06-15",
+      openTasks: [{ text: "reply re: pricing [thread](https://slk/p1)", path: "p", line: 1, dueDate: "2026-06-13" }],
+      followups: [], questions: [], counts: { openTasks: 1, followups: 0, questions: 0 },
+      hero: null, brief: null, calendar: null,
+    };
+    const out = formatTodayResult(doc, caps, "/v/work");
+    // arrow is inside: the closing OSC8 (\x1b]8;;\x1b\\) comes AFTER "thread↗"
+    expect(out).toContain("\x1b]8;;https://slk/p1\x1b\\thread↗\x1b]8;;\x1b\\");
+    // and NOT the old arrow-outside form
+    expect(out).not.toContain("\x1b\\thread\x1b]8;;\x1b\\↗");
+  });
+
+  test("hero inline-link affordance puts the ↗ INSIDE the OSC 8 hyperlink", () => {
+    const caps = { color: false, unicode: true, width: 100, hyperlinks: true } as const;
+    const doc = {
+      date: "2026-06-15",
+      hero: {
+        kind: "task",
+        item: {
+          text: "Partner call [thread](https://slk/h1)",
+          path: "wiki/tasks.md",
+          line: 1,
+          dueDate: null,
+        },
+      },
+      openTasks: [],
+      followups: [], questions: [], counts: { openTasks: 0, followups: 0, questions: 0 },
+      brief: null, calendar: null,
+    };
+    const out = formatTodayResult(doc, caps, "/v/work");
+    // arrow is inside the hyperlink on the hero line too
+    expect(out).toContain("\x1b]8;;https://slk/h1\x1b\\thread↗\x1b]8;;\x1b\\");
+    expect(out).not.toContain("\x1b\\thread\x1b]8;;\x1b\\↗");
+  });
+});
