@@ -91,7 +91,7 @@ async function runQueryView(
     if (cite !== null) recordCitation(state, cite);
     const title =
       typeof m["title"] === "string" ? m["title"] : "(untitled)";
-    const path = cite?.path ?? typeof m["path"] === "string" ? (m["path"] as string) : "(no path)";
+    const path = cite?.path ?? (typeof m["path"] === "string" ? (m["path"] as string) : "(no path)");
     const snippet =
       typeof m["snippet"] === "string" ? m["snippet"] : "";
     lines.push(`- ${title} [${path}]${snippet ? `: ${snippet}` : ""}`);
@@ -100,7 +100,6 @@ async function runQueryView(
 }
 
 type TodayItem = {
-  readonly title?: string;
   readonly text?: string;
   readonly path?: string;
   readonly sourceRefs?: ReadonlyArray<{ path: string; commit?: string }>;
@@ -163,11 +162,9 @@ async function runTodayView(
         });
       }
       const itemLabel =
-        typeof item.title === "string"
-          ? item.title
-          : typeof item.text === "string"
-            ? item.text
-            : sourcePath ?? "(item)";
+        typeof item.text === "string"
+          ? item.text
+          : sourcePath ?? "(item)";
       sections.push(`- ${itemLabel}${sourcePath ? ` [${sourcePath}]` : ""}`);
     }
   }

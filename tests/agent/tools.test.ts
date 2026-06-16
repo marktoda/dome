@@ -69,6 +69,38 @@ describe("buildAskTools", () => {
     expect(state.citations.map((c) => c.path)).toContain("wiki/x.md");
   });
 
+  test("todays_brief returns task text and records citation", async () => {
+    const todayVault = fakeVault({
+      runView: async (_cmd: string, _args: unknown) => ({
+        kind: "ok",
+        views: [],
+        brokerDiagnostics: [],
+        structured: {
+          name: "dome.daily.today",
+          schema: "dome.daily.today/v1",
+          data: {
+            openTasks: [
+              {
+                text: "Reply to vendor",
+                path: "inbox/raw/x.md",
+                sourceRefs: [{ path: "inbox/raw/x.md", commit: "c1" }],
+              },
+            ],
+            followups: [],
+            questions: [],
+          },
+        },
+      }),
+    });
+    const tools = buildAskTools(todayVault);
+    const brief = tools.find((t) => t.schema.name === "todays_brief");
+    expect(brief).toBeDefined();
+    const state: AskState = { citations: [] };
+    const out = await brief!.execute({}, state);
+    expect(out).toContain("Reply to vendor");
+    expect(state.citations.map((c) => c.path)).toContain("inbox/raw/x.md");
+  });
+
   test("read_document on a missing path returns a not-found message, no citation", async () => {
     const tools = buildAskTools(fakeVault({ readDocument: async () => null }));
     const read = tools.find((t) => t.schema.name === "read_document");
