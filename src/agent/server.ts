@@ -144,6 +144,16 @@ function errorResponse(status: number, error: string, message: string): Response
   return jsonResponse(status, { schema: SCHEMA, status: "error", error, message });
 }
 
+/**
+ * Error envelope for the PWA data routes (POST /capture, GET /tasks,
+ * POST /resolve). These routes mirror `dome http` EXACTLY — including the
+ * error shape, which does NOT carry a `schema` field (unlike the ask-specific
+ * errorResponse above which adds `schema: "dome.ask/v1"`).
+ */
+function dataErrorResponse(status: number, error: string, message: string): Response {
+  return jsonResponse(status, { status: "error", error, message });
+}
+
 /** The vault-open failure envelope — same shape as the http server's. */
 function commandErrorResponse(command: string, errorKind: string): Response {
   return jsonResponse(500, {
@@ -484,11 +494,11 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
     if (route === "POST /capture") {
       const read = await jsonBody(request, maxBodyBytes);
       if (read.kind === "too-large") {
-        return errorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
+        return dataErrorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
       }
       const body = read.body;
       if (body === null || typeof body.text !== "string" || body.text.trim().length === 0) {
-        return errorResponse(400, "capture-usage", "POST /capture requires a JSON body with non-empty `text` (optional `title`, `captureId`).");
+        return dataErrorResponse(400, "capture-usage", "POST /capture requires a JSON body with non-empty `text` (optional `title`, `captureId`).");
       }
       // performCapture is runtime-free (writes a raw file + a human commit) —
       // no enqueue/withVault needed, same as the http server.
@@ -522,7 +532,7 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
       }
       const run = outcome.value;
       if (run.kind === "problem") {
-        return errorResponse(
+        return dataErrorResponse(
           viewProblemHttpStatus(run.problem),
           run.problem.kind,
           catalogViewProblemMessage("GET /tasks", FIRST_PARTY_VIEWS.today, run.problem),
@@ -534,7 +544,7 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
     if (route === "POST /resolve") {
       const read = await jsonBody(request, maxBodyBytes);
       if (read.kind === "too-large") {
-        return errorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
+        return dataErrorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
       }
       const body = read.body;
       const id = typeof body?.id === "number" && Number.isInteger(body.id) && body.id > 0
@@ -542,7 +552,7 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
         : null;
       const value = typeof body?.value === "string" ? body.value.trim() : "";
       if (id === null || value.length === 0) {
-        return errorResponse(400, "resolve-usage", "POST /resolve requires a JSON body with a positive integer `id` and a non-empty `value`.");
+        return dataErrorResponse(400, "resolve-usage", "POST /resolve requires a JSON body with a positive integer `id` and a non-empty `value`.");
       }
       return withVault("POST /resolve", async (v) => {
         const outcome = await v.resolve(id, value);
@@ -576,7 +586,7 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
       });
     }
 
-    return errorResponse(404, "not-found", `no route for ${route}.`);
+    return dataErrorResponse(404, "not-found", `no route for ${route}.`);
   };
 
   const handle = async (request: Request): Promise<Response> => {

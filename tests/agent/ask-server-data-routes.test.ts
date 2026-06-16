@@ -176,7 +176,12 @@ describe("POST /capture", () => {
     async () => {
       const { status, json } = await post("/capture", { title: "no text" });
       expect(status).toBe(400);
+      // Must match dome http's errorResponse shape exactly: { status, error, message }
+      // NO schema field (in particular, NOT schema: "dome.ask/v1").
       expect(json.status).toBe("error");
+      expect(json.error).toBe("capture-usage");
+      expect(typeof json.message).toBe("string");
+      expect(Object.prototype.hasOwnProperty.call(json, "schema")).toBe(false);
     },
     TEST_TIMEOUT_MS,
   );
@@ -265,9 +270,13 @@ describe("POST /resolve", () => {
       expect(questionId).toBeGreaterThan(0);
 
       // Bad input: empty value → 400.
+      // Must match dome http's errorResponse shape: { status, error, message } — NO schema field.
       const badInput = await post("/resolve", { id: questionId, value: "" });
       expect(badInput.status).toBe(400);
       expect(badInput.json.status).toBe("error");
+      expect(badInput.json.error).toBe("resolve-usage");
+      expect(typeof badInput.json.message).toBe("string");
+      expect(Object.prototype.hasOwnProperty.call(badInput.json, "schema")).toBe(false);
 
       // Invalid option → 400 with the answer envelope.
       const badOption = await post("/resolve", { id: questionId, value: "maybe" });
@@ -287,8 +296,13 @@ describe("POST /resolve", () => {
     async () => {
       const { status, json } = await post("/resolve", { id: 999_999, value: "x" });
       expect(status).toBe(404);
+      // dome http's POST /resolve not-found uses the ANSWER_SCHEMA envelope
+      // (schema: "dome.answer/v1") — this is the ONE resolve error path that
+      // DOES carry a schema, and it matches http exactly (not dome.ask/v1).
       expect(json.schema).toBe("dome.answer/v1");
+      expect(json.status).toBe("error");
       expect(json.error).toBe("question-not-found");
+      expect(typeof json.message).toBe("string");
     },
     TEST_TIMEOUT_MS,
   );
