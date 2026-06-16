@@ -227,6 +227,39 @@ block yourself.
 - \`.dome/extensions/\` is optional vault-local extension code. The shipped
   first-party bundles live with the SDK and do not need to be copied here.
 
+## Writing wiki pages
+
+Follow the conventions Dome's adoption-phase lint checks — getting them right
+means clean adoption instead of warning diagnostics.
+
+**Frontmatter & page type.** Every \`wiki/\` page needs \`type:\` — the singular of
+its directory:
+
+| Type | Directory | For |
+|---|---|---|
+| \`entity\` | \`wiki/entities/\` | people, teams, products, projects, orgs |
+| \`concept\` | \`wiki/concepts/\` | ideas, themes, durable claims across captures |
+| \`source\` | \`wiki/sources/\` | papers, articles, meetings, scans — evidence |
+| \`synthesis\` | \`wiki/syntheses/\` | higher-order analysis, plans, positioning |
+
+Also carry \`created:\`/\`updated:\` ISO dates, a one-line \`description:\` (it
+compiles the index), and \`sources:\` — a list of \`[[wikilinks]]\` to the evidence
+the page rests on. Cite a source in prose with a \`[[wikilink]]\` rather than
+restating it; source-backing is the point.
+
+**Claims** are bold-key lines Dome tracks as durable, dated facts:
+\`- **Key:** value *(as of YYYY-MM-DD)* ^c…\`. The \`^c…\` anchor is the claim's
+stable identity — Dome stamps it; never write or edit it by hand.
+
+**Tasks** are checkbox lines with their own move-stable identity:
+\`- [ ] task text ^t…\` (\`[x]\` when done). The \`^t…\` anchor is how Dome reconciles
+a task across daily notes — never remove or change it, and leave any
+\`([↗](…))\` origin marker in place.
+
+**Generated blocks.** Text between Dome's \`<!-- dome.* -->\` HTML-comment markers
+(in dailies, \`core.md\`, index files) is machine-regenerated — edit the source it
+derives from, not the block, or your change is overwritten on the next sync.
+
 ## Load-bearing rules
 
 - Markdown plus git history are the source of truth.
