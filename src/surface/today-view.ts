@@ -9,7 +9,7 @@
 //   - counts are number-coerced with array-length fallbacks.
 //   - null-safe throughout: brief/calendar/hero return null if absent/malformed.
 
-import { stripWikilinks } from "../core/wikilink";
+import { stripWikilinks, wikilinkSlugs } from "../core/wikilink";
 
 // ── Field types ────────────────────────────────────────────────────────────────
 
@@ -20,6 +20,8 @@ export type TodayTaskRow = {
   readonly dueDate: string | null;
   /** Decoded URL/path from an inline `([↗](target))` origin marker, if present. */
   readonly origin?: string;
+  /** Slugs of all `[[wikilink]]` targets found in the raw task text (order-preserving, deduped). */
+  readonly entities?: readonly string[];
 };
 
 export type TodayQuestionRow = {
@@ -92,15 +94,18 @@ function parseTaskRows(raw: unknown): ReadonlyArray<TodayTaskRow> {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((item) => {
     const r = isRecord(item) ? item : {};
-    const text = typeof r.text === "string" ? stripWikilinks(r.text) : "";
+    const rawText = typeof r.text === "string" ? r.text : "";
+    const text = rawText.length > 0 ? stripWikilinks(rawText) : "";
     if (text.length === 0) return [];
     const origin = typeof r.origin === "string" ? r.origin : undefined;
+    const entities = wikilinkSlugs(rawText);
     return [{
       text,
       path: typeof r.path === "string" ? r.path : "",
       line: typeof r.line === "number" ? r.line : null,
       dueDate: typeof r.dueDate === "string" ? r.dueDate : null,
       ...(origin !== undefined ? { origin } : {}),
+      ...(entities.length > 0 ? { entities } : {}),
     }];
   });
 }
@@ -161,9 +166,11 @@ function parseHero(raw: unknown): TodayHeroItem | null {
   if (kind === "task") {
     const item = isRecord(raw.item) ? raw.item : null;
     if (item === null) return null;
-    const text = typeof item.text === "string" ? stripWikilinks(item.text) : "";
+    const rawText = typeof item.text === "string" ? item.text : "";
+    const text = rawText.length > 0 ? stripWikilinks(rawText) : "";
     if (text.length === 0) return null;
     const heroOrigin = typeof item.origin === "string" ? item.origin : undefined;
+    const entities = wikilinkSlugs(rawText);
     return {
       kind: "task",
       item: {
@@ -172,6 +179,7 @@ function parseHero(raw: unknown): TodayHeroItem | null {
         line: typeof item.line === "number" ? item.line : null,
         dueDate: typeof item.dueDate === "string" ? item.dueDate : null,
         ...(heroOrigin !== undefined ? { origin: heroOrigin } : {}),
+        ...(entities.length > 0 ? { entities } : {}),
       },
     };
   }

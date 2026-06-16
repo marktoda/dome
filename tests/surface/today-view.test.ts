@@ -36,5 +36,23 @@ test("addDays: malformed input returns the input unchanged (NaN-guard)", () => {
 test("hero task text stripped of wikilinks", () => {
   const v = parseTodayView({ date: "x", openTasks: [], followups: [], questions: [], counts: {}, brief: null, calendar: null,
     hero: { kind: "task", item: { text: "do [[wiki/y|the thing]]", path: "p", line: 1, dueDate: null } } });
-  expect(v.hero).toEqual({ kind: "task", item: { text: "do the thing", path: "p", line: 1, dueDate: null } });
+  expect(v.hero?.kind).toBe("task");
+  const item = (v.hero as { kind: "task"; item: { text: string; entities?: readonly string[] } }).item;
+  expect(item.text).toBe("do the thing");
+  expect(item.entities).toEqual(["y"]);
+});
+
+test("task rows expose [[entity]] slugs as a structured `entities` field", () => {
+  const view = parseTodayView({
+    date: "2026-06-15",
+    openTasks: [{ text: "ping [[people/cody-born]] and [[siyu|Siyu Z]] re: routing", path: "p", line: 1, dueDate: null }],
+    counts: { openTasks: 1, followups: 0, questions: 0 },
+  });
+  expect(view.openTasks[0]!.entities).toEqual(["cody-born", "siyu"]);
+  expect(view.openTasks[0]!.text).toBe("ping cody-born and Siyu Z re: routing"); // still stripped
+});
+
+test("a row with no wikilinks has empty/absent entities", () => {
+  const view = parseTodayView({ date: "x", openTasks: [{ text: "plain task", path: "p", line: 1, dueDate: null }], counts: { openTasks: 1, followups: 0, questions: 0 } });
+  expect(view.openTasks[0]!.entities ?? []).toEqual([]);
 });
