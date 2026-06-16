@@ -801,17 +801,25 @@ export async function logWithTrailers(opts: {
 }
 
 /**
- * The paths a commit changed vs its first parent, relative to repo root.
+ * The paths a commit changed vs its first parent, **vault-relative**.
  * `--root` makes the initial commit diff against the empty tree so all its
  * files are returned.  Git spawning stays in this module via `runNativeGit`,
  * mirroring `logWithTrailers`.
+ *
+ * Dogfood-mode safe: when the vault lives inside an outer git repo (non-empty
+ * `prefix`), we pass `--relative=<prefix>` to `git diff-tree` which both
+ * restricts output to paths under the prefix AND strips it — so callers always
+ * receive vault-relative paths regardless of where `.git/` lives. When the
+ * vault IS the git root (empty prefix) the flag is omitted and behaviour is
+ * identical to before. Pattern mirrors `latestFileInfoByPath` / `logWithTrailers`
+ * which both append `-- <prefix>` when prefix is non-empty.
  */
 export async function changedPathsForCommit(opts: {
   readonly path: string;
   readonly sha: string;
 }): Promise<ReadonlyArray<string>> {
-  const { root } = await resolveGitContext(opts.path);
-  const out = await runNativeGit([
+  const { root, prefix } = await resolveGitContext(opts.path);
+  const args = [
     "-C",
     root,
     "diff-tree",
@@ -819,8 +827,12 @@ export async function changedPathsForCommit(opts: {
     "--name-only",
     "-r",
     "--root",
-    opts.sha,
-  ]);
+  ];
+  if (prefix !== "") {
+    args.push(`--relative=${prefix}`);
+  }
+  args.push(opts.sha);
+  const out = await runNativeGit(args);
   return Object.freeze(
     out
       .split("\n")

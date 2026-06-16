@@ -111,7 +111,9 @@ describe("buildRecents", () => {
     expect(typeof a.title).toBe("string");
     expect(a.changedBy === "human" || a.changedBy === "engine").toBe(true);
     expect(typeof a.lastChangedAt).toBe("string");
-    expect(typeof a.subject).toBe("string");
+    // Dedup must keep the NEWEST commit (the edit), not the creation commit.
+    // Commit 3 has subject "update entity a"; Commit 1 had "add entity a".
+    expect(a.subject).toBe("update entity a");
   }, 30_000);
 
   test("title comes from frontmatter description when present", async () => {

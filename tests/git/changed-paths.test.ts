@@ -44,4 +44,26 @@ describe("changedPathsForCommit", () => {
     const root = await changedPathsForCommit({ path: dir, sha: commits.at(-1)!.oid });
     expect(root).toContain("x.md");
   });
+
+  test("nested vault: returns vault-relative paths, not repo-root-relative paths", async () => {
+    // Simulate the dogfood case: git root is `dir`, vault lives at `dir/sub`.
+    // A commit that touches `sub/wiki/entities/a.md` should appear as
+    // `wiki/entities/a.md` (vault-relative), NOT as `sub/wiki/entities/a.md`.
+    const dir = mkdtempSync(join(tmpdir(), "dome-cp3-"));
+    await git(dir, "init", "-q");
+    await git(dir, "config", "user.email", "t@t");
+    await git(dir, "config", "user.name", "t");
+
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(join(dir, "sub", "wiki", "entities"), { recursive: true });
+    await Bun.write(join(dir, "sub", "wiki", "entities", "a.md"), "# A\n");
+    await git(dir, "add", "."); await git(dir, "commit", "-qm", "add entity");
+
+    const commits = await log({ path: join(dir, "sub"), depth: 5 });
+    const sha = commits.at(-1)!.oid;
+    const paths = await changedPathsForCommit({ path: join(dir, "sub"), sha });
+
+    expect(paths).toContain("wiki/entities/a.md");
+    expect(paths).not.toContain("sub/wiki/entities/a.md");
+  });
 });

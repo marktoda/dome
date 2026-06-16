@@ -86,6 +86,10 @@ export async function buildRecents(
   const seen = new Set<string>();
   const out: RecentEntry[] = [];
 
+  // Perf note: one `changedPathsForCommit` subprocess per commit (up to COMMIT_SCAN_CAP).
+  // Acceptable for a low-frequency single-user panel. Follow-up: collapse to a single
+  // `git log --name-only` with a roots pathspec (the `latestFileInfoByPath` pattern in
+  // src/git.ts) if this loop ever becomes hot.
   for (const commit of commits) {
     if (out.length >= limit) break;
     const paths = await changedPathsForCommit({ path: vault, sha: commit.sha });
