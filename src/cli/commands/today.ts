@@ -35,6 +35,7 @@ import {
   shortenLabel,
   splitInlineLinks,
   statusGlyph,
+  stripEmphasis,
   truncate,
   visibleWidth,
   type Caps,
@@ -329,20 +330,60 @@ export function formatTodayResult(
 
   // Hero action line (→ / >) — never dome decide
   if (hero !== null) {
+    const heroArrow = caps.unicode ? "↗" : "->";
+    const heroArrowWidth = visibleWidth(heroArrow);
     if (hero.kind === "task") {
       const item = hero.item;
-      const heroText = truncate(item.text, 60);
-      const urgency = item.dueDate === null
+      // Urgency suffix — compute its plain visible width BEFORE paint so we
+      // can reserve the right number of columns.
+      const urgencyPlain = item.dueDate === null
+        ? ""
+        : item.dueDate < date
+        ? `   overdue ${daysBetween(item.dueDate, date)}d`
+        : item.dueDate === date
+        ? `   due today`
+        : `   due ${item.dueDate}`;
+      const urgencyPainted = item.dueDate === null
         ? ""
         : item.dueDate < date
         ? `   ${paint(`overdue ${daysBetween(item.dueDate, date)}d`, "err", caps)}`
         : item.dueDate === date
         ? `   ${paint("due today", "warn", caps)}`
         : `   ${paint(`due ${item.dueDate}`, "muted", caps)}`;
-      lines.push(`  ${glyph("pointer", caps)} ${heroText}${urgency}`);
+      const urgencyWidth = visibleWidth(urgencyPlain);
+
+      // Mirror renderRow: split out inline links, strip emphasis, shorten.
+      const { text: rawText, links: heroLinks } = splitInlineLinks(item.text);
+      const heroText = stripEmphasis(rawText);
+      const MAX_LINK_LABEL = 24;
+      const heroAffs = heroLinks.map((l) => ({
+        label: shortenLabel(l.label, MAX_LINK_LABEL, caps.unicode),
+        url: l.url,
+      }));
+      const heroLinkReserve =
+        heroAffs.length === 0
+          ? 0
+          : 3 +
+            heroAffs.reduce((a, x) => a + visibleWidth(x.label) + heroArrowWidth, 0) +
+            (heroAffs.length - 1) * 2;
+      const heroOriginReserve = item.origin !== undefined ? 3 + heroArrowWidth : 0;
+      // "  → " leader = 4 cols (2 indent + pointer char + space); same as taskWidth.
+      const heroTaskWidth = Math.max(24, caps.width - 4);
+      const heroBudget = Math.max(0, heroTaskWidth - urgencyWidth - heroLinkReserve - heroOriginReserve);
+      const heroLabel = shortenLabel(heroText, heroBudget, caps.unicode);
+
+      const heroAffordances = heroAffs
+        .map((x) => paint(`${hyperlink(x.label, x.url, caps)}${heroArrow}`, "ident", caps))
+        .join("  ");
+      const heroInlineTail = heroAffs.length > 0 ? `   ${heroAffordances}` : "";
+      const heroOriginTail =
+        item.origin !== undefined
+          ? `   ${paint(hyperlink(heroArrow, originUrl(item.origin, vault), caps), "ident", caps)}`
+          : "";
+      lines.push(`  ${glyph("pointer", caps)} ${heroLabel}${heroInlineTail}${heroOriginTail}${urgencyPainted}`);
     } else {
       const item = hero.item;
-      const questionText = truncate(item.question, 60);
+      const questionText = shortenLabel(stripEmphasis(item.question), 60, caps.unicode);
       lines.push(
         `  ${glyph("pointer", caps)} dome resolve ${item.id}   ${paint(questionText, "muted", caps)}`,
       );
@@ -386,7 +427,8 @@ export function formatTodayResult(
     // trailing clickable affordance per link, then a single origin ↗ if set.
     // The URL never enters the visible width, so it can never be sliced.
     const renderRow = (t: TodayTaskRow, tone: Tone): void => {
-      const { text, links } = splitInlineLinks(t.text);
+      const { text: rawRowText, links } = splitInlineLinks(t.text);
+      const text = stripEmphasis(rawRowText);
       const arrowWidth = visibleWidth(arrow); // ↗ (U+2197) is 2 cols, not 1
       const MAX_LINK_LABEL = 24;
       // Cap each affordance label, then reserve the EXACT visible width of the
@@ -457,7 +499,7 @@ export function formatTodayResult(
       const extra = questions.length - 1;
       const extraNote = extra > 0 ? `   ${paint(`+${extra}`, "muted", caps)}` : "";
       const askWidth = Math.max(24, caps.width - 40);
-      const questionLabel = shortenLabel(top.question, askWidth, caps.unicode);
+      const questionLabel = shortenLabel(stripEmphasis(top.question), askWidth, caps.unicode);
       lines.push(
         `  ? ${paint("ask", "muted", caps)}   #${top.id} ${questionLabel}   ${paint(top.resolveCommand, "ident", caps)}${extraNote}`,
       );

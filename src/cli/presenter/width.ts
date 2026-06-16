@@ -56,6 +56,14 @@ export function shortenLabel(text: string, width: number, unicode = true): strin
 // existing callers that import from this module continue to work.
 export { stripWikilinks } from "../../core/wikilink";
 
+/** Strip markdown BOLD (**x**) for terminal display. Conservative on purpose:
+ *  only the doubled-asterisk form, which is almost never legitimate in task
+ *  prose. Single * / _ and __ are LEFT INTACT so snake_case identifiers, bare
+ *  URLs, dunder names, and `2 * 3` math are never mangled. */
+export function stripEmphasis(text: string): string {
+  return text.replace(/\*\*([^*]+?)\*\*/g, "$1");
+}
+
 /**
  * Word-wrap plain (uncolored) text to a visible width. Words longer than
  * `width` get their own line rather than being split mid-word. Always
