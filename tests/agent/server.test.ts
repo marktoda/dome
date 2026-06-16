@@ -170,4 +170,55 @@ describe("createAskServer POST /ask/stream", () => {
     const res = await streamServer(["x"]).fetch(postStream({ question: "  " }));
     expect(res.status).toBe(400);
   });
+
+  test("emits error event on timeout, not a done event, and completes in time", async () => {
+    const TIMEOUT_MS = 30;
+    // The fake stream yields one text delta then stalls until the abort signal
+    // fires.  This exercises the timeout path without hanging indefinitely.
+    const s = createAskServer({
+      vaultPath: "/tmp/unused",
+      token: TOKEN,
+      timeoutMs: TIMEOUT_MS,
+      askStreamImpl: (_question: string, signal: AbortSignal): AskStream => {
+        async function* gen(): AsyncIterable<TextStreamPart<ToolSet>> {
+          yield { type: "text-delta", id: "t1", text: "partial" } as TextStreamPart<ToolSet>;
+          // Stall until the AbortController fires (timeout).
+          await new Promise<void>((resolve) => {
+            if (signal.aborted) {
+              resolve();
+            } else {
+              signal.addEventListener("abort", () => resolve(), { once: true });
+            }
+          });
+          // Generator ends naturally after the abort — the route sees the loop
+          // finish with controller.signal.aborted === true.
+        }
+        return {
+          fullStream: gen(),
+          citations: [],
+          finished: new Promise<{ stopReason: "budget" }>((resolve) => {
+            signal.addEventListener("abort", () => resolve({ stopReason: "budget" }), { once: true });
+          }),
+        };
+      },
+    });
+
+    const start = Date.now();
+    const res = await s.fetch(postStream({ question: "will this stall?" }));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/event-stream");
+
+    const body = await res.text();
+    const elapsed = Date.now() - start;
+
+    // Must have gotten the partial text event before the timeout fired.
+    expect(body).toContain('"type":"text"');
+    expect(body).toContain('"partial"');
+    // Must have an error event mentioning the timeout — NOT a done event.
+    expect(body).toContain('"type":"error"');
+    expect(body).toContain(`${TIMEOUT_MS}ms`);
+    expect(body).not.toContain('"type":"done"');
+    // Should complete well within a couple of seconds.
+    expect(elapsed).toBeLessThan(3000);
+  });
 });

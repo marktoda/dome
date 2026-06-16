@@ -140,8 +140,13 @@ export function runAskStream(opts: AskOptions): AskStream {
   return {
     fullStream: result.fullStream,
     citations,
-    finished: Promise.resolve(result.finishReason).then((finishReason) => ({
-      stopReason: stopReasonOf(finishReason),
-    })),
+    // Never rejects: on abort-before-first-step the AI SDK may reject
+    // result.finishReason, which would leave a dangling unhandledRejection if
+    // the route's for-await throws before reaching `await stream.finished`.
+    // Catch here and fall back to "budget" so the promise is always settled.
+    finished: Promise.resolve(result.finishReason).then(
+      (finishReason) => ({ stopReason: stopReasonOf(finishReason) }),
+      () => ({ stopReason: "budget" as const }),
+    ),
   };
 }

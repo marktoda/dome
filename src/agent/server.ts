@@ -357,6 +357,7 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
       const sseBody = new ReadableStream<Uint8Array>({
         async start(ctrl) {
           try {
+            let abortedInLoop = false;
             for await (const part of stream.fullStream) {
               if (part.type === "text-delta") {
                 ctrl.enqueue(sse({ type: "text", text: part.text }));
@@ -366,12 +367,27 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
                     ? part.error.message
                     : String(part.error);
                 ctrl.enqueue(sse({ type: "error", message }));
+              } else if (part.type === "abort") {
+                // AI SDK signals an abort via a stream part — emit error and stop.
+                const message = controller.signal.aborted
+                  ? `ask exceeded ${timeoutMs}ms.`
+                  : "aborted";
+                ctrl.enqueue(sse({ type: "error", message }));
+                abortedInLoop = true;
+                break;
               }
             }
-            const { stopReason } = await stream.finished;
-            ctrl.enqueue(
-              sse({ type: "done", citations: stream.citations, stopReason }),
-            );
+            if (abortedInLoop || controller.signal.aborted) {
+              // Timed out or aborted after the loop: emit error, not done.
+              if (!abortedInLoop) {
+                ctrl.enqueue(sse({ type: "error", message: `ask exceeded ${timeoutMs}ms.` }));
+              }
+            } else {
+              const { stopReason } = await stream.finished;
+              ctrl.enqueue(
+                sse({ type: "done", citations: stream.citations, stopReason }),
+              );
+            }
           } catch (e) {
             const message = controller.signal.aborted
               ? `ask exceeded ${timeoutMs}ms.`
