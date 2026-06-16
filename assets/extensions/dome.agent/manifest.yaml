@@ -11,6 +11,8 @@ processors:
       - kind: signal
         name: document.changed
         pathPattern: "inbox/raw/*.md"
+      - kind: schedule
+        cron: "0 * * * *"
     capabilities:
       - kind: read
         paths:
