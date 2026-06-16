@@ -42,6 +42,7 @@ import {
   type Tone,
 } from "../presenter";
 import { daysBetween, parseTodayView, type TodayTaskRow } from "../../surface/today-view";
+import { compareStrings } from "../../core/compare";
 import { resolveVaultPath } from "../../surface/resolve-vault";
 import { EX_USAGE } from "../exit-codes";
 
@@ -426,7 +427,9 @@ export function formatTodayResult(
     // Render one task row: clean sentence (links pulled out, shortened) + a
     // trailing clickable affordance per link, then a single origin ↗ if set.
     // The URL never enters the visible width, so it can never be sliced.
-    const renderRow = (t: TodayTaskRow, tone: Tone): void => {
+    // `indent` (default 0) adds that many space columns AFTER the leader and
+    // shrinks the taskWidth budget by the same amount so the width invariant holds.
+    const renderRow = (t: TodayTaskRow, tone: Tone, indent: number = 0): void => {
       const { text: rawRowText, links } = splitInlineLinks(t.text);
       const text = stripEmphasis(rawRowText);
       const arrowWidth = visibleWidth(arrow); // ↗ (U+2197) is 2 cols, not 1
@@ -447,7 +450,9 @@ export function formatTodayResult(
             (affs.length - 1) * 2;
       // Reserve width for the origin ↗ affordance when present.
       const originReserve = t.origin !== undefined ? 3 + arrowWidth : 0;
-      const label = shortenLabel(text, Math.max(0, taskWidth - linkReserve - originReserve), caps.unicode);
+      // Reduce available label width by the extra indent to keep total ≤ taskWidth.
+      const effectiveWidth = taskWidth - indent;
+      const label = shortenLabel(text, Math.max(0, effectiveWidth - linkReserve - originReserve), caps.unicode);
       const g = paint(statusGlyph(tone, caps), tone, caps);
       const affordances = affs
         .map((x) => paint(`${hyperlink(x.label, x.url, caps)}${arrow}`, "ident", caps))
@@ -457,19 +462,82 @@ export function formatTodayResult(
         t.origin !== undefined
           ? `   ${paint(hyperlink(arrow, originUrl(t.origin, vault), caps), "ident", caps)}`
           : "";
-      lines.push(`  ${g} ${label}${inlineTail}${originTail}`);
+      const indentStr = " ".repeat(indent);
+      lines.push(`  ${g} ${indentStr}${label}${inlineTail}${originTail}`);
     };
 
+    const CLUSTER_MIN = 3;
     const OVERDUE_CAP = 6;
     const TODAY_CAP = 4;
     const OPEN_CAP = 4;
     const capOf = (n: number): number => (opts.verbose === true ? Number.POSITIVE_INFINITY : n);
 
+    // Group shown tasks by entity clusters, then emit bucket header + clusters + ungrouped.
+    // Returns how many tasks were shown (for overflow accounting — unchanged).
     const section = (header: string, items: ReadonlyArray<TodayTaskRow>, capN: number, tone: Tone): number => {
       if (items.length === 0) return 0;
       lines.push(`  ${paint(header, "muted", caps)}`);
       const shown = Math.min(capOf(capN), items.length);
-      for (const t of items.slice(0, shown)) renderRow(t, tone);
+      const shownSlice = items.slice(0, shown);
+
+      // Tally entity → count over the shown slice.
+      const entityCount = new Map<string, number>();
+      for (const t of shownSlice) {
+        for (const e of (t.entities ?? [])) {
+          entityCount.set(e, (entityCount.get(e) ?? 0) + 1);
+        }
+      }
+
+      // Entities with count >= CLUSTER_MIN are qualifying clusters.
+      const clusterEntities = new Set(
+        [...entityCount.entries()]
+          .filter(([, n]) => n >= CLUSTER_MIN)
+          .map(([e]) => e),
+      );
+
+      // Assign each shown task to its dominant cluster (most members; ties: alphabetical slug).
+      // Tasks with no qualifying entity are ungrouped (clusterKey === null).
+      const clusterKey = (t: TodayTaskRow): string | null => {
+        const qualifying = (t.entities ?? []).filter((e) => clusterEntities.has(e));
+        if (qualifying.length === 0) return null;
+        return qualifying.reduce((best, e) => {
+          const bc = entityCount.get(best) ?? 0;
+          const ec = entityCount.get(e) ?? 0;
+          if (ec > bc) return e;
+          if (ec === bc && e < best) return e;
+          return best;
+        });
+      };
+
+      // Sort clusters by member count desc, tie alphabetical.
+      const sortedClusters = [...clusterEntities].sort((a, b) => {
+        const diff = (entityCount.get(b) ?? 0) - (entityCount.get(a) ?? 0);
+        return diff !== 0 ? diff : compareStrings(a, b);
+      });
+
+      // Build map: cluster entity -> member tasks (in original bucket order).
+      const clusterMembers = new Map<string, TodayTaskRow[]>();
+      for (const e of sortedClusters) clusterMembers.set(e, []);
+      const ungrouped: TodayTaskRow[] = [];
+      for (const t of shownSlice) {
+        const key = clusterKey(t);
+        if (key !== null) {
+          clusterMembers.get(key)!.push(t);
+        } else {
+          ungrouped.push(t);
+        }
+      }
+
+      // Emit clusters first, then ungrouped flat.
+      const CLUSTER_INDENT = 2;
+      for (const e of sortedClusters) {
+        const members = clusterMembers.get(e)!;
+        if (members.length === 0) continue;
+        lines.push(`  ${paint(`${e}  (${members.length})`, "muted", caps)}`);
+        for (const t of members) renderRow(t, tone, CLUSTER_INDENT);
+      }
+      for (const t of ungrouped) renderRow(t, tone);
+
       return shown;
     };
 

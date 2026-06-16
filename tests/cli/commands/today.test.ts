@@ -966,3 +966,157 @@ describe("dome today: stripEmphasis applied in renderRow", () => {
     expect(taskLine).toContain("__Important task__");
   });
 });
+
+// ----- dome today entity grouping (Task 2) ------------------------------------
+//
+// Within each bucket (overdue/dueToday/open), shown tasks (post-cap) that
+// share an entity slug with >= CLUSTER_MIN (3) sibling shown tasks form a
+// cluster. Each cluster gets a muted sub-header "  <entity>  (N)" followed by
+// its members indented one extra level. Ungrouped tasks render flat as before.
+//
+// Fixtures use wikilink markup in task text so parseTodayView extracts
+// entities via wikilinkSlugs (the same path production data uses).
+
+describe("today entity grouping", () => {
+  // Use fixed-width ASCII (non-color) caps for deterministic assertion strings.
+  const CAPS = resolveCaps({ isTTY: false });
+
+  // Build a raw task row. text must contain [[wikilinks]] for entities to be
+  // extracted by parseTodayView -> wikilinkSlugs.
+  const mkRow = (text: string, dueDate: string | null) =>
+    ({ text, path: "wiki/t.md", line: 1, dueDate });
+
+  // 1. threshold met: 3 tasks share "cody-born" -> sub-header; dinari flat
+
+  test("3 overdue tasks sharing cody-born -> cluster sub-header + members; lone dinari flat", () => {
+    const date = "2026-06-15";
+    const data = {
+      date,
+      hero: null, brief: null, calendar: null,
+      openTasks: [
+        mkRow("cody task alpha [[cody-born]]",  "2026-06-10"),
+        mkRow("cody task beta [[cody-born]]",   "2026-06-10"),
+        mkRow("cody task gamma [[cody-born]]",  "2026-06-10"),
+        mkRow("dinari task [[dinari]]",          "2026-06-10"),
+      ],
+      followups: [], questions: [],
+      counts: { openTasks: 4, followups: 0, questions: 0 },
+    };
+    const out = formatTodayResult(data, CAPS, "/vault");
+
+    // Sub-header for the cody-born cluster (3 members).
+    expect(out).toMatch(/cody-born\s+\(3\)/);
+
+    // All three cody members appear after the sub-header (stripWikilinks removes the [[...]]).
+    const lines = out.split("\n");
+    const headerIdx = lines.findIndex((l) => /cody-born\s+\(3\)/.test(l));
+    expect(headerIdx).toBeGreaterThanOrEqual(0);
+
+    const afterHeader = lines.slice(headerIdx + 1).join("\n");
+    expect(afterHeader).toContain("cody task alpha");
+    expect(afterHeader).toContain("cody task beta");
+    expect(afterHeader).toContain("cody task gamma");
+
+    // dinari appears in the output but has NO cluster sub-header (only 1 member).
+    expect(out).toContain("dinari task");
+    expect(out).not.toMatch(/dinari\s+\(\d+\)/);
+  });
+
+  // 2. below threshold: 2 tasks sharing an entity -> flat, no sub-header
+
+  test("2 tasks sharing an entity (below CLUSTER_MIN=3) -> NO sub-header", () => {
+    const date = "2026-06-15";
+    const data = {
+      date,
+      hero: null, brief: null, calendar: null,
+      openTasks: [
+        mkRow("alpha task [[shared-ent]]", "2026-06-10"),
+        mkRow("beta task [[shared-ent]]",  "2026-06-10"),
+      ],
+      followups: [], questions: [],
+      counts: { openTasks: 2, followups: 0, questions: 0 },
+    };
+    const out = formatTodayResult(data, CAPS, "/vault");
+    // No cluster header for shared-ent (only 2 tasks).
+    expect(out).not.toMatch(/shared-ent\s+\(\d+\)/);
+    // Both tasks still rendered flat.
+    expect(out).toContain("alpha task");
+    expect(out).toContain("beta task");
+  });
+
+  // 3. task with multiple entities joins the dominant cluster only (no duplication)
+
+  test("task with [[ent-a]] [[ent-b]] where each has 3 members joins one cluster, not both", () => {
+    const date = "2026-06-15";
+    // shared-task has both ent-a and ent-b; count(ent-a)=3, count(ent-b)=3 -> tie -> alphabetical -> ent-a
+    const data = {
+      date,
+      hero: null, brief: null, calendar: null,
+      openTasks: [
+        mkRow("a task 1 [[ent-a]]",            "2026-06-10"),
+        mkRow("a task 2 [[ent-a]]",            "2026-06-10"),
+        mkRow("shared task [[ent-a]] [[ent-b]]", "2026-06-10"),
+        mkRow("b task 1 [[ent-b]]",            "2026-06-10"),
+        mkRow("b task 2 [[ent-b]]",            "2026-06-10"),
+      ],
+      followups: [], questions: [],
+      counts: { openTasks: 5, followups: 0, questions: 0 },
+    };
+    const out = formatTodayResult(data, CAPS, "/vault");
+
+    // "shared task" appears exactly once (not duplicated across two clusters).
+    const sharedCount = (out.match(/shared task/g) ?? []).length;
+    expect(sharedCount).toBe(1);
+
+    // Both clusters exist (each has >= 3 members counting the shared task per entity tally).
+    expect(out).toMatch(/ent-a\s+\(\d+\)/);
+    expect(out).toMatch(/ent-b\s+\(\d+\)/);
+  });
+
+  // 4. width invariant: every line <= width with extra cluster indent
+
+  test("at width 50 with a cluster, every line (incl. sub-header + indented members) <= 50", () => {
+    const NARROW = { color: false, unicode: false, width: 50, hyperlinks: false } as const;
+    const date = "2026-06-15";
+    const data = {
+      date,
+      hero: null, brief: null, calendar: null,
+      openTasks: [
+        mkRow("cluster task alpha [[my-entity]]",  "2026-06-10"),
+        mkRow("cluster task beta [[my-entity]]",   "2026-06-10"),
+        mkRow("cluster task gamma [[my-entity]]",  "2026-06-10"),
+      ],
+      followups: [], questions: [],
+      counts: { openTasks: 3, followups: 0, questions: 0 },
+    };
+    const out = formatTodayResult(data, NARROW, "/vault");
+    expect(out).toMatch(/my-entity\s+\(3\)/);
+    for (const line of out.split("\n")) {
+      expect(visibleWidth(line)).toBeLessThanOrEqual(50);
+    }
+  });
+
+  // 5. no entities anywhere -> unchanged flat rendering
+
+  test("tasks with no entities -> flat rendering, no cluster headers", () => {
+    const date = "2026-06-15";
+    const data = {
+      date,
+      hero: null, brief: null, calendar: null,
+      openTasks: [
+        { text: "plain task alpha", path: "wiki/t.md", line: 1, dueDate: "2026-06-10" },
+        { text: "plain task beta",  path: "wiki/t.md", line: 2, dueDate: "2026-06-10" },
+        { text: "plain task gamma", path: "wiki/t.md", line: 3, dueDate: "2026-06-10" },
+      ],
+      followups: [], questions: [],
+      counts: { openTasks: 3, followups: 0, questions: 0 },
+    };
+    const out = formatTodayResult(data, CAPS, "/vault");
+    // No cluster headers (no parenthesized entity counts).
+    expect(out).not.toMatch(/\w[\w-]*\s+\(\d+\)/);
+    // All tasks rendered.
+    expect(out).toContain("plain task alpha");
+    expect(out).toContain("plain task beta");
+    expect(out).toContain("plain task gamma");
+  });
+});
