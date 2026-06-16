@@ -14,7 +14,9 @@
 
 import { describe, expect, test } from "bun:test";
 
-import staleTaskWarden from "../../../assets/extensions/dome.daily/processors/stale-task-warden";
+import staleTaskWarden, {
+  MAX_SETTLE_STALE,
+} from "../../../assets/extensions/dome.daily/processors/stale-task-warden";
 import type { QuestionEffect } from "../../../src/core/effect";
 import { treeOid, type Snapshot } from "../../../src/core/processor";
 import { makeManualProposal } from "../../../src/core/proposal";
@@ -370,4 +372,107 @@ describe("dome.daily.stale-task-warden", () => {
     const effects = await runWarden(emptySnapshot);
     expect(effects.filter((e): e is QuestionEffect => e.kind === "question")).toHaveLength(0);
   });
+
+  test("cap: > MAX_SETTLE_STALE stale tasks → exactly MAX_SETTLE_STALE questions, worst first", async () => {
+    // Build 10 overdue tasks all clearly stale (14–23 days overdue), all above
+    // STALE_OVERDUE_DAYS = 14. Expectation: only the top 8 (most-overdue) are
+    // emitted, i.e. the 16–23d ones; 14d and 15d are cut off.
+    const TASK_COUNT = 10;
+    const tasks: Array<{ anchor: string; daysOverdue: number }> = [];
+    for (let i = 0; i < TASK_COUNT; i++) {
+      tasks.push({
+        anchor: `tcap${String(i).padStart(11, "0")}`,
+        // 23, 22, 21, ..., 14 days overdue (all ≥ STALE_OVERDUE_DAYS)
+        daysOverdue: 23 - i,
+      });
+    }
+
+    // Each task gets its own project file to avoid any carry-forward confusion.
+    const files: Record<string, string> = {
+      "wiki/dailies/2026-06-15.md": dailyWithLoops("2026-06-15", []),
+    };
+    for (const task of tasks) {
+      const dueDate = wholeDaysBeforeToday(task.daysOverdue);
+      const body = `Cap test task ${task.daysOverdue}d overdue \u{1F4C5} ${dueDate}`;
+      files[`wiki/projects/cap-task-${task.daysOverdue}.md`] = [
+        "# Cap test",
+        "",
+        `- [ ] ${body} ^${task.anchor}`,
+        "",
+      ].join("\n");
+    }
+
+    const snapshot = Object.freeze({
+      commit: HEAD_COMMIT,
+      tree: treeOid("7777777777777777777777777777777777777777"),
+      readFile: async (p: string) => files[p] ?? null,
+      listMarkdownFiles: async () => Object.freeze(Object.keys(files)),
+      getFileInfo: async (p: string) => {
+        if (!(p in files)) return null;
+        return Object.freeze({
+          lastChangedCommit: HEAD_COMMIT,
+          lastChangedAt: "2026-05-01T10:00:00.000Z",
+          lastHumanChangedAt: null,
+        });
+      },
+    });
+
+    const effects = await runWarden(snapshot);
+    const questions = effects.filter(
+      (e): e is QuestionEffect => e.kind === "question",
+    );
+
+    // Exactly MAX_SETTLE_STALE (8) questions despite 10 stale tasks.
+    expect(questions).toHaveLength(MAX_SETTLE_STALE);
+
+    // The emitted questions must be the 8 MOST overdue (daysOverdue 16..23).
+    // daysOverdue 14 and 15 are cut off.
+    const emittedTexts = questions.map((q) => q.question);
+    for (let daysOverdue = 16; daysOverdue <= 23; daysOverdue++) {
+      expect(emittedTexts.some((t) => t.includes(`${daysOverdue}d overdue`))).toBe(true);
+    }
+    // The two least-stale (14d, 15d) must NOT appear.
+    expect(emittedTexts.some((t) => t.includes("14d overdue"))).toBe(false);
+    expect(emittedTexts.some((t) => t.includes("15d overdue"))).toBe(false);
+
+    // Questions are ordered worst-first: most-overdue first.
+    for (let i = 0; i < questions.length - 1; i++) {
+      const a = questions[i]!;
+      const b = questions[i + 1]!;
+      // Extract days-overdue number from question text ("N days overdue")
+      const aDays = Number(/(\d+) days overdue/.exec(a.question)?.[1]);
+      const bDays = Number(/(\d+) days overdue/.exec(b.question)?.[1]);
+      expect(aDays).toBeGreaterThanOrEqual(bDays);
+    }
+  });
+
+  test("metadata: anchor is in material and recommendedAnswer is 'keep' for anchored task", async () => {
+    // The overdue task in the fixture has OVERDUE_TASK_ANCHOR — verify it round-trips.
+    const effects = await runWarden();
+    const questions = effects.filter(
+      (e): e is QuestionEffect => e.kind === "question",
+    );
+    const overdueQ = questions.find((q) => q.question.includes(OVERDUE_15_DATE));
+    expect(overdueQ).toBeDefined();
+
+    // recommendedAnswer defaults to "keep" (bias toward not auto-disrupting).
+    expect(overdueQ!.metadata?.recommendedAnswer).toBe("keep");
+
+    // anchor is carried in material so Task 2 (settle-stale-answer) can locate
+    // the origin line via `^${anchor}` in metadata.destination.
+    expect(overdueQ!.metadata?.material).toBe(OVERDUE_TASK_ANCHOR);
+  });
 });
+
+// ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Return the YYYY-MM-DD date string that is `n` whole days before TODAY (2026-06-15).
+ */
+function wholeDaysBeforeToday(n: number): string {
+  const baseMs = Date.parse("2026-06-15T00:00:00.000Z");
+  const targetMs = baseMs - n * 86_400_000;
+  return new Date(targetMs).toISOString().slice(0, 10);
+}
