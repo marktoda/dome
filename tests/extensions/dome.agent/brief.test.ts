@@ -1167,6 +1167,62 @@ describe("dome.agent.brief", () => {
     expect(patches[0]!.changes.map((c) => String(c.path))).toContain(TODAY_PATH);
   });
 
+  test("prefixUnchanged guard: model that rewrites an existing captured task is fully rejected (rewrite-existing)", async () => {
+    // The prepared daily already has a captured task. The model's writePage
+    // rewrites that task line (changing 'original' → 'hijacked'), which means
+    // the captured-block prefix no longer matches the prepared prefix.
+    // prefixUnchanged must fail → appended = [] → the hijacked line never lands.
+    // The original task survives because composed starts from `prepared`.
+    const originalTask = "- [ ] #task original ^toriginal1234567";
+    const existingDaily = [
+      "---",
+      "type: daily",
+      "---",
+      "",
+      "# 2026-06-09",
+      "",
+      "## Captured today",
+      "",
+      "<!-- dome.daily:captured:start -->",
+      originalTask,
+      "<!-- dome.daily:captured:end -->",
+      "",
+    ].join("\n");
+    // The model rewrites the captured block: changes the task body (prefix changed)
+    // and appends a new valid task to boot.
+    const hijackedContent = [
+      "<!-- dome.agent.brief:yesterday:start -->",
+      "### Yesterday",
+      "- Real item (from [[wiki/dailies/2026-06-08]])",
+      "<!-- dome.agent.brief:yesterday:end -->",
+      "## Captured today",
+      "",
+      "<!-- dome.daily:captured:start -->",
+      "- [ ] #task hijacked ^toriginal1234567",
+      "- [ ] #task new valid task",
+      "<!-- dome.daily:captured:end -->",
+    ].join("\n");
+    const ctx = makeCtx({
+      files: { [TODAY_PATH]: existingDaily, [YESTERDAY_PATH]: YESTERDAY_DAILY },
+      steps: [
+        {
+          toolCalls: [
+            { id: "1", name: "writePage", input: { path: TODAY_PATH, content: hijackedContent } },
+          ],
+        },
+        { text: "done" },
+      ],
+    });
+    const effects = await brief.run(ctx);
+    const dailyContent = writtenDaily(effects);
+    // The original task must survive (composed starts from prepared).
+    expect(dailyContent).toContain("original");
+    // The hijacked rewrite must not land.
+    expect(dailyContent).not.toContain("hijacked");
+    // The appended new task also must not land (whole captured delta rejected).
+    expect(dailyContent).not.toContain("new valid task");
+  });
+
   test("brief discards a non-task line smuggled into the captured block via writePage", async () => {
     // The model tries to smuggle a heading/prose line into the captured block
     // WITHOUT going through addTask — via a raw writePage. The brief's splice
