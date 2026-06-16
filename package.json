@@ -35,7 +35,9 @@
     "v1:release-check": "bun scripts/v1-release-check.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.84",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "ai": "^6.0.206",
     "commander": "^14.0.3",
     "gray-matter": "^4.0.3",
     "isomorphic-git": "^1.27.0",
