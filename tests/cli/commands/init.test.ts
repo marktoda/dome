@@ -176,7 +176,7 @@ describe("runInit", () => {
       expect(agentsBody).toContain("^c…"); // claim anchor — never hand-edit
       expect(agentsBody).toContain("^t…"); // task anchor — move-stable identity
       expect(agentsBody).toContain("**Generated blocks.**");
-      expect(agentsBody).toContain("<!-- dome.* -->");
+      expect(agentsBody).toContain("machine-regenerated"); // generated-block awareness (no literal marker token — splice-guard)
 
       const claudePath = join(target, "CLAUDE.md");
       expect(existsSync(claudePath)).toBe(true);

@@ -256,9 +256,10 @@ stable identity — Dome stamps it; never write or edit it by hand.
 a task across daily notes — never remove or change it, and leave any
 \`([↗](…))\` origin marker in place.
 
-**Generated blocks.** Text between Dome's \`<!-- dome.* -->\` HTML-comment markers
-(in dailies, \`core.md\`, index files) is machine-regenerated — edit the source it
-derives from, not the block, or your change is overwritten on the next sync.
+**Generated blocks.** Some sections are machine-regenerated between paired,
+Dome-owned HTML-comment markers (named like \`dome.<bundle>\`; you'll see them in
+dailies, \`core.md\`, and index files) — edit the source they derive from, not the
+block itself, or your change is overwritten on the next sync.
 
 ## Load-bearing rules
 
