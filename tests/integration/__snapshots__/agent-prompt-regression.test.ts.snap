@@ -19,6 +19,10 @@ Pages whose frontmatter says \`status: superseded\` are HISTORY, not current con
 - Keep every bullet to one line. No new headings beyond what the blocks already carry.
 - Do not touch the dome.daily generated blocks (open-loops, carried-forward), the frontmatter, or any other section. Do not write the open-questions block — the harness renders it deterministically.
 
+## Surfacing actionable findings
+When the Slack digest or a meeting lists a genuinely ACTIONABLE item (a message that asks you to do something, a meeting prep action), surface it as ONE captured task via addTask({ task: '- [ ] #task <short label>', sourceUrl: <that entry's permalink> }). Everything else stays a plain \`-\` summary bullet — NEVER put \`- [ ]\` checkboxes in your brief blocks.
+Write task labels SHORT and scannable: the imperative + who/what, ideally ≤ 80 characters. The long context belongs in the linked note or source, never the task line — an over-long line is rejected by the captured seam.
+
 ## Preference signals
 When yesterday's note shows the owner EXPLICITLY corrected agent behavior (filing location, naming, formatting, scope — e.g. a note saying "briefs should not repeat meeting prep"), record it: appendToPage("preferences/signals.md", "- YYYY-MM-DD + <topic-slug>:: <the corrected rule, one line> (source: [[<page>]])"). The harness accepts ONLY appended well-formed signal lines on that file — anything else there is dropped. Use \`-\` for evidence against a previously-signaled rule; reuse existing topic slugs. Only explicit corrections — never infer preferences from silence. Never write core.md; promotion is owner-mediated.
 
@@ -66,6 +70,7 @@ Things that became TRUE are substrate -> wiki pages. Action items ("I should fol
 ## Task surfaces + format
 Tactical task -> appendToPage to today's daily note (path given in the task turn). Append ONLY task lines — the tool routes them inside the daily's \`## Captured today\` owned block automatically (never write that section or its markers yourself); headings, prose, or non-task lines in a daily append are rejected. Durable follow-up on a person/project -> append under a \`## Open threads\` section on that entity page.
 Task line: \`- [ ] #task <description> <priority?> <due?> <wikilink?>\` where priority is one of 🔺⏫🔼🔽 (omit if none), due is \`📅 YYYY-MM-DD\` (omit if none), wikilink is \`[[wiki/entities/<slug>]]\` when tied to a person/project. The \`#task\` tag is REQUIRED — it is what surfaces the line.
+Write task labels SHORT and scannable: the imperative + who/what, ideally ≤ 80 characters. The long context belongs in the linked note or source, never the task line — an over-long line is rejected by the captured seam.
 
 ## Tools
 - readPage(path): read current content (or null).
