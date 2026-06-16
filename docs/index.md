@@ -134,6 +134,7 @@ Named semantic linter specs. Each names the rule, what it checks, and the target
 ## Concepts
 
 - [[wiki/concepts/brain-companion]] — Dome's product framing: ambient, always-accessible memory.
+- [[wiki/concepts/client-model]] — The three-layer client model: the user operates a client (primarily an LLM agent) over the compiled vault; the contract is the product; the CLI is admin/agent-tool/gap-filler.
 - [[wiki/concepts/llm-wiki-pattern]] — Karpathy's pattern: LLM as wiki maintainer, raw immutable, wiki synthesized.
 
 ## Sources
