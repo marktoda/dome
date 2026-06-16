@@ -63,6 +63,38 @@ Algorithm per write change:
 
 Deletes are unchanged (already a no-op when absent).
 
+### Implementation note — refined during planning (the three "bases")
+
+The original sketch assumed `applyPatchToCandidate` already received the read
+snapshot as `runContext.base`. Reading the garden plumbing showed it does not:
+in the **garden sub-proposal path** three distinct commits are conflated.
+
+1. **candidate** — the tree the patch is applied onto; becomes the new commit's
+   parent AND `proposal.base`. In the garden path this is the *live* adopted ref
+   (`resolveCurrentAdopted(...)`), which advances as sibling patches adopt.
+2. **merge base** — the snapshot the emitting processor *read* (the garden
+   orchestrator's `adopted` param; for the non-signal dispatch path, its
+   `adopted` arg). Needed for the 3-way diff. Today it is *collapsed onto the
+   candidate* (`garden-sub-proposals.ts` sets `candidate: opts.base` with
+   `base === candidate`), so a naive `ours===base` fast path would never fire a
+   merge — this is precisely why the fix needs new plumbing.
+3. **Dome-Base trailer** — left unchanged (stays = candidate).
+
+`proposal.base` MUST equal the new commit's parent: `adopt()` compiles signals
+over `compileRange({ base: proposal.base, head: candidate })`, so setting it to
+the older read snapshot would replay sibling changes as if they were this
+proposal's. Therefore the merge base is carried in a **new, optional**
+`runContext.mergeBase: CommitOid` field rather than by repurposing `base`. When
+`mergeBase` is absent it defaults to `candidate` → the merge collapses to today's
+overwrite (zero behavior change). Only the garden paths set it.
+
+The **adoption-phase** sink (`compiler-host.ts`) is *not* wired for merge in this
+change: it already passes a distinct `base`/`candidate`, and the adoption loop has
+its own fixpoint re-run that self-heals a within-iteration clobber. The garden
+phase fires each processor **once per adoption** (no fixpoint loop), so it cannot
+self-heal — that is why the merge is load-bearing there and there alone. Wiring
+the adoption sink is a possible future generalization, explicitly out of scope.
+
 ### Merge mechanism
 Pure in-process line diff3 — no temp files, staying within the engine's "everything
 through isomorphic-git plumbing, never touch the working tree" boundary. Reuse an

@@ -4,16 +4,20 @@
 
 **Goal:** Stop the non-converging garden loop (and its whole class) by making `applyPatchToCandidate` apply a processor's `write` change as a **3-way merge of its intended (base→content) diff onto the live candidate**, instead of a whole-blob overwrite that reverts sibling processors' regions.
 
-**Architecture:** Pure in-process line diff3 (no temp files, no working tree). `applyPatchToCandidate` reads `ours` (path@candidate) and `base` (path@runContext.base); fast-path when equal (today's behavior), else diff3-merge `theirs`=`change.content`; conflicting hunks resolve to `ours` (never revert) + optional diagnostic. Convergence proven by test.
+**Architecture:** Pure in-process line diff3 (no temp files, no working tree). `applyPatchToCandidate` gains a new optional `runContext.mergeBase` (the commit the emitting processor *read*). For each `write` it reads `ours` (path@candidate) and `base` (path@mergeBase); when `mergeBase` is absent or equals `candidate` it overwrites (today's behavior, byte-identical); otherwise it diff3-merges `theirs`=`change.content` onto `ours`, conflicts resolving to `ours` (never revert) + optional diagnostic. The garden orchestrator and the non-signal garden dispatch then *feed* `mergeBase` = the snapshot their processors read; `proposal.base`/`candidate`/`Dome-Base` are untouched. Convergence proven by test.
 
-**Tech Stack:** TypeScript on Bun; isomorphic-git plumbing; `bun test`. Files under `src/engine/core/`.
+**Tech Stack:** TypeScript on Bun; isomorphic-git plumbing; `bun test`. Files under `src/engine/core/` and `src/engine/garden/`.
 
-**Design:** `docs/cohesive/brainstorms/2026-06-16-garden-patch-3way-merge.md`.
+**Design:** `docs/cohesive/brainstorms/2026-06-16-garden-patch-3way-merge.md` (see "the three bases" note).
 
-**Key facts (verified):**
-- Fix site: `src/engine/core/apply-patch.ts` → `applyPatchToCandidate`. Loop (lines 126–143) hashes `change.content` to a blob unconditionally (overwrite). It already has `opts.candidate` (CommitOid) and `opts.runContext.base` (CommitOid).
-- Read a file at a commit: `git.readBlob({ fs, dir: root, oid: <commitOid>, filepath: <repo-rel path> })` resolves the path within that commit's tree; throws/`NotFoundError` when absent → treat as `null`.
+**Key facts (verified by reading the code):**
+- Fix site: `src/engine/core/apply-patch.ts` → `applyPatchToCandidate`. Loop (lines 126–143) hashes `change.content` to a blob unconditionally (overwrite).
+- **The merge base is NOT `runContext.base` today.** In the garden sub-proposal path (`src/engine/garden/garden-sub-proposals.ts:55-64`) the call sets `candidate: opts.base` AND `runContext.base: opts.base` — i.e. base === candidate === the *live* adopted ref. `proposal.base` is also set from the same `opts.base` (line 76) and **must** stay equal to the new commit's parent because `adopt()` compiles signals over `compileRange({ base: proposal.base, head: candidate })` (`src/engine/core/adopt.ts:330-334`). → We must add a NEW field for the merge base, not repurpose `base`.
+- The snapshot the garden processors read = the orchestrator's `adopted` param (`src/engine/garden/garden.ts:327` passes it to `runGardenProcessors`); for the non-signal path it's `dispatchGardenPatchEffect`'s `opts.adopted` (`garden-patch-dispatch.ts`). The live candidate is `resolveCurrentAdopted(currentAdopted, adopted)`.
+- The adoption-phase sink (`src/engine/host/compiler-host.ts:964-973`) already passes a distinct `base`/`candidate` and is NOT wired for merge in this change (its own fixpoint loop self-heals); leave it untouched.
+- Read a file at a commit: `git.readBlob({ fs, dir: root, oid: <commitOid>, filepath: <repo-rel path> })` resolves the path within that commit's tree; throws a `NotFoundError` when absent → treat as `null`.
 - Paths in the loop are already prefix-joined to outer-repo-relative (`fullPath`).
+- `tests/engine/` is FLAT — no `tests/engine/core/` subdir. Existing apply-patch tests: `tests/engine/apply-patch.test.ts`. diff3 tests landed at `tests/engine/diff3.test.ts` (Task 1, done).
 - Banner at lines 32–36 documents the current "non-merging overwrite" — UPDATE it.
 
 ---
@@ -89,92 +93,164 @@ git commit -m "feat(engine): pure line-based 3-way merge (diff3) util"
 
 ---
 
-### Task 2: Apply `write` changes as a 3-way merge in `applyPatchToCandidate`
+### Task 2: 3-way merge in `applyPatchToCandidate` (gated on a new `mergeBase`)
 
-**Files:** Modify `src/engine/core/apply-patch.ts`; Test `tests/engine/core/apply-patch.test.ts` (find the existing test file — `grep -rl applyPatchToCandidate tests/` — extend it; create if none).
+**Files:** Modify `src/engine/core/apply-patch.ts`; Test: extend `tests/engine/apply-patch.test.ts`.
 
-First **verify the base**: confirm `opts.runContext.base` is the commit the emitting processor *read* (its snapshot), not an older loop-start commit, for the garden path — read `src/engine/garden/garden.ts` + `src/processors/runtime.ts` where the garden runContext is built. If garden passes a different field as the snapshot commit, merge against THAT (the merge base must be the processor's input snapshot). Document the finding in a code comment. (A too-old base is safe — it only causes spurious conflicts, never silent revert — but the correct base gives clean merges.)
+The merge is keyed on a NEW optional field `runContext.mergeBase: CommitOid`. When it's absent or equal to `candidate`, behavior is byte-identical to today (overwrite). When it differs (a sibling advanced the candidate since the processor read `mergeBase`), we diff3-merge. Task 3 wires the garden callers to set it; this task makes apply-patch honor it and proves the merge at the apply layer.
 
-- [ ] **Step 1: Failing reproduction test** — the exact bug, at the apply layer. In `apply-patch.test.ts`, set up a tiny git repo with a file `daily.md` having two disjoint regions; build a candidate commit `C0`. Simulate two processors that each read `C0` and emit a whole-file `write`:
-  - patch A (runContext.base = C0): content = C0 with **region 1** changed.
-  - apply A → C1.
-  - patch B (runContext.base = C0): content = C0 with **region 2** changed (region 1 as in C0).
-  - apply B onto candidate **C1**.
-  Assert the resulting tree has **both** region 1 (from A) **and** region 2 (from B). Pre-fix this fails (B's whole-file overwrite reverts region 1 to C0). Use the existing test's repo-fixture helpers.
-
+- [ ] **Step 1: Add the optional field.** In `ApplyPatchInput.runContext` (apply-patch.ts:72-80), add after `sourceHead`:
 ```ts
-// pseudocode shape — adapt to the file's existing harness
-const c1 = await applyPatchToCandidate({ vaultPath, candidate: c0, patch: patchA, runContext: { ...rc, base: c0 } });
-const c2 = await applyPatchToCandidate({ vaultPath, candidate: c1!, patch: patchB, runContext: { ...rc, base: c0 } });
-const merged = await readFileAt(c2!, "daily.md");
-expect(merged).toContain("REGION1_FROM_A");
-expect(merged).toContain("REGION2_FROM_B");
+    /**
+     * The commit the emitting processor READ (its input snapshot), used as the
+     * 3-way merge base when `candidate` has advanced past it (a sibling patch
+     * landed in between). Absent or `=== candidate` → plain overwrite (no
+     * sibling divergence to reconcile). Distinct from `base` (the Dome-Base
+     * trailer / `proposal.base`), which must stay equal to the new commit's
+     * parent. See docs/cohesive/brainstorms/2026-06-16-garden-patch-3way-merge.md.
+     */
+    readonly mergeBase?: CommitOid;
+```
+Also add to `ApplyPatchInput` (top-level, after `now?`):
+```ts
+  /** Called once per write whose 3-way merge had a true conflict (resolved to `ours`). */
+  readonly onMergeConflict?: (info: { readonly path: string; readonly processorId: string }) => void;
 ```
 
-- [ ] **Step 2: Run, expect FAIL** (region 1 reverted): `bun test tests/engine/core/apply-patch.test.ts -t disjoint`.
-- [ ] **Step 3: Implement the merge.** In the write branch (apply-patch.ts ~129–135), replace the unconditional overwrite:
+- [ ] **Step 2: Failing reproduction test** — the exact bug at the apply layer. In `tests/engine/apply-patch.test.ts` (reuse its existing fixture helpers — read the file first for the repo-setup/commit/readBlob patterns), add a test `"3-way merges disjoint-region writes against mergeBase (no sibling-region revert)"`:
+  - Create a file `daily.md` with two clearly disjoint regions (e.g. a top line `TOP: base` and a bottom line `BOTTOM: base`, with filler lines between). Commit → `c0`.
+  - Build patch A = whole-file content of `c0` with the TOP region changed (`TOP: from-A`), bottom unchanged. Apply with `candidate: c0, runContext.mergeBase: c0` → `c1`. (mergeBase===candidate → overwrite; c1 has A's top.)
+  - Build patch B = whole-file content of `c0` with the BOTTOM region changed (`BOTTOM: from-B`), top unchanged (as in `c0`). Apply with `candidate: c1, runContext.mergeBase: c0` → `c2`.
+  - Read `daily.md` @ `c2`; assert it contains BOTH `TOP: from-A` AND `BOTTOM: from-B`.
+  - Pre-implementation (overwrite) this FAILS: B reverts TOP back to `TOP: base`.
 
+- [ ] **Step 3: Run, expect FAIL:** `bun test tests/engine/apply-patch.test.ts -t "3-way merges disjoint"` → the TOP assertion fails (reverted).
+
+- [ ] **Step 4: Implement.** Add the import `import { merge3 } from "./diff3";`. Add a helper near the path helpers:
 ```ts
-import { merge3 } from "./diff3";
-// ... inside the `if (change.kind === "write")` branch:
-const ours = await readBlobUtf8(root, opts.candidate, fullPath);   // null if absent
-const base = await readBlobUtf8(root, opts.runContext.base, fullPath);
-let finalContent = change.content;
-if (ours !== null && ours !== base) {
-  // Someone advanced this path since the processor read it: merge the
-  // processor's intended diff (base→content) onto the live candidate.
-  const m = merge3({ base: base ?? "", ours, theirs: change.content });
-  finalContent = m.text;
-  if (m.conflict) opts.onMergeConflict?.({ path: change.path, processorId: opts.runContext.processorId });
+/** Read a file's UTF-8 content at a commit; `null` when the path is absent there. */
+async function readBlobUtf8(root: string, oid: string, filepath: string): Promise<string | null> {
+  try {
+    const { blob } = await git.readBlob({ fs, dir: root, oid, filepath });
+    return Buffer.from(blob).toString("utf8");
+  } catch (e) {
+    if (e instanceof git.Errors.NotFoundError) return null;
+    throw e;
+  }
 }
-const blobOid = await git.writeBlob({ fs, dir: root, blob: Buffer.from(finalContent, "utf8") });
-writes.set(fullPath, blobOid);
-deletes.delete(fullPath);
 ```
-Add a `readBlobUtf8(root, commitOid, filepath): Promise<string | null>` helper (wraps `git.readBlob`; returns `null` on `NotFoundError`). Add `onMergeConflict?: (i: { path: string; processorId: string }) => void` to `ApplyPatchInput` (optional — adoption-path callers may omit it). Update the file banner (lines 32–36) to describe the merge semantics.
+Replace the `change.kind === "write"` branch (apply-patch.ts:129-137) body so the blob written is the merged content:
+```ts
+    if (change.kind === "write") {
+      let finalContent = change.content;
+      const mergeBase = opts.runContext.mergeBase;
+      // Only reconcile when a sibling advanced the candidate past the snapshot
+      // the processor read. Same-commit (or unset) mergeBase → overwrite, the
+      // common case and byte-identical to pre-merge behavior.
+      if (mergeBase !== undefined && mergeBase !== opts.candidate) {
+        const ours = await readBlobUtf8(root, opts.candidate, fullPath);
+        const base = await readBlobUtf8(root, mergeBase, fullPath);
+        if (ours !== null && ours !== base) {
+          const m = merge3({ base: base ?? "", ours, theirs: change.content });
+          finalContent = m.text;
+          if (m.conflict) {
+            opts.onMergeConflict?.({
+              path: change.path,
+              processorId: opts.runContext.processorId,
+            });
+          }
+        }
+      }
+      const blobOid = await git.writeBlob({
+        fs,
+        dir: root,
+        blob: Buffer.from(finalContent, "utf8"),
+      });
+      writes.set(fullPath, blobOid);
+      deletes.delete(fullPath);
+    } else {
+```
+Update the file banner (apply-patch.ts:32-36): replace the "There is no 'patch failed to apply' path — the FileChange shape is non-merging" wording with a description of the `mergeBase`-gated 3-way merge (disjoint regions compose; conflicts resolve to `ours` and fire `onMergeConflict`; absent/equal `mergeBase` = overwrite).
 
-- [ ] **Step 4: Run, expect PASS** — reproduction test passes (both regions survive). Add a conflict-path test (both patches edit the SAME line → result keeps the first/`ours`, `onMergeConflict` fired). Confirm the fast path (`ours === base`) still yields a plain overwrite (existing tests unchanged).
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run, expect PASS.** Reproduction test passes (both regions survive). Add two more cases in the same file:
+  - **conflict path:** A changes the TOP line, B (mergeBase=c0, candidate=c1) ALSO changes the TOP line differently → result keeps A's TOP (`ours`), and an `onMergeConflict` spy fires once with `path: "daily.md"`.
+  - **fast path unchanged:** mergeBase omitted entirely → plain overwrite (B's whole content wins), proving back-compat.
+  Run the whole file: `bun test tests/engine/apply-patch.test.ts` → all green (existing tests unaffected — they don't set `mergeBase`).
+
+- [ ] **Step 6: Commit**
 ```bash
-git add src/engine/core/apply-patch.ts tests/engine/core/apply-patch.test.ts
-git commit -m "fix(engine): apply patch writes as 3-way merge onto candidate (no sibling-region revert)"
+git add src/engine/core/apply-patch.ts tests/engine/apply-patch.test.ts
+git commit -m "fix(engine): apply patch writes as a mergeBase-gated 3-way merge
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 3: Convergence test — the claims render↔stamp loop settles
+### Task 3: Feed `mergeBase` from the garden paths
 
-**Files:** Test only — `tests/extensions/dome.claims/render-stamp-convergence.test.ts` (or an existing claims integration test; `grep -rl "render-facts\|stampClaimAnchors" tests/`).
+**Files:** Modify `src/engine/garden/garden-sub-proposals.ts`, `src/engine/garden/garden.ts`, `src/engine/garden/garden-patch-dispatch.ts`; Test: a garden-level test (extend an existing one — `grep -rln "spawnGardenSubProposal\|runGardenPhase" tests/`).
 
-- [ ] **Step 1: Failing/guard test.** Build a daily-note fixture with ≥3 **un-anchored** claim lines (so render-facts wants backlinks once anchored, and stamp wants to anchor). Drive the two processors through the garden settle (use the existing garden/runtime test harness — `grep -rl "runGardenPhase\|gardenRunner\|garden" tests/` for the pattern). Run the cascade to fixpoint and assert:
-  - the daily ends with all claims anchored AND the `current-facts` block rendered with backlinks, AND
-  - a subsequent garden pass produces **zero patches** (the fixed point — this is the assertion that fails today, where it never stops).
-  If a full garden-harness is too heavy, assert the narrower invariant directly: applying `stampClaimAnchors`' write then `render-facts`' write (each based on the shared pre-anchor snapshot) through `applyPatchToCandidate` yields a state where re-running BOTH produces no change.
+Goal: pass the read-snapshot as `mergeBase` so apply-patch's new branch actually fires in production. `candidate`, `proposal.base`, and the `Dome-Base` trailer stay exactly as they are.
 
-- [ ] **Step 2: Run** — pre-fix this loops/diverges (no fixpoint); post-fix it converges. Confirm PASS on the fix branch.
+- [ ] **Step 1: Thread `mergeBase` through `spawnGardenSubProposal`.** In `garden-sub-proposals.ts`, add to the `opts` of `spawnGardenSubProposal` a field `readonly mergeBase: CommitOid;` (required — every garden caller knows the read snapshot). In the `applyPatch({...})` call (lines 55-67) pass `mergeBase: opts.mergeBase` inside `runContext` (alongside the existing `base: opts.base`). Do NOT change `candidate: opts.base`, `base: opts.base`, `sourceHead`, or `makeGardenProposal({ base: opts.base, ... })`.
+
+- [ ] **Step 2: Orchestrator caller.** In `garden.ts` (the spawn loop at ~542-556), the snapshot all processors in this pass read is the orchestrator's `adopted` param. Pass `mergeBase: adopted` to `spawnGardenSubProposal` (the existing `base`/`sourceHead` keep using `resolveCurrentAdopted(currentAdopted, adopted)` — the live candidate). So: `base` advances per sibling; `mergeBase` is the fixed pass snapshot.
+
+- [ ] **Step 3: Non-signal dispatch caller.** In `garden-patch-dispatch.ts` (~104-117), `opts.adopted` is the snapshot the scheduled/queued/answer processor read; `adopted = resolveCurrentAdopted(opts.currentAdopted, opts.adopted)` is the live candidate. Pass `mergeBase: opts.adopted` to `spawnGardenSubProposal` (keep `base: adopted`, `sourceHead: adopted`).
+
+- [ ] **Step 4: Test the wiring.** Add a garden-level test that two garden processors emitting whole-file writes to **disjoint regions** of one file from the same `adopted` snapshot both survive after the spawn loop (i.e. the second sub-proposal does not revert the first). Drive it through `runGardenPhase` with a stub `GardenPhaseRunner` returning the two patch effects and a real (or in-memory) `adoptSubProposal` that advances `currentAdopted`. Assert the final adopted tree's file contains both regions. Pre-Task-2+3 this reverts; now it composes. If the existing garden test harness makes a full `runGardenPhase` drive heavy, instead unit-test `spawnGardenSubProposal` twice in sequence against a tiny repo (first spawn advances a `currentAdopted` stub; second spawn's `mergeBase` = original snapshot, `candidate` = advanced) and assert both regions survive — this directly exercises the new plumbing.
+
+- [ ] **Step 5: Run + commit.** `bun test <the garden test file>` green, plus `bun test tests/engine/garden 2>&1 | tail -5` (or wherever garden tests live) to confirm no regression.
+```bash
+git add src/engine/garden/garden-sub-proposals.ts src/engine/garden/garden.ts src/engine/garden/garden-patch-dispatch.ts tests/
+git commit -m "fix(garden): feed processor read-snapshot as mergeBase so sub-proposal writes merge
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
+### Task 4: Convergence test — the claims render↔stamp loop settles
+
+**Files:** Test only — create `tests/extensions/dome.claims/render-stamp-convergence.test.ts` (confirm the dir; `grep -rln "render-facts\|stampClaimAnchors\|dome.claims" tests/` for an existing claims test to mirror harness + import paths).
+
+This is the end-to-end proof that the production loop now reaches a fixed point.
+
+- [ ] **Step 1: Test.** Build a daily-note fixture with ≥3 **un-anchored** claim lines (so `dome.claims.stamp` wants to add `^c` anchors and `dome.claims.render-facts` wants to render the `current-facts` digest — and, once anchored, add `([[page#^anchor]])` backlinks). Drive both processors through the garden cascade to its fixed point using the same harness Task 3 used (real `runGardenPhase` + recursive `adoptSubProposal`, or the direct `spawnGardenSubProposal`-sequence harness). Assert:
+  - the settled daily has all claim lines anchored (`^c…`) AND a rendered `<!-- dome.claims:current-facts -->` block whose lines carry backlinks, AND
+  - one more garden pass over the settled state produces **zero** sub-proposals / patches (the fixed point — the assertion that never holds today because the two processors revert each other forever).
+  Keep iteration count bounded and assert it stays under the cascade cap (settling should take only 2-3 rounds).
+
+- [ ] **Step 2: Run, expect PASS** on this branch (pre-fix it would diverge/hit the cap). `bun test tests/extensions/dome.claims/render-stamp-convergence.test.ts`.
 - [ ] **Step 3: Commit**
 ```bash
 git add tests/extensions/dome.claims/render-stamp-convergence.test.ts
-git commit -m "test(claims): render-facts↔stamp converges to a fixed point under garden merge"
+git commit -m "test(claims): render-facts<->stamp converges to a fixed point under garden merge
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 4: Spec note + full-suite gate
+### Task 5: Spec note + full-suite gate
 
-**Files:** `docs/wiki/specs/adoption.md` (the `candidate = apply_patches(...)` step) and/or `docs/wiki/specs/effects.md` (PatchEffect): note that whole-content writes are applied as a 3-way merge onto the candidate (base = the processor's read snapshot), so disjoint-region co-writers compose and the garden converges; overlaps resolve to the landed change + a `garden.patch.merge-conflict` diagnostic.
+**Files:** the adoption/effects spec (`grep -rln "applyPatch\|apply_patches\|PatchEffect" docs/wiki/specs/`; likely `docs/wiki/specs/adoption.md` and/or `docs/wiki/specs/effects.md`).
 
-- [ ] **Step 1:** Add the normative paragraph; match the file's wikilink/voice conventions; link `[[cohesive/brainstorms/2026-06-16-garden-patch-3way-merge]]`.
-- [ ] **Step 2: Full suite** `bun test 2>&1 | tail -6` → 0 fail. Watch `tests/engine/**`, adoption/garden tests, and the claims suite. Investigate any failure (existing apply-patch tests that asserted overwrite-revert behavior may legitimately need updating — confirm each is the intended new behavior, not a regression).
+- [ ] **Step 1:** Add a normative paragraph: a garden sub-proposal's whole-content `write` is applied as a 3-way merge onto the live candidate, using the emitting processor's read-snapshot (`mergeBase`) as the base, so disjoint-region co-writers compose and the garden reaches its fixed point instead of livelocking; overlapping edits resolve to the already-landed change (`ours`) and fire `onMergeConflict`. Note the adoption-phase sink is unchanged (its own fixpoint loop covers it). Match the file's wikilink/voice conventions; link `[[cohesive/brainstorms/2026-06-16-garden-patch-3way-merge]]`.
+- [ ] **Step 2: Full suite** `bun test 2>&1 | tail -8` → 0 fail. Watch `tests/engine/**`, garden, adoption, and the claims suite. If a pre-existing test asserted overwrite-revert behavior, confirm whether it's a legitimate behavior change (a garden test that set base===candidate is unaffected; only tests that newly set `mergeBase` should see merging) — update only if it's the intended new behavior, never to paper over a regression.
 - [ ] **Step 3: Commit**
 ```bash
 git add docs/wiki/specs
-git commit -m "docs(adoption): patch writes are 3-way merged onto the candidate (garden convergence)"
+git commit -m "docs(adoption): garden patch writes are 3-way merged onto the candidate
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
 
 ## Self-review notes
-- **Root, not symptom:** fixes every disjoint-region co-writer pair, not just claims; the claims processors are unchanged.
-- **Safety:** fast path (`ours===base`) is byte-identical to today; conflicts resolve to the *landed* change (never revert) → guaranteed forward progress + convergence; commit shape/trailers unchanged.
+- **Root, not symptom:** the merge is general (every disjoint-region garden co-writer pair); the claims processors are unchanged.
+- **Safety / back-compat:** `mergeBase` absent or `=== candidate` → byte-identical overwrite. Only the two garden callers set it; the adoption sink, `proposal.base`, `candidate`, and the `Dome-Base` trailer are untouched. Conflicts resolve to the *landed* change (never revert) → guaranteed forward progress + convergence.
+- **The merge base was the one real unknown** — verified by reading the code: it is NOT `runContext.base` (which equals `candidate`/`proposal.base` in the garden path and must stay so for `compileRange`), hence the new `mergeBase` field + the Task 3 plumbing. This reshaped Tasks 2-3 from the original single-task sketch.
 - **No working tree / isolation preserved:** pure in-process diff3; only isomorphic-git plumbing.
-- **Verify the merge base** (Task 2 pre-step) — the one correctness-critical unknown.
+- **Type consistency:** `merge3`/`Merge3Result` (Task 1) ← `runContext.mergeBase`/`onMergeConflict`/`readBlobUtf8` (Task 2) ← `spawnGardenSubProposal({ mergeBase })` (Task 3). Field names match across tasks.
 - **Operational:** after merge, the live work daemon needs a restart to pick up the fix; the currently-stuck capture + oscillating daily are a separate operational unblock (offered separately).
