@@ -122,7 +122,7 @@ describe("runInspect", () => {
         bundle: "dome.agent",
         version: "0.3.0",
         phase: "garden",
-        triggers: "signal",
+        triggers: "schedule,signal",
         execution: "llm",
         model: "granted-no-provider",
       }),
