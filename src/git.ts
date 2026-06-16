@@ -801,6 +801,35 @@ export async function logWithTrailers(opts: {
 }
 
 /**
+ * The paths a commit changed vs its first parent, relative to repo root.
+ * `--root` makes the initial commit diff against the empty tree so all its
+ * files are returned.  Git spawning stays in this module via `runNativeGit`,
+ * mirroring `logWithTrailers`.
+ */
+export async function changedPathsForCommit(opts: {
+  readonly path: string;
+  readonly sha: string;
+}): Promise<ReadonlyArray<string>> {
+  const { root } = await resolveGitContext(opts.path);
+  const out = await runNativeGit([
+    "-C",
+    root,
+    "diff-tree",
+    "--no-commit-id",
+    "--name-only",
+    "-r",
+    "--root",
+    opts.sha,
+  ]);
+  return Object.freeze(
+    out
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0),
+  );
+}
+
+/**
  * First value of a `%(trailers:...,valueonly,separator=%x0c)` field —
  * engine commits carry exactly one of each Dome-* trailer, so additional
  * values (a hand-crafted duplicate trailer) are ignored rather than joined.
