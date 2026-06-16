@@ -64,6 +64,8 @@ Dome interacts with the world through two distinct kinds of surfaces, and the de
 
 Native surfaces optimize for friction (designed flows). Agentic harnesses optimize for openness (any tool, any conversation, any model). Both produce Proposals; the engine adopts every Proposal through the same loop, regardless of origin.
 
+For the full client taxonomy — why the agent is the *primary* client today, where native surfaces fit, and why the CLI is admin/agent-tool/gap-filler rather than an end-user surface — see [[wiki/concepts/client-model]].
+
 ## What Dome is not
 
 - Not a notes app, not a chat product, not a meeting recorder, not a wearable.
