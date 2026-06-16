@@ -374,7 +374,7 @@ export function formatTodayResult(
       const heroLabel = shortenLabel(heroText, heroBudget, caps.unicode);
 
       const heroAffordances = heroAffs
-        .map((x) => paint(`${hyperlink(x.label, x.url, caps)}${heroArrow}`, "ident", caps))
+        .map((x) => paint(hyperlink(`${x.label}${heroArrow}`, x.url, caps), "ident", caps))
         .join("  ");
       const heroInlineTail = heroAffs.length > 0 ? `   ${heroAffordances}` : "";
       const heroOriginTail =
@@ -455,7 +455,7 @@ export function formatTodayResult(
       const label = shortenLabel(text, Math.max(0, effectiveWidth - linkReserve - originReserve), caps.unicode);
       const g = paint(statusGlyph(tone, caps), tone, caps);
       const affordances = affs
-        .map((x) => paint(`${hyperlink(x.label, x.url, caps)}${arrow}`, "ident", caps))
+        .map((x) => paint(hyperlink(`${x.label}${arrow}`, x.url, caps), "ident", caps))
         .join("  ");
       const inlineTail = affs.length > 0 ? `   ${affordances}` : "";
       const originTail =
