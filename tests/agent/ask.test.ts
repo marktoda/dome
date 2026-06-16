@@ -95,4 +95,29 @@ describe("runAsk", () => {
     expect(result.stopReason).toBe("final");
     expect(result.steps).toBeGreaterThanOrEqual(2);
   });
+
+  test("returns stopReason=budget and a non-empty answer when the step cap fires mid-loop", async () => {
+    // A model that always returns a tool-call and never a final text, so
+    // generateText will exhaust maxSteps without hitting "stop".
+    const model = new MockLanguageModelV3({
+      doGenerate: [
+        toolCallStep("search_vault", { text: "anything" }),
+        toolCallStep("search_vault", { text: "still going" }),
+        // Extra entry so MockLanguageModelV3 doesn't run out before maxSteps.
+        toolCallStep("search_vault", { text: "one more" }),
+      ],
+    });
+
+    const result = await runAsk({
+      vault: fakeVault(),
+      model,
+      question: "Does this answer exist?",
+      maxSteps: 2,
+    });
+
+    expect(result.stopReason).toBe("budget");
+    // Graceful fallback must produce a non-empty string.
+    expect(typeof result.answer).toBe("string");
+    expect(result.answer.trim().length).toBeGreaterThan(0);
+  });
 });

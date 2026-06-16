@@ -36,7 +36,7 @@ export async function runAsk(opts: {
   const tools = buildAskTools(opts.vault, citations);
   const maxSteps = opts.maxSteps ?? 8;
 
-  const { text, steps } = await generateText({
+  const { text, steps, finishReason } = await generateText({
     model: opts.model ?? anthropic(opts.modelId ?? DEFAULT_MODEL),
     system: ASK_CHARTER,
     prompt: opts.question,
@@ -45,9 +45,10 @@ export async function runAsk(opts: {
     ...(opts.abortSignal !== undefined ? { abortSignal: opts.abortSignal } : {}),
   });
 
-  // The step cap was hit without the model producing a final answer ⇒ budget.
-  const hitBudget = steps.length >= maxSteps && text.trim().length === 0;
-  const stopReason: AskResult["stopReason"] = hitBudget ? "budget" : "final";
+  // "stop" means the model ended naturally; anything else (e.g. "tool-calls"
+  // when the step cap fired mid-loop, or "length") means we were cut off.
+  const stopReason: AskResult["stopReason"] =
+    finishReason === "stop" ? "final" : "budget";
 
   const answer =
     text.trim().length > 0
