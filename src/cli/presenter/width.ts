@@ -57,6 +57,23 @@ export function shortenLabel(text: string, width: number, unicode = true): strin
 export { stripWikilinks } from "../../core/wikilink";
 
 /**
+ * Strip paired markdown emphasis markers from plain text for CLI display.
+ * Removes `**bold**`, `__bold__`, `*italic*`, `_italic_` — only when the
+ * markers are paired around non-space content. Conservative: does NOT strip
+ * unpaired asterisks/underscores (e.g. `a*b`, `snake_case` left untouched).
+ * Apply BEFORE paint() and BEFORE shortenLabel().
+ */
+export function stripEmphasis(text: string): string {
+  // Double markers first (must precede single so `**x**` → `x` not `*x*` → `x*`).
+  // Use [^*] for ** and [^_] for __ to prevent greedy cross-span matching.
+  return text
+    .replace(/\*\*([^*\s][^*]*?[^*\s]|[^*\s])\*\*/g, "$1")
+    .replace(/__([^_\s][^_]*?[^_\s]|[^_\s])__/g, "$1")
+    .replace(/\*([^*\s][^*]*?[^*\s]|[^*\s])\*/g, "$1")
+    .replace(/_([^_\s][^_]*?[^_\s]|[^_\s])_/g, "$1");
+}
+
+/**
  * Word-wrap plain (uncolored) text to a visible width. Words longer than
  * `width` get their own line rather than being split mid-word. Always
  * returns at least one line. Call before paint().
