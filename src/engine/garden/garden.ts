@@ -544,6 +544,7 @@ async function runGardenPhaseInner(opts: {
         const spawned = await spawnGardenSubProposal({
           vault,
           base,
+          mergeBase: adopted,
           sourceHead: base,
           patch: req.patch,
           processorId: req.processorId,

@@ -105,6 +105,7 @@ export async function dispatchGardenPatchEffect(opts: {
   const spawned = await spawnGardenSubProposal({
     vault: opts.vault,
     base: adopted,
+    mergeBase: opts.adopted,
     sourceHead: adopted,
     patch: routed.patch,
     processorId: opts.processorId,
