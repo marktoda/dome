@@ -50,6 +50,63 @@ function sha256(value: string): Buffer {
   return createHash("sha256").update(value, "utf8").digest();
 }
 
+type JsonBodyRead =
+  | { readonly kind: "ok"; readonly body: Record<string, unknown> | null }
+  | { readonly kind: "too-large" };
+
+/**
+ * Read and parse a JSON request body without buffering more than `maxBytes`.
+ * Two layers, both required:
+ *
+ *   1. A declared `content-length` over the cap answers `too-large` before
+ *      reading anything.
+ *   2. The body stream is read with a byte budget, so chunked or
+ *      lying-content-length bodies are cut off at the cap too. (Bun's
+ *      `maxRequestBodySize` does not enforce on chunked bodies as of
+ *      Bun 1.2.x — this read is the real guarantee on every host.)
+ *
+ * Local copy; do NOT import from src/http/ — the agent server is self-contained.
+ */
+async function jsonBody(
+  request: Request,
+  maxBytes: number,
+): Promise<JsonBodyRead> {
+  const declared = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    return { kind: "too-large" };
+  }
+  if (request.body === null) return { kind: "ok", body: null };
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > maxBytes) {
+        await reader.cancel();
+        return { kind: "too-large" };
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  try {
+    const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    return {
+      kind: "ok",
+      body:
+        parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : null,
+    };
+  } catch {
+    return { kind: "ok", body: null };
+  }
+}
+
 function jsonResponse(status: number, data: unknown): Response {
   return new Response(`${JSON.stringify(data, null, 2)}\n`, {
     status,
@@ -119,21 +176,18 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
     }
 
     if (route === "POST /ask") {
-      // Body size gate: content-length fast-path.
-      const declared = Number(request.headers.get("content-length"));
-      if (Number.isFinite(declared) && declared > maxBodyBytes) {
+      // Body size gate: bounded stream read (+ content-length fast-path inside).
+      const read = await jsonBody(request, maxBodyBytes);
+      if (read.kind === "too-large") {
         return errorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
       }
-
-      let body: { question?: unknown } | null = null;
-      try {
-        body = (await request.json()) as { question?: unknown };
-      } catch {
+      if (read.body === null) {
         return errorResponse(400, "invalid-json", "request body is not valid JSON.");
       }
 
+      const body = read.body;
       const question =
-        typeof body?.question === "string" ? body.question.trim() : "";
+        typeof body.question === "string" ? body.question.trim() : "";
       if (question.length === 0) {
         return errorResponse(
           400,

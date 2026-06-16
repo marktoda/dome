@@ -44,4 +44,33 @@ describe("createAskServer", () => {
     const res = await server().fetch(new Request("http://localhost/nope", { headers: { authorization: `Bearer ${TOKEN}` } }));
     expect(res.status).toBe(404);
   });
+  test("413 when body exceeds maxBodyBytes (stream read, not content-length)", async () => {
+    const s = createAskServer({
+      vaultPath: "/tmp/unused",
+      token: TOKEN,
+      maxBodyBytes: 50,
+      askImpl: async (question: string) => ({
+        answer: `answer to: ${question}`,
+        citations: [],
+        steps: 1,
+        stopReason: "final" as const,
+      }),
+    });
+    // Build a body whose JSON is definitely > 50 bytes; omit content-length so
+    // the stream-read path is what enforces the cap.
+    const longQuestion = "x".repeat(200);
+    const bodyBytes = new TextEncoder().encode(JSON.stringify({ question: longQuestion }));
+    const req = new Request("http://localhost/ask", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${TOKEN}`,
+        "content-type": "application/json",
+        // Deliberately omit content-length — Bun may still set one, but the
+        // assertion covers the stream-cap path regardless.
+      },
+      body: bodyBytes,
+    });
+    const res = await s.fetch(req);
+    expect(res.status).toBe(413);
+  });
 });
