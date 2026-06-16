@@ -281,7 +281,7 @@ processors:
       - kind: read
         paths: ["wiki/**/*.md", "notes/*.md"]
       - kind: patch.auto
-        paths: ["wiki/**/*.md", "notes/*.md", "wiki/dailies/*.md"]
+        paths: ["wiki/**/*.md", "notes/*.md"]
     module: processors/settle-stale-answer.ts
 
 # Doctor contributions (wiki/specs/cli.md §"dome doctor"): grant-entry probes
