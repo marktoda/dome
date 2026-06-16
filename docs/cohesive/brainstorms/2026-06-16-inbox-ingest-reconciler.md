@@ -76,24 +76,48 @@ Make ingest's behavior a pure function of the *standing* contents of
    longer depends on the commit delta. Empty set → early-return with **no model
    call** (idle cron passes are free).
 3. **Deterministic order + per-run bound:** sort the standing set by filename
-   (captures are timestamp-prefixed, so lexical order = chronological =
+   (captures are timestamp-prefixed, so lexical order = chronological = FIFO =
    deterministic — no `mtime`, preserving processor purity) and process the
-   **oldest N per run** (default `MAX_CAPTURES_PER_RUN = 10`). A backlog drains
-   over successive passes instead of risking the agent's execution timeout in a
-   single run. Pure function of the snapshot.
-4. **Atomicity (unchanged):** keep the existing single-`PatchEffect`-per-run
-   batch (ingest.ts:77-81 — "the whole batch lands as a SINGLE PatchEffect"). A
-   successful capture's task-write and its archive-out-of-`inbox/raw/` land in
-   the same commit; a failed/partial run commits nothing and the next pass
-   retries cleanly. The `INBOX_IS_EPHEMERAL` invariant + `source-unarchived`
-   warning are preserved.
-5. **`inbox-stale-check` → meaningful poison alarm:** with the reconciler in
-   place, a capture still present after several cron passes genuinely means
-   ingest *cannot* process it. Keep the processor, but set its age threshold to
-   comfortably exceed a couple of cron intervals (e.g. ≥ 3h) so it flags real
-   poison (malformed/oversize/repeatedly-failing captures) rather than a capture
-   merely awaiting its next reconciliation pass. (Oversize already self-escalates
-   as a `question` in ingest; this covers the rest.)
+   **oldest N per run** (`MAX_CAPTURES_PER_RUN`, default 10). A backlog drains
+   over successive passes (oldest-first, so old captures are never starved)
+   instead of risking the agent's execution timeout in a single run. This is the
+   ingest-shaped analog of `consolidate`'s `MAX_CHANGED_FILES = 30` — the
+   established "a scheduled agent run is blast-radius-capped" convention, not a
+   new mechanism. In the common case the standing set is just the freshly-arrived
+   capture, so the signal path stays prompt.
+4. **Atomicity (unchanged — the standard flow):** the existing
+   `finishAgentRun(...)` tail already emits the run's accumulated edits as a
+   single `PatchEffect` (ingest.ts ~line 168), so a capture's task-write and its
+   archive-out-of-`inbox/raw/` land in the same commit. A failed/partial run
+   commits nothing and the next pass retries cleanly. The `INBOX_IS_EPHEMERAL`
+   invariant + `source-unarchived` warning are preserved. Nothing here changes.
+5. **`inbox-stale-check`: no change.** Its threshold is already
+   `DEFAULT_STALE_AGE_HOURS = 168` (7 days) — far beyond the hourly cron — so the
+   moment ingest reconciles, the existing age-based `inbox.stale` warning *is* a
+   correct poison alarm (it fires only on a capture that resisted ~168 hourly
+   reconciliation passes). No retune needed. (Shortening 168h for faster poison
+   detection is a separate tuning question, out of scope.)
+
+### Cohesion & reuse (what we lean on, what we deliberately omit)
+
+- **Reuses the shared agent harness verbatim:** `agentPreamble`, `runAgentLoop`,
+  `AgentRunState`, `finishAgentRun`, `withCoreMemory`, `resolveModelOverride` /
+  `withStepModel`, the `ingest-tools` / `INGEST_CHARTER`, and the existing local
+  `isRawCapturePath` predicate. The schedule trigger is the same manifest
+  facility `consolidate` / `brief` use.
+- **Net new surface is tiny:** one manifest trigger + one worklist-selection
+  change (`ctx.changedPaths.filter(...)` → `(await ctx.snapshot
+  .listMarkdownFiles()).filter(isRawCapturePath).sort().slice(0, N)`) + one
+  bounded-batch constant. Everything downstream (`sourceRefs`, the per-source
+  loop, `finishAgentRun`) is untouched.
+- **Deliberately NOT added:** a ledger. `consolidate` carries a
+  `resolveLedgerPath` "since last run" ledger; ingest needs none — `inbox/raw/`
+  *is* the durable, self-describing queue, so its standing contents are the
+  worklist. Importing ledger machinery would be over-engineering. The reconciler
+  is therefore *simpler* than its sibling, not more complex.
+- **Typing:** `listMarkdownFiles(): Promise<ReadonlyArray<string>>` →
+  `filter`/`sort`/`slice` → `string[]`, feeding the unchanged `sourceRefs` /
+  loop. No `any`, no casts.
 
 ## Idempotency / why it is obviously correct
 
@@ -116,7 +140,7 @@ Make ingest's behavior a pure function of the *standing* contents of
 ## Scope / non-goals
 
 - **In:** the ingest manifest trigger; ingest's standing-set input + ordering +
-  per-run bound; the `inbox-stale-check` threshold tweak; tests.
+  per-run bound; tests. (No `inbox-stale-check` change — see fix item 5.)
 - **Out (deferred):** engine-level durable/at-least-once garden signal delivery
   (Approach B) — the general fix for *all* garden processors, but it overturns
   the deliberate "fire once per adoption" invariant and adds retry/dedup/ack
@@ -127,7 +151,13 @@ Make ingest's behavior a pure function of the *standing* contents of
 
 ## Testing
 
-Scenario-harness tests (real git, real bundle, `tick()` = one `dome sync`):
+**Unit test** (pin the one piece of genuinely new logic) — the worklist
+selection: given a snapshot listing, it selects `inbox/raw/*.md` only, sorts
+oldest-first (FIFO), bounds to `MAX_CAPTURES_PER_RUN`, and yields `[]` (→ no
+model call) when empty. Pure, fast, deterministic.
+
+Scenario-harness tests (real git, real bundle, `tick()` = one `dome sync`,
+scheduled work via `runOperationalWorkForAdopted` + `TestClock`):
 
 1. **The recovery proof (must fail pre-fix):** commit a capture into
    `inbox/raw/` such that the signal-triggered garden run does not lift it
