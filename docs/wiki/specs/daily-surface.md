@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-10
-updated: 2026-06-12
+updated: 2026-06-15
 sources:
   - "[[daily]]"
   - "[[wiki/specs/task-lifecycle]]"
@@ -37,6 +37,7 @@ All times are vault-local; cron triggers fire only while the compiler host (`dom
 | 05:20 | `dome.agent.active-projects` | dome.agent | Refreshes `core.md`'s `dome.agent:active-projects` generated block from the dailies' open-loop tallies ([[wiki/specs/autonomous-agents]] §"`dome.agent.active-projects`") — after the 05:15 index render, before the brief, so the brief's core-memory injection reads fresh project tallies. Also re-fires on daily-note changes during the day. |
 | 05:30 | `dome.agent.brief` | dome.agent | **The edition compile.** Composes the brief blocks into today's daily (creating the shared skeleton when absent, so create-daily later no-ops): yesterday digest (replacing the mechanical fallback body wholesale), meetings, open-questions batch, integrated-overnight digest, sources-seen record. Also triggers on `file.created` for `sources/calendar/*.md` + `sources/slack/*.md` — the late-source re-compose, gated by the sources-seen record (§"Wake-tick choreography"). |
 | 06:00 | `dome.daily.create-daily` | dome.daily | Skeleton fallback: creates today's daily when nothing else did; seeds the unified `dome.agent.brief:yesterday` block with the mechanical fallback body (§"The one yesterday block"). |
+| 06:00 | `dome.daily.stale-task-warden` | dome.daily | Stale-settle warden: emits one `settle-stale` owner question per stale task (overdue ≥ 14 d OR undated + discount ≥ threshold), capped at 8 worst-first. The companion `dome.daily.settle-stale-answer` handler applies the owner's close/defer/keep answer deterministically. Normative at [[wiki/specs/task-lifecycle]] §"Stale-settle (finishing the attention path)". |
 | 06:00 + on-commit | `dome.daily.carry-forward` | dome.daily | Raises the ranked `dome.daily:open-loops` surface; re-fires on every adopted commit so the surface tracks the live vault. Seeds the yesterday fallback block when (and only when) it is absent. |
 | on-commit (capture) | `dome.agent.ingest` | dome.agent | Routes a capture's tactical tasks into today's daily — task-shaped lines spliced into the `dome.daily:captured` block by the tool seam (the model never positions). |
 | on-commit (daytime) | `dome.daily.stamp-block-id`, `normalize-task-syntax`, `reconcile-tasks`, `attention-discount`, `task-index` | dome.daily | The hygiene set: anchor stamping, cosmetic normalization, close-in-one-place reconcile, dismissal-derived discount facts, task facts. Normative at [[wiki/specs/task-lifecycle]]. |
