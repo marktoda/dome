@@ -7,7 +7,7 @@ function server() {
   return createAskServer({
     vaultPath: "/tmp/unused",
     token: TOKEN,
-    askImpl: async (question: string) => ({
+    askImpl: async (question: string, _signal: AbortSignal) => ({
       answer: `answer to: ${question}`,
       citations: [{ path: "wiki/x.md", commit: "c1" }],
       steps: 2,
@@ -49,7 +49,7 @@ describe("createAskServer", () => {
       vaultPath: "/tmp/unused",
       token: TOKEN,
       maxBodyBytes: 50,
-      askImpl: async (question: string) => ({
+      askImpl: async (question: string, _signal: AbortSignal) => ({
         answer: `answer to: ${question}`,
         citations: [],
         steps: 1,
@@ -72,5 +72,17 @@ describe("createAskServer", () => {
     });
     const res = await s.fetch(req);
     expect(res.status).toBe(413);
+  });
+  test("504 when ask exceeds timeoutMs", async () => {
+    const s = createAskServer({
+      vaultPath: "/tmp/unused",
+      token: TOKEN,
+      timeoutMs: 30,
+      askImpl: (_question: string, _signal: AbortSignal) => new Promise(() => {}),
+    });
+    const res = await s.fetch(post({ question: "will this hang?" }));
+    expect(res.status).toBe(504);
+    const json = (await res.json()) as { error: string };
+    expect(json.error).toBe("ask-timeout");
   });
 });

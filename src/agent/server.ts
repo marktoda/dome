@@ -22,7 +22,7 @@ const SCHEMA = "dome.ask/v1";
 
 // ----- Public types ---------------------------------------------------------
 
-export type AskImpl = (question: string) => Promise<AskResult>;
+export type AskImpl = (question: string, signal: AbortSignal) => Promise<AskResult>;
 
 export type CreateAskServerOptions = {
   readonly vaultPath: string;
@@ -35,6 +35,11 @@ export type CreateAskServerOptions = {
    * (default 1 MiB). Enforced on the declared `content-length` when present.
    */
   readonly maxBodyBytes?: number | undefined;
+  /**
+   * Milliseconds before a hung POST /ask is aborted and returns 504.
+   * Defaults to 120_000 (2 minutes).
+   */
+  readonly timeoutMs?: number | undefined;
   /**
    * Inject a custom ask implementation (used by tests to avoid opening a real
    * vault). When omitted the default wires getModelStepProvider + runAsk.
@@ -140,8 +145,10 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
   const maxBodyBytes = opts.maxBodyBytes ?? 1_048_576;
   const enqueue = makeVaultMutex();
 
+  const timeoutMs = opts.timeoutMs ?? 120_000;
+
   // Default ask: open the vault, resolve the provider, run the loop.
-  const defaultAsk: AskImpl = async (question) => {
+  const defaultAsk: AskImpl = async (question, signal) => {
     const prov = await getModelStepProvider(opts.vaultPath);
     if (prov.kind !== "ok") {
       throw new Error(
@@ -150,10 +157,9 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
           : prov.message,
       );
     }
-    const controller = new AbortController();
     const step = askStepFromProvider(prov.provider, {
       model: opts.model,
-      signal: controller.signal,
+      signal,
     });
     const outcome = await withVaultShared(
       { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
@@ -196,8 +202,16 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
         );
       }
 
+      const controller = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Error("__ask-timeout__"));
+        }, timeoutMs);
+      });
       try {
-        const result = await ask(question);
+        const result = await Promise.race([ask(question, controller.signal), timeoutPromise]);
         return jsonResponse(200, {
           schema: SCHEMA,
           status: "ok",
@@ -207,11 +221,16 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
           stopReason: result.stopReason,
         });
       } catch (e) {
+        if (controller.signal.aborted) {
+          return errorResponse(504, "ask-timeout", `ask exceeded ${timeoutMs}ms.`);
+        }
         return errorResponse(
           500,
           "ask-failed",
           e instanceof Error ? e.message : String(e),
         );
+      } finally {
+        clearTimeout(timer);
       }
     }
 
