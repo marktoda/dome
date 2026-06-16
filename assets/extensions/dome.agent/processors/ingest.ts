@@ -54,8 +54,10 @@ const MAX_SOURCE_CHARS = 100_000;
 
 const ingest = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
-    // Extra guard before preamble: no raw captures → nothing to do.
-    const rawPaths = ctx.changedPaths.filter(isRawCapturePath);
+    // Reconcile the STANDING inbox/raw set (works for both signal and scheduled
+    // triggers; a missed signal is recovered on the next pass). Not the commit
+    // delta — that is the edge-triggering that stranded captures.
+    const rawPaths = selectIngestWorklist(await ctx.snapshot.listMarkdownFiles());
     if (rawPaths.length === 0) return Object.freeze([]);
     const sourceRefs = rawPaths.map((p) => ctx.sourceRef(p));
 
