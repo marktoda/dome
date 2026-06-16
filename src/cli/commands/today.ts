@@ -532,6 +532,8 @@ export function formatTodayResult(
       const CLUSTER_INDENT = 2;
       for (const e of sortedClusters) {
         const members = clusterMembers.get(e)!;
+        // An entity can pass CLUSTER_MIN co-occurrence yet lose all its tasks to a
+        // higher-count dominant cluster — skip such now-empty clusters.
         if (members.length === 0) continue;
         lines.push(`  ${paint(`${e}  (${members.length})`, "muted", caps)}`);
         for (const t of members) renderRow(t, tone, CLUSTER_INDENT);

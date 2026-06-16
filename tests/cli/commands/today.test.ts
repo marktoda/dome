@@ -1096,7 +1096,28 @@ describe("today entity grouping", () => {
     }
   });
 
-  // 5. no entities anywhere -> unchanged flat rendering
+  // 5. width invariant worst case: indented clustered member with long body + inline link + origin
+
+  test("clustered (indented) members with link + origin never exceed caps.width", () => {
+    const narrow = { color: false, unicode: true, width: 44, hyperlinks: true } as const;
+    // entities extracted via wikilinkSlugs from [[cody-born]] in the text
+    const mk = (n: number) => ({
+      text: `coordinate the routing-retention decision across the pod number ${n} [[cody-born]] [thread](https://uniswapteam.slack.com/archives/C0/p${n})`,
+      path: "p", line: n, dueDate: "2026-06-10", origin: "https://slk/o" + n,
+    });
+    const doc = {
+      date: "2026-06-15",
+      openTasks: [mk(1), mk(2), mk(3)],
+      followups: [], questions: [],
+      counts: { openTasks: 3, followups: 0, questions: 0 },
+      hero: null, brief: null, calendar: null,
+    };
+    const out = formatTodayResult(doc, narrow, "/v/work");
+    expect(out).toContain("cody-born"); // cluster sub-header present
+    for (const line of out.split("\n")) expect(visibleWidth(line)).toBeLessThanOrEqual(narrow.width);
+  });
+
+  // 6. no entities anywhere -> unchanged flat rendering
 
   test("tasks with no entities -> flat rendering, no cluster headers", () => {
     const date = "2026-06-15";
