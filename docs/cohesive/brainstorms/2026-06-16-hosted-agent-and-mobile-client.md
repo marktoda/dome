@@ -141,6 +141,21 @@ it's an implementation option *inside* A's backend, not a different product.
 3. **PWA**: voice capture (MediaRecorder→transcription), ask/chat, brief, recents.
    Add-to-home-screen; IndexedDB capture queue flushed on open (no iOS background
    sync); Declarative Web Push for question nudges.
+
+   **PWA backend topology** — the PWA talks to ONE backend = `dome ask-server`
+   (one base URL, one token, one process). Beyond `/ask` + `/ask/stream`, the
+   ask-server now also serves `POST /capture` (voice→note), `GET /tasks` (the
+   brief: today's tasks/loops/questions), and `POST /resolve` (answer a
+   Dome-raised question) — ✅ **SHIPPED 2026-06-16**. Those three reuse the SAME
+   shared `src/surface/` collectors `dome http` uses (`performCapture`,
+   `runCatalogView(today)`, `vault.resolve`), under the ask-server's existing
+   single mutex, with identical request/response shapes + status codes — so the
+   client gets the same contract whichever server it hits. Delegation to
+   `dome http` was **rejected**: each server owns its own `makeVaultMutex()`, so
+   composing them would allow two concurrent `VaultRuntime`s (a correctness
+   hazard). `dome http` stays unchanged — the standalone lightweight read+capture
+   adapter plus the `/today` HTML cockpit. The **recents** route is the only
+   remaining PWA backend piece, deferred to the PWA build as a net-new view.
 4. **Per-device tokens** (promised twice in v1, never delivered) land here.
 5. **Optional**: read-only remote-MCP server behind Cloudflare Access for the Claude
    desktop app.
