@@ -33,17 +33,37 @@ function isRawCapturePath(path: string): boolean {
 }
 
 /**
- * The ingest worklist = the standing contents of inbox/raw/, oldest-first,
- * bounded. Pure: a function of the snapshot's markdown listing, not of the
- * commit delta — so a scheduled (cron) run reconciles lingering captures a
- * missed signal left behind. Captures are timestamp-prefixed, so a lexical
- * sort is chronological (FIFO) and deterministic (no mtime).
+ * The ingest worklist over the standing contents of inbox/raw/ (a function of
+ * the snapshot's markdown listing, not the commit delta — so a scheduled (cron)
+ * run reconciles lingering captures a missed signal left behind), bounded to
+ * `max`.
+ *
+ * Ordering: the just-arrived captures named in `prioritized` (the run's
+ * `changedPaths`, when signal-triggered) come FIRST, then the remaining
+ * standing captures oldest-first. This is head-of-line-blocking insurance: a
+ * capture that ingest can't lift (oversize, or a repeatedly-failing source) is
+ * NOT removed from inbox/raw, so under a pure oldest-first bound a wall of such
+ * "poison" captures at the front of the FIFO could starve every newer capture —
+ * even on its own signal. Prioritizing the freshly-signaled captures guarantees
+ * a new capture is always in the worklist; the oldest-first tail still drains
+ * the backlog. On a scheduled tick `prioritized` is empty → pure oldest-first.
+ *
+ * Captures are timestamp-prefixed, so a lexical sort is chronological (FIFO) and
+ * deterministic (no mtime). Pure.
  */
 export function selectIngestWorklist(
   markdownPaths: ReadonlyArray<string>,
+  prioritized: ReadonlyArray<string> = [],
   max: number = MAX_CAPTURES_PER_RUN,
 ): string[] {
-  return markdownPaths.filter(isRawCapturePath).sort().slice(0, max);
+  const standing = markdownPaths.filter(isRawCapturePath).sort();
+  const standingSet = new Set(standing);
+  // Only prioritize captures that are actually still present (a changedPath may
+  // be a deletion or a non-capture path).
+  const fresh = prioritized.filter((p) => isRawCapturePath(p) && standingSet.has(p));
+  const freshSet = new Set(fresh);
+  const ordered = [...fresh, ...standing.filter((p) => !freshSet.has(p))];
+  return [...new Set(ordered)].slice(0, max);
 }
 
 // Truncated-read amputation guard (mirrors sweep's MATERIAL_READ_CHARS): a
@@ -55,9 +75,14 @@ const MAX_SOURCE_CHARS = 100_000;
 const ingest = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     // Reconcile the STANDING inbox/raw set (works for both signal and scheduled
-    // triggers; a missed signal is recovered on the next pass). Not the commit
-    // delta — that is the edge-triggering that stranded captures.
-    const rawPaths = selectIngestWorklist(await ctx.snapshot.listMarkdownFiles());
+    // triggers; a missed signal is recovered on the next pass). The commit delta
+    // (`changedPaths`) is no longer the SOURCE of the worklist — it only
+    // PRIORITIZES the just-arrived captures so a poison backlog can't starve a
+    // fresh one (see selectIngestWorklist).
+    const rawPaths = selectIngestWorklist(
+      await ctx.snapshot.listMarkdownFiles(),
+      ctx.changedPaths,
+    );
     if (rawPaths.length === 0) return Object.freeze([]);
     const sourceRefs = rawPaths.map((p) => ctx.sourceRef(p));
 
