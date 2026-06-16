@@ -647,6 +647,32 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("ask-server")
+    .description("Run the ask-my-brain agent backend over this vault (bearer-token auth; loopback by default).")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .option("--port <port>", "Port to listen on (default 4664).")
+    .option("--host <host>", "Interface to bind (default 127.0.0.1).")
+    .option("--token <token>", "Bearer token (or set DOME_ASK_TOKEN).")
+    .option("--model <model>", "Model id override (else the provider default).")
+    .action(async (options: AskServerCliOptions) => {
+      // Dynamic import keeps the agent backend out of the CLI's static graph,
+      // matching the `dome http` companion-entrypoint pattern.
+      // ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY requires this.
+      const { runAskServer } = await import("./commands/ask-server");
+      setExitCode(
+        await runAskServer({
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+          port: options.port,
+          host: options.host,
+          token: options.token,
+          model: options.model,
+        }),
+      );
+    });
+
+  program
     .command("recipe <kind>")
     .description(
       "Print a setup recipe (available: ios — voice capture via Shortcuts; capture-queue — the laptop-side iCloud queue drain; core-seed — owner interview for core.md).",
@@ -763,6 +789,15 @@ type HttpCliOptions = {
   readonly port?: string;
   readonly host?: string;
   readonly token?: string;
+};
+
+type AskServerCliOptions = {
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+  readonly port?: string;
+  readonly host?: string;
+  readonly token?: string;
+  readonly model?: string;
 };
 
 type CheckCliOptions = {
