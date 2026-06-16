@@ -172,8 +172,9 @@ function splitLines(s: string): string[] {
 }
 
 // Join merged lines back to a string, matching the trailing-newline shape of
-// `ours`: if ours ended with "\n" (or ours was empty but we produced output),
-// re-append one.
+// `ours`: if ours ended with "\n", re-append one. (Empty `ours` has no trailing
+// newline, so the result has none either — the fast paths cover empty-ours
+// cases in practice.)
 function joinLines(lines: readonly string[], ours: string): string {
   if (lines.length === 0) return "";
   const body = lines.join("\n");
