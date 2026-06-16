@@ -59,7 +59,7 @@ import type { PatchEffect } from "../../core/effect";
 import { commitOid, type CommitOid } from "../../core/source-ref";
 import { requireVaultPath } from "../../core/vault-path";
 import { composeCommitMessage } from "../../engine-commit";
-import { findGitRoot } from "../../git";
+import { findGitRoot, readBlob } from "../../git";
 import { merge3 } from "./diff3";
 
 // ----- ApplyPatchInput ------------------------------------------------------
@@ -150,8 +150,20 @@ export async function applyPatchToCandidate(
       // the processor read. Same-commit (or unset) mergeBase → overwrite, the
       // common case and byte-identical to pre-merge behavior.
       if (mergeBase !== undefined && mergeBase !== opts.candidate) {
-        const ours = await readBlobUtf8(root, opts.candidate, fullPath);
-        const baseContent = await readBlobUtf8(root, mergeBase, fullPath);
+        // Reuse git.ts's readBlob (hardened NotFoundError detection, returns
+        // null for an absent path). It resolves the git context itself, so it
+        // takes the vault dir + the change's vault-relative path — not the
+        // already-prefixed `fullPath`.
+        const ours = await readBlob({
+          path: opts.vaultPath,
+          commit: opts.candidate,
+          filepath: vaultPath,
+        });
+        const baseContent = await readBlob({
+          path: opts.vaultPath,
+          commit: mergeBase,
+          filepath: vaultPath,
+        });
         if (ours !== null && ours !== baseContent) {
           const m = merge3({
             base: baseContent ?? "",
@@ -518,19 +530,4 @@ function computePrefix(root: string, vaultPath: string): string {
  */
 function joinPrefix(prefix: string, vaultPath: string): string {
   return prefix === "" ? vaultPath : posix.join(prefix, vaultPath);
-}
-
-/** Read a file's UTF-8 content at a commit; `null` when the path is absent there. */
-async function readBlobUtf8(
-  root: string,
-  oid: string,
-  filepath: string,
-): Promise<string | null> {
-  try {
-    const { blob } = await git.readBlob({ fs, dir: root, oid, filepath });
-    return Buffer.from(blob).toString("utf8");
-  } catch (e) {
-    if (e instanceof git.Errors.NotFoundError) return null;
-    throw e;
-  }
 }
