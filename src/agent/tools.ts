@@ -1,8 +1,11 @@
 // src/agent/tools.ts
 //
-// Read-only vault tools for the ask-agent backend.
+// Read-only vault tools for the ask-agent backend, expressed as a Vercel AI SDK
+// tool set (Record<string, Tool>). The AI SDK runs each tool's `execute` during
+// generateText(), so citations are accumulated into a shared array provided by
+// runAsk and read back after the run completes.
 //
-// Wraps the Vault handle's two recall entry-points:
+// Wraps the Vault handle's three recall entry-points:
 //   vault.runView("query", {text, limit})  — FTS + ranked matches
 //   vault.readDocument(path)               — full document content
 //   vault.runView("today", {date?})        — daily action surface
@@ -16,25 +19,24 @@
 //
 // Real dome.daily.today/v1 structured.data shape:
 //   { date, openTasks: [...], followups: [...], questions: [...], ... }
-//   Each item has sourceRefs: [{ path, commit }].
-//   No top-level "matches" key — adapted via todaysSummary().
+//   Each item has sourceRefs: [{ path, commit }]. No top-level "matches" key.
 
+import { tool, type ToolSet } from "ai";
+import { z } from "zod";
 import type { Vault } from "../vault";
-import type { AskTool, AskState, AskCitation } from "./types";
+import type { AskCitation } from "./types";
 
 // ----- helpers ----------------------------------------------------------------
 
-function recordCitation(state: AskState, c: AskCitation): void {
-  if (!state.citations.some((x) => x.path === c.path)) state.citations.push(c);
+function recordCitation(citations: AskCitation[], c: AskCitation): void {
+  if (!citations.some((x) => x.path === c.path)) citations.push(c);
 }
 
 /**
  * Extract a citation from a single query match item.
  * sourceRefs is a plural array; use the first entry.
  */
-function citationFromMatch(
-  m: Record<string, unknown>,
-): AskCitation | null {
+function citationFromMatch(m: Record<string, unknown>): AskCitation | null {
   // sourceRefs is an array: [{path, commit, ...}]
   const sourceRefs = m["sourceRefs"];
   const firstRef =
@@ -67,7 +69,7 @@ function citationFromMatch(
 async function runQueryView(
   vault: Vault,
   args: Record<string, unknown>,
-  state: AskState,
+  citations: AskCitation[],
 ): Promise<string> {
   const result = (await vault.runView("query", args)) as {
     kind: string;
@@ -88,12 +90,12 @@ async function runQueryView(
   const lines: string[] = [];
   for (const m of matches as ReadonlyArray<Record<string, unknown>>) {
     const cite = citationFromMatch(m);
-    if (cite !== null) recordCitation(state, cite);
-    const title =
-      typeof m["title"] === "string" ? m["title"] : "(untitled)";
-    const path = cite?.path ?? (typeof m["path"] === "string" ? (m["path"] as string) : "(no path)");
-    const snippet =
-      typeof m["snippet"] === "string" ? m["snippet"] : "";
+    if (cite !== null) recordCitation(citations, cite);
+    const title = typeof m["title"] === "string" ? m["title"] : "(untitled)";
+    const path =
+      cite?.path ??
+      (typeof m["path"] === "string" ? (m["path"] as string) : "(no path)");
+    const snippet = typeof m["snippet"] === "string" ? m["snippet"] : "";
     lines.push(`- ${title} [${path}]${snippet ? `: ${snippet}` : ""}`);
   }
   return lines.join("\n");
@@ -112,7 +114,7 @@ type TodayItem = {
 async function runTodayView(
   vault: Vault,
   args: Record<string, unknown>,
-  state: AskState,
+  citations: AskCitation[],
 ): Promise<string> {
   const result = (await vault.runView("today", args)) as {
     kind: string;
@@ -156,15 +158,13 @@ async function runTodayView(
             ? item.path
             : null;
       if (sourcePath !== null) {
-        recordCitation(state, {
+        recordCitation(citations, {
           path: sourcePath,
           commit: typeof ref?.commit === "string" ? ref.commit : undefined,
         });
       }
       const itemLabel =
-        typeof item.text === "string"
-          ? item.text
-          : sourcePath ?? "(item)";
+        typeof item.text === "string" ? item.text : sourcePath ?? "(item)";
       sections.push(`- ${itemLabel}${sourcePath ? ` [${sourcePath}]` : ""}`);
     }
   }
@@ -179,57 +179,45 @@ async function runTodayView(
 
 // ----- public API -------------------------------------------------------------
 
-export function buildAskTools(vault: Vault): ReadonlyArray<AskTool> {
-  return [
-    {
-      schema: {
-        name: "search_vault",
-        description:
-          "Full-text + fact search over the adopted vault. Returns ranked matches with their source paths. Use this first to find relevant pages.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            text: { type: "string", description: "The search query." },
-            limit: {
-              type: "number",
-              description: "Max matches (default 8).",
-            },
-          },
-          required: ["text"],
-          additionalProperties: false,
-        },
-      },
-      execute: async (input, state) => {
-        const raw = input as Record<string, unknown>;
-        const text = typeof raw?.["text"] === "string" ? String(raw["text"]) : "";
+/**
+ * Build the AI SDK tool set for the ask agent. Citations gathered during tool
+ * execution are pushed into the shared `citations` array (read back by runAsk
+ * after generateText resolves).
+ */
+export function buildAskTools(
+  vault: Vault,
+  citations: AskCitation[],
+): ToolSet {
+  return {
+    search_vault: tool({
+      description:
+        "Full-text + fact search over the adopted vault. Returns ranked matches with their source paths. Use this first to find relevant pages.",
+      inputSchema: z.object({
+        text: z.string().describe("The search query."),
+        limit: z
+          .number()
+          .optional()
+          .describe("Max matches (default 8)."),
+      }),
+      execute: async (input) => {
+        const text = typeof input.text === "string" ? input.text : "";
         if (text.trim().length === 0) {
           return "error: search_vault requires non-empty `text`.";
         }
-        const limit =
-          typeof raw?.["limit"] === "number" ? Number(raw["limit"]) : 8;
-        return runQueryView(vault, { text, limit }, state);
+        const limit = typeof input.limit === "number" ? input.limit : 8;
+        return runQueryView(vault, { text, limit }, citations);
       },
-    },
-    {
-      schema: {
-        name: "read_document",
-        description:
-          "Read the full markdown of a vault page by path (as returned by search_vault). Use to get detail before answering.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            path: {
-              type: "string",
-              description: "Vault-relative path, e.g. wiki/entities/x.md.",
-            },
-          },
-          required: ["path"],
-          additionalProperties: false,
-        },
-      },
-      execute: async (input, state) => {
-        const raw = input as Record<string, unknown>;
-        const path = typeof raw?.["path"] === "string" ? String(raw["path"]) : "";
+    }),
+    read_document: tool({
+      description:
+        "Read the full markdown of a vault page by path (as returned by search_vault). Use to get detail before answering.",
+      inputSchema: z.object({
+        path: z
+          .string()
+          .describe("Vault-relative path, e.g. wiki/entities/x.md."),
+      }),
+      execute: async (input) => {
+        const path = typeof input.path === "string" ? input.path : "";
         if (path.trim().length === 0) {
           return "error: read_document requires `path`.";
         }
@@ -237,36 +225,27 @@ export function buildAskTools(vault: Vault): ReadonlyArray<AskTool> {
         if (doc === null) {
           return `not found: no adopted document at '${path}'.`;
         }
-        recordCitation(state, { path: doc.path, commit: doc.commit });
+        recordCitation(citations, { path: doc.path, commit: doc.commit });
         return doc.content;
       },
-    },
-    {
-      schema: {
-        name: "todays_brief",
-        description:
-          "The owner's brief for today: open tasks, follow-ups, and questions. Use when the question is about 'today', 'now', or what's open.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            date: {
-              type: "string",
-              description: "ISO date; defaults to today.",
-            },
-          },
-          additionalProperties: false,
-        },
-      },
-      execute: async (input, state) => {
-        const raw = input as Record<string, unknown>;
-        const date =
-          typeof raw?.["date"] === "string" ? String(raw["date"]) : undefined;
+    }),
+    todays_brief: tool({
+      description:
+        "The owner's brief for today: open tasks, follow-ups, and questions. Use when the question is about 'today', 'now', or what's open.",
+      inputSchema: z.object({
+        date: z
+          .string()
+          .optional()
+          .describe("ISO date; defaults to today."),
+      }),
+      execute: async (input) => {
+        const date = typeof input.date === "string" ? input.date : undefined;
         return runTodayView(
           vault,
           date !== undefined ? { date } : {},
-          state,
+          citations,
         );
       },
-    },
-  ];
+    }),
+  };
 }

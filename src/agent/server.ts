@@ -13,7 +13,6 @@ import {
   withVault as withVaultShared,
 } from "../surface/adapter";
 import { runAsk } from "./ask";
-import { askStepFromProvider, getModelStepProvider } from "./provider";
 import type { AskResult } from "./types";
 
 // ----- Constants ------------------------------------------------------------
@@ -42,7 +41,7 @@ export type CreateAskServerOptions = {
   readonly timeoutMs?: number | undefined;
   /**
    * Inject a custom ask implementation (used by tests to avoid opening a real
-   * vault). When omitted the default wires getModelStepProvider + runAsk.
+   * vault). When omitted the default opens the vault and wires runAsk.
    */
   readonly askImpl?: AskImpl | undefined;
 };
@@ -147,23 +146,17 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
 
   const timeoutMs = opts.timeoutMs ?? 120_000;
 
-  // Default ask: open the vault, resolve the provider, run the loop.
+  // Default ask: open the vault, run the AI SDK agent loop over its tools.
   const defaultAsk: AskImpl = async (question, signal) => {
-    const prov = await getModelStepProvider(opts.vaultPath);
-    if (prov.kind !== "ok") {
-      throw new Error(
-        prov.kind === "no-provider"
-          ? "no model provider configured in .dome/config.yaml"
-          : prov.message,
-      );
-    }
-    const step = askStepFromProvider(prov.provider, {
-      model: opts.model,
-      signal,
-    });
     const outcome = await withVaultShared(
       { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
-      (vault) => runAsk({ vault, step, question, model: opts.model }),
+      (vault) =>
+        runAsk({
+          vault,
+          question,
+          abortSignal: signal,
+          ...(opts.model !== undefined ? { modelId: opts.model } : {}),
+        }),
     );
     if (outcome.kind === "open-failed") {
       throw new Error(`vault open failed: ${openVaultErrorKind(outcome.error)}`);
