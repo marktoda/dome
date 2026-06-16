@@ -29,11 +29,16 @@
 //     operator/programmer-level issues the adoption loop does not attempt
 //     to recover from.
 //
-// Whole-content writes always succeed (we overwrite the blob OID at the
-// path regardless of prior content); deletes are no-ops when the path
-// doesn't exist in the candidate's tree. If all writes/deletes collapse to
-// the same root tree OID, no commit is written. There is no "patch failed to
-// apply" path — the FileChange shape is non-merging.
+// A write is applied as a 3-way merge when `runContext.mergeBase` is set and
+// differs from `candidate`: the emitting processor's read-snapshot is the
+// merge base, the already-landed candidate blob is `ours`, and the write's
+// content is `theirs`. Disjoint regions compose; a conflicting region resolves
+// to `ours` (the already-landed change, never reverted) and fires
+// `onMergeConflict`. An absent or `=== candidate` mergeBase is a plain
+// overwrite (the common case, byte-identical to pre-merge behavior). Deletes
+// are no-ops when the path doesn't exist in the candidate's tree. If all
+// writes/deletes collapse to the same root tree OID, no commit is written.
+// There is no "patch failed to apply" path — a merge always produces a blob.
 //
 // House-style notes (matches src/engine/core/closure-commit.ts,
 // src/engine/core/apply-effect.ts, src/engine/core/compile-range.ts):
@@ -54,7 +59,8 @@ import type { PatchEffect } from "../../core/effect";
 import { commitOid, type CommitOid } from "../../core/source-ref";
 import { requireVaultPath } from "../../core/vault-path";
 import { composeCommitMessage } from "../../engine-commit";
-import { findGitRoot } from "../../git";
+import { findGitRoot, readBlob } from "../../git";
+import { merge3 } from "./diff3";
 
 // ----- ApplyPatchInput ------------------------------------------------------
 
@@ -77,8 +83,19 @@ export type ApplyPatchInput = {
     readonly base: CommitOid;
     /** HEAD SHA at loop start. */
     readonly sourceHead: CommitOid;
+    /**
+     * The commit the emitting processor READ (its input snapshot), used as the
+     * 3-way merge base when `candidate` has advanced past it (a sibling patch
+     * landed in between). Absent or `=== candidate` → plain overwrite (no
+     * sibling divergence to reconcile). Distinct from `base` (the Dome-Base
+     * trailer / `proposal.base`), which must stay equal to the new commit's
+     * parent. See docs/cohesive/brainstorms/2026-06-16-garden-patch-3way-merge.md.
+     */
+    readonly mergeBase?: CommitOid;
   };
   readonly now?: () => Date;
+  /** Called once per write whose 3-way merge had a true conflict (resolved to `ours`). */
+  readonly onMergeConflict?: (info: { readonly path: string; readonly processorId: string }) => void;
 };
 
 // ----- applyPatchToCandidate ------------------------------------------------
@@ -127,10 +144,45 @@ export async function applyPatchToCandidate(
     const vaultPath = requireVaultPath(change.path, "PatchEffect.change.path");
     const fullPath = joinPrefix(prefix, vaultPath);
     if (change.kind === "write") {
+      let finalContent = change.content;
+      const mergeBase = opts.runContext.mergeBase;
+      // Only reconcile when a sibling advanced the candidate past the snapshot
+      // the processor read. Same-commit (or unset) mergeBase → overwrite, the
+      // common case and byte-identical to pre-merge behavior.
+      if (mergeBase !== undefined && mergeBase !== opts.candidate) {
+        // Reuse git.ts's readBlob (hardened NotFoundError detection, returns
+        // null for an absent path). It resolves the git context itself, so it
+        // takes the vault dir + the change's vault-relative path — not the
+        // already-prefixed `fullPath`.
+        const ours = await readBlob({
+          path: opts.vaultPath,
+          commit: opts.candidate,
+          filepath: vaultPath,
+        });
+        const baseContent = await readBlob({
+          path: opts.vaultPath,
+          commit: mergeBase,
+          filepath: vaultPath,
+        });
+        if (ours !== null && ours !== baseContent) {
+          const m = merge3({
+            base: baseContent ?? "",
+            ours,
+            theirs: change.content,
+          });
+          finalContent = m.text;
+          if (m.conflict) {
+            opts.onMergeConflict?.({
+              path: change.path,
+              processorId: opts.runContext.processorId,
+            });
+          }
+        }
+      }
       const blobOid = await git.writeBlob({
         fs,
         dir: root,
-        blob: Buffer.from(change.content, "utf8"),
+        blob: Buffer.from(finalContent, "utf8"),
       });
       writes.set(fullPath, blobOid);
       // A later write supersedes an earlier delete of the same path.

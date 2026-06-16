@@ -102,9 +102,11 @@ export async function dispatchGardenPatchEffect(opts: {
   }
 
   const adopted = resolveCurrentAdopted(opts.currentAdopted, opts.adopted);
+  const mergeConflicts: Array<{ path: string; processorId: string }> = [];
   const spawned = await spawnGardenSubProposal({
     vault: opts.vault,
     base: adopted,
+    mergeBase: opts.adopted,
     sourceHead: adopted,
     patch: routed.patch,
     processorId: opts.processorId,
@@ -114,7 +116,28 @@ export async function dispatchGardenPatchEffect(opts: {
     ...(opts.now !== undefined ? { now: opts.now } : {}),
     applyPatch: opts.applyGardenPatch,
     adoptSubProposal: opts.adoptSubProposal,
+    onMergeConflict: (info) => mergeConflicts.push(info),
   });
+  // A true 3-way merge conflict resolves to the already-landed content; surface
+  // it so the silent resolve-to-ours is operator-visible.
+  for (const conflict of mergeConflicts) {
+    const diag = diagnosticEffect({
+      severity: "warning",
+      code: "garden.patch.merge-conflict",
+      message:
+        `Garden patch from ${conflict.processorId} conflicted with a ` +
+        `concurrently-landed change at ${conflict.path}; resolved to the ` +
+        `already-landed content (the conflicting region was not applied).`,
+      sourceRefs: [],
+    });
+    opts.diagnostics.push(diag);
+    await opts.sinks.recordDiagnostic({
+      effect: diag,
+      processorId: conflict.processorId,
+      runId: opts.runId,
+      proposalId: opts.proposalId,
+    });
+  }
   return Object.freeze({
     authorized: true,
     spawned: spawned.kind === "spawned",

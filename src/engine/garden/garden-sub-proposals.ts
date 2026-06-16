@@ -42,6 +42,15 @@ export type GardenSubProposalSpawnResult =
 export async function spawnGardenSubProposal(opts: {
   readonly vault: EngineVault;
   readonly base: CommitOid;
+  /**
+   * The snapshot the emitting processor READ — the 3-way merge base for the
+   * patch's whole-file write. Distinct from `base` (which is the live candidate
+   * / proposal base / Dome-Base trailer). When it equals `base` (nothing landed
+   * since the read) apply-patch overwrites as before; when a sibling advanced
+   * `base` past it, apply-patch merges. See
+   * docs/cohesive/brainstorms/2026-06-16-garden-patch-3way-merge.md.
+   */
+  readonly mergeBase: CommitOid;
   readonly sourceHead: CommitOid;
   readonly patch: PatchEffect;
   readonly processorId: string;
@@ -49,6 +58,8 @@ export async function spawnGardenSubProposal(opts: {
   readonly extensionId: string;
   readonly cascadeDepth: number;
   readonly now?: () => Date;
+  /** Forwarded to applyPatch; fires per write whose 3-way merge truly conflicted (resolved to `ours`). */
+  readonly onMergeConflict?: (info: { readonly path: string; readonly processorId: string }) => void;
   readonly applyPatch: (opts: ApplyPatchInput) => Promise<CommitOid | null>;
   readonly adoptSubProposal: AdoptSubProposalFn;
 }): Promise<GardenSubProposalSpawnResult> {
@@ -61,9 +72,13 @@ export async function spawnGardenSubProposal(opts: {
       processorId: opts.processorId,
       extensionId: opts.extensionId,
       base: opts.base,
+      mergeBase: opts.mergeBase,
       sourceHead: opts.sourceHead,
     },
     ...(opts.now !== undefined ? { now: opts.now } : {}),
+    ...(opts.onMergeConflict !== undefined
+      ? { onMergeConflict: opts.onMergeConflict }
+      : {}),
   });
   if (newHead === null) {
     return Object.freeze({

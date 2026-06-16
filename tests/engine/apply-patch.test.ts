@@ -596,6 +596,149 @@ describe("applyPatchToCandidate", () => {
     );
   });
 
+  test("3-way merges disjoint-region writes against mergeBase (no sibling-region revert)", async () => {
+    const base = "TOP: base\nmid-1\nmid-2\nmid-3\nBOTTOM: base\n";
+    const f = await makeFixture({ "daily.md": base });
+    fixtures.push(f);
+    const c0 = f.baseCandidate;
+
+    // Patch A: change only the TOP region; mergeBase === candidate (c0) → overwrite.
+    const aContent = "TOP: from-A\nmid-1\nmid-2\nmid-3\nBOTTOM: base\n";
+    const patchA = patchEffect({
+      mode: "auto",
+      changes: [{ kind: "write", path: "daily.md", content: aContent }],
+      reason: "A",
+      sourceRefs: [],
+    });
+    const c1 = await applyPatchToCandidate({
+      vaultPath: f.vaultPath,
+      candidate: c0,
+      patch: patchA,
+      runContext: { ...RUN_CONTEXT_FIXTURE(c0, c0), mergeBase: c0 },
+    });
+    expect(c1).not.toBeNull();
+    if (c1 === null) throw new Error("expected new commit");
+
+    // Patch B: change only the BOTTOM region, computed from the SAME snapshot c0.
+    // Applied onto c1 (TOP already changed) with mergeBase = c0 → must MERGE.
+    const bContent = "TOP: base\nmid-1\nmid-2\nmid-3\nBOTTOM: from-B\n";
+    const patchB = patchEffect({
+      mode: "auto",
+      changes: [{ kind: "write", path: "daily.md", content: bContent }],
+      reason: "B",
+      sourceRefs: [],
+    });
+    const c2 = await applyPatchToCandidate({
+      vaultPath: f.vaultPath,
+      candidate: c1,
+      patch: patchB,
+      runContext: { ...RUN_CONTEXT_FIXTURE(c1, c1), mergeBase: c0 },
+    });
+    expect(c2).not.toBeNull();
+    if (c2 === null) throw new Error("expected new commit");
+
+    const merged = await readBlobAt(f.vaultPath, c2, "daily.md");
+    expect(merged).toContain("TOP: from-A"); // A's region survived
+    expect(merged).toContain("BOTTOM: from-B"); // B's region landed
+  });
+
+  test("conflicting-region writes resolve to ours and fire onMergeConflict", async () => {
+    const base = "TOP: base\nmid-1\nmid-2\nmid-3\nBOTTOM: base\n";
+    const f = await makeFixture({ "daily.md": base });
+    fixtures.push(f);
+    const c0 = f.baseCandidate;
+
+    // Patch A: change TOP.
+    const aContent = "TOP: from-A\nmid-1\nmid-2\nmid-3\nBOTTOM: base\n";
+    const patchA = patchEffect({
+      mode: "auto",
+      changes: [{ kind: "write", path: "daily.md", content: aContent }],
+      reason: "A",
+      sourceRefs: [],
+    });
+    const c1 = await applyPatchToCandidate({
+      vaultPath: f.vaultPath,
+      candidate: c0,
+      patch: patchA,
+      runContext: { ...RUN_CONTEXT_FIXTURE(c0, c0), mergeBase: c0 },
+    });
+    expect(c1).not.toBeNull();
+    if (c1 === null) throw new Error("expected new commit");
+
+    // Patch B: ALSO changes TOP differently, from the same snapshot c0 → conflict.
+    const bContent = "TOP: from-B\nmid-1\nmid-2\nmid-3\nBOTTOM: base\n";
+    const patchB = patchEffect({
+      mode: "auto",
+      changes: [{ kind: "write", path: "daily.md", content: bContent }],
+      reason: "B",
+      sourceRefs: [],
+    });
+    const calls: Array<{ path: string; processorId: string }> = [];
+    const c2 = await applyPatchToCandidate({
+      vaultPath: f.vaultPath,
+      candidate: c1,
+      patch: patchB,
+      runContext: { ...RUN_CONTEXT_FIXTURE(c1, c1), mergeBase: c0 },
+      onMergeConflict: (i) => calls.push(i),
+    });
+
+    // ours (the already-landed TOP: from-A) wins the conflicting region, so the
+    // merge result equals the candidate's existing blob → no tree change → null.
+    // The diagnostic still fires.
+    expect(c2).toBeNull();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.path).toBe("daily.md");
+
+    // The candidate's content is unchanged: A's region intact, B's reverted.
+    const merged = await readBlobAt(f.vaultPath, c1, "daily.md");
+    expect(merged).toContain("TOP: from-A");
+    expect(merged).not.toContain("TOP: from-B");
+  });
+
+  test("no mergeBase is a plain overwrite (back-compat fast path)", async () => {
+    const base = "TOP: base\nmid-1\nmid-2\nmid-3\nBOTTOM: base\n";
+    const f = await makeFixture({ "daily.md": base });
+    fixtures.push(f);
+    const c0 = f.baseCandidate;
+
+    const aContent = "TOP: from-A\nmid-1\nmid-2\nmid-3\nBOTTOM: base\n";
+    const patchA = patchEffect({
+      mode: "auto",
+      changes: [{ kind: "write", path: "daily.md", content: aContent }],
+      reason: "A",
+      sourceRefs: [],
+    });
+    const c1 = await applyPatchToCandidate({
+      vaultPath: f.vaultPath,
+      candidate: c0,
+      patch: patchA,
+      runContext: { ...RUN_CONTEXT_FIXTURE(c0, c0), mergeBase: c0 },
+    });
+    expect(c1).not.toBeNull();
+    if (c1 === null) throw new Error("expected new commit");
+
+    // Patch B with NO mergeBase → plain overwrite onto c1.
+    const bContent = "TOP: base\nmid-1\nmid-2\nmid-3\nBOTTOM: from-B\n";
+    const patchB = patchEffect({
+      mode: "auto",
+      changes: [{ kind: "write", path: "daily.md", content: bContent }],
+      reason: "B",
+      sourceRefs: [],
+    });
+    const c2 = await applyPatchToCandidate({
+      vaultPath: f.vaultPath,
+      candidate: c1,
+      patch: patchB,
+      runContext: RUN_CONTEXT_FIXTURE(c1, c1),
+    });
+    expect(c2).not.toBeNull();
+    if (c2 === null) throw new Error("expected new commit");
+
+    // Whole-blob overwrite: B's content lands verbatim, A's TOP reverts.
+    const result = await readBlobAt(f.vaultPath, c2, "daily.md");
+    expect(result).toBe(bContent);
+  });
+
   test("whitespace-only reason produces no body paragraph", async () => {
     const f = await makeFixture({ "wiki/a.md": "alpha\n" });
     fixtures.push(f);

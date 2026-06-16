@@ -541,9 +541,11 @@ async function runGardenPhaseInner(opts: {
       // answer handlers.
       for (const req of spawnQueue) {
         const base = resolveCurrentAdopted(currentAdopted, adopted);
+        const mergeConflicts: Array<{ path: string; processorId: string }> = [];
         const spawned = await spawnGardenSubProposal({
           vault,
           base,
+          mergeBase: adopted,
           sourceHead: base,
           patch: req.patch,
           processorId: req.processorId,
@@ -553,7 +555,30 @@ async function runGardenPhaseInner(opts: {
           ...(opts.now !== undefined ? { now: opts.now } : {}),
           applyPatch: applyPatchToCandidate,
           adoptSubProposal,
+          onMergeConflict: (info) => mergeConflicts.push(info),
         });
+        // A true 3-way merge conflict (a sibling sub-Proposal touched the same
+        // region this processor read) resolves to the already-landed content;
+        // surface it so the silent resolve-to-ours is operator-visible.
+        for (const conflict of mergeConflicts) {
+          const diag = diagnosticEffect({
+            severity: "warning",
+            code: "garden.patch.merge-conflict",
+            message:
+              `Garden patch from ${conflict.processorId} conflicted with a ` +
+              `concurrently-landed change at ${conflict.path}; resolved to the ` +
+              `already-landed content (the conflicting region was not applied). ` +
+              `The processor re-derives against the merged state on the next cascade.`,
+            sourceRefs: [],
+          });
+          allDiagnostics.push(diag);
+          await sinks.recordDiagnostic({
+            effect: diag,
+            processorId: conflict.processorId,
+            runId: req.runId,
+            proposalId: proposal.id,
+          });
+        }
         if (spawned.kind === "spawned") {
           totalSubProposals += 1;
         }
