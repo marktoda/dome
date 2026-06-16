@@ -30,8 +30,8 @@ export type ExecutionPolicyError = {
  * The hard ceiling for an adoption-phase deterministic timeout. Adoption is
  * the merge gate, so its DEFAULT stays low (10s — see the deterministic class
  * default) to keep the common single-file path fast. But a genuine whole-vault
- * adoption scan (e.g. `dome.markdown.duplicate-detection`, which reads and
- * parses every comparable page on each changed file) legitimately needs more
+ * adoption scan (e.g. `dome.markdown.lint-supersession`, which reads and
+ * parses every readable page on each changed file) legitimately needs more
  * than 10s on a large vault, and silently timing out ~every tick wedges
  * adoption with zero health signal. A processor may therefore REQUEST a larger
  * deterministic timeout via its manifest `execution.timeoutMs`, clamped to this

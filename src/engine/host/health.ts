@@ -60,8 +60,8 @@ export const DEFAULT_RECURRING_OUTBOX_FAILURE_THRESHOLD_MS = 60 * 60 * 1000;
 /**
  * How many `timed_out` runs for one processor (within the scanned window)
  * constitute a recurring-timeout finding. Two clears a single unlucky blip
- * while still firing early on a genuine wedge (the live duplicate-detection
- * timed out ~30+ times).
+ * while still firing early on a genuine wedge (e.g. a whole-vault adoption
+ * scan like dome.markdown.lint-supersession timing out ~30+ times).
  */
 export const DEFAULT_RECURRING_TIMEOUT_THRESHOLD = 2;
 /**
