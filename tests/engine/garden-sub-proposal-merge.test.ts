@@ -22,10 +22,14 @@ import fs from "node:fs";
 import git from "isomorphic-git";
 
 import { spawnGardenSubProposal } from "../../src/engine/garden/garden-sub-proposals";
+import { runGardenPhase } from "../../src/engine/garden/garden";
 import { applyPatchToCandidate } from "../../src/engine/core/apply-patch";
+import { noopSinks } from "../../src/engine/core/apply-effect";
 import { patchEffect } from "../../src/core/effect";
 import { commitOid, type CommitOid } from "../../src/core/source-ref";
+import { makeManualProposal } from "../../src/core/proposal";
 import type { AdoptionResult, Proposal } from "../../src/core/proposal";
+import type { Capability } from "../../src/core/processor";
 import type { RunId } from "../../src/engine/core/runner-contract";
 import type { EngineVault } from "../../src/engine/core/vault-shape";
 import { commit, initRepo } from "../../src/git";
@@ -162,6 +166,134 @@ describe("spawnGardenSubProposal mergeBase plumbing", () => {
     const merged = await readBlobAt(f.vaultPath, h2, "daily.md");
     expect(merged).toContain("TOP: from-A"); // A's region survived
     expect(merged).toContain("BOTTOM: from-B"); // B's region landed
+  });
+
+  test("true conflict (same region edited from same snapshot) fires onMergeConflict", async () => {
+    const f = await makeFixture(S0);
+    fixtures.push(f);
+    const s0 = f.snapshot;
+
+    // Spawn #1 edits the TOP line.
+    const h1 = await spawnWrite({
+      vaultPath: f.vaultPath,
+      base: s0,
+      mergeBase: s0,
+      content: A_CONTENT,
+      reason: "render-facts",
+    });
+    expect(await readBlobAt(f.vaultPath, h1, "daily.md")).toBe(A_CONTENT);
+
+    // Spawn #2 edits the SAME TOP line (conflict) AND a disjoint BOTTOM line
+    // (clean) from the SAME snapshot (s0). base advanced to H1 (sibling #1
+    // landed); mergeBase = s0 → the TOP region truly conflicts → resolves to
+    // `ours` (H1's TOP) and fires onMergeConflict once; BOTTOM merges cleanly so
+    // the merged tree differs from H1 and the sub-Proposal actually spawns.
+    const collected: Array<{ path: string; processorId: string }> = [];
+    const CONFLICTING = "TOP: from-B\nm1\nm2\nm3\nBOTTOM: from-B\n"; // TOP conflicts, BOTTOM clean
+    const patch = patchEffect({
+      mode: "auto",
+      changes: [{ kind: "write", path: "daily.md", content: CONFLICTING }],
+      reason: "stamp",
+      sourceRefs: [],
+    });
+    const result = await spawnGardenSubProposal({
+      vault: vaultFor(f.vaultPath),
+      base: h1,
+      mergeBase: s0,
+      sourceHead: h1,
+      patch,
+      processorId: "dome.claims.stamp",
+      runId: RUN_ID,
+      extensionId: "dome.claims",
+      cascadeDepth: 1,
+      applyPatch: applyPatchToCandidate,
+      adoptSubProposal: async (proposal) => MINIMAL_ADOPTION(proposal),
+      onMergeConflict: (info) => collected.push(info),
+    });
+    if (result.kind !== "spawned") {
+      throw new Error(`expected spawned, got ${result.kind}`);
+    }
+
+    expect(collected).toHaveLength(1);
+    expect(collected[0]?.path).toBe("daily.md");
+    expect(collected[0]?.processorId).toBe("dome.claims.stamp");
+  });
+
+  test("orchestrator records a garden.patch.merge-conflict diagnostic on a true conflict", async () => {
+    const f = await makeFixture(S0);
+    fixtures.push(f);
+    const s0 = f.snapshot;
+
+    // Simulate the live adopted ref advancing as each sub-Proposal adopts —
+    // what the real host's currentAdopted observes across the spawn loop.
+    let liveAdopted: CommitOid = s0;
+
+    const recorded: Array<{ code: string; processorId: string }> = [];
+    const sinks = {
+      ...noopSinks(),
+      recordDiagnostic: async (input: {
+        readonly effect: { readonly code: string };
+        readonly processorId: string;
+      }) => {
+        recorded.push({ code: input.effect.code, processorId: input.processorId });
+      },
+    };
+
+    const grant: Capability[] = [
+      { kind: "read", paths: ["daily.md"] },
+      { kind: "patch.auto", paths: ["daily.md"] },
+    ];
+    const runnerResult = (processorId: string, content: string) => ({
+      runId: RUN_ID,
+      processorId,
+      executionStatus: "succeeded" as const,
+      declared: grant,
+      granted: grant,
+      inspectedPaths: ["daily.md"],
+      effects: [
+        patchEffect({
+          mode: "auto",
+          changes: [{ kind: "write", path: "daily.md", content }],
+          reason: processorId,
+          sourceRefs: [],
+        }),
+      ],
+    });
+
+    const result = await runGardenPhase({
+      vault: vaultFor(f.vaultPath),
+      proposal: makeManualProposal({
+        id: "prop_conflict",
+        base: s0,
+        head: s0,
+        branch: "main",
+      }),
+      adopted: s0,
+      changedPaths: ["daily.md"],
+      signals: [{ signal: "document.changed", path: "daily.md" }],
+      currentAdopted: () => liveAdopted,
+      runGardenProcessors: async () => [
+        // #1 changes TOP only.
+        runnerResult("dome.claims.render-facts", A_CONTENT),
+        // #2 read the SAME snapshot (s0) but the candidate advanced to #1's
+        // head; it conflicts on TOP and changes BOTTOM cleanly.
+        runnerResult("dome.claims.stamp", "TOP: from-B\nm1\nm2\nm3\nBOTTOM: from-B\n"),
+      ],
+      sinks,
+      adoptSubProposal: async (proposal) => {
+        liveAdopted = proposal.head; // advance the live ref as the host would
+        return MINIMAL_ADOPTION(proposal);
+      },
+    });
+
+    const conflicts = recorded.filter(
+      (r) => r.code === "garden.patch.merge-conflict",
+    );
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]?.processorId).toBe("dome.claims.stamp");
+    expect(
+      result.diagnostics.some((d) => d.code === "garden.patch.merge-conflict"),
+    ).toBe(true);
   });
 
   test("gate: mergeBase === base (=== H1) is a plain overwrite that reverts TOP", async () => {

@@ -58,6 +58,8 @@ export async function spawnGardenSubProposal(opts: {
   readonly extensionId: string;
   readonly cascadeDepth: number;
   readonly now?: () => Date;
+  /** Forwarded to applyPatch; fires per write whose 3-way merge truly conflicted (resolved to `ours`). */
+  readonly onMergeConflict?: (info: { readonly path: string; readonly processorId: string }) => void;
   readonly applyPatch: (opts: ApplyPatchInput) => Promise<CommitOid | null>;
   readonly adoptSubProposal: AdoptSubProposalFn;
 }): Promise<GardenSubProposalSpawnResult> {
@@ -74,6 +76,9 @@ export async function spawnGardenSubProposal(opts: {
       sourceHead: opts.sourceHead,
     },
     ...(opts.now !== undefined ? { now: opts.now } : {}),
+    ...(opts.onMergeConflict !== undefined
+      ? { onMergeConflict: opts.onMergeConflict }
+      : {}),
   });
   if (newHead === null) {
     return Object.freeze({
