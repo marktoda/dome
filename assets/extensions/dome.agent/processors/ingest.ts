@@ -21,6 +21,31 @@ import { archivedCapturePath } from "../lib/vault-tools";
 
 const MAX_STEPS = 25;
 
+/**
+ * Max captures lifted per ingest run. A backlog drains over successive passes
+ * (oldest-first) rather than risking the agent execution timeout in one run.
+ * Ingest's analog of consolidate's MAX_CHANGED_FILES blast-radius cap.
+ */
+export const MAX_CAPTURES_PER_RUN = 10;
+
+function isRawCapturePath(path: string): boolean {
+  return /^inbox\/raw\/[^/]+\.md$/.test(path);
+}
+
+/**
+ * The ingest worklist = the standing contents of inbox/raw/, oldest-first,
+ * bounded. Pure: a function of the snapshot's markdown listing, not of the
+ * commit delta — so a scheduled (cron) run reconciles lingering captures a
+ * missed signal left behind. Captures are timestamp-prefixed, so a lexical
+ * sort is chronological (FIFO) and deterministic (no mtime).
+ */
+export function selectIngestWorklist(
+  markdownPaths: ReadonlyArray<string>,
+  max: number = MAX_CAPTURES_PER_RUN,
+): string[] {
+  return markdownPaths.filter(isRawCapturePath).sort().slice(0, max);
+}
+
 // Truncated-read amputation guard (mirrors sweep's MATERIAL_READ_CHARS): a
 // source beyond this never reaches the model. `trimToFit` never trims the
 // task turn, so an unbounded capture would exceed provider context on EVERY
@@ -191,10 +216,6 @@ function extractCaptureSourceUrl(source: string): string | null {
   }
   const slack = /\bhttps:\/\/[a-z0-9.-]*slack\.com\/\S+/i.exec(source);
   return slack ? slack[0] : null;
-}
-
-function isRawCapturePath(path: string): boolean {
-  return /^inbox\/raw\/[^/]+\.md$/.test(path);
 }
 
 function taskTurn(
