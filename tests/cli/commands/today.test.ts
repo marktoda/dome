@@ -946,7 +946,7 @@ describe("dome today: stripEmphasis applied in renderRow", () => {
     expect(taskLine).toContain("Re-look Erin promo doc");
   });
 
-  test("a task row with __underline bold__ renders without underscores", () => {
+  test("a task row with __dunder__ text renders intact (we no longer strip __)", () => {
     const data = {
       date: "2026-06-15",
       hero: null,
@@ -962,6 +962,7 @@ describe("dome today: stripEmphasis applied in renderRow", () => {
     const out = formatTodayResult(data, caps, "/vault");
     const taskLine = out.split("\n").find((l) => l.includes("Important task"))!;
     expect(taskLine).toBeDefined();
-    expect(taskLine).not.toContain("__");
+    // __ is intentionally left intact — stripping it would mangle dunder names
+    expect(taskLine).toContain("__Important task__");
   });
 });

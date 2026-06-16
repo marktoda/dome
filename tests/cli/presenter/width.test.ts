@@ -22,36 +22,43 @@ describe("shortenLabel", () => {
 });
 
 describe("stripEmphasis", () => {
+  // --- strips **bold** (the only form we handle) ---
   test("**bold** → bare text", () => {
     expect(stripEmphasis("**bold**")).toBe("bold");
   });
-  test("__bold__ → bare text", () => {
-    expect(stripEmphasis("__bold__")).toBe("bold");
+  test("**a** and **b** → a and b", () => {
+    expect(stripEmphasis("**a** and **b**")).toBe("a and b");
   });
-  test("*italic* → bare text", () => {
-    expect(stripEmphasis("*italic*")).toBe("italic");
-  });
-  test("_italic_ → bare text", () => {
-    expect(stripEmphasis("_italic_")).toBe("italic");
-  });
-  test("emphasis embedded in a sentence", () => {
+  test("**bold** embedded in a sentence", () => {
     expect(stripEmphasis("**Re-look Erin promo doc** — check details")).toBe("Re-look Erin promo doc — check details");
-  });
-  test("multiple emphasis spans", () => {
-    expect(stripEmphasis("**A** and **B** done")).toBe("A and B done");
   });
   test("plain text is unchanged", () => {
     expect(stripEmphasis("plain label")).toBe("plain label");
   });
-  test("unpaired single asterisk left untouched (a*b)", () => {
-    // a*b — no matching pair around non-space content
-    expect(stripEmphasis("a*b")).toBe("a*b");
-  });
-  test("snake_case left untouched (no surrounding pair)", () => {
-    // snake_case has no matching closing _
-    expect(stripEmphasis("snake_case")).toBe("snake_case");
-  });
   test("no-op on empty string", () => {
     expect(stripEmphasis("")).toBe("");
+  });
+
+  // --- safety: single markers and dunders are NOT stripped ---
+  test("snake_case is unchanged (no over-strip)", () => {
+    expect(stripEmphasis("foo_bar_baz")).toBe("foo_bar_baz");
+  });
+  test("URL with underscores is unchanged", () => {
+    expect(stripEmphasis("https://x.com/path_with_underscores")).toBe("https://x.com/path_with_underscores");
+  });
+  test("__init__ is unchanged", () => {
+    expect(stripEmphasis("__init__")).toBe("__init__");
+  });
+  test("math expression with * is unchanged", () => {
+    expect(stripEmphasis("2 * 3 = 6")).toBe("2 * 3 = 6");
+  });
+  test("*italic* is unchanged (we do NOT strip single emphasis)", () => {
+    expect(stripEmphasis("*italic*")).toBe("*italic*");
+  });
+  test("_emphasis_ is unchanged", () => {
+    expect(stripEmphasis("_emphasis_")).toBe("_emphasis_");
+  });
+  test("__bold__ is unchanged (we do NOT strip double-underscore)", () => {
+    expect(stripEmphasis("__bold__")).toBe("__bold__");
   });
 });

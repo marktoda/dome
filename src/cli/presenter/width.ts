@@ -56,21 +56,12 @@ export function shortenLabel(text: string, width: number, unicode = true): strin
 // existing callers that import from this module continue to work.
 export { stripWikilinks } from "../../core/wikilink";
 
-/**
- * Strip paired markdown emphasis markers from plain text for CLI display.
- * Removes `**bold**`, `__bold__`, `*italic*`, `_italic_` — only when the
- * markers are paired around non-space content. Conservative: does NOT strip
- * unpaired asterisks/underscores (e.g. `a*b`, `snake_case` left untouched).
- * Apply BEFORE paint() and BEFORE shortenLabel().
- */
+/** Strip markdown BOLD (**x**) for terminal display. Conservative on purpose:
+ *  only the doubled-asterisk form, which is almost never legitimate in task
+ *  prose. Single * / _ and __ are LEFT INTACT so snake_case identifiers, bare
+ *  URLs, dunder names, and `2 * 3` math are never mangled. */
 export function stripEmphasis(text: string): string {
-  // Double markers first (must precede single so `**x**` → `x` not `*x*` → `x*`).
-  // Use [^*] for ** and [^_] for __ to prevent greedy cross-span matching.
-  return text
-    .replace(/\*\*([^*\s][^*]*?[^*\s]|[^*\s])\*\*/g, "$1")
-    .replace(/__([^_\s][^_]*?[^_\s]|[^_\s])__/g, "$1")
-    .replace(/\*([^*\s][^*]*?[^*\s]|[^*\s])\*/g, "$1")
-    .replace(/_([^_\s][^_]*?[^_\s]|[^_\s])_/g, "$1");
+  return text.replace(/\*\*([^*]+?)\*\*/g, "$1");
 }
 
 /**
