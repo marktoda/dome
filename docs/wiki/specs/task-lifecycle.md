@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-03
-updated: 2026-06-13
+updated: 2026-06-15
 sources:
   - "[[v1]]"
 description: "Task substrate: move-stable ^block anchors, splice-guard generated blocks, stamp/reconcile/normalize, lastHumanChangedAt, attention discounting"
@@ -92,6 +92,10 @@ The fact's value records `{ anchor, body, discount, impressions, lastShown }` (s
 - **The morning brief** receives heavily-discounted items (discount ≥ 0.4) as deterministic pre-run DATA — "surfaced Nx without action" — and its charter compresses them into a single stale-loops line or one question instead of repeating them at full prominence. See [[wiki/specs/autonomous-agents]] §"`dome.agent.brief`".
 
 The asymmetry is by construction, mirroring the Gmail lesson ("buried something important" must be the rare error): discounting compresses and reorders presentation; it never resolves, dismisses, or deletes the underlying task line. Markdown stays the source of truth; the discount is presentation-layer judgment derived from it.
+
+## Stale-settle (finishing the attention path)
+
+**Stale-settle (finishing the attention path).** A task that is overdue beyond a threshold (default 14 days) OR undated and discounted ≥ `ATTENTION_STALE_THRESHOLD` is surfaced by `dome.daily.stale-task-warden` as ONE owner question — `dome.daily.settle-stale:<stableId>`, options close / defer / keep — capped at the 8 worst per run (most-overdue first). The deterministic `dome.daily.settle-stale-answer` handler applies the disposition: **close** marks the origin line `[-]` (reconcile propagates), **defer** moves the `📅` due date forward, **keep** is a no-op (the resolved question suppresses recurrence). Both processors are deterministic (clock-dependent, not rebuild-`deterministic`); the warden only asks and the handler only acts on the owner's answer — propose-not-auto. This finishes the existing attention path (no new staleness channel). Design: [[cohesive/brainstorms/2026-06-15-daily-phase2]].
 
 ## Wardens
 

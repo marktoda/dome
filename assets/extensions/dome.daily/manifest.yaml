@@ -246,6 +246,44 @@ processors:
       kind: all-readable-markdown
     module: processors/reconcile-tasks.ts
 
+  # Clock-aware warden: emits one settle-stale QuestionEffect per stale/overdue
+  # open-loop task. Stale = overdue ≥ 14 days (rule a) OR undated + discounted ≥ 0.4
+  # (rule b). Cron-only BY DESIGN: staleness is a daily property, not a per-commit
+  # fact; schedule matches create-daily so the owner sees fresh signals each morning.
+  # NOT registered as execution.class: deterministic because the output depends on
+  # ctx.now() for the overdue date comparison.
+  - id: dome.daily.stale-task-warden
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "0 6 * * *"
+    capabilities:
+      - kind: read
+        paths: ["wiki/**/*.md", "notes/*.md"]
+      - kind: question.ask
+    module: processors/stale-task-warden.ts
+
+  # Deterministic answer handler for dome.daily.stale-task-warden questions.
+  # Applies the owner's disposition (close / defer / keep) to the stale task
+  # identified by its ^anchor (metadata.material) in the source file
+  # (metadata.destination). close → `- [-]` (idempotent); defer → advances the
+  # 📅 date by DEFER_DAYS from today; keep → no effects.
+  # No model, no graph.write — patch.auto only.
+  - id: dome.daily.settle-stale-answer
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: answer
+        questionProcessorId: dome.daily.stale-task-warden
+        idempotencyKeyPrefix: "dome.daily.settle-stale:"
+    capabilities:
+      - kind: read
+        paths: ["wiki/**/*.md", "notes/*.md"]
+      - kind: patch.auto
+        paths: ["wiki/**/*.md", "notes/*.md", "wiki/dailies/*.md"]
+    module: processors/settle-stale-answer.ts
+
 # Doctor contributions (wiki/specs/cli.md §"dome doctor"): grant-entry probes
 # evaluated generically by the health report. dome init --refresh-config never
 # merges new entries into existing grant keys, so these name the exact YAML a
