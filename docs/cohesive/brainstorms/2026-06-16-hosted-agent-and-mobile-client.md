@@ -129,9 +129,15 @@ it's an implementation option *inside* A's backend, not a different product.
 
 1. **Stand up the home server** on the tailnet; move `dome serve` + the vault onto
    it. This unblocks everything mobile and is the WS3 prerequisite.
-2. **Agent backend** on the host: Claude API tool runner with Dome read/search/
-   capture as tools + a synthesis prompt; expose a small HTTP surface (chat + the
-   existing collector routes), served via `tailscale serve`.
+2. **Agent backend** on the host — ✅ **SHIPPED 2026-06-16** (`src/agent/`,
+   `dome ask-server`, `POST /ask` → `{answer, citations}`): a multi-step
+   tool-calling loop over Dome's read collectors (query/today/readDocument) on
+   the **Vercel AI SDK** (`generateText` + tools), bearer auth + bounded body +
+   request timeout. It's a client of the contract, brings its own model
+   (Anthropic via the AI SDK), and is a companion entrypoint (dynamic-import
+   only, so the no-LLM-in-core fence holds). Remaining for this step: streaming
+   (`streamText` + SSE) for the voice/chat UX, and serving it via
+   `tailscale serve` once the host exists.
 3. **PWA**: voice capture (MediaRecorder→transcription), ask/chat, brief, recents.
    Add-to-home-screen; IndexedDB capture queue flushed on open (no iOS background
    sync); Declarative Web Push for question nudges.
