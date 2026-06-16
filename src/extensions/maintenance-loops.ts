@@ -622,6 +622,10 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         // settle-stale questions, one per task, so the owner can close, defer, or
         // keep. Fires at 06:00 alongside create-daily (shared cron tick).
         "dome.daily.stale-task-warden",
+        // Answer handler for the warden's settle-stale questions. Deterministic;
+        // applies close (→ [-]), defer (advances the 📅 date by 7 days), or keep
+        // (no-op) based on the owner's answer. Locates the task by ^anchor.
+        "dome.daily.settle-stale-answer",
       ],
       // dome.sources.fetch joins the edition rather than owning a tenth
       // loop: in the default experience its sole purpose is feeding the

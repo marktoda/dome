@@ -264,6 +264,26 @@ processors:
       - kind: question.ask
     module: processors/stale-task-warden.ts
 
+  # Deterministic answer handler for dome.daily.stale-task-warden questions.
+  # Applies the owner's disposition (close / defer / keep) to the stale task
+  # identified by its ^anchor (metadata.material) in the source file
+  # (metadata.destination). close → `- [-]` (idempotent); defer → advances the
+  # 📅 date by DEFER_DAYS from today; keep → no effects.
+  # No model, no graph.write — patch.auto only.
+  - id: dome.daily.settle-stale-answer
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: answer
+        questionProcessorId: dome.daily.stale-task-warden
+        idempotencyKeyPrefix: "dome.daily.settle-stale:"
+    capabilities:
+      - kind: read
+        paths: ["wiki/**/*.md", "notes/*.md"]
+      - kind: patch.auto
+        paths: ["wiki/**/*.md", "notes/*.md", "wiki/dailies/*.md"]
+    module: processors/settle-stale-answer.ts
+
 # Doctor contributions (wiki/specs/cli.md §"dome doctor"): grant-entry probes
 # evaluated generically by the health report. dome init --refresh-config never
 # merges new entries into existing grant keys, so these name the exact YAML a
