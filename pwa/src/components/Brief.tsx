@@ -27,6 +27,7 @@ export function Brief({ today, onResolve }: { today: Today; onResolve: (id: numb
   return (
     <section className="brief">
       <header>today · {open === 0 ? "all clear" : `${open} open`}</header>
+      {open === 0 ? <p className="all-clear">You&apos;re clear.</p> : null}
       {today.brief !== null ? <p className="brief-text">{today.brief.text}</p> : null}
       {today.hero !== null ? <div className="hero">⚠ {"text" in today.hero.item ? today.hero.item.text : today.hero.item.question}</div> : null}
       {today.openTasks.length > 0 ? <ul>{today.openTasks.map((t, i) => <Item key={`${t.path}:${t.line}:${i}`} item={t} />)}</ul> : null}

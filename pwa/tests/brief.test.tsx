@@ -22,6 +22,6 @@ describe("Brief", () => {
 
   test("shows an all-clear state when nothing is open", () => {
     render(<Brief today={base} onResolve={() => {}} />);
-    expect(screen.getByText(/clear/i)).toBeDefined();
+    expect(screen.getByText(/you're clear/i)).toBeDefined();
   });
 });
