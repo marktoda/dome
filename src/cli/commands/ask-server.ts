@@ -30,6 +30,14 @@ export type RunAskServerOptions = {
   readonly host?: string | undefined;
   readonly token?: string | undefined;
   readonly model?: string | undefined;
+  /** Path to the built PWA static assets directory (or env DOME_PWA_DIR). */
+  readonly staticDir?: string | undefined;
+  /**
+   * Shell command + args for server-side audio transcription (or env
+   * DOME_TRANSCRIBE_CMD, space-split). Passed as-is to `createAskServer` as
+   * `transcribeCommand`.
+   */
+  readonly transcribeCmd?: string | undefined;
   /**
    * Test-only seam: aborting this signal stops the listener and resolves
    * runAskServer with exit 0, exactly like SIGINT/SIGTERM. The CLI never
@@ -78,6 +86,11 @@ export async function runAskServer(options: RunAskServerOptions = {}): Promise<n
     return EX_USAGE;
   }
 
+  const staticDir = options.staticDir ?? process.env["DOME_PWA_DIR"];
+  const transcribeCommand = (options.transcribeCmd ?? process.env["DOME_TRANSCRIBE_CMD"])
+    ?.split(/\s+/)
+    .filter(Boolean);
+
   try {
     const handler = createAskServer({
       vaultPath,
@@ -87,6 +100,12 @@ export async function runAskServer(options: RunAskServerOptions = {}): Promise<n
         : {}),
       ...(options.model !== undefined
         ? { model: options.model }
+        : {}),
+      ...(staticDir !== undefined
+        ? { staticDir }
+        : {}),
+      ...(transcribeCommand !== undefined && transcribeCommand.length > 0
+        ? { transcribeCommand }
         : {}),
     });
     const server = Bun.serve({

@@ -655,6 +655,8 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .option("--host <host>", "Interface to bind (default 127.0.0.1).")
     .option("--token <token>", "Bearer token (or set DOME_ASK_TOKEN).")
     .option("--model <model>", "Model id override (else the provider default).")
+    .option("--static-dir <path>", "Serve a built PWA from this directory (or set DOME_PWA_DIR).")
+    .option("--transcribe-cmd <cmd>", "Shell command for server-side transcription, e.g. whisper (or set DOME_TRANSCRIBE_CMD; space-split into argv).")
     .action(async (options: AskServerCliOptions) => {
       // Dynamic import keeps the agent backend out of the CLI's static graph,
       // matching the `dome http` companion-entrypoint pattern.
@@ -668,6 +670,8 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           host: options.host,
           token: options.token,
           model: options.model,
+          staticDir: options.staticDir,
+          transcribeCmd: options.transcribeCmd,
         }),
       );
     });
@@ -798,6 +802,8 @@ type AskServerCliOptions = {
   readonly host?: string;
   readonly token?: string;
   readonly model?: string;
+  readonly staticDir?: string;
+  readonly transcribeCmd?: string;
 };
 
 type CheckCliOptions = {
