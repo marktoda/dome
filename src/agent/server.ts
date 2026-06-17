@@ -89,6 +89,12 @@ export type CreateAskServerOptions = {
    * argument. When undefined, POST /transcribe returns 501.
    */
   readonly transcribeCommand?: ReadonlyArray<string> | undefined;
+  /**
+   * Milliseconds before a hung POST /transcribe subprocess is killed and
+   * returns 500 `transcribe-timeout`. Defaults to 120_000 (2 minutes).
+   * Injectable so tests can set a short value (e.g. 50ms).
+   */
+  readonly transcribeTimeoutMs?: number | undefined;
 };
 
 export type AskServer = { readonly fetch: (request: Request) => Promise<Response> };
@@ -253,6 +259,7 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
   const enqueue = makeVaultMutex();
 
   const timeoutMs = opts.timeoutMs ?? 120_000;
+  const transcribeTimeoutMs = opts.transcribeTimeoutMs ?? 120_000;
 
   // Vault-open wrapper for the data routes (mirrors src/http/server.ts's
   // `withVault`): runs `fn` against an open VaultRuntime under the SAME mutex
@@ -360,6 +367,67 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
   };
 
   const askStream = opts.askStreamImpl ?? defaultAskStream;
+
+  // ----- POST /transcribe (runs authenticated but outside the vault mutex) -----
+  //
+  // /transcribe is runtime-free: it touches no vault, only shells out to the
+  // host whisper command. Running it inside enqueue() would hold the vault
+  // mutex for the duration of the subprocess — blocking /ask, /tasks, etc.
+  // Instead, handle() dispatches it directly after auth, bypassing the mutex.
+  const handleTranscribe = async (request: Request): Promise<Response> => {
+    if (opts.transcribeCommand === undefined || opts.transcribeCommand.length === 0) {
+      return dataErrorResponse(501, "transcribe-unconfigured", "transcription is not configured on this server.");
+    }
+    const declared = Number(request.headers.get("content-length"));
+    if (Number.isFinite(declared) && declared > maxBodyBytes) return dataErrorResponse(413, "payload-too-large", "audio too large.");
+    const bytes = new Uint8Array(await request.arrayBuffer());
+    if (bytes.byteLength === 0) return dataErrorResponse(400, "transcribe-usage", "POST /transcribe requires an audio body.");
+    if (bytes.byteLength > maxBodyBytes) return dataErrorResponse(413, "payload-too-large", "audio too large.");
+    const ext = EXT_BY_TYPE[(request.headers.get("content-type") ?? "").split(";")[0]!.trim()] ?? ".audio";
+    const dir = mkdtempSync(join(tmpdir(), "dome-transcribe-"));
+    const audioPath = join(dir, `audio${ext}`);
+    let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+    let proc: ReturnType<typeof Bun.spawn> | undefined;
+    try {
+      await Bun.write(audioPath, bytes);
+      proc = Bun.spawn([...opts.transcribeCommand, audioPath], { stdout: "pipe", stderr: "pipe" });
+      // Capture stream references immediately (they're typed as ReadableStream
+      // when spawned with "pipe", but the let-binding's union type defeats
+      // later narrowing after an await — so we pin them now).
+      const stdout = proc.stdout as ReadableStream<Uint8Array>;
+      const stderr = proc.stderr as ReadableStream<Uint8Array>;
+      // Race the subprocess exit against the timeout. We must race BEFORE
+      // reading stdout/stderr, because those streams stay open until the
+      // process exits — reading them first would block indefinitely on a
+      // hanging command and prevent the timeout from ever firing.
+      const code = await Promise.race([
+        proc.exited,
+        new Promise<number>((_, reject) => {
+          timeoutTimer = setTimeout(() => {
+            proc!.kill();
+            reject(new Error("__transcribe-timeout__"));
+          }, transcribeTimeoutMs);
+        }),
+      ]);
+      clearTimeout(timeoutTimer);
+      timeoutTimer = undefined;
+      // Process has exited — streams are now closed; safe to read output.
+      const out = await new Response(stdout).text();
+      if (code !== 0) {
+        const err = await new Response(stderr).text();
+        return dataErrorResponse(500, "transcribe-failed", `transcription command exited ${code}: ${err.slice(0, 500)}`);
+      }
+      return jsonResponse(200, { schema: "dome.transcribe/v1", text: out.trim() });
+    } catch (e) {
+      clearTimeout(timeoutTimer);
+      if (e instanceof Error && e.message === "__transcribe-timeout__") {
+        return dataErrorResponse(500, "transcribe-timeout", `transcription exceeded ${transcribeTimeoutMs}ms.`);
+      }
+      return dataErrorResponse(500, "transcribe-failed", e instanceof Error ? e.message : String(e));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  };
 
   const routes = async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
@@ -639,35 +707,6 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
       return jsonResponse(200, { schema: "dome.recents/v1", count: entries.length, entries });
     }
 
-    if (route === "POST /transcribe") {
-      if (opts.transcribeCommand === undefined || opts.transcribeCommand.length === 0) {
-        return dataErrorResponse(501, "transcribe-unconfigured", "transcription is not configured on this server.");
-      }
-      const declared = Number(request.headers.get("content-length"));
-      if (Number.isFinite(declared) && declared > maxBodyBytes) return dataErrorResponse(413, "payload-too-large", "audio too large.");
-      const bytes = new Uint8Array(await request.arrayBuffer());
-      if (bytes.byteLength === 0) return dataErrorResponse(400, "transcribe-usage", "POST /transcribe requires an audio body.");
-      if (bytes.byteLength > maxBodyBytes) return dataErrorResponse(413, "payload-too-large", "audio too large.");
-      const ext = EXT_BY_TYPE[(request.headers.get("content-type") ?? "").split(";")[0]!.trim()] ?? ".audio";
-      const dir = mkdtempSync(join(tmpdir(), "dome-transcribe-"));
-      const audioPath = join(dir, `audio${ext}`);
-      try {
-        await Bun.write(audioPath, bytes);
-        const proc = Bun.spawn([...opts.transcribeCommand, audioPath], { stdout: "pipe", stderr: "pipe" });
-        const out = await new Response(proc.stdout).text();
-        const code = await proc.exited;
-        if (code !== 0) {
-          const err = await new Response(proc.stderr).text();
-          return dataErrorResponse(500, "transcribe-failed", `transcription command exited ${code}: ${err.slice(0, 500)}`);
-        }
-        return jsonResponse(200, { schema: "dome.transcribe/v1", text: out.trim() });
-      } catch (e) {
-        return dataErrorResponse(500, "transcribe-failed", e instanceof Error ? e.message : String(e));
-      } finally {
-        await rm(dir, { recursive: true, force: true });
-      }
-    }
-
     return dataErrorResponse(404, "not-found", `no route for ${route}.`);
   };
 
@@ -684,6 +723,12 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
         error: "unauthorized",
         message: "missing or invalid bearer token.",
       });
+    }
+    // /transcribe runs authenticated but outside the vault mutex — it touches
+    // no vault and can hold a subprocess for many seconds; letting it run
+    // inside enqueue() would block /ask, /tasks, etc. for that entire time.
+    if (request.method === "POST" && url.pathname === "/transcribe") {
+      return handleTranscribe(request);
     }
     try {
       return await enqueue(() => routes(request));

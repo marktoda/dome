@@ -308,4 +308,23 @@ describe("POST /transcribe", () => {
     const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeCommand: FAKE_WHISPER, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
     expect((await server.fetch(post(new Uint8Array([1, 2, 3]), ""))).status).toBe(401);
   });
+  test("500 transcribe-timeout when the subprocess hangs past transcribeTimeoutMs", async () => {
+    const HANG_CMD = ["sh", "-c", "sleep 30"];
+    const server = createAskServer({
+      vaultPath: "/tmp/unused",
+      token: TOKEN,
+      transcribeCommand: HANG_CMD,
+      transcribeTimeoutMs: 50, // very short — should fire in <<1s
+      askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }),
+    });
+    const start = Date.now();
+    const res = await server.fetch(post(new Uint8Array([1, 2, 3, 4])));
+    const elapsed = Date.now() - start;
+    expect(res.status).toBe(500);
+    const json = await res.json() as { error: string; message: string };
+    expect(json.error).toBe("transcribe-timeout");
+    expect(json.message).toContain("50ms");
+    // Must not hang — should complete well within a couple of seconds.
+    expect(elapsed).toBeLessThan(3000);
+  });
 });

@@ -4,7 +4,7 @@
 
 **Goal:** Add the two server-side pieces the PWA needs to `dome ask-server`: serving the built static app, and a `POST /transcribe` route backed by a host-configured local whisper command. (The React client is a separate plan.)
 
-**Architecture:** Both land on the existing `createAskServer` (`src/agent/server.ts`) — a companion entrypoint reached only via dynamic import. (1) **Static serving:** when a `staticDir` is configured, GET `/` serves the app shell and `/assets/*` the bundles, **unauthenticated** (a browser's initial navigation can't carry a bearer header; the shell is non-secret and the endpoint is a private trust domain), while every data/API route stays bearer-gated; the current `GET /` JSON ping moves to `GET /healthz`. (2) **`POST /transcribe`:** runtime-free (subprocess only, like `/capture` — no vault open, no mutex), bearer-gated, bounded body; writes the audio to a temp file and runs a host-configured command (the model-provider "shipped script" pattern), returning `{ text }`.
+**Architecture:** Both land on the existing `createAskServer` (`src/agent/server.ts`) — a companion entrypoint reached only via dynamic import. (1) **Static serving:** when a `staticDir` is configured, GET `/` serves the app shell and `/assets/*` the bundles, **unauthenticated** (a browser's initial navigation can't carry a bearer header; the shell is non-secret and the endpoint is a private trust domain), while every data/API route stays bearer-gated; the current `GET /` JSON ping moves to `GET /healthz`. (2) **`POST /transcribe`:** runtime-free (subprocess only — no vault open), bearer-gated, bounded body; writes the audio to a temp file and runs a host-configured command (the model-provider "shipped script" pattern), returning `{ text }`. Runs authenticated but outside the vault mutex (unlike `/capture`, which does run under the mutex) so a slow whisper subprocess cannot block other routes; includes a per-request subprocess timeout.
 
 **Tech Stack:** TypeScript/Bun. `Bun.file` for static serving (sets content-type automatically), `Bun.spawn` for the whisper subprocess. Reuses the ask-server's existing `authorized`, `jsonResponse`, `dataErrorResponse`, `positiveInt`, and the `fetch` → auth → `enqueue(routes)` structure.
 
@@ -13,7 +13,7 @@
 - `src/agent/` stays reachable ONLY via dynamic import (`dome ask-server` → `await import`); never statically imported from `src/index.ts`'s graph. The `bundle-deps` + `public-surface-shape` fences must stay green.
 - Don't change `/ask`, `/ask/stream`, `/capture`, `/tasks`, `/resolve`, `/recents`, or `dome http`.
 - Static GETs (shell/assets) bypass BOTH auth and the vault mutex; all other routes keep auth-before-routing exactly as today.
-- `POST /transcribe` is runtime-free: no `withVault`, no `enqueue`/mutex (subprocess only), like `/capture`.
+- `POST /transcribe` is runtime-free: no `withVault`, no `enqueue`/mutex (subprocess only). Note: `/capture` does run under the mutex; `/transcribe` deliberately does not — it dispatches in `handle()` after auth but before `enqueue()`.
 
 **Read before starting:** `src/agent/server.ts` (the whole `createAskServer` — the `fetch` wrapper at the bottom that does `authorized()` then `enqueue(() => routes(request))`; the `routes()` switch incl. `GET /` ping and `POST /capture` as the runtime-free template; the helpers `jsonResponse`, `dataErrorResponse`, `jsonBody`, `authorized`, `positiveInt`, `CreateAskServerOptions`), `src/cli/commands/ask-server.ts` + the `ask-server` block in `src/cli/index.ts` (to add CLI flags), `tests/agent/server.test.ts` and `tests/agent/ask-server-data-routes.test.ts` (the two test styles: injected-seam unit tests + the `runInit` fixture).
 
@@ -140,7 +140,7 @@ describe("createAskServer static serving", () => {
 
 **Interfaces:**
 - Consumes: `CreateAskServerOptions`, `authorized`, `jsonResponse`, `dataErrorResponse`, `jsonBody`/the body-bound limit.
-- Produces: `CreateAskServerOptions` gains `readonly transcribeCommand?: ReadonlyArray<string> | undefined;`. New route `POST /transcribe` (bearer-gated): audio body → `{ schema: "dome.transcribe/v1", text }`. Errors: 501 `transcribe-unconfigured` (no `transcribeCommand`), 400 `transcribe-usage` (empty body), 413 (over `maxBodyBytes`), 500 `transcribe-failed` (non-zero exit / spawn error).
+- Produces: `CreateAskServerOptions` gains `readonly transcribeCommand?: ReadonlyArray<string> | undefined;` and `readonly transcribeTimeoutMs?: number | undefined;`. New route `POST /transcribe` (bearer-gated, dispatched outside the vault mutex): audio body → `{ schema: "dome.transcribe/v1", text }`. Errors: 501 `transcribe-unconfigured` (no `transcribeCommand`), 400 `transcribe-usage` (empty body), 413 (over `maxBodyBytes`), 500 `transcribe-failed` (non-zero exit / spawn error), 500 `transcribe-timeout` (subprocess exceeded `transcribeTimeoutMs`).
 
 - [ ] **Step 1: Write the failing tests**
 
