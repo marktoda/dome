@@ -119,18 +119,18 @@ describe("run.recurring-timeout", () => {
   test("fires once per processor when timeouts reach the threshold", () => {
     const runs = Array.from(
       { length: DEFAULT_RECURRING_TIMEOUT_THRESHOLD },
-      () => timedOutRun("dome.markdown.duplicate-detection"),
+      () => timedOutRun("dome.markdown.lint-supersession"),
     );
     const findings = recurringTimeoutFindings({ recentTimedOutRuns: runs });
     expect(findings.length).toBe(1);
     expect(findings[0]?.code).toBe("run.recurring-timeout");
     expect(findings[0]?.severity).toBe("warning");
-    expect(findings[0]?.message).toContain("dome.markdown.duplicate-detection");
+    expect(findings[0]?.message).toContain("dome.markdown.lint-supersession");
   });
 
   test("a single timeout does not fire (below threshold)", () => {
     const findings = recurringTimeoutFindings({
-      recentTimedOutRuns: [timedOutRun("dome.markdown.duplicate-detection")],
+      recentTimedOutRuns: [timedOutRun("dome.markdown.lint-supersession")],
     });
     expect(findings.length).toBe(0);
   });

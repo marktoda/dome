@@ -87,9 +87,9 @@ describe("loadBundles — shipped dome.lint bundle", () => {
   });
 
   test("heavy whole-vault adoption scanners declare a deterministic timeout above the 10s default", async () => {
-    // The silent-wedge fix: dome.markdown.duplicate-detection (and its
-    // whole-vault-content-reading adoption siblings) re-read/parse every
-    // comparable page on each changed file, which blows the 10s adoption
+    // The silent-wedge fix: whole-vault-content-reading adoption scanners
+    // (e.g. dome.markdown.lint-supersession) re-read/parse every comparable
+    // page on each changed file, which blows the 10s adoption
     // default on a large vault and silently wedges adoption. They must
     // declare an explicit deterministic execution.timeoutMs > 10s; the
     // loader binds it onto the processor, and resolveExecutionPolicy honors
@@ -104,7 +104,6 @@ describe("loadBundles — shipped dome.lint bundle", () => {
     if (markdown === undefined) return;
 
     const markdownHeavyScanners = [
-      "dome.markdown.duplicate-detection",
       "dome.markdown.lint-supersession",
       "dome.markdown.broken-images",
     ];

@@ -166,16 +166,14 @@ scenario(
     const seed = await h.tick();
     expect(seed.adopted).toBe(true);
 
-    const duplicateBody =
-      "# Support rota\n\n" +
-      "The support rota assigns incident triage ownership for weekday coverage.\n";
-
     await h.userCommit({
       files: {
-        "wiki/support-rota.md": `---\ntype: note\n---\n${duplicateBody}`,
-        "wiki/support-rota-copy.md": `---\ntype: note\n---\n${duplicateBody}`,
+        "wiki/page.md":
+          "# Page\n\nWorking with [[wiki/entities/grae-danco#Notes|Grace]].\n",
+        "wiki/entities/grace-danco.md": "# Grace Danco\n",
+        "wiki/entities/grade-danco.md": "# Grade Danco\n",
       },
-      message: "add duplicate support rota pages",
+      message: "add ambiguous wikilink",
     });
 
     const sync = await h.tick();
@@ -198,7 +196,7 @@ scenario(
     const answer = await h.runCli([
       "resolve",
       String(questionId),
-      "keep separate",
+      "keep unresolved",
       "--json",
     ]);
     expect(answer.exitCode).toBe(0);
@@ -220,13 +218,16 @@ scenario(
     expect(answered.status).toBe("answered");
     expect(answered.question.id).toBe(questionId);
     expect(answered.question.status).toBe("answered");
-    expect(answered.question.answer).toBe("keep separate");
+    expect(answered.question.answer).toBe("keep unresolved");
     expect(answered.question.answered_at).not.toBeNull();
     expect(answered.handlers.status).toBe("handled");
     expect(answered.handlers.runs.map((run) => run.processor_id)).toEqual([
-      "dome.markdown.duplicate-detection-answer",
+      "dome.markdown.ambiguous-wikilink-answer",
       "test.answer-handler.record-duplicate-answer",
     ]);
+    // One sub-proposal: ambiguous-wikilink-answer runs but no-ops on "keep
+    // unresolved" (the link stays ambiguous, so the question re-derives on
+    // rebuild); only the fixture records the answer.
     expect(answered.handlers.sub_proposals).toBe(1);
     const ledgerRow = h.ledger.raw
       .query<{ trigger_kind: string }, []>(
@@ -249,7 +250,7 @@ scenario(
     expect(adopted).not.toBeNull();
     if (adopted === null) return;
     await h.expectFile("wiki/answer-handled.md", { atCommit: adopted })
-      .toContain(`Question ${questionId}: keep separate`);
+      .toContain(`Question ${questionId}: keep unresolved`);
 
     const after = await h.runCli(["inspect", "questions", "--json"]);
     const afterRows = JSON.parse(after.stdout) as ReadonlyArray<{
@@ -259,7 +260,7 @@ scenario(
     }>;
     expect(afterRows[0]?.id).toBe(questionId);
     expect(afterRows[0]?.status).toBe("answered");
-    expect(afterRows[0]?.answer).toBe("keep separate");
+    expect(afterRows[0]?.answer).toBe("keep unresolved");
 
     const rebuild = await h.runCli(["rebuild", "--json"]);
     expect(rebuild.exitCode).toBe(0);
@@ -273,7 +274,7 @@ scenario(
     expect(rebuiltRows.length).toBe(1);
     expect(rebuiltRows[0]?.idempotency_key).toBe(rows[0]?.idempotency_key);
     expect(rebuiltRows[0]?.status).toBe("answered");
-    expect(rebuiltRows[0]?.answer).toBe("keep separate");
+    expect(rebuiltRows[0]?.answer).toBe("keep unresolved");
 
     h.answers.raw.run(
       "UPDATE question_answers SET handler_status = 'skipped', handled_at = NULL",
@@ -281,7 +282,7 @@ scenario(
     const retry = await h.runCli([
       "resolve",
       String(questionId),
-      "keep separate",
+      "keep unresolved",
       "--json",
     ]);
     expect(retry.exitCode).toBe(0);
