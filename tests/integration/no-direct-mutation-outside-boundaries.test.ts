@@ -30,6 +30,11 @@ const ALLOWED_FILES = new Set([
   // user-facing non-fast-forward cursor move; see
   // docs/wiki/gotchas/adopted-ref-divergence.md.
   "src/cli/commands/reanchor.ts",
+  // The ask-server's POST /transcribe handler writes the uploaded audio to a
+  // mkdtemp temp directory, invokes the configured whisper command against it,
+  // and deletes the dir in a finally block. This is a process-scoped temp-file
+  // write (not a vault write), in the same boundary class as capture.ts.
+  "src/agent/server.ts",
 ]);
 
 const FORBIDDEN_PATTERNS: ReadonlyArray<{

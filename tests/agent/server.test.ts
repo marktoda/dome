@@ -1,4 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createAskServer } from "../../src/agent/server";
 import type { AskStream } from "../../src/agent/ask";
 import type { TextStreamPart, ToolSet } from "ai";
@@ -50,6 +54,59 @@ function post(body: unknown, token = TOKEN): Request {
     body: JSON.stringify(body),
   });
 }
+
+async function makeStaticDir(): Promise<string> {
+  const dir = mkdtempSync(join(tmpdir(), "dome-pwa-static-"));
+  await writeFile(join(dir, "index.html"), "<!doctype html><title>Dome</title>", "utf8");
+  await mkdir(join(dir, "assets"), { recursive: true });
+  await writeFile(join(dir, "assets", "app.js"), "console.log('dome')", "utf8");
+  return dir;
+}
+
+describe("createAskServer static serving", () => {
+  test("GET / serves the app shell unauthenticated when staticDir is set", async () => {
+    const staticDir = await makeStaticDir();
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, staticDir, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    const res = await server.fetch(new Request("http://localhost/")); // NO auth header
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type") ?? "").toContain("text/html");
+    expect(await res.text()).toContain("<title>Dome</title>");
+  });
+
+  test("GET /assets/* serves the asset unauthenticated", async () => {
+    const staticDir = await makeStaticDir();
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, staticDir, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    const res = await server.fetch(new Request("http://localhost/assets/app.js"));
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("dome");
+  });
+
+  test("a traversal path under /assets is rejected", async () => {
+    const staticDir = await makeStaticDir();
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, staticDir, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    const res = await server.fetch(new Request("http://localhost/assets/../index.html"));
+    // URL normalization resolves assets/../ to / before our code sees it, so the
+    // traversal attempt produces /index.html which is neither "/" nor "/assets/*"
+    // — serveStatic returns null, auth gate fires (no token), 401. Also accept
+    // 403/404 in case a future runtime preserves the raw path.
+    expect([401, 403, 404]).toContain(res.status);
+  });
+
+  test("GET /healthz returns the ping (bearer-gated)", async () => {
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    expect((await server.fetch(new Request("http://localhost/healthz"))).status).toBe(401); // no token
+    const ok = await server.fetch(new Request("http://localhost/healthz", { headers: { authorization: `Bearer ${TOKEN}` } }));
+    expect(ok.status).toBe(200);
+    expect((await ok.json() as { server: string }).server).toBe("dome-ask");
+  });
+
+  test("with no staticDir, GET / still returns the ping (back-compat)", async () => {
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    const res = await server.fetch(new Request("http://localhost/", { headers: { authorization: `Bearer ${TOKEN}` } }));
+    expect(res.status).toBe(200);
+    expect((await res.json() as { server: string }).server).toBe("dome-ask");
+  });
+});
 
 describe("createAskServer", () => {
   test("POST /ask returns a synthesized answer + citations", async () => {
@@ -219,6 +276,55 @@ describe("createAskServer POST /ask/stream", () => {
     expect(body).toContain(`${TIMEOUT_MS}ms`);
     expect(body).not.toContain('"type":"done"');
     // Should complete well within a couple of seconds.
+    expect(elapsed).toBeLessThan(3000);
+  });
+});
+
+// ----- POST /transcribe -------------------------------------------------
+
+describe("POST /transcribe", () => {
+  // A trivial "whisper" that ignores the audio file arg and prints a fixed transcript.
+  const FAKE_WHISPER = ["sh", "-c", "cat >/dev/null; echo 'hello from whisper'"];
+  function post(body: Uint8Array | null, token = TOKEN): Request {
+    return new Request("http://localhost/transcribe", { method: "POST", headers: token ? { authorization: `Bearer ${token}`, "content-type": "audio/m4a" } : { "content-type": "audio/m4a" }, body });
+  }
+  test("transcribes audio via the configured command", async () => {
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeCommand: FAKE_WHISPER, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    const res = await server.fetch(post(new Uint8Array([1, 2, 3, 4])));
+    expect(res.status).toBe(200);
+    const json = await res.json() as { schema: string; text: string };
+    expect(json.schema).toBe("dome.transcribe/v1");
+    expect(json.text).toBe("hello from whisper");
+  });
+  test("501 when transcribe is not configured", async () => {
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    expect((await server.fetch(post(new Uint8Array([1, 2, 3])))).status).toBe(501);
+  });
+  test("400 on empty body", async () => {
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeCommand: FAKE_WHISPER, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    expect((await server.fetch(post(new Uint8Array([])))).status).toBe(400);
+  });
+  test("401 without a token", async () => {
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeCommand: FAKE_WHISPER, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    expect((await server.fetch(post(new Uint8Array([1, 2, 3]), ""))).status).toBe(401);
+  });
+  test("500 transcribe-timeout when the subprocess hangs past transcribeTimeoutMs", async () => {
+    const HANG_CMD = ["sh", "-c", "sleep 30"];
+    const server = createAskServer({
+      vaultPath: "/tmp/unused",
+      token: TOKEN,
+      transcribeCommand: HANG_CMD,
+      transcribeTimeoutMs: 50, // very short — should fire in <<1s
+      askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }),
+    });
+    const start = Date.now();
+    const res = await server.fetch(post(new Uint8Array([1, 2, 3, 4])));
+    const elapsed = Date.now() - start;
+    expect(res.status).toBe(500);
+    const json = await res.json() as { error: string; message: string };
+    expect(json.error).toBe("transcribe-timeout");
+    expect(json.message).toContain("50ms");
+    // Must not hang — should complete well within a couple of seconds.
     expect(elapsed).toBeLessThan(3000);
   });
 });

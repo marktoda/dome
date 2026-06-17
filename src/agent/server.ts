@@ -7,6 +7,10 @@
 // table.
 
 import { createHash, timingSafeEqual } from "node:crypto";
+import { mkdtempSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { resolve, sep, join } from "node:path";
 import {
   ANSWER_SCHEMA,
   answerHandlersJson,
@@ -33,6 +37,11 @@ import type { AskResult } from "./types";
 // ----- Constants ------------------------------------------------------------
 
 const SCHEMA = "dome.ask/v1";
+
+const EXT_BY_TYPE: Record<string, string> = {
+  "audio/m4a": ".m4a", "audio/mp4": ".m4a", "audio/webm": ".webm",
+  "audio/wav": ".wav", "audio/x-wav": ".wav", "audio/mpeg": ".mp3", "audio/ogg": ".ogg",
+};
 
 // ----- Public types ---------------------------------------------------------
 
@@ -67,6 +76,25 @@ export type CreateAskServerOptions = {
    * Parallel to askImpl.
    */
   readonly askStreamImpl?: AskStreamImpl | undefined;
+  /**
+   * Filesystem path to the built PWA static assets directory. When set,
+   * unauthenticated GET requests for "/" (app shell) and "/assets/*" are
+   * served directly from this directory — bypassing auth entirely so the
+   * browser can boot the PWA without a token.
+   */
+  readonly staticDir?: string | undefined;
+  /**
+   * Shell command to invoke for audio transcription (e.g. a local whisper
+   * wrapper). The implementation appends the temp-file path as the last
+   * argument. When undefined, POST /transcribe returns 501.
+   */
+  readonly transcribeCommand?: ReadonlyArray<string> | undefined;
+  /**
+   * Milliseconds before a hung POST /transcribe subprocess is killed and
+   * returns 500 `transcribe-timeout`. Defaults to 120_000 (2 minutes).
+   * Injectable so tests can set a short value (e.g. 50ms).
+   */
+  readonly transcribeTimeoutMs?: number | undefined;
 };
 
 export type AskServer = { readonly fetch: (request: Request) => Promise<Response> };
@@ -195,6 +223,27 @@ function authorized(request: Request, tokenDigest: Buffer): boolean {
   return timingSafeEqual(sha256(match[1]), tokenDigest);
 }
 
+// ----- Static asset serving --------------------------------------------------
+
+/**
+ * Serve the PWA app shell ("/" → index.html) or an asset ("/assets/...").
+ * Returns null for any path that should fall through to the API routes.
+ * Traversal attacks are rejected with 403 before the file is read.
+ */
+async function serveStatic(staticDir: string, pathname: string): Promise<Response | null> {
+  // Only "/" (shell) and "/assets/..." are served. Everything else → null (fall through to API routing).
+  const rel = pathname === "/" ? "index.html" : pathname.startsWith("/assets/") ? pathname.slice(1) : null;
+  if (rel === null) return null;
+  const root = resolve(staticDir);
+  const full = resolve(join(root, rel));
+  if (full !== root && !full.startsWith(root + sep)) {
+    return new Response("forbidden", { status: 403 }); // traversal guard
+  }
+  const file = Bun.file(full);
+  if (!(await file.exists())) return new Response("not found", { status: 404 });
+  return new Response(file); // Bun sets content-type from extension
+}
+
 // ----- Server factory -------------------------------------------------------
 
 /**
@@ -210,6 +259,7 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
   const enqueue = makeVaultMutex();
 
   const timeoutMs = opts.timeoutMs ?? 120_000;
+  const transcribeTimeoutMs = opts.transcribeTimeoutMs ?? 120_000;
 
   // Vault-open wrapper for the data routes (mirrors src/http/server.ts's
   // `withVault`): runs `fn` against an open VaultRuntime under the SAME mutex
@@ -318,11 +368,72 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
 
   const askStream = opts.askStreamImpl ?? defaultAskStream;
 
+  // ----- POST /transcribe (runs authenticated but outside the vault mutex) -----
+  //
+  // /transcribe is runtime-free: it touches no vault, only shells out to the
+  // host whisper command. Running it inside enqueue() would hold the vault
+  // mutex for the duration of the subprocess — blocking /ask, /tasks, etc.
+  // Instead, handle() dispatches it directly after auth, bypassing the mutex.
+  const handleTranscribe = async (request: Request): Promise<Response> => {
+    if (opts.transcribeCommand === undefined || opts.transcribeCommand.length === 0) {
+      return dataErrorResponse(501, "transcribe-unconfigured", "transcription is not configured on this server.");
+    }
+    const declared = Number(request.headers.get("content-length"));
+    if (Number.isFinite(declared) && declared > maxBodyBytes) return dataErrorResponse(413, "payload-too-large", "audio too large.");
+    const bytes = new Uint8Array(await request.arrayBuffer());
+    if (bytes.byteLength === 0) return dataErrorResponse(400, "transcribe-usage", "POST /transcribe requires an audio body.");
+    if (bytes.byteLength > maxBodyBytes) return dataErrorResponse(413, "payload-too-large", "audio too large.");
+    const ext = EXT_BY_TYPE[(request.headers.get("content-type") ?? "").split(";")[0]!.trim()] ?? ".audio";
+    const dir = mkdtempSync(join(tmpdir(), "dome-transcribe-"));
+    const audioPath = join(dir, `audio${ext}`);
+    let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+    let proc: ReturnType<typeof Bun.spawn> | undefined;
+    try {
+      await Bun.write(audioPath, bytes);
+      proc = Bun.spawn([...opts.transcribeCommand, audioPath], { stdout: "pipe", stderr: "pipe" });
+      // Capture stream references immediately (they're typed as ReadableStream
+      // when spawned with "pipe", but the let-binding's union type defeats
+      // later narrowing after an await — so we pin them now).
+      const stdout = proc.stdout as ReadableStream<Uint8Array>;
+      const stderr = proc.stderr as ReadableStream<Uint8Array>;
+      // Race the subprocess exit against the timeout. We must race BEFORE
+      // reading stdout/stderr, because those streams stay open until the
+      // process exits — reading them first would block indefinitely on a
+      // hanging command and prevent the timeout from ever firing.
+      const code = await Promise.race([
+        proc.exited,
+        new Promise<number>((_, reject) => {
+          timeoutTimer = setTimeout(() => {
+            proc!.kill();
+            reject(new Error("__transcribe-timeout__"));
+          }, transcribeTimeoutMs);
+        }),
+      ]);
+      clearTimeout(timeoutTimer);
+      timeoutTimer = undefined;
+      // Process has exited — streams are now closed; safe to read output.
+      const out = await new Response(stdout).text();
+      if (code !== 0) {
+        const err = await new Response(stderr).text();
+        return dataErrorResponse(500, "transcribe-failed", `transcription command exited ${code}: ${err.slice(0, 500)}`);
+      }
+      return jsonResponse(200, { schema: "dome.transcribe/v1", text: out.trim() });
+    } catch (e) {
+      clearTimeout(timeoutTimer);
+      if (e instanceof Error && e.message === "__transcribe-timeout__") {
+        return dataErrorResponse(500, "transcribe-timeout", `transcription exceeded ${transcribeTimeoutMs}ms.`);
+      }
+      return dataErrorResponse(500, "transcribe-failed", e instanceof Error ? e.message : String(e));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  };
+
   const routes = async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
     const route = `${request.method} ${url.pathname}`;
 
-    if (route === "GET /") {
+    if (route === "GET /" || route === "GET /healthz") {
       return jsonResponse(200, { schema: "dome.ask-server/v1", server: "dome-ask" });
     }
 
@@ -600,6 +711,11 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
   };
 
   const handle = async (request: Request): Promise<Response> => {
+    const url = new URL(request.url);
+    if (request.method === "GET" && opts.staticDir !== undefined) {
+      const served = await serveStatic(opts.staticDir, url.pathname);
+      if (served !== null) return served; // unauthenticated, no mutex
+    }
     if (!authorized(request, tokenDigest)) {
       return jsonResponse(401, {
         schema: SCHEMA,
@@ -607,6 +723,12 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
         error: "unauthorized",
         message: "missing or invalid bearer token.",
       });
+    }
+    // /transcribe runs authenticated but outside the vault mutex — it touches
+    // no vault and can hold a subprocess for many seconds; letting it run
+    // inside enqueue() would block /ask, /tasks, etc. for that entire time.
+    if (request.method === "POST" && url.pathname === "/transcribe") {
+      return handleTranscribe(request);
     }
     try {
       return await enqueue(() => routes(request));

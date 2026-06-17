@@ -156,9 +156,17 @@ it's an implementation option *inside* A's backend, not a different product.
    composing them would allow two concurrent `VaultRuntime`s (a correctness
    hazard). `dome http` stays unchanged — the standalone lightweight read+capture
    adapter plus the `/today` HTML cockpit. **Recents** (`GET /recents` →
-   `dome.recents/v1`, recently-touched knowledge pages) is now ✅ **SHIPPED** too —
-   so the ask-server is the PWA's complete backend; the remaining PWA work is the
-   client itself + the always-on host.
+   `dome.recents/v1`, recently-touched knowledge pages) is now ✅ **SHIPPED** too.
+   The ask-server also **serves the PWA static assets** (`--static-dir <path>` /
+   `DOME_PWA_DIR` — `GET /` app shell + `GET /assets/*` static files, auth
+   carved out so the browser can load the shell unauthenticated; `GET /healthz`
+   is the PWA's liveness ping) and handles **voice transcription** (`POST
+   /transcribe` with `--transcribe-cmd <cmd>` / `DOME_TRANSCRIBE_CMD`, space-split
+   into argv and called with a temp audio-file path → returns `{text}`) — ✅
+   **SHIPPED 2026-06-17** — so the ask-server is the PWA's **complete backend
+   including voice-capture transcription**. The remaining PWA work is the React
+   client itself (apiClient, Composer/ChatTranscript, Brief/Recents, capture
+   queue, token gate, manifest + service worker) + the always-on host.
 4. **Per-device tokens** (promised twice in v1, never delivered) land here.
 5. **Optional**: read-only remote-MCP server behind Cloudflare Access for the Claude
    desktop app.
