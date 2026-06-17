@@ -52,6 +52,7 @@ function localDateString(date: Date = new Date()): string {
 
 const TODAY = localDateString();
 const DAILY_PATH = `wiki/dailies/${TODAY}.md`;
+const ENTITY_PATH = `wiki/entities/test-entity.md`;
 
 type Fixture = {
   readonly vault: string;
@@ -80,6 +81,17 @@ async function buildFixture(): Promise<Fixture> {
   const { add, commit } = await import("../../src/git");
   await add(vault, DAILY_PATH);
   await commit({ path: vault, message: "seed daily tasks" });
+
+  // Seed a knowledge page so GET /recents returns non-empty results.
+  await mkdir(join(vault, "wiki", "entities"), { recursive: true });
+  await writeFile(
+    join(vault, ENTITY_PATH),
+    `# Test Entity\n\nA seeded entity for recents tests.\n`,
+    "utf8",
+  );
+  await add(vault, ENTITY_PATH);
+  await commit({ path: vault, message: "seed entity for recents" });
+
   expect(await runSync({ vault, quiet: true })).toBe(0);
 
   const handler = createAskServer({
@@ -311,6 +323,46 @@ describe("POST /resolve", () => {
     "requires the bearer token",
     async () => {
       expect((await post("/resolve", { id: 1, value: "x" }, null)).status).toBe(401);
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+// ----- GET /recents ----------------------------------------------------------
+
+describe("GET /recents", () => {
+  test(
+    "returns recently-touched pages (dome.recents/v1)",
+    async () => {
+      const { status, json } = await get("/recents");
+      expect(status).toBe(200);
+      expect(json.schema).toBe("dome.recents/v1");
+      expect(Array.isArray(json.entries)).toBe(true);
+      expect(json.count).toBe((json.entries as unknown[]).length);
+      // The fixture committed a knowledge page under wiki/entities/ — it must appear.
+      expect(
+        (json.entries as Array<Record<string, unknown>>).some((e) =>
+          String(e.path).startsWith("wiki/"),
+        ),
+      ).toBe(true);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "is 401 without a token",
+    async () => {
+      expect((await get("/recents", null)).status).toBe(401);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "respects ?limit=",
+    async () => {
+      const { status, json } = await get("/recents?limit=1");
+      expect(status).toBe(200);
+      expect((json.entries as unknown[]).length).toBeLessThanOrEqual(1);
     },
     TEST_TIMEOUT_MS,
   );

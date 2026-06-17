@@ -13,6 +13,7 @@ import {
   questionRecordJson,
 } from "../surface/answer";
 import { captureJsonDocument, performCapture } from "../surface/capture";
+import { buildRecents } from "../surface/recents";
 import {
   catalogViewProblemMessage,
   makeVaultMutex,
@@ -584,6 +585,15 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
             });
         }
       });
+    }
+
+    if (route === "GET /recents") {
+      const limit = positiveInt(url.searchParams.get("limit")) ?? undefined;
+      const entries = await buildRecents({
+        vault: opts.vaultPath,
+        ...(limit !== undefined ? { limit } : {}),
+      });
+      return jsonResponse(200, { schema: "dome.recents/v1", count: entries.length, entries });
     }
 
     return dataErrorResponse(404, "not-found", `no route for ${route}.`);

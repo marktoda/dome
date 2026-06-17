@@ -119,8 +119,9 @@ it's an implementation option *inside* A's backend, not a different product.
   grounded retrieval, the today/brief view). The agent backend is a new *client* of
   that contract that happens to run server-side — plus the synthesis layer the
   contract deliberately doesn't provide.
-- **Recents**: still a net-new surface (foundation in `src/surface/activity.ts`,
-  not yet routed) — needed for the brief/recents panel.
+- **Recents**: ✅ **SHIPPED 2026-06-16** — `GET /recents` on the ask-server
+  (`dome.recents/v1`: recently-touched knowledge pages, git-derived via
+  `src/surface/recents.ts`), powering the brief/recents panel.
 - **[[v1]] §WS3**: the always-on-host decision is now made (home server on
   Tailscale); the remote-MCP-as-phone-frontend bet is superseded by our-own-backend
   for the phone, with remote MCP retained only as the optional desktop secondary.
@@ -154,8 +155,10 @@ it's an implementation option *inside* A's backend, not a different product.
    `dome http` was **rejected**: each server owns its own `makeVaultMutex()`, so
    composing them would allow two concurrent `VaultRuntime`s (a correctness
    hazard). `dome http` stays unchanged — the standalone lightweight read+capture
-   adapter plus the `/today` HTML cockpit. The **recents** route is the only
-   remaining PWA backend piece, deferred to the PWA build as a net-new view.
+   adapter plus the `/today` HTML cockpit. **Recents** (`GET /recents` →
+   `dome.recents/v1`, recently-touched knowledge pages) is now ✅ **SHIPPED** too —
+   so the ask-server is the PWA's complete backend; the remaining PWA work is the
+   client itself + the always-on host.
 4. **Per-device tokens** (promised twice in v1, never delivered) land here.
 5. **Optional**: read-only remote-MCP server behind Cloudflare Access for the Claude
    desktop app.
