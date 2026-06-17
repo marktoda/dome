@@ -1,4 +1,23 @@
-import type { AskResult, CaptureResult, Recents, ResolveResult, Today, Transcript } from "./types";
+import type { AskResult, CaptureResult, Recents, ResolveResult, StreamEvent, Today, Transcript } from "./types";
+
+// Parse a buffer of SSE text into complete events + the leftover partial frame.
+export function parseSseChunk(buffer: string): { events: StreamEvent[]; rest: string } {
+  const events: StreamEvent[] = [];
+  const parts = buffer.split("\n\n");
+  const rest = parts.pop() ?? ""; // last element is the (possibly empty) partial
+  for (const part of parts) {
+    const line = part.split("\n").find((l) => l.startsWith("data:"));
+    if (line === undefined) continue;
+    const json = line.slice("data:".length).trim();
+    if (json.length === 0) continue;
+    try {
+      events.push(JSON.parse(json) as StreamEvent);
+    } catch {
+      // malformed frame — skip
+    }
+  }
+  return { events, rest };
+}
 
 export class DomeClient {
   constructor(private readonly token: string, private readonly baseUrl: string = "") {}
@@ -44,5 +63,29 @@ export class DomeClient {
 
   async ask(question: string): Promise<AskResult> {
     return this.parse<AskResult>(await fetch(new Request(`${this.baseUrl}/ask`, { method: "POST", headers: this.authHeaders(true), body: JSON.stringify({ question }) })));
+  }
+
+  async askStream(question: string, onEvent: (e: StreamEvent) => void, signal?: AbortSignal): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/ask/stream`, {
+      method: "POST",
+      headers: { ...this.authHeaders(true), accept: "text/event-stream" },
+      body: JSON.stringify({ question }),
+      ...(signal !== undefined ? { signal } : {}),
+    });
+    if (!res.ok || res.body === null) {
+      onEvent({ type: "error", message: `stream failed (${res.status})` });
+      return;
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const { events, rest } = parseSseChunk(buffer);
+      buffer = rest;
+      for (const e of events) onEvent(e);
+    }
   }
 }
