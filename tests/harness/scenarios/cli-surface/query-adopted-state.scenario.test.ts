@@ -82,8 +82,9 @@ scenario(
     // telemetry (why:, facts:) goes to --json only
     expect(text.stdout).not.toContain("why:");
     expect(text.stdout).not.toContain("dome.graph.tagged");
-    expect(text.stdout).toContain("questions:");
-    expect(text.stdout).toContain("resolve: dome resolve ");
+    // No open questions in this vault (duplicate-detection retired — dedup is
+    // dome.agent.consolidate's job now), so the questions section is absent.
+    expect(text.stdout).not.toContain("questions:");
 
     const cli = await h.runCli(["query", "alpha launch", "--json"]);
     expect(cli.exitCode).toBe(0);
@@ -144,21 +145,9 @@ scenario(
         (diagnostic) => diagnostic.code === "dome.markdown.broken-wikilink",
       ),
     ).toBe(true);
-    expect(
-      match?.questions.some((question) =>
-        question.question.includes("Possible duplicate pages")
-      ),
-    ).toBe(true);
-    const question = match?.questions.find((question) =>
-      question.question.includes("Possible duplicate pages")
-    );
-    expect(question?.id).toBeGreaterThan(0);
-    expect(question?.options).toEqual(["merge", "keep separate"]);
-    expect(question?.resolveCommand).toBe(
-      `dome resolve ${question?.id} <merge|keep separate>`,
-    );
-    expect(question?.metadata?.automationPolicy).toBe("owner-needed");
-    expect(question?.automationPolicy).toBe("owner-needed");
+    // duplicate-detection retired: this match no longer carries a duplicate
+    // question (dedup is dome.agent.consolidate's job).
+    expect(match?.questions.length ?? 0).toBe(0);
 
     const limitedText = await h.runCli([
       "query",

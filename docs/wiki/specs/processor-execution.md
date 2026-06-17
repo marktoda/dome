@@ -101,7 +101,7 @@ deterministic execution; garden and view processors may request `llm` or
 
 Adoption stays the merge gate: its deterministic timeout DEFAULT is 10s to keep
 the common single-file path fast. A processor that performs a genuine
-whole-vault adoption scan (e.g. `dome.markdown.duplicate-detection`, which reads
+whole-vault adoption scan (e.g. `dome.markdown.lint-supersession`, which reads
 and parses every comparable page on each changed file) may request a larger
 `execution.timeoutMs`, clamped to the adoption deterministic ceiling
 (`ADOPTION_DETERMINISTIC_TIMEOUT_CEILING_MS`, 60s). The gate therefore stays
@@ -112,7 +112,7 @@ bound, applied as a `min`, so the tighter vault cap caps the requested value). A
 request without an explicit `timeoutMs` resolves to the 10s default unchanged.
 
 > **Deviation (v1 chunk 11, Task 2):** the 60s ceiling and the explicit 30s/20s
-> requests on `dome.markdown.duplicate-detection`, `lint-supersession`, and
+> requests on `dome.markdown.lint-supersession` and
 > `broken-images` are a band-aid, not the durable fix. Those scanners are not
 > yet incremental: each does an unconditional whole-vault read + `gray-matter`
 > parse of every page on every adoption tick (cost scales with vault size, not
