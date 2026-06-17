@@ -7,6 +7,7 @@
 // table.
 
 import { createHash, timingSafeEqual } from "node:crypto";
+import { resolve, sep, join } from "node:path";
 import {
   ANSWER_SCHEMA,
   answerHandlersJson,
@@ -67,6 +68,13 @@ export type CreateAskServerOptions = {
    * Parallel to askImpl.
    */
   readonly askStreamImpl?: AskStreamImpl | undefined;
+  /**
+   * Filesystem path to the built PWA static assets directory. When set,
+   * unauthenticated GET requests for "/" (app shell) and "/assets/*" are
+   * served directly from this directory — bypassing auth entirely so the
+   * browser can boot the PWA without a token.
+   */
+  readonly staticDir?: string | undefined;
 };
 
 export type AskServer = { readonly fetch: (request: Request) => Promise<Response> };
@@ -193,6 +201,27 @@ function authorized(request: Request, tokenDigest: Buffer): boolean {
   const match = /^Bearer\s+(.+)$/i.exec(header);
   if (match === null || match[1] === undefined) return false;
   return timingSafeEqual(sha256(match[1]), tokenDigest);
+}
+
+// ----- Static asset serving --------------------------------------------------
+
+/**
+ * Serve the PWA app shell ("/" → index.html) or an asset ("/assets/...").
+ * Returns null for any path that should fall through to the API routes.
+ * Traversal attacks are rejected with 403 before the file is read.
+ */
+async function serveStatic(staticDir: string, pathname: string): Promise<Response | null> {
+  // Only "/" (shell) and "/assets/..." are served. Everything else → null (fall through to API routing).
+  const rel = pathname === "/" ? "index.html" : pathname.startsWith("/assets/") ? pathname.slice(1) : null;
+  if (rel === null) return null;
+  const root = resolve(staticDir);
+  const full = resolve(join(root, rel));
+  if (full !== root && !full.startsWith(root + sep)) {
+    return new Response("forbidden", { status: 403 }); // traversal guard
+  }
+  const file = Bun.file(full);
+  if (!(await file.exists())) return new Response("not found", { status: 404 });
+  return new Response(file); // Bun sets content-type from extension
 }
 
 // ----- Server factory -------------------------------------------------------
@@ -322,7 +351,7 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
     const url = new URL(request.url);
     const route = `${request.method} ${url.pathname}`;
 
-    if (route === "GET /") {
+    if (route === "GET /" || route === "GET /healthz") {
       return jsonResponse(200, { schema: "dome.ask-server/v1", server: "dome-ask" });
     }
 
@@ -600,6 +629,11 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
   };
 
   const handle = async (request: Request): Promise<Response> => {
+    const url = new URL(request.url);
+    if (request.method === "GET" && opts.staticDir !== undefined) {
+      const served = await serveStatic(opts.staticDir, url.pathname);
+      if (served !== null) return served; // unauthenticated, no mutex
+    }
     if (!authorized(request, tokenDigest)) {
       return jsonResponse(401, {
         schema: SCHEMA,

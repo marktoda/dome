@@ -1,4 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createAskServer } from "../../src/agent/server";
 import type { AskStream } from "../../src/agent/ask";
 import type { TextStreamPart, ToolSet } from "ai";
@@ -50,6 +54,59 @@ function post(body: unknown, token = TOKEN): Request {
     body: JSON.stringify(body),
   });
 }
+
+async function makeStaticDir(): Promise<string> {
+  const dir = mkdtempSync(join(tmpdir(), "dome-pwa-static-"));
+  await writeFile(join(dir, "index.html"), "<!doctype html><title>Dome</title>", "utf8");
+  await mkdir(join(dir, "assets"), { recursive: true });
+  await writeFile(join(dir, "assets", "app.js"), "console.log('dome')", "utf8");
+  return dir;
+}
+
+describe("createAskServer static serving", () => {
+  test("GET / serves the app shell unauthenticated when staticDir is set", async () => {
+    const staticDir = await makeStaticDir();
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, staticDir, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    const res = await server.fetch(new Request("http://localhost/")); // NO auth header
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type") ?? "").toContain("text/html");
+    expect(await res.text()).toContain("<title>Dome</title>");
+  });
+
+  test("GET /assets/* serves the asset unauthenticated", async () => {
+    const staticDir = await makeStaticDir();
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, staticDir, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    const res = await server.fetch(new Request("http://localhost/assets/app.js"));
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("dome");
+  });
+
+  test("a traversal path under /assets is rejected", async () => {
+    const staticDir = await makeStaticDir();
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, staticDir, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    const res = await server.fetch(new Request("http://localhost/assets/../index.html"));
+    // URL normalization resolves assets/../ to / before our code sees it, so the
+    // traversal attempt produces /index.html which is neither "/" nor "/assets/*"
+    // — serveStatic returns null, auth gate fires (no token), 401. Also accept
+    // 403/404 in case a future runtime preserves the raw path.
+    expect([401, 403, 404]).toContain(res.status);
+  });
+
+  test("GET /healthz returns the ping (bearer-gated)", async () => {
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    expect((await server.fetch(new Request("http://localhost/healthz"))).status).toBe(401); // no token
+    const ok = await server.fetch(new Request("http://localhost/healthz", { headers: { authorization: `Bearer ${TOKEN}` } }));
+    expect(ok.status).toBe(200);
+    expect((await ok.json() as { server: string }).server).toBe("dome-ask");
+  });
+
+  test("with no staticDir, GET / still returns the ping (back-compat)", async () => {
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    const res = await server.fetch(new Request("http://localhost/", { headers: { authorization: `Bearer ${TOKEN}` } }));
+    expect(res.status).toBe(200);
+    expect((await res.json() as { server: string }).server).toBe("dome-ask");
+  });
+});
 
 describe("createAskServer", () => {
   test("POST /ask returns a synthesized answer + citations", async () => {
