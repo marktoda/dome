@@ -164,9 +164,15 @@ it's an implementation option *inside* A's backend, not a different product.
    /transcribe` with `--transcribe-cmd <cmd>` / `DOME_TRANSCRIBE_CMD`, space-split
    into argv and called with a temp audio-file path → returns `{text}`) — ✅
    **SHIPPED 2026-06-17** — so the ask-server is the PWA's **complete backend
-   including voice-capture transcription**. The remaining PWA work is the React
-   client itself (apiClient, Composer/ChatTranscript, Brief/Recents, capture
-   queue, token gate, manifest + service worker) + the always-on host.
+   including voice-capture transcription**. The React client is now ✅ **SHIPPED
+   2026-06-17 too** — a React+Vite app in `pwa/` (apiClient, token gate,
+   Brief/Recents, ChatTranscript + stream reducer, voice-capture Composer +
+   state machine, offline capture queue, manifest + service worker, signal-first
+   styling), served via `dome ask-server --static-dir pwa/dist`; voice-capture
+   (record→transcribe→review→file) + text-chat ask (streamed, source-backed) +
+   brief + recents. **The one remaining mobile-arc piece is the always-on home
+   server** (owner's to stand up). Deferred to v1.1+: voice-for-ask/TTS, push,
+   page viewer, native wrapper, per-device tokens.
 4. **Per-device tokens** (promised twice in v1, never delivered) land here.
 5. **Optional**: read-only remote-MCP server behind Cloudflare Access for the Claude
    desktop app.
