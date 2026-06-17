@@ -153,50 +153,12 @@ processors:
     # When an image is added/deleted this re-reads every markdown page and
     # stats every referenced image — a whole-vault pass that can exceed the
     # 10s adoption default on a large vault. 20s headroom (the per-tick
-    # exposure is rarer than duplicate-detection's, since it only widens to
+    # exposure is rarer than lint-supersession's, since it only widens to
     # the whole vault on an image change).
     execution:
       class: deterministic
       timeoutMs: 20000
     module: processors/broken-images.ts
-
-  - id: dome.markdown.duplicate-detection
-    version: 0.1.2
-    phase: adoption
-    triggers:
-      - kind: signal
-        name: document.changed
-      - kind: signal
-        name: file.created
-    capabilities:
-      - kind: read
-        paths: ["**/*.md"]
-      - kind: question.ask
-    # Heavy whole-vault scan: reads + parses EVERY comparable page on every
-    # changed file. Under the 10s adoption default it timed out ~30+ times on a
-    # 786-page vault, silently wedging adoption (blocked-main ticks, zero health
-    # questions). 30s gives realistic headroom; the merge gate stays bounded by
-    # the 60s adoption ceiling, and a recurring timeout now surfaces as a
-    # health finding (see run.recurring-timeout) instead of a silent serve.log
-    # loop.
-    execution:
-      class: deterministic
-      timeoutMs: 30000
-    module: processors/duplicate-detection.ts
-
-  - id: dome.markdown.duplicate-detection-answer
-    version: 0.1.0
-    phase: garden
-    triggers:
-      - kind: answer
-        questionProcessorId: dome.markdown.duplicate-detection
-        idempotencyKeyPrefix: "dome.markdown.duplicate-detection:"
-    capabilities:
-      - kind: read
-        paths: ["**/*.md"]
-      - kind: patch.auto
-        paths: ["wiki/syntheses/*.md"]
-    module: processors/duplicate-detection-answer.ts
 
   - id: dome.markdown.stale-dates
     version: 0.1.2

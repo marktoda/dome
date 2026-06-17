@@ -33,7 +33,7 @@ const processor: Processor<AnswerInput> = defineProcessor({
   triggers: [
     {
       kind: "answer",
-      idempotencyKeyPrefix: "dome.markdown.duplicate-detection:",
+      idempotencyKeyPrefix: "dome.markdown.ambiguous-wikilink:",
     },
   ],
   capabilities: [

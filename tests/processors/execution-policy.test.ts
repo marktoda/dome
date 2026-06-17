@@ -82,7 +82,7 @@ describe("resolveExecutionPolicy", () => {
   });
 
   test("adoption honors an explicit larger deterministic timeout up to the adoption ceiling", () => {
-    // A genuine whole-vault adoption scan (dome.markdown.duplicate-detection)
+    // A genuine whole-vault adoption scan (e.g. dome.markdown.lint-supersession)
     // needs headroom over the 10s default; the merge gate still stays bounded.
     const result = resolveExecutionPolicy({
       phase: "adoption",

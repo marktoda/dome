@@ -51,7 +51,7 @@ describe("pruneUnknownProcessors", () => {
   test("preserves a registered-but-disabled processor's counter", () => {
     let persisted: ReadonlyArray<ProcessorExecutionStateEntry> | null = null;
     const state = buildProcessorExecutionState({
-      initialEntries: [entry("dome.markdown.duplicate-detection")],
+      initialEntries: [entry("dome.markdown.lint-supersession")],
       onEntriesChanged: (entries) => {
         persisted = entries;
       },
@@ -59,7 +59,7 @@ describe("pruneUnknownProcessors", () => {
 
     // The bundle is installed (known) even though disabled by policy → keep.
     const removed = state.pruneUnknownProcessors(
-      (id) => id === "dome.markdown.duplicate-detection",
+      (id) => id === "dome.markdown.lint-supersession",
     );
     expect(removed).toBe(0);
     // No mutation → no persist call.
@@ -69,13 +69,13 @@ describe("pruneUnknownProcessors", () => {
   test("prunes only the unknown entries in a mixed set", () => {
     const state = buildProcessorExecutionState({
       initialEntries: [
-        entry("dome.markdown.duplicate-detection"),
+        entry("dome.markdown.lint-supersession"),
         entry("retired.bundle.processor"),
         entry("dome.health.outbox-recovery-questions"),
       ],
     });
     const known = new Set([
-      "dome.markdown.duplicate-detection",
+      "dome.markdown.lint-supersession",
       "dome.health.outbox-recovery-questions",
     ]);
     const removed = state.pruneUnknownProcessors((id) => known.has(id));
