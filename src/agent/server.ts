@@ -7,6 +7,9 @@
 // table.
 
 import { createHash, timingSafeEqual } from "node:crypto";
+import { mkdtempSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { resolve, sep, join } from "node:path";
 import {
   ANSWER_SCHEMA,
@@ -34,6 +37,11 @@ import type { AskResult } from "./types";
 // ----- Constants ------------------------------------------------------------
 
 const SCHEMA = "dome.ask/v1";
+
+const EXT_BY_TYPE: Record<string, string> = {
+  "audio/m4a": ".m4a", "audio/mp4": ".m4a", "audio/webm": ".webm",
+  "audio/wav": ".wav", "audio/x-wav": ".wav", "audio/mpeg": ".mp3", "audio/ogg": ".ogg",
+};
 
 // ----- Public types ---------------------------------------------------------
 
@@ -75,6 +83,12 @@ export type CreateAskServerOptions = {
    * browser can boot the PWA without a token.
    */
   readonly staticDir?: string | undefined;
+  /**
+   * Shell command to invoke for audio transcription (e.g. a local whisper
+   * wrapper). The implementation appends the temp-file path as the last
+   * argument. When undefined, POST /transcribe returns 501.
+   */
+  readonly transcribeCommand?: ReadonlyArray<string> | undefined;
 };
 
 export type AskServer = { readonly fetch: (request: Request) => Promise<Response> };
@@ -623,6 +637,35 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
         ...(limit !== undefined ? { limit } : {}),
       });
       return jsonResponse(200, { schema: "dome.recents/v1", count: entries.length, entries });
+    }
+
+    if (route === "POST /transcribe") {
+      if (opts.transcribeCommand === undefined || opts.transcribeCommand.length === 0) {
+        return dataErrorResponse(501, "transcribe-unconfigured", "transcription is not configured on this server.");
+      }
+      const declared = Number(request.headers.get("content-length"));
+      if (Number.isFinite(declared) && declared > maxBodyBytes) return dataErrorResponse(413, "payload-too-large", "audio too large.");
+      const bytes = new Uint8Array(await request.arrayBuffer());
+      if (bytes.byteLength === 0) return dataErrorResponse(400, "transcribe-usage", "POST /transcribe requires an audio body.");
+      if (bytes.byteLength > maxBodyBytes) return dataErrorResponse(413, "payload-too-large", "audio too large.");
+      const ext = EXT_BY_TYPE[(request.headers.get("content-type") ?? "").split(";")[0]!.trim()] ?? ".audio";
+      const dir = mkdtempSync(join(tmpdir(), "dome-transcribe-"));
+      const audioPath = join(dir, `audio${ext}`);
+      try {
+        await Bun.write(audioPath, bytes);
+        const proc = Bun.spawn([...opts.transcribeCommand, audioPath], { stdout: "pipe", stderr: "pipe" });
+        const out = await new Response(proc.stdout).text();
+        const code = await proc.exited;
+        if (code !== 0) {
+          const err = await new Response(proc.stderr).text();
+          return dataErrorResponse(500, "transcribe-failed", `transcription command exited ${code}: ${err.slice(0, 500)}`);
+        }
+        return jsonResponse(200, { schema: "dome.transcribe/v1", text: out.trim() });
+      } catch (e) {
+        return dataErrorResponse(500, "transcribe-failed", e instanceof Error ? e.message : String(e));
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
     }
 
     return dataErrorResponse(404, "not-found", `no route for ${route}.`);

@@ -279,3 +279,33 @@ describe("createAskServer POST /ask/stream", () => {
     expect(elapsed).toBeLessThan(3000);
   });
 });
+
+// ----- POST /transcribe -------------------------------------------------
+
+describe("POST /transcribe", () => {
+  // A trivial "whisper" that ignores the audio file arg and prints a fixed transcript.
+  const FAKE_WHISPER = ["sh", "-c", "cat >/dev/null; echo 'hello from whisper'"];
+  function post(body: Uint8Array | null, token = TOKEN): Request {
+    return new Request("http://localhost/transcribe", { method: "POST", headers: token ? { authorization: `Bearer ${token}`, "content-type": "audio/m4a" } : { "content-type": "audio/m4a" }, body });
+  }
+  test("transcribes audio via the configured command", async () => {
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeCommand: FAKE_WHISPER, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    const res = await server.fetch(post(new Uint8Array([1, 2, 3, 4])));
+    expect(res.status).toBe(200);
+    const json = await res.json() as { schema: string; text: string };
+    expect(json.schema).toBe("dome.transcribe/v1");
+    expect(json.text).toBe("hello from whisper");
+  });
+  test("501 when transcribe is not configured", async () => {
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    expect((await server.fetch(post(new Uint8Array([1, 2, 3])))).status).toBe(501);
+  });
+  test("400 on empty body", async () => {
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeCommand: FAKE_WHISPER, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    expect((await server.fetch(post(new Uint8Array([])))).status).toBe(400);
+  });
+  test("401 without a token", async () => {
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeCommand: FAKE_WHISPER, askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    expect((await server.fetch(post(new Uint8Array([1, 2, 3]), ""))).status).toBe(401);
+  });
+});
