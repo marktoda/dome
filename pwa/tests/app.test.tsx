@@ -17,7 +17,7 @@ beforeEach(() => {
 describe("App", () => {
   test("renders the brief (all-clear), recents, and composer when tokened", async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getAllByText(/clear/i).length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
     expect(screen.getByPlaceholderText(/ask/i)).toBeDefined();
   });
 });

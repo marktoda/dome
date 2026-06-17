@@ -14,10 +14,7 @@ export default defineConfig({
   build: {
     outDir: "dist",
     sourcemap: false,
-    rollupOptions: {
-      input: { main: "index.html", sw: "src/sw.ts" },
-      output: { entryFileNames: (c) => c.name === "sw" ? "sw.js" : "assets/[name]-[hash].js" },
-    },
+    assetsInlineLimit: 0,
   },
   server: { port: 5173, proxy },
 });

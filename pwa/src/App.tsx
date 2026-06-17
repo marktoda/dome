@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { DomeClient } from "./api/client";
 import type { Recents as RecentsT, Today } from "./api/types";
 import { TokenGate } from "./auth/TokenGate";
@@ -9,7 +9,7 @@ import { Composer } from "./components/Composer";
 import { chatReducer } from "./chat/streamReducer";
 
 function Screen({ token }: { token: string }): React.ReactElement {
-  const client = new DomeClient(token);
+  const client = useMemo(() => new DomeClient(token), [token]);
   const [today, setToday] = useState<Today | null>(null);
   const [recents, setRecents] = useState<RecentsT | null>(null);
   const [chat, dispatch] = useReducer(chatReducer, { messages: [] });
@@ -17,7 +17,7 @@ function Screen({ token }: { token: string }): React.ReactElement {
   const refresh = useCallback(() => {
     client.tasks().then(setToday).catch(() => {});
     client.recents().then(setRecents).catch(() => {});
-  }, [token]);
+  }, [client]);
 
   useEffect(() => {
     refresh();

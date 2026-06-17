@@ -167,11 +167,14 @@ it's an implementation option *inside* A's backend, not a different product.
    including voice-capture transcription**. The React client is now ✅ **SHIPPED
    2026-06-17 too** — a React+Vite app in `pwa/` (apiClient, token gate,
    Brief/Recents, ChatTranscript + stream reducer, voice-capture Composer +
-   state machine, offline capture queue, manifest + service worker, signal-first
+   state machine, offline capture queue, manifest served from `/assets/`, signal-first
    styling), served via `dome ask-server --static-dir pwa/dist`; voice-capture
    (record→transcribe→review→file) + text-chat ask (streamed, source-backed) +
    brief + recents. **The one remaining mobile-arc piece is the always-on home
-   server** (owner's to stand up). Deferred to v1.1+: voice-for-ask/TTS, push,
+   server** (owner's to stand up). Deferred to v1.1+: **service worker + offline
+   capture-queue wiring** (manifest ships in v1 so add-to-home-screen works;
+   `CaptureQueue` is built + tested but not yet wired; SW registration is
+   deferred — the build emits no `sw.js`), voice-for-ask/TTS, push,
    page viewer, native wrapper, per-device tokens.
 4. **Per-device tokens** (promised twice in v1, never delivered) land here.
 5. **Optional**: read-only remote-MCP server behind Cloudflare Access for the Claude
