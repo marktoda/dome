@@ -23,7 +23,7 @@
     "dome": "bin/dome"
   },
   "scripts": {
-    "test": "bun test",
+    "test": "bun test ./tests",
     "test:invariants": "bun test tests/invariants",
     "typecheck": "bunx tsc --noEmit && bunx tsc --noEmit -p tsconfig.bundles.json && bunx tsc --noEmit -p tsconfig.scripts.json",
     "v1:smoke": "bun scripts/v1-smoke.ts",
