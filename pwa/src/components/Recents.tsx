@@ -17,14 +17,18 @@ export function Recents({ recents }: { recents: RecentsT }): React.ReactElement 
   return (
     <div className="recents">
       <ul>
-        {recents.entries.map((e) => (
-          <li key={e.path}>
-            <span className="title">{e.title}</span>
-            <span className="meta">
-              <span className={e.changedBy === "engine" ? "who-engine" : ""}>{e.changedBy}</span> · {ago(e.lastChangedAt)}
-            </span>
-          </li>
-        ))}
+        {recents.entries.map((e) => {
+          const who = e.changedBy === "engine" ? "engine" : "you";
+          return (
+            <li key={e.path}>
+              <span className={`rdot ${who}`} aria-hidden="true" />
+              <div className="rbody">
+                <span className="title">{e.title}</span>
+                <span className="meta">{who} · {e.subject} · {ago(e.lastChangedAt)}</span>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
