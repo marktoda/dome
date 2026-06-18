@@ -226,7 +226,7 @@ a.wl { text-decoration: underline; text-decoration-thickness: 1px; text-underlin
 .mic .glyph { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .mic .glyph .stem { width: 9px; height: 14px; border-radius: 5px; background: var(--sage-ink); }
 .mic .glyph .base { width: 13px; height: 6px; border: 1.5px solid var(--sage-ink); border-top: none; border-radius: 0 0 7px 7px; }
-.composer input { flex: 1; min-width: 0; font-size: 14px; padding: 0 4px; }
+.composer input { flex: 1; min-width: 0; font-size: 16px; padding: 0 4px; } /* >=16px: stops iOS focus-zoom */
 .composer input::placeholder { color: var(--text-faint); }
 .send { width: 36px; height: 36px; flex: none; border-radius: 50%; background: #262624; display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-size: 17px; margin-right: 2px; transition: background .15s, color .15s; }
 .send.active { background: var(--peri); color: #14162a; }
@@ -286,6 +286,6 @@ a.wl { text-decoration: underline; text-decoration-thickness: 1px; text-underlin
 .gate h1 { font-size: 26px; font-weight: 600; color: var(--text-strong); letter-spacing: -.02em; margin-bottom: 12px; }
 .gate .lede { font-size: 14.5px; line-height: 1.55; color: var(--text-dim); margin-bottom: 30px; text-wrap: pretty; }
 .gate form { display: flex; flex-direction: column; }
-.gate input { height: 50px; border-radius: 13px; background: var(--surface-2); border: 1px solid var(--sage-bdr); padding: 0 16px; font: 500 14px var(--mono); color: var(--text-soft); letter-spacing: .1em; margin-bottom: 14px; }
+.gate input { height: 50px; border-radius: 13px; background: var(--surface-2); border: 1px solid var(--sage-bdr); padding: 0 16px; font: 500 16px var(--mono); color: var(--text-soft); letter-spacing: .1em; margin-bottom: 14px; } /* >=16px: stops iOS focus-zoom */
 .gate button { height: 50px; border-radius: 13px; background: var(--sage); color: var(--sage-ink); font-size: 15px; font-weight: 600; }
 .gate .fine { font: 500 11px var(--mono); color: var(--text-faint); margin-top: 18px; text-align: center; }
