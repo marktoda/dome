@@ -2,30 +2,26 @@ import { useState } from "react";
 import type { Citation } from "../api/types";
 import type { ChatState } from "../chat/streamReducer";
 
-/** Middle/tail-truncate long paths so chips don't blow out the row. */
-function truncPath(p: string): string {
-  if (p.length <= 24) return p;
+/** Shorten long paths to "head/…/file.md" so chips stay one line. */
+function shortPath(p: string): string {
+  if (p.length <= 22) return p;
   const parts = p.split("/");
-  const file = parts[parts.length - 1] ?? p;
-  if (file.length >= 22) return `…${file.slice(-21)}`;
-  return `${parts[0] ?? ""}/…/${file}`;
+  return `${parts[0] ?? ""}/…/${parts[parts.length - 1] ?? p}`;
 }
 
 function Chip({ path }: { path: string }): React.ReactElement {
-  return <span className="chip"><span className="doc" aria-hidden="true" />{truncPath(path)}</span>;
+  return <span className="chip"><span className="doc" aria-hidden="true" />{shortPath(path)}</span>;
 }
 
 function Cites({ citations }: { citations: Citation[] }): React.ReactElement {
   const [expanded, setExpanded] = useState(false);
-  const SHOWN = 3;
-  if (citations.length <= SHOWN || expanded) {
-    return <div className="cites">{citations.map((c, i) => <Chip key={i} path={c.path} />)}</div>;
-  }
-  const head = citations.slice(0, SHOWN - 1);
+  const MAX = 4;
+  const visible = expanded ? citations : citations.slice(0, MAX);
+  const hidden = citations.length - visible.length;
   return (
     <div className="cites">
-      {head.map((c, i) => <Chip key={i} path={c.path} />)}
-      <button type="button" className="chip more" onClick={() => setExpanded(true)}>+{citations.length - head.length} sources</button>
+      {visible.map((c, i) => <Chip key={i} path={c.path} />)}
+      {hidden > 0 ? <button type="button" className="chip more" onClick={() => setExpanded(true)}>+{hidden} more</button> : null}
     </div>
   );
 }

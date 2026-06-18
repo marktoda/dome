@@ -85,7 +85,7 @@ export function Composer({ onAsk, onTranscribe, onFile }: Props): React.ReactEle
             {WAVE.map((h, i) => <div key={i} className="bar" style={{ height: `${h}px`, animationDelay: `${(i * 0.045).toFixed(3)}s` }} />)}
           </div>
           <div className="timer">{fmtTime(secs)}</div>
-          <div className="hint">tap to stop</div>
+          <div className="hint">tap to stop &amp; review</div>
         </div>
         <div className="rec-controls">
           <button type="button" className="rec-btn" aria-label="stop recording" onClick={() => recorderRef.current?.stop()}><span className="stop" /></button>
@@ -114,7 +114,6 @@ export function Composer({ onAsk, onTranscribe, onFile }: Props): React.ReactEle
           <div className="grip" />
           <div className="tag"><span className="dot" /><span className="label">HEARD THIS — FIX IF NEEDED</span></div>
           <textarea aria-label="capture draft" value={cap.draft} disabled={filing} onChange={(e) => dispatch({ kind: "edit", text: e.target.value })} />
-          <div className="target">→ inbox/raw/…</div>
           <div className="actions">
             <button type="button" className="cancel" disabled={filing} onClick={() => dispatch({ kind: "cancel" })}>Cancel</button>
             <button type="button" className="fileit" disabled={filing} onClick={() => { void file(); }}>{filing ? "Filing…" : "File it"}</button>
@@ -132,7 +131,7 @@ export function Composer({ onAsk, onTranscribe, onFile }: Props): React.ReactEle
           <span className="glyph"><span className="stem" /><span className="base" /></span>
         </button>
         <input placeholder="ask your brain…" value={text} onChange={(e) => setText(e.target.value)} />
-        <button type="submit" className="send" aria-label="send">↑</button>
+        <button type="submit" className={`send${text.trim().length > 0 ? " active" : ""}`} aria-label="send">↑</button>
       </div>
       {cap.error !== null ? <span className="err">{cap.error}</span> : null}
     </form>

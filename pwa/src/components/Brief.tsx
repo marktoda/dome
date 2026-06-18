@@ -12,6 +12,9 @@ function fmtDue(iso: string): string {
 function TaskRow({ item, followup = false }: { item: TodayItem; followup?: boolean }): React.ReactElement {
   return (
     <div className={`row${followup ? " followup" : ""}`}>
+      {/* Non-interactive for now: completing a task = editing markdown = a git commit,
+          which needs a co-located checkout the phone lacks. Make this a checkable
+          control once there's a phone write-path (the deferred authoring boundary). */}
       <div className="box" />
       <div className="text">{item.text}</div>
       {item.dueDate !== null ? <span className="due">{fmtDue(item.dueDate)}</span> : null}
@@ -22,12 +25,9 @@ function TaskRow({ item, followup = false }: { item: TodayItem; followup?: boole
 function QuestionCard({ q, onResolve }: { q: TodayQuestion; onResolve: (id: number, value: string) => void }): React.ReactElement {
   return (
     <div className="qcard">
-      <div className="tag"><span className="q">?</span><span className="label">DECIDE</span></div>
       <div className="body">{q.question}</div>
       <div className="opts">
-        {q.options.map((opt) => (
-          <button key={opt} type="button" onClick={() => onResolve(q.id, opt)}>{opt}</button>
-        ))}
+        {q.options.map((opt) => <button key={opt} type="button" onClick={() => onResolve(q.id, opt)}>{opt}</button>)}
       </div>
     </div>
   );
@@ -40,11 +40,7 @@ function HeroCard({ hero, onResolve }: { hero: NonNullable<Today["hero"]>; onRes
     inner = (
       <>
         <div className="body">{q.question}</div>
-        <div className="opts">
-          {q.options.map((opt) => (
-            <button key={opt} type="button" onClick={() => onResolve(q.id, opt)}>{opt}</button>
-          ))}
-        </div>
+        <div className="opts">{q.options.map((opt) => <button key={opt} type="button" onClick={() => onResolve(q.id, opt)}>{opt}</button>)}</div>
       </>
     );
   } else {
@@ -59,24 +55,18 @@ function HeroCard({ hero, onResolve }: { hero: NonNullable<Today["hero"]>; onRes
   );
 }
 
-export function Brief({ today, onResolve }: { today: Today; onResolve: (id: number, value: string) => void }): React.ReactElement {
-  const totalOpen = today.counts.openTasks + today.counts.followups + today.counts.questions;
+type Props = {
+  today: Today;
+  onResolve: (id: number, value: string) => void;
+  collapsed?: boolean;
+  hasMessages?: boolean;
+  onToggle?: () => void;
+};
 
-  if (totalOpen === 0) {
-    return (
-      <section className="brief">
-        <div className="all-clear">
-          <div className="halo"><div className="ring" /><div className="core" /></div>
-          <h2>You&apos;re clear.</h2>
-          <p>Nothing open today. Peek at recents if you&apos;re curious.</p>
-        </div>
-      </section>
-    );
-  }
-
+export function Brief({ today, onResolve, collapsed = false, hasMessages = false, onToggle = () => {} }: Props): React.ReactElement | null {
   const hero = today.hero;
-  const heroQId = hero?.kind === "question" ? (hero.item as TodayQuestion).id : null;
-  const heroTaskText = hero?.kind === "task" ? (hero.item as TodayItem).text : null;
+  const heroQId = hero !== null && hero.kind === "question" ? (hero.item as TodayQuestion).id : null;
+  const heroTaskText = hero !== null && hero.kind === "task" ? (hero.item as TodayItem).text : null;
 
   // De-duplicate the hero from the lists below it.
   let taskDropped = false;
@@ -86,14 +76,43 @@ export function Brief({ today, onResolve }: { today: Today; onResolve: (id: numb
   });
   const questions = today.questions.filter((q) => q.id !== heroQId);
 
-  const haveTasks = today.counts.openTasks > 0 || today.counts.followups > 0;
-  const subline = haveTasks ? `today · ${totalOpen} open` : `today · ${totalOpen} to decide`;
+  const openCount = openTasks.length + (hero?.kind === "task" ? 1 : 0);
+  const qCount = questions.length + (heroQId !== null ? 1 : 0);
+  const totalOpen = openCount + today.followups.length + qCount;
+
+  if (totalOpen === 0) {
+    if (hasMessages) return null;
+    return (
+      <section className="brief">
+        <div className="all-clear">
+          <div className="halo"><div className="ring" /><div className="core" /></div>
+          <h2>You&apos;re clear.</h2>
+          <p>Nothing open today. Ask your brain anything, or capture a thought below.</p>
+        </div>
+      </section>
+    );
+  }
+
+  const summary =
+    [openCount > 0 ? `${openCount} open` : null, qCount > 0 ? `${qCount} to decide` : null]
+      .filter(Boolean).join(" · ") || "all clear";
+
+  if (collapsed) {
+    return (
+      <button type="button" className="brief-bar" onClick={onToggle}>
+        <span className="left"><span className="dot" />Today&apos;s brief</span>
+        <span className="sum">{summary} ▾</span>
+      </button>
+    );
+  }
 
   return (
     <section className="brief">
-      <div className="subline">{subline}</div>
+      <div className="brief-head">
+        <span className="label">today · {summary}</span>
+        {hasMessages ? <button type="button" className="hide" onClick={onToggle}>hide ▴</button> : null}
+      </div>
       {today.brief !== null ? <p className="brief-text">{today.brief.text}</p> : null}
-
       {hero !== null ? <HeroCard hero={hero} onResolve={onResolve} /> : null}
 
       {openTasks.length > 0 ? (
@@ -112,7 +131,8 @@ export function Brief({ today, onResolve }: { today: Today; onResolve: (id: numb
 
       {questions.length > 0 ? (
         <div className="section">
-          {questions.map((q) => <QuestionCard key={q.id} q={q} onResolve={onResolve} />)}
+          <div className="label">To decide</div>
+          <div className="rows">{questions.map((q) => <QuestionCard key={q.id} q={q} onResolve={onResolve} />)}</div>
         </div>
       ) : null}
     </section>

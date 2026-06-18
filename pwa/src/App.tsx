@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { DomeClient } from "./api/client";
-import type { Recents as RecentsT, Today } from "./api/types";
+import type { Recents as RecentsT, Today, TodayQuestion } from "./api/types";
 import { TokenGate } from "./auth/TokenGate";
 import { Brief } from "./components/Brief";
 import { Recents } from "./components/Recents";
@@ -21,6 +21,9 @@ function Screen({ token }: { token: string }): React.ReactElement {
   const [today, setToday] = useState<Today | null>(null);
   const [recents, setRecents] = useState<RecentsT | null>(null);
   const [chat, dispatch] = useReducer(chatReducer, { messages: [] });
+  const [briefCollapsed, setBriefCollapsed] = useState(false);
+  const [ack, setAck] = useState<string | null>(null);
+  const hasMessages = chat.messages.length > 0;
 
   const refresh = useCallback(() => {
     client.tasks().then(setToday).catch(() => {});
@@ -37,7 +40,22 @@ function Screen({ token }: { token: string }): React.ReactElement {
   const onAsk = (q: string): void => {
     dispatch({ kind: "user", text: q });
     dispatch({ kind: "assistant-start" });
+    setBriefCollapsed(true);
     void client.askStream(q, (e) => dispatch({ kind: "event", event: e }));
+  };
+
+  // Optimistic: drop the answered question (and hero if it was the one) immediately,
+  // toast the answer, then resolve against the API and refetch to confirm.
+  const resolve = (id: number, value: string): void => {
+    setToday((prev) =>
+      prev === null ? prev : {
+        ...prev,
+        hero: prev.hero !== null && prev.hero.kind === "question" && (prev.hero.item as TodayQuestion).id === id ? null : prev.hero,
+        questions: prev.questions.filter((q) => q.id !== id),
+      });
+    setAck(`Answered · "${value}"`);
+    setTimeout(() => setAck(null), 2200);
+    void client.resolve(id, value).then(refresh).catch(() => {});
   };
 
   return (
@@ -47,7 +65,9 @@ function Screen({ token }: { token: string }): React.ReactElement {
         <span className="meta">{todayLabel()}<span className="pulse" aria-hidden="true" /></span>
       </header>
       <div className="scroll">
-        {today !== null ? <Brief today={today} onResolve={(id, v) => { void client.resolve(id, v).then(refresh); }} /> : null}
+        {today !== null ? (
+          <Brief today={today} onResolve={resolve} collapsed={briefCollapsed} hasMessages={hasMessages} onToggle={() => setBriefCollapsed((c) => !c)} />
+        ) : null}
         {recents !== null ? (
           <details className="recents-wrap">
             <summary>recents · {recents.count}</summary>
@@ -56,6 +76,7 @@ function Screen({ token }: { token: string }): React.ReactElement {
         ) : null}
         <ChatTranscript state={chat} />
       </div>
+      {ack !== null ? <div className="ack-wrap"><div className="ack">{ack}</div></div> : null}
       <Composer
         onAsk={onAsk}
         onTranscribe={(blob) => client.transcribe(blob).then((t) => t.text)}

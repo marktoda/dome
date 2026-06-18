@@ -74,6 +74,7 @@ input, textarea { font: inherit; color: inherit; background: none; border: none;
 
 /* ── App shell ── */
 .screen {
+  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -98,6 +99,17 @@ input, textarea { font: inherit; color: inherit; background: none; border: none;
 /* ── Brief ── */
 .brief { padding-bottom: 4px; }
 .brief .subline { font: 500 11px var(--mono); letter-spacing: .04em; color: var(--label); margin: 2px 0 14px 2px; }
+.brief-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 2px 14px; }
+.brief-head .label { font: 500 11px var(--mono); letter-spacing: .06em; color: var(--label); }
+.brief-head .hide { font: 500 11px var(--mono); color: #6a6a64; }
+/* collapsed brief bar */
+.brief-bar { width: 100%; text-align: left; display: flex; align-items: center; justify-content: space-between; background: #161614; border: 1px solid var(--border); border-radius: 13px; padding: 13px 15px; margin: 4px 0 8px; animation: rise .3s ease; }
+.brief-bar .left { display: flex; align-items: center; gap: 9px; font-size: 14px; color: var(--text); font-weight: 500; }
+.brief-bar .left .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); flex: none; }
+.brief-bar .sum { font: 500 12px var(--mono); color: var(--amber); }
+/* answer ack toast */
+.ack-wrap { position: absolute; left: 0; right: 0; bottom: 96px; display: flex; justify-content: center; z-index: 30; pointer-events: none; }
+.ack { background: rgba(200,240,216,0.14); border: 1px solid var(--sage-bdr); color: var(--sage); font: 500 12px var(--mono); padding: 8px 14px; border-radius: 20px; backdrop-filter: blur(8px); animation: rise .3s ease; }
 .brief-text { font-size: 14px; line-height: 1.55; color: var(--text-dim); margin-bottom: 18px; text-wrap: pretty; }
 
 /* hero card */
@@ -126,7 +138,7 @@ input, textarea { font: inherit; color: inherit; background: none; border: none;
 .section > .label { font: 500 11px var(--mono); color: var(--label); margin: 0 0 11px 2px; }
 .rows { display: flex; flex-direction: column; gap: 12px; }
 .row { display: flex; gap: 12px; align-items: flex-start; }
-.box { width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid #4a4a45; margin-top: 1px; flex: none; }
+.box { width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid #4a4a45; margin-top: 1px; flex: none; }
 .row.followup .box { border-color: #3a3a35; }
 .row .text { flex: 1; font-size: 14.5px; line-height: 1.4; color: var(--text); }
 .row.followup .text { color: #b8b4ab; }
@@ -156,11 +168,14 @@ input, textarea { font: inherit; color: inherit; background: none; border: none;
 .recents-wrap > summary::-webkit-details-marker { display: none; }
 .recents-wrap > summary::before { content: "▸"; color: var(--text-faint); }
 .recents-wrap[open] > summary::before { content: "▾"; }
-.recents ul { list-style: none; display: flex; flex-direction: column; gap: 11px; padding: 2px 2px 14px; }
-.recents li { display: flex; flex-direction: column; gap: 2px; }
-.recents .title { font-size: 14px; color: var(--text); line-height: 1.3; }
-.recents .meta { font: 500 11px var(--mono); color: var(--text-faint); }
-.recents .meta .who-engine { color: var(--sage); opacity: .8; }
+.recents ul { list-style: none; display: flex; flex-direction: column; gap: 2px; padding: 2px 2px 14px; }
+.recents li { display: flex; gap: 11px; align-items: flex-start; padding: 7px 0; }
+.recents .rdot { width: 6px; height: 6px; border-radius: 50%; margin-top: 7px; flex: none; }
+.recents .rdot.engine { background: var(--sage); }
+.recents .rdot.you { background: var(--peri); }
+.recents .rbody { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.recents .title { font-size: 13.5px; color: var(--text); line-height: 1.3; }
+.recents .meta { font: 500 11px var(--mono); color: #6a6a64; }
 .recents .empty { font: 500 12px var(--mono); color: var(--text-faint); padding: 2px 2px 14px; }
 
 /* ── Chat transcript ── */
@@ -193,7 +208,8 @@ input, textarea { font: inherit; color: inherit; background: none; border: none;
 .mic .glyph .base { width: 13px; height: 6px; border: 1.5px solid var(--sage-ink); border-top: none; border-radius: 0 0 7px 7px; }
 .composer input { flex: 1; min-width: 0; font-size: 14px; padding: 0 4px; }
 .composer input::placeholder { color: var(--text-faint); }
-.send { width: 36px; height: 36px; flex: none; border-radius: 50%; background: #262624; display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-size: 17px; margin-right: 2px; }
+.send { width: 36px; height: 36px; flex: none; border-radius: 50%; background: #262624; display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-size: 17px; margin-right: 2px; transition: background .15s, color .15s; }
+.send.active { background: var(--peri); color: #14162a; }
 .composer .err { position: absolute; top: -22px; left: var(--pad); font: 500 11px var(--mono); color: var(--coral); }
 
 /* ── Capture overlays (fixed, full-screen) ── */
@@ -215,7 +231,7 @@ input, textarea { font: inherit; color: inherit; background: none; border: none;
 .timer { font: 500 30px var(--mono); color: var(--text-strong); letter-spacing: .02em; }
 .hint { font-size: 13px; color: var(--text-dim); margin-top: 10px; }
 .rec-controls { flex: none; padding: 12px 16px calc(24px + env(safe-area-inset-bottom)); display: flex; align-items: center; justify-content: center; }
-.rec-btn { width: 70px; height: 70px; border-radius: 50%; background: var(--coral); display: flex; align-items: center; justify-content: center; animation: recpulse 1.8s ease-out infinite; }
+.rec-btn { width: 74px; height: 74px; border-radius: 50%; background: var(--coral); display: flex; align-items: center; justify-content: center; animation: recpulse 1.8s ease-out infinite; }
 .rec-btn .stop { width: 24px; height: 24px; border-radius: 6px; background: #1a0f0c; }
 
 /* transcribing */
