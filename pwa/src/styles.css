@@ -191,6 +191,13 @@ a.wl { text-decoration: underline; text-decoration-thickness: 1px; text-underlin
 .msg.user p { font-size: 14px; line-height: 1.4; }
 .msg.assistant { align-self: flex-start; max-width: 94%; }
 .msg.assistant p { font-size: 14.5px; line-height: 1.5; color: var(--text); text-wrap: pretty; }
+.answer { font-size: 14.5px; line-height: 1.5; color: var(--text); text-wrap: pretty; }
+.answer p { margin-bottom: 9px; }
+.answer p:last-child { margin-bottom: 0; }
+.answer strong { font-weight: 600; color: var(--text-strong); }
+.answer ul { list-style: none; margin: 2px 0 11px; display: flex; flex-direction: column; gap: 6px; }
+.answer li { position: relative; padding-left: 15px; }
+.answer li::before { content: "·"; position: absolute; left: 3px; color: var(--text-dim); }
 .cursor { display: inline-block; width: 2px; height: 16px; background: var(--sage); margin-left: 2px; vertical-align: -3px; animation: blink 1s steps(1) infinite; }
 .cites { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; background: var(--surface-2); border: 1px solid var(--border-mid); border-radius: 7px; font: 500 11px var(--mono); color: #b8b4ab; }
