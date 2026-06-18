@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Citation } from "../api/types";
 import type { ChatState } from "../chat/streamReducer";
+import { renderRich } from "../rich";
 
 /** Shorten long paths to "head/…/file.md" so chips stay one line. */
 function shortPath(p: string): string {
@@ -31,7 +32,7 @@ export function ChatTranscript({ state }: { state: ChatState }): React.ReactElem
     <div className="transcript">
       {state.messages.map((m, i) => (
         <div key={i} className={`msg ${m.role}`}>
-          <p>{m.text}{m.streaming ? <span className="cursor" aria-hidden="true" /> : null}</p>
+          <p>{renderRich(m.text)}{m.streaming ? <span className="cursor" aria-hidden="true" /> : null}</p>
           {m.citations.length > 0 ? <Cites citations={m.citations} /> : null}
         </div>
       ))}

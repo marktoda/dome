@@ -111,6 +111,12 @@ input, textarea { font: inherit; color: inherit; background: none; border: none;
 .ack-wrap { position: absolute; left: 0; right: 0; bottom: 96px; display: flex; justify-content: center; z-index: 30; pointer-events: none; }
 .ack { background: rgba(200,240,216,0.14); border: 1px solid var(--sage-bdr); color: var(--sage); font: 500 12px var(--mono); padding: 8px 14px; border-radius: 20px; backdrop-filter: blur(8px); animation: rise .3s ease; }
 .brief-text { font-size: 14px; line-height: 1.55; color: var(--text-dim); margin-bottom: 18px; text-wrap: pretty; }
+.brief-more { display: block; font: 500 12px var(--mono); color: var(--text-dim); padding: 4px 2px 6px; }
+/* [[wikilinks]] + markdown links rendered as clean inline text (never raw syntax) */
+.wl { color: var(--text-soft); }
+a.wl { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; text-decoration-color: rgba(200,240,216,.4); }
+.msg.assistant .wl { color: var(--sage); opacity: .9; }
+.row .text strong, .qcard .body strong, .hero .body strong { font-weight: 600; color: var(--text-strong); }
 
 /* hero card */
 .hero {
