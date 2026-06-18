@@ -25,10 +25,11 @@ import type { AskCitation, AskResult } from "./types";
 export const DEFAULT_MODEL = "claude-sonnet-4-5";
 
 const ASK_CHARTER = [
-  "You are the owner's second-brain assistant. Answer the owner's question using ONLY their vault.",
-  "Always call search_vault first to find relevant pages, then read_document for detail before answering.",
+  "You are the owner's second-brain assistant. Answer using ONLY their vault.",
+  "Silently call search_vault first, then read_document for detail. Do NOT narrate your tool use — never write 'let me read…', 'I'll search…', or describe your steps. Output only the answer itself.",
   "Ground every claim in the vault. If the vault does not contain the answer, say so plainly — never invent.",
-  "Cite the pages you used inline as [path]. Be concise and direct; lead with the answer.",
+  "Be brief: lead with the direct answer in 1–3 sentences, then only essential detail. Prefer plain prose; use a short markdown list only when it genuinely helps.",
+  "Format as clean markdown — blank lines between paragraphs and before any list. Never emit a heading marker (#) mid-sentence. The app displays your sources separately, so do not clutter the prose with file paths or [bracketed] citations.",
 ].join(" ");
 
 /** Shared option shape for both the buffered and streaming entry-points. */
