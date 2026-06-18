@@ -8,6 +8,14 @@ import { ChatTranscript } from "./components/ChatTranscript";
 import { Composer } from "./components/Composer";
 import { chatReducer } from "./chat/streamReducer";
 
+function todayLabel(): string {
+  try {
+    return new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+  } catch {
+    return "";
+  }
+}
+
 function Screen({ token }: { token: string }): React.ReactElement {
   const client = useMemo(() => new DomeClient(token), [token]);
   const [today, setToday] = useState<Today | null>(null);
@@ -34,13 +42,24 @@ function Screen({ token }: { token: string }): React.ReactElement {
 
   return (
     <main className="screen">
-      {today !== null ? <Brief today={today} onResolve={(id, v) => { void client.resolve(id, v).then(refresh); }} /> : null}
-      {recents !== null ? <details className="recents-wrap"><summary>recents ({recents.count})</summary><Recents recents={recents} /></details> : null}
-      <ChatTranscript state={chat} />
+      <header className="masthead">
+        <span className="brand">Dome</span>
+        <span className="meta">{todayLabel()}<span className="pulse" aria-hidden="true" /></span>
+      </header>
+      <div className="scroll">
+        {today !== null ? <Brief today={today} onResolve={(id, v) => { void client.resolve(id, v).then(refresh); }} /> : null}
+        {recents !== null ? (
+          <details className="recents-wrap">
+            <summary>recents · {recents.count}</summary>
+            <Recents recents={recents} />
+          </details>
+        ) : null}
+        <ChatTranscript state={chat} />
+      </div>
       <Composer
         onAsk={onAsk}
         onTranscribe={(blob) => client.transcribe(blob).then((t) => t.text)}
-        onFile={(text) => client.capture({ text }).then(() => undefined)}
+        onFile={(text) => client.capture({ text }).then((r) => r.path)}
       />
     </main>
   );

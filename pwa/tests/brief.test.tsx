@@ -15,7 +15,7 @@ describe("Brief", () => {
       counts: { openTasks: 1, followups: 0, questions: 1 } };
     render(<Brief today={today} onResolve={onResolve} />);
     expect(screen.getByText(/Draft roadmap/)).toBeDefined();
-    expect(screen.getByText(/2026-06-20/)).toBeDefined();
+    expect(screen.getByText(/Jun 20/)).toBeDefined(); // dueDate is formatted "2026-06-20" → "Jun 20"
     fireEvent.click(screen.getByRole("button", { name: "hourly" }));
     expect(onResolve).toHaveBeenCalledWith(7, "hourly");
   });
