@@ -195,6 +195,8 @@ a.wl { text-decoration: underline; text-decoration-thickness: 1px; text-underlin
 .answer p { margin-bottom: 9px; }
 .answer p:last-child { margin-bottom: 0; }
 .answer strong { font-weight: 600; color: var(--text-strong); }
+.answer .ans-h { font-weight: 600; color: var(--text-strong); font-size: 14.5px; margin: 12px 0 6px; }
+.answer .ans-h:first-child { margin-top: 0; }
 .answer ul { list-style: none; margin: 2px 0 11px; display: flex; flex-direction: column; gap: 6px; }
 .answer li { position: relative; padding-left: 15px; }
 .answer li::before { content: "·"; position: absolute; left: 3px; color: var(--text-dim); }

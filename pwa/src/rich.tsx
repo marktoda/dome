@@ -33,7 +33,13 @@ export function renderRich(text: string): React.ReactNode {
     } else if (m[2] !== undefined) {
       out.push(<span key={key++} className="wl">{conceptLabel(m[2])}</span>);
     } else if (m[3] !== undefined && m[4] !== undefined) {
-      out.push(<a key={key++} className="wl" href={m[4]} target="_blank" rel="noopener noreferrer">{m[3]}</a>);
+      // Only http(s) links become clickable — never javascript:/data: (XSS guard;
+      // the token lives in localStorage). Other schemes render as plain label text.
+      if (/^https?:\/\//i.test(m[4])) {
+        out.push(<a key={key++} className="wl" href={m[4]} target="_blank" rel="noopener noreferrer">{m[3]}</a>);
+      } else {
+        out.push(<span key={key++} className="wl">{m[3]}</span>);
+      }
     } else if (m[5] !== undefined) {
       out.push(<span key={key++} className="wl">{conceptLabel(m[5])}</span>);
     }
@@ -56,6 +62,8 @@ export function renderMarkdown(text: string): React.ReactNode {
     if (li !== null) { items.push(<li key={key++}>{renderRich(li[1] ?? "")}</li>); continue; }
     flush();
     if (line === "") continue;
+    const h = /^(#{1,6})\s+(.+)$/.exec(line);
+    if (h !== null) { blocks.push(<div key={key++} className="ans-h">{renderRich(h[2] ?? "")}</div>); continue; }
     blocks.push(<p key={key++}>{renderRich(line)}</p>);
   }
   flush();
