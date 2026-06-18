@@ -1,6 +1,9 @@
+import { useState } from "react";
 import type { Today, TodayItem, TodayQuestion } from "../api/types";
+import { renderRich } from "../rich";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const CAP = 5; // glanceable by default; "+N more" reveals the rest
 
 /** "2026-06-20" → "Jun 20". Deterministic (no Date / timezone). */
 function fmtDue(iso: string): string {
@@ -16,7 +19,7 @@ function TaskRow({ item, followup = false }: { item: TodayItem; followup?: boole
           which needs a co-located checkout the phone lacks. Make this a checkable
           control once there's a phone write-path (the deferred authoring boundary). */}
       <div className="box" />
-      <div className="text">{item.text}</div>
+      <div className="text">{renderRich(item.text)}</div>
       {item.dueDate !== null ? <span className="due">{fmtDue(item.dueDate)}</span> : null}
     </div>
   );
@@ -25,7 +28,7 @@ function TaskRow({ item, followup = false }: { item: TodayItem; followup?: boole
 function QuestionCard({ q, onResolve }: { q: TodayQuestion; onResolve: (id: number, value: string) => void }): React.ReactElement {
   return (
     <div className="qcard">
-      <div className="body">{q.question}</div>
+      <div className="body">{renderRich(q.question)}</div>
       <div className="opts">
         {q.options.map((opt) => <button key={opt} type="button" onClick={() => onResolve(q.id, opt)}>{opt}</button>)}
       </div>
@@ -39,13 +42,13 @@ function HeroCard({ hero, onResolve }: { hero: NonNullable<Today["hero"]>; onRes
     const q = hero.item as TodayQuestion;
     inner = (
       <>
-        <div className="body">{q.question}</div>
+        <div className="body">{renderRich(q.question)}</div>
         <div className="opts">{q.options.map((opt) => <button key={opt} type="button" onClick={() => onResolve(q.id, opt)}>{opt}</button>)}</div>
       </>
     );
   } else {
     const t = hero.item as TodayItem;
-    inner = <div className="body">{t.text}{t.dueDate !== null ? <span className="due">{fmtDue(t.dueDate)}</span> : null}</div>;
+    inner = <div className="body">{renderRich(t.text)}{t.dueDate !== null ? <span className="due">{fmtDue(t.dueDate)}</span> : null}</div>;
   }
   return (
     <div className="hero">
@@ -64,6 +67,8 @@ type Props = {
 };
 
 export function Brief({ today, onResolve, collapsed = false, hasMessages = false, onToggle = () => {} }: Props): React.ReactElement | null {
+  const [showAll, setShowAll] = useState(false);
+
   const hero = today.hero;
   const heroQId = hero !== null && hero.kind === "question" ? (hero.item as TodayQuestion).id : null;
   const heroTaskText = hero !== null && hero.kind === "task" ? (hero.item as TodayItem).text : null;
@@ -106,35 +111,46 @@ export function Brief({ today, onResolve, collapsed = false, hasMessages = false
     );
   }
 
+  const tasksShown = showAll ? openTasks : openTasks.slice(0, CAP);
+  const fupsShown = showAll ? today.followups : today.followups.slice(0, CAP);
+  const qsShown = showAll ? questions : questions.slice(0, CAP);
+  const hidden =
+    (openTasks.length - tasksShown.length) +
+    (today.followups.length - fupsShown.length) +
+    (questions.length - qsShown.length);
+
   return (
     <section className="brief">
       <div className="brief-head">
         <span className="label">today · {summary}</span>
         {hasMessages ? <button type="button" className="hide" onClick={onToggle}>hide ▴</button> : null}
       </div>
-      {today.brief !== null ? <p className="brief-text">{today.brief.text}</p> : null}
+      {today.brief !== null ? <p className="brief-text">{renderRich(today.brief.text)}</p> : null}
       {hero !== null ? <HeroCard hero={hero} onResolve={onResolve} /> : null}
 
-      {openTasks.length > 0 ? (
+      {tasksShown.length > 0 ? (
         <div className="section">
           <div className="label">Open tasks</div>
-          <div className="rows">{openTasks.map((t, i) => <TaskRow key={`t${i}`} item={t} />)}</div>
+          <div className="rows">{tasksShown.map((t, i) => <TaskRow key={`t${i}`} item={t} />)}</div>
         </div>
       ) : null}
 
-      {today.followups.length > 0 ? (
+      {fupsShown.length > 0 ? (
         <div className="section">
           <div className="label">Follow-ups</div>
-          <div className="rows">{today.followups.map((t, i) => <TaskRow key={`f${i}`} item={t} followup />)}</div>
+          <div className="rows">{fupsShown.map((t, i) => <TaskRow key={`f${i}`} item={t} followup />)}</div>
         </div>
       ) : null}
 
-      {questions.length > 0 ? (
+      {qsShown.length > 0 ? (
         <div className="section">
           <div className="label">To decide</div>
-          <div className="rows">{questions.map((q) => <QuestionCard key={q.id} q={q} onResolve={onResolve} />)}</div>
+          <div className="rows">{qsShown.map((q) => <QuestionCard key={q.id} q={q} onResolve={onResolve} />)}</div>
         </div>
       ) : null}
+
+      {hidden > 0 ? <button type="button" className="brief-more" onClick={() => setShowAll(true)}>+{hidden} more ▾</button> : null}
+      {showAll && totalOpen > CAP ? <button type="button" className="brief-more" onClick={() => setShowAll(false)}>show less ▴</button> : null}
     </section>
   );
 }
