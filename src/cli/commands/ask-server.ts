@@ -38,6 +38,12 @@ export type RunAskServerOptions = {
    * `transcribeCommand`.
    */
   readonly transcribeCmd?: string | undefined;
+  /** API key for cloud transcription (or env DOME_TRANSCRIBE_KEY, falling back to OPENAI_API_KEY). */
+  readonly transcribeKey?: string | undefined;
+  /** Base URL for cloud transcription (or env DOME_TRANSCRIBE_URL; default OpenAI). */
+  readonly transcribeUrl?: string | undefined;
+  /** Cloud transcription model (or env DOME_TRANSCRIBE_MODEL; default whisper-1). */
+  readonly transcribeModel?: string | undefined;
   /**
    * Test-only seam: aborting this signal stops the listener and resolves
    * runAskServer with exit 0, exactly like SIGINT/SIGTERM. The CLI never
@@ -90,6 +96,9 @@ export async function runAskServer(options: RunAskServerOptions = {}): Promise<n
   const transcribeCommand = (options.transcribeCmd ?? process.env["DOME_TRANSCRIBE_CMD"])
     ?.split(/\s+/)
     .filter(Boolean);
+  const transcribeApiKey = options.transcribeKey ?? process.env["DOME_TRANSCRIBE_KEY"] ?? process.env["OPENAI_API_KEY"];
+  const transcribeBaseUrl = options.transcribeUrl ?? process.env["DOME_TRANSCRIBE_URL"];
+  const transcribeModel = options.transcribeModel ?? process.env["DOME_TRANSCRIBE_MODEL"];
 
   try {
     const handler = createAskServer({
@@ -107,6 +116,11 @@ export async function runAskServer(options: RunAskServerOptions = {}): Promise<n
       ...(transcribeCommand !== undefined && transcribeCommand.length > 0
         ? { transcribeCommand }
         : {}),
+      ...(transcribeApiKey !== undefined && transcribeApiKey.length > 0
+        ? { transcribeApiKey }
+        : {}),
+      ...(transcribeBaseUrl !== undefined ? { transcribeBaseUrl } : {}),
+      ...(transcribeModel !== undefined ? { transcribeModel } : {}),
     });
     const server = Bun.serve({
       hostname: options.host ?? DEFAULT_HOST,

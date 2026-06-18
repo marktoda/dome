@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -326,5 +326,35 @@ describe("POST /transcribe", () => {
     expect(json.message).toContain("50ms");
     // Must not hang — should complete well within a couple of seconds.
     expect(elapsed).toBeLessThan(3000);
+  });
+});
+
+describe("POST /transcribe (cloud)", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = realFetch; });
+  function post(body: Uint8Array | null, token = TOKEN): Request {
+    return new Request("http://localhost/transcribe", { method: "POST", headers: token ? { authorization: `Bearer ${token}`, "content-type": "audio/m4a" } : { "content-type": "audio/m4a" }, body });
+  }
+  test("uploads to the OpenAI-compatible endpoint and returns the text", async () => {
+    let url = "";
+    let auth = "";
+    globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
+      url = typeof input === "string" ? input : input.toString();
+      auth = new Headers(init?.headers).get("authorization") ?? "";
+      return new Response(JSON.stringify({ text: "hello cloud" }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeApiKey: "sk-test", transcribeBaseUrl: "https://api.example.com/v1", transcribeModel: "whisper-1", askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    const res = await server.fetch(post(new Uint8Array([1, 2, 3, 4])));
+    expect(res.status).toBe(200);
+    expect((await res.json() as { text: string }).text).toBe("hello cloud");
+    expect(url).toBe("https://api.example.com/v1/audio/transcriptions");
+    expect(auth).toBe("Bearer sk-test");
+  });
+  test("502 transcribe-failed when the STT API rejects", async () => {
+    globalThis.fetch = mock(async () => new Response("bad key", { status: 401 })) as unknown as typeof fetch;
+    const server = createAskServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeApiKey: "sk-bad", askImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final" }) });
+    const res = await server.fetch(post(new Uint8Array([1, 2, 3, 4])));
+    expect(res.status).toBe(502);
+    expect((await res.json() as { error: string }).error).toBe("transcribe-failed");
   });
 });

@@ -90,6 +90,16 @@ export type CreateAskServerOptions = {
    */
   readonly transcribeCommand?: ReadonlyArray<string> | undefined;
   /**
+   * API key for built-in cloud transcription via an OpenAI-compatible
+   * POST /audio/transcriptions endpoint. Used when no transcribeCommand is set.
+   * Audio is uploaded to the configured endpoint (it leaves the host).
+   */
+  readonly transcribeApiKey?: string | undefined;
+  /** Base URL for cloud transcription (default https://api.openai.com/v1; e.g. https://api.groq.com/openai/v1). */
+  readonly transcribeBaseUrl?: string | undefined;
+  /** Cloud transcription model (default "whisper-1"; e.g. gpt-4o-mini-transcribe, whisper-large-v3-turbo). */
+  readonly transcribeModel?: string | undefined;
+  /**
    * Milliseconds before a hung POST /transcribe subprocess is killed and
    * returns 500 `transcribe-timeout`. Defaults to 120_000 (2 minutes).
    * Injectable so tests can set a short value (e.g. 50ms).
@@ -370,27 +380,63 @@ export function createAskServer(opts: CreateAskServerOptions): AskServer {
 
   // ----- POST /transcribe (runs authenticated but outside the vault mutex) -----
   //
-  // /transcribe is runtime-free: it touches no vault, only shells out to the
-  // host whisper command. Running it inside enqueue() would hold the vault
-  // mutex for the duration of the subprocess — blocking /ask, /tasks, etc.
-  // Instead, handle() dispatches it directly after auth, bypassing the mutex.
+  // /transcribe is runtime-free: it touches no vault — it either shells out to
+  // a host whisper command (local, private) or uploads the audio to an
+  // OpenAI-compatible cloud STT endpoint. Running it inside enqueue() would hold
+  // the vault mutex for the call's duration — blocking /ask, /tasks, etc. — so
+  // handle() dispatches it directly after auth, bypassing the mutex.
   const handleTranscribe = async (request: Request): Promise<Response> => {
-    if (opts.transcribeCommand === undefined || opts.transcribeCommand.length === 0) {
+    const cmd = opts.transcribeCommand;
+    const hasCmd = cmd !== undefined && cmd.length > 0;
+    const apiKey = opts.transcribeApiKey;
+    const hasCloud = apiKey !== undefined && apiKey.length > 0;
+    if (!hasCmd && !hasCloud) {
       return dataErrorResponse(501, "transcribe-unconfigured", "transcription is not configured on this server.");
     }
     const declared = Number(request.headers.get("content-length"));
     if (Number.isFinite(declared) && declared > maxBodyBytes) return dataErrorResponse(413, "payload-too-large", "audio too large.");
+    const contentType = (request.headers.get("content-type") ?? "").split(";")[0]!.trim();
     const bytes = new Uint8Array(await request.arrayBuffer());
     if (bytes.byteLength === 0) return dataErrorResponse(400, "transcribe-usage", "POST /transcribe requires an audio body.");
     if (bytes.byteLength > maxBodyBytes) return dataErrorResponse(413, "payload-too-large", "audio too large.");
-    const ext = EXT_BY_TYPE[(request.headers.get("content-type") ?? "").split(";")[0]!.trim()] ?? ".audio";
+    const ext = EXT_BY_TYPE[contentType] ?? ".audio";
+
+    // Cloud path: when no local command is configured, upload the audio to an
+    // OpenAI-compatible /audio/transcriptions endpoint (the easy, turnkey path).
+    if (!hasCmd) {
+      const baseUrl = (opts.transcribeBaseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
+      const model = opts.transcribeModel ?? "whisper-1";
+      const form = new FormData();
+      form.append("file", new Blob([bytes], { type: contentType || "audio/webm" }), `audio${ext}`);
+      form.append("model", model);
+      try {
+        const res = await fetch(`${baseUrl}/audio/transcriptions`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${apiKey}` },
+          body: form,
+          signal: AbortSignal.timeout(transcribeTimeoutMs),
+        });
+        if (!res.ok) {
+          return dataErrorResponse(502, "transcribe-failed", `transcription API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+        }
+        const json = (await res.json()) as { text?: string };
+        return jsonResponse(200, { schema: "dome.transcribe/v1", text: (json.text ?? "").trim() });
+      } catch (e) {
+        if (e instanceof Error && e.name === "TimeoutError") {
+          return dataErrorResponse(500, "transcribe-timeout", `transcription exceeded ${transcribeTimeoutMs}ms.`);
+        }
+        return dataErrorResponse(500, "transcribe-failed", e instanceof Error ? e.message : String(e));
+      }
+    }
+
+    // Local path: spawn the host command (audio never leaves the host).
     const dir = mkdtempSync(join(tmpdir(), "dome-transcribe-"));
     const audioPath = join(dir, `audio${ext}`);
     let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
     let proc: ReturnType<typeof Bun.spawn> | undefined;
     try {
       await Bun.write(audioPath, bytes);
-      proc = Bun.spawn([...opts.transcribeCommand, audioPath], { stdout: "pipe", stderr: "pipe" });
+      proc = Bun.spawn([...(cmd as ReadonlyArray<string>), audioPath], { stdout: "pipe", stderr: "pipe" });
       // Capture stream references immediately (they're typed as ReadableStream
       // when spawned with "pipe", but the let-binding's union type defeats
       // later narrowing after an await — so we pin them now).
