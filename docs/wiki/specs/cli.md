@@ -67,10 +67,19 @@ dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
                                 status, check, resolve, tasks, brief) for MCP
                                 harnesses. The daemon still owns compilation.
 dome http [--vault <path>] [--port <port>] [--host <host>] [--token <token>]
-                                Run the HTTP read+capture surface (bearer-token
-                                auth; loopback by default): POST /capture plus
-                                status/query/tasks/doc/questions/resolve routes
-                                plus the GET /today HTML cockpit.
+          [--model <id>] [--static-dir <path>] [--allow-write]
+          [--transcribe-cmd <cmd>] [--transcribe-key <key>]
+          [--transcribe-url <url>] [--transcribe-model <model>]
+                                Run the Dome HTTP surface (bearer-token auth;
+                                loopback by default): read/capture/resolve routes,
+                                the GET /today HTML cockpit, POST /agent (the
+                                hosted agent loop; converse capability),
+                                POST /agent/stream (SSE variant), POST /transcribe
+                                (voice STT; capture capability), and GET /recents.
+                                --allow-write grants the agent the `author` write
+                                capability (create_document / edit_document →
+                                git commit → daemon adopts); default off,
+                                read-only-safe. DOME_ALLOW_WRITE=1 is the env form.
                                 The daemon still owns compilation.
 dome recipe <kind> [--url <base>]
                                 Print a setup recipe. v1 ships three kinds:
@@ -95,7 +104,7 @@ routing and capability checks.
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, and `dome today` — command-triggered view-phase processors invoked through the shared view-command boundary. `dome today` is the dedicated cockpit wrapper over the `dome.daily.today` view; the other daily planning processors (`prep`, `agenda-with`) remain available through `dome run` for tests/debugging without dedicated top-level CLI verbs.
 - **Capture ingress:** `dome capture` — the frictionless write-side entry point ([[wedge]] §"Phase 3 — Capture loop"). It writes a timestamped raw source into `inbox/raw/` and lands it as an ordinary human commit on the current branch; adoption and `dome.agent.ingest` handle everything after the commit boundary. See [[wiki/specs/capture]] for the capture-loop spec and the phone/voice ingress recipe.
 - **Lifecycle:** `dome init` — vault construction; `dome install` / `dome restart` / `dome uninstall` — ambient service lifecycle for the local compiler host (a launchd LaunchAgent on macOS, a systemd `--user` unit on Linux, both around `dome serve`, per [[wedge]] §"Phase 1 — Ambient daemon"). Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
-- **Protocol adapters:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"; [[wiki/specs/mcp-surface]]) — and `dome http` — the HTTP read+capture surface and first shipped form of the remote-capture seam ([[wiki/specs/http-surface]]). Both are thin adapters over the public `openVault` wrapper plus the protocol-neutral `src/surface/` collectors. `dome recipe` prints client-side setup text (`ios`: the queue-first iOS Shortcut against `dome http`; `capture-queue`: the laptop-side iCloud queue drain; `core-seed`: the owner interview that seeds `core.md` — §"`dome recipe`").
+- **Protocol adapters:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"; [[wiki/specs/mcp-surface]]) — and `dome http` — the HTTP read+capture+converse surface and first shipped form of the remote-capture seam ([[wiki/specs/http-surface]]). Both are thin adapters over the public `openVault` wrapper plus the protocol-neutral `src/surface/` collectors. `dome recipe` prints client-side setup text (`ios`: the queue-first iOS Shortcut against `dome http`; `capture-queue`: the laptop-side iCloud queue drain; `core-seed`: the owner interview that seeds `core.md` — §"`dome recipe`").
 
 Planned dedicated view aliases such as `dome stats` are not Commander bindings
 yet. Until they ship, their processors are invoked through `dome run

@@ -1,18 +1,18 @@
 ---
 type: spec
 created: 2026-06-10
-updated: 2026-06-12
+updated: 2026-06-19
 sources:
   - "[[wiki/specs/capture]]"
   - "[[wiki/specs/sdk-surface]]"
-description: "dome http read+capture adapter: bearer-token JSON routes, the POST /capture seam, GET /today HTML cockpit with the lone query-token exception"
+description: "dome http converged adapter: bearer-token JSON routes, POST /capture seam, GET /today cockpit, POST /agent converse loop, POST /transcribe, GET /recents, author capability"
 ---
 
 # HTTP surface
 
-This spec is normative for `dome http` — the HTTP read+capture protocol
-adapter (`src/http/server.ts`, hosted by the `dome http` verb). It is the
-same surface class as the MCP adapter ([[wiki/specs/mcp-surface]]), lifted
+This spec is normative for `dome http` — the HTTP read+capture+converse
+protocol adapter (`src/http/server.ts`, hosted by the `dome http` verb). It is
+the same surface class as the MCP adapter ([[wiki/specs/mcp-surface]]), lifted
 onto HTTP for callers that can't mount stdio: phones, iOS Shortcuts,
 scripts on other machines. It is also the first shipped form of the
 remote-capture seam ([[wiki/specs/capture]] §"The remote-capture seam").
@@ -20,7 +20,10 @@ remote-capture seam ([[wiki/specs/capture]] §"The remote-capture seam").
 ```text
 src/http/server.ts — createDomeHttpServer({ vaultPath, bundlesRoot?, token }) → { fetch }
   ↓
-dome http [--port 3663] [--host 127.0.0.1] [--token …]   (Bun.serve; one vault per process)
+dome http [--port 3663] [--host 127.0.0.1] [--token …]
+         [--model …] [--static-dir …] [--allow-write]
+         [--transcribe-cmd …] [--transcribe-key …] [--transcribe-url …] [--transcribe-model …]
+         (Bun.serve; one vault per process)
 ```
 
 The adapter is deliberately thin and consumes the same data paths as the
@@ -28,6 +31,24 @@ MCP tools — the public `openVault` wrapper plus the protocol-neutral
 `src/surface/` collectors ([[wiki/linters/surface-adapters-dont-import-adapters]]).
 No parallel query or serialization logic; results are the same JSON
 documents the CLI emits under `--json`.
+
+## Capabilities
+
+The server gates every route on a named capability. The vocabulary is:
+`read · capture · resolve · converse · author`. All five are granted by default
+**except `author`**, which must be explicitly enabled with `dome http
+--allow-write` (or the environment variable `DOME_ALLOW_WRITE=1` /
+`DOME_ALLOW_WRITE=true`).
+
+`author` gates the agent's write tools (`create_document` /
+`edit_document`). A write lands as an ordinary git commit carrying a
+`Dome-Agent` trailer — the same mechanism as `dome capture` — and the running
+daemon adopts it on its next tick. Default-off keeps the server read-only-safe:
+a phone on Tailscale can hit `/agent` for Q&A without ever being able to write
+the vault.
+
+Per-credential token scopes (different callers holding differently-scoped
+bearers) are deferred to the `SECOND_USER_GATE` milestone.
 
 ## Routes
 
@@ -50,6 +71,10 @@ One vault per process.
 | `GET /doc?path=…` | `vault.readDocument` (adopted ref) | `dome.http.document/v1` |
 | `GET /questions` | `vault.listQuestions` (open only) | `dome.http.questions/v1` |
 | `POST /resolve` `{id, value}` | `dome resolve` | `dome.answer/v1` |
+| `POST /agent` `{question}` | hosted agent loop over vault tools (`converse` capability) | `dome.ask/v1` |
+| `POST /agent/stream` `{question}` | same loop, SSE stream of events (`converse` capability) | `dome.ask/v1` event stream |
+| `POST /transcribe` audio body | STT step: shell command or OpenAI-compatible cloud endpoint (`capture` capability; 501 when unconfigured) | `dome.transcribe/v1` `{text}` |
+| `GET /recents` | recent vault changes (`read` capability) | `dome.recents/v1` `{count, entries}` |
 
 Errors are JSON envelopes (`{status: "error", error, message}`) with honest
 HTTP codes: 400 usage, 401 auth, 404 missing, 409 unworkable git state,
@@ -232,8 +257,10 @@ Tests: `tests/http/http-server.test.ts` §"request-body size cap".
 ## Boundary notes
 
 - **No engine control.** No sync/serve/init/rebuild routes; the daemon owns
-  compilation. The two write-ish routes (`capture`, `resolve`) are the
-  established non-engine channels (ordinary commit; `answers.db`).
+  compilation. The write-ish routes (`capture`, `resolve`, and agent writes
+  under `author`) are the established non-engine channels (ordinary commit;
+  `answers.db`). Agent writes (`create_document` / `edit_document`) require the
+  `author` capability (`--allow-write`).
 - **One runtime at a time.** A route mutex serializes vault-opening work;
   each request opens and closes its own `Vault`, like one CLI invocation.
 - **No new dependencies.** The handler is a plain `fetch` function for
