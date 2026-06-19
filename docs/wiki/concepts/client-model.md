@@ -145,9 +145,14 @@ This is a real fork, not a bug:
 
 For v1 the phone client is **read + ask + capture** — a coherent, defensible
 scope. Phone-side authoring waits on one of the two forks above. And note that
-"ask" itself needs an agent *running somewhere*: the HTTP/MCP surfaces host no
-model, so synthesis comes from the client's agent (desktop Claude Code today; a
-reachable hosted agent for the phone — the same always-on-host dependency).
+"ask" itself needs an agent *running somewhere*: the MCP surface hosts no model
+(it is a typed read/capture front-end for harnesses that already bring their own
+agent). The HTTP surface (`dome http`) **optionally co-locates a write-capable
+agent** via `POST /agent` and `POST /agent/stream` when launched with
+`--allow-write` — this is the always-on-host path: an agent running beside the
+vault that a phone can reach directly. Without `--allow-write` the HTTP surface
+is read+capture+converse (the default safe posture); synthesis still comes from
+a client's own agent if none is co-located.
 
 ## What "ask" and "recall" mean under this model
 

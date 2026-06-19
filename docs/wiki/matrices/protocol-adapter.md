@@ -13,7 +13,7 @@ Per-protocol map of how consumer surfaces (CLI, MCP, HTTP, future voice /
 web) project from the same runtime/view boundary (per
 [[wiki/specs/sdk-surface]] §"Consumer surfaces"). The CLI is shipped; the
 MCP server shipped as wedge Phase 5 (`dome mcp`, [[wiki/specs/mcp-surface]]);
-the HTTP surface shipped as the first remote-capture-seam form (`dome http`,
+the HTTP surface shipped as the converged read+capture+converse+agent adapter (`dome http`,
 [[wiki/specs/http-surface]]). The protocol adapters consume the public
 `openVault` wrapper plus the CLI's data-returning collectors, so every
 surface emits the same `dome.<verb>/v1` JSON. `AbstractSurface` remains the
@@ -22,18 +22,22 @@ remain CLI-only in v1.
 
 ## The matrix
 
-| Operation | AbstractSurface API (planned) | CLI (v1, primary) | MCP (shipped, wedge P5) | HTTP (shipped, minimal) | Voice (v2, designed-for) |
+| Operation | AbstractSurface API (planned) | CLI (v1, primary) | MCP (shipped, wedge P5) | HTTP (shipped, converged) | Voice (v2, designed-for) |
 |---|---|---|---|---|---|
-| **Capture into inbox** | n/a (git-native ingress, not AbstractSurface) | `dome capture` | `capture` tool | `POST /capture` (shipped; the remote-capture seam) | Voice memo → transcription → `capture` |
-| **Query adopted state** | `surface.query(input)` | `dome query <text>` | `query` tool | `GET /query?text=...` (shipped) | Speech-to-text query, response rendered as audio |
+| **Capture into inbox** | n/a (git-native ingress, not AbstractSurface) | `dome capture` | `capture` tool | `POST /capture` (shipped; `capture` capability) | Voice memo → transcription → `capture` |
+| **Query adopted state** | `surface.query(input)` | `dome query <text>` | `query` tool | `GET /query?text=...` (shipped; `read` capability) | Speech-to-text query, response rendered as audio |
 | **Export context packet** | `surface.commands["export-context"]` | `dome export-context <topic>` | `export_context` tool | `GET /context/<topic>` | n/a |
-| **Read document** | `surface.read(path)` | `dome cat <path>` (deferred to v1.1; today: file read) | `brief` tool (daily note only; generic read deferred) | `GET /doc?path=...` (shipped; adopted ref) | "Read me my notes about X" |
+| **Read document** | `surface.read(path)` | `dome cat <path>` (deferred to v1.1; today: file read) | `brief` tool (daily note only; generic read deferred) | `GET /doc?path=...` (shipped; `read` capability; adopted ref) | "Read me my notes about X" |
 | **Resolve wikilink** | `surface.resolveWikilink(link)` | n/a (not a CLI surface) | n/a (deferred with AbstractSurface) | `GET /wikilinks/<link>` | n/a |
-| **Run command processor** | `surface.commands.<name>.invoke(args)` | Dedicated commands (`dome query`, `dome export-context`) plus hidden compatibility/debug commands (`dome lint`, daily wrappers, `dome run <name>`) | `tasks` tool (the `today` view); other views not protocol-routed in v1 | `GET /tasks` (the `today` view; generic `POST /commands/<name>` v2+) | Voice command → command processor (query / export-context / future typed views) |
+| **Run command processor / today view** | `surface.commands.<name>.invoke(args)` | Dedicated commands (`dome query`, `dome export-context`) plus hidden compatibility/debug commands (`dome lint`, daily wrappers, `dome run <name>`) | `tasks` tool (the `today` view); other views not protocol-routed in v1 | `GET /tasks` (the `today` view; `read` capability; generic `POST /commands/<name>` v2+) | Voice command → command processor (query / export-context / future typed views) |
+| **Cockpit HTML page** | n/a | `dome today --watch` | n/a | `GET /today` (shipped; renders `dome.daily.today` as phone-friendly HTML; `read` capability; `?token=` escape for browser nav) | n/a |
+| **Hosted agent (converse)** | n/a (surface-level, not AbstractSurface) | n/a | n/a (MCP harnesses bring their own agent) | `POST /agent` (non-streaming; `converse` capability; `dome.ask/v1`), `POST /agent/stream` (SSE; same capability) — enabled by default; writes gated by `author` capability (`--allow-write`) | n/a |
+| **Transcribe audio** | n/a | n/a | n/a | `POST /transcribe` (audio body; shell command or OpenAI-compatible cloud STT; `capture` capability; `dome.transcribe/v1`; 501 when unconfigured) | Native (voice client handles STT locally) |
+| **Recent vault changes** | n/a | n/a | n/a | `GET /recents` (shipped; `read` capability; `dome.recents/v1`) | n/a |
 | **Read resource** | `surface.readResource(uri)` | n/a (CLI reads paths, not URIs) | not shipped (deferred with AbstractSurface; tools cover the wedge surface) | `GET /<uri>` | n/a |
 | **Get instructions** | `surface.instructions` | `dome inspect instructions` (v1.x subject) | `serverInfo.instructions` (shipped) | `GET /instructions` | Read at session start by voice client |
-| **Get adoption status / attention** | `vault.getAdoptionStatus()` (engine, not AbstractSurface) | `dome status --json` / `dome check --json` | `status` / `check` tools | `GET /status` (shipped; `check` route v2+) | n/a |
-| **Resolve a Dome question** | (engine, not AbstractSurface) | `dome resolve <id> [<value>]` | `resolve` tool | `GET /questions` + `POST /resolve` (shipped) | n/a |
+| **Get adoption status / attention** | `vault.getAdoptionStatus()` (engine, not AbstractSurface) | `dome status --json` / `dome check --json` | `status` / `check` tools | `GET /status` (shipped; `read` capability; `check` route v2+) | n/a |
+| **Resolve a Dome question** | (engine, not AbstractSurface) | `dome resolve <id> [<value>]` | `resolve` tool | `GET /questions` + `POST /resolve` (shipped; `resolve` capability) | n/a |
 | **Rebuild projection** | `vault.rebuild()` (engine) | `dome rebuild` | n/a (engine control, not exposed via MCP) | `POST /rebuild` (auth-gated in hosted mode) | n/a |
 | **Engine control (sync, init, serve, advanced detail)** | (engine, not AbstractSurface) | `dome sync`, `dome init`, `dome serve`/`install`, plus advanced `dome inspect` / `dome doctor` / `dome answer` | n/a (engine control surface is CLI-only) | (hosted-only; v2+) | n/a |
 

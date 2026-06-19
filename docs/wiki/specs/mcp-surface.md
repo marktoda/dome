@@ -100,7 +100,7 @@ counts: { openTasks, followups, questions }  # from dome.daily.today
 
 ## Writes and lifecycle
 
-The MCP server is a **read/capture surface over an existing vault**. It runs no adoption loop, no scheduler, and no garden processors — the daemon (`dome serve`, kept alive by `dome install`, per [[wedge]] §"Phase 1") owns compilation. The two write-shaped tools reuse existing non-engine write channels unchanged:
+The MCP server is a **read/capture surface over an existing vault** (no hosted model — the MCP surface brings typed tools for harnesses that already carry their own agent; the HTTP surface's `POST /agent` is the co-located agent path). It runs no adoption loop, no scheduler, and no garden processors — the daemon (`dome serve`, kept alive by `dome install`, per [[wedge]] §"Phase 1") owns compilation. The two write-shaped tools reuse existing non-engine write channels unchanged:
 
 - **`capture`** lands an ordinary human commit via the same single-file commit path as `dome capture` (no `Dome-*` trailers; the daemon constructs the Proposal from branch drift, per [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]]). The payload's `compile_pending` / `serve_status` fields tell the caller whether a daemon will pick it up.
 - **`resolve`** records an answer durably in `answers.db` and dispatches answer handlers via the identical `answerQuestionDurably` path `dome resolve` uses.

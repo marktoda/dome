@@ -139,7 +139,7 @@ export type DomeHttpServerOptions = {
 
 export type DomeHttpServer = { readonly fetch: (request: Request) => Promise<Response> };
 
-// ----- Helpers (private, mirrors src/http/server.ts) ------------------------
+// ----- Helpers (private) ----------------------------------------------------
 
 function sha256(value: string): Buffer {
   return createHash("sha256").update(value, "utf8").digest();
@@ -159,8 +159,6 @@ type JsonBodyRead =
  *      lying-content-length bodies are cut off at the cap too. (Bun's
  *      `maxRequestBodySize` does not enforce on chunked bodies as of
  *      Bun 1.2.x — this read is the real guarantee on every host.)
- *
- * Local copy; do NOT import from src/http/ — the agent server is self-contained.
  */
 async function jsonBody(
   request: Request,
@@ -214,10 +212,12 @@ function errorResponse(status: number, error: string, message: string): Response
 }
 
 /**
- * Error envelope for the PWA data routes (POST /capture, GET /tasks,
- * POST /resolve). These routes mirror `dome http` EXACTLY — including the
- * error shape, which does NOT carry a `schema` field (unlike the ask-specific
- * errorResponse above which adds `schema: "dome.ask/v1"`).
+ * Error envelope for the data routes (POST /capture, GET /tasks, POST /resolve,
+ * GET /recents, GET /query, etc.). Does NOT carry a `schema` field — unlike
+ * `errorResponse` above, which keeps `schema: "dome.ask/v1"` as the frozen
+ * wire id the PWA depends on for the /agent response envelope. Two helpers
+ * exist because /agent has a stable wire schema the PWA hardcodes; all other
+ * routes use the schema-less data envelope.
  */
 function dataErrorResponse(status: number, error: string, message: string): Response {
   return jsonResponse(status, { status: "error", error, message });
@@ -234,7 +234,7 @@ function commandErrorResponse(command: string, errorKind: string): Response {
   });
 }
 
-/** HTTP status semantics for a catalog-view problem (mirrors src/http/server.ts). */
+/** HTTP status semantics for a catalog-view problem. */
 function viewProblemHttpStatus(problem: CatalogViewProblem): number {
   switch (problem.kind) {
     case "detached-head":
@@ -331,9 +331,9 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
   const timeoutMs = opts.timeoutMs ?? 120_000;
   const transcribeTimeoutMs = opts.transcribeTimeoutMs ?? 120_000;
 
-  // Vault-open wrapper for the data routes (mirrors src/http/server.ts's
-  // `withVault`): runs `fn` against an open VaultRuntime under the SAME mutex
-  // the ask routes use, mapping an open failure to the command-error envelope.
+  // Vault-open wrapper for the data routes: runs `fn` against an open
+  // VaultRuntime under the vault mutex, mapping an open failure to the
+  // command-error envelope.
   const withVault = async (
     command: string,
     fn: (v: Vault) => Promise<Response>,
@@ -712,13 +712,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       });
     }
 
-    // ----- PWA data routes ---------------------------------------------------
-    //
-    // These mirror src/http/server.ts's `POST /capture`, `GET /tasks`, and
-    // `POST /resolve` EXACTLY — same parsing, same JSON shapes, same status
-    // codes — reusing the same shared `src/surface/` collectors under THIS
-    // server's single mutex (no delegation to `dome http`, which owns its own
-    // mutex). The PWA gets identical contracts whichever server it hits.
+    // ----- data routes -------------------------------------------------------
 
     if (route === "POST /capture") {
       const read = await jsonBody(request, maxBodyBytes);
