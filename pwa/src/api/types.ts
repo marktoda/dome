@@ -4,7 +4,7 @@ export type Citation = {
   snippet?: string;
 };
 
-export type AskResult = {
+export type AgentResult = {
   schema: "dome.ask/v1";
   status: "ok";
   answer: string;

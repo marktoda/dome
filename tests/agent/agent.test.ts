@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { MockLanguageModelV3 } from "ai/test";
-import { runAsk } from "../../src/agent/ask";
+import { runAgent } from "../../src/agent/agent";
 
 function fakeVault() {
   return {
@@ -65,7 +65,7 @@ function textStep(text: string) {
   };
 }
 
-describe("runAsk", () => {
+describe("runAgent", () => {
   test("drives the AI SDK loop through tools and returns answer + citations", async () => {
     // Step 1: model calls search_vault. Step 2: model calls read_document.
     // Step 3: model emits final text. (The SDK collapses the trailing tool-call
@@ -81,7 +81,7 @@ describe("runAsk", () => {
       ],
     });
 
-    const result = await runAsk({
+    const result = await runAgent({
       vault: fakeVault(),
       model,
       question: "When does Robinhood Chain launch?",
@@ -108,7 +108,7 @@ describe("runAsk", () => {
       ],
     });
 
-    const result = await runAsk({
+    const result = await runAgent({
       vault: fakeVault(),
       model,
       question: "Does this answer exist?",

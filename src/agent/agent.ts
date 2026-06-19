@@ -4,8 +4,8 @@
 //
 // Runs a multi-step, tool-calling agent loop via the Vercel AI SDK's
 // generateText(): the model searches/reads the vault through the tools built by
-// buildAskTools, grounding its answer in the owner's vault. Citations gathered
-// by the tools during generation are read back into the AskResult.
+// buildAgentTools, grounding its answer in the owner's vault. Citations gathered
+// by the tools during generation are read back into the AgentResult.
 
 import {
   generateText,
@@ -18,13 +18,13 @@ import {
 } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import type { Vault } from "../vault";
-import { buildAskTools } from "./tools";
-import type { AskCitation, AskResult } from "./types";
+import { buildAgentTools } from "./tools";
+import type { Citation, AgentResult } from "./types";
 
 /** Default interactive-ask model. Overridable via opts.modelId. */
 export const DEFAULT_MODEL = "claude-sonnet-4-5";
 
-const ASK_CHARTER = [
+const AGENT_CHARTER = [
   "You are the owner's second-brain assistant. Answer using ONLY their vault.",
   "Silently call search_vault first, then read_document for detail. Do NOT narrate your tool use — never write 'let me read…', 'I'll search…', or describe your steps. Output only the answer itself.",
   "Ground every claim in the vault. If the vault does not contain the answer, say so plainly — never invent.",
@@ -33,7 +33,7 @@ const ASK_CHARTER = [
 ].join(" ");
 
 /** Shared option shape for both the buffered and streaming entry-points. */
-type AskOptions = {
+type AgentOptions = {
   readonly vault: Vault;
   readonly question: string;
   readonly modelId?: string | undefined;
@@ -45,24 +45,24 @@ type AskOptions = {
 
 /**
  * Resolve the shared agent-loop setup — charter, citation carrier, tool set,
- * model, step budget — used identically by runAsk and runAskStream. Keeping
+ * model, step budget — used identically by runAgent and runAgentStream. Keeping
  * this in one place means the charter and tool wiring are never duplicated.
  */
-function setupAsk(opts: AskOptions): {
+function setupAgent(opts: AgentOptions): {
   readonly model: LanguageModel;
   readonly system: string;
   readonly prompt: string;
   readonly tools: ToolSet;
   readonly maxSteps: number;
-  readonly citations: AskCitation[];
+  readonly citations: Citation[];
   readonly abortSignal: AbortSignal | undefined;
 } {
-  const citations: AskCitation[] = [];
+  const citations: Citation[] = [];
   return {
     model: opts.model ?? anthropic(opts.modelId ?? DEFAULT_MODEL),
-    system: ASK_CHARTER,
+    system: AGENT_CHARTER,
     prompt: opts.question,
-    tools: buildAskTools(opts.vault, citations),
+    tools: buildAgentTools(opts.vault, citations),
     maxSteps: opts.maxSteps ?? 8,
     citations,
     abortSignal: opts.abortSignal,
@@ -74,13 +74,13 @@ function setupAsk(opts: AskOptions): {
  * means the model ended naturally; anything else (e.g. "tool-calls" when the
  * step cap fired mid-loop, or "length") means we were cut off.
  */
-function stopReasonOf(finishReason: FinishReason): AskResult["stopReason"] {
+function stopReasonOf(finishReason: FinishReason): AgentResult["stopReason"] {
   return finishReason === "stop" ? "final" : "budget";
 }
 
-export async function runAsk(opts: AskOptions): Promise<AskResult> {
+export async function runAgent(opts: AgentOptions): Promise<AgentResult> {
   const { model, system, prompt, tools, maxSteps, citations, abortSignal } =
-    setupAsk(opts);
+    setupAgent(opts);
 
   const { text, steps, finishReason } = await generateText({
     model,
@@ -110,24 +110,24 @@ export async function runAsk(opts: AskOptions): Promise<AskResult> {
  * array the tools push into during the run (complete once the stream drains);
  * `finished` resolves after the stream fully drains with the coarse stopReason.
  */
-export type AskStream = {
+export type AgentStream = {
   /** The AI SDK fullStream: text-delta / tool-call / tool-result / finish / error parts. */
   readonly fullStream: AsyncIterable<TextStreamPart<ToolSet>>;
   /** Populated as the tools run; complete once `finished` resolves. */
-  readonly citations: AskCitation[];
+  readonly citations: Citation[];
   /** Resolves after the stream drains with the run's coarse stopReason. */
-  readonly finished: Promise<{ readonly stopReason: AskResult["stopReason"] }>;
+  readonly finished: Promise<{ readonly stopReason: AgentResult["stopReason"] }>;
 };
 
 /**
- * Streaming sibling of runAsk: drives the same agent loop via streamText so a
+ * Streaming sibling of runAgent: drives the same agent loop via streamText so a
  * voice/chat client gets token-by-token output. Shares all setup (charter,
- * tools, model, budget) with runAsk via setupAsk. The returned value is both
+ * tools, model, budget) with runAgent via setupAgent. The returned value is both
  * iterable (fullStream) and readable-after (citations once finished resolves).
  */
-export function runAskStream(opts: AskOptions): AskStream {
+export function runAgentStream(opts: AgentOptions): AgentStream {
   const { model, system, prompt, tools, maxSteps, citations, abortSignal } =
-    setupAsk(opts);
+    setupAgent(opts);
 
   const result = streamText({
     model,

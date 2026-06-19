@@ -8,16 +8,16 @@
 // `ai`'s generateText(); these types are just the citation carrier + result.
 
 /** A source the answer rests on — surfaced by a read tool during the run. */
-export type AskCitation = {
+export type Citation = {
   readonly path: string;
   readonly commit?: string | undefined;
   readonly snippet?: string | undefined;
 };
 
 /** The synthesized answer plus the evidence it cited. */
-export type AskResult = {
+export type AgentResult = {
   readonly answer: string;
-  readonly citations: ReadonlyArray<AskCitation>;
+  readonly citations: ReadonlyArray<Citation>;
   readonly steps: number;
   readonly stopReason: "final" | "budget";
 };

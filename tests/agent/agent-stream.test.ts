@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
-import { runAskStream } from "../../src/agent/ask";
+import { runAgentStream } from "../../src/agent/agent";
 
 function fakeVault() {
   return {
@@ -57,9 +57,9 @@ function textStreamModel(deltas: string[], unified: "stop" | "tool-calls" = "sto
   });
 }
 
-describe("runAskStream", () => {
+describe("runAgentStream", () => {
   test("streams text deltas through fullStream and resolves finished=final", async () => {
-    const ask = runAskStream({
+    const ask = runAgentStream({
       vault: fakeVault(),
       model: textStreamModel(["Robinhood ", "Chain ", "launches July 2026."]),
       question: "When does Robinhood Chain launch?",
@@ -77,7 +77,7 @@ describe("runAskStream", () => {
   });
 
   test("resolves finished=budget when the model never reaches a natural stop", async () => {
-    const ask = runAskStream({
+    const ask = runAgentStream({
       vault: fakeVault(),
       model: textStreamModel(["partial"], "tool-calls"),
       question: "Does this answer exist?",
