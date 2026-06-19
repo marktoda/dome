@@ -49,7 +49,17 @@ export async function routeGardenRunEffects(opts: {
     readonly code: string;
     readonly message: string;
   };
+  /**
+   * The cascade depth of the CURRENT run (parent depth). Forwarded to
+   * dispatchGardenPatchEffect → spawnGardenSubProposal. Defaults to 0 for
+   * top-level operational runs (scheduler/jobs/answers).
+   */
   readonly cascadeDepth?: number;
+  /**
+   * Cap on cascade recursion. Forwarded to spawnGardenSubProposal.
+   * Defaults to DEFAULT_MAX_CASCADE_DEPTH (10).
+   */
+  readonly maxCascadeDepth?: number;
   readonly now?: () => Date;
 }): Promise<GardenRunEffectRoutingSummary> {
   let authorizedPatchCount = 0;
@@ -94,6 +104,9 @@ export async function routeGardenRunEffects(opts: {
         disabledDiagnostic: opts.disabledDiagnostic,
         ...(opts.cascadeDepth !== undefined
           ? { cascadeDepth: opts.cascadeDepth }
+          : {}),
+        ...(opts.maxCascadeDepth !== undefined
+          ? { maxCascadeDepth: opts.maxCascadeDepth }
           : {}),
         ...(opts.now !== undefined ? { now: opts.now } : {}),
       });

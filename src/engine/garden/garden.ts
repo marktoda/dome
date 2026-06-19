@@ -58,31 +58,17 @@ import type { LedgerDb } from "../../ledger/db";
 import { routeGardenPatchForSubProposal } from "./garden-patch-router";
 import {
   spawnGardenSubProposal,
+  DEFAULT_MAX_CASCADE_DEPTH,
   type AdoptSubProposalFn,
 } from "./garden-sub-proposals";
 import { recordEffectCapabilityUse } from "../core/effect-capability-use";
 import type { GardenPhaseRunner, GardenProcessorStart, RunId } from "../core/runner-contract";
 import type { EngineVault } from "../core/vault-shape";
 
-// ----- DEFAULT_MAX_CASCADE_DEPTH --------------------------------------------
-
-/**
- * The default cap on garden → sub-Proposal recursion depth. A garden
- * processor that emits a PatchEffect spawns a sub-Proposal; if THAT
- * adoption's garden phase emits another PatchEffect, depth is 2; and
- * so on. The cap prevents unbounded recursion when garden processors
- * react to each other in cycles.
- *
- * The default of 10 is generous; legitimate cascades (entity created →
- * backlinks added → search-index updated) usually reach depth 2-3.
- * Hitting the cap surfaces a `garden.cascade-cap` DiagnosticEffect;
- * the cap can be raised per-call via `maxCascadeDepth`.
- *
- * Mirrors the philosophy of `DEFAULT_MAX_ITERATIONS` in adopt.ts —
- * generous default, explicit override, structural fence against
- * pathological cycles.
- */
-export const DEFAULT_MAX_CASCADE_DEPTH = 10;
+// DEFAULT_MAX_CASCADE_DEPTH is defined and exported from garden-sub-proposals.ts
+// (the chokepoint where the cap is enforced) and re-exported from here for
+// backward-compatible imports.
+export { DEFAULT_MAX_CASCADE_DEPTH } from "./garden-sub-proposals";
 
 // ----- GardenPhaseResult ----------------------------------------------------
 
@@ -513,32 +499,14 @@ async function runGardenPhaseInner(opts: {
         runId: spawnQueue[0]!.runId,
         proposalId: proposal.id,
       });
-    } else if (cascadeDepth >= maxCascadeDepth) {
-      // Cascade-cap hit. Emit one diagnostic naming the depth and the
-      // count of skipped patches; don't fire any sub-Proposals.
-      const capDiag = diagnosticEffect({
-        severity: "warning",
-        code: "garden.cascade-cap",
-        message:
-          `Garden sub-Proposal cascade hit cap=${maxCascadeDepth} at ` +
-          `depth=${cascadeDepth}; ${spawnQueue.length} PatchEffect(s) ` +
-          `skipped. Garden processors named: ` +
-          `${[...new Set(spawnQueue.map((s) => s.processorId))].join(", ")}.`,
-        sourceRefs: [],
-      });
-      allDiagnostics.push(capDiag);
-      // Also record the cap diagnostic via the sinks so it lands in
-      // projection.db.diagnostics for operator visibility.
-      await sinks.recordDiagnostic({
-        effect: capDiag,
-        processorId: "engine.garden",
-        runId: spawnQueue[0]!.runId,
-        proposalId: proposal.id,
-      });
     } else {
       // Spawn sub-Proposals for each authorized patch through the shared
       // conversion boundary used by garden, scheduler, queued jobs, and
-      // answer handlers.
+      // answer handlers. The cascade-cap check now lives inside
+      // spawnGardenSubProposal (the single chokepoint) so all sources are
+      // equally bounded. We collect any cascade-capped results and emit a
+      // single batched diagnostic — preserving the pre-fix message format.
+      const cappedReqs: SpawnRequest[] = [];
       for (const req of spawnQueue) {
         const base = resolveCurrentAdopted(currentAdopted, adopted);
         const mergeConflicts: Array<{ path: string; processorId: string }> = [];
@@ -551,12 +519,21 @@ async function runGardenPhaseInner(opts: {
           processorId: req.processorId,
           runId: req.runId,
           extensionId: extensionIdFor(req.processorId),
-          cascadeDepth: cascadeDepth + 1,
+          // Pass the CURRENT depth (not +1): spawnGardenSubProposal checks
+          // cascadeDepth >= maxCascadeDepth and calls adoptSubProposal at
+          // cascadeDepth + 1. This keeps the cap semantics and diagnostic
+          // message byte-identical to the former inline arm.
+          cascadeDepth,
+          maxCascadeDepth,
           ...(opts.now !== undefined ? { now: opts.now } : {}),
           applyPatch: applyPatchToCandidate,
           adoptSubProposal,
           onMergeConflict: (info) => mergeConflicts.push(info),
         });
+        if (spawned.kind === "cascade-capped") {
+          cappedReqs.push(req);
+          continue;
+        }
         // A true 3-way merge conflict (a sibling sub-Proposal touched the same
         // region this processor read) resolves to the already-landed content;
         // surface it so the silent resolve-to-ours is operator-visible.
@@ -582,6 +559,28 @@ async function runGardenPhaseInner(opts: {
         if (spawned.kind === "spawned") {
           totalSubProposals += 1;
         }
+      }
+      // Emit one batched cascade-cap diagnostic (identical format to the
+      // former inline arm) so the message is unchanged when all items are
+      // capped at once, as happens in the common signal-path case.
+      if (cappedReqs.length > 0) {
+        const capDiag = diagnosticEffect({
+          severity: "warning",
+          code: "garden.cascade-cap",
+          message:
+            `Garden sub-Proposal cascade hit cap=${maxCascadeDepth} at ` +
+            `depth=${cascadeDepth}; ${cappedReqs.length} PatchEffect(s) ` +
+            `skipped. Garden processors named: ` +
+            `${[...new Set(cappedReqs.map((s) => s.processorId))].join(", ")}.`,
+          sourceRefs: [],
+        });
+        allDiagnostics.push(capDiag);
+        await sinks.recordDiagnostic({
+          effect: capDiag,
+          processorId: "engine.garden",
+          runId: cappedReqs[0]!.runId,
+          proposalId: proposal.id,
+        });
       }
     }
   }
