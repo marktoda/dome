@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { MockLanguageModelV3 } from "ai/test";
 import { runAgent } from "../../src/agent/agent";
+import { mkdtempSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import git from "isomorphic-git";
+import fs from "node:fs";
 
 function fakeVault() {
   return {
@@ -64,6 +70,47 @@ function textStep(text: string) {
     warnings: [],
   };
 }
+
+async function tempVaultHandle() {
+  const dir = mkdtempSync(join(tmpdir(), "dome-agent-loop-write-"));
+  await git.init({ fs, dir, defaultBranch: "main" });
+  await mkdir(join(dir, "wiki"), { recursive: true });
+  await writeFile(join(dir, "wiki", "seed.md"), "# Seed\n", "utf8");
+  await git.add({ fs, dir, filepath: "wiki/seed.md" });
+  await git.commit({ fs, dir, message: "seed", author: { name: "t", email: "t@t" } });
+  return {
+    path: dir,
+    runView: async () => ({ kind: "ok", structured: { data: { matches: [] } } }),
+    readDocument: async () => null,
+  } as never;
+}
+
+describe("runAgent write capability", () => {
+  test("with allowWrite, a create_document tool-call writes + commits and surfaces in changes", async () => {
+    const vault = await tempVaultHandle();
+    // MockLanguageModelV3 returns doGenerate[doGenerateCalls.length] (after push),
+    // so index 0 is never returned — the array is 1-indexed in practice.
+    const model = new MockLanguageModelV3({
+      doGenerate: [
+        toolCallStep("search_vault", { text: "placeholder" }), // index 0: never returned
+        toolCallStep("create_document", { path: "wiki/made.md", content: "# Made\n" }),
+        textStep("Created the page."),
+      ],
+    });
+    const result = await runAgent({ vault, question: "make a page", model, allowWrite: true });
+    expect(result.changes).toEqual([{ path: "wiki/made.md", kind: "create" }]);
+    expect(await readFile(join((vault as unknown as { path: string }).path, "wiki/made.md"), "utf8")).toBe("# Made\n");
+  });
+
+  test("without allowWrite, the write tools are absent (read-only); changes is empty", async () => {
+    const vault = await tempVaultHandle();
+    // MockLanguageModelV3 uses 1-indexed access (doGenerate[doGenerateCalls.length]);
+    // index 0 is never returned, so pad with a dummy.
+    const model = new MockLanguageModelV3({ doGenerate: [textStep("pad"), textStep("nothing to do")] });
+    const result = await runAgent({ vault, question: "hi", model });
+    expect(result.changes).toEqual([]);
+  });
+});
 
 describe("runAgent", () => {
   test("drives the AI SDK loop through tools and returns answer + citations", async () => {
