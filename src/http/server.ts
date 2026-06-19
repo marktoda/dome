@@ -316,8 +316,8 @@ async function serveStatic(staticDir: string, pathname: string): Promise<Respons
 // ----- Server factory -------------------------------------------------------
 
 /**
- * Build the ask-server fetch handler. The caller owns the listener:
- * `dome ask-server` runs `Bun.serve({ fetch })`; tests call `.fetch()` directly.
+ * Build the unified Dome HTTP fetch handler. The caller owns the listener:
+ * `dome http` runs `Bun.serve({ fetch })`; tests call `.fetch()` directly.
  */
 export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServer {
   if (opts.token.trim().length === 0) {

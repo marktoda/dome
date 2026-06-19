@@ -41,7 +41,7 @@ function Screen({ token }: { token: string }): React.ReactElement {
     dispatch({ kind: "user", text: q });
     dispatch({ kind: "assistant-start" });
     setBriefCollapsed(true);
-    void client.askStream(q, (e) => dispatch({ kind: "event", event: e }));
+    void client.agentStream(q, (e) => dispatch({ kind: "event", event: e }));
   };
 
   // Optimistic: drop the answered question (and hero if it was the one) immediately,

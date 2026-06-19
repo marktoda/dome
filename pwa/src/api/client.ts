@@ -1,4 +1,4 @@
-import type { AskResult, CaptureResult, Recents, ResolveResult, StreamEvent, Today, Transcript } from "./types";
+import type { AgentResult, CaptureResult, Recents, ResolveResult, StreamEvent, Today, Transcript } from "./types";
 
 // Parse a buffer of SSE text into complete events + the leftover partial frame.
 export function parseSseChunk(buffer: string): { events: StreamEvent[]; rest: string } {
@@ -61,12 +61,12 @@ export class DomeClient {
     return this.parse<Transcript>(await fetch(new Request(`${this.baseUrl}/transcribe`, { method: "POST", headers: { ...this.authHeaders(false), "content-type": audio.type || "audio/webm" }, body: audio })));
   }
 
-  async ask(question: string): Promise<AskResult> {
-    return this.parse<AskResult>(await fetch(new Request(`${this.baseUrl}/ask`, { method: "POST", headers: this.authHeaders(true), body: JSON.stringify({ question }) })));
+  async agent(question: string): Promise<AgentResult> {
+    return this.parse<AgentResult>(await fetch(new Request(`${this.baseUrl}/agent`, { method: "POST", headers: this.authHeaders(true), body: JSON.stringify({ question }) })));
   }
 
-  async askStream(question: string, onEvent: (e: StreamEvent) => void, signal?: AbortSignal): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/ask/stream`, {
+  async agentStream(question: string, onEvent: (e: StreamEvent) => void, signal?: AbortSignal): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/agent/stream`, {
       method: "POST",
       headers: { ...this.authHeaders(true), accept: "text/event-stream" },
       body: JSON.stringify({ question }),
