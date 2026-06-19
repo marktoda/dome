@@ -357,6 +357,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
           question,
           abortSignal: signal,
           ...(opts.model !== undefined ? { modelId: opts.model } : {}),
+          ...(has(granted, "author") ? { allowWrite: true } : {}),
         }),
     );
     if (outcome.kind === "open-failed") {
@@ -393,6 +394,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
           question,
           abortSignal: signal,
           ...(opts.model !== undefined ? { modelId: opts.model } : {}),
+          ...(has(granted, "author") ? { allowWrite: true } : {}),
         });
         ready();
         // Hold the vault open until the route finishes draining the stream.
@@ -427,6 +429,9 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       // Same array reference the tools push into; populated as the stream drains.
       get citations() {
         return stream?.citations ?? [];
+      },
+      get changes() {
+        return stream?.changes ?? [];
       },
       get finished() {
         return (
@@ -586,6 +591,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
           citations: result.citations,
           steps: result.steps,
           stopReason: result.stopReason,
+          changes: result.changes,
         });
       } catch (e) {
         if (controller.signal.aborted) {
@@ -679,7 +685,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
             } else {
               const { stopReason } = await stream.finished;
               ctrl.enqueue(
-                sse({ type: "done", citations: stream.citations, stopReason }),
+                sse({ type: "done", citations: stream.citations, changes: stream.changes, stopReason }),
               );
             }
           } catch (e) {
