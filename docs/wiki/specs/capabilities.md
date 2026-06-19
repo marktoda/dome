@@ -12,6 +12,8 @@ description: "Capability broker: seventeen tiers, manifest-declared x vault-gran
 
 This spec is normative for Dome's capability broker — the one chokepoint that decides whether an [[wiki/specs/effects|Effect]] emitted by a [[wiki/specs/processors|Processor]] is applied or rejected. Every effect, regardless of source, passes through `enforceCapability(effect, processor.capabilities, grants)` before the engine applies it. This is pinned by [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]].
 
+Note: the `read · capture · resolve · converse · author` vocabulary in [[wiki/specs/http-surface]] scopes *who can reach a route* (the HTTP surface's per-route access gate); the engine's seventeen capability tiers here scope *what an effect may do once the engine applies it* — they are orthogonal layers that compose, not duplicates of each other.
+
 ## Why a capability broker
 
 The four-concept v0.5 core enforced trust via the hook-source partition (`HookSource = "sdk" | "plugin" | "vault-local"` with `HookContext.privilegedWriter` only on the SDK source). That worked when first-party hooks were the only ones in the vault.

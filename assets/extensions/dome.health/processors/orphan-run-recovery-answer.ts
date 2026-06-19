@@ -12,6 +12,7 @@ import {
   defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
+import { ORPHAN_RUN_RECOVERY_ERROR_REASON } from "../../../../src/ledger/runs";
 
 import {
   orphanRunTargetFromQuestionIdempotencyKey,
@@ -51,7 +52,7 @@ const orphanRunRecoveryAnswer = defineProcessorImplementation({
         processorId: target.processorId,
         processorVersion: target.processorVersion,
         phase: target.phase,
-        reason: "dome.health: mark orphaned processor run failed",
+        reason: ORPHAN_RUN_RECOVERY_ERROR_REASON,
         sourceRefs: input.question.sourceRefs,
       }),
     ];

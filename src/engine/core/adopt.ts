@@ -643,6 +643,104 @@ export async function adopt(opts: {
   // live there), or the proposal head's resolved candidate otherwise.
   const newAdopted: CommitOid = closureCommitOid ?? candidate;
 
+  const outcome = await finalizeAdoption({
+    vault,
+    branch,
+    sourceHead,
+    newAdopted,
+    forceAdvance,
+    sinks,
+    allDiagnostics,
+    proposal,
+    projectionBuffer,
+  });
+
+  if (outcome.kind === "blocked") {
+    return frozenResult({
+      proposalId: proposal.id,
+      adopted: false,
+      adoptedRef: adopted,
+      diagnostics: allDiagnostics,
+      closureCommitOid,
+      iterations: iteration,
+    });
+  }
+
+  return frozenResult({
+    proposalId: proposal.id,
+    adopted: true,
+    adoptedRef: outcome.newAdopted,
+    diagnostics: allDiagnostics,
+    closureCommitOid,
+    iterations: iteration,
+  });
+}
+
+async function resolveRecoveredEngineAdoptionDiagnostics(
+  sinks: ApplyEffectSinks,
+): Promise<void> {
+  await sinks.resolveDiagnostics?.({
+    processorId: "engine.adoption",
+    inspectedPaths: [],
+    emittedDiagnostics: [],
+  });
+}
+
+// ----- finalizeAdoption -----------------------------------------------------
+//
+// Adoption's own I/O shell: Phase 12c branch advance → materialization →
+// adopted-ref advance → journal clear → projection flush. Called once per
+// `adopt()` invocation after the fixed-point loop converges.
+//
+// The `abort()` helper inside collapses the repeated pattern:
+//   push diagnostics → recordDiagnosticsViaSink → return blocked.
+// Journal clearing (when needed) is done by the caller BEFORE invoking
+// abort() so the helper stays uniform across all abort branches.
+// Branches that have divergent journal-clear logic handle it explicitly
+// before calling abort().
+
+type FinalizeOutcome =
+  | { readonly kind: "finalized"; readonly newAdopted: CommitOid }
+  | { readonly kind: "blocked" };
+
+async function finalizeAdoption(opts: {
+  readonly vault: EngineVault;
+  readonly branch: string;
+  readonly sourceHead: CommitOid;
+  readonly newAdopted: CommitOid;
+  readonly forceAdvance: boolean;
+  readonly sinks: ApplyEffectSinks;
+  readonly allDiagnostics: DiagnosticEffect[];
+  readonly proposal: Proposal;
+  readonly projectionBuffer: { readonly flush: () => Promise<void> };
+}): Promise<FinalizeOutcome> {
+  const {
+    vault,
+    branch,
+    sourceHead,
+    newAdopted,
+    forceAdvance,
+    sinks,
+    allDiagnostics,
+    proposal,
+    projectionBuffer,
+  } = opts;
+
+  // One abort() helper: push diagnostics, record via sink, return blocked.
+  // Journal clearing is handled by each call site BEFORE invoking abort().
+  async function abort(
+    diagnostics: ReadonlyArray<DiagnosticEffect>,
+  ): Promise<FinalizeOutcome> {
+    allDiagnostics.push(...diagnostics);
+    await recordDiagnosticsViaSink({
+      sinks,
+      diagnostics,
+      processorId: "engine.adoption",
+      proposalId: proposal.id,
+    });
+    return { kind: "blocked" };
+  }
+
   // Phase 12c: when the successful adoption target is not already the source
   // branch's HEAD, advance `refs/heads/<branch>` to that target BEFORE
   // advancing the adopted ref. Per docs/v1.md §4.1 (local-eventual mode),
@@ -695,33 +793,21 @@ export async function adopt(opts: {
         descendant: branchAdvanceTarget,
       }));
     if (!fastForward) {
-      const staleCandidateDiag = diagnosticEffect({
-        severity: "block",
-        code: "adoption.branch-advance-not-fast-forward",
-        message:
-          `Refused to advance refs/heads/${branch} to engine target ` +
-          `${branchAdvanceTarget.slice(0, 7)}: the target does not descend ` +
-          `from the branch head ${sourceHead.slice(0, 7)} observed at loop ` +
-          `start (a commit likely landed on the branch while this proposal ` +
-          `was being adopted). No refs were moved; the work will be ` +
-          `re-derived on the next sync.`,
-        sourceRefs: [],
-      });
-      allDiagnostics.push(staleCandidateDiag);
-      await recordDiagnosticsViaSink({
-        sinks,
-        diagnostics: [staleCandidateDiag],
-        processorId: "engine.adoption",
-        proposalId: proposal.id,
-      });
-      return frozenResult({
-        proposalId: proposal.id,
-        adopted: false,
-        adoptedRef: adopted,
-        diagnostics: allDiagnostics,
-        closureCommitOid,
-        iterations: iteration,
-      });
+      // No journal written yet — no clearing needed before abort().
+      return abort([
+        diagnosticEffect({
+          severity: "block",
+          code: "adoption.branch-advance-not-fast-forward",
+          message:
+            `Refused to advance refs/heads/${branch} to engine target ` +
+            `${branchAdvanceTarget.slice(0, 7)}: the target does not descend ` +
+            `from the branch head ${sourceHead.slice(0, 7)} observed at loop ` +
+            `start (a commit likely landed on the branch while this proposal ` +
+            `was being adopted). No refs were moved; the work will be ` +
+            `re-derived on the next sync.`,
+          sourceRefs: [],
+        }),
+      ]);
     }
     materializePaths = await changedPathsBetween({
       vaultPath: vault.path,
@@ -734,21 +820,8 @@ export async function adopt(opts: {
       paths: materializePaths,
     });
     if (materializeDiagnostic !== null) {
-      allDiagnostics.push(materializeDiagnostic);
-      await recordDiagnosticsViaSink({
-        sinks,
-        diagnostics: [materializeDiagnostic],
-        processorId: "engine.adoption",
-        proposalId: proposal.id,
-      });
-      return frozenResult({
-        proposalId: proposal.id,
-        adopted: false,
-        adoptedRef: adopted,
-        diagnostics: allDiagnostics,
-        closureCommitOid,
-        iterations: iteration,
-      });
+      // No journal written yet — no clearing needed before abort().
+      return abort([materializeDiagnostic]);
     }
 
     try {
@@ -771,28 +844,16 @@ export async function adopt(opts: {
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      // Journal may have been written; clear it before aborting.
       await clearFinalizeJournal(vault.path);
-      const branchAdvanceDiag = diagnosticEffect({
-        severity: "block",
-        code: "adoption.branch-advance-failed",
-        message: `Failed to advance refs/heads/${branch} to engine target ${branchAdvanceTarget.slice(0, 7)}: ${msg}`,
-        sourceRefs: [],
-      });
-      allDiagnostics.push(branchAdvanceDiag);
-      await recordDiagnosticsViaSink({
-        sinks,
-        diagnostics: [branchAdvanceDiag],
-        processorId: "engine.adoption",
-        proposalId: proposal.id,
-      });
-      return frozenResult({
-        proposalId: proposal.id,
-        adopted: false,
-        adoptedRef: adopted,
-        diagnostics: allDiagnostics,
-        closureCommitOid,
-        iterations: iteration,
-      });
+      return abort([
+        diagnosticEffect({
+          severity: "block",
+          code: "adoption.branch-advance-failed",
+          message: `Failed to advance refs/heads/${branch} to engine target ${branchAdvanceTarget.slice(0, 7)}: ${msg}`,
+          sourceRefs: [],
+        }),
+      ]);
     }
 
     try {
@@ -824,25 +885,12 @@ export async function adopt(opts: {
           rollbackMessage(rollbackDiagnostic, branch, sourceHead),
         sourceRefs: [],
       });
-      allDiagnostics.push(materializeFailedDiag);
-      if (rollbackDiagnostic !== null) allDiagnostics.push(rollbackDiagnostic);
-      await recordDiagnosticsViaSink({
-        sinks,
-        diagnostics: [
-          materializeFailedDiag,
-          ...(rollbackDiagnostic !== null ? [rollbackDiagnostic] : []),
-        ],
-        processorId: "engine.adoption",
-        proposalId: proposal.id,
-      });
-      return frozenResult({
-        proposalId: proposal.id,
-        adopted: false,
-        adoptedRef: adopted,
-        diagnostics: allDiagnostics,
-        closureCommitOid,
-        iterations: iteration,
-      });
+      // Journal already conditionally cleared above; call abort() with both
+      // diags (rollbackDiagnostic may be null — filter it out).
+      return abort([
+        materializeFailedDiag,
+        ...(rollbackDiagnostic !== null ? [rollbackDiagnostic] : []),
+      ]);
     }
   }
 
@@ -875,25 +923,12 @@ export async function adopt(opts: {
         rollbackMessage(rollbackDiagnostic, branch, sourceHead),
       sourceRefs: [],
     });
-    allDiagnostics.push(refAdvanceDiag);
-    if (rollbackDiagnostic !== null) allDiagnostics.push(rollbackDiagnostic);
-    await recordDiagnosticsViaSink({
-      sinks,
-      diagnostics: [
-        refAdvanceDiag,
-        ...(rollbackDiagnostic !== null ? [rollbackDiagnostic] : []),
-      ],
-      processorId: "engine.adoption",
-      proposalId: proposal.id,
-    });
-    return frozenResult({
-      proposalId: proposal.id,
-      adopted: false,
-      adoptedRef: adopted,
-      diagnostics: allDiagnostics,
-      closureCommitOid,
-      iterations: iteration,
-    });
+    // Journal already conditionally cleared above; call abort() with both
+    // diags (rollbackDiagnostic may be null — filter it out).
+    return abort([
+      refAdvanceDiag,
+      ...(rollbackDiagnostic !== null ? [rollbackDiagnostic] : []),
+    ]);
   }
 
   // Finalization fully resolved: branch advanced (when needed), working
@@ -920,24 +955,7 @@ export async function adopt(opts: {
     );
   }
 
-  return frozenResult({
-    proposalId: proposal.id,
-    adopted: true,
-    adoptedRef: newAdopted,
-    diagnostics: allDiagnostics,
-    closureCommitOid,
-    iterations: iteration,
-  });
-}
-
-async function resolveRecoveredEngineAdoptionDiagnostics(
-  sinks: ApplyEffectSinks,
-): Promise<void> {
-  await sinks.resolveDiagnostics?.({
-    processorId: "engine.adoption",
-    inspectedPaths: [],
-    emittedDiagnostics: [],
-  });
+  return { kind: "finalized", newAdopted };
 }
 
 // ----- internals ------------------------------------------------------------

@@ -123,6 +123,7 @@ async function spawnWrite(opts: {
     runId: RUN_ID,
     extensionId: "dome.claims",
     cascadeDepth: 1,
+    maxCascadeDepth: 10,
     applyPatch: applyPatchToCandidate,
     adoptSubProposal: async (proposal) => MINIMAL_ADOPTION(proposal),
   });
@@ -206,6 +207,7 @@ describe("spawnGardenSubProposal mergeBase plumbing", () => {
       runId: RUN_ID,
       extensionId: "dome.claims",
       cascadeDepth: 1,
+      maxCascadeDepth: 10,
       applyPatch: applyPatchToCandidate,
       adoptSubProposal: async (proposal) => MINIMAL_ADOPTION(proposal),
       onMergeConflict: (info) => collected.push(info),

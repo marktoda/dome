@@ -45,6 +45,13 @@ describe("createDocument", () => {
         .rejects.toBeInstanceOf(AgentWriteError);
     }
   });
+
+  test("rejects generated/frozen/raw paths via the default write scope", async () => {
+    for (const p of ["index.md", "log.md", "inbox/raw/x.md"]) {
+      await expect(createDocument(CTX(vault), { path: p, content: "x\n" }))
+        .rejects.toBeInstanceOf(AgentWriteError);
+    }
+  });
 });
 
 describe("editDocument", () => {
