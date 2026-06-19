@@ -154,27 +154,33 @@ describe("DOME_TRAILER_KEYS lockstep", () => {
 describe("stripDomeTrailers — agent trailer", () => {
   test("a body consisting solely of Dome-Agent renders empty after stripping", async () => {
     // Smoke-check: agent commits have a body of exactly "Dome-Agent: <model>";
-    // that line must not leak into `dome log` output. Verified via the activity
-    // pipeline by writing a synthetic agent commit through a real temp vault.
-    const { mkdtempSync } = await import("node:fs");
-    const { mkdir, writeFile } = await import("node:fs/promises");
-    const { tmpdir } = await import("node:os");
-    const { join } = await import("node:path");
-    const git = (await import("isomorphic-git")).default;
-    const fs = (await import("node:fs")).default;
-    const { buildActivityLog } = await import("../../src/surface/activity");
-    const { createDocument } = await import("../../src/agent/write");
-
+    // that line must not leak into `dome log` output. Build the commit with
+    // core helpers only — no import from src/agent/ — so the surface layer
+    // stays free of agent-layer dependencies.
     const dir = mkdtempSync(join(tmpdir(), "dome-activity-agent-"));
-    await git.init({ fs, dir, defaultBranch: "main" });
+    await import("isomorphic-git").then(async (mod) => {
+      const git = mod.default;
+      const fs = (await import("node:fs")).default;
+      await git.init({ fs, dir, defaultBranch: "main" });
+    });
     await mkdir(join(dir, "wiki"), { recursive: true });
     await writeFile(join(dir, "wiki", "seed.md"), "# Seed\n", "utf8");
-    await git.add({ fs, dir, filepath: "wiki/seed.md" });
-    await git.commit({ fs, dir, message: "seed", author: { name: "t", email: "t@t" } });
+    // Seed commit via core git helper (no agent layer).
+    await commit({
+      path: dir,
+      message: "seed",
+      files: ["wiki/seed.md"],
+      author: { name: "t", email: "t@t" },
+    });
 
-    await createDocument({ vaultPath: dir, modelId: "claude-sonnet-4-5" }, {
-      path: "wiki/agent-page.md",
-      content: "# Agent Page\nbody\n",
+    // Write the agent page and commit with the exact message shape the agent
+    // produces: subject + blank line + Dome-Agent trailer.
+    await writeFile(join(dir, "wiki", "agent-page.md"), "# Agent Page\nbody\n", "utf8");
+    await commit({
+      path: dir,
+      message: "author: create wiki/agent-page.md\n\nDome-Agent: claude-sonnet-4-5",
+      files: ["wiki/agent-page.md"],
+      author: { name: "Dome", email: "dome@local" },
     });
 
     const entries = await buildActivityLog({ vault: dir, limit: 10 });

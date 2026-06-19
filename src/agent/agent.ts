@@ -101,7 +101,7 @@ export async function runAgent(opts: AgentOptions): Promise<AgentResult> {
           ? citations.map((c) => c.path).join(", ")
           : "no relevant vault pages.");
 
-  return { answer, citations, steps: steps.length, stopReason };
+  return { answer, citations, steps: steps.length, stopReason, changes: [] };
 }
 
 /**
