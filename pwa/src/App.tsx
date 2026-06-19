@@ -41,7 +41,10 @@ function Screen({ token }: { token: string }): React.ReactElement {
     dispatch({ kind: "user", text: q });
     dispatch({ kind: "assistant-start" });
     setBriefCollapsed(true);
-    void client.agentStream(q, (e) => dispatch({ kind: "event", event: e }));
+    void client.agentStream(q, (e) => {
+      dispatch({ kind: "event", event: e });
+      if (e.type === "done" && (e.changes?.length ?? 0) > 0) refresh();
+    });
   };
 
   // Optimistic: drop the answered question (and hero if it was the one) immediately,

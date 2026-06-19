@@ -4,6 +4,11 @@ export type Citation = {
   snippet?: string;
 };
 
+export type AgentChange = {
+  path: string;
+  kind: "create" | "edit";
+};
+
 export type AgentResult = {
   schema: "dome.ask/v1";
   status: "ok";
@@ -11,11 +16,12 @@ export type AgentResult = {
   citations: Citation[];
   steps: number;
   stopReason: "final" | "budget";
+  changes?: AgentChange[];
 };
 
 export type StreamEvent =
   | { type: "text"; text: string }
-  | { type: "done"; citations: Citation[]; stopReason: "final" | "budget" }
+  | { type: "done"; citations: Citation[]; stopReason: "final" | "budget"; changes?: AgentChange[] }
   | { type: "error"; message: string };
 
 export type CaptureResult = {
