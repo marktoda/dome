@@ -87,6 +87,7 @@ export async function editDocument(
   if (typeof input.old_string !== "string" || input.old_string.length === 0) {
     throw new AgentWriteError("old_string is required");
   }
+  // An empty new_string is a valid deletion; only a missing/non-string value is rejected.
   if (typeof input.new_string !== "string") {
     throw new AgentWriteError("new_string is required");
   }

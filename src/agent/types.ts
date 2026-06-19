@@ -1,6 +1,6 @@
 // src/agent/types.ts
 //
-// Types for the ask-agent backend (companion entrypoint).
+// Types for the agent backend (companion entrypoint).
 //
 // This backend is a COMPANION HTTP service reached only via dynamic import from
 // the CLI — it is NOT part of the @dome/sdk core static graph, so it is allowed

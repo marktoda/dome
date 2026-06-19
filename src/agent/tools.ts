@@ -1,6 +1,6 @@
 // src/agent/tools.ts
 //
-// Read-only vault tools for the ask-agent backend, expressed as a Vercel AI SDK
+// Vault tools for the agent backend, expressed as a Vercel AI SDK
 // tool set (Record<string, Tool>). The AI SDK runs each tool's `execute` during
 // generateText(), so citations are accumulated into a shared array provided by
 // runAgent and read back after the run completes.
@@ -24,8 +24,7 @@
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import type { Vault } from "../vault";
-import type { Citation } from "./types";
-import type { AgentChange } from "./types";
+import type { Citation, AgentChange } from "./types";
 import { createDocument, editDocument } from "./write";
 
 // ----- helpers ----------------------------------------------------------------
@@ -264,6 +263,21 @@ export function buildAgentTools(
   };
 
   if (write !== undefined) {
+    // Run a write op, record the change, and surface failures to the model as
+    // an `error: …` string (never throw — a rejected write must not crash the loop).
+    const runWrite = async (
+      op: () => Promise<AgentChange>,
+      verb: "created" | "edited",
+    ): Promise<string> => {
+      try {
+        const change = await op();
+        write.changes.push(change);
+        return `${verb} ${change.path}`;
+      } catch (e) {
+        return `error: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    };
+
     tools["create_document"] = tool({
       description:
         "Create a NEW markdown page in the vault and commit it. Fails if the path already exists — use edit_document for an existing page. Path is vault-relative (e.g. wiki/notes/foo.md), .md only; .dome/ is off-limits.",
@@ -271,18 +285,8 @@ export function buildAgentTools(
         path: z.string().describe("Vault-relative .md path for the new page."),
         content: z.string().describe("Full markdown content of the new page."),
       }),
-      execute: async (input) => {
-        try {
-          const change = await createDocument(
-            { vaultPath: write.vaultPath, modelId: write.modelId },
-            { path: String(input.path), content: String(input.content) },
-          );
-          write.changes.push(change);
-          return `created ${change.path}`;
-        } catch (e) {
-          return `error: ${e instanceof Error ? e.message : String(e)}`;
-        }
-      },
+      execute: (input) =>
+        runWrite(() => createDocument(write, { path: input.path, content: input.content }), "created"),
     });
     tools["edit_document"] = tool({
       description:
@@ -292,22 +296,16 @@ export function buildAgentTools(
         old_string: z.string().describe("Exact text to replace; must be unique in the file."),
         new_string: z.string().describe("Replacement text."),
       }),
-      execute: async (input) => {
-        try {
-          const change = await editDocument(
-            { vaultPath: write.vaultPath, modelId: write.modelId },
-            {
-              path: String(input.path),
-              old_string: String(input.old_string),
-              new_string: String(input.new_string),
-            },
-          );
-          write.changes.push(change);
-          return `edited ${change.path}`;
-        } catch (e) {
-          return `error: ${e instanceof Error ? e.message : String(e)}`;
-        }
-      },
+      execute: (input) =>
+        runWrite(
+          () =>
+            editDocument(write, {
+              path: input.path,
+              old_string: input.old_string,
+              new_string: input.new_string,
+            }),
+          "edited",
+        ),
     });
   }
 

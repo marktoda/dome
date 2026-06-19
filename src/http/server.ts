@@ -40,7 +40,7 @@ import { grantedCapabilities, has, type Capability } from "../capabilities";
 
 // ----- Constants ------------------------------------------------------------
 
-const SCHEMA = "dome.ask/v1"; // the agent answer + auth-error envelope schema
+const SCHEMA = "dome.ask/v1"; // stable wire schema for the agent answer + auth/usage error envelope; kept as "dome.ask/v1" (with the ask-* error codes) as the wire contract though the route was renamed /ask→/agent — renaming the wire id is a separate, client+docs-coordinated change.
 const SERVER_SCHEMA = "dome.http/v1";
 const DOCUMENT_SCHEMA = "dome.http.document/v1";
 const QUESTIONS_SCHEMA = "dome.http.questions/v1";
@@ -91,7 +91,7 @@ export type DomeHttpServerOptions = {
    */
   readonly maxBodyBytes?: number | undefined;
   /**
-   * Milliseconds before a hung POST /ask is aborted and returns 504.
+   * Milliseconds before a hung POST /agent is aborted and returns 504.
    * Defaults to 120_000 (2 minutes).
    */
   readonly timeoutMs?: number | undefined;
@@ -347,8 +347,8 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       : outcome.value;
   };
 
-  // Default ask: open the vault, run the AI SDK agent loop over its tools.
-  const defaultAsk: AgentImpl = async (question, signal) => {
+  // Default agent: open the vault, run the AI SDK agent loop over its tools.
+  const defaultAgent: AgentImpl = async (question, signal) => {
     const outcome = await withVaultShared(
       { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
       (vault) =>
@@ -366,15 +366,15 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     return outcome.value;
   };
 
-  const ask = opts.agentImpl ?? defaultAsk;
+  const agent = opts.agentImpl ?? defaultAgent;
 
-  // Default streaming ask: open the vault and keep it open for the whole
+  // Default streaming agent: open the vault and keep it open for the whole
   // stream. withVault closes the vault when its callback resolves, but the
-  // ask tools run lazily as the stream drains — so we hold the callback open
+  // agent tools run lazily as the stream drains — so we hold the callback open
   // with a deferred promise that only resolves once fullStream is fully
   // consumed (or errors). The wrapped generator triggers that resolution in
   // its finally block, after which withVault closes the vault.
-  const defaultAskStream: AgentStreamImpl = (question, signal) => {
+  const defaultAgentStream: AgentStreamImpl = (question, signal) => {
     let stream: AgentStream | undefined;
     let openError: Error | undefined;
     let release!: () => void;
@@ -441,14 +441,14 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     };
   };
 
-  const askStream = opts.agentStreamImpl ?? defaultAskStream;
+  const agentStream = opts.agentStreamImpl ?? defaultAgentStream;
 
   // ----- POST /transcribe (runs authenticated but outside the vault mutex) -----
   //
   // /transcribe is runtime-free: it touches no vault — it either shells out to
   // a host whisper command (local, private) or uploads the audio to an
   // OpenAI-compatible cloud STT endpoint. Running it inside enqueue() would hold
-  // the vault mutex for the call's duration — blocking /ask, /tasks, etc. — so
+  // the vault mutex for the call's duration — blocking /agent, /tasks, etc. — so
   // handle() dispatches it directly after auth, bypassing the mutex.
   const handleTranscribe = async (request: Request): Promise<Response> => {
     const cmd = opts.transcribeCommand;
@@ -570,7 +570,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
         return errorResponse(
           400,
           "ask-usage",
-          "POST /ask requires a non-empty `question`.",
+          "POST /agent requires a non-empty `question`.",
         );
       }
 
@@ -583,7 +583,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
         }, timeoutMs);
       });
       try {
-        const result = await Promise.race([ask(question, controller.signal), timeoutPromise]);
+        const result = await Promise.race([agent(question, controller.signal), timeoutPromise]);
         return jsonResponse(200, {
           schema: SCHEMA,
           status: "ok",
@@ -646,7 +646,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       const sse = (payload: unknown): Uint8Array =>
         encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
 
-      const stream = askStream(question, controller.signal);
+      const stream = agentStream(question, controller.signal);
 
       let signalDrained!: () => void;
       const drained = new Promise<void>((resolve) => {

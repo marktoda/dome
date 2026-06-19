@@ -111,7 +111,7 @@ describe("createDomeHttpServer static serving", () => {
 });
 
 describe("createDomeHttpServer", () => {
-  test("POST /ask returns a synthesized answer + citations", async () => {
+  test("POST /agent returns a synthesized answer + citations", async () => {
     const res = await server().fetch(post({ question: "what's open?" }));
     expect(res.status).toBe(200);
     const json = (await res.json()) as { answer: string; citations: unknown[] };
@@ -320,6 +320,7 @@ describe("createDomeHttpServer POST /agent/stream", () => {
     }));
     const text = await res.text();
     const doneLine = text.split("\n\n").map((b) => b.split("\n").find((l) => l.startsWith("data:"))).filter(Boolean).map((l) => JSON.parse(l!.slice(5).trim())).find((e) => e.type === "done");
+    expect(doneLine).toBeDefined();
     expect(doneLine.changes).toEqual([{ path: "wiki/seed.md", kind: "edit" }]);
   });
 });
