@@ -38,6 +38,13 @@ export function ChatTranscript({ state }: { state: ChatState }): React.ReactElem
             <p>{renderRich(m.text)}</p>
           )}
           {m.citations.length > 0 ? <Cites citations={m.citations} /> : null}
+          {m.changes.length > 0 ? (
+            <div className="changes">
+              {m.changes.map((c, j) => (
+                <span key={j} className="change">✎ {c.kind === "create" ? "created" : "updated"} {shortPath(c.path)}</span>
+              ))}
+            </div>
+          ) : null}
         </div>
       ))}
     </div>

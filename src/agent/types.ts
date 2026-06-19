@@ -14,10 +14,18 @@ export type Citation = {
   readonly snippet?: string | undefined;
 };
 
-/** The synthesized answer plus the evidence it cited. */
+/** A vault write the agent made during a run (surfaced to the client as done.changes). */
+export type AgentChange = {
+  readonly path: string;
+  readonly kind: "create" | "edit";
+};
+
+/** The synthesized answer plus the evidence it cited and any writes it made. */
 export type AgentResult = {
   readonly answer: string;
   readonly citations: ReadonlyArray<Citation>;
   readonly steps: number;
   readonly stopReason: "final" | "budget";
+  /** Vault writes made this run; empty for read-only turns. */
+  readonly changes: ReadonlyArray<AgentChange>;
 };

@@ -18,8 +18,8 @@ import {
 } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import type { Vault } from "../vault";
-import { buildAgentTools } from "./tools";
-import type { Citation, AgentResult } from "./types";
+import { buildAgentTools, type AgentWriteContext } from "./tools";
+import type { Citation, AgentResult, AgentChange } from "./types";
 
 /** Default interactive-ask model. Overridable via opts.modelId. */
 export const DEFAULT_MODEL = "claude-sonnet-4-5";
@@ -32,6 +32,11 @@ const AGENT_CHARTER = [
   "Format as clean markdown — blank lines between paragraphs and before any list. Never emit a heading marker (#) mid-sentence. The app displays your sources separately, so do not clutter the prose with file paths or [bracketed] citations.",
 ].join(" ");
 
+const WRITE_CHARTER = [
+  "You can also modify the vault. Use create_document for a new page and edit_document for a surgical, unique-substring edit to an existing page (e.g. checking off a task: '- [ ]' → '- [x]').",
+  "Make the smallest change that satisfies the request, then briefly state what you changed. Never write under .dome/.",
+].join(" ");
+
 /** Shared option shape for both the buffered and streaming entry-points. */
 type AgentOptions = {
   readonly vault: Vault;
@@ -41,6 +46,8 @@ type AgentOptions = {
   readonly model?: LanguageModel | undefined;
   readonly maxSteps?: number | undefined;
   readonly abortSignal?: AbortSignal | undefined;
+  /** Grant the author capability: provisions create_document / edit_document. */
+  readonly allowWrite?: boolean | undefined;
 };
 
 /**
@@ -55,16 +62,24 @@ function setupAgent(opts: AgentOptions): {
   readonly tools: ToolSet;
   readonly maxSteps: number;
   readonly citations: Citation[];
+  readonly changes: AgentChange[];
   readonly abortSignal: AbortSignal | undefined;
 } {
   const citations: Citation[] = [];
+  const changes: AgentChange[] = [];
+  const modelId = opts.modelId ?? DEFAULT_MODEL;
+  const write: AgentWriteContext | undefined =
+    opts.allowWrite === true
+      ? { vaultPath: opts.vault.path, modelId, changes }
+      : undefined;
   return {
-    model: opts.model ?? anthropic(opts.modelId ?? DEFAULT_MODEL),
-    system: AGENT_CHARTER,
+    model: opts.model ?? anthropic(modelId),
+    system: write !== undefined ? `${AGENT_CHARTER} ${WRITE_CHARTER}` : AGENT_CHARTER,
     prompt: opts.question,
-    tools: buildAgentTools(opts.vault, citations),
+    tools: buildAgentTools(opts.vault, citations, write),
     maxSteps: opts.maxSteps ?? 8,
     citations,
+    changes,
     abortSignal: opts.abortSignal,
   };
 }
@@ -79,7 +94,7 @@ function stopReasonOf(finishReason: FinishReason): AgentResult["stopReason"] {
 }
 
 export async function runAgent(opts: AgentOptions): Promise<AgentResult> {
-  const { model, system, prompt, tools, maxSteps, citations, abortSignal } =
+  const { model, system, prompt, tools, maxSteps, citations, changes, abortSignal } =
     setupAgent(opts);
 
   const { text, steps, finishReason } = await generateText({
@@ -101,7 +116,7 @@ export async function runAgent(opts: AgentOptions): Promise<AgentResult> {
           ? citations.map((c) => c.path).join(", ")
           : "no relevant vault pages.");
 
-  return { answer, citations, steps: steps.length, stopReason };
+  return { answer, citations, steps: steps.length, stopReason, changes };
 }
 
 /**
@@ -115,6 +130,8 @@ export type AgentStream = {
   readonly fullStream: AsyncIterable<TextStreamPart<ToolSet>>;
   /** Populated as the tools run; complete once `finished` resolves. */
   readonly citations: Citation[];
+  /** Vault writes made this run; same array the tools push into — complete once `finished` resolves. */
+  readonly changes: AgentChange[];
   /** Resolves after the stream drains with the run's coarse stopReason. */
   readonly finished: Promise<{ readonly stopReason: AgentResult["stopReason"] }>;
 };
@@ -126,7 +143,7 @@ export type AgentStream = {
  * iterable (fullStream) and readable-after (citations once finished resolves).
  */
 export function runAgentStream(opts: AgentOptions): AgentStream {
-  const { model, system, prompt, tools, maxSteps, citations, abortSignal } =
+  const { model, system, prompt, tools, maxSteps, citations, changes, abortSignal } =
     setupAgent(opts);
 
   const result = streamText({
@@ -141,6 +158,7 @@ export function runAgentStream(opts: AgentOptions): AgentStream {
   return {
     fullStream: result.fullStream,
     citations,
+    changes,
     // Never rejects: on abort-before-first-step the AI SDK may reject
     // result.finishReason, which would leave a dangling unhandledRejection if
     // the route's for-await throws before reaching `await stream.finished`.

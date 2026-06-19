@@ -4,16 +4,16 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDomeHttpServer } from "../../src/http/server";
-import type { AskStream } from "../../src/agent/ask";
+import type { AgentStream } from "../../src/agent/agent";
 import type { TextStreamPart, ToolSet } from "ai";
 
 const TOKEN = "test-token";
 
-/** Build an AskStream from a fixed list of text deltas (no model needed). */
+/** Build an AgentStream from a fixed list of text deltas (no model needed). */
 function fakeStream(
   deltas: string[],
   stopReason: "final" | "budget" = "final",
-): AskStream {
+): AgentStream {
   const citations = [{ path: "wiki/x.md", commit: "c1" }];
   async function* gen(): AsyncIterable<TextStreamPart<ToolSet>> {
     yield { type: "start" } as TextStreamPart<ToolSet>;
@@ -30,6 +30,7 @@ function fakeStream(
   return {
     fullStream: gen(),
     citations,
+    changes: [],
     finished: Promise.resolve({ stopReason }),
   };
 }
@@ -43,6 +44,7 @@ function server() {
       citations: [{ path: "wiki/x.md", commit: "c1" }],
       steps: 2,
       stopReason: "final" as const,
+      changes: [],
     }),
   });
 }
@@ -169,6 +171,23 @@ describe("createDomeHttpServer", () => {
     const json = (await res.json()) as { error: string };
     expect(json.error).toBe("ask-timeout");
   });
+  test("POST /agent includes a changes array in the JSON", async () => {
+    const srv = createDomeHttpServer({
+      vaultPath: "/tmp/unused",
+      token: TOKEN,
+      agentImpl: async (q: string) => ({
+        answer: `a:${q}`,
+        citations: [],
+        steps: 1,
+        stopReason: "final" as const,
+        changes: [{ path: "wiki/made.md", kind: "create" as const }],
+      }),
+    });
+    const res = await srv.fetch(post({ question: "make it" }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { changes: { path: string; kind: string }[] };
+    expect(body.changes).toEqual([{ path: "wiki/made.md", kind: "create" }]);
+  });
 });
 
 // ----- POST /agent/stream -----------------------------------------------------
@@ -236,7 +255,7 @@ describe("createDomeHttpServer POST /agent/stream", () => {
       vaultPath: "/tmp/unused",
       token: TOKEN,
       timeoutMs: TIMEOUT_MS,
-      agentStreamImpl: (_question: string, signal: AbortSignal): AskStream => {
+      agentStreamImpl: (_question: string, signal: AbortSignal): AgentStream => {
         async function* gen(): AsyncIterable<TextStreamPart<ToolSet>> {
           yield { type: "text-delta", id: "t1", text: "partial" } as TextStreamPart<ToolSet>;
           // Stall until the AbortController fires (timeout).
@@ -253,6 +272,7 @@ describe("createDomeHttpServer POST /agent/stream", () => {
         return {
           fullStream: gen(),
           citations: [],
+          changes: [],
           finished: new Promise<{ stopReason: "budget" }>((resolve) => {
             signal.addEventListener("abort", () => resolve({ stopReason: "budget" }), { once: true });
           }),
@@ -277,6 +297,30 @@ describe("createDomeHttpServer POST /agent/stream", () => {
     expect(body).not.toContain('"type":"done"');
     // Should complete well within a couple of seconds.
     expect(elapsed).toBeLessThan(3000);
+  });
+
+  test("the streaming done event carries changes", async () => {
+    const srv = createDomeHttpServer({
+      vaultPath: "/tmp/unused",
+      token: TOKEN,
+      agentStreamImpl: (): AgentStream => ({
+        fullStream: (async function* () {
+          yield { type: "text-delta", id: "t", text: "ok" } as TextStreamPart<ToolSet>;
+          yield { type: "finish", finishReason: "stop" } as unknown as TextStreamPart<ToolSet>;
+        })(),
+        citations: [],
+        changes: [{ path: "wiki/seed.md", kind: "edit" }],
+        finished: Promise.resolve({ stopReason: "final" as const }),
+      }),
+    });
+    const res = await srv.fetch(new Request("http://localhost/agent/stream", {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" },
+      body: JSON.stringify({ question: "check it off" }),
+    }));
+    const text = await res.text();
+    const doneLine = text.split("\n\n").map((b) => b.split("\n").find((l) => l.startsWith("data:"))).filter(Boolean).map((l) => JSON.parse(l!.slice(5).trim())).find((e) => e.type === "done");
+    expect(doneLine.changes).toEqual([{ path: "wiki/seed.md", kind: "edit" }]);
   });
 });
 

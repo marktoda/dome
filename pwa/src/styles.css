@@ -210,6 +210,8 @@ a.wl { text-decoration: underline; text-decoration-thickness: 1px; text-underlin
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; background: var(--surface-2); border: 1px solid var(--border-mid); border-radius: 7px; font: 500 11px var(--mono); color: #b8b4ab; }
 .chip .doc { width: 9px; height: 11px; border: 1px solid var(--text-dim); border-radius: 1.5px; flex: none; }
 .chip.more { background: var(--sage-bg); border-color: var(--sage-bdr); color: var(--sage); cursor: pointer; }
+.changes { display: flex; flex-direction: column; gap: 2px; margin-top: 9px; }
+.change { font: 500 11px var(--mono); color: var(--sage); }
 
 /* ── Composer (idle pill) ── */
 .composer {

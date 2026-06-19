@@ -150,3 +150,43 @@ describe("DOME_TRAILER_KEYS lockstep", () => {
     expect(keys).toEqual([...DOME_TRAILER_KEYS]);
   });
 });
+
+describe("stripDomeTrailers — agent trailer", () => {
+  test("a body consisting solely of Dome-Agent renders empty after stripping", async () => {
+    // Smoke-check: agent commits have a body of exactly "Dome-Agent: <model>";
+    // that line must not leak into `dome log` output. Build the commit with
+    // core helpers only — no import from src/agent/ — so the surface layer
+    // stays free of agent-layer dependencies.
+    const dir = mkdtempSync(join(tmpdir(), "dome-activity-agent-"));
+    await import("isomorphic-git").then(async (mod) => {
+      const git = mod.default;
+      const fs = (await import("node:fs")).default;
+      await git.init({ fs, dir, defaultBranch: "main" });
+    });
+    await mkdir(join(dir, "wiki"), { recursive: true });
+    await writeFile(join(dir, "wiki", "seed.md"), "# Seed\n", "utf8");
+    // Seed commit via core git helper (no agent layer).
+    await commit({
+      path: dir,
+      message: "seed",
+      files: ["wiki/seed.md"],
+      author: { name: "t", email: "t@t" },
+    });
+
+    // Write the agent page and commit with the exact message shape the agent
+    // produces: subject + blank line + Dome-Agent trailer.
+    await writeFile(join(dir, "wiki", "agent-page.md"), "# Agent Page\nbody\n", "utf8");
+    await commit({
+      path: dir,
+      message: "author: create wiki/agent-page.md\n\nDome-Agent: claude-sonnet-4-5",
+      files: ["wiki/agent-page.md"],
+      author: { name: "Dome", email: "dome@local" },
+    });
+
+    const entries = await buildActivityLog({ vault: dir, limit: 10 });
+    const agentCommit = entries.find((e) => e.subject.includes("author: create wiki/agent-page.md"));
+    expect(agentCommit).toBeDefined();
+    // The Dome-Agent trailer must not appear in the rendered body.
+    expect(agentCommit?.body ?? "").not.toContain("Dome-Agent:");
+  });
+});

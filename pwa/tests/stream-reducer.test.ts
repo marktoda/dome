@@ -23,4 +23,11 @@ describe("chatReducer", () => {
     expect(s.messages[0]!.streaming).toBe(false);
     expect(s.messages[0]!.text).toContain("timeout");
   });
+  test("done with changes stores them on the assistant message", () => {
+    let s: ChatState = { messages: [] };
+    s = chatReducer(s, { kind: "assistant-start" });
+    s = chatReducer(s, { kind: "event", event: { type: "text", text: "done" } });
+    s = chatReducer(s, { kind: "event", event: { type: "done", citations: [], stopReason: "final", changes: [{ path: "wiki/a.md", kind: "edit" }] } });
+    expect(s.messages[0]!.changes).toEqual([{ path: "wiki/a.md", kind: "edit" }]);
+  });
 });
