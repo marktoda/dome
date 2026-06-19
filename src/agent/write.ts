@@ -12,6 +12,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize } from "node:path";
 import { commitSingleFileOnHead } from "../git";
+import { DEFAULT_AGENT_WRITE_SCOPE, writeScopeDenial, type WriteScope } from "../write-scope";
 import type { AgentChange } from "./types";
 
 /** Attribution trailer key; NOT part of DOME_TRAILER_KEYS (engine Dome-Run family). */
@@ -28,7 +29,7 @@ export class AgentWriteError extends Error {
 }
 
 /** Validate + normalize a caller-supplied path to a safe vault-relative `.md` path. */
-function vaultRelPath(raw: string): string {
+function vaultRelPath(raw: string, scope: WriteScope): string {
   const rel = typeof raw === "string" ? raw.trim() : "";
   if (rel.length === 0) throw new AgentWriteError("path is required");
   if (isAbsolute(rel)) throw new AgentWriteError("path must be vault-relative, not absolute");
@@ -39,9 +40,14 @@ function vaultRelPath(raw: string): string {
   if (norm.split("/")[0] === ".dome") {
     throw new AgentWriteError(".dome/ is engine-internal and off-limits to the agent");
   }
+  if (norm.startsWith("inbox/raw/")) {
+    throw new AgentWriteError("inbox/raw/ is immutable (RAW_IS_IMMUTABLE); the agent cannot write raw capture files");
+  }
   if (!norm.endsWith(".md")) {
     throw new AgentWriteError("only markdown (.md) files can be written");
   }
+  const denial = writeScopeDenial(norm, scope);
+  if (denial !== null) throw new AgentWriteError(denial);
   return norm;
 }
 
@@ -49,13 +55,13 @@ function commitMessage(verb: "create" | "edit", rel: string, modelId: string): s
   return `author: ${verb} ${rel}\n\n${AGENT_TRAILER_KEY}: ${modelId}`;
 }
 
-export type AgentWriteCtx = { readonly vaultPath: string; readonly modelId: string };
+export type AgentWriteCtx = { readonly vaultPath: string; readonly modelId: string; readonly scope?: WriteScope };
 
 export async function createDocument(
   ctx: AgentWriteCtx,
   input: { path: string; content: string },
 ): Promise<AgentChange> {
-  const rel = vaultRelPath(input.path);
+  const rel = vaultRelPath(input.path, ctx.scope ?? DEFAULT_AGENT_WRITE_SCOPE);
   const abs = join(ctx.vaultPath, rel);
   if (existsSync(abs)) {
     throw new AgentWriteError(`already exists: ${rel} (use edit_document to change it)`);
@@ -79,7 +85,7 @@ export async function editDocument(
   ctx: AgentWriteCtx,
   input: { path: string; old_string: string; new_string: string },
 ): Promise<AgentChange> {
-  const rel = vaultRelPath(input.path);
+  const rel = vaultRelPath(input.path, ctx.scope ?? DEFAULT_AGENT_WRITE_SCOPE);
   const abs = join(ctx.vaultPath, rel);
   if (!existsSync(abs)) {
     throw new AgentWriteError(`not found: ${rel} (use create_document for a new page)`);
