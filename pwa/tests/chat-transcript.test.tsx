@@ -17,7 +17,6 @@ describe("ChatTranscript", () => {
   test("renders a changes line for agent writes", () => {
     const state = { messages: [{ role: "assistant" as const, text: "Done.", citations: [], changes: [{ path: "wiki/todo.md", kind: "edit" as const }], streaming: false }] };
     render(<ChatTranscript state={state} />);
-    expect(screen.getByText(/updated/)).toBeTruthy();
-    expect(screen.getByText(/todo\.md/)).toBeTruthy();
+    expect(screen.getByText(/updated wiki\/todo\.md/)).toBeTruthy();
   });
 });

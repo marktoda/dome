@@ -1,6 +1,6 @@
-// src/agent/ask.ts
+// src/agent/agent.ts
 //
-// Orchestration entry-point for the ask-agent backend.
+// Orchestration entry-point for the agent backend.
 //
 // Runs a multi-step, tool-calling agent loop via the Vercel AI SDK's
 // generateText(): the model searches/reads the vault through the tools built by

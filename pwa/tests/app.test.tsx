@@ -10,8 +10,10 @@ const RECENTS_BODY = JSON.stringify({ schema: "dome.recents/v1", count: 0, entri
 beforeEach(() => {
   localStorage.clear();
   localStorage.setItem("dome.token", "tok");
-  globalThis.fetch = mock(async (req: Request) => {
-    const url = new URL(req.url, "http://x");
+  // agentStream calls fetch(string, opts); tasks/recents call fetch(new Request(...))
+  globalThis.fetch = mock(async (reqOrUrl: Request | string) => {
+    const rawUrl = typeof reqOrUrl === "string" ? reqOrUrl : reqOrUrl.url;
+    const url = new URL(rawUrl, "http://x");
     if (url.pathname === "/tasks") return new Response(TODAY_BODY, { status: 200 });
     if (url.pathname === "/recents") return new Response(RECENTS_BODY, { status: 200 });
     return new Response("{}", { status: 200 });
