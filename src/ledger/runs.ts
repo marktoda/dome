@@ -480,6 +480,7 @@ WHERE status IN ('failed', 'timed_out', 'cancelled')
     status = 'failed'
     AND (
       error LIKE 'orphaned-run:%'
+      -- safe interpolation: a compile-time const with no SQL metacharacters (never user input)
       OR error = '${ORPHAN_RUN_RECOVERY_ERROR_REASON}'
     )
   )

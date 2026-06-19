@@ -106,8 +106,8 @@ export async function spawnGardenSubProposal(opts: {
    *   adoptSubProposal gets 1.
    *
    * The cap check `cascadeDepth >= maxCascadeDepth` fires at the parent
-   * depth so the diagnostic message reports the same depth as the former
-   * inline arm in garden.ts (byte-identical).
+   * depth, matching the former inline arm in garden.ts — so the signal
+   * path's bound is unchanged and operational sources now get the same bound.
    */
   readonly cascadeDepth: number;
   /**
@@ -123,10 +123,12 @@ export async function spawnGardenSubProposal(opts: {
   readonly adoptSubProposal: AdoptSubProposalFn;
 }): Promise<GardenSubProposalSpawnResult> {
   // Cascade-cap enforcement: all sources funnel through this single
-  // conversion boundary. The check `cascadeDepth >= maxCascadeDepth` is
-  // identical to the former inline arm in garden.ts (parent-depth
-  // semantics) so the signal path continues to behave as before and
-  // operational sources now get the same bound.
+  // conversion boundary. The cap-firing DEPTH (`cascadeDepth >= maxCascadeDepth`,
+  // parent-depth semantics) matches the former inline arm in garden.ts, so the
+  // signal path's bound is unchanged and operational sources now get the same
+  // bound. NOTE: the diagnostic message built here is the per-patch operational
+  // form ("1 PatchEffect(s)"); the signal path re-aggregates capped results in
+  // garden.ts to preserve its original batched "N PatchEffect(s)" message.
   if (opts.cascadeDepth >= opts.maxCascadeDepth) {
     const capDiag = diagnosticEffect({
       severity: "warning",

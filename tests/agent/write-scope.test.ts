@@ -20,4 +20,8 @@ describe("writeScopeDenial (default agent scope)", () => {
     expect(writeScopeDenial("daily/x.md", scope)).not.toBeNull();
     expect(writeScopeDenial("wiki/x.md", scope)).toBeNull();
   });
+  test("an empty allow-list means allow-all (only deny gates)", () => {
+    expect(writeScopeDenial("anything/x.md", { allow: [], deny: [] })).toBeNull();
+    expect(writeScopeDenial("x.md", { allow: [], deny: ["x.md"] })).not.toBeNull();
+  });
 });
