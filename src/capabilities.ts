@@ -8,7 +8,7 @@ export type Capability = "read" | "capture" | "resolve" | "converse" | "author";
 const BASE: readonly Capability[] = ["read", "capture", "resolve", "converse"];
 
 /** The capabilities a server instance grants. `author` is added only with write enabled. */
-export function grantedCapabilities(opts: { allowWrite?: boolean }): ReadonlySet<Capability> {
+export function grantedCapabilities(opts: { allowWrite?: boolean | undefined }): ReadonlySet<Capability> {
   return new Set<Capability>(opts.allowWrite === true ? [...BASE, "author"] : BASE);
 }
 

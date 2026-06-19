@@ -1,57 +1,23 @@
-// http/server: the Dome HTTP surface — the read+capture protocol adapter.
+// src/http/server.ts
 //
-// Per docs/wiki/specs/http-surface.md, this is a THIN adapter over the
-// public `openVault` wrapper plus the protocol-neutral `src/surface/`
-// collectors — the same posture as the MCP adapter (`src/mcp/server.ts`),
-// lifted onto HTTP for callers that can't mount stdio: phones, shortcuts,
-// scripts on other machines. Never imports `src/cli/` (pinned by
-// tests/integration/surface-adapter-imports.test.ts).
-//
-//   POST /capture   → performCapture (source: "http")   dome.capture/v1
-//   GET  /status    → buildStatusSnapshot               status snapshot
-//   GET  /query     → vault.runView("query")            dome.search.query/v1
-//   GET  /tasks     → vault.runView("today")            dome.daily.today/v1
-//   GET  /doc       → vault.readDocument                dome.http.document/v1
-//   GET  /questions → vault.listQuestions               dome.http.questions/v1
-//   POST /resolve   → vault.resolve                     dome.answer/v1
-//   GET  /today     → vault.runView("today") → HTML     cockpit page
-//
-// Boundary notes:
-//
-//   - Every route requires `Authorization: Bearer <token>` (constant-time
-//     comparison). The server is meant to bind loopback or a private
-//     (Tailscale-class) interface in the owner's trust domain — see the
-//     spec's §"Trust domain". There is no anonymous route. `GET /today`
-//     — and only that route — additionally accepts the same token as
-//     `?token=` so a browser navigation can reach the cockpit (see
-//     `queryTokenAuthorized`).
-//   - `POST /capture` implements the remote-capture seam
-//     ([[wiki/specs/capture]] §"The remote-capture seam"): it produces
-//     exactly what `dome capture` produces — one raw file, one ordinary
-//     human commit — and nothing else. `captureId` makes retries
-//     idempotent.
-//   - No engine control: no sync/serve/rebuild routes. The daemon owns
-//     compilation; captures report `compile_pending` instead.
-//   - No new dependencies: the handler is a plain `fetch` function for
-//     `Bun.serve`. Nothing here is reachable from the static import graph
-//     of `src/index.ts`.
-//   - The route mutex serializes vault-opening work, so at most one
-//     VaultRuntime is open at a time — the same one-CLI-invocation-at-a-
-//     time posture as the MCP adapter.
+// The one Dome HTTP surface (`dome http`). A single capability-gated server
+// over one vault + one mutex: read (query/doc/questions/status/tasks/today/
+// recents), capture, resolve, the agent (`/agent` + `/agent/stream`),
+// transcribe, and static PWA serving. `author` (write) is gated by --allow-write
+// and provisioned in Phase 2.
 
 import { createHash, timingSafeEqual } from "node:crypto";
-
+import { mkdtempSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { resolve, sep, join } from "node:path";
 import {
   ANSWER_SCHEMA,
   answerHandlersJson,
   questionRecordJson,
 } from "../surface/answer";
-import {
-  captureJsonDocument,
-  performCapture,
-} from "../surface/capture";
-import { COMMAND_ERROR_SCHEMA } from "../surface/command-error";
-import { buildStatusSnapshot } from "../surface/status";
+import { captureJsonDocument, performCapture } from "../surface/capture";
+import { buildRecents } from "../surface/recents";
 import {
   catalogViewProblemMessage,
   makeVaultMutex,
@@ -61,358 +27,119 @@ import {
   withVault as withVaultShared,
   type CatalogViewProblem,
 } from "../surface/adapter";
-import { FIRST_PARTY_VIEWS, type FirstPartyViewEntry } from "../surface/view-catalog";
+import { COMMAND_ERROR_SCHEMA } from "../surface/command-error";
+import { FIRST_PARTY_VIEWS } from "../surface/view-catalog";
+import type { Vault } from "../vault";
+import type { TextStreamPart, ToolSet } from "ai";
+import { runAgent, runAgentStream, type AgentStream } from "../agent/agent";
+import type { AgentResult } from "../agent/types";
+import { buildStatusSnapshot } from "../surface/status";
 import { renderTodayHtml } from "./today-html";
 import { BASEL_BOOK_WOFF2_B64, BASEL_MEDIUM_WOFF2_B64 } from "./today-fonts";
-import type { Vault } from "../vault";
+import { grantedCapabilities, has, type Capability } from "../capabilities";
 
 // ----- Constants ------------------------------------------------------------
 
+const SCHEMA = "dome.ask/v1"; // the agent answer + auth-error envelope schema
 const SERVER_SCHEMA = "dome.http/v1";
 const DOCUMENT_SCHEMA = "dome.http.document/v1";
 const QUESTIONS_SCHEMA = "dome.http.questions/v1";
 
-/**
- * Default request-body cap (1 MiB) — far above any honest capture, far below
- * anything that could pressure a 24/7 LaunchAgent's memory. The handler owns
- * this check (content-length gate + bounded stream read) because Bun's
- * `maxRequestBodySize` does not enforce on chunked bodies (verified against
- * Bun 1.2.x); `dome http` still sets Bun's limit as a backstop.
- */
+/** Default request-body cap (1 MiB); `dome http` sets Bun's limit to 2× as a backstop. */
 export const DEFAULT_MAX_BODY_BYTES = 1_048_576;
 
+const EXT_BY_TYPE: Record<string, string> = {
+  "audio/m4a": ".m4a", "audio/mp4": ".m4a", "audio/webm": ".webm",
+  "audio/wav": ".wav", "audio/x-wav": ".wav", "audio/mpeg": ".mp3", "audio/ogg": ".ogg",
+};
+
+/** The capability each route requires. Pings (GET / and /healthz) need none. */
+const ROUTE_CAPABILITY: Readonly<Record<string, Capability>> = {
+  "POST /agent": "converse",
+  "POST /agent/stream": "converse",
+  "POST /capture": "capture",
+  "POST /resolve": "resolve",
+  "GET /tasks": "read",
+  "GET /recents": "read",
+  "GET /status": "read",
+  "GET /query": "read",
+  "GET /today": "read",
+  "GET /doc": "read",
+  "GET /questions": "read",
+};
 
 // ----- Public types ---------------------------------------------------------
+
+export type AgentImpl = (question: string, signal: AbortSignal) => Promise<AgentResult>;
+
+export type AgentStreamImpl = (question: string, signal: AbortSignal) => AgentStream;
 
 export type DomeHttpServerOptions = {
   readonly vaultPath: string;
   readonly bundlesRoot?: string | undefined;
   /** Bearer token every request must present. Must be non-empty. */
   readonly token: string;
+  readonly model?: string | undefined;
+  /**
+   * Grant the `author` capability (agent write tools). Default off
+   * (read-only-safe). Provisioned in Phase 2; accepted now as the seam.
+   */
+  readonly allowWrite?: boolean | undefined;
   /**
    * Reject POST bodies larger than this with 413 `payload-too-large`
-   * (default `DEFAULT_MAX_BODY_BYTES`, 1 MiB). Enforced on the declared
-   * `content-length` when present and by a bounded stream read otherwise,
-   * so chunked bodies cannot bypass it.
+   * (default 1 MiB). Enforced on the declared `content-length` when present.
    */
   readonly maxBodyBytes?: number | undefined;
+  /**
+   * Milliseconds before a hung POST /ask is aborted and returns 504.
+   * Defaults to 120_000 (2 minutes).
+   */
+  readonly timeoutMs?: number | undefined;
+  /**
+   * Inject a custom ask implementation (used by tests to avoid opening a real
+   * vault). When omitted the default opens the vault and wires runAgent.
+   */
+  readonly agentImpl?: AgentImpl | undefined;
+  /**
+   * Inject a custom streaming ask implementation (used by tests to avoid a
+   * model). When omitted the default opens the vault and wires runAgentStream.
+   * Parallel to agentImpl.
+   */
+  readonly agentStreamImpl?: AgentStreamImpl | undefined;
+  /**
+   * Filesystem path to the built PWA static assets directory. When set,
+   * unauthenticated GET requests for "/" (app shell) and "/assets/*" are
+   * served directly from this directory — bypassing auth entirely so the
+   * browser can boot the PWA without a token.
+   */
+  readonly staticDir?: string | undefined;
+  /**
+   * Shell command to invoke for audio transcription (e.g. a local whisper
+   * wrapper). The implementation appends the temp-file path as the last
+   * argument. When undefined, POST /transcribe returns 501.
+   */
+  readonly transcribeCommand?: ReadonlyArray<string> | undefined;
+  /**
+   * API key for built-in cloud transcription via an OpenAI-compatible
+   * POST /audio/transcriptions endpoint. Used when no transcribeCommand is set.
+   * Audio is uploaded to the configured endpoint (it leaves the host).
+   */
+  readonly transcribeApiKey?: string | undefined;
+  /** Base URL for cloud transcription (default https://api.openai.com/v1; e.g. https://api.groq.com/openai/v1). */
+  readonly transcribeBaseUrl?: string | undefined;
+  /** Cloud transcription model (default "whisper-1"; e.g. gpt-4o-mini-transcribe, whisper-large-v3-turbo). */
+  readonly transcribeModel?: string | undefined;
+  /**
+   * Milliseconds before a hung POST /transcribe subprocess is killed and
+   * returns 500 `transcribe-timeout`. Defaults to 120_000 (2 minutes).
+   * Injectable so tests can set a short value (e.g. 50ms).
+   */
+  readonly transcribeTimeoutMs?: number | undefined;
 };
 
-export type DomeHttpServer = {
-  readonly fetch: (request: Request) => Promise<Response>;
-};
+export type DomeHttpServer = { readonly fetch: (request: Request) => Promise<Response> };
 
-// ----- The server -------------------------------------------------------------
-
-/**
- * Build the Dome HTTP fetch handler for one vault. The caller owns the
- * listener: `dome http` runs `Bun.serve({ fetch })` bound to loopback by
- * default; tests serve an ephemeral port.
- */
-export function createDomeHttpServer(
-  opts: DomeHttpServerOptions,
-): DomeHttpServer {
-  if (opts.token.trim().length === 0) {
-    throw new Error("dome http: a non-empty bearer token is required");
-  }
-  if (
-    opts.maxBodyBytes !== undefined &&
-    (!Number.isInteger(opts.maxBodyBytes) || opts.maxBodyBytes <= 0)
-  ) {
-    throw new Error("dome http: maxBodyBytes must be a positive integer");
-  }
-  const vault = opts.vaultPath;
-  const bundlesRoot = opts.bundlesRoot;
-  const maxBodyBytes = opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
-  const tokenDigest = sha256(opts.token);
-  const enqueue = makeVaultMutex();
-
-  const withVault = async (
-    command: string,
-    fn: (v: Vault) => Promise<Response>,
-  ): Promise<Response> => {
-    const outcome = await withVaultShared({ path: vault, bundlesRoot }, fn);
-    return outcome.kind === "open-failed"
-      ? commandErrorResponse(command, openVaultErrorKind(outcome.error))
-      : outcome.value;
-  };
-
-  const structuredView = async (input: {
-    readonly route: string;
-    readonly entry: FirstPartyViewEntry;
-    readonly args: unknown;
-  }): Promise<Response> => {
-    const outcome = await withVaultShared({ path: vault, bundlesRoot }, (v) =>
-      runCatalogView(v, input.entry, input.args),
-    );
-    if (outcome.kind === "open-failed") {
-      return commandErrorResponse(
-        input.route,
-        openVaultErrorKind(outcome.error),
-      );
-    }
-    const run = outcome.value;
-    if (run.kind === "problem") {
-      return errorResponse(
-        viewProblemHttpStatus(run.problem),
-        run.problem.kind,
-        catalogViewProblemMessage(input.route, input.entry, run.problem),
-      );
-    }
-    return jsonResponse(200, run.data);
-  };
-
-  const routes = async (request: Request): Promise<Response> => {
-    const url = new URL(request.url);
-    const route = `${request.method} ${url.pathname}`;
-
-    switch (route) {
-      case "GET /":
-        return jsonResponse(200, { schema: SERVER_SCHEMA, server: "dome", vault });
-
-      case "POST /capture": {
-        const read = await jsonBody(request, maxBodyBytes);
-        if (read.kind === "too-large") return payloadTooLargeResponse(maxBodyBytes);
-        const body = read.body;
-        if (body === null || typeof body.text !== "string" || body.text.trim().length === 0) {
-          return errorResponse(400, "capture-usage", "POST /capture requires a JSON body with non-empty `text` (optional `title`, `captureId`).");
-        }
-        const outcome = await performCapture({
-          text: body.text,
-          ...(typeof body.title === "string" ? { title: body.title } : {}),
-          ...(typeof body.captureId === "string" ? { captureId: body.captureId } : {}),
-          vault,
-          source: "http",
-        });
-        const doc = captureJsonDocument(outcome);
-        if (outcome.kind === "error") {
-          return jsonResponse(outcome.exitCode === 64 ? 400 : 500, doc);
-        }
-        return jsonResponse(200, doc);
-      }
-
-      case "GET /status": {
-        const result = await buildStatusSnapshot({ vault, bundlesRoot });
-        return result.kind === "runtime-open-failed"
-          ? commandErrorResponse("status", result.errorKind)
-          : jsonResponse(200, result.snapshot);
-      }
-
-      case "GET /query": {
-        const text = url.searchParams.get("text")?.trim() ?? "";
-        if (text.length === 0) {
-          return errorResponse(400, "query-usage", "GET /query requires a non-empty `text` parameter.");
-        }
-        const limit = positiveInt(url.searchParams.get("limit"));
-        const category = url.searchParams.get("category") ?? undefined;
-        const type = url.searchParams.get("type") ?? undefined;
-        return structuredView({
-          route: "GET /query",
-          entry: FIRST_PARTY_VIEWS.query,
-          args: Object.freeze({
-            text,
-            ...(category !== undefined ? { category } : {}),
-            ...(type !== undefined ? { type } : {}),
-            ...(limit !== null ? { limit } : {}),
-          }),
-        });
-      }
-
-      case "GET /tasks": {
-        const date = url.searchParams.get("date") ?? undefined;
-        const limit = positiveInt(url.searchParams.get("limit"));
-        return structuredView({
-          route: "GET /tasks",
-          entry: FIRST_PARTY_VIEWS.today,
-          args: Object.freeze({
-            ...(date !== undefined ? { date } : {}),
-            ...(limit !== null ? { limit } : {}),
-          }),
-        });
-      }
-
-      case "GET /today": {
-        const refresh = positiveInt(url.searchParams.get("refresh")) ?? 15;
-        const outcome = await withVaultShared({ path: vault, bundlesRoot }, (v) =>
-          runCatalogView(v, FIRST_PARTY_VIEWS.today, Object.freeze({})),
-        );
-        if (outcome.kind === "open-failed") {
-          return commandErrorResponse("GET /today", openVaultErrorKind(outcome.error));
-        }
-        const run = outcome.value;
-        if (run.kind === "problem") {
-          return errorResponse(
-            viewProblemHttpStatus(run.problem),
-            run.problem.kind,
-            catalogViewProblemMessage("GET /today", FIRST_PARTY_VIEWS.today, run.problem),
-          );
-        }
-        return new Response(renderTodayHtml(run.data, { refreshSeconds: refresh }), {
-          status: 200,
-          // no-store: an authenticated page whose URL can carry ?token=, and
-          // whose freshness contract is the meta-refresh — never cache it.
-          headers: {
-            "content-type": "text/html; charset=utf-8",
-            "cache-control": "no-store",
-          },
-        });
-      }
-
-      case "GET /doc": {
-        const path = url.searchParams.get("path")?.trim() ?? "";
-        if (path.length === 0) {
-          return errorResponse(400, "doc-usage", "GET /doc requires a non-empty `path` parameter.");
-        }
-        return withVault("GET /doc", async (v) => {
-          const doc = await v.readDocument(path);
-          if (doc === null) {
-            return errorResponse(404, "document-not-found", `no document at '${path}' in adopted state.`);
-          }
-          return jsonResponse(200, {
-            schema: DOCUMENT_SCHEMA,
-            path: doc.path,
-            commit: doc.commit,
-            content: doc.content,
-          });
-        });
-      }
-
-      case "GET /questions":
-        return withVault("GET /questions", async (v) => {
-          const rows = await v.listQuestions({ resolved: false });
-          return jsonResponse(200, {
-            schema: QUESTIONS_SCHEMA,
-            count: rows.length,
-            questions: rows.map((row) => questionRecordJson(row)),
-          });
-        });
-
-      case "POST /resolve": {
-        const read = await jsonBody(request, maxBodyBytes);
-        if (read.kind === "too-large") return payloadTooLargeResponse(maxBodyBytes);
-        const body = read.body;
-        const id = typeof body?.id === "number" && Number.isInteger(body.id) && body.id > 0
-          ? body.id
-          : null;
-        const value = typeof body?.value === "string" ? body.value.trim() : "";
-        if (id === null || value.length === 0) {
-          return errorResponse(400, "resolve-usage", "POST /resolve requires a JSON body with a positive integer `id` and a non-empty `value`.");
-        }
-        return withVault("POST /resolve", async (v) => {
-          const outcome = await v.resolve(id, value);
-          switch (outcome.kind) {
-            case "not-found":
-              return jsonResponse(404, {
-                schema: ANSWER_SCHEMA,
-                status: "error",
-                error: "question-not-found",
-                message: `question ${id} was not found.`,
-              });
-            case "invalid-option":
-              return jsonResponse(400, {
-                schema: ANSWER_SCHEMA,
-                status: "invalid-option",
-                options: outcome.options,
-                question: questionRecordJson(outcome.record),
-              });
-            case "answered":
-            case "already-answered":
-              return jsonResponse(200, {
-                schema: ANSWER_SCHEMA,
-                status: outcome.kind,
-                question: questionRecordJson(outcome.record),
-                handlers:
-                  outcome.handlers === null
-                    ? null
-                    : answerHandlersJson(outcome.handlers),
-              });
-          }
-        });
-      }
-
-      default:
-        return errorResponse(404, "not-found", `no route for ${route}.`);
-    }
-  };
-
-  const handle = async (request: Request): Promise<Response> => {
-    const url = new URL(request.url);
-    // The cockpit's @font-face url()s these two woff2 files; the browser
-    // requests them with NO Authorization header and NO ?token=, so they MUST
-    // be served before — and exempt from — the auth gate. They are
-    // non-sensitive static font bytes, scoped to these two exact paths only.
-    const font = fontResponse(request);
-    if (font !== null) return font;
-    if (!authorized(request, tokenDigest) && !queryTokenAuthorized(request, url, tokenDigest)) {
-      return errorResponse(401, "unauthorized", "missing or invalid bearer token.");
-    }
-    try {
-      return await enqueue(() => routes(request));
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return errorResponse(500, "internal", msg);
-    }
-  };
-
-  return Object.freeze({ fetch: handle });
-}
-
-// ----- internals --------------------------------------------------------------
-
-/**
- * Serve the cockpit's two Basel Grotesk woff2 files from same-origin, cacheable
- * routes (`GET /today/fonts/basel-{book,medium}.woff2`). The CSS `url()`s these
- * so the ~246KB of font bytes load once and cache for a year, instead of
- * re-inlining as base64 on every `no-store` /today reload. Returns `null` for
- * any other request so the caller falls through to the auth gate + router.
- *
- * Auth note: these are served BEFORE the auth gate because the browser fetches
- * them from CSS with neither an Authorization header nor a ?token=. They are
- * non-sensitive static font bytes; only these two exact GET paths are exempt.
- */
-function fontResponse(request: Request): Response | null {
-  if (request.method !== "GET") return null;
-  const pathname = new URL(request.url).pathname;
-  const b64 =
-    pathname === "/today/fonts/basel-book.woff2"
-      ? BASEL_BOOK_WOFF2_B64
-      : pathname === "/today/fonts/basel-medium.woff2"
-        ? BASEL_MEDIUM_WOFF2_B64
-        : null;
-  if (b64 === null) return null;
-  return new Response(Buffer.from(b64, "base64"), {
-    status: 200,
-    headers: {
-      "content-type": "font/woff2",
-      "cache-control": "public, max-age=31536000, immutable",
-    },
-  });
-}
-
-/** Constant-time bearer check: compare SHA-256 digests, never raw strings. */
-function authorized(request: Request, tokenDigest: Buffer): boolean {
-  const header = request.headers.get("authorization") ?? "";
-  const match = /^Bearer\s+(.+)$/i.exec(header);
-  if (match === null || match[1] === undefined) return false;
-  return timingSafeEqual(sha256(match[1]), tokenDigest);
-}
-
-/**
- * Browser-navigation escape hatch for the HTML cockpit ONLY: `GET /today`
- * may carry the bearer as `?token=` (browsers cannot set Authorization on a
- * plain navigation). Same digest, same constant-time comparison; every
- * other route stays header-only.
- */
-function queryTokenAuthorized(
-  request: Request,
-  url: URL,
-  tokenDigest: Buffer,
-): boolean {
-  if (request.method !== "GET" || url.pathname !== "/today") return false;
-  const token = url.searchParams.get("token");
-  if (token === null || token.length === 0) return false;
-  return timingSafeEqual(sha256(token), tokenDigest);
-}
+// ----- Helpers (private, mirrors src/http/server.ts) ------------------------
 
 function sha256(value: string): Buffer {
   return createHash("sha256").update(value, "utf8").digest();
@@ -423,19 +150,17 @@ type JsonBodyRead =
   | { readonly kind: "too-large" };
 
 /**
- * Read and parse a JSON request body without ever buffering more than
- * `maxBytes` (`request.json()` / `request.text()` are unbounded). Two
- * layers, both required:
+ * Read and parse a JSON request body without buffering more than `maxBytes`.
+ * Two layers, both required:
  *
- *   1. A declared `content-length` over the cap answers `too-large`
- *      before reading anything.
+ *   1. A declared `content-length` over the cap answers `too-large` before
+ *      reading anything.
  *   2. The body stream is read with a byte budget, so chunked or
  *      lying-content-length bodies are cut off at the cap too. (Bun's
  *      `maxRequestBodySize` does not enforce on chunked bodies as of
  *      Bun 1.2.x — this read is the real guarantee on every host.)
  *
- * Malformed JSON / non-object payloads come back as `body: null`, exactly
- * like the previous `request.json()` failure path.
+ * Local copy; do NOT import from src/http/ — the agent server is self-contained.
  */
 async function jsonBody(
   request: Request,
@@ -477,14 +202,6 @@ async function jsonBody(
   }
 }
 
-function payloadTooLargeResponse(maxBytes: number): Response {
-  return errorResponse(
-    413,
-    "payload-too-large",
-    `request body exceeds the ${maxBytes}-byte limit.`,
-  );
-}
-
 function jsonResponse(status: number, data: unknown): Response {
   return new Response(`${JSON.stringify(data, null, 2)}\n`, {
     status,
@@ -492,15 +209,21 @@ function jsonResponse(status: number, data: unknown): Response {
   });
 }
 
-function errorResponse(
-  status: number,
-  error: string,
-  message: string,
-): Response {
+function errorResponse(status: number, error: string, message: string): Response {
+  return jsonResponse(status, { schema: SCHEMA, status: "error", error, message });
+}
+
+/**
+ * Error envelope for the PWA data routes (POST /capture, GET /tasks,
+ * POST /resolve). These routes mirror `dome http` EXACTLY — including the
+ * error shape, which does NOT carry a `schema` field (unlike the ask-specific
+ * errorResponse above which adds `schema: "dome.ask/v1"`).
+ */
+function dataErrorResponse(status: number, error: string, message: string): Response {
   return jsonResponse(status, { status: "error", error, message });
 }
 
-/** The vault-open failure envelope — same shape as the CLI's. */
+/** The vault-open failure envelope — same shape as the http server's. */
 function commandErrorResponse(command: string, errorKind: string): Response {
   return jsonResponse(500, {
     schema: COMMAND_ERROR_SCHEMA,
@@ -511,7 +234,7 @@ function commandErrorResponse(command: string, errorKind: string): Response {
   });
 }
 
-/** HTTP status semantics for a catalog-view problem. */
+/** HTTP status semantics for a catalog-view problem (mirrors src/http/server.ts). */
 function viewProblemHttpStatus(problem: CatalogViewProblem): number {
   switch (problem.kind) {
     case "detached-head":
@@ -530,4 +253,685 @@ function positiveInt(raw: string | null): number | null {
   if (raw === null) return null;
   const value = Number(raw);
   return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+/** Constant-time bearer check: compare SHA-256 digests, never raw strings. */
+function authorized(request: Request, tokenDigest: Buffer): boolean {
+  const header = request.headers.get("authorization") ?? "";
+  const match = /^Bearer\s+(.+)$/i.exec(header);
+  if (match === null || match[1] === undefined) return false;
+  return timingSafeEqual(sha256(match[1]), tokenDigest);
+}
+
+/** Serve the cockpit's two woff2 fonts (base64-inlined) unauthenticated, or null. */
+function fontResponse(request: Request): Response | null {
+  if (request.method !== "GET") return null;
+  const pathname = new URL(request.url).pathname;
+  const b64 =
+    pathname === "/today/fonts/basel-book.woff2"
+      ? BASEL_BOOK_WOFF2_B64
+      : pathname === "/today/fonts/basel-medium.woff2"
+        ? BASEL_MEDIUM_WOFF2_B64
+        : null;
+  if (b64 === null) return null;
+  return new Response(Buffer.from(b64, "base64"), {
+    status: 200,
+    headers: { "content-type": "font/woff2", "cache-control": "public, max-age=31536000, immutable" },
+  });
+}
+
+/**
+ * Browser-navigation escape hatch for the HTML cockpit ONLY: `GET /today` may
+ * carry the bearer as `?token=` (a plain navigation cannot set Authorization).
+ * Same digest, same constant-time comparison; every other route stays header-only.
+ */
+function queryTokenAuthorized(request: Request, url: URL, tokenDigest: Buffer): boolean {
+  if (request.method !== "GET" || url.pathname !== "/today") return false;
+  const token = url.searchParams.get("token");
+  if (token === null || token.length === 0) return false;
+  return timingSafeEqual(sha256(token), tokenDigest);
+}
+
+// ----- Static asset serving --------------------------------------------------
+
+/**
+ * Serve the PWA app shell ("/" → index.html) or an asset ("/assets/...").
+ * Returns null for any path that should fall through to the API routes.
+ * Traversal attacks are rejected with 403 before the file is read.
+ */
+async function serveStatic(staticDir: string, pathname: string): Promise<Response | null> {
+  // Only "/" (shell) and "/assets/..." are served. Everything else → null (fall through to API routing).
+  const rel = pathname === "/" ? "index.html" : pathname.startsWith("/assets/") ? pathname.slice(1) : null;
+  if (rel === null) return null;
+  const root = resolve(staticDir);
+  const full = resolve(join(root, rel));
+  if (full !== root && !full.startsWith(root + sep)) {
+    return new Response("forbidden", { status: 403 }); // traversal guard
+  }
+  const file = Bun.file(full);
+  if (!(await file.exists())) return new Response("not found", { status: 404 });
+  return new Response(file); // Bun sets content-type from extension
+}
+
+// ----- Server factory -------------------------------------------------------
+
+/**
+ * Build the ask-server fetch handler. The caller owns the listener:
+ * `dome ask-server` runs `Bun.serve({ fetch })`; tests call `.fetch()` directly.
+ */
+export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServer {
+  if (opts.token.trim().length === 0) {
+    throw new Error("createDomeHttpServer: token must be non-empty");
+  }
+  const tokenDigest = sha256(opts.token);
+  const granted = grantedCapabilities({ allowWrite: opts.allowWrite });
+  const maxBodyBytes = opts.maxBodyBytes ?? 1_048_576;
+  const enqueue = makeVaultMutex();
+
+  const timeoutMs = opts.timeoutMs ?? 120_000;
+  const transcribeTimeoutMs = opts.transcribeTimeoutMs ?? 120_000;
+
+  // Vault-open wrapper for the data routes (mirrors src/http/server.ts's
+  // `withVault`): runs `fn` against an open VaultRuntime under the SAME mutex
+  // the ask routes use, mapping an open failure to the command-error envelope.
+  const withVault = async (
+    command: string,
+    fn: (v: Vault) => Promise<Response>,
+  ): Promise<Response> => {
+    const outcome = await withVaultShared(
+      { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
+      fn,
+    );
+    return outcome.kind === "open-failed"
+      ? commandErrorResponse(command, openVaultErrorKind(outcome.error))
+      : outcome.value;
+  };
+
+  // Default ask: open the vault, run the AI SDK agent loop over its tools.
+  const defaultAsk: AgentImpl = async (question, signal) => {
+    const outcome = await withVaultShared(
+      { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
+      (vault) =>
+        runAgent({
+          vault,
+          question,
+          abortSignal: signal,
+          ...(opts.model !== undefined ? { modelId: opts.model } : {}),
+        }),
+    );
+    if (outcome.kind === "open-failed") {
+      throw new Error(`vault open failed: ${openVaultErrorKind(outcome.error)}`);
+    }
+    return outcome.value;
+  };
+
+  const ask = opts.agentImpl ?? defaultAsk;
+
+  // Default streaming ask: open the vault and keep it open for the whole
+  // stream. withVault closes the vault when its callback resolves, but the
+  // ask tools run lazily as the stream drains — so we hold the callback open
+  // with a deferred promise that only resolves once fullStream is fully
+  // consumed (or errors). The wrapped generator triggers that resolution in
+  // its finally block, after which withVault closes the vault.
+  const defaultAskStream: AgentStreamImpl = (question, signal) => {
+    let stream: AgentStream | undefined;
+    let openError: Error | undefined;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let ready!: () => void;
+    const opened = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+
+    void withVaultShared(
+      { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
+      async (vault) => {
+        stream = runAgentStream({
+          vault,
+          question,
+          abortSignal: signal,
+          ...(opts.model !== undefined ? { modelId: opts.model } : {}),
+        });
+        ready();
+        // Hold the vault open until the route finishes draining the stream.
+        await held;
+      },
+    ).then((outcome) => {
+      if (outcome.kind === "open-failed") {
+        openError = new Error(
+          `vault open failed: ${openVaultErrorKind(outcome.error)}`,
+        );
+        ready();
+      }
+    });
+
+    async function* drain(): AsyncIterable<TextStreamPart<ToolSet>> {
+      await opened;
+      if (openError !== undefined || stream === undefined) {
+        release();
+        throw openError ?? new Error("vault open failed");
+      }
+      try {
+        for await (const part of stream.fullStream) {
+          yield part;
+        }
+      } finally {
+        release(); // let withVault close the vault
+      }
+    }
+
+    return {
+      fullStream: drain(),
+      // Same array reference the tools push into; populated as the stream drains.
+      get citations() {
+        return stream?.citations ?? [];
+      },
+      get finished() {
+        return (
+          stream?.finished ?? Promise.resolve({ stopReason: "budget" as const })
+        );
+      },
+    };
+  };
+
+  const askStream = opts.agentStreamImpl ?? defaultAskStream;
+
+  // ----- POST /transcribe (runs authenticated but outside the vault mutex) -----
+  //
+  // /transcribe is runtime-free: it touches no vault — it either shells out to
+  // a host whisper command (local, private) or uploads the audio to an
+  // OpenAI-compatible cloud STT endpoint. Running it inside enqueue() would hold
+  // the vault mutex for the call's duration — blocking /ask, /tasks, etc. — so
+  // handle() dispatches it directly after auth, bypassing the mutex.
+  const handleTranscribe = async (request: Request): Promise<Response> => {
+    const cmd = opts.transcribeCommand;
+    const hasCmd = cmd !== undefined && cmd.length > 0;
+    const apiKey = opts.transcribeApiKey;
+    const hasCloud = apiKey !== undefined && apiKey.length > 0;
+    if (!hasCmd && !hasCloud) {
+      return dataErrorResponse(501, "transcribe-unconfigured", "transcription is not configured on this server.");
+    }
+    const declared = Number(request.headers.get("content-length"));
+    if (Number.isFinite(declared) && declared > maxBodyBytes) return dataErrorResponse(413, "payload-too-large", "audio too large.");
+    const contentType = (request.headers.get("content-type") ?? "").split(";")[0]!.trim();
+    const bytes = new Uint8Array(await request.arrayBuffer());
+    if (bytes.byteLength === 0) return dataErrorResponse(400, "transcribe-usage", "POST /transcribe requires an audio body.");
+    if (bytes.byteLength > maxBodyBytes) return dataErrorResponse(413, "payload-too-large", "audio too large.");
+    const ext = EXT_BY_TYPE[contentType] ?? ".audio";
+
+    // Cloud path: when no local command is configured, upload the audio to an
+    // OpenAI-compatible /audio/transcriptions endpoint (the easy, turnkey path).
+    if (!hasCmd) {
+      const baseUrl = (opts.transcribeBaseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
+      const model = opts.transcribeModel ?? "whisper-1";
+      const form = new FormData();
+      form.append("file", new Blob([bytes], { type: contentType || "audio/webm" }), `audio${ext}`);
+      form.append("model", model);
+      try {
+        const res = await fetch(`${baseUrl}/audio/transcriptions`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${apiKey}` },
+          body: form,
+          signal: AbortSignal.timeout(transcribeTimeoutMs),
+        });
+        if (!res.ok) {
+          return dataErrorResponse(502, "transcribe-failed", `transcription API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+        }
+        const json = (await res.json()) as { text?: string };
+        return jsonResponse(200, { schema: "dome.transcribe/v1", text: (json.text ?? "").trim() });
+      } catch (e) {
+        if (e instanceof Error && e.name === "TimeoutError") {
+          return dataErrorResponse(500, "transcribe-timeout", `transcription exceeded ${transcribeTimeoutMs}ms.`);
+        }
+        return dataErrorResponse(500, "transcribe-failed", e instanceof Error ? e.message : String(e));
+      }
+    }
+
+    // Local path: spawn the host command (audio never leaves the host).
+    const dir = mkdtempSync(join(tmpdir(), "dome-transcribe-"));
+    const audioPath = join(dir, `audio${ext}`);
+    let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+    let proc: ReturnType<typeof Bun.spawn> | undefined;
+    try {
+      await Bun.write(audioPath, bytes);
+      proc = Bun.spawn([...(cmd as ReadonlyArray<string>), audioPath], { stdout: "pipe", stderr: "pipe" });
+      // Capture stream references immediately (they're typed as ReadableStream
+      // when spawned with "pipe", but the let-binding's union type defeats
+      // later narrowing after an await — so we pin them now).
+      const stdout = proc.stdout as ReadableStream<Uint8Array>;
+      const stderr = proc.stderr as ReadableStream<Uint8Array>;
+      // Race the subprocess exit against the timeout. We must race BEFORE
+      // reading stdout/stderr, because those streams stay open until the
+      // process exits — reading them first would block indefinitely on a
+      // hanging command and prevent the timeout from ever firing.
+      const code = await Promise.race([
+        proc.exited,
+        new Promise<number>((_, reject) => {
+          timeoutTimer = setTimeout(() => {
+            proc!.kill();
+            reject(new Error("__transcribe-timeout__"));
+          }, transcribeTimeoutMs);
+        }),
+      ]);
+      clearTimeout(timeoutTimer);
+      timeoutTimer = undefined;
+      // Process has exited — streams are now closed; safe to read output.
+      const out = await new Response(stdout).text();
+      if (code !== 0) {
+        const err = await new Response(stderr).text();
+        return dataErrorResponse(500, "transcribe-failed", `transcription command exited ${code}: ${err.slice(0, 500)}`);
+      }
+      return jsonResponse(200, { schema: "dome.transcribe/v1", text: out.trim() });
+    } catch (e) {
+      clearTimeout(timeoutTimer);
+      if (e instanceof Error && e.message === "__transcribe-timeout__") {
+        return dataErrorResponse(500, "transcribe-timeout", `transcription exceeded ${transcribeTimeoutMs}ms.`);
+      }
+      return dataErrorResponse(500, "transcribe-failed", e instanceof Error ? e.message : String(e));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  };
+
+  const routes = async (request: Request): Promise<Response> => {
+    const url = new URL(request.url);
+    const route = `${request.method} ${url.pathname}`;
+
+    const need = ROUTE_CAPABILITY[route];
+    if (need !== undefined && !has(granted, need)) {
+      return dataErrorResponse(403, "capability-denied", `route ${route} requires the '${need}' capability.`);
+    }
+
+    if (route === "GET /" || route === "GET /healthz") {
+      return jsonResponse(200, { schema: SERVER_SCHEMA, server: "dome", vault: opts.vaultPath });
+    }
+
+    if (route === "POST /agent") {
+      // Body size gate: bounded stream read (+ content-length fast-path inside).
+      const read = await jsonBody(request, maxBodyBytes);
+      if (read.kind === "too-large") {
+        return errorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
+      }
+      if (read.body === null) {
+        return errorResponse(400, "invalid-json", "request body is not valid JSON.");
+      }
+
+      const body = read.body;
+      const question =
+        typeof body.question === "string" ? body.question.trim() : "";
+      if (question.length === 0) {
+        return errorResponse(
+          400,
+          "ask-usage",
+          "POST /ask requires a non-empty `question`.",
+        );
+      }
+
+      const controller = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Error("__ask-timeout__"));
+        }, timeoutMs);
+      });
+      try {
+        const result = await Promise.race([ask(question, controller.signal), timeoutPromise]);
+        return jsonResponse(200, {
+          schema: SCHEMA,
+          status: "ok",
+          answer: result.answer,
+          citations: result.citations,
+          steps: result.steps,
+          stopReason: result.stopReason,
+        });
+      } catch (e) {
+        if (controller.signal.aborted) {
+          return errorResponse(504, "ask-timeout", `ask exceeded ${timeoutMs}ms.`);
+        }
+        return errorResponse(
+          500,
+          "ask-failed",
+          e instanceof Error ? e.message : String(e),
+        );
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    if (route === "POST /agent/stream") {
+      const read = await jsonBody(request, maxBodyBytes);
+      if (read.kind === "too-large") {
+        return errorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
+      }
+      if (read.body === null) {
+        return errorResponse(400, "invalid-json", "request body is not valid JSON.");
+      }
+
+      const body = read.body;
+      const question =
+        typeof body.question === "string" ? body.question.trim() : "";
+      if (question.length === 0) {
+        return errorResponse(
+          400,
+          "ask-usage",
+          "POST /agent/stream requires a non-empty `question`.",
+        );
+      }
+
+      // Headers are flushed as soon as we return the Response, so an error or
+      // timeout AFTER that point cannot change the status — it surfaces as an
+      // SSE `error` event then closes. The timeout's controller signal feeds
+      // the stream's abortSignal; on abort the underlying stream ends (or
+      // emits an error part), which we forward and then close.
+      //
+      // Mutex: routes() runs inside the vault mutex, but the SSE body drains
+      // AFTER we return the Response (and the route resolves). To keep the
+      // one-VaultRuntime-at-a-time posture, we hold the mutex slot until the
+      // drain finishes by acquiring a nested mutex turn that resolves only on
+      // `drained` — `handle` already serialized us in, and this nested turn
+      // keeps the NEXT request queued until this stream closes.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+      const encoder = new TextEncoder();
+      const sse = (payload: unknown): Uint8Array =>
+        encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
+
+      const stream = askStream(question, controller.signal);
+
+      let signalDrained!: () => void;
+      const drained = new Promise<void>((resolve) => {
+        signalDrained = resolve;
+      });
+      void enqueue(() => drained);
+
+      const sseBody = new ReadableStream<Uint8Array>({
+        async start(ctrl) {
+          try {
+            let abortedInLoop = false;
+            for await (const part of stream.fullStream) {
+              if (part.type === "text-delta") {
+                ctrl.enqueue(sse({ type: "text", text: part.text }));
+              } else if (part.type === "error") {
+                const message =
+                  part.error instanceof Error
+                    ? part.error.message
+                    : String(part.error);
+                ctrl.enqueue(sse({ type: "error", message }));
+              } else if (part.type === "abort") {
+                // AI SDK signals an abort via a stream part — emit error and stop.
+                const message = controller.signal.aborted
+                  ? `ask exceeded ${timeoutMs}ms.`
+                  : "aborted";
+                ctrl.enqueue(sse({ type: "error", message }));
+                abortedInLoop = true;
+                break;
+              }
+            }
+            if (abortedInLoop || controller.signal.aborted) {
+              // Timed out or aborted after the loop: emit error, not done.
+              if (!abortedInLoop) {
+                ctrl.enqueue(sse({ type: "error", message: `ask exceeded ${timeoutMs}ms.` }));
+              }
+            } else {
+              const { stopReason } = await stream.finished;
+              ctrl.enqueue(
+                sse({ type: "done", citations: stream.citations, stopReason }),
+              );
+            }
+          } catch (e) {
+            const message = controller.signal.aborted
+              ? `ask exceeded ${timeoutMs}ms.`
+              : e instanceof Error
+                ? e.message
+                : String(e);
+            ctrl.enqueue(sse({ type: "error", message }));
+          } finally {
+            clearTimeout(timer);
+            signalDrained();
+            ctrl.close();
+          }
+        },
+      });
+
+      return new Response(sseBody, {
+        status: 200,
+        headers: {
+          "content-type": "text/event-stream",
+          "cache-control": "no-store",
+        },
+      });
+    }
+
+    // ----- PWA data routes ---------------------------------------------------
+    //
+    // These mirror src/http/server.ts's `POST /capture`, `GET /tasks`, and
+    // `POST /resolve` EXACTLY — same parsing, same JSON shapes, same status
+    // codes — reusing the same shared `src/surface/` collectors under THIS
+    // server's single mutex (no delegation to `dome http`, which owns its own
+    // mutex). The PWA gets identical contracts whichever server it hits.
+
+    if (route === "POST /capture") {
+      const read = await jsonBody(request, maxBodyBytes);
+      if (read.kind === "too-large") {
+        return dataErrorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
+      }
+      const body = read.body;
+      if (body === null || typeof body.text !== "string" || body.text.trim().length === 0) {
+        return dataErrorResponse(400, "capture-usage", "POST /capture requires a JSON body with non-empty `text` (optional `title`, `captureId`).");
+      }
+      // performCapture is runtime-free (writes a raw file + a human commit) —
+      // no enqueue/withVault needed, same as the http server.
+      const outcome = await performCapture({
+        text: body.text,
+        ...(typeof body.title === "string" ? { title: body.title } : {}),
+        ...(typeof body.captureId === "string" ? { captureId: body.captureId } : {}),
+        vault: opts.vaultPath,
+        source: "http",
+      });
+      const doc = captureJsonDocument(outcome);
+      if (outcome.kind === "error") {
+        return jsonResponse(outcome.exitCode === 64 ? 400 : 500, doc);
+      }
+      return jsonResponse(200, doc);
+    }
+
+    if (route === "GET /tasks") {
+      const date = url.searchParams.get("date") ?? undefined;
+      const limit = positiveInt(url.searchParams.get("limit"));
+      const args = Object.freeze({
+        ...(date !== undefined ? { date } : {}),
+        ...(limit !== null ? { limit } : {}),
+      });
+      const outcome = await withVaultShared(
+        { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
+        (v) => runCatalogView(v, FIRST_PARTY_VIEWS.today, args),
+      );
+      if (outcome.kind === "open-failed") {
+        return commandErrorResponse("GET /tasks", openVaultErrorKind(outcome.error));
+      }
+      const run = outcome.value;
+      if (run.kind === "problem") {
+        return dataErrorResponse(
+          viewProblemHttpStatus(run.problem),
+          run.problem.kind,
+          catalogViewProblemMessage("GET /tasks", FIRST_PARTY_VIEWS.today, run.problem),
+        );
+      }
+      return jsonResponse(200, run.data);
+    }
+
+    if (route === "POST /resolve") {
+      const read = await jsonBody(request, maxBodyBytes);
+      if (read.kind === "too-large") {
+        return dataErrorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
+      }
+      const body = read.body;
+      const id = typeof body?.id === "number" && Number.isInteger(body.id) && body.id > 0
+        ? body.id
+        : null;
+      const value = typeof body?.value === "string" ? body.value.trim() : "";
+      if (id === null || value.length === 0) {
+        return dataErrorResponse(400, "resolve-usage", "POST /resolve requires a JSON body with a positive integer `id` and a non-empty `value`.");
+      }
+      return withVault("POST /resolve", async (v) => {
+        const outcome = await v.resolve(id, value);
+        switch (outcome.kind) {
+          case "not-found":
+            return jsonResponse(404, {
+              schema: ANSWER_SCHEMA,
+              status: "error",
+              error: "question-not-found",
+              message: `question ${id} was not found.`,
+            });
+          case "invalid-option":
+            return jsonResponse(400, {
+              schema: ANSWER_SCHEMA,
+              status: "invalid-option",
+              options: outcome.options,
+              question: questionRecordJson(outcome.record),
+            });
+          case "answered":
+          case "already-answered":
+            return jsonResponse(200, {
+              schema: ANSWER_SCHEMA,
+              status: outcome.kind,
+              question: questionRecordJson(outcome.record),
+              handlers:
+                outcome.handlers === null
+                  ? null
+                  : answerHandlersJson(outcome.handlers),
+            });
+        }
+      });
+    }
+
+    if (route === "GET /recents") {
+      const limit = positiveInt(url.searchParams.get("limit")) ?? undefined;
+      const entries = await buildRecents({
+        vault: opts.vaultPath,
+        ...(limit !== undefined ? { limit } : {}),
+      });
+      return jsonResponse(200, { schema: "dome.recents/v1", count: entries.length, entries });
+    }
+
+    // ----- read-only views (from the former `dome http`) ---------------------
+
+    if (route === "GET /status") {
+      const result = await buildStatusSnapshot({ vault: opts.vaultPath, bundlesRoot: opts.bundlesRoot });
+      return result.kind === "runtime-open-failed"
+        ? commandErrorResponse("status", result.errorKind)
+        : jsonResponse(200, result.snapshot);
+    }
+
+    if (route === "GET /query") {
+      const text = url.searchParams.get("text")?.trim() ?? "";
+      if (text.length === 0) {
+        return dataErrorResponse(400, "query-usage", "GET /query requires a non-empty `text` parameter.");
+      }
+      const limit = positiveInt(url.searchParams.get("limit"));
+      const category = url.searchParams.get("category") ?? undefined;
+      const type = url.searchParams.get("type") ?? undefined;
+      const args = Object.freeze({
+        text,
+        ...(category !== undefined ? { category } : {}),
+        ...(type !== undefined ? { type } : {}),
+        ...(limit !== null ? { limit } : {}),
+      });
+      const outcome = await withVaultShared(
+        { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
+        (v) => runCatalogView(v, FIRST_PARTY_VIEWS.query, args),
+      );
+      if (outcome.kind === "open-failed") {
+        return commandErrorResponse("GET /query", openVaultErrorKind(outcome.error));
+      }
+      const run = outcome.value;
+      if (run.kind === "problem") {
+        return dataErrorResponse(viewProblemHttpStatus(run.problem), run.problem.kind, catalogViewProblemMessage("GET /query", FIRST_PARTY_VIEWS.query, run.problem));
+      }
+      return jsonResponse(200, run.data);
+    }
+
+    if (route === "GET /today") {
+      const refresh = positiveInt(url.searchParams.get("refresh")) ?? 15;
+      const outcome = await withVaultShared(
+        { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
+        (v) => runCatalogView(v, FIRST_PARTY_VIEWS.today, Object.freeze({})),
+      );
+      if (outcome.kind === "open-failed") {
+        return commandErrorResponse("GET /today", openVaultErrorKind(outcome.error));
+      }
+      const run = outcome.value;
+      if (run.kind === "problem") {
+        return dataErrorResponse(viewProblemHttpStatus(run.problem), run.problem.kind, catalogViewProblemMessage("GET /today", FIRST_PARTY_VIEWS.today, run.problem));
+      }
+      return new Response(renderTodayHtml(run.data, { refreshSeconds: refresh }), {
+        status: 200,
+        headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+      });
+    }
+
+    if (route === "GET /doc") {
+      const path = url.searchParams.get("path")?.trim() ?? "";
+      if (path.length === 0) {
+        return dataErrorResponse(400, "doc-usage", "GET /doc requires a non-empty `path` parameter.");
+      }
+      return withVault("GET /doc", async (v) => {
+        const doc = await v.readDocument(path);
+        if (doc === null) {
+          return dataErrorResponse(404, "document-not-found", `no document at '${path}' in adopted state.`);
+        }
+        return jsonResponse(200, { schema: DOCUMENT_SCHEMA, path: doc.path, commit: doc.commit, content: doc.content });
+      });
+    }
+
+    if (route === "GET /questions") {
+      return withVault("GET /questions", async (v) => {
+        const rows = await v.listQuestions({ resolved: false });
+        return jsonResponse(200, { schema: QUESTIONS_SCHEMA, count: rows.length, questions: rows.map((row) => questionRecordJson(row)) });
+      });
+    }
+
+    return dataErrorResponse(404, "not-found", `no route for ${route}.`);
+  };
+
+  const handle = async (request: Request): Promise<Response> => {
+    const url = new URL(request.url);
+    // Unauthenticated subresources: cockpit fonts, and (when configured) the PWA shell/assets.
+    const font = fontResponse(request);
+    if (font !== null) return font;
+    if (request.method === "GET" && opts.staticDir !== undefined) {
+      const served = await serveStatic(opts.staticDir, url.pathname);
+      if (served !== null) return served; // unauthenticated, no mutex
+    }
+    // Header bearer for every route; the `?token=` escape is for GET /today only.
+    if (!authorized(request, tokenDigest) && !queryTokenAuthorized(request, url, tokenDigest)) {
+      return jsonResponse(401, {
+        schema: SCHEMA,
+        status: "error",
+        error: "unauthorized",
+        message: "missing or invalid bearer token.",
+      });
+    }
+    // /transcribe runs authenticated but outside the vault mutex — it touches
+    // no vault and can hold a subprocess for many seconds; letting it run
+    // inside enqueue() would block /agent, /tasks, etc. for that entire time.
+    if (request.method === "POST" && url.pathname === "/transcribe") {
+      if (!has(granted, "capture")) {
+        return dataErrorResponse(403, "capability-denied", "route POST /transcribe requires the 'capture' capability.");
+      }
+      return handleTranscribe(request);
+    }
+    try {
+      return await enqueue(() => routes(request));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return errorResponse(500, "internal", msg);
+    }
+  };
+
+  return Object.freeze({ fetch: handle });
 }
