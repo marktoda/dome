@@ -25,6 +25,8 @@ import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import type { Vault } from "../vault";
 import type { Citation } from "./types";
+import type { AgentChange } from "./types";
+import { createDocument, editDocument } from "./write";
 
 // ----- helpers ----------------------------------------------------------------
 
@@ -180,6 +182,17 @@ async function runTodayView(
 // ----- public API -------------------------------------------------------------
 
 /**
+ * Author context for the write tools. When passed to buildAgentTools, the
+ * create_document / edit_document tools are provisioned (this presence IS the
+ * `author` gate); the tools push each successful write into `changes`.
+ */
+export type AgentWriteContext = {
+  readonly vaultPath: string;
+  readonly modelId: string;
+  readonly changes: AgentChange[];
+};
+
+/**
  * Build the AI SDK tool set for the ask agent. Citations gathered during tool
  * execution are pushed into the shared `citations` array (read back by runAgent
  * after generateText resolves).
@@ -187,8 +200,9 @@ async function runTodayView(
 export function buildAgentTools(
   vault: Vault,
   citations: Citation[],
+  write?: AgentWriteContext | undefined,
 ): ToolSet {
-  return {
+  const tools: ToolSet = {
     search_vault: tool({
       description:
         "Full-text + fact search over the adopted vault. Returns ranked matches with their source paths. Use this first to find relevant pages.",
@@ -248,4 +262,54 @@ export function buildAgentTools(
       },
     }),
   };
+
+  if (write !== undefined) {
+    tools["create_document"] = tool({
+      description:
+        "Create a NEW markdown page in the vault and commit it. Fails if the path already exists — use edit_document for an existing page. Path is vault-relative (e.g. wiki/notes/foo.md), .md only; .dome/ is off-limits.",
+      inputSchema: z.object({
+        path: z.string().describe("Vault-relative .md path for the new page."),
+        content: z.string().describe("Full markdown content of the new page."),
+      }),
+      execute: async (input) => {
+        try {
+          const change = await createDocument(
+            { vaultPath: write.vaultPath, modelId: write.modelId },
+            { path: String(input.path), content: String(input.content) },
+          );
+          write.changes.push(change);
+          return `created ${change.path}`;
+        } catch (e) {
+          return `error: ${e instanceof Error ? e.message : String(e)}`;
+        }
+      },
+    });
+    tools["edit_document"] = tool({
+      description:
+        "Edit an existing vault page by replacing an exact, UNIQUE substring, then commit. old_string must appear exactly once — include enough surrounding context to be unique. Use to check off a task ('- [ ]' → '- [x]'), fix a line, etc.",
+      inputSchema: z.object({
+        path: z.string().describe("Vault-relative .md path of the page to edit."),
+        old_string: z.string().describe("Exact text to replace; must be unique in the file."),
+        new_string: z.string().describe("Replacement text."),
+      }),
+      execute: async (input) => {
+        try {
+          const change = await editDocument(
+            { vaultPath: write.vaultPath, modelId: write.modelId },
+            {
+              path: String(input.path),
+              old_string: String(input.old_string),
+              new_string: String(input.new_string),
+            },
+          );
+          write.changes.push(change);
+          return `edited ${change.path}`;
+        } catch (e) {
+          return `error: ${e instanceof Error ? e.message : String(e)}`;
+        }
+      },
+    });
+  }
+
+  return tools;
 }

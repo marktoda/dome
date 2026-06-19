@@ -1,6 +1,12 @@
-import { describe, expect, test } from "bun:test";
-import { buildAgentTools } from "../../src/agent/tools";
-import type { Citation } from "../../src/agent/types";
+import { describe, expect, test, beforeEach } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import git from "isomorphic-git";
+import fs from "node:fs";
+import { buildAgentTools, type AgentWriteContext } from "../../src/agent/tools";
+import type { Citation, AgentChange } from "../../src/agent/types";
 
 // Real VaultViewResult shape: {kind: "ok", structured: {name, schema, data}, views, brokerDiagnostics}
 // Real query structured.data shape (dome.search.query/v1):
@@ -106,5 +112,54 @@ describe("buildAgentTools", () => {
     const out = await tools.read_document!.execute!({ path: "missing.md" }, callOpts);
     expect(String(out).toLowerCase()).toContain("not found");
     expect(citations).toHaveLength(0);
+  });
+});
+
+async function tempVault(): Promise<string> {
+  const dir = mkdtempSync(join(tmpdir(), "dome-tools-write-"));
+  await git.init({ fs, dir, defaultBranch: "main" });
+  await mkdir(join(dir, "wiki"), { recursive: true });
+  await writeFile(join(dir, "wiki", "seed.md"), "# Seed\n", "utf8");
+  await git.add({ fs, dir, filepath: "wiki/seed.md" });
+  await git.commit({ fs, dir, message: "seed", author: { name: "t", email: "t@t" } });
+  return dir;
+}
+
+// Minimal Vault stub: tools only need `.path` for writes here.
+function vaultAt(path: string) {
+  return { path, runView: async () => ({ kind: "ok", structured: { data: { matches: [] } } }), readDocument: async () => null } as never;
+}
+
+describe("buildAgentTools write provisioning", () => {
+  test("omits write tools when no write context is given", () => {
+    const tools = buildAgentTools(vaultAt("/tmp/x"), []);
+    expect(Object.keys(tools)).not.toContain("create_document");
+    expect(Object.keys(tools)).not.toContain("edit_document");
+  });
+
+  test("includes write tools when a write context is given", () => {
+    const tools = buildAgentTools(vaultAt("/tmp/x"), [], { vaultPath: "/tmp/x", modelId: "m", changes: [] });
+    expect(Object.keys(tools)).toContain("create_document");
+    expect(Object.keys(tools)).toContain("edit_document");
+  });
+
+  test("create_document writes, commits, and records the change", async () => {
+    const vault = await tempVault();
+    const changes: AgentChange[] = [];
+    const write: AgentWriteContext = { vaultPath: vault, modelId: "m", changes };
+    const tools = buildAgentTools(vaultAt(vault), [], write);
+    const out = await (tools["create_document"] as { execute: (i: unknown) => Promise<string> }).execute({ path: "wiki/n.md", content: "# N\n" });
+    expect(out).toContain("created wiki/n.md");
+    expect(changes).toEqual([{ path: "wiki/n.md", kind: "create" }]);
+    expect(await readFile(join(vault, "wiki/n.md"), "utf8")).toBe("# N\n");
+  });
+
+  test("create_document returns an error string (does not throw) on a bad path", async () => {
+    const vault = await tempVault();
+    const changes: AgentChange[] = [];
+    const tools = buildAgentTools(vaultAt(vault), [], { vaultPath: vault, modelId: "m", changes });
+    const out = await (tools["create_document"] as { execute: (i: unknown) => Promise<string> }).execute({ path: ".dome/x.md", content: "y" });
+    expect(out).toStartWith("error:");
+    expect(changes).toHaveLength(0);
   });
 });
