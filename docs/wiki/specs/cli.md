@@ -2329,16 +2329,18 @@ The process serves until the client disconnects (stdin closes). Exit codes:
 0 on clean shutdown; 64 when the target is not an initialized Dome vault
 (missing git repo or `.dome/config.yaml`); 1 on transport failure.
 
-### `dome http [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--token <token>]`
+### `dome http [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--token <token>] [--model <id>] [--static-dir <path>] [--allow-write] [--transcribe-cmd <cmd>] [--transcribe-key <key>] [--transcribe-url <url>] [--transcribe-model <model>]`
 
-Runs the Dome HTTP read+capture surface for one vault — the shipped protocol
-adapter per [[wiki/specs/http-surface]] and the first shipped form of the
-remote-capture seam ([[wiki/specs/capture]] §"The remote-capture seam").
+Runs the Dome HTTP read+capture+converse surface for one vault — the shipped
+protocol adapter per [[wiki/specs/http-surface]] and the first shipped form of
+the remote-capture seam ([[wiki/specs/capture]] §"The remote-capture seam").
 Routes: `POST /capture`, `GET /status`, `GET /query`, `GET /tasks`,
 `GET /doc`, `GET /questions`, `POST /resolve` — the same JSON documents the
-corresponding CLI verbs emit under `--json` — plus `GET /today`, the
-self-refreshing HTML cockpit page ([[wiki/specs/http-surface]] §"The cockpit
-page (`GET /today`)").
+corresponding CLI verbs emit under `--json` — plus `GET /today` (the
+self-refreshing HTML cockpit page; [[wiki/specs/http-surface]] §"The cockpit
+page (`GET /today`)"), `POST /agent` (the hosted agent loop; converse
+capability), `POST /agent/stream` (SSE variant), `POST /transcribe` (voice
+STT; capture capability), and `GET /recents`.
 
 Boundary discipline:
 
@@ -2350,6 +2352,10 @@ Boundary discipline:
   only — hosted multi-tenant is v1.5 territory.
 - **No compilation.** Same as `dome mcp`: the daemon owns adoption;
   `capture` and `resolve` reuse the non-engine write channels.
+- **Write capability opt-in.** `--allow-write` (or `DOME_ALLOW_WRITE=1`)
+  grants the agent the `author` write capability (`create_document` /
+  `edit_document` → git commit → daemon adopts); default off,
+  read-only-safe.
 
 Exit codes: 0 on clean shutdown (SIGINT/SIGTERM); 64 on missing token,
 malformed port, or uninitialized vault; 1 on listener failure.
