@@ -3,7 +3,7 @@
 // Read-only vault tools for the ask-agent backend, expressed as a Vercel AI SDK
 // tool set (Record<string, Tool>). The AI SDK runs each tool's `execute` during
 // generateText(), so citations are accumulated into a shared array provided by
-// runAsk and read back after the run completes.
+// runAgent and read back after the run completes.
 //
 // Wraps the Vault handle's three recall entry-points:
 //   vault.runView("query", {text, limit})  — FTS + ranked matches
@@ -24,11 +24,11 @@
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import type { Vault } from "../vault";
-import type { AskCitation } from "./types";
+import type { Citation } from "./types";
 
 // ----- helpers ----------------------------------------------------------------
 
-function recordCitation(citations: AskCitation[], c: AskCitation): void {
+function recordCitation(citations: Citation[], c: Citation): void {
   if (!citations.some((x) => x.path === c.path)) citations.push(c);
 }
 
@@ -36,7 +36,7 @@ function recordCitation(citations: AskCitation[], c: AskCitation): void {
  * Extract a citation from a single query match item.
  * sourceRefs is a plural array; use the first entry.
  */
-function citationFromMatch(m: Record<string, unknown>): AskCitation | null {
+function citationFromMatch(m: Record<string, unknown>): Citation | null {
   // sourceRefs is an array: [{path, commit, ...}]
   const sourceRefs = m["sourceRefs"];
   const firstRef =
@@ -69,7 +69,7 @@ function citationFromMatch(m: Record<string, unknown>): AskCitation | null {
 async function runQueryView(
   vault: Vault,
   args: Record<string, unknown>,
-  citations: AskCitation[],
+  citations: Citation[],
 ): Promise<string> {
   const result = (await vault.runView("query", args)) as {
     kind: string;
@@ -114,7 +114,7 @@ type TodayItem = {
 async function runTodayView(
   vault: Vault,
   args: Record<string, unknown>,
-  citations: AskCitation[],
+  citations: Citation[],
 ): Promise<string> {
   const result = (await vault.runView("today", args)) as {
     kind: string;
@@ -181,12 +181,12 @@ async function runTodayView(
 
 /**
  * Build the AI SDK tool set for the ask agent. Citations gathered during tool
- * execution are pushed into the shared `citations` array (read back by runAsk
+ * execution are pushed into the shared `citations` array (read back by runAgent
  * after generateText resolves).
  */
-export function buildAskTools(
+export function buildAgentTools(
   vault: Vault,
-  citations: AskCitation[],
+  citations: Citation[],
 ): ToolSet {
   return {
     search_vault: tool({

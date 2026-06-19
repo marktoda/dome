@@ -43,7 +43,6 @@ describe("bin/dome process boundary", () => {
       "uninstall",
       "mcp",
       "http",
-      "ask-server",
       "recipe",
       "status",
       "sync",

@@ -646,41 +646,6 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       );
     });
 
-  program
-    .command("ask-server")
-    .description("Run the ask-my-brain agent backend over this vault (bearer-token auth; loopback by default).")
-    .option("--vault <path>", "Vault path (defaults to current directory).")
-    .option("--bundles-root <path>", "Extension bundles root.")
-    .option("--port <port>", "Port to listen on (default 4664).")
-    .option("--host <host>", "Interface to bind (default 127.0.0.1).")
-    .option("--token <token>", "Bearer token (or set DOME_ASK_TOKEN).")
-    .option("--model <model>", "Model id override (else the provider default).")
-    .option("--static-dir <path>", "Serve a built PWA from this directory (or set DOME_PWA_DIR).")
-    .option("--transcribe-cmd <cmd>", "Local shell command for server-side transcription, e.g. whisper (or set DOME_TRANSCRIBE_CMD; space-split into argv). Takes precedence over the cloud key.")
-    .option("--transcribe-key <key>", "API key for cloud transcription (or set DOME_TRANSCRIBE_KEY, falling back to OPENAI_API_KEY).")
-    .option("--transcribe-url <url>", "Base URL for cloud transcription (or set DOME_TRANSCRIBE_URL; default https://api.openai.com/v1).")
-    .option("--transcribe-model <model>", "Cloud transcription model (or set DOME_TRANSCRIBE_MODEL; default whisper-1).")
-    .action(async (options: AskServerCliOptions) => {
-      // Dynamic import keeps the agent backend out of the CLI's static graph,
-      // matching the `dome http` companion-entrypoint pattern.
-      // ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY requires this.
-      const { runAskServer } = await import("./commands/ask-server");
-      setExitCode(
-        await runAskServer({
-          vault: options.vault,
-          bundlesRoot: options.bundlesRoot,
-          port: options.port,
-          host: options.host,
-          token: options.token,
-          model: options.model,
-          staticDir: options.staticDir,
-          transcribeCmd: options.transcribeCmd,
-          transcribeKey: options.transcribeKey,
-          transcribeUrl: options.transcribeUrl,
-          transcribeModel: options.transcribeModel,
-        }),
-      );
-    });
 
   program
     .command("recipe <kind>")
@@ -801,19 +766,6 @@ type HttpCliOptions = {
   readonly token?: string;
 };
 
-type AskServerCliOptions = {
-  readonly vault?: string;
-  readonly bundlesRoot?: string;
-  readonly port?: string;
-  readonly host?: string;
-  readonly token?: string;
-  readonly model?: string;
-  readonly staticDir?: string;
-  readonly transcribeCmd?: string;
-  readonly transcribeKey?: string;
-  readonly transcribeUrl?: string;
-  readonly transcribeModel?: string;
-};
 
 type CheckCliOptions = {
   readonly engine?: boolean;

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { buildAskTools } from "../../src/agent/tools";
-import type { AskCitation } from "../../src/agent/types";
+import { buildAgentTools } from "../../src/agent/tools";
+import type { Citation } from "../../src/agent/types";
 
 // Real VaultViewResult shape: {kind: "ok", structured: {name, schema, data}, views, brokerDiagnostics}
 // Real query structured.data shape (dome.search.query/v1):
@@ -52,10 +52,10 @@ function fakeVault(over: Partial<{ runView: unknown; readDocument: unknown }> = 
 // Our tools ignore it, so a minimal cast suffices for unit-testing execute.
 const callOpts = {} as never;
 
-describe("buildAskTools", () => {
+describe("buildAgentTools", () => {
   test("search_vault returns matches and records citations", async () => {
-    const citations: AskCitation[] = [];
-    const tools = buildAskTools(fakeVault(), citations);
+    const citations: Citation[] = [];
+    const tools = buildAgentTools(fakeVault(), citations);
     const out = await tools.search_vault!.execute!({ text: "robinhood" }, callOpts);
     expect(out).toContain("wiki/entities/robinhood-chain.md");
     expect(citations).toHaveLength(1);
@@ -63,8 +63,8 @@ describe("buildAskTools", () => {
   });
 
   test("read_document returns content and records a citation", async () => {
-    const citations: AskCitation[] = [];
-    const tools = buildAskTools(fakeVault(), citations);
+    const citations: Citation[] = [];
+    const tools = buildAgentTools(fakeVault(), citations);
     const out = await tools.read_document!.execute!({ path: "wiki/x.md" }, callOpts);
     expect(out).toContain("# Hello");
     expect(citations.map((c) => c.path)).toContain("wiki/x.md");
@@ -93,16 +93,16 @@ describe("buildAskTools", () => {
         },
       }),
     });
-    const citations: AskCitation[] = [];
-    const tools = buildAskTools(todayVault, citations);
+    const citations: Citation[] = [];
+    const tools = buildAgentTools(todayVault, citations);
     const out = await tools.todays_brief!.execute!({}, callOpts);
     expect(out).toContain("Reply to vendor");
     expect(citations.map((c) => c.path)).toContain("inbox/raw/x.md");
   });
 
   test("read_document on a missing path returns a not-found message, no citation", async () => {
-    const citations: AskCitation[] = [];
-    const tools = buildAskTools(fakeVault({ readDocument: async () => null }), citations);
+    const citations: Citation[] = [];
+    const tools = buildAgentTools(fakeVault({ readDocument: async () => null }), citations);
     const out = await tools.read_document!.execute!({ path: "missing.md" }, callOpts);
     expect(String(out).toLowerCase()).toContain("not found");
     expect(citations).toHaveLength(0);
