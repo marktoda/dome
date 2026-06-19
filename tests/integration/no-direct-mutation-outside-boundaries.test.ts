@@ -24,6 +24,11 @@ const ALLOWED_FILES = new Set([
   // editor + `git commit`. Not an engine write path — the daemon constructs
   // the Proposal from the resulting branch drift.
   "src/surface/capture.ts",
+  // The hosted agent's write path: create_document / edit_document write one
+  // markdown file and land it as an ordinary human commit via
+  // commitSingleFileOnHead — exactly like `dome capture`. Same boundary class
+  // as capture.ts; the daemon constructs the Proposal from the branch drift.
+  "src/agent/write.ts",
   // The explicit adopted-ref divergence recovery chokepoint: moves
   // refs/dome/adopted/<branch> (with a refs/dome/backup/ copy first) via the
   // src/git ref helpers after the user confirms a history rewrite. The only

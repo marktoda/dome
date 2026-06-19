@@ -150,3 +150,37 @@ describe("DOME_TRAILER_KEYS lockstep", () => {
     expect(keys).toEqual([...DOME_TRAILER_KEYS]);
   });
 });
+
+describe("stripDomeTrailers — agent trailer", () => {
+  test("a body consisting solely of Dome-Agent renders empty after stripping", async () => {
+    // Smoke-check: agent commits have a body of exactly "Dome-Agent: <model>";
+    // that line must not leak into `dome log` output. Verified via the activity
+    // pipeline by writing a synthetic agent commit through a real temp vault.
+    const { mkdtempSync } = await import("node:fs");
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const git = (await import("isomorphic-git")).default;
+    const fs = (await import("node:fs")).default;
+    const { buildActivityLog } = await import("../../src/surface/activity");
+    const { createDocument } = await import("../../src/agent/write");
+
+    const dir = mkdtempSync(join(tmpdir(), "dome-activity-agent-"));
+    await git.init({ fs, dir, defaultBranch: "main" });
+    await mkdir(join(dir, "wiki"), { recursive: true });
+    await writeFile(join(dir, "wiki", "seed.md"), "# Seed\n", "utf8");
+    await git.add({ fs, dir, filepath: "wiki/seed.md" });
+    await git.commit({ fs, dir, message: "seed", author: { name: "t", email: "t@t" } });
+
+    await createDocument({ vaultPath: dir, modelId: "claude-sonnet-4-5" }, {
+      path: "wiki/agent-page.md",
+      content: "# Agent Page\nbody\n",
+    });
+
+    const entries = await buildActivityLog({ vault: dir, limit: 10 });
+    const agentCommit = entries.find((e) => e.subject.includes("author: create wiki/agent-page.md"));
+    expect(agentCommit).toBeDefined();
+    // The Dome-Agent trailer must not appear in the rendered body.
+    expect(agentCommit?.body ?? "").not.toContain("Dome-Agent:");
+  });
+});
