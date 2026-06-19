@@ -26,9 +26,9 @@ This also begins making the API **principled**: capabilities as a named vocabula
 
 ## Decisions (settled in brainstorming)
 
-- **Naming:** `/ask` → `/agent`, `/ask/stream` → `/agent/stream` (the `converse` capability). CLI `dome ask-server` → `dome agent`. Internals `Ask*` → `Agent*`.
+- **Naming:** `/ask` → `/agent`, `/ask/stream` → `/agent/stream` (the `converse` capability). CLI `dome ask-server` → `dome agent`. Internals `Ask*` → `Agent*`. The old `/ask` names are **deleted, not aliased** — pre-release, so no back-compat shim to carry forward.
 - **Gating:** a capability vocabulary in code; `author` granted by a **server-level switch** now (`--allow-write` / `DOME_ALLOW_WRITE`), with per-credential token scopes deferred (the seam, not the machinery — `SECOND_USER_GATE`).
-- **Write trust:** **auto-commit + report** (mirrors desktop; git history + run ledger are the undo), plus an **"undo last change"** affordance. Confirm-each-write is deferred.
+- **Write trust:** **auto-commit + report** (mirrors desktop; git history + the run ledger are the recovery path). Confirm-each-write and an in-app undo are **deferred** — v1 stays lean; recovery is git/desktop, exactly as for the desktop agent today.
 - **Scope:** this spec is **focused** — capability model + write-capable `/agent` + rename + author gating + client surfacing. The broader cleanup (de-duplicating `/capture`·`/tasks`·`/resolve` shared with `dome http`, converging the two HTTP servers) is a **fast-follow** with its own spec.
 
 ## Architecture
@@ -43,13 +43,13 @@ This also begins making the API **principled**: capabilities as a named vocabula
 - **When `author` is granted**, the loop additionally gets two write tools (and *only* then):
   - `create_document({ path, content })` — create a new vault page at `path` with `content`.
   - `edit_document({ path, old_string, new_string })` — replace an exact, unique `old_string` with `new_string` in an existing page (the Read-then-Edit pattern; small, safe diffs — e.g. `- [ ] X` → `- [x] X`).
-- Both tools: write into the co-located checkout (under `vaultPath`), `git add` + `git commit` with a clear message and a `Dome-Agent: <model-id>` trailer (so the run ledger / `dome log` can distinguish agent-authored commits from human edits). The running `dome serve` daemon adopts the commit.
-- Path safety: writes are confined to the vault (reject paths escaping `vaultPath`; restrict to the writable subtree, e.g. under `wiki/` and `notes/` — never `.dome/`).
+- Both tools write into the co-located checkout and commit (see *Write mechanism* below); the running `dome serve` daemon adopts the commit.
+- Path safety: writes are confined to the vault and reject `.dome/` (derived/engine state — never hand-edited) and any path escaping `vaultPath`. Otherwise the agent may write any markdown page, exactly as the desktop agent can — no arbitrary allowlist to invent or maintain.
 - Both tools require the `author` capability defensively (not just absent-from-toolset).
 
 ### Write mechanism + concurrency
-- Writes go through `src/git.ts` helpers (stage + commit), reusing existing native-git plumbing.
-- The agent and the `dome serve` daemon are **separate processes** committing to the same repo. The plan must serialize: a commit lock (advisory lockfile under `.dome/`) and/or **commit-with-retry on `index.lock`**. Personal-scale frequency makes contention rare, but it is handled explicitly, not assumed away. (Spike if retry proves flaky.)
+- Writes **reuse** `src/git.ts` (stage + commit) and the existing trailer composition in `src/engine-commit` — the `Dome-Agent: <model-id>` trailer fits the same `Dome-*` scheme `dome log`/activity already parses. No hand-rolled commit formatting.
+- Concurrency is **not a new subsystem.** The hosted agent commits exactly as the desktop agent (Claude Code) already does beside a running `dome serve` — a pattern already in production. Rely on git's atomic commit plus a bounded retry on `index.lock`; do not build a lock manager. (Revisit only if retries prove flaky at real frequency.)
 
 ### Auth / gating
 - `dome agent --allow-write` (or `DOME_ALLOW_WRITE=1`) flips `author` into the granted set; default off (read-only-safe). A deployment that shouldn't author (a public/read-only one) simply omits it.
@@ -57,10 +57,9 @@ This also begins making the API **principled**: capabilities as a named vocabula
 
 ## Client (`pwa/`)
 - Rename: `DomeClient.ask`/`askStream` → `agent`/`agentStream`; the routes they hit.
-- Surface the read/write nature: the stream gains a **`change` event** (`{ type: "change", path, kind: "create" | "edit" }`) the agent emits per write; the transcript renders a subtle "✎ updated `<page>`" line under the assistant turn.
-- After the stream completes *with any change event*, the app refetches `/tasks` + `/recents` so the brief reflects the write (same adoption latency as a capture — the daemon ingests, then the view updates).
-- **"Undo last change":** when the last assistant turn made changes, offer an undo that calls a new `POST /agent/undo` (reverts the agent's last commit). (Minimal: revert the single most-recent `Dome-Agent` commit.)
-- Feature 2 (editable to-dos) needs no dedicated UI: it is the agent editing the daily/page on request. A tap-to-complete shortcut stays a later nicety.
+- Surface the read/write nature **without a new event type**: the existing **`done` event gains `changes: { path, kind: "create" | "edit" }[]`** (the writes made this turn). The transcript renders a subtle "✎ updated `<page>`" line under the assistant turn.
+- When `done.changes` is non-empty, the app refetches `/tasks` + `/recents` so the brief reflects the write (same adoption latency as a capture). Read-only turns trigger no refetch.
+- Feature 2 (editable to-dos) needs no dedicated UI: it is the agent editing the daily/page on request, then the brief refetch above. A tap-to-complete shortcut stays a later nicety.
 
 ## Error handling
 - A write tool that fails (path escapes the vault, `edit_document` `old_string` not found or not unique, git commit fails) returns a tool error the agent surfaces in its answer ("I couldn't update X because …") — it does not crash the loop.
@@ -70,13 +69,11 @@ This also begins making the API **principled**: capabilities as a named vocabula
 ## Testing
 - `capabilities.ts`: `grantedCapabilities` with/without write; the `has` guard.
 - `create_document` / `edit_document`: write + commit to a temp git vault; rejected without `author`; path-escape rejected; `edit_document` errors on missing/ambiguous `old_string`.
-- Agent loop (mock model that calls a write tool): asserts the file written, committed (with the trailer), and a `change` event emitted; and that without `author` the tools are absent.
-- `POST /agent/undo`: reverts the last agent commit on a temp vault.
+- Agent loop (mock model that calls a write tool): asserts the file written, committed (with the `Dome-Agent` trailer), and `done.changes` populated; and that without `author` the tools are absent.
 - Rename: the renamed routes respond; `bin.test` command-surface lockstep updated for `dome agent`.
-- Client: the `change`-event reducer; rename of client methods.
+- Client: `done.changes` handling (render + refetch trigger); rename of client methods.
 
 ## Out of scope (deferred)
 - Per-credential token scopes / OAuth (the productized multi-tenant model — `SECOND_USER_GATE`).
 - De-duplicating the `/capture`·`/tasks`·`/resolve` handlers shared with `dome http`, and converging the two HTTP servers (fast-follow cleanup spec).
-- Confirm-each-write UX; tap-to-complete to-do shortcut.
-- Multi-commit undo / richer history surfacing (only single last-change undo here).
+- Confirm-each-write UX; an **in-app undo** (`/agent/undo`); tap-to-complete to-do shortcut. (v1 recovery is git history / desktop, exactly like the desktop agent.)
