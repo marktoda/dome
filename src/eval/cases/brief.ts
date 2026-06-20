@@ -44,7 +44,6 @@ import { briefShapeValid, trajectoryReadsBeforeWrites } from "../assertions";
 import type { BriefOutput } from "../assertions";
 
 import {
-  BRIEF_BASIC_SCRIPT,
   FIRED_AT,
   TODAY_DAILY_PATH,
 } from "../../../tests/fixtures/eval/brief-basic/script";
