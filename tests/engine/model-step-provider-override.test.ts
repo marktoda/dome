@@ -53,7 +53,7 @@ describe("openVaultRuntime modelStepProvider override", () => {
       capabilities: [modelCap],
       run: async (ctx) => {
         // Drive the step path
-        await ctx.modelInvoke.step?.({
+        await ctx.modelInvoke?.step?.({
           messages: [{ role: "user", content: "test" }],
           tools: [],
         });
@@ -94,9 +94,11 @@ describe("openVaultRuntime modelStepProvider override", () => {
     roots.push(root);
     mkdirSync(join(root, ".dome"), { recursive: true });
 
+    const emptyRegistryResult = buildRegistry([]);
+    if (!emptyRegistryResult.ok) throw new Error("unexpected registry error");
     const runtimeResult = await openVaultRuntime({
       vaultPath: root,
-      registry: buildRegistry([]).value!,
+      registry: emptyRegistryResult.value,
       extensions: [],
       processorVersions: [],
       // No modelStepProvider — config-built path (which is also absent here)
@@ -124,9 +126,11 @@ describe("openVaultRuntime modelStepProvider override", () => {
 
     const scripted: ModelStepProvider = async () => ({ text: "override-wins" });
 
+    const emptyRegistryResult = buildRegistry([]);
+    if (!emptyRegistryResult.ok) throw new Error("unexpected registry error");
     const runtimeResult = await openVaultRuntime({
       vaultPath: root,
-      registry: buildRegistry([]).value!,
+      registry: emptyRegistryResult.value,
       extensions: [],
       processorVersions: [],
       modelStepProvider: scripted,

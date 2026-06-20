@@ -228,10 +228,10 @@ describe("dome.claims render-facts <-> stamp whole-file write composition", () =
     expect(rerendered).toMatch(ANCHOR_RE);
     expect(rerendered).toContain(DIGEST_HEADING);
     const rerendered2 = replaceGeneratedBlock(
-      rerendered,
+      rerendered!,
       "dome.claims",
       "current-facts",
-      renderCurrentFactsBlock(claimsFromMarkdown(rerendered), PATH.replace(/\.md$/, "")),
+      renderCurrentFactsBlock(claimsFromMarkdown(rerendered!), PATH.replace(/\.md$/, "")),
     );
     expect(rerendered2).toBe(rerendered);
   });
