@@ -224,6 +224,8 @@ export type OpenVaultRuntimeWithRegistryOpts = {
    */
   readonly externalHandlers?: ExternalHandlerRegistry;
   readonly modelProvider?: ModelProvider;
+  /** Override the step (tool-calling) provider. Symmetric with `modelProvider`. */
+  readonly modelStepProvider?: ModelStepProvider;
 };
 
 /**
@@ -257,6 +259,8 @@ export type OpenVaultRuntimeWithBundlesOpts = {
    */
   readonly externalHandlers?: ExternalHandlerRegistry;
   readonly modelProvider?: ModelProvider;
+  /** Override the step (tool-calling) provider. Symmetric with `modelProvider`. */
+  readonly modelStepProvider?: ModelStepProvider;
 };
 
 /**
@@ -424,7 +428,7 @@ function runtimeSettingsForPolicy(input: {
     input.opts.vaultPath,
   );
   const modelProvider = input.opts.modelProvider ?? builtProviders?.text;
-  const modelStepProvider = builtProviders?.step;
+  const modelStepProvider = input.opts.modelStepProvider ?? builtProviders?.step;
 
   return Object.freeze({
     resolveGrants,

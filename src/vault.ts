@@ -70,6 +70,7 @@ import {
   type OpenVaultRuntimeError,
   type VaultRuntime,
 } from "./engine/host/vault-runtime";
+import type { ModelStepProvider } from "./engine/core/model-invoke";
 import { runViewCommandWithRuntime } from "./engine/host/view-command";
 import type { GardenProcessorStart } from "./engine/core/runner-contract";
 import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "./engine/host/health";
@@ -98,6 +99,8 @@ export type OpenVaultOptions = {
   readonly path: string;
   /** Exact bundles-root override for tests and ad-hoc development. */
   readonly bundlesRoot?: string | undefined;
+  /** Override the step (tool-calling) model provider. Symmetric with the text provider. */
+  readonly modelStepProvider?: ModelStepProvider | undefined;
 };
 
 export type OpenVaultError =
@@ -296,6 +299,9 @@ export async function openVault(
   const runtimeResult = await openVaultRuntime({
     vaultPath,
     ...resolveBundleRoots({ vaultPath, bundlesRoot: opts.bundlesRoot }),
+    ...(opts.modelStepProvider !== undefined
+      ? { modelStepProvider: opts.modelStepProvider }
+      : {}),
   });
   if (!runtimeResult.ok) {
     return err({ kind: "runtime-open-failed", cause: runtimeResult.error });
