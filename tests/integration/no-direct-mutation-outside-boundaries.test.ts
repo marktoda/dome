@@ -40,6 +40,12 @@ const ALLOWED_FILES = new Set([
   // and deletes the dir in a finally block. This is a process-scoped temp-file
   // write (not a vault write), in the same boundary class as capture.ts.
   "src/http/server.ts",
+  // The eval harness materializes a throwaway temp vault from a fixture
+  // (mkdtemp → cp seed files → init repo → symlink bundle → commit) so the
+  // brief golden case can run through the real engine. Not a vault write
+  // path — it scaffolds a disposable fixture vault, same boundary class as
+  // the harness's tmpdir scaffolding.
+  "src/eval/cases/brief.ts",
 ]);
 
 const FORBIDDEN_PATTERNS: ReadonlyArray<{

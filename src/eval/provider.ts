@@ -10,17 +10,17 @@ import type {
   ModelStepProvider,
   ModelStepResponse,
 } from "../engine/core/model-invoke";
-import type { EvalEnv } from "./types";
+import type { EvalEnv, ToolCallTrace } from "./types";
 
 // ---------------------------------------------------------------------------
 // ToolCallTrace
 // ---------------------------------------------------------------------------
 
-export type ToolCallTrace = {
-  readonly step: number;
-  readonly toolCalls: ReadonlyArray<{ name: string }>;
-  readonly text: string | null;
-};
+// `ToolCallTrace` now lives in `./types` (alongside `EvalEnv`, which carries
+// the trajectory array) to avoid an import cycle. Re-exported here so existing
+// consumers (`assertions.ts`, the provider tests) keep importing it from
+// `./provider`.
+export type { ToolCallTrace } from "./types";
 
 // ---------------------------------------------------------------------------
 // Terminal default response (returned once the script is exhausted)
@@ -66,13 +66,48 @@ export function scriptedRecordingStep(
 
 /**
  * Wraps `scriptedRecordingStep` into an `EvalEnv` with `mode: "hermetic"`.
+ *
+ * The scripted provider already records each call into `trajectory`; the same
+ * array is attached to `env.trajectory` so the case reads the realized
+ * trajectory back via `env` after the engine drives the run. The returned
+ * `trajectory` is the identical array reference for callers that prefer it
+ * directly.
  */
 export function hermeticEvalEnv(
   script: ReadonlyArray<ModelStepResponse>,
 ): { env: EvalEnv; trajectory: ToolCallTrace[] } {
   const { provider, trajectory } = scriptedRecordingStep(script);
-  const env: EvalEnv = { modelStepProvider: provider, mode: "hermetic" };
+  const env: EvalEnv = {
+    modelStepProvider: provider,
+    mode: "hermetic",
+    trajectory,
+  };
   return { env, trajectory };
+}
+
+/**
+ * Wrap a `ModelStepProvider` in a recording layer that appends one
+ * `ToolCallTrace` per call into `trajectory`. Used for the live provider so
+ * `--live` trajectories are captured the same way the hermetic scripted
+ * provider records them — this is what makes `trajectoryReadsBeforeWrites`
+ * meaningful for live runs too.
+ */
+function recordingStepProvider(
+  provider: ModelStepProvider,
+): { provider: ModelStepProvider; trajectory: ToolCallTrace[] } {
+  let index = 0;
+  const trajectory: ToolCallTrace[] = [];
+  const recording: ModelStepProvider = async (request) => {
+    const response = await provider(request);
+    trajectory.push({
+      step: index,
+      toolCalls: (response.toolCalls ?? []).map((c) => ({ name: c.name })),
+      text: response.text ?? null,
+    });
+    index += 1;
+    return response;
+  };
+  return { provider: recording, trajectory };
 }
 
 // ---------------------------------------------------------------------------
@@ -84,7 +119,7 @@ export function hermeticEvalEnv(
  * Vercel AI SDK `generateText` path — the same SDK the agent loop uses.
  * Throws loudly if `ANTHROPIC_API_KEY` is unset.
  */
-export function liveEvalEnv(): EvalEnv {
+export function liveEvalEnv(): { env: EvalEnv; trajectory: ToolCallTrace[] } {
   const apiKey = process.env["ANTHROPIC_API_KEY"];
   if (apiKey === undefined || apiKey === "") {
     throw new Error(
@@ -167,5 +202,11 @@ export function liveEvalEnv(): EvalEnv {
     });
   };
 
-  return { modelStepProvider: provider, mode: "live" };
+  const { provider: recording, trajectory } = recordingStepProvider(provider);
+  const env: EvalEnv = {
+    modelStepProvider: recording,
+    mode: "live",
+    trajectory,
+  };
+  return { env, trajectory };
 }

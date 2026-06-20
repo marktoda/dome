@@ -5,6 +5,7 @@ import type { EvalCase, EvalEnv } from "../../src/eval/types";
 const ENV: EvalEnv = {
   modelStepProvider: async (_request) => ({ text: "x" }),
   mode: "hermetic",
+  trajectory: [],
 };
 
 describe("runEvalSuite", () => {
