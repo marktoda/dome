@@ -25,14 +25,9 @@
 //     A PatchEffect with an empty `changes` list is structurally impossible
 //     (`PatchEffectSchema` enforces `.min(1)`); the broker defensively denies
 //     if it ever sees one.
-//   - `owns.region` is a planned generated-region ownership capability, but
-//     it is not enforceable until the engine has a region parser at the
-//     patch boundary. Runtime config and manifests reject it in v1. If a
-//     hand-built test/runtime still passes it to the broker, PatchEffect is
-//     denied rather than pretending the region boundary is safe. `owns.path`
-//     is enforced here: a path-bearing PatchEffect targeting a path matched
-//     by a granted `owns.path` capability that the emitting processor's
-//     declared capabilities do not include is denied with a
+//   - `owns.path` is enforced here: a path-bearing PatchEffect targeting a
+//     path matched by a granted `owns.path` capability that the emitting
+//     processor's declared capabilities do not include is denied with a
 //     `capability-deny-patch` diagnostic.
 //   - `raw/**` is immutable: any PatchEffect touching a raw path is denied
 //     regardless of declared/granted path reach. Direct user commits that mutate
@@ -264,8 +259,6 @@ function sourceRefsForReadCheck(effect: Effect): ReadonlyArray<SourceRef> {
  *      - If `patch.propose` is effective for every path → allow.
  *      - Else → deny.
  *
- * `owns.region` is rejected in v1 because region ownership cannot be
- * enforced until the patch boundary can parse marker-delimited regions.
  */
 function enforcePatch(
   effect: PatchEffect,
@@ -280,21 +273,6 @@ function enforcePatch(
         code: "capability-deny-patch",
         message:
           "PatchEffect denied: `changes` is empty; the broker cannot determine the touched paths. A PatchEffect must carry at least one FileChange (this is also enforced by PatchEffectSchema).",
-        sourceRefs: [],
-      }),
-    );
-  }
-
-  if (
-    hasCapabilityKind(declared, "owns.region") ||
-    hasCapabilityKind(granted, "owns.region")
-  ) {
-    return deny(
-      diagnosticEffect({
-        severity: "error",
-        code: "capability-deny-patch",
-        message:
-          "PatchEffect denied: 'owns.region' is planned but not supported in v1. Use 'owns.path' or path-scoped patch grants until generated-region ownership enforcement ships.",
         sourceRefs: [],
       }),
     );
@@ -402,13 +380,6 @@ function enforcePatch(
       sourceRefs: [],
     }),
   );
-}
-
-function hasCapabilityKind(
-  capabilities: ReadonlyArray<Capability>,
-  kind: Capability["kind"],
-): boolean {
-  return capabilities.some((capability) => capability.kind === kind);
 }
 
 function uniqueChangedPaths(effect: PatchEffect): ReadonlyArray<string> {

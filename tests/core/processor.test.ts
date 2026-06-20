@@ -106,7 +106,7 @@ describe("TriggerSchema (discriminated union)", () => {
   });
 });
 
-describe("CapabilitySchema (discriminated union, 17 kinds)", () => {
+describe("CapabilitySchema (discriminated union, 16 kinds)", () => {
   test("read", () => {
     expect(CapabilitySchema.parse({ kind: "read", paths: ["wiki/**"] }).kind).toBe("read");
   });
@@ -121,12 +121,6 @@ describe("CapabilitySchema (discriminated union, 17 kinds)", () => {
     expect(
       CapabilitySchema.parse({ kind: "patch.auto", paths: ["wiki/**"] }).kind,
     ).toBe("patch.auto");
-  });
-
-  test("owns.region", () => {
-    expect(
-      CapabilitySchema.parse({ kind: "owns.region", regionIds: ["index"] }).kind,
-    ).toBe("owns.region");
   });
 
   test("owns.path", () => {

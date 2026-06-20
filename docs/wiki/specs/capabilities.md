@@ -5,14 +5,14 @@ updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
-description: "Capability broker: seventeen tiers, manifest-declared x vault-granted intersection, enforced at the single enforceCapability chokepoint"
+description: "Capability broker: sixteen tiers, manifest-declared x vault-granted intersection, enforced at the single enforceCapability chokepoint"
 ---
 
 # Capabilities
 
 This spec is normative for Dome's capability broker — the one chokepoint that decides whether an [[wiki/specs/effects|Effect]] emitted by a [[wiki/specs/processors|Processor]] is applied or rejected. Every effect, regardless of source, passes through `enforceCapability(effect, processor.capabilities, grants)` before the engine applies it. This is pinned by [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]].
 
-Note: the `read · capture · resolve · converse · author` vocabulary in [[wiki/specs/http-surface]] scopes *who can reach a route* (the HTTP surface's per-route access gate); the engine's seventeen capability tiers here scope *what an effect may do once the engine applies it* — they are orthogonal layers that compose, not duplicates of each other.
+Note: the `read · capture · resolve · converse · author` vocabulary in [[wiki/specs/http-surface]] scopes *who can reach a route* (the HTTP surface's per-route access gate); the engine's sixteen capability tiers here scope *what an effect may do once the engine applies it* — they are orthogonal layers that compose, not duplicates of each other.
 
 ## Why a capability broker
 
@@ -29,7 +29,6 @@ type Capability =
   | { kind: "read";          paths: string[] }                  // glob patterns; allows content/metadata reads via ctx.snapshot
   | { kind: "patch.propose"; paths: string[] }                  // allows PatchEffect mode:"propose"
   | { kind: "patch.auto";    paths: string[] }                  // allows PatchEffect mode:"auto"
-  | { kind: "owns.region";   regionIds: string[] }              // exclusive ownership of marker regions
   | { kind: "owns.path";     paths: string[] }                  // exclusive ownership of paths (e.g., index.md)
   | { kind: "graph.write";   namespaces: string[] }             // FactEffect namespaces
   | { kind: "search.write";  paths: string[] }                  // SearchDocumentEffect paths
@@ -64,12 +63,6 @@ Permits `PatchEffect` with `mode: "auto"` for paths matching the glob. Auto-mode
 **Downgrade behavior:** a `mode: "auto"` PatchEffect whose touched paths exceed `patch.auto` capability is downgraded to `mode: "propose"` and emits a [[wiki/gotchas/capability-downgrade-surprise]] diagnostic. In adoption, that proposed patch then blocks for review; outside adoption it follows the phase's propose route.
 
 **Raw exception:** `raw/**` is not grantable write territory in v1. The broker denies both `patch.auto` and `patch.propose` effects touching `raw/**` even when a processor has otherwise broad path reach. Direct committed raw mutations are blocked separately by [[wiki/invariants/RAW_IS_IMMUTABLE]]'s adoption processor.
-
-### `owns.region`
-
-Marker-delimited region ownership. A processor that `owns.region: ["dome.daily.morning_brief"]` is the only one allowed to write inside `<!-- dome:region id="dome.daily.morning_brief" --> ... <!-- /dome:region -->` markers. Another processor's patch that touches the region is rejected.
-
-Implementation status: the core type exists as a planned API, but region parsing and enforcement are not shipped yet. V1 runtime manifests and config reject `owns.region`, and the broker denies hand-built PatchEffect routing that carries it, rather than pretending the generated-region boundary is safe. Current v1 enforcement covers `owns.path`; `owns.region` can be enabled only after parser-backed broker enforcement and harness coverage land.
 
 ### `owns.path`
 
@@ -323,11 +316,11 @@ Called exactly once at the engine effect-routing boundary before an effect can m
 
 Every effect attempt with a capability dimension records a `CapabilityUse` row in the run ledger's `RunRecord` (per [[wiki/specs/run-ledger]] §"CapabilityUse"), including allowed, downgraded, and denied attempts. This is the audit surface for "what did this processor try to reach" and the input to per-extension cost / quota tracking.
 
-## Why seventeen tiers, not more
+## Why sixteen tiers, not more
 
-The seventeen cover every effect kind and the non-effect runtime powers (`model.invoke`, operational outbox reads, operational quarantine reads, and operational run reads). Three properties drive the closed set:
+The sixteen cover every effect kind and the non-effect runtime powers (`model.invoke`, operational outbox reads, operational quarantine reads, and operational run reads). Three properties drive the closed set:
 
-1. **Effect/runtime-power coverage.** Each effect kind in [[wiki/specs/effects]] has a corresponding required capability per [[wiki/matrices/effect-x-capability]], and non-effect runtime powers (`model.invoke`, `outbox.read`, `quarantine.read`, `run.read`) have explicit context gates. Adding capabilities beyond the seventeen would mean inventing effects or runtime powers without a routing target.
+1. **Effect/runtime-power coverage.** Each effect kind in [[wiki/specs/effects]] has a corresponding required capability per [[wiki/matrices/effect-x-capability]], and non-effect runtime powers (`model.invoke`, `outbox.read`, `quarantine.read`, `run.read`) have explicit context gates. Adding capabilities beyond the sixteen would mean inventing effects or runtime powers without a routing target.
 2. **Trust dimensions are about effect power, not source.** Distinguishing "trusted plugin" from "untrusted plugin" via tier doesn't help; what matters is what the plugin can *do*. `external: "calendar.write"` is the trust dimension; the plugin is whoever holds it.
 3. **The enforcement code stays simple.** Seventeen cases across effect enforcement and context gating are auditable. A more granular set would push enforcement into per-effect-kind validators, dispersing the trust contract.
 

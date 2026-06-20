@@ -213,7 +213,6 @@ export type Trigger =
  *   - `read`          — read paths via `ctx.snapshot`; outside paths return null.
  *   - `patch.propose` — emit PatchEffect with `mode: "propose"`.
  *   - `patch.auto`    — emit PatchEffect with `mode: "auto"`.
- *   - `owns.region`   — exclusive write ownership of marker-delimited regions.
  *   - `owns.path`     — exclusive write ownership of whole files.
  *   - `graph.write`   — emit FactEffect under named namespaces.
  *   - `search.write`  — emit SearchDocumentEffect for indexed markdown paths.
@@ -239,10 +238,6 @@ export type PatchProposeCapability = {
 export type PatchAutoCapability = {
   readonly kind: "patch.auto";
   readonly paths: ReadonlyArray<string>;
-};
-export type OwnsRegionCapability = {
-  readonly kind: "owns.region";
-  readonly regionIds: ReadonlyArray<string>;
 };
 export type OwnsPathCapability = {
   readonly kind: "owns.path";
@@ -314,7 +309,6 @@ export type Capability =
   | ReadCapability
   | PatchProposeCapability
   | PatchAutoCapability
-  | OwnsRegionCapability
   | OwnsPathCapability
   | GraphWriteCapability
   | SearchWriteCapability
@@ -806,13 +800,6 @@ export const PatchAutoCapabilitySchema = z
   })
   .strict();
 
-export const OwnsRegionCapabilitySchema = z
-  .object({
-    kind: z.literal("owns.region"),
-    regionIds: z.array(z.string().min(1)),
-  })
-  .strict();
-
 export const OwnsPathCapabilitySchema = z
   .object({
     kind: z.literal("owns.path"),
@@ -925,7 +912,6 @@ export const CapabilitySchema = z.discriminatedUnion("kind", [
   ReadCapabilitySchema,
   PatchProposeCapabilitySchema,
   PatchAutoCapabilitySchema,
-  OwnsRegionCapabilitySchema,
   OwnsPathCapabilitySchema,
   GraphWriteCapabilitySchema,
   SearchWriteCapabilitySchema,

@@ -45,7 +45,7 @@ term that lives in only one spec is defined there, not here.
 - **Capture** — a thought dropped into `inbox/raw/` as one ordinary human commit (`dome capture`, the MCP tool). [[wiki/specs/capture]]
 - **Intake bucket** — an `inbox/` subdirectory captures land in before compilation; ephemeral per [[wiki/invariants/INBOX_IS_EPHEMERAL]].
 - **Block anchor** — `^id` line identity; move-stable, survives edits. [[wiki/specs/task-lifecycle]]
-- **Generated block** (= **owned block**) — a marker-delimited region exactly one processor may regenerate. "Owned" is the same thing seen from the capability side (`owns.path`, planned `owns.region`).
+- **Generated block** (= **owned block**) — a marker-delimited region exactly one processor may regenerate. "Owned" is the same thing seen from the capability side (`owns.path`).
 - **Claim line** — `**Key:** value *(as of date)* ^c…`; the stamped-fact grammar. [[wiki/specs/claims]]
 - **core.md** — the owner-tendable always-loaded memory page; exactly one automated writer (the preference-promotion answer handler). [[wiki/specs/preferences]]
 

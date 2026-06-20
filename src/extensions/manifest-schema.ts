@@ -373,19 +373,6 @@ function checkCapabilityPhaseMatrix(
 ): Result<void, ManifestError> {
   for (const decl of manifest.processors) {
     if (
-      decl.capabilities.some((capability) =>
-        capability.kind === "owns.region"
-      )
-    ) {
-      return err({
-        kind: "capability-not-supported",
-        processorId: decl.id,
-        capability: "owns.region",
-        message:
-          "owns.region is planned but not supported in v1 manifests; use owns.path or path-scoped patch grants until generated-region ownership enforcement ships.",
-      });
-    }
-    if (
       decl.phase === "adoption" &&
       decl.capabilities.some((capability) => capability.kind === "model.invoke")
     ) {

@@ -228,7 +228,6 @@ const CAPABILITY_KINDS_ALL: ReadonlyArray<CapabilityKind> = [
   "read",
   "patch.propose",
   "patch.auto",
-  "owns.region",
   "owns.path",
   "graph.write",
   "search.write",
@@ -289,7 +288,6 @@ const DEFERRED_CAPABILITIES: ReadonlySet<CapabilityKind> = new Set<CapabilityKin
   // Sources-subscription coverage unblocked: external (dome.sources.fetch,
   // scenarios/effect-kinds/sources-subscription-fetch).
   "patch.propose", // No shipped processor uses propose-mode patches (normalize-frontmatter is auto-mode)
-  "owns.region",   // Phase 15 — owned-region processors (marker-delimited write ownership)
   "owns.path",     // Phase 15 — owned-path processors (whole-file write ownership)
 ]);
 

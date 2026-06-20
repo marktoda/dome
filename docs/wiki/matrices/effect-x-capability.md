@@ -17,7 +17,6 @@ Per-Effect-kind capability requirements enforced by the broker at the engine rou
 |---|---|---|---|
 | **PatchEffect (mode: "auto")** | `patch.auto` | every path touched by the patch must be matched by the grant's glob list | Downgraded to `mode: "propose"` with a `capability-downgrade-surprise` diagnostic |
 | **PatchEffect (mode: "propose")** | `patch.propose` | every path touched by the patch | Denied; diagnostic emitted; effect discarded |
-| **PatchEffect (touching owned region)** | Planned `owns.region`; rejected in v1 manifests/config until parser-backed enforcement ships | per-region check via marker parsing | V1 denies any hand-built PatchEffect route that carries `owns.region` rather than pretending to enforce it |
 | **PatchEffect (touching owned path)** | `owns.path` for each modified path, OR the patch must touch only non-owned paths | per-path check against `owns.path` grants in vault config | Denied unless the emitting processor is the path's owner |
 | **PatchEffect (touching `raw/**`)** | none; raw paths are ungrantable write territory | path prefix `raw/` | Denied with `capability-deny-patch`; raw sources are immutable |
 | **DiagnosticEffect (any severity)** | (none — every processor may emit diagnostics) | — | (n/a — no denial path) |
