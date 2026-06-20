@@ -63,11 +63,15 @@ export type EvalReport = {
   readonly failed: number;
 };
 
-/** What a case's run() needs from the harness — chiefly the injected model provider (hermetic | live). */
+/** What a case's run() needs from the harness — the injected step provider + a trajectory recorder. */
 export type EvalEnv = {
-  readonly modelProvider: CommandModelProvider; // Dome's existing model-provider seam
+  readonly modelStepProvider: ModelStepProvider; // src/engine/core/model-invoke.ts; what openVault({modelStepProvider}) accepts
+  readonly trajectory: ToolCallTrace[];          // mutable; the (recording) provider pushes each call, the case reads it back
   readonly mode: "hermetic" | "live";
 };
+// NOTE (as-built): the agent uses the STEP provider (tool-calling), so EvalEnv carries
+// `modelStepProvider` (not a text `CommandModelProvider`), and a `trajectory` recorder so
+// `trajectoryReadsBeforeWrites` works for both hermetic and --live runs.
 ```
 
 `Assertion<O>` is the key extensibility seam: vault-diff, trajectory, and every future semantic check (LLM-as-judge, entropy, citation-validity) are all just `Assertion`s. A judge assertion is an `async` one calling a pinned judge model — no core change.
