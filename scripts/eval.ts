@@ -25,7 +25,7 @@
 import { hermeticEvalEnv, liveEvalEnv } from "../src/eval/provider";
 import { runEvalSuite } from "../src/eval/run-suite";
 import { ALL_EVAL_CASES } from "../src/eval/cases/index";
-import { BRIEF_BASIC_SCRIPT } from "../tests/fixtures/eval/brief-basic/script";
+import { BRIEF_BASIC_SCRIPT } from "../src/eval/cases/brief-fixtures";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);

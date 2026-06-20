@@ -44,23 +44,13 @@ import { briefShapeValid, trajectoryReadsBeforeWrites } from "../assertions";
 import type { BriefOutput } from "../assertions";
 
 import {
+  BRIEF_FIXTURE_VAULT_DIR,
   FIRED_AT,
   TODAY_DAILY_PATH,
-} from "../../../tests/fixtures/eval/brief-basic/script";
+} from "./brief-fixtures";
 
-// The fixture vault's seed-file root, relative to the SDK source root. The
-// case copies this tree into a fresh temp dir, inits a git repo, and commits.
-const FIXTURE_VAULT_DIR = join(
-  import.meta.dir,
-  "..",
-  "..",
-  "..",
-  "tests",
-  "fixtures",
-  "eval",
-  "brief-basic",
-  "vault",
-);
+// The fixture vault's seed-file root (resolved in brief-fixtures.ts).
+const FIXTURE_VAULT_DIR = BRIEF_FIXTURE_VAULT_DIR;
 
 // The brief's charter system message starts with this sentence (see
 // assets/extensions/dome.agent/lib/brief-charter.ts). The gate keys off it so
