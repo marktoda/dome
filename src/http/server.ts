@@ -37,6 +37,7 @@ import { buildStatusSnapshot } from "../surface/status";
 import { renderTodayHtml } from "./today-html";
 import { BASEL_BOOK_WOFF2_B64, BASEL_MEDIUM_WOFF2_B64 } from "./today-fonts";
 import { grantedCapabilities, has, type Capability } from "../capabilities";
+import { makeAgentLogSink, type AgentLogSink } from "./agent-log";
 
 // ----- Constants ------------------------------------------------------------
 
@@ -135,6 +136,14 @@ export type DomeHttpServerOptions = {
    * Injectable so tests can set a short value (e.g. 50ms).
    */
   readonly transcribeTimeoutMs?: number | undefined;
+  /**
+   * Filesystem path to the agent request log file. When set, one JSON line is
+   * appended per /agent (buffered) and /agent/stream request: granted
+   * capabilities, authorEnabled, changes, stopReason, answer preview, duration,
+   * and any error. When undefined (default), the sink is a no-op — zero cost.
+   * Set via --agent-log or DOME_AGENT_LOG.
+   */
+  readonly agentLogPath?: string | undefined;
 };
 
 export type DomeHttpServer = { readonly fetch: (request: Request) => Promise<Response> };
@@ -330,6 +339,10 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
 
   const timeoutMs = opts.timeoutMs ?? 120_000;
   const transcribeTimeoutMs = opts.transcribeTimeoutMs ?? 120_000;
+
+  const agentLog: AgentLogSink = makeAgentLogSink(opts.agentLogPath);
+  const authorEnabled = has(granted, "author");
+  const capabilityList: string[] = [...granted].sort();
 
   // Vault-open wrapper for the data routes: runs `fn` against an open
   // VaultRuntime under the vault mutex, mapping an open failure to the
@@ -550,7 +563,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     }
 
     if (route === "GET /" || route === "GET /healthz") {
-      return jsonResponse(200, { schema: SERVER_SCHEMA, server: "dome", vault: opts.vaultPath });
+      return jsonResponse(200, { schema: SERVER_SCHEMA, server: "dome", vault: opts.vaultPath, capabilities: [...granted].sort() });
     }
 
     if (route === "POST /agent") {
@@ -582,8 +595,21 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
           reject(new Error("__ask-timeout__"));
         }, timeoutMs);
       });
+      const startedAt = Date.now();
       try {
         const result = await Promise.race([agent(question, controller.signal), timeoutPromise]);
+        agentLog({
+          ts: new Date().toISOString(),
+          route: "/agent",
+          question,
+          capabilities: capabilityList,
+          authorEnabled,
+          changes: result.changes,
+          stopReason: result.stopReason,
+          answerPreview: result.answer.slice(0, 500),
+          durationMs: Date.now() - startedAt,
+          error: null,
+        });
         return jsonResponse(200, {
           schema: SCHEMA,
           status: "ok",
@@ -594,13 +620,26 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
           changes: result.changes,
         });
       } catch (e) {
+        const errorMsg = e instanceof Error ? e.message : String(e);
+        agentLog({
+          ts: new Date().toISOString(),
+          route: "/agent",
+          question,
+          capabilities: capabilityList,
+          authorEnabled,
+          changes: [],
+          stopReason: null,
+          answerPreview: null,
+          durationMs: Date.now() - startedAt,
+          error: errorMsg,
+        });
         if (controller.signal.aborted) {
           return errorResponse(504, "ask-timeout", `ask exceeded ${timeoutMs}ms.`);
         }
         return errorResponse(
           500,
           "ask-failed",
-          e instanceof Error ? e.message : String(e),
+          errorMsg,
         );
       } finally {
         clearTimeout(timer);
@@ -641,6 +680,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       // keeps the NEXT request queued until this stream closes.
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const streamStartedAt = Date.now();
 
       const encoder = new TextEncoder();
       const sse = (payload: unknown): Uint8Array =>
@@ -656,6 +696,8 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
 
       const sseBody = new ReadableStream<Uint8Array>({
         async start(ctrl) {
+          let streamStopReason: string | null = null;
+          let streamError: string | null = null;
           try {
             let abortedInLoop = false;
             for await (const part of stream.fullStream) {
@@ -667,12 +709,14 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
                     ? part.error.message
                     : String(part.error);
                 ctrl.enqueue(sse({ type: "error", message }));
+                streamError = message;
               } else if (part.type === "abort") {
                 // AI SDK signals an abort via a stream part — emit error and stop.
                 const message = controller.signal.aborted
                   ? `ask exceeded ${timeoutMs}ms.`
                   : "aborted";
                 ctrl.enqueue(sse({ type: "error", message }));
+                streamError = message;
                 abortedInLoop = true;
                 break;
               }
@@ -680,10 +724,13 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
             if (abortedInLoop || controller.signal.aborted) {
               // Timed out or aborted after the loop: emit error, not done.
               if (!abortedInLoop) {
-                ctrl.enqueue(sse({ type: "error", message: `ask exceeded ${timeoutMs}ms.` }));
+                const message = `ask exceeded ${timeoutMs}ms.`;
+                ctrl.enqueue(sse({ type: "error", message }));
+                streamError = message;
               }
             } else {
               const { stopReason } = await stream.finished;
+              streamStopReason = stopReason;
               ctrl.enqueue(
                 sse({ type: "done", citations: stream.citations, changes: stream.changes, stopReason }),
               );
@@ -695,7 +742,21 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
                 ? e.message
                 : String(e);
             ctrl.enqueue(sse({ type: "error", message }));
+            streamError = message;
           } finally {
+            // Log the request outcome — the sink swallows errors so it cannot throw.
+            agentLog({
+              ts: new Date().toISOString(),
+              route: "/agent/stream",
+              question,
+              capabilities: capabilityList,
+              authorEnabled,
+              changes: stream.changes,
+              stopReason: streamStopReason,
+              answerPreview: null, // stream text is not buffered server-side
+              durationMs: Date.now() - streamStartedAt,
+              error: streamError,
+            });
             clearTimeout(timer);
             signalDrained();
             ctrl.close();
