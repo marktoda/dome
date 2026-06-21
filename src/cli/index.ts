@@ -638,6 +638,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .option("--transcribe-key <key>", "API key for cloud transcription (or set DOME_TRANSCRIBE_KEY, falling back to OPENAI_API_KEY).")
     .option("--transcribe-url <url>", "Base URL for cloud transcription (or set DOME_TRANSCRIBE_URL; default https://api.openai.com/v1).")
     .option("--transcribe-model <model>", "Cloud transcription model (or set DOME_TRANSCRIBE_MODEL; default whisper-1).")
+    .option("--agent-log <path>", "Append one JSON line per /agent request to <path> (or set DOME_AGENT_LOG).")
     .action(async (options: HttpCliOptions) => {
       // Dynamic import keeps the listener entrypoint (and the AI SDK it pulls
       // for /agent) out of the CLI's static graph, matching the `dome mcp`
@@ -657,6 +658,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           transcribeKey: options.transcribeKey,
           transcribeUrl: options.transcribeUrl,
           transcribeModel: options.transcribeModel,
+          agentLog: options.agentLog,
         }),
       );
     });
@@ -786,6 +788,7 @@ type HttpCliOptions = {
   readonly transcribeKey?: string;
   readonly transcribeUrl?: string;
   readonly transcribeModel?: string;
+  readonly agentLog?: string;
 };
 
 

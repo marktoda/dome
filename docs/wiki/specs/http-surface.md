@@ -23,6 +23,7 @@ src/http/server.ts — createDomeHttpServer({ vaultPath, bundlesRoot?, token }) 
 dome http [--port 3663] [--host 127.0.0.1] [--token …]
          [--model …] [--static-dir …] [--allow-write]
          [--transcribe-cmd …] [--transcribe-key …] [--transcribe-url …] [--transcribe-model …]
+         [--agent-log <path>]
          (Bun.serve; one vault per process)
 ```
 
@@ -49,6 +50,13 @@ the vault.
 
 Per-credential token scopes (different callers holding differently-scoped
 bearers) are deferred to the `SECOND_USER_GATE` milestone.
+
+`--agent-log <path>` (or `DOME_AGENT_LOG=<path>`) enables a structured
+per-request log for the `/agent` and `/agent/stream` routes: one JSON line per
+request recording the granted capabilities, `authorEnabled`, `changes`,
+`stopReason`, a 500-char `answerPreview`, `durationMs`, and any `error`. When
+unconfigured the sink is a no-op with zero cost. Write errors are caught and
+logged to stderr — they never propagate into the request path.
 
 ## Routes
 

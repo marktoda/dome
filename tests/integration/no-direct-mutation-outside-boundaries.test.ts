@@ -46,6 +46,10 @@ const ALLOWED_FILES = new Set([
   // path — it scaffolds a disposable fixture vault, same boundary class as
   // the harness's tmpdir scaffolding.
   "src/eval/cases/brief.ts",
+  // Process-scoped operational append-only log; not a vault write — same
+  // class as the server's POST /transcribe temp-write. Appends one JSON line
+  // per /agent request to a configurable path for post-hoc diagnostics.
+  "src/http/agent-log.ts",
 ]);
 
 const FORBIDDEN_PATTERNS: ReadonlyArray<{

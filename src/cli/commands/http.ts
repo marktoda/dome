@@ -40,6 +40,8 @@ export type RunHttpOptions = {
   readonly transcribeKey?: string | undefined;
   readonly transcribeUrl?: string | undefined;
   readonly transcribeModel?: string | undefined;
+  /** Path to write one JSON line per /agent request (or env DOME_AGENT_LOG). */
+  readonly agentLog?: string | undefined;
   /**
    * Test-only seam: aborting this signal stops the listener and resolves
    * runHttp with exit 0, exactly like SIGINT/SIGTERM. The CLI never passes
@@ -89,6 +91,7 @@ export async function runHttp(options: RunHttpOptions = {}): Promise<number> {
   }
 
   const staticDir = options.staticDir ?? process.env["DOME_PWA_DIR"];
+  const agentLogPath = options.agentLog ?? process.env["DOME_AGENT_LOG"];
   const allowWrite =
     options.allowWrite === true ||
     process.env["DOME_ALLOW_WRITE"] === "1" ||
@@ -114,6 +117,7 @@ export async function runHttp(options: RunHttpOptions = {}): Promise<number> {
       ...(transcribeApiKey !== undefined && transcribeApiKey.length > 0 ? { transcribeApiKey } : {}),
       ...(transcribeBaseUrl !== undefined ? { transcribeBaseUrl } : {}),
       ...(transcribeModel !== undefined ? { transcribeModel } : {}),
+      ...(agentLogPath !== undefined ? { agentLogPath } : {}),
     });
     const server = Bun.serve({
       hostname: options.host ?? DEFAULT_HOST,
