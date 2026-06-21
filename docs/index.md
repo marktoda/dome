@@ -25,7 +25,7 @@ Installing Dome on your own machine? [[getting-started]] is the clone → vault 
 - [[wiki/specs/adoption]] — The fixed-point adoption loop; `refs/dome/adopted/<branch>`; Dome-* trailer convention; `dome sync` / `dome status`.
 - [[wiki/specs/projection-store]] — Bun.sqlite-backed projection (facts, fts5, diagnostics, questions, schedule cursors); rebuild path; outbox is adjacent operational state.
 - [[wiki/specs/embeddings]] — Banked dense-retrieval design (not implemented): `dome.model-provider.embed/v1` envelope; `model.embed` capability; `embeddings.db` as the recomputable-cache store class; brute-force-cosine third RRF channel; gated on the `retrieval-misses.md` log.
-- [[wiki/specs/capabilities]] — Seventeen capability tiers; manifest declarations; vault grants; broker enforcement at one chokepoint.
+- [[wiki/specs/capabilities]] — Sixteen capability tiers; manifest declarations; vault grants; broker enforcement at one chokepoint.
 - [[wiki/specs/run-ledger]] — RunRecord per processor invocation; CapabilityUse; dual provenance with engine commit trailers.
 - [[wiki/specs/cli]] — The Dome CLI: primary compiler loop (`serve` / `sync` / `status` / `check` / `resolve`), capture ingress (`capture`), adopted-state recall surfaces (`query`, `export-context`, the CLI-native activity view `log`), and hidden advanced/compatibility commands (`inspect`, `doctor`, `lint`, `answer`, `run`, `rebuild`, daily view wrappers).
 - [[wiki/specs/capture]] — The capture loop end-to-end: `dome capture`, the raw-capture file shape under `inbox/raw/`, the phone/voice ingress recipe (what ships vs. what the user assembles), and the remote-capture seam contract (commit-or-nothing; owner trust domain; `performCapture` as reference implementation).

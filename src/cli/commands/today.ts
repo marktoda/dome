@@ -36,7 +36,6 @@ import {
   splitInlineLinks,
   statusGlyph,
   stripEmphasis,
-  truncate,
   visibleWidth,
   type Caps,
   type Tone,

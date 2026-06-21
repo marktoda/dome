@@ -382,7 +382,6 @@ const GRANT_KEYS = new Set([
   "patch.auto",
   "owns.path",
   "search.write",
-  "owns.region",
   "graph.write",
   "question.ask",
   "job.enqueue",
@@ -782,10 +781,6 @@ function normalizeGrantEntry(
   }
 
   switch (key) {
-    case "owns.region":
-      return err(
-        `${label} is planned but not supported in v1; use owns.path or path-scoped patch grants until generated-region ownership enforcement ships`,
-      );
     case "question.ask":
       return normalizeQuestionAsk(raw, label);
     case "model.invoke":

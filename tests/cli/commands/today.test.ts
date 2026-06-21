@@ -826,7 +826,6 @@ describe("dome today: hero line uses shortenLabel + link/origin affordances", ()
     // Must end at a word boundary: the char before "…" is not mid-word
     const ellipsisIdx = heroLine.indexOf("…");
     if (ellipsisIdx !== -1) {
-      const charBefore = heroLine[ellipsisIdx - 1];
       // Should be a letter/digit/punct char that ends a word, not a space-less mid-word cut after "—"
       // The key check: "— w" should NOT appear (i.e. no cut like "— w…" mid-word)
       expect(heroLine).not.toMatch(/— \w…/);

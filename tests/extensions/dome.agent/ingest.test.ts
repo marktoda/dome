@@ -491,7 +491,7 @@ describe("dome.agent.ingest", () => {
     const effects = await ingest.run(ctx);
     const patch = effects.find((e) => e.kind === "patch") as PatchEffect;
     const daily = patch.changes.find((c) => String(c.path) === dailyP)!;
-    expect(String(daily.content)).toContain("([↗](https://uniswapteam.slack.com/archives/C0/p1))");
+    expect(daily.kind === "write" ? daily.content : "").toContain("([↗](https://uniswapteam.slack.com/archives/C0/p1))");
   });
 
   test("reconciles a standing inbox/raw capture even with no changedPaths (cron trigger)", async () => {
@@ -608,6 +608,6 @@ describe("dome.agent.ingest", () => {
     const effects = await ingest.run(ctx);
     const patch = effects.find((e) => e.kind === "patch") as PatchEffect;
     const daily = patch.changes.find((c) => String(c.path) === dailyP)!;
-    expect(String(daily.content)).toContain("([↗](inbox/processed/2026-06-08-radiator.md))");
+    expect(daily.kind === "write" ? daily.content : "").toContain("([↗](inbox/processed/2026-06-08-radiator.md))");
   });
 });

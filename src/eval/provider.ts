@@ -6,6 +6,8 @@
  * - `liveEvalEnv` — builds a real Anthropic step provider; throws if no key.
  */
 
+import type { ToolSet } from "ai";
+
 import type {
   ModelStepProvider,
   ModelStepResponse,
@@ -132,10 +134,10 @@ export function liveEvalEnv(): { env: EvalEnv; trajectory: ToolCallTrace[] } {
     // Lazy import so that the module loads even without the AI SDK present in
     // hermetic test runs (the import will only execute when liveEvalEnv is
     // actually called with a real key).
-    const { generateText } = await import("ai");
+    const { generateText, jsonSchema, stepCountIs, tool: aiTool } = await import("ai");
     const { anthropic } = await import("@ai-sdk/anthropic");
 
-    // Map engine ModelMessage[] → AI SDK CoreMessage[]
+    // Map engine ModelMessage[] → AI SDK ModelMessage[]
     const messages = request.messages.map((msg) => {
       if (msg.role === "system") {
         return { role: "system" as const, content: msg.content };
@@ -146,7 +148,7 @@ export function liveEvalEnv(): { env: EvalEnv; trajectory: ToolCallTrace[] } {
       if (msg.role === "assistant") {
         return { role: "assistant" as const, content: msg.content };
       }
-      // role === "tool"
+      // role === "tool" — AI SDK ToolResultPart uses `output`, not `content`.
       return {
         role: "tool" as const,
         content: [
@@ -154,29 +156,38 @@ export function liveEvalEnv(): { env: EvalEnv; trajectory: ToolCallTrace[] } {
             type: "tool-result" as const,
             toolCallId: msg.toolCallId,
             toolName: msg.toolName,
-            content: msg.content,
+            output: { type: "text" as const, value: msg.content },
           },
         ],
       };
     });
 
-    // Map engine ModelToolSchema[] → AI SDK tools record
-    const tools: Record<
-      string,
-      { description: string; parameters: Record<string, unknown> }
-    > = {};
-    for (const tool of request.tools) {
-      tools[tool.name] = {
-        description: tool.description,
-        parameters: tool.inputSchema as Record<string, unknown>,
-      };
-    }
+    // Map engine ModelToolSchema[] → AI SDK ToolSet (Record<string, Tool<...>>).
+    // `jsonSchema` wraps a plain JSON Schema object into the FlexibleSchema the
+    // AI SDK requires; `tool()` assembles the Tool record entry. Cast to
+    // `ToolSet` because `Tool<never, never>` (no execute) is structurally
+    // compatible at runtime but fails the exactOptionalPropertyTypes check
+    // on the `execute` member of ToolSet's Pick constraint.
+    const toolSet: ToolSet | undefined =
+      request.tools.length > 0
+        ? (Object.fromEntries(
+            request.tools.map((t) => [
+              t.name,
+              aiTool({
+                description: t.description,
+                inputSchema: jsonSchema(
+                  t.inputSchema as Record<string, unknown>,
+                ),
+              }),
+            ]),
+          ) as ToolSet)
+        : undefined;
 
     const result = await generateText({
       model: anthropic(request.model ?? "claude-sonnet-4-5"),
       messages,
-      tools: Object.keys(tools).length > 0 ? (tools as never) : undefined,
-      maxSteps: 1,
+      ...(toolSet !== undefined ? { tools: toolSet } : {}),
+      stopWhen: stepCountIs(1),
       abortSignal: request.signal,
     });
 

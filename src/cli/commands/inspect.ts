@@ -1331,8 +1331,6 @@ function capabilityScopeDetails(
     case "owns.path":
     case "search.write":
       return [grantDetail(capability.kind, "paths", capability.paths)];
-    case "owns.region":
-      return [grantDetail(capability.kind, "regionIds", capability.regionIds)];
     case "graph.write":
       return [grantDetail(capability.kind, "namespaces", capability.namespaces)];
     case "job.enqueue":
