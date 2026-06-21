@@ -60,7 +60,7 @@ One vault per process.
 
 | Route | Same path as | Result schema |
 |---|---|---|
-| `GET /` | — | `dome.http/v1` identity document |
+| `GET /` | — | `dome.http/v1` identity document; includes `capabilities: string[]` — the sorted list of granted capabilities (e.g. `["capture","converse","read","resolve"]`; `"author"` only when `--allow-write` is set) |
 | `POST /capture` `{text, title?, captureId?}` | `performCapture` with `source: "http"` | `dome.capture/v1` (`status: captured \| duplicate`) |
 | `GET /status` | `dome status --json` | status snapshot (stable keys) |
 | `GET /query?text=…` | `dome query --json` | `dome.search.query/v1` |

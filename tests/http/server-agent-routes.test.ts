@@ -65,6 +65,16 @@ async function makeStaticDir(): Promise<string> {
   return dir;
 }
 
+test("GET / exposes granted capabilities (author only with allowWrite)", async () => {
+  const ro = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, agentImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final", changes: [] }) });
+  const roBody = (await (await ro.fetch(new Request("http://localhost/", { headers: { authorization: `Bearer ${TOKEN}` } }))).json()) as { capabilities: string[] };
+  expect(roBody.capabilities).toContain("read");
+  expect(roBody.capabilities).not.toContain("author");
+  const rw = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, allowWrite: true, agentImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final", changes: [] }) });
+  const rwBody = (await (await rw.fetch(new Request("http://localhost/", { headers: { authorization: `Bearer ${TOKEN}` } }))).json()) as { capabilities: string[] };
+  expect(rwBody.capabilities).toContain("author");
+});
+
 describe("createDomeHttpServer static serving", () => {
   test("GET / serves the app shell unauthenticated when staticDir is set", async () => {
     const staticDir = await makeStaticDir();

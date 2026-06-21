@@ -550,7 +550,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     }
 
     if (route === "GET /" || route === "GET /healthz") {
-      return jsonResponse(200, { schema: SERVER_SCHEMA, server: "dome", vault: opts.vaultPath });
+      return jsonResponse(200, { schema: SERVER_SCHEMA, server: "dome", vault: opts.vaultPath, capabilities: [...granted].sort() });
     }
 
     if (route === "POST /agent") {
