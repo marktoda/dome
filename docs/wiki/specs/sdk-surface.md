@@ -583,6 +583,8 @@ the public `openVault` wrapper plus the protocol-neutral collector layer at
 `src/surface/`. Adapters never import other adapters — pinned by
 [[wiki/linters/surface-adapters-dont-import-adapters]].
 
+For a view read by more than one adapter, follow the [[wiki/concepts/surface-view-model]] pattern: a validated `/vN` payload contract the producer emits and every consumer validates against, an optional consumer-side view-model for derived presentation semantics, and thin protocol painters. `dome.daily.today/v1` is the worked exemplar.
+
 - **Recall access** — the `query` + `readDocument` + `resolveWikilink` APIs for read paths.
 - **Processors** — the catalog of view-phase processors that respond to commands (`dome lint`, `dome query`, etc.).
 - **Instructions** — cold-start orientation: invariants enabled in this vault, page types declared, the `AGENTS.md` user-tendable preamble; a single string.
