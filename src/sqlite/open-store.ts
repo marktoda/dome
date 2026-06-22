@@ -240,7 +240,7 @@ export function openSimpleStore(
     path: spec.path,
     metaTable: spec.metaTable,
     currentHash: spec.currentHash,
-    foreignKeys: spec.foreignKeys,
+    foreignKeys: spec.foreignKeys ?? false,
   });
   if (!prepared.ok) return err(prepared.error); // PrepareStoreError ⊂ StoreOpenError
 
