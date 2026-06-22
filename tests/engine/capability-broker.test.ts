@@ -434,3 +434,65 @@ describe("RunRecoveryEffect", () => {
     expect(r.diagnostic.code).toBe("capability-deny-run-recover");
   });
 });
+
+// A capability is effective only when present in BOTH declared and granted.
+// These pin that AND-invariant across the predicate shapes that share it
+// (action-membership, binary, field-equality) so a declared-XOR-granted slip
+// can never silently allow an effect.
+describe("effective grant requires declared AND granted (not either)", () => {
+  test("outbox.recover declared-only is denied", () => {
+    const e = outboxRecoveryEffect({
+      action: "retry",
+      idempotencyKey: "e-1",
+      reason: "recover failed outbox row",
+      sourceRefs: [ref],
+    });
+    const cap: Capability = { kind: "outbox.recover", actions: ["retry"] };
+    expect(enforceCapability(e, [cap], []).kind).toBe("deny");
+  });
+
+  test("outbox.recover granted-only is denied", () => {
+    const e = outboxRecoveryEffect({
+      action: "retry",
+      idempotencyKey: "e-1",
+      reason: "recover failed outbox row",
+      sourceRefs: [ref],
+    });
+    const cap: Capability = { kind: "outbox.recover", actions: ["retry"] };
+    expect(enforceCapability(e, [], [cap]).kind).toBe("deny");
+  });
+
+  test("question.ask declared-only is denied", () => {
+    const q = questionEffect({ question: "ok?", sourceRefs: [ref], idempotencyKey: "q-1" });
+    const cap: Capability = { kind: "question.ask" };
+    expect(enforceCapability(q, [cap], []).kind).toBe("deny");
+  });
+
+  test("question.ask granted-only is denied", () => {
+    const q = questionEffect({ question: "ok?", sourceRefs: [ref], idempotencyKey: "q-1" });
+    const cap: Capability = { kind: "question.ask" };
+    expect(enforceCapability(q, [], [cap]).kind).toBe("deny");
+  });
+
+  test("external declared-only is denied", () => {
+    const e = externalActionEffect({
+      capability: "calendar.write",
+      idempotencyKey: "e-1",
+      payload: { event: "x" },
+      sourceRefs: [ref],
+    });
+    const cap: Capability = { kind: "external", capability: "calendar.write" };
+    expect(enforceCapability(e, [cap], []).kind).toBe("deny");
+  });
+
+  test("external granted-only is denied", () => {
+    const e = externalActionEffect({
+      capability: "calendar.write",
+      idempotencyKey: "e-1",
+      payload: { event: "x" },
+      sourceRefs: [ref],
+    });
+    const cap: Capability = { kind: "external", capability: "calendar.write" };
+    expect(enforceCapability(e, [], [cap]).kind).toBe("deny");
+  });
+});

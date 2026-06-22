@@ -125,6 +125,72 @@ const downgrade = (
     diagnostic,
   } as const);
 
+// ----- effective-grant matching ---------------------------------------------
+
+/**
+ * The effective-grant invariant, in one place: a capability is effective only
+ * when at least one capability satisfying `match` is BOTH declared (manifest)
+ * AND granted (config.yaml). Every per-kind enforcement reduces to a `match`
+ * predicate over this AND. Keeping the `&&` singular means a declared-XOR-
+ * granted slip can never silently allow an effect.
+ */
+function effective(
+  declared: ReadonlyArray<Capability>,
+  granted: ReadonlyArray<Capability>,
+  match: (capability: Capability) => boolean,
+): boolean {
+  return declared.some(match) && granted.some(match);
+}
+
+/**
+ * Allow when `match` is effective across declared+granted; otherwise deny with
+ * the given diagnostic. The shared shape behind the per-kind enforcers whose
+ * only variation is the match predicate and the deny code/message.
+ */
+function enforceGrant(
+  declared: ReadonlyArray<Capability>,
+  granted: ReadonlyArray<Capability>,
+  match: (capability: Capability) => boolean,
+  denyDiagnostic: { readonly code: string; readonly message: string },
+): EnforcementResult {
+  if (effective(declared, granted, match)) return allow();
+  return deny(
+    diagnosticEffect({
+      severity: "error",
+      code: denyDiagnostic.code,
+      message: denyDiagnostic.message,
+      sourceRefs: [],
+    }),
+  );
+}
+
+/**
+ * The three recovery effects share an identical enforcement shape: a
+ * `<area>.recover` grant whose `actions` list covers the effect's action. The
+ * only variation is the capability kind (typed to the recover-capability union)
+ * and the templated deny message. The dispatch switch pairs each recovery
+ * effect kind with its `capKind`, so the action sets correspond.
+ */
+function enforceRecovery(
+  effect: OutboxRecoveryEffect | QuarantineRecoveryEffect | RunRecoveryEffect,
+  declared: ReadonlyArray<Capability>,
+  granted: ReadonlyArray<Capability>,
+  capKind: "outbox.recover" | "quarantine.recover" | "run.recover",
+  effectName: string,
+): EnforcementResult {
+  return enforceGrant(
+    declared,
+    granted,
+    (c) =>
+      c.kind === capKind &&
+      (c.actions as ReadonlyArray<string>).includes(effect.action),
+    {
+      code: `capability-deny-${capKind.replace(".", "-")}`,
+      message: `${effectName} denied: action '${effect.action}' has no effective '${capKind}' grant.`,
+    },
+  );
+}
+
 // ----- enforceCapability ----------------------------------------------------
 
 /**
@@ -179,11 +245,29 @@ function enforceEffectKindCapability(
     case "external":
       return enforceExternal(effect, declared, granted);
     case "outbox-recovery":
-      return enforceOutboxRecovery(effect, declared, granted);
+      return enforceRecovery(
+        effect,
+        declared,
+        granted,
+        "outbox.recover",
+        "OutboxRecoveryEffect",
+      );
     case "quarantine-recovery":
-      return enforceQuarantineRecovery(effect, declared, granted);
+      return enforceRecovery(
+        effect,
+        declared,
+        granted,
+        "quarantine.recover",
+        "QuarantineRecoveryEffect",
+      );
     case "run-recovery":
-      return enforceRunRecovery(effect, declared, granted);
+      return enforceRecovery(
+        effect,
+        declared,
+        granted,
+        "run.recover",
+        "RunRecoveryEffect",
+      );
     case "view":
       return allow();
   }
@@ -465,17 +549,15 @@ function enforceQuestion(
   declared: ReadonlyArray<Capability>,
   granted: ReadonlyArray<Capability>,
 ): EnforcementResult {
-  const hasDeclared = declared.some((c) => c.kind === "question.ask");
-  const hasGranted = granted.some((c) => c.kind === "question.ask");
-  if (hasDeclared && hasGranted) return allow();
-  return deny(
-    diagnosticEffect({
-      severity: "error",
+  return enforceGrant(
+    declared,
+    granted,
+    (c) => c.kind === "question.ask",
+    {
       code: "capability-deny-question-ask",
       message:
         "QuestionEffect denied: no effective 'question.ask' grant. Declare 'question.ask' in the manifest and grant it in config.yaml.",
-      sourceRefs: [],
-    }),
+    },
   );
 }
 
@@ -515,92 +597,14 @@ function enforceExternal(
   declared: ReadonlyArray<Capability>,
   granted: ReadonlyArray<Capability>,
 ): EnforcementResult {
-  const hasDeclared = declared.some(
+  return enforceGrant(
+    declared,
+    granted,
     (c) => c.kind === "external" && c.capability === effect.capability,
-  );
-  const hasGranted = granted.some(
-    (c) => c.kind === "external" && c.capability === effect.capability,
-  );
-  if (hasDeclared && hasGranted) return allow();
-  return deny(
-    diagnosticEffect({
-      severity: "error",
+    {
       code: "capability-deny-external",
       message: `ExternalActionEffect denied: capability '${effect.capability}' has no effective 'external' grant. Declare 'external: ${effect.capability}' in the manifest and grant it in config.yaml.`,
-      sourceRefs: [],
-    }),
-  );
-}
-
-// ----- OutboxRecoveryEffect enforcement ------------------------------------
-
-function enforceOutboxRecovery(
-  effect: OutboxRecoveryEffect,
-  declared: ReadonlyArray<Capability>,
-  granted: ReadonlyArray<Capability>,
-): EnforcementResult {
-  const hasDeclared = declared.some(
-    (c) => c.kind === "outbox.recover" && c.actions.includes(effect.action),
-  );
-  const hasGranted = granted.some(
-    (c) => c.kind === "outbox.recover" && c.actions.includes(effect.action),
-  );
-  if (hasDeclared && hasGranted) return allow();
-  return deny(
-    diagnosticEffect({
-      severity: "error",
-      code: "capability-deny-outbox-recover",
-      message: `OutboxRecoveryEffect denied: action '${effect.action}' has no effective 'outbox.recover' grant.`,
-      sourceRefs: [],
-    }),
-  );
-}
-
-// ----- QuarantineRecoveryEffect enforcement --------------------------------
-
-function enforceQuarantineRecovery(
-  effect: QuarantineRecoveryEffect,
-  declared: ReadonlyArray<Capability>,
-  granted: ReadonlyArray<Capability>,
-): EnforcementResult {
-  const hasDeclared = declared.some(
-    (c) => c.kind === "quarantine.recover" && c.actions.includes(effect.action),
-  );
-  const hasGranted = granted.some(
-    (c) => c.kind === "quarantine.recover" && c.actions.includes(effect.action),
-  );
-  if (hasDeclared && hasGranted) return allow();
-  return deny(
-    diagnosticEffect({
-      severity: "error",
-      code: "capability-deny-quarantine-recover",
-      message: `QuarantineRecoveryEffect denied: action '${effect.action}' has no effective 'quarantine.recover' grant.`,
-      sourceRefs: [],
-    }),
-  );
-}
-
-// ----- RunRecoveryEffect enforcement ---------------------------------------
-
-function enforceRunRecovery(
-  effect: RunRecoveryEffect,
-  declared: ReadonlyArray<Capability>,
-  granted: ReadonlyArray<Capability>,
-): EnforcementResult {
-  const hasDeclared = declared.some(
-    (c) => c.kind === "run.recover" && c.actions.includes(effect.action),
-  );
-  const hasGranted = granted.some(
-    (c) => c.kind === "run.recover" && c.actions.includes(effect.action),
-  );
-  if (hasDeclared && hasGranted) return allow();
-  return deny(
-    diagnosticEffect({
-      severity: "error",
-      code: "capability-deny-run-recover",
-      message: `RunRecoveryEffect denied: action '${effect.action}' has no effective 'run.recover' grant.`,
-      sourceRefs: [],
-    }),
+    },
   );
 }
 
@@ -611,23 +615,19 @@ function processorEffectiveFor(
   declared: ReadonlyArray<Capability>,
   granted: ReadonlyArray<Capability>,
 ): boolean {
-  return (
-    anyProcessorCapabilityMatches(processorId, declared) &&
-    anyProcessorCapabilityMatches(processorId, granted)
+  return effective(declared, granted, (c) =>
+    jobEnqueueCovers(c, processorId),
   );
 }
 
-function anyProcessorCapabilityMatches(
+function jobEnqueueCovers(
+  capability: Capability,
   processorId: string,
-  caps: ReadonlyArray<Capability>,
 ): boolean {
-  for (const cap of caps) {
-    if (cap.kind !== "job.enqueue") continue;
-    for (const pattern of cap.processors) {
-      if (globMatch(pattern, processorId)) return true;
-    }
-  }
-  return false;
+  return (
+    capability.kind === "job.enqueue" &&
+    capability.processors.some((pattern) => globMatch(pattern, processorId))
+  );
 }
 
 // ----- Namespace helpers ----------------------------------------------------
@@ -666,23 +666,31 @@ function namespaceEffectiveFor(
   declared: ReadonlyArray<Capability>,
   granted: ReadonlyArray<Capability>,
 ): boolean {
-  return (
-    anyNamespaceCovers(namespace, declared) &&
-    anyNamespaceCovers(namespace, granted)
+  return effective(declared, granted, (c) =>
+    graphWriteNamespaceCovers(c, namespace),
   );
 }
 
+// Single-list namespace coverage, kept for the exported `graphWriteCovers`
+// (consumed by `dome doctor`); shares the per-capability predicate with
+// `namespaceEffectiveFor` so the two cannot drift.
 function anyNamespaceCovers(
   predicateNs: string,
   caps: ReadonlyArray<Capability>,
 ): boolean {
-  for (const cap of caps) {
-    if (cap.kind !== "graph.write") continue;
-    for (const declaredNs of cap.namespaces) {
-      if (namespaceCovers(declaredNs, predicateNs)) return true;
-    }
-  }
-  return false;
+  return caps.some((c) => graphWriteNamespaceCovers(c, predicateNs));
+}
+
+function graphWriteNamespaceCovers(
+  capability: Capability,
+  namespace: string,
+): boolean {
+  return (
+    capability.kind === "graph.write" &&
+    capability.namespaces.some((declaredNs) =>
+      namespaceCovers(declaredNs, namespace),
+    )
+  );
 }
 
 function namespaceCovers(declaredNs: string, predicateNs: string): boolean {
