@@ -17,14 +17,16 @@
 //   { matches: [{ path, title, snippet, sourceRefs: [{ path, commit }], ... }] }
 //   Note: sourceRefs is a PLURAL ARRAY — not a singular sourceRef object.
 //
-// Real dome.daily.today/v1 structured.data shape:
-//   { date, openTasks: [...], followups: [...], questions: [...], ... }
-//   Each item has sourceRefs: [{ path, commit }]. No top-level "matches" key.
+// dome.daily.today/v1 is validated against the shared todayPayloadSchema
+// (src/surface/today-view.ts) — the contract pins openTasks/followups/questions
+// and the plural sourceRefs array, so this consumer no longer re-derives the
+// shape by hand (that drift is what the contract retired).
 
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import type { Vault } from "../vault";
 import type { Citation, AgentChange } from "./types";
+import { todayPayloadSchema } from "../surface/today-view";
 import { createDocument, editDocument } from "./write";
 
 // ----- helpers ----------------------------------------------------------------
@@ -102,10 +104,15 @@ async function runQueryView(
   return lines.join("\n");
 }
 
+// A loose render view of any today row (task or question). The `| undefined`
+// on each optional matches the validated contract rows under
+// exactOptionalPropertyTypes.
 type TodayItem = {
-  readonly text?: string;
-  readonly path?: string;
-  readonly sourceRefs?: ReadonlyArray<{ path: string; commit?: string }>;
+  readonly text?: string | undefined;
+  readonly path?: string | undefined;
+  readonly sourceRefs?:
+    | ReadonlyArray<{ readonly path: string; readonly commit?: string | undefined }>
+    | undefined;
 };
 
 /**
@@ -119,24 +126,18 @@ async function runTodayView(
 ): Promise<string> {
   const result = (await vault.runView("today", args)) as {
     kind: string;
-    structured?: {
-      data?: {
-        date?: string;
-        openTasks?: ReadonlyArray<TodayItem>;
-        followups?: ReadonlyArray<TodayItem>;
-        questions?: ReadonlyArray<TodayItem>;
-      };
-    } | null;
+    structured?: { data?: unknown } | null;
   };
 
   if (result.kind !== "ok") {
     return `error: today view unavailable (${result.kind}).`;
   }
 
-  const data = result.structured?.data;
-  if (data === undefined || data === null) {
+  const parsed = todayPayloadSchema.safeParse(result.structured?.data);
+  if (!parsed.success) {
     return "no daily data available.";
   }
+  const data = parsed.data;
 
   const sections: string[] = [];
   if (typeof data.date === "string") {

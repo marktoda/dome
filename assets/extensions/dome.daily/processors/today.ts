@@ -116,12 +116,12 @@ const today = defineProcessorImplementation({
       brief,
       calendar,
       hero,
+      daily: actionState.daily,
     } satisfies TodayPayload;
     const data = Object.freeze({
       schema: SCHEMA,
       ...payload,
       limit,
-      daily: actionState.daily,
       sourceCounts: actionState.sourceCounts,
       dueCounts: actionState.dueCounts,
       shown,

@@ -82,74 +82,73 @@ export type TodayView = {
 };
 
 // ── Tier 1: the dome.daily.today/v1 wire contract ───────────────────────────
-// The single declared shape spanning producer ↔ consumers. `.passthrough()`
-// where the producer emits richer objects (full SourceRefs, extra envelope
-// fields) so the contract pins the consumed subset without rejecting extras.
-// Text is RAW here (wikilinks intact); stripping is the consumer's enrich.
+// The single declared shape spanning producer ↔ consumers. zod's default
+// key-stripping pins the consumed subset: the producer's richer objects (full
+// SourceRefs with ranges, extra envelope fields like limit/sourceCounts) pass
+// validation — the extra keys are simply dropped, never rejected. Clean inferred
+// types (no index signatures). Text is RAW here (wikilinks intact); stripping is
+// the consumer's enrich.
 
-const sourceRefWireSchema = z
-  .object({ path: z.string(), commit: z.string().optional() })
-  .passthrough();
+const sourceRefWireSchema = z.object({
+  path: z.string(),
+  commit: z.string().optional(),
+});
 
-const taskRowWireSchema = z
-  .object({
-    text: z.string(),
-    path: z.string(),
-    line: z.number().nullable().optional(),
-    dueDate: z.string().nullable().optional(),
-    origin: z.string().optional(),
-    sourceRefs: z.array(sourceRefWireSchema).readonly().optional(),
-  })
-  .passthrough();
+const taskRowWireSchema = z.object({
+  text: z.string(),
+  path: z.string(),
+  line: z.number().nullable().optional(),
+  dueDate: z.string().nullable().optional(),
+  origin: z.string().optional(),
+  sourceRefs: z.array(sourceRefWireSchema).readonly().optional(),
+});
 
-const questionRowWireSchema = z
-  .object({
-    id: z.number(),
-    question: z.string(),
-    resolveCommand: z.string().optional(),
-    options: z.array(z.string()).readonly().optional(),
-    sourceRefs: z.array(sourceRefWireSchema).readonly().optional(),
-  })
-  .passthrough();
+const questionRowWireSchema = z.object({
+  id: z.number(),
+  question: z.string(),
+  resolveCommand: z.string().optional(),
+  options: z.array(z.string()).readonly().optional(),
+  sourceRefs: z.array(sourceRefWireSchema).readonly().optional(),
+});
 
 const heroWireSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("task"), item: taskRowWireSchema }).passthrough(),
-  z.object({ kind: z.literal("question"), item: questionRowWireSchema }).passthrough(),
+  z.object({ kind: z.literal("task"), item: taskRowWireSchema }),
+  z.object({ kind: z.literal("question"), item: questionRowWireSchema }),
 ]);
 
-const todayPayloadSchema = z
-  .object({
-    date: z.string(),
-    counts: z
-      .object({
-        openTasks: z.number(),
-        followups: z.number(),
-        questions: z.number(),
-      })
-      .passthrough(),
-    openTasks: z.array(taskRowWireSchema).readonly(),
-    followups: z.array(taskRowWireSchema).readonly(),
-    questions: z.array(questionRowWireSchema).readonly(),
-    brief: z
-      .object({ text: z.string(), sourceRef: z.object({ path: z.string() }).passthrough() })
-      .passthrough()
-      .nullable(),
-    calendar: z
-      .object({
-        events: z
-          .array(
-            z
-              .object({ time: z.string(), title: z.string(), meta: z.string().optional() })
-              .passthrough(),
-          )
-          .readonly(),
-        sourceRef: z.object({ path: z.string() }).passthrough(),
-      })
-      .passthrough()
-      .nullable(),
-    hero: heroWireSchema.nullable(),
-  })
-  .passthrough();
+const todayPayloadSchema = z.object({
+  date: z.string(),
+  counts: z.object({
+    openTasks: z.number(),
+    followups: z.number(),
+    questions: z.number(),
+  }),
+  openTasks: z.array(taskRowWireSchema).readonly(),
+  followups: z.array(taskRowWireSchema).readonly(),
+  questions: z.array(questionRowWireSchema).readonly(),
+  brief: z
+    .object({ text: z.string(), sourceRef: z.object({ path: z.string() }) })
+    .nullable(),
+  calendar: z
+    .object({
+      events: z
+        .array(z.object({ time: z.string(), title: z.string(), meta: z.string().optional() }))
+        .readonly(),
+      sourceRef: z.object({ path: z.string() }),
+    })
+    .nullable(),
+  hero: heroWireSchema.nullable(),
+  // The daily note's own locator metadata — consumed by the MCP brief tool to
+  // find + read the note. Optional: the CLI/HTTP render path and agent tools
+  // don't read it.
+  daily: z
+    .object({
+      path: z.string(),
+      exists: z.boolean().optional(),
+      sourceRefs: z.array(sourceRefWireSchema).readonly().optional(),
+    })
+    .optional(),
+});
 
 /**
  * The `dome.daily.today/v1` wire contract. The producer imports this *type*

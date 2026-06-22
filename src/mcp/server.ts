@@ -63,6 +63,7 @@ import {
   withVault as withVaultShared,
 } from "../surface/adapter";
 import { FIRST_PARTY_VIEWS } from "../surface/view-catalog";
+import { todayPayloadSchema } from "../surface/today-view";
 import { COMMAND_ERROR_SCHEMA } from "../surface/command-error";
 import { formatJson } from "../surface/format";
 import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "../engine/host/health";
@@ -564,29 +565,25 @@ type BriefSource = {
  * adopted commit (from the daily's own source ref) to read it at.
  */
 function parseBriefSource(data: unknown): BriefSource {
-  const record = asRecord(data);
-  const daily = asRecord(record.daily);
-  const date = typeof record.date === "string" ? record.date : "";
-  const path = typeof daily.path === "string" ? daily.path : "";
+  // Validate against the shared dome.daily.today/v1 contract instead of
+  // hand-narrowing. A malformed/absent payload falls through to the empty
+  // date/path guard below (same behavior as before).
+  const parsed = todayPayloadSchema.safeParse(data);
+  const payload = parsed.success ? parsed.data : null;
+  const date = payload?.date ?? "";
+  const daily = payload?.daily;
+  const path = daily?.path ?? "";
   if (date.length === 0 || path.length === 0) {
     throw new Error(
       "dome mcp brief: today view returned no daily date/path.",
     );
   }
-  const sourceRefs = Array.isArray(daily.sourceRefs) ? daily.sourceRefs : [];
-  const firstRef = asRecord(sourceRefs[0]);
-  const commit = typeof firstRef.commit === "string" ? firstRef.commit : null;
+  const commit = daily?.sourceRefs?.[0]?.commit ?? null;
   return Object.freeze({
     date,
     path,
-    exists: daily.exists === true,
+    exists: daily?.exists === true,
     commit,
-    counts: record.counts ?? null,
+    counts: payload?.counts ?? null,
   });
-}
-
-function asRecord(raw: unknown): Record<string, unknown> {
-  return raw !== null && typeof raw === "object" && !Array.isArray(raw)
-    ? (raw as Record<string, unknown>)
-    : {};
 }
