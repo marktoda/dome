@@ -678,11 +678,15 @@ describe("formatTodayResult grouping + links", () => {
     ...over,
   });
 
-  test("renders OVERDUE/TODAY/OPEN headers only for non-empty buckets", () => {
+  // The five-section grouping (plan: 2026-06-22-today-view-model). The undated
+  // "draft the Q3 plan" now lands in SOMEDAY rather than the old lumped OPEN
+  // bucket — the intended behavior change from adopting the shared view-model.
+  test("renders urgency-section headers only for non-empty buckets", () => {
     const out = formatTodayResult(doc(), caps, "/v/work");
-    expect(out).toContain("OVERDUE");
-    expect(out).toContain("TODAY");
-    expect(out).toContain("OPEN");
+    expect(out).toContain("OVERDUE"); // dueDate 2026-06-13
+    expect(out).toContain("TODAY"); // dueDate 2026-06-15
+    expect(out).toContain("SOMEDAY"); // dueDate null (was OPEN)
+    expect(out).not.toContain("OPEN");
   });
 
   test("pulls the slack URL out of the line — no raw archives/ URL, link label survives", () => {

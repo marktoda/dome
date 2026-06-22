@@ -40,7 +40,12 @@ import {
   type Caps,
   type Tone,
 } from "../presenter";
-import { daysBetween, parseTodayView, type TodayTaskRow } from "../../surface/today-view";
+import {
+  parseTodayView,
+  buildTodayViewModel,
+  type TodayTaskRow,
+  type TaskUrgency,
+} from "../../surface/today-view";
 import { compareStrings } from "../../core/compare";
 import { resolveVaultPath } from "../../surface/resolve-vault";
 import { EX_USAGE } from "../exit-codes";
@@ -293,24 +298,35 @@ export type FormatTodayOptions = {
   readonly verbose?: boolean;
 };
 
+/** Render the hero pill's urgency suffix from the view-model classification. */
+function heroUrgencyStrings(
+  u: TaskUrgency | null,
+  caps: Caps,
+): { plain: string; painted: string } {
+  if (u === null || u.kind === "someday") return { plain: "", painted: "" };
+  if (u.kind === "overdue") {
+    const s = `overdue ${u.days}d`;
+    return { plain: `   ${s}`, painted: `   ${paint(s, "err", caps)}` };
+  }
+  if (u.kind === "due-today") {
+    return { plain: "   due today", painted: `   ${paint("due today", "warn", caps)}` };
+  }
+  const s = `due ${u.date}`; // this-week | later
+  return { plain: `   ${s}`, painted: `   ${paint(s, "muted", caps)}` };
+}
+
 export function formatTodayResult(
   data: unknown,
   caps: Caps,
   vault: string,
   opts: FormatTodayOptions = {},
 ): string {
-  const view = parseTodayView(data);
-  const { date, openTasks, followups, questions, hero, brief, calendar, counts } = view;
-  const openTasksTotal = counts.openTasks;
-  const followupsTotal = counts.followups;
-  const questionsTotal = counts.questions;
-
-  // Count overdue tasks (dueDate < date)
-  const allTasks = [...openTasks, ...followups];
-  const overdueCount = allTasks.filter(
-    (t) => t.dueDate !== null && t.dueDate < date,
-  ).length;
-  const totalOpen = openTasksTotal + followupsTotal + questionsTotal;
+  const vm = buildTodayViewModel(parseTodayView(data));
+  const { date, counts, totalOpen, hero, heroUrgency, stillOpen, brief, calendar, questions } = vm;
+  // Verdict overdue count includes the hero when it is itself overdue (the hero
+  // is rendered separately but still counts toward "N overdue").
+  const overdueCount =
+    stillOpen.overdue.length + (heroUrgency?.kind === "overdue" ? 1 : 0);
   const isAllClear = totalOpen === 0;
 
   // Verdict header
@@ -334,22 +350,12 @@ export function formatTodayResult(
     const heroArrowWidth = visibleWidth(heroArrow);
     if (hero.kind === "task") {
       const item = hero.item;
-      // Urgency suffix — compute its plain visible width BEFORE paint so we
-      // can reserve the right number of columns.
-      const urgencyPlain = item.dueDate === null
-        ? ""
-        : item.dueDate < date
-        ? `   overdue ${daysBetween(item.dueDate, date)}d`
-        : item.dueDate === date
-        ? `   due today`
-        : `   due ${item.dueDate}`;
-      const urgencyPainted = item.dueDate === null
-        ? ""
-        : item.dueDate < date
-        ? `   ${paint(`overdue ${daysBetween(item.dueDate, date)}d`, "err", caps)}`
-        : item.dueDate === date
-        ? `   ${paint("due today", "warn", caps)}`
-        : `   ${paint(`due ${item.dueDate}`, "muted", caps)}`;
+      // Urgency suffix — from the view-model's heroUrgency. Compute its plain
+      // visible width BEFORE paint so we can reserve the right columns.
+      const { plain: urgencyPlain, painted: urgencyPainted } = heroUrgencyStrings(
+        heroUrgency,
+        caps,
+      );
       const urgencyWidth = visibleWidth(urgencyPlain);
 
       // Mirror renderRow: split out inline links, strip emphasis, shorten.
@@ -410,15 +416,9 @@ export function formatTodayResult(
   }
 
   if (!isAllClear) {
-    const isHeroTask = (t: TodayTaskRow): boolean =>
-      hero !== null && hero.kind === "task" &&
-      hero.item.text === t.text && hero.item.path === t.path &&
-      hero.item.line === t.line;
-
-    const nonHero = allTasks.filter((t) => !isHeroTask(t));
-    const overdue = nonHero.filter((t) => t.dueDate !== null && t.dueDate < date);
-    const dueToday = nonHero.filter((t) => t.dueDate !== null && t.dueDate === date);
-    const open = nonHero.filter((t) => t.dueDate === null || t.dueDate > date);
+    // Hero-deduped, urgency-bucketed sections come from the view-model — the CLI
+    // no longer derives "overdue"/"due today"/etc. itself.
+    const { overdue, dueToday, thisWeek, later, someday } = stillOpen;
 
     const taskWidth = Math.max(24, caps.width - 4); // "  <glyph> " leader = 4 cols
     const arrow = caps.unicode ? "↗" : "->";
@@ -468,7 +468,9 @@ export function formatTodayResult(
     const CLUSTER_MIN = 3;
     const OVERDUE_CAP = 6;
     const TODAY_CAP = 4;
-    const OPEN_CAP = 4;
+    const THIS_WEEK_CAP = 4;
+    const LATER_CAP = 3;
+    const SOMEDAY_CAP = 3;
     const capOf = (n: number): number => (opts.verbose === true ? Number.POSITIVE_INFINITY : n);
 
     // Group shown tasks by entity clusters, then emit bucket header + clusters + ungrouped.
@@ -544,16 +546,19 @@ export function formatTodayResult(
 
     const overdueShown = section("OVERDUE", overdue, OVERDUE_CAP, "err");
     const todayShown = section("TODAY", dueToday, TODAY_CAP, "warn");
-    const openShown = section("OPEN", open, OPEN_CAP, "plain");
+    const thisWeekShown = section("THIS WEEK", thisWeek, THIS_WEEK_CAP, "plain");
+    const laterShown = section("LATER", later, LATER_CAP, "plain");
+    const somedayShown = section("SOMEDAY", someday, SOMEDAY_CAP, "plain");
 
     // Honest overflow using the view's TRUE totals (counts.*), not the received
     // (possibly display-capped) arrays. Overdue is reported exactly (the verdict
     // header already relies on the received list carrying all overdue); every
     // other non-shown task folds into a single "more" so the math never lies.
     const heroIsTask = hero !== null && hero.kind === "task";
-    const trueTotal = (counts.openTasks + followupsTotal) - (heroIsTask ? 1 : 0);
+    const trueTotal = (counts.openTasks + counts.followups) - (heroIsTask ? 1 : 0);
     const overdueMore = Math.max(0, overdue.length - overdueShown);
-    const otherMore = Math.max(0, (trueTotal - overdue.length) - (todayShown + openShown));
+    const shownNonOverdue = todayShown + thisWeekShown + laterShown + somedayShown;
+    const otherMore = Math.max(0, (trueTotal - overdue.length) - shownNonOverdue);
     if (overdueMore > 0 || otherMore > 0) {
       const parts: string[] = [];
       if (overdueMore > 0) parts.push(`${overdueMore} more overdue`);

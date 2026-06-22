@@ -85,7 +85,11 @@ describe("buildAgentTools", () => {
         structured: {
           name: "dome.daily.today",
           schema: "dome.daily.today/v1",
+          // A realistic dome.daily.today/v1 payload — the real producer always
+          // emits date + counts (now validated by the shared contract).
           data: {
+            date: "2026-06-22",
+            counts: { openTasks: 1, followups: 0, questions: 0 },
             openTasks: [
               {
                 text: "Reply to vendor",
@@ -95,6 +99,9 @@ describe("buildAgentTools", () => {
             ],
             followups: [],
             questions: [],
+            brief: null,
+            calendar: null,
+            hero: null,
           },
         },
       }),

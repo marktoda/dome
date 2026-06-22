@@ -10,7 +10,16 @@ export type TodayHtmlOptions = {
   readonly refreshSeconds: number;
 };
 
-import { addDays, daysBetween, parseTodayView, type TodayTaskRow, type TodayQuestionRow, type TodayCalendarEvent, type TodayHeroItem } from "../surface/today-view";
+import {
+  parseTodayView,
+  buildTodayViewModel,
+  type TodayTaskRow,
+  type TodayQuestionRow,
+  type TodayCalendarEvent,
+  type TodayHeroItem,
+  type TaskUrgency,
+  type TodaySections,
+} from "../surface/today-view";
 
 // @font-face: the design's Basel Grotesk (Book 485 / Medium 535). The woff2
 // bytes are served from same-origin, year-cacheable routes (the HTTP adapter's
@@ -26,21 +35,14 @@ const FONT_FACE = `
 
 export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
   const refresh = Math.max(1, Math.floor(opts.refreshSeconds));
-  const view = parseTodayView(data);
-  const { date, openTasks, followups, questions, brief, calendar, hero, counts } = view;
-  // Use true totals from the shared parser counts (not the display-limited received lengths).
-  const total = counts.openTasks + counts.followups + counts.questions;
-
-  // The hero task is already the pill above — don't repeat it in "Still open".
-  const heroKey =
-    hero !== null && hero.kind === "task"
-      ? `${hero.item.path}:${hero.item.line ?? ""}:${hero.item.text}`
-      : null;
-  const allItems = [...openTasks, ...followups].filter(
-    (t) => heroKey === null || `${t.path}:${t.line ?? ""}:${t.text}` !== heroKey,
-  );
-  const isAllClear = total === 0;
-  // True total for the "Still open" section (tasks + followups, hero shown separately).
+  const vm = buildTodayViewModel(parseTodayView(data));
+  const { date, questions, brief, calendar, hero, heroUrgency, stillOpen, counts, totalOpen } = vm;
+  const isAllClear = totalOpen === 0;
+  // The hero is shown as its own pill; stillOpen is already hero-deduped.
+  const hasOpenItems =
+    stillOpen.overdue.length + stillOpen.dueToday.length + stillOpen.thisWeek.length +
+    stillOpen.later.length + stillOpen.someday.length > 0;
+  // True total for the "Still open" header (tasks + followups, hero counted separately).
   const heroIsTask = hero !== null && hero.kind === "task";
   const trueOpenCount = counts.openTasks + counts.followups - (heroIsTask ? 1 : 0);
 
@@ -177,7 +179,7 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
   <div class="brief-prov">&#8627; ${esc(brief.sourceRef.path)} · brief</div>`
     : "";
 
-  const heroHtml = hero !== null ? renderHeroHtml(hero, date) : "";
+  const heroHtml = hero !== null ? renderHeroHtml(hero, heroUrgency) : "";
 
   const calendarHtml = calendar !== null && calendar.events.length > 0
     ? renderCalendarHtml(calendar.events)
@@ -191,8 +193,8 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
     ? `<div class="band">${calendarHtml}${questionsHtml}</div>`
     : "";
 
-  const stillOpenHtml = allItems.length > 0
-    ? renderStillOpenHtml(allItems, date, trueOpenCount)
+  const stillOpenHtml = hasOpenItems
+    ? renderStillOpenHtml(stillOpen, date, trueOpenCount)
     : "";
 
   const allClearHtml = isAllClear
@@ -484,18 +486,19 @@ function buildScriptHtml(
 
 // ── Section renderers ───────────────────────────────────────────────────────
 
-function renderHeroHtml(hero: TodayHeroItem, today: string): string {
+function renderHeroHtml(hero: TodayHeroItem, heroUrgency: TaskUrgency | null): string {
   if (hero.kind === "task") {
     const item = hero.item;
     let urgencyHtml = "";
-    if (item.dueDate !== null) {
-      if (item.dueDate < today) {
-        urgencyHtml = `<span class="hero-urgency">overdue ${daysBetween(item.dueDate, today)}d</span>`;
-      } else if (item.dueDate === today) {
+    if (heroUrgency !== null) {
+      if (heroUrgency.kind === "overdue") {
+        urgencyHtml = `<span class="hero-urgency">overdue ${heroUrgency.days}d</span>`;
+      } else if (heroUrgency.kind === "due-today") {
         urgencyHtml = `<span class="hero-urgency warn">due today</span>`;
-      } else {
-        urgencyHtml = `<span class="hero-urgency ok">due ${esc(item.dueDate)}</span>`;
+      } else if (heroUrgency.kind === "this-week" || heroUrgency.kind === "later") {
+        urgencyHtml = `<span class="hero-urgency ok">due ${esc(heroUrgency.date)}</span>`;
       }
+      // someday (undated) → no urgency span, matching the prior null-dueDate case
     }
     return `<div class="hero">
     <span class="hero-arrow">&#8594;</span>
@@ -564,19 +567,25 @@ function renderQuestionsHtml(questions: ReadonlyArray<TodayQuestionRow>): string
 }
 
 function renderStillOpenHtml(
-  items: ReadonlyArray<TodayTaskRow>,
+  sections: TodaySections,
   today: string,
   trueCount: number,
 ): string {
-  // Compute the week boundary: +7 calendar days from today.
-  const weekBound = addDays(today, 7);
-
-  // Bucket items by urgency.
-  const overdue = items.filter((t) => t.dueDate !== null && t.dueDate < today);
-  const todayItems = items.filter((t) => t.dueDate === today);
-  const thisWeek = items.filter(
-    (t) => t.dueDate !== null && t.dueDate > today && t.dueDate <= weekBound,
-  );
+  // Buckets come from the view-model (same overdue/today/this-week partition the
+  // local filters used to compute). The cockpit shows these three inline and
+  // folds later + someday into the "+N more, later" chip — its presentation
+  // choice; the CLI surfaces them as sections instead.
+  const overdue = sections.overdue;
+  const todayItems = sections.dueToday;
+  const thisWeek = sections.thisWeek;
+  // Full hero-deduped list (urgency-ordered) for the no-urgent-content fallback.
+  const items: ReadonlyArray<TodayTaskRow> = [
+    ...sections.overdue,
+    ...sections.dueToday,
+    ...sections.thisWeek,
+    ...sections.later,
+    ...sections.someday,
+  ];
 
   function renderItem(t: TodayTaskRow): string {
     const glyph = taskGlyph(t, today);
