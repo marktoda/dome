@@ -298,6 +298,98 @@ function parseHero(raw: unknown): TodayHeroItem | null {
   return null;
 }
 
+// ── Tier 2: the view-model ──────────────────────────────────────────────────
+// The semantic decisions both adapters used to recompute independently: per-task
+// urgency, hero-dedup, and the five due-date sections. Adapters paint this; they
+// no longer derive "is this overdue" or "is this the hero" themselves.
+
+export type TaskUrgency =
+  | { readonly kind: "overdue"; readonly days: number }
+  | { readonly kind: "due-today" }
+  | { readonly kind: "this-week"; readonly date: string }
+  | { readonly kind: "later"; readonly date: string }
+  | { readonly kind: "someday" };
+
+/** Hero-deduped tasks partitioned by urgency. A row's section IS its urgency. */
+export type TodaySections = {
+  readonly overdue: ReadonlyArray<TodayTaskRow>;
+  readonly dueToday: ReadonlyArray<TodayTaskRow>;
+  readonly thisWeek: ReadonlyArray<TodayTaskRow>;
+  readonly later: ReadonlyArray<TodayTaskRow>;
+  readonly someday: ReadonlyArray<TodayTaskRow>;
+};
+
+export type TodayViewModel = {
+  readonly date: string;
+  readonly counts: TodayCounts;
+  /** counts.openTasks + followups + questions — the "N open" headline; all-clear is `=== 0`. */
+  readonly totalOpen: number;
+  readonly hero: TodayHeroItem | null;
+  /** Urgency of the hero task; null when the hero is a question or absent. */
+  readonly heroUrgency: TaskUrgency | null;
+  readonly stillOpen: TodaySections;
+  readonly brief: TodayBriefField | null;
+  readonly calendar: TodayCalendar | null;
+  readonly questions: ReadonlyArray<TodayQuestionRow>;
+};
+
+/** Classify a task's due date relative to `today` (both "YYYY-MM-DD" or null). */
+export function classifyUrgency(dueDate: string | null, today: string): TaskUrgency {
+  if (dueDate === null) return { kind: "someday" };
+  if (dueDate < today) return { kind: "overdue", days: daysBetween(dueDate, today) };
+  if (dueDate === today) return { kind: "due-today" };
+  if (dueDate <= addDays(today, 7)) return { kind: "this-week", date: dueDate };
+  return { kind: "later", date: dueDate };
+}
+
+function taskIdentity(t: { path: string; line: number | null; text: string }): string {
+  return `${t.path}:${t.line ?? ""}:${t.text}`;
+}
+
+/** Derive the today view-model from a parsed view. Pure; `today` is `view.date`. */
+export function buildTodayViewModel(view: TodayView): TodayViewModel {
+  const { date, openTasks, followups, questions, hero, brief, calendar, counts } = view;
+
+  const heroIsTask = hero !== null && hero.kind === "task";
+  const heroKey = heroIsTask ? taskIdentity(hero.item) : null;
+
+  const sections: {
+    overdue: TodayTaskRow[];
+    dueToday: TodayTaskRow[];
+    thisWeek: TodayTaskRow[];
+    later: TodayTaskRow[];
+    someday: TodayTaskRow[];
+  } = { overdue: [], dueToday: [], thisWeek: [], later: [], someday: [] };
+
+  for (const t of [...openTasks, ...followups]) {
+    if (heroKey !== null && taskIdentity(t) === heroKey) continue; // hero shown separately
+    const urgency = classifyUrgency(t.dueDate, date);
+    if (urgency.kind === "overdue") sections.overdue.push(t);
+    else if (urgency.kind === "due-today") sections.dueToday.push(t);
+    else if (urgency.kind === "this-week") sections.thisWeek.push(t);
+    else if (urgency.kind === "later") sections.later.push(t);
+    else sections.someday.push(t);
+  }
+
+  return {
+    date,
+    counts,
+    totalOpen: counts.openTasks + counts.followups + counts.questions,
+    hero,
+    heroUrgency: heroIsTask ? classifyUrgency(hero.item.dueDate, date) : null,
+    stillOpen: {
+      overdue: sections.overdue,
+      dueToday: sections.dueToday,
+      thisWeek: sections.thisWeek,
+      later: sections.later,
+      someday: sections.someday,
+    },
+    brief,
+    calendar,
+    questions,
+  };
+}
+
 // ── Date helpers ────────────────────────────────────────────────────────────
 // One cluster of YYYY-MM-DD arithmetic, shared by both surfaces. UTC-based so
 // there is no DST / local-timezone off-by-one (2026-06-10 → 2026-06-14 == 4).
