@@ -8,6 +8,8 @@ New to the vocabulary? [[glossary]] is the one-page map: the four core types, th
 
 Installing Dome on your own machine? [[getting-started]] is the clone → vault → daemon → first-morning-brief walkthrough (the WS6 second-user script), every command verified against a scratch vault.
 
+Working in the codebase? [[philosophy]] is the house style — pure-decide + thin shells, named invariants with mechanical enforcers, locality > centralization, depth as the test of a seam, and when generalizing at N=1 is the right call.
+
 ## Current Product Planning
 
 - [[v1]] — V1 design and plan: source-preserving convergent maintenance loops for Mark's work vault; processors remain the execution primitive, loops are the automation design unit.

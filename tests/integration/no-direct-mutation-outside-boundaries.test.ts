@@ -50,6 +50,12 @@ const ALLOWED_FILES = new Set([
   // class as the server's POST /transcribe temp-write. Appends one JSON line
   // per /agent request to a configurable path for post-hoc diagnostics.
   "src/http/agent-log.ts",
+  // The shared store-opener seam: prepareStore + openSimpleStore. The single
+  // meta-row write (DELETE+INSERT in a tx) is the same operational write the
+  // four store boundaries (src/{projections,ledger,outbox,answers}/, already in
+  // ALLOWED_DIRS) each did inline before — hoisted to one place. Same boundary
+  // class as those store dirs; not a vault write path.
+  "src/sqlite/open-store.ts",
 ]);
 
 const FORBIDDEN_PATTERNS: ReadonlyArray<{
