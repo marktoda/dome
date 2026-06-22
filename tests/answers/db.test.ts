@@ -46,22 +46,38 @@ describe("openAnswersDb", () => {
     expect(row?.timeout).toBe(5000);
   });
 
-  it("does not delete answers_meta when reopening a matching schema", async () => {
+  // Reopening a matching schema preserves durable answer rows. The meta row is
+  // now replaced via DELETE+INSERT in a tx (the shared seam's mechanic — see
+  // docs/superpowers/plans/2026-06-22-store-opener-deepening.md), which is
+  // observably equivalent: one meta row, current hash. The contract that
+  // matters is that durable question_answers rows survive — not the meta SQL.
+  it("reopening a matching schema preserves durable answer rows", async () => {
     const first = await openAnswersDb({ path: dbPath });
     expect(first.ok).toBe(true);
     if (!first.ok) return;
-    handles.push(first.value.db);
-
     first.value.db.raw.run(
-      "CREATE TRIGGER fail_answers_meta_delete "
-        + "BEFORE DELETE ON answers_meta "
-        + "BEGIN SELECT RAISE(FAIL, 'answers_meta delete is not expected'); END",
+      "INSERT INTO question_answers "
+        + "(idempotency_key, answer, answered_at, question, processor_id, adopted_commit) "
+        + "VALUES (?, ?, ?, ?, ?, ?)",
+      ["k1", "yes", "2026-06-22T00:00:00Z", "Ship it?", "dome.test", "abc123"],
     );
+    first.value.db.close();
 
     const second = await openAnswersDb({ path: dbPath });
     expect(second.ok).toBe(true);
     if (!second.ok) return;
     handles.push(second.value.db);
     expect(second.value.migration).toBe("ok");
+
+    const row = second.value.db.raw
+      .query<{ answer: string }, []>(
+        "SELECT answer FROM question_answers WHERE idempotency_key = 'k1'",
+      )
+      .get();
+    expect(row?.answer).toBe("yes");
+    const meta = second.value.db.raw
+      .query<{ c: number }, []>("SELECT COUNT(*) AS c FROM answers_meta")
+      .get();
+    expect(meta?.c).toBe(1);
   });
 });
