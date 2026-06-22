@@ -11,6 +11,10 @@ import {
 } from "../../../../src/core/processor";
 
 import type { SourceRef } from "../../../../src/core/source-ref";
+// Erased type import — the dome.daily.today/v1 wire contract. No runtime zod
+// dependency crosses into this bundle; this only compile-checks that the
+// emitted ViewEffect data carries the consumed contract fields.
+import type { TodayPayload } from "../../../../src/surface/today-view";
 import {
   collectDailyActionState,
   inputDateOrLocalToday,
@@ -100,22 +104,28 @@ const today = defineProcessorImplementation({
       ctx.projection?.facts({ predicate: "dome.agent.calendar.event" }) ?? [],
       calendarSourcePath,
     );
-    const data = Object.freeze({
-      schema: SCHEMA,
+    // The consumed wire contract (dome.daily.today/v1), compile-checked against
+    // the shared TodayPayload type. The extra envelope fields below are spread
+    // on after — the contract pins the consumed subset, not the full envelope.
+    const payload = {
       date: actionState.date,
-      limit,
-      daily: actionState.daily,
       counts: actionState.counts,
-      sourceCounts: actionState.sourceCounts,
-      dueCounts: actionState.dueCounts,
-      shown,
-      omitted,
       openTasks,
       followups,
       questions,
       brief,
       calendar,
       hero,
+    } satisfies TodayPayload;
+    const data = Object.freeze({
+      schema: SCHEMA,
+      ...payload,
+      limit,
+      daily: actionState.daily,
+      sourceCounts: actionState.sourceCounts,
+      dueCounts: actionState.dueCounts,
+      shown,
+      omitted,
     });
 
     const effect: ViewEffect = viewEffect({

@@ -98,7 +98,7 @@ const taskRowWireSchema = z
     line: z.number().nullable().optional(),
     dueDate: z.string().nullable().optional(),
     origin: z.string().optional(),
-    sourceRefs: z.array(sourceRefWireSchema).optional(),
+    sourceRefs: z.array(sourceRefWireSchema).readonly().optional(),
   })
   .passthrough();
 
@@ -107,8 +107,8 @@ const questionRowWireSchema = z
     id: z.number(),
     question: z.string(),
     resolveCommand: z.string().optional(),
-    options: z.array(z.string()).optional(),
-    sourceRefs: z.array(sourceRefWireSchema).optional(),
+    options: z.array(z.string()).readonly().optional(),
+    sourceRefs: z.array(sourceRefWireSchema).readonly().optional(),
   })
   .passthrough();
 
@@ -127,20 +127,22 @@ const todayPayloadSchema = z
         questions: z.number(),
       })
       .passthrough(),
-    openTasks: z.array(taskRowWireSchema),
-    followups: z.array(taskRowWireSchema),
-    questions: z.array(questionRowWireSchema),
+    openTasks: z.array(taskRowWireSchema).readonly(),
+    followups: z.array(taskRowWireSchema).readonly(),
+    questions: z.array(questionRowWireSchema).readonly(),
     brief: z
       .object({ text: z.string(), sourceRef: z.object({ path: z.string() }).passthrough() })
       .passthrough()
       .nullable(),
     calendar: z
       .object({
-        events: z.array(
-          z
-            .object({ time: z.string(), title: z.string(), meta: z.string().optional() })
-            .passthrough(),
-        ),
+        events: z
+          .array(
+            z
+              .object({ time: z.string(), title: z.string(), meta: z.string().optional() })
+              .passthrough(),
+          )
+          .readonly(),
         sourceRef: z.object({ path: z.string() }).passthrough(),
       })
       .passthrough()
