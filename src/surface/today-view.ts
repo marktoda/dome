@@ -1,13 +1,26 @@
-// surface/today-view: shared parser for dome.daily.today/v1 structured data.
-// Both the web cockpit (src/http/today-html.ts) and the terminal briefing
-// (src/cli/commands/today.ts) consume this — ending the drift between their
-// duplicated local parsers.
+// surface/today-view: the dome.daily.today/v1 surface contract + view-model.
 //
-// Behavior contract:
-//   - ALL task/question/hero text is stripWikilinks-cleaned here.
-//   - question options are always parsed (ReadonlyArray<string>).
-//   - counts are number-coerced with array-length fallbacks.
-//   - null-safe throughout: brief/calendar/hero return null if absent/malformed.
+// Three tiers (docs/wiki/concepts/surface-view-model.md):
+//   1. Payload contract — `todayPayloadSchema` / `TodayPayload`: the single
+//      declared wire shape. The producer (assets/extensions/dome.daily/
+//      processors/today.ts) imports the erased `TodayPayload` type and
+//      constructs its ViewEffect data to it; agent tools + MCP validate
+//      received payloads against the schema instead of re-deriving the shape
+//      by hand (this is what retires the "sourceRefs is a PLURAL ARRAY"
+//      footgun). Unknown keys are passed through, so the producer's extra
+//      envelope fields (limit, daily, sourceCounts, …) don't break validation
+//      — the contract is the consumed subset.
+//   2. View-model — `buildTodayViewModel`: urgency classification, hero-dedup,
+//      sections, totalOpen. Consumer-derived; adapters paint it.
+//   3. Paint — the CLI (src/cli/commands/today.ts) and HTTP
+//      (src/http/today-html.ts) adapters.
+//
+// `parseTodayView` is the CLI/HTTP render path's lenient enrich (strip
+// wikilinks, extract entities, count fallbacks, null-safe). It stays total
+// (never throws) for render resilience; the strict schema validates the wire
+// contract for the producer + agent/MCP consumers.
+
+import { z } from "zod";
 
 import { stripWikilinks, wikilinkSlugs } from "../core/wikilink";
 
@@ -67,6 +80,83 @@ export type TodayView = {
   readonly hero: TodayHeroItem | null;
   readonly counts: TodayCounts;
 };
+
+// ── Tier 1: the dome.daily.today/v1 wire contract ───────────────────────────
+// The single declared shape spanning producer ↔ consumers. `.passthrough()`
+// where the producer emits richer objects (full SourceRefs, extra envelope
+// fields) so the contract pins the consumed subset without rejecting extras.
+// Text is RAW here (wikilinks intact); stripping is the consumer's enrich.
+
+const sourceRefWireSchema = z
+  .object({ path: z.string(), commit: z.string().optional() })
+  .passthrough();
+
+const taskRowWireSchema = z
+  .object({
+    text: z.string(),
+    path: z.string(),
+    line: z.number().nullable().optional(),
+    dueDate: z.string().nullable().optional(),
+    origin: z.string().optional(),
+    sourceRefs: z.array(sourceRefWireSchema).optional(),
+  })
+  .passthrough();
+
+const questionRowWireSchema = z
+  .object({
+    id: z.number(),
+    question: z.string(),
+    resolveCommand: z.string().optional(),
+    options: z.array(z.string()).optional(),
+    sourceRefs: z.array(sourceRefWireSchema).optional(),
+  })
+  .passthrough();
+
+const heroWireSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("task"), item: taskRowWireSchema }).passthrough(),
+  z.object({ kind: z.literal("question"), item: questionRowWireSchema }).passthrough(),
+]);
+
+const todayPayloadSchema = z
+  .object({
+    date: z.string(),
+    counts: z
+      .object({
+        openTasks: z.number(),
+        followups: z.number(),
+        questions: z.number(),
+      })
+      .passthrough(),
+    openTasks: z.array(taskRowWireSchema),
+    followups: z.array(taskRowWireSchema),
+    questions: z.array(questionRowWireSchema),
+    brief: z
+      .object({ text: z.string(), sourceRef: z.object({ path: z.string() }).passthrough() })
+      .passthrough()
+      .nullable(),
+    calendar: z
+      .object({
+        events: z.array(
+          z
+            .object({ time: z.string(), title: z.string(), meta: z.string().optional() })
+            .passthrough(),
+        ),
+        sourceRef: z.object({ path: z.string() }).passthrough(),
+      })
+      .passthrough()
+      .nullable(),
+    hero: heroWireSchema.nullable(),
+  })
+  .passthrough();
+
+/**
+ * The `dome.daily.today/v1` wire contract. The producer imports this *type*
+ * (erased — no runtime zod dependency crosses into the bundle) and constructs
+ * its ViewEffect data to it; agent tools + MCP validate received payloads with
+ * `todayPayloadSchema`.
+ */
+export type TodayPayload = z.infer<typeof todayPayloadSchema>;
+export { todayPayloadSchema };
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
