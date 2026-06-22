@@ -87,21 +87,11 @@
 //     failures the caller can reasonably handle.
 
 import { Database } from "bun:sqlite";
-import { dirname } from "node:path";
 
 import { type Result, ok, err } from "../types";
-import {
-  validateSqliteTableShapes,
-  type SqliteTableShape,
-} from "../sqlite-shape";
-import { configureSqliteConnection } from "../sqlite/connection";
-import { errorMessage } from "../sqlite/error-message";
+import { type SqliteTableShape } from "../sqlite-shape";
 import { computeDdlHash } from "../sqlite/hash";
-import {
-  applyDdlInTransaction,
-  ensureParentDir,
-  readStoredSchemaHash as readStoredSchemaHashFromTable,
-} from "../sqlite/open-store";
+import { openSimpleStore, type StoreOpenError } from "../sqlite/open-store";
 
 // ----- Schema DDL -----------------------------------------------------------
 //
@@ -280,21 +270,8 @@ export type OpenLedgerDbResult = {
   readonly migration: LedgerMigration;
 };
 
-export type LedgerDbError =
-  | {
-      readonly kind: "directory-create-failed";
-      readonly path: string;
-      readonly cause: string;
-    }
-  | {
-      readonly kind: "schema-init-failed";
-      readonly cause: string;
-    }
-  | {
-      readonly kind: "schema-mismatch";
-      readonly stored: string;
-      readonly expected: string;
-    };
+/** The ledger refuses on mismatch; its open errors are exactly the shared seam's. */
+export type LedgerDbError = StoreOpenError;
 
 // ----- Public hash helpers --------------------------------------------------
 
@@ -327,113 +304,30 @@ export function computeLedgerSchemaHash(): string {
 export async function openLedgerDb(
   opts: OpenLedgerDbOpts,
 ): Promise<Result<OpenLedgerDbResult, LedgerDbError>> {
-  // 1. Ensure the parent directory exists. `recursive: true` is mkdir -p
-  //    semantics — no error if the directory already exists.
-  const parent = dirname(opts.path);
-  try {
-    ensureParentDir(opts.path);
-  } catch (e) {
-    return err({
-      kind: "directory-create-failed",
-      path: parent,
-      cause: errorMessage(e),
-    });
-  }
+  // The ledger is unrebuildable audit history, so its policy is REFUSE on any
+  // schema-hash mismatch (never wipe). `foreignKeys` is on for the
+  // capability_uses → runs reference. The shared seam owns dir/open/hash/DDL/
+  // shapes/meta/close-on-error.
+  const result = openSimpleStore({
+    path: opts.path,
+    metaTable: "ledger_meta",
+    ddl: DDL,
+    currentHash: computeLedgerSchemaHash(),
+    shapes: REQUIRED_TABLE_SHAPES,
+    policy: { kind: "refuse" },
+    foreignKeys: true,
+  });
+  if (!result.ok) return err(result.error);
 
-  // 2. Open the SQLite file. Bun's Database constructor creates the file
-  //    if it doesn't exist (default options: `{readwrite: true, create: true}`).
-  let raw: Database;
-  try {
-    raw = new Database(opts.path);
-    configureSqliteConnection(raw);
-    enableForeignKeys(raw);
-  } catch (e) {
-    return err({ kind: "schema-init-failed", cause: errorMessage(e) });
-  }
-
-  // 3. Read the stored schema_hash, if any. A fresh file has no
-  //    ledger_meta table; we detect that by querying sqlite_master.
-  const currentSchemaHash = computeLedgerSchemaHash();
-  let storedSchemaHash: string | null;
-  try {
-    storedSchemaHash = readStoredSchemaHashFromTable(raw, "ledger_meta");
-  } catch (e) {
-    raw.close();
-    return err({ kind: "schema-init-failed", cause: errorMessage(e) });
-  }
-
-  const isFresh = storedSchemaHash === null;
-  const isSchemaChanged =
-    storedSchemaHash !== null && storedSchemaHash !== currentSchemaHash;
-
-  // 4. If schema changed, refuse to open. The ledger is unrebuildable
-  //    operational history, so unknown schema skew must be reported before
-  //    any destructive migration is attempted. If fresh, just apply DDL;
-  //    if matched, apply DDL idempotently (`CREATE ... IF NOT EXISTS` is
-  //    safe and defensive against a partial schema left by a prior crash).
-  try {
-    if (isSchemaChanged) {
-      raw.close();
-      return err({
-        kind: "schema-mismatch",
-        stored: storedSchemaHash ?? "",
-        expected: currentSchemaHash,
-      });
-    }
-    applyDdlInTransaction(raw, DDL);
-    const shapeError = validateSqliteTableShapes(raw, REQUIRED_TABLE_SHAPES);
-    if (shapeError !== null) {
-      throw new Error(shapeError);
-    }
-  } catch (e) {
-    raw.close();
-    return err({ kind: "schema-init-failed", cause: errorMessage(e) });
-  }
-
-  // 5. Ensure exactly one ledger_meta row exists with the current schema
-  //    hash. On the "ok" path, the existing row's hash already matches;
-  //    INSERT OR REPLACE is a defensive no-op (same hash → same row,
-  //    updated built_at).
-  try {
-    insertOrReplaceMetaRow(raw, currentSchemaHash);
-  } catch (e) {
-    raw.close();
-    return err({ kind: "schema-init-failed", cause: errorMessage(e) });
-  }
-
-  // 6. Compute the migration state.
-  let migration: LedgerMigration;
-  if (isFresh) {
-    migration = "fresh";
-  } else {
-    migration = "ok";
-  }
+  const { raw, schemaHash, migration } = result.value;
+  // REFUSE policy never yields "migrated"; map onto the ledger's narrow enum.
+  const ledgerMigration: LedgerMigration = migration === "fresh" ? "fresh" : "ok";
 
   const db: LedgerDb = Object.freeze({
     raw,
-    schemaHash: currentSchemaHash,
+    schemaHash,
     close: () => raw.close(),
   });
 
-  return ok(Object.freeze({ db, migration }));
-}
-
-// ----- internals ------------------------------------------------------------
-
-function enableForeignKeys(db: Database): void {
-  db.run("PRAGMA foreign_keys = ON");
-}
-
-/**
- * Insert (or replace) the single `ledger_meta` row with the given
- * schema_hash and the current timestamp. `INSERT OR REPLACE` because the
- * PRIMARY KEY is `schema_hash` — if a row with this hash already exists
- * (the "ok" path), we overwrite the `built_at` timestamp (cheap, makes
- * "when was the schema last verified" observable) rather than fail.
- */
-function insertOrReplaceMetaRow(db: Database, schemaHash: string): void {
-  db.run(
-    "INSERT OR REPLACE INTO ledger_meta (schema_hash, built_at) VALUES (?, ?)",
-    [schemaHash, new Date().toISOString()],
-  );
+  return ok(Object.freeze({ db, migration: ledgerMigration }));
 }
