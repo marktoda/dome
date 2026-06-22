@@ -43,9 +43,9 @@
 import type {
   DiagnosticEffect,
   PatchEffect,
-  QuestionEffect,
 } from "../../core/effect";
 import { diagnosticEffect } from "../../core/effect";
+import { effectsOfKind } from "../../core/effect-classify";
 import type { Proposal } from "../../core/proposal";
 import type { CommitOid } from "../../core/source-ref";
 import { applyEffect, type ApplyEffectSinks } from "../core/apply-effect";
@@ -352,9 +352,7 @@ async function runGardenPhaseInner(opts: {
   const spawnCountByProcessor = new Map<string, number>();
 
   for (const result of runnerResults) {
-    const emittedDiagnostics = result.effects.filter(
-      (effect): effect is DiagnosticEffect => effect.kind === "diagnostic",
-    );
+    const emittedDiagnostics = effectsOfKind(result.effects, "diagnostic");
     const diagnosticsForResolution: DiagnosticEffect[] = [
       ...emittedDiagnostics,
     ];
@@ -459,9 +457,7 @@ async function runGardenPhaseInner(opts: {
         processorId: result.processorId,
         runId: result.runId,
         inspectedPaths: result.inspectedPaths,
-        emittedQuestions: result.effects.filter(
-          (effect): effect is QuestionEffect => effect.kind === "question",
-        ),
+        emittedQuestions: effectsOfKind(result.effects, "question"),
       });
     }
 

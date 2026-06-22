@@ -67,9 +67,9 @@ import type {
   Effect,
   DiagnosticEffect,
   PatchEffect,
-  QuestionEffect,
 } from "../../core/effect";
 import { diagnosticEffect } from "../../core/effect";
+import { effectsOfKind } from "../../core/effect-classify";
 import type {
   AdoptionResult,
   Proposal,
@@ -399,15 +399,11 @@ export async function adopt(opts: {
         runId,
         effectCount: effects.length,
       });
-      const emittedDiagnostics = effects.filter(
-        (effect): effect is DiagnosticEffect => effect.kind === "diagnostic",
-      );
+      const emittedDiagnostics = effectsOfKind(effects, "diagnostic");
       const diagnosticsForResolution: DiagnosticEffect[] = [
         ...emittedDiagnostics,
       ];
-      const emittedQuestions = effects.filter(
-        (effect): effect is QuestionEffect => effect.kind === "question",
-      );
+      const emittedQuestions = effectsOfKind(effects, "question");
       if (
         executionStatus === "succeeded" &&
         routingSinks.resolveFacts !== undefined

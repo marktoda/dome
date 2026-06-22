@@ -10,7 +10,7 @@
 
 import { posix } from "node:path";
 
-import type { Effect } from "../../core/effect";
+import { isProjectionEffect } from "../../core/effect-classify";
 import type { Capability, Processor } from "../../core/processor";
 import { makeManualProposal } from "../../core/proposal";
 import type { CommitOid } from "../../core/source-ref";
@@ -127,7 +127,7 @@ async function rebuildProjectionUnlocked(
   let routedEffects = 0;
   for (const run of rebuildRuns) {
     for (const effect of run.result.effects) {
-      if (!isProjectionRebuildEffect(effect)) continue;
+      if (!isProjectionEffect(effect)) continue;
       const applied = await applyEffect({
         effect,
         processorId: run.result.processorId,
@@ -288,13 +288,4 @@ function signalsForRebuild(
     }
   }
   return Object.freeze(signals);
-}
-
-function isProjectionRebuildEffect(effect: Effect): boolean {
-  return (
-    effect.kind === "diagnostic" ||
-    effect.kind === "fact" ||
-    effect.kind === "search-document" ||
-    effect.kind === "question"
-  );
 }

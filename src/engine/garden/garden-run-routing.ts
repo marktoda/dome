@@ -14,7 +14,8 @@
 // these hooks, schedule/job/answer-driven processors accumulate stale
 // projection rows that only a full rebuild would clear.
 
-import type { DiagnosticEffect, QuestionEffect } from "../../core/effect";
+import type { DiagnosticEffect } from "../../core/effect";
+import { effectsOfKind } from "../../core/effect-classify";
 import type { CommitOid } from "../../core/source-ref";
 import type { LedgerDb } from "../../ledger/db";
 import { applyEffect, type ApplyEffectSinks } from "../core/apply-effect";
@@ -67,8 +68,10 @@ export async function routeGardenRunEffects(opts: {
   let rejectedPatchCount = 0;
 
   const succeeded = opts.result.executionStatus === "succeeded";
-  const diagnosticsForResolution: DiagnosticEffect[] = opts.result.effects
-    .filter((effect): effect is DiagnosticEffect => effect.kind === "diagnostic");
+  const diagnosticsForResolution: DiagnosticEffect[] = effectsOfKind(
+    opts.result.effects,
+    "diagnostic",
+  );
 
   if (succeeded && opts.sinks.resolveFacts !== undefined) {
     await opts.sinks.resolveFacts({
@@ -157,9 +160,7 @@ export async function routeGardenRunEffects(opts: {
       processorId: opts.result.processorId,
       runId: opts.result.runId,
       inspectedPaths: opts.result.inspectedPaths,
-      emittedQuestions: opts.result.effects.filter(
-        (effect): effect is QuestionEffect => effect.kind === "question",
-      ),
+      emittedQuestions: effectsOfKind(opts.result.effects, "question"),
     });
   }
 
