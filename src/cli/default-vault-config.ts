@@ -189,6 +189,21 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
           read: ["core.md", "wiki/dailies/*.md"],
           "patch.auto": ["core.md"],
         }),
+        // The DETERMINISTIC index extractors (not model processors) publish the
+        // cross-bundle facts the cockpit's today view reads: brief-index emits
+        // dome.agent.brief from the daily note's brief block, calendar-index
+        // emits dome.agent.calendar.event from sources/calendar. The bundle-wide
+        // graph.write stays dome.preference.* (MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS);
+        // these per-processor grants are the exact namespaces each deterministic
+        // extractor needs. Replacement grants restate read.
+        "dome.agent.brief-index": Object.freeze({
+          read: ["wiki/dailies/*.md", "notes/*.md"],
+          "graph.write": ["dome.agent"],
+        }),
+        "dome.agent.calendar-index": Object.freeze({
+          read: ["sources/calendar/*.md"],
+          "graph.write": ["dome.agent.calendar.*"],
+        }),
       },
     ),
     extension("dome.search", true, {
