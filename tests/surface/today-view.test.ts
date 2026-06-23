@@ -14,6 +14,22 @@ test("parses tasks with wikilinks stripped + dueDate", () => {
   expect(v.openTasks[0]!.dueDate).toBe("2026-06-10");
 });
 
+test("parseTaskRows carries priority for all five literals + null/unknown", () => {
+  const v = parseTodayView({
+    date: "2026-06-23",
+    openTasks: [
+      { text: "a", path: "p", line: 1, dueDate: null, priority: "highest" },
+      { text: "b", path: "p", line: 2, dueDate: null, priority: "low" },
+      { text: "c", path: "p", line: 3, dueDate: null },
+      { text: "d", path: "p", line: 4, dueDate: null, priority: "bogus" },
+    ],
+    followups: [], questions: [],
+    counts: { openTasks: 4, followups: 0, questions: 0 },
+    brief: null, calendar: null, hero: null,
+  });
+  expect(v.openTasks.map((t) => t.priority ?? null)).toEqual(["highest", "low", null, null]);
+});
+
 test("parses question options + resolveCommand", () => {
   const v = parseTodayView({ date: "x", openTasks: [], followups: [],
     questions: [{ id: 7, question: "go?", options: ["yes","no"], resolveCommand: "dome resolve 7" }],

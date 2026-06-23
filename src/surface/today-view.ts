@@ -35,6 +35,8 @@ export type TodayTaskRow = {
   readonly origin?: string;
   /** Slugs of all `[[wikilink]]` targets found in the raw task text (order-preserving, deduped). */
   readonly entities?: readonly string[];
+  /** Obsidian task priority parsed by the producer; null/absent when untagged. */
+  readonly priority?: "highest" | "high" | "medium" | "low" | "lowest" | null;
 };
 
 export type TodayQuestionRow = {
@@ -100,6 +102,7 @@ const taskRowWireSchema = z.object({
   line: z.number().nullable().optional(),
   dueDate: z.string().nullable().optional(),
   origin: z.string().optional(),
+  priority: z.enum(["highest", "high", "medium", "low", "lowest"]).nullable().optional(),
   sourceRefs: z.array(sourceRefWireSchema).readonly().optional(),
 });
 
@@ -181,6 +184,15 @@ export function parseTodayView(data: unknown): TodayView {
 
 // ── Private parsers ───────────────────────────────────────────────────────────
 
+const PRIORITY_LEVELS = ["highest", "high", "medium", "low", "lowest"] as const;
+type ParsedPriority = (typeof PRIORITY_LEVELS)[number];
+
+function parsePriority(raw: unknown): ParsedPriority | null {
+  return typeof raw === "string" && (PRIORITY_LEVELS as readonly string[]).includes(raw)
+    ? (raw as ParsedPriority)
+    : null;
+}
+
 function parseTaskRows(raw: unknown): ReadonlyArray<TodayTaskRow> {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((item) => {
@@ -190,6 +202,7 @@ function parseTaskRows(raw: unknown): ReadonlyArray<TodayTaskRow> {
     if (text.length === 0) return [];
     const origin = typeof r.origin === "string" ? r.origin : undefined;
     const entities = wikilinkSlugs(rawText);
+    const priority = parsePriority(r.priority);
     return [{
       text,
       path: typeof r.path === "string" ? r.path : "",
@@ -197,6 +210,7 @@ function parseTaskRows(raw: unknown): ReadonlyArray<TodayTaskRow> {
       dueDate: typeof r.dueDate === "string" ? r.dueDate : null,
       ...(origin !== undefined ? { origin } : {}),
       ...(entities.length > 0 ? { entities } : {}),
+      ...(priority !== null ? { priority } : {}),
     }];
   });
 }
@@ -262,6 +276,7 @@ function parseHero(raw: unknown): TodayHeroItem | null {
     if (text.length === 0) return null;
     const heroOrigin = typeof item.origin === "string" ? item.origin : undefined;
     const entities = wikilinkSlugs(rawText);
+    const priority = parsePriority(item.priority);
     return {
       kind: "task",
       item: {
@@ -271,6 +286,7 @@ function parseHero(raw: unknown): TodayHeroItem | null {
         dueDate: typeof item.dueDate === "string" ? item.dueDate : null,
         ...(heroOrigin !== undefined ? { origin: heroOrigin } : {}),
         ...(entities.length > 0 ? { entities } : {}),
+        ...(priority !== null ? { priority } : {}),
       },
     };
   }
