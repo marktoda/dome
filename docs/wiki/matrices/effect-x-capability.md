@@ -9,7 +9,7 @@ description: Maps each Effect kind to the broker-required capability, its resour
 
 # Effect × capability matrix
 
-Per-Effect-kind capability requirements enforced by the broker at the engine routing boundary. Generic routes go through `apply-effect.ts`; garden PatchEffects go through `garden-patch-dispatch.ts` because their destination is sub-Proposal construction. The broker rejects effects emitted without the required capability; `tests/engine/capability-broker.test.ts`, `tests/engine/apply-effect.test.ts`, and `tests/engine/garden-patch-router.test.ts` exercise the matrix at the broker and routing boundaries.
+Per-Effect-kind capability requirements enforced by the broker at the engine routing boundary. Every effect — garden PatchEffects included — routes through the sole applier `apply-effect.ts`; an authorized garden auto-mode PatchEffect resolves to `queued-for-spawn` there, then `garden-patch-dispatch.ts` constructs the sub-Proposal. The broker rejects effects emitted without the required capability; `tests/engine/capability-broker.test.ts` and `tests/engine/apply-effect.test.ts` exercise the matrix at the broker and routing boundaries (the latter covers garden-phase PatchEffect routing).
 
 ## The matrix
 

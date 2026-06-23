@@ -8,20 +8,19 @@
 // routes each emitted effect, and (Phase 4a') spawns sub-Proposals
 // for garden-emitted PatchEffects.
 //
-// Phase 4a (shipped): garden-phase processors fire against the
-// post-adoption signal stream; non-Patch effects (Diagnostic, Fact,
-// Question, Job, External) route through `applyEffect` with
-// `phase: "garden"` ensuring uniform broker enforcement +
-// capability-use ledgering.
+// Garden-phase processors fire against the post-adoption signal stream.
+// EVERY emitted effect — PatchEffects included — routes through `applyEffect`
+// with `phase: "garden"`, the sole applier, ensuring uniform broker
+// enforcement + capability-use ledgering.
 //
-// Phase 4a' (this commit): garden-emitted auto-mode PatchEffects
-// spawn sub-Proposals. The orchestrator routes the patch through the shared
-// garden patch router, applies the patch to the adopted tree via
-// `applyPatchToCandidate` to produce a new commit head, constructs a
-// Proposal with `source: { kind: "garden", processorId, runId }`,
-// and routes it through the injected `adoptSubProposal` callback —
-// which is wired by the compiler host to recurse into
-// `adopt()` + `runGardenPhase()` with `cascadeDepth + 1`.
+// An authorized auto-mode PatchEffect resolves there to the
+// `queued-for-spawn` outcome (it is not written through the patch sink); the
+// orchestrator collects the authorized patch and, after all broker decisions
+// are recorded, applies it to the adopted tree via `applyPatchToCandidate` to
+// produce a new commit head, constructs a Proposal with
+// `source: { kind: "garden", processorId, runId }`, and routes it through the
+// injected `adoptSubProposal` callback — which the compiler host wires to
+// recurse into `adopt()` + `runGardenPhase()` with `cascadeDepth + 1`.
 //
 // Cascade-depth cap: default 10. When a garden run at the cap emits
 // a PatchEffect, the orchestrator records a `garden.cascade-cap`
@@ -55,7 +54,6 @@ import { recordDiagnosticsViaSink } from "../core/diagnostics";
 import { resolveCurrentAdopted } from "../core/adoption-status";
 import { deriveExtensionId } from "../../extensions/id-helpers";
 import type { LedgerDb } from "../../ledger/db";
-import { routeGardenPatchForSubProposal } from "./garden-patch-router";
 import {
   spawnGardenSubProposal,
   DEFAULT_MAX_CASCADE_DEPTH,
@@ -156,13 +154,13 @@ export type { AdoptSubProposalFn };
  * Run the garden phase against a just-adopted commit. The orchestrator:
  *
  *   1. Invokes the injected `GardenPhaseRunner`.
- *   2. For each runner result, walks the emitted effects:
- *      - Non-Patch effects route through `applyEffect({ phase: "garden", ... })`.
- *      - Auto-mode Patch effects pass through the shared garden patch router;
- *        accepted ones are queued for sub-Proposal
- *        spawn.
- *      - Propose-mode Patch effects log+drop (v1.0; full lint-review
- *        wiring is a separate phase).
+ *   2. For each runner result, walks the emitted effects — every effect,
+ *      patches included, routes through `applyEffect({ phase: "garden", ... })`:
+ *      - Non-Patch effects route to their sink as usual.
+ *      - Auto-mode Patch effects resolve to `queued-for-spawn`; the authorized
+ *        patch is queued for sub-Proposal spawn.
+ *      - Propose-mode Patch effects resolve to `blocked-for-review` and drop
+ *        (v1.0; full lint-review wiring is a separate phase).
  *   3. After the effects pass, processes the spawn queue: applies each
  *      queued patch to the adopted tree via `applyPatchToCandidate` to
  *      produce a new commit, constructs a garden-source Proposal, and
@@ -369,48 +367,11 @@ async function runGardenPhaseInner(opts: {
     }
 
     for (const effect of result.effects) {
-      if (effect.kind === "patch") {
-        const routed = await routeGardenPatchForSubProposal({
-          effect,
-          processorId: result.processorId,
-          runId: result.runId,
-          proposalId: proposal.id,
-          declared: result.declared,
-          granted: result.granted,
-          sinks,
-        });
-        recordEffectCapabilityUse({
-          ledger,
-          runId: result.runId,
-          ...(routed.capabilityUse !== undefined
-            ? { capabilityUse: routed.capabilityUse }
-            : {}),
-        });
-        if (routed.kind === "dropped") {
-          allDiagnostics.push(...routed.diagnostics);
-          diagnosticsForResolution.push(...routed.diagnostics);
-          if (routed.rejected) {
-            totalRejectedPatches += 1;
-          }
-          continue;
-        }
-        if (routed.diagnostics.length > 0) {
-          allDiagnostics.push(...routed.diagnostics);
-          diagnosticsForResolution.push(...routed.diagnostics);
-        }
-        spawnQueue.push({
-          patch: routed.patch,
-          processorId: result.processorId,
-          runId: result.runId,
-        });
-        spawnCountByProcessor.set(
-          result.processorId,
-          (spawnCountByProcessor.get(result.processorId) ?? 0) + 1,
-        );
-        continue;
-      }
-
-      // Non-Patch effect: route through applyEffect normally.
+      // Every garden effect — patches included — crosses the sole applier.
+      // A garden auto-mode PatchEffect resolves to `queued-for-spawn` and is
+      // collected here; the orchestrator spawns sub-Proposals after all broker
+      // decisions are recorded. Denied/downgraded/propose patches are dropped
+      // by applyEffect, which already recorded their diagnostics via the sink.
       const applied = await applyEffect({
         effect,
         processorId: result.processorId,
@@ -435,6 +396,20 @@ async function runGardenPhaseInner(opts: {
           ? { capabilityUse: applied.capabilityUse }
           : {}),
       });
+
+      if (applied.outcome === "queued-for-spawn" && effect.kind === "patch") {
+        spawnQueue.push({
+          patch: effect,
+          processorId: result.processorId,
+          runId: result.runId,
+        });
+        spawnCountByProcessor.set(
+          result.processorId,
+          (spawnCountByProcessor.get(result.processorId) ?? 0) + 1,
+        );
+      } else if (applied.outcome === "denied" && effect.kind === "patch") {
+        totalRejectedPatches += 1;
+      }
     }
 
     if (

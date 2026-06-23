@@ -34,7 +34,7 @@ tier: axiom
 
 - Structurally true now:
   - `src/core/effect.ts` carries the closed eleven-kind Effect union — the only legal write-side payload shape a processor can emit.
-  - The engine route layer is the sole router for Effects; `src/engine/core/apply-effect.ts:routeToSink` is an exhaustive switch on generic sink routes, and garden PatchEffects route through `src/engine/garden/garden-patch-router.ts` into sub-Proposals.
+  - `src/engine/core/apply-effect.ts` is the sole applier for Effects; `routeToSink` is an exhaustive switch on the sink routes, and a garden auto-mode PatchEffect resolves to the `queued-for-spawn` outcome there before the garden orchestrator turns it into a sub-Proposal.
   - `src/engine/core/capability-broker.ts:enforceCapability` is the single enforcement function, called only from engine route modules.
   - `src/engine/core/adopt.ts:adopt()` is the only function that mutates trusted state. There is no public submit-style API in `src/index.ts`; Proposals are constructed internally by engine code and routed through `adopt()`.
   - `src/index.ts` does NOT export `writeDocument`, `moveDocument`, `deleteDocument`, `appendLog`, or the privileged-writer surface — those v0.5 paths were retired entirely.
