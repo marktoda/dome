@@ -5,9 +5,11 @@
 // and then dispatches to one of the injected sinks via an exhaustive
 // `switch` on `Effect.kind`. The router itself is pure: it owns no I/O and
 // holds no state; the wired sinks (projection store, ledger, outbox, etc.)
-// live in Phase 4 + Phase 8. Garden-phase PatchEffects are the one route
-// owned by `garden-patch-dispatch.ts`, because their destination is
-// sub-Proposal construction rather than an inline sink.
+// live in Phase 4 + Phase 8. Garden-phase PatchEffects flow through this
+// router like every other effect: the broker is enforced here, then an
+// authorized auto-mode patch resolves to the `queued-for-spawn` outcome (it is
+// not written through an inline sink) and the garden orchestrator constructs
+// the sub-Proposal from it.
 //
 // Normative references:
 //   - docs/wiki/specs/effects.md §"The Effect union"
@@ -17,8 +19,8 @@
 // Structural fence: TypeScript's `never`-type exhaustiveness check on the
 // `switch (effect.kind)` makes adding an Effect kind without a route
 // a compile error here for the generic sink routes. The capability broker
-// (`./capability-broker`) is also called by `garden-patch-dispatch.ts` for
-// garden PatchEffects; both call sites are inside the engine routing layer.
+// (`./capability-broker`) is called only from this module — one chokepoint for
+// every effect kind and phase, garden PatchEffects included.
 //
 // v1 scope:
 //   - This file is the pure routing layer. The sinks are *injected* via the
@@ -28,10 +30,11 @@
 //     through `sinks.recordDiagnostic` before return. Callers still inspect
 //     the returned array for control flow, but they do not need to remember a
 //     second persistence step.
-//   - Garden-phase PatchEffects are rejected here with `phase-mismatch`.
-//     Callers that accept garden patches must route them through
-//     `garden-patch-dispatch.ts`, where broker authorization, capability-use
-//     ledgering, and sub-Proposal spawning stay explicit.
+//   - Garden-phase PatchEffects cross this router like any other effect: the
+//     broker is enforced here, then an authorized auto-mode patch resolves to
+//     `queued-for-spawn` (it is NOT written through the patch sink). The garden
+//     orchestrator reads `appliedEffect` and spawns a sub-Proposal. Propose-mode
+//     and downgraded garden patches are surfaced and dropped.
 //   - In the adoption phase, a DiagnosticEffect with `severity: "block"` is
 //     *recorded* via `sinks.recordDiagnostic` and the router returns
 //     `outcome: "applied"`. The blocking itself happens one layer up, in
@@ -84,7 +87,7 @@ type PhaseCompatibilityTable = {
 export const EFFECT_PHASE_COMPATIBILITY = Object.freeze({
   patch: Object.freeze({
     adoption: true,
-    garden: false,
+    garden: true,
     view: false,
   }),
   diagnostic: Object.freeze({
@@ -311,15 +314,25 @@ export type ApplyEffectSinks = {
  *                           effect; the broker was not consulted. Nothing
  *                           routed. `diagnostics` carries a `phase-mismatch`
  *                           diagnostic.
- *   - `blocked-for-review` — an adoption-phase PatchEffect resolved to
- *                           `mode: "propose"` after broker enforcement.
- *                           Nothing routed; `diagnostics` carries a block
- *                           diagnostic that stops adoption.
+ *   - `blocked-for-review` — a PatchEffect the broker allowed but that will
+ *                           not be auto-applied. In adoption this is a
+ *                           `mode: "propose"` patch; `diagnostics` carries a
+ *                           `block` diagnostic that stops adoption. In garden
+ *                           this is a `mode: "propose"` patch with no review
+ *                           surface in v1.0; `diagnostics` carries an `info`
+ *                           `garden.patch-propose-review-unavailable`
+ *                           diagnostic that does not halt anything. Nothing
+ *                           routed either way.
+ *   - `queued-for-spawn`  — a garden-phase auto-mode PatchEffect the broker
+ *                           authorized. The patch is not written through the
+ *                           patch sink; instead the garden orchestrator reads
+ *                           `appliedEffect` and spawns a sub-Proposal from it.
+ *                           `diagnostics` is empty.
  *
- * `appliedEffect` is `null` for `denied` and `rejected-by-phase`. For
- * `blocked-for-review`, `denied`, and `rejected-by-phase` it is null. For
- * `applied` and `downgraded` it is non-null and equals the effect handed to
- * the sink.
+ * `appliedEffect` is the effect that was authorized and routed onward — to a
+ * sink (`applied`, `downgraded`) or to the spawn queue (`queued-for-spawn`).
+ * It is `null` when nothing was routed: `denied`, `rejected-by-phase`, and
+ * `blocked-for-review`.
  *
  * `diagnostics` is empty for plain `applied`; it carries the broker's
  * diagnostic for `downgraded` / `denied` and the router's `phase-mismatch`
@@ -333,7 +346,8 @@ export type ApplyEffectResult = {
     | "downgraded"
     | "denied"
     | "rejected-by-phase"
-    | "blocked-for-review";
+    | "blocked-for-review"
+    | "queued-for-spawn";
   readonly appliedEffect: Effect | null;
   readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
   /**
@@ -482,6 +496,65 @@ export async function applyEffect(opts: {
       ? Object.freeze([verdict.diagnostic])
       : EMPTY_DIAGNOSTICS;
 
+  // Garden-phase PatchEffects do not write through the patch sink. The broker
+  // decision is shared with adoption (deny handled above); only the post-broker
+  // routing differs: a downgraded patch or a propose-mode patch is surfaced and
+  // dropped, and an authorized auto-mode patch is queued for the garden
+  // orchestrator to spawn as a sub-Proposal — it reads the patch off
+  // `appliedEffect`. There is no garden propose review surface in v1.0.
+  if (opts.phase === "garden" && opts.effect.kind === "patch") {
+    if (verdict.kind === "downgrade") {
+      const downgraded = frozen({
+        outcome: "downgraded",
+        appliedEffect: null,
+        diagnostics: verdictDiagnostics,
+        ...capabilityUseField(opts.effect, "downgraded"),
+      });
+      await recordDiagnosticsViaSink({
+        sinks: opts.sinks,
+        diagnostics: downgraded.diagnostics,
+        processorId: opts.processorId,
+        proposalId: opts.proposalId,
+        runId: opts.runId,
+      });
+      return downgraded;
+    }
+    if (routed.kind === "patch" && routed.mode === "propose") {
+      const reviewDiagnostic = diagnosticEffect({
+        severity: "info",
+        code: "garden.patch-propose-review-unavailable",
+        message:
+          `Garden PatchEffect from ${opts.processorId} requested review, ` +
+          `but the garden propose review surface is not wired in v1.0; ` +
+          `patch dropped: ${routed.reason}`,
+        sourceRefs: routed.sourceRefs,
+      });
+      const blocked = frozen({
+        outcome: "blocked-for-review",
+        appliedEffect: null,
+        diagnostics: Object.freeze([reviewDiagnostic]),
+        ...capabilityUseField(opts.effect, "allowed"),
+      });
+      await recordDiagnosticsViaSink({
+        sinks: opts.sinks,
+        diagnostics: blocked.diagnostics,
+        processorId: opts.processorId,
+        proposalId: opts.proposalId,
+        runId: opts.runId,
+      });
+      return blocked;
+    }
+    // verdict is `allow` and mode is `auto` here (deny/downgrade/propose all
+    // returned above), so `routed` is the original patch unchanged — it is the
+    // authorized PatchEffect the orchestrator spawns.
+    return frozen({
+      outcome: "queued-for-spawn",
+      appliedEffect: routed,
+      diagnostics: EMPTY_DIAGNOSTICS,
+      ...capabilityUseField(opts.effect, "allowed"),
+    });
+  }
+
   // Adoption can auto-apply only auto-mode patches. A propose-mode patch
   // means the processor is asking for human review; applying it inside the
   // merge gate would silently bypass that review boundary. Run this after
@@ -606,7 +679,7 @@ function demoteGardenBlockSeverity(
  *
  *   - adoption: JobEffect, ExternalActionEffect, OutboxRecoveryEffect,
  *               QuarantineRecoveryEffect, RunRecoveryEffect, ViewEffect
- *   - garden:   PatchEffect, ViewEffect
+ *   - garden:   ViewEffect
  *   - view:     PatchEffect, DiagnosticEffect (severity: "block"),
  *               FactEffect, SearchDocumentEffect, QuestionEffect, JobEffect,
  *               ExternalActionEffect, OutboxRecoveryEffect,
@@ -628,10 +701,7 @@ function rejectedByPhase(
   effect: Effect,
   phase: ProcessorPhase,
 ): ApplyEffectResult {
-  const message =
-    phase === "garden" && effect.kind === "patch"
-      ? "Garden PatchEffects must route through garden-patch-dispatch as sub-Proposals, not the generic effect router."
-      : `Processor in phase '${phase}' cannot emit effect of kind '${effect.kind}'`;
+  const message = `Processor in phase '${phase}' cannot emit effect of kind '${effect.kind}'`;
   return frozen({
     outcome: "rejected-by-phase",
     appliedEffect: null,

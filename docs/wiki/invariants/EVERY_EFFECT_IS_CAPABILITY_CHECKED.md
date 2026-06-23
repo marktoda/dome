@@ -21,24 +21,24 @@ tier: axiom
 
 **Structural enforcement:**
 
-1. **One enforcement boundary.** `enforceCapability` is called from the engine routing layer exactly once per routed effect. Adoption, view, and non-patch garden effects go through `src/engine/core/apply-effect.ts`; garden PatchEffects go through `src/engine/garden/garden-patch-dispatch.ts` / `src/engine/garden/garden-patch-router.ts` because their destination is sub-Proposal construction. The broker is not exposed outside the engine.
+1. **One enforcement boundary.** `enforceCapability` is called from the sole applier `src/engine/core/apply-effect.ts` exactly once per routed effect — every effect kind and phase, garden PatchEffects included. A garden auto-mode PatchEffect is authorized there and resolves to `queued-for-spawn`; the garden orchestrator (`garden.ts` / `garden-patch-dispatch.ts`) then constructs the sub-Proposal from the already-authorized patch. The broker is not exposed outside the engine.
 2. **Returns `allow | downgrade | deny`.** The applier branches on the broker's verdict — `allow` applies the effect, `downgrade` rewrites it (e.g., PatchEffect `auto → propose`) and applies, `deny` writes a diagnostic and discards.
 3. **Capability uses are ledgered.** Every effect enforcement decision writes a `CapabilityUse` row in the run ledger (per [[wiki/specs/run-ledger]] §"capability_uses"). Runtime-only privileged powers such as `model.invoke` use the same table at their context boundary. The audit surface for "what did this processor reach" is structural, not heuristic.
 4. **Adoption-phase processors can't request `model.invoke`.** The bundle loader rejects manifests where an adoption-phase processor declares `model.invoke` capability — the broker refuses at registration time, not runtime.
-5. **The engine test suite exercises every Effect kind × Capability boundary.** `tests/engine/capability-broker.test.ts` ships positive and negative broker cases per effect family, `tests/engine/apply-effect.test.ts` checks generic routing outcomes, `tests/engine/garden-patch-router.test.ts` checks garden PatchEffect routing, and `tests/engine/adopt-capability-uses.test.ts` verifies capability-use ledger rows during adoption.
+5. **The engine test suite exercises every Effect kind × Capability boundary.** `tests/engine/capability-broker.test.ts` ships positive and negative broker cases per effect family, `tests/engine/apply-effect.test.ts` checks routing outcomes (including garden-phase PatchEffect routing), and `tests/engine/adopt-capability-uses.test.ts` verifies capability-use ledger rows during adoption.
 
 **Off-matrix lockstep convention:** This invariant is enforced at the engine boundary, not at a processor's call site. The lockstep test file at `tests/invariants/every-effect-is-capability-checked.test.ts` pins the invariant document into AC3; the behavior is exercised by the engine tests named above.
 
 **Counter-example:** A processor declares `patch.auto: ["wiki/**"]` but is granted only `patch.auto: ["wiki/generated/**"]` in vault config. The processor emits a PatchEffect touching `wiki/entities/danny.md` (outside the grant). The broker returns `downgrade`: the effect is rewritten to `patch.propose`, a [[wiki/gotchas/capability-downgrade-surprise]] diagnostic is emitted, and adoption blocks until a review/apply surface is available or the user changes the grant/code.
 
-**Test guarantee:** `tests/invariants/every-effect-is-capability-checked.test.ts` pins the invariant doc into AC3. The canonical enforcement coverage is the combination of `tests/engine/capability-broker.test.ts`, `tests/engine/apply-effect.test.ts`, `tests/engine/garden-patch-router.test.ts`, `tests/engine/adopt-capability-uses.test.ts`, and `tests/engine/model-invoke.test.ts`.
+**Test guarantee:** `tests/invariants/every-effect-is-capability-checked.test.ts` pins the invariant doc into AC3. The canonical enforcement coverage is the combination of `tests/engine/capability-broker.test.ts`, `tests/engine/apply-effect.test.ts`, `tests/engine/adopt-capability-uses.test.ts`, and `tests/engine/model-invoke.test.ts`. Garden-phase PatchEffect routing is covered by `tests/engine/apply-effect.test.ts`; the single-broker-chokepoint contract is pinned by `tests/integration/patch-effect-broker-lockstep.test.ts`.
 
 ## Implementation status
 
 **As of the v1 cut (Phases 1–10 complete):**
 
 - Structurally true now:
-  - **One enforcement function, engine-only call sites.** `src/engine/core/capability-broker.ts:enforceCapability` is invoked only from the engine routing layer (`apply-effect.ts`, `garden-patch-dispatch.ts`, and `garden-patch-router.ts`). The verdict shape (`allow | downgrade | deny`) is closed and the applier branches on it.
+  - **One enforcement function, one call site.** `src/engine/core/capability-broker.ts:enforceCapability` is invoked only from the sole applier `apply-effect.ts` (for every effect kind and phase). The verdict shape (`allow | downgrade | deny`) is closed and the applier branches on it.
   - **Verdict branching matches the spec.** `allow` routes the original effect, `downgrade` routes `verdict.rewrittenEffect`, `deny` returns `outcome: "denied"` with the broker's deny diagnostic.
   - **The Capability union is closed** in `src/core/processor.ts`. The bundle-manifest loader's Zod schemas in `src/extensions/manifest-schema.ts` validate declarations at registration boundary.
   - **The end-to-end runtime path is wired.** `dome sync` / `dome serve` open the runtime via `openVaultRuntime`, construct a manual Proposal from git state, call `adopt()`, and route returned Effects through the engine routing layer. Every Effect a processor emits passes through the broker before it can mutate state or write projections.

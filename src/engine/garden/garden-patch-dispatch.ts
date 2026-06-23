@@ -14,11 +14,10 @@ import {
 import type { Capability } from "../../core/processor";
 import type { CommitOid } from "../../core/source-ref";
 import type { LedgerDb } from "../../ledger/db";
-import type { ApplyEffectSinks } from "../core/apply-effect";
+import { applyEffect, type ApplyEffectSinks } from "../core/apply-effect";
 import type { ApplyPatchInput } from "../core/apply-patch";
 import { recordEffectCapabilityUse } from "../core/effect-capability-use";
 import { resolveCurrentAdopted } from "../core/adoption-status";
-import { routeGardenPatchForSubProposal } from "./garden-patch-router";
 import {
   spawnGardenSubProposal,
   DEFAULT_MAX_CASCADE_DEPTH,
@@ -67,28 +66,32 @@ export async function dispatchGardenPatchEffect(opts: {
   readonly maxCascadeDepth?: number;
   readonly now?: () => Date;
 }): Promise<GardenPatchDispatchResult> {
-  const routed = await routeGardenPatchForSubProposal({
+  const applied = await applyEffect({
     effect: opts.effect,
     processorId: opts.processorId,
     runId: opts.runId,
     proposalId: opts.proposalId,
+    phase: "garden",
     declared: opts.declared,
     granted: opts.granted,
     sinks: opts.sinks,
+    // Garden patches never write through the patch sink, so the candidate OID
+    // is unused on this path; pass the adopted commit for completeness.
+    candidate: opts.adopted,
   });
   recordEffectCapabilityUse({
     ledger: opts.ledger,
     runId: opts.runId,
-    ...(routed.capabilityUse !== undefined
-      ? { capabilityUse: routed.capabilityUse }
+    ...(applied.capabilityUse !== undefined
+      ? { capabilityUse: applied.capabilityUse }
       : {}),
   });
-  opts.diagnostics.push(...routed.diagnostics);
-  if (routed.kind === "dropped") {
+  opts.diagnostics.push(...applied.diagnostics);
+  if (applied.outcome !== "queued-for-spawn") {
     return Object.freeze({
       authorized: false,
       spawned: false,
-      rejected: routed.rejected,
+      rejected: applied.outcome === "denied",
     });
   }
 
@@ -124,7 +127,7 @@ export async function dispatchGardenPatchEffect(opts: {
     base: adopted,
     mergeBase: opts.adopted,
     sourceHead: adopted,
-    patch: routed.patch,
+    patch: opts.effect,
     processorId: opts.processorId,
     runId: opts.runId,
     extensionId: opts.extensionId,

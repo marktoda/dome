@@ -43,7 +43,7 @@ The check is a static import-graph walk over `src/**/*.ts`. For every file outsi
 
 ## Why this exists
 
-The engine is the only applier per [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]]. Every mutation flows through the engine routing layer (`src/engine/core/apply-effect.ts` for generic sink routes, `src/engine/garden/garden-patch-router.ts` plus sub-Proposal spawning for garden PatchEffects) with capability enforcement, ledger writes, and projection updates as routed side effects. Modules outside the engine that reach for `fs.writeFile`, `sqlite.execute("INSERT ...")`, or `git.commit()` bypass the chokepoint — and with it the broker, the ledger, and the audit surface.
+The engine is the only applier per [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]]. Every mutation flows through the sole applier `src/engine/core/apply-effect.ts` — every effect kind and phase, garden PatchEffects included (which it authorizes and resolves to `queued-for-spawn` before the garden orchestrator spawns a sub-Proposal) — with capability enforcement, ledger writes, and projection updates as routed side effects. Modules outside the engine that reach for `fs.writeFile`, `sqlite.execute("INSERT ...")`, or `git.commit()` bypass the chokepoint — and with it the broker, the ledger, and the audit surface.
 
 The static import-graph check catches the bypass at CI. The dynamic-import edge case (a processor reaching mutation modules via `await import("node:fs")`) is not caught by this check; v1.1+ adds a runtime fence via Node.js module-resolution interception or a runtime-import-trace.
 

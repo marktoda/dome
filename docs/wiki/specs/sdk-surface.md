@@ -409,7 +409,7 @@ remain effect-only.
 The substrate scaffold catches the missing pieces:
 - `tests/extensions/loader.test.ts` loads shipped and fixture bundles, rejects manifest/code drift, and asserts duplicate command triggers fail registry construction.
 - `tests/integration/processor-purity.test.ts` typechecks that no processor's `run` body reaches a mutation surface.
-- `tests/engine/capability-broker.test.ts`, `tests/engine/apply-effect.test.ts`, and `tests/engine/garden-patch-router.test.ts` exercise capability checks at the broker and routing boundaries.
+- `tests/engine/capability-broker.test.ts` and `tests/engine/apply-effect.test.ts` exercise capability checks at the broker and routing boundaries, including garden-phase PatchEffect routing.
 
 ## Adding a maintenance loop
 

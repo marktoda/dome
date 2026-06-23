@@ -3,21 +3,25 @@
 // Invariant: PATCH_EFFECT_BROKER_CHECKED_ON_EVERY_PATH
 //
 // PatchEffect is the only effect that mutates the canonical markdown substrate,
-// so it must always flow through the capability broker. There are TWO call
-// sites that route PatchEffects:
+// so it must always flow through the capability broker. Garden-phase patches
+// used to enforce the broker in a parallel module (garden-patch-router.ts);
+// that route was collapsed into the sole applier so there is now exactly ONE
+// broker call site for every patch phase:
 //
-//   1. src/engine/core/apply-effect.ts  — adoption-phase patches
-//   2. src/engine/garden/garden-patch-router.ts — garden-phase patches
+//   src/engine/core/apply-effect.ts — enforceCapability for adoption AND garden
 //
-// The engine's `never`-exhaustive effect switch only fences the generic route;
-// the garden route's broker call is a hand-maintained parallel. Without a
-// mechanical test, either path could silently drop `enforceCapability` during a
-// refactor and the invariant would be broken with no compile-time signal.
+// A garden patch is now phase-compatible with `applyEffect`, which enforces the
+// broker (step 2) before resolving the patch to `queued-for-spawn`. The garden
+// orchestrator only spawns a sub-Proposal AFTER applyEffect authorized it. The
+// remaining risk is a spawn caller bypassing applyEffect and spawning an
+// un-brokered patch, so this test pins two things: (1) apply-effect.ts still
+// calls enforceCapability, and (2) every module that calls
+// spawnGardenSubProposal also routes through applyEffect — no spawn without the
+// sole applier first.
 //
-// Assertion shape: source-level. Read both files and assert each one contains a
-// call to `enforceCapability`. This is the house pattern for cross-file
+// Assertion shape: source-level. This is the house pattern for cross-file
 // contracts (mirrors engine-import-direction.test.ts); it does not ossify
-// internal details beyond the single chokepoint symbol both paths must invoke.
+// internal details beyond the chokepoint symbols the paths must invoke.
 
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
@@ -34,21 +38,20 @@ const APPLY_EFFECT_PATH = join(
   "core",
   "apply-effect.ts",
 );
-const GARDEN_PATCH_ROUTER_PATH = join(
-  REPO_ROOT,
-  "src",
-  "engine",
-  "garden",
-  "garden-patch-router.ts",
-);
 
-// The broker entry point both paths must call. We strip single-line comments
-// before checking so a commented-out call does not satisfy the assertion. We
-// check for the call-expression token `enforceCapability(` (with open-paren) so
-// an import statement alone does not satisfy the check.
+// The modules that spawn garden sub-Proposals from an authorized PatchEffect.
+// Each must route the patch through applyEffect (the sole broker entry) before
+// reaching spawnGardenSubProposal.
+const SPAWN_CALLER_PATHS = [
+  join(REPO_ROOT, "src", "engine", "garden", "garden.ts"),
+  join(REPO_ROOT, "src", "engine", "garden", "garden-patch-dispatch.ts"),
+];
+
 const BROKER_CALL_PATTERN = "enforceCapability(";
+const APPLIER_CALL_PATTERN = "applyEffect(";
+const SPAWN_CALL_PATTERN = "spawnGardenSubProposal(";
 
-/** Strip `// ...` single-line comments from source so commented-out calls don't satisfy the check. */
+/** Strip `// ...` single-line comments so commented-out calls don't satisfy the check. */
 function stripLineComments(source: string): string {
   return source
     .split("\n")
@@ -60,21 +63,22 @@ function stripLineComments(source: string): string {
 }
 
 describe("PATCH_EFFECT_BROKER_CHECKED_ON_EVERY_PATH (review §3.4)", () => {
-  test("apply-effect.ts calls enforceCapability for the adoption PatchEffect path", async () => {
-    const raw = await readFile(APPLY_EFFECT_PATH, "utf8");
-    const source = stripLineComments(raw);
+  test("apply-effect.ts is the sole broker entry for every patch phase", async () => {
+    const source = stripLineComments(await readFile(APPLY_EFFECT_PATH, "utf8"));
     expect(
       source.includes(BROKER_CALL_PATTERN),
-      `apply-effect.ts must contain an active (non-commented) call to enforceCapability(...) — it is the broker entry for adoption-phase PatchEffects. If you removed or renamed this call, the adoption path no longer enforces capabilities (invariant PATCH_EFFECT_BROKER_CHECKED_ON_EVERY_PATH).`,
+      `apply-effect.ts must contain an active (non-commented) call to enforceCapability(...) — it is the single broker entry for both adoption- and garden-phase PatchEffects. If you removed or renamed this call, no patch path enforces capabilities (invariant PATCH_EFFECT_BROKER_CHECKED_ON_EVERY_PATH).`,
     ).toBe(true);
   });
 
-  test("garden-patch-router.ts calls enforceCapability for the garden PatchEffect path", async () => {
-    const raw = await readFile(GARDEN_PATCH_ROUTER_PATH, "utf8");
-    const source = stripLineComments(raw);
-    expect(
-      source.includes(BROKER_CALL_PATTERN),
-      `garden-patch-router.ts must contain an active (non-commented) call to enforceCapability(...) — it is the broker entry for garden-phase PatchEffects. If you removed or renamed this call, garden patches no longer enforce capabilities (invariant PATCH_EFFECT_BROKER_CHECKED_ON_EVERY_PATH).`,
-    ).toBe(true);
+  test("every garden sub-Proposal spawn routes through the sole applier", async () => {
+    for (const path of SPAWN_CALLER_PATHS) {
+      const source = stripLineComments(await readFile(path, "utf8"));
+      if (!source.includes(SPAWN_CALL_PATTERN)) continue;
+      expect(
+        source.includes(APPLIER_CALL_PATTERN),
+        `${path} calls spawnGardenSubProposal(...) but does not route the patch through applyEffect(...). Garden patches must cross the sole applier (which enforces the broker) before a sub-Proposal is spawned; spawning an un-brokered patch breaks PATCH_EFFECT_BROKER_CHECKED_ON_EVERY_PATH.`,
+      ).toBe(true);
+    }
   });
 });
