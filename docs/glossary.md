@@ -58,6 +58,7 @@ term that lives in only one spec is defined there, not here.
 - **Close scaffold** — the deterministic evening block: done candidates, still-open count, story pointer.
 - **Sweep** — the nightly meaning-integration pass over recent material. [[wiki/specs/sweep]]
 - **Subscription** — a declared external-feed fetch in `dome.sources`: schedule + vault-authored command + output path. [[wiki/specs/sources]]
+- **View Contract** — a first-party view's single declaration (`FirstPartyViewEntry` in `src/surface/view-catalog.ts`): command trigger, expected ViewEffect name + version tag (`schemaTag`), the zod **payload** schema (tier 1 — validates the structured data, retiring `data: unknown`), and an optional **view-model** builder (tier 2). The view-layer analog of the sqlite row-codec; adapters validate against it and paint. [[wiki/concepts/surface-view-model]]
 
 ## Processor shapes (not primitives)
 
