@@ -325,7 +325,7 @@ export type TaskUrgency =
   | { readonly kind: "later"; readonly date: string }
   | { readonly kind: "someday" };
 
-/** Hero-deduped tasks partitioned by urgency. A row's section IS its urgency. */
+/** Open tasks partitioned by urgency. A row's section IS its urgency. */
 export type TodaySections = {
   readonly overdue: ReadonlyArray<TodayTaskRow>;
   readonly dueToday: ReadonlyArray<TodayTaskRow>;
@@ -339,9 +339,6 @@ export type TodayViewModel = {
   readonly counts: TodayCounts;
   /** counts.openTasks + followups + questions — the "N open" headline; all-clear is `=== 0`. */
   readonly totalOpen: number;
-  readonly hero: TodayHeroItem | null;
-  /** Urgency of the hero task; null when the hero is a question or absent. */
-  readonly heroUrgency: TaskUrgency | null;
   readonly stillOpen: TodaySections;
   readonly brief: TodayBriefField | null;
   readonly calendar: TodayCalendar | null;
@@ -357,16 +354,9 @@ export function classifyUrgency(dueDate: string | null, today: string): TaskUrge
   return { kind: "later", date: dueDate };
 }
 
-function taskIdentity(t: { path: string; line: number | null; text: string }): string {
-  return `${t.path}:${t.line ?? ""}:${t.text}`;
-}
-
 /** Derive the today view-model from a parsed view. Pure; `today` is `view.date`. */
 export function buildTodayViewModel(view: TodayView): TodayViewModel {
-  const { date, openTasks, followups, questions, hero, brief, calendar, counts } = view;
-
-  const heroIsTask = hero !== null && hero.kind === "task";
-  const heroKey = heroIsTask ? taskIdentity(hero.item) : null;
+  const { date, openTasks, followups, questions, brief, calendar, counts } = view;
 
   const sections: {
     overdue: TodayTaskRow[];
@@ -377,7 +367,6 @@ export function buildTodayViewModel(view: TodayView): TodayViewModel {
   } = { overdue: [], dueToday: [], thisWeek: [], later: [], someday: [] };
 
   for (const t of [...openTasks, ...followups]) {
-    if (heroKey !== null && taskIdentity(t) === heroKey) continue; // hero shown separately
     const urgency = classifyUrgency(t.dueDate, date);
     if (urgency.kind === "overdue") sections.overdue.push(t);
     else if (urgency.kind === "due-today") sections.dueToday.push(t);
@@ -390,8 +379,6 @@ export function buildTodayViewModel(view: TodayView): TodayViewModel {
     date,
     counts,
     totalOpen: counts.openTasks + counts.followups + counts.questions,
-    hero,
-    heroUrgency: heroIsTask ? classifyUrgency(hero.item.dueDate, date) : null,
     stillOpen: {
       overdue: sections.overdue,
       dueToday: sections.dueToday,

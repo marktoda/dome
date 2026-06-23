@@ -16,8 +16,6 @@ import {
   type TodayTaskRow,
   type TodayQuestionRow,
   type TodayCalendarEvent,
-  type TodayHeroItem,
-  type TaskUrgency,
   type TodaySections,
 } from "../surface/today-view";
 
@@ -36,15 +34,13 @@ const FONT_FACE = `
 export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
   const refresh = Math.max(1, Math.floor(opts.refreshSeconds));
   const vm = buildTodayViewModel(parseTodayView(data));
-  const { date, questions, brief, calendar, hero, heroUrgency, stillOpen, counts, totalOpen } = vm;
+  const { date, questions, brief, calendar, stillOpen, counts, totalOpen } = vm;
   const isAllClear = totalOpen === 0;
-  // The hero is shown as its own pill; stillOpen is already hero-deduped.
   const hasOpenItems =
     stillOpen.overdue.length + stillOpen.dueToday.length + stillOpen.thisWeek.length +
     stillOpen.later.length + stillOpen.someday.length > 0;
-  // True total for the "Still open" header (tasks + followups, hero counted separately).
-  const heroIsTask = hero !== null && hero.kind === "task";
-  const trueOpenCount = counts.openTasks + counts.followups - (heroIsTask ? 1 : 0);
+  // True total for the "Still open" header (tasks + followups).
+  const trueOpenCount = counts.openTasks + counts.followups;
 
   const style = `${FONT_FACE}
     * { box-sizing: border-box; }
@@ -73,14 +69,6 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
     /* brief */
     .brief-text { font-size: 19px; line-height: 1.57; color: rgba(255,255,255,0.92); margin: 0 0 8px; max-width: 64ch; letter-spacing: -0.005em; }
     .brief-prov { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: rgba(255,255,255,0.32); margin-bottom: 28px; }
-
-    /* hero pill */
-    .hero { display: inline-flex; gap: 12px; align-items: center; padding: 13px 18px; border: 1px solid rgba(255,55,199,0.35); border-radius: 15px; margin-bottom: 36px; }
-    .hero-arrow { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: #FF37C7; font-size: 16px; }
-    .hero-text { font-size: 16px; color: #fff; }
-    .hero-urgency { margin-left: 10px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; color: #FF593C; }
-    .hero-urgency.warn { color: #FFBF17; }
-    .hero-urgency.ok { color: rgba(255,255,255,0.5); }
 
     /* two-column band */
     .band { display: grid; grid-template-columns: 1fr; gap: 36px; margin-bottom: 36px; }
@@ -179,8 +167,6 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
   <div class="brief-prov">&#8627; ${esc(brief.sourceRef.path)} · brief</div>`
     : "";
 
-  const heroHtml = hero !== null ? renderHeroHtml(hero, heroUrgency) : "";
-
   const calendarHtml = calendar !== null && calendar.events.length > 0
     ? renderCalendarHtml(calendar.events)
     : "";
@@ -223,7 +209,7 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
   const bodyContent = isAllClear
     ? `${allClearHtml}`
     : `${briefHtml}
-  ${heroHtml}${bandHtml}${stillOpenHtml}`;
+  ${bandHtml}${stillOpenHtml}`;
 
   const scriptHtml = buildScriptHtml(refresh, questions);
 
@@ -485,42 +471,6 @@ function buildScriptHtml(
 }
 
 // ── Section renderers ───────────────────────────────────────────────────────
-
-function renderHeroHtml(hero: TodayHeroItem, heroUrgency: TaskUrgency | null): string {
-  if (hero.kind === "task") {
-    const item = hero.item;
-    let urgencyHtml = "";
-    if (heroUrgency !== null) {
-      if (heroUrgency.kind === "overdue") {
-        urgencyHtml = `<span class="hero-urgency">overdue ${heroUrgency.days}d</span>`;
-      } else if (heroUrgency.kind === "due-today") {
-        urgencyHtml = `<span class="hero-urgency warn">due today</span>`;
-      } else if (heroUrgency.kind === "this-week" || heroUrgency.kind === "later") {
-        urgencyHtml = `<span class="hero-urgency ok">due ${esc(heroUrgency.date)}</span>`;
-      }
-      // someday (undated) → no urgency span, matching the prior null-dueDate case
-    }
-    return `<div class="hero">
-    <span class="hero-arrow">&#8594;</span>
-    <span class="hero-text">${esc(clampText(item.text, 100))}</span>
-    ${urgencyHtml}
-  </div>
-  `;
-  } else {
-    const item = hero.item;
-    return `<div class="hero">
-    <span class="hero-arrow">&#8594;</span>
-    <span class="hero-text">${esc(clampText(item.question, 100))}</span>
-  </div>
-  `;
-  }
-}
-
-// Clamp the hero pill text so a long task doesn't balloon the pill; the full
-// item is still in the list / --json.
-function clampText(value: string, max: number): string {
-  return value.length <= max ? value : `${value.slice(0, max - 1).trimEnd()}…`;
-}
 
 function renderCalendarHtml(events: ReadonlyArray<TodayCalendarEvent>): string {
   const eventsHtml = events.map((ev) => `

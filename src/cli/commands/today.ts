@@ -44,7 +44,6 @@ import {
   parseTodayView,
   buildTodayViewModel,
   type TodayTaskRow,
-  type TaskUrgency,
 } from "../../surface/today-view";
 import { compareStrings } from "../../core/compare";
 import { resolveVaultPath } from "../../surface/resolve-vault";
@@ -298,23 +297,6 @@ export type FormatTodayOptions = {
   readonly verbose?: boolean;
 };
 
-/** Render the hero pill's urgency suffix from the view-model classification. */
-function heroUrgencyStrings(
-  u: TaskUrgency | null,
-  caps: Caps,
-): { plain: string; painted: string } {
-  if (u === null || u.kind === "someday") return { plain: "", painted: "" };
-  if (u.kind === "overdue") {
-    const s = `overdue ${u.days}d`;
-    return { plain: `   ${s}`, painted: `   ${paint(s, "err", caps)}` };
-  }
-  if (u.kind === "due-today") {
-    return { plain: "   due today", painted: `   ${paint("due today", "warn", caps)}` };
-  }
-  const s = `due ${u.date}`; // this-week | later
-  return { plain: `   ${s}`, painted: `   ${paint(s, "muted", caps)}` };
-}
-
 export function formatTodayResult(
   data: unknown,
   caps: Caps,
@@ -322,11 +304,8 @@ export function formatTodayResult(
   opts: FormatTodayOptions = {},
 ): string {
   const vm = buildTodayViewModel(parseTodayView(data));
-  const { date, counts, totalOpen, hero, heroUrgency, stillOpen, brief, calendar, questions } = vm;
-  // Verdict overdue count includes the hero when it is itself overdue (the hero
-  // is rendered separately but still counts toward "N overdue").
-  const overdueCount =
-    stillOpen.overdue.length + (heroUrgency?.kind === "overdue" ? 1 : 0);
+  const { date, counts, totalOpen, stillOpen, brief, calendar, questions } = vm;
+  const overdueCount = stillOpen.overdue.length;
   const isAllClear = totalOpen === 0;
 
   // Verdict header
@@ -343,59 +322,6 @@ export function formatTodayResult(
     headline({ cmd: "today", context: vaultName }, status, caps),
     "",
   ];
-
-  // Hero action line (→ / >) — never dome decide
-  if (hero !== null) {
-    const heroArrow = caps.unicode ? "↗" : "->";
-    const heroArrowWidth = visibleWidth(heroArrow);
-    if (hero.kind === "task") {
-      const item = hero.item;
-      // Urgency suffix — from the view-model's heroUrgency. Compute its plain
-      // visible width BEFORE paint so we can reserve the right columns.
-      const { plain: urgencyPlain, painted: urgencyPainted } = heroUrgencyStrings(
-        heroUrgency,
-        caps,
-      );
-      const urgencyWidth = visibleWidth(urgencyPlain);
-
-      // Mirror renderRow: split out inline links, strip emphasis, shorten.
-      const { text: rawText, links: heroLinks } = splitInlineLinks(item.text);
-      const heroText = stripEmphasis(rawText);
-      const MAX_LINK_LABEL = 24;
-      const heroAffs = heroLinks.map((l) => ({
-        label: shortenLabel(l.label, MAX_LINK_LABEL, caps.unicode),
-        url: l.url,
-      }));
-      const heroLinkReserve =
-        heroAffs.length === 0
-          ? 0
-          : 3 +
-            heroAffs.reduce((a, x) => a + visibleWidth(x.label) + heroArrowWidth, 0) +
-            (heroAffs.length - 1) * 2;
-      const heroOriginReserve = item.origin !== undefined ? 3 + heroArrowWidth : 0;
-      // "  → " leader = 4 cols (2 indent + pointer char + space); same as taskWidth.
-      const heroTaskWidth = Math.max(24, caps.width - 4);
-      const heroBudget = Math.max(0, heroTaskWidth - urgencyWidth - heroLinkReserve - heroOriginReserve);
-      const heroLabel = shortenLabel(heroText, heroBudget, caps.unicode);
-
-      const heroAffordances = heroAffs
-        .map((x) => paint(hyperlink(`${x.label}${heroArrow}`, x.url, caps), "ident", caps))
-        .join("  ");
-      const heroInlineTail = heroAffs.length > 0 ? `   ${heroAffordances}` : "";
-      const heroOriginTail =
-        item.origin !== undefined
-          ? `   ${paint(hyperlink(heroArrow, originUrl(item.origin, vault), caps), "ident", caps)}`
-          : "";
-      lines.push(`  ${glyph("pointer", caps)} ${heroLabel}${heroInlineTail}${heroOriginTail}${urgencyPainted}`);
-    } else {
-      const item = hero.item;
-      const questionText = shortenLabel(stripEmphasis(item.question), 60, caps.unicode);
-      lines.push(
-        `  ${glyph("pointer", caps)} dome resolve ${item.id}   ${paint(questionText, "muted", caps)}`,
-      );
-    }
-    lines.push("");
-  }
 
   // All-clear calm body: a quiet two-line state under the verdict header,
   // not a bare one-liner. (No hero, no list — there is nothing open.)
@@ -554,8 +480,7 @@ export function formatTodayResult(
     // (possibly display-capped) arrays. Overdue is reported exactly (the verdict
     // header already relies on the received list carrying all overdue); every
     // other non-shown task folds into a single "more" so the math never lies.
-    const heroIsTask = hero !== null && hero.kind === "task";
-    const trueTotal = (counts.openTasks + counts.followups) - (heroIsTask ? 1 : 0);
+    const trueTotal = counts.openTasks + counts.followups;
     const overdueMore = Math.max(0, overdue.length - overdueShown);
     const shownNonOverdue = todayShown + thisWeekShown + laterShown + somedayShown;
     const otherMore = Math.max(0, (trueTotal - overdue.length) - shownNonOverdue);

@@ -117,21 +117,16 @@ describe("renderTodayHtml", () => {
     expect(html).toContain("You&#39;re clear");
   });
 
-  test("renders the hero pill for a task hero", () => {
-    const html = renderTodayHtml(
-      { ...base, hero: { kind: "task", item: taskFixture } },
-      { refreshSeconds: 15 },
-    );
-    expect(html).toContain("Make the routing decision");
-  });
-
-  test("web hero shows the overdue day count", () => {
+  test("hero retired: no hero pill even when the payload carries one; the task shows in the list", () => {
     const html = renderTodayHtml(
       { ...base, date: "2026-06-14",
-        hero: { kind: "task", item: { text: "x", path: "p", line: 1, dueDate: "2026-06-10" } } },
+        openTasks: [taskFixture], followups: [], questions: [],
+        counts: { openTasks: 1, followups: 0, questions: 0 },
+        hero: { kind: "task", item: taskFixture } },
       { refreshSeconds: 15 },
     );
-    expect(html).toMatch(/overdue\s*4d/);
+    expect(html).not.toContain('class="hero"');
+    expect(html).toContain("Make the routing decision"); // lives in the still-open list
   });
 
   test("escapes HTML in interpolated content", () => {
@@ -225,9 +220,12 @@ describe("wikilink stripping (web cockpit)", () => {
     expect(html).toContain("Talk to Eric eric-sanchirico about the lane");
     expect(html).not.toContain("[[");
   });
-  test("hero task text strips [[wikilinks]]", () => {
+  test("still-open task text strips [[wikilinks]]", () => {
     const html = renderTodayHtml(
-      { ...base, hero: { kind: "task", item: { ...taskFixture, text: "Decide [[wiki/routing-decision|the routing call]]" } } },
+      { ...base,
+        openTasks: [{ text: "Decide [[wiki/routing-decision|the routing call]]", path: "p", line: 1, dueDate: null }],
+        followups: [], questions: [],
+        counts: { openTasks: 1, followups: 0, questions: 0 }, hero: null },
       { refreshSeconds: 15 },
     );
     expect(html).toContain("Decide the routing call");
