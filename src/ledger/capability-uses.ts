@@ -31,7 +31,7 @@
 
 import { z } from "zod";
 
-import { parseEnum } from "../sqlite/parse-enum";
+import { rowCodec } from "../sqlite/row-codec";
 import { parseJsonColumn } from "../sqlite/row-json";
 import { mapRows } from "../sqlite/rows";
 import type { LedgerDb } from "./db";
@@ -228,54 +228,55 @@ export function queryPatchRecords(
 
 // ----- internals ------------------------------------------------------------
 
-function rowToCapabilityUseRow(row: CapabilityUseRawRow): CapabilityUseRow {
-  return Object.freeze({
-    id: row.id,
-    runId: row.run_id as RunId,
-    capability: row.capability,
-    resource: row.resource,
-    outcome: narrowOutcome(row.outcome),
-    recordedAt: row.recorded_at,
-  });
-}
-
-function rowToPatchRecord(row: PatchRecordRawRow): PatchRecord {
-  return Object.freeze({
-    id: row.id,
-    runId: row.run_id as RunId,
-    processorId: row.processor_id,
-    processorVersion: row.processor_version,
-    phase: row.phase,
-    status: row.status,
-    capability: row.capability,
-    resource: row.resource,
-    outcome: narrowOutcome(row.outcome),
-    inputCommit: row.input_commit,
-    outputCommit: row.output_commit,
-    effectHashes: Object.freeze(
-      parseJsonColumn(
-        row.effect_hashes_json,
-        "runs.effect_hashes_json",
-        EffectHashesSchema,
-      ),
-    ),
-    startedAt: row.started_at,
-    finishedAt: row.finished_at,
-    recordedAt: row.recorded_at,
-  });
-}
-
 const CAPABILITY_OUTCOMES = [
   "allowed",
   "downgraded",
   "denied",
 ] as const satisfies ReadonlyArray<CapabilityOutcome>;
 
-/**
- * Narrow the raw `outcome` string to the closed `CapabilityOutcome`
- * union. The DDL doesn't carry a CHECK constraint on `outcome` (v1
- * simplicity); this function is the read-side fence.
- */
-function narrowOutcome(s: string): CapabilityOutcome {
-  return parseEnum(s, CAPABILITY_OUTCOMES, "ledger.capability-uses: outcome");
-}
+// The DDL doesn't carry a CHECK constraint on `outcome` (v1 simplicity); the
+// `enumCol` reader is the read-side fence. Two codecs because the patch-record
+// query joins extra run columns onto the capability_use row.
+const capUseCodec = rowCodec<CapabilityUseRawRow>("ledger.capability-uses");
+
+const rowToCapabilityUseRow = capUseCodec.define<CapabilityUseRow>({
+  id: capUseCodec.col("id"),
+  runId: capUseCodec.brand("run_id", (v) => v as RunId),
+  capability: capUseCodec.col("capability"),
+  resource: capUseCodec.col("resource"),
+  outcome: capUseCodec.enumCol("outcome", CAPABILITY_OUTCOMES),
+  recordedAt: capUseCodec.col("recorded_at"),
+});
+
+const patchRecordCodec = rowCodec<PatchRecordRawRow>("ledger.capability-uses");
+
+const rowToPatchRecord = patchRecordCodec.define<PatchRecord>({
+  id: patchRecordCodec.col("id"),
+  runId: patchRecordCodec.brand("run_id", (v) => v as RunId),
+  processorId: patchRecordCodec.col("processor_id"),
+  processorVersion: patchRecordCodec.col("processor_version"),
+  // phase / status / commits are plain strings on PatchRecord (this is a
+  // derived inspection view, not the narrowed RunRow), so they pass through.
+  phase: patchRecordCodec.col("phase"),
+  status: patchRecordCodec.col("status"),
+  capability: patchRecordCodec.col("capability"),
+  resource: patchRecordCodec.col("resource"),
+  outcome: patchRecordCodec.enumCol("outcome", CAPABILITY_OUTCOMES),
+  inputCommit: patchRecordCodec.col("input_commit"),
+  outputCommit: patchRecordCodec.col("output_commit"),
+  // `custom` with the source-table label: `effect_hashes_json` is JOINed from
+  // the `runs` table, so the honest validation label is "runs.…", not this
+  // accessor's table. (The auto-label `<table>.<col>` would misattribute it.)
+  effectHashes: patchRecordCodec.custom((row) =>
+    Object.freeze(
+      parseJsonColumn(
+        row.effect_hashes_json,
+        "runs.effect_hashes_json",
+        EffectHashesSchema,
+      ),
+    ),
+  ),
+  startedAt: patchRecordCodec.col("started_at"),
+  finishedAt: patchRecordCodec.col("finished_at"),
+  recordedAt: patchRecordCodec.col("recorded_at"),
+});

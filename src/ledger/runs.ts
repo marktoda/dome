@@ -94,8 +94,8 @@ import {
   type ProcessorTimeoutExecutionError,
   type RunId,
 } from "../engine/core/runner-contract";
-import { parseEnum } from "../sqlite/parse-enum";
 import { parseJsonColumn } from "../sqlite/row-json";
+import { rowCodec } from "../sqlite/row-codec";
 import { mapRows } from "../sqlite/rows";
 import type { LedgerDb } from "./db";
 import { limitClause } from "./limits";
@@ -1074,57 +1074,10 @@ export function failRunIfCurrent(
 
 // ----- internals ------------------------------------------------------------
 
-/**
- * Row → RunRow. Deserializes JSON columns and narrows the `status`,
- * `phase`, `trigger_kind` strings to their closed unions. Throws on an
- * unrecognized value (a row corrupted at the SQL boundary — programmer
- * error or external tampering with the db file).
- */
-function rowToRunRow(row: RunRawRow): RunRow {
-  return Object.freeze({
-    id: row.id as RunId,
-    proposalId: row.proposal_id,
-    processorId: row.processor_id,
-    processorVersion: row.processor_version,
-    phase: narrowPhase(row.phase),
-    inputCommit: commitOid(row.input_commit),
-    outputCommit: row.output_commit === null ? null : commitOid(row.output_commit),
-    status: narrowStatus(row.status),
-    effectHashes: Object.freeze(
-      parseJsonColumn(
-        row.effect_hashes_json,
-        "runs.effect_hashes_json",
-        EffectHashesSchema,
-      ),
-    ),
-    costUsd: row.cost_usd,
-    durationMs: row.duration_ms,
-    error: row.error,
-    triggerKind: narrowTriggerKind(row.trigger_kind),
-    triggerPayload: parseJsonColumn(
-      row.trigger_payload_json,
-      "runs.trigger_payload_json",
-      JsonValueSchema,
-    ),
-    startedAt: row.started_at,
-    finishedAt: row.finished_at,
-  });
-}
-
-function rowToRunSummaryRow(row: RunSummaryRawRow): RunSummaryRow {
-  return Object.freeze({
-    id: row.id as RunId,
-    processorId: row.processor_id,
-    processorVersion: row.processor_version,
-    phase: narrowPhase(row.phase),
-    status: narrowStatus(row.status),
-    durationMs: row.duration_ms,
-    error: row.error,
-    triggerKind: narrowTriggerKind(row.trigger_kind),
-    startedAt: row.started_at,
-    finishedAt: row.finished_at,
-  });
-}
+// Row → RunRow / RunSummaryRow codecs are defined below, after the closed-enum
+// arrays they reference (see `runCodec`). They deserialize JSON columns and
+// narrow `status` / `phase` / `trigger_kind`, throwing on a value corrupted at
+// the SQL boundary.
 
 function runsWhereClause(
   filter?: RunsQueryFilter,
@@ -1185,17 +1138,52 @@ const TRIGGER_KINDS = [
   "job",
 ] as const satisfies ReadonlyArray<TriggerKind>;
 
-function narrowStatus(s: string): RunStatus {
-  return parseEnum(s, RUN_STATUSES, "ledger.runs: status");
-}
+const runCodec = rowCodec<RunRawRow>("ledger.runs");
 
-function narrowPhase(s: string): ProcessorPhase {
-  return parseEnum(s, PROCESSOR_PHASES, "ledger.runs: phase");
-}
+const rowToRunRow = runCodec.define<RunRow>({
+  id: runCodec.brand("id", (v) => v as RunId),
+  proposalId: runCodec.col("proposal_id"),
+  processorId: runCodec.col("processor_id"),
+  processorVersion: runCodec.col("processor_version"),
+  phase: runCodec.enumCol("phase", PROCESSOR_PHASES),
+  inputCommit: runCodec.brand("input_commit", commitOid),
+  outputCommit: runCodec.nullableBrand("output_commit", commitOid),
+  status: runCodec.enumCol("status", RUN_STATUSES),
+  effectHashes: runCodec.jsonCol("effect_hashes_json", EffectHashesSchema),
+  costUsd: runCodec.col("cost_usd"),
+  durationMs: runCodec.col("duration_ms"),
+  error: runCodec.col("error"),
+  triggerKind: runCodec.enumCol("trigger_kind", TRIGGER_KINDS),
+  // `custom`, not `jsonCol`: the trigger payload is left unfrozen (its shape is
+  // opaque `unknown`), matching the hand-mapper that froze effectHashes but not
+  // this column.
+  triggerPayload: runCodec.custom((row) =>
+    parseJsonColumn(
+      row.trigger_payload_json,
+      "ledger.runs.trigger_payload_json",
+      JsonValueSchema,
+    ),
+  ),
+  startedAt: runCodec.col("started_at"),
+  finishedAt: runCodec.col("finished_at"),
+});
 
-function narrowTriggerKind(s: string): TriggerKind {
-  return parseEnum(s, TRIGGER_KINDS, "ledger.runs: trigger_kind");
-}
+// Bound to the narrower summary raw shape (`queryRunSummaries` SELECTs fewer
+// columns), so the codec only reads columns that row actually carries.
+const runSummaryCodec = rowCodec<RunSummaryRawRow>("ledger.runs");
+
+const rowToRunSummaryRow = runSummaryCodec.define<RunSummaryRow>({
+  id: runSummaryCodec.brand("id", (v) => v as RunId),
+  processorId: runSummaryCodec.col("processor_id"),
+  processorVersion: runSummaryCodec.col("processor_version"),
+  phase: runSummaryCodec.enumCol("phase", PROCESSOR_PHASES),
+  status: runSummaryCodec.enumCol("status", RUN_STATUSES),
+  durationMs: runSummaryCodec.col("duration_ms"),
+  error: runSummaryCodec.col("error"),
+  triggerKind: runSummaryCodec.enumCol("trigger_kind", TRIGGER_KINDS),
+  startedAt: runSummaryCodec.col("started_at"),
+  finishedAt: runSummaryCodec.col("finished_at"),
+});
 
 function isRecoveredOrphanRun(
   row: Pick<RunRow, "status" | "error">,
