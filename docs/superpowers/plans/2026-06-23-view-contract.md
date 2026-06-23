@@ -398,6 +398,8 @@ export type QueryResultData = z.infer<typeof queryPayloadSchema>;
 
 **Note (no silent cap):** the `facts`/`diagnostics`/`questions` arrays currently parse to richer shapes via `parseFacts`/`parseDiagnostics`/`parseQuestions`. Port those exact element schemas (read `query.ts:300+`) rather than `z.unknown()` — `z.unknown()` here is a placeholder the implementer MUST replace so the rendered output is byte-identical. Verify against `tests/cli/commands/query.test.ts` golden output.
 
+**CORRECTION (impl discovery — query needs a view-model tier):** `parseQuestions` does more than validate — it *derives* (`resolveCommand` via `resolveQuestionCommand`, `automationPolicy` via `questionAutomationPolicy(metadata)`) and *filters* (drops facts/questions with empty `predicate`/`code`/`question`). Validation + dropping can live in the schema (`.transform`/`.catch`), but the `resolve*`/`*Policy` derivations belong in a `buildViewModel` (tier 2) on the entry — query is NOT schema-only. Split: `queryPayloadSchema` validates the raw wire shape; `buildQueryViewModel(payload)` does the derivation + filtering; `formatQueryResult` paints from the view-model. This is a heavier task than lint — do it as its own cycle and diff the query golden test carefully.
+
 - [ ] **Step 4: Wire catalog + CLI** — query entry `payload: queryPayloadSchema`; delete `parseQueryResult`/`QueryResultData` from `query.ts`; import `formatQueryResult` from `../../surface/query-view`; `renderHuman: (data) => formatQueryResult(data, resolveCaps(), vaultPath)`.
 
 - [ ] **Step 5: Run tests** — `cd <worktree> && bun test tests/surface/query-view.test.ts tests/cli/commands/query.test.ts` → PASS.
