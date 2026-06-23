@@ -1,9 +1,16 @@
 import { useState } from "react";
-import type { Today, TodayItem, TodayQuestion } from "../api/types";
+import {
+  buildTodayViewModel,
+  parseTodayView,
+  priorityMarkerChars,
+  type TodayTaskRow,
+  type TodayQuestionRow,
+} from "../../../src/surface/today-view";
+import type { Today } from "../api/types";
 import { renderRich } from "../rich";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const CAP = 5; // glanceable by default; "+N more" reveals the rest
+const AGENDA_CAP = 5;
 
 /** "2026-06-20" → "Jun 20". Deterministic (no Date / timezone). */
 function fmtDue(iso: string): string {
@@ -12,20 +19,28 @@ function fmtDue(iso: string): string {
   return `${MONTHS[Number(m[2]) - 1] ?? ""} ${Number(m[3])}`;
 }
 
-function TaskRow({ item, followup = false }: { item: TodayItem; followup?: boolean }): React.ReactElement {
+/** Priority marker glyph, shared with the CLI/HTTP surfaces via the view-model. */
+function PriorityMark({ priority }: { priority: TodayTaskRow["priority"] }): React.ReactElement | null {
+  const chars = priorityMarkerChars(priority, true);
+  if (chars.length === 0) return null;
+  const high = priority === "highest" || priority === "high";
+  return <span className={`prio ${high ? "prio-high" : "prio-low"}`}>{chars} </span>;
+}
+
+function TaskRow({ item }: { item: TodayTaskRow }): React.ReactElement {
   return (
-    <div className={`row${followup ? " followup" : ""}`}>
+    <div className="row">
       {/* Non-interactive for now: completing a task = editing markdown = a git commit,
           which needs a co-located checkout the phone lacks. Make this a checkable
           control once there's a phone write-path (the deferred authoring boundary). */}
       <div className="box" />
-      <div className="text">{renderRich(item.text)}</div>
+      <div className="text"><PriorityMark priority={item.priority} />{renderRich(item.text)}</div>
       {item.dueDate !== null ? <span className="due">{fmtDue(item.dueDate)}</span> : null}
     </div>
   );
 }
 
-function QuestionCard({ q, onResolve }: { q: TodayQuestion; onResolve: (id: number, value: string) => void }): React.ReactElement {
+function QuestionCard({ q, onResolve }: { q: TodayQuestionRow; onResolve: (id: number, value: string) => void }): React.ReactElement {
   return (
     <div className="qcard">
       <div className="body">{renderRich(q.question)}</div>
@@ -36,25 +51,14 @@ function QuestionCard({ q, onResolve }: { q: TodayQuestion; onResolve: (id: numb
   );
 }
 
-function HeroCard({ hero, onResolve }: { hero: NonNullable<Today["hero"]>; onResolve: (id: number, value: string) => void }): React.ReactElement {
-  let inner: React.ReactNode;
-  if (hero.kind === "question") {
-    const q = hero.item as TodayQuestion;
-    inner = (
-      <>
-        <div className="body">{renderRich(q.question)}</div>
-        <div className="opts">{q.options.map((opt) => <button key={opt} type="button" onClick={() => onResolve(q.id, opt)}>{opt}</button>)}</div>
-      </>
-    );
-  } else {
-    const t = hero.item as TodayItem;
-    inner = <div className="body">{renderRich(t.text)}{t.dueDate !== null ? <span className="due">{fmtDue(t.dueDate)}</span> : null}</div>;
-  }
+/** One urgency bucket (overdue / today / this week / later) — header + rows; nothing when empty. */
+function Bucket({ label, cls, items }: { label: string; cls: string; items: ReadonlyArray<TodayTaskRow> }): React.ReactElement | null {
+  if (items.length === 0) return null;
   return (
-    <div className="hero">
-      <div className="tag"><span className="dot" /><span className="label">THE ONE THING</span></div>
-      {inner}
-    </div>
+    <>
+      <div className={`bucket-label ${cls}`}>{label} · {items.length}</div>
+      <div className="rows">{items.map((t, i) => <TaskRow key={`${cls}${i}`} item={t} />)}</div>
+    </>
   );
 }
 
@@ -69,21 +73,11 @@ type Props = {
 export function Brief({ today, onResolve, collapsed = false, hasMessages = false, onToggle = () => {} }: Props): React.ReactElement | null {
   const [showAll, setShowAll] = useState(false);
 
-  const hero = today.hero;
-  const heroQId = hero !== null && hero.kind === "question" ? (hero.item as TodayQuestion).id : null;
-  const heroTaskText = hero !== null && hero.kind === "task" ? (hero.item as TodayItem).text : null;
-
-  // De-duplicate the hero from the lists below it.
-  let taskDropped = false;
-  const openTasks = today.openTasks.filter((t) => {
-    if (!taskDropped && heroTaskText !== null && t.text === heroTaskText) { taskDropped = true; return false; }
-    return true;
-  });
-  const questions = today.questions.filter((q) => q.id !== heroQId);
-
-  const openCount = openTasks.length + (hero?.kind === "task" ? 1 : 0);
-  const qCount = questions.length + (heroQId !== null ? 1 : 0);
-  const totalOpen = openCount + today.followups.length + qCount;
+  // Paint the SHARED view-model — same urgency classification, sections, and
+  // counts the CLI and HTTP cockpit render (src/surface/today-view.ts). The PWA
+  // no longer re-derives "is this overdue" or carries a bespoke hero.
+  const vm = buildTodayViewModel(parseTodayView(today));
+  const { brief, calendar, questions, stillOpen, counts, totalOpen } = vm;
 
   if (totalOpen === 0) {
     if (hasMessages) return null;
@@ -98,6 +92,8 @@ export function Brief({ today, onResolve, collapsed = false, hasMessages = false
     );
   }
 
+  const openCount = counts.openTasks + counts.followups;
+  const qCount = counts.questions;
   const summary =
     [openCount > 0 ? `${openCount} open` : null, qCount > 0 ? `${qCount} to decide` : null]
       .filter(Boolean).join(" · ") || "all clear";
@@ -111,13 +107,14 @@ export function Brief({ today, onResolve, collapsed = false, hasMessages = false
     );
   }
 
-  const tasksShown = showAll ? openTasks : openTasks.slice(0, CAP);
-  const fupsShown = showAll ? today.followups : today.followups.slice(0, CAP);
-  const qsShown = showAll ? questions : questions.slice(0, CAP);
-  const hidden =
-    (openTasks.length - tasksShown.length) +
-    (today.followups.length - fupsShown.length) +
-    (questions.length - qsShown.length);
+  // Urgent buckets shown inline; later + someday fold into a "+N more, later"
+  // reveal — the HTTP cockpit's treatment, painted from the same view-model.
+  const { overdue, dueToday, thisWeek, later, someday } = stillOpen;
+  const laterAll = [...later, ...someday];
+  const shownInline = overdue.length + dueToday.length + thisWeek.length;
+  const hidden = openCount - shownInline; // == laterAll.length
+  const agendaEvents = calendar !== null ? calendar.events.slice(0, AGENDA_CAP) : [];
+  const agendaMore = calendar !== null ? calendar.events.length - agendaEvents.length : 0;
 
   return (
     <section className="brief">
@@ -125,32 +122,47 @@ export function Brief({ today, onResolve, collapsed = false, hasMessages = false
         <span className="label">today · {summary}</span>
         {hasMessages ? <button type="button" className="hide" onClick={onToggle}>hide ▴</button> : null}
       </div>
-      {today.brief !== null ? <p className="brief-text">{renderRich(today.brief.text)}</p> : null}
-      {hero !== null ? <HeroCard hero={hero} onResolve={onResolve} /> : null}
 
-      {tasksShown.length > 0 ? (
-        <div className="section">
-          <div className="label">Open tasks</div>
-          <div className="rows">{tasksShown.map((t, i) => <TaskRow key={`t${i}`} item={t} />)}</div>
+      {brief !== null ? <p className="brief-text">{renderRich(brief.text)}</p> : null}
+
+      {agendaEvents.length > 0 ? (
+        <div className="section agenda">
+          <div className="label">Agenda</div>
+          {agendaEvents.map((ev, i) => (
+            <div className="agenda-row" key={`ev${i}`}>
+              <span className="agenda-time">{ev.time === "" ? "—" : ev.time}</span>
+              <span className="agenda-body">
+                {ev.title}
+                {ev.meta.length > 0 ? <span className="agenda-meta"> · {ev.meta}</span> : null}
+              </span>
+            </div>
+          ))}
+          {agendaMore > 0 ? <div className="agenda-more">+{agendaMore} more</div> : null}
         </div>
       ) : null}
 
-      {fupsShown.length > 0 ? (
+      {shownInline > 0 || laterAll.length > 0 ? (
         <div className="section">
-          <div className="label">Follow-ups</div>
-          <div className="rows">{fupsShown.map((t, i) => <TaskRow key={`f${i}`} item={t} followup />)}</div>
+          <div className="label">Still open</div>
+          <Bucket label="overdue" cls="bucket-overdue" items={overdue} />
+          <Bucket label="today" cls="bucket-today" items={dueToday} />
+          <Bucket label="this week" cls="bucket-week" items={thisWeek} />
+          {showAll ? <Bucket label="later" cls="bucket-later" items={laterAll} /> : null}
+          {!showAll && hidden > 0 ? (
+            <button type="button" className="brief-more" onClick={() => setShowAll(true)}>+{hidden} more, later ▾</button>
+          ) : null}
+          {showAll && hidden > 0 ? (
+            <button type="button" className="brief-more" onClick={() => setShowAll(false)}>show less ▴</button>
+          ) : null}
         </div>
       ) : null}
 
-      {qsShown.length > 0 ? (
+      {questions.length > 0 ? (
         <div className="section">
           <div className="label">To decide</div>
-          <div className="rows">{qsShown.map((q) => <QuestionCard key={q.id} q={q} onResolve={onResolve} />)}</div>
+          <div className="rows">{questions.map((q) => <QuestionCard key={q.id} q={q} onResolve={onResolve} />)}</div>
         </div>
       ) : null}
-
-      {hidden > 0 ? <button type="button" className="brief-more" onClick={() => setShowAll(true)}>+{hidden} more ▾</button> : null}
-      {showAll && totalOpen > CAP ? <button type="button" className="brief-more" onClick={() => setShowAll(false)}>show less ▴</button> : null}
     </section>
   );
 }

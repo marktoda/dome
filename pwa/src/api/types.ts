@@ -40,6 +40,7 @@ export type TodayItem = {
   dueDate: string | null;
   origin?: string;
   entities?: string[];
+  priority?: "highest" | "high" | "medium" | "low" | "lowest" | null;
 };
 
 export type TodayQuestion = {
