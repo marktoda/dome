@@ -193,6 +193,24 @@ function parsePriority(raw: unknown): ParsedPriority | null {
     : null;
 }
 
+/**
+ * Plain (uncolored) priority marker glyphs, shared by both paint adapters so
+ * they can't drift on what a level looks like. The marker gutter is ≤2 cols
+ * wide (`▲▲`/`▽▽`); medium/null render no mark. ASCII fallback uses `^`/`v`.
+ */
+export function priorityMarkerChars(
+  priority: TodayTaskRow["priority"] | undefined,
+  unicode: boolean,
+): string {
+  switch (priority) {
+    case "highest": return unicode ? "▲▲" : "^^";
+    case "high":    return unicode ? "▲" : "^";
+    case "low":     return unicode ? "▽" : "v";
+    case "lowest":  return unicode ? "▽▽" : "vv";
+    default:        return ""; // medium / null / undefined → no mark
+  }
+}
+
 function parseTaskRows(raw: unknown): ReadonlyArray<TodayTaskRow> {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((item) => {

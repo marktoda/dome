@@ -376,9 +376,10 @@ describe("dome today: Briefing terminal restyle", () => {
     };
     const out = formatTodayResult(data, ASCII_CAPS, "/vault");
     // Flat list: one task per line, urgency glyph leads each (ASCII: x/!/*).
-    expect(out).toMatch(/\n\s+x overdue task/);
-    expect(out).toMatch(/\n\s+! due today task/);
-    expect(out).toMatch(/\n\s+\* open task/);
+    // glyph leads each row; a fixed priority-marker gutter sits between glyph and text.
+    expect(out).toMatch(/\n\s+x\s+overdue task/);
+    expect(out).toMatch(/\n\s+!\s+due today task/);
+    expect(out).toMatch(/\n\s+\*\s+open task/);
   });
 
   test("? ask line shows top question with dome resolve; +N if more", () => {
@@ -403,6 +404,24 @@ describe("dome today: Briefing terminal restyle", () => {
     // Second question collapsed
     expect(out).not.toContain("Second question");
     expect(out).toContain("+1");
+  });
+
+  test("priority markers render in a reserved gutter and keep rows within width", () => {
+    const caps = { color: false, unicode: true, width: 80, hyperlinks: false } as const;
+    const out = formatTodayResult({
+      date: "2026-06-23",
+      counts: { openTasks: 2, followups: 0, questions: 0 },
+      openTasks: [
+        { text: "ship it", path: "p", line: 1, dueDate: "2026-06-10", priority: "highest" },
+        { text: "later maybe", path: "p", line: 2, dueDate: "2026-06-10" },
+      ],
+      followups: [], questions: [], brief: null, calendar: null, hero: null,
+    }, caps, "/vault");
+    expect(out).toContain("▲▲ ship it");
+    // unmarked row keeps the gutter so text columns align: glyph + space + 3-col blank gutter
+    const line = out.split("\n").find((l) => l.includes("later maybe"))!;
+    expect(line).toMatch(/✗ {4}later maybe/);
+    for (const l of out.split("\n")) expect(visibleWidth(l)).toBeLessThanOrEqual(80);
   });
 
   test("rollup line 'everything else clean' always appears when tasks exist", () => {
@@ -568,8 +587,8 @@ describe("dome today: flat signal-led task list", () => {
       counts: { openTasks: 11 }, dueCounts: {},
     };
     const out = formatTodayResult(data, ASCII_CAPS, "/vault");
-    expect(out).toMatch(/\n  x Overdue thing/);
-    expect(out).toMatch(/\n  \* Open item 0/);
+    expect(out).toMatch(/\n  x\s+Overdue thing/);
+    expect(out).toMatch(/\n  \*\s+Open item 0/);
     expect(out).toMatch(/\d+ more · dome today --verbose/);
     expect(out).not.toContain("· +");
     expect(out).not.toMatch(/^\s+x overdue\s/m);

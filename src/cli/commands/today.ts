@@ -46,6 +46,7 @@ import {
 import {
   parseTodayView,
   buildTodayViewModel,
+  priorityMarkerChars,
   type TodayTaskRow,
 } from "../../surface/today-view";
 import { compareStrings } from "../../core/compare";
@@ -405,8 +406,19 @@ export function formatTodayResult(
             (affs.length - 1) * 2;
       // Reserve width for the origin ↗ affordance when present.
       const originReserve = t.origin !== undefined ? 3 + arrowWidth : 0;
-      // Reduce available label width by the extra indent to keep total ≤ taskWidth.
-      const effectiveWidth = taskWidth - indent;
+      // Priority marker gutter: a fixed 3-col cell ("▲▲ ") between the glyph and
+      // the text so marked and unmarked rows align at the same text column. The
+      // marker (highest/high in `err`, low/lowest in `muted`) is reserved out of
+      // the text budget like indent, keeping the row within taskWidth.
+      const MARKER_GUTTER = 3;
+      const markerRaw = priorityMarkerChars(t.priority, caps.unicode);
+      const markerTone: Tone =
+        t.priority === "highest" || t.priority === "high" ? "err" : "muted";
+      const marker = markerRaw.length > 0
+        ? `${paint(pad(markerRaw, MARKER_GUTTER - 1), markerTone, caps)} `
+        : " ".repeat(MARKER_GUTTER);
+      // Reduce available label width by the extra indent + marker gutter to keep total ≤ taskWidth.
+      const effectiveWidth = taskWidth - indent - MARKER_GUTTER;
       const label = shortenLabel(text, Math.max(0, effectiveWidth - linkReserve - originReserve), caps.unicode);
       const g = paint(statusGlyph(tone, caps), tone, caps);
       const affordances = affs
@@ -418,7 +430,7 @@ export function formatTodayResult(
           ? `   ${paint(hyperlink(arrow, originUrl(t.origin, vault), caps), "ident", caps)}`
           : "";
       const indentStr = " ".repeat(indent);
-      lines.push(`  ${g} ${indentStr}${label}${inlineTail}${originTail}`);
+      lines.push(`  ${g} ${marker}${indentStr}${label}${inlineTail}${originTail}`);
     };
 
     const CLUSTER_MIN = 3;

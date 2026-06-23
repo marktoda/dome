@@ -4,7 +4,19 @@ import {
   addDays,
   buildTodayViewModel,
   classifyUrgency,
+  priorityMarkerChars,
 } from "../../src/surface/today-view";
+
+test("priorityMarkerChars maps all five levels + null", () => {
+  expect(priorityMarkerChars("highest", true)).toBe("▲▲");
+  expect(priorityMarkerChars("high", true)).toBe("▲");
+  expect(priorityMarkerChars("medium", true)).toBe("");
+  expect(priorityMarkerChars("low", true)).toBe("▽");
+  expect(priorityMarkerChars("lowest", true)).toBe("▽▽");
+  expect(priorityMarkerChars(null, true)).toBe("");
+  expect(priorityMarkerChars("highest", false)).toBe("^^");
+  expect(priorityMarkerChars("lowest", false)).toBe("vv");
+});
 
 test("parses tasks with wikilinks stripped + dueDate", () => {
   const v = parseTodayView({ date: "2026-06-14",

@@ -129,6 +129,18 @@ describe("renderTodayHtml", () => {
     expect(html).toContain("Make the routing decision"); // lives in the still-open list
   });
 
+  test("paints a priority marker span on high-priority rows", () => {
+    const html = renderTodayHtml(
+      { ...base,
+        openTasks: [{ text: "ship it", path: "p", line: 1, dueDate: "2026-06-10", priority: "highest" }],
+        followups: [], questions: [],
+        counts: { openTasks: 1, followups: 0, questions: 0 }, hero: null },
+      { refreshSeconds: 15 },
+    );
+    expect(html).toContain("prio");   // marker class present
+    expect(html).toContain("▲▲");
+  });
+
   test("escapes HTML in interpolated content", () => {
     const html = renderTodayHtml(
       { ...base, brief: { text: "<script>x</script>", sourceRef: ref } },

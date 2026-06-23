@@ -13,6 +13,7 @@ export type TodayHtmlOptions = {
 import {
   parseTodayView,
   buildTodayViewModel,
+  priorityMarkerChars,
   type TodayTaskRow,
   type TodayQuestionRow,
   type TodayCalendarEvent,
@@ -112,6 +113,9 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
     .open-glyph.open { color: rgba(255,255,255,0.5); }
     .open-body { flex: 1; }
     .open-text { font-size: 15px; line-height: 1.4; }
+    .prio { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+    .prio-high { color: #FF593C; }
+    .prio-low { color: rgba(255,255,255,0.4); }
     .reveal .src { opacity: 0; transition: opacity .14s ease; }
     .reveal:hover .src { opacity: .55; }
     .src { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 3px; }
@@ -540,10 +544,14 @@ function renderStillOpenHtml(
   function renderItem(t: TodayTaskRow): string {
     const glyph = taskGlyph(t, today);
     const where = t.line === null ? t.path : `${t.path}:${t.line}`;
+    const markerChars = priorityMarkerChars(t.priority, true);
+    const markerHtml = markerChars.length > 0
+      ? `<span class="prio ${t.priority === "highest" || t.priority === "high" ? "prio-high" : "prio-low"}">${markerChars}</span> `
+      : "";
     return `<div class="open-item reveal">
         <span class="open-glyph ${glyph.cls}">${glyph.char}</span>
         <div class="open-body">
-          <div class="open-text">${esc(t.text)}</div>
+          <div class="open-text">${markerHtml}${esc(t.text)}</div>
           <div class="src">${esc(where)}</div>
         </div>
       </div>`;
