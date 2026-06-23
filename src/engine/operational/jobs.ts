@@ -10,6 +10,7 @@ import {
   type DiagnosticEffect,
 } from "../../core/effect";
 import type { AdoptionResult, Proposal } from "../../core/proposal";
+import { computeNextAttemptAt } from "../../core/retry-policy";
 import type { CommitOid } from "../../core/source-ref";
 import type {
   Capability,
@@ -50,7 +51,6 @@ import type { RunId } from "../core/runner-contract";
 import type { EngineVault } from "../core/vault-shape";
 
 const DEFAULT_MAX_JOBS_PER_DRAIN = 100;
-const MAX_RETRY_DELAY_MS = 60_000;
 
 type AdoptJobSubProposalFn = (
   proposal: Proposal,
@@ -313,7 +313,7 @@ async function runOneJob(opts: {
   markJobPending(
     opts.projection,
     opts.job.id,
-    new Date(opts.now().getTime() + retryDelayMs(attemptsAfterRun)),
+    computeNextAttemptAt(opts.now(), attemptsAfterRun),
   );
   return Object.freeze({
     jobId: opts.job.id,
@@ -344,7 +344,7 @@ async function recoverCrashedClaimedJob(opts: {
     markJobPending(
       opts.projection,
       opts.job.id,
-      new Date(opts.now().getTime() + retryDelayMs(opts.job.attempts)),
+      computeNextAttemptAt(opts.now(), opts.job.attempts),
     );
     summary = Object.freeze({
       jobId: opts.job.id,
@@ -369,9 +369,4 @@ async function recoverCrashedClaimedJob(opts: {
     proposalId: null,
   });
   return summary;
-}
-
-function retryDelayMs(attemptsAfterRun: number): number {
-  const delay = 1000 * 2 ** Math.max(0, attemptsAfterRun - 1);
-  return Math.min(delay, MAX_RETRY_DELAY_MS);
 }

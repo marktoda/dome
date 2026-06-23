@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import ingest from "../../../assets/extensions/dome.agent/processors/ingest";
+import ingest, { MAX_CAPTURES_PER_RUN } from "../../../assets/extensions/dome.agent/processors/ingest";
 import type {
   ProcessorContext,
   ModelStepResult,
@@ -491,7 +491,103 @@ describe("dome.agent.ingest", () => {
     const effects = await ingest.run(ctx);
     const patch = effects.find((e) => e.kind === "patch") as PatchEffect;
     const daily = patch.changes.find((c) => String(c.path) === dailyP)!;
-    expect(String(daily.content)).toContain("([↗](https://uniswapteam.slack.com/archives/C0/p1))");
+    expect(daily.kind === "write" ? daily.content : "").toContain("([↗](https://uniswapteam.slack.com/archives/C0/p1))");
+  });
+
+  test("reconciles a standing inbox/raw capture even with no changedPaths (cron trigger)", async () => {
+    const ctx = makeCtx({
+      files: { "inbox/raw/2026-06-08-0900-note.md": "Acme raised a round." },
+      changedPaths: [], // a scheduled tick carries no delta
+      steps: [
+        {
+          toolCalls: [
+            {
+              id: "1",
+              name: "writePage",
+              input: { path: "wiki/sources/acme-round.md", content: "# Acme" },
+            },
+            {
+              id: "2",
+              name: "archiveSource",
+              input: { rawPath: "inbox/raw/2026-06-08-0900-note.md" },
+            },
+          ],
+        },
+        { text: "ingested" },
+      ],
+    });
+    const effects = await ingest.run(ctx);
+    const patch = effects.find((e): e is PatchEffect => e.kind === "patch");
+    expect(patch).toBeDefined();
+    // the capture is archived OUT of inbox/raw — the change set no longer writes it there
+    const stillWritesRaw = patch!.changes.some(
+      (c) => c.path === "inbox/raw/2026-06-08-0900-note.md" && c.kind === "write",
+    );
+    expect(stillWritesRaw).toBe(false);
+  });
+
+  test("idle inbox: no captures => no effects and the model is never called", async () => {
+    let called = false;
+    const ctx = makeCtx({
+      files: { "wiki/a.md": "x" }, // nothing in inbox/raw
+      changedPaths: [],
+      stepFn: async () => {
+        called = true;
+        return { text: "should not run" };
+      },
+    });
+    expect(await ingest.run(ctx)).toEqual([]);
+    expect(called).toBe(false);
+  });
+
+  test("bounded per run: operates on exactly the oldest MAX_CAPTURES_PER_RUN, oldest-first", async () => {
+    // MAX_CAPTURES_PER_RUN + 2 timestamp-named captures so lexical sort is chronological.
+    const files: Record<string, string> = {};
+    const total = MAX_CAPTURES_PER_RUN + 2;
+    const paths: string[] = [];
+    for (let n = 0; n < total; n++) {
+      // zero-padded minute keeps the sort determinate (00..NN)
+      const mm = String(n).padStart(2, "0");
+      const p = `inbox/raw/2026-06-08-09${mm}-note.md`;
+      paths.push(p);
+      files[p] = `capture ${mm}`;
+    }
+    // Each source archives itself in one step, then finalizes.
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      const task = messages.find((m) => m.role === "user")?.content ?? "";
+      const turns = messages.filter((m) => m.role === "assistant").length;
+      const raw = paths.find((p) => task.includes(p));
+      if (turns === 0 && raw)
+        return { toolCalls: [{ id: "a", name: "archiveSource", input: { rawPath: raw } }] };
+      return { text: "done" };
+    };
+    const ctx = makeCtx({ files, changedPaths: [], stepFn });
+    const effects = await ingest.run(ctx);
+    const patch = effects.find((e): e is PatchEffect => e.kind === "patch")!;
+    expect(patch).toBeDefined();
+    const touched = new Set(patch.changes.map((c) => String(c.path)));
+    // the two NEWEST captures must never appear
+    expect(touched.has(paths[total - 1]!)).toBe(false);
+    expect(touched.has(paths[total - 2]!)).toBe(false);
+    // the oldest MAX_CAPTURES_PER_RUN must all be archived (deleted)
+    for (let n = 0; n < MAX_CAPTURES_PER_RUN; n++) {
+      expect(touched.has(paths[n]!)).toBe(true);
+    }
+    // sourceRefs cover exactly the bounded worklist
+    expect(patch.sourceRefs.length).toBe(MAX_CAPTURES_PER_RUN);
+  });
+
+  test("idempotent: a second run with the capture already archived does nothing", async () => {
+    const ctx = makeCtx({
+      files: { "wiki/sources/acme-round.md": "# Acme" }, // capture already moved out of inbox/raw
+      changedPaths: [],
+      stepFn: async () => ({ text: "should not run" }),
+    });
+    expect(await ingest.run(ctx)).toEqual([]);
   });
 
   test("a plain capture (no source_url) still stamps the archived-capture backlink", async () => {
@@ -512,6 +608,6 @@ describe("dome.agent.ingest", () => {
     const effects = await ingest.run(ctx);
     const patch = effects.find((e) => e.kind === "patch") as PatchEffect;
     const daily = patch.changes.find((c) => String(c.path) === dailyP)!;
-    expect(String(daily.content)).toContain("([↗](inbox/processed/2026-06-08-radiator.md))");
+    expect(daily.kind === "write" ? daily.content : "").toContain("([↗](inbox/processed/2026-06-08-radiator.md))");
   });
 });

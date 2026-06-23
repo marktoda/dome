@@ -22,7 +22,7 @@ The most common failure modes:
 
 1. **Processor reads its own output.** Processor A emits a PatchEffect; the patched tree now has signals processor A reacts to; A emits another effect; B reacts to A's new effect; the chain continues. Fix: A's triggers should be specific enough that they don't match A's own emissions.
 2. **Non-idempotent emissions.** A processor that emits a slightly different patch each iteration (e.g., timestamps embedded in the patch, random IDs not derived from the input). Fix: idempotency — the same input must produce the same patch.
-3. **Conflicting capability scopes.** Two processors with overlapping `patch.auto` paths emit patches that touch each other's claimed regions. Fix: clarify ownership via `owns.region` / `owns.path`.
+3. **Conflicting capability scopes.** Two processors with overlapping `patch.auto` paths emit patches that touch each other's claimed regions. Fix: clarify ownership via `owns.path` (or narrow each processor's path scope).
 
 **Structural mitigation:** **Hard iteration cap + diagnostic on cap-hit.**
 

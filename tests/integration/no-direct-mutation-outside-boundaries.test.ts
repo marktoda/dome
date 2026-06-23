@@ -24,12 +24,38 @@ const ALLOWED_FILES = new Set([
   // editor + `git commit`. Not an engine write path — the daemon constructs
   // the Proposal from the resulting branch drift.
   "src/surface/capture.ts",
+  // The hosted agent's write path: create_document / edit_document write one
+  // markdown file and land it as an ordinary human commit via
+  // commitSingleFileOnHead — exactly like `dome capture`. Same boundary class
+  // as capture.ts; the daemon constructs the Proposal from the branch drift.
+  "src/agent/write.ts",
   // The explicit adopted-ref divergence recovery chokepoint: moves
   // refs/dome/adopted/<branch> (with a refs/dome/backup/ copy first) via the
   // src/git ref helpers after the user confirms a history rewrite. The only
   // user-facing non-fast-forward cursor move; see
   // docs/wiki/gotchas/adopted-ref-divergence.md.
   "src/cli/commands/reanchor.ts",
+  // The HTTP server's POST /transcribe handler writes the uploaded audio to a
+  // mkdtemp temp directory, invokes the configured whisper command against it,
+  // and deletes the dir in a finally block. This is a process-scoped temp-file
+  // write (not a vault write), in the same boundary class as capture.ts.
+  "src/http/server.ts",
+  // The eval harness materializes a throwaway temp vault from a fixture
+  // (mkdtemp → cp seed files → init repo → symlink bundle → commit) so the
+  // brief golden case can run through the real engine. Not a vault write
+  // path — it scaffolds a disposable fixture vault, same boundary class as
+  // the harness's tmpdir scaffolding.
+  "src/eval/cases/brief.ts",
+  // Process-scoped operational append-only log; not a vault write — same
+  // class as the server's POST /transcribe temp-write. Appends one JSON line
+  // per /agent request to a configurable path for post-hoc diagnostics.
+  "src/http/agent-log.ts",
+  // The shared store-opener seam: prepareStore + openSimpleStore. The single
+  // meta-row write (DELETE+INSERT in a tx) is the same operational write the
+  // four store boundaries (src/{projections,ledger,outbox,answers}/, already in
+  // ALLOWED_DIRS) each did inline before — hoisted to one place. Same boundary
+  // class as those store dirs; not a vault write path.
+  "src/sqlite/open-store.ts",
 ]);
 
 const FORBIDDEN_PATTERNS: ReadonlyArray<{

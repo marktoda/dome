@@ -18,12 +18,14 @@ import { noopSinks, type ApplyEffectSinks } from "../../src/engine/core/apply-ef
 import {
   diagnosticEffect,
   factEffect,
+  patchEffect,
   questionEffect,
 } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import type { RunnerResult, RunId } from "../../src/engine/core/runner-contract";
 import type { EngineVault } from "../../src/engine/core/vault-shape";
 import type { Effect } from "../../src/core/effect";
+import type { AdoptionResult, Proposal } from "../../src/core/proposal";
 
 const ADOPTED = commitOid("a".repeat(40));
 const VAULT: EngineVault = {
@@ -225,5 +227,95 @@ describe("routeGardenRunEffects projection-maintenance hooks", () => {
     expect(diagnostics.length).toBeGreaterThan(0);
     expect(emittedCodes).not.toBeNull();
     expect(emittedCodes!).toEqual(diagnostics.map((d) => d.code));
+  });
+});
+
+// ----- Cascade-cap enforcement on the operational path ----------------------
+//
+// Before this fix, routeGardenRunEffects / dispatchGardenPatchEffect called
+// spawnGardenSubProposal with `cascadeDepth ?? 1` — no cap check. A
+// scheduler/job/answer-triggered processor at depth >= maxCascadeDepth would
+// spawn sub-Proposals indefinitely. This suite pins the fix: an operational
+// garden source driven at cascadeDepth === maxCascadeDepth must emit a
+// `garden.cascade-cap` diagnostic and NOT spawn any sub-Proposals.
+
+describe("routeGardenRunEffects cascade-cap enforcement", () => {
+  const MAX = 3; // small max for the test; faster to reason about
+  const patchCap = { kind: "patch.auto" as const, paths: ["wiki/**"] };
+
+  function makePatchResult(): RunnerResult {
+    return {
+      runId: "run_cascade_cap_test" as RunId,
+      processorId: "test.scheduled.cascade",
+      executionStatus: "succeeded" as const,
+      declared: [patchCap],
+      granted: [patchCap],
+      inspectedPaths: ["wiki/page.md"],
+      effects: [
+        patchEffect({
+          mode: "auto",
+          changes: [
+            { kind: "write", path: "wiki/page.md", content: "cascade\n" },
+          ],
+          reason: "cascade trigger",
+          sourceRefs: [],
+        }),
+      ],
+    };
+  }
+
+  test("operational source at cascadeDepth === maxCascadeDepth emits garden.cascade-cap and spawns nothing", async () => {
+    // Arrange: wire adoptSubProposal so a spawn would succeed if not capped.
+    const adoptedProposals: Proposal[] = [];
+    const adoptSubProposal = async (proposal: Proposal, _depth: number): Promise<AdoptionResult> => {
+      adoptedProposals.push(proposal);
+      return {
+        proposalId: proposal.id,
+        adopted: true,
+        adoptedRef: proposal.head,
+        diagnostics: [],
+        closureCommitOid: null,
+        iterations: 1,
+      };
+    };
+
+    const recordedCodes: string[] = [];
+    const sinks: ApplyEffectSinks = {
+      ...noopSinks(),
+      recordDiagnostic: async ({ effect }) => {
+        recordedCodes.push(effect.code);
+      },
+    };
+
+    const diagnostics: ReturnType<typeof diagnosticEffect>[] = [];
+    const newHead = commitOid("c".repeat(40));
+
+    // Act: drive at cascadeDepth === MAX (the cap boundary).
+    await routeGardenRunEffects({
+      result: makePatchResult(),
+      vault: VAULT,
+      adopted: ADOPTED,
+      proposalId: null,
+      sinks,
+      diagnostics,
+      applyGardenPatch: async () => newHead,
+      extensionIdFor: () => "test",
+      adoptSubProposal,
+      cascadeDepth: MAX,       // at the cap
+      maxCascadeDepth: MAX,    // cap is MAX
+      disabledDiagnostic: {
+        code: "test.disabled",
+        message: "spawn disabled",
+      },
+    });
+
+    // Assert: cascade-cap diagnostic emitted, no sub-Proposal spawned.
+    expect(
+      diagnostics.some((d) => d.code === "garden.cascade-cap"),
+    ).toBe(true);
+    expect(
+      recordedCodes.some((c) => c === "garden.cascade-cap"),
+    ).toBe(true);
+    expect(adoptedProposals).toHaveLength(0);
   });
 });

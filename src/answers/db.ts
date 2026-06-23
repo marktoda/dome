@@ -6,17 +6,11 @@
 // that survives projection rebuilds.
 
 import { Database } from "bun:sqlite";
-import { dirname } from "node:path";
 
 import { err, ok, type Result } from "../types";
-import {
-  validateSqliteTableShapes,
-  type SqliteTableShape,
-} from "../sqlite-shape";
-import { configureSqliteConnection } from "../sqlite/connection";
-import { errorMessage } from "../sqlite/error-message";
+import { type SqliteTableShape } from "../sqlite-shape";
 import { computeDdlHash } from "../sqlite/hash";
-import { applyDdlInTransaction, ensureParentDir } from "../sqlite/open-store";
+import { openSimpleStore, type StoreOpenError } from "../sqlite/open-store";
 
 const DDL: ReadonlyArray<string> = Object.freeze([
   "CREATE TABLE IF NOT EXISTS answers_meta ("
@@ -82,98 +76,34 @@ export type OpenAnswersDbResult = {
   readonly migration: "fresh" | "ok";
 };
 
-export type AnswersDbError =
-  | {
-      readonly kind: "directory-create-failed";
-      readonly path: string;
-      readonly cause: string;
-    }
-  | {
-      readonly kind: "schema-init-failed";
-      readonly cause: string;
-    }
-  | {
-      readonly kind: "schema-mismatch";
-      readonly stored: string;
-      readonly expected: string;
-    };
+/** Answers refuse on mismatch; their open errors are exactly the shared seam's. */
+export type AnswersDbError = StoreOpenError;
 
 export async function openAnswersDb(
   opts: OpenAnswersDbOpts,
 ): Promise<Result<OpenAnswersDbResult, AnswersDbError>> {
-  const parent = dirname(opts.path);
-  try {
-    ensureParentDir(opts.path);
-  } catch (e) {
-    return err({
-      kind: "directory-create-failed",
-      path: parent,
-      cause: errorMessage(e),
-    });
-  }
+  // Durable human/agent decisions are unrebuildable → policy REFUSE on mismatch.
+  const result = openSimpleStore({
+    path: opts.path,
+    metaTable: "answers_meta",
+    ddl: DDL,
+    currentHash: computeAnswersSchemaHash(),
+    shapes: REQUIRED_TABLE_SHAPES,
+    policy: { kind: "refuse" },
+  });
+  if (!result.ok) return err(result.error);
 
-  let raw: Database;
-  try {
-    raw = new Database(opts.path);
-    configureSqliteConnection(raw);
-  } catch (e) {
-    return err({ kind: "schema-init-failed", cause: errorMessage(e) });
-  }
-
-  const schemaHash = computeAnswersSchemaHash();
-  let storedSchemaHash: string | null;
-  try {
-    storedSchemaHash = readStoredSchemaHash(raw);
-    if (storedSchemaHash !== null && storedSchemaHash !== schemaHash) {
-      raw.close();
-      return err({
-        kind: "schema-mismatch",
-        stored: storedSchemaHash,
-        expected: schemaHash,
-      });
-    }
-    applyDdlInTransaction(raw, DDL);
-    const shapeError = validateSqliteTableShapes(raw, REQUIRED_TABLE_SHAPES);
-    if (shapeError !== null) {
-      throw new Error(shapeError);
-    }
-    insertOrReplaceMetaRow(raw, schemaHash);
-  } catch (e) {
-    raw.close();
-    return err({ kind: "schema-init-failed", cause: errorMessage(e) });
-  }
-
+  const { raw, schemaHash, migration } = result.value;
   const db: AnswersDb = Object.freeze({
     raw,
     schemaHash,
     close: () => raw.close(),
   });
-  const migration = storedSchemaHash === null ? "fresh" : "ok";
-  return ok(Object.freeze({ db, migration }));
+  // REFUSE never yields "migrated"; map onto the narrow answers enum.
+  const answersMigration: "fresh" | "ok" = migration === "fresh" ? "fresh" : "ok";
+  return ok(Object.freeze({ db, migration: answersMigration }));
 }
 
 export function computeAnswersSchemaHash(): string {
   return computeDdlHash(DDL);
-}
-
-function insertOrReplaceMetaRow(db: Database, schemaHash: string): void {
-  db.query(
-    "INSERT INTO answers_meta (schema_hash, built_at) VALUES (?, ?) "
-      + "ON CONFLICT(schema_hash) DO UPDATE SET built_at = excluded.built_at",
-  ).run(schemaHash, new Date().toISOString());
-}
-
-function readStoredSchemaHash(db: Database): string | null {
-  const hasMeta = db
-    .query<{ name: string }, [string]>(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
-    )
-    .get("answers_meta");
-  if (hasMeta === null) return null;
-  const row = db
-    .query<{ schema_hash: string }, []>(
-      "SELECT schema_hash FROM answers_meta LIMIT 1",
-    )
-    .get();
-  return row?.schema_hash ?? null;
 }

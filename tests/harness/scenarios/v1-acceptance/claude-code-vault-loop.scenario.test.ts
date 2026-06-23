@@ -85,7 +85,13 @@ scenario(
       message: "capture manager day",
       files: {
         [PROJECT_PATH]: projectPage(),
-        "wiki/projects/alpha-review-copy.md": projectPage(),
+        // An ambiguous wikilink raises dome.markdown.ambiguous-wikilink's
+        // question — the raise+resolve beat this acceptance loop exercises
+        // (duplicate-detection retired; dedup is dome.agent.consolidate's job).
+        "wiki/page.md":
+          "# Page\n\nWorking with [[wiki/entities/grae-danco#Notes|Grace]].\n",
+        "wiki/entities/grace-danco.md": "# Grace Danco\n",
+        "wiki/entities/grade-danco.md": "# Grade Danco\n",
       },
     });
 
@@ -193,8 +199,14 @@ scenario(
     }>;
     expect(questions).toHaveLength(1);
     expect(questions[0]?.status).toBe("open");
-    expect(questions[0]?.question).toContain("Possible duplicate pages");
-    expect(questions[0]?.options).toEqual(["merge", "keep separate"]);
+    expect(questions[0]?.question).toContain(
+      "[[wiki/entities/grae-danco#Notes]]",
+    );
+    expect(questions[0]?.options).toEqual([
+      "wiki/entities/grace-danco#Notes",
+      "wiki/entities/grade-danco#Notes",
+      "keep unresolved",
+    ]);
 
     const questionId = questions[0]?.id;
     expect(questionId).toBeGreaterThan(0);
@@ -202,7 +214,7 @@ scenario(
     const answer = await h.runCli([
       "resolve",
       String(questionId),
-      "keep separate",
+      "keep unresolved",
       "--json",
     ]);
     expect(answer.exitCode).toBe(0);
@@ -212,7 +224,7 @@ scenario(
     };
     expect(answerPayload.status).toBe("answered");
     expect(answerPayload.question.status).toBe("answered");
-    expect(answerPayload.question.answer).toBe("keep separate");
+    expect(answerPayload.question.answer).toBe("keep unresolved");
 
     const doctor = await h.runCli(["doctor", "--json"]);
     expect(doctor.exitCode).toBe(0);

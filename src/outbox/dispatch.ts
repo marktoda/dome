@@ -83,6 +83,7 @@
 //     functionally; no index access into the raw `.all()` result.
 
 import { JsonValueSchema, type ExternalActionEffect } from "../core/effect";
+import { computeNextAttemptAt } from "../core/retry-policy";
 import type { SourceRef } from "../core/source-ref";
 import { rowCodec } from "../sqlite/row-codec";
 import {
@@ -102,8 +103,6 @@ import type { OutboxDb } from "./db";
  * default ever changes.
  */
 const DEFAULT_MAX_ATTEMPTS = 3;
-const BASE_RETRY_DELAY_MS = 1000;
-const MAX_RETRY_DELAY_MS = 60_000;
 const DEFAULT_EXTERNAL_HANDLER_TIMEOUT_MS = 30_000;
 
 // ----- Public types ---------------------------------------------------------
@@ -998,15 +997,6 @@ function failureToken(row: OutboxRow): string {
       lastError: row.lastError,
     }),
   );
-}
-
-function computeNextAttemptAt(now: Date, failedAttemptCount: number): Date {
-  const exponent = Math.max(0, failedAttemptCount - 1);
-  const delay = Math.min(
-    BASE_RETRY_DELAY_MS * 2 ** exponent,
-    MAX_RETRY_DELAY_MS,
-  );
-  return new Date(now.getTime() + delay);
 }
 
 function lookupHandler(

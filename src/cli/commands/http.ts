@@ -31,6 +31,17 @@ export type RunHttpOptions = {
   readonly port?: string | number | undefined;
   readonly host?: string | undefined;
   readonly token?: string | undefined;
+  readonly model?: string | undefined;
+  /** Serve a built PWA from this directory (or env DOME_PWA_DIR). */
+  readonly staticDir?: string | undefined;
+  /** Grant the agent `author` (write) capability (or env DOME_ALLOW_WRITE). */
+  readonly allowWrite?: boolean | undefined;
+  readonly transcribeCmd?: string | undefined;
+  readonly transcribeKey?: string | undefined;
+  readonly transcribeUrl?: string | undefined;
+  readonly transcribeModel?: string | undefined;
+  /** Path to write one JSON line per /agent request (or env DOME_AGENT_LOG). */
+  readonly agentLog?: string | undefined;
   /**
    * Test-only seam: aborting this signal stops the listener and resolves
    * runHttp with exit 0, exactly like SIGINT/SIGTERM. The CLI never passes
@@ -79,6 +90,19 @@ export async function runHttp(options: RunHttpOptions = {}): Promise<number> {
     return EX_USAGE;
   }
 
+  const staticDir = options.staticDir ?? process.env["DOME_PWA_DIR"];
+  const agentLogPath = options.agentLog ?? process.env["DOME_AGENT_LOG"];
+  const allowWrite =
+    options.allowWrite === true ||
+    process.env["DOME_ALLOW_WRITE"] === "1" ||
+    process.env["DOME_ALLOW_WRITE"] === "true";
+  const transcribeCommand = (options.transcribeCmd ?? process.env["DOME_TRANSCRIBE_CMD"])
+    ?.split(/\s+/)
+    .filter(Boolean);
+  const transcribeApiKey = options.transcribeKey ?? process.env["DOME_TRANSCRIBE_KEY"] ?? process.env["OPENAI_API_KEY"];
+  const transcribeBaseUrl = options.transcribeUrl ?? process.env["DOME_TRANSCRIBE_URL"];
+  const transcribeModel = options.transcribeModel ?? process.env["DOME_TRANSCRIBE_MODEL"];
+
   try {
     const handler = createDomeHttpServer({
       vaultPath,
@@ -86,6 +110,14 @@ export async function runHttp(options: RunHttpOptions = {}): Promise<number> {
       ...(options.bundlesRoot !== undefined
         ? { bundlesRoot: options.bundlesRoot }
         : {}),
+      ...(options.model !== undefined ? { model: options.model } : {}),
+      ...(staticDir !== undefined ? { staticDir } : {}),
+      ...(allowWrite ? { allowWrite: true } : {}),
+      ...(transcribeCommand !== undefined && transcribeCommand.length > 0 ? { transcribeCommand } : {}),
+      ...(transcribeApiKey !== undefined && transcribeApiKey.length > 0 ? { transcribeApiKey } : {}),
+      ...(transcribeBaseUrl !== undefined ? { transcribeBaseUrl } : {}),
+      ...(transcribeModel !== undefined ? { transcribeModel } : {}),
+      ...(agentLogPath !== undefined ? { agentLogPath } : {}),
     });
     const server = Bun.serve({
       hostname: options.host ?? DEFAULT_HOST,

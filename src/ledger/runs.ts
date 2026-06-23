@@ -315,6 +315,17 @@ export const ACTIVE_PROBLEM_RUN_STATUSES: ReadonlySet<RunStatus> = new Set([
   "cancelled",
 ]);
 
+/**
+ * The exact failure reason the dome.health orphan-recovery answer writes.
+ *
+ * Imported by both the suppression filter (LATEST_ACTIVE_PROBLEM_WHERE_SQL)
+ * and the health processor (orphan-run-recovery-answer.ts) so the two sites
+ * cannot drift silently. A rename here is a compile error at both import
+ * sites. Invariant: ORPHAN_RECOVERED_RUNS_ARE_SUPPRESSED.
+ */
+export const ORPHAN_RUN_RECOVERY_ERROR_REASON =
+  "dome.health: mark orphaned processor run failed" as const;
+
 export type SumCostUsdByProcessorPrefixOpts = {
   readonly processorIdPrefix: string;
   readonly sinceIso: string;
@@ -469,7 +480,8 @@ WHERE status IN ('failed', 'timed_out', 'cancelled')
     status = 'failed'
     AND (
       error LIKE 'orphaned-run:%'
-      OR error = 'dome.health: mark orphaned processor run failed'
+      -- safe interpolation: a compile-time const with no SQL metacharacters (never user input)
+      OR error = '${ORPHAN_RUN_RECOVERY_ERROR_REASON}'
     )
   )
   AND NOT EXISTS (
@@ -1178,7 +1190,7 @@ function isRecoveredOrphanRun(
 ): boolean {
   if (row.status !== "failed" || row.error === null) return false;
   return row.error.startsWith("orphaned-run:") ||
-    row.error === "dome.health: mark orphaned processor run failed";
+    row.error === ORPHAN_RUN_RECOVERY_ERROR_REASON;
 }
 
 function durationBetween(startedAt: string, finishedAt: Date): number {

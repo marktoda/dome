@@ -97,7 +97,9 @@ scenario(
     expect(text.stdout).toContain("# Dome Context: alpha launch");
     expect(text.stdout).toContain("## Read First");
     expect(text.stdout).toContain("## Open Loops");
-    expect(text.stdout).toContain("## Unresolved Questions");
+    // duplicate-detection retired (dedup is dome.agent.consolidate's job): no
+    // open questions in this vault, so the Unresolved Questions section is absent.
+    expect(text.stdout).not.toContain("## Unresolved Questions");
     expect(text.stdout).toContain("## Active Diagnostics");
     expect(text.stdout).toContain("wiki/project-alpha.md");
     expect(text.stdout).toContain("- Relevance:");
@@ -115,8 +117,8 @@ scenario(
     expect(text.stdout).toContain("more facts");
     expect(text.stdout).toContain("Diagnostics:");
     expect(text.stdout).toContain("dome.markdown.broken-wikilink");
-    expect(text.stdout).toContain("Questions:");
-    expect(text.stdout).toContain("resolve: dome resolve ");
+    // duplicate-detection retired: no per-match Questions section / resolve hint.
+    expect(text.stdout).not.toContain("Questions:");
 
     const json = await h.runCli([
       "export-context",
@@ -213,9 +215,8 @@ scenario(
     expect(payload.overview.openLoops.some((item) =>
       item.text === "Book hotel for beta retreat"
     )).toBe(false);
-    expect(payload.overview.unresolvedQuestions.some((item) =>
-      item.resolveCommand.includes("dome resolve")
-    )).toBe(true);
+    // duplicate-detection retired: no open questions in this vault.
+    expect(payload.overview.unresolvedQuestions.length).toBe(0);
     expect(payload.overview.diagnostics.some((diagnostic) =>
       diagnostic.code === "dome.markdown.broken-wikilink"
     )).toBe(true);
@@ -255,15 +256,9 @@ scenario(
     expect(alpha?.diagnostics.some(
       (diagnostic) => diagnostic.code === "dome.markdown.broken-wikilink",
     )).toBe(true);
-    const question = alpha?.questions.find((question) =>
-      question.question.includes("Possible duplicate pages")
-    );
-    expect(question?.id).toBeGreaterThan(0);
-    expect(question?.resolveCommand).toBe(
-      `dome resolve ${question?.id} <merge|keep separate>`,
-    );
-    expect(question?.metadata?.automationPolicy).toBe("owner-needed");
-    expect(question?.automationPolicy).toBe("owner-needed");
+    // duplicate-detection retired: no duplicate question attached to this page
+    // (dedup is dome.agent.consolidate's job now).
+    expect(alpha?.questions.length ?? 0).toBe(0);
 
     const limitedText = await h.runCli([
       "export-context",

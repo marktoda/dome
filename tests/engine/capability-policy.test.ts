@@ -692,31 +692,6 @@ extensions:
     );
   });
 
-  test("rejects owns.region grants until region ownership enforcement ships", async () => {
-    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
-    roots.push(root);
-    mkdirSync(join(root, ".dome"), { recursive: true });
-    writeFileSync(
-      join(root, ".dome", "config.yaml"),
-      `
-extensions:
-  dome.markdown:
-    enabled: true
-    grant:
-      owns.region: ["dome.markdown.generated"]
-`,
-      "utf8",
-    );
-
-    const result = await loadCapabilityPolicy(root);
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toContain(
-      "extensions.dome.markdown.grant.owns.region is planned but not supported in v1",
-    );
-  });
-
   test("rejects invalid operational grant enum values", async () => {
     const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
     roots.push(root);

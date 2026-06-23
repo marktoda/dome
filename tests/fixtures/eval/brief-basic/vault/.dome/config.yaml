@@ -1,0 +1,14 @@
+extensions:
+  dome.agent:
+    enabled: true
+    grant:
+      read:
+        - "wiki/**/*.md"
+        - "core.md"
+        - "preferences/signals.md"
+      patch.auto:
+        - "wiki/dailies/*.md"
+        - "preferences/signals.md"
+      model.invoke:
+        maxDailyCostUsd: 5
+      question.ask: true

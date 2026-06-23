@@ -6,7 +6,7 @@ processors:
     phase: garden
     triggers:
       - kind: answer
-        idempotencyKeyPrefix: "dome.markdown.duplicate-detection:"
+        idempotencyKeyPrefix: "dome.markdown.ambiguous-wikilink:"
     capabilities:
       - kind: patch.auto
         paths: ["wiki/**"]

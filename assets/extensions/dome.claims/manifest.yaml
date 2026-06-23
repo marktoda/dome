@@ -79,7 +79,7 @@ processors:
     # timed out on the 786-page live vault (surfaced by run.recurring-timeout,
     # whose recovery text says to raise the processor's execution.timeoutMs).
     # 30s headroom matches the sibling whole-vault scanners (Half A:
-    # duplicate-detection/lint-supersession 30s, broken-images 20s) and stays
+    # lint-supersession 30s, broken-images 20s) and stays
     # under the 60s adoption ceiling. Same band-aid class as Half A, with the
     # same deferred follow-up: an incremental scan keyed on changed paths.
     execution:

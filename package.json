@@ -23,7 +23,7 @@
     "dome": "bin/dome"
   },
   "scripts": {
-    "test": "bun test",
+    "test": "bun test ./tests",
     "test:invariants": "bun test tests/invariants",
     "typecheck": "bunx tsc --noEmit && bunx tsc --noEmit -p tsconfig.bundles.json && bunx tsc --noEmit -p tsconfig.scripts.json",
     "v1:smoke": "bun scripts/v1-smoke.ts",
@@ -31,11 +31,14 @@
     "v1:dogfood-snapshot": "bun scripts/v1-dogfood-snapshot.ts",
     "v1:dogfood-report": "bun scripts/v1-dogfood-report.ts",
     "v1:dogfood-preflight": "bun scripts/v1-dogfood-preflight.ts",
-    "v1:check": "bun run typecheck && git diff --check && bun test && bun run v1:smoke",
+    "eval": "bun scripts/eval.ts",
+    "v1:check": "bun run typecheck && git diff --check && bun test ./tests && bun run v1:smoke",
     "v1:release-check": "bun scripts/v1-release-check.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.84",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "ai": "^6.0.206",
     "commander": "^14.0.3",
     "gray-matter": "^4.0.3",
     "isomorphic-git": "^1.27.0",

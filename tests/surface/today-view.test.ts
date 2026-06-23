@@ -1,5 +1,10 @@
-import { expect, test } from "bun:test";
-import { parseTodayView, addDays } from "../../src/surface/today-view";
+import { describe, expect, test } from "bun:test";
+import {
+  parseTodayView,
+  addDays,
+  buildTodayViewModel,
+  classifyUrgency,
+} from "../../src/surface/today-view";
 
 test("parses tasks with wikilinks stripped + dueDate", () => {
   const v = parseTodayView({ date: "2026-06-14",
@@ -55,4 +60,89 @@ test("task rows expose [[entity]] slugs as a structured `entities` field", () =>
 test("a row with no wikilinks has empty/absent entities", () => {
   const view = parseTodayView({ date: "x", openTasks: [{ text: "plain task", path: "p", line: 1, dueDate: null }], counts: { openTasks: 1, followups: 0, questions: 0 } });
   expect(view.openTasks[0]!.entities ?? []).toEqual([]);
+});
+
+// ── Tier 2: buildTodayViewModel ──────────────────────────────────────────────
+
+describe("classifyUrgency", () => {
+  const today = "2026-06-22";
+  test("null due date → someday", () => {
+    expect(classifyUrgency(null, today)).toEqual({ kind: "someday" });
+  });
+  test("past → overdue with whole-day count", () => {
+    expect(classifyUrgency("2026-06-20", today)).toEqual({ kind: "overdue", days: 2 });
+  });
+  test("equal → due-today", () => {
+    expect(classifyUrgency(today, today)).toEqual({ kind: "due-today" });
+  });
+  test("within +7 (inclusive) → this-week", () => {
+    expect(classifyUrgency("2026-06-29", today)).toEqual({ kind: "this-week", date: "2026-06-29" }); // +7
+    expect(classifyUrgency("2026-06-23", today)).toEqual({ kind: "this-week", date: "2026-06-23" }); // +1
+  });
+  test("beyond +7 → later", () => {
+    expect(classifyUrgency("2026-06-30", today)).toEqual({ kind: "later", date: "2026-06-30" }); // +8
+  });
+});
+
+describe("buildTodayViewModel", () => {
+  const base = {
+    date: "2026-06-22",
+    counts: { openTasks: 4, followups: 0, questions: 1 },
+    followups: [],
+    brief: null,
+    calendar: null,
+  };
+
+  test("partitions hero-deduped tasks into the five sections", () => {
+    const vm = buildTodayViewModel(
+      parseTodayView({
+        ...base,
+        openTasks: [
+          { text: "overdue one", path: "p", line: 1, dueDate: "2026-06-20" },
+          { text: "due today", path: "p", line: 2, dueDate: "2026-06-22" },
+          { text: "this week", path: "p", line: 3, dueDate: "2026-06-25" },
+          { text: "far", path: "p", line: 4, dueDate: "2026-08-01" },
+          { text: "no date", path: "p", line: 5, dueDate: null },
+        ],
+        questions: [],
+        hero: null,
+      }),
+    );
+    expect(vm.stillOpen.overdue.map((t) => t.text)).toEqual(["overdue one"]);
+    expect(vm.stillOpen.dueToday.map((t) => t.text)).toEqual(["due today"]);
+    expect(vm.stillOpen.thisWeek.map((t) => t.text)).toEqual(["this week"]);
+    expect(vm.stillOpen.later.map((t) => t.text)).toEqual(["far"]);
+    expect(vm.stillOpen.someday.map((t) => t.text)).toEqual(["no date"]);
+  });
+
+  test("drops the hero task from the sections and classifies it as heroUrgency", () => {
+    const vm = buildTodayViewModel(
+      parseTodayView({
+        ...base,
+        openTasks: [
+          { text: "the hero", path: "p", line: 1, dueDate: "2026-06-20" },
+          { text: "other", path: "p", line: 2, dueDate: "2026-06-22" },
+        ],
+        questions: [],
+        hero: { kind: "task", item: { text: "the hero", path: "p", line: 1, dueDate: "2026-06-20" } },
+      }),
+    );
+    const all = [...vm.stillOpen.overdue, ...vm.stillOpen.dueToday].map((t) => t.text);
+    expect(all).not.toContain("the hero"); // shown as the hero pill, not in sections
+    expect(all).toContain("other");
+    expect(vm.heroUrgency).toEqual({ kind: "overdue", days: 2 });
+  });
+
+  test("question hero → heroUrgency null; totalOpen counts incl. questions", () => {
+    const vm = buildTodayViewModel(
+      parseTodayView({
+        ...base,
+        openTasks: [],
+        questions: [{ id: 1, question: "go?", options: [], resolveCommand: "dome resolve 1" }],
+        hero: { kind: "question", item: { id: 1, question: "go?", options: [], resolveCommand: "dome resolve 1" } },
+      }),
+    );
+    expect(vm.heroUrgency).toBeNull();
+    expect(vm.totalOpen).toBe(5); // counts 4 + 0 + 1
+  });
 });

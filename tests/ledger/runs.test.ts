@@ -37,6 +37,7 @@ import {
   markTimedOut,
   newRunId,
   orphanRuns,
+  ORPHAN_RUN_RECOVERY_ERROR_REASON,
   queryRunSummaries,
   queryRuns,
   updateOutputCommit,
@@ -1188,5 +1189,115 @@ describe("capability_uses accessor", () => {
     expect(() => queryPatchRecords(db)).toThrow(
       "runs.effect_hashes_json failed validation",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ORPHAN_RECOVERED_RUNS_ARE_SUPPRESSED (§3.4, review findings D2+D5)
+// ---------------------------------------------------------------------------
+//
+// Runs failed via the dome.health orphan-recovery path must be suppressed from
+// latestActiveProblemRuns/countLatestActiveProblemRuns so the health machinery
+// does not loop on them. The suppression filter matches on:
+//   (a) ORPHAN_RUN_RECOVERY_ERROR_REASON — the typed const imported by both
+//       sides, so compile-time drift is impossible.
+//   (b) LIKE 'orphaned-run:%' — backward-compat for rows written by the
+//       engine-crash path (FAIL_ORPHANS_SQL).
+//
+// The lockstep invariant doc lives at:
+//   docs/wiki/invariants/ORPHAN_RECOVERED_RUNS_ARE_SUPPRESSED.md
+// ---------------------------------------------------------------------------
+
+describe("ORPHAN_RECOVERED_RUNS_ARE_SUPPRESSED", () => {
+  let root: string;
+  let db: LedgerDb;
+
+  beforeEach(async () => {
+    root = mkdtempSync(join(tmpdir(), "dome-ledger-orphan-sup-"));
+    const path = join(root, ".dome", "state", "runs.db");
+    const r = await openLedgerDb({ path });
+    if (!r.ok) throw new Error(`openLedgerDb failed: ${JSON.stringify(r.error)}`);
+    db = r.value.db;
+  });
+
+  afterEach(() => {
+    try {
+      db.close();
+    } catch {
+      // already closed
+    }
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  function queueAndRun(id: RunId, processorId: string, startedAt: Date): void {
+    insertQueued(db, {
+      id,
+      proposalId: null,
+      processorId,
+      processorVersion: "1.0.0",
+      phase: "garden",
+      inputCommit: INPUT_COMMIT,
+      triggerKind: "schedule",
+      triggerPayload: null,
+      startedAt,
+    });
+    markRunning(db, id, startedAt);
+  }
+
+  it("ORPHAN_RUN_RECOVERY_ERROR_REASON is the exact prose string the health processor writes", () => {
+    expect(ORPHAN_RUN_RECOVERY_ERROR_REASON).toBe(
+      "dome.health: mark orphaned processor run failed",
+    );
+  });
+
+  it("a run failed with ORPHAN_RUN_RECOVERY_ERROR_REASON is suppressed from latestActiveProblemRuns", () => {
+    const healthRecovered = newRunId(new Date(1), () => "hlth01");
+    queueAndRun(healthRecovered, "dome.test.health-recovered", new Date(1));
+    markFailed(db, {
+      id: healthRecovered,
+      error: ORPHAN_RUN_RECOVERY_ERROR_REASON,
+      durationMs: 1,
+      finishedAt: new Date(2),
+    });
+
+    expect(countLatestActiveProblemRuns(db)).toBe(0);
+    expect(latestActiveProblemRuns(db)).toEqual([]);
+  });
+
+  it("a run failed with ORPHAN_RUN_RECOVERY_ERROR_REASON does NOT suppress an unrelated failure on a different processor", () => {
+    const healthRecovered = newRunId(new Date(1), () => "hlth02");
+    queueAndRun(healthRecovered, "dome.test.health-rec-2", new Date(1));
+    markFailed(db, {
+      id: healthRecovered,
+      error: ORPHAN_RUN_RECOVERY_ERROR_REASON,
+      durationMs: 1,
+      finishedAt: new Date(2),
+    });
+
+    const unrelated = newRunId(new Date(3), () => "other1");
+    queueAndRun(unrelated, "dome.test.actually-broken", new Date(3));
+    markFailed(db, {
+      id: unrelated,
+      error: "real problem: unexpected crash",
+      durationMs: 1,
+      finishedAt: new Date(4),
+    });
+
+    expect(countLatestActiveProblemRuns(db)).toBe(1);
+    expect(latestActiveProblemRuns(db).map((r) => r.id)).toEqual([unrelated]);
+  });
+
+  it("a run failed via FAIL_ORPHANS_SQL prefix 'orphaned-run:' is suppressed (backward-compat arm)", () => {
+    const engineCrashOrphan = newRunId(new Date(1), () => "ecrsh1");
+    queueAndRun(engineCrashOrphan, "dome.test.engine-crash", new Date(1));
+    markFailed(db, {
+      id: engineCrashOrphan,
+      error: "orphaned-run: engine crash detected; transitioned by failOrphanedRuns",
+      durationMs: 1,
+      finishedAt: new Date(2),
+    });
+
+    expect(countLatestActiveProblemRuns(db)).toBe(0);
+    expect(latestActiveProblemRuns(db)).toEqual([]);
   });
 });
