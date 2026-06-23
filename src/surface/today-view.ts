@@ -35,6 +35,8 @@ export type TodayTaskRow = {
   readonly origin?: string;
   /** Slugs of all `[[wikilink]]` targets found in the raw task text (order-preserving, deduped). */
   readonly entities?: readonly string[];
+  /** Obsidian task priority parsed by the producer; null/absent when untagged. */
+  readonly priority?: "highest" | "high" | "medium" | "low" | "lowest" | null;
 };
 
 export type TodayQuestionRow = {
@@ -100,6 +102,7 @@ const taskRowWireSchema = z.object({
   line: z.number().nullable().optional(),
   dueDate: z.string().nullable().optional(),
   origin: z.string().optional(),
+  priority: z.enum(["highest", "high", "medium", "low", "lowest"]).nullable().optional(),
   sourceRefs: z.array(sourceRefWireSchema).readonly().optional(),
 });
 
@@ -181,6 +184,33 @@ export function parseTodayView(data: unknown): TodayView {
 
 // ── Private parsers ───────────────────────────────────────────────────────────
 
+const PRIORITY_LEVELS = ["highest", "high", "medium", "low", "lowest"] as const;
+type ParsedPriority = (typeof PRIORITY_LEVELS)[number];
+
+function parsePriority(raw: unknown): ParsedPriority | null {
+  return typeof raw === "string" && (PRIORITY_LEVELS as readonly string[]).includes(raw)
+    ? (raw as ParsedPriority)
+    : null;
+}
+
+/**
+ * Plain (uncolored) priority marker glyphs, shared by both paint adapters so
+ * they can't drift on what a level looks like. The marker gutter is ≤2 cols
+ * wide (`▲▲`/`▽▽`); medium/null render no mark. ASCII fallback uses `^`/`v`.
+ */
+export function priorityMarkerChars(
+  priority: TodayTaskRow["priority"] | undefined,
+  unicode: boolean,
+): string {
+  switch (priority) {
+    case "highest": return unicode ? "▲▲" : "^^";
+    case "high":    return unicode ? "▲" : "^";
+    case "low":     return unicode ? "▽" : "v";
+    case "lowest":  return unicode ? "▽▽" : "vv";
+    default:        return ""; // medium / null / undefined → no mark
+  }
+}
+
 function parseTaskRows(raw: unknown): ReadonlyArray<TodayTaskRow> {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((item) => {
@@ -190,6 +220,7 @@ function parseTaskRows(raw: unknown): ReadonlyArray<TodayTaskRow> {
     if (text.length === 0) return [];
     const origin = typeof r.origin === "string" ? r.origin : undefined;
     const entities = wikilinkSlugs(rawText);
+    const priority = parsePriority(r.priority);
     return [{
       text,
       path: typeof r.path === "string" ? r.path : "",
@@ -197,6 +228,7 @@ function parseTaskRows(raw: unknown): ReadonlyArray<TodayTaskRow> {
       dueDate: typeof r.dueDate === "string" ? r.dueDate : null,
       ...(origin !== undefined ? { origin } : {}),
       ...(entities.length > 0 ? { entities } : {}),
+      ...(priority !== null ? { priority } : {}),
     }];
   });
 }
@@ -262,6 +294,7 @@ function parseHero(raw: unknown): TodayHeroItem | null {
     if (text.length === 0) return null;
     const heroOrigin = typeof item.origin === "string" ? item.origin : undefined;
     const entities = wikilinkSlugs(rawText);
+    const priority = parsePriority(item.priority);
     return {
       kind: "task",
       item: {
@@ -271,6 +304,7 @@ function parseHero(raw: unknown): TodayHeroItem | null {
         dueDate: typeof item.dueDate === "string" ? item.dueDate : null,
         ...(heroOrigin !== undefined ? { origin: heroOrigin } : {}),
         ...(entities.length > 0 ? { entities } : {}),
+        ...(priority !== null ? { priority } : {}),
       },
     };
   }
@@ -309,7 +343,7 @@ export type TaskUrgency =
   | { readonly kind: "later"; readonly date: string }
   | { readonly kind: "someday" };
 
-/** Hero-deduped tasks partitioned by urgency. A row's section IS its urgency. */
+/** Open tasks partitioned by urgency. A row's section IS its urgency. */
 export type TodaySections = {
   readonly overdue: ReadonlyArray<TodayTaskRow>;
   readonly dueToday: ReadonlyArray<TodayTaskRow>;
@@ -323,9 +357,6 @@ export type TodayViewModel = {
   readonly counts: TodayCounts;
   /** counts.openTasks + followups + questions — the "N open" headline; all-clear is `=== 0`. */
   readonly totalOpen: number;
-  readonly hero: TodayHeroItem | null;
-  /** Urgency of the hero task; null when the hero is a question or absent. */
-  readonly heroUrgency: TaskUrgency | null;
   readonly stillOpen: TodaySections;
   readonly brief: TodayBriefField | null;
   readonly calendar: TodayCalendar | null;
@@ -341,16 +372,9 @@ export function classifyUrgency(dueDate: string | null, today: string): TaskUrge
   return { kind: "later", date: dueDate };
 }
 
-function taskIdentity(t: { path: string; line: number | null; text: string }): string {
-  return `${t.path}:${t.line ?? ""}:${t.text}`;
-}
-
 /** Derive the today view-model from a parsed view. Pure; `today` is `view.date`. */
 export function buildTodayViewModel(view: TodayView): TodayViewModel {
-  const { date, openTasks, followups, questions, hero, brief, calendar, counts } = view;
-
-  const heroIsTask = hero !== null && hero.kind === "task";
-  const heroKey = heroIsTask ? taskIdentity(hero.item) : null;
+  const { date, openTasks, followups, questions, brief, calendar, counts } = view;
 
   const sections: {
     overdue: TodayTaskRow[];
@@ -361,7 +385,6 @@ export function buildTodayViewModel(view: TodayView): TodayViewModel {
   } = { overdue: [], dueToday: [], thisWeek: [], later: [], someday: [] };
 
   for (const t of [...openTasks, ...followups]) {
-    if (heroKey !== null && taskIdentity(t) === heroKey) continue; // hero shown separately
     const urgency = classifyUrgency(t.dueDate, date);
     if (urgency.kind === "overdue") sections.overdue.push(t);
     else if (urgency.kind === "due-today") sections.dueToday.push(t);
@@ -374,8 +397,6 @@ export function buildTodayViewModel(view: TodayView): TodayViewModel {
     date,
     counts,
     totalOpen: counts.openTasks + counts.followups + counts.questions,
-    hero,
-    heroUrgency: heroIsTask ? classifyUrgency(hero.item.dueDate, date) : null,
     stillOpen: {
       overdue: sections.overdue,
       dueToday: sections.dueToday,

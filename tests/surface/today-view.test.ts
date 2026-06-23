@@ -4,7 +4,19 @@ import {
   addDays,
   buildTodayViewModel,
   classifyUrgency,
+  priorityMarkerChars,
 } from "../../src/surface/today-view";
+
+test("priorityMarkerChars maps all five levels + null", () => {
+  expect(priorityMarkerChars("highest", true)).toBe("▲▲");
+  expect(priorityMarkerChars("high", true)).toBe("▲");
+  expect(priorityMarkerChars("medium", true)).toBe("");
+  expect(priorityMarkerChars("low", true)).toBe("▽");
+  expect(priorityMarkerChars("lowest", true)).toBe("▽▽");
+  expect(priorityMarkerChars(null, true)).toBe("");
+  expect(priorityMarkerChars("highest", false)).toBe("^^");
+  expect(priorityMarkerChars("lowest", false)).toBe("vv");
+});
 
 test("parses tasks with wikilinks stripped + dueDate", () => {
   const v = parseTodayView({ date: "2026-06-14",
@@ -12,6 +24,22 @@ test("parses tasks with wikilinks stripped + dueDate", () => {
     followups: [], questions: [], counts: { openTasks: 1, followups: 0, questions: 0 }, brief: null, calendar: null, hero: null });
   expect(v.openTasks[0]!.text).toBe("talk to Eric");
   expect(v.openTasks[0]!.dueDate).toBe("2026-06-10");
+});
+
+test("parseTaskRows carries priority for all five literals + null/unknown", () => {
+  const v = parseTodayView({
+    date: "2026-06-23",
+    openTasks: [
+      { text: "a", path: "p", line: 1, dueDate: null, priority: "highest" },
+      { text: "b", path: "p", line: 2, dueDate: null, priority: "low" },
+      { text: "c", path: "p", line: 3, dueDate: null },
+      { text: "d", path: "p", line: 4, dueDate: null, priority: "bogus" },
+    ],
+    followups: [], questions: [],
+    counts: { openTasks: 4, followups: 0, questions: 0 },
+    brief: null, calendar: null, hero: null,
+  });
+  expect(v.openTasks.map((t) => t.priority ?? null)).toEqual(["highest", "low", null, null]);
 });
 
 test("parses question options + resolveCommand", () => {
@@ -115,34 +143,34 @@ describe("buildTodayViewModel", () => {
     expect(vm.stillOpen.someday.map((t) => t.text)).toEqual(["no date"]);
   });
 
-  test("drops the hero task from the sections and classifies it as heroUrgency", () => {
+  test("no longer exposes a hero; every open task lands in a section (the would-be hero is NOT deduped out)", () => {
     const vm = buildTodayViewModel(
       parseTodayView({
         ...base,
         openTasks: [
-          { text: "the hero", path: "p", line: 1, dueDate: "2026-06-20" },
+          { text: "the would-be hero", path: "p", line: 1, dueDate: "2026-06-20" },
           { text: "other", path: "p", line: 2, dueDate: "2026-06-22" },
         ],
         questions: [],
-        hero: { kind: "task", item: { text: "the hero", path: "p", line: 1, dueDate: "2026-06-20" } },
+        // even when the payload still carries a hero, the view-model ignores it:
+        hero: { kind: "task", item: { text: "the would-be hero", path: "p", line: 1, dueDate: "2026-06-20" } },
       }),
     );
-    const all = [...vm.stillOpen.overdue, ...vm.stillOpen.dueToday].map((t) => t.text);
-    expect(all).not.toContain("the hero"); // shown as the hero pill, not in sections
-    expect(all).toContain("other");
-    expect(vm.heroUrgency).toEqual({ kind: "overdue", days: 2 });
+    expect("hero" in vm).toBe(false);
+    expect("heroUrgency" in vm).toBe(false);
+    expect(vm.stillOpen.overdue.map((t) => t.text)).toEqual(["the would-be hero"]);
+    expect(vm.stillOpen.dueToday.map((t) => t.text)).toEqual(["other"]);
   });
 
-  test("question hero → heroUrgency null; totalOpen counts incl. questions", () => {
+  test("totalOpen counts tasks + followups + questions", () => {
     const vm = buildTodayViewModel(
       parseTodayView({
         ...base,
         openTasks: [],
         questions: [{ id: 1, question: "go?", options: [], resolveCommand: "dome resolve 1" }],
-        hero: { kind: "question", item: { id: 1, question: "go?", options: [], resolveCommand: "dome resolve 1" } },
+        hero: null,
       }),
     );
-    expect(vm.heroUrgency).toBeNull();
     expect(vm.totalOpen).toBe(5); // counts 4 + 0 + 1
   });
 });

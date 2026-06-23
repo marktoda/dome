@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import {
   defaultModelProviderConfig,
@@ -13,6 +13,7 @@ import {
 } from "../../src/cli/default-vault-config";
 import { resolveShippedBundlesRoot } from "../../src/cli/commands/sync-shared";
 import { loadCapabilityPolicy } from "../../src/engine/core/capability-policy";
+import { graphWriteCovers } from "../../src/engine/core/capability-broker";
 import { loadBundles } from "../../src/extensions/loader";
 
 describe("default vault config", () => {
@@ -81,6 +82,42 @@ describe("default vault config", () => {
         }
       }
       expect(missing).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("default config grants the deterministic brief/calendar indexers their fact namespaces", async () => {
+    // Regression: the dome.agent bundle graph.write is scoped to
+    // dome.preference.* (model-processors-emit-no-durable-facts), but the
+    // DETERMINISTIC brief-index/calendar-index extractors publish
+    // dome.agent.brief / dome.agent.calendar.event facts the cockpit reads.
+    // Without per-processor grants the broker denies those facts and the
+    // today view's brief/calendar render empty. Verify the SAME namespace
+    // matcher the broker uses now covers them.
+    const root = mkdtempSync(join(tmpdir(), "dome-default-config-grant-"));
+    try {
+      await mkdir(join(root, ".dome"), { recursive: true });
+      // dome.agent ships disabled by default; enable it so its (deterministic
+      // indexer) per-processor grants are loaded by the capability policy.
+      const rec = structuredClone(defaultConfigRecord()) as {
+        extensions: Record<string, { enabled: boolean }>;
+      };
+      rec.extensions["dome.agent"]!.enabled = true;
+      await writeFile(join(root, ".dome", "config.yaml"), stringifyYaml(rec), "utf8");
+      const policy = await loadCapabilityPolicy(root);
+      expect(policy.ok).toBe(true);
+      if (!policy.ok) throw new Error(policy.error);
+
+      const briefGraphWrite = policy.value
+        .grantsForProcessor("dome.agent", "dome.agent.brief-index")
+        .filter((c) => c.kind === "graph.write");
+      expect(graphWriteCovers("dome.agent.brief", briefGraphWrite)).toBe(true);
+
+      const calendarGraphWrite = policy.value
+        .grantsForProcessor("dome.agent", "dome.agent.calendar-index")
+        .filter((c) => c.kind === "graph.write");
+      expect(graphWriteCovers("dome.agent.calendar.event", calendarGraphWrite)).toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
