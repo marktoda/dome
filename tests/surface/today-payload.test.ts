@@ -46,6 +46,17 @@ test("passes through the producer's extra envelope fields (consumed-subset contr
   expect(r.success).toBe(true);
 });
 
+test("validates priority and still strips extras", () => {
+  const parsed = todayPayloadSchema.parse({
+    date: "2026-06-23",
+    counts: { openTasks: 1, followups: 0, questions: 0 },
+    openTasks: [{ text: "a", path: "p", line: 1, dueDate: null, priority: "high", attention: { discount: 0.1 } }],
+    followups: [], questions: [], brief: null, calendar: null, hero: null,
+  });
+  expect(parsed.openTasks[0]!.priority).toBe("high");
+  expect((parsed.openTasks[0] as Record<string, unknown>).attention).toBeUndefined(); // extra stripped
+});
+
 test("rejects a payload missing a required consumed field", () => {
   const missingCounts = { ...(valid as Record<string, unknown>) };
   delete (missingCounts as { counts?: unknown }).counts;

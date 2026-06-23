@@ -29,6 +29,7 @@ import {
   headline,
   hyperlink,
   originUrl,
+  pad,
   paint,
   resolveCaps,
   rollup,
@@ -36,15 +37,17 @@ import {
   splitInlineLinks,
   statusGlyph,
   stripEmphasis,
+  stripWikilinks,
   visibleWidth,
+  wrap,
   type Caps,
   type Tone,
 } from "../presenter";
 import {
   parseTodayView,
   buildTodayViewModel,
+  priorityMarkerChars,
   type TodayTaskRow,
-  type TaskUrgency,
 } from "../../surface/today-view";
 import { compareStrings } from "../../core/compare";
 import { resolveVaultPath } from "../../surface/resolve-vault";
@@ -298,23 +301,6 @@ export type FormatTodayOptions = {
   readonly verbose?: boolean;
 };
 
-/** Render the hero pill's urgency suffix from the view-model classification. */
-function heroUrgencyStrings(
-  u: TaskUrgency | null,
-  caps: Caps,
-): { plain: string; painted: string } {
-  if (u === null || u.kind === "someday") return { plain: "", painted: "" };
-  if (u.kind === "overdue") {
-    const s = `overdue ${u.days}d`;
-    return { plain: `   ${s}`, painted: `   ${paint(s, "err", caps)}` };
-  }
-  if (u.kind === "due-today") {
-    return { plain: "   due today", painted: `   ${paint("due today", "warn", caps)}` };
-  }
-  const s = `due ${u.date}`; // this-week | later
-  return { plain: `   ${s}`, painted: `   ${paint(s, "muted", caps)}` };
-}
-
 export function formatTodayResult(
   data: unknown,
   caps: Caps,
@@ -322,11 +308,8 @@ export function formatTodayResult(
   opts: FormatTodayOptions = {},
 ): string {
   const vm = buildTodayViewModel(parseTodayView(data));
-  const { date, counts, totalOpen, hero, heroUrgency, stillOpen, brief, calendar, questions } = vm;
-  // Verdict overdue count includes the hero when it is itself overdue (the hero
-  // is rendered separately but still counts toward "N overdue").
-  const overdueCount =
-    stillOpen.overdue.length + (heroUrgency?.kind === "overdue" ? 1 : 0);
+  const { date, counts, totalOpen, stillOpen, brief, calendar, questions } = vm;
+  const overdueCount = stillOpen.overdue.length;
   const isAllClear = totalOpen === 0;
 
   // Verdict header
@@ -344,55 +327,15 @@ export function formatTodayResult(
     "",
   ];
 
-  // Hero action line (→ / >) — never dome decide
-  if (hero !== null) {
-    const heroArrow = caps.unicode ? "↗" : "->";
-    const heroArrowWidth = visibleWidth(heroArrow);
-    if (hero.kind === "task") {
-      const item = hero.item;
-      // Urgency suffix — from the view-model's heroUrgency. Compute its plain
-      // visible width BEFORE paint so we can reserve the right columns.
-      const { plain: urgencyPlain, painted: urgencyPainted } = heroUrgencyStrings(
-        heroUrgency,
-        caps,
-      );
-      const urgencyWidth = visibleWidth(urgencyPlain);
-
-      // Mirror renderRow: split out inline links, strip emphasis, shorten.
-      const { text: rawText, links: heroLinks } = splitInlineLinks(item.text);
-      const heroText = stripEmphasis(rawText);
-      const MAX_LINK_LABEL = 24;
-      const heroAffs = heroLinks.map((l) => ({
-        label: shortenLabel(l.label, MAX_LINK_LABEL, caps.unicode),
-        url: l.url,
-      }));
-      const heroLinkReserve =
-        heroAffs.length === 0
-          ? 0
-          : 3 +
-            heroAffs.reduce((a, x) => a + visibleWidth(x.label) + heroArrowWidth, 0) +
-            (heroAffs.length - 1) * 2;
-      const heroOriginReserve = item.origin !== undefined ? 3 + heroArrowWidth : 0;
-      // "  → " leader = 4 cols (2 indent + pointer char + space); same as taskWidth.
-      const heroTaskWidth = Math.max(24, caps.width - 4);
-      const heroBudget = Math.max(0, heroTaskWidth - urgencyWidth - heroLinkReserve - heroOriginReserve);
-      const heroLabel = shortenLabel(heroText, heroBudget, caps.unicode);
-
-      const heroAffordances = heroAffs
-        .map((x) => paint(hyperlink(`${x.label}${heroArrow}`, x.url, caps), "ident", caps))
-        .join("  ");
-      const heroInlineTail = heroAffs.length > 0 ? `   ${heroAffordances}` : "";
-      const heroOriginTail =
-        item.origin !== undefined
-          ? `   ${paint(hyperlink(heroArrow, originUrl(item.origin, vault), caps), "ident", caps)}`
-          : "";
-      lines.push(`  ${glyph("pointer", caps)} ${heroLabel}${heroInlineTail}${heroOriginTail}${urgencyPainted}`);
-    } else {
-      const item = hero.item;
-      const questionText = shortenLabel(stripEmphasis(item.question), 60, caps.unicode);
-      lines.push(
-        `  ${glyph("pointer", caps)} dome resolve ${item.id}   ${paint(questionText, "muted", caps)}`,
-      );
+  // Brief — the grounded morning framing, shown by default under the verdict.
+  // Wikilinks are stripped to their labels (terminal legibility); the source
+  // path is shown only under --verbose.
+  if (brief !== null) {
+    for (const line of wrap(stripWikilinks(brief.text), Math.max(8, caps.width - 2))) {
+      lines.push(`  ${line}`);
+    }
+    if (opts.verbose === true && brief.sourceRef.path.length > 0) {
+      lines.push(`  ${paint(brief.sourceRef.path, "muted", caps)}`);
     }
     lines.push("");
   }
@@ -405,13 +348,27 @@ export function formatTodayResult(
     lines.push("");
   }
 
-  // Calendar summary line
+  // Calendar agenda — a time-gutter list of today's events. Capped (with an
+  // overflow line); --verbose shows all. The dim `meta` (attendees) trails the
+  // title when present.
   if (calendar !== null && calendar.events.length > 0) {
-    const n = calendar.events.length;
-    const evtSummary = `${n} ${n === 1 ? "event" : "events"}`;
-    lines.push(
-      `  ${paint("today", "muted", caps)}  ${paint(date, "plain", caps)} · ${paint(evtSummary, "muted", caps)}`,
-    );
+    lines.push(`  ${paint("agenda", "muted", caps)}  ${paint(date, "plain", caps)}`);
+    const AGENDA_CAP = 5;
+    const shown = opts.verbose === true
+      ? calendar.events.length
+      : Math.min(AGENDA_CAP, calendar.events.length);
+    const timeWidth = calendar.events
+      .slice(0, shown)
+      .reduce((m, e) => Math.max(m, visibleWidth(e.time === "" ? "—" : e.time)), 0);
+    for (const ev of calendar.events.slice(0, shown)) {
+      const time = paint(pad(ev.time === "" ? "—" : ev.time, timeWidth), "muted", caps);
+      const metaTail = ev.meta.length > 0 ? `   ${paint(ev.meta, "muted", caps)}` : "";
+      const titleBudget = Math.max(8, caps.width - 4 - timeWidth - 3 - visibleWidth(ev.meta) - 3);
+      const title = shortenLabel(stripEmphasis(ev.title), titleBudget, caps.unicode);
+      lines.push(`    ${time}  ${title}${metaTail}`);
+    }
+    const more = calendar.events.length - shown;
+    if (more > 0) lines.push(`    ${paint(`+${more} more`, "muted", caps)}`);
     lines.push("");
   }
 
@@ -449,8 +406,19 @@ export function formatTodayResult(
             (affs.length - 1) * 2;
       // Reserve width for the origin ↗ affordance when present.
       const originReserve = t.origin !== undefined ? 3 + arrowWidth : 0;
-      // Reduce available label width by the extra indent to keep total ≤ taskWidth.
-      const effectiveWidth = taskWidth - indent;
+      // Priority marker gutter: a fixed 3-col cell ("▲▲ ") between the glyph and
+      // the text so marked and unmarked rows align at the same text column. The
+      // marker (highest/high in `err`, low/lowest in `muted`) is reserved out of
+      // the text budget like indent, keeping the row within taskWidth.
+      const MARKER_GUTTER = 3;
+      const markerRaw = priorityMarkerChars(t.priority, caps.unicode);
+      const markerTone: Tone =
+        t.priority === "highest" || t.priority === "high" ? "err" : "muted";
+      const marker = markerRaw.length > 0
+        ? `${paint(pad(markerRaw, MARKER_GUTTER - 1), markerTone, caps)} `
+        : " ".repeat(MARKER_GUTTER);
+      // Reduce available label width by the extra indent + marker gutter to keep total ≤ taskWidth.
+      const effectiveWidth = taskWidth - indent - MARKER_GUTTER;
       const label = shortenLabel(text, Math.max(0, effectiveWidth - linkReserve - originReserve), caps.unicode);
       const g = paint(statusGlyph(tone, caps), tone, caps);
       const affordances = affs
@@ -462,7 +430,7 @@ export function formatTodayResult(
           ? `   ${paint(hyperlink(arrow, originUrl(t.origin, vault), caps), "ident", caps)}`
           : "";
       const indentStr = " ".repeat(indent);
-      lines.push(`  ${g} ${indentStr}${label}${inlineTail}${originTail}`);
+      lines.push(`  ${g} ${marker}${indentStr}${label}${inlineTail}${originTail}`);
     };
 
     const CLUSTER_MIN = 3;
@@ -554,8 +522,7 @@ export function formatTodayResult(
     // (possibly display-capped) arrays. Overdue is reported exactly (the verdict
     // header already relies on the received list carrying all overdue); every
     // other non-shown task folds into a single "more" so the math never lies.
-    const heroIsTask = hero !== null && hero.kind === "task";
-    const trueTotal = (counts.openTasks + counts.followups) - (heroIsTask ? 1 : 0);
+    const trueTotal = counts.openTasks + counts.followups;
     const overdueMore = Math.max(0, overdue.length - overdueShown);
     const shownNonOverdue = todayShown + thisWeekShown + laterShown + somedayShown;
     const otherMore = Math.max(0, (trueTotal - overdue.length) - shownNonOverdue);
@@ -581,22 +548,6 @@ export function formatTodayResult(
 
     lines.push("");
     lines.push(rollup([], caps));
-  }
-
-  // Brief prose: hidden by default, shown under --verbose
-  if (brief !== null) {
-    if (opts.verbose === true) {
-      lines.push("");
-      lines.push(`  ${paint("brief", "muted", caps)}   ${brief.text}`);
-      if (brief.sourceRef.path.length > 0) {
-        lines.push(`  ${paint(brief.sourceRef.path, "muted", caps)}`);
-      }
-    } else {
-      lines.push("");
-      lines.push(
-        `  ${paint("--verbose for full brief + sources", "muted", caps)}`,
-      );
-    }
   }
 
   return lines.join("\n");
