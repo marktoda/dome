@@ -313,7 +313,7 @@ describe("dome today: Briefing terminal restyle", () => {
     expect(out).toMatch(/go make something|you're clear/i);
   });
 
-  test("calendar summary line rendered when calendar present", () => {
+  test("calendar renders a time-gutter agenda with titles when present", () => {
     const data = {
       date: "2026-06-14",
       hero: null,
@@ -332,8 +332,30 @@ describe("dome today: Briefing terminal restyle", () => {
       dueCounts: {},
     };
     const out = formatTodayResult(data, ASCII_CAPS, "/vault");
-    expect(out).toMatch(/today|2026-06-14/);
-    expect(out).toMatch(/2\s*event/);
+    expect(out).toContain("agenda");
+    expect(out).toContain("10:00  Team sync");
+    expect(out).toContain("14:00  Design review");
+    expect(out).toContain("30min"); // meta tail
+  });
+
+  test("calendar agenda caps at 5 with overflow; --verbose shows all", () => {
+    const events = Array.from({ length: 7 }, (_, i) => ({
+      time: `0${i}:00`, title: `Event ${i}`, meta: i === 0 ? "Cody, Grayson" : "",
+    }));
+    const data = {
+      date: "2026-06-23",
+      counts: { openTasks: 0, followups: 0, questions: 0 },
+      openTasks: [], followups: [], questions: [], brief: null, hero: null,
+      calendar: { events, sourceRef: { path: "sources/calendar/2026-06-23.md" } },
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(out).toContain("00:00  Event 0");
+    expect(out).toContain("Cody, Grayson");        // meta rendered
+    expect(out).toContain("04:00  Event 4");        // 5th event shown
+    expect(out).not.toContain("05:00  Event 5");    // capped
+    expect(out).toContain("+2 more");               // overflow
+    const verbose = formatTodayResult(data, ASCII_CAPS, "/vault", { verbose: true });
+    expect(verbose).toContain("06:00  Event 6");     // all shown under --verbose
   });
 
   test("glyph-grouped task rows: overdue, today, open", () => {

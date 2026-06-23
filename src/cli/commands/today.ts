@@ -347,13 +347,27 @@ export function formatTodayResult(
     lines.push("");
   }
 
-  // Calendar summary line
+  // Calendar agenda — a time-gutter list of today's events. Capped (with an
+  // overflow line); --verbose shows all. The dim `meta` (attendees) trails the
+  // title when present.
   if (calendar !== null && calendar.events.length > 0) {
-    const n = calendar.events.length;
-    const evtSummary = `${n} ${n === 1 ? "event" : "events"}`;
-    lines.push(
-      `  ${paint("today", "muted", caps)}  ${paint(date, "plain", caps)} · ${paint(evtSummary, "muted", caps)}`,
-    );
+    lines.push(`  ${paint("agenda", "muted", caps)}  ${paint(date, "plain", caps)}`);
+    const AGENDA_CAP = 5;
+    const shown = opts.verbose === true
+      ? calendar.events.length
+      : Math.min(AGENDA_CAP, calendar.events.length);
+    const timeWidth = calendar.events
+      .slice(0, shown)
+      .reduce((m, e) => Math.max(m, visibleWidth(e.time === "" ? "—" : e.time)), 0);
+    for (const ev of calendar.events.slice(0, shown)) {
+      const time = paint(pad(ev.time === "" ? "—" : ev.time, timeWidth), "muted", caps);
+      const metaTail = ev.meta.length > 0 ? `   ${paint(ev.meta, "muted", caps)}` : "";
+      const titleBudget = Math.max(8, caps.width - 4 - timeWidth - 3 - visibleWidth(ev.meta) - 3);
+      const title = shortenLabel(stripEmphasis(ev.title), titleBudget, caps.unicode);
+      lines.push(`    ${time}  ${title}${metaTail}`);
+    }
+    const more = calendar.events.length - shown;
+    if (more > 0) lines.push(`    ${paint(`+${more} more`, "muted", caps)}`);
     lines.push("");
   }
 
