@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { DomeClient } from "./api/client";
-import type { Recents as RecentsT, Today, TodayQuestion } from "./api/types";
+import type { Recents as RecentsT, Today } from "./api/types";
 import { TokenGate } from "./auth/TokenGate";
 import { Brief } from "./components/Brief";
 import { Recents } from "./components/Recents";
@@ -47,13 +47,12 @@ function Screen({ token }: { token: string }): React.ReactElement {
     });
   };
 
-  // Optimistic: drop the answered question (and hero if it was the one) immediately,
-  // toast the answer, then resolve against the API and refetch to confirm.
+  // Optimistic: drop the answered question immediately, toast the answer, then
+  // resolve against the API and refetch to confirm.
   const resolve = (id: number, value: string): void => {
     setToday((prev) =>
       prev === null ? prev : {
         ...prev,
-        hero: prev.hero !== null && prev.hero.kind === "question" && (prev.hero.item as TodayQuestion).id === id ? null : prev.hero,
         questions: prev.questions.filter((q) => q.id !== id),
       });
     setAck(`Answered · "${value}"`);

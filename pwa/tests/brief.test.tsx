@@ -24,4 +24,32 @@ describe("Brief", () => {
     render(<Brief today={base} onResolve={() => {}} />);
     expect(screen.getByText(/you're clear/i)).toBeDefined();
   });
+
+  test("buckets tasks by urgency, shows a priority marker, and renders no hero card", () => {
+    const today: Today = { ...base, date: "2026-06-17",
+      openTasks: [
+        { text: "Overdue thing", path: "p", line: 1, dueDate: "2026-06-10", priority: "highest" },
+        { text: "Due today thing", path: "p", line: 2, dueDate: "2026-06-17" },
+      ],
+      counts: { openTasks: 2, followups: 0, questions: 0 },
+      // even when the payload carries a hero, the PWA no longer paints one:
+      hero: { kind: "task", item: { text: "Overdue thing", path: "p", line: 1, dueDate: "2026-06-10" } } };
+    render(<Brief today={today} onResolve={() => {}} />);
+    expect(screen.getByText(/overdue · 1/i)).toBeDefined();   // urgency bucket label
+    expect(screen.getByText(/today · 1/i)).toBeDefined();
+    expect(screen.getByText(/Overdue thing/)).toBeDefined();
+    expect(screen.getByText("▲▲")).toBeDefined();             // priority marker (shared glyph)
+    expect(screen.queryByText(/THE ONE THING/)).toBeNull();   // hero retired
+  });
+
+  test("renders the agenda from calendar events", () => {
+    const today: Today = { ...base, date: "2026-06-17",
+      calendar: { events: [{ time: "09:00", title: "Standup", meta: "Eng" }], sourceRef: { path: "sources/calendar/x.md" } },
+      openTasks: [{ text: "something", path: "p", line: 1, dueDate: null }],
+      counts: { openTasks: 1, followups: 0, questions: 0 } };
+    render(<Brief today={today} onResolve={() => {}} />);
+    expect(screen.getByText("Agenda")).toBeDefined();
+    expect(screen.getByText("09:00")).toBeDefined();
+    expect(screen.getByText(/Standup/)).toBeDefined();
+  });
 });
