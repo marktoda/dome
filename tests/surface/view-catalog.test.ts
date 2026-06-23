@@ -38,7 +38,7 @@ describe("first-party view catalog lockstep", () => {
         `no shipped view-phase processor in ${entry.bundleId} handles command '${entry.command}'`,
       ).toBeDefined();
       expect(entry.viewName.startsWith(`${entry.bundleId}.`)).toBe(true);
-      expect(entry.schema).toBe(`${entry.viewName}/v1`);
+      expect(entry.schemaTag).toBe(`${entry.viewName}/v1`);
     }
   });
 

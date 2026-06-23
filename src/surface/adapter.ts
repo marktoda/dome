@@ -13,6 +13,8 @@
 // `surface.commands`, grown consumer-by-consumer instead of designed
 // speculatively.
 
+import type { ZodType } from "zod";
+
 import {
   openVault,
   type OpenVaultError,
@@ -120,25 +122,28 @@ export type CatalogViewProblem =
   | { readonly kind: "no-structured-result" }
   | { readonly kind: "multiple-views"; readonly count: number }
   | { readonly kind: "wrong-view"; readonly got: string }
-  | { readonly kind: "wrong-schema"; readonly got: string };
+  | { readonly kind: "wrong-schema"; readonly got: string }
+  | { readonly kind: "invalid-payload"; readonly issues: string };
 
-export type CatalogViewOutcome =
+export type CatalogViewOutcome<TPayload = unknown> =
   | {
       readonly kind: "ok";
-      readonly data: unknown;
+      readonly data: TPayload;
       readonly brokerDiagnostics: ReadonlyArray<DiagnosticEffect>;
     }
   | { readonly kind: "problem"; readonly problem: CatalogViewProblem };
 
 /**
- * Run one catalog view on an open vault and validate the result: exactly
- * one view, matching the expected name and structured schema.
+ * Run one catalog view on an open vault and validate the result against the
+ * entry's View Contract: exactly one view, matching the expected name and
+ * version tag, and a structured payload that parses against `entry.payload`.
+ * The ok branch carries the typed `TPayload` — `data: unknown` dies here.
  */
-export async function runCatalogView(
+export async function runCatalogView<TPayload>(
   vault: Vault,
-  entry: FirstPartyViewEntry,
+  entry: FirstPartyViewEntry<TPayload>,
   args?: unknown,
-): Promise<CatalogViewOutcome> {
+): Promise<CatalogViewOutcome<TPayload>> {
   const run = await vault.runView(entry.command, args ?? null);
   switch (run.kind) {
     case "detached-head":
@@ -161,7 +166,7 @@ export async function runCatalogView(
     case "ok": {
       const validated = validateStructuredRun(
         { views: run.views, structured: run.structured },
-        { viewName: entry.viewName, schema: entry.schema },
+        { viewName: entry.viewName, schemaTag: entry.schemaTag, payload: entry.payload },
       );
       if (validated.kind === "problem") return validated;
       return {
@@ -175,18 +180,25 @@ export async function runCatalogView(
 
 /**
  * The pure expected-view validation every consumer shares: exactly one
- * view, matching name, structured content, matching schema. The CLI's
- * structured-view wrapper and `runCatalogView` both delegate here; only
- * the message rendering differs per surface.
+ * view, matching name, structured content, matching version tag, and a
+ * payload that parses against the contract schema. The CLI's structured-view
+ * wrapper and `runCatalogView` both delegate here; only the message rendering
+ * differs per surface. The version tag (`schemaTag`) is a cheap handshake that
+ * fast-fails before the schema parse; a tag match with a malformed payload is
+ * a distinct `invalid-payload` problem (a processor bug).
  */
-export function validateStructuredRun(
+export function validateStructuredRun<TPayload>(
   run: {
     readonly views: ReadonlyArray<{ readonly name: string }>;
     readonly structured: { readonly schema: string; readonly data: unknown } | null;
   },
-  expected: { readonly viewName: string; readonly schema: string },
+  expected: {
+    readonly viewName: string;
+    readonly schemaTag: string;
+    readonly payload: ZodType<TPayload>;
+  },
 ):
-  | { readonly kind: "ok"; readonly data: unknown }
+  | { readonly kind: "ok"; readonly data: TPayload }
   | { readonly kind: "problem"; readonly problem: CatalogViewProblem } {
   if (run.views.length === 0) {
     return { kind: "problem", problem: { kind: "no-structured-result" } };
@@ -204,22 +216,44 @@ export function validateStructuredRun(
   if (run.structured === null) {
     return { kind: "problem", problem: { kind: "no-structured-result" } };
   }
-  if (run.structured.schema !== expected.schema) {
+  if (run.structured.schema !== expected.schemaTag) {
     return {
       kind: "problem",
       problem: { kind: "wrong-schema", got: run.structured.schema },
     };
   }
-  return { kind: "ok", data: run.structured.data };
+  const parsed = expected.payload.safeParse(run.structured.data);
+  if (!parsed.success) {
+    return {
+      kind: "problem",
+      problem: {
+        kind: "invalid-payload",
+        issues: parsed.error.issues
+          .map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`)
+          .join("; "),
+      },
+    };
+  }
+  return { kind: "ok", data: parsed.data };
 }
 
 const OLD_FIRST_PARTY_CONFIG_HINT =
   "For older vault configs, run `dome init --refresh-config` to add current first-party defaults.";
 
+/**
+ * The label fields the operator-message renderers read. Narrowed from the
+ * full entry so a generic `FirstPartyViewEntry<TPayload>` passes without the
+ * contravariant `buildViewModel` param tripping `exactOptionalPropertyTypes`.
+ */
+type ViewEntryLabels = Pick<
+  FirstPartyViewEntry,
+  "viewName" | "schemaTag" | "bundleId" | "processorName"
+>;
+
 /** The shared not-found wording for a first-party view. */
 export function viewNotFoundMessage(
   commandLabel: string,
-  entry: FirstPartyViewEntry,
+  entry: ViewEntryLabels,
 ): string {
   return (
     `${commandLabel}: ${entry.bundleId} is not installed or no ` +
@@ -230,7 +264,7 @@ export function viewNotFoundMessage(
 /** Render the shared operator wording for a catalog-view problem. */
 export function catalogViewProblemMessage(
   commandLabel: string,
-  entry: FirstPartyViewEntry,
+  entry: ViewEntryLabels,
   problem: CatalogViewProblem,
 ): string {
   switch (problem.kind) {
@@ -251,7 +285,9 @@ export function catalogViewProblemMessage(
     case "wrong-view":
       return `${commandLabel}: expected view '${entry.viewName}', got '${problem.got}'.`;
     case "wrong-schema":
-      return `${commandLabel}: expected structured schema '${entry.schema}', got '${problem.got}'.`;
+      return `${commandLabel}: expected structured schema '${entry.schemaTag}', got '${problem.got}'.`;
+    case "invalid-payload":
+      return `${commandLabel}: ${entry.processorName} processor returned a payload that failed validation (${problem.issues}).`;
   }
 }
 

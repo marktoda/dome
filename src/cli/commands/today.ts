@@ -192,7 +192,8 @@ async function renderTodayOnce(
       { views: run.views, structured: run.structured },
       {
         viewName: FIRST_PARTY_VIEWS.today.viewName,
-        schema: FIRST_PARTY_VIEWS.today.schema,
+        schemaTag: FIRST_PARTY_VIEWS.today.schemaTag,
+        payload: FIRST_PARTY_VIEWS.today.payload,
       },
     );
     if (validated.kind === "problem") {
