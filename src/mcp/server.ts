@@ -62,8 +62,10 @@ import {
   runtimeOpenFailureMessage,
   withVault as withVaultShared,
 } from "../surface/adapter";
-import { FIRST_PARTY_VIEWS } from "../surface/view-catalog";
-import { todayPayloadSchema } from "../surface/today-view";
+import {
+  FIRST_PARTY_VIEWS,
+  type FirstPartyViewEntry,
+} from "../surface/view-catalog";
 import { COMMAND_ERROR_SCHEMA } from "../surface/command-error";
 import { formatJson } from "../surface/format";
 import { DEFAULT_ORPHAN_RUN_THRESHOLD_MS } from "../engine/host/health";
@@ -188,12 +190,12 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
    * Run a catalog view through the shared runner; problems render with the
    * shared operator wording as tool errors.
    */
-  const structuredViewResult = async (input: {
+  const structuredViewResult = async <TPayload>(input: {
     readonly toolLabel: string;
-    readonly entry: (typeof FIRST_PARTY_VIEWS)[keyof typeof FIRST_PARTY_VIEWS];
+    readonly entry: FirstPartyViewEntry<TPayload>;
     readonly args: unknown;
   }): Promise<
-    | { readonly kind: "ok"; readonly data: unknown }
+    | { readonly kind: "ok"; readonly data: TPayload }
     | { readonly kind: "error"; readonly result: ToolResult }
   > => {
     const outcome = await withVaultShared({ path: vault, bundlesRoot }, (v) =>
@@ -522,7 +524,10 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
   }) =>
     structuredViewResult({
       toolLabel: "dome mcp tasks",
-      entry: FIRST_PARTY_VIEWS.today,
+      // Lenient degrade: the tasks tool surfaces the daily view to an agent
+      // and should render even a slightly-off payload, so it overrides the
+      // strict contract here (parity with the CLI/HTTP today surfaces).
+      entry: { ...FIRST_PARTY_VIEWS.today, payload: z.unknown() },
       args: Object.freeze({
         ...(input.date !== undefined ? { date: input.date } : {}),
         ...(input.limit !== undefined ? { limit: input.limit } : {}),
@@ -565,10 +570,11 @@ type BriefSource = {
  * adopted commit (from the daily's own source ref) to read it at.
  */
 function parseBriefSource(data: unknown): BriefSource {
-  // Validate against the shared dome.daily.today/v1 contract instead of
-  // hand-narrowing. A malformed/absent payload falls through to the empty
+  // Validate against the shared dome.daily.today/v1 contract — now sourced
+  // from the catalog entry (the single declaration) rather than importing the
+  // schema directly. A malformed/absent payload falls through to the empty
   // date/path guard below (same behavior as before).
-  const parsed = todayPayloadSchema.safeParse(data);
+  const parsed = FIRST_PARTY_VIEWS.today.payload.safeParse(data);
   const payload = parsed.success ? parsed.data : null;
   const date = payload?.date ?? "";
   const daily = payload?.daily;

@@ -8,6 +8,8 @@
 
 import { basename } from "node:path";
 
+import { z } from "zod";
+
 import {
   runSharedViewCommand,
   structuredViewBrokerMessages,
@@ -195,7 +197,11 @@ async function renderTodayOnce(
       { views: run.views, structured: run.structured },
       {
         viewName: FIRST_PARTY_VIEWS.today.viewName,
-        schema: FIRST_PARTY_VIEWS.today.schema,
+        schemaTag: FIRST_PARTY_VIEWS.today.schemaTag,
+        // Lenient degrade: `dome today` must always render something, so it
+        // skips the strict contract parse here and enriches the raw data via
+        // `parseTodayView` (total) in `formatTodayResult`.
+        payload: z.unknown(),
       },
     );
     if (validated.kind === "problem") {

@@ -4,11 +4,13 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  parseLintData,
   renderLintText,
   runLint,
-  type LintData,
 } from "../../../src/cli/commands/lint";
+import {
+  lintPayloadSchema,
+  type LintData,
+} from "../../../src/surface/lint-view";
 
 import {
   captured,
@@ -46,7 +48,7 @@ describe("runLint", () => {
 // ----- renderLintText (unit) ------------------------------------------------
 
 // Minimal LintData with no issues (all counts zero).
-const CLEAN_DATA: LintData = parseLintData({
+const CLEAN_DATA: LintData = lintPayloadSchema.parse({
   status: "pass",
   failOn: "error",
   checked: { markdownFiles: 42 },
@@ -57,7 +59,7 @@ const CLEAN_DATA: LintData = parseLintData({
 });
 
 // LintData that passes (failOn=error) but still has warning/info issues.
-const PASS_WITH_ISSUES_DATA: LintData = parseLintData({
+const PASS_WITH_ISSUES_DATA: LintData = lintPayloadSchema.parse({
   status: "pass",
   failOn: "error",
   checked: { markdownFiles: 7 },
@@ -81,7 +83,7 @@ const PASS_WITH_ISSUES_DATA: LintData = parseLintData({
 });
 
 // LintData with one warning and one info issue.
-const DIRTY_DATA: LintData = parseLintData({
+const DIRTY_DATA: LintData = lintPayloadSchema.parse({
   status: "fail",
   failOn: "warning",
   checked: { markdownFiles: 10 },

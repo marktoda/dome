@@ -38,12 +38,25 @@ describe("first-party view catalog lockstep", () => {
         `no shipped view-phase processor in ${entry.bundleId} handles command '${entry.command}'`,
       ).toBeDefined();
       expect(entry.viewName.startsWith(`${entry.bundleId}.`)).toBe(true);
-      expect(entry.schema).toBe(`${entry.viewName}/v1`);
+      expect(entry.schemaTag).toBe(`${entry.viewName}/v1`);
     }
   });
 
   test("catalog commands are unique", () => {
     const commands = Object.values(FIRST_PARTY_VIEWS).map((e) => e.command);
     expect(new Set(commands).size).toBe(commands.length);
+  });
+
+  test("export-context contract requires markdown and passes the rest through", () => {
+    const entry = FIRST_PARTY_VIEWS.exportContext;
+    expect(() => entry.payload.parse({})).toThrow();
+    const parsed = entry.payload.parse({ markdown: "# hi", topic: "t", extra: 1 }) as {
+      markdown: string;
+      topic: string;
+      extra: number;
+    };
+    expect(parsed.markdown).toBe("# hi");
+    expect(parsed.topic).toBe("t");
+    expect(parsed.extra).toBe(1);
   });
 });

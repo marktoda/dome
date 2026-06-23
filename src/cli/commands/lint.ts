@@ -13,6 +13,10 @@ import {
   type Status,
 } from "../presenter";
 import { FIRST_PARTY_VIEWS } from "../../surface/view-catalog";
+import {
+  type LintData,
+  type LintSeverity,
+} from "../../surface/lint-view";
 import { printViewCommandError } from "./view-shared";
 import { runCliStructuredView } from "../structured-view-command";
 
@@ -57,84 +61,11 @@ export async function runLint(
     failedError: "lint-failed",
     renderHuman: (data) =>
       renderLintText(
-        parseLintData(data),
+        data,
         resolveVaultPath(options.vault),
         options.verbose === true,
       ),
-    successExitCode: (data) => (parseLintData(data).status === "fail" ? 1 : 0),
-  });
-}
-
-export type LintSeverity = "info" | "warning" | "error" | "block";
-
-export type LintIssueData = {
-  readonly severity: LintSeverity;
-  readonly code: string;
-  readonly message: string;
-  readonly sourceRefs: ReadonlyArray<{ readonly path: string; readonly commit: string }>;
-};
-
-export type LintData = {
-  readonly status: "pass" | "fail";
-  readonly failOn: string;
-  readonly checked: { readonly markdownFiles: number };
-  readonly counts: {
-    readonly total: number;
-    readonly info: number;
-    readonly warning: number;
-    readonly error: number;
-    readonly block: number;
-  };
-  readonly shownIssues: number;
-  readonly omittedIssues: number;
-  readonly issues: ReadonlyArray<LintIssueData>;
-};
-
-export function parseLintData(data: unknown): LintData {
-  if (data === null || typeof data !== "object") {
-    throw new Error("lint structured data must be an object.");
-  }
-  const record = data as Record<string, unknown>;
-  if (record.status !== "pass" && record.status !== "fail") {
-    throw new Error("lint structured data status must be 'pass' or 'fail'.");
-  }
-  const checkedRec = record.checked !== null && typeof record.checked === "object"
-    ? record.checked as Record<string, unknown>
-    : {};
-  const countsRec = record.counts !== null && typeof record.counts === "object"
-    ? record.counts as Record<string, unknown>
-    : {};
-  const issueArr = Array.isArray(record.issues) ? record.issues : [];
-  const issues: LintIssueData[] = issueArr.map((issue: unknown) => {
-    const i = (issue !== null && typeof issue === "object" ? issue : {}) as Record<string, unknown>;
-    const refs = Array.isArray(i.sourceRefs) ? i.sourceRefs : [];
-    return Object.freeze({
-      severity: (i.severity as LintSeverity) ?? "info",
-      code: typeof i.code === "string" ? i.code : "",
-      message: typeof i.message === "string" ? i.message : "",
-      sourceRefs: Object.freeze(refs.map((r: unknown) => {
-        const ref = (r !== null && typeof r === "object" ? r : {}) as Record<string, unknown>;
-        return Object.freeze({
-          path: typeof ref.path === "string" ? ref.path : "",
-          commit: typeof ref.commit === "string" ? ref.commit : "",
-        });
-      })),
-    });
-  });
-  return Object.freeze({
-    status: record.status,
-    failOn: typeof record.failOn === "string" ? record.failOn : "error",
-    checked: Object.freeze({ markdownFiles: Number(checkedRec.markdownFiles ?? 0) }),
-    counts: Object.freeze({
-      total: Number(countsRec.total ?? 0),
-      info: Number(countsRec.info ?? 0),
-      warning: Number(countsRec.warning ?? 0),
-      error: Number(countsRec.error ?? 0),
-      block: Number(countsRec.block ?? 0),
-    }),
-    shownIssues: typeof record.shownIssues === "number" ? record.shownIssues : issues.length,
-    omittedIssues: typeof record.omittedIssues === "number" ? record.omittedIssues : 0,
-    issues: Object.freeze(issues),
+    successExitCode: (data) => (data.status === "fail" ? 1 : 0),
   });
 }
 

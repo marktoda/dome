@@ -60,15 +60,46 @@ fallbacks) sits between the contract and the view-model on the render path; it
 stays total (never throws) for render resilience, while the schema is strict for
 the producer + agent/MCP consumers.
 
-## Next instance
+## The generic layer: the View Contract (built)
 
-**`status` is the second instance to build** (`src/surface/status.ts` —
-`buildStatusSnapshot` already exists; the CLI renders it richly, HTTP returns it
-raw). Giving it a `dome.status/v1` contract + a status view-model is the natural
-follow-on.
+The generic surface-view layer now exists. Each first-party catalog entry
+(`src/surface/view-catalog.ts`) is a **View Contract** —
+`FirstPartyViewEntry<TPayload, TView>` carrying the zod `payload` schema (tier
+1) and an optional `buildViewModel` (tier 2). `runCatalogView` /
+`validateStructuredRun` are generic over `TPayload`: the version tag
+(`schemaTag`) is a cheap handshake that fast-fails before the schema parse, and
+a tag-match-but-malformed payload is a distinct `invalid-payload` problem.
+`data: unknown` is dead at the seam.
 
-A **generic** surface-view layer (one abstract model every view produces and
-every adapter renders, with schema validation wired into the view-catalog) is
-deliberately deferred: design it against two concrete instances (today +
-status), not one — see [[philosophy]] on generalizing only when the general form
-is demonstrably cleaner, not guessed from a single example.
+All four catalog views carry contracts: `today` (`todayPayloadSchema`), `query`
+(`queryPayloadSchema`), `lint` (`lintPayloadSchema`), and `export-context` (an
+inline passthrough `{ markdown }`). The three hand-rolled `parse(unknown)`
+coercers that predated this — `parseQueryResult`, `parseLintData`, and
+`export-context`'s `markdownFromData` — are deleted; their validation is the
+schema, their projection is zod's default key-stripping. This is the sqlite
+[[row-codec]] move one layer up: N hand-rolled mappers collapse to one declared
+contract per view.
+
+Realized design notes (the shape the build settled into):
+
+- **`status` was *not* the second instance.** The design-it-twice bar was met
+  several times over by `query` / `lint` / `export-context` — each already
+  carried a hand-rolled coercer. `status` / `check` stay **out**: they are
+  typed collectors (`buildStatusSnapshot` / `buildCheckReport`) on a different
+  path, not `data: unknown` catalog views.
+- **Paint stays per-adapter (tier 3).** Render functions (`renderLintText`,
+  `formatQueryResult`, the today CLI/HTTP painters) live with their adapter, not
+  in `surface/`; only the contract (schema + type) and the view-model move to
+  `surface/`. Moving a renderer down would invert the surface→cli layering.
+- **`query` is schema-only.** Its producer (`related.ts`
+  `questionItemFromProjection`) already emits `resolveCommand` /
+  `automationPolicy`, so the old consumer-side derivation fallback was dead — no
+  view-model needed.
+- **Degrade is an explicit per-adapter choice.** `today` keeps
+  degrade-don't-fail: the CLI verb, the HTTP `/tasks` + today-html routes, and
+  the MCP tasks tool each pass an explicit `payload: z.unknown()` override and
+  enrich via the total `parseTodayView`, making the degrade choice visible at
+  the call site. The strict `todayPayloadSchema` stays bound to the entry for
+  consumers that want it (the MCP brief-source narrowing). `query` / `lint` /
+  `export-context` hard-fail (`invalid-payload`) — a malformed payload there is
+  a producer bug, surfaced loudly.

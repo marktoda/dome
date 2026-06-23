@@ -55,9 +55,9 @@ export type ViewCommandRunResult =
       readonly brokerDiagnostics: ReadonlyArray<DiagnosticEffect>;
     };
 
-export type StructuredViewCommandOptions = {
+export type StructuredViewCommandOptions<TPayload = unknown> = {
   readonly commandLabel: string;
-  readonly entry: FirstPartyViewEntry;
+  readonly entry: FirstPartyViewEntry<TPayload>;
   readonly commandArgs?: unknown;
   readonly vault?: string | undefined;
   readonly bundlesRoot?: string | undefined;
@@ -71,10 +71,10 @@ export type StructuredViewCommandOptions = {
   readonly noStructuredResultMessage: string;
 };
 
-export type StructuredViewCommandResult =
+export type StructuredViewCommandResult<TPayload = unknown> =
   | {
       readonly kind: "ok";
-      readonly data: unknown;
+      readonly data: TPayload;
       readonly view: StructuredView;
       readonly brokerDiagnostics: ReadonlyArray<DiagnosticEffect>;
     }
@@ -156,9 +156,9 @@ function translateViewResult(
   }
 }
 
-export async function runStructuredViewCommand(
-  opts: StructuredViewCommandOptions,
-): Promise<StructuredViewCommandResult> {
+export async function runStructuredViewCommand<TPayload>(
+  opts: StructuredViewCommandOptions<TPayload>,
+): Promise<StructuredViewCommandResult<TPayload>> {
   const { commandLabel, entry } = opts;
   try {
     const run = await runSharedViewCommand({
@@ -205,7 +205,7 @@ export async function runStructuredViewCommand(
 
     const validated = validateStructuredRun(
       { views: run.views, structured: run.structured },
-      { viewName: entry.viewName, schema: entry.schema },
+      { viewName: entry.viewName, schemaTag: entry.schemaTag, payload: entry.payload },
     );
     if (validated.kind === "problem") {
       // `no-structured-result` keeps the per-caller override wording; every
@@ -243,7 +243,11 @@ export function structuredViewBrokerMessages(
 function structuredError(
   exitCode: number,
   messages: ReadonlyArray<string>,
-): StructuredViewCommandResult {
+): {
+  readonly kind: "error";
+  readonly exitCode: number;
+  readonly messages: ReadonlyArray<string>;
+} {
   return Object.freeze({
     kind: "error" as const,
     exitCode,

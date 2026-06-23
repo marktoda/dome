@@ -24,11 +24,11 @@ import {
   printViewCommandMessages,
 } from "./commands/view-shared";
 
-export type CliStructuredViewOptions = {
+export type CliStructuredViewOptions<TPayload = unknown> = {
   /** Operator-facing command label, e.g. "dome query". */
   readonly commandLabel: string;
   /** The first-party view this verb wraps. */
-  readonly entry: FirstPartyViewEntry;
+  readonly entry: FirstPartyViewEntry<TPayload>;
   /** Structured args handed to the processor (already built by the caller). */
   readonly commandArgs?: unknown;
   readonly vault?: string | undefined;
@@ -39,18 +39,19 @@ export type CliStructuredViewOptions = {
   readonly noStructuredResultMessage: string;
   /** The `error` tag used in the `<name>-failed` JSON envelope. */
   readonly failedError: string;
-  /** Renders the human (non-JSON) output from the validated structured data. */
-  readonly renderHuman: (data: unknown) => string;
+  /** Renders the human (non-JSON) output from the validated payload. */
+  readonly renderHuman: (data: TPayload) => string;
   /**
-   * Success exit code derived from the validated data (default 0). lint maps
-   * a `fail` status to 1; query/export-context always succeed with 0. Called
-   * inside the shared try/catch, so a throw here lands in `<name>-failed`.
+   * Success exit code derived from the validated payload (default 0). lint
+   * maps a `fail` status to 1; query/export-context always succeed with 0.
+   * Called inside the shared try/catch, so a throw here lands in
+   * `<name>-failed`.
    */
-  readonly successExitCode?: (data: unknown) => number;
+  readonly successExitCode?: (data: TPayload) => number;
 };
 
-export async function runCliStructuredView(
-  opts: CliStructuredViewOptions,
+export async function runCliStructuredView<TPayload>(
+  opts: CliStructuredViewOptions<TPayload>,
 ): Promise<number> {
   try {
     const run = await runStructuredViewCommand({
