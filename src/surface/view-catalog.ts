@@ -11,6 +11,7 @@
 import { z, type ZodType } from "zod";
 
 import { lintPayloadSchema } from "./lint-view";
+import { queryPayloadSchema } from "./query-view";
 
 /**
  * `dome.search.export-context/v1` — a passthrough View Contract. The CLI paint
@@ -51,7 +52,7 @@ export const FIRST_PARTY_VIEWS = {
     schemaTag: "dome.search.query/v1",
     bundleId: "dome.search",
     processorName: "query",
-    payload: z.unknown(),
+    payload: queryPayloadSchema,
   }),
   exportContext: Object.freeze({
     command: "export-context",
