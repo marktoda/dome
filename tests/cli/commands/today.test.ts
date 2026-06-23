@@ -268,28 +268,21 @@ describe("dome today: Briefing terminal restyle", () => {
     expect(out).not.toContain("dome decide");
   });
 
-  test("full brief prose is hidden by default, shown under verbose", () => {
-    const BRIEF = "A long analysis paragraph about today's priorities.";
+  test("brief shown by default with wikilinks stripped; source path only under --verbose", () => {
     const data = {
-      date: "2026-06-14",
-      hero: null,
-      brief: {
-        text: BRIEF,
-        sourceRef: { path: "wiki/brief.md" },
-      },
-      calendar: null,
-      openTasks: [],
-      followups: [],
-      questions: [],
-      counts: {},
-      dueCounts: {},
+      date: "2026-06-23",
+      counts: { openTasks: 0, followups: 0, questions: 0 },
+      openTasks: [], followups: [], questions: [], calendar: null, hero: null,
+      brief: { text: "Focus on [[wiki/rh-chain|RH Chain]] today.", sourceRef: { path: "wiki/dailies/2026-06-23.md" } },
     };
-    const defaultOut = formatTodayResult(data, ASCII_CAPS, "/vault");
-    const verboseOut = formatTodayResult(data, ASCII_CAPS, "/vault", { verbose: true });
-    expect(defaultOut).not.toContain(BRIEF);
-    expect(verboseOut).toContain(BRIEF);
-    // Default output hints about --verbose
-    expect(defaultOut).toContain("--verbose");
+    const plain = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(plain).toContain("Focus on RH Chain today."); // wikilink stripped to label
+    expect(plain).not.toContain("[[");
+    expect(plain).not.toContain("wiki/dailies/2026-06-23.md"); // path hidden by default
+    expect(plain).not.toContain("--verbose for full brief");
+
+    const verbose = formatTodayResult(data, ASCII_CAPS, "/vault", { verbose: true });
+    expect(verbose).toContain("wiki/dailies/2026-06-23.md"); // path shown under --verbose
   });
 
   test("all-clear renders calm verdict with no tasks", () => {

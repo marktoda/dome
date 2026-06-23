@@ -29,6 +29,7 @@ import {
   headline,
   hyperlink,
   originUrl,
+  pad,
   paint,
   resolveCaps,
   rollup,
@@ -36,7 +37,9 @@ import {
   splitInlineLinks,
   statusGlyph,
   stripEmphasis,
+  stripWikilinks,
   visibleWidth,
+  wrap,
   type Caps,
   type Tone,
 } from "../presenter";
@@ -323,6 +326,19 @@ export function formatTodayResult(
     "",
   ];
 
+  // Brief — the grounded morning framing, shown by default under the verdict.
+  // Wikilinks are stripped to their labels (terminal legibility); the source
+  // path is shown only under --verbose.
+  if (brief !== null) {
+    for (const line of wrap(stripWikilinks(brief.text), Math.max(8, caps.width - 2))) {
+      lines.push(`  ${line}`);
+    }
+    if (opts.verbose === true && brief.sourceRef.path.length > 0) {
+      lines.push(`  ${paint(brief.sourceRef.path, "muted", caps)}`);
+    }
+    lines.push("");
+  }
+
   // All-clear calm body: a quiet two-line state under the verdict header,
   // not a bare one-liner. (No hero, no list — there is nothing open.)
   if (isAllClear) {
@@ -506,22 +522,6 @@ export function formatTodayResult(
 
     lines.push("");
     lines.push(rollup([], caps));
-  }
-
-  // Brief prose: hidden by default, shown under --verbose
-  if (brief !== null) {
-    if (opts.verbose === true) {
-      lines.push("");
-      lines.push(`  ${paint("brief", "muted", caps)}   ${brief.text}`);
-      if (brief.sourceRef.path.length > 0) {
-        lines.push(`  ${paint(brief.sourceRef.path, "muted", caps)}`);
-      }
-    } else {
-      lines.push("");
-      lines.push(
-        `  ${paint("--verbose for full brief + sources", "muted", caps)}`,
-      );
-    }
   }
 
   return lines.join("\n");
