@@ -23,8 +23,8 @@
 - `src/surface/view-catalog.ts` — `FirstPartyViewEntry<TPayload, TView>` becomes generic; each entry gains `payload` (zod) + optional `buildViewModel`. Imports per-view schemas from the surface modules below.
 - `src/surface/adapter.ts` — `runCatalogView` / `validateStructuredRun` generic over `TPayload`; new `invalid-payload` problem; parse driven by `entry.payload`.
 - `src/surface/view.ts` — `StructuredViewCommandResult.data` and `runStructuredViewCommand` generic over `TPayload`.
-- `src/surface/lint-view.ts` — **new.** `lintPayloadSchema`, `type LintData = z.infer<…>`, `renderLintText` (moved from `cli/commands/lint.ts`). No view-model (render reads payload directly).
-- `src/surface/query-view.ts` — **new.** `queryPayloadSchema`, `type QueryResultData = z.infer<…>`, `formatQueryResult` (moved from `cli/commands/query.ts`).
+- `src/surface/lint-view.ts` — **new.** `lintPayloadSchema`, `type LintData = z.infer<…>` only. **CORRECTION (impl):** `renderLintText` is tier-3 terminal paint (imports the CLI presenter) and **stays in `cli/commands/lint.ts`** — moving it would invert the surface→cli layering. Only the contract moves to surface. No view-model (paint reads the payload directly).
+- `src/surface/query-view.ts` — **new.** `queryPayloadSchema`, `type QueryResultData = z.infer<…>` only. `formatQueryResult` (CLI paint) **stays in `cli/commands/query.ts`** — same layering reason.
 - `src/surface/today-view.ts` — `todayPayloadSchema` referenced by the catalog entry; `buildTodayViewModel` becomes the entry's `buildViewModel`. `parseTodayView` deleted; its lenient defaults move into the schema via `.catch()`/`.default()`.
 - `src/cli/commands/{lint,query,export-context,today}.ts` — `renderHuman` now receives typed payload; delete the local `parseXxx`.
 - `src/cli/structured-view-command.ts` — `renderHuman`/`successExitCode` typed `(payload: TPayload)`.
