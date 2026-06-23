@@ -11,6 +11,8 @@ import { mkdtempSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, sep, join } from "node:path";
+
+import { z } from "zod";
 import {
   ANSWER_SCHEMA,
   answerHandlersJson,
@@ -809,7 +811,10 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       });
       const outcome = await withVaultShared(
         { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
-        (v) => runCatalogView(v, FIRST_PARTY_VIEWS.today, args),
+        // Lenient degrade: HTTP renders/serves the daily surface even on a
+        // slightly-off payload, so it overrides the strict contract here and
+        // enriches via `parseTodayView` downstream.
+        (v) => runCatalogView(v, { ...FIRST_PARTY_VIEWS.today, payload: z.unknown() }, args),
       );
       if (outcome.kind === "open-failed") {
         return commandErrorResponse("GET /tasks", openVaultErrorKind(outcome.error));
@@ -920,7 +925,9 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       const refresh = positiveInt(url.searchParams.get("refresh")) ?? 15;
       const outcome = await withVaultShared(
         { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
-        (v) => runCatalogView(v, FIRST_PARTY_VIEWS.today, Object.freeze({})),
+        // Lenient degrade (see GET /tasks): override the strict contract and
+        // enrich via `parseTodayView` so the HTML surface always renders.
+        (v) => runCatalogView(v, { ...FIRST_PARTY_VIEWS.today, payload: z.unknown() }, Object.freeze({})),
       );
       if (outcome.kind === "open-failed") {
         return commandErrorResponse("GET /today", openVaultErrorKind(outcome.error));

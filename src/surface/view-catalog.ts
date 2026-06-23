@@ -12,6 +12,7 @@ import { z, type ZodType } from "zod";
 
 import { lintPayloadSchema } from "./lint-view";
 import { queryPayloadSchema } from "./query-view";
+import { todayPayloadSchema } from "./today-view";
 
 /**
  * `dome.search.export-context/v1` — a passthrough View Contract. The CLI paint
@@ -76,6 +77,12 @@ export const FIRST_PARTY_VIEWS = {
     schemaTag: "dome.daily.today/v1",
     bundleId: "dome.daily",
     processorName: "today",
-    payload: z.unknown(),
+    // The strict wire contract. Human-render adapters (CLI, HTTP) opt into
+    // lenient degrade by passing a `payload: z.unknown()` override at their
+    // call site and enriching via `parseTodayView`; MCP / strict consumers
+    // validate against this. `buildViewModel` is intentionally unbound: the
+    // tier-2 `buildTodayViewModel` consumes the enriched `TodayView`, not the
+    // raw `TodayPayload`, so adapters compose it after `parseTodayView`.
+    payload: todayPayloadSchema,
   }),
 } as const satisfies Record<string, FirstPartyViewEntry>;
