@@ -30,6 +30,7 @@
 import { z } from "zod";
 
 import { JsonValueSchema, type JobEffect } from "../core/effect";
+import { rowCodec } from "../sqlite/row-codec";
 import { parseJsonColumn } from "../sqlite/row-json";
 import type { ProjectionDb } from "./db";
 
@@ -364,23 +365,25 @@ export function recoverExpiredRunningJobs(
 
 // ----- internals ------------------------------------------------------------
 
-function rowToScheduledJob(row: JobRow): ScheduledJobRow {
-  return Object.freeze({
-    id: row.id,
-    processorId: row.processor_id,
-    input: parseJsonColumn(
-      row.input_json,
-      "scheduled_jobs.input_json",
-      JsonValueSchema,
-    ),
-    runAfter: row.run_after,
-    idempotencyKey: row.idempotency_key,
-    maxAttempts: row.max_attempts,
-    attempts: row.attempts,
-    status: JobStatusSchema.parse(row.status),
-    enqueuedAt: row.enqueued_at,
-    claimedAt: row.claimed_at,
-    claimExpiresAt: row.claim_expires_at,
-    completedAt: row.completed_at,
-  });
-}
+const jobCodec = rowCodec<JobRow>("scheduled_jobs");
+
+const rowToScheduledJob = jobCodec.define<ScheduledJobRow>({
+  id: jobCodec.col("id"),
+  processorId: jobCodec.col("processor_id"),
+  // `custom`, not `jsonCol`: the opaque input was left unfrozen by the
+  // hand-mapper.
+  input: jobCodec.custom((row) =>
+    parseJsonColumn(row.input_json, "scheduled_jobs.input_json", JsonValueSchema),
+  ),
+  runAfter: jobCodec.col("run_after"),
+  idempotencyKey: jobCodec.col("idempotency_key"),
+  maxAttempts: jobCodec.col("max_attempts"),
+  attempts: jobCodec.col("attempts"),
+  // status narrows through its Zod schema (a `z.enum`, not the parseEnum-backed
+  // `enumCol`), so preserve that idiom via `custom`.
+  status: jobCodec.custom((row) => JobStatusSchema.parse(row.status)),
+  enqueuedAt: jobCodec.col("enqueued_at"),
+  claimedAt: jobCodec.col("claimed_at"),
+  claimExpiresAt: jobCodec.col("claim_expires_at"),
+  completedAt: jobCodec.col("completed_at"),
+});
