@@ -13,6 +13,13 @@ import { z, type ZodType } from "zod";
 import { lintPayloadSchema } from "./lint-view";
 
 /**
+ * `dome.search.export-context/v1` — a passthrough View Contract. The CLI paint
+ * reads only `markdown`; `.passthrough()` keeps the producer's richer fields
+ * (`topic`, `overview`, `entries`, …) intact for the `--json` / MCP surface.
+ */
+const exportContextPayloadSchema = z.object({ markdown: z.string() }).passthrough();
+
+/**
  * A first-party view's **View Contract** — the single declaration every
  * adapter validates against and paints from. Tier 1 is the `payload` schema
  * (kills `data: unknown`); tier 2 is the optional `buildViewModel` (derived
@@ -52,7 +59,7 @@ export const FIRST_PARTY_VIEWS = {
     schemaTag: "dome.search.export-context/v1",
     bundleId: "dome.search",
     processorName: "export-context",
-    payload: z.unknown(),
+    payload: exportContextPayloadSchema,
   }),
   lint: Object.freeze({
     command: "lint",
