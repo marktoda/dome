@@ -10,6 +10,8 @@
 
 import { z, type ZodType } from "zod";
 
+import { lintPayloadSchema } from "./lint-view";
+
 /**
  * A first-party view's **View Contract** — the single declaration every
  * adapter validates against and paints from. Tier 1 is the `payload` schema
@@ -58,7 +60,7 @@ export const FIRST_PARTY_VIEWS = {
     schemaTag: "dome.lint.report/v1",
     bundleId: "dome.lint",
     processorName: "lint",
-    payload: z.unknown(),
+    payload: lintPayloadSchema,
   }),
   today: Object.freeze({
     command: "today",
