@@ -35,6 +35,10 @@ const ALLOWED_FILES = new Set([
   // user-facing non-fast-forward cursor move; see
   // docs/wiki/gotchas/adopted-ref-divergence.md.
   "src/cli/commands/reanchor.ts",
+  // Explicit guarded repair surface. `task-anchors --apply` edits vault
+  // markdown only after a dry-run-able plan; run-ledger mutations route through
+  // src/ledger/. Same operator-confirmed repair boundary class as reanchor.
+  "src/cli/commands/repair.ts",
   // The HTTP server's POST /transcribe handler writes the uploaded audio to a
   // mkdtemp temp directory, invokes the configured whisper command against it,
   // and deletes the dir in a finally block. This is a process-scoped temp-file

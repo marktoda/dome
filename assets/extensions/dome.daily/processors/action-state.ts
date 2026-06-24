@@ -449,6 +449,7 @@ function taskItemFromFact(input: {
     attention: taskAttention(input.attentionDiscounts, {
       sourcePath: path,
       body,
+      ...(sid !== undefined ? { stableId: sid } : {}),
     }),
     evidenceLabel: actionEvidenceLabel({ path, line, sourceRefs }),
     sourceRefs,
@@ -487,6 +488,8 @@ function taskItemFromDailySurface(input: {
     attention: taskAttention(input.attentionDiscounts, {
       sourcePath: input.item.sourcePath,
       body: input.item.body,
+      stableId: input.item.stableId,
+      ...(input.item.anchor !== undefined ? { anchor: input.item.anchor } : {}),
     }),
     evidenceLabel: actionEvidenceLabel({
       path: input.dailyPath,
@@ -500,9 +503,16 @@ function taskItemFromDailySurface(input: {
 
 function taskAttention(
   discounts: ReadonlyMap<string, AttentionDiscount>,
-  item: { readonly sourcePath: string; readonly body: string },
+  item: {
+    readonly sourcePath: string;
+    readonly body: string;
+    readonly stableId?: string;
+    readonly anchor?: string;
+  },
 ): DailyTaskAttention | null {
-  const entry = discounts.get(openLoopIdentity(item));
+  const entry =
+    (item.stableId === undefined ? undefined : discounts.get(item.stableId)) ??
+    discounts.get(openLoopIdentity(item));
   if (entry === undefined) return null;
   return Object.freeze({
     discount: entry.discount,

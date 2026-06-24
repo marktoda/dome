@@ -35,7 +35,10 @@ import {
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import { AS_OF_MARKER_RE } from "./claim-fact";
-import { claimsFromMarkdown, type ClaimLine } from "./claims-shared";
+import {
+  claimsWithStableAnchors,
+  type ClaimLine,
+} from "./claims-shared";
 
 const OWNER = "dome.claims";
 const BLOCK = "current-facts";
@@ -196,7 +199,7 @@ const renderFacts = defineProcessorImplementation({
         }),
       );
 
-      const claims = claimsFromMarkdown(content);
+      const claims = claimsWithStableAnchors({ path, content });
       const desired = claims.length >= minClaims;
       const { range } = findGeneratedBlock(content, OWNER, BLOCK);
       // The page name in wikilinks drops the `.md` extension (Obsidian style).

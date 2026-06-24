@@ -392,11 +392,6 @@ processors:
       # brief's core-memory injection reads a fresh active-projects block.
       - kind: schedule
         cron: "20 5 * * *"
-      # Re-render when a daily changes: settling or surfacing an open loop
-      # is what moves the tallies.
-      - kind: signal
-        name: document.changed
-        pathPattern: "wiki/dailies/*.md"
     capabilities:
       # The OTHER gated core.md writer (two-gated-writers contract, see the
       # promotion answer handler above): deterministic, block-scoped — it

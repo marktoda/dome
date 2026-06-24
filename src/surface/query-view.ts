@@ -41,11 +41,19 @@ const queryRankingSchema = z
   .object({
     score: z.number().catch(0),
     ftsRank: z.number().catch(0),
+    recencyFactor: z.number().catch(1),
     reasons: z.array(z.string()).catch([]),
     signals: z.array(queryRankingSignalSchema).catch([]),
   })
   .nullable()
   .catch(null);
+
+const queryFiltersSchema = z
+  .object({
+    category: z.string().optional(),
+    type: z.string().optional(),
+  })
+  .catch({});
 
 const queryQuestionMetadataSchema = z
   .object({
@@ -70,20 +78,45 @@ const queryQuestionSchema = z.object({
   sourceRefs: z.array(querySourceRefSchema).catch([]),
 });
 
+const queryFactSchema = z
+  .object({
+    predicate: z.string().catch(""),
+    object: z.unknown().optional(),
+    assertion: z.string().optional(),
+    sourceRefs: z.array(querySourceRefSchema).catch([]),
+    confidence: z.number().optional(),
+  })
+  .passthrough();
+
+const queryDiagnosticSchema = z
+  .object({
+    severity: z.string().optional(),
+    code: z.string().catch(""),
+    message: z.string().optional(),
+    sourceRefs: z.array(querySourceRefSchema).catch([]),
+  })
+  .passthrough();
+
 const queryMatchSchema = z.object({
   path: z.string().catch(""),
   title: z.string().catch(""),
+  category: z.string().nullable().catch(null),
+  type: z.string().nullable().catch(null),
+  sectionId: z.string().nullable().catch(null),
   breadcrumb: z.string().min(1).nullable().catch(null),
   snippet: z.string().catch(""),
+  rank: z.number().nullable().catch(null),
   ranking: queryRankingSchema,
   sourceRefs: z.array(querySourceRefSchema).catch([]),
-  facts: z.array(z.object({ predicate: z.string().catch("") })).catch([]),
-  diagnostics: z.array(z.object({ code: z.string().catch("") })).catch([]),
+  facts: z.array(queryFactSchema).catch([]),
+  diagnostics: z.array(queryDiagnosticSchema).catch([]),
   questions: z.array(queryQuestionSchema).catch([]),
 });
 
 export const queryPayloadSchema = z.object({
+  schema: z.literal("dome.search.query/v1").catch("dome.search.query/v1"),
   query: z.string(),
+  filters: queryFiltersSchema,
   limit: z.number().nullable().catch(null),
   shown: z.object({ matches: z.number().catch(0) }).catch({ matches: 0 }),
   hasMore: z

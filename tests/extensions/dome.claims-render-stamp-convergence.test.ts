@@ -5,14 +5,17 @@
 //   - dome.claims.stamp     -> whole-file write = S0 + `^c…` anchors on claim
 //                              source lines (no digest block).
 //   - dome.claims.render-facts -> whole-file write = S0 + a `## Current facts`
-//                              digest block after frontmatter/H1 (claim source
-//                              lines still un-anchored, since render read S0).
+//                              digest block after frontmatter/H1. The digest
+//                              predicts the same deterministic `^c…` anchors
+//                              stamp will apply, so backlinks are already at
+//                              the post-stamp fixed point.
 //
 // These two writes edit DISJOINT regions of S0. Pre-fix, applyPatchToCandidate
 // overwrote: the second write reverts the first's region, and the two
-// processors fight forever. The fix makes applyPatchToCandidate 3-way merge a
-// write against `runContext.mergeBase` (= the snapshot the processor read), so
-// disjoint regions COMPOSE and the loop converges.
+// processors fight forever. The merge fix makes applyPatchToCandidate 3-way
+// merge a write against `runContext.mergeBase` (= the snapshot the processor
+// read), so disjoint regions COMPOSE. The render-side anchor prediction then
+// removes the extra "render again to add backlinks" cascade.
 //
 // This test reproduces the stale-read / advanced-candidate condition the
 // end-to-end harness cannot (the harness re-reads fresh state each cascade
@@ -38,6 +41,7 @@ import { commitOid, type CommitOid } from "../../src/core/source-ref";
 import { commit, initRepo } from "../../src/git";
 import {
   claimsFromMarkdown,
+  claimsWithStableAnchors,
   stampClaimAnchors,
 } from "../../assets/extensions/dome.claims/processors/claims-shared";
 import {
@@ -140,7 +144,7 @@ function runContext(opts: { base: CommitOid; mergeBase: CommitOid }) {
 // Faithful render whole-file write against a given snapshot, using the REAL
 // render-facts pure functions + the EXACT splice the processor uses.
 function renderWholeFile(content: string): string {
-  const claims = claimsFromMarkdown(content);
+  const claims = claimsWithStableAnchors({ path: PATH, content });
   const page = PATH.replace(/\.md$/, "");
   const block = renderCurrentFactsBlock(claims, page);
   return insertBlock(content, block, insertionOffset(content));
@@ -164,8 +168,12 @@ describe("dome.claims render-facts <-> stamp whole-file write composition", () =
     const renderContent = renderWholeFile(S0);
     expect(renderContent).toContain(DIGEST_START);
     expect(renderContent).toContain(DIGEST_HEADING);
-    // render read S0: claim SOURCE lines stay un-anchored (digest backlinks too).
-    expect(renderContent).not.toMatch(ANCHOR_RE);
+    // render read S0: claim SOURCE lines stay un-anchored, but the digest
+    // predicts the anchors stamp will apply and is already backlink-complete.
+    expect(renderContent).toContain(`([[${PATH.replace(/\.md$/, "")}#^`);
+    expect(
+      claimsFromMarkdown(renderContent).filter((claim) => claim.anchor !== null),
+    ).toHaveLength(0);
 
     // Disjoint: distinct contents, distinct edited regions.
     expect(renderContent).not.toBe(stampContent!);
@@ -203,9 +211,9 @@ describe("dome.claims render-facts <-> stamp whole-file write composition", () =
     // stamp is now a no-op: every claim source line is already anchored.
     expect(stampClaimAnchors({ path: PATH, content: merged! })).toBeNull();
 
-    // re-render is stable: re-splicing the digest into `merged` (now that
-    // claims carry anchors, so the digest body gains backlinks) replaces the
-    // existing block in place — no oscillation, no new claim lines added.
+    // re-render is stable: because render predicted the same anchors stamp
+    // applied, re-splicing the digest into `merged` is byte-stable. No extra
+    // cascade is needed just to add backlinks.
     const { replaceGeneratedBlock } = await import(
       "../../src/core/generated-block"
     );
@@ -215,7 +223,7 @@ describe("dome.claims render-facts <-> stamp whole-file write composition", () =
       claimsAfter,
       PATH.replace(/\.md$/, ""),
     );
-    // anchored claims -> the digest body now carries page#^anchor backlinks.
+    // anchored claims -> the digest body carries page#^anchor backlinks.
     expect(rerenderedBlock).toContain(`([[${PATH.replace(/\.md$/, "")}#^`);
     const rerendered = replaceGeneratedBlock(
       merged!,
@@ -223,6 +231,7 @@ describe("dome.claims render-facts <-> stamp whole-file write composition", () =
       "current-facts",
       rerenderedBlock,
     );
+    expect(rerendered).toBe(merged);
     // The digest + anchors coexist; re-rendering does not strip the anchors and
     // a second re-render is byte-stable (true fixed point).
     expect(rerendered).toMatch(ANCHOR_RE);

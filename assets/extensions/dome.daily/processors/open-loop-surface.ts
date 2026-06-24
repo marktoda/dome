@@ -20,6 +20,7 @@ import {
 } from "./daily-paths";
 import {
   actionItemsFromMarkdown,
+  duplicateTaskAnchorsFromMarkdown,
   isObsidianTasksDashboard,
   normalizeSourcePath,
   normalizeOpenLoopBody,
@@ -40,24 +41,32 @@ export function openLoopSurfaceSources(input: {
   const isDailySource =
     parseDailyPath(input.path, input.settings ?? DEFAULT_DAILY_PATH_SETTINGS) !==
     null;
+  const collidedAnchors = new Set(
+    duplicateTaskAnchorsFromMarkdown(input.content).map(
+      (collision) => collision.anchor,
+    ),
+  );
   const items: DailyOpenLoopSource[] = [];
   for (const item of actionItemsFromMarkdown(input.content)) {
     if (lineIsInsideRanges(item.line, generatedRanges)) continue;
     if (!isDailySource && !isSurfaceEligibleNonDailyAction(item)) {
       continue;
     }
+    const anchor = item.anchor === undefined || collidedAnchors.has(item.anchor)
+      ? undefined
+      : item.anchor;
     items.push(
       Object.freeze({
         line: item.line,
         stableId: taskStableId({
           sourcePath: input.path,
           body: item.body,
-          ...(item.anchor !== undefined ? { anchor: item.anchor } : {}),
+          ...(anchor !== undefined ? { anchor } : {}),
         }),
         body: item.body,
         followup: item.followup,
         sourcePath: input.path,
-        ...(item.anchor !== undefined ? { anchor: item.anchor } : {}),
+        ...(anchor !== undefined ? { anchor } : {}),
       }),
     );
   }
@@ -113,15 +122,17 @@ export function settledSourceBackedOpenLoopsFromMarkdown(input: {
     items.push(
       Object.freeze({
         line: item.line,
-        stableId: openLoopStableId({
+        stableId: taskStableId({
           sourcePath: item.sourcePath,
           body: item.body,
+          ...(item.anchor !== undefined ? { anchor: item.anchor } : {}),
         }),
         path: input.path,
         body: item.body,
         followup: item.followup,
         sourcePath: item.sourcePath,
         status: item.status,
+        ...(item.anchor !== undefined ? { anchor: item.anchor } : {}),
       }),
     );
   }
@@ -144,13 +155,15 @@ export function openSourceBackedOpenLoopsFromMarkdown(input: {
     items.push(
       Object.freeze({
         line: item.line,
-        stableId: openLoopStableId({
+        stableId: taskStableId({
           sourcePath: item.sourcePath,
           body: item.body,
+          ...(item.anchor !== undefined ? { anchor: item.anchor } : {}),
         }),
         body: item.body,
         followup: item.followup,
         sourcePath: item.sourcePath,
+        ...(item.anchor !== undefined ? { anchor: item.anchor } : {}),
       }),
     );
   }
@@ -162,16 +175,17 @@ export function openSourceBackedOpenLoopsFromMarkdown(input: {
  * open-loop copies in daily notes BACK to the origin task line in its source
  * file — "close it in one place, close it everywhere."
  *
- * Across all `files`, every settled `- [x]/[-] body (from [[origin]])` copy
- * yields a target `{ sourcePath, body, status }`. For each target, the file at
+ * Across all `files`, every settled
+ * `- [x]/[-] body (from [[origin]]) ^anchor` copy yields a target
+ * `{ sourcePath, body, status, anchor? }`. For each target, the file at
  * `sourcePath` (matched within the same `files` list, path-normalized with
- * `.md`) is scanned for the OPEN action-item line whose normalized body matches.
- * Matching is by normalized body, not by anchor — the generated copy carries no
- * `^anchor`. When exactly one open line matches, only its checkbox marker is
- * rewritten (`[ ]` → `[x]` for resolved, `[ ]` → `[-]` for dismissed); when the
- * origin has two open lines sharing that body the match is ambiguous and is
- * skipped (never guess which to close). The rest of the line — trailing
- * `^anchor`, tags, source suffix — is preserved verbatim, and no line is ever
+ * `.md`) is scanned for the matching OPEN action-item line. Matching prefers
+ * the projected `^anchor`, so resolution notes or other body edits on the
+ * daily copy still close the origin. Legacy unanchored copies fall back to
+ * normalized body matching; ambiguous matches are skipped rather than guessed.
+ * Only the checkbox marker is rewritten (`[ ]` → `[x]` for resolved,
+ * `[ ]` → `[-]` for dismissed). The rest of the origin line — trailing
+ * `^anchor`, tags, origin marker — is preserved verbatim, and no line is ever
  * deleted. The daily's own generated copy is never modified.
  *
  * Only files whose content changed are returned. The transform is idempotent:
@@ -212,18 +226,24 @@ export function reconcileSettledOpenLoops(input: {
     if (isObsidianTasksDashboard(current)) continue;
 
     const consumed = consumedLines.get(originPath) ?? new Set<number>();
-    const wantBody = reconcileBodyKey(target.body);
-    const matches = actionItemsFromMarkdown(current).filter(
+    const openItems = actionItemsFromMarkdown(current).filter(
       (item) =>
         item.kind === "checkbox" &&
-        !consumed.has(item.line) &&
-        reconcileBodyKey(item.body) === wantBody,
+        !consumed.has(item.line),
     );
-    // The generated daily copy carries no `^anchor`, so a body match is the
-    // only signal. When two open lines in the origin share a body we cannot
-    // tell which one the user settled — skip rather than close the wrong line.
-    // (carry-forward dedups surfaced copies by body, so the unambiguous 1:1
-    // case is the norm; genuine duplicates are left for explicit settling.)
+    const anchorMatches =
+      target.anchor === undefined
+        ? []
+        : openItems.filter((item) => item.anchor === target.anchor);
+    const wantBody = reconcileBodyKey(target.body);
+    const matches =
+      anchorMatches.length > 0
+        ? anchorMatches
+        : openItems.filter((item) => reconcileBodyKey(item.body) === wantBody);
+    // Prefer the projected `^anchor` when present: it survives body edits on
+    // the daily copy, including resolution notes. Legacy unanchored copies
+    // still fall back to the historical body match; ambiguous matches are
+    // skipped rather than guessed.
     if (matches.length !== 1) continue;
     const match = matches[0];
     if (match === undefined) continue;
@@ -293,8 +313,9 @@ export function completedSourceBackedOpenLoopsFromMarkdown(input: {
 export function openLoopIdentity(input: {
   readonly sourcePath: string;
   readonly body: string;
+  readonly anchor?: string;
 }): string {
-  return openLoopStableId(input);
+  return taskStableId(input);
 }
 
 export function openLoopSurfaceKey(input: { readonly body: string }): string {
@@ -431,11 +452,17 @@ function insertOpenLoopSurfaceSection(input: {
 // loops use `[x]` (resolved) / `[-]` (dismissed). The `#followup` prefix, body,
 // and `(from [[…]])` suffix are identical in both.
 function renderOpenLoopSourceLine(
-  item: { readonly followup: boolean; readonly body: string; readonly sourcePath: string },
+  item: {
+    readonly followup: boolean;
+    readonly body: string;
+    readonly sourcePath: string;
+    readonly anchor?: string;
+  },
   marker: string,
 ): string {
   const followup = item.followup ? "#followup " : "";
-  return `- [${marker}] ${followup}${item.body} (from [[${item.sourcePath.replace(/\.md$/, "")}]])`;
+  const anchor = item.anchor === undefined ? "" : ` ^${item.anchor}`;
+  return `- [${marker}] ${followup}${item.body} (from [[${item.sourcePath.replace(/\.md$/, "")}]])${anchor}`;
 }
 
 function renderOpenLoopSource(item: DailyOpenLoopSource): string {
@@ -457,6 +484,7 @@ function stripCandidateMetadata(
     body: item.body,
     followup: item.followup,
     sourcePath: item.sourcePath,
+    ...(item.anchor !== undefined ? { anchor: item.anchor } : {}),
   });
 }
 

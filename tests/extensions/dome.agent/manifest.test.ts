@@ -157,11 +157,6 @@ describe("dome.agent manifest cadence + grants", () => {
     expect(processor?.module).toBe("processors/active-projects.ts");
     expect(processor?.triggers).toEqual([
       { kind: "schedule", cron: "20 5 * * *" },
-      {
-        kind: "signal",
-        name: "document.changed",
-        pathPattern: "wiki/dailies/*.md",
-      },
     ]);
     const kinds = (processor?.capabilities ?? []).map((c) => c.kind).sort();
     expect(kinds).toEqual(["patch.auto", "read"]);

@@ -182,6 +182,7 @@ function printDoctorText(
   if (s.operationalSchemaMismatch === 0) cleanCategories.push("storage");
   if (s.capabilityGrantGaps + s.capabilityGrantEntryGaps + s.capabilityGrantStarvation === 0) cleanCategories.push("grants");
   if (s.dailyPathMismatch + s.dailyEditionNotCompiled + s.dailyCalendarSourceMissing === 0) cleanCategories.push("daily");
+  if (s.duplicateTaskAnchors === 0) cleanCategories.push("tasks");
   if (s.sourcesTimeoutDefault + s.sourcesFetchScriptMissing === 0) cleanCategories.push("sources");
   if (s.modelProviderMissing + s.modelProviderUnreachable + s.modelProviderKeyMissing === 0) cleanCategories.push("model");
   if (s.unreadableQuestions === 0) cleanCategories.push("decisions");
@@ -223,6 +224,7 @@ function printDoctorText(
       `model ${s.modelProviderMissing} missing`,
       `${s.modelProviderUnreachable} unreachable`,
       `${s.modelProviderKeyMissing} keyless`,
+      `tasks ${s.duplicateTaskAnchors} duplicate anchors`,
     ];
 
     lines.push(

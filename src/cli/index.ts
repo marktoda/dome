@@ -25,6 +25,7 @@ import { runLint, type LintFailOn } from "./commands/lint";
 import { runLog } from "./commands/log";
 import { runQuery } from "./commands/query";
 import { runReanchor } from "./commands/reanchor";
+import { runRepair } from "./commands/repair";
 import { runRecipe } from "./commands/recipe";
 import { runRebuild } from "./commands/rebuild";
 import { runResolve } from "./commands/resolve";
@@ -276,6 +277,34 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
           orphanThresholdMs: options.orphanThresholdMs,
+        }),
+      );
+    });
+
+  program
+    .command("repair", { hidden: true })
+    .description("Run an explicit guarded vault/content-state repair.")
+    .argument("[subject]", "Repair subject: task-anchors or run-ledger.")
+    .option("--dry-run", "Show planned changes without writing files.")
+    .option("--apply", "Apply the planned repair.")
+    .option(
+      "--older-than-days <n>",
+      "For run-ledger: prune eligible rows older than N days.",
+      parsePositiveIntegerOption,
+    )
+    .option("--vacuum", "For run-ledger: VACUUM runs.db after --apply.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .action(async (subject: string | undefined, options: RepairCliOptions) => {
+      setExitCode(
+        await runRepair({
+          subject,
+          dryRun: options.dryRun,
+          apply: options.apply,
+          olderThanDays: options.olderThanDays,
+          vacuum: options.vacuum,
+          json: options.json,
+          vault: options.vault,
         }),
       );
     });
@@ -829,6 +858,15 @@ type DoctorCliOptions = {
   readonly vault?: string;
   readonly bundlesRoot?: string;
   readonly orphanThresholdMs?: number;
+};
+
+type RepairCliOptions = {
+  readonly dryRun?: boolean;
+  readonly apply?: boolean;
+  readonly olderThanDays?: number;
+  readonly vacuum?: boolean;
+  readonly json?: boolean;
+  readonly vault?: string;
 };
 
 type AnswerCliOptions = {

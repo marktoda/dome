@@ -20,28 +20,56 @@
 // The transformation is idempotent: a re-run over already-stamped content
 // produces no changes, so the garden cascade converges at depth 1.
 
-import { patchEffect, type Effect, type FileChangeInput } from "../../../../src/core/effect";
+import {
+  diagnosticEffect,
+  patchEffect,
+  type Effect,
+  type FileChangeInput,
+} from "../../../../src/core/effect";
 import {
   defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
-import { stampTaskAnchors } from "./action-extraction";
+import {
+  duplicateTaskAnchorsFromMarkdown,
+  stampTaskAnchors,
+} from "./action-extraction";
 
 const stampBlockId = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
+    const effects: Effect[] = [];
     const changes: FileChangeInput[] = [];
     const sourceRefs = [];
     for (const path of ctx.changedPaths.filter((p) => p.endsWith(".md"))) {
       const content = await ctx.snapshot.readFile(path);
       if (content === null) continue;
+      for (const collision of duplicateTaskAnchorsFromMarkdown(content)) {
+        effects.push(
+          diagnosticEffect({
+            severity: "warning",
+            code: "dome.daily.duplicate-task-anchor",
+            message:
+              `Duplicate task anchor ^${collision.anchor} in ${path}; ` +
+              "task identity is ambiguous until one line is assigned a new anchor.",
+            sourceRefs: collision.occurrences.map((occurrence) =>
+              ctx.sourceRef(
+                path,
+                { startLine: occurrence.line, endLine: occurrence.line },
+                `dome.daily.open-loop:${collision.anchor}`,
+              )
+            ),
+          }),
+        );
+      }
       const stamped = stampTaskAnchors({ path, content });
       if (stamped === null) continue;
       changes.push({ kind: "write", path, content: stamped });
       sourceRefs.push(ctx.sourceRef(path, { startLine: 1, endLine: 1 }));
     }
-    if (changes.length === 0) return [];
+    if (changes.length === 0) return Object.freeze(effects);
     return [
+      ...effects,
       patchEffect({
         mode: "auto",
         changes,

@@ -28,6 +28,11 @@ export type ClaimLine = {
   readonly anchor: string | null;
 };
 
+type ClaimAnchorAssignment = {
+  readonly claim: ClaimLine;
+  readonly anchor: string;
+};
+
 /** Optional indent + optional bullet, then a line-opening `**Key:**` + value. */
 const CLAIM_LINE_RE = /^(\s*(?:[-*]\s+)?)\*\*([^*\n]+):\*\*\s+(\S.*)$/;
 const AS_OF_RE = /\*\(as of (\d{4}-\d{2}-\d{2})\)\*/;
@@ -180,6 +185,29 @@ export function claimAnchorId(input: {
 }
 
 /**
+ * Return the claim parse with every claim carrying the stable anchor it either
+ * already has or would receive from {@link stampClaimAnchors}. This lets
+ * readers that render references to claim lines (for example Current facts)
+ * compute the post-stamp fixed point without waiting for an extra garden
+ * cascade. The assignment logic intentionally mirrors stamping, including the
+ * used-id collision skip.
+ */
+export function claimsWithStableAnchors(input: {
+  readonly path: string;
+  readonly content: string;
+}): ReadonlyArray<ClaimLine> {
+  return Object.freeze(
+    stableClaimAnchorAssignments(input).map(({ claim, anchor }) => {
+      if (claim.anchor === anchor) return claim;
+      return Object.freeze({
+        ...claim,
+        anchor,
+      });
+    }),
+  );
+}
+
+/**
  * Stamp a stable `^c…` anchor onto every claim line that lacks one,
  * returning the rewritten document — or `null` when nothing needs stamping
  * (the idempotent fixed point). Occurrence counting includes already-anchored
@@ -197,40 +225,62 @@ export function stampClaimAnchors(input: {
   readonly path: string;
   readonly content: string;
 }): string | null {
-  const allLines = input.content.split(/\r?\n/);
+  const lines = input.content.split(/\r?\n/);
+  let changed = false;
+  for (const { claim, anchor } of stableClaimAnchorAssignments(input)) {
+    if (claim.anchor !== null) continue;
+    const idx = claim.line - 1;
+    const line = lines[idx];
+    if (line === undefined) continue;
+    lines[idx] = appendBlockAnchor(line, anchor);
+    changed = true;
+  }
+  return changed ? lines.join("\n") : null;
+}
+
+function stableClaimAnchorAssignments(input: {
+  readonly path: string;
+  readonly content: string;
+}): ReadonlyArray<ClaimAnchorAssignment> {
+  const lines = input.content.split(/\r?\n/);
 
   // Collect every existing anchor id in the document into the used set.
   const usedIds = new Set<string>();
-  for (const line of allLines) {
+  for (const line of lines) {
     const parsed = parseBlockAnchor(line);
     if (parsed !== null) usedIds.add(parsed.id);
   }
 
-  const lines = allLines;
+  const assignments: ClaimAnchorAssignment[] = [];
   const occurrences = new Map<string, number>();
-  let changed = false;
   for (const claim of claimsFromMarkdown(input.content)) {
     const keyNorm = normalizeClaimKey(claim.key);
     const occurrence = occurrences.get(keyNorm) ?? 0;
     if (claim.anchor !== null) {
-      // Already anchored: advance counter and skip stamping.
+      // Already anchored: advance counter and keep the existing identity.
       occurrences.set(keyNorm, occurrence + 1);
+      assignments.push(Object.freeze({ claim, anchor: claim.anchor }));
       continue;
     }
+
     // Find the first unused id for this key, starting at the current counter.
     let occ = occurrence;
-    let candidate = claimAnchorId({ path: input.path, key: claim.key, occurrence: occ });
+    let candidate = claimAnchorId({
+      path: input.path,
+      key: claim.key,
+      occurrence: occ,
+    });
     while (usedIds.has(candidate)) {
       occ += 1;
-      candidate = claimAnchorId({ path: input.path, key: claim.key, occurrence: occ });
+      candidate = claimAnchorId({
+        path: input.path,
+        key: claim.key,
+        occurrence: occ,
+      });
     }
     usedIds.add(candidate);
     occurrences.set(keyNorm, occ + 1);
-    const idx = claim.line - 1;
-    const line = lines[idx];
-    if (line === undefined) continue;
-    lines[idx] = appendBlockAnchor(line, candidate);
-    changed = true;
+    assignments.push(Object.freeze({ claim, anchor: candidate }));
   }
-  return changed ? lines.join("\n") : null;
+  return Object.freeze(assignments);
 }

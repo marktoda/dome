@@ -351,6 +351,43 @@ export type AggregateCostUsdByProcessorOpts = {
   readonly todayIso: string;
 };
 
+export type RunLedgerRetentionOpts = {
+  /**
+   * ISO-8601 upper bound on `started_at`. Eligible rows are strictly older
+   * than this cutoff.
+   */
+  readonly cutoffIso: string;
+};
+
+export type RunLedgerRetentionStatusCount = {
+  readonly status: RunStatus;
+  readonly runs: number;
+};
+
+export type RunLedgerRetentionPlan = {
+  readonly cutoffIso: string;
+  readonly eligibleRuns: number;
+  readonly eligibleCapabilityUses: number;
+  readonly eligibleCostUsd: number;
+  readonly oldestStartedAt: string | null;
+  readonly newestStartedAt: string | null;
+  readonly statusCounts: ReadonlyArray<RunLedgerRetentionStatusCount>;
+};
+
+export type PruneRunLedgerOpts = RunLedgerRetentionOpts & {
+  /**
+   * Run SQLite VACUUM after deleting eligible rows. This can be expensive, so
+   * CLI surfaces keep it opt-in.
+   */
+  readonly vacuum?: boolean;
+};
+
+export type PruneRunLedgerResult = RunLedgerRetentionPlan & {
+  readonly prunedRuns: number;
+  readonly prunedCapabilityUses: number;
+  readonly vacuumed: boolean;
+};
+
 // ----- SQL ------------------------------------------------------------------
 
 const INSERT_QUEUED_SQL = `
@@ -525,6 +562,65 @@ WHERE id = ? AND status = 'running' AND started_at = ?
   AND processor_id = ? AND processor_version = ? AND phase = ?
 `.trim();
 
+// Retention deliberately prunes only boring terminal rows. Failed, timed_out,
+// cancelled, queued, running, and reason-bearing skipped rows keep their audit
+// value until an operator explicitly decides otherwise in a future wider tool.
+const RETENTION_ELIGIBLE_RUN_WHERE_SQL = `
+finished_at IS NOT NULL
+  AND started_at < ?
+  AND (
+    status = 'succeeded'
+    OR (status = 'skipped' AND error IS NULL)
+  )
+`.trim();
+
+const COUNT_RETENTION_ELIGIBLE_RUNS_SQL = `
+SELECT COUNT(*) AS count
+FROM runs
+WHERE ${RETENTION_ELIGIBLE_RUN_WHERE_SQL}
+`.trim();
+
+const COUNT_RETENTION_ELIGIBLE_CAPABILITY_USES_SQL = `
+SELECT COUNT(*) AS count
+FROM capability_uses
+WHERE run_id IN (
+  SELECT id FROM runs WHERE ${RETENTION_ELIGIBLE_RUN_WHERE_SQL}
+)
+`.trim();
+
+const SUM_RETENTION_ELIGIBLE_COST_SQL = `
+SELECT COALESCE(SUM(cost_usd), 0) AS cost_usd
+FROM runs
+WHERE ${RETENTION_ELIGIBLE_RUN_WHERE_SQL}
+`.trim();
+
+const RETENTION_ELIGIBLE_BOUNDS_SQL = `
+SELECT MIN(started_at) AS oldest_started_at,
+       MAX(started_at) AS newest_started_at
+FROM runs
+WHERE ${RETENTION_ELIGIBLE_RUN_WHERE_SQL}
+`.trim();
+
+const RETENTION_ELIGIBLE_STATUS_COUNTS_SQL = `
+SELECT status, COUNT(*) AS runs
+FROM runs
+WHERE ${RETENTION_ELIGIBLE_RUN_WHERE_SQL}
+GROUP BY status
+ORDER BY status
+`.trim();
+
+const DELETE_RETENTION_ELIGIBLE_CAPABILITY_USES_SQL = `
+DELETE FROM capability_uses
+WHERE run_id IN (
+  SELECT id FROM runs WHERE ${RETENTION_ELIGIBLE_RUN_WHERE_SQL}
+)
+`.trim();
+
+const DELETE_RETENTION_ELIGIBLE_RUNS_SQL = `
+DELETE FROM runs
+WHERE ${RETENTION_ELIGIBLE_RUN_WHERE_SQL}
+`.trim();
+
 // ----- Raw row shape --------------------------------------------------------
 
 type RunRawRow = {
@@ -572,6 +668,16 @@ type ProcessorCostRawRow = {
 
 type CountRawRow = {
   readonly count: number;
+};
+
+type RetentionBoundsRawRow = {
+  readonly oldest_started_at: string | null;
+  readonly newest_started_at: string | null;
+};
+
+type RetentionStatusCountRawRow = {
+  readonly status: string;
+  readonly runs: number;
 };
 
 const EffectHashesSchema = z.array(z.string().min(1));
@@ -1072,6 +1178,75 @@ export function failRunIfCurrent(
   return result.changes > 0;
 }
 
+/**
+ * Plan an explicit ledger-retention prune without mutating rows.
+ *
+ * The candidate set is intentionally narrow: old `succeeded` runs and old
+ * idempotency-style `skipped` runs (`error IS NULL`) whose lifecycle reached a
+ * terminal timestamp. Diagnostic terminal rows and active rows are preserved.
+ */
+export function planRunLedgerRetention(
+  db: LedgerDb,
+  opts: RunLedgerRetentionOpts,
+): RunLedgerRetentionPlan {
+  const eligibleRuns = countRetentionEligibleRuns(db, opts.cutoffIso);
+  const eligibleCapabilityUses = countRetentionEligibleCapabilityUses(
+    db,
+    opts.cutoffIso,
+  );
+  const eligibleCostUsd = sumRetentionEligibleCost(db, opts.cutoffIso);
+  const bounds = retentionEligibleBounds(db, opts.cutoffIso);
+  const statusCounts = retentionEligibleStatusCounts(db, opts.cutoffIso);
+  return Object.freeze({
+    cutoffIso: opts.cutoffIso,
+    eligibleRuns,
+    eligibleCapabilityUses,
+    eligibleCostUsd,
+    oldestStartedAt: bounds.oldest_started_at,
+    newestStartedAt: bounds.newest_started_at,
+    statusCounts,
+  });
+}
+
+/**
+ * Delete rows described by `planRunLedgerRetention`. Capability-use children
+ * are deleted first because the schema intentionally has no cascade; the
+ * ledger layer owns both writes so no CLI command has to bypass the fence.
+ */
+export function pruneRunLedger(
+  db: LedgerDb,
+  opts: PruneRunLedgerOpts,
+): PruneRunLedgerResult {
+  const plan = planRunLedgerRetention(db, opts);
+  let prunedCapabilityUses = 0;
+  let prunedRuns = 0;
+
+  db.raw.exec("BEGIN IMMEDIATE");
+  try {
+    prunedCapabilityUses = db.raw
+      .query(DELETE_RETENTION_ELIGIBLE_CAPABILITY_USES_SQL)
+      .run(opts.cutoffIso).changes;
+    prunedRuns = db.raw
+      .query(DELETE_RETENTION_ELIGIBLE_RUNS_SQL)
+      .run(opts.cutoffIso).changes;
+    db.raw.exec("COMMIT");
+  } catch (error) {
+    db.raw.exec("ROLLBACK");
+    throw error;
+  }
+
+  if (opts.vacuum === true) {
+    db.raw.exec("VACUUM");
+  }
+
+  return Object.freeze({
+    ...plan,
+    prunedRuns,
+    prunedCapabilityUses,
+    vacuumed: opts.vacuum === true,
+  });
+}
+
 // ----- internals ------------------------------------------------------------
 
 // Row → RunRow / RunSummaryRow codecs are defined below, after the closed-enum
@@ -1113,6 +1288,62 @@ function runsWhereClause(
   });
 }
 
+function countRetentionEligibleRuns(db: LedgerDb, cutoffIso: string): number {
+  const row = db.raw
+    .query<CountRawRow, [string]>(COUNT_RETENTION_ELIGIBLE_RUNS_SQL)
+    .get(cutoffIso);
+  return row?.count ?? 0;
+}
+
+function countRetentionEligibleCapabilityUses(
+  db: LedgerDb,
+  cutoffIso: string,
+): number {
+  const row = db.raw
+    .query<CountRawRow, [string]>(
+      COUNT_RETENTION_ELIGIBLE_CAPABILITY_USES_SQL,
+    )
+    .get(cutoffIso);
+  return row?.count ?? 0;
+}
+
+function sumRetentionEligibleCost(db: LedgerDb, cutoffIso: string): number {
+  const row = db.raw
+    .query<SumCostRawRow, [string]>(SUM_RETENTION_ELIGIBLE_COST_SQL)
+    .get(cutoffIso);
+  return row?.cost_usd ?? 0;
+}
+
+function retentionEligibleBounds(
+  db: LedgerDb,
+  cutoffIso: string,
+): RetentionBoundsRawRow {
+  const row = db.raw
+    .query<RetentionBoundsRawRow, [string]>(RETENTION_ELIGIBLE_BOUNDS_SQL)
+    .get(cutoffIso);
+  return Object.freeze({
+    oldest_started_at: row?.oldest_started_at ?? null,
+    newest_started_at: row?.newest_started_at ?? null,
+  });
+}
+
+function retentionEligibleStatusCounts(
+  db: LedgerDb,
+  cutoffIso: string,
+): ReadonlyArray<RunLedgerRetentionStatusCount> {
+  const rows = db.raw
+    .query<RetentionStatusCountRawRow, [string]>(
+      RETENTION_ELIGIBLE_STATUS_COUNTS_SQL,
+    )
+    .all(cutoffIso);
+  return mapRows(rows, (row) =>
+    Object.freeze({
+      status: decodeRunStatus(row.status),
+      runs: row.runs,
+    }),
+  );
+}
+
 const RUN_STATUSES = [
   "queued",
   "running",
@@ -1137,6 +1368,13 @@ const TRIGGER_KINDS = [
   "command",
   "job",
 ] as const satisfies ReadonlyArray<TriggerKind>;
+
+function decodeRunStatus(status: string): RunStatus {
+  if ((RUN_STATUSES as ReadonlyArray<string>).includes(status)) {
+    return status as RunStatus;
+  }
+  throw new Error(`invalid ledger.runs.status: ${status}`);
+}
 
 const runCodec = rowCodec<RunRawRow>("ledger.runs");
 

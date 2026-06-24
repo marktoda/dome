@@ -391,7 +391,9 @@ Each writer is gated in its own way: the promotion answer handler writes only
 on an owner answer — the promotion question *was* the review, so the write is
 owner-mediated by construction. The active-projects renderer is a pure
 projection of the dailies' open-loop state — no model judgment, no new
-content, diff-before-emit — so its gate is determinism plus block scope.
+content, diff-before-emit — so its gate is determinism plus block scope. It
+refreshes on the morning schedule, not on every daily edit, so `core.md` stays
+a batched context snapshot rather than a live dashboard.
 
 **The rule for any future writer:** every `core.md` `patch.auto` holder must
 own a **distinct generated block name**. Block-disjoint writers cannot fight

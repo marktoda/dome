@@ -50,7 +50,11 @@ describe("first-party view catalog lockstep", () => {
   test("export-context contract requires markdown and passes the rest through", () => {
     const entry = FIRST_PARTY_VIEWS.exportContext;
     expect(() => entry.payload.parse({})).toThrow();
-    const parsed = entry.payload.parse({ markdown: "# hi", topic: "t", extra: 1 }) as {
+    const parsed = entry.payload.parse({
+      markdown: "# hi",
+      topic: "t",
+      extra: 1,
+    }) as unknown as {
       markdown: string;
       topic: string;
       extra: number;

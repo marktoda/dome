@@ -739,6 +739,71 @@ describe("dome.daily shared date helpers", () => {
     ).toBe(next);
   });
 
+  test("openLoopSurfaceSection carries task anchors on source-backed copies", () => {
+    const items = openLoopSurfaceSources({
+      path: "wiki/projects/alpha.md",
+      content: [
+        "# Alpha",
+        "",
+        "- [ ] #task Send budget update ^talpha1234",
+      ].join("\n"),
+    });
+    expect(items[0]?.anchor).toBe("talpha1234");
+
+    const section = openLoopSurfaceSection({ items });
+    expect(section).toContain(
+      "- [ ] Send budget update (from [[wiki/projects/alpha]]) ^talpha1234",
+    );
+
+    const settled = settledSourceBackedOpenLoopsFromMarkdown({
+      path: "wiki/dailies/2026-02-28.md",
+      content: [
+        "## Open Loops",
+        "",
+        "<!-- dome.daily:open-loops:start -->",
+        "### Resolved Today",
+        "- [x] Send budget update -- sent (from [[wiki/projects/alpha]]) ^talpha1234",
+        "<!-- dome.daily:open-loops:end -->",
+      ].join("\n"),
+    });
+    expect(settled[0]?.anchor).toBe("talpha1234");
+    expect(openLoopIdentity(settled[0]!)).toBe(
+      "dome.daily.open-loop:talpha1234",
+    );
+  });
+
+  test("openLoopSurfaceSources falls back when an origin task anchor is duplicated", () => {
+    const items = openLoopSurfaceSources({
+      path: "wiki/projects/alpha.md",
+      content: [
+        "- [ ] Send budget update #task ^tdeadbeef",
+        "- [ ] Confirm launch date #task ^tdeadbeef",
+        "",
+      ].join("\n"),
+    });
+
+    expect(items.map((item) => item.body)).toEqual([
+      "Send budget update #task",
+      "Confirm launch date #task",
+    ]);
+    expect(items.map((item) => item.anchor)).toEqual([undefined, undefined]);
+    expect(items[0]?.stableId).toBe(
+      openLoopStableId({
+        sourcePath: "wiki/projects/alpha.md",
+        body: "Send budget update #task",
+      }),
+    );
+    expect(items[1]?.stableId).toBe(
+      openLoopStableId({
+        sourcePath: "wiki/projects/alpha.md",
+        body: "Confirm launch date #task",
+      }),
+    );
+
+    const section = openLoopSurfaceSection({ items });
+    expect(section).not.toContain("^tdeadbeef");
+  });
+
   test("rankDailyOpenLoopSurfaceItems folds repeated surface loops", () => {
     const duplicateBody = "Send budget update";
     expect(openLoopSurfaceKey({ body: duplicateBody })).toBe(

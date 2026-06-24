@@ -199,6 +199,8 @@ export type DailySettledOpenLoopSource = {
   readonly followup: boolean;
   readonly sourcePath: string;
   readonly status: DailyOpenLoopSettlementStatus;
+  /** The origin line's stamped `^block-anchor` id, when the copy carries one. */
+  readonly anchor?: string;
 };
 
 export type PreviousDailyDigest = {

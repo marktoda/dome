@@ -9,7 +9,7 @@ import type {
   ManifestGrantEntry,
   ManifestGrantEntryRequirement,
 } from "../../extensions/manifest-schema";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { Database } from "bun:sqlite";
 
@@ -39,6 +39,13 @@ import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import { countCommitsOnlyIn, currentSha, isAncestor } from "../../git";
 import type { Capability } from "../../core/processor";
 import { canonicalVaultPath, type VaultPath } from "../../core/vault-path";
+import { parseBlockAnchor } from "../../core/block-anchor";
+import { findAllGeneratedBlocks } from "../../core/generated-block";
+import {
+  fencedCodeBlockLineRanges,
+  frontmatterLineRange,
+  type LineRange,
+} from "../../core/markdown-scan";
 import { graphWriteCovers } from "../core/capability-broker";
 import { globMatch } from "../core/glob-cache";
 import { pathCapabilityMatches } from "../core/path-capabilities";
@@ -408,6 +415,22 @@ export type HealthFinding =
       };
     }
   | {
+      readonly code: "task.duplicate-anchor";
+      readonly severity: "warning";
+      readonly subject: "tasks";
+      readonly id: string;
+      readonly message: string;
+      readonly recovery: string;
+      readonly taskAnchor: {
+        readonly anchor: string;
+        readonly occurrences: ReadonlyArray<{
+          readonly path: string;
+          readonly line: number;
+          readonly text: string;
+        }>;
+      };
+    }
+  | {
       readonly code: "git.commit-signing";
       readonly severity: "info";
       readonly subject: "git";
@@ -441,6 +464,7 @@ export type HealthSummary = {
   readonly sourcesFetchScriptMissing: number;
   readonly dailyEditionNotCompiled: number;
   readonly dailyCalendarSourceMissing: number;
+  readonly duplicateTaskAnchors: number;
   readonly gitCommitSigning: number;
   readonly recurringOutboxFailures: number;
   readonly unreadableQuestions: number;
@@ -477,6 +501,7 @@ const SUMMARY_FIELD_BY_CODE = Object.freeze({
   "sources.fetch-script-missing": "sourcesFetchScriptMissing",
   "daily.edition-not-compiled": "dailyEditionNotCompiled",
   "daily.calendar-source-missing": "dailyCalendarSourceMissing",
+  "task.duplicate-anchor": "duplicateTaskAnchors",
   "git.commit-signing": "gitCommitSigning",
   "outbox.recurring-failure": "recurringOutboxFailures",
   "questions.unreadable-backlog": "unreadableQuestions",
@@ -691,6 +716,11 @@ export async function collectHealthReport(opts: {
               join(opts.vaultPath, "sources", "calendar", `${date}.md`),
             ),
         });
+  const taskAnchorDuplicates = opts.extensions.some((e) => e.name === "dome.daily")
+    ? duplicateTaskAnchorFindings({
+        files: markdownFilesForTaskAnchorScan(opts.vaultPath),
+      })
+    : [];
 
   const commitSigning =
     opts.commitSigningEnabled === true
@@ -708,6 +738,7 @@ export async function collectHealthReport(opts: {
     ...sourcesTimeout,
     ...sourcesFetchScript,
     ...dailyEdition,
+    ...taskAnchorDuplicates,
     ...commitSigning,
     ...failedOutbox.map(outboxFinding),
     ...recurringOutboxFailures,
@@ -1526,6 +1557,205 @@ export function dailyEditionFindings(opts: {
   }
 
   return Object.freeze(findings);
+}
+
+// ----- Task-anchor integrity probe -------------------------------------------
+
+export type TaskAnchorScanFile = {
+  readonly path: string;
+  readonly content: string;
+};
+
+export type TaskAnchorOccurrence = {
+  readonly path: string;
+  readonly line: number;
+  readonly text: string;
+};
+
+export type TaskAnchorCollision = {
+  readonly anchor: string;
+  readonly occurrences: ReadonlyArray<TaskAnchorOccurrence>;
+};
+
+const TASK_ANCHOR_RE = /^t[0-9A-Za-z][A-Za-z0-9-]*$/;
+const TASK_ANCHOR_SCAN_IGNORED_DIRS = new Set([
+  ".git",
+  ".dome",
+  ".Codex",
+  "node_modules",
+]);
+const DAILY_ORIGIN_TASK_EXCLUDED_BLOCKS: ReadonlyArray<{
+  readonly owner: string;
+  readonly block: string;
+}> = Object.freeze([
+  Object.freeze({ owner: "dome.daily", block: "start-context" }),
+  Object.freeze({ owner: "dome.daily", block: "open-loops" }),
+  Object.freeze({ owner: "dome.daily", block: "carried-forward" }),
+  Object.freeze({ owner: "dome.daily", block: "close" }),
+  Object.freeze({ owner: "dome.agent.brief", block: "yesterday" }),
+]);
+
+export function duplicateTaskAnchorFindings(opts: {
+  readonly files: ReadonlyArray<TaskAnchorScanFile>;
+}): ReadonlyArray<HealthFinding> {
+  const collisions = duplicateTaskAnchorCollisions(opts);
+  return Object.freeze(
+    collisions.map((collision) =>
+      Object.freeze({
+        code: "task.duplicate-anchor" as const,
+        severity: "warning" as const,
+        subject: "tasks" as const,
+        id: collision.anchor,
+        message:
+          `Task anchor ^${collision.anchor} appears on ` +
+          `${collision.occurrences.length} origin task lines; ` +
+          "carried-forward close propagation is ambiguous until all but one " +
+          "line gets a new task anchor.",
+        recovery:
+          "Run `dome repair task-anchors --dry-run` to inspect the proposed " +
+          "repair, then `dome repair task-anchors --apply` to remove duplicate " +
+          "anchors from non-kept origin lines. Run `dome sync` afterward so " +
+          "dome.daily.stamp-block-id assigns fresh identities.",
+        taskAnchor: Object.freeze({
+          anchor: collision.anchor,
+          occurrences: collision.occurrences,
+        }),
+      }),
+    ),
+  );
+}
+
+export function duplicateTaskAnchorCollisions(opts: {
+  readonly files: ReadonlyArray<TaskAnchorScanFile>;
+}): ReadonlyArray<TaskAnchorCollision> {
+  const byAnchor = new Map<string, TaskAnchorOccurrence[]>();
+  for (const file of opts.files) {
+    for (const occurrence of taskAnchorOccurrences(file)) {
+      const occurrences = byAnchor.get(occurrence.anchor) ?? [];
+      occurrences.push(
+        Object.freeze({
+          path: file.path,
+          line: occurrence.line,
+          text: occurrence.text,
+        }),
+      );
+      byAnchor.set(occurrence.anchor, occurrences);
+    }
+  }
+
+  const collisions: TaskAnchorCollision[] = [];
+  for (const [anchor, occurrences] of [...byAnchor.entries()].sort((a, b) =>
+    compareStrings(a[0], b[0]),
+  )) {
+    if (occurrences.length < 2) continue;
+    collisions.push(
+      Object.freeze({
+        anchor,
+        occurrences: Object.freeze([...occurrences]),
+      }),
+    );
+  }
+  return Object.freeze(collisions);
+}
+
+function taskAnchorOccurrences(file: TaskAnchorScanFile): ReadonlyArray<{
+  readonly anchor: string;
+  readonly line: number;
+  readonly text: string;
+}> {
+  const lines = file.content.split(/\r?\n/);
+  const ignored = taskAnchorIgnoredRanges(file.content);
+  const out: Array<{ anchor: string; line: number; text: string }> = [];
+  for (let idx = 0; idx < lines.length; idx += 1) {
+    const line = idx + 1;
+    if (lineIsInsideRanges(line, ignored)) continue;
+    const raw = lines[idx] ?? "";
+    const parsed = parseBlockAnchor(raw);
+    if (parsed === null || !TASK_ANCHOR_RE.test(parsed.id)) continue;
+    if (!isOriginTaskLikeLine(parsed.withoutAnchor)) continue;
+    out.push(Object.freeze({ anchor: parsed.id, line, text: raw.trim() }));
+  }
+  return Object.freeze(out);
+}
+
+function taskAnchorIgnoredRanges(content: string): ReadonlyArray<LineRange> {
+  const frontmatter = frontmatterLineRange(content);
+  const ranges: LineRange[] = [
+    ...fencedCodeBlockLineRanges(content),
+    ...(frontmatter === null ? [] : [frontmatter]),
+  ];
+  for (const block of DAILY_ORIGIN_TASK_EXCLUDED_BLOCKS) {
+    for (const range of findAllGeneratedBlocks(
+      content,
+      block.owner,
+      block.block,
+    )) {
+      ranges.push(Object.freeze({ start: range.startLine, end: range.endLine }));
+    }
+  }
+  return Object.freeze(ranges);
+}
+
+function isOriginTaskLikeLine(lineWithoutAnchor: string): boolean {
+  if (/\s+\(from \[\[[^\]\n]+\]\]\)\s*$/.test(lineWithoutAnchor)) {
+    return false;
+  }
+  if (/^\s*[-*]\s+\[[ xX-]\]\s+\S/.test(lineWithoutAnchor)) return true;
+  return /^\s*(?:[-*]\s+)?(?:todo|follow[- ]?up)\s*:\s*\S/i.test(
+    lineWithoutAnchor,
+  );
+}
+
+function lineIsInsideRanges(
+  line: number,
+  ranges: ReadonlyArray<LineRange>,
+): boolean {
+  return ranges.some((range) => line >= range.start && line <= range.end);
+}
+
+export function markdownFilesForTaskAnchorScan(
+  vaultPath: string,
+): ReadonlyArray<TaskAnchorScanFile> {
+  const out: TaskAnchorScanFile[] = [];
+  walkMarkdownFiles(vaultPath, "", out);
+  return Object.freeze(out.sort((a, b) => compareStrings(a.path, b.path)));
+}
+
+function walkMarkdownFiles(
+  root: string,
+  relDir: string,
+  out: TaskAnchorScanFile[],
+): void {
+  const absDir = relDir === "" ? root : join(root, relDir);
+  let entries;
+  try {
+    entries = readdirSync(absDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      if (TASK_ANCHOR_SCAN_IGNORED_DIRS.has(entry.name)) continue;
+      walkMarkdownFiles(
+        root,
+        relDir === "" ? entry.name : `${relDir}/${entry.name}`,
+        out,
+      );
+      continue;
+    }
+    if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+    const relPath = relDir === "" ? entry.name : `${relDir}/${entry.name}`;
+    try {
+      out.push(
+        Object.freeze({
+          path: relPath,
+          content: readFileSync(join(root, relPath), "utf8"),
+        }),
+      );
+    } catch {
+      // A disappearing/unreadable markdown file should not make doctor fail.
+    }
+  }
 }
 
 /**

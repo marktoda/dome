@@ -126,15 +126,24 @@ ledger forensics remain on the CLI operational surface.
 
 ## Retention
 
-Default retention: **forever**. The ledger is small (typically a few KB per run) and the audit value compounds over time. Users with vaults that grow into millions of runs may opt into a retention policy via `<vault>/.dome/config.yaml`:
+Default retention: **forever**. The ledger is small (typically a few KB per run) and the audit value compounds over time. Users with vaults that grow into millions of runs can explicitly prune low-signal history with:
+
+```sh
+dome repair run-ledger --older-than-days 365        # dry-run
+dome repair run-ledger --older-than-days 365 --apply
+dome repair run-ledger --older-than-days 365 --apply --vacuum
+```
+
+The command never creates a missing ledger, defaults to dry-run, and prunes only old successful rows plus idempotency-style skipped rows (`status = skipped` with no error). Failed, timed-out, cancelled, queued, running, and reason-bearing skipped rows are preserved because they carry active forensics. `--vacuum` is separate and opt-in because SQLite compaction can be expensive.
+
+A future background policy may opt into the same posture via `<vault>/.dome/config.yaml`:
 
 ```yaml
 ledger:
   retention_days: 365
-  retention_failed_runs_days: 90
 ```
 
-The engine prunes rows older than the policy at the start of each `dome sync`. Pruning never touches `failed` runs unless `retention_failed_runs_days` is set explicitly — failed-run forensics are too valuable to drop silently.
+The engine does not prune on `dome sync` in the current implementation; background retention needs an explicit policy implementation before it can run automatically. Even then, failed-run forensics should not be dropped silently.
 
 ## What the ledger cannot do
 

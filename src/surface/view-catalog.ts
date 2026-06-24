@@ -15,11 +15,27 @@ import { queryPayloadSchema } from "./query-view";
 import { todayPayloadSchema } from "./today-view";
 
 /**
- * `dome.search.export-context/v1` — a passthrough View Contract. The CLI paint
- * reads only `markdown`; `.passthrough()` keeps the producer's richer fields
- * (`topic`, `overview`, `entries`, …) intact for the `--json` / MCP surface.
+ * `dome.search.export-context/v1` — a mostly-pass-through View Contract. The
+ * CLI paint reads only `markdown`, but the JSON surface is a stable envelope,
+ * so declare the top-level keys in producer order and still pass through any
+ * future fields.
  */
-const exportContextPayloadSchema = z.object({ markdown: z.string() }).passthrough();
+const exportContextPayloadSchema = z
+  .object({
+    schema: z
+      .literal("dome.search.export-context/v1")
+      .catch("dome.search.export-context/v1"),
+    topic: z.string().catch(""),
+    limit: z.number().nullable().catch(null),
+    shown: z.object({ entries: z.number().catch(0) }).catch({ entries: 0 }),
+    hasMore: z
+      .object({ entries: z.boolean().catch(false) })
+      .catch({ entries: false }),
+    overview: z.unknown().catch({}),
+    markdown: z.string(),
+    entries: z.array(z.unknown()).catch([]),
+  })
+  .passthrough();
 
 /**
  * A first-party view's **View Contract** — the single declaration every

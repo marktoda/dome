@@ -1480,10 +1480,12 @@ instead of hiding the backing source behind a separate SourceRefs section.
 Settling a generated source-backed item is still meaningful markdown evidence.
 On the next carry-forward pass, Dome keeps `[x]` rows under
 `### Resolved Today` and `[-]` rows under `### Dismissed Today` in that daily
-note. Both states suppress the same source/body identity and equivalent
-repeated surface loops from future daily surfaces. This lets the daily note act
-as a collaborative work queue without mutating the original source note or
-storing hidden dismissal state in `.dome/state`.
+note. Both states suppress the same carried `^anchor` identity (falling back to
+source/body identity for legacy unanchored rows) and equivalent repeated surface
+loops from future daily surfaces. This lets the daily note act as a collaborative
+work queue without storing hidden dismissal state in `.dome/state`; the
+companion `dome.daily.reconcile-tasks` pass propagates the settled marker back
+to the origin line.
 
 Within daily action sections, each task/followup/question carries a source
 scope: `daily` when it comes from the target daily note, `backlog` otherwise.
@@ -1916,6 +1918,12 @@ The recut splits these along their real seams:
   QuestionEffect → user runs `dome resolve <id>` → answer-handler
   processor in the `dome.health` bundle applies the mutation. No
   per-substrate verb-noun commands.
+- **Explicit guarded repairs** → `dome repair <subject>` for narrow,
+  operator-initiated repairs that are not question answers. The command
+  defaults to dry-run. Current subjects are `task-anchors` (remove duplicate
+  `^t...` identities from non-first task-origin lines so `dome sync` can
+  restamp them) and `run-ledger` (prune old low-signal terminal rows with
+  `--older-than-days N --apply`, preserving failures and active rows).
 - **Auto-mitigations** (AGENTS.md template drift, projection schema
   rebuild, orphan-commit GC) → handled inline by garden-phase processors
   with no CLI surface; the engine just does them. Operational schema
@@ -1929,6 +1937,24 @@ The recut splits these along their real seams:
 This collapses the v0.5 / pre-recut "doctor as admin grab-bag" into
 the primary `status` / `check` / `resolve` path, with `inspect` and
 `doctor` retained as advanced detail views.
+
+### `dome repair <subject> [--dry-run] [--apply] [--json]` *(hidden advanced repair)*
+
+Explicit guarded mutation surface for narrow repairs. `--dry-run` is the
+default, `--apply` is required to write, and `--apply --dry-run` is a usage
+error.
+
+`task-anchors` scans markdown task-origin lines for duplicate `^t...` task
+anchors. The dry-run report lists the non-first occurrences whose anchor would
+be removed; `--apply` removes only those duplicated anchors and leaves the next
+`dome sync` to stamp fresh stable identities.
+
+`run-ledger` requires `--older-than-days <n>`. It prunes only old `succeeded`
+rows and idempotency-style `skipped` rows with no error, first deleting their
+`capability_uses` children inside the ledger layer. It preserves failed,
+timed-out, cancelled, queued, running, and reason-bearing skipped rows.
+`--vacuum` is valid only with `--apply` and runs SQLite `VACUUM` after the
+delete.
 
 ### `dome answer <question-id> [<value>]` *(advanced compatibility alias)*
 

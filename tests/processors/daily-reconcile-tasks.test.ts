@@ -37,6 +37,40 @@ describe("reconcileSettledOpenLoops", () => {
     ]);
   });
 
+  test("propagates an annotated resolved copy by anchor even when the body changed", () => {
+    const result = reconcileSettledOpenLoops({
+      files: [
+        {
+          path: "wiki/dailies/2026-01-02.md",
+          content: [
+            "# 2026-01-02",
+            "",
+            "## Open Loops",
+            "",
+            "<!-- dome.daily:open-loops:start -->",
+            "### Resolved Today",
+            "- [x] ship it -- shipped to production (from [[wiki/projects/conv]]) ^t1a2b3c4",
+            "<!-- dome.daily:open-loops:end -->",
+            "",
+          ].join("\n"),
+        },
+        {
+          path: "wiki/projects/conv.md",
+          content: ["# Conv", "", "- [ ] ship it #task ^t1a2b3c4", ""].join(
+            "\n",
+          ),
+        },
+      ],
+    });
+
+    expect(result).toEqual([
+      {
+        path: "wiki/projects/conv.md",
+        content: ["# Conv", "", "- [x] ship it #task ^t1a2b3c4", ""].join("\n"),
+      },
+    ]);
+  });
+
   test("skips (does not guess) when the origin has two open lines sharing the body", () => {
     const result = reconcileSettledOpenLoops({
       files: [
