@@ -41,7 +41,7 @@ dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]
                                 FTS + structured query against adopted state.
 dome export-context <topic> [--limit <n>] [--json]
                                 Portable source-backed context packet.
-dome today [--date <yyyy-mm-dd>] [--limit <n>] [--watch] [--interval <seconds>] [--json]
+dome today [--date <yyyy-mm-dd>] [--limit <n>] [--watch] [--interval <seconds>] [--json] [--verbose]
                                 Render today's action surface (open tasks,
                                 follow-ups, questions) — the terminal cockpit.
                                 --watch re-renders on an interval until ctrl-c.
@@ -1241,7 +1241,7 @@ structured `dome.search.export-context/v1` payload, including the packet under
 `overview.recallSignals` carries the same source-backed recall evidence for
 structured consumers.
 
-### `dome today [--date <yyyy-mm-dd>] [--limit <n>] [--watch] [--interval <seconds>] [--json]`
+### `dome today [--date <yyyy-mm-dd>] [--limit <n>] [--watch] [--interval <seconds>] [--json] [--verbose]`
 
 The terminal cockpit — a typed dedicated wrapper over the command-triggered
 `today` view (`dome.daily.today`, structured schema `dome.daily.today/v1`),
@@ -1252,22 +1252,21 @@ routes through the same shared view-command boundary and validates the same
 one-view/effect-name/schema contract as the other dedicated wrappers.
 
 Default text output uses the **Briefing v2 presenter** (CB-T4): a `dome
-today` headline with the vault basename, then immediately a verdict line
-(`√ all clear` or `x <n> overdue · <m> open`). When anything is open, a
-**hero pill** follows — the single highest-priority item (the overdue or
-due-today task with the nearest due date, or the oldest open question when
-no task qualifies) rendered with an arrow glyph. Grouped summary lines then
-show overdue tasks, due-today tasks, and open-items in compact inline form
-(`· item1 · item2 · +N`). `--verbose` adds the `brief` narrative panel
-(from the `dome.agent.brief` fact, when present) before the task groups and
-the calendar event count line; the default compact view omits both. There
-is no `Open tasks` / `Follow-ups` / `Questions` section header rendering in
-v2 — items are bucketed inline into the summary row. `dome decide` is not
+today` headline with the vault basename and a right-aligned verdict
+(`√ all clear` or `x <n> overdue · <m> open`). The default body shows the
+brief when present, today's agenda when present, and open tasks/followups in
+urgency buckets (`OVERDUE`, `TODAY`, `THIS WEEK`, `LATER`, `SOMEDAY`) with
+compact task rows. Task rows stay terse by default. `--verbose` uncaps bucket
+lists and adds a muted `why:` line under each task with due/overdue reason,
+source-backed vs. daily-local scope, carry-forward projection provenance,
+attention discount metadata, and any task origin marker. `dome decide` is not
 emitted.
 
 - `--date <yyyy-mm-dd>` and `--limit <n>` pass through to the view's
   `date` / `limit` command args (same semantics as `dome run today`).
 - `--json` emits the structured `dome.daily.today/v1` payload unchanged.
+- `--verbose` uncaps the human task lists and prints compact per-task
+  provenance; it does not mutate or clean up the daily note.
 - `--watch` is the cockpit mode: re-render on an interval until ctrl-c
   (SIGINT/SIGTERM). It is **poll-based re-render** — dumb polling per the v1
   plan's open-questions resolution, not a push channel. Each iteration
@@ -1518,8 +1517,8 @@ fields report the actual bounded array lengths and may show more than
 `<limit>` rows for a category when both source groups have matching items.
 `--json` emits the structured `dome.daily.today/v1` payload, including
 `sourceCounts`, `dueCounts`, `shown`, `omitted`, plus per-item `source`,
-`dueDate`, `priority`, `lastChangedAt`, `evidenceLabel`, and the folded row's
-complete `sourceRefs`. `shown` and `omitted` mirror the bounded arrays so
+`dueDate`, `priority`, `lastChangedAt`, `evidenceLabel`, `attention`, and the
+folded row's complete `sourceRefs`. `shown` and `omitted` mirror the bounded arrays so
 agents do not need to infer truncation from array lengths. `--date` is for
 reviewing another day and for deterministic tests; omitted means local today.
 

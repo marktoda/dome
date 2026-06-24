@@ -48,7 +48,9 @@ import {
 import {
   parseTodayView,
   buildTodayViewModel,
+  classifyUrgency,
   priorityMarkerChars,
+  type TodaySourceRef,
   type TodayTaskRow,
 } from "../../surface/today-view";
 import { compareStrings } from "../../core/compare";
@@ -437,6 +439,14 @@ export function formatTodayResult(
           : "";
       const indentStr = " ".repeat(indent);
       lines.push(`  ${g} ${marker}${indentStr}${label}${inlineTail}${originTail}`);
+      if (opts.verbose === true) {
+        const why = taskWhyLine(t, date);
+        if (why.length > 0) {
+          for (const whyLine of wrap(why, Math.max(8, caps.width - 6))) {
+            lines.push(`      ${paint(whyLine, "muted", caps)}`);
+          }
+        }
+      }
     };
 
     const CLUSTER_MIN = 3;
@@ -557,4 +567,71 @@ export function formatTodayResult(
   }
 
   return lines.join("\n");
+}
+
+function taskWhyLine(task: TodayTaskRow, today: string): string {
+  const parts = [
+    dueWhy(task, today),
+    ...sourceWhy(task),
+    attentionWhy(task),
+    task.origin !== undefined ? `origin ${task.origin}` : null,
+  ].filter((part): part is string => part !== null && part.length > 0);
+  return parts.length === 0 ? "" : `why: ${parts.join(" · ")}`;
+}
+
+function dueWhy(task: TodayTaskRow, today: string): string {
+  const urgency = classifyUrgency(task.dueDate, today);
+  switch (urgency.kind) {
+    case "overdue":
+      return `overdue by ${urgency.days}d (${task.dueDate})`;
+    case "due-today":
+      return "due today";
+    case "this-week":
+      return `due this week (${urgency.date})`;
+    case "later":
+      return `due later (${urgency.date})`;
+    case "someday":
+      return "no due date";
+  }
+}
+
+function sourceWhy(task: TodayTaskRow): ReadonlyArray<string> {
+  const location = task.evidenceLabel ?? formatTaskLocation(task);
+  const originRef = firstBackingRef(task);
+  if (originRef !== null && originRef.path !== task.path) {
+    return [
+      `source-backed from ${formatSourceRef(originRef)}`,
+      withLocation("carried-forward projection", location),
+    ];
+  }
+  if (task.source === "backlog") return [withLocation("source-backed backlog", location)];
+  if (task.source === "daily") return [withLocation("daily-local", location)];
+  return location.length > 0 ? [`source ${location}`] : [];
+}
+
+function firstBackingRef(task: TodayTaskRow): TodaySourceRef | null {
+  const refs = task.sourceRefs ?? [];
+  return refs.find((ref) => ref.path !== task.path) ?? refs[0] ?? null;
+}
+
+function attentionWhy(task: TodayTaskRow): string | null {
+  const attention = task.attention;
+  if (attention === undefined) return null;
+  if (attention === null) return "attention undiscounted";
+  return `attention discount ${Math.round(attention.discount * 100)}% after ` +
+    `${attention.impressions} impressions (last ${attention.lastShown})`;
+}
+
+function formatTaskLocation(task: TodayTaskRow): string {
+  if (task.path.length === 0) return "";
+  return task.line === null ? task.path : `${task.path}:${task.line}`;
+}
+
+function formatSourceRef(ref: TodaySourceRef): string {
+  const line = ref.range?.startLine;
+  return line === undefined ? ref.path : `${ref.path}:${line}`;
+}
+
+function withLocation(label: string, location: string): string {
+  return location.length === 0 ? label : `${label} at ${location}`;
 }

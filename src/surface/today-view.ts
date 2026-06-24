@@ -30,13 +30,34 @@ export type TodayTaskRow = {
   readonly text: string;
   readonly path: string;
   readonly line: number | null;
+  readonly source?: "daily" | "backlog";
   readonly dueDate: string | null;
   /** Decoded URL/path from an inline `([↗](target))` origin marker, if present. */
   readonly origin?: string;
+  readonly evidenceLabel?: string;
+  readonly lastChangedAt?: string | null;
+  readonly attention?: TodayTaskAttention | null;
+  readonly sourceRefs?: ReadonlyArray<TodaySourceRef>;
   /** Slugs of all `[[wikilink]]` targets found in the raw task text (order-preserving, deduped). */
   readonly entities?: readonly string[];
   /** Obsidian task priority parsed by the producer; null/absent when untagged. */
   readonly priority?: "highest" | "high" | "medium" | "low" | "lowest" | null;
+};
+
+export type TodayTaskAttention = {
+  readonly discount: number;
+  readonly impressions: number;
+  readonly lastShown: string;
+};
+
+export type TodaySourceRef = {
+  readonly path: string;
+  readonly commit?: string;
+  readonly stableId?: string;
+  readonly range?: {
+    readonly startLine: number;
+    readonly endLine: number;
+  };
 };
 
 export type TodayQuestionRow = {
@@ -94,14 +115,31 @@ export type TodayView = {
 const sourceRefWireSchema = z.object({
   path: z.string(),
   commit: z.string().optional(),
+  stableId: z.string().optional(),
+  range: z
+    .object({
+      startLine: z.number(),
+      endLine: z.number(),
+    })
+    .optional(),
+});
+
+const attentionWireSchema = z.object({
+  discount: z.number(),
+  impressions: z.number(),
+  lastShown: z.string(),
 });
 
 const taskRowWireSchema = z.object({
   text: z.string(),
   path: z.string(),
   line: z.number().nullable().optional(),
+  source: z.enum(["daily", "backlog"]).optional(),
   dueDate: z.string().nullable().optional(),
   origin: z.string().optional(),
+  evidenceLabel: z.string().optional(),
+  lastChangedAt: z.string().nullable().optional(),
+  attention: attentionWireSchema.nullable().optional(),
   priority: z.enum(["highest", "high", "medium", "low", "lowest"]).nullable().optional(),
   sourceRefs: z.array(sourceRefWireSchema).readonly().optional(),
 });
@@ -215,20 +253,76 @@ function parseTaskRows(raw: unknown): ReadonlyArray<TodayTaskRow> {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((item) => {
     const r = isRecord(item) ? item : {};
-    const rawText = typeof r.text === "string" ? r.text : "";
-    const text = rawText.length > 0 ? stripWikilinks(rawText) : "";
-    if (text.length === 0) return [];
-    const origin = typeof r.origin === "string" ? r.origin : undefined;
-    const entities = wikilinkSlugs(rawText);
-    const priority = parsePriority(r.priority);
+    const row = parseTaskRowRecord(r);
+    return row === null ? [] : [row];
+  });
+}
+
+function parseTaskRowRecord(r: Record<string, unknown>): TodayTaskRow | null {
+  const rawText = typeof r.text === "string" ? r.text : "";
+  const text = rawText.length > 0 ? stripWikilinks(rawText) : "";
+  if (text.length === 0) return null;
+  const origin = typeof r.origin === "string" ? r.origin : undefined;
+  const entities = wikilinkSlugs(rawText);
+  const priority = parsePriority(r.priority);
+  const source = r.source === "daily" || r.source === "backlog"
+    ? r.source
+    : undefined;
+  const evidenceLabel = typeof r.evidenceLabel === "string"
+    ? r.evidenceLabel
+    : undefined;
+  const lastChangedAt = typeof r.lastChangedAt === "string"
+    ? r.lastChangedAt
+    : r.lastChangedAt === null
+      ? null
+      : undefined;
+  const attention = parseAttention(r.attention);
+  const sourceRefs = parseSourceRefs(r.sourceRefs);
+  return {
+    text,
+    path: typeof r.path === "string" ? r.path : "",
+    line: typeof r.line === "number" ? r.line : null,
+    ...(source !== undefined ? { source } : {}),
+    dueDate: typeof r.dueDate === "string" ? r.dueDate : null,
+    ...(origin !== undefined ? { origin } : {}),
+    ...(evidenceLabel !== undefined ? { evidenceLabel } : {}),
+    ...(lastChangedAt !== undefined ? { lastChangedAt } : {}),
+    ...(attention !== undefined ? { attention } : {}),
+    ...(sourceRefs.length > 0 ? { sourceRefs } : {}),
+    ...(entities.length > 0 ? { entities } : {}),
+    ...(priority !== null ? { priority } : {}),
+  };
+}
+
+function parseAttention(raw: unknown): TodayTaskAttention | null | undefined {
+  if (raw === null) return null;
+  if (!isRecord(raw)) return undefined;
+  const discount = typeof raw.discount === "number" ? raw.discount : null;
+  const impressions = typeof raw.impressions === "number" ? raw.impressions : null;
+  const lastShown = typeof raw.lastShown === "string" ? raw.lastShown : null;
+  if (discount === null || impressions === null || lastShown === null) {
+    return undefined;
+  }
+  return { discount, impressions, lastShown };
+}
+
+function parseSourceRefs(raw: unknown): ReadonlyArray<TodaySourceRef> {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((item) => {
+    if (!isRecord(item) || typeof item.path !== "string") return [];
+    const range = isRecord(item.range) &&
+      typeof item.range.startLine === "number" &&
+      typeof item.range.endLine === "number"
+      ? {
+        startLine: item.range.startLine,
+        endLine: item.range.endLine,
+      }
+      : undefined;
     return [{
-      text,
-      path: typeof r.path === "string" ? r.path : "",
-      line: typeof r.line === "number" ? r.line : null,
-      dueDate: typeof r.dueDate === "string" ? r.dueDate : null,
-      ...(origin !== undefined ? { origin } : {}),
-      ...(entities.length > 0 ? { entities } : {}),
-      ...(priority !== null ? { priority } : {}),
+      path: item.path,
+      ...(typeof item.commit === "string" ? { commit: item.commit } : {}),
+      ...(typeof item.stableId === "string" ? { stableId: item.stableId } : {}),
+      ...(range !== undefined ? { range } : {}),
     }];
   });
 }
@@ -289,23 +383,11 @@ function parseHero(raw: unknown): TodayHeroItem | null {
   if (kind === "task") {
     const item = isRecord(raw.item) ? raw.item : null;
     if (item === null) return null;
-    const rawText = typeof item.text === "string" ? item.text : "";
-    const text = rawText.length > 0 ? stripWikilinks(rawText) : "";
-    if (text.length === 0) return null;
-    const heroOrigin = typeof item.origin === "string" ? item.origin : undefined;
-    const entities = wikilinkSlugs(rawText);
-    const priority = parsePriority(item.priority);
+    const parsed = parseTaskRowRecord(item);
+    if (parsed === null) return null;
     return {
       kind: "task",
-      item: {
-        text,
-        path: typeof item.path === "string" ? item.path : "",
-        line: typeof item.line === "number" ? item.line : null,
-        dueDate: typeof item.dueDate === "string" ? item.dueDate : null,
-        ...(heroOrigin !== undefined ? { origin: heroOrigin } : {}),
-        ...(entities.length > 0 ? { entities } : {}),
-        ...(priority !== null ? { priority } : {}),
-      },
+      item: parsed,
     };
   }
   if (kind === "question") {

@@ -42,6 +42,52 @@ test("parseTaskRows carries priority for all five literals + null/unknown", () =
   expect(v.openTasks.map((t) => t.priority ?? null)).toEqual(["highest", "low", null, null]);
 });
 
+test("parseTaskRows preserves task provenance metadata for why-lines", () => {
+  const v = parseTodayView({
+    date: "2026-06-14",
+    openTasks: [
+      {
+        text: "reply to [[people/jane|Jane]]",
+        path: "wiki/dailies/2026-06-14.md",
+        line: 20,
+        source: "daily",
+        dueDate: "2026-06-10",
+        evidenceLabel: "wiki/dailies/2026-06-14.md:20; source wiki/projects/client.md:7",
+        lastChangedAt: "2026-06-13T10:00:00.000Z",
+        attention: { discount: 0.32, impressions: 4, lastShown: "2026-06-13" },
+        sourceRefs: [
+          {
+            path: "wiki/dailies/2026-06-14.md",
+            range: { startLine: 20, endLine: 20 },
+            stableId: "t1",
+          },
+          {
+            path: "wiki/projects/client.md",
+            range: { startLine: 7, endLine: 7 },
+            stableId: "t1",
+          },
+        ],
+      },
+    ],
+    followups: [],
+    questions: [],
+    counts: { openTasks: 1, followups: 0, questions: 0 },
+    brief: null,
+    calendar: null,
+    hero: null,
+  });
+  const row = v.openTasks[0]!;
+  expect(row.text).toBe("reply to Jane");
+  expect(row.source).toBe("daily");
+  expect(row.evidenceLabel).toBe("wiki/dailies/2026-06-14.md:20; source wiki/projects/client.md:7");
+  expect(row.lastChangedAt).toBe("2026-06-13T10:00:00.000Z");
+  expect(row.attention).toEqual({ discount: 0.32, impressions: 4, lastShown: "2026-06-13" });
+  expect(row.sourceRefs?.map((ref) => `${ref.path}:${ref.range?.startLine}:${ref.stableId}`)).toEqual([
+    "wiki/dailies/2026-06-14.md:20:t1",
+    "wiki/projects/client.md:7:t1",
+  ]);
+});
+
 test("parses question options + resolveCommand", () => {
   const v = parseTodayView({ date: "x", openTasks: [], followups: [],
     questions: [{ id: 7, question: "go?", options: ["yes","no"], resolveCommand: "dome resolve 7" }],

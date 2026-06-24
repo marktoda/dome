@@ -285,6 +285,45 @@ describe("dome today: Briefing terminal restyle", () => {
     expect(verbose).toContain("wiki/dailies/2026-06-23.md"); // path shown under --verbose
   });
 
+  test("--verbose explains why each task is surfaced", () => {
+    const data = {
+      date: "2026-06-14",
+      hero: null,
+      brief: null,
+      calendar: null,
+      openTasks: [
+        {
+          text: "reply to Jane",
+          path: "wiki/dailies/2026-06-14.md",
+          line: 20,
+          source: "daily",
+          dueDate: "2026-06-10",
+          evidenceLabel: "wiki/dailies/2026-06-14.md:20",
+          attention: { discount: 0.32, impressions: 4, lastShown: "2026-06-13" },
+          origin: "https://slk/p1",
+          sourceRefs: [
+            { path: "wiki/dailies/2026-06-14.md", range: { startLine: 20, endLine: 20 } },
+            { path: "wiki/projects/client.md", range: { startLine: 7, endLine: 7 } },
+          ],
+        },
+      ],
+      followups: [],
+      questions: [],
+      counts: { openTasks: 1, followups: 0, questions: 0 },
+    };
+    const plain = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(plain).not.toContain("why:");
+
+    const verbose = formatTodayResult(data, ASCII_CAPS, "/vault", { verbose: true });
+    const oneLineVerbose = verbose.replace(/\s+/g, " ");
+    expect(oneLineVerbose).toContain("why:");
+    expect(oneLineVerbose).toContain("overdue by 4d");
+    expect(oneLineVerbose).toContain("source-backed from wiki/projects/client.md:7");
+    expect(oneLineVerbose).toContain("carried-forward projection at wiki/dailies/2026-06-14.md:20");
+    expect(oneLineVerbose).toContain("attention discount 32%");
+    expect(oneLineVerbose).toContain("origin https://slk/p1");
+  });
+
   test("all-clear renders calm verdict with no tasks", () => {
     const data = {
       date: "2026-06-14",
