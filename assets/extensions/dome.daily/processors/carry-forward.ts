@@ -109,6 +109,13 @@ const carryForward = defineProcessorImplementation({
       settings,
       targetOpenItems,
       settledKeys,
+      // Settled rows are still part of today's visible work queue. Count them
+      // against the cap so checking items off contracts the surface instead of
+      // pulling fresh backlog into the vacated slots.
+      openLimit: Math.max(
+        0,
+        OPEN_LOOP_SURFACE_LIMIT - targetSettledItems.length,
+      ),
     });
     // Migration (one-time, idempotent): drop a legacy dome.daily:start-context
     // block from TODAY's daily in the same patch that ensures the unified
@@ -166,8 +173,16 @@ async function collectOpenLoopSources(input: {
   readonly settings: DailyPathSettings;
   readonly targetOpenItems: ReadonlyArray<DailyOpenLoopSource>;
   readonly settledKeys: SettledOpenLoopKeys;
+  readonly openLimit: number;
 }): Promise<ReadonlyArray<DailyOpenLoopSource>> {
-  const { ctx, targetPath, settings, targetOpenItems, settledKeys } = input;
+  const {
+    ctx,
+    targetPath,
+    settings,
+    targetOpenItems,
+    settledKeys,
+    openLimit,
+  } = input;
   const items: DailyOpenLoopCandidate[] = [];
   const itemByIdentity = new Map<string, DailyOpenLoopCandidate>();
   // Attention discounting (task-lifecycle §"Attention discounting"): items
@@ -210,7 +225,8 @@ async function collectOpenLoopSources(input: {
   return mergeRetainedOpenLoops({
     retainedItems: targetOpenItems,
     itemByIdentity,
-    rankedItems: rankDailyOpenLoopSurfaceItems(items, OPEN_LOOP_SURFACE_LIMIT),
+    rankedItems: rankDailyOpenLoopSurfaceItems(items, openLimit),
+    limit: openLimit,
   });
 }
 
@@ -285,13 +301,14 @@ function mergeRetainedOpenLoops(input: {
   readonly retainedItems: ReadonlyArray<DailyOpenLoopSource>;
   readonly itemByIdentity: ReadonlyMap<string, DailyOpenLoopCandidate>;
   readonly rankedItems: ReadonlyArray<DailyOpenLoopSource>;
+  readonly limit: number;
 }): ReadonlyArray<DailyOpenLoopSource> {
   const out: DailyOpenLoopSource[] = [];
   const identities = new Set<string>();
   const surfaceKeys = new Set<string>();
 
   const append = (item: DailyOpenLoopSource): void => {
-    if (out.length >= OPEN_LOOP_SURFACE_LIMIT) return;
+    if (out.length >= input.limit) return;
     const identity = openLoopIdentity(item);
     if (identities.has(identity)) return;
     const surfaceKey = openLoopSurfaceKey(item);

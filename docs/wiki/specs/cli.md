@@ -1466,10 +1466,13 @@ are evidence, not mutation targets. `dome.daily.task-index` treats those blocks
 as surfaces, not new sources: generated daily entries are skipped during fact
 extraction, but `today` and `prep` still read open source-backed rows as the
 target day's surface. Carry-forward keeps existing generated rows in place when
-their backing source item is still live, then fills any remaining slots from the
-freshly ranked candidate set. This gives the daily cockpit stable same-day
-ordering without letting completed or deleted source items linger. When the same
-loop also exists as an original project, meeting, capture, or prior-daily fact,
+their backing source item is still live, then fills initial empty slots from the
+freshly ranked candidate set. Same-day settled rows (`Resolved Today` /
+`Dismissed Today`) count against that day's surface cap, so checking items off
+contracts today's work queue instead of pulling new backlog into the vacated
+slots. This gives the daily cockpit stable same-day ordering without letting
+completed or deleted source items linger. When the same loop also exists as an
+original project, meeting, capture, or prior-daily fact,
 the view folds the rows together, counts the representative as `daily`, and keeps
 representative source refs for the daily surface plus the backing source.
 Rendered daily/prep/agenda rows use the compact `evidenceLabel` from that folded

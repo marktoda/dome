@@ -853,6 +853,24 @@ describe("dome.daily shared date helpers", () => {
     expect(ranked[0]?.sourcePath).toBe("wiki/projects/new.md");
   });
 
+  test("rankDailyOpenLoopSurfaceItems returns no rows when the cap is zero", () => {
+    const ranked = rankDailyOpenLoopSurfaceItems([
+      {
+        line: 2,
+        stableId: openLoopStableId({
+          sourcePath: "wiki/projects/overflow.md",
+          body: "Overflow row",
+        }),
+        body: "Overflow row",
+        followup: false,
+        sourcePath: "wiki/projects/overflow.md",
+        lastChangedAt: "2026-01-03T09:00:00.000Z",
+      },
+    ], 0);
+
+    expect(ranked).toEqual([]);
+  });
+
   test("openLoopFreshnessKey ranks daily notes by daily date", () => {
     const settings = dailyPathSettings({ daily_path: "notes/{date}.md" });
 

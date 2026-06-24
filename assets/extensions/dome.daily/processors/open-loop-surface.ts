@@ -364,6 +364,7 @@ export function rankDailyOpenLoopSurfaceItems(
   items: ReadonlyArray<DailyOpenLoopCandidate>,
   limit = 12,
 ): ReadonlyArray<DailyOpenLoopSource> {
+  if (limit <= 0) return Object.freeze([]);
   const seen = new Set<string>();
   const seenSurface = new Set<string>();
   const out: DailyOpenLoopSource[] = [];

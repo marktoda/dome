@@ -90,6 +90,13 @@ Every generated block that may appear in a daily note, with its writer, reader, 
 | `dome.agent.brief:sources` | `## Start Here`, rendered last (after the questions/integrated blocks) | `dome.agent.brief` | deterministic — one italic record line (`_Sources: calendar ✓ · slack —_`; ✓ = the source day-file existed when the brief composed, — = absent), never model-written | every **successful** compose (05:30 cron + signal re-composes); the failure-stub path deliberately never writes it — a failed brief's recovery stays with its acknowledgeable question, never an automatic signal retry | Shipping. The wake-tick re-compose gate's entire state — §"Wake-tick choreography". |
 | `dome.daily:close` | `## Done` | `close-scaffold` (presence-gated: written ONLY when the block is absent) | deterministic (done candidates from today's settled surface + still-open count + story pointer — never model prose, [[daily]] decision ledger 3) | 21:30 (schedule-only) | Shipping. The Close — §"The close block". |
 
+`dome.daily:open-loops` is a bounded work queue, not an infinite cleanup
+stream. On first render, carry-forward fills the open section from the ranked
+source-backed candidate set. During the same day, resolved/dismissed rows that
+the human leaves in the generated block count against the same cap, so settling
+an item shrinks the open section instead of backfilling a fresh backlog item into
+the vacated slot.
+
 Brief blocks render plain `-` bullets only — never `- [ ]` checkboxes, which the task extractors would re-ingest as new tasks.
 
 ### The one yesterday block (D2)
