@@ -282,7 +282,7 @@ describe("adopt — capability-use recording (Phase 6)", () => {
     expect(use.resource).toBe("wiki/seed.md");
   });
 
-  test("no ledger wired → adoption runs normally; no capability_uses written", async () => {
+  test("adopt records capability_uses only on the threaded ledger (an unthreaded ledger sees nothing)", async () => {
     const f = await makeFixture();
     fixtures.push(f);
     // A separate ledger threaded through `adopt`, so the fixture's own ledger

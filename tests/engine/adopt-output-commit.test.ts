@@ -115,7 +115,7 @@ describe("adopt — output_commit back-fill (Phase 6 polish)", () => {
     expect(queryRuns(f.ledger).length).toBe(0);
   });
 
-  test("no ledger wired → no updateOutputCommit attempted (no throw)", async () => {
+  test("diagnostic-only adoption → no updateOutputCommit attempted (no throw)", async () => {
     const f = await makeFixture();
     fixtures.push(f);
     const sha = await currentSha(f.vault.path);

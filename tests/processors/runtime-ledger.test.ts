@@ -40,7 +40,6 @@ import type { ExecutionPolicyCap } from "../../src/processors/execution-policy";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
 import { capabilityUsesByRun } from "../../src/ledger/capability-uses";
 import { queryRuns, type RunId } from "../../src/ledger/runs";
-import { openTestLedger } from "../support/test-ledger";
 
 // Stub EngineVault — the runtime never touches it.
 const STUB_VAULT: EngineVault = {
@@ -771,55 +770,4 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     expect(rows[0]?.status).toBe("timed_out");
   });
 
-  test("no ledger wired (Phase 6 transitional) — runs proceed and no rows are written", async () => {
-    // Open a separate ledger purely to assert the OTHER ledger sees nothing
-    // (no shared state between the two ledger files).
-    const witnessLedger = await openLedger();
-    // The runtime gets its own independent in-memory ledger, so the
-    // witness (the file-backed ledger above) still sees zero rows.
-    const runtimeLedger = await openTestLedger();
-
-    const p = makeFixtureProcessor({
-      id: "test.no-ledger",
-      phase: "adoption",
-      triggers: [{ kind: "signal", name: "file.created" }],
-      emitsEffects: [
-        diagnosticEffect({
-          severity: "info",
-          code: "test.fired",
-          message: "fired",
-          sourceRefs: [],
-        }),
-      ],
-    });
-
-    // Build a runtime WITHOUT a ledger.
-    const reg = buildRegistry([p]);
-    if (!reg.ok) throw new Error(`registry build failed: ${reg.error.kind}`);
-    const rt = buildRuntime({
-      registry: reg.value,
-      resolveGrants: () => [READ_WIKI],
-      extensionIdFor: (id) => id,
-      resolveTree: async () => TREE,
-      ledger: runtimeLedger,
-    });
-
-    const results = await rt.adoptionRunner({
-      vault: STUB_VAULT,
-      candidate: CANDIDATE,
-      changedPaths: ["wiki/a.md"],
-      signals: [SIGNAL_CREATED],
-      iteration: 1,
-      proposal,
-    });
-
-    expect(results.length).toBe(1);
-    // runId is still populated (the fallback `makeRunContext` path).
-    expect(typeof results[0]?.runId).toBe("string");
-    expect(results[0]?.runId.startsWith("run_")).toBe(true);
-
-    // No rows in the witness ledger (it was never wired in).
-    expect(queryRuns(witnessLedger).length).toBe(0);
-    runtimeLedger.close();
-  });
 });

@@ -53,9 +53,8 @@
 //     outbound `AdoptionPhaseRunner` type), pure types from `../core/`,
 //     the adopted-ref read/write chokepoint from `../adopted-ref`, the
 //     git boundary from `../git`, the run-ledger handle + capability-use
-//     accessor from `../ledger/` (Phase 6 — optional, threaded only when
-//     the caller wires a ledger), and the `EngineVault` type from
-//     `./vault-shape`.
+//     accessor from `../ledger/` (required — every adoption run is
+//     ledgered), and the `EngineVault` type from `./vault-shape`.
 //     Note: `../run-context.makeRunContext` was previously imported to
 //     mint per-effect run ids; the runtime now owns run-id allocation and
 //     surfaces it on `RunnerResult.runId`, removing that dependency here.
@@ -247,9 +246,9 @@ export async function adopt(opts: {
    * runtime allocates the run id and surfaces it on `RunnerResult.runId`,
    * which is what the engine uses to join the capability-use rows.
    *
-   * Optional during the Phase 6 transition: callers that pass a runtime
-   * without a ledger pass no ledger here either, and the loop runs as in
-   * Phase 5 (no ledger writes). Phase 7+ wires both end-to-end.
+   * Required: every adoption run is ledgered (the engine is never built
+   * without a ledger), so this is the structural enforcer of
+   * [[EVERY_PROCESSOR_RUN_IS_LEDGERED]].
    */
   readonly ledger: LedgerDb;
   /**
