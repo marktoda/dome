@@ -21,22 +21,20 @@ import type { AdoptionResult, Proposal } from "../../core/proposal";
 import type { CommitOid } from "../../core/source-ref";
 import type { LedgerDb } from "../../ledger/db";
 import type { QuestionRecord } from "../../projections/questions";
-import {
-  dispatchOneProcessor,
-  makeSnapshot,
-} from "../../processors/runtime";
 import type { ExecutionPolicyCap } from "../../processors/execution-policy";
 import type { ProcessorExecutionState } from "../../processors/execution-state";
 import type { ProcessorRegistry } from "../../processors/registry";
 import type { TriggerMatch } from "../../processors/triggers";
 import type { ApplyEffectSinks } from "../core/apply-effect";
-import { resolveCurrentAdopted } from "../core/adoption-status";
 import {
   applyPatchToCandidate,
   type ApplyPatchInput,
 } from "../core/apply-patch";
 import { recordDiagnosticsViaSink } from "../core/diagnostics";
-import { routeGardenRunEffects } from "../garden/garden-run-routing";
+import {
+  dispatchGardenRun,
+  type GardenRunDeps,
+} from "../garden/garden-run";
 import type { ModelProvider, ModelStepProvider } from "../core/model-invoke";
 import type {
   RunId,
@@ -187,71 +185,64 @@ async function runAnswerHandlersInner(opts: {
   const applyGardenPatch =
     opts.applyGardenPatchToCandidate ?? applyPatchToCandidate;
 
-  for (const candidate of candidates) {
-    const inputAdopted = resolveCurrentAdopted(opts.currentAdopted, opts.adopted);
-    const snapshot = await makeSnapshot(
-      opts.vault.path,
-      inputAdopted,
-      opts.resolveTree,
-    );
-    const result = await dispatchOneProcessor<AnswerRunInput>({
-      processor: candidate.processor,
-      phase: "garden",
-      envelope: Object.freeze({
-        kind: "answer" as const,
-        questionId: opts.question.id,
-        question: opts.question.effect,
-        answer: opts.question.answer,
-        answeredAt: opts.question.answeredAt,
-        matchedTriggers: candidate.matches,
-      }),
-      snapshot,
-      changedPaths: Object.freeze([]),
-      proposal: null,
-      inputCommit: inputAdopted,
-      matches: candidate.matches,
-      resolveGrants: opts.resolveGrants,
-      extensionIdFor: opts.extensionIdFor,
-      ledger: opts.ledger,
-      ...(opts.executionState !== undefined
-        ? { executionState: opts.executionState }
-        : {}),
-      ...(opts.executionCap !== undefined
-        ? { executionCap: opts.executionCap }
-        : {}),
-      ...(opts.modelProvider !== undefined
-        ? { modelProvider: opts.modelProvider }
-        : {}),
-      ...(opts.modelStepProvider !== undefined
-        ? { modelStepProvider: opts.modelStepProvider }
-        : {}),
-      ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
-    });
+  // The shared dispatch+route plumbing every answer handler forwards verbatim;
+  // dispatchGardenRun owns the snapshot + dispatch + route envelope. Answer
+  // handlers are not tied to a user-drift Proposal (proposal_id = NULL).
+  const gardenRunDeps: GardenRunDeps = {
+    vault: opts.vault,
+    adopted: opts.adopted,
+    ...(opts.currentAdopted !== undefined
+      ? { currentAdopted: opts.currentAdopted }
+      : {}),
+    resolveTree: opts.resolveTree,
+    sinks: opts.sinks,
+    resolveGrants: opts.resolveGrants,
+    extensionIdFor: opts.extensionIdFor,
+    ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
+    ...(opts.executionState !== undefined
+      ? { executionState: opts.executionState }
+      : {}),
+    ...(opts.executionCap !== undefined
+      ? { executionCap: opts.executionCap }
+      : {}),
+    ...(opts.modelProvider !== undefined
+      ? { modelProvider: opts.modelProvider }
+      : {}),
+    ...(opts.modelStepProvider !== undefined
+      ? { modelStepProvider: opts.modelStepProvider }
+      : {}),
+    ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
+    applyGardenPatch,
+    ...(opts.adoptSubProposal !== undefined
+      ? { adoptSubProposal: opts.adoptSubProposal }
+      : {}),
+  };
 
-    const routed = await routeGardenRunEffects({
-      result,
-      vault: opts.vault,
-      adopted: inputAdopted,
-      ...(opts.currentAdopted !== undefined
-        ? { currentAdopted: opts.currentAdopted }
-        : {}),
-      proposalId: null,
-      sinks: opts.sinks,
-      diagnostics,
-      applyGardenPatch,
-      extensionIdFor: opts.extensionIdFor,
-      ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
-      ...(opts.adoptSubProposal !== undefined
-        ? { adoptSubProposal: opts.adoptSubProposal }
-        : {}),
-      disabledDiagnostic: {
-        code: "answer.garden-sub-proposal-spawn-disabled",
-        message:
-          `Answer handler ${result.processorId} emitted an authorized ` +
-          `PatchEffect, but no adoptSubProposal callback was wired; ` +
-          `patch dropped.`,
+  for (const candidate of candidates) {
+    const { result, routing: routed } = await dispatchGardenRun(
+      gardenRunDeps,
+      {
+        processor: candidate.processor,
+        phase: "garden",
+        envelope: Object.freeze({
+          kind: "answer" as const,
+          questionId: opts.question.id,
+          question: opts.question.effect,
+          answer: opts.question.answer,
+          answeredAt: opts.question.answeredAt,
+          matchedTriggers: candidate.matches,
+        }),
+        matches: candidate.matches,
+        disabledDiagnostic: {
+          code: "answer.garden-sub-proposal-spawn-disabled",
+          message:
+            `Answer handler ${candidate.processor.id} emitted an authorized ` +
+            `PatchEffect, but no adoptSubProposal callback was wired; ` +
+            `patch dropped.`,
+        },
       },
-    });
+      diagnostics,
+    );
     subProposalCount += routed.spawnedPatchCount;
     rejectedPatchCount += routed.rejectedPatchCount;
 
