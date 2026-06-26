@@ -1,3 +1,4 @@
+import type { StatusReason } from "./attention-reasons";
 import {
   questionResolutionDescription,
   resolveQuestionCommand,
@@ -16,13 +17,18 @@ export function formatCliNextAction(action: CliNextAction): string {
   return `${action.command} - ${action.description}`;
 }
 
-const DIRTY_REASONS = Object.freeze(["dirty_modified", "dirty_untracked"]);
-const SYNC_REASONS = Object.freeze([
+// Status-path reason buckets. Typed to the closed StatusReason vocabulary so a
+// stray or misspelled code is a compile error here, not a silent miss.
+const DIRTY_REASONS: ReadonlyArray<StatusReason> = Object.freeze([
+  "dirty_modified",
+  "dirty_untracked",
+]);
+const SYNC_REASONS: ReadonlyArray<StatusReason> = Object.freeze([
   "sync_needed",
   "projection_stale",
   "outbox_pending",
 ]);
-const CHECK_REASONS = Object.freeze([
+const CHECK_REASONS: ReadonlyArray<StatusReason> = Object.freeze([
   "pending_runs",
   "failed_runs",
   "diagnostics",
@@ -30,7 +36,9 @@ const CHECK_REASONS = Object.freeze([
   "outbox_failed",
   "quarantined",
 ]);
-const CAPTURE_REASONS = Object.freeze(["capture_loop_inactive"]);
+const CAPTURE_REASONS: ReadonlyArray<StatusReason> = Object.freeze([
+  "capture_loop_inactive",
+]);
 
 const SYNC_RETRY_REASONS = Object.freeze([
   "compiler_host_busy",
@@ -52,7 +60,7 @@ const SYNC_CHECK_REASONS = Object.freeze([
 
 export function nextActionsForStatus(
   input: {
-    readonly attention: ReadonlyArray<string>;
+    readonly attention: ReadonlyArray<StatusReason>;
     readonly dirtyModified?: number;
     readonly dirtyUntracked?: number;
     readonly dirtyModifiedPaths?: ReadonlyArray<string>;
