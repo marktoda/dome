@@ -15,9 +15,15 @@
 
 import { formatJson } from "../surface/format";
 import {
-  runStructuredViewCommand,
-  structuredViewBrokerMessages,
-} from "../surface/view";
+  catalogViewProblemExitCode,
+  catalogViewProblemMessage,
+  dispatchView,
+  vaultOpenFailureMessage,
+  type CatalogViewProblem,
+  type ViewRenderer,
+} from "../surface/adapter";
+import { resolveVaultPath } from "../surface/resolve-vault";
+import { structuredViewBrokerMessages } from "../surface/view";
 import type { FirstPartyViewEntry } from "../surface/view-catalog";
 import {
   printViewCommandError,
@@ -50,27 +56,109 @@ export type CliStructuredViewOptions<TPayload = unknown> = {
   readonly successExitCode?: (data: TPayload) => number;
 };
 
+/**
+ * The CLI stderr lines for a catalog-view problem. `no-structured-result`
+ * keeps the per-caller override wording; `processor-failed` expands the
+ * execution error + each diagnostic into its own line (the multi-line output
+ * the structured CLI verbs have always emitted); everything else is the single
+ * shared operator line. Exported for byte-identity unit coverage.
+ */
+export function cliProblemMessages<TPayload>(
+  commandLabel: string,
+  entry: FirstPartyViewEntry<TPayload>,
+  problem: CatalogViewProblem,
+  noStructuredResultMessage: string,
+): ReadonlyArray<string> {
+  if (problem.kind === "no-structured-result") {
+    return [noStructuredResultMessage];
+  }
+  const messages = [catalogViewProblemMessage(commandLabel, entry, problem)];
+  if (problem.kind === "processor-failed") {
+    if (problem.executionError !== null) {
+      messages.push(
+        `${commandLabel}: ${problem.executionError.code}: ${problem.executionError.message}`,
+      );
+    }
+    for (const d of problem.diagnostics) {
+      messages.push(
+        `${commandLabel}: diagnostic [${d.severity}] ${d.code}: ${d.message}`,
+      );
+    }
+  }
+  return messages;
+}
+
+/** The CLI error-rendering seam: prints to its channel, returns the exit code. */
+function cliViewRenderer<TPayload>(opts: {
+  readonly commandLabel: string;
+  readonly entry: FirstPartyViewEntry<TPayload>;
+  readonly json: boolean;
+  readonly noStructuredResultMessage: string;
+}): ViewRenderer<number> {
+  return {
+    openFailed: (error) => {
+      printViewCommandError({
+        commandLabel: opts.commandLabel,
+        json: opts.json,
+        messages: [vaultOpenFailureMessage(opts.commandLabel, error)],
+      });
+      return error.kind === "not-a-vault" ? 64 : 1;
+    },
+    problem: (problem) => {
+      printViewCommandError({
+        commandLabel: opts.commandLabel,
+        json: opts.json,
+        messages: cliProblemMessages(
+          opts.commandLabel,
+          opts.entry,
+          problem,
+          opts.noStructuredResultMessage,
+        ),
+      });
+      return catalogViewProblemExitCode(problem);
+    },
+  };
+}
+
 export async function runCliStructuredView<TPayload>(
   opts: CliStructuredViewOptions<TPayload>,
 ): Promise<number> {
   try {
-    const run = await runStructuredViewCommand({
-      commandLabel: opts.commandLabel,
-      entry: opts.entry,
-      commandArgs: opts.commandArgs,
-      vault: opts.vault,
-      bundlesRoot: opts.bundlesRoot,
-      noStructuredResultMessage: opts.noStructuredResultMessage,
-    });
-
-    if (run.kind === "error") {
+    let run;
+    try {
+      run = await dispatchView(
+        {
+          path: resolveVaultPath(opts.vault),
+          bundlesRoot: opts.bundlesRoot,
+        },
+        opts.entry,
+        opts.commandArgs,
+        cliViewRenderer({
+          commandLabel: opts.commandLabel,
+          entry: opts.entry,
+          json: opts.json,
+          noStructuredResultMessage: opts.noStructuredResultMessage,
+        }),
+      );
+    } catch (e) {
+      // Preserve the prior two-tier catch: an unexpected throw *during view
+      // execution* renders as the generic `view-command-failed` envelope (no
+      // `error` tag), distinct from the caller's `<name>-failed` tag reserved
+      // for the outer rendering catch below.
+      const msg = e instanceof Error ? e.message : String(e);
       printViewCommandError({
         commandLabel: opts.commandLabel,
         json: opts.json,
-        messages: run.messages,
+        messages: [`${opts.commandLabel}: failed: ${msg}`],
       });
-      return run.exitCode;
+      return 1;
     }
+
+    if (run.kind === "rendered") {
+      // The renderer already printed; the envelope is the exit code.
+      return run.envelope;
+    }
+
     printViewCommandMessages(
       structuredViewBrokerMessages(opts.commandLabel, run.brokerDiagnostics),
     );
