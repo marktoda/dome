@@ -43,7 +43,7 @@
     "gray-matter": "^4.0.3",
     "isomorphic-git": "^1.27.0",
     "picocolors": "^1.1.1",
-    "string-width": "^7",
+    "string-width": "^8",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
