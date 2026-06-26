@@ -30,22 +30,20 @@ import {
 } from "../../projections/jobs";
 import type { ProjectionDb } from "../../projections/db";
 import type { ProcessorRegistry } from "../../processors/registry";
-import {
-  dispatchOneProcessor,
-  makeSnapshot,
-} from "../../processors/runtime";
 import type { ExecutionPolicyCap } from "../../processors/execution-policy";
 import type { ProcessorExecutionState } from "../../processors/execution-state";
 import type { ModelProvider, ModelStepProvider } from "../core/model-invoke";
 import type { TriggerMatch } from "../../processors/triggers";
 import type { ApplyEffectSinks } from "../core/apply-effect";
-import { resolveCurrentAdopted } from "../core/adoption-status";
 import {
   applyPatchToCandidate,
   type ApplyPatchInput,
 } from "../core/apply-patch";
 import { recordDiagnosticsViaSink } from "../core/diagnostics";
-import { routeGardenRunEffects } from "../garden/garden-run-routing";
+import {
+  dispatchGardenRun,
+  type GardenRunDeps,
+} from "../garden/garden-run";
 import type { RunId } from "../core/runner-contract";
 import type { EngineVault } from "../core/vault-shape";
 
@@ -187,38 +185,23 @@ async function runOneJob(opts: {
   readonly diagnostics: DiagnosticEffect[];
   readonly applyGardenPatch: (opts: ApplyPatchInput) => Promise<CommitOid | null>;
 }): Promise<JobDrainSummary> {
-  const inputAdopted = resolveCurrentAdopted(opts.currentAdopted, opts.adopted);
-  const snapshot = await makeSnapshot(
-    opts.vault.path,
-    inputAdopted,
-    opts.resolveTree,
-  );
-  const matches: ReadonlyArray<TriggerMatch> = Object.freeze([
-    Object.freeze({
-      trigger: Object.freeze({
-        kind: "job" as const,
-        idempotencyKey: opts.job.idempotencyKey,
-      }),
-      matchedSignals: Object.freeze([]),
-    }),
-  ]);
-
-  const result = await dispatchOneProcessor({
-    processor: opts.processor,
-    phase: "garden",
-    envelope: opts.job.input,
-    snapshot,
-    changedPaths: Object.freeze([]),
-    proposal: null,
-    inputCommit: inputAdopted,
-    matches,
+  // The shared dispatch+route plumbing; dispatchGardenRun owns the snapshot +
+  // dispatch + route envelope. Queued jobs are not tied to a user-drift
+  // Proposal (proposal_id = NULL).
+  const gardenRunDeps: GardenRunDeps = {
+    vault: opts.vault,
+    adopted: opts.adopted,
+    ...(opts.currentAdopted !== undefined
+      ? { currentAdopted: opts.currentAdopted }
+      : {}),
+    resolveTree: opts.resolveTree,
+    sinks: opts.sinks,
     resolveGrants: opts.resolveGrants,
     extensionIdFor: opts.extensionIdFor,
     ...(opts.extensionConfigFor !== undefined
       ? { extensionConfigFor: opts.extensionConfigFor }
       : {}),
-    ledger: opts.ledger,
-    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+    ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
     ...(opts.executionState !== undefined
       ? { executionState: opts.executionState }
       : {}),
@@ -232,33 +215,41 @@ async function runOneJob(opts: {
       ? { modelStepProvider: opts.modelStepProvider }
       : {}),
     ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
-  });
-
-  await routeGardenRunEffects({
-    result,
-    vault: opts.vault,
-    adopted: inputAdopted,
-    ...(opts.currentAdopted !== undefined
-      ? { currentAdopted: opts.currentAdopted }
-      : {}),
-    proposalId: null,
-    sinks: opts.sinks,
-    diagnostics: opts.diagnostics,
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+    now: opts.now,
     applyGardenPatch: opts.applyGardenPatch,
-    extensionIdFor: opts.extensionIdFor,
-    ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
     ...(opts.adoptSubProposal !== undefined
       ? { adoptSubProposal: opts.adoptSubProposal }
       : {}),
-    now: opts.now,
-    disabledDiagnostic: {
-      code: "jobs.garden-sub-proposal-spawn-disabled",
-      message:
-        `Queued job processor ${result.processorId} emitted an authorized ` +
-        `PatchEffect, but no adoptSubProposal callback was wired; ` +
-        `patch dropped.`,
+  };
+
+  const matches: ReadonlyArray<TriggerMatch> = Object.freeze([
+    Object.freeze({
+      trigger: Object.freeze({
+        kind: "job" as const,
+        idempotencyKey: opts.job.idempotencyKey,
+      }),
+      matchedSignals: Object.freeze([]),
+    }),
+  ]);
+
+  const { result } = await dispatchGardenRun(
+    gardenRunDeps,
+    {
+      processor: opts.processor,
+      phase: "garden",
+      envelope: opts.job.input,
+      matches,
+      disabledDiagnostic: {
+        code: "jobs.garden-sub-proposal-spawn-disabled",
+        message:
+          `Queued job processor ${opts.processor.id} emitted an authorized ` +
+          `PatchEffect, but no adoptSubProposal callback was wired; ` +
+          `patch dropped.`,
+      },
     },
-  });
+    opts.diagnostics,
+  );
 
   if (result.executionStatus === "succeeded") {
     markJobSucceeded(opts.projection, opts.job.id, opts.now());
