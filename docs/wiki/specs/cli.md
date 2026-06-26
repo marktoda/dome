@@ -762,7 +762,11 @@ agent can safely follow. Current reasons include `adopted_ref_diverged`,
 `pending_runs`, `failed_runs`, `serve_stale`, `service_not_loaded`,
 `model_provider_unreachable`, `diagnostics`, `questions`,
 `outbox_pending`, `outbox_failed`, `quarantined`, and
-`capture_loop_inactive`. `adopted_ref_diverged` routes to `dome reanchor`
+`capture_loop_inactive`. This set is closed: the `StatusReason` union in
+`src/surface/attention-reasons.ts` is its canonical inventory, and the emitter
+(`statusAttention`), the next-action buckets, and the CLI signal painter are all
+type-checked against it, so a code cannot be added or removed without the
+compiler flagging every site that must react. `adopted_ref_diverged` routes to `dome reanchor`
 (inspect first; see [[wiki/gotchas/adopted-ref-divergence]]);
 `service_not_loaded` routes to `dome restart`; `model_provider_unreachable`
 routes to `dome doctor --json`. Dirty reasons include bounded path samples in

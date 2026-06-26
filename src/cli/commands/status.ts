@@ -12,6 +12,7 @@ import {
   type RunStatusOptions,
   type StatusSnapshot,
 } from "../../surface/status";
+import type { StatusReason } from "../../surface/attention-reasons";
 import type {
   DiagnosticDispositionSummary,
   DiagnosticMessageSummary,
@@ -35,6 +36,7 @@ import {
   type Caps,
   type KvRow,
   type Status,
+  type Tone,
 } from "../presenter";
 import { freshnessTone, syncTone } from "./status-tone";
 import {
@@ -242,60 +244,90 @@ function printStatusText(
 
 // ----- signal-only helpers --------------------------------------------------
 
-type SignalEntry = { label: string; tone: import("../presenter").Tone; detail: string };
+// Attention reasons fold into a small set of display slots — `dirty_modified`
+// and `dirty_untracked` are both "draft"; `pending_runs`/`failed_runs` are both
+// "runs". `SLOT_BY_REASON` is the single source of that grouping, read in
+// opposite directions by the attention-row painter (reason → slot) and the
+// healthy rollup (a slot is healthy when no reason flags it). A Record keyed by
+// the closed `StatusReason` union is exhaustive by construction: adding a code
+// breaks the build until it is placed in a slot.
+type SignalSlotId =
+  | "sync"
+  | "projection"
+  | "draft"
+  | "runs"
+  | "outbox"
+  | "diagnostics"
+  | "questions"
+  | "serve"
+  | "service"
+  | "model"
+  | "quarantine"
+  | "inbox";
+
+const SLOT_BY_REASON: Record<StatusReason, SignalSlotId> = {
+  sync_needed: "sync",
+  adopted_ref_diverged: "sync",
+  projection_stale: "projection",
+  dirty_modified: "draft",
+  dirty_untracked: "draft",
+  pending_runs: "runs",
+  failed_runs: "runs",
+  outbox_pending: "outbox",
+  outbox_failed: "outbox",
+  diagnostics: "diagnostics",
+  questions: "questions",
+  serve_stale: "serve",
+  service_not_loaded: "service",
+  model_provider_unreachable: "model",
+  quarantined: "quarantine",
+  capture_loop_inactive: "inbox",
+};
+
+// Per-slot signal row (tone + detail). The first five reuse the same
+// `syncTone`/`freshnessTone`/… helpers the verbose "at a glance" rows use, so
+// the two presentations can't disagree on a slot's tone. Keyed by slot, so
+// every slot has a renderer (exhaustive by construction).
+const SLOT_SIGNAL: Record<SignalSlotId, (s: StatusSnapshot, caps: Caps) => Status> = {
+  sync: (s) => syncTone(s),
+  projection: (s) => freshnessTone(s),
+  draft: (s) => draftStatus(s),
+  diagnostics: (s) => diagnosticStatus(s),
+  serve: (s) => serveStatus(s),
+  questions: (s) => ({ tone: "warn", label: String(s.questions) }),
+  runs: (s, caps) => ({
+    tone: "warn",
+    label: dimZeros([`${formatPendingRuns(s)} pending`, `${s.failed_runs} failed`], caps),
+  }),
+  outbox: (s, caps) => ({
+    tone: "warn",
+    label: dimZeros([`${s.outbox_pending} pending`, `${s.outbox_failed} failed`], caps),
+  }),
+  quarantine: (s) => ({ tone: "warn", label: String(s.quarantined) }),
+  service: () => ({ tone: "warn", label: "installed, not loaded" }),
+  model: (s) => ({
+    tone: "warn",
+    label: `probe ${s.model_provider_probe_status ?? "failed"}`,
+  }),
+  inbox: () => ({ tone: "warn", label: "capture loop inactive" }),
+};
+
+type SignalEntry = { label: string; tone: Tone; detail: string };
 
 /**
- * Map each attention reason to a { label, tone, detail } triple. Reasons that
- * belong to the same display row (e.g. dirty_modified + dirty_untracked both
- * map to "draft") are de-duped: first occurrence wins.
+ * Group flagged attention reasons into display rows. Reasons sharing a slot
+ * collapse to one row (first occurrence wins); order follows `s.attention`.
  */
 function attentionSignalEntries(s: StatusSnapshot, caps: Caps): ReadonlyArray<SignalEntry> {
-  const seen = new Set<string>();
+  const seen = new Set<SignalSlotId>();
   const entries: SignalEntry[] = [];
-
-  function add(label: string, tone: import("../presenter").Tone, detail: string): void {
-    if (seen.has(label)) return;
-    seen.add(label);
-    entries.push({ label, tone, detail });
-  }
-
   for (const reason of s.attention) {
-    if (reason === "sync_needed" || reason === "adopted_ref_diverged") {
-      const st = syncTone(s);
-      add("sync", st.tone as import("../presenter").Tone, st.label);
-    } else if (reason === "projection_stale") {
-      const st = freshnessTone(s);
-      add("projection", st.tone as import("../presenter").Tone, st.label);
-    } else if (reason === "dirty_modified" || reason === "dirty_untracked") {
-      const st = draftStatus(s);
-      add("draft", st.tone as import("../presenter").Tone, st.label);
-    } else if (reason === "diagnostics") {
-      const st = diagnosticStatus(s);
-      add("diagnostics", st.tone as import("../presenter").Tone, formatDiagnosticCount(s));
-    } else if (reason === "questions") {
-      add("questions", "warn", String(s.questions));
-    } else if (reason === "serve_stale") {
-      const st = serveStatus(s);
-      add("serve", st.tone as import("../presenter").Tone, st.label);
-    } else if (reason === "pending_runs" || reason === "failed_runs") {
-      add("runs", "warn", dimZeros([`${formatPendingRuns(s)} pending`, `${s.failed_runs} failed`], caps));
-    } else if (reason === "outbox_pending" || reason === "outbox_failed") {
-      add("outbox", "warn", dimZeros([`${s.outbox_pending} pending`, `${s.outbox_failed} failed`], caps));
-    } else if (reason === "quarantined") {
-      add("quarantine", "warn", String(s.quarantined));
-    } else if (reason === "service_not_loaded") {
-      add("service", "warn", "installed, not loaded");
-    } else if (reason === "model_provider_unreachable") {
-      add("model", "warn", `probe ${s.model_provider_probe_status ?? "failed"}`);
-    } else if (reason === "capture_loop_inactive") {
-      add("inbox", "warn", "capture loop inactive");
-    } else {
-      // Exhaustiveness guard: any unrecognised attention code must still
-      // produce a visible row so the header count never exceeds rendered rows.
-      add(reason, "warn", "");
-    }
+    const slot = SLOT_BY_REASON[reason];
+    if (seen.has(slot)) continue;
+    seen.add(slot);
+    const signal = SLOT_SIGNAL[slot](s, caps);
+    entries.push({ label: slot, tone: signal.tone, detail: signal.label });
   }
-
   return entries;
 }
 
@@ -306,44 +338,40 @@ function buildAttentionSignals(s: StatusSnapshot, caps: Caps): ReadonlyArray<str
   return entries.map((e) => signalLine(e.tone, e.label, e.detail, labelWidth, caps));
 }
 
+// Slots shown in the healthy rollup, in display order. A slot is healthy when
+// no attention reason maps to it (the same `SLOT_BY_REASON` grouping the signal
+// rows use) and its visibility gate, if any, holds. Operational slots
+// (runs/outbox) only roll up once the vault has synced — otherwise they are all
+// zeroes and add noise; serve only when a host is expected.
+const HEALTHY_SLOTS: ReadonlyArray<{
+  readonly slot: SignalSlotId;
+  readonly visible?: (s: StatusSnapshot) => boolean;
+}> = [
+  { slot: "sync" },
+  { slot: "projection" },
+  { slot: "draft" },
+  { slot: "diagnostics" },
+  { slot: "questions" },
+  { slot: "serve", visible: (s) => s.serve_status !== "off" },
+  { slot: "runs", visible: (s) => s.last_sync !== null },
+  { slot: "outbox", visible: (s) => s.last_sync !== null },
+];
+
 /**
- * Return the display labels for categories that are NOT flagged in attention.
- * We track a fixed ordered set of logical "slots"; any slot not covered by
- * attention is considered healthy.
+ * Display labels for slots that are NOT flagged in attention — the inverse of
+ * `attentionSignalEntries`, derived from the same grouping so the two can't
+ * disagree on which reasons belong to which slot.
  */
 function buildHealthyLabels(s: StatusSnapshot): ReadonlyArray<string> {
-  const attentionSet = new Set(s.attention);
+  const flagged = new Set<SignalSlotId>(
+    s.attention.map((reason) => SLOT_BY_REASON[reason]),
+  );
   const healthy: string[] = [];
-
-  const syncFlagged = attentionSet.has("sync_needed") || attentionSet.has("adopted_ref_diverged");
-  if (!syncFlagged) healthy.push("sync");
-
-  const projFlagged = attentionSet.has("projection_stale");
-  if (!projFlagged) healthy.push("projection");
-
-  const draftFlagged = attentionSet.has("dirty_modified") || attentionSet.has("dirty_untracked");
-  if (!draftFlagged) healthy.push("draft");
-
-  const diagFlagged = attentionSet.has("diagnostics");
-  if (!diagFlagged) healthy.push("diagnostics");
-
-  const qFlagged = attentionSet.has("questions");
-  if (!qFlagged) healthy.push("questions");
-
-  const serveFlagged = attentionSet.has("serve_stale");
-  if (!serveFlagged && s.serve_status !== "off") healthy.push("serve");
-
-  // For operational categories (runs, outbox, quarantine), only show in
-  // healthy rollup when the vault has been synced (last_sync != null),
-  // otherwise they'll all just be zeroes and add noise.
-  if (s.last_sync !== null) {
-    const runsFlagged = attentionSet.has("pending_runs") || attentionSet.has("failed_runs");
-    if (!runsFlagged) healthy.push("runs");
-
-    const outboxFlagged = attentionSet.has("outbox_pending") || attentionSet.has("outbox_failed");
-    if (!outboxFlagged) healthy.push("outbox");
+  for (const { slot, visible } of HEALTHY_SLOTS) {
+    if (flagged.has(slot)) continue;
+    if (visible !== undefined && !visible(s)) continue;
+    healthy.push(slot);
   }
-
   return healthy;
 }
 
