@@ -1,14 +1,12 @@
-// surface/health-inputs: the runtime → collectHealthReport field mapping.
-//
-// `dome check` and `dome doctor` both build the same fifteen-field options
-// object from an open VaultRuntime; this helper owns the mapping once. Each
-// caller spreads the result and adds its own extras (probe input, orphan
-// threshold).
+// engine/host/health/inputs: build the HealthInputs context from an open
+// runtime. `dome check` and `dome doctor` both call this; each then sets its
+// own extras (probe input, commit-signing, thresholds). This bridge belongs at
+// the engine/host layer (runtime ↔ health), not in surface/.
+import type { VaultRuntime } from "../vault-runtime";
+import type { HealthInputs } from "./types";
 
-import type { VaultRuntime } from "../engine/host/vault-runtime";
-
-/** The shared `collectHealthReport` inputs derived from an open runtime. */
-export function runtimeHealthReportInputs(runtime: VaultRuntime) {
+/** The HealthInputs derived from an open runtime (callers add their extras). */
+export function healthInputsFromRuntime(runtime: VaultRuntime): HealthInputs {
   return {
     vaultPath: runtime.path,
     projection: runtime.projectionDb,
@@ -26,5 +24,6 @@ export function runtimeHealthReportInputs(runtime: VaultRuntime) {
     modelProviderConfigured: runtime.modelProvider !== undefined,
     externalHandlerTimeoutConfigured:
       runtime.config.engine.externalHandlerTimeoutMs !== undefined,
-  } as const;
+  };
 }
+
