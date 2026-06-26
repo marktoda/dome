@@ -10,40 +10,20 @@ import {
   diagnosticEffect,
   type DiagnosticEffect,
 } from "../../core/effect";
-import type {
-  AnswerTrigger,
-  Capability,
-  OperationalQueryView,
-  Processor,
-  TreeOid,
-} from "../../core/processor";
-import type { AdoptionResult, Proposal } from "../../core/proposal";
-import type { CommitOid } from "../../core/source-ref";
-import type { LedgerDb } from "../../ledger/db";
+import type { AnswerTrigger, Processor } from "../../core/processor";
 import type { QuestionRecord } from "../../projections/questions";
-import {
-  dispatchOneProcessor,
-  makeSnapshot,
-} from "../../processors/runtime";
-import type { ExecutionPolicyCap } from "../../processors/execution-policy";
-import type { ProcessorExecutionState } from "../../processors/execution-state";
 import type { ProcessorRegistry } from "../../processors/registry";
 import type { TriggerMatch } from "../../processors/triggers";
-import type { ApplyEffectSinks } from "../core/apply-effect";
-import { resolveCurrentAdopted } from "../core/adoption-status";
-import {
-  applyPatchToCandidate,
-  type ApplyPatchInput,
-} from "../core/apply-patch";
 import { recordDiagnosticsViaSink } from "../core/diagnostics";
-import { routeGardenRunEffects } from "../garden/garden-run-routing";
-import type { ModelProvider, ModelStepProvider } from "../core/model-invoke";
+import {
+  dispatchGardenRun,
+  type GardenRunDeps,
+} from "../garden/garden-run";
 import type {
   RunId,
   RunnerError,
   RunnerExecutionStatus,
 } from "../core/runner-contract";
-import type { EngineVault } from "../core/vault-shape";
 
 export type AnswerRunInput = {
   readonly kind: "answer";
@@ -71,32 +51,18 @@ export type AnswerHandlerResult = {
   readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
 };
 
-type AdoptAnswerSubProposalFn = (
-  proposal: Proposal,
-  cascadeDepth: number,
-) => Promise<AdoptionResult>;
 
-export async function runAnswerHandlers(opts: {
-  readonly vault: EngineVault;
-  readonly adopted: CommitOid;
+// Answer-handler extras on top of the shared garden-run plumbing. Answer runs
+// carry no `now`/`signal`; the bag has both optional. `opts` is forwarded to
+// dispatchGardenRun untouched (opts ⊇ GardenRunDeps).
+type AnswerHandlerOptions = GardenRunDeps & {
   readonly registry: ProcessorRegistry;
   readonly question: QuestionRecord;
-  readonly sinks: ApplyEffectSinks;
-  readonly resolveTree: (commit: CommitOid) => Promise<TreeOid>;
-  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
-  readonly extensionIdFor: (processorId: string) => string;
-  readonly ledger?: LedgerDb;
-  readonly executionState?: ProcessorExecutionState;
-  readonly executionCap?: ExecutionPolicyCap;
-  readonly modelProvider?: ModelProvider;
-  readonly modelStepProvider?: ModelStepProvider;
-  readonly operational?: OperationalQueryView;
-  readonly adoptSubProposal?: AdoptAnswerSubProposalFn;
-  readonly currentAdopted?: () => CommitOid;
-  readonly applyGardenPatchToCandidate?: (
-    opts: ApplyPatchInput,
-  ) => Promise<CommitOid | null>;
-}): Promise<AnswerHandlerResult> {
+};
+
+export async function runAnswerHandlers(
+  opts: AnswerHandlerOptions,
+): Promise<AnswerHandlerResult> {
   try {
     return await runAnswerHandlersInner(opts);
   } catch (e) {
@@ -138,27 +104,9 @@ export async function runAnswerHandlers(opts: {
   }
 }
 
-async function runAnswerHandlersInner(opts: {
-  readonly vault: EngineVault;
-  readonly adopted: CommitOid;
-  readonly registry: ProcessorRegistry;
-  readonly question: QuestionRecord;
-  readonly sinks: ApplyEffectSinks;
-  readonly resolveTree: (commit: CommitOid) => Promise<TreeOid>;
-  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
-  readonly extensionIdFor: (processorId: string) => string;
-  readonly ledger?: LedgerDb;
-  readonly executionState?: ProcessorExecutionState;
-  readonly executionCap?: ExecutionPolicyCap;
-  readonly modelProvider?: ModelProvider;
-  readonly modelStepProvider?: ModelStepProvider;
-  readonly operational?: OperationalQueryView;
-  readonly adoptSubProposal?: AdoptAnswerSubProposalFn;
-  readonly currentAdopted?: () => CommitOid;
-  readonly applyGardenPatchToCandidate?: (
-    opts: ApplyPatchInput,
-  ) => Promise<CommitOid | null>;
-}): Promise<AnswerHandlerResult> {
+async function runAnswerHandlersInner(
+  opts: AnswerHandlerOptions,
+): Promise<AnswerHandlerResult> {
   if (opts.question.answer === null || opts.question.answeredAt === null) {
     return frozenResult({
       questionId: opts.question.id,
@@ -184,74 +132,35 @@ async function runAnswerHandlersInner(opts: {
   const runs: AnswerHandlerRunSummary[] = [];
   let subProposalCount = 0;
   let rejectedPatchCount = 0;
-  const applyGardenPatch =
-    opts.applyGardenPatchToCandidate ?? applyPatchToCandidate;
 
+  // dispatchGardenRun owns the snapshot + dispatch + route envelope. Answer
+  // handlers are not tied to a user-drift Proposal (proposal_id = NULL); `opts`
+  // is forwarded as the garden-run deps untouched.
   for (const candidate of candidates) {
-    const inputAdopted = resolveCurrentAdopted(opts.currentAdopted, opts.adopted);
-    const snapshot = await makeSnapshot(
-      opts.vault.path,
-      inputAdopted,
-      opts.resolveTree,
-    );
-    const result = await dispatchOneProcessor<AnswerRunInput>({
-      processor: candidate.processor,
-      phase: "garden",
-      envelope: Object.freeze({
-        kind: "answer" as const,
-        questionId: opts.question.id,
-        question: opts.question.effect,
-        answer: opts.question.answer,
-        answeredAt: opts.question.answeredAt,
-        matchedTriggers: candidate.matches,
-      }),
-      snapshot,
-      changedPaths: Object.freeze([]),
-      proposal: null,
-      inputCommit: inputAdopted,
-      matches: candidate.matches,
-      resolveGrants: opts.resolveGrants,
-      extensionIdFor: opts.extensionIdFor,
-      ledger: opts.ledger,
-      ...(opts.executionState !== undefined
-        ? { executionState: opts.executionState }
-        : {}),
-      ...(opts.executionCap !== undefined
-        ? { executionCap: opts.executionCap }
-        : {}),
-      ...(opts.modelProvider !== undefined
-        ? { modelProvider: opts.modelProvider }
-        : {}),
-      ...(opts.modelStepProvider !== undefined
-        ? { modelStepProvider: opts.modelStepProvider }
-        : {}),
-      ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
-    });
-
-    const routed = await routeGardenRunEffects({
-      result,
-      vault: opts.vault,
-      adopted: inputAdopted,
-      ...(opts.currentAdopted !== undefined
-        ? { currentAdopted: opts.currentAdopted }
-        : {}),
-      proposalId: null,
-      sinks: opts.sinks,
-      diagnostics,
-      applyGardenPatch,
-      extensionIdFor: opts.extensionIdFor,
-      ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
-      ...(opts.adoptSubProposal !== undefined
-        ? { adoptSubProposal: opts.adoptSubProposal }
-        : {}),
-      disabledDiagnostic: {
-        code: "answer.garden-sub-proposal-spawn-disabled",
-        message:
-          `Answer handler ${result.processorId} emitted an authorized ` +
-          `PatchEffect, but no adoptSubProposal callback was wired; ` +
-          `patch dropped.`,
+    const { result, routing: routed } = await dispatchGardenRun(
+      opts,
+      {
+        processor: candidate.processor,
+        phase: "garden",
+        envelope: Object.freeze({
+          kind: "answer" as const,
+          questionId: opts.question.id,
+          question: opts.question.effect,
+          answer: opts.question.answer,
+          answeredAt: opts.question.answeredAt,
+          matchedTriggers: candidate.matches,
+        }),
+        matches: candidate.matches,
+        disabledDiagnostic: {
+          code: "answer.garden-sub-proposal-spawn-disabled",
+          message:
+            `Answer handler ${candidate.processor.id} emitted an authorized ` +
+            `PatchEffect, but no adoptSubProposal callback was wired; ` +
+            `patch dropped.`,
+        },
       },
-    });
+      diagnostics,
+    );
     subProposalCount += routed.spawnedPatchCount;
     rejectedPatchCount += routed.rejectedPatchCount;
 

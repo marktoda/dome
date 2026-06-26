@@ -91,7 +91,11 @@ export async function runOperationalWork(opts: {
   const outboxNow = opts.now();
   const outboxDrainCutoff = outboxNow;
 
-  const scheduler = await runScheduler({
+  // The scheduler and the queued-job drain take the identical operational
+  // runner plumbing — assemble it once instead of spreading the same ~15
+  // fields into both calls. A new runtime dependency is added here once, not
+  // in lockstep across two call blocks.
+  const operationalRunnerOptions = {
     vault: opts.vault,
     adopted: opts.adopted,
     registry: opts.registry,
@@ -128,46 +132,11 @@ export async function runOperationalWork(opts: {
     ...(opts.applyGardenPatchToCandidate !== undefined
       ? { applyGardenPatchToCandidate: opts.applyGardenPatchToCandidate }
       : {}),
-  });
+  };
 
-  const jobs = await runQueuedJobs({
-    vault: opts.vault,
-    adopted: opts.adopted,
-    registry: opts.registry,
-    projection: opts.projection,
-    sinks: opts.sinks,
-    resolveTree: opts.resolveTree,
-    now: opts.now,
-    resolveGrants: opts.resolveGrants,
-    extensionIdFor: opts.extensionIdFor,
-    ...(opts.extensionConfigFor !== undefined
-      ? { extensionConfigFor: opts.extensionConfigFor }
-      : {}),
-    ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
-    ...(opts.executionState !== undefined
-      ? { executionState: opts.executionState }
-      : {}),
-    ...(opts.executionCap !== undefined
-      ? { executionCap: opts.executionCap }
-      : {}),
-    ...(opts.modelProvider !== undefined
-      ? { modelProvider: opts.modelProvider }
-      : {}),
-    ...(opts.modelStepProvider !== undefined
-      ? { modelStepProvider: opts.modelStepProvider }
-      : {}),
-    ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
-    ...(opts.adoptSubProposal !== undefined
-      ? { adoptSubProposal: opts.adoptSubProposal }
-      : {}),
-    ...(opts.currentAdopted !== undefined
-      ? { currentAdopted: opts.currentAdopted }
-      : {}),
-    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-    ...(opts.applyGardenPatchToCandidate !== undefined
-      ? { applyGardenPatchToCandidate: opts.applyGardenPatchToCandidate }
-      : {}),
-  });
+  const scheduler = await runScheduler({ ...operationalRunnerOptions });
+
+  const jobs = await runQueuedJobs({ ...operationalRunnerOptions });
 
   const outbox = await dispatchPendingOutbox(opts.outbox, {
     handlers: opts.externalHandlers,

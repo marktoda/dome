@@ -14,32 +14,21 @@ import {
   markAnswerHandlersHandled,
 } from "../../answers/question-answers";
 import { diagnosticEffect, type DiagnosticEffect } from "../../core/effect";
-import type {
-  Capability,
-  OperationalQueryView,
-  TreeOid,
-} from "../../core/processor";
-import type { AdoptionResult, Proposal } from "../../core/proposal";
+import type { TreeOid } from "../../core/processor";
 import type { CommitOid } from "../../core/source-ref";
 import type { RuntimeQuestionAutoResolveConfig } from "../core/capability-policy";
-import type { LedgerDb } from "../../ledger/db";
 import type { ProjectionDb } from "../../projections/db";
 import {
   queryQuestionRecords,
   type QuestionRecord,
 } from "../../projections/questions";
-import type { ExecutionPolicyCap } from "../../processors/execution-policy";
-import type { ProcessorExecutionState } from "../../processors/execution-state";
 import type { ProcessorRegistry } from "../../processors/registry";
 import { makeSnapshot } from "../../processors/runtime";
-import type { ApplyEffectSinks } from "../core/apply-effect";
-import type { ApplyPatchInput } from "../core/apply-patch";
 import { resolveCurrentAdopted } from "../core/adoption-status";
 import { runAnswerHandlers } from "./answers";
+import type { GardenRunDeps } from "../garden/garden-run";
 import type { RunnerExecutionStatus } from "../core/runner-contract";
-import type { ModelProvider, ModelStepProvider } from "../core/model-invoke";
 import { answerQuestionDurably } from "./question-answer-recording";
-import type { EngineVault } from "../core/vault-shape";
 
 export type QuestionAutoResolutionResult = {
   readonly enabled: boolean;
@@ -50,36 +39,18 @@ export type QuestionAutoResolutionResult = {
   readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
 };
 
-type AdoptAutoAnswerSubProposalFn = (
-  proposal: Proposal,
-  cascadeDepth: number,
-) => Promise<AdoptionResult>;
 
-export async function runQuestionAutoResolution(opts: {
+type QuestionAutoResolutionOptions = GardenRunDeps & {
   readonly config: RuntimeQuestionAutoResolveConfig;
-  readonly vault: EngineVault;
-  readonly adopted: CommitOid;
   readonly registry: ProcessorRegistry;
   readonly projection: ProjectionDb;
   readonly answers: AnswersDb;
-  readonly sinks: ApplyEffectSinks;
-  readonly resolveTree: (commit: CommitOid) => Promise<TreeOid>;
   readonly now: () => Date;
-  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
-  readonly extensionIdFor: (processorId: string) => string;
-  readonly operational?: OperationalQueryView;
-  readonly ledger?: LedgerDb;
-  readonly executionState?: ProcessorExecutionState;
-  readonly executionCap?: ExecutionPolicyCap;
-  readonly modelProvider?: ModelProvider;
-  readonly modelStepProvider?: ModelStepProvider;
-  readonly adoptSubProposal?: AdoptAutoAnswerSubProposalFn;
-  readonly currentAdopted?: () => CommitOid;
-  readonly signal?: AbortSignal;
-  readonly applyGardenPatchToCandidate?: (
-    opts: ApplyPatchInput,
-  ) => Promise<CommitOid | null>;
-}): Promise<QuestionAutoResolutionResult> {
+};
+
+export async function runQuestionAutoResolution(
+  opts: QuestionAutoResolutionOptions,
+): Promise<QuestionAutoResolutionResult> {
   if (!opts.config.enabled) return emptyResult(false);
 
   const diagnostics: DiagnosticEffect[] = [];
@@ -205,29 +176,16 @@ async function autoResolutionPlan(opts: {
   return Object.freeze({ answer });
 }
 
-async function dispatchAutoAnswerHandlers(opts: {
-  readonly vault: EngineVault;
-  readonly adopted: CommitOid;
+type DispatchAutoAnswerOptions = GardenRunDeps & {
   readonly registry: ProcessorRegistry;
   readonly answers: AnswersDb;
-  readonly sinks: ApplyEffectSinks;
-  readonly resolveTree: (commit: CommitOid) => Promise<TreeOid>;
-  readonly now: () => Date;
-  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
-  readonly extensionIdFor: (processorId: string) => string;
   readonly question: QuestionRecord;
-  readonly operational?: OperationalQueryView;
-  readonly ledger?: LedgerDb;
-  readonly executionState?: ProcessorExecutionState;
-  readonly executionCap?: ExecutionPolicyCap;
-  readonly modelProvider?: ModelProvider;
-  readonly modelStepProvider?: ModelStepProvider;
-  readonly adoptSubProposal?: AdoptAutoAnswerSubProposalFn;
-  readonly currentAdopted?: () => CommitOid;
-  readonly applyGardenPatchToCandidate?: (
-    opts: ApplyPatchInput,
-  ) => Promise<CommitOid | null>;
-}): Promise<{
+  readonly now: () => Date;
+};
+
+async function dispatchAutoAnswerHandlers(
+  opts: DispatchAutoAnswerOptions,
+): Promise<{
   readonly failed: boolean;
   readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
 }> {
@@ -237,38 +195,11 @@ async function dispatchAutoAnswerHandlers(opts: {
     idempotencyKey,
     opts.now().toISOString(),
   );
+  // opts ⊇ GardenRunDeps & {registry, question}; forward it, pinning the
+  // pre-resolved adopted ref the auto-answer path passed.
   const result = await runAnswerHandlers({
-    vault: opts.vault,
+    ...opts,
     adopted: resolveCurrentAdopted(opts.currentAdopted, opts.adopted),
-    registry: opts.registry,
-    question: opts.question,
-    sinks: opts.sinks,
-    resolveTree: opts.resolveTree,
-    resolveGrants: opts.resolveGrants,
-    extensionIdFor: opts.extensionIdFor,
-    ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
-    ...(opts.executionState !== undefined
-      ? { executionState: opts.executionState }
-      : {}),
-    ...(opts.executionCap !== undefined
-      ? { executionCap: opts.executionCap }
-      : {}),
-    ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
-    ...(opts.modelProvider !== undefined
-      ? { modelProvider: opts.modelProvider }
-      : {}),
-    ...(opts.modelStepProvider !== undefined
-      ? { modelStepProvider: opts.modelStepProvider }
-      : {}),
-    ...(opts.adoptSubProposal !== undefined
-      ? { adoptSubProposal: opts.adoptSubProposal }
-      : {}),
-    ...(opts.currentAdopted !== undefined
-      ? { currentAdopted: opts.currentAdopted }
-      : {}),
-    ...(opts.applyGardenPatchToCandidate !== undefined
-      ? { applyGardenPatchToCandidate: opts.applyGardenPatchToCandidate }
-      : {}),
   });
 
   const failure = answerHandlerFailure(result);

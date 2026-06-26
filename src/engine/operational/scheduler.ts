@@ -57,46 +57,21 @@ import {
   diagnosticEffect,
   type DiagnosticEffect,
 } from "../../core/effect";
-import type { AdoptionResult, Proposal } from "../../core/proposal";
-import type { CommitOid } from "../../core/source-ref";
-import type { ApplyEffectSinks } from "../core/apply-effect";
-import { resolveCurrentAdopted } from "../core/adoption-status";
-import {
-  applyPatchToCandidate,
-  type ApplyPatchInput,
-} from "../core/apply-patch";
 import { nextFire, parseCron, type ParsedCron } from "./cron";
-import { routeGardenRunEffects } from "../garden/garden-run-routing";
-import type { EngineVault } from "../core/vault-shape";
+import {
+  dispatchGardenRun,
+  type GardenRunDeps,
+} from "../garden/garden-run";
 import {
   getCursor,
   upsertCursor,
 } from "../../projections/schedule-cursors";
 import type { ProjectionDb } from "../../projections/db";
 import type { ProcessorRegistry } from "../../processors/registry";
-import type { LedgerDb } from "../../ledger/db";
 import { latestScheduleRunStartedAt } from "../../ledger/runs";
-import type {
-  Capability,
-  ExtensionConfig,
-  OperationalQueryView,
-  Processor,
-  TreeOid,
-} from "../../core/processor";
-import {
-  dispatchOneProcessor,
-  makeSnapshot,
-} from "../../processors/runtime";
-import type { ExecutionPolicyCap } from "../../processors/execution-policy";
-import type { ProcessorExecutionState } from "../../processors/execution-state";
-import type { ModelProvider, ModelStepProvider } from "../core/model-invoke";
+import type { Processor } from "../../core/processor";
 import type { TriggerMatch } from "../../processors/triggers";
 import { recordDiagnosticsViaSink } from "../core/diagnostics";
-
-type AdoptScheduledSubProposalFn = (
-  proposal: Proposal,
-  cascadeDepth: number,
-) => Promise<AdoptionResult>;
 
 // ----- ScheduledFireResult --------------------------------------------------
 
@@ -139,30 +114,15 @@ export type SchedulerResult = {
  * delivery surface in v1; periodic work that should write or queue durable
  * state belongs in garden.
  */
-export async function runScheduler(opts: {
-  readonly vault: EngineVault;
-  readonly adopted: CommitOid;
+// The scheduler-specific extras on top of the shared garden-run plumbing.
+// `now` is required here (cron cursor math); the bag carries it as optional.
+type SchedulerOptions = GardenRunDeps & {
   readonly registry: ProcessorRegistry;
   readonly projection: ProjectionDb;
-  readonly sinks: ApplyEffectSinks;
-  readonly resolveTree: (commit: CommitOid) => Promise<TreeOid>;
   readonly now: () => Date;
-  readonly ledger?: LedgerDb;
-  readonly executionState?: ProcessorExecutionState;
-  readonly executionCap?: ExecutionPolicyCap;
-  readonly modelProvider?: ModelProvider;
-  readonly modelStepProvider?: ModelStepProvider;
-  readonly operational?: OperationalQueryView;
-  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
-  readonly extensionIdFor: (processorId: string) => string;
-  readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
-  readonly adoptSubProposal?: AdoptScheduledSubProposalFn;
-  readonly currentAdopted?: () => CommitOid;
-  readonly signal?: AbortSignal;
-  readonly applyGardenPatchToCandidate?: (
-    opts: ApplyPatchInput,
-  ) => Promise<CommitOid | null>;
-}): Promise<SchedulerResult> {
+};
+
+export async function runScheduler(opts: SchedulerOptions): Promise<SchedulerResult> {
   try {
     return await runSchedulerInner(opts);
   } catch (e) {
@@ -201,53 +161,11 @@ export async function runScheduler(opts: {
   }
 }
 
-async function runSchedulerInner(opts: {
-  readonly vault: EngineVault;
-  readonly adopted: CommitOid;
-  readonly registry: ProcessorRegistry;
-  readonly projection: ProjectionDb;
-  readonly sinks: ApplyEffectSinks;
-  readonly resolveTree: (commit: CommitOid) => Promise<TreeOid>;
-  readonly now: () => Date;
-  readonly ledger?: LedgerDb;
-  readonly executionState?: ProcessorExecutionState;
-  readonly executionCap?: ExecutionPolicyCap;
-  readonly modelProvider?: ModelProvider;
-  readonly modelStepProvider?: ModelStepProvider;
-  readonly operational?: OperationalQueryView;
-  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
-  readonly extensionIdFor: (processorId: string) => string;
-  readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
-  readonly adoptSubProposal?: AdoptScheduledSubProposalFn;
-  readonly currentAdopted?: () => CommitOid;
-  readonly signal?: AbortSignal;
-  readonly applyGardenPatchToCandidate?: (
-    opts: ApplyPatchInput,
-  ) => Promise<CommitOid | null>;
-}): Promise<SchedulerResult> {
-  const {
-    vault,
-    adopted,
-    registry,
-    projection,
-    sinks,
-    resolveTree,
-    now,
-    ledger,
-    executionState,
-    executionCap,
-    modelProvider,
-    modelStepProvider,
-    operational,
-    resolveGrants,
-    extensionIdFor,
-    extensionConfigFor,
-    adoptSubProposal,
-    currentAdopted,
-    signal,
-  } = opts;
-  const applyGardenPatch =
-    opts.applyGardenPatchToCandidate ?? applyPatchToCandidate;
+async function runSchedulerInner(opts: SchedulerOptions): Promise<SchedulerResult> {
+  // The scheduler reads only these fields for its own eligibility + cursor
+  // bookkeeping; the rest of the garden-run plumbing rides in `opts` and is
+  // forwarded to dispatchGardenRun untouched (opts ⊇ GardenRunDeps).
+  const { registry, projection, sinks, now, ledger, signal } = opts;
 
   const nowDate = now();
   const fired: ScheduledFireResult[] = [];
@@ -402,12 +320,6 @@ async function runSchedulerInner(opts: {
 
     let success: boolean;
     try {
-      const inputAdopted = resolveCurrentAdopted(currentAdopted, adopted);
-      // Build the snapshot once per fire — same shape adoptionRunner /
-      // gardenRunner construct, just resolved against the adopted commit
-      // (schedule fires see the post-adoption snapshot).
-      const snapshot = await makeSnapshot(vault.path, inputAdopted, resolveTree);
-
       // Synthesize a TriggerMatch list for the schedule trigger. Empty
       // matchedSignals because schedule fires have no signal stream.
       const matches: ReadonlyArray<TriggerMatch> = Object.freeze([
@@ -417,59 +329,34 @@ async function runSchedulerInner(opts: {
         }),
       ] as TriggerMatch[]);
 
-      const result = await dispatchOneProcessor({
-        processor,
-        phase,
-        envelope: Object.freeze({
-          kind: "schedule" as const,
-          cron,
-          firedAt: nowDate.toISOString(),
-        }),
-        snapshot,
-        changedPaths: Object.freeze([]),
-        now: nowDate,
-        // Schedule fires are not tied to a user-drift Proposal. The run
-        // ledger records proposal_id = NULL; inputCommit records the adopted
-        // snapshot the schedule fired against.
-        proposal: null,
-        inputCommit: inputAdopted,
-        matches,
-        resolveGrants,
-        extensionIdFor,
-        ...(extensionConfigFor !== undefined ? { extensionConfigFor } : {}),
-        ledger,
-        ...(signal !== undefined ? { signal } : {}),
-        ...(executionState !== undefined ? { executionState } : {}),
-        ...(executionCap !== undefined ? { executionCap } : {}),
-        ...(modelProvider !== undefined ? { modelProvider } : {}),
-        ...(modelStepProvider !== undefined ? { modelStepProvider } : {}),
-        ...(operational !== undefined ? { operational } : {}),
-      });
-
-      // Scheduled garden PatchEffects become garden sub-Proposals, matching
-      // signal-triggered garden semantics instead of mutating a candidate
-      // through the generic applyPatch sink.
-      await routeGardenRunEffects({
-        result,
-        vault,
-        adopted: inputAdopted,
-        ...(currentAdopted !== undefined ? { currentAdopted } : {}),
-        proposalId: null,
-        sinks,
-        diagnostics,
-        applyGardenPatch,
-        extensionIdFor,
-        ...(ledger !== undefined ? { ledger } : {}),
-        ...(adoptSubProposal !== undefined ? { adoptSubProposal } : {}),
-        now,
-        disabledDiagnostic: {
-          code: "scheduler.garden-sub-proposal-spawn-disabled",
-          message:
-            `Scheduled garden processor ${result.processorId} emitted ` +
-            `an authorized PatchEffect, but no adoptSubProposal ` +
-            `callback was wired; patch dropped.`,
+      // dispatchGardenRun owns the snapshot + dispatch + route envelope.
+      // Scheduled garden PatchEffects become garden sub-Proposals (matching
+      // signal-triggered garden semantics) rather than mutating a candidate
+      // through the generic applyPatch sink. Schedule fires are not tied to a
+      // user-drift Proposal (proposal_id = NULL); the run pins `nowDate` so
+      // its ledger startedAt matches the cursor math and envelope.firedAt.
+      const { result } = await dispatchGardenRun(
+        opts,
+        {
+          processor,
+          phase,
+          envelope: Object.freeze({
+            kind: "schedule" as const,
+            cron,
+            firedAt: nowDate.toISOString(),
+          }),
+          matches,
+          now: nowDate,
+          disabledDiagnostic: {
+            code: "scheduler.garden-sub-proposal-spawn-disabled",
+            message:
+              `Scheduled garden processor ${processor.id} emitted ` +
+              `an authorized PatchEffect, but no adoptSubProposal ` +
+              `callback was wired; patch dropped.`,
+          },
         },
-      });
+        diagnostics,
+      );
 
       // Success means the executor accepted the invocation as a processor
       // success. Executor failures/timeouts/cancellations and not-invoked

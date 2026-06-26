@@ -9,17 +9,8 @@ import {
   diagnosticEffect,
   type DiagnosticEffect,
 } from "../../core/effect";
-import type { AdoptionResult, Proposal } from "../../core/proposal";
 import { computeNextAttemptAt } from "../../core/retry-policy";
-import type { CommitOid } from "../../core/source-ref";
-import type {
-  Capability,
-  ExtensionConfig,
-  OperationalQueryView,
-  Processor,
-  TreeOid,
-} from "../../core/processor";
-import type { LedgerDb } from "../../ledger/db";
+import type { Processor } from "../../core/processor";
 import {
   claimNextEligibleJob,
   markJobFailed,
@@ -31,31 +22,16 @@ import {
 } from "../../projections/jobs";
 import type { ProjectionDb } from "../../projections/db";
 import type { ProcessorRegistry } from "../../processors/registry";
-import {
-  dispatchOneProcessor,
-  makeSnapshot,
-} from "../../processors/runtime";
-import type { ExecutionPolicyCap } from "../../processors/execution-policy";
-import type { ProcessorExecutionState } from "../../processors/execution-state";
-import type { ModelProvider, ModelStepProvider } from "../core/model-invoke";
 import type { TriggerMatch } from "../../processors/triggers";
 import type { ApplyEffectSinks } from "../core/apply-effect";
-import { resolveCurrentAdopted } from "../core/adoption-status";
-import {
-  applyPatchToCandidate,
-  type ApplyPatchInput,
-} from "../core/apply-patch";
 import { recordDiagnosticsViaSink } from "../core/diagnostics";
-import { routeGardenRunEffects } from "../garden/garden-run-routing";
+import {
+  dispatchGardenRun,
+  type GardenRunDeps,
+} from "../garden/garden-run";
 import type { RunId } from "../core/runner-contract";
-import type { EngineVault } from "../core/vault-shape";
 
 const DEFAULT_MAX_JOBS_PER_DRAIN = 100;
-
-type AdoptJobSubProposalFn = (
-  proposal: Proposal,
-  cascadeDepth: number,
-) => Promise<AdoptionResult>;
 
 export type JobDrainResult = {
   readonly drained: ReadonlyArray<JobDrainSummary>;
@@ -69,36 +45,19 @@ export type JobDrainSummary = {
   readonly runId: RunId | null;
 };
 
-export async function runQueuedJobs(opts: {
-  readonly vault: EngineVault;
-  readonly adopted: CommitOid;
+// Job-drain extras on top of the shared garden-run plumbing. `now` is required
+// (job claim + timestamps); the bag carries it as optional.
+type JobDrainOptions = GardenRunDeps & {
   readonly registry: ProcessorRegistry;
   readonly projection: ProjectionDb;
-  readonly sinks: ApplyEffectSinks;
-  readonly resolveTree: (commit: CommitOid) => Promise<TreeOid>;
   readonly now: () => Date;
-  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
-  readonly extensionIdFor: (processorId: string) => string;
-  readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
-  readonly ledger?: LedgerDb;
-  readonly executionState?: ProcessorExecutionState;
-  readonly executionCap?: ExecutionPolicyCap;
-  readonly modelProvider?: ModelProvider;
-  readonly modelStepProvider?: ModelStepProvider;
-  readonly operational?: OperationalQueryView;
-  readonly adoptSubProposal?: AdoptJobSubProposalFn;
-  readonly currentAdopted?: () => CommitOid;
-  readonly applyGardenPatchToCandidate?: (
-    opts: ApplyPatchInput,
-  ) => Promise<CommitOid | null>;
-  readonly signal?: AbortSignal;
   readonly maxJobs?: number;
-}): Promise<JobDrainResult> {
+};
+
+export async function runQueuedJobs(opts: JobDrainOptions): Promise<JobDrainResult> {
   const maxJobs = opts.maxJobs ?? DEFAULT_MAX_JOBS_PER_DRAIN;
   const drained: JobDrainSummary[] = [];
   const diagnostics: DiagnosticEffect[] = [];
-  const applyGardenPatch =
-    opts.applyGardenPatchToCandidate ?? applyPatchToCandidate;
   recoverExpiredRunningJobs(opts.projection, opts.now());
 
   for (let i = 0; i < maxJobs; i += 1) {
@@ -140,7 +99,6 @@ export async function runQueuedJobs(opts: {
         job,
         processor,
         diagnostics,
-        applyGardenPatch,
       });
       drained.push(result);
     } catch (e) {
@@ -163,36 +121,19 @@ export async function runQueuedJobs(opts: {
   });
 }
 
-async function runOneJob(opts: {
-  readonly vault: EngineVault;
-  readonly adopted: CommitOid;
+// runOneJob extras on top of the shared garden-run plumbing; `opts` is forwarded
+// to dispatchGardenRun untouched (opts ⊇ GardenRunDeps).
+type RunOneJobOptions = GardenRunDeps & {
   readonly projection: ProjectionDb;
-  readonly sinks: ApplyEffectSinks;
-  readonly resolveTree: (commit: CommitOid) => Promise<TreeOid>;
   readonly now: () => Date;
-  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
-  readonly extensionIdFor: (processorId: string) => string;
-  readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
-  readonly ledger?: LedgerDb;
-  readonly executionState?: ProcessorExecutionState;
-  readonly executionCap?: ExecutionPolicyCap;
-  readonly modelProvider?: ModelProvider;
-  readonly modelStepProvider?: ModelStepProvider;
-  readonly operational?: OperationalQueryView;
-  readonly adoptSubProposal?: AdoptJobSubProposalFn;
-  readonly currentAdopted?: () => CommitOid;
-  readonly signal?: AbortSignal;
   readonly job: ScheduledJobRow;
   readonly processor: Processor<unknown>;
   readonly diagnostics: DiagnosticEffect[];
-  readonly applyGardenPatch: (opts: ApplyPatchInput) => Promise<CommitOid | null>;
-}): Promise<JobDrainSummary> {
-  const inputAdopted = resolveCurrentAdopted(opts.currentAdopted, opts.adopted);
-  const snapshot = await makeSnapshot(
-    opts.vault.path,
-    inputAdopted,
-    opts.resolveTree,
-  );
+};
+
+async function runOneJob(opts: RunOneJobOptions): Promise<JobDrainSummary> {
+  // dispatchGardenRun owns the snapshot + dispatch + route envelope. Queued
+  // jobs are not tied to a user-drift Proposal (proposal_id = NULL).
   const matches: ReadonlyArray<TriggerMatch> = Object.freeze([
     Object.freeze({
       trigger: Object.freeze({
@@ -203,62 +144,23 @@ async function runOneJob(opts: {
     }),
   ]);
 
-  const result = await dispatchOneProcessor({
-    processor: opts.processor,
-    phase: "garden",
-    envelope: opts.job.input,
-    snapshot,
-    changedPaths: Object.freeze([]),
-    proposal: null,
-    inputCommit: inputAdopted,
-    matches,
-    resolveGrants: opts.resolveGrants,
-    extensionIdFor: opts.extensionIdFor,
-    ...(opts.extensionConfigFor !== undefined
-      ? { extensionConfigFor: opts.extensionConfigFor }
-      : {}),
-    ledger: opts.ledger,
-    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-    ...(opts.executionState !== undefined
-      ? { executionState: opts.executionState }
-      : {}),
-    ...(opts.executionCap !== undefined
-      ? { executionCap: opts.executionCap }
-      : {}),
-    ...(opts.modelProvider !== undefined
-      ? { modelProvider: opts.modelProvider }
-      : {}),
-    ...(opts.modelStepProvider !== undefined
-      ? { modelStepProvider: opts.modelStepProvider }
-      : {}),
-    ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
-  });
-
-  await routeGardenRunEffects({
-    result,
-    vault: opts.vault,
-    adopted: inputAdopted,
-    ...(opts.currentAdopted !== undefined
-      ? { currentAdopted: opts.currentAdopted }
-      : {}),
-    proposalId: null,
-    sinks: opts.sinks,
-    diagnostics: opts.diagnostics,
-    applyGardenPatch: opts.applyGardenPatch,
-    extensionIdFor: opts.extensionIdFor,
-    ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
-    ...(opts.adoptSubProposal !== undefined
-      ? { adoptSubProposal: opts.adoptSubProposal }
-      : {}),
-    now: opts.now,
-    disabledDiagnostic: {
-      code: "jobs.garden-sub-proposal-spawn-disabled",
-      message:
-        `Queued job processor ${result.processorId} emitted an authorized ` +
-        `PatchEffect, but no adoptSubProposal callback was wired; ` +
-        `patch dropped.`,
+  const { result } = await dispatchGardenRun(
+    opts,
+    {
+      processor: opts.processor,
+      phase: "garden",
+      envelope: opts.job.input,
+      matches,
+      disabledDiagnostic: {
+        code: "jobs.garden-sub-proposal-spawn-disabled",
+        message:
+          `Queued job processor ${opts.processor.id} emitted an authorized ` +
+          `PatchEffect, but no adoptSubProposal callback was wired; ` +
+          `patch dropped.`,
+      },
     },
-  });
+    opts.diagnostics,
+  );
 
   if (result.executionStatus === "succeeded") {
     markJobSucceeded(opts.projection, opts.job.id, opts.now());
