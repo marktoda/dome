@@ -11,7 +11,7 @@ description: Maps every src/engine/ module to its layer (core/garden/operational
 
 The canonical map of `src/engine/`'s internal layering. The engine is one conceptual service (the adoption loop + the single applier per [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]]), but internally it is four layers with a strict downward-only import direction. Each engine module lives in the subdirectory named after its layer; the directory placement *is* the layer assignment.
 
-**Lockstep status:** shipped. `tests/integration/engine-import-direction.test.ts` parses this matrix and asserts (1) every module row exists on disk in the stated layer directory, (2) every `.ts` file under `src/engine/` has a row, and (3) no engine module imports a module from a higher-ranked layer. See [[wiki/linters/engine-import-direction]] for the rule.
+**Lockstep status:** shipped. `tests/integration/engine-import-direction.test.ts` parses this matrix and asserts (1) every module row exists on disk as either `src/engine/<layer>/<module>.ts` or a `src/engine/<layer>/<module>/` directory (a directory-module, e.g. `health/`), (2) every `.ts` file under `src/engine/` is covered by a row (directly or under a directory-module), and (3) no engine module imports a module from a higher-ranked layer. See [[wiki/linters/engine-import-direction]] for the rule.
 
 ## The four layers
 
@@ -50,6 +50,7 @@ Cycles are permitted *within* a layer (e.g. `apply-effect` ↔ `diagnostics` in 
 | `vault-shape` | `core` | EngineVault — the minimal structural shape the engine reads |
 | `garden` | `garden` | The garden-phase orchestrator |
 | `garden-patch-dispatch` | `garden` | Shared garden PatchEffect dispatch for non-signal garden sources |
+| `garden-run` | `garden` | `dispatchGardenRun` — shared snapshot + dispatch + route for one non-signal garden run (schedule / job / answer) |
 | `garden-run-routing` | `garden` | Shared effect routing for one non-signal garden processor run |
 | `garden-sub-proposals` | `garden` | Garden PatchEffect → sub-Proposal conversion (cascade-depth bookkeeping) |
 | `answers` | `operational` | Dispatch garden-phase processors after a user answer |
@@ -66,7 +67,7 @@ Cycles are permitted *within* a layer (e.g. `apply-effect` ↔ `diagnostics` in 
 | `compiler-host-heartbeat` | `host` | Host heartbeat file |
 | `compiler-host-lock` | `host` | Per-branch runtime host exclusion |
 | `file-lock` | `host` | Cross-process exclusive lock helper |
-| `health` | `host` | Read-only probes for operational recovery surfaces |
+| `health` | `host` | Read-only probes for operational recovery surfaces (a `health/` directory-module of submodules) |
 | `model-provider-probe-cache` | `host` | Persisted last-probe result for the model provider |
 | `projection-lock` | `host` | Shared exclusion for projection.db writes |
 | `projection-rebuild` | `host` | Rebuild projection.db from the adopted commit |

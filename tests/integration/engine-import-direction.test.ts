@@ -65,13 +65,29 @@ describe("engine module map lockstep", () => {
     const rows = await matrixRows();
     expect(rows.length).toBeGreaterThan(0);
 
-    const declared = new Set(
-      rows.map((row) => `src/engine/${row.layer}/${row.module}.ts`),
-    );
-    const onDisk = new Set(await engineFiles());
+    const onDisk = await engineFiles();
 
-    const missingOnDisk = [...declared].filter((path) => !onDisk.has(path));
-    const missingInMatrix = [...onDisk].filter((path) => !declared.has(path));
+    // Each row covers EITHER a module file `src/engine/<layer>/<module>.ts`
+    // OR a directory-module `src/engine/<layer>/<module>/` (every file under
+    // it), e.g. `health/`. A row whose neither file nor directory exists is
+    // missingOnDisk; an on-disk file no row covers is missingInMatrix.
+    const covered = new Set<string>();
+    const missingOnDisk: string[] = [];
+    for (const row of rows) {
+      const filePath = `src/engine/${row.layer}/${row.module}.ts`;
+      const dirPrefix = `src/engine/${row.layer}/${row.module}/`;
+      if (onDisk.includes(filePath)) {
+        covered.add(filePath);
+        continue;
+      }
+      const underDir = onDisk.filter((path) => path.startsWith(dirPrefix));
+      if (underDir.length > 0) {
+        for (const path of underDir) covered.add(path);
+        continue;
+      }
+      missingOnDisk.push(filePath);
+    }
+    const missingInMatrix = onDisk.filter((path) => !covered.has(path));
 
     expect(missingOnDisk).toEqual([]);
     expect(missingInMatrix).toEqual([]);
