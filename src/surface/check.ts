@@ -14,11 +14,11 @@ import type { QuestionMetadata } from "../core/effect";
 import {
   collectHealthReport,
   collectOperationalSchemaReport,
+  healthInputsFromRuntime,
   type HealthReport,
 } from "../engine/host/health";
 import { openVaultRuntime, type VaultRuntime } from "../engine/host/vault-runtime";
 import { resolveBundleRoots } from "../extensions/bundle-roots";
-import { runtimeHealthReportInputs } from "./health-inputs";
 import { queryRunSummaries } from "../ledger/runs";
 import {
   projectionCacheKeysChanged,
@@ -223,7 +223,7 @@ export async function buildCheckReport(opts: {
     });
     const engine = scopes.engine
       ? await collectHealthReport({
-          ...runtimeHealthReportInputs(runtime),
+          ...healthInputsFromRuntime(runtime),
           orphanRunThresholdMs: orphanThresholdMs,
         })
       : null;
