@@ -32,7 +32,7 @@ import type { ProcessorExecutionState } from "../../processors/execution-state";
 import type { TriggerMatch } from "../../processors/triggers";
 import { resolveCurrentAdopted } from "../core/adoption-status";
 import type { ApplyEffectSinks } from "../core/apply-effect";
-import type { ApplyPatchInput } from "../core/apply-patch";
+import { applyPatchToCandidate, type ApplyPatchInput } from "../core/apply-patch";
 import type { ModelProvider, ModelStepProvider } from "../core/model-invoke";
 import type { RunnerResult } from "../core/runner-contract";
 import type { EngineVault } from "../core/vault-shape";
@@ -61,8 +61,14 @@ export type GardenRunDeps = {
   readonly signal?: AbortSignal;
   /** Clock forwarded to routeGardenRunEffects (sub-Proposal timestamping). */
   readonly now?: () => Date;
-  /** Resolved patch applier; callers apply the `?? applyPatchToCandidate` default. */
-  readonly applyGardenPatch: (opts: ApplyPatchInput) => Promise<CommitOid | null>;
+  /**
+   * Optional override for the garden-patch applier. dispatchGardenRun resolves
+   * the `?? applyPatchToCandidate` default internally, so the default lives in
+   * one place and no caller has to thread it.
+   */
+  readonly applyGardenPatchToCandidate?: (
+    opts: ApplyPatchInput,
+  ) => Promise<CommitOid | null>;
   readonly adoptSubProposal?: AdoptSubProposalFn;
 };
 
@@ -103,6 +109,8 @@ export async function dispatchGardenRun(
   run: GardenRun,
   diagnostics: DiagnosticEffect[],
 ): Promise<GardenRunOutcome> {
+  const applyGardenPatch =
+    deps.applyGardenPatchToCandidate ?? applyPatchToCandidate;
   const inputAdopted = resolveCurrentAdopted(deps.currentAdopted, deps.adopted);
   const snapshot = await makeSnapshot(
     deps.vault.path,
@@ -152,7 +160,7 @@ export async function dispatchGardenRun(
     proposalId: null,
     sinks: deps.sinks,
     diagnostics,
-    applyGardenPatch: deps.applyGardenPatch,
+    applyGardenPatch,
     extensionIdFor: deps.extensionIdFor,
     ...(deps.ledger !== undefined ? { ledger: deps.ledger } : {}),
     ...(deps.adoptSubProposal !== undefined

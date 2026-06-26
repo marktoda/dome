@@ -62,7 +62,7 @@ function baseDeps(
     sinks: noopSinks(),
     resolveGrants: () => [],
     extensionIdFor: () => "test",
-    applyGardenPatch: async () => null,
+    applyGardenPatchToCandidate: async () => null,
     ...overrides,
   };
 }

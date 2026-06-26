@@ -57,44 +57,21 @@ import {
   diagnosticEffect,
   type DiagnosticEffect,
 } from "../../core/effect";
-import type { AdoptionResult, Proposal } from "../../core/proposal";
-import type { CommitOid } from "../../core/source-ref";
-import type { ApplyEffectSinks } from "../core/apply-effect";
-import {
-  applyPatchToCandidate,
-  type ApplyPatchInput,
-} from "../core/apply-patch";
 import { nextFire, parseCron, type ParsedCron } from "./cron";
 import {
   dispatchGardenRun,
   type GardenRunDeps,
 } from "../garden/garden-run";
-import type { EngineVault } from "../core/vault-shape";
 import {
   getCursor,
   upsertCursor,
 } from "../../projections/schedule-cursors";
 import type { ProjectionDb } from "../../projections/db";
 import type { ProcessorRegistry } from "../../processors/registry";
-import type { LedgerDb } from "../../ledger/db";
 import { latestScheduleRunStartedAt } from "../../ledger/runs";
-import type {
-  Capability,
-  ExtensionConfig,
-  OperationalQueryView,
-  Processor,
-  TreeOid,
-} from "../../core/processor";
-import type { ExecutionPolicyCap } from "../../processors/execution-policy";
-import type { ProcessorExecutionState } from "../../processors/execution-state";
-import type { ModelProvider, ModelStepProvider } from "../core/model-invoke";
+import type { Processor } from "../../core/processor";
 import type { TriggerMatch } from "../../processors/triggers";
 import { recordDiagnosticsViaSink } from "../core/diagnostics";
-
-type AdoptScheduledSubProposalFn = (
-  proposal: Proposal,
-  cascadeDepth: number,
-) => Promise<AdoptionResult>;
 
 // ----- ScheduledFireResult --------------------------------------------------
 
@@ -137,30 +114,15 @@ export type SchedulerResult = {
  * delivery surface in v1; periodic work that should write or queue durable
  * state belongs in garden.
  */
-export async function runScheduler(opts: {
-  readonly vault: EngineVault;
-  readonly adopted: CommitOid;
+// The scheduler-specific extras on top of the shared garden-run plumbing.
+// `now` is required here (cron cursor math); the bag carries it as optional.
+type SchedulerOptions = GardenRunDeps & {
   readonly registry: ProcessorRegistry;
   readonly projection: ProjectionDb;
-  readonly sinks: ApplyEffectSinks;
-  readonly resolveTree: (commit: CommitOid) => Promise<TreeOid>;
   readonly now: () => Date;
-  readonly ledger?: LedgerDb;
-  readonly executionState?: ProcessorExecutionState;
-  readonly executionCap?: ExecutionPolicyCap;
-  readonly modelProvider?: ModelProvider;
-  readonly modelStepProvider?: ModelStepProvider;
-  readonly operational?: OperationalQueryView;
-  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
-  readonly extensionIdFor: (processorId: string) => string;
-  readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
-  readonly adoptSubProposal?: AdoptScheduledSubProposalFn;
-  readonly currentAdopted?: () => CommitOid;
-  readonly signal?: AbortSignal;
-  readonly applyGardenPatchToCandidate?: (
-    opts: ApplyPatchInput,
-  ) => Promise<CommitOid | null>;
-}): Promise<SchedulerResult> {
+};
+
+export async function runScheduler(opts: SchedulerOptions): Promise<SchedulerResult> {
   try {
     return await runSchedulerInner(opts);
   } catch (e) {
@@ -199,76 +161,11 @@ export async function runScheduler(opts: {
   }
 }
 
-async function runSchedulerInner(opts: {
-  readonly vault: EngineVault;
-  readonly adopted: CommitOid;
-  readonly registry: ProcessorRegistry;
-  readonly projection: ProjectionDb;
-  readonly sinks: ApplyEffectSinks;
-  readonly resolveTree: (commit: CommitOid) => Promise<TreeOid>;
-  readonly now: () => Date;
-  readonly ledger?: LedgerDb;
-  readonly executionState?: ProcessorExecutionState;
-  readonly executionCap?: ExecutionPolicyCap;
-  readonly modelProvider?: ModelProvider;
-  readonly modelStepProvider?: ModelStepProvider;
-  readonly operational?: OperationalQueryView;
-  readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
-  readonly extensionIdFor: (processorId: string) => string;
-  readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
-  readonly adoptSubProposal?: AdoptScheduledSubProposalFn;
-  readonly currentAdopted?: () => CommitOid;
-  readonly signal?: AbortSignal;
-  readonly applyGardenPatchToCandidate?: (
-    opts: ApplyPatchInput,
-  ) => Promise<CommitOid | null>;
-}): Promise<SchedulerResult> {
-  const {
-    vault,
-    adopted,
-    registry,
-    projection,
-    sinks,
-    resolveTree,
-    now,
-    ledger,
-    executionState,
-    executionCap,
-    modelProvider,
-    modelStepProvider,
-    operational,
-    resolveGrants,
-    extensionIdFor,
-    extensionConfigFor,
-    adoptSubProposal,
-    currentAdopted,
-    signal,
-  } = opts;
-  const applyGardenPatch =
-    opts.applyGardenPatchToCandidate ?? applyPatchToCandidate;
-
-  // The shared dispatch+route plumbing every schedule fire forwards verbatim;
-  // built once here and threaded into dispatchGardenRun per fire.
-  const gardenRunDeps: GardenRunDeps = {
-    vault,
-    adopted,
-    ...(currentAdopted !== undefined ? { currentAdopted } : {}),
-    resolveTree,
-    sinks,
-    resolveGrants,
-    extensionIdFor,
-    ...(extensionConfigFor !== undefined ? { extensionConfigFor } : {}),
-    ...(ledger !== undefined ? { ledger } : {}),
-    ...(executionState !== undefined ? { executionState } : {}),
-    ...(executionCap !== undefined ? { executionCap } : {}),
-    ...(modelProvider !== undefined ? { modelProvider } : {}),
-    ...(modelStepProvider !== undefined ? { modelStepProvider } : {}),
-    ...(operational !== undefined ? { operational } : {}),
-    ...(signal !== undefined ? { signal } : {}),
-    now,
-    applyGardenPatch,
-    ...(adoptSubProposal !== undefined ? { adoptSubProposal } : {}),
-  };
+async function runSchedulerInner(opts: SchedulerOptions): Promise<SchedulerResult> {
+  // The scheduler reads only these fields for its own eligibility + cursor
+  // bookkeeping; the rest of the garden-run plumbing rides in `opts` and is
+  // forwarded to dispatchGardenRun untouched (opts ⊇ GardenRunDeps).
+  const { registry, projection, sinks, now, ledger, signal } = opts;
 
   const nowDate = now();
   const fired: ScheduledFireResult[] = [];
@@ -439,7 +336,7 @@ async function runSchedulerInner(opts: {
       // user-drift Proposal (proposal_id = NULL); the run pins `nowDate` so
       // its ledger startedAt matches the cursor math and envelope.firedAt.
       const { result } = await dispatchGardenRun(
-        gardenRunDeps,
+        opts,
         {
           processor,
           phase,
