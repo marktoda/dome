@@ -192,7 +192,7 @@ export async function runGardenPhase(opts: {
   readonly signals: ReadonlyArray<SignalEvent>;
   readonly runGardenProcessors: GardenPhaseRunner;
   readonly sinks: ApplyEffectSinks;
-  readonly ledger?: LedgerDb;
+  readonly ledger: LedgerDb;
   /**
    * Latest adopted ref inside a host tick. Top-level garden processors run
    * against `adopted`, but multiple spawned sub-Proposals must apply
@@ -282,7 +282,7 @@ async function runGardenPhaseInner(opts: {
   readonly signals: ReadonlyArray<SignalEvent>;
   readonly runGardenProcessors: GardenPhaseRunner;
   readonly sinks: ApplyEffectSinks;
-  readonly ledger?: LedgerDb;
+  readonly ledger: LedgerDb;
   readonly currentAdopted?: () => CommitOid;
   readonly extensionIdFor?: (processorId: string) => string;
   readonly adoptSubProposal?: AdoptSubProposalFn;

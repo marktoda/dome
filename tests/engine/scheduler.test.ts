@@ -19,6 +19,7 @@ import { runScheduler } from "../../src/engine/operational/scheduler";
 import type { EngineVault } from "../../src/engine/core/vault-shape";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
 import { insertQueued, markSucceeded, newRunId } from "../../src/ledger/runs";
+import { openTestLedger } from "../support/test-ledger";
 import { openProjectionDb, type ProjectionDb } from "../../src/projections/db";
 import {
   getCursor,
@@ -34,6 +35,7 @@ type Fixture = {
   readonly root: string;
   readonly projection: ProjectionDb;
   readonly vault: EngineVault;
+  readonly ledger: LedgerDb;
 };
 
 const fixtures: Fixture[] = [];
@@ -51,6 +53,11 @@ afterEach(() => {
     if (fixture === undefined) continue;
     try {
       fixture.projection.close();
+    } catch {
+      // already closed
+    }
+    try {
+      fixture.ledger.close();
     } catch {
       // already closed
     }
@@ -732,6 +739,7 @@ async function makeFixture(): Promise<Fixture> {
       `openProjectionDb failed: ${JSON.stringify(projectionResult.error)}`,
     );
   }
+  const ledger = await openTestLedger();
   return {
     root,
     projection: projectionResult.value.db,
@@ -739,6 +747,7 @@ async function makeFixture(): Promise<Fixture> {
       path: root,
       config: { git: { auto_commit_workflows: false } },
     },
+    ledger,
   };
 }
 
@@ -786,14 +795,12 @@ async function runWithProcessor(
     now: () => NOW,
     resolveGrants: schedulerOverrides.resolveGrants ?? (() => []),
     extensionIdFor: (id: string) => id,
+    ledger: schedulerOverrides.ledger ?? fixture.ledger,
     ...(schedulerOverrides.modelStepProvider !== undefined
       ? { modelStepProvider: schedulerOverrides.modelStepProvider }
       : {}),
     ...(schedulerOverrides.signal !== undefined
       ? { signal: schedulerOverrides.signal }
-      : {}),
-    ...(schedulerOverrides.ledger !== undefined
-      ? { ledger: schedulerOverrides.ledger }
       : {}),
     ...(schedulerOverrides.adoptSubProposal !== undefined
       ? { adoptSubProposal: schedulerOverrides.adoptSubProposal }

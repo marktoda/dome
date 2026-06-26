@@ -24,6 +24,8 @@ import type { EngineVault } from "../../src/engine/core/vault-shape";
 import { claimNextEligibleJob, enqueueJob } from "../../src/projections/jobs";
 import { openProjectionDb, type ProjectionDb } from "../../src/projections/db";
 import { buildRegistry } from "../../src/processors/registry";
+import type { LedgerDb } from "../../src/ledger/db";
+import { openTestLedger } from "../support/test-ledger";
 
 const ADOPTED = commitOid("adopted0000000000000000000000000000000000");
 const TREE = treeOid("tree000000000000000000000000000000000000");
@@ -33,6 +35,7 @@ type Fixture = {
   readonly root: string;
   readonly projection: ProjectionDb;
   readonly vault: EngineVault;
+  readonly ledger: LedgerDb;
 };
 
 const fixtures: Fixture[] = [];
@@ -50,6 +53,11 @@ afterEach(() => {
     if (fixture === undefined) continue;
     try {
       fixture.projection.close();
+    } catch {
+      // already closed
+    }
+    try {
+      fixture.ledger.close();
     } catch {
       // already closed
     }
@@ -468,6 +476,7 @@ async function makeFixture(): Promise<Fixture> {
       `openProjectionDb failed: ${JSON.stringify(projectionResult.error)}`,
     );
   }
+  const ledger = await openTestLedger();
   return {
     root,
     projection: projectionResult.value.db,
@@ -475,6 +484,7 @@ async function makeFixture(): Promise<Fixture> {
       path: root,
       config: { git: { auto_commit_workflows: false } },
     },
+    ledger,
   };
 }
 
@@ -529,6 +539,7 @@ async function runWithProcessors(
     resolveGrants: (processorId: string): ReadonlyArray<Capability> =>
       registryResult.value.get(processorId)?.capabilities ?? [],
     extensionIdFor: (id: string) => id,
+    ledger: fixture.ledger,
     ...(runnerOverrides.signal !== undefined
       ? { signal: runnerOverrides.signal }
       : {}),

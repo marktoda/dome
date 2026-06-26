@@ -73,7 +73,7 @@ export async function runOperationalWork(opts: {
   readonly externalHandlerTimeoutMs?: number;
   readonly questionAutoResolve?: RuntimeQuestionAutoResolveConfig;
   readonly operational?: OperationalQueryView;
-  readonly ledger?: LedgerDb;
+  readonly ledger: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
   readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
@@ -108,7 +108,7 @@ export async function runOperationalWork(opts: {
     ...(opts.extensionConfigFor !== undefined
       ? { extensionConfigFor: opts.extensionConfigFor }
       : {}),
-    ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
+    ledger: opts.ledger,
     ...(opts.executionState !== undefined
       ? { executionState: opts.executionState }
       : {}),
@@ -166,7 +166,7 @@ export async function runOperationalWork(opts: {
           ...(opts.operational !== undefined
             ? { operational: opts.operational }
             : {}),
-          ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
+          ledger: opts.ledger,
           ...(opts.executionState !== undefined
             ? { executionState: opts.executionState }
             : {}),

@@ -52,7 +52,7 @@ export type GardenRunDeps = {
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
   readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
-  readonly ledger?: LedgerDb;
+  readonly ledger: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
   readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
@@ -162,7 +162,7 @@ export async function dispatchGardenRun(
     diagnostics,
     applyGardenPatch,
     extensionIdFor: deps.extensionIdFor,
-    ...(deps.ledger !== undefined ? { ledger: deps.ledger } : {}),
+    ledger: deps.ledger,
     ...(deps.adoptSubProposal !== undefined
       ? { adoptSubProposal: deps.adoptSubProposal }
       : {}),

@@ -251,7 +251,7 @@ export async function adopt(opts: {
    * without a ledger pass no ledger here either, and the loop runs as in
    * Phase 5 (no ledger writes). Phase 7+ wires both end-to-end.
    */
-  readonly ledger?: LedgerDb;
+  readonly ledger: LedgerDb;
   /**
    * Optional observability callback. When provided, the loop emits
    * `AdoptEvent`s at iteration-start, processor-result, and iteration-end
@@ -627,7 +627,7 @@ export async function adopt(opts: {
   // didn't exist yet); this UPDATE lands the OID now that it does. The
   // two-write pattern is intentional — see
   // docs/wiki/gotchas/run-succeeded-before-closure.md.
-  if (closureCommitOid !== null && ledger !== undefined) {
+  if (closureCommitOid !== null) {
     updateOutputCommit(ledger, {
       runIds: [...contributingRunIds],
       outputCommit: closureCommitOid,

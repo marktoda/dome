@@ -13,6 +13,7 @@ import { insertPending, queryOutbox } from "../../src/outbox/dispatch";
 import { openProjectionDb } from "../../src/projections/db";
 import { getCursor } from "../../src/projections/schedule-cursors";
 import { buildRegistry } from "../../src/processors/registry";
+import { openTestLedger } from "../support/test-ledger";
 
 const tmpRoots: string[] = [];
 
@@ -51,6 +52,7 @@ describe("runOperationalWork", () => {
       throw new Error(`outbox open failed: ${outbox.error.kind}`);
     }
 
+    const ledger = await openTestLedger();
     try {
       let started: (() => void) | undefined;
       const startedPromise = new Promise<void>((resolve) => {
@@ -103,6 +105,7 @@ describe("runOperationalWork", () => {
         extensionIdFor: (processorId) => processorId,
         externalHandlers: {},
         signal: controller.signal,
+        ledger,
       });
 
       await startedPromise;
@@ -116,6 +119,7 @@ describe("runOperationalWork", () => {
       });
       expect(getCursor(projection.value.db, processor.id)).toBeNull();
     } finally {
+      ledger.close();
       outbox.value.db.close();
       projection.value.db.close();
     }
@@ -141,6 +145,7 @@ describe("runOperationalWork", () => {
       throw new Error(`outbox open failed: ${outbox.error.kind}`);
     }
 
+    const ledger = await openTestLedger();
     try {
       const logicalNow = new Date("2026-01-01T00:00:00.000Z");
       const idempotencyKey = "future-enqueued";
@@ -204,11 +209,13 @@ describe("runOperationalWork", () => {
             return { externalId: "external_test" };
           },
         },
+        ledger,
       });
 
       expect(result.outbox).toEqual([]);
       expect(handlerCalls).toBe(0);
     } finally {
+      ledger.close();
       outbox.value.db.close();
       projection.value.db.close();
     }
@@ -234,6 +241,7 @@ describe("runOperationalWork", () => {
       throw new Error(`outbox open failed: ${outbox.error.kind}`);
     }
 
+    const ledger = await openTestLedger();
     try {
       const logicalNow = new Date("2026-01-01T00:00:00.000Z");
       insertPending(outbox.value.db, {
@@ -299,6 +307,7 @@ describe("runOperationalWork", () => {
           },
         },
         signal: controller.signal,
+        ledger,
       });
 
       await startedPromise;
@@ -315,6 +324,7 @@ describe("runOperationalWork", () => {
       expect(row?.attempts).toBe(0);
       expect(row?.lastError).toBeNull();
     } finally {
+      ledger.close();
       outbox.value.db.close();
       projection.value.db.close();
     }

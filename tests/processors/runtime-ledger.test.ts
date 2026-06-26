@@ -40,6 +40,7 @@ import type { ExecutionPolicyCap } from "../../src/processors/execution-policy";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
 import { capabilityUsesByRun } from "../../src/ledger/capability-uses";
 import { queryRuns, type RunId } from "../../src/ledger/runs";
+import { openTestLedger } from "../support/test-ledger";
 
 // Stub EngineVault — the runtime never touches it.
 const STUB_VAULT: EngineVault = {
@@ -774,6 +775,9 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     // Open a separate ledger purely to assert the OTHER ledger sees nothing
     // (no shared state between the two ledger files).
     const witnessLedger = await openLedger();
+    // The runtime gets its own independent in-memory ledger, so the
+    // witness (the file-backed ledger above) still sees zero rows.
+    const runtimeLedger = await openTestLedger();
 
     const p = makeFixtureProcessor({
       id: "test.no-ledger",
@@ -797,7 +801,7 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
       resolveGrants: () => [READ_WIKI],
       extensionIdFor: (id) => id,
       resolveTree: async () => TREE,
-      // ledger intentionally absent
+      ledger: runtimeLedger,
     });
 
     const results = await rt.adoptionRunner({
@@ -816,5 +820,6 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
 
     // No rows in the witness ledger (it was never wired in).
     expect(queryRuns(witnessLedger).length).toBe(0);
+    runtimeLedger.close();
   });
 });

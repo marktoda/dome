@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
 import { diagnosticEffect } from "../../src/core/effect";
 import { commitOid } from "../../src/core/source-ref";
@@ -9,8 +9,18 @@ import type {
   RunnerError,
   ViewPhaseRunner,
 } from "../../src/engine/core/runner-contract";
+import type { LedgerDb } from "../../src/ledger/db";
+import { openTestLedger } from "../support/test-ledger";
 
 describe("runViewCommand", () => {
+  let ledger: LedgerDb;
+  beforeAll(async () => {
+    ledger = await openTestLedger();
+  });
+  afterAll(() => {
+    ledger.close();
+  });
+
   test("view processor execution failure returns failed instead of empty success", async () => {
     const runId = "run_test_view_failed" as RunId;
     const executionError: RunnerError = {
@@ -53,6 +63,7 @@ describe("runViewCommand", () => {
           recorded.push(effect.code);
         },
       },
+      ledger,
     });
 
     expect(result.kind).toBe("failed");

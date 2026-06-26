@@ -38,6 +38,8 @@ import type { EngineVault } from "../../src/engine/core/vault-shape";
 import { commit, currentSha, initRepo, readRef, writeRef } from "../../src/git";
 import { openVaultRuntime } from "../../src/engine/host/vault-runtime";
 import { runCompilerHostTick } from "../../src/engine/host/compiler-host";
+import { insertQueued } from "../../src/ledger/runs";
+import { openTestLedger } from "../support/test-ledger";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SHIPPED_BUNDLES_ROOT = join(REPO_ROOT, "assets", "extensions");
@@ -272,6 +274,20 @@ describe("finalize-journal lifecycle in adopt()", () => {
       ];
     };
 
+    const ledger = await openTestLedger();
+    // capability_uses joins to a run row by runId — seed the run the
+    // hand-built RunnerResult references so the FK constraint is satisfied.
+    insertQueued(ledger, {
+      id: "run_finalize_journal" as RunId,
+      proposalId: null,
+      processorId: "test.patch",
+      processorVersion: "0.0.1",
+      phase: "adoption",
+      inputCommit: commitOid(sha),
+      triggerKind: "signal",
+      triggerPayload: null,
+      startedAt: new Date(),
+    });
     const r = await adopt({
       vault,
       proposal,
@@ -292,7 +308,9 @@ describe("finalize-journal lifecycle in adopt()", () => {
             },
           }),
       },
+      ledger,
     });
+    ledger.close();
 
     expect(r.adopted).toBe(true);
     expect(r.closureCommitOid).not.toBeNull();

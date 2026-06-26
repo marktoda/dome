@@ -114,7 +114,7 @@ export async function runViewCommand(opts: {
   readonly commandArgs?: unknown;
   readonly viewRunner: ViewPhaseRunner;
   readonly sinks: ApplyEffectSinks;
-  readonly ledger?: LedgerDb;
+  readonly ledger: LedgerDb;
 }): Promise<RunCommandResult> {
   const {
     vault,

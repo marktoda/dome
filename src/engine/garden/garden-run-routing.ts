@@ -39,7 +39,7 @@ export async function routeGardenRunEffects(opts: {
   readonly currentAdopted?: () => CommitOid;
   readonly proposalId: string | null;
   readonly sinks: ApplyEffectSinks;
-  readonly ledger?: LedgerDb;
+  readonly ledger: LedgerDb;
   readonly diagnostics: DiagnosticEffect[];
   readonly applyGardenPatch: (
     opts: ApplyPatchInput,
@@ -100,7 +100,7 @@ export async function routeGardenRunEffects(opts: {
         diagnostics: opts.diagnostics,
         applyGardenPatch: opts.applyGardenPatch,
         extensionId: opts.extensionIdFor(opts.result.processorId),
-        ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
+        ledger: opts.ledger,
         ...(opts.adoptSubProposal !== undefined
           ? { adoptSubProposal: opts.adoptSubProposal }
           : {}),

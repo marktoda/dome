@@ -20,6 +20,9 @@ import { diagnosticEffect, patchEffect } from "../../src/core/effect";
 import { commitOid } from "../../src/core/source-ref";
 import { makeManualProposal } from "../../src/core/proposal";
 import type { EngineVault } from "../../src/engine/core/vault-shape";
+import type { LedgerDb } from "../../src/ledger/db";
+import { insertQueued } from "../../src/ledger/runs";
+import { openTestLedger } from "../support/test-ledger";
 import {
   checkoutPathsAtRef,
   commit,
@@ -31,6 +34,7 @@ import {
 
 type Fixture = {
   vault: EngineVault;
+  ledger: LedgerDb;
   baseSha: string;
   cleanup: () => Promise<void>;
 };
@@ -51,13 +55,37 @@ async function makeMinimalGitVault(autoCommit = true): Promise<Fixture> {
       git: { auto_commit_workflows: autoCommit },
     },
   };
+  const ledger = await openTestLedger();
   return {
     vault,
+    ledger,
     baseSha,
     cleanup: async () => {
+      ledger.close();
       await rm(path, { recursive: true, force: true });
     },
   };
+}
+
+// capability_uses rows join to a run row by runId; seed the run the
+// hand-built RunnerResult references so the FK constraint is satisfied.
+function seedRun(
+  ledger: LedgerDb,
+  id: string,
+  processorId: string,
+  inputCommit: string,
+): void {
+  insertQueued(ledger, {
+    id: id as RunId,
+    proposalId: null,
+    processorId,
+    processorVersion: "0.0.1",
+    phase: "adoption",
+    inputCommit: commitOid(inputCommit),
+    triggerKind: "signal",
+    triggerPayload: null,
+    startedAt: new Date(),
+  });
 }
 
 const fixtures: Fixture[] = [];
@@ -87,6 +115,7 @@ describe("adopt fixed-point loop", () => {
       proposal,
       runAdoptionProcessors: runner,
       sinks: noopSinks(),
+      ledger: f.ledger,
     });
 
     expect(r.adopted).toBe(true);
@@ -128,6 +157,7 @@ describe("adopt fixed-point loop", () => {
       proposal,
       runAdoptionProcessors: runner,
       sinks: noopSinks(),
+      ledger: f.ledger,
     });
 
     expect(r.adopted).toBe(false);
@@ -150,6 +180,7 @@ describe("adopt fixed-point loop", () => {
     // the loop counts it as an auto patch (without these, the broker would
     // deny and the loop would converge on iter 1).
     const auto = { kind: "patch.auto" as const, paths: ["wiki/**"] };
+    seedRun(f.ledger, "run_test_diverger", "test.diverger", sha);
     const recorded: Array<{
       readonly code: string;
       readonly processorId: string;
@@ -187,6 +218,7 @@ describe("adopt fixed-point loop", () => {
         },
       },
       maxIterations: 3,
+      ledger: f.ledger,
     });
 
     expect(r.adopted).toBe(false);
@@ -265,6 +297,7 @@ describe("adopt fixed-point loop", () => {
           });
         },
       },
+      ledger: f.ledger,
     });
 
     expect(r.adopted).toBe(true);
@@ -325,6 +358,7 @@ describe("adopt fixed-point loop", () => {
       branch: "main",
     });
     const auto = { kind: "patch.auto" as const, paths: ["wiki/**"] };
+    seedRun(f.ledger, "run_test_ref_refusal", "test.patch", userHead);
     let ran = false;
     const runner: AdoptionPhaseRunner = async () => {
       if (ran) return [];
@@ -371,6 +405,7 @@ describe("adopt fixed-point loop", () => {
             },
           }),
       },
+      ledger: f.ledger,
     });
 
     expect(r.adopted).toBe(false);
@@ -436,6 +471,7 @@ describe("adopt fixed-point loop", () => {
       proposal,
       runAdoptionProcessors: runner,
       sinks: noopSinks(),
+      ledger: f.ledger,
     });
 
     expect(r.adopted).toBe(false);

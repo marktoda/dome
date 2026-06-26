@@ -3,7 +3,7 @@
 // filtering, processor-exception synthesis, resolveTree invocation, and
 // ProcessorContext round-trip.
 
-import { describe, test, expect } from "bun:test";
+import { afterAll, beforeAll, describe, test, expect } from "bun:test";
 import {
   buildRuntime,
   dispatchOneProcessor,
@@ -37,6 +37,16 @@ import { makeManualProposal } from "../../src/core/proposal";
 import type { SignalEvent } from "../../src/engine/core/compile-range";
 import type { EngineVault } from "../../src/engine/core/vault-shape";
 import type { ModelProvider } from "../../src/engine/core/model-invoke";
+import type { LedgerDb } from "../../src/ledger/db";
+import { openTestLedger } from "../support/test-ledger";
+
+let sharedLedger: LedgerDb;
+beforeAll(async () => {
+  sharedLedger = await openTestLedger();
+});
+afterAll(() => {
+  sharedLedger.close();
+});
 
 // Stub EngineVault — the runtime never touches it (only passed through the
 // AdoptionPhaseRunner input contract).
@@ -105,6 +115,7 @@ function buildRuntimeFor(
     resolveGrants: overrides?.resolveGrants ?? (() => [READ_WIKI]),
     extensionIdFor: overrides?.extensionIdFor ?? ((id) => id),
     resolveTree: overrides?.resolveTree ?? (async () => TREE),
+    ledger: sharedLedger,
     ...(overrides?.modelProvider !== undefined
       ? { modelProvider: overrides.modelProvider }
       : {}),
@@ -922,7 +933,7 @@ describe("dispatchOneProcessor — scoped snapshot reads", () => {
       ],
       resolveGrants: () => [readCap],
       extensionIdFor: (id) => id,
-      ledger: undefined,
+      ledger: sharedLedger,
     });
 
     expect(result.executionStatus).toBe("succeeded");

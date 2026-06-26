@@ -29,6 +29,7 @@ import type { Capability } from "../../src/core/processor";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
 import { capabilityUsesByRun } from "../../src/ledger/capability-uses";
 import { insertQueued, type RunId } from "../../src/ledger/runs";
+import { openTestLedger } from "../support/test-ledger";
 
 type Fixture = {
   vault: EngineVault;
@@ -284,8 +285,18 @@ describe("adopt — capability-use recording (Phase 6)", () => {
   test("no ledger wired → adoption runs normally; no capability_uses written", async () => {
     const f = await makeFixture();
     fixtures.push(f);
+    // A separate ledger threaded through `adopt`, so the fixture's own ledger
+    // (`f.ledger`) stays untouched and still sees zero rows for RUN_ID.
+    const otherLedger = await openTestLedger();
     const sha = await currentSha(f.vault.path);
     if (sha === null) throw new Error("expected sha");
+    // The capability_uses row joins to a run by runId; seed RUN_ID on the
+    // threaded ledger so the FK constraint is satisfied.
+    seedRun(otherLedger, {
+      id: RUN_ID,
+      processorId: "test.capuse.no-ledger",
+      inputCommit: sha,
+    });
     const proposal = makeManualProposal({
       id: "prop_capuse_4",
       base: commitOid(sha),
@@ -320,7 +331,7 @@ describe("adopt — capability-use recording (Phase 6)", () => {
       proposal,
       runAdoptionProcessors: runner,
       sinks: noopSinks(),
-      // ledger intentionally absent
+      ledger: otherLedger,
     });
 
     expect(r.adopted).toBe(false);
@@ -328,5 +339,6 @@ describe("adopt — capability-use recording (Phase 6)", () => {
     // The fixture's ledger was opened but not threaded through `adopt` —
     // so it sees zero rows.
     expect(capabilityUsesByRun(f.ledger, RUN_ID).length).toBe(0);
+    otherLedger.close();
   });
 });

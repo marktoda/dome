@@ -57,9 +57,8 @@
 //     EVERY_PROCESSOR_RUN_IS_LEDGERED), `./registry` (ProcessorRegistry),
 //     `./triggers` (matchTriggers + TriggerMatch), `./context`
 //     (makeProcessorContext + ProcessorContextInput), `./executor`
-//     (executeProcessor), `./execution-policy` (resolveExecutionPolicy),
-//     `../run-context` (makeRunContext — the no-ledger fallback for
-//     runner-result runId). The `../git` import
+//     (executeProcessor), `./execution-policy` (resolveExecutionPolicy).
+//     The `../git` import
 //     surfaces `readBlob` / `readTree` / `fileInfoAtCommit` for the Snapshot's read closures
 //     (`readFile`, `listMarkdownFiles`, `getFileInfo`); the closures are lazy — invoked
 //     only when an adoption-phase processor reads from `ctx.snapshot` —
@@ -132,7 +131,6 @@ import {
   makeProcessorContext,
   type ProcessorContextInput,
 } from "./context";
-import { makeRunContext } from "../run-context";
 import {
   modelInvokeForProcessor,
   type ModelProvider,
@@ -254,14 +252,12 @@ export type BuildRuntimeOptions = {
    * invocation, and exactly one terminal mark (`succeeded`, `failed`,
    * `timed_out`, or `cancelled`) after executor completion.
    *
-   * Optional for unit tests and lightweight fixtures. When absent, no ledger
-   * writes occur and the runner-result
-   * `runId` falls back to a `makeRunContext`-synthesized placeholder so
-   * downstream `applyEffect` capability-use recording still has a slot
-   * (the engine's adoption loop skips ledger writes if the ledger itself
-   * is absent at its own seam).
+   * Required: every processor invocation is ledgered, so the runtime is
+   * never constructed without a ledger to write to. Tests use an in-memory
+   * ledger (`openLedgerDb({ path: ":memory:" })`). This is the structural
+   * enforcer of [[EVERY_PROCESSOR_RUN_IS_LEDGERED]].
    */
-  readonly ledger?: LedgerDb;
+  readonly ledger: LedgerDb;
   /**
    * Optional read-only projection query surface. When present, view-phase
    * and garden-phase processor invocations populate `ctx.projection` so
@@ -451,7 +447,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
               resolveGrants,
               proposalId: input.proposal?.id ?? null,
               inputCommit: input.adopted,
-              ...(ledger !== undefined ? { ledger } : {}),
+              ledger,
             }),
           );
           break;
@@ -773,7 +769,7 @@ export type DispatchOneProcessorOptions<TEnvelope> = {
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
   readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
-  readonly ledger: LedgerDb | undefined;
+  readonly ledger: LedgerDb;
   readonly executionCap?: ExecutionPolicyCap;
   readonly signal?: AbortSignal;
   readonly executionState?: ProcessorExecutionState;
@@ -807,7 +803,7 @@ type DispatchFrame = {
   readonly inspectedPaths: ReadonlyArray<string>;
   readonly startedAt: Date;
   readonly executionCap?: ExecutionPolicyCap;
-  readonly ledger?: LedgerDb;
+  readonly ledger: LedgerDb;
 };
 
 type ExecutionContextBuildResult = {
@@ -865,32 +861,23 @@ async function beginDispatch<TEnvelope>(
   const contextChangedPaths = Object.freeze(
     filterReadablePaths(opts.changedPaths, declared, granted),
   );
-  const runId: RunId =
-    opts.ledger !== undefined
-      ? newRunId(startedAt)
-      : (makeRunContext({
-          extensionId,
-          base: opts.proposal?.base ?? opts.inputCommit,
-          sourceHead: opts.proposal?.head ?? opts.inputCommit,
-        }).runId as RunId);
+  const runId: RunId = newRunId(startedAt);
 
   // Ledger the queued row BEFORE any async work. `resolveInspectionPaths`
   // can do a full git tree walk (inspection: all-readable-markdown); a git
   // error there used to leave a trigger-matched invocation with NO run row
   // — the one outcome EVERY_PROCESSOR_RUN_IS_LEDGERED forbids.
-  if (opts.ledger !== undefined) {
-    insertQueued(opts.ledger, {
-      id: runId,
-      proposalId: opts.proposal?.id ?? null,
-      processorId: opts.processor.id,
-      processorVersion: opts.processor.version,
-      phase: opts.phase,
-      inputCommit: opts.inputCommit,
-      triggerKind: triggerKindOf(opts.matches),
-      triggerPayload: triggerPayloadOf(opts.matches),
-      startedAt,
-    });
-  }
+  insertQueued(opts.ledger, {
+    id: runId,
+    proposalId: opts.proposal?.id ?? null,
+    processorId: opts.processor.id,
+    processorVersion: opts.processor.version,
+    phase: opts.phase,
+    inputCommit: opts.inputCommit,
+    triggerKind: triggerKindOf(opts.matches),
+    triggerPayload: triggerPayloadOf(opts.matches),
+    startedAt,
+  });
 
   let inspectedPaths: ReadonlyArray<string>;
   try {
@@ -905,18 +892,16 @@ async function beginDispatch<TEnvelope>(
     // The processor was never invoked: record a reasoned skip so the row
     // reaches a terminal state, then rethrow to preserve the caller's
     // failure semantics.
-    if (opts.ledger !== undefined) {
-      markSkipped(opts.ledger, {
-        id: runId,
-        finishedAt: opts.now ?? new Date(),
-        error: JSON.stringify({
-          code: "dispatch.inspection-paths-failed",
-          message: e instanceof Error ? e.message : String(e),
-          phase: opts.phase,
-          processorId: opts.processor.id,
-        }),
-      });
-    }
+    markSkipped(opts.ledger, {
+      id: runId,
+      finishedAt: opts.now ?? new Date(),
+      error: JSON.stringify({
+        code: "dispatch.inspection-paths-failed",
+        message: e instanceof Error ? e.message : String(e),
+        phase: opts.phase,
+        processorId: opts.processor.id,
+      }),
+    });
     throw e;
   }
 
@@ -933,7 +918,7 @@ async function beginDispatch<TEnvelope>(
     ...(opts.executionCap !== undefined
       ? { executionCap: opts.executionCap }
       : {}),
-    ...(opts.ledger !== undefined ? { ledger: opts.ledger } : {}),
+    ledger: opts.ledger,
   };
   return Object.freeze(frame);
 }
@@ -1033,13 +1018,11 @@ function returnSkippedRun(opts: {
   readonly error: ProcessorSkippedExecutionError;
   readonly severity: "block" | "error";
 }): RunnerResult {
-  if (opts.frame.ledger !== undefined) {
-    markSkipped(opts.frame.ledger, {
-      id: opts.frame.runId,
-      finishedAt: new Date(),
-      error: JSON.stringify(opts.error),
-    });
-  }
+  markSkipped(opts.frame.ledger, {
+    id: opts.frame.runId,
+    finishedAt: new Date(),
+    error: JSON.stringify(opts.error),
+  });
   return Object.freeze({
     runId: opts.frame.runId,
     processorId: opts.frame.processor.id,
@@ -1073,7 +1056,7 @@ function recordAbortedBeforeDispatch(opts: {
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly proposalId: string | null;
   readonly inputCommit: CommitOid;
-  readonly ledger?: LedgerDb;
+  readonly ledger: LedgerDb;
 }): ReadonlyArray<RunnerResult> {
   const results: RunnerResult[] = [];
   for (const processor of opts.processors) {
@@ -1097,24 +1080,22 @@ function recordAbortedBeforeDispatch(opts: {
       phase: opts.phase,
       processorId: processor.id,
     });
-    if (opts.ledger !== undefined) {
-      insertQueued(opts.ledger, {
-        id: runId,
-        proposalId: opts.proposalId,
-        processorId: processor.id,
-        processorVersion: processor.version,
-        phase: opts.phase,
-        inputCommit: opts.inputCommit,
-        triggerKind: triggerKindOf(matches),
-        triggerPayload: triggerPayloadOf(matches),
-        startedAt,
-      });
-      markSkipped(opts.ledger, {
-        id: runId,
-        finishedAt: startedAt,
-        error: JSON.stringify(error),
-      });
-    }
+    insertQueued(opts.ledger, {
+      id: runId,
+      proposalId: opts.proposalId,
+      processorId: processor.id,
+      processorVersion: processor.version,
+      phase: opts.phase,
+      inputCommit: opts.inputCommit,
+      triggerKind: triggerKindOf(matches),
+      triggerPayload: triggerPayloadOf(matches),
+      startedAt,
+    });
+    markSkipped(opts.ledger, {
+      id: runId,
+      finishedAt: startedAt,
+      error: JSON.stringify(error),
+    });
     results.push(
       Object.freeze({
         runId,
@@ -1132,9 +1113,7 @@ function recordAbortedBeforeDispatch(opts: {
 }
 
 function markDispatchRunning(frame: DispatchFrame): void {
-  if (frame.ledger !== undefined) {
-    markRunning(frame.ledger, frame.runId, frame.startedAt);
-  }
+  markRunning(frame.ledger, frame.runId, frame.startedAt);
 }
 
 function buildExecutionContext<TEnvelope>(
@@ -1163,7 +1142,6 @@ function buildExecutionContext<TEnvelope>(
           costUsd += cost;
         },
         onCapabilityUse: (use) => {
-          if (frame.ledger === undefined) return;
           recordCapabilityUse(frame.ledger, {
             runId: frame.runId,
             capability: use.capability,
@@ -1492,7 +1470,6 @@ function markDispatchTerminal(
   execution: ProcessorExecutionResult,
   costUsd: number,
 ): void {
-  if (frame.ledger === undefined) return;
   const id = frame.runId;
   const finishedAt = new Date();
   const resolvedCostUsd = costUsdOrNull(costUsd);
@@ -1580,18 +1557,16 @@ function costUsdOrNull(costUsd: number): number | null {
 }
 
 function modelSpendForToday(opts: {
-  readonly ledger: LedgerDb | undefined;
+  readonly ledger: LedgerDb;
   /** Full processor id for per-processor spend; extension id for the pool. */
   readonly processorIdPrefix: string;
   readonly currentRunCostUsd: number;
   readonly now: Date;
 }): number {
-  const persisted = opts.ledger === undefined
-    ? 0
-    : sumCostUsdByProcessorPrefix(opts.ledger, {
-        processorIdPrefix: opts.processorIdPrefix,
-        sinceIso: startOfLocalDay(opts.now).toISOString(),
-      });
+  const persisted = sumCostUsdByProcessorPrefix(opts.ledger, {
+    processorIdPrefix: opts.processorIdPrefix,
+    sinceIso: startOfLocalDay(opts.now).toISOString(),
+  });
   return persisted + opts.currentRunCostUsd;
 }
 
