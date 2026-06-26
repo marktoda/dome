@@ -1,7 +1,7 @@
 ---
 type: glossary
 created: 2026-06-10
-updated: 2026-06-10
+updated: 2026-06-26
 tags:
   - orientation
   - vocabulary
@@ -27,6 +27,7 @@ term that lives in only one spec is defined there, not here.
 - **Candidate** — the merge of adopted state + Proposal head that the adoption loop iterates on.
 - **Closure commit** — the engine commit (with `Dome-*` trailers) that lands accumulated patches when adoption converges.
 - **Phase** — when a processor runs: **adoption** (deterministic, inside the loop), **garden** (after adoption), **view** (on command).
+- **Garden run** — a single non-signal garden-phase processor invocation: a schedule fire, a queued job, or an answer handler, dispatched against the adopted snapshot outside the adoption loop and routed via `routeGardenRunEffects`. The signal-triggered garden pass differs: it batches many processors' patches before spawning. The shared dispatch+route mechanism is `dispatchGardenRun` (`src/engine/garden/garden-run.ts`).
 - **Trigger** — what starts a processor run: signal / path / schedule / answer / command.
 - **Signal** — a change event the engine synthesizes from a Proposal's diff (`file.created`, `document.changed`, …). Unqualified, "signal" means this — not the preference signal (see §One word, several meanings).
 - **Capability / grant** — what a processor declares it needs vs. what the vault config allows; the intersection is enforced at the broker. [[wiki/specs/capabilities]]
