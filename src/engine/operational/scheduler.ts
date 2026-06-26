@@ -244,10 +244,7 @@ async function runSchedulerInner(opts: SchedulerOptions): Promise<SchedulerResul
     //   3. Cursor exists, cron matches: compute nextFire(parsed, lastFireDate);
     //      fire if nextFire <= nowDate.
     if (cursor === null) {
-      const ledgerLastFire =
-        ledger === undefined
-          ? null
-          : latestScheduleRunStartedAt(ledger, processor.id);
+      const ledgerLastFire = latestScheduleRunStartedAt(ledger, processor.id);
       if (ledgerLastFire === null) {
         due.push({
           processor,

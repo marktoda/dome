@@ -253,12 +253,9 @@ export type GardenPhaseRunner = (input: {
  * the processor. The engine threads it through `applyEffect` so the broker
  * records capability uses against the correct row — joining the
  * `capability_uses` and `runs` tables on this key (per
- * [[wiki/specs/run-ledger]] §"Tables — capability_uses"). When the runtime
- * is built without a ledger (the Phase 6 transitional state — see
- * `src/processors/runtime.ts`'s `BuildRuntimeOptions.ledger` slot), the
- * runtime synthesizes a placeholder id via `makeRunContext` so the engine
- * keeps its single-source-of-truth contract; nothing is recorded in that
- * case, but the type slot stays populated.
+ * [[wiki/specs/run-ledger]] §"Tables — capability_uses"). The runtime always
+ * has a ledger (`BuildRuntimeOptions.ledger` is required), so this is always
+ * a real, inserted run id.
  */
 export type RunnerResult = {
   readonly runId: RunId;

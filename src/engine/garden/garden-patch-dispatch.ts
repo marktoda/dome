@@ -43,7 +43,7 @@ export async function dispatchGardenPatchEffect(opts: {
   readonly declared: ReadonlyArray<Capability>;
   readonly granted: ReadonlyArray<Capability>;
   readonly sinks: ApplyEffectSinks;
-  readonly ledger?: LedgerDb;
+  readonly ledger: LedgerDb;
   readonly diagnostics: DiagnosticEffect[];
   readonly adoptSubProposal?: AdoptSubProposalFn;
   readonly applyGardenPatch: (opts: ApplyPatchInput) => Promise<CommitOid | null>;

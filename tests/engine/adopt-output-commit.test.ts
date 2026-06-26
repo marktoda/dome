@@ -115,7 +115,7 @@ describe("adopt — output_commit back-fill (Phase 6 polish)", () => {
     expect(queryRuns(f.ledger).length).toBe(0);
   });
 
-  test("no ledger wired → no updateOutputCommit attempted (no throw)", async () => {
+  test("diagnostic-only adoption → no updateOutputCommit attempted (no throw)", async () => {
     const f = await makeFixture();
     fixtures.push(f);
     const sha = await currentSha(f.vault.path);
@@ -152,11 +152,11 @@ describe("adopt — output_commit back-fill (Phase 6 polish)", () => {
       proposal,
       runAdoptionProcessors: runner,
       sinks: noopSinks(),
-      // ledger intentionally absent
+      ledger: f.ledger,
     });
     expect(r.adopted).toBe(true);
-    // Nothing to assert in the (un-wired) ledger; the test passes when
-    // adopt() doesn't throw on the missing-ledger path.
+    // Nothing to assert in the ledger; the test passes when adopt() doesn't
+    // throw on this path.
   });
 
   test("contributing succeeded runs receive the closure-commit OID via updateOutputCommit", async () => {

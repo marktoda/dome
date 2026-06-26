@@ -11,7 +11,7 @@
 // region forever. Real git + real applyPatchToCandidate; the only stub is
 // `adoptSubProposal` (we don't need adoption to actually run).
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { rm } from "node:fs/promises";
@@ -33,6 +33,31 @@ import type { Capability } from "../../src/core/processor";
 import type { RunId } from "../../src/engine/core/runner-contract";
 import type { EngineVault } from "../../src/engine/core/vault-shape";
 import { commit, initRepo } from "../../src/git";
+import type { LedgerDb } from "../../src/ledger/db";
+import { insertQueued } from "../../src/ledger/runs";
+import { openTestLedger } from "../support/test-ledger";
+
+let ledger: LedgerDb;
+beforeAll(async () => {
+  ledger = await openTestLedger();
+  // capability_uses joins to a run row by runId — the conflict test routes
+  // patch effects through runGardenPhase under a single shared RUN_ID, so
+  // seed that run row to satisfy the FK constraint.
+  insertQueued(ledger, {
+    id: RUN_ID,
+    proposalId: null,
+    processorId: "dome.claims.render-facts",
+    processorVersion: "0.0.1",
+    phase: "garden",
+    inputCommit: commitOid("0".repeat(40)),
+    triggerKind: "signal",
+    triggerPayload: null,
+    startedAt: new Date(),
+  });
+});
+afterAll(() => {
+  ledger.close();
+});
 
 type Fixture = {
   readonly vaultPath: string;
@@ -282,6 +307,7 @@ describe("spawnGardenSubProposal mergeBase plumbing", () => {
         runnerResult("dome.claims.stamp", "TOP: from-B\nm1\nm2\nm3\nBOTTOM: from-B\n"),
       ],
       sinks,
+      ledger,
       adoptSubProposal: async (proposal) => {
         liveAdopted = proposal.head; // advance the live ref as the host would
         return MINIMAL_ADOPTION(proposal);

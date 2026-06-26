@@ -9,7 +9,7 @@
 // authorized garden patch with no adoptSubProposal wired surfaces the run's
 // own message.
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,6 +32,8 @@ import {
   type GardenRun,
   type GardenRunDeps,
 } from "../../src/engine/garden/garden-run";
+import type { LedgerDb } from "../../src/ledger/db";
+import { openTestLedger } from "../support/test-ledger";
 
 const ADOPTED = commitOid("adopted0000000000000000000000000000000000");
 const TREE = treeOid("tree000000000000000000000000000000000000");
@@ -43,6 +45,14 @@ afterEach(() => {
     const root = roots.pop();
     if (root !== undefined) rmSync(root, { recursive: true, force: true });
   }
+});
+
+let ledger: LedgerDb;
+beforeAll(async () => {
+  ledger = await openTestLedger();
+});
+afterAll(() => {
+  ledger.close();
 });
 
 function makeVault(): EngineVault {
@@ -63,6 +73,7 @@ function baseDeps(
     resolveGrants: () => [],
     extensionIdFor: () => "test",
     applyGardenPatchToCandidate: async () => null,
+    ledger,
     ...overrides,
   };
 }

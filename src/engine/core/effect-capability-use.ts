@@ -110,12 +110,12 @@ function patchResource(effect: PatchEffect): string | null {
 }
 
 export function recordEffectCapabilityUse(opts: {
-  readonly ledger?: LedgerDb | undefined;
+  readonly ledger: LedgerDb;
   readonly runId: RunId;
   readonly capabilityUse?: EffectCapabilityUse | undefined;
   readonly recordedAt?: Date;
 }): void {
-  if (opts.ledger === undefined || opts.capabilityUse === undefined) return;
+  if (opts.capabilityUse === undefined) return;
   recordCapabilityUse(opts.ledger, {
     runId: opts.runId,
     capability: opts.capabilityUse.capability,

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
 import { diagnosticEffect } from "../../src/core/effect";
 import { makeManualProposal } from "../../src/core/proposal";
@@ -6,8 +6,18 @@ import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { noopSinks } from "../../src/engine/core/apply-effect";
 import { runGardenPhase } from "../../src/engine/garden/garden";
 import type { RunId } from "../../src/engine/core/runner-contract";
+import type { LedgerDb } from "../../src/ledger/db";
+import { openTestLedger } from "../support/test-ledger";
 
 describe("runGardenPhase", () => {
+  let ledger: LedgerDb;
+  beforeAll(async () => {
+    ledger = await openTestLedger();
+  });
+  afterAll(() => {
+    ledger.close();
+  });
+
   test("successful garden runs resolve stale diagnostics for inspected paths", async () => {
     const adopted = commitOid("abc123");
     const proposal = makeManualProposal({
@@ -63,6 +73,7 @@ describe("runGardenPhase", () => {
           });
         },
       },
+      ledger,
     });
 
     expect(result.diagnostics).toEqual([]);

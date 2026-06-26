@@ -11,7 +11,7 @@
 // after routing with the run's emitted effects, all gated on a succeeded
 // execution.
 
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
 import { routeGardenRunEffects } from "../../src/engine/garden/garden-run-routing";
 import { noopSinks, type ApplyEffectSinks } from "../../src/engine/core/apply-effect";
@@ -26,12 +26,41 @@ import type { RunnerResult, RunId } from "../../src/engine/core/runner-contract"
 import type { EngineVault } from "../../src/engine/core/vault-shape";
 import type { Effect } from "../../src/core/effect";
 import type { AdoptionResult, Proposal } from "../../src/core/proposal";
+import type { LedgerDb } from "../../src/ledger/db";
+import { insertQueued } from "../../src/ledger/runs";
+import { openTestLedger } from "../support/test-ledger";
 
 const ADOPTED = commitOid("a".repeat(40));
 const VAULT: EngineVault = {
   path: "/tmp/unused-garden-run-routing",
   config: { git: { auto_commit_workflows: true } },
 };
+
+let ledger: LedgerDb;
+beforeAll(async () => {
+  ledger = await openTestLedger();
+  // capability_uses joins to a run row by runId — seed the run rows the
+  // hand-built RunnerResults reference so the FK constraint is satisfied.
+  for (const [id, processorId] of [
+    ["run_routing_test", "test.scheduled"],
+    ["run_cascade_cap_test", "test.scheduled.cascade"],
+  ] as const) {
+    insertQueued(ledger, {
+      id: id as RunId,
+      proposalId: null,
+      processorId,
+      processorVersion: "0.0.1",
+      phase: "garden",
+      inputCommit: ADOPTED,
+      triggerKind: "schedule",
+      triggerPayload: null,
+      startedAt: new Date(),
+    });
+  }
+});
+afterAll(() => {
+  ledger.close();
+});
 
 const REF = sourceRef({ commit: ADOPTED, path: "wiki/page.md" });
 
@@ -72,6 +101,7 @@ async function route(opts: {
     diagnostics: opts.diagnostics ?? [],
     applyGardenPatch: async () => null,
     extensionIdFor: () => "test",
+    ledger,
     disabledDiagnostic: {
       code: "test.disabled",
       message: "garden patch dispatch disabled in this test",
@@ -300,6 +330,7 @@ describe("routeGardenRunEffects cascade-cap enforcement", () => {
       diagnostics,
       applyGardenPatch: async () => newHead,
       extensionIdFor: () => "test",
+      ledger,
       adoptSubProposal,
       cascadeDepth: MAX,       // at the cap
       maxCascadeDepth: MAX,    // cap is MAX
