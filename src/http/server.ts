@@ -22,15 +22,19 @@ import { captureJsonDocument, performCapture } from "../surface/capture";
 import { buildRecents } from "../surface/recents";
 import {
   catalogViewProblemMessage,
+  dispatchView,
   makeVaultMutex,
   openVaultErrorKind,
-  runCatalogView,
   runtimeOpenFailureMessage,
   withVault as withVaultShared,
   type CatalogViewProblem,
+  type ViewRenderer,
 } from "../surface/adapter";
 import { COMMAND_ERROR_SCHEMA } from "../surface/command-error";
-import { FIRST_PARTY_VIEWS } from "../surface/view-catalog";
+import {
+  FIRST_PARTY_VIEWS,
+  type FirstPartyViewEntry,
+} from "../surface/view-catalog";
 import type { Vault } from "../vault";
 import type { TextStreamPart, ToolSet } from "ai";
 import { runAgent, runAgentStream, type AgentStream } from "../agent/agent";
@@ -258,6 +262,23 @@ function viewProblemHttpStatus(problem: CatalogViewProblem): number {
     default:
       return 500;
   }
+}
+
+/** The HTTP error-rendering seam: open failures + view problems → Responses. */
+function httpViewRenderer<TPayload>(
+  route: string,
+  entry: FirstPartyViewEntry<TPayload>,
+): ViewRenderer<Response> {
+  return {
+    openFailed: (error) =>
+      commandErrorResponse(route, openVaultErrorKind(error)),
+    problem: (problem) =>
+      dataErrorResponse(
+        viewProblemHttpStatus(problem),
+        problem.kind,
+        catalogViewProblemMessage(route, entry, problem),
+      ),
+  };
 }
 
 function positiveInt(raw: string | null): number | null {
@@ -809,25 +830,17 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
         ...(date !== undefined ? { date } : {}),
         ...(limit !== null ? { limit } : {}),
       });
-      const outcome = await withVaultShared(
+      // Lenient degrade: HTTP renders/serves the daily surface even on a
+      // slightly-off payload, so it overrides the strict contract here and
+      // enriches via `parseTodayView` downstream.
+      const lenientToday = { ...FIRST_PARTY_VIEWS.today, payload: z.unknown() };
+      const run = await dispatchView(
         { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
-        // Lenient degrade: HTTP renders/serves the daily surface even on a
-        // slightly-off payload, so it overrides the strict contract here and
-        // enriches via `parseTodayView` downstream.
-        (v) => runCatalogView(v, { ...FIRST_PARTY_VIEWS.today, payload: z.unknown() }, args),
+        lenientToday,
+        args,
+        httpViewRenderer("GET /tasks", lenientToday),
       );
-      if (outcome.kind === "open-failed") {
-        return commandErrorResponse("GET /tasks", openVaultErrorKind(outcome.error));
-      }
-      const run = outcome.value;
-      if (run.kind === "problem") {
-        return dataErrorResponse(
-          viewProblemHttpStatus(run.problem),
-          run.problem.kind,
-          catalogViewProblemMessage("GET /tasks", FIRST_PARTY_VIEWS.today, run.problem),
-        );
-      }
-      return jsonResponse(200, run.data);
+      return run.kind === "rendered" ? run.envelope : jsonResponse(200, run.data);
     }
 
     if (route === "POST /resolve") {
@@ -907,35 +920,27 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
         ...(type !== undefined ? { type } : {}),
         ...(limit !== null ? { limit } : {}),
       });
-      const outcome = await withVaultShared(
+      const run = await dispatchView(
         { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
-        (v) => runCatalogView(v, FIRST_PARTY_VIEWS.query, args),
+        FIRST_PARTY_VIEWS.query,
+        args,
+        httpViewRenderer("GET /query", FIRST_PARTY_VIEWS.query),
       );
-      if (outcome.kind === "open-failed") {
-        return commandErrorResponse("GET /query", openVaultErrorKind(outcome.error));
-      }
-      const run = outcome.value;
-      if (run.kind === "problem") {
-        return dataErrorResponse(viewProblemHttpStatus(run.problem), run.problem.kind, catalogViewProblemMessage("GET /query", FIRST_PARTY_VIEWS.query, run.problem));
-      }
-      return jsonResponse(200, run.data);
+      return run.kind === "rendered" ? run.envelope : jsonResponse(200, run.data);
     }
 
     if (route === "GET /today") {
       const refresh = positiveInt(url.searchParams.get("refresh")) ?? 15;
-      const outcome = await withVaultShared(
+      // Lenient degrade (see GET /tasks): override the strict contract and
+      // enrich via `parseTodayView` so the HTML surface always renders.
+      const lenientToday = { ...FIRST_PARTY_VIEWS.today, payload: z.unknown() };
+      const run = await dispatchView(
         { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
-        // Lenient degrade (see GET /tasks): override the strict contract and
-        // enrich via `parseTodayView` so the HTML surface always renders.
-        (v) => runCatalogView(v, { ...FIRST_PARTY_VIEWS.today, payload: z.unknown() }, Object.freeze({})),
+        lenientToday,
+        Object.freeze({}),
+        httpViewRenderer("GET /today", lenientToday),
       );
-      if (outcome.kind === "open-failed") {
-        return commandErrorResponse("GET /today", openVaultErrorKind(outcome.error));
-      }
-      const run = outcome.value;
-      if (run.kind === "problem") {
-        return dataErrorResponse(viewProblemHttpStatus(run.problem), run.problem.kind, catalogViewProblemMessage("GET /today", FIRST_PARTY_VIEWS.today, run.problem));
-      }
+      if (run.kind === "rendered") return run.envelope;
       return new Response(renderTodayHtml(run.data, { refreshSeconds: refresh }), {
         status: 200,
         headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
