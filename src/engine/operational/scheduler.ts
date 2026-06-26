@@ -60,13 +60,15 @@ import {
 import type { AdoptionResult, Proposal } from "../../core/proposal";
 import type { CommitOid } from "../../core/source-ref";
 import type { ApplyEffectSinks } from "../core/apply-effect";
-import { resolveCurrentAdopted } from "../core/adoption-status";
 import {
   applyPatchToCandidate,
   type ApplyPatchInput,
 } from "../core/apply-patch";
 import { nextFire, parseCron, type ParsedCron } from "./cron";
-import { routeGardenRunEffects } from "../garden/garden-run-routing";
+import {
+  dispatchGardenRun,
+  type GardenRunDeps,
+} from "../garden/garden-run";
 import type { EngineVault } from "../core/vault-shape";
 import {
   getCursor,
@@ -83,10 +85,6 @@ import type {
   Processor,
   TreeOid,
 } from "../../core/processor";
-import {
-  dispatchOneProcessor,
-  makeSnapshot,
-} from "../../processors/runtime";
 import type { ExecutionPolicyCap } from "../../processors/execution-policy";
 import type { ProcessorExecutionState } from "../../processors/execution-state";
 import type { ModelProvider, ModelStepProvider } from "../core/model-invoke";
@@ -249,6 +247,29 @@ async function runSchedulerInner(opts: {
   const applyGardenPatch =
     opts.applyGardenPatchToCandidate ?? applyPatchToCandidate;
 
+  // The shared dispatch+route plumbing every schedule fire forwards verbatim;
+  // built once here and threaded into dispatchGardenRun per fire.
+  const gardenRunDeps: GardenRunDeps = {
+    vault,
+    adopted,
+    ...(currentAdopted !== undefined ? { currentAdopted } : {}),
+    resolveTree,
+    sinks,
+    resolveGrants,
+    extensionIdFor,
+    ...(extensionConfigFor !== undefined ? { extensionConfigFor } : {}),
+    ...(ledger !== undefined ? { ledger } : {}),
+    ...(executionState !== undefined ? { executionState } : {}),
+    ...(executionCap !== undefined ? { executionCap } : {}),
+    ...(modelProvider !== undefined ? { modelProvider } : {}),
+    ...(modelStepProvider !== undefined ? { modelStepProvider } : {}),
+    ...(operational !== undefined ? { operational } : {}),
+    ...(signal !== undefined ? { signal } : {}),
+    now,
+    applyGardenPatch,
+    ...(adoptSubProposal !== undefined ? { adoptSubProposal } : {}),
+  };
+
   const nowDate = now();
   const fired: ScheduledFireResult[] = [];
   const skipped: { processorId: string; reason: string }[] = [];
@@ -402,12 +423,6 @@ async function runSchedulerInner(opts: {
 
     let success: boolean;
     try {
-      const inputAdopted = resolveCurrentAdopted(currentAdopted, adopted);
-      // Build the snapshot once per fire — same shape adoptionRunner /
-      // gardenRunner construct, just resolved against the adopted commit
-      // (schedule fires see the post-adoption snapshot).
-      const snapshot = await makeSnapshot(vault.path, inputAdopted, resolveTree);
-
       // Synthesize a TriggerMatch list for the schedule trigger. Empty
       // matchedSignals because schedule fires have no signal stream.
       const matches: ReadonlyArray<TriggerMatch> = Object.freeze([
@@ -417,59 +432,34 @@ async function runSchedulerInner(opts: {
         }),
       ] as TriggerMatch[]);
 
-      const result = await dispatchOneProcessor({
-        processor,
-        phase,
-        envelope: Object.freeze({
-          kind: "schedule" as const,
-          cron,
-          firedAt: nowDate.toISOString(),
-        }),
-        snapshot,
-        changedPaths: Object.freeze([]),
-        now: nowDate,
-        // Schedule fires are not tied to a user-drift Proposal. The run
-        // ledger records proposal_id = NULL; inputCommit records the adopted
-        // snapshot the schedule fired against.
-        proposal: null,
-        inputCommit: inputAdopted,
-        matches,
-        resolveGrants,
-        extensionIdFor,
-        ...(extensionConfigFor !== undefined ? { extensionConfigFor } : {}),
-        ledger,
-        ...(signal !== undefined ? { signal } : {}),
-        ...(executionState !== undefined ? { executionState } : {}),
-        ...(executionCap !== undefined ? { executionCap } : {}),
-        ...(modelProvider !== undefined ? { modelProvider } : {}),
-        ...(modelStepProvider !== undefined ? { modelStepProvider } : {}),
-        ...(operational !== undefined ? { operational } : {}),
-      });
-
-      // Scheduled garden PatchEffects become garden sub-Proposals, matching
-      // signal-triggered garden semantics instead of mutating a candidate
-      // through the generic applyPatch sink.
-      await routeGardenRunEffects({
-        result,
-        vault,
-        adopted: inputAdopted,
-        ...(currentAdopted !== undefined ? { currentAdopted } : {}),
-        proposalId: null,
-        sinks,
-        diagnostics,
-        applyGardenPatch,
-        extensionIdFor,
-        ...(ledger !== undefined ? { ledger } : {}),
-        ...(adoptSubProposal !== undefined ? { adoptSubProposal } : {}),
-        now,
-        disabledDiagnostic: {
-          code: "scheduler.garden-sub-proposal-spawn-disabled",
-          message:
-            `Scheduled garden processor ${result.processorId} emitted ` +
-            `an authorized PatchEffect, but no adoptSubProposal ` +
-            `callback was wired; patch dropped.`,
+      // dispatchGardenRun owns the snapshot + dispatch + route envelope.
+      // Scheduled garden PatchEffects become garden sub-Proposals (matching
+      // signal-triggered garden semantics) rather than mutating a candidate
+      // through the generic applyPatch sink. Schedule fires are not tied to a
+      // user-drift Proposal (proposal_id = NULL); the run pins `nowDate` so
+      // its ledger startedAt matches the cursor math and envelope.firedAt.
+      const { result } = await dispatchGardenRun(
+        gardenRunDeps,
+        {
+          processor,
+          phase,
+          envelope: Object.freeze({
+            kind: "schedule" as const,
+            cron,
+            firedAt: nowDate.toISOString(),
+          }),
+          matches,
+          now: nowDate,
+          disabledDiagnostic: {
+            code: "scheduler.garden-sub-proposal-spawn-disabled",
+            message:
+              `Scheduled garden processor ${processor.id} emitted ` +
+              `an authorized PatchEffect, but no adoptSubProposal ` +
+              `callback was wired; patch dropped.`,
+          },
         },
-      });
+        diagnostics,
+      );
 
       // Success means the executor accepted the invocation as a processor
       // success. Executor failures/timeouts/cancellations and not-invoked
