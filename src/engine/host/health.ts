@@ -528,7 +528,14 @@ export type HealthReport = {
   readonly findings: ReadonlyArray<HealthFinding>;
 };
 
-export async function collectHealthReport(opts: {
+/**
+ * The single context `collectHealthReport` consumes — built from an open
+ * runtime by `healthInputsFromRuntime` (engine/host/health-inputs), with the
+ * doctor-only probes (model provider, commit signing) and threshold/now
+ * overrides set by the caller. Replaces the former 27-field inline options
+ * object: one named seam shared by `dome check` and `dome doctor`.
+ */
+export type HealthInputs = {
   readonly vaultPath: string;
   readonly projection: ProjectionDb;
   readonly ledger: LedgerDb;
@@ -574,185 +581,211 @@ export async function collectHealthReport(opts: {
   readonly pendingOutboxThresholdMs?: number;
   readonly recurringOutboxFailureThresholdMs?: number;
   readonly recurringTimeoutThreshold?: number;
-}): Promise<HealthReport> {
-  const now = opts.now ?? new Date();
-  const orphanRunThresholdMs =
-    opts.orphanRunThresholdMs ?? DEFAULT_ORPHAN_RUN_THRESHOLD_MS;
-  const pendingOutboxThresholdMs =
-    opts.pendingOutboxThresholdMs ?? DEFAULT_PENDING_OUTBOX_THRESHOLD_MS;
-  const failedOutbox = queryOutbox(opts.outbox, { status: "failed" });
-  const stuckPendingOutbox = queryOutbox(opts.outbox, { status: "pending" })
-    .filter((row) => isStuckPendingOutbox(row, now, pendingOutboxThresholdMs));
-  // Self-referential orphan containment (Task 4b): the run.orphan finding is a
-  // recovery surface, so it excludes the dome.health recovery processors' own
-  // minute-cadence runs — otherwise the orphan-run detector raises a finding
-  // about itself. A genuinely stuck health run is still visible via
-  // `dome inspect orphan-runs` (which calls orphanRuns unfiltered).
-  const orphaned = orphanRuns(opts.ledger, orphanRunThresholdMs, now, {
-    excludeProcessorIdPrefixes: ORPHAN_RECOVERY_EXCLUDED_PROCESSOR_PREFIXES,
-  });
-  // Recurring-failure surfaces (Task 3): one root-cause finding instead of a
-  // growing question stack / silent serve.log loop. All read-only and cheap.
-  const recurringOutboxFailures = recurringOutboxFailureFindings({
-    failedOutbox,
-    now,
-    ...(opts.recurringOutboxFailureThresholdMs !== undefined
-      ? { thresholdMs: opts.recurringOutboxFailureThresholdMs }
-      : {}),
-  });
-  const unreadableQuestions = unreadableQuestionBacklogFindings({
-    unrehydratableCount: countUnrehydratableQuestions(opts.projection),
-  });
-  const recurringTimeouts = recurringTimeoutFindings({
-    recentTimedOutRuns: queryRunSummaries(opts.ledger, {
-      status: "timed_out",
-      limit: RECURRING_TIMEOUT_SCAN_LIMIT,
-    }),
-    ...(opts.recurringTimeoutThreshold !== undefined
-      ? { threshold: opts.recurringTimeoutThreshold }
-      : {}),
-  });
-  // A latest-failure finding for a processor that is no longer registered
-  // (bundle retired or disabled) can never be superseded by a newer run —
-  // it would hold attention_required hostage forever (the stale
-  // dome.intake.synthesize-rollup failure of 2026-06-08). Registry absent
-  // (no bundles resolvable in this call shape) → no filtering.
-  const failedRuns = latestActiveProblemRuns(opts.ledger).filter(
-    (row) =>
-      opts.registry === undefined ||
-      opts.registry.get(row.processorId) !== undefined,
-  );
-  const quarantined = opts.executionState.quarantines();
-  const projectionDrift = projectionCacheKeysChanged(opts.projection, {
-    extensionSet: opts.extensions,
-    processorVersions: opts.processorVersions,
-    capabilityPolicyHash: opts.capabilityPolicyHash,
-  })
-    ? [projectionCacheDriftFinding()]
-    : [];
-  const adoptedDivergence = await adoptedRefDivergenceFinding(opts.vaultPath);
-  const instructionDrift = instructionDriftFindings(opts.vaultPath);
-  const storageSchema = collectOperationalSchemaFindings(opts.vaultPath);
-  const capabilityGrants =
-    opts.registry === undefined || opts.resolveGrants === undefined
+};
+
+/**
+ * `HealthInputs` with `now` and the always-defaulted thresholds resolved, so
+ * probes read concrete values. `collectHealthReport` normalizes once.
+ */
+type ProbeContext = HealthInputs & {
+  readonly now: Date;
+  readonly orphanRunThresholdMs: number;
+  readonly pendingOutboxThresholdMs: number;
+};
+
+/**
+ * A health probe: read the context, self-gate (a probe whose inputs are absent
+ * returns no findings), and return its findings. The pure detection functions
+ * keep their small focused inputs; each probe here is the thin adapter that
+ * derives those inputs from the context. Sync or async (the git/divergence
+ * probe is async); `collectHealthReport` awaits all.
+ */
+type HealthProbe = (
+  ctx: ProbeContext,
+) => ReadonlyArray<HealthFinding> | Promise<ReadonlyArray<HealthFinding>>;
+
+/**
+ * The probe registry — the single ordered list of every health probe. Order is
+ * the emitted `findings` order (and was the order of the former hand-spread
+ * `findings` array), so `dome doctor --json` / `dome check` output is unchanged.
+ * Adding a probe is one entry here plus its detection fn and its
+ * `SUMMARY_FIELD_BY_CODE` row; there is no longer a separate conditional-compute
+ * blob and findings-spread to keep in sync.
+ */
+const HEALTH_PROBES: ReadonlyArray<HealthProbe> = [
+  (c) => collectOperationalSchemaFindings(c.vaultPath),
+  (c) =>
+    c.registry === undefined || c.resolveGrants === undefined
       ? []
       : capabilityGrantFindings({
-          registry: opts.registry,
-          resolveGrants: opts.resolveGrants,
-        });
-  const capabilityGrantEntries =
-    opts.registry === undefined || opts.resolveGrants === undefined
+          registry: c.registry,
+          resolveGrants: c.resolveGrants,
+        }),
+  (c) =>
+    c.registry === undefined || c.resolveGrants === undefined
       ? []
       : capabilityGrantEntryFindings({
-          registry: opts.registry,
-          resolveGrants: opts.resolveGrants,
-          requirements: opts.doctorGrantEntries ?? [],
-        });
-  const capabilityGrantStarvation =
-    opts.registry === undefined || opts.resolveGrants === undefined
+          registry: c.registry,
+          resolveGrants: c.resolveGrants,
+          requirements: c.doctorGrantEntries ?? [],
+        }),
+  (c) =>
+    c.registry === undefined || c.resolveGrants === undefined
       ? []
       : capabilityGrantStarvationFindings({
-          registry: opts.registry,
-          resolveGrants: opts.resolveGrants,
-          requirements: opts.doctorGrantEntries ?? [],
-          ...(opts.extensionIdFor !== undefined
-            ? { extensionIdFor: opts.extensionIdFor }
+          registry: c.registry,
+          resolveGrants: c.resolveGrants,
+          requirements: c.doctorGrantEntries ?? [],
+          ...(c.extensionIdFor !== undefined
+            ? { extensionIdFor: c.extensionIdFor }
             : {}),
-        });
-  const modelProvider =
-    opts.registry === undefined || opts.resolveGrants === undefined
+        }),
+  (c) =>
+    c.registry === undefined || c.resolveGrants === undefined
       ? []
       : modelProviderFindings({
-          registry: opts.registry,
-          resolveGrants: opts.resolveGrants,
-          modelProviderConfigured: opts.modelProviderConfigured === true,
-        });
-  const modelProviderProbe =
-    opts.modelProviderProbe === undefined
+          registry: c.registry,
+          resolveGrants: c.resolveGrants,
+          modelProviderConfigured: c.modelProviderConfigured === true,
+        }),
+  (c) =>
+    c.modelProviderProbe === undefined
       ? []
-      : modelProviderProbeFindings(opts.modelProviderProbe);
-  const dailyPathMismatch =
-    opts.extensionConfigFor === undefined
+      : modelProviderProbeFindings(c.modelProviderProbe),
+  (c) =>
+    c.extensionConfigFor === undefined
       ? []
       : dailyPathMismatchFindings({
-          extensions: opts.extensions,
-          extensionConfigFor: opts.extensionConfigFor,
-        });
-  const sourcesTimeout =
-    opts.extensionConfigFor === undefined
+          extensions: c.extensions,
+          extensionConfigFor: c.extensionConfigFor,
+        }),
+  (c) =>
+    c.extensionConfigFor === undefined
       ? []
       : sourcesHandlerTimeoutFindings({
-          extensions: opts.extensions,
-          extensionConfigFor: opts.extensionConfigFor,
+          extensions: c.extensions,
+          extensionConfigFor: c.extensionConfigFor,
           externalHandlerTimeoutConfigured:
-            opts.externalHandlerTimeoutConfigured === true,
-        });
-  const sourcesFetchScript =
-    opts.extensionConfigFor === undefined
+            c.externalHandlerTimeoutConfigured === true,
+        }),
+  (c) =>
+    c.extensionConfigFor === undefined
       ? []
       : sourcesFetchScriptFindings({
-          extensions: opts.extensions,
-          extensionConfigFor: opts.extensionConfigFor,
+          extensions: c.extensions,
+          extensionConfigFor: c.extensionConfigFor,
           scriptIsFile: (scriptPath) => {
             const resolved = isAbsolute(scriptPath)
               ? scriptPath
-              : join(opts.vaultPath, scriptPath);
+              : join(c.vaultPath, scriptPath);
             try {
               return statSync(resolved).isFile();
             } catch {
               return false;
             }
           },
-        });
-  const dailyEdition =
-    opts.registry === undefined
+        }),
+  (c) =>
+    c.registry === undefined
       ? []
       : dailyEditionFindings({
-          now,
-          briefCron: briefScheduleCron(opts.registry),
-          briefRunDates: briefRunDates(opts.ledger),
+          now: c.now,
+          briefCron: briefScheduleCron(c.registry),
+          briefRunDates: briefRunDates(c.ledger),
           calendarFileExists: (date) =>
-            existsSync(
-              join(opts.vaultPath, "sources", "calendar", `${date}.md`),
-            ),
-        });
-  const taskAnchorDuplicates = opts.extensions.some((e) => e.name === "dome.daily")
-    ? duplicateTaskAnchorFindings({
-        files: markdownFilesForTaskAnchorScan(opts.vaultPath),
-      })
-    : [];
+            existsSync(join(c.vaultPath, "sources", "calendar", `${date}.md`)),
+        }),
+  (c) =>
+    c.extensions.some((e) => e.name === "dome.daily")
+      ? duplicateTaskAnchorFindings({
+          files: markdownFilesForTaskAnchorScan(c.vaultPath),
+        })
+      : [],
+  (c) => (c.commitSigningEnabled === true ? [commitSigningFinding()] : []),
+  // Outbox failures: failed rows and the recurring-failure root cause share one
+  // `queryOutbox(failed)` read, emitted in the former spread order.
+  (c) => {
+    const failedOutbox = queryOutbox(c.outbox, { status: "failed" });
+    return [
+      ...failedOutbox.map(outboxFinding),
+      ...recurringOutboxFailureFindings({
+        failedOutbox,
+        now: c.now,
+        ...(c.recurringOutboxFailureThresholdMs !== undefined
+          ? { thresholdMs: c.recurringOutboxFailureThresholdMs }
+          : {}),
+      }),
+    ];
+  },
+  (c) =>
+    queryOutbox(c.outbox, { status: "pending" })
+      .filter((row) => isStuckPendingOutbox(row, c.now, c.pendingOutboxThresholdMs))
+      .map(stuckPendingOutboxFinding),
+  // Self-referential orphan containment (Task 4b): the run.orphan finding is a
+  // recovery surface, so it excludes the dome.health recovery processors' own
+  // minute-cadence runs — otherwise the orphan-run detector raises a finding
+  // about itself. A genuinely stuck health run is still visible via
+  // `dome inspect orphan-runs` (which calls orphanRuns unfiltered).
+  (c) =>
+    orphanRuns(c.ledger, c.orphanRunThresholdMs, c.now, {
+      excludeProcessorIdPrefixes: ORPHAN_RECOVERY_EXCLUDED_PROCESSOR_PREFIXES,
+    }).map(orphanFinding),
+  // A latest-failure finding for a processor that is no longer registered
+  // (bundle retired or disabled) can never be superseded by a newer run — it
+  // would hold attention_required hostage forever (the stale
+  // dome.intake.synthesize-rollup failure of 2026-06-08). Registry absent (no
+  // bundles resolvable in this call shape) → no filtering.
+  (c) =>
+    latestActiveProblemRuns(c.ledger)
+      .filter(
+        (row) =>
+          c.registry === undefined ||
+          c.registry.get(row.processorId) !== undefined,
+      )
+      .map(latestProblemRunFinding),
+  (c) =>
+    recurringTimeoutFindings({
+      recentTimedOutRuns: queryRunSummaries(c.ledger, {
+        status: "timed_out",
+        limit: RECURRING_TIMEOUT_SCAN_LIMIT,
+      }),
+      ...(c.recurringTimeoutThreshold !== undefined
+        ? { threshold: c.recurringTimeoutThreshold }
+        : {}),
+    }),
+  (c) => c.executionState.quarantines().map(quarantineFinding),
+  (c) =>
+    unreadableQuestionBacklogFindings({
+      unrehydratableCount: countUnrehydratableQuestions(c.projection),
+    }),
+  (c) =>
+    projectionCacheKeysChanged(c.projection, {
+      extensionSet: c.extensions,
+      processorVersions: c.processorVersions,
+      capabilityPolicyHash: c.capabilityPolicyHash,
+    })
+      ? [projectionCacheDriftFinding()]
+      : [],
+  async (c) => {
+    const divergence = await adoptedRefDivergenceFinding(c.vaultPath);
+    return divergence === null ? [] : [divergence];
+  },
+  (c) => instructionDriftFindings(c.vaultPath),
+];
 
-  const commitSigning =
-    opts.commitSigningEnabled === true
-      ? [commitSigningFinding()]
-      : [];
-
-  const findings: HealthFinding[] = [
-    ...storageSchema,
-    ...capabilityGrants,
-    ...capabilityGrantEntries,
-    ...capabilityGrantStarvation,
-    ...modelProvider,
-    ...modelProviderProbe,
-    ...dailyPathMismatch,
-    ...sourcesTimeout,
-    ...sourcesFetchScript,
-    ...dailyEdition,
-    ...taskAnchorDuplicates,
-    ...commitSigning,
-    ...failedOutbox.map(outboxFinding),
-    ...recurringOutboxFailures,
-    ...stuckPendingOutbox.map(stuckPendingOutboxFinding),
-    ...orphaned.map(orphanFinding),
-    ...failedRuns.map(latestProblemRunFinding),
-    ...recurringTimeouts,
-    ...quarantined.map(quarantineFinding),
-    ...unreadableQuestions,
-    ...projectionDrift,
-    ...(adoptedDivergence === null ? [] : [adoptedDivergence]),
-    ...instructionDrift,
-  ];
-  return buildHealthReport(findings, now);
+export async function collectHealthReport(
+  opts: HealthInputs,
+): Promise<HealthReport> {
+  const ctx: ProbeContext = {
+    ...opts,
+    now: opts.now ?? new Date(),
+    orphanRunThresholdMs:
+      opts.orphanRunThresholdMs ?? DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
+    pendingOutboxThresholdMs:
+      opts.pendingOutboxThresholdMs ?? DEFAULT_PENDING_OUTBOX_THRESHOLD_MS,
+  };
+  const found = await Promise.all(HEALTH_PROBES.map((probe) => probe(ctx)));
+  return buildHealthReport(found.flat(), ctx.now);
 }
 
 export function collectOperationalSchemaReport(opts: {
