@@ -39,6 +39,7 @@ term that lives in only one spec is defined there, not here.
 - **Answer handler** — a garden processor triggered by a durable answer.
 - **Quarantine** — where a repeatedly-failing processor sits until recovered.
 - **Compiler host** — the tick loop behind `dome serve` / `dome sync`: detect branch drift, construct the Proposal, run adoption.
+- **View dispatch** — the shared `dispatchView` core (`src/surface/adapter.ts`) that opens a vault, runs a catalog view, validates it against the first-party View Contract, and routes the three outcomes (open-failed / problem / ok) to a per-protocol `ViewRenderer`. Error rendering is the protocol-uniform seam; `ok` rendering (JSON / HTML / stderr) stays with the caller. The adapter analog of [[#Garden run]]'s `dispatchGardenRun`; CLI / MCP / HTTP all flow through it.
 
 ## Content conventions (markdown grammar)
 

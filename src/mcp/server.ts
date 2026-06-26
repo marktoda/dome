@@ -56,11 +56,12 @@ import {
 import { buildStatusSnapshot } from "../surface/status";
 import {
   catalogViewProblemMessage,
+  dispatchView,
   makeVaultMutex,
   openVaultErrorKind,
-  runCatalogView,
   runtimeOpenFailureMessage,
   withVault as withVaultShared,
+  type ViewRenderer,
 } from "../surface/adapter";
 import {
   FIRST_PARTY_VIEWS,
@@ -186,9 +187,21 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
       : outcome.value;
   };
 
+  /** The MCP error-rendering seam: open failures + view problems → tool errors. */
+  const mcpViewRenderer = <TPayload>(
+    toolLabel: string,
+    entry: FirstPartyViewEntry<TPayload>,
+  ): ViewRenderer<ToolResult> => ({
+    openFailed: (error) =>
+      commandErrorResult(toolLabel, openVaultErrorKind(error)),
+    problem: (problem) =>
+      errorToolResult([catalogViewProblemMessage(toolLabel, entry, problem)]),
+  });
+
   /**
-   * Run a catalog view through the shared runner; problems render with the
-   * shared operator wording as tool errors.
+   * Run a catalog view through the shared `dispatchView` core. Keeps the
+   * `{ kind: "ok" } | { kind: "error" }` shape the tool handlers already branch
+   * on; the open-use-close + validation + problem rendering live in the core.
    */
   const structuredViewResult = async <TPayload>(input: {
     readonly toolLabel: string;
@@ -198,33 +211,16 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
     | { readonly kind: "ok"; readonly data: TPayload }
     | { readonly kind: "error"; readonly result: ToolResult }
   > => {
-    const outcome = await withVaultShared({ path: vault, bundlesRoot }, (v) =>
-      runCatalogView(v, input.entry, input.args),
+    const run = await dispatchView(
+      { path: vault, bundlesRoot },
+      input.entry,
+      input.args,
+      mcpViewRenderer(input.toolLabel, input.entry),
     );
-    if (outcome.kind === "open-failed") {
-      return {
-        kind: "error",
-        result: commandErrorResult(
-          input.toolLabel,
-          openVaultErrorKind(outcome.error),
-        ),
-      };
-    }
-    const run = outcome.value;
-    if (run.kind === "problem") {
-      return viewError(
-        catalogViewProblemMessage(input.toolLabel, input.entry, run.problem),
-      );
-    }
-    return { kind: "ok", data: run.data };
+    return run.kind === "rendered"
+      ? { kind: "error", result: run.envelope }
+      : { kind: "ok", data: run.data };
   };
-
-  const viewError = (
-    message: string,
-  ): { readonly kind: "error"; readonly result: ToolResult } => ({
-    kind: "error",
-    result: errorToolResult([message]),
-  });
 
   // ----- capture ---------------------------------------------------------------
 

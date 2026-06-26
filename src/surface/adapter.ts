@@ -304,3 +304,58 @@ export function catalogViewProblemExitCode(
       return 1;
   }
 }
+
+// ----- View dispatch (the shared adapter core) -----------------------------------
+
+/**
+ * The per-protocol error-rendering seam. The two outcomes that are uniform
+ * within a protocol — a vault-open failure and a catalog-view problem — render
+ * here; the `ok` outcome varies per route (JSON / HTML / stderr) so the caller
+ * owns it. CLI/MCP/HTTP each supply one `ViewRenderer`.
+ */
+export type ViewRenderer<TEnvelope> = {
+  readonly openFailed: (error: OpenVaultError) => TEnvelope;
+  readonly problem: (problem: CatalogViewProblem) => TEnvelope;
+};
+
+/**
+ * What `dispatchView` returns: either an already-rendered error envelope, or
+ * the validated, typed `ok` payload for the caller to render its own way.
+ */
+export type ViewDispatch<TPayload, TEnvelope> =
+  | {
+      readonly kind: "ok";
+      readonly data: TPayload;
+      readonly brokerDiagnostics: ReadonlyArray<DiagnosticEffect>;
+    }
+  | { readonly kind: "rendered"; readonly envelope: TEnvelope };
+
+/**
+ * Open the vault, run one catalog view against its View Contract, and route the
+ * three outcomes to the renderer (open-failed, problem) or back to the caller
+ * (ok). The adapter analog of `dispatchGardenRun`: one small interface, all the
+ * open-use-close + validate + branch behaviour behind it. Every protocol
+ * adapter's view path flows through here.
+ */
+export async function dispatchView<TPayload, TEnvelope>(
+  locator: { readonly path: string; readonly bundlesRoot?: string | undefined },
+  entry: FirstPartyViewEntry<TPayload>,
+  args: unknown,
+  renderer: ViewRenderer<TEnvelope>,
+): Promise<ViewDispatch<TPayload, TEnvelope>> {
+  const outcome = await withVault(locator, (v) =>
+    runCatalogView(v, entry, args),
+  );
+  if (outcome.kind === "open-failed") {
+    return { kind: "rendered", envelope: renderer.openFailed(outcome.error) };
+  }
+  const run = outcome.value;
+  if (run.kind === "problem") {
+    return { kind: "rendered", envelope: renderer.problem(run.problem) };
+  }
+  return {
+    kind: "ok",
+    data: run.data,
+    brokerDiagnostics: run.brokerDiagnostics,
+  };
+}
