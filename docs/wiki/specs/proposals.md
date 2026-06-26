@@ -107,6 +107,23 @@ Proposals. A `DEFAULT_MAX_CASCADE_DEPTH` cap (default 10, in
 a `garden.cascade-cap` DiagnosticEffect (see
 [[wiki/gotchas/garden-cascade-cap]]).
 
+**Convergence.** When `applyPatchToCandidate` applies a garden-emitted
+PatchEffect whose whole-content `write` targets a file an earlier sub-Proposal
+in the same cascade already changed, it does so as a **3-way merge** — not a
+whole-file overwrite — whose base is the snapshot the emitting processor read
+(`runContext.mergeBase`), with the already-landed candidate blob as `ours` and
+the write's content as `theirs`. Two garden processors that edit disjoint
+regions of the same file therefore compose: the second does not revert the
+first, so the cascade reaches its fixed point instead of livelocking on mutual
+reverts. Overlapping edits to the same region resolve to the already-landed
+change (`ours`, never reverted) and surface a `garden.patch.merge-conflict`
+diagnostic (path + processorId) via the `onMergeConflict` hook; forward progress
+is still guaranteed because the conflicted processor re-derives against the
+merged state on the next cascade. The adoption-phase apply is unchanged — its
+own fixed-point loop (per [[wiki/specs/adoption]] §"The fixed-point adoption
+loop") self-heals. See
+[[cohesive/brainstorms/2026-06-16-garden-patch-3way-merge]].
+
 A garden processor cannot bypass adoption. The engine is the only entity that constructs a Proposal from a garden effect, and the engine always routes it through the loop. This is the structural fence behind [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
 
 ### Hosted-protected mode (v1.5 — designed-for, not shipped)

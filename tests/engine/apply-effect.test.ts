@@ -59,13 +59,134 @@ test("phase compatibility table covers every effect kind and phase", () => {
   }
   expect(EFFECT_PHASE_COMPATIBILITY.patch).toEqual({
     adoption: true,
-    garden: false,
+    garden: true,
     view: false,
   });
   expect(EFFECT_PHASE_COMPATIBILITY.view).toEqual({
     adoption: false,
     garden: false,
     view: true,
+  });
+});
+
+describe("garden-phase PatchEffect routing", () => {
+  // Migrated from the deleted garden-patch-router; garden patches now cross the
+  // sole applier. An authorized auto patch is queued for sub-Proposal spawn by
+  // the orchestrator (queued-for-spawn); denied/downgraded/propose patches are
+  // surfaced and dropped without writing through the patch sink.
+  const gardenRef = sourceRef({ commit: commitOid("abc"), path: "wiki/x.md" });
+  const autoCap: Capability = { kind: "patch.auto", paths: ["wiki/**"] };
+  const proposeCap: Capability = { kind: "patch.propose", paths: ["wiki/**"] };
+  const autoPatch = patchEffect({
+    mode: "auto",
+    changes: [{ kind: "write", path: "wiki/x.md", content: "x\n" }],
+    reason: "test auto patch",
+    sourceRefs: [gardenRef],
+  });
+  const proposePatch = patchEffect({
+    mode: "propose",
+    changes: [{ kind: "write", path: "wiki/x.md", content: "x\n" }],
+    reason: "test propose patch",
+    sourceRefs: [gardenRef],
+  });
+
+  test("authorized auto patch is queued for sub-Proposal spawn", async () => {
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "garden",
+      declared: [autoCap, read],
+      granted: [autoCap, read],
+      effect: autoPatch,
+    });
+    expect(r.outcome).toBe("queued-for-spawn");
+    expect(r.appliedEffect).toBe(autoPatch);
+    expect(r.diagnostics).toEqual([]);
+    expect(r.capabilityUse).toEqual({
+      capability: "patch.auto",
+      resource: "wiki/x.md",
+      outcome: "allowed",
+    });
+  });
+
+  test("denied patch is dropped and surfaced as a rejected diagnostic", async () => {
+    const recorded: string[] = [];
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "garden",
+      declared: [],
+      granted: [],
+      effect: autoPatch,
+      sinks: {
+        ...noopSinks(),
+        recordDiagnostic: async ({ effect }) => {
+          recorded.push(effect.code);
+        },
+      },
+    });
+    expect(r.outcome).toBe("denied");
+    expect(r.appliedEffect).toBeNull();
+    expect(r.diagnostics[0]?.code).toBe("capability-deny-patch");
+    expect(r.capabilityUse).toEqual({
+      capability: "patch.auto",
+      resource: "wiki/x.md",
+      outcome: "denied",
+    });
+    expect(recorded).toEqual(["capability-deny-patch"]);
+  });
+
+  test("downgraded patch is dropped and surfaced as a diagnostic", async () => {
+    const recorded: string[] = [];
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "garden",
+      declared: [proposeCap, read],
+      granted: [proposeCap, read],
+      effect: autoPatch,
+      sinks: {
+        ...noopSinks(),
+        recordDiagnostic: async ({ effect }) => {
+          recorded.push(effect.code);
+        },
+      },
+    });
+    expect(r.outcome).toBe("downgraded");
+    expect(r.appliedEffect).toBeNull();
+    expect(r.diagnostics[0]?.code).toBe("capability-downgrade-surprise");
+    expect(r.capabilityUse).toEqual({
+      capability: "patch.auto",
+      resource: "wiki/x.md",
+      outcome: "downgraded",
+    });
+    expect(recorded).toEqual(["capability-downgrade-surprise"]);
+  });
+
+  test("authorized propose patch is dropped until the review surface exists", async () => {
+    const recorded: string[] = [];
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "garden",
+      declared: [proposeCap, read],
+      granted: [proposeCap, read],
+      effect: proposePatch,
+      sinks: {
+        ...noopSinks(),
+        recordDiagnostic: async ({ effect }) => {
+          recorded.push(effect.code);
+        },
+      },
+    });
+    expect(r.outcome).toBe("blocked-for-review");
+    expect(r.appliedEffect).toBeNull();
+    expect(r.diagnostics[0]?.code).toBe(
+      "garden.patch-propose-review-unavailable",
+    );
+    expect(r.diagnostics[0]?.severity).toBe("info");
+    expect(r.capabilityUse).toEqual({
+      capability: "patch.propose",
+      resource: "wiki/x.md",
+      outcome: "allowed",
+    });
+    expect(recorded).toEqual(["garden.patch-propose-review-unavailable"]);
   });
 });
 
@@ -174,24 +295,6 @@ describe("phase-mismatch rejections", () => {
       }),
     });
     expect(r.outcome).toBe("rejected-by-phase");
-  });
-
-  test("PatchEffect in garden phase is not routed by the generic router", async () => {
-    const auto: Capability = { kind: "patch.auto", paths: ["wiki/**"] };
-    const r = await applyEffect({
-      ...baseOpts,
-      declared: [auto],
-      granted: [auto],
-      phase: "garden",
-      effect: patchEffect({
-        mode: "auto",
-        changes: [{ kind: "write", path: "wiki/x.md", content: "x\n" }],
-        reason: "x",
-        sourceRefs: [ref],
-      }),
-    });
-    expect(r.outcome).toBe("rejected-by-phase");
-    expect(r.diagnostics[0]?.message).toContain("garden-patch-dispatch");
   });
 
   test("PatchEffect in view phase", async () => {

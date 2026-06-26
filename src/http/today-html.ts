@@ -10,7 +10,15 @@ export type TodayHtmlOptions = {
   readonly refreshSeconds: number;
 };
 
-import { addDays, daysBetween, parseTodayView, type TodayTaskRow, type TodayQuestionRow, type TodayCalendarEvent, type TodayHeroItem } from "../surface/today-view";
+import {
+  parseTodayView,
+  buildTodayViewModel,
+  priorityMarkerChars,
+  type TodayTaskRow,
+  type TodayQuestionRow,
+  type TodayCalendarEvent,
+  type TodaySections,
+} from "../surface/today-view";
 
 // @font-face: the design's Basel Grotesk (Book 485 / Medium 535). The woff2
 // bytes are served from same-origin, year-cacheable routes (the HTTP adapter's
@@ -26,23 +34,14 @@ const FONT_FACE = `
 
 export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
   const refresh = Math.max(1, Math.floor(opts.refreshSeconds));
-  const view = parseTodayView(data);
-  const { date, openTasks, followups, questions, brief, calendar, hero, counts } = view;
-  // Use true totals from the shared parser counts (not the display-limited received lengths).
-  const total = counts.openTasks + counts.followups + counts.questions;
-
-  // The hero task is already the pill above — don't repeat it in "Still open".
-  const heroKey =
-    hero !== null && hero.kind === "task"
-      ? `${hero.item.path}:${hero.item.line ?? ""}:${hero.item.text}`
-      : null;
-  const allItems = [...openTasks, ...followups].filter(
-    (t) => heroKey === null || `${t.path}:${t.line ?? ""}:${t.text}` !== heroKey,
-  );
-  const isAllClear = total === 0;
-  // True total for the "Still open" section (tasks + followups, hero shown separately).
-  const heroIsTask = hero !== null && hero.kind === "task";
-  const trueOpenCount = counts.openTasks + counts.followups - (heroIsTask ? 1 : 0);
+  const vm = buildTodayViewModel(parseTodayView(data));
+  const { date, questions, brief, calendar, stillOpen, counts, totalOpen } = vm;
+  const isAllClear = totalOpen === 0;
+  const hasOpenItems =
+    stillOpen.overdue.length + stillOpen.dueToday.length + stillOpen.thisWeek.length +
+    stillOpen.later.length + stillOpen.someday.length > 0;
+  // True total for the "Still open" header (tasks + followups).
+  const trueOpenCount = counts.openTasks + counts.followups;
 
   const style = `${FONT_FACE}
     * { box-sizing: border-box; }
@@ -71,14 +70,6 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
     /* brief */
     .brief-text { font-size: 19px; line-height: 1.57; color: rgba(255,255,255,0.92); margin: 0 0 8px; max-width: 64ch; letter-spacing: -0.005em; }
     .brief-prov { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: rgba(255,255,255,0.32); margin-bottom: 28px; }
-
-    /* hero pill */
-    .hero { display: inline-flex; gap: 12px; align-items: center; padding: 13px 18px; border: 1px solid rgba(255,55,199,0.35); border-radius: 15px; margin-bottom: 36px; }
-    .hero-arrow { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: #FF37C7; font-size: 16px; }
-    .hero-text { font-size: 16px; color: #fff; }
-    .hero-urgency { margin-left: 10px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; color: #FF593C; }
-    .hero-urgency.warn { color: #FFBF17; }
-    .hero-urgency.ok { color: rgba(255,255,255,0.5); }
 
     /* two-column band */
     .band { display: grid; grid-template-columns: 1fr; gap: 36px; margin-bottom: 36px; }
@@ -122,6 +113,9 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
     .open-glyph.open { color: rgba(255,255,255,0.5); }
     .open-body { flex: 1; }
     .open-text { font-size: 15px; line-height: 1.4; }
+    .prio { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+    .prio-high { color: #FF593C; }
+    .prio-low { color: rgba(255,255,255,0.4); }
     .reveal .src { opacity: 0; transition: opacity .14s ease; }
     .reveal:hover .src { opacity: .55; }
     .src { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 3px; }
@@ -177,8 +171,6 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
   <div class="brief-prov">&#8627; ${esc(brief.sourceRef.path)} · brief</div>`
     : "";
 
-  const heroHtml = hero !== null ? renderHeroHtml(hero, date) : "";
-
   const calendarHtml = calendar !== null && calendar.events.length > 0
     ? renderCalendarHtml(calendar.events)
     : "";
@@ -191,8 +183,8 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
     ? `<div class="band">${calendarHtml}${questionsHtml}</div>`
     : "";
 
-  const stillOpenHtml = allItems.length > 0
-    ? renderStillOpenHtml(allItems, date, trueOpenCount)
+  const stillOpenHtml = hasOpenItems
+    ? renderStillOpenHtml(stillOpen, date, trueOpenCount)
     : "";
 
   const allClearHtml = isAllClear
@@ -221,7 +213,7 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
   const bodyContent = isAllClear
     ? `${allClearHtml}`
     : `${briefHtml}
-  ${heroHtml}${bandHtml}${stillOpenHtml}`;
+  ${bandHtml}${stillOpenHtml}`;
 
   const scriptHtml = buildScriptHtml(refresh, questions);
 
@@ -484,41 +476,6 @@ function buildScriptHtml(
 
 // ── Section renderers ───────────────────────────────────────────────────────
 
-function renderHeroHtml(hero: TodayHeroItem, today: string): string {
-  if (hero.kind === "task") {
-    const item = hero.item;
-    let urgencyHtml = "";
-    if (item.dueDate !== null) {
-      if (item.dueDate < today) {
-        urgencyHtml = `<span class="hero-urgency">overdue ${daysBetween(item.dueDate, today)}d</span>`;
-      } else if (item.dueDate === today) {
-        urgencyHtml = `<span class="hero-urgency warn">due today</span>`;
-      } else {
-        urgencyHtml = `<span class="hero-urgency ok">due ${esc(item.dueDate)}</span>`;
-      }
-    }
-    return `<div class="hero">
-    <span class="hero-arrow">&#8594;</span>
-    <span class="hero-text">${esc(clampText(item.text, 100))}</span>
-    ${urgencyHtml}
-  </div>
-  `;
-  } else {
-    const item = hero.item;
-    return `<div class="hero">
-    <span class="hero-arrow">&#8594;</span>
-    <span class="hero-text">${esc(clampText(item.question, 100))}</span>
-  </div>
-  `;
-  }
-}
-
-// Clamp the hero pill text so a long task doesn't balloon the pill; the full
-// item is still in the list / --json.
-function clampText(value: string, max: number): string {
-  return value.length <= max ? value : `${value.slice(0, max - 1).trimEnd()}…`;
-}
-
 function renderCalendarHtml(events: ReadonlyArray<TodayCalendarEvent>): string {
   const eventsHtml = events.map((ev) => `
       <div class="cal-event">
@@ -564,27 +521,37 @@ function renderQuestionsHtml(questions: ReadonlyArray<TodayQuestionRow>): string
 }
 
 function renderStillOpenHtml(
-  items: ReadonlyArray<TodayTaskRow>,
+  sections: TodaySections,
   today: string,
   trueCount: number,
 ): string {
-  // Compute the week boundary: +7 calendar days from today.
-  const weekBound = addDays(today, 7);
-
-  // Bucket items by urgency.
-  const overdue = items.filter((t) => t.dueDate !== null && t.dueDate < today);
-  const todayItems = items.filter((t) => t.dueDate === today);
-  const thisWeek = items.filter(
-    (t) => t.dueDate !== null && t.dueDate > today && t.dueDate <= weekBound,
-  );
+  // Buckets come from the view-model (same overdue/today/this-week partition the
+  // local filters used to compute). The cockpit shows these three inline and
+  // folds later + someday into the "+N more, later" chip — its presentation
+  // choice; the CLI surfaces them as sections instead.
+  const overdue = sections.overdue;
+  const todayItems = sections.dueToday;
+  const thisWeek = sections.thisWeek;
+  // Full hero-deduped list (urgency-ordered) for the no-urgent-content fallback.
+  const items: ReadonlyArray<TodayTaskRow> = [
+    ...sections.overdue,
+    ...sections.dueToday,
+    ...sections.thisWeek,
+    ...sections.later,
+    ...sections.someday,
+  ];
 
   function renderItem(t: TodayTaskRow): string {
     const glyph = taskGlyph(t, today);
     const where = t.line === null ? t.path : `${t.path}:${t.line}`;
+    const markerChars = priorityMarkerChars(t.priority, true);
+    const markerHtml = markerChars.length > 0
+      ? `<span class="prio ${t.priority === "highest" || t.priority === "high" ? "prio-high" : "prio-low"}">${markerChars}</span> `
+      : "";
     return `<div class="open-item reveal">
         <span class="open-glyph ${glyph.cls}">${glyph.char}</span>
         <div class="open-body">
-          <div class="open-text">${esc(t.text)}</div>
+          <div class="open-text">${markerHtml}${esc(t.text)}</div>
           <div class="src">${esc(where)}</div>
         </div>
       </div>`;

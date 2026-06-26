@@ -24,7 +24,8 @@ import {
 } from "./daily-types";
 
 /** A `(from [[…]])` provenance suffix — the carry-forward COPY shape. */
-export const SOURCE_BACKED_SUFFIX_RE = /\(from \[\[[^\]\n]+\]\]\)\s*$/;
+export const SOURCE_BACKED_SUFFIX_RE =
+  /\(from \[\[[^\]\n]+\]\]\)(?:\s+\^[A-Za-z0-9][A-Za-z0-9-]*)?\s*$/;
 
 // ── The origin marker — ([↗](target)) — a task's source provenance ──────────
 // Canonical home (captured-block re-exports). The target is percent-encoded on
@@ -68,6 +69,18 @@ export type SourceBackedCheckbox = {
   readonly body: string;
   readonly followup: boolean;
   readonly sourcePath: string;
+  readonly anchor?: string;
+};
+
+export type DuplicateTaskAnchorOccurrence = {
+  readonly line: number;
+  readonly body: string;
+  readonly text: string;
+};
+
+export type DuplicateTaskAnchor = {
+  readonly anchor: string;
+  readonly occurrences: ReadonlyArray<DuplicateTaskAnchorOccurrence>;
 };
 
 export function openTasksFromMarkdown(content: string): ReadonlyArray<OpenTask> {
@@ -143,15 +156,24 @@ export function stampTaskAnchors(input: {
 }): string | null {
   if (isObsidianTasksDashboard(input.content)) return null;
   const lines = input.content.split(/\r?\n/);
+  const actionItemsByLine = new Map(
+    actionItemsFromMarkdown(input.content).map((item) => [item.line, item]),
+  );
   const occurrences = new Map<string, number>();
+  const ignoredRanges = actionExtractionLineRanges(input.content);
   let changed = false;
-  for (const item of actionItemsFromMarkdown(input.content)) {
-    const idx = item.line - 1;
+  for (let idx = 0; idx < lines.length; idx += 1) {
+    const lineNumber = idx + 1;
+    if (lineIsInsideRanges(lineNumber, ignoredRanges)) continue;
     const line = lines[idx];
-    if (line === undefined || hasBlockAnchor(line)) continue;
-    const bodyKey = normalizeOpenLoopBody(item.body);
+    if (line === undefined) continue;
+    const occurrenceSource = originTaskIdentityLineFromLine(line, lineNumber);
+    if (occurrenceSource === null) continue;
+    const bodyKey = normalizeOpenLoopBody(occurrenceSource.body);
     const occurrence = occurrences.get(bodyKey) ?? 0;
     occurrences.set(bodyKey, occurrence + 1);
+    const item = actionItemsByLine.get(lineNumber);
+    if (item === undefined || hasBlockAnchor(line)) continue;
     lines[idx] = appendBlockAnchor(
       line,
       taskAnchorId({ path: input.path, body: item.body, occurrence }),
@@ -159,6 +181,44 @@ export function stampTaskAnchors(input: {
     changed = true;
   }
   return changed ? lines.join("\n") : null;
+}
+
+export function duplicateTaskAnchorsFromMarkdown(
+  content: string,
+): ReadonlyArray<DuplicateTaskAnchor> {
+  if (isObsidianTasksDashboard(content)) return Object.freeze([]);
+  const byAnchor = new Map<string, DuplicateTaskAnchorOccurrence[]>();
+  const lines = content.split(/\r?\n/);
+  const ignoredRanges = actionExtractionLineRanges(content);
+  for (let idx = 0; idx < lines.length; idx += 1) {
+    const lineNumber = idx + 1;
+    if (lineIsInsideRanges(lineNumber, ignoredRanges)) continue;
+    const line = lines[idx] ?? "";
+    const parsed = parseBlockAnchor(line);
+    if (parsed === null) continue;
+    const occurrenceSource = originTaskIdentityLineFromLine(line, lineNumber);
+    if (occurrenceSource === null) continue;
+    const occurrences = byAnchor.get(parsed.id) ?? [];
+    occurrences.push(
+      Object.freeze({
+        line: lineNumber,
+        body: occurrenceSource.body,
+        text: line.trim(),
+      }),
+    );
+    byAnchor.set(parsed.id, occurrences);
+  }
+  const duplicates: DuplicateTaskAnchor[] = [];
+  for (const [anchor, occurrences] of byAnchor) {
+    if (occurrences.length < 2) continue;
+    duplicates.push(
+      Object.freeze({
+        anchor,
+        occurrences: Object.freeze([...occurrences]),
+      }),
+    );
+  }
+  return Object.freeze(duplicates);
 }
 
 /**
@@ -366,6 +426,18 @@ function openTaskFromLine(line: string, lineNumber: number): OpenTask {
   });
 }
 
+function originTaskIdentityLineFromLine(
+  line: string,
+  lineNumber: number,
+): { readonly body: string } | null {
+  if (sourceBackedCheckboxFromLine(line, lineNumber) !== null) return null;
+  const checkboxBody = taskBodyFromAnyCheckboxLine(line);
+  if (checkboxBody !== null) return Object.freeze({ body: checkboxBody });
+  const directive = directiveActionItemFromLine(line, lineNumber);
+  if (directive === null) return null;
+  return Object.freeze({ body: directive.body });
+}
+
 function directiveActionItemFromLine(
   line: string,
   lineNumber: number,
@@ -400,6 +472,16 @@ function taskBodyFromCheckboxLine(line: string): string {
   return semanticActionBody(
     withoutMarker.replace(/^\s*[-*]\s+\[ \]\s+/, "").trim(),
   );
+}
+
+function taskBodyFromAnyCheckboxLine(line: string): string | null {
+  const base = stripCarryForwardSource(line);
+  const withoutAnchor = parseBlockAnchor(base)?.withoutAnchor ?? base;
+  const withoutMarker = stripOriginMarker(withoutAnchor);
+  const match = /^\s*[-*]\s+\[[ xX-]\]\s+(\S.*?)\s*$/.exec(withoutMarker);
+  if (match === null) return null;
+  const body = semanticActionBody((match[1] ?? "").trim());
+  return body.length === 0 ? null : body;
 }
 
 function isExplicitFollowup(line: string): boolean {
@@ -457,9 +539,11 @@ export function sourceBackedCheckboxFromLine(
   line: string,
   lineNumber: number,
 ): SourceBackedCheckbox | null {
+  const parsedAnchor = parseBlockAnchor(line);
+  const base = parsedAnchor?.withoutAnchor ?? line;
   const match =
     /^\s*[-*]\s+\[([ xX-])\]\s+(.+?)\s+\(from \[\[([^\]\n]+?)(?:\.md)?\]\]\)\s*$/.exec(
-      line,
+      base,
     );
   if (match === null) return null;
   const state = match[1] ?? " ";
@@ -479,6 +563,7 @@ export function sourceBackedCheckboxFromLine(
     body: semanticActionBody(stripOriginMarker(rawBody)),
     followup: isExplicitFollowup(rawBody),
     sourcePath: normalizeSourcePath(sourcePath),
+    ...(parsedAnchor !== null ? { anchor: parsedAnchor.id } : {}),
   });
 }
 

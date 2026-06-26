@@ -6,7 +6,6 @@
 // questions, the user resolves them with `dome resolve`, and answer handlers apply
 // the mutation.
 
-import { runtimeHealthReportInputs } from "../../surface/health-inputs";
 import { basename } from "node:path";
 
 import { probeCommandModelProvider } from "../../engine/host/command-model-provider";
@@ -14,6 +13,7 @@ import {
   collectHealthReport,
   collectOperationalSchemaReport,
   DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
+  healthInputsFromRuntime,
   type HealthReport,
   type ModelProviderProbeInput,
 } from "../../engine/host/health";
@@ -127,7 +127,7 @@ export async function runDoctor(
     const commitSigningEnabled = await vaultCommitSigningEnabled(runtime.path);
 
     const report = await collectHealthReport({
-      ...runtimeHealthReportInputs(runtime),
+      ...healthInputsFromRuntime(runtime),
       ...(modelProviderProbe !== undefined ? { modelProviderProbe } : {}),
       ...(commitSigningEnabled !== undefined ? { commitSigningEnabled } : {}),
       orphanRunThresholdMs: orphanThresholdMs,
@@ -182,6 +182,7 @@ function printDoctorText(
   if (s.operationalSchemaMismatch === 0) cleanCategories.push("storage");
   if (s.capabilityGrantGaps + s.capabilityGrantEntryGaps + s.capabilityGrantStarvation === 0) cleanCategories.push("grants");
   if (s.dailyPathMismatch + s.dailyEditionNotCompiled + s.dailyCalendarSourceMissing === 0) cleanCategories.push("daily");
+  if (s.duplicateTaskAnchors === 0) cleanCategories.push("tasks");
   if (s.sourcesTimeoutDefault + s.sourcesFetchScriptMissing === 0) cleanCategories.push("sources");
   if (s.modelProviderMissing + s.modelProviderUnreachable + s.modelProviderKeyMissing === 0) cleanCategories.push("model");
   if (s.unreadableQuestions === 0) cleanCategories.push("decisions");
@@ -223,6 +224,7 @@ function printDoctorText(
       `model ${s.modelProviderMissing} missing`,
       `${s.modelProviderUnreachable} unreachable`,
       `${s.modelProviderKeyMissing} keyless`,
+      `tasks ${s.duplicateTaskAnchors} duplicate anchors`,
     ];
 
     lines.push(

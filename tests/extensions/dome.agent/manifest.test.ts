@@ -95,6 +95,26 @@ describe("dome.agent manifest cadence + grants", () => {
     expect(brief?.module).toBe("processors/brief.ts");
   });
 
+  test("ingest has an hourly schedule trigger (level-triggered backstop) plus its inbox signals", async () => {
+    const manifest = await loadManifest();
+    const ingest = manifest.processors.find(
+      (p) => p.id === "dome.agent.ingest",
+    );
+    expect(ingest).toBeDefined();
+    const schedule = (ingest?.triggers ?? []).filter(
+      (t) => t.kind === "schedule",
+    );
+    expect(schedule).toHaveLength(1);
+    expect(schedule[0]?.kind === "schedule" ? schedule[0].cron : undefined).toBe(
+      "0 * * * *",
+    );
+    expect(
+      (ingest?.triggers ?? []).some(
+        (t) => t.kind === "signal" && t.pathPattern === "inbox/raw/*.md",
+      ),
+    ).toBe(true);
+  });
+
   test("core.md is readable by every agent processor and auto-writable ONLY by the two gated block writers", async () => {
     const manifest = await loadManifest();
     const agents = ["dome.agent.ingest", "dome.agent.consolidate", "dome.agent.brief"];
@@ -137,11 +157,6 @@ describe("dome.agent manifest cadence + grants", () => {
     expect(processor?.module).toBe("processors/active-projects.ts");
     expect(processor?.triggers).toEqual([
       { kind: "schedule", cron: "20 5 * * *" },
-      {
-        kind: "signal",
-        name: "document.changed",
-        pathPattern: "wiki/dailies/*.md",
-      },
     ]);
     const kinds = (processor?.capabilities ?? []).map((c) => c.kind).sort();
     expect(kinds).toEqual(["patch.auto", "read"]);

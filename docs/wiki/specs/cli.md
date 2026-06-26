@@ -41,7 +41,7 @@ dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]
                                 FTS + structured query against adopted state.
 dome export-context <topic> [--limit <n>] [--json]
                                 Portable source-backed context packet.
-dome today [--date <yyyy-mm-dd>] [--limit <n>] [--watch] [--interval <seconds>] [--json]
+dome today [--date <yyyy-mm-dd>] [--limit <n>] [--watch] [--interval <seconds>] [--json] [--verbose]
                                 Render today's action surface (open tasks,
                                 follow-ups, questions) — the terminal cockpit.
                                 --watch re-renders on an interval until ctrl-c.
@@ -67,10 +67,19 @@ dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
                                 status, check, resolve, tasks, brief) for MCP
                                 harnesses. The daemon still owns compilation.
 dome http [--vault <path>] [--port <port>] [--host <host>] [--token <token>]
-                                Run the HTTP read+capture surface (bearer-token
-                                auth; loopback by default): POST /capture plus
-                                status/query/tasks/doc/questions/resolve routes
-                                plus the GET /today HTML cockpit.
+          [--model <id>] [--static-dir <path>] [--allow-write]
+          [--transcribe-cmd <cmd>] [--transcribe-key <key>]
+          [--transcribe-url <url>] [--transcribe-model <model>]
+                                Run the Dome HTTP surface (bearer-token auth;
+                                loopback by default): read/capture/resolve routes,
+                                the GET /today HTML cockpit, POST /agent (the
+                                hosted agent loop; converse capability),
+                                POST /agent/stream (SSE variant), POST /transcribe
+                                (voice STT; capture capability), and GET /recents.
+                                --allow-write grants the agent the `author` write
+                                capability (create_document / edit_document →
+                                git commit → daemon adopts); default off,
+                                read-only-safe. DOME_ALLOW_WRITE=1 is the env form.
                                 The daemon still owns compilation.
 dome recipe <kind> [--url <base>]
                                 Print a setup recipe. v1 ships three kinds:
@@ -95,7 +104,7 @@ routing and capability checks.
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, and `dome today` — command-triggered view-phase processors invoked through the shared view-command boundary. `dome today` is the dedicated cockpit wrapper over the `dome.daily.today` view; the other daily planning processors (`prep`, `agenda-with`) remain available through `dome run` for tests/debugging without dedicated top-level CLI verbs.
 - **Capture ingress:** `dome capture` — the frictionless write-side entry point ([[wedge]] §"Phase 3 — Capture loop"). It writes a timestamped raw source into `inbox/raw/` and lands it as an ordinary human commit on the current branch; adoption and `dome.agent.ingest` handle everything after the commit boundary. See [[wiki/specs/capture]] for the capture-loop spec and the phone/voice ingress recipe.
 - **Lifecycle:** `dome init` — vault construction; `dome install` / `dome restart` / `dome uninstall` — ambient service lifecycle for the local compiler host (a launchd LaunchAgent on macOS, a systemd `--user` unit on Linux, both around `dome serve`, per [[wedge]] §"Phase 1 — Ambient daemon"). Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
-- **Protocol adapters:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"; [[wiki/specs/mcp-surface]]) — and `dome http` — the HTTP read+capture surface and first shipped form of the remote-capture seam ([[wiki/specs/http-surface]]). Both are thin adapters over the public `openVault` wrapper plus the protocol-neutral `src/surface/` collectors. `dome recipe` prints client-side setup text (`ios`: the queue-first iOS Shortcut against `dome http`; `capture-queue`: the laptop-side iCloud queue drain; `core-seed`: the owner interview that seeds `core.md` — §"`dome recipe`").
+- **Protocol adapters:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"; [[wiki/specs/mcp-surface]]) — and `dome http` — the HTTP read+capture+converse surface and first shipped form of the remote-capture seam ([[wiki/specs/http-surface]]). Both are thin adapters over the public `openVault` wrapper plus the protocol-neutral `src/surface/` collectors. `dome recipe` prints client-side setup text (`ios`: the queue-first iOS Shortcut against `dome http`; `capture-queue`: the laptop-side iCloud queue drain; `core-seed`: the owner interview that seeds `core.md` — §"`dome recipe`").
 
 Planned dedicated view aliases such as `dome stats` are not Commander bindings
 yet. Until they ship, their processors are invoked through `dome run
@@ -753,7 +762,11 @@ agent can safely follow. Current reasons include `adopted_ref_diverged`,
 `pending_runs`, `failed_runs`, `serve_stale`, `service_not_loaded`,
 `model_provider_unreachable`, `diagnostics`, `questions`,
 `outbox_pending`, `outbox_failed`, `quarantined`, and
-`capture_loop_inactive`. `adopted_ref_diverged` routes to `dome reanchor`
+`capture_loop_inactive`. This set is closed: the `StatusReason` union in
+`src/surface/attention-reasons.ts` is its canonical inventory, and the emitter
+(`statusAttention`), the next-action buckets, and the CLI signal painter are all
+type-checked against it, so a code cannot be added or removed without the
+compiler flagging every site that must react. `adopted_ref_diverged` routes to `dome reanchor`
 (inspect first; see [[wiki/gotchas/adopted-ref-divergence]]);
 `service_not_loaded` routes to `dome restart`; `model_provider_unreachable`
 routes to `dome doctor --json`. Dirty reasons include bounded path samples in
@@ -1232,7 +1245,7 @@ structured `dome.search.export-context/v1` payload, including the packet under
 `overview.recallSignals` carries the same source-backed recall evidence for
 structured consumers.
 
-### `dome today [--date <yyyy-mm-dd>] [--limit <n>] [--watch] [--interval <seconds>] [--json]`
+### `dome today [--date <yyyy-mm-dd>] [--limit <n>] [--watch] [--interval <seconds>] [--json] [--verbose]`
 
 The terminal cockpit — a typed dedicated wrapper over the command-triggered
 `today` view (`dome.daily.today`, structured schema `dome.daily.today/v1`),
@@ -1243,22 +1256,21 @@ routes through the same shared view-command boundary and validates the same
 one-view/effect-name/schema contract as the other dedicated wrappers.
 
 Default text output uses the **Briefing v2 presenter** (CB-T4): a `dome
-today` headline with the vault basename, then immediately a verdict line
-(`√ all clear` or `x <n> overdue · <m> open`). When anything is open, a
-**hero pill** follows — the single highest-priority item (the overdue or
-due-today task with the nearest due date, or the oldest open question when
-no task qualifies) rendered with an arrow glyph. Grouped summary lines then
-show overdue tasks, due-today tasks, and open-items in compact inline form
-(`· item1 · item2 · +N`). `--verbose` adds the `brief` narrative panel
-(from the `dome.agent.brief` fact, when present) before the task groups and
-the calendar event count line; the default compact view omits both. There
-is no `Open tasks` / `Follow-ups` / `Questions` section header rendering in
-v2 — items are bucketed inline into the summary row. `dome decide` is not
+today` headline with the vault basename and a right-aligned verdict
+(`√ all clear` or `x <n> overdue · <m> open`). The default body shows the
+brief when present, today's agenda when present, and open tasks/followups in
+urgency buckets (`OVERDUE`, `TODAY`, `THIS WEEK`, `LATER`, `SOMEDAY`) with
+compact task rows. Task rows stay terse by default. `--verbose` uncaps bucket
+lists and adds a muted `why:` line under each task with due/overdue reason,
+source-backed vs. daily-local scope, carry-forward projection provenance,
+attention discount metadata, and any task origin marker. `dome decide` is not
 emitted.
 
 - `--date <yyyy-mm-dd>` and `--limit <n>` pass through to the view's
   `date` / `limit` command args (same semantics as `dome run today`).
 - `--json` emits the structured `dome.daily.today/v1` payload unchanged.
+- `--verbose` uncaps the human task lists and prints compact per-task
+  provenance; it does not mutate or clean up the daily note.
 - `--watch` is the cockpit mode: re-render on an interval until ctrl-c
   (SIGINT/SIGTERM). It is **poll-based re-render** — dumb polling per the v1
   plan's open-questions resolution, not a push channel. Each iteration
@@ -1458,10 +1470,13 @@ are evidence, not mutation targets. `dome.daily.task-index` treats those blocks
 as surfaces, not new sources: generated daily entries are skipped during fact
 extraction, but `today` and `prep` still read open source-backed rows as the
 target day's surface. Carry-forward keeps existing generated rows in place when
-their backing source item is still live, then fills any remaining slots from the
-freshly ranked candidate set. This gives the daily cockpit stable same-day
-ordering without letting completed or deleted source items linger. When the same
-loop also exists as an original project, meeting, capture, or prior-daily fact,
+their backing source item is still live, then fills initial empty slots from the
+freshly ranked candidate set. Same-day settled rows (`Resolved Today` /
+`Dismissed Today`) count against that day's surface cap, so checking items off
+contracts today's work queue instead of pulling new backlog into the vacated
+slots. This gives the daily cockpit stable same-day ordering without letting
+completed or deleted source items linger. When the same loop also exists as an
+original project, meeting, capture, or prior-daily fact,
 the view folds the rows together, counts the representative as `daily`, and keeps
 representative source refs for the daily surface plus the backing source.
 Rendered daily/prep/agenda rows use the compact `evidenceLabel` from that folded
@@ -1471,10 +1486,12 @@ instead of hiding the backing source behind a separate SourceRefs section.
 Settling a generated source-backed item is still meaningful markdown evidence.
 On the next carry-forward pass, Dome keeps `[x]` rows under
 `### Resolved Today` and `[-]` rows under `### Dismissed Today` in that daily
-note. Both states suppress the same source/body identity and equivalent
-repeated surface loops from future daily surfaces. This lets the daily note act
-as a collaborative work queue without mutating the original source note or
-storing hidden dismissal state in `.dome/state`.
+note. Both states suppress the same carried `^anchor` identity (falling back to
+source/body identity for legacy unanchored rows) and equivalent repeated surface
+loops from future daily surfaces. This lets the daily note act as a collaborative
+work queue without storing hidden dismissal state in `.dome/state`; the
+companion `dome.daily.reconcile-tasks` pass propagates the settled marker back
+to the origin line.
 
 Within daily action sections, each task/followup/question carries a source
 scope: `daily` when it comes from the target daily note, `backlog` otherwise.
@@ -1507,8 +1524,8 @@ fields report the actual bounded array lengths and may show more than
 `<limit>` rows for a category when both source groups have matching items.
 `--json` emits the structured `dome.daily.today/v1` payload, including
 `sourceCounts`, `dueCounts`, `shown`, `omitted`, plus per-item `source`,
-`dueDate`, `priority`, `lastChangedAt`, `evidenceLabel`, and the folded row's
-complete `sourceRefs`. `shown` and `omitted` mirror the bounded arrays so
+`dueDate`, `priority`, `lastChangedAt`, `evidenceLabel`, `attention`, and the
+folded row's complete `sourceRefs`. `shown` and `omitted` mirror the bounded arrays so
 agents do not need to infer truncation from array lengths. `--date` is for
 reviewing another day and for deterministic tests; omitted means local today.
 
@@ -1907,6 +1924,12 @@ The recut splits these along their real seams:
   QuestionEffect → user runs `dome resolve <id>` → answer-handler
   processor in the `dome.health` bundle applies the mutation. No
   per-substrate verb-noun commands.
+- **Explicit guarded repairs** → `dome repair <subject>` for narrow,
+  operator-initiated repairs that are not question answers. The command
+  defaults to dry-run. Current subjects are `task-anchors` (remove duplicate
+  `^t...` identities from non-first task-origin lines so `dome sync` can
+  restamp them) and `run-ledger` (prune old low-signal terminal rows with
+  `--older-than-days N --apply`, preserving failures and active rows).
 - **Auto-mitigations** (AGENTS.md template drift, projection schema
   rebuild, orphan-commit GC) → handled inline by garden-phase processors
   with no CLI surface; the engine just does them. Operational schema
@@ -1920,6 +1943,24 @@ The recut splits these along their real seams:
 This collapses the v0.5 / pre-recut "doctor as admin grab-bag" into
 the primary `status` / `check` / `resolve` path, with `inspect` and
 `doctor` retained as advanced detail views.
+
+### `dome repair <subject> [--dry-run] [--apply] [--json]` *(hidden advanced repair)*
+
+Explicit guarded mutation surface for narrow repairs. `--dry-run` is the
+default, `--apply` is required to write, and `--apply --dry-run` is a usage
+error.
+
+`task-anchors` scans markdown task-origin lines for duplicate `^t...` task
+anchors. The dry-run report lists the non-first occurrences whose anchor would
+be removed; `--apply` removes only those duplicated anchors and leaves the next
+`dome sync` to stamp fresh stable identities.
+
+`run-ledger` requires `--older-than-days <n>`. It prunes only old `succeeded`
+rows and idempotency-style `skipped` rows with no error, first deleting their
+`capability_uses` children inside the ledger layer. It preserves failed,
+timed-out, cancelled, queued, running, and reason-bearing skipped rows.
+`--vacuum` is valid only with `--apply` and runs SQLite `VACUUM` after the
+delete.
 
 ### `dome answer <question-id> [<value>]` *(advanced compatibility alias)*
 
@@ -2320,16 +2361,18 @@ The process serves until the client disconnects (stdin closes). Exit codes:
 0 on clean shutdown; 64 when the target is not an initialized Dome vault
 (missing git repo or `.dome/config.yaml`); 1 on transport failure.
 
-### `dome http [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--token <token>]`
+### `dome http [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--token <token>] [--model <id>] [--static-dir <path>] [--allow-write] [--transcribe-cmd <cmd>] [--transcribe-key <key>] [--transcribe-url <url>] [--transcribe-model <model>]`
 
-Runs the Dome HTTP read+capture surface for one vault — the shipped protocol
-adapter per [[wiki/specs/http-surface]] and the first shipped form of the
-remote-capture seam ([[wiki/specs/capture]] §"The remote-capture seam").
+Runs the Dome HTTP read+capture+converse surface for one vault — the shipped
+protocol adapter per [[wiki/specs/http-surface]] and the first shipped form of
+the remote-capture seam ([[wiki/specs/capture]] §"The remote-capture seam").
 Routes: `POST /capture`, `GET /status`, `GET /query`, `GET /tasks`,
 `GET /doc`, `GET /questions`, `POST /resolve` — the same JSON documents the
-corresponding CLI verbs emit under `--json` — plus `GET /today`, the
-self-refreshing HTML cockpit page ([[wiki/specs/http-surface]] §"The cockpit
-page (`GET /today`)").
+corresponding CLI verbs emit under `--json` — plus `GET /today` (the
+self-refreshing HTML cockpit page; [[wiki/specs/http-surface]] §"The cockpit
+page (`GET /today`)"), `POST /agent` (the hosted agent loop; converse
+capability), `POST /agent/stream` (SSE variant), `POST /transcribe` (voice
+STT; capture capability), and `GET /recents`.
 
 Boundary discipline:
 
@@ -2341,6 +2384,10 @@ Boundary discipline:
   only — hosted multi-tenant is v1.5 territory.
 - **No compilation.** Same as `dome mcp`: the daemon owns adoption;
   `capture` and `resolve` reuse the non-engine write channels.
+- **Write capability opt-in.** `--allow-write` (or `DOME_ALLOW_WRITE=1`)
+  grants the agent the `author` write capability (`create_document` /
+  `edit_document` → git commit → daemon adopts); default off,
+  read-only-safe.
 
 Exit codes: 0 on clean shutdown (SIGINT/SIGTERM); 64 on missing token,
 malformed port, or uninitialized vault; 1 on listener failure.

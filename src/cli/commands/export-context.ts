@@ -41,18 +41,6 @@ export async function runExportContext(
     noStructuredResultMessage:
       "dome export-context: processor returned no structured result.",
     failedError: "export-context-failed",
-    renderHuman: (data) => markdownFromData(data),
+    renderHuman: (data) => data.markdown,
   });
-}
-
-function markdownFromData(data: unknown): string {
-  if (data === null || typeof data !== "object") {
-    throw new Error("export-context structured data must be an object.");
-  }
-  const record = data as Record<string, unknown>;
-  const markdown = record.markdown;
-  if (typeof markdown !== "string") {
-    throw new Error("export-context structured data markdown must be a string.");
-  }
-  return markdown;
 }

@@ -379,9 +379,14 @@ describe("NO_ACCRETING_REGISTRIES", () => {
         `default-vault-config replacement grant for ${processorId}`,
       );
     }
-    // Both gated writers must actually appear in the shipped replacement
+    // Both gated patch writers must actually appear in the shipped replacement
     // grants — if one vanishes, the exact-pin above silently stops checking.
-    expect(Object.keys(agent.processors ?? {}).sort()).toEqual(
+    // Deterministic graph-only processors may also have replacement grants.
+    const patchAutoProcessorIds = Object.entries(agent.processors ?? {})
+      .filter(([, grant]) => Array.isArray(grant["patch.auto"]))
+      .map(([processorId]) => processorId)
+      .sort();
+    expect(patchAutoProcessorIds).toEqual(
       Object.keys(CORE_MD_WRITER_GRANTS).sort(),
     );
   });

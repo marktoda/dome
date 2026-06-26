@@ -772,6 +772,160 @@ extensions:
 
 scenario(
   {
+    name: "effect-routing: dome.daily settling today's open-loop row does not backfill a new row",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "patch" },
+      { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-signal" },
+    ],
+    harness: {
+      clock: new TestClock("2026-01-02T15:00:00.000Z"),
+      bundles: ["dome.daily"],
+      initialFiles: {
+        ".dome/config.yaml": `
+extensions:
+  dome.daily:
+    enabled: true
+    grant:
+      read: ["wiki/**/*.md"]
+      patch.auto: ["wiki/dailies/*.md"]
+      graph.write: ["dome.daily.*"]
+      question.ask: true
+`,
+        "wiki/dailies/2026-01-02.md": [
+          "# 2026-01-02",
+          "",
+          "## Open Loops",
+          "",
+          "## Notes",
+          "",
+        ].join("\n"),
+        ...numberedLoopFiles(13),
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.expectFile("wiki/dailies/2026-01-02.md").toContain("Task 12");
+    await h.expectFile("wiki/dailies/2026-01-02.md").toNotContain("Task 13");
+
+    const daily = await readFile(
+      join(h.vaultPath, "wiki/dailies/2026-01-02.md"),
+      "utf8",
+    );
+    await h.userCommit({
+      files: {
+        "wiki/dailies/2026-01-02.md": daily.replace(
+          "- [ ] Task 05 (from [[wiki/projects/task-05]]) ^ttask05aa",
+          "- [x] ✅done Task 05 (from [[wiki/projects/task-05]]) ^ttask05aa",
+        ),
+      },
+      message: "complete surfaced daily open loop without asking for another",
+    });
+
+    const resolved = await h.tick();
+    expect(resolved.adopted).toBe(true);
+
+    const nextDaily = await readFile(
+      join(h.vaultPath, "wiki/dailies/2026-01-02.md"),
+      "utf8",
+    );
+    expect(nextDaily).toContain("### Resolved Today");
+    expect(nextDaily).toContain("- [x] ✅done Task 05 (from [[wiki/projects/task-05]]) ^ttask05aa");
+    expect(nextDaily).not.toContain("- [ ] Task 05 (from [[wiki/projects/task-05]]) ^ttask05aa");
+    expect(nextDaily).not.toContain("Task 13");
+  },
+);
+
+scenario(
+  {
+    name: "effect-routing: dome.daily annotated anchored open-loop closes origin without duplication",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "patch" },
+      { kind: "capability", capability: "read" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "phase", phase: "garden" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "route", route: "garden-signal" },
+    ],
+    harness: {
+      clock: new TestClock("2026-01-02T15:00:00.000Z"),
+      bundles: ["dome.daily"],
+      initialFiles: {
+        ".dome/config.yaml": `
+extensions:
+  dome.daily:
+    enabled: true
+    grant:
+      read: ["wiki/**/*.md"]
+      patch.auto: ["wiki/dailies/*.md", "wiki/projects/*.md"]
+      graph.write: ["dome.daily.*"]
+      question.ask: true
+`,
+        "wiki/dailies/2026-01-02.md": [
+          "# 2026-01-02",
+          "",
+          "## Open Loops",
+          "",
+          "## Notes",
+          "",
+        ].join("\n"),
+        "wiki/projects/release.md": [
+          "# Release",
+          "",
+          "- [ ] #task Ship release packet ^trelease1234",
+          "",
+        ].join("\n"),
+      },
+    },
+  },
+  async (h) => {
+    const surfaced = await h.tick();
+    expect(surfaced.adopted).toBe(true);
+
+    const openLine =
+      "- [ ] Ship release packet (from [[wiki/projects/release]]) ^trelease1234";
+    await h.expectFile("wiki/dailies/2026-01-02.md").toContain(openLine);
+
+    const daily = await readFile(
+      join(h.vaultPath, "wiki/dailies/2026-01-02.md"),
+      "utf8",
+    );
+    const resolvedLine =
+      "- [x] Ship release packet -- sent (from [[wiki/projects/release]]) ^trelease1234";
+    await h.userCommit({
+      files: {
+        "wiki/dailies/2026-01-02.md": daily.replace(openLine, resolvedLine),
+      },
+      message: "complete annotated surfaced daily open loop",
+    });
+
+    const resolved = await h.tick();
+    expect(resolved.adopted).toBe(true);
+
+    const nextDaily = await readFile(
+      join(h.vaultPath, "wiki/dailies/2026-01-02.md"),
+      "utf8",
+    );
+    expect(nextDaily).toContain("### Resolved Today");
+    expect(nextDaily).toContain(resolvedLine);
+    expect(nextDaily).not.toContain(openLine);
+    expect(occurrences(nextDaily, "Ship release packet")).toBe(1);
+    await h
+      .expectFile("wiki/projects/release.md")
+      .toContain("- [x] #task Ship release packet ^trelease1234");
+  },
+);
+
+scenario(
+  {
     name: "effect-routing: dome.daily dismissed source-backed open loops stay dismissed",
     tags: [
       { kind: "group", group: "effect-kinds" },
@@ -890,4 +1044,21 @@ extensions:
 function occurrences(value: string, needle: string): number {
   if (needle.length === 0) return 0;
   return value.split(needle).length - 1;
+}
+
+function numberedLoopFiles(count: number): Record<string, string> {
+  return Object.fromEntries(
+    Array.from({ length: count }, (_, index) => {
+      const n = String(index + 1).padStart(2, "0");
+      return [
+        `wiki/projects/task-${n}.md`,
+        [
+          `# Task ${n}`,
+          "",
+          `TODO: Task ${n} ^ttask${n}aa`,
+          "",
+        ].join("\n"),
+      ];
+    }),
+  );
 }

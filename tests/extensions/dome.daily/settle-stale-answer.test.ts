@@ -32,8 +32,7 @@ import type { ProcessorContext } from "../../../src/core/processor";
 
 // "today" = 2026-06-15; DEFER_DAYS = 7 → deferred to 2026-06-22
 const NOW_ISO = "2026-06-15T08:00:00.000Z";
-const TODAY = "2026-06-15";
-const DEFERRED_DATE = "2026-06-22"; // TODAY + 7
+const DEFERRED_DATE = "2026-06-22"; // 2026-06-15 + 7
 
 const ANCHOR = "tabc123def456";
 const DEST = "wiki/projects/alpha.md";
@@ -50,7 +49,6 @@ const OPEN_NO_DATE_LINE = `- [ ] ${TASK_BODY_NO_DATE} ^${ANCHOR}`;
 const DEFERRED_NO_DATE_LINE = `- [ ] #task plan the thing 📅 ${DEFERRED_DATE} ^${ANCHOR}`;
 
 // Task line with an origin marker ([↗](target)) and anchor — defer must preserve both
-const ORIGIN_TARGET = "wiki/projects/source.md";
 const ORIGIN_ENCODED = "wiki/projects/source.md"; // no parens to encode here
 const TASK_WITH_ORIGIN_LINE = `- [ ] #task do thing 📅 2026-06-01 ([↗](${ORIGIN_ENCODED})) ^${ANCHOR}`;
 const DEFERRED_WITH_ORIGIN_LINE = `- [ ] #task do thing 📅 ${DEFERRED_DATE} ([↗](${ORIGIN_ENCODED})) ^${ANCHOR}`;

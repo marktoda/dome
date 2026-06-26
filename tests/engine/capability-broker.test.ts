@@ -118,23 +118,6 @@ describe("PatchEffect (mode: auto)", () => {
     expect(r.diagnostic.message).toContain("owned/y.md");
   });
 
-  test("denies owns.region in v1 instead of pretending to enforce it", () => {
-    const auto: Capability = { kind: "patch.auto", paths: ["wiki/**"] };
-    const region: Capability = {
-      kind: "owns.region",
-      regionIds: ["dome.daily.generated"],
-    };
-    const r = enforceCapability(
-      patchTouching("wiki/x.md"),
-      [read, auto, region],
-      [read, auto, region],
-    );
-    expect(r.kind).toBe("deny");
-    if (r.kind !== "deny") return;
-    expect(r.diagnostic.message).toContain("owns.region");
-    expect(r.diagnostic.message).toContain("not supported in v1");
-  });
-
   test("denies forged non-vault-relative paths before glob matching", () => {
     const auto: Capability = { kind: "patch.auto", paths: ["**"] };
     const forged = {
@@ -449,5 +432,67 @@ describe("RunRecoveryEffect", () => {
     expect(r.kind).toBe("deny");
     if (r.kind !== "deny") return;
     expect(r.diagnostic.code).toBe("capability-deny-run-recover");
+  });
+});
+
+// A capability is effective only when present in BOTH declared and granted.
+// These pin that AND-invariant across the predicate shapes that share it
+// (action-membership, binary, field-equality) so a declared-XOR-granted slip
+// can never silently allow an effect.
+describe("effective grant requires declared AND granted (not either)", () => {
+  test("outbox.recover declared-only is denied", () => {
+    const e = outboxRecoveryEffect({
+      action: "retry",
+      idempotencyKey: "e-1",
+      reason: "recover failed outbox row",
+      sourceRefs: [ref],
+    });
+    const cap: Capability = { kind: "outbox.recover", actions: ["retry"] };
+    expect(enforceCapability(e, [cap], []).kind).toBe("deny");
+  });
+
+  test("outbox.recover granted-only is denied", () => {
+    const e = outboxRecoveryEffect({
+      action: "retry",
+      idempotencyKey: "e-1",
+      reason: "recover failed outbox row",
+      sourceRefs: [ref],
+    });
+    const cap: Capability = { kind: "outbox.recover", actions: ["retry"] };
+    expect(enforceCapability(e, [], [cap]).kind).toBe("deny");
+  });
+
+  test("question.ask declared-only is denied", () => {
+    const q = questionEffect({ question: "ok?", sourceRefs: [ref], idempotencyKey: "q-1" });
+    const cap: Capability = { kind: "question.ask" };
+    expect(enforceCapability(q, [cap], []).kind).toBe("deny");
+  });
+
+  test("question.ask granted-only is denied", () => {
+    const q = questionEffect({ question: "ok?", sourceRefs: [ref], idempotencyKey: "q-1" });
+    const cap: Capability = { kind: "question.ask" };
+    expect(enforceCapability(q, [], [cap]).kind).toBe("deny");
+  });
+
+  test("external declared-only is denied", () => {
+    const e = externalActionEffect({
+      capability: "calendar.write",
+      idempotencyKey: "e-1",
+      payload: { event: "x" },
+      sourceRefs: [ref],
+    });
+    const cap: Capability = { kind: "external", capability: "calendar.write" };
+    expect(enforceCapability(e, [cap], []).kind).toBe("deny");
+  });
+
+  test("external granted-only is denied", () => {
+    const e = externalActionEffect({
+      capability: "calendar.write",
+      idempotencyKey: "e-1",
+      payload: { event: "x" },
+      sourceRefs: [ref],
+    });
+    const cap: Capability = { kind: "external", capability: "calendar.write" };
+    expect(enforceCapability(e, [], [cap]).kind).toBe("deny");
   });
 });

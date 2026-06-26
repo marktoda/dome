@@ -79,7 +79,6 @@ import "../scenarios/effect-kinds/graph-links-emits-facts.scenario.test";
 import "../scenarios/effect-kinds/graph-tag-index-emits-facts.scenario.test";
 import "../scenarios/effect-kinds/daily-task-index-facts.scenario.test";
 import "../scenarios/effect-kinds/broken-images-diagnostics.scenario.test";
-import "../scenarios/effect-kinds/duplicate-detection-questions.scenario.test";
 import "../scenarios/effect-kinds/wikilink-ambiguity-questions.scenario.test";
 import "../scenarios/effect-kinds/stale-dates-diagnostics.scenario.test";
 import "../scenarios/effect-kinds/view-effect-via-dome-run.scenario.test";
@@ -229,7 +228,6 @@ const CAPABILITY_KINDS_ALL: ReadonlyArray<CapabilityKind> = [
   "read",
   "patch.propose",
   "patch.auto",
-  "owns.region",
   "owns.path",
   "graph.write",
   "search.write",
@@ -267,7 +265,7 @@ const ROUTES_ALL: ReadonlyArray<RouteKind> = [
 
 const DEFERRED_EFFECTS: ReadonlySet<EffectKind> = new Set<EffectKind>([
   // Phase 13a unblocked: fact (dome.graph.links), view (dome.markdown.orphan-pages).
-  // Phase 13b unblocked: question (dome.markdown.duplicate-detection).
+  // Phase 13b unblocked: question (dome.markdown.ambiguous-wikilink).
   // Effect-routing fixture coverage unblocked: job.
   // Effect-routing fixture coverage unblocked: outbox-recovery.
   // Sources-subscription coverage unblocked: external (dome.sources.fetch,
@@ -283,14 +281,13 @@ const DEFERRED_TRIGGERS: ReadonlySet<TriggerKind> = new Set<TriggerKind>([
 
 const DEFERRED_CAPABILITIES: ReadonlySet<CapabilityKind> = new Set<CapabilityKind>([
   // Phase 13a unblocked: graph.write (dome.graph.links declares `dome.graph.*`).
-  // Phase 13b unblocked: question.ask (dome.markdown.duplicate-detection).
+  // Phase 13b unblocked: question.ask (dome.markdown.ambiguous-wikilink).
   // Effect-routing fixture coverage unblocked: job.enqueue.
   // Harness operational-work coverage unblocked: model.invoke.
   // Effect-routing fixture coverage unblocked: outbox.recover.
   // Sources-subscription coverage unblocked: external (dome.sources.fetch,
   // scenarios/effect-kinds/sources-subscription-fetch).
   "patch.propose", // No shipped processor uses propose-mode patches (normalize-frontmatter is auto-mode)
-  "owns.region",   // Phase 15 — owned-region processors (marker-delimited write ownership)
   "owns.path",     // Phase 15 — owned-path processors (whole-file write ownership)
 ]);
 

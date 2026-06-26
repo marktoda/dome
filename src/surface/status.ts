@@ -115,6 +115,7 @@
 //     a compact dashboard intended for humans and agent transcripts.
 
 import { commitOid } from "../core/source-ref";
+import type { StatusReason } from "./attention-reasons";
 import { currentSha } from "../git";
 import { getAdoptedRef, getCurrentBranch } from "../adopted-ref";
 import {
@@ -218,7 +219,7 @@ export type StatusSnapshot = {
   readonly projection_stale: boolean;
   readonly projection_cache_drift: boolean;
   readonly attention_required: boolean;
-  readonly attention: ReadonlyArray<string>;
+  readonly attention: ReadonlyArray<StatusReason>;
   readonly next_actions: ReadonlyArray<CliNextAction>;
   readonly dirty_modified: number;
   readonly dirty_untracked: number;
@@ -635,8 +636,8 @@ function statusAttention(input: {
   readonly outboxFailed: number;
   readonly quarantined: number;
   readonly captureLoopInactive: boolean;
-}): ReadonlyArray<string> {
-  const out: string[] = [];
+}): ReadonlyArray<StatusReason> {
+  const out: StatusReason[] = [];
   if (input.adoptedDiverged) out.push("adopted_ref_diverged");
   if (input.syncNeeded) out.push("sync_needed");
   if (input.projectionStale) out.push("projection_stale");

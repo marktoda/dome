@@ -40,6 +40,7 @@ Cycles are permitted *within* a layer (e.g. `apply-effect` ↔ `diagnostics` in 
 | `commands` | `core` | View-phase command dispatcher (pure dispatch machinery) |
 | `compile-range` | `core` | "What changed in this Proposal" primitive |
 | `diagnostics` | `core` | Persisting engine-created diagnostics |
+| `diff3` | `core` | Line-level 3-way merge primitive backing garden-patch convergence (see [[wiki/specs/proposals]] §"Garden-emitted Proposals") |
 | `effect-capability-use` | `core` | Canonical run-ledger audit labels for effect capability enforcement |
 | `finalize-journal` | `core` | Finalize-intent journal — crash-safety for adoption finalization |
 | `glob-cache` | `core` | Cached Bun.Glob compilation |
@@ -49,7 +50,6 @@ Cycles are permitted *within* a layer (e.g. `apply-effect` ↔ `diagnostics` in 
 | `vault-shape` | `core` | EngineVault — the minimal structural shape the engine reads |
 | `garden` | `garden` | The garden-phase orchestrator |
 | `garden-patch-dispatch` | `garden` | Shared garden PatchEffect dispatch for non-signal garden sources |
-| `garden-patch-router` | `garden` | Shared routing for garden-phase PatchEffects |
 | `garden-run-routing` | `garden` | Shared effect routing for one non-signal garden processor run |
 | `garden-sub-proposals` | `garden` | Garden PatchEffect → sub-Proposal conversion (cascade-depth bookkeeping) |
 | `answers` | `operational` | Dispatch garden-phase processors after a user answer |

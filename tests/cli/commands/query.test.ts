@@ -13,6 +13,7 @@ import { describe, expect, test } from "bun:test";
 import {
   formatQueryResult,
 } from "../../../src/cli/commands/query";
+import { queryPayloadSchema } from "../../../src/surface/query-view";
 import { resolveCaps } from "../../../src/cli/presenter";
 
 // A caps instance with no color / unicode (mirrors the non-TTY test env).
@@ -26,13 +27,13 @@ function makeQueryData(overrides: {
   limit?: number | null;
   matches?: unknown[];
 }) {
-  return {
+  return queryPayloadSchema.parse({
     query: overrides.query ?? "capability broker",
     shown: { matches: overrides.shown ?? (overrides.matches?.length ?? 1) },
     hasMore: { matches: overrides.hasMore ?? false },
     limit: overrides.limit ?? null,
     matches: overrides.matches ?? [],
-  };
+  });
 }
 
 const MATCH_WITH_TELEMETRY = {

@@ -5,12 +5,14 @@ updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
-description: "Capability broker: seventeen tiers, manifest-declared x vault-granted intersection, enforced at the single enforceCapability chokepoint"
+description: "Capability broker: sixteen tiers, manifest-declared x vault-granted intersection, enforced at the single enforceCapability chokepoint"
 ---
 
 # Capabilities
 
 This spec is normative for Dome's capability broker — the one chokepoint that decides whether an [[wiki/specs/effects|Effect]] emitted by a [[wiki/specs/processors|Processor]] is applied or rejected. Every effect, regardless of source, passes through `enforceCapability(effect, processor.capabilities, grants)` before the engine applies it. This is pinned by [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]].
+
+Note: the `read · capture · resolve · converse · author` vocabulary in [[wiki/specs/http-surface]] scopes *who can reach a route* (the HTTP surface's per-route access gate); the engine's sixteen capability tiers here scope *what an effect may do once the engine applies it* — they are orthogonal layers that compose, not duplicates of each other.
 
 ## Why a capability broker
 
@@ -20,14 +22,13 @@ The v1 engine model treats every behavior as an extension — first-party `dome.
 
 ## Capability tiers
 
-Capabilities are about **effect power**, not arbitrary trust labels. Seventeen capability tiers cover every effect a processor can emit and every non-effect runtime power exposed through processor context:
+Capabilities are about **effect power**, not arbitrary trust labels. Sixteen capability tiers cover every effect a processor can emit and every non-effect runtime power exposed through processor context:
 
 ```ts
 type Capability =
   | { kind: "read";          paths: string[] }                  // glob patterns; allows content/metadata reads via ctx.snapshot
   | { kind: "patch.propose"; paths: string[] }                  // allows PatchEffect mode:"propose"
   | { kind: "patch.auto";    paths: string[] }                  // allows PatchEffect mode:"auto"
-  | { kind: "owns.region";   regionIds: string[] }              // exclusive ownership of marker regions
   | { kind: "owns.path";     paths: string[] }                  // exclusive ownership of paths (e.g., index.md)
   | { kind: "graph.write";   namespaces: string[] }             // FactEffect namespaces
   | { kind: "search.write";  paths: string[] }                  // SearchDocumentEffect paths
@@ -62,12 +63,6 @@ Permits `PatchEffect` with `mode: "auto"` for paths matching the glob. Auto-mode
 **Downgrade behavior:** a `mode: "auto"` PatchEffect whose touched paths exceed `patch.auto` capability is downgraded to `mode: "propose"` and emits a [[wiki/gotchas/capability-downgrade-surprise]] diagnostic. In adoption, that proposed patch then blocks for review; outside adoption it follows the phase's propose route.
 
 **Raw exception:** `raw/**` is not grantable write territory in v1. The broker denies both `patch.auto` and `patch.propose` effects touching `raw/**` even when a processor has otherwise broad path reach. Direct committed raw mutations are blocked separately by [[wiki/invariants/RAW_IS_IMMUTABLE]]'s adoption processor.
-
-### `owns.region`
-
-Marker-delimited region ownership. A processor that `owns.region: ["dome.daily.morning_brief"]` is the only one allowed to write inside `<!-- dome:region id="dome.daily.morning_brief" --> ... <!-- /dome:region -->` markers. Another processor's patch that touches the region is rejected.
-
-Implementation status: the core type exists as a planned API, but region parsing and enforcement are not shipped yet. V1 runtime manifests and config reject `owns.region`, and the broker denies hand-built PatchEffect routing that carries it, rather than pretending the generated-region boundary is safe. Current v1 enforcement covers `owns.path`; `owns.region` can be enabled only after parser-backed broker enforcement and harness coverage land.
 
 ### `owns.path`
 
@@ -288,7 +283,7 @@ it catches cases where an enabled processor would later skip, degrade, or
 block during capability enforcement because the bundle was installed without
 the matching grant kind.
 
-Shipped-default grants (the ones a fresh `dome init` writes): default-on first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches for frontmatter normalization, high-confidence existing-page wikilink repair, explicit source-backed concept/entity stub creation, and stale managed `updated:` metadata refresh, synthesis-page auto-patches for source-preserving duplicate reviews, and `question.ask` for duplicate-detection plus ambiguous-link questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.daily` is granted `wiki/**/*.md` plus root `notes/*.md` reads, matching auto-patches for daily creation, daily open-loop surfacing, and accepted follow-up answers, `dome.daily.*` fact writes, and `question.ask`; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted broad read for failed-row source provenance, failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` is granted markdown reads for its adopted-state report. `dome.agent` is shipped with an opt-in disabled grant skeleton because it needs a vault-configured `ModelProvider`; when enabled, it also receives `question.ask`, broad wiki/notes/inbox reads, matching `patch.auto` for wiki/notes/index/log/inbox-processed/inbox-raw paths, and `model.invoke` so the ingest agent can integrate raw captures and the stale-check can inspect active inbox buckets. The `patch.auto` grant covers `notes/**` by design — the capability grant is the single write boundary, and `raw/**` is explicitly absent (see [[wiki/invariants/RAW_IS_IMMUTABLE]]). Third-party bundles default to inactive until the user explicitly opts in.
+Shipped-default grants (the ones a fresh `dome init` writes): default-on first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches for frontmatter normalization, high-confidence existing-page wikilink repair, explicit source-backed concept/entity stub creation, and stale managed `updated:` metadata refresh, and `question.ask` for ambiguous-link questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.daily` is granted `wiki/**/*.md` plus root `notes/*.md` reads, matching auto-patches for daily creation, daily open-loop surfacing, and accepted follow-up answers, `dome.daily.*` fact writes, and `question.ask`; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted broad read for failed-row source provenance, failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` is granted markdown reads for its adopted-state report. `dome.agent` is shipped with an opt-in disabled grant skeleton because it needs a vault-configured `ModelProvider`; when enabled, it also receives `question.ask`, broad wiki/notes/inbox reads, matching `patch.auto` for wiki/notes/index/log/inbox-processed/inbox-raw paths, and `model.invoke` so the ingest agent can integrate raw captures and the stale-check can inspect active inbox buckets. The `patch.auto` grant covers `notes/**` by design — the capability grant is the single write boundary, and `raw/**` is explicitly absent (see [[wiki/invariants/RAW_IS_IMMUTABLE]]). Third-party bundles default to inactive until the user explicitly opts in.
 
 `tests/integration/default-vault-config.test.ts` keeps broad shipped-default
 path grants in lockstep. Any new default path grant over `**`, `**/*`, or
@@ -313,21 +308,21 @@ type EnforcementResult =
   | { kind: "deny";     diagnostic: DiagnosticEffect };
 ```
 
-Called exactly once at the engine effect-routing boundary before an effect can mutate state or write projections. Adoption, view, and non-patch garden effects call it through `src/engine/core/apply-effect.ts`; garden PatchEffects call it through `src/engine/garden/garden-patch-dispatch.ts` / `src/engine/garden/garden-patch-router.ts` because their route target is sub-Proposal construction. No code outside the engine reaches `enforceCapability` or the application layer. This is the structural fence behind [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]] and [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
+Called exactly once at the engine effect-routing boundary before an effect can mutate state or write projections. Every effect — garden PatchEffects included — calls it through the sole applier `src/engine/core/apply-effect.ts`; a garden auto-mode PatchEffect is authorized there and resolves to `queued-for-spawn`, after which `src/engine/garden/garden-patch-dispatch.ts` (and the signal-path orchestrator `garden.ts`) constructs the sub-Proposal. No code outside the engine reaches `enforceCapability` or the application layer. This is the structural fence behind [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]] and [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]].
 
-`tests/engine/capability-broker.test.ts`, `tests/engine/apply-effect.test.ts`, and `tests/engine/garden-patch-router.test.ts` ship positive and negative cases across broker enforcement and routing. The matrix at [[wiki/matrices/effect-x-capability]] enumerates the pairs.
+`tests/engine/capability-broker.test.ts` and `tests/engine/apply-effect.test.ts` ship positive and negative cases across broker enforcement and routing (the latter covers garden-phase PatchEffect routing). The matrix at [[wiki/matrices/effect-x-capability]] enumerates the pairs.
 
 ## Capability uses are ledgered
 
 Every effect attempt with a capability dimension records a `CapabilityUse` row in the run ledger's `RunRecord` (per [[wiki/specs/run-ledger]] §"CapabilityUse"), including allowed, downgraded, and denied attempts. This is the audit surface for "what did this processor try to reach" and the input to per-extension cost / quota tracking.
 
-## Why seventeen tiers, not more
+## Why sixteen tiers, not more
 
-The seventeen cover every effect kind and the non-effect runtime powers (`model.invoke`, operational outbox reads, operational quarantine reads, and operational run reads). Three properties drive the closed set:
+The sixteen cover every effect kind and the non-effect runtime powers (`model.invoke`, operational outbox reads, operational quarantine reads, and operational run reads). Three properties drive the closed set:
 
-1. **Effect/runtime-power coverage.** Each effect kind in [[wiki/specs/effects]] has a corresponding required capability per [[wiki/matrices/effect-x-capability]], and non-effect runtime powers (`model.invoke`, `outbox.read`, `quarantine.read`, `run.read`) have explicit context gates. Adding capabilities beyond the seventeen would mean inventing effects or runtime powers without a routing target.
+1. **Effect/runtime-power coverage.** Each effect kind in [[wiki/specs/effects]] has a corresponding required capability per [[wiki/matrices/effect-x-capability]], and non-effect runtime powers (`model.invoke`, `outbox.read`, `quarantine.read`, `run.read`) have explicit context gates. Adding capabilities beyond the sixteen would mean inventing effects or runtime powers without a routing target.
 2. **Trust dimensions are about effect power, not source.** Distinguishing "trusted plugin" from "untrusted plugin" via tier doesn't help; what matters is what the plugin can *do*. `external: "calendar.write"` is the trust dimension; the plugin is whoever holds it.
-3. **The enforcement code stays simple.** Seventeen cases across effect enforcement and context gating are auditable. A more granular set would push enforcement into per-effect-kind validators, dispersing the trust contract.
+3. **The enforcement code stays simple.** Sixteen cases across effect enforcement and context gating are auditable. A more granular set would push enforcement into per-effect-kind validators, dispersing the trust contract.
 
 ## Related
 

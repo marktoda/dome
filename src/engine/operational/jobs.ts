@@ -9,6 +9,7 @@ import {
   diagnosticEffect,
   type DiagnosticEffect,
 } from "../../core/effect";
+import { computeNextAttemptAt } from "../../core/retry-policy";
 import type { Processor } from "../../core/processor";
 import {
   claimNextEligibleJob,
@@ -31,7 +32,6 @@ import {
 import type { RunId } from "../core/runner-contract";
 
 const DEFAULT_MAX_JOBS_PER_DRAIN = 100;
-const MAX_RETRY_DELAY_MS = 60_000;
 
 export type JobDrainResult = {
   readonly drained: ReadonlyArray<JobDrainSummary>;
@@ -215,7 +215,7 @@ async function runOneJob(opts: RunOneJobOptions): Promise<JobDrainSummary> {
   markJobPending(
     opts.projection,
     opts.job.id,
-    new Date(opts.now().getTime() + retryDelayMs(attemptsAfterRun)),
+    computeNextAttemptAt(opts.now(), attemptsAfterRun),
   );
   return Object.freeze({
     jobId: opts.job.id,
@@ -246,7 +246,7 @@ async function recoverCrashedClaimedJob(opts: {
     markJobPending(
       opts.projection,
       opts.job.id,
-      new Date(opts.now().getTime() + retryDelayMs(opts.job.attempts)),
+      computeNextAttemptAt(opts.now(), opts.job.attempts),
     );
     summary = Object.freeze({
       jobId: opts.job.id,
@@ -271,9 +271,4 @@ async function recoverCrashedClaimedJob(opts: {
     proposalId: null,
   });
   return summary;
-}
-
-function retryDelayMs(attemptsAfterRun: number): number {
-  const delay = 1000 * 2 ** Math.max(0, attemptsAfterRun - 1);
-  return Math.min(delay, MAX_RETRY_DELAY_MS);
 }

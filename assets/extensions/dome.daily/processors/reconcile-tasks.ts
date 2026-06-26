@@ -5,9 +5,9 @@
 // source-backed copy in a daily does nothing to the origin task. This garden
 // processor closes that gap — "close it in one place, close it everywhere." It
 // scans the whole readable vault (siblings live in other files), collects every
-// settled `- [x]/[-] body (from [[origin]])` copy, and rewrites the matching
-// open origin line's checkbox marker in place. The daily's generated copy is
-// never touched; past notes stay append-only.
+// settled `- [x]/[-] body (from [[origin]]) ^anchor` copy, and rewrites the
+// matching open origin line's checkbox marker in place. The daily's generated
+// copy is never touched; past notes stay append-only.
 
 import {
   patchEffect,

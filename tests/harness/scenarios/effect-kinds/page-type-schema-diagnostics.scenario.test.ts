@@ -241,9 +241,6 @@ extensions:
     const seed = await h.tick();
     expect(seed.adopted).toBe(true);
 
-    const duplicateBody =
-      "# Recipe duplicate\n\n" +
-      "This body is intentionally duplicated so the question emitter fires.\n";
     await h.userCommit({
       files: {
         ".dome/page-types.yaml":
@@ -259,8 +256,13 @@ extensions:
           "unexpected: yes\n" +
           "---\n" +
           "# Soup\n",
-        "wiki/recipes/dupe-a.md": duplicateBody,
-        "wiki/recipes/dupe-b.md": duplicateBody,
+        // An ambiguous wikilink fires dome.markdown.ambiguous-wikilink's
+        // question — the answer-flow vehicle for this test (the question
+        // emitter is incidental; the subject is answer-driven schema cleanup).
+        "wiki/page.md":
+          "# Page\n\nWorking with [[wiki/entities/grae-danco#Notes|Grace]].\n",
+        "wiki/entities/grace-danco.md": "# Grace Danco\n",
+        "wiki/entities/grade-danco.md": "# Grade Danco\n",
       },
       message: "add answer-driven schema cleanup fixture",
     });
@@ -289,7 +291,7 @@ extensions:
     const answered = await h.runCli([
       "answer",
       String(questionId),
-      "keep separate",
+      "wiki/entities/grace-danco#Notes",
       "--json",
     ]);
     expect(answered.exitCode).toBe(0);

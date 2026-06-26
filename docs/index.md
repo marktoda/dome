@@ -8,6 +8,8 @@ New to the vocabulary? [[glossary]] is the one-page map: the four core types, th
 
 Installing Dome on your own machine? [[getting-started]] is the clone → vault → daemon → first-morning-brief walkthrough (the WS6 second-user script), every command verified against a scratch vault.
 
+Working in the codebase? [[philosophy]] is the house style — pure-decide + thin shells, named invariants with mechanical enforcers, locality > centralization, depth as the test of a seam, and when generalizing at N=1 is the right call.
+
 ## Current Product Planning
 
 - [[v1]] — V1 design and plan: source-preserving convergent maintenance loops for Mark's work vault; processors remain the execution primitive, loops are the automation design unit.
@@ -25,7 +27,7 @@ Installing Dome on your own machine? [[getting-started]] is the clone → vault 
 - [[wiki/specs/adoption]] — The fixed-point adoption loop; `refs/dome/adopted/<branch>`; Dome-* trailer convention; `dome sync` / `dome status`.
 - [[wiki/specs/projection-store]] — Bun.sqlite-backed projection (facts, fts5, diagnostics, questions, schedule cursors); rebuild path; outbox is adjacent operational state.
 - [[wiki/specs/embeddings]] — Banked dense-retrieval design (not implemented): `dome.model-provider.embed/v1` envelope; `model.embed` capability; `embeddings.db` as the recomputable-cache store class; brute-force-cosine third RRF channel; gated on the `retrieval-misses.md` log.
-- [[wiki/specs/capabilities]] — Seventeen capability tiers; manifest declarations; vault grants; broker enforcement at one chokepoint.
+- [[wiki/specs/capabilities]] — Sixteen capability tiers; manifest declarations; vault grants; broker enforcement at one chokepoint.
 - [[wiki/specs/run-ledger]] — RunRecord per processor invocation; CapabilityUse; dual provenance with engine commit trailers.
 - [[wiki/specs/cli]] — The Dome CLI: primary compiler loop (`serve` / `sync` / `status` / `check` / `resolve`), capture ingress (`capture`), adopted-state recall surfaces (`query`, `export-context`, the CLI-native activity view `log`), and hidden advanced/compatibility commands (`inspect`, `doctor`, `lint`, `answer`, `run`, `rebuild`, daily view wrappers).
 - [[wiki/specs/capture]] — The capture loop end-to-end: `dome capture`, the raw-capture file shape under `inbox/raw/`, the phone/voice ingress recipe (what ships vs. what the user assembles), and the remote-capture seam contract (commit-or-nothing; owner trust domain; `performCapture` as reference implementation).
@@ -134,7 +136,9 @@ Named semantic linter specs. Each names the rule, what it checks, and the target
 ## Concepts
 
 - [[wiki/concepts/brain-companion]] — Dome's product framing: ambient, always-accessible memory.
+- [[wiki/concepts/client-model]] — The three-layer client model: the user operates a client (primarily an LLM agent) over the compiled vault; the contract is the product; the CLI is admin/agent-tool/gap-filler.
 - [[wiki/concepts/llm-wiki-pattern]] — Karpathy's pattern: LLM as wiki maintainer, raw immutable, wiki synthesized.
+- [[wiki/concepts/surface-view-model]] — Surface views as three tiers (validated `/vN` payload contract → consumer view-model → thin protocol painters); `dome.daily.today/v1` is the exemplar, `status` is next.
 
 ## Sources
 

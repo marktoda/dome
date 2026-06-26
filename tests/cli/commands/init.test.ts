@@ -165,6 +165,18 @@ describe("runInit", () => {
       // `dome log` is the activity view (3a deferred item).
       expect(agentsBody).toContain("dome log");
       expect(agentsBody).toContain("activity view");
+      // Authoring conventions: page-type schema, source-backing, claim/task
+      // anchors, and generated-block awareness — the cross-client quality
+      // multiplier so an arbitrary agent writes adoption-clean pages.
+      expect(agentsBody).toContain("## Writing wiki pages");
+      expect(agentsBody).toContain("wiki/entities/");
+      expect(agentsBody).toContain("wiki/syntheses/");
+      expect(agentsBody).toContain("source-backing is the point");
+      expect(agentsBody).toContain("**Key:**"); // claim line grammar
+      expect(agentsBody).toContain("^c…"); // claim anchor — never hand-edit
+      expect(agentsBody).toContain("^t…"); // task anchor — move-stable identity
+      expect(agentsBody).toContain("**Generated blocks.**");
+      expect(agentsBody).toContain("machine-regenerated"); // generated-block awareness (no literal marker token — splice-guard)
 
       const claudePath = join(target, "CLAUDE.md");
       expect(existsSync(claudePath)).toBe(true);

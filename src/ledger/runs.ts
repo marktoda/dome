@@ -94,8 +94,8 @@ import {
   type ProcessorTimeoutExecutionError,
   type RunId,
 } from "../engine/core/runner-contract";
-import { parseEnum } from "../sqlite/parse-enum";
 import { parseJsonColumn } from "../sqlite/row-json";
+import { rowCodec } from "../sqlite/row-codec";
 import { mapRows } from "../sqlite/rows";
 import type { LedgerDb } from "./db";
 import { limitClause } from "./limits";
@@ -315,6 +315,17 @@ export const ACTIVE_PROBLEM_RUN_STATUSES: ReadonlySet<RunStatus> = new Set([
   "cancelled",
 ]);
 
+/**
+ * The exact failure reason the dome.health orphan-recovery answer writes.
+ *
+ * Imported by both the suppression filter (LATEST_ACTIVE_PROBLEM_WHERE_SQL)
+ * and the health processor (orphan-run-recovery-answer.ts) so the two sites
+ * cannot drift silently. A rename here is a compile error at both import
+ * sites. Invariant: ORPHAN_RECOVERED_RUNS_ARE_SUPPRESSED.
+ */
+export const ORPHAN_RUN_RECOVERY_ERROR_REASON =
+  "dome.health: mark orphaned processor run failed" as const;
+
 export type SumCostUsdByProcessorPrefixOpts = {
   readonly processorIdPrefix: string;
   readonly sinceIso: string;
@@ -338,6 +349,43 @@ export type AggregateCostUsdByProcessorOpts = {
   readonly sinceIso: string;
   /** ISO-8601 start-of-local-day — the "today" split inside the window. */
   readonly todayIso: string;
+};
+
+export type RunLedgerRetentionOpts = {
+  /**
+   * ISO-8601 upper bound on `started_at`. Eligible rows are strictly older
+   * than this cutoff.
+   */
+  readonly cutoffIso: string;
+};
+
+export type RunLedgerRetentionStatusCount = {
+  readonly status: RunStatus;
+  readonly runs: number;
+};
+
+export type RunLedgerRetentionPlan = {
+  readonly cutoffIso: string;
+  readonly eligibleRuns: number;
+  readonly eligibleCapabilityUses: number;
+  readonly eligibleCostUsd: number;
+  readonly oldestStartedAt: string | null;
+  readonly newestStartedAt: string | null;
+  readonly statusCounts: ReadonlyArray<RunLedgerRetentionStatusCount>;
+};
+
+export type PruneRunLedgerOpts = RunLedgerRetentionOpts & {
+  /**
+   * Run SQLite VACUUM after deleting eligible rows. This can be expensive, so
+   * CLI surfaces keep it opt-in.
+   */
+  readonly vacuum?: boolean;
+};
+
+export type PruneRunLedgerResult = RunLedgerRetentionPlan & {
+  readonly prunedRuns: number;
+  readonly prunedCapabilityUses: number;
+  readonly vacuumed: boolean;
 };
 
 // ----- SQL ------------------------------------------------------------------
@@ -469,7 +517,8 @@ WHERE status IN ('failed', 'timed_out', 'cancelled')
     status = 'failed'
     AND (
       error LIKE 'orphaned-run:%'
-      OR error = 'dome.health: mark orphaned processor run failed'
+      -- safe interpolation: a compile-time const with no SQL metacharacters (never user input)
+      OR error = '${ORPHAN_RUN_RECOVERY_ERROR_REASON}'
     )
   )
   AND NOT EXISTS (
@@ -511,6 +560,65 @@ SET status = 'failed',
     finished_at = ?
 WHERE id = ? AND status = 'running' AND started_at = ?
   AND processor_id = ? AND processor_version = ? AND phase = ?
+`.trim();
+
+// Retention deliberately prunes only boring terminal rows. Failed, timed_out,
+// cancelled, queued, running, and reason-bearing skipped rows keep their audit
+// value until an operator explicitly decides otherwise in a future wider tool.
+const RETENTION_ELIGIBLE_RUN_WHERE_SQL = `
+finished_at IS NOT NULL
+  AND started_at < ?
+  AND (
+    status = 'succeeded'
+    OR (status = 'skipped' AND error IS NULL)
+  )
+`.trim();
+
+const COUNT_RETENTION_ELIGIBLE_RUNS_SQL = `
+SELECT COUNT(*) AS count
+FROM runs
+WHERE ${RETENTION_ELIGIBLE_RUN_WHERE_SQL}
+`.trim();
+
+const COUNT_RETENTION_ELIGIBLE_CAPABILITY_USES_SQL = `
+SELECT COUNT(*) AS count
+FROM capability_uses
+WHERE run_id IN (
+  SELECT id FROM runs WHERE ${RETENTION_ELIGIBLE_RUN_WHERE_SQL}
+)
+`.trim();
+
+const SUM_RETENTION_ELIGIBLE_COST_SQL = `
+SELECT COALESCE(SUM(cost_usd), 0) AS cost_usd
+FROM runs
+WHERE ${RETENTION_ELIGIBLE_RUN_WHERE_SQL}
+`.trim();
+
+const RETENTION_ELIGIBLE_BOUNDS_SQL = `
+SELECT MIN(started_at) AS oldest_started_at,
+       MAX(started_at) AS newest_started_at
+FROM runs
+WHERE ${RETENTION_ELIGIBLE_RUN_WHERE_SQL}
+`.trim();
+
+const RETENTION_ELIGIBLE_STATUS_COUNTS_SQL = `
+SELECT status, COUNT(*) AS runs
+FROM runs
+WHERE ${RETENTION_ELIGIBLE_RUN_WHERE_SQL}
+GROUP BY status
+ORDER BY status
+`.trim();
+
+const DELETE_RETENTION_ELIGIBLE_CAPABILITY_USES_SQL = `
+DELETE FROM capability_uses
+WHERE run_id IN (
+  SELECT id FROM runs WHERE ${RETENTION_ELIGIBLE_RUN_WHERE_SQL}
+)
+`.trim();
+
+const DELETE_RETENTION_ELIGIBLE_RUNS_SQL = `
+DELETE FROM runs
+WHERE ${RETENTION_ELIGIBLE_RUN_WHERE_SQL}
 `.trim();
 
 // ----- Raw row shape --------------------------------------------------------
@@ -560,6 +668,16 @@ type ProcessorCostRawRow = {
 
 type CountRawRow = {
   readonly count: number;
+};
+
+type RetentionBoundsRawRow = {
+  readonly oldest_started_at: string | null;
+  readonly newest_started_at: string | null;
+};
+
+type RetentionStatusCountRawRow = {
+  readonly status: string;
+  readonly runs: number;
 };
 
 const EffectHashesSchema = z.array(z.string().min(1));
@@ -1060,59 +1178,81 @@ export function failRunIfCurrent(
   return result.changes > 0;
 }
 
-// ----- internals ------------------------------------------------------------
+/**
+ * Plan an explicit ledger-retention prune without mutating rows.
+ *
+ * The candidate set is intentionally narrow: old `succeeded` runs and old
+ * idempotency-style `skipped` runs (`error IS NULL`) whose lifecycle reached a
+ * terminal timestamp. Diagnostic terminal rows and active rows are preserved.
+ */
+export function planRunLedgerRetention(
+  db: LedgerDb,
+  opts: RunLedgerRetentionOpts,
+): RunLedgerRetentionPlan {
+  const eligibleRuns = countRetentionEligibleRuns(db, opts.cutoffIso);
+  const eligibleCapabilityUses = countRetentionEligibleCapabilityUses(
+    db,
+    opts.cutoffIso,
+  );
+  const eligibleCostUsd = sumRetentionEligibleCost(db, opts.cutoffIso);
+  const bounds = retentionEligibleBounds(db, opts.cutoffIso);
+  const statusCounts = retentionEligibleStatusCounts(db, opts.cutoffIso);
+  return Object.freeze({
+    cutoffIso: opts.cutoffIso,
+    eligibleRuns,
+    eligibleCapabilityUses,
+    eligibleCostUsd,
+    oldestStartedAt: bounds.oldest_started_at,
+    newestStartedAt: bounds.newest_started_at,
+    statusCounts,
+  });
+}
 
 /**
- * Row → RunRow. Deserializes JSON columns and narrows the `status`,
- * `phase`, `trigger_kind` strings to their closed unions. Throws on an
- * unrecognized value (a row corrupted at the SQL boundary — programmer
- * error or external tampering with the db file).
+ * Delete rows described by `planRunLedgerRetention`. Capability-use children
+ * are deleted first because the schema intentionally has no cascade; the
+ * ledger layer owns both writes so no CLI command has to bypass the fence.
  */
-function rowToRunRow(row: RunRawRow): RunRow {
+export function pruneRunLedger(
+  db: LedgerDb,
+  opts: PruneRunLedgerOpts,
+): PruneRunLedgerResult {
+  const plan = planRunLedgerRetention(db, opts);
+  let prunedCapabilityUses = 0;
+  let prunedRuns = 0;
+
+  db.raw.exec("BEGIN IMMEDIATE");
+  try {
+    prunedCapabilityUses = db.raw
+      .query(DELETE_RETENTION_ELIGIBLE_CAPABILITY_USES_SQL)
+      .run(opts.cutoffIso).changes;
+    prunedRuns = db.raw
+      .query(DELETE_RETENTION_ELIGIBLE_RUNS_SQL)
+      .run(opts.cutoffIso).changes;
+    db.raw.exec("COMMIT");
+  } catch (error) {
+    db.raw.exec("ROLLBACK");
+    throw error;
+  }
+
+  if (opts.vacuum === true) {
+    db.raw.exec("VACUUM");
+  }
+
   return Object.freeze({
-    id: row.id as RunId,
-    proposalId: row.proposal_id,
-    processorId: row.processor_id,
-    processorVersion: row.processor_version,
-    phase: narrowPhase(row.phase),
-    inputCommit: commitOid(row.input_commit),
-    outputCommit: row.output_commit === null ? null : commitOid(row.output_commit),
-    status: narrowStatus(row.status),
-    effectHashes: Object.freeze(
-      parseJsonColumn(
-        row.effect_hashes_json,
-        "runs.effect_hashes_json",
-        EffectHashesSchema,
-      ),
-    ),
-    costUsd: row.cost_usd,
-    durationMs: row.duration_ms,
-    error: row.error,
-    triggerKind: narrowTriggerKind(row.trigger_kind),
-    triggerPayload: parseJsonColumn(
-      row.trigger_payload_json,
-      "runs.trigger_payload_json",
-      JsonValueSchema,
-    ),
-    startedAt: row.started_at,
-    finishedAt: row.finished_at,
+    ...plan,
+    prunedRuns,
+    prunedCapabilityUses,
+    vacuumed: opts.vacuum === true,
   });
 }
 
-function rowToRunSummaryRow(row: RunSummaryRawRow): RunSummaryRow {
-  return Object.freeze({
-    id: row.id as RunId,
-    processorId: row.processor_id,
-    processorVersion: row.processor_version,
-    phase: narrowPhase(row.phase),
-    status: narrowStatus(row.status),
-    durationMs: row.duration_ms,
-    error: row.error,
-    triggerKind: narrowTriggerKind(row.trigger_kind),
-    startedAt: row.started_at,
-    finishedAt: row.finished_at,
-  });
-}
+// ----- internals ------------------------------------------------------------
+
+// Row → RunRow / RunSummaryRow codecs are defined below, after the closed-enum
+// arrays they reference (see `runCodec`). They deserialize JSON columns and
+// narrow `status` / `phase` / `trigger_kind`, throwing on a value corrupted at
+// the SQL boundary.
 
 function runsWhereClause(
   filter?: RunsQueryFilter,
@@ -1148,6 +1288,62 @@ function runsWhereClause(
   });
 }
 
+function countRetentionEligibleRuns(db: LedgerDb, cutoffIso: string): number {
+  const row = db.raw
+    .query<CountRawRow, [string]>(COUNT_RETENTION_ELIGIBLE_RUNS_SQL)
+    .get(cutoffIso);
+  return row?.count ?? 0;
+}
+
+function countRetentionEligibleCapabilityUses(
+  db: LedgerDb,
+  cutoffIso: string,
+): number {
+  const row = db.raw
+    .query<CountRawRow, [string]>(
+      COUNT_RETENTION_ELIGIBLE_CAPABILITY_USES_SQL,
+    )
+    .get(cutoffIso);
+  return row?.count ?? 0;
+}
+
+function sumRetentionEligibleCost(db: LedgerDb, cutoffIso: string): number {
+  const row = db.raw
+    .query<SumCostRawRow, [string]>(SUM_RETENTION_ELIGIBLE_COST_SQL)
+    .get(cutoffIso);
+  return row?.cost_usd ?? 0;
+}
+
+function retentionEligibleBounds(
+  db: LedgerDb,
+  cutoffIso: string,
+): RetentionBoundsRawRow {
+  const row = db.raw
+    .query<RetentionBoundsRawRow, [string]>(RETENTION_ELIGIBLE_BOUNDS_SQL)
+    .get(cutoffIso);
+  return Object.freeze({
+    oldest_started_at: row?.oldest_started_at ?? null,
+    newest_started_at: row?.newest_started_at ?? null,
+  });
+}
+
+function retentionEligibleStatusCounts(
+  db: LedgerDb,
+  cutoffIso: string,
+): ReadonlyArray<RunLedgerRetentionStatusCount> {
+  const rows = db.raw
+    .query<RetentionStatusCountRawRow, [string]>(
+      RETENTION_ELIGIBLE_STATUS_COUNTS_SQL,
+    )
+    .all(cutoffIso);
+  return mapRows(rows, (row) =>
+    Object.freeze({
+      status: decodeRunStatus(row.status),
+      runs: row.runs,
+    }),
+  );
+}
+
 const RUN_STATUSES = [
   "queued",
   "running",
@@ -1173,24 +1369,66 @@ const TRIGGER_KINDS = [
   "job",
 ] as const satisfies ReadonlyArray<TriggerKind>;
 
-function narrowStatus(s: string): RunStatus {
-  return parseEnum(s, RUN_STATUSES, "ledger.runs: status");
+function decodeRunStatus(status: string): RunStatus {
+  if ((RUN_STATUSES as ReadonlyArray<string>).includes(status)) {
+    return status as RunStatus;
+  }
+  throw new Error(`invalid ledger.runs.status: ${status}`);
 }
 
-function narrowPhase(s: string): ProcessorPhase {
-  return parseEnum(s, PROCESSOR_PHASES, "ledger.runs: phase");
-}
+const runCodec = rowCodec<RunRawRow>("ledger.runs");
 
-function narrowTriggerKind(s: string): TriggerKind {
-  return parseEnum(s, TRIGGER_KINDS, "ledger.runs: trigger_kind");
-}
+const rowToRunRow = runCodec.define<RunRow>({
+  id: runCodec.brand("id", (v) => v as RunId),
+  proposalId: runCodec.col("proposal_id"),
+  processorId: runCodec.col("processor_id"),
+  processorVersion: runCodec.col("processor_version"),
+  phase: runCodec.enumCol("phase", PROCESSOR_PHASES),
+  inputCommit: runCodec.brand("input_commit", commitOid),
+  outputCommit: runCodec.nullableBrand("output_commit", commitOid),
+  status: runCodec.enumCol("status", RUN_STATUSES),
+  effectHashes: runCodec.jsonCol("effect_hashes_json", EffectHashesSchema),
+  costUsd: runCodec.col("cost_usd"),
+  durationMs: runCodec.col("duration_ms"),
+  error: runCodec.col("error"),
+  triggerKind: runCodec.enumCol("trigger_kind", TRIGGER_KINDS),
+  // `custom`, not `jsonCol`: the trigger payload is left unfrozen (its shape is
+  // opaque `unknown`), matching the hand-mapper that froze effectHashes but not
+  // this column.
+  triggerPayload: runCodec.custom((row) =>
+    parseJsonColumn(
+      row.trigger_payload_json,
+      "ledger.runs.trigger_payload_json",
+      JsonValueSchema,
+    ),
+  ),
+  startedAt: runCodec.col("started_at"),
+  finishedAt: runCodec.col("finished_at"),
+});
+
+// Bound to the narrower summary raw shape (`queryRunSummaries` SELECTs fewer
+// columns), so the codec only reads columns that row actually carries.
+const runSummaryCodec = rowCodec<RunSummaryRawRow>("ledger.runs");
+
+const rowToRunSummaryRow = runSummaryCodec.define<RunSummaryRow>({
+  id: runSummaryCodec.brand("id", (v) => v as RunId),
+  processorId: runSummaryCodec.col("processor_id"),
+  processorVersion: runSummaryCodec.col("processor_version"),
+  phase: runSummaryCodec.enumCol("phase", PROCESSOR_PHASES),
+  status: runSummaryCodec.enumCol("status", RUN_STATUSES),
+  durationMs: runSummaryCodec.col("duration_ms"),
+  error: runSummaryCodec.col("error"),
+  triggerKind: runSummaryCodec.enumCol("trigger_kind", TRIGGER_KINDS),
+  startedAt: runSummaryCodec.col("started_at"),
+  finishedAt: runSummaryCodec.col("finished_at"),
+});
 
 function isRecoveredOrphanRun(
   row: Pick<RunRow, "status" | "error">,
 ): boolean {
   if (row.status !== "failed" || row.error === null) return false;
   return row.error.startsWith("orphaned-run:") ||
-    row.error === "dome.health: mark orphaned processor run failed";
+    row.error === ORPHAN_RUN_RECOVERY_ERROR_REASON;
 }
 
 function durationBetween(startedAt: string, finishedAt: Date): number {

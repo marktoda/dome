@@ -270,8 +270,9 @@ the 05:30 brief's core-memory injection reads fresh project tallies, not
 just the daily surface.
 
 - **Triggers:** cron `20 5 * * *` — after the 05:15 index render, before the
-  05:30 brief — plus a `document.changed` signal on `wiki/dailies/*.md`
-  (settling or surfacing an open loop is what moves the tallies).
+  05:30 brief. It is schedule-only by design: active-projects is a morning
+  core-memory snapshot for agent context, not a live dashboard on every
+  daily-note edit.
 - **Grant:** `read` over exactly `core.md` + `wiki/dailies/*.md`;
   `patch.auto` over exactly `core.md` (manifest declaration + the
   per-processor replacement grant in the shipped vault config — the

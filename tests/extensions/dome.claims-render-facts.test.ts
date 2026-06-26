@@ -58,6 +58,13 @@ describe("dome.claims.render-facts", () => {
     expect(content).toContain("Status");
     expect(content).toContain("Owner");
     expect(content).toContain("Stage");
+    // The digest predicts the same deterministic anchors that
+    // dome.claims.stamp will apply in the same garden cascade, so the first
+    // rendered block is already the fixed-point block with backlinks.
+    expect(
+      content.match(/\(\[\[wiki\/notes\/phoenix#\^c[0-9a-f]{8}\]\]\)/g) ??
+        [],
+    ).toHaveLength(3);
     // Inserted AFTER frontmatter and the first H1: the H1 precedes the block,
     // the block precedes the original prose.
     const h1At = content.indexOf("# Project Phoenix");

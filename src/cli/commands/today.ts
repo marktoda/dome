@@ -8,6 +8,8 @@
 
 import { basename } from "node:path";
 
+import { z } from "zod";
+
 import {
   runSharedViewCommand,
   structuredViewBrokerMessages,
@@ -29,6 +31,7 @@ import {
   headline,
   hyperlink,
   originUrl,
+  pad,
   paint,
   resolveCaps,
   rollup,
@@ -36,12 +39,20 @@ import {
   splitInlineLinks,
   statusGlyph,
   stripEmphasis,
-  truncate,
+  stripWikilinks,
   visibleWidth,
+  wrap,
   type Caps,
   type Tone,
 } from "../presenter";
-import { daysBetween, parseTodayView, type TodayTaskRow } from "../../surface/today-view";
+import {
+  parseTodayView,
+  buildTodayViewModel,
+  classifyUrgency,
+  priorityMarkerChars,
+  type TodaySourceRef,
+  type TodayTaskRow,
+} from "../../surface/today-view";
 import { compareStrings } from "../../core/compare";
 import { resolveVaultPath } from "../../surface/resolve-vault";
 import { EX_USAGE } from "../exit-codes";
@@ -188,7 +199,11 @@ async function renderTodayOnce(
       { views: run.views, structured: run.structured },
       {
         viewName: FIRST_PARTY_VIEWS.today.viewName,
-        schema: FIRST_PARTY_VIEWS.today.schema,
+        schemaTag: FIRST_PARTY_VIEWS.today.schemaTag,
+        // Lenient degrade: `dome today` must always render something, so it
+        // skips the strict contract parse here and enriches the raw data via
+        // `parseTodayView` (total) in `formatTodayResult`.
+        payload: z.unknown(),
       },
     );
     if (validated.kind === "problem") {
@@ -300,18 +315,9 @@ export function formatTodayResult(
   vault: string,
   opts: FormatTodayOptions = {},
 ): string {
-  const view = parseTodayView(data);
-  const { date, openTasks, followups, questions, hero, brief, calendar, counts } = view;
-  const openTasksTotal = counts.openTasks;
-  const followupsTotal = counts.followups;
-  const questionsTotal = counts.questions;
-
-  // Count overdue tasks (dueDate < date)
-  const allTasks = [...openTasks, ...followups];
-  const overdueCount = allTasks.filter(
-    (t) => t.dueDate !== null && t.dueDate < date,
-  ).length;
-  const totalOpen = openTasksTotal + followupsTotal + questionsTotal;
+  const vm = buildTodayViewModel(parseTodayView(data));
+  const { date, counts, totalOpen, stillOpen, brief, calendar, questions } = vm;
+  const overdueCount = stillOpen.overdue.length;
   const isAllClear = totalOpen === 0;
 
   // Verdict header
@@ -329,65 +335,15 @@ export function formatTodayResult(
     "",
   ];
 
-  // Hero action line (→ / >) — never dome decide
-  if (hero !== null) {
-    const heroArrow = caps.unicode ? "↗" : "->";
-    const heroArrowWidth = visibleWidth(heroArrow);
-    if (hero.kind === "task") {
-      const item = hero.item;
-      // Urgency suffix — compute its plain visible width BEFORE paint so we
-      // can reserve the right number of columns.
-      const urgencyPlain = item.dueDate === null
-        ? ""
-        : item.dueDate < date
-        ? `   overdue ${daysBetween(item.dueDate, date)}d`
-        : item.dueDate === date
-        ? `   due today`
-        : `   due ${item.dueDate}`;
-      const urgencyPainted = item.dueDate === null
-        ? ""
-        : item.dueDate < date
-        ? `   ${paint(`overdue ${daysBetween(item.dueDate, date)}d`, "err", caps)}`
-        : item.dueDate === date
-        ? `   ${paint("due today", "warn", caps)}`
-        : `   ${paint(`due ${item.dueDate}`, "muted", caps)}`;
-      const urgencyWidth = visibleWidth(urgencyPlain);
-
-      // Mirror renderRow: split out inline links, strip emphasis, shorten.
-      const { text: rawText, links: heroLinks } = splitInlineLinks(item.text);
-      const heroText = stripEmphasis(rawText);
-      const MAX_LINK_LABEL = 24;
-      const heroAffs = heroLinks.map((l) => ({
-        label: shortenLabel(l.label, MAX_LINK_LABEL, caps.unicode),
-        url: l.url,
-      }));
-      const heroLinkReserve =
-        heroAffs.length === 0
-          ? 0
-          : 3 +
-            heroAffs.reduce((a, x) => a + visibleWidth(x.label) + heroArrowWidth, 0) +
-            (heroAffs.length - 1) * 2;
-      const heroOriginReserve = item.origin !== undefined ? 3 + heroArrowWidth : 0;
-      // "  → " leader = 4 cols (2 indent + pointer char + space); same as taskWidth.
-      const heroTaskWidth = Math.max(24, caps.width - 4);
-      const heroBudget = Math.max(0, heroTaskWidth - urgencyWidth - heroLinkReserve - heroOriginReserve);
-      const heroLabel = shortenLabel(heroText, heroBudget, caps.unicode);
-
-      const heroAffordances = heroAffs
-        .map((x) => paint(hyperlink(`${x.label}${heroArrow}`, x.url, caps), "ident", caps))
-        .join("  ");
-      const heroInlineTail = heroAffs.length > 0 ? `   ${heroAffordances}` : "";
-      const heroOriginTail =
-        item.origin !== undefined
-          ? `   ${paint(hyperlink(heroArrow, originUrl(item.origin, vault), caps), "ident", caps)}`
-          : "";
-      lines.push(`  ${glyph("pointer", caps)} ${heroLabel}${heroInlineTail}${heroOriginTail}${urgencyPainted}`);
-    } else {
-      const item = hero.item;
-      const questionText = shortenLabel(stripEmphasis(item.question), 60, caps.unicode);
-      lines.push(
-        `  ${glyph("pointer", caps)} dome resolve ${item.id}   ${paint(questionText, "muted", caps)}`,
-      );
+  // Brief — the grounded morning framing, shown by default under the verdict.
+  // Wikilinks are stripped to their labels (terminal legibility); the source
+  // path is shown only under --verbose.
+  if (brief !== null) {
+    for (const line of wrap(stripWikilinks(brief.text), Math.max(8, caps.width - 2))) {
+      lines.push(`  ${line}`);
+    }
+    if (opts.verbose === true && brief.sourceRef.path.length > 0) {
+      lines.push(`  ${paint(brief.sourceRef.path, "muted", caps)}`);
     }
     lines.push("");
   }
@@ -400,26 +356,34 @@ export function formatTodayResult(
     lines.push("");
   }
 
-  // Calendar summary line
+  // Calendar agenda — a time-gutter list of today's events. Capped (with an
+  // overflow line); --verbose shows all. The dim `meta` (attendees) trails the
+  // title when present.
   if (calendar !== null && calendar.events.length > 0) {
-    const n = calendar.events.length;
-    const evtSummary = `${n} ${n === 1 ? "event" : "events"}`;
-    lines.push(
-      `  ${paint("today", "muted", caps)}  ${paint(date, "plain", caps)} · ${paint(evtSummary, "muted", caps)}`,
-    );
+    lines.push(`  ${paint("agenda", "muted", caps)}  ${paint(date, "plain", caps)}`);
+    const AGENDA_CAP = 5;
+    const shown = opts.verbose === true
+      ? calendar.events.length
+      : Math.min(AGENDA_CAP, calendar.events.length);
+    const timeWidth = calendar.events
+      .slice(0, shown)
+      .reduce((m, e) => Math.max(m, visibleWidth(e.time === "" ? "—" : e.time)), 0);
+    for (const ev of calendar.events.slice(0, shown)) {
+      const time = paint(pad(ev.time === "" ? "—" : ev.time, timeWidth), "muted", caps);
+      const metaTail = ev.meta.length > 0 ? `   ${paint(ev.meta, "muted", caps)}` : "";
+      const titleBudget = Math.max(8, caps.width - 4 - timeWidth - 3 - visibleWidth(ev.meta) - 3);
+      const title = shortenLabel(stripEmphasis(ev.title), titleBudget, caps.unicode);
+      lines.push(`    ${time}  ${title}${metaTail}`);
+    }
+    const more = calendar.events.length - shown;
+    if (more > 0) lines.push(`    ${paint(`+${more} more`, "muted", caps)}`);
     lines.push("");
   }
 
   if (!isAllClear) {
-    const isHeroTask = (t: TodayTaskRow): boolean =>
-      hero !== null && hero.kind === "task" &&
-      hero.item.text === t.text && hero.item.path === t.path &&
-      hero.item.line === t.line;
-
-    const nonHero = allTasks.filter((t) => !isHeroTask(t));
-    const overdue = nonHero.filter((t) => t.dueDate !== null && t.dueDate < date);
-    const dueToday = nonHero.filter((t) => t.dueDate !== null && t.dueDate === date);
-    const open = nonHero.filter((t) => t.dueDate === null || t.dueDate > date);
+    // Hero-deduped, urgency-bucketed sections come from the view-model — the CLI
+    // no longer derives "overdue"/"due today"/etc. itself.
+    const { overdue, dueToday, thisWeek, later, someday } = stillOpen;
 
     const taskWidth = Math.max(24, caps.width - 4); // "  <glyph> " leader = 4 cols
     const arrow = caps.unicode ? "↗" : "->";
@@ -450,8 +414,19 @@ export function formatTodayResult(
             (affs.length - 1) * 2;
       // Reserve width for the origin ↗ affordance when present.
       const originReserve = t.origin !== undefined ? 3 + arrowWidth : 0;
-      // Reduce available label width by the extra indent to keep total ≤ taskWidth.
-      const effectiveWidth = taskWidth - indent;
+      // Priority marker gutter: a fixed 3-col cell ("▲▲ ") between the glyph and
+      // the text so marked and unmarked rows align at the same text column. The
+      // marker (highest/high in `err`, low/lowest in `muted`) is reserved out of
+      // the text budget like indent, keeping the row within taskWidth.
+      const MARKER_GUTTER = 3;
+      const markerRaw = priorityMarkerChars(t.priority, caps.unicode);
+      const markerTone: Tone =
+        t.priority === "highest" || t.priority === "high" ? "err" : "muted";
+      const marker = markerRaw.length > 0
+        ? `${paint(pad(markerRaw, MARKER_GUTTER - 1), markerTone, caps)} `
+        : " ".repeat(MARKER_GUTTER);
+      // Reduce available label width by the extra indent + marker gutter to keep total ≤ taskWidth.
+      const effectiveWidth = taskWidth - indent - MARKER_GUTTER;
       const label = shortenLabel(text, Math.max(0, effectiveWidth - linkReserve - originReserve), caps.unicode);
       const g = paint(statusGlyph(tone, caps), tone, caps);
       const affordances = affs
@@ -463,13 +438,23 @@ export function formatTodayResult(
           ? `   ${paint(hyperlink(arrow, originUrl(t.origin, vault), caps), "ident", caps)}`
           : "";
       const indentStr = " ".repeat(indent);
-      lines.push(`  ${g} ${indentStr}${label}${inlineTail}${originTail}`);
+      lines.push(`  ${g} ${marker}${indentStr}${label}${inlineTail}${originTail}`);
+      if (opts.verbose === true) {
+        const why = taskWhyLine(t, date);
+        if (why.length > 0) {
+          for (const whyLine of wrap(why, Math.max(8, caps.width - 6))) {
+            lines.push(`      ${paint(whyLine, "muted", caps)}`);
+          }
+        }
+      }
     };
 
     const CLUSTER_MIN = 3;
     const OVERDUE_CAP = 6;
     const TODAY_CAP = 4;
-    const OPEN_CAP = 4;
+    const THIS_WEEK_CAP = 4;
+    const LATER_CAP = 3;
+    const SOMEDAY_CAP = 3;
     const capOf = (n: number): number => (opts.verbose === true ? Number.POSITIVE_INFINITY : n);
 
     // Group shown tasks by entity clusters, then emit bucket header + clusters + ungrouped.
@@ -545,16 +530,18 @@ export function formatTodayResult(
 
     const overdueShown = section("OVERDUE", overdue, OVERDUE_CAP, "err");
     const todayShown = section("TODAY", dueToday, TODAY_CAP, "warn");
-    const openShown = section("OPEN", open, OPEN_CAP, "plain");
+    const thisWeekShown = section("THIS WEEK", thisWeek, THIS_WEEK_CAP, "plain");
+    const laterShown = section("LATER", later, LATER_CAP, "plain");
+    const somedayShown = section("SOMEDAY", someday, SOMEDAY_CAP, "plain");
 
     // Honest overflow using the view's TRUE totals (counts.*), not the received
     // (possibly display-capped) arrays. Overdue is reported exactly (the verdict
     // header already relies on the received list carrying all overdue); every
     // other non-shown task folds into a single "more" so the math never lies.
-    const heroIsTask = hero !== null && hero.kind === "task";
-    const trueTotal = (counts.openTasks + followupsTotal) - (heroIsTask ? 1 : 0);
+    const trueTotal = counts.openTasks + counts.followups;
     const overdueMore = Math.max(0, overdue.length - overdueShown);
-    const otherMore = Math.max(0, (trueTotal - overdue.length) - (todayShown + openShown));
+    const shownNonOverdue = todayShown + thisWeekShown + laterShown + somedayShown;
+    const otherMore = Math.max(0, (trueTotal - overdue.length) - shownNonOverdue);
     if (overdueMore > 0 || otherMore > 0) {
       const parts: string[] = [];
       if (overdueMore > 0) parts.push(`${overdueMore} more overdue`);
@@ -579,21 +566,72 @@ export function formatTodayResult(
     lines.push(rollup([], caps));
   }
 
-  // Brief prose: hidden by default, shown under --verbose
-  if (brief !== null) {
-    if (opts.verbose === true) {
-      lines.push("");
-      lines.push(`  ${paint("brief", "muted", caps)}   ${brief.text}`);
-      if (brief.sourceRef.path.length > 0) {
-        lines.push(`  ${paint(brief.sourceRef.path, "muted", caps)}`);
-      }
-    } else {
-      lines.push("");
-      lines.push(
-        `  ${paint("--verbose for full brief + sources", "muted", caps)}`,
-      );
-    }
-  }
-
   return lines.join("\n");
+}
+
+function taskWhyLine(task: TodayTaskRow, today: string): string {
+  const parts = [
+    dueWhy(task, today),
+    ...sourceWhy(task),
+    attentionWhy(task),
+    task.origin !== undefined ? `origin ${task.origin}` : null,
+  ].filter((part): part is string => part !== null && part.length > 0);
+  return parts.length === 0 ? "" : `why: ${parts.join(" · ")}`;
+}
+
+function dueWhy(task: TodayTaskRow, today: string): string {
+  const urgency = classifyUrgency(task.dueDate, today);
+  switch (urgency.kind) {
+    case "overdue":
+      return `overdue by ${urgency.days}d (${task.dueDate})`;
+    case "due-today":
+      return "due today";
+    case "this-week":
+      return `due this week (${urgency.date})`;
+    case "later":
+      return `due later (${urgency.date})`;
+    case "someday":
+      return "no due date";
+  }
+}
+
+function sourceWhy(task: TodayTaskRow): ReadonlyArray<string> {
+  const location = task.evidenceLabel ?? formatTaskLocation(task);
+  const originRef = firstBackingRef(task);
+  if (originRef !== null && originRef.path !== task.path) {
+    return [
+      `source-backed from ${formatSourceRef(originRef)}`,
+      withLocation("carried-forward projection", location),
+    ];
+  }
+  if (task.source === "backlog") return [withLocation("source-backed backlog", location)];
+  if (task.source === "daily") return [withLocation("daily-local", location)];
+  return location.length > 0 ? [`source ${location}`] : [];
+}
+
+function firstBackingRef(task: TodayTaskRow): TodaySourceRef | null {
+  const refs = task.sourceRefs ?? [];
+  return refs.find((ref) => ref.path !== task.path) ?? refs[0] ?? null;
+}
+
+function attentionWhy(task: TodayTaskRow): string | null {
+  const attention = task.attention;
+  if (attention === undefined) return null;
+  if (attention === null) return "attention undiscounted";
+  return `attention discount ${Math.round(attention.discount * 100)}% after ` +
+    `${attention.impressions} impressions (last ${attention.lastShown})`;
+}
+
+function formatTaskLocation(task: TodayTaskRow): string {
+  if (task.path.length === 0) return "";
+  return task.line === null ? task.path : `${task.path}:${task.line}`;
+}
+
+function formatSourceRef(ref: TodaySourceRef): string {
+  const line = ref.range?.startLine;
+  return line === undefined ? ref.path : `${ref.path}:${line}`;
+}
+
+function withLocation(label: string, location: string): string {
+  return location.length === 0 ? label : `${label} at ${location}`;
 }

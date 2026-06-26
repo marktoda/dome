@@ -32,7 +32,9 @@ Pinned by [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]].
 ```text
 proposal P arrives with base = adopted, head = candidate
 
-candidate := merge(adopted, P.head)
+candidate := P.head  # proposal-construction guarantees head descends from adopted
+                     # real 3-way merging (when two patches touch the same path) happens
+                     # inside the garden-patch path — see merge3 in src/engine/core/apply-patch.ts
 
 for iteration in 1..MAX_ITER:
   snapshot      := read(candidate)

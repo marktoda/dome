@@ -24,6 +24,7 @@ import type { Snapshot } from "../../../../src/core/processor";
 import { dailyPathSettings, formatDate, parseDailyPath } from "./daily-paths";
 import {
   openLoopIdentity,
+  openLoopStableId,
   openLoopSurfaceKey,
   openLoopSurfaceSources,
   openSourceBackedOpenLoopsFromMarkdown,
@@ -160,11 +161,12 @@ type AttentionSnapshot = Pick<
 >;
 
 /**
- * Scan the snapshot and derive the discount table, keyed by open-loop identity
- * (`openLoopIdentity` — origin path + normalized body, the same key the daily
- * surface uses). Only items whose origin line carries a `^block-anchor`
- * participate; settled items are excluded; entries exist only for items with
- * at least one counted impression. Deterministic per snapshot: no clock.
+ * Scan the snapshot and derive the discount table, keyed by the anchored
+ * open-loop identity the daily surface uses. Only items whose origin line
+ * carries a `^block-anchor` participate; legacy unanchored daily copies still
+ * count as impressions via their old path+body identity. Settled items are
+ * excluded; entries exist only for items with at least one counted impression.
+ * Deterministic per snapshot: no clock.
  */
 export async function collectAttentionDiscounts(input: {
   readonly snapshot: AttentionSnapshot;
@@ -193,7 +195,8 @@ export async function collectAttentionDiscounts(input: {
   if (referenceDate === undefined) return new Map();
 
   // Impressions: distinct daily dates whose generated open-loops block carries
-  // an OPEN copy of the item, keyed by open-loop identity.
+  // an OPEN copy of the item, keyed by projected identity. New copies carry an
+  // anchor; legacy copies use the former path+body identity.
   const shownDates = new Map<string, Set<string>>();
   for (const daily of dailies) {
     const content = contents.get(daily.path);
@@ -237,7 +240,14 @@ export async function collectAttentionDiscounts(input: {
         continue;
       }
       const dates = shownDates.get(identity);
-      if (dates === undefined || dates.size === 0) continue;
+      const legacyIdentity = openLoopStableId({
+        sourcePath: item.sourcePath,
+        body: item.body,
+      });
+      const legacyDates =
+        legacyIdentity === identity ? undefined : shownDates.get(legacyIdentity);
+      const impressionDates = unionDates(dates, legacyDates);
+      if (impressionDates.size === 0) continue;
 
       if (!lastHumanDateByPath.has(path)) {
         const info = await input.snapshot.getFileInfo(path);
@@ -250,11 +260,11 @@ export async function collectAttentionDiscounts(input: {
 
       // Only dailies dated strictly AFTER the last human touch count — any
       // human edit to the origin file resets the impression trail.
-      const counted = [...dates].filter(
+      const counted = [...impressionDates].filter(
         (date) => lastHumanDate === null || date > lastHumanDate,
       );
       if (counted.length === 0) continue;
-      const lastShown = [...dates].sort().at(-1) ?? referenceDate;
+      const lastShown = [...impressionDates].sort().at(-1) ?? referenceDate;
       const daysSinceLastShown = wholeDaysBetween(lastShown, referenceDate);
       const exempt = isAttentionExemptBody(item.body);
       out.set(
@@ -279,6 +289,13 @@ export async function collectAttentionDiscounts(input: {
     }
   }
   return out;
+}
+
+function unionDates(
+  a: ReadonlySet<string> | undefined,
+  b: ReadonlySet<string> | undefined,
+): ReadonlySet<string> {
+  return new Set([...(a ?? []), ...(b ?? [])]);
 }
 
 /** Encode the fact value (stable key order — facts must be byte-stable). */

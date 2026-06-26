@@ -35,7 +35,10 @@ import {
   type ProcessorContext,
 } from "../../../../src/core/processor";
 import { AS_OF_MARKER_RE } from "./claim-fact";
-import { claimsFromMarkdown, type ClaimLine } from "./claims-shared";
+import {
+  claimsWithStableAnchors,
+  type ClaimLine,
+} from "./claims-shared";
 
 const OWNER = "dome.claims";
 const BLOCK = "current-facts";
@@ -114,7 +117,7 @@ function minClaimsFromConfig(config?: ExtensionConfig): number {
  * H1 line (when present). Returns a char offset just past the consumed
  * region's trailing newline (or content length when it runs to EOF).
  */
-function insertionOffset(content: string): number {
+export function insertionOffset(content: string): number {
   const lines = content.split("\n");
   let cursor = 0; // 0-based line index of the next unconsumed line
 
@@ -149,7 +152,7 @@ function insertionOffset(content: string): number {
  * Accepted limitation: the spliced region uses LF line endings even if the
  * surrounding document mixes CRLF.
  */
-function insertBlock(content: string, block: string, offset: number): string {
+export function insertBlock(content: string, block: string, offset: number): string {
   const before = content.slice(0, offset);
   const after = content.slice(offset);
   const head = before.replace(/\n+$/, "");
@@ -196,7 +199,7 @@ const renderFacts = defineProcessorImplementation({
         }),
       );
 
-      const claims = claimsFromMarkdown(content);
+      const claims = claimsWithStableAnchors({ path, content });
       const desired = claims.length >= minClaims;
       const { range } = findGeneratedBlock(content, OWNER, BLOCK);
       // The page name in wikilinks drops the `.md` extension (Obsidian style).

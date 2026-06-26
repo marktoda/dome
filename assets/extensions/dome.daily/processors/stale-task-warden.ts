@@ -140,7 +140,7 @@ const staleTaskWarden = defineProcessorImplementation({
 
     // Collect attention discounts for all anchored open-loop items in the snapshot.
     // This is a pure snapshot scan — no projection required, matches posture of
-    // the attention-discount processor. Keyed by openLoopIdentity (sourcePath + body).
+    // the attention-discount processor. Keyed by anchored openLoopIdentity.
     const discounts = await collectAttentionDiscounts({
       snapshot: ctx.snapshot,
       settings,
@@ -181,10 +181,7 @@ const staleTaskWarden = defineProcessorImplementation({
           // Even if discount=0 (exempt), rule (a) still applies independently.
         } else {
           // Rule (b): undated task — check attention discount.
-          const identityKey = openLoopIdentity({
-            sourcePath: item.sourcePath,
-            body: item.body,
-          });
+          const identityKey = openLoopIdentity(item);
           const discountEntry = discounts.get(identityKey);
           if (
             discountEntry !== undefined &&

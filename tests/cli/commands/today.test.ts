@@ -243,88 +243,85 @@ describe("dome today: Briefing terminal restyle", () => {
     expect(out).not.toContain("dome decide");
   });
 
-  test("hero task line renders with '>' pointer and urgency, no dome decide", () => {
+  test("hero retired: no '>' pointer line; the would-be hero appears in OVERDUE", () => {
     const data = {
       date: "2026-06-14",
+      // even when the payload still carries a hero, it is no longer painted:
       hero: {
         kind: "task",
-        item: {
-          text: "make the routing decision",
-          path: "wiki/tasks.md",
-          line: 1,
-          dueDate: "2026-06-10",
-        },
+        item: { text: "make the routing decision", path: "wiki/tasks.md", line: 1, dueDate: "2026-06-10" },
       },
       brief: null,
       calendar: null,
-      openTasks: [],
+      openTasks: [
+        { text: "make the routing decision", path: "wiki/tasks.md", line: 1, dueDate: "2026-06-10" },
+      ],
       followups: [],
       questions: [],
-      counts: {},
+      counts: { openTasks: 1, followups: 0, questions: 0 },
       dueCounts: {},
     };
     const out = formatTodayResult(data, ASCII_CAPS, "/vault");
-    expect(out).toContain(">");                          // ASCII pointer glyph
-    expect(out).toContain("make the routing decision");
-    expect(out).toMatch(/overdue/);
+    expect(out).not.toMatch(/\n\s+> /);                  // no hero pointer line
+    expect(out).toContain("OVERDUE");
+    expect(out).toContain("make the routing decision");  // the task lives in its section
     expect(out).not.toContain("dome decide");
   });
 
-  test("hero question line renders with '>' and dome resolve, no dome decide", () => {
+  test("brief shown by default with wikilinks stripped; source path only under --verbose", () => {
     const data = {
-      date: "2026-06-14",
-      hero: {
-        kind: "question",
-        item: {
-          id: 7,
-          question: "K-budget gate a blocker?",
-          resolveCommand: "dome resolve 7 yes",
-          options: [],
-        },
-      },
-      brief: null,
-      calendar: null,
-      openTasks: [],
-      followups: [],
-      questions: [
-        {
-          id: 7,
-          question: "K-budget gate a blocker?",
-          resolveCommand: "dome resolve 7 yes",
-          options: [],
-        },
-      ],
-      counts: {},
-      dueCounts: {},
+      date: "2026-06-23",
+      counts: { openTasks: 0, followups: 0, questions: 0 },
+      openTasks: [], followups: [], questions: [], calendar: null, hero: null,
+      brief: { text: "Focus on [[wiki/rh-chain|RH Chain]] today.", sourceRef: { path: "wiki/dailies/2026-06-23.md" } },
     };
-    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
-    expect(out).toContain(">");
-    expect(out).toContain("dome resolve");
-    expect(out).not.toContain("dome decide");
+    const plain = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(plain).toContain("Focus on RH Chain today."); // wikilink stripped to label
+    expect(plain).not.toContain("[[");
+    expect(plain).not.toContain("wiki/dailies/2026-06-23.md"); // path hidden by default
+    expect(plain).not.toContain("--verbose for full brief");
+
+    const verbose = formatTodayResult(data, ASCII_CAPS, "/vault", { verbose: true });
+    expect(verbose).toContain("wiki/dailies/2026-06-23.md"); // path shown under --verbose
   });
 
-  test("full brief prose is hidden by default, shown under verbose", () => {
-    const BRIEF = "A long analysis paragraph about today's priorities.";
+  test("--verbose explains why each task is surfaced", () => {
     const data = {
       date: "2026-06-14",
       hero: null,
-      brief: {
-        text: BRIEF,
-        sourceRef: { path: "wiki/brief.md" },
-      },
+      brief: null,
       calendar: null,
-      openTasks: [],
+      openTasks: [
+        {
+          text: "reply to Jane",
+          path: "wiki/dailies/2026-06-14.md",
+          line: 20,
+          source: "daily",
+          dueDate: "2026-06-10",
+          evidenceLabel: "wiki/dailies/2026-06-14.md:20",
+          attention: { discount: 0.32, impressions: 4, lastShown: "2026-06-13" },
+          origin: "https://slk/p1",
+          sourceRefs: [
+            { path: "wiki/dailies/2026-06-14.md", range: { startLine: 20, endLine: 20 } },
+            { path: "wiki/projects/client.md", range: { startLine: 7, endLine: 7 } },
+          ],
+        },
+      ],
       followups: [],
       questions: [],
-      counts: {},
-      dueCounts: {},
+      counts: { openTasks: 1, followups: 0, questions: 0 },
     };
-    const defaultOut = formatTodayResult(data, ASCII_CAPS, "/vault");
-    const verboseOut = formatTodayResult(data, ASCII_CAPS, "/vault", { verbose: true });
-    expect(defaultOut).not.toContain(BRIEF);
-    expect(verboseOut).toContain(BRIEF);
-    // Default output hints about --verbose
-    expect(defaultOut).toContain("--verbose");
+    const plain = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(plain).not.toContain("why:");
+
+    const verbose = formatTodayResult(data, ASCII_CAPS, "/vault", { verbose: true });
+    const oneLineVerbose = verbose.replace(/\s+/g, " ");
+    expect(oneLineVerbose).toContain("why:");
+    expect(oneLineVerbose).toContain("overdue by 4d");
+    expect(oneLineVerbose).toContain("source-backed from wiki/projects/client.md:7");
+    expect(oneLineVerbose).toContain("carried-forward projection at wiki/dailies/2026-06-14.md:20");
+    expect(oneLineVerbose).toContain("attention discount 32%");
+    expect(oneLineVerbose).toContain("origin https://slk/p1");
   });
 
   test("all-clear renders calm verdict with no tasks", () => {
@@ -355,7 +352,7 @@ describe("dome today: Briefing terminal restyle", () => {
     expect(out).toMatch(/go make something|you're clear/i);
   });
 
-  test("calendar summary line rendered when calendar present", () => {
+  test("calendar renders a time-gutter agenda with titles when present", () => {
     const data = {
       date: "2026-06-14",
       hero: null,
@@ -374,8 +371,30 @@ describe("dome today: Briefing terminal restyle", () => {
       dueCounts: {},
     };
     const out = formatTodayResult(data, ASCII_CAPS, "/vault");
-    expect(out).toMatch(/today|2026-06-14/);
-    expect(out).toMatch(/2\s*event/);
+    expect(out).toContain("agenda");
+    expect(out).toContain("10:00  Team sync");
+    expect(out).toContain("14:00  Design review");
+    expect(out).toContain("30min"); // meta tail
+  });
+
+  test("calendar agenda caps at 5 with overflow; --verbose shows all", () => {
+    const events = Array.from({ length: 7 }, (_, i) => ({
+      time: `0${i}:00`, title: `Event ${i}`, meta: i === 0 ? "Cody, Grayson" : "",
+    }));
+    const data = {
+      date: "2026-06-23",
+      counts: { openTasks: 0, followups: 0, questions: 0 },
+      openTasks: [], followups: [], questions: [], brief: null, hero: null,
+      calendar: { events, sourceRef: { path: "sources/calendar/2026-06-23.md" } },
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(out).toContain("00:00  Event 0");
+    expect(out).toContain("Cody, Grayson");        // meta rendered
+    expect(out).toContain("04:00  Event 4");        // 5th event shown
+    expect(out).not.toContain("05:00  Event 5");    // capped
+    expect(out).toContain("+2 more");               // overflow
+    const verbose = formatTodayResult(data, ASCII_CAPS, "/vault", { verbose: true });
+    expect(verbose).toContain("06:00  Event 6");     // all shown under --verbose
   });
 
   test("glyph-grouped task rows: overdue, today, open", () => {
@@ -396,9 +415,10 @@ describe("dome today: Briefing terminal restyle", () => {
     };
     const out = formatTodayResult(data, ASCII_CAPS, "/vault");
     // Flat list: one task per line, urgency glyph leads each (ASCII: x/!/*).
-    expect(out).toMatch(/\n\s+x overdue task/);
-    expect(out).toMatch(/\n\s+! due today task/);
-    expect(out).toMatch(/\n\s+\* open task/);
+    // glyph leads each row; a fixed priority-marker gutter sits between glyph and text.
+    expect(out).toMatch(/\n\s+x\s+overdue task/);
+    expect(out).toMatch(/\n\s+!\s+due today task/);
+    expect(out).toMatch(/\n\s+\*\s+open task/);
   });
 
   test("? ask line shows top question with dome resolve; +N if more", () => {
@@ -423,6 +443,24 @@ describe("dome today: Briefing terminal restyle", () => {
     // Second question collapsed
     expect(out).not.toContain("Second question");
     expect(out).toContain("+1");
+  });
+
+  test("priority markers render in a reserved gutter and keep rows within width", () => {
+    const caps = { color: false, unicode: true, width: 80, hyperlinks: false } as const;
+    const out = formatTodayResult({
+      date: "2026-06-23",
+      counts: { openTasks: 2, followups: 0, questions: 0 },
+      openTasks: [
+        { text: "ship it", path: "p", line: 1, dueDate: "2026-06-10", priority: "highest" },
+        { text: "later maybe", path: "p", line: 2, dueDate: "2026-06-10" },
+      ],
+      followups: [], questions: [], brief: null, calendar: null, hero: null,
+    }, caps, "/vault");
+    expect(out).toContain("▲▲ ship it");
+    // unmarked row keeps the gutter so text columns align: glyph + space + 3-col blank gutter
+    const line = out.split("\n").find((l) => l.includes("later maybe"))!;
+    expect(line).toMatch(/✗ {4}later maybe/);
+    for (const l of out.split("\n")) expect(visibleWidth(l)).toBeLessThanOrEqual(80);
   });
 
   test("rollup line 'everything else clean' always appears when tasks exist", () => {
@@ -484,55 +522,24 @@ describe("stripWikilinks", () => {
 // ----- wikilink stripping in formatTodayResult --------------------------------
 
 describe("dome today: wikilink stripping in rendered output", () => {
-  test("hero task with wikilinks renders alias not raw markup", () => {
+  test("task row with wikilinks renders alias not raw markup", () => {
     const data = {
       date: "2026-06-14",
-      hero: {
-        kind: "task",
-        item: {
-          text: "Partner call: confirm [[wiki/entities/robinhood-chain|RH Chain]] launch",
-          path: "wiki/tasks.md",
-          line: 1,
-          dueDate: "2026-06-10",
-        },
-      },
+      hero: null,
       brief: null,
       calendar: null,
-      openTasks: [],
+      openTasks: [
+        { text: "Partner call: confirm [[wiki/entities/robinhood-chain|RH Chain]] launch", path: "wiki/tasks.md", line: 1, dueDate: "2026-06-10" },
+      ],
       followups: [],
       questions: [],
-      counts: {},
+      counts: { openTasks: 1, followups: 0, questions: 0 },
       dueCounts: {},
     };
     const out = formatTodayResult(data, ASCII_CAPS, "/vault");
     expect(out).toContain("RH Chain");
     expect(out).not.toContain("[[");
     expect(out).not.toContain("]]");
-  });
-
-  test("hero task overdue shows day count (overdue Nd), not bare 'overdue'", () => {
-    const data = {
-      date: "2026-06-14",
-      hero: {
-        kind: "task",
-        item: {
-          text: "Overdue task",
-          path: "wiki/tasks.md",
-          line: 1,
-          dueDate: "2026-06-10",
-        },
-      },
-      brief: null,
-      calendar: null,
-      openTasks: [],
-      followups: [],
-      questions: [],
-      counts: {},
-      dueCounts: {},
-    };
-    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
-    // Should show "overdue 4d" (4 days from 2026-06-10 to 2026-06-14)
-    expect(out).toMatch(/overdue \d+d/);
   });
 
   test("grouped task row truncates long label with ellipsis", () => {
@@ -619,8 +626,8 @@ describe("dome today: flat signal-led task list", () => {
       counts: { openTasks: 11 }, dueCounts: {},
     };
     const out = formatTodayResult(data, ASCII_CAPS, "/vault");
-    expect(out).toMatch(/\n  x Overdue thing/);
-    expect(out).toMatch(/\n  \* Open item 0/);
+    expect(out).toMatch(/\n  x\s+Overdue thing/);
+    expect(out).toMatch(/\n  \*\s+Open item 0/);
     expect(out).toMatch(/\d+ more · dome today --verbose/);
     expect(out).not.toContain("· +");
     expect(out).not.toMatch(/^\s+x overdue\s/m);
@@ -678,11 +685,15 @@ describe("formatTodayResult grouping + links", () => {
     ...over,
   });
 
-  test("renders OVERDUE/TODAY/OPEN headers only for non-empty buckets", () => {
+  // The five-section grouping (plan: 2026-06-22-today-view-model). The undated
+  // "draft the Q3 plan" now lands in SOMEDAY rather than the old lumped OPEN
+  // bucket — the intended behavior change from adopting the shared view-model.
+  test("renders urgency-section headers only for non-empty buckets", () => {
     const out = formatTodayResult(doc(), caps, "/v/work");
-    expect(out).toContain("OVERDUE");
-    expect(out).toContain("TODAY");
-    expect(out).toContain("OPEN");
+    expect(out).toContain("OVERDUE"); // dueDate 2026-06-13
+    expect(out).toContain("TODAY"); // dueDate 2026-06-15
+    expect(out).toContain("SOMEDAY"); // dueDate null (was OPEN)
+    expect(out).not.toContain("OPEN");
   });
 
   test("pulls the slack URL out of the line — no raw archives/ URL, link label survives", () => {
@@ -793,131 +804,6 @@ describe("today renders task origin as one affordance", () => {
 });
 
 // ----- Hero line: shortenLabel + link/origin affordance (Fix 1) ---------------
-
-describe("dome today: hero line uses shortenLabel + link/origin affordances", () => {
-  const caps = { color: false, unicode: true, width: 80, hyperlinks: false } as const;
-
-  const heroDoc = (over: Record<string, unknown> = {}) => ({
-    date: "2026-06-15",
-    hero: {
-      kind: "task",
-      item: {
-        text: "Partner call: confirm the token catalog — which issuers should be on the initial list [thread](https://slack/123)",
-        path: "wiki/tasks.md",
-        line: 1,
-        dueDate: "2026-06-13",
-      },
-    },
-    openTasks: [],
-    followups: [],
-    questions: [],
-    counts: { openTasks: 0, followups: 0, questions: 0 },
-    brief: null,
-    calendar: null,
-    ...over,
-  });
-
-  test("hero line does NOT cut mid-word (ends at word/clause boundary before ellipsis)", () => {
-    const out = formatTodayResult(heroDoc(), caps, "/vault");
-    const heroLine = out.split("\n").find((l) => l.includes("Partner call"))!;
-    expect(heroLine).toBeDefined();
-    // The raw URL must not appear (split out as link affordance)
-    expect(heroLine).not.toContain("https://slack/123");
-    // Must end at a word boundary: the char before "…" is not mid-word
-    const ellipsisIdx = heroLine.indexOf("…");
-    if (ellipsisIdx !== -1) {
-      const charBefore = heroLine[ellipsisIdx - 1];
-      // Should be a letter/digit/punct char that ends a word, not a space-less mid-word cut after "—"
-      // The key check: "— w" should NOT appear (i.e. no cut like "— w…" mid-word)
-      expect(heroLine).not.toMatch(/— \w…/);
-    }
-  });
-
-  test("hero line renders the inline link as label↗ affordance", () => {
-    const hypercaps = { color: false, unicode: true, width: 80, hyperlinks: true } as const;
-    const out = formatTodayResult(heroDoc(), hypercaps, "/vault");
-    const heroLine = out.split("\n").find((l) => l.includes("Partner call"))!;
-    // The link label "thread" should appear in the hero line
-    expect(heroLine).toContain("thread");
-    // The URL must be inside an OSC 8 escape (non-visible), not as bare visible text.
-    // Strip OSC 8 sequences and confirm the URL does not appear in the stripped text.
-    const strippedOfEscapes = heroLine.replace(/\x1b\]8;;[^\x1b]*\x1b\\/g, "");
-    expect(strippedOfEscapes).not.toContain("https://slack/123");
-  });
-
-  test("hero line total visible width ≤ caps.width including urgency suffix and affordances", () => {
-    const widths = [60, 80, 120];
-    for (const w of widths) {
-      const c = { color: false, unicode: true, width: w, hyperlinks: true } as const;
-      const out = formatTodayResult(heroDoc(), c, "/vault");
-      for (const line of out.split("\n")) {
-        expect(visibleWidth(line)).toBeLessThanOrEqual(w);
-      }
-    }
-  });
-
-  test("hero task with **bold** text renders without asterisks", () => {
-    const boldDoc = {
-      ...heroDoc(),
-      hero: {
-        kind: "task",
-        item: {
-          text: "**Re-look Erin promo doc** — check the bundle",
-          path: "wiki/tasks.md",
-          line: 1,
-          dueDate: null,
-        },
-      },
-    };
-    const out = formatTodayResult(boldDoc, caps, "/vault");
-    const heroLine = out.split("\n").find((l) => l.includes("Re-look Erin"))!;
-    expect(heroLine).toBeDefined();
-    expect(heroLine).not.toContain("**");
-    expect(heroLine).not.toContain("*");
-  });
-
-  test("hero with origin renders the ↗ origin affordance", () => {
-    const originDoc = {
-      ...heroDoc(),
-      hero: {
-        kind: "task",
-        item: {
-          text: "Confirm the routing plan",
-          path: "wiki/tasks.md",
-          line: 1,
-          dueDate: null,
-          origin: "https://slack/origin",
-        },
-      },
-    };
-    const hypercaps = { color: false, unicode: true, width: 80, hyperlinks: true } as const;
-    const out = formatTodayResult(originDoc, hypercaps, "/vault");
-    const heroLine = out.split("\n").find((l) => l.includes("Confirm the routing"))!;
-    expect(heroLine).toContain("↗");
-    expect(heroLine).toContain("https://slack/origin");
-  });
-
-  test("hero origin affordance never pushes the hero line past caps.width", () => {
-    const originDoc = {
-      ...heroDoc(),
-      hero: {
-        kind: "task",
-        item: {
-          text: "A very long hero task title that will definitely need to be shortened to fit — check everything",
-          path: "wiki/tasks.md",
-          line: 1,
-          dueDate: "2026-06-13",
-          origin: "https://slack/p1",
-        },
-      },
-    };
-    const narrow = { color: false, unicode: true, width: 50, hyperlinks: true } as const;
-    const out = formatTodayResult(originDoc, narrow, "/vault");
-    for (const line of out.split("\n")) {
-      expect(visibleWidth(line)).toBeLessThanOrEqual(narrow.width);
-    }
-  });
-});
 
 // ----- stripEmphasis in renderRow (Fix 2) -------------------------------------
 
@@ -1155,29 +1041,6 @@ describe("dome today: inline-link ↗ is INSIDE the OSC 8 hyperlink", () => {
     // arrow is inside: the closing OSC8 (\x1b]8;;\x1b\\) comes AFTER "thread↗"
     expect(out).toContain("\x1b]8;;https://slk/p1\x1b\\thread↗\x1b]8;;\x1b\\");
     // and NOT the old arrow-outside form
-    expect(out).not.toContain("\x1b\\thread\x1b]8;;\x1b\\↗");
-  });
-
-  test("hero inline-link affordance puts the ↗ INSIDE the OSC 8 hyperlink", () => {
-    const caps = { color: false, unicode: true, width: 100, hyperlinks: true } as const;
-    const doc = {
-      date: "2026-06-15",
-      hero: {
-        kind: "task",
-        item: {
-          text: "Partner call [thread](https://slk/h1)",
-          path: "wiki/tasks.md",
-          line: 1,
-          dueDate: null,
-        },
-      },
-      openTasks: [],
-      followups: [], questions: [], counts: { openTasks: 0, followups: 0, questions: 0 },
-      brief: null, calendar: null,
-    };
-    const out = formatTodayResult(doc, caps, "/v/work");
-    // arrow is inside the hyperlink on the hero line too
-    expect(out).toContain("\x1b]8;;https://slk/h1\x1b\\thread↗\x1b]8;;\x1b\\");
     expect(out).not.toContain("\x1b\\thread\x1b]8;;\x1b\\↗");
   });
 });

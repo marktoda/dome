@@ -83,8 +83,9 @@
 //     functionally; no index access into the raw `.all()` result.
 
 import { JsonValueSchema, type ExternalActionEffect } from "../core/effect";
+import { computeNextAttemptAt } from "../core/retry-policy";
 import type { SourceRef } from "../core/source-ref";
-import { parseEnum } from "../sqlite/parse-enum";
+import { rowCodec } from "../sqlite/row-codec";
 import {
   parseJsonColumn,
   parseSourceRefsColumn,
@@ -102,8 +103,6 @@ import type { OutboxDb } from "./db";
  * default ever changes.
  */
 const DEFAULT_MAX_ATTEMPTS = 3;
-const BASE_RETRY_DELAY_MS = 1000;
-const MAX_RETRY_DELAY_MS = 60_000;
 const DEFAULT_EXTERNAL_HANDLER_TIMEOUT_MS = 30_000;
 
 // ----- Public types ---------------------------------------------------------
@@ -1000,15 +999,6 @@ function failureToken(row: OutboxRow): string {
   );
 }
 
-function computeNextAttemptAt(now: Date, failedAttemptCount: number): Date {
-  const exponent = Math.max(0, failedAttemptCount - 1);
-  const delay = Math.min(
-    BASE_RETRY_DELAY_MS * 2 ** exponent,
-    MAX_RETRY_DELAY_MS,
-  );
-  return new Date(now.getTime() + delay);
-}
-
 function lookupHandler(
   handlers: ExternalHandlerRegistry,
   capability: string,
@@ -1045,37 +1035,9 @@ function isOutboxDispatchCancelled(error: unknown): boolean {
   );
 }
 
-/**
- * Row → OutboxRow. Deserializes JSON columns and narrows the `status`
- * string to the closed union. Throws on an unrecognized status (a row
- * corrupted at the SQL boundary — programmer error or external
- * tampering with the db file).
- */
-function rowToOutboxRow(row: OutboxRawRow): OutboxRow {
-  return Object.freeze({
-    id: row.id,
-    capability: row.capability,
-    idempotencyKey: row.idempotency_key,
-    payload: parseJsonColumn(
-      row.payload_json,
-      "outbox.payload_json",
-      JsonValueSchema,
-    ),
-    sourceRefs: parseSourceRefsColumn(
-      row.source_refs,
-      "outbox.source_refs",
-    ),
-    status: narrowStatus(row.status),
-    externalId: row.external_id,
-    attempts: row.attempts,
-    maxAttempts: row.max_attempts,
-    enqueuedAt: row.enqueued_at,
-    nextAttemptAt: row.next_attempt_at,
-    sentAt: row.sent_at,
-    lastError: row.last_error,
-    runId: row.run_id,
-  });
-}
+// Row → OutboxRow codec is defined below, after `OUTBOX_STATUSES` (the codec
+// references it). Deserializes JSON columns, resolves source refs, and narrows
+// `status`, throwing on a value corrupted at the SQL boundary.
 
 const OUTBOX_STATUSES = [
   "pending",
@@ -1085,11 +1047,30 @@ const OUTBOX_STATUSES = [
   "abandoned",
 ] as const satisfies ReadonlyArray<OutboxStatus>;
 
-/**
- * Narrow the raw `status` string to the closed `OutboxStatus` union.
- * The DDL doesn't carry a CHECK constraint on `status` (v1 simplicity);
- * this function is the read-side fence.
- */
-function narrowStatus(s: string): OutboxStatus {
-  return parseEnum(s, OUTBOX_STATUSES, "outbox.dispatch: status");
-}
+// The DDL doesn't carry a CHECK constraint on `status` (v1 simplicity); the
+// `enumCol` reader below is the read-side fence.
+const outboxCodec = rowCodec<OutboxRawRow>("outbox");
+
+const rowToOutboxRow = outboxCodec.define<OutboxRow>({
+  id: outboxCodec.col("id"),
+  capability: outboxCodec.col("capability"),
+  idempotencyKey: outboxCodec.col("idempotency_key"),
+  // `custom`, not `jsonCol`: the opaque payload was left unfrozen by the
+  // hand-mapper.
+  payload: outboxCodec.custom((row) =>
+    parseJsonColumn(row.payload_json, "outbox.payload_json", JsonValueSchema),
+  ),
+  // `parseSourceRefsColumn` already freezes the array it returns.
+  sourceRefs: outboxCodec.custom((row) =>
+    parseSourceRefsColumn(row.source_refs, "outbox.source_refs"),
+  ),
+  status: outboxCodec.enumCol("status", OUTBOX_STATUSES),
+  externalId: outboxCodec.col("external_id"),
+  attempts: outboxCodec.col("attempts"),
+  maxAttempts: outboxCodec.col("max_attempts"),
+  enqueuedAt: outboxCodec.col("enqueued_at"),
+  nextAttemptAt: outboxCodec.col("next_attempt_at"),
+  sentAt: outboxCodec.col("sent_at"),
+  lastError: outboxCodec.col("last_error"),
+  runId: outboxCodec.col("run_id"),
+});

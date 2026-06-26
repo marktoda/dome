@@ -1,5 +1,22 @@
-import { expect, test } from "bun:test";
-import { parseTodayView, addDays } from "../../src/surface/today-view";
+import { describe, expect, test } from "bun:test";
+import {
+  parseTodayView,
+  addDays,
+  buildTodayViewModel,
+  classifyUrgency,
+  priorityMarkerChars,
+} from "../../src/surface/today-view";
+
+test("priorityMarkerChars maps all five levels + null", () => {
+  expect(priorityMarkerChars("highest", true)).toBe("▲▲");
+  expect(priorityMarkerChars("high", true)).toBe("▲");
+  expect(priorityMarkerChars("medium", true)).toBe("");
+  expect(priorityMarkerChars("low", true)).toBe("▽");
+  expect(priorityMarkerChars("lowest", true)).toBe("▽▽");
+  expect(priorityMarkerChars(null, true)).toBe("");
+  expect(priorityMarkerChars("highest", false)).toBe("^^");
+  expect(priorityMarkerChars("lowest", false)).toBe("vv");
+});
 
 test("parses tasks with wikilinks stripped + dueDate", () => {
   const v = parseTodayView({ date: "2026-06-14",
@@ -7,6 +24,68 @@ test("parses tasks with wikilinks stripped + dueDate", () => {
     followups: [], questions: [], counts: { openTasks: 1, followups: 0, questions: 0 }, brief: null, calendar: null, hero: null });
   expect(v.openTasks[0]!.text).toBe("talk to Eric");
   expect(v.openTasks[0]!.dueDate).toBe("2026-06-10");
+});
+
+test("parseTaskRows carries priority for all five literals + null/unknown", () => {
+  const v = parseTodayView({
+    date: "2026-06-23",
+    openTasks: [
+      { text: "a", path: "p", line: 1, dueDate: null, priority: "highest" },
+      { text: "b", path: "p", line: 2, dueDate: null, priority: "low" },
+      { text: "c", path: "p", line: 3, dueDate: null },
+      { text: "d", path: "p", line: 4, dueDate: null, priority: "bogus" },
+    ],
+    followups: [], questions: [],
+    counts: { openTasks: 4, followups: 0, questions: 0 },
+    brief: null, calendar: null, hero: null,
+  });
+  expect(v.openTasks.map((t) => t.priority ?? null)).toEqual(["highest", "low", null, null]);
+});
+
+test("parseTaskRows preserves task provenance metadata for why-lines", () => {
+  const v = parseTodayView({
+    date: "2026-06-14",
+    openTasks: [
+      {
+        text: "reply to [[people/jane|Jane]]",
+        path: "wiki/dailies/2026-06-14.md",
+        line: 20,
+        source: "daily",
+        dueDate: "2026-06-10",
+        evidenceLabel: "wiki/dailies/2026-06-14.md:20; source wiki/projects/client.md:7",
+        lastChangedAt: "2026-06-13T10:00:00.000Z",
+        attention: { discount: 0.32, impressions: 4, lastShown: "2026-06-13" },
+        sourceRefs: [
+          {
+            path: "wiki/dailies/2026-06-14.md",
+            range: { startLine: 20, endLine: 20 },
+            stableId: "t1",
+          },
+          {
+            path: "wiki/projects/client.md",
+            range: { startLine: 7, endLine: 7 },
+            stableId: "t1",
+          },
+        ],
+      },
+    ],
+    followups: [],
+    questions: [],
+    counts: { openTasks: 1, followups: 0, questions: 0 },
+    brief: null,
+    calendar: null,
+    hero: null,
+  });
+  const row = v.openTasks[0]!;
+  expect(row.text).toBe("reply to Jane");
+  expect(row.source).toBe("daily");
+  expect(row.evidenceLabel).toBe("wiki/dailies/2026-06-14.md:20; source wiki/projects/client.md:7");
+  expect(row.lastChangedAt).toBe("2026-06-13T10:00:00.000Z");
+  expect(row.attention).toEqual({ discount: 0.32, impressions: 4, lastShown: "2026-06-13" });
+  expect(row.sourceRefs?.map((ref) => `${ref.path}:${ref.range?.startLine}:${ref.stableId}`)).toEqual([
+    "wiki/dailies/2026-06-14.md:20:t1",
+    "wiki/projects/client.md:7:t1",
+  ]);
 });
 
 test("parses question options + resolveCommand", () => {
@@ -55,4 +134,89 @@ test("task rows expose [[entity]] slugs as a structured `entities` field", () =>
 test("a row with no wikilinks has empty/absent entities", () => {
   const view = parseTodayView({ date: "x", openTasks: [{ text: "plain task", path: "p", line: 1, dueDate: null }], counts: { openTasks: 1, followups: 0, questions: 0 } });
   expect(view.openTasks[0]!.entities ?? []).toEqual([]);
+});
+
+// ── Tier 2: buildTodayViewModel ──────────────────────────────────────────────
+
+describe("classifyUrgency", () => {
+  const today = "2026-06-22";
+  test("null due date → someday", () => {
+    expect(classifyUrgency(null, today)).toEqual({ kind: "someday" });
+  });
+  test("past → overdue with whole-day count", () => {
+    expect(classifyUrgency("2026-06-20", today)).toEqual({ kind: "overdue", days: 2 });
+  });
+  test("equal → due-today", () => {
+    expect(classifyUrgency(today, today)).toEqual({ kind: "due-today" });
+  });
+  test("within +7 (inclusive) → this-week", () => {
+    expect(classifyUrgency("2026-06-29", today)).toEqual({ kind: "this-week", date: "2026-06-29" }); // +7
+    expect(classifyUrgency("2026-06-23", today)).toEqual({ kind: "this-week", date: "2026-06-23" }); // +1
+  });
+  test("beyond +7 → later", () => {
+    expect(classifyUrgency("2026-06-30", today)).toEqual({ kind: "later", date: "2026-06-30" }); // +8
+  });
+});
+
+describe("buildTodayViewModel", () => {
+  const base = {
+    date: "2026-06-22",
+    counts: { openTasks: 4, followups: 0, questions: 1 },
+    followups: [],
+    brief: null,
+    calendar: null,
+  };
+
+  test("partitions hero-deduped tasks into the five sections", () => {
+    const vm = buildTodayViewModel(
+      parseTodayView({
+        ...base,
+        openTasks: [
+          { text: "overdue one", path: "p", line: 1, dueDate: "2026-06-20" },
+          { text: "due today", path: "p", line: 2, dueDate: "2026-06-22" },
+          { text: "this week", path: "p", line: 3, dueDate: "2026-06-25" },
+          { text: "far", path: "p", line: 4, dueDate: "2026-08-01" },
+          { text: "no date", path: "p", line: 5, dueDate: null },
+        ],
+        questions: [],
+        hero: null,
+      }),
+    );
+    expect(vm.stillOpen.overdue.map((t) => t.text)).toEqual(["overdue one"]);
+    expect(vm.stillOpen.dueToday.map((t) => t.text)).toEqual(["due today"]);
+    expect(vm.stillOpen.thisWeek.map((t) => t.text)).toEqual(["this week"]);
+    expect(vm.stillOpen.later.map((t) => t.text)).toEqual(["far"]);
+    expect(vm.stillOpen.someday.map((t) => t.text)).toEqual(["no date"]);
+  });
+
+  test("no longer exposes a hero; every open task lands in a section (the would-be hero is NOT deduped out)", () => {
+    const vm = buildTodayViewModel(
+      parseTodayView({
+        ...base,
+        openTasks: [
+          { text: "the would-be hero", path: "p", line: 1, dueDate: "2026-06-20" },
+          { text: "other", path: "p", line: 2, dueDate: "2026-06-22" },
+        ],
+        questions: [],
+        // even when the payload still carries a hero, the view-model ignores it:
+        hero: { kind: "task", item: { text: "the would-be hero", path: "p", line: 1, dueDate: "2026-06-20" } },
+      }),
+    );
+    expect("hero" in vm).toBe(false);
+    expect("heroUrgency" in vm).toBe(false);
+    expect(vm.stillOpen.overdue.map((t) => t.text)).toEqual(["the would-be hero"]);
+    expect(vm.stillOpen.dueToday.map((t) => t.text)).toEqual(["other"]);
+  });
+
+  test("totalOpen counts tasks + followups + questions", () => {
+    const vm = buildTodayViewModel(
+      parseTodayView({
+        ...base,
+        openTasks: [],
+        questions: [{ id: 1, question: "go?", options: [], resolveCommand: "dome resolve 1" }],
+        hero: null,
+      }),
+    );
+    expect(vm.totalOpen).toBe(5); // counts 4 + 0 + 1
+  });
 });

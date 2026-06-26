@@ -38,8 +38,7 @@ const HEAD_COMMIT = commitOid("1111111111111111111111111111111111111111");
 
 // Fixed "today" — 2026-06-15. Overdue-14 boundary is 2026-06-01.
 const NOW = new Date("2026-06-15T08:00:00.000Z");
-const TODAY = "2026-06-15";
-const OVERDUE_14_DATE = "2026-06-01"; // exactly 14 days before today — boundary (still overdue)
+const OVERDUE_14_DATE = "2026-06-01"; // exactly 14 days before today (2026-06-15) — boundary (still overdue)
 const OVERDUE_15_DATE = "2026-05-31"; // 15 days before — clearly overdue
 const FRESH_DATED_DATE = "2026-06-14"; // 1 day overdue — NOT overdue by 14 days
 

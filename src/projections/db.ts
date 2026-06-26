@@ -67,22 +67,15 @@
 //     reasonably handle.
 
 import { Database } from "bun:sqlite";
-import { dirname } from "node:path";
-
 import { type Result, ok, err } from "../types";
 import { commitOid, type CommitOid } from "../core/source-ref";
 import {
   validateSqliteTableShapes,
   type SqliteTableShape,
 } from "../sqlite-shape";
-import { configureSqliteConnection } from "../sqlite/connection";
 import { errorMessage } from "../sqlite/error-message";
 import { computeDdlHash, sha256Hex } from "../sqlite/hash";
-import {
-  applyDdlInTransaction,
-  ensureParentDir,
-  readStoredSchemaHash as readStoredSchemaHashFromTable,
-} from "../sqlite/open-store";
+import { applyDdlInTransaction, prepareStore } from "../sqlite/open-store";
 
 import { compareStrings } from "../core/compare";
 
@@ -578,41 +571,27 @@ export function computeProcessorVersionsHash(
 export async function openProjectionDb(
   opts: OpenProjectionDbOpts,
 ): Promise<Result<OpenProjectionDbResult, ProjectionDbError>> {
-  // 1. Ensure the parent directory exists. `recursive: true` makes this
-  //    `mkdir -p` semantics — no error if the directory already exists.
-  const parent = dirname(opts.path);
-  try {
-    ensureParentDir(opts.path);
-  } catch (e) {
-    return err({
-      kind: "directory-create-failed",
-      path: parent,
-      cause: errorMessage(e),
-    });
-  }
-
-  // 2. Open the SQLite file. Bun's Database constructor creates the file
-  //    if it doesn't exist (default options: `{readwrite: true, create: true}`).
-  //    A failure here is rare — corrupt file, permissions, disk full — and
-  //    is surfaced as schema-init-failed (closest match in our error
-  //    vocabulary; the meta-read path may also fail in similar conditions).
-  let raw: Database;
-  try {
-    raw = new Database(opts.path);
-    configureSqliteConnection(raw);
-  } catch (e) {
-    return err({ kind: "schema-init-failed", cause: errorMessage(e) });
-  }
-
-  // 3. Read the stored schema_hash, if any. A fresh file has no
-  //    projection_meta table; we detect that by querying sqlite_master.
-  //    This branch is the "fresh" path.
+  // 1–3. The shared seam owns ensure-dir + open + configure + read stored hash.
+  //      Projections keeps its own bespoke TAIL (the WIPE / cache-key / 4-state
+  //      logic below) because it is a rebuildable cache, not a durable log — so
+  //      it does NOT go through openSimpleStore. A failure reading the stored
+  //      hash surfaces from prepareStore as schema-init-failed; projections
+  //      keeps meta-read-failed for its own state/meta-row probes.
   const currentSchemaHash = computeSchemaHash();
-  let storedSchemaHash: string | null;
+  const prepared = prepareStore({
+    path: opts.path,
+    metaTable: "projection_meta",
+    currentHash: currentSchemaHash,
+  });
+  if (!prepared.ok) return err(prepared.error); // PrepareStoreError ⊂ ProjectionDbError
+  const { raw, storedHash: storedSchemaHash } = prepared.value;
+
+  // Projection-specific staleness probes — the CACHE has a shape axis the
+  // durable-log stores lack: does prior projection state exist, and does its
+  // table shape still match? Drift here triggers the WIPE+rebuild in step 4.
   let hasExistingProjectionState: boolean;
   let schemaShapeMatches: boolean;
   try {
-    storedSchemaHash = readStoredSchemaHashFromTable(raw, "projection_meta");
     hasExistingProjectionState = projectionStateExists(raw);
     schemaShapeMatches = projectionSchemaShapeMatches(raw);
   } catch (e) {

@@ -8,20 +8,19 @@
 // routes each emitted effect, and (Phase 4a') spawns sub-Proposals
 // for garden-emitted PatchEffects.
 //
-// Phase 4a (shipped): garden-phase processors fire against the
-// post-adoption signal stream; non-Patch effects (Diagnostic, Fact,
-// Question, Job, External) route through `applyEffect` with
-// `phase: "garden"` ensuring uniform broker enforcement +
-// capability-use ledgering.
+// Garden-phase processors fire against the post-adoption signal stream.
+// EVERY emitted effect — PatchEffects included — routes through `applyEffect`
+// with `phase: "garden"`, the sole applier, ensuring uniform broker
+// enforcement + capability-use ledgering.
 //
-// Phase 4a' (this commit): garden-emitted auto-mode PatchEffects
-// spawn sub-Proposals. The orchestrator routes the patch through the shared
-// garden patch router, applies the patch to the adopted tree via
-// `applyPatchToCandidate` to produce a new commit head, constructs a
-// Proposal with `source: { kind: "garden", processorId, runId }`,
-// and routes it through the injected `adoptSubProposal` callback —
-// which is wired by the compiler host to recurse into
-// `adopt()` + `runGardenPhase()` with `cascadeDepth + 1`.
+// An authorized auto-mode PatchEffect resolves there to the
+// `queued-for-spawn` outcome (it is not written through the patch sink); the
+// orchestrator collects the authorized patch and, after all broker decisions
+// are recorded, applies it to the adopted tree via `applyPatchToCandidate` to
+// produce a new commit head, constructs a Proposal with
+// `source: { kind: "garden", processorId, runId }`, and routes it through the
+// injected `adoptSubProposal` callback — which the compiler host wires to
+// recurse into `adopt()` + `runGardenPhase()` with `cascadeDepth + 1`.
 //
 // Cascade-depth cap: default 10. When a garden run at the cap emits
 // a PatchEffect, the orchestrator records a `garden.cascade-cap`
@@ -43,9 +42,9 @@
 import type {
   DiagnosticEffect,
   PatchEffect,
-  QuestionEffect,
 } from "../../core/effect";
 import { diagnosticEffect } from "../../core/effect";
+import { effectsOfKind } from "../../core/effect-classify";
 import type { Proposal } from "../../core/proposal";
 import type { CommitOid } from "../../core/source-ref";
 import { applyEffect, type ApplyEffectSinks } from "../core/apply-effect";
@@ -55,34 +54,19 @@ import { recordDiagnosticsViaSink } from "../core/diagnostics";
 import { resolveCurrentAdopted } from "../core/adoption-status";
 import { deriveExtensionId } from "../../extensions/id-helpers";
 import type { LedgerDb } from "../../ledger/db";
-import { routeGardenPatchForSubProposal } from "./garden-patch-router";
 import {
   spawnGardenSubProposal,
+  DEFAULT_MAX_CASCADE_DEPTH,
   type AdoptSubProposalFn,
 } from "./garden-sub-proposals";
 import { recordEffectCapabilityUse } from "../core/effect-capability-use";
 import type { GardenPhaseRunner, GardenProcessorStart, RunId } from "../core/runner-contract";
 import type { EngineVault } from "../core/vault-shape";
 
-// ----- DEFAULT_MAX_CASCADE_DEPTH --------------------------------------------
-
-/**
- * The default cap on garden → sub-Proposal recursion depth. A garden
- * processor that emits a PatchEffect spawns a sub-Proposal; if THAT
- * adoption's garden phase emits another PatchEffect, depth is 2; and
- * so on. The cap prevents unbounded recursion when garden processors
- * react to each other in cycles.
- *
- * The default of 10 is generous; legitimate cascades (entity created →
- * backlinks added → search-index updated) usually reach depth 2-3.
- * Hitting the cap surfaces a `garden.cascade-cap` DiagnosticEffect;
- * the cap can be raised per-call via `maxCascadeDepth`.
- *
- * Mirrors the philosophy of `DEFAULT_MAX_ITERATIONS` in adopt.ts —
- * generous default, explicit override, structural fence against
- * pathological cycles.
- */
-export const DEFAULT_MAX_CASCADE_DEPTH = 10;
+// DEFAULT_MAX_CASCADE_DEPTH is defined and exported from garden-sub-proposals.ts
+// (the chokepoint where the cap is enforced) and re-exported from here for
+// backward-compatible imports.
+export { DEFAULT_MAX_CASCADE_DEPTH } from "./garden-sub-proposals";
 
 // ----- GardenPhaseResult ----------------------------------------------------
 
@@ -170,13 +154,13 @@ export type { AdoptSubProposalFn };
  * Run the garden phase against a just-adopted commit. The orchestrator:
  *
  *   1. Invokes the injected `GardenPhaseRunner`.
- *   2. For each runner result, walks the emitted effects:
- *      - Non-Patch effects route through `applyEffect({ phase: "garden", ... })`.
- *      - Auto-mode Patch effects pass through the shared garden patch router;
- *        accepted ones are queued for sub-Proposal
- *        spawn.
- *      - Propose-mode Patch effects log+drop (v1.0; full lint-review
- *        wiring is a separate phase).
+ *   2. For each runner result, walks the emitted effects — every effect,
+ *      patches included, routes through `applyEffect({ phase: "garden", ... })`:
+ *      - Non-Patch effects route to their sink as usual.
+ *      - Auto-mode Patch effects resolve to `queued-for-spawn`; the authorized
+ *        patch is queued for sub-Proposal spawn.
+ *      - Propose-mode Patch effects resolve to `blocked-for-review` and drop
+ *        (v1.0; full lint-review wiring is a separate phase).
  *   3. After the effects pass, processes the spawn queue: applies each
  *      queued patch to the adopted tree via `applyPatchToCandidate` to
  *      produce a new commit, constructs a garden-source Proposal, and
@@ -366,9 +350,7 @@ async function runGardenPhaseInner(opts: {
   const spawnCountByProcessor = new Map<string, number>();
 
   for (const result of runnerResults) {
-    const emittedDiagnostics = result.effects.filter(
-      (effect): effect is DiagnosticEffect => effect.kind === "diagnostic",
-    );
+    const emittedDiagnostics = effectsOfKind(result.effects, "diagnostic");
     const diagnosticsForResolution: DiagnosticEffect[] = [
       ...emittedDiagnostics,
     ];
@@ -385,48 +367,11 @@ async function runGardenPhaseInner(opts: {
     }
 
     for (const effect of result.effects) {
-      if (effect.kind === "patch") {
-        const routed = await routeGardenPatchForSubProposal({
-          effect,
-          processorId: result.processorId,
-          runId: result.runId,
-          proposalId: proposal.id,
-          declared: result.declared,
-          granted: result.granted,
-          sinks,
-        });
-        recordEffectCapabilityUse({
-          ledger,
-          runId: result.runId,
-          ...(routed.capabilityUse !== undefined
-            ? { capabilityUse: routed.capabilityUse }
-            : {}),
-        });
-        if (routed.kind === "dropped") {
-          allDiagnostics.push(...routed.diagnostics);
-          diagnosticsForResolution.push(...routed.diagnostics);
-          if (routed.rejected) {
-            totalRejectedPatches += 1;
-          }
-          continue;
-        }
-        if (routed.diagnostics.length > 0) {
-          allDiagnostics.push(...routed.diagnostics);
-          diagnosticsForResolution.push(...routed.diagnostics);
-        }
-        spawnQueue.push({
-          patch: routed.patch,
-          processorId: result.processorId,
-          runId: result.runId,
-        });
-        spawnCountByProcessor.set(
-          result.processorId,
-          (spawnCountByProcessor.get(result.processorId) ?? 0) + 1,
-        );
-        continue;
-      }
-
-      // Non-Patch effect: route through applyEffect normally.
+      // Every garden effect — patches included — crosses the sole applier.
+      // A garden auto-mode PatchEffect resolves to `queued-for-spawn` and is
+      // collected here; the orchestrator spawns sub-Proposals after all broker
+      // decisions are recorded. Denied/downgraded/propose patches are dropped
+      // by applyEffect, which already recorded their diagnostics via the sink.
       const applied = await applyEffect({
         effect,
         processorId: result.processorId,
@@ -451,6 +396,20 @@ async function runGardenPhaseInner(opts: {
           ? { capabilityUse: applied.capabilityUse }
           : {}),
       });
+
+      if (applied.outcome === "queued-for-spawn" && effect.kind === "patch") {
+        spawnQueue.push({
+          patch: effect,
+          processorId: result.processorId,
+          runId: result.runId,
+        });
+        spawnCountByProcessor.set(
+          result.processorId,
+          (spawnCountByProcessor.get(result.processorId) ?? 0) + 1,
+        );
+      } else if (applied.outcome === "denied" && effect.kind === "patch") {
+        totalRejectedPatches += 1;
+      }
     }
 
     if (
@@ -473,9 +432,7 @@ async function runGardenPhaseInner(opts: {
         processorId: result.processorId,
         runId: result.runId,
         inspectedPaths: result.inspectedPaths,
-        emittedQuestions: result.effects.filter(
-          (effect): effect is QuestionEffect => effect.kind === "question",
-        ),
+        emittedQuestions: effectsOfKind(result.effects, "question"),
       });
     }
 
@@ -513,50 +470,88 @@ async function runGardenPhaseInner(opts: {
         runId: spawnQueue[0]!.runId,
         proposalId: proposal.id,
       });
-    } else if (cascadeDepth >= maxCascadeDepth) {
-      // Cascade-cap hit. Emit one diagnostic naming the depth and the
-      // count of skipped patches; don't fire any sub-Proposals.
-      const capDiag = diagnosticEffect({
-        severity: "warning",
-        code: "garden.cascade-cap",
-        message:
-          `Garden sub-Proposal cascade hit cap=${maxCascadeDepth} at ` +
-          `depth=${cascadeDepth}; ${spawnQueue.length} PatchEffect(s) ` +
-          `skipped. Garden processors named: ` +
-          `${[...new Set(spawnQueue.map((s) => s.processorId))].join(", ")}.`,
-        sourceRefs: [],
-      });
-      allDiagnostics.push(capDiag);
-      // Also record the cap diagnostic via the sinks so it lands in
-      // projection.db.diagnostics for operator visibility.
-      await sinks.recordDiagnostic({
-        effect: capDiag,
-        processorId: "engine.garden",
-        runId: spawnQueue[0]!.runId,
-        proposalId: proposal.id,
-      });
     } else {
       // Spawn sub-Proposals for each authorized patch through the shared
       // conversion boundary used by garden, scheduler, queued jobs, and
-      // answer handlers.
+      // answer handlers. The cascade-cap check now lives inside
+      // spawnGardenSubProposal (the single chokepoint) so all sources are
+      // equally bounded. We collect any cascade-capped results and emit a
+      // single batched diagnostic — preserving the pre-fix message format.
+      const cappedReqs: SpawnRequest[] = [];
       for (const req of spawnQueue) {
         const base = resolveCurrentAdopted(currentAdopted, adopted);
+        const mergeConflicts: Array<{ path: string; processorId: string }> = [];
         const spawned = await spawnGardenSubProposal({
           vault,
           base,
+          mergeBase: adopted,
           sourceHead: base,
           patch: req.patch,
           processorId: req.processorId,
           runId: req.runId,
           extensionId: extensionIdFor(req.processorId),
-          cascadeDepth: cascadeDepth + 1,
+          // Pass the CURRENT depth (not +1): spawnGardenSubProposal checks
+          // cascadeDepth >= maxCascadeDepth and calls adoptSubProposal at
+          // cascadeDepth + 1. This keeps the cap semantics and diagnostic
+          // message byte-identical to the former inline arm.
+          cascadeDepth,
+          maxCascadeDepth,
           ...(opts.now !== undefined ? { now: opts.now } : {}),
           applyPatch: applyPatchToCandidate,
           adoptSubProposal,
+          onMergeConflict: (info) => mergeConflicts.push(info),
         });
+        if (spawned.kind === "cascade-capped") {
+          cappedReqs.push(req);
+          continue;
+        }
+        // A true 3-way merge conflict (a sibling sub-Proposal touched the same
+        // region this processor read) resolves to the already-landed content;
+        // surface it so the silent resolve-to-ours is operator-visible.
+        for (const conflict of mergeConflicts) {
+          const diag = diagnosticEffect({
+            severity: "warning",
+            code: "garden.patch.merge-conflict",
+            message:
+              `Garden patch from ${conflict.processorId} conflicted with a ` +
+              `concurrently-landed change at ${conflict.path}; resolved to the ` +
+              `already-landed content (the conflicting region was not applied). ` +
+              `The processor re-derives against the merged state on the next cascade.`,
+            sourceRefs: [],
+          });
+          allDiagnostics.push(diag);
+          await sinks.recordDiagnostic({
+            effect: diag,
+            processorId: conflict.processorId,
+            runId: req.runId,
+            proposalId: proposal.id,
+          });
+        }
         if (spawned.kind === "spawned") {
           totalSubProposals += 1;
         }
+      }
+      // Emit one batched cascade-cap diagnostic (identical format to the
+      // former inline arm) so the message is unchanged when all items are
+      // capped at once, as happens in the common signal-path case.
+      if (cappedReqs.length > 0) {
+        const capDiag = diagnosticEffect({
+          severity: "warning",
+          code: "garden.cascade-cap",
+          message:
+            `Garden sub-Proposal cascade hit cap=${maxCascadeDepth} at ` +
+            `depth=${cascadeDepth}; ${cappedReqs.length} PatchEffect(s) ` +
+            `skipped. Garden processors named: ` +
+            `${[...new Set(cappedReqs.map((s) => s.processorId))].join(", ")}.`,
+          sourceRefs: [],
+        });
+        allDiagnostics.push(capDiag);
+        await sinks.recordDiagnostic({
+          effect: capDiag,
+          processorId: "engine.garden",
+          runId: cappedReqs[0]!.runId,
+          proposalId: proposal.id,
+        });
       }
     }
   }
