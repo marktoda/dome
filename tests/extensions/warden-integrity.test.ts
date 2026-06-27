@@ -137,6 +137,41 @@ describe("dome.warden.integrity", () => {
     expect(effects.some((e) => e.kind === "question")).toBe(false);
   });
 
+  test("two distinct colliding keys on one page → two separate collision diagnostics with distinct stableIds", async () => {
+    // Regression guard: before the per-key stableId fix, multiple collisions on
+    // the same page shared a page-level subject_hash, so only the first
+    // survived the INSERT OR IGNORE dedup. Each collision must now carry a
+    // per-key stableId so the projection can distinguish them.
+    const path = "wiki/concepts/migration.md";
+    const content =
+      "# Migration\n\n" +
+      "- **Status:** active\n" +
+      "- **Status:** shipped\n" +
+      "- **Owner:** Ada\n" +
+      "- **Owner:** Grace\n";
+    const effects = await runIntegrity({
+      path,
+      content,
+      findings: [],
+      claimFacts: [
+        claimFact(path, "Status", "active"),
+        claimFact(path, "Status", "shipped"),
+        claimFact(path, "Owner", "Ada"),
+        claimFact(path, "Owner", "Grace"),
+      ],
+    });
+    const collisions = effects.filter(
+      (e): e is DiagnosticEffect =>
+        e.kind === "diagnostic" &&
+        (e as DiagnosticEffect).code === "dome.warden.integrity.claim-collision",
+    );
+    expect(collisions.length).toBe(2);
+    // distinct stableIds — one per colliding key
+    const stableIds = collisions.map((c) => c.sourceRefs[0]?.stableId).sort();
+    expect(new Set(stableIds).size).toBe(2);
+    expect(effects.some((e) => e.kind === "question")).toBe(false);
+  });
+
   test("no findings → emits nothing", async () => {
     const effects = await runIntegrity({
       path: "wiki/concepts/migration.md",

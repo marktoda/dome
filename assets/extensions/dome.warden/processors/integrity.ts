@@ -169,14 +169,19 @@ const integrity = defineProcessorImplementation({
 
       // 1) Deterministic collisions surface directly — the mechanical
       // contradiction is hard evidence, so it never depends on the model or
-      // the confidence floor.
-      for (const [, collision] of pageCollisions) {
+      // the confidence floor. Each collision gets a per-key stableId so that
+      // two different colliding keys on the same page produce two distinct
+      // subject_hashes under the UNIQUE(processor_id, code, proposal_id,
+      // subject_hash) projection dedup (INSERT OR IGNORE). Without the
+      // stableId, all collisions on a page share the same page-level
+      // subject_hash and only the first one survives.
+      for (const [keyNorm, collision] of pageCollisions) {
         effects.push(
           diagnosticEffect({
             severity: "warning", // hard mechanical contradiction
             code: "dome.warden.integrity.claim-collision",
             message: collisionDiagnosticMessage(path, collision),
-            sourceRefs: [ctx.sourceRef(path)],
+            sourceRefs: [ctx.sourceRef(path, undefined, `claim-collision:${keyNorm}`)],
           }),
         );
       }
