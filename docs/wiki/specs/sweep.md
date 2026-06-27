@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-10
-updated: 2026-06-12
+updated: 2026-06-27
 sources:
   - "[[cohesive/brainstorms/2026-06-09-meaning-consolidation-claims-and-sweeper]]"
 description: "Nightly dome.agent.sweep integration: deterministic queue, settlement via destination sources: links (ledger advisory), safe cursor, escalation"
@@ -64,11 +64,11 @@ cursor:: 2026-06-09
 |---|---|
 | `integrated` | Model wrote a section + sources link; destination updated. |
 | `no-op` | Model made no edit (material had nothing meaningful for this destination). |
-| `questioned` | Uncertain, or a size guard refused to start the run; a QuestionEffect was emitted for the owner. Settles the pair (saves re-judging). |
+| `questioned` | Uncertain, or a size guard refused to start the run; a `warning` diagnostic was emitted for the owner. Settles the pair (saves re-judging). |
 | `failed` | A run error occurred, or the shrink guard rejected the proposed edit; pair is not settled, re-queues. After 3 failures the processor escalates instead. |
-| `escalated` | The repeated-failure threshold's **terminal record**, written alongside the escalation question: the pair is settled — excluded from the queue, no longer holding the cursor back via its `materialDate` — and stops burning model budget. |
+| `escalated` | The repeated-failure threshold's **terminal record**, written alongside the escalation diagnostic: the pair is settled — excluded from the queue, no longer holding the cursor back via its `materialDate` — and stops burning model budget. |
 
-`questioned` and `escalated` deliberately mean different things even though both ride an escalation-shaped question: the **oversized-page guards** record `questioned` (the pair never reached the model for size reasons — a judgment-free refusal), while the **repeated-failure threshold** records `escalated` (the pair reached the model ≥ 3 times and kept failing — a poison pair). **Re-eligibility after an escalation is deliberately manual:** the owner hand-deletes the `escalated` row from the ledger; there is no retry-granted flow.
+`questioned` and `escalated` deliberately mean different things even though both ride an escalation diagnostic: the **oversized-page guards** record `questioned` (the pair never reached the model for size reasons — a judgment-free refusal), while the **repeated-failure threshold** records `escalated` (the pair reached the model ≥ 3 times and kept failing — a poison pair). **Re-eligibility after an escalation is deliberately manual:** the owner hand-deletes the `escalated` row from the ledger; there is no retry-granted flow.
 
 The ledger is written once per run as a final advisory patch (cursor + run section). Its loss costs only re-judging already-settled pairs (and re-arming escalated pairs); settlement-by-sources in destination frontmatter holds.
 
@@ -96,27 +96,33 @@ The model must **not** delete or rewrite existing narrative prose, and must not 
 
 **Shrink guard:** After `ensureSourcesLink` runs, if the proposed content is shorter than `destContent.length − max(200 chars, 10%)`, the patch is refused: a significant shrink on an append-only charter means the model rewrote from truncated context or vandalism. The pair records a `failed` row and re-queues; the `dome.agent.sweep-shrink-rejected` warning diagnostic is emitted. `failed` rows from the shrink guard count toward the escalate-after-3 contract.
 
-**Oversized-destination guard:** If the destination content exceeds 20,000 characters (the same per-read cap applied to all agent tool reads via `MAX_READ_CHARS`), no agent run is started — a full-page rewrite from a truncated read would amputate the tail. Instead the processor escalates immediately: a `dome.agent.sweep:escalate:<m>-><d>` question is emitted asking the owner to integrate manually or skip, and a `questioned` row is written to the ledger. Destinations keep the tighter 20k cap because they are rewritten wholesale.
+**Oversized-destination guard:** If the destination content exceeds 20,000 characters (the same per-read cap applied to all agent tool reads via `MAX_READ_CHARS`), no agent run is started — a full-page rewrite from a truncated read would amputate the tail. Instead the processor escalates immediately: a `warning` diagnostic (`code: dome.agent.sweep.dest-too-large`) is emitted; the owner integrates manually or re-arms by deleting the ledger row, and a `questioned` row is written to the ledger. Destinations keep the tighter 20k cap because they are rewritten wholesale.
 
-**Oversized-material guard:** If the *material* content exceeds 100,000 characters (`MATERIAL_READ_CHARS`), the agent run is also skipped. Integrating from a truncated material head would write the sources link and permanently settle the pair with the tail never seen — a "no capture left behind" violation. The same escalation path applies: `dome.agent.sweep:escalate:<m>-><d>` question with `options: ["skip"]`, `automationPolicy: "owner-needed"`, and a `questioned` ledger row. The material cap is larger (100k vs 20k for destinations) because material is quoted read-only context embedded into the task turn — the cap bounds prompt size only, not rewrite-amputation risk. Real dailies routinely run 20–30k characters, so the former shared 20k cap was escalating valid pairs every night. Together, the two oversized guards ensure neither side of a pair can reach the model in a silently truncated state.
+**Oversized-material guard:** If the *material* content exceeds 100,000 characters (`MATERIAL_READ_CHARS`), the agent run is also skipped. Integrating from a truncated material head would write the sources link and permanently settle the pair with the tail never seen — a "no capture left behind" violation. The same escalation path applies: a `warning` diagnostic (`code: dome.agent.sweep.material-too-large`) is emitted, and a `questioned` ledger row is written. The material cap is larger (100k vs 20k for destinations) because material is quoted read-only context embedded into the task turn — the cap bounds prompt size only, not rewrite-amputation risk. Real dailies routinely run 20–30k characters, so the former shared 20k cap was escalating valid pairs every night. Together, the two oversized guards ensure neither side of a pair can reach the model in a silently truncated state.
 
 **Night-overlay same-destination composition:** When two queue items in the same night target the same destination, the processor threads a per-night overlay map. After item 1 writes its integration, its resulting content is stored in the overlay keyed by the destination path. Item 2's agent reads the destination via the overlay (not the stale snapshot), so its patch is applied on top of item 1's content — both integrations land in a single destination page without clobbering each other. The overlay also means item 1's newly added sources link is visible to item 2's settlement check.
 
 ## Question namespaces
 
-The sweep emits questions in two namespaces under the shared `dome.agent.sweep:` prefix:
+The sweep emits questions in ONE namespace under the shared `dome.agent.sweep:` prefix:
 
 - `dome.agent.sweep:uncertain:<material>-><destination>` — uncertain-integration questions (options `["integrate", "skip"]`). The question carries `metadata.proposedSection` (capped at 4000 chars) so the answer handler can apply the integration without another model call.
-- `dome.agent.sweep:escalate:<material>-><destination>` — escalations (options `["skip"]` only; no `proposedSection`), raised by the repeated-failure threshold (≥ 3 failures; an `escalated` ledger row is written alongside) and by the oversized-page guards (a `questioned` row). The escalation carries `automationPolicy: "owner-needed"`.
+
+Escalations (repeated-failure threshold + oversized-page guards) are **not questions** — they surface as `warning` diagnostics with no answer handler:
+
+- `dome.agent.sweep.escalate-failures` — repeated-failure threshold (≥ 3 failures; an `escalated` ledger row is written alongside).
+- `dome.agent.sweep.dest-too-large` — oversized-destination guard (a `questioned` row is written).
+- `dome.agent.sweep.material-too-large` — oversized-material guard (a `questioned` row is written).
+
+The owner re-arms an escalated or questioned pair only by hand-deleting its row from the ledger; there is no retry-granted flow.
 
 **Answer-handler semantics (`dome.agent.sweep-answer`):**
 
 - `integrate` answer on an `uncertain` key: the handler reads the destination, appends `metadata.proposedSection` as a dated section, runs `ensureSourcesLink`, and emits one auto patch. The `:: questioned` ledger row already settles the pair; once the patch lands, settlement-by-sources holds too.
 - `skip` answer on an `uncertain` key: no effects. The `questioned` ledger row prevents re-queueing.
-- Any answer on an `escalate` key: **no-op settle** — the handler records nothing and never re-queues the pair; the answer itself closes the question, and the ledger row (an `escalated` row for the failure threshold, a `questioned` row for the size guards) already settles the pair. The owner re-arms an escalated pair only by hand-deleting its row from the ledger.
 - Malformed metadata: warning diagnostic, no effects, never throws.
 
-**Retry idempotency:** Question idempotency keys carry the kind segment: `dome.agent.sweep:uncertain:<material>-><destination>` and `dome.agent.sweep:escalate:<material>-><destination>`. If the answer-handler fires more than once (at-least-once dispatch), the re-fire guard is section-text presence: the handler checks `existingContent.includes(proposedSection.trim())`. When the section is already present, no second append is emitted; `ensureSourcesLink` is still called, and a patch is emitted only when the sources link was somehow missing — exactly recovering the link-only failure mode.
+**Retry idempotency:** Question idempotency keys carry the kind segment: `dome.agent.sweep:uncertain:<material>-><destination>`. If the answer-handler fires more than once (at-least-once dispatch), the re-fire guard is section-text presence: the handler checks `existingContent.includes(proposedSection.trim())`. When the section is already present, no second append is emitted; `ensureSourcesLink` is still called, and a patch is emitted only when the sources link was somehow missing — exactly recovering the link-only failure mode.
 
 ## Brief digest block
 
@@ -125,7 +131,7 @@ The brief reads the sweep ledger and renders the most recent `## Run <date>` sec
 - `integrated` rows → `- [[destination]] ← [[material]]`
 - `questioned` rows → `- ⚠ pending your answer: [[destination]] ← [[material]]`
 - `no-op` and `failed` rows are not rendered (the brief is signal, not log).
-- `escalated` rows are not rendered either: the escalation's question already renders in the brief's deterministic open-questions block, and a second bullet would double-surface the same decision.
+- `escalated` rows are not rendered either: the escalation diagnostic already surfaces in the vault's diagnostics view, and a second bullet would double-surface the same signal.
 
 When the ledger is absent or the current day has no run section, the block is omitted entirely.
 
@@ -147,7 +153,7 @@ All under `extensions.dome.agent.config` in `.dome/config.yaml`:
 | Processor | Phase | Trigger | Kind | Effect |
 |---|---|---|---|---|
 | `dome.agent.sweep` | garden | cron `0 3 * * *` | LLM | Per-queue-item auto patches + QuestionEffects + advisory ledger patch. |
-| `dome.agent.sweep-answer` | garden | answer (prefix `dome.agent.sweep:`) | deterministic | Apply owner-approved integrations or dismiss escalations; no ledger write (the `questioned`/`escalated` row already settles). |
+| `dome.agent.sweep-answer` | garden | answer (prefix `dome.agent.sweep:`) | deterministic | Apply owner-approved integrations (`uncertain` namespace only); no ledger write (the `questioned` row already settles). |
 
 The pair is registered as the `dome.meaning.integration` maintenance loop.
 
