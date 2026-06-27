@@ -37,6 +37,46 @@ type ClaimAnchorAssignment = {
 const CLAIM_LINE_RE = /^(\s*(?:[-*]\s+)?)\*\*([^*\n]+):\*\*\s+(\S.*)$/;
 const AS_OF_RE = /\*\(as of (\d{4}-\d{2}-\d{2})\)\*/;
 
+/**
+ * Discourse-marker keys that are session framing, not durable entity facts.
+ * `**Net:** …`, `**Tension to hold:** …`, and friends are the bold-label shape
+ * a `**Key:**` claim uses, but they label a momentary read or synthesis — they
+ * belong in prose, not in the durable `## Current facts` digest. Excluding them
+ * here (in the single grammar chokepoint) stops both the `^c` stamp and the
+ * fact index from promoting them.
+ *
+ * This is a deliberately conservative denylist: it excludes only this known set
+ * of framing labels, so a borderline real claim is let through rather than a
+ * real fact dropped. Keys are matched by their normalized form
+ * (lowercased, whitespace-collapsed) so case and spacing variants are covered.
+ * Add new markers here as dogfooding surfaces them.
+ */
+const DISCOURSE_MARKER_KEYS: ReadonlySet<string> = new Set([
+  "net",
+  "net-net",
+  "tension",
+  "tension to hold",
+  "tl;dr",
+  "tldr",
+  "takeaway",
+  "key takeaway",
+  "bottom line",
+  "my read",
+  "read",
+  "verdict",
+  "caveat",
+  "aside",
+  "update",
+  "note",
+  "summary",
+  "context",
+]);
+
+/** True when a claim key is a discourse/framing marker, not a durable fact. */
+function isDiscourseMarkerKey(key: string): boolean {
+  return DISCOURSE_MARKER_KEYS.has(normalizeClaimKey(key));
+}
+
 // The single dome generated block whose `**Key:**`-shaped digest lines must
 // never feed back into the claim index: the `## Current facts` block that
 // `dome.claims.render-facts` writes.
@@ -60,6 +100,7 @@ export function claimsFromMarkdown(
     const key = (match[2] ?? "").trim();
     const value = (match[3] ?? "").trim();
     if (key.length === 0 || value.length === 0) continue;
+    if (isDiscourseMarkerKey(key)) continue;
     claims.push(
       Object.freeze({
         line: i + 1,

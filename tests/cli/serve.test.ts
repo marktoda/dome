@@ -455,6 +455,97 @@ describe("runServe smoke", () => {
     expect(code).toBe(0);
   }, 10_000);
 
+  test("defers operational work while the working tree is dirty, drains once clean", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    silenceConsole();
+
+    // Generous, equal poll/operational intervals: after the initial adoption
+    // settles there is a wide, quiet window in which to dirty the tree and
+    // enqueue work BEFORE the next operational tick fires. This makes the
+    // ordering (tree dirty before any tick can drain) deterministic rather than
+    // racing a 20ms loop with side-channel state injection.
+    const intervalMs = 250;
+    const controller = new AbortController();
+    const servePromise = runServe(
+      {
+        vault: f.vaultPath,
+        bundlesRoot: f.bundlesRoot,
+        pollIntervalMs: intervalMs,
+      },
+      {
+        signal: controller.signal,
+        operationalIntervalMs: intervalMs,
+      },
+    );
+
+    await waitFor(
+      async () => (await getAdoptedRef(f.vaultPath, "main")) === f.initialSha,
+      3000,
+    );
+    // `getAdoptedRef === initialSha` becomes true mid-cycle (the ref advances
+    // inside the adoption cycle, before its operational phase finishes). Wait
+    // out two full intervals so that initial cycle — and its outbox drain — has
+    // completed and the loop is idle between operational ticks before we inject.
+    await new Promise((r) => setTimeout(r, intervalMs * 2));
+
+    // Dirty the working tree with an uncommitted file. This is the "live editor
+    // mid-edit" state: the daemon must hold off all tick work so it never
+    // rewrites files out from under the editor.
+    const draftPath = join(f.vaultPath, "wiki", "draft.md");
+    await writeFile(draftPath, "work in progress\n", "utf8");
+
+    const outboxPath = join(f.vaultPath, ".dome", "state", "outbox.db");
+    const outbox = await openOutboxDb({ path: outboxPath });
+    if (!outbox.ok) throw new Error(`could not open outbox: ${outbox.error.kind}`);
+    try {
+      insertPending(outbox.value.db, {
+        effect: externalActionEffect({
+          capability: "calendar.write",
+          idempotencyKey: "serve-dirty-defer",
+          payload: { event: "x" },
+          sourceRefs: [
+            sourceRef({
+              commit: commitOid(f.initialSha),
+              path: "wiki/seed.md",
+            }),
+          ],
+        }),
+        runId: "run-test",
+      });
+    } finally {
+      outbox.value.db.close();
+    }
+
+    // Across several operational ticks with the tree dirty, the pending item
+    // must NOT drain — the daemon defers every tick.
+    await new Promise((r) => setTimeout(r, intervalMs * 4));
+    const whileDirty = await openOutboxDb({ path: outboxPath });
+    if (!whileDirty.ok) throw new Error("could not reopen outbox");
+    try {
+      expect(queryOutbox(whileDirty.value.db)[0]?.status).toBe("pending");
+    } finally {
+      whileDirty.value.db.close();
+    }
+
+    // Clean the tree (remove the uncommitted draft). The daemon resumes and
+    // drains the pending item.
+    await rm(draftPath, { force: true });
+    await waitFor(async () => {
+      const check = await openOutboxDb({ path: outboxPath });
+      if (!check.ok) return false;
+      try {
+        return queryOutbox(check.value.db)[0]?.status === "failed";
+      } finally {
+        check.value.db.close();
+      }
+    }, 3000);
+
+    controller.abort();
+    const code = await servePromise;
+    expect(code).toBe(0);
+  }, 15_000);
+
   test("--quiet suppresses banner, adoption, and shutdown chatter", async () => {
     const f = await makeFixture();
     fixtures.push(f);
