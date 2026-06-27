@@ -46,6 +46,7 @@ import {
 import type { OperationalWorkResult } from "../../engine/operational/operational-work";
 import { getCurrentBranch } from "../../adopted-ref";
 import { compileRange } from "../../engine/core/compile-range";
+import { isWorkingTreeDirty } from "../../git";
 import { resolveVaultPath } from "../../surface/resolve-vault";
 
 import {
@@ -580,18 +581,36 @@ async function pollLoop(input: {
         continue;
       }
       const nowMs = Date.now();
+      const operationalDue =
+        drift.kind === "drift" || nowMs >= nextOperationalAtMs;
+      // While the working tree carries uncommitted work, the daemon stays off
+      // it entirely: defer this tick — both adoption AND the tend phase
+      // (carry-forward, claims-stamping, scheduled processors, …) — so it never
+      // rewrites a file out from under a human or agent editing between their
+      // read and their edit. Garden triggers key on the adoption diff, so we
+      // must not advance adoption while deferring tend, or the trigger is lost;
+      // skipping the whole tick lets the same work re-derive on a later tick
+      // once the tree is clean. Dome works at the git commit boundary. The
+      // check runs only when there is work to do (the operational cadence), so
+      // a clean steady state still costs just `detectDrift`; we do NOT advance
+      // `nextOperationalAtMs` on a deferral so the daemon resumes promptly once
+      // the tree goes clean.
+      if (operationalDue && (await isWorkingTreeDirty(vaultPath))) {
+        lastKind = "deferred-dirty-worktree";
+        await sleep(pollIntervalMs, cancel);
+        continue;
+      }
       const tick = await runCompilerHostTickWithErrorHandling({
         runtime,
         drift,
-        runOperationalWhenInSync:
-          drift.kind === "drift" || nowMs >= nextOperationalAtMs,
+        runOperationalWhenInSync: operationalDue,
         cancel,
         verbose,
         quiet,
         ...(filterProcessor !== undefined ? { filterProcessor } : {}),
         suppressBusyLine: lastKind === "busy",
       });
-      if (drift.kind === "drift" || nowMs >= nextOperationalAtMs) {
+      if (operationalDue) {
         nextOperationalAtMs = nowMs + operationalIntervalMs;
       }
       lastKind = tick?.kind ?? "tick-error";

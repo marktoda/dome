@@ -118,6 +118,32 @@ export async function statusMatrix(
   return result;
 }
 
+/**
+ * True when the working tree carries uncommitted work — any tracked file
+ * modified/added/deleted, or any non-ignored untracked file. Built on
+ * {@link statusMatrix}, so derived `.dome/state/` and gitignored paths are
+ * already excluded and never read as dirty. A row is clean only when
+ * `[HEAD, WORKDIR, STAGE] === [1, 1, 1]`; any deviation is uncommitted work.
+ *
+ * Used by `dome serve` to hold the garden phase off the working tree while a
+ * human or agent is mid-edit (Dome works at the git commit boundary): the
+ * daemon defers garden materialization until the tree is clean again, so it
+ * never rewrites a file out from under a live editor.
+ *
+ * Caveat: `statusMatrix` honors git's index stat-cache, so an edit that leaves a
+ * tracked file at the exact same byte size AND within the same mtime-second as
+ * its last index entry can read as clean. Real edits change length and cross
+ * second boundaries, so this only degrades gracefully (a rare missed defer falls
+ * back to today's clobber) rather than causing data loss.
+ */
+export async function isWorkingTreeDirty(path: string): Promise<boolean> {
+  const matrix = await statusMatrix(path);
+  return matrix.some(
+    ([, head, workdir, stage]) =>
+      !(head === 1 && workdir === 1 && stage === 1),
+  );
+}
+
 function isDomeStatePath(filepath: string, prefix: string): boolean {
   const domeState = prefix === "" ? ".dome/state" : `${prefix}/.dome/state`;
   return filepath === domeState || filepath.startsWith(`${domeState}/`);
