@@ -153,7 +153,7 @@ All under `extensions.dome.agent.config` in `.dome/config.yaml`:
 | Processor | Phase | Trigger | Kind | Effect |
 |---|---|---|---|---|
 | `dome.agent.sweep` | garden | cron `0 3 * * *` | LLM | Per-queue-item auto patches + QuestionEffects + advisory ledger patch. |
-| `dome.agent.sweep-answer` | garden | answer (prefix `dome.agent.sweep:`) | deterministic | Apply owner-approved integrations (`uncertain` namespace only); no ledger write (the `questioned` row already settles). |
+| `dome.agent.sweep-answer` | garden | answer (prefix `dome.agent.sweep:`) | deterministic | Apply owner-approved integrations (`uncertain` namespace only); no ledger write (the `questioned` row already settles); a pre-migration `escalate:` answer key is treated as an unrecognized shape (warning diagnostic). |
 
 The pair is registered as the `dome.meaning.integration` maintenance loop.
 

@@ -14,7 +14,8 @@
 // as `warning` diagnostics (codes dome.agent.sweep.escalate-failures /
 // .dest-too-large / .material-too-large) — they are not questions and have no
 // answer handler. A pre-migration `dome.agent.sweep:escalate:` answer falls
-// through to the unknown branch → zero effects (safe no-op).
+// through to the unknown branch → a `dome.agent.sweep-answer-invalid` warning
+// diagnostic is emitted (unrecognized key shape).
 //
 // Settlement note: for uncertain→integrate, no ledger update is emitted here.
 // The pair's `:: questioned` row already prevents re-queueing by the sweep

@@ -368,6 +368,21 @@ describe("malformed envelope", () => {
     expect(diagnostics(effects)).toHaveLength(1);
     expect(diagnostics(effects)[0]!.code).toBe("dome.agent.sweep-answer-invalid");
   });
+
+  test("escalate-prefixed key (pre-migration) → sweep-answer-invalid warning, no patch", async () => {
+    const ctx = makeCtx({
+      files: { [DEST]: DEST_CONTENT },
+      input: envelope({
+        key: "dome.agent.sweep:escalate:wiki/x.md->wiki/y.md",
+        answer: "integrate",
+      }),
+    });
+    const effects = await sweepAnswer.run(ctx as never);
+    expect(patches(effects)).toHaveLength(0);
+    expect(diagnostics(effects)).toHaveLength(1);
+    expect(diagnostics(effects)[0]!.code).toBe("dome.agent.sweep-answer-invalid");
+    expect(diagnostics(effects)[0]!.severity).toBe("warning");
+  });
 });
 
 // ---------------------------------------------------------------------------
