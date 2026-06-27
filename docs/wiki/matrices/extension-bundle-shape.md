@@ -1,7 +1,7 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-06-12
+updated: 2026-06-26
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 description: Which contributions (page types, processors, handlers, grants) each shipped bundle provides; lockstep-tested against the assets.
@@ -49,7 +49,7 @@ An **extension bundle** is a directory under `<vault>/.dome/extensions/<bundle-n
 | **`dome.claims`** *(first-party)* | `shipped` | — | — | `claim-index.ts`, `stamp-anchor.ts`, `render-facts.ts`, `stale-claims.ts` | — | `read: ["wiki/**/*.md", "notes/*.md"]`; `patch.auto: ["wiki/**/*.md", "notes/*.md"]`; `graph.write: ["dome.claims.*"]` |
 | **`dome.daily`** *(first-party)* | `shipped` | `daily`; future: `weekly` | — | `agenda-with.ts`, `ambiguous-followup-answer.ts`, `attention-discount.ts`, `carry-forward.ts`, `close-scaffold.ts`, `create-daily.ts`, `normalize-task-syntax.ts`, `prep.ts`, `reconcile-tasks.ts`, `settle-stale-answer.ts`, `stale-task-warden.ts`, `stamp-block-id.ts`, `task-index.ts`, `today.ts`; future: `create-weekly.ts`, `week-review.ts`, `append-followup.ts` | — | `read: ["wiki/**/*.md"]`; `patch.auto: ["wiki/**/*.md"]`; `graph.write: ["dome.daily.*", "dome.attention.*"]` (attention-discount facts from `attention-discount.ts`); `question.ask: true` |
 | **`dome.lint`** *(first-party)* | `shipped` | — | — | `report.ts`; future: `apply-finding.ts` | — | `read: ["**/*.md"]`; future: `patch.propose: ["**"]` |
-| **`dome.warden`** *(first-party)* | `shipped` | — | — | `integrity.ts`, `integrity-answer.ts` | — | `read: ["wiki/**/*.md"]`; `model.invoke: { maxDailyCostUsd: 10 }`; `question.ask: true` |
+| **`dome.warden`** *(first-party)* | `shipped` | — | — | `integrity.ts` | — | `read: ["wiki/**/*.md"]`; `model.invoke: { maxDailyCostUsd: 10 }` |
 | **`dome.search`** *(first-party)* | `shipped` | — | — | `index-text.ts`, `query.ts`, `export-context.ts` | — | `read: ["**/*.md"]`; `search.write: ["**/*.md"]` |
 | **`dome.sources`** *(first-party)* | `shipped` | — | — | `fetch.ts` | `sources.fetch.ts` (the first shipped use of the contribution kind: a generic spawn-the-vault-configured-fetch-command handler bound by filename stem; `openVaultRuntime` injects the vault root into bundle handler input) | `read: ["sources/**/*.md", ".dome/config.yaml"]` (skip-if-present snapshot reads + the config consent surface); `external: ["sources.fetch"]` — the subscription opt-in per [[wiki/specs/sources]] (shipped default flips every subscription `enabled: false`) |
 | **`dome.migrate`** *(first-party)* | `anticipated` | — | — | `migrate-vault.ts` | — | `read: ["**"]`; `patch.auto: ["**"]` (migrations need broad reach by design) |

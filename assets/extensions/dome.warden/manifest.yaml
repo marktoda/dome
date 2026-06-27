@@ -13,21 +13,8 @@ processors:
         paths: ["wiki/**/*.md"]
       - kind: model.invoke
         maxDailyCostUsd: 10
-      - kind: question.ask
     execution:
       class: llm
       timeoutMs: 600000
       modelCallTimeoutMs: 180000
     module: processors/integrity.ts
-
-  - id: dome.warden.integrity-answer
-    version: 0.1.0
-    phase: garden
-    triggers:
-      - kind: answer
-        questionProcessorId: dome.warden.integrity
-        idempotencyKeyPrefix: "dome.warden.integrity:"
-    capabilities:
-      - kind: read
-        paths: ["wiki/**/*.md"]
-    module: processors/integrity-answer.ts
