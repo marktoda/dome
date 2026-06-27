@@ -501,7 +501,6 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       ],
       optionalProcessors: [
         "dome.warden.integrity",
-        "dome.warden.integrity-answer",
         "dome.agent.preference-promotion-answer",
       ],
       questionScope: "all",
