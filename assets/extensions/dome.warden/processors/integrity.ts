@@ -58,6 +58,7 @@ import {
   defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
+import { shortHash } from "../../../../src/core/short-hash";
 
 const MODEL_SCHEMA = "dome.warden.integrity/v1";
 
@@ -217,7 +218,19 @@ const integrity = defineProcessorImplementation({
             severity: severityForRisk(finding.severity),
             code: `dome.warden.integrity.${finding.kind}`,
             message: findingDiagnosticMessage(path, finding),
-            sourceRefs: [ctx.sourceRef(path)],
+            // Per-finding stableId so two same-kind findings on one page get
+            // distinct subject hashes and both survive the projection's
+            // INSERT OR IGNORE dedup (code alone is per-kind, not per-finding).
+            // Keyed on the claim text: stable for the same finding, distinct
+            // across findings; if the model rephrases a claim the diagnostic
+            // re-churns, which is fine for transient, self-clearing findings.
+            sourceRefs: [
+              ctx.sourceRef(
+                path,
+                undefined,
+                `${finding.kind}:${shortHash(finding.claim, 12)}`,
+              ),
+            ],
           }),
         );
       }

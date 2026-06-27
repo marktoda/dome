@@ -172,6 +172,46 @@ describe("dome.warden.integrity", () => {
     expect(effects.some((e) => e.kind === "question")).toBe(false);
   });
 
+  test("two same-kind model findings on one page → two diagnostics with distinct stableIds", async () => {
+    // Fidelity guard: model findings of the same kind on one page share a
+    // `dome.warden.integrity.<kind>` code; without a per-finding stableId they
+    // also share a page-level subject_hash, so the projection's INSERT OR
+    // IGNORE dedup collapses them to one row. Each distinct finding must carry
+    // its own stableId so both survive.
+    const path = "wiki/entities/danny.md";
+    const content =
+      "---\ntype: entity\n---\n# Danny\n\nTwo separate stale framings live here.\n";
+    const effects = await runIntegrity({
+      path,
+      content,
+      findings: [
+        {
+          kind: "historical-as-ongoing",
+          claim: "Danny is leading the migration",
+          severity: "high",
+          confidence: 0.9,
+          recommendedAnswer: "Reframe: the migration shipped.",
+        },
+        {
+          kind: "historical-as-ongoing",
+          claim: "Danny is onboarding the new hire",
+          severity: "high",
+          confidence: 0.9,
+          recommendedAnswer: "Reframe: onboarding completed.",
+        },
+      ],
+    });
+    const diags = effects.filter(
+      (e): e is DiagnosticEffect =>
+        e.kind === "diagnostic" &&
+        (e as DiagnosticEffect).code ===
+          "dome.warden.integrity.historical-as-ongoing",
+    );
+    expect(diags.length).toBe(2);
+    const stableIds = diags.map((d) => d.sourceRefs[0]?.stableId).sort();
+    expect(new Set(stableIds).size).toBe(2);
+  });
+
   test("no findings → emits nothing", async () => {
     const effects = await runIntegrity({
       path: "wiki/concepts/migration.md",
