@@ -404,21 +404,16 @@ const sweep = defineProcessorImplementation({
       // Escalation contract: a pair that keeps failing stops burning model
       // budget and goes to the owner instead of retrying forever. The
       // `escalated` ledger row is the threshold's terminal record, written
-      // alongside the question: it settles the pair (queue exclusion + the
+      // alongside the diagnostic: it settles the pair (queue exclusion + the
       // cursor no longer held back by its materialDate). Re-eligibility is
       // deliberately manual — the owner hand-deletes the escalated row from
       // the ledger; there is no retry-granted flow.
       if (item.failedCount >= ESCALATE_AFTER_FAILURES) {
         effects.push(
-          questionEffect({
-            question: `Sweep keeps failing on ${item.material} -> ${item.destination} (${item.failedCount} failed attempts); integrate manually or skip?`,
-            options: ["skip"],
-            idempotencyKey: sweepIdempotencyKey("escalate", item),
-            metadata: {
-              destination: item.destination,
-              material: item.material,
-              automationPolicy: "owner-needed",
-            },
+          diagnosticEffect({
+            severity: "warning",
+            code: "dome.agent.sweep.escalate-failures",
+            message: `Sweep keeps failing on ${item.material} -> ${item.destination} (${item.failedCount} failed attempts); integrate it manually, or it stays unswept until you re-arm the pair by deleting its ledger row.`,
             sourceRefs: itemRefs,
           }),
         );
@@ -436,15 +431,10 @@ const sweep = defineProcessorImplementation({
         "";
       if (destContent.length > MAX_READ_CHARS) {
         effects.push(
-          questionEffect({
-            question: `Sweep cannot safely integrate ${item.material} -> ${item.destination}: the destination is ${destContent.length} chars, beyond the sweep's ${MAX_READ_CHARS}-char read window (a full-page rewrite from a truncated read would amputate the tail); integrate manually or skip?`,
-            options: ["skip"],
-            idempotencyKey: sweepIdempotencyKey("escalate", item),
-            metadata: {
-              destination: item.destination,
-              material: item.material,
-              automationPolicy: "owner-needed",
-            },
+          diagnosticEffect({
+            severity: "warning",
+            code: "dome.agent.sweep.dest-too-large",
+            message: `Sweep cannot safely integrate ${item.material} -> ${item.destination}: the destination is ${destContent.length} chars, beyond the sweep's ${MAX_READ_CHARS}-char read window (a full-page rewrite from a truncated read would amputate the tail); integrate it manually, or it stays unswept until you re-arm the pair by deleting its ledger row.`,
             sourceRefs: itemRefs,
           }),
         );
@@ -463,15 +453,10 @@ const sweep = defineProcessorImplementation({
       const materialContent = (await ctx.snapshot.readFile(item.material)) ?? "";
       if (materialContent.length > MATERIAL_READ_CHARS) {
         effects.push(
-          questionEffect({
-            question: `Sweep cannot safely integrate ${item.material} -> ${item.destination}: the material is ${materialContent.length} chars, beyond the sweep's ${MATERIAL_READ_CHARS}-char material read window (integrating from a truncated read would settle the pair with the tail never seen; "no capture left behind" violation); integrate manually or skip?`,
-            options: ["skip"],
-            idempotencyKey: sweepIdempotencyKey("escalate", item),
-            metadata: {
-              destination: item.destination,
-              material: item.material,
-              automationPolicy: "owner-needed",
-            },
+          diagnosticEffect({
+            severity: "warning",
+            code: "dome.agent.sweep.material-too-large",
+            message: `Sweep cannot safely integrate ${item.material} -> ${item.destination}: the material is ${materialContent.length} chars, beyond the sweep's ${MATERIAL_READ_CHARS}-char material read window (integrating from a truncated read would settle the pair with the tail never seen; "no capture left behind" violation); integrate it manually, or it stays unswept until you re-arm the pair by deleting its ledger row.`,
             sourceRefs: itemRefs,
           }),
         );
