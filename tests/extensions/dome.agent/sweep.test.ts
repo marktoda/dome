@@ -805,7 +805,7 @@ describe("dome.agent.sweep", () => {
     expect(patchFor(effects, DEST)).toBeNull();
     const ledger = patchFor(effects, LEDGER);
     expect(ledger).toContain(
-      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: questioned",
+      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: escalated",
     );
   });
 
@@ -954,10 +954,10 @@ describe("dome.agent.sweep", () => {
     // No patch on the destination.
     expect(patchFor(effects, DEST)).toBeNull();
 
-    // Questioned ledger row.
+    // Escalated ledger row (size-guards write escalated, not questioned).
     const ledger = patchFor(effects, LEDGER);
     expect(ledger).toContain(
-      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: questioned",
+      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: escalated",
     );
   });
 

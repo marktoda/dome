@@ -30,7 +30,7 @@ The deterministic sweep queue (pure library `lib/sweep-queue.ts`) decides *what*
 **Settlement skip (idempotency):** A (material, destination) pair is dropped when:
 
 1. The destination's frontmatter `sources:` list contains a wikilink to the material — this is the authoritative settlement check (markdown, not `.dome/state`).
-2. The ledger records a `no-op`, `questioned`, or `escalated` disposition for the pair. `integrated` rows do **not** settle: the sources-link in the destination's frontmatter is the authoritative record for integrations — an `integrated` row without the link means the sub-proposal was rejected, and the pair must re-queue. `failed` rows also do **not** settle; the pair re-queues and the failed count increments toward escalation. `escalated` rows settle **terminally** — the pair stops consuming attempts and stops holding the cursor back; see §"Advisory ledger grammar".
+2. The ledger records a `no-op`, `questioned`, `escalated`, or other disposition for the pair. `integrated` rows do **not** settle: the sources-link in the destination's frontmatter is the authoritative record for integrations — an `integrated` row without the link means the sub-proposal was rejected, and the pair must re-queue. `failed` rows also do **not** settle; the pair re-queues and the failed count increments toward escalation. `escalated` rows settle **terminally** — the pair stops consuming attempts and stops holding the cursor back; see §"Advisory ledger grammar".
 
 **Ranking and cap:** Items rank by `(materialDate desc, mentions desc, destination asc)` for full determinism. The queue is capped at `sweep_max_items` (default 20); over-cap items re-queue the next night. The processor emits an info diagnostic when the cap truncates the queue (no silent drops).
 
@@ -40,7 +40,7 @@ The deterministic sweep queue (pure library `lib/sweep-queue.ts`) decides *what*
 
 Settlement is the wikilink `[[material-path-without-.md]]` appearing in the destination page's frontmatter `sources:` list. This is written atomically in the same patch as the integration text, so it is always in sync. The four accepted link forms are `[[m]]`, `[[m|alias]]`, `[[m.md]]`, and `[[m.md|alias]]` — all matched by substring on each `sources:` list line in both the queue's frontmatter slice check (`isSettledBySources`) and the processor's enforcement function (`containsMaterialLink`).
 
-The advisory ledger's `integrated` rows are **record-only** — the queue does not settle on them. When the sub-proposal carrying the integration patch was rejected by the engine, the ledger row would be present but the sources link would be absent; treating the row as settled would suppress re-queueing forever. Only `no-op`, `questioned`, and `escalated` ledger rows settle (`no-op`/`questioned` only save re-judging, never mask a failed write; `escalated` is the deliberate terminal record for a poison pair).
+The advisory ledger's `integrated` rows are **record-only** — the queue does not settle on them. When the sub-proposal carrying the integration patch was rejected by the engine, the ledger row would be present but the sources link would be absent; treating the row as settled would suppress re-queueing forever. Only `no-op`, `questioned`, and `escalated` ledger rows settle (`no-op`/`questioned` save re-judging, never mask a failed write; `escalated` is the deliberate terminal record for all escalation paths — repeated failures and both oversized-page guards).
 
 ## Advisory ledger grammar
 
@@ -64,11 +64,11 @@ cursor:: 2026-06-09
 |---|---|
 | `integrated` | Model wrote a section + sources link; destination updated. |
 | `no-op` | Model made no edit (material had nothing meaningful for this destination). |
-| `questioned` | Uncertain, or a size guard refused to start the run; a `warning` diagnostic was emitted for the owner. Settles the pair (saves re-judging). |
+| `questioned` | Uncertain integration (model proposed a section, owner must decide `integrate` or `skip`); a `warning` diagnostic was emitted for the owner. Settles the pair (saves re-judging). Renders as "⚠ pending your answer" in the morning brief. |
 | `failed` | A run error occurred, or the shrink guard rejected the proposed edit; pair is not settled, re-queues. After 3 failures the processor escalates instead. |
-| `escalated` | The repeated-failure threshold's **terminal record**, written alongside the escalation diagnostic: the pair is settled — excluded from the queue, no longer holding the cursor back via its `materialDate` — and stops burning model budget. |
+| `escalated` | **Terminal record** for all three escalation paths — the repeated-failure threshold, the oversized-destination guard, and the oversized-material guard — written alongside the `warning` diagnostic. The pair is settled (excluded from the queue, no longer holding the cursor back via its `materialDate`) and stops burning model budget. Omitted from the brief (surfaces in the diagnostics view instead). |
 
-`questioned` and `escalated` deliberately mean different things even though both ride an escalation diagnostic: the **oversized-page guards** record `questioned` (the pair never reached the model for size reasons — a judgment-free refusal), while the **repeated-failure threshold** records `escalated` (the pair reached the model ≥ 3 times and kept failing — a poison pair). **Re-eligibility after an escalation is deliberately manual:** the owner hand-deletes the `escalated` row from the ledger; there is no retry-granted flow.
+All three escalation paths write `escalated` and surface as `warning` diagnostics in the diagnostics view — they are never rendered as "pending your answer" in the morning brief. `questioned` is exclusively the uncertain-integration case (the model reached a confident-enough result to propose a section, but flagged it for owner review). **Re-eligibility after escalation is deliberately manual:** the owner hand-deletes the `escalated` row from the ledger; there is no retry-granted flow.
 
 The ledger is written once per run as a final advisory patch (cursor + run section). Its loss costs only re-judging already-settled pairs (and re-arming escalated pairs); settlement-by-sources in destination frontmatter holds.
 
@@ -96,9 +96,9 @@ The model must **not** delete or rewrite existing narrative prose, and must not 
 
 **Shrink guard:** After `ensureSourcesLink` runs, if the proposed content is shorter than `destContent.length − max(200 chars, 10%)`, the patch is refused: a significant shrink on an append-only charter means the model rewrote from truncated context or vandalism. The pair records a `failed` row and re-queues; the `dome.agent.sweep-shrink-rejected` warning diagnostic is emitted. `failed` rows from the shrink guard count toward the escalate-after-3 contract.
 
-**Oversized-destination guard:** If the destination content exceeds 20,000 characters (the same per-read cap applied to all agent tool reads via `MAX_READ_CHARS`), no agent run is started — a full-page rewrite from a truncated read would amputate the tail. Instead the processor escalates immediately: a `warning` diagnostic (`code: dome.agent.sweep.dest-too-large`) is emitted; the owner integrates manually or re-arms by deleting the ledger row, and a `questioned` row is written to the ledger. Destinations keep the tighter 20k cap because they are rewritten wholesale.
+**Oversized-destination guard:** If the destination content exceeds 20,000 characters (the same per-read cap applied to all agent tool reads via `MAX_READ_CHARS`), no agent run is started — a full-page rewrite from a truncated read would amputate the tail. Instead the processor escalates immediately: a `warning` diagnostic (`code: dome.agent.sweep.dest-too-large`) is emitted; the owner integrates manually or re-arms by deleting the ledger row, and an `escalated` ledger row is written. Destinations keep the tighter 20k cap because they are rewritten wholesale.
 
-**Oversized-material guard:** If the *material* content exceeds 100,000 characters (`MATERIAL_READ_CHARS`), the agent run is also skipped. Integrating from a truncated material head would write the sources link and permanently settle the pair with the tail never seen — a "no capture left behind" violation. The same escalation path applies: a `warning` diagnostic (`code: dome.agent.sweep.material-too-large`) is emitted, and a `questioned` ledger row is written. The material cap is larger (100k vs 20k for destinations) because material is quoted read-only context embedded into the task turn — the cap bounds prompt size only, not rewrite-amputation risk. Real dailies routinely run 20–30k characters, so the former shared 20k cap was escalating valid pairs every night. Together, the two oversized guards ensure neither side of a pair can reach the model in a silently truncated state.
+**Oversized-material guard:** If the *material* content exceeds 100,000 characters (`MATERIAL_READ_CHARS`), the agent run is also skipped. Integrating from a truncated material head would write the sources link and permanently settle the pair with the tail never seen — a "no capture left behind" violation. The same escalation path applies: a `warning` diagnostic (`code: dome.agent.sweep.material-too-large`) is emitted, and an `escalated` ledger row is written. The material cap is larger (100k vs 20k for destinations) because material is quoted read-only context embedded into the task turn — the cap bounds prompt size only, not rewrite-amputation risk. Real dailies routinely run 20–30k characters, so the former shared 20k cap was escalating valid pairs every night. Together, the two oversized guards ensure neither side of a pair can reach the model in a silently truncated state.
 
 **Night-overlay same-destination composition:** When two queue items in the same night target the same destination, the processor threads a per-night overlay map. After item 1 writes its integration, its resulting content is stored in the overlay keyed by the destination path. Item 2's agent reads the destination via the overlay (not the stale snapshot), so its patch is applied on top of item 1's content — both integrations land in a single destination page without clobbering each other. The overlay also means item 1's newly added sources link is visible to item 2's settlement check.
 
@@ -111,10 +111,10 @@ The sweep emits questions in ONE namespace under the shared `dome.agent.sweep:` 
 Escalations (repeated-failure threshold + oversized-page guards) are **not questions** — they surface as `warning` diagnostics with no answer handler:
 
 - `dome.agent.sweep.escalate-failures` — repeated-failure threshold (≥ 3 failures; an `escalated` ledger row is written alongside).
-- `dome.agent.sweep.dest-too-large` — oversized-destination guard (a `questioned` row is written).
-- `dome.agent.sweep.material-too-large` — oversized-material guard (a `questioned` row is written).
+- `dome.agent.sweep.dest-too-large` — oversized-destination guard (an `escalated` ledger row is written alongside).
+- `dome.agent.sweep.material-too-large` — oversized-material guard (an `escalated` ledger row is written alongside).
 
-The owner re-arms an escalated or questioned pair only by hand-deleting its row from the ledger; there is no retry-granted flow.
+All three write `escalated` rows. The owner re-arms by hand-deleting the row from the ledger; there is no retry-granted flow.
 
 **Answer-handler semantics (`dome.agent.sweep-answer`):**
 
@@ -129,9 +129,9 @@ The owner re-arms an escalated or questioned pair only by hand-deleting its row 
 The brief reads the sweep ledger and renders the most recent `## Run <date>` section's rows as the `dome.agent.brief:integrated` generated block — deterministic, never model-written; its place in the daily-note package is normative at [[wiki/specs/daily-surface]] §"Block ownership":
 
 - `integrated` rows → `- [[destination]] ← [[material]]`
-- `questioned` rows → `- ⚠ pending your answer: [[destination]] ← [[material]]`
+- `questioned` rows → `- ⚠ pending your answer: [[destination]] ← [[material]]` (uncertain-integration path only — the owner must `dome resolve` the open question)
 - `no-op` and `failed` rows are not rendered (the brief is signal, not log).
-- `escalated` rows are not rendered either: the escalation diagnostic already surfaces in the vault's diagnostics view, and a second bullet would double-surface the same signal.
+- `escalated` rows are not rendered: all three escalation paths surface as `warning` diagnostics in the diagnostics view; rendering a "pending your answer" bullet would be a false signal since there is no answerable question.
 
 When the ledger is absent or the current day has no run section, the block is omitted entirely.
 

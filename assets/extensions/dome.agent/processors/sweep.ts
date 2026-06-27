@@ -438,7 +438,7 @@ const sweep = defineProcessorImplementation({
             sourceRefs: itemRefs,
           }),
         );
-        ledgerRows.push({ ...row, disposition: "questioned" });
+        ledgerRows.push({ ...row, disposition: "escalated" });
         continue;
       }
 
@@ -460,7 +460,7 @@ const sweep = defineProcessorImplementation({
             sourceRefs: itemRefs,
           }),
         );
-        ledgerRows.push({ ...row, disposition: "questioned" });
+        ledgerRows.push({ ...row, disposition: "escalated" });
         continue;
       }
 
