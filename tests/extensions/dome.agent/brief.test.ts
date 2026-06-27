@@ -1914,6 +1914,31 @@ describe("integratedBriefSection (pure render helper)", () => {
     expect(section!.trimStart()).toStartWith(INTEGRATED_BLOCK.start);
     expect(section!.trimEnd()).toEndWith(INTEGRATED_BLOCK.end);
   });
+
+  test("escalated rows are omitted from the brief (not rendered as pending-your-answer)", () => {
+    // Size-guard escalations write `escalated`, not `questioned`. The brief
+    // must NOT render a false "pending your answer" bullet for them — they
+    // surface as warning diagnostics in the diagnostics view instead.
+    const section = integratedBriefSection([
+      { material: "wiki/dailies/2026-06-09", destination: "wiki/entities/alice", disposition: "escalated" },
+      { material: "wiki/dailies/2026-06-09", destination: "wiki/entities/bob", disposition: "integrated" },
+    ]);
+    expect(section).not.toBeNull();
+    expect(section).not.toContain("alice"); // escalated row: omitted entirely
+    expect(section).not.toContain("pending your answer");
+    expect(section).toContain("[[wiki/entities/bob]]"); // integrated row: still rendered
+  });
+
+  test("questioned rows render as pending-your-answer (uncertain integration path only)", () => {
+    // `questioned` is exclusively the uncertain→integrate path now; the brief
+    // SHOULD render it as "pending your answer" so the owner knows to respond.
+    const section = integratedBriefSection([
+      { material: "wiki/dailies/2026-06-09", destination: "wiki/entities/carol", disposition: "questioned" },
+    ]);
+    expect(section).not.toBeNull();
+    expect(section).toContain("⚠ pending your answer");
+    expect(section).toContain("[[wiki/entities/carol]]");
+  });
 });
 
 // ----- Integrated overnight digest wired into brief.ts -----------------------

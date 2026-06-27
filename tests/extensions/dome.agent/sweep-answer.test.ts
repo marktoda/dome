@@ -23,7 +23,6 @@ const DEST = "wiki/entities/alice-henshaw.md";
 const ANSWERED_AT = "2026-06-10T08:00:00.000Z";
 
 const UNCERTAIN_KEY = `dome.agent.sweep:uncertain:${MATERIAL}->${DEST}`;
-const ESCALATE_KEY = `dome.agent.sweep:escalate:${MATERIAL}->${DEST}`;
 
 const DEST_CONTENT = [
   "---",
@@ -209,24 +208,7 @@ describe("skip answer", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test 4: escalate-key answer (any value) → zero effects
-// ---------------------------------------------------------------------------
-
-describe("escalate-key answer", () => {
-  test("any answer value → zero effects (the escalated ledger row stands; no re-queue)", async () => {
-    for (const answer of ["skip", "integrate", "whatever"]) {
-      const ctx = makeCtx({
-        files: { [DEST]: DEST_CONTENT },
-        input: envelope({ key: ESCALATE_KEY, answer }),
-      });
-      const effects = await sweepAnswer.run(ctx as never);
-      expect(effects).toHaveLength(0);
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Test 5: malformed metadata (missing proposedSection) → invalid diagnostic, no patch
+// Test 4: malformed metadata (missing proposedSection) → invalid diagnostic, no patch
 // ---------------------------------------------------------------------------
 
 describe("malformed metadata on integrate", () => {
@@ -285,7 +267,7 @@ describe("malformed metadata on integrate", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test 6: missing destination file → missing-destination diagnostic, no patch
+// Test 5: missing destination file → missing-destination diagnostic, no patch
 // ---------------------------------------------------------------------------
 
 describe("missing destination file", () => {
@@ -310,7 +292,7 @@ describe("missing destination file", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test 7: destination already containing the sources link → ensureSourcesLink idempotent
+// Test 6: destination already containing the sources link → ensureSourcesLink idempotent
 // ---------------------------------------------------------------------------
 
 describe("ensureSourcesLink idempotency via the handler", () => {
@@ -348,7 +330,7 @@ describe("ensureSourcesLink idempotency via the handler", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test 8: malformed envelope → invalid diagnostic, never throw
+// Test 7: malformed envelope → invalid diagnostic, never throw
 // ---------------------------------------------------------------------------
 
 describe("malformed envelope", () => {
@@ -386,10 +368,25 @@ describe("malformed envelope", () => {
     expect(diagnostics(effects)).toHaveLength(1);
     expect(diagnostics(effects)[0]!.code).toBe("dome.agent.sweep-answer-invalid");
   });
+
+  test("escalate-prefixed key (pre-migration) → sweep-answer-invalid warning, no patch", async () => {
+    const ctx = makeCtx({
+      files: { [DEST]: DEST_CONTENT },
+      input: envelope({
+        key: "dome.agent.sweep:escalate:wiki/x.md->wiki/y.md",
+        answer: "integrate",
+      }),
+    });
+    const effects = await sweepAnswer.run(ctx as never);
+    expect(patches(effects)).toHaveLength(0);
+    expect(diagnostics(effects)).toHaveLength(1);
+    expect(diagnostics(effects)[0]!.code).toBe("dome.agent.sweep-answer-invalid");
+    expect(diagnostics(effects)[0]!.severity).toBe("warning");
+  });
 });
 
 // ---------------------------------------------------------------------------
-// Test 9: destination outside wiki/ → warning diagnostic, no patch
+// Test 8: destination outside wiki/ → warning diagnostic, no patch
 // ---------------------------------------------------------------------------
 
 describe("destination outside wiki/", () => {
@@ -414,7 +411,7 @@ describe("destination outside wiki/", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test 10: sourceRefs in the emitted patch cite material + destination
+// Test 9: sourceRefs in the emitted patch cite material + destination
 // ---------------------------------------------------------------------------
 
 describe("patch sourceRefs", () => {
@@ -439,7 +436,7 @@ describe("patch sourceRefs", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test 11: retry-idempotence presence guard
+// Test 10: retry-idempotence presence guard
 // ---------------------------------------------------------------------------
 
 describe("retry idempotence — presence guard before append", () => {
@@ -513,7 +510,7 @@ describe("retry idempotence — presence guard before append", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test 12: trailing newline preservation
+// Test 11: trailing newline preservation
 // ---------------------------------------------------------------------------
 
 describe("trailing newline preservation", () => {

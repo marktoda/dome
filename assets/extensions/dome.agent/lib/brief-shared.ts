@@ -608,8 +608,9 @@ export function integratedBriefSection(
         `- ⚠ pending your answer: [[${row.destination}]] ← [[${row.material}]]`,
       );
     }
-    // no-op, failed, escalated: omitted (signal, not log; the escalated
-    // pair's question renders in the open-questions block already)
+    // no-op, failed, escalated: omitted (signal, not log; escalations surface
+    // as warning diagnostics in the diagnostics view, not as questions — so
+    // escalated rows are deliberately omitted from the brief)
   }
   if (bullets.length === 0) return null;
   const lines = [

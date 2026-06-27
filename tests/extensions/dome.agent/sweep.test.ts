@@ -432,7 +432,7 @@ describe("dome.agent.sweep", () => {
     );
   });
 
-  test("escalation: failedCount >= 3 skips the model and asks the owner (options: skip)", async () => {
+  test("escalation: failedCount >= 3 skips the model and emits a warning diagnostic", async () => {
     const failedLedger = [
       "# Sweep ledger",
       "",
@@ -448,20 +448,19 @@ describe("dome.agent.sweep", () => {
       stepFn: THROWING_STEP, // escalation must not touch the model
     });
     const effects = await sweep.run(ctx);
-    const qs = questions(effects);
-    expect(qs).toHaveLength(1);
-    expect(qs[0]!.question).toContain("keeps failing");
-    expect(qs[0]!.options).toEqual(["skip"]);
-    // I3: escalations live in their own key namespace.
-    expect(qs[0]!.idempotencyKey).toBe(`dome.agent.sweep:escalate:${MATERIAL}->${DEST}`);
-    expect(qs[0]!.metadata?.automationPolicy).toBe("owner-needed");
-    expect(qs[0]!.metadata?.destination).toBe(DEST);
-    expect(qs[0]!.metadata?.material).toBe(MATERIAL);
-    // M4: the escalation cites the destination alongside the material.
-    const escRefs = qs[0]!.sourceRefs.map((r) => (r as { path: string }).path);
-    expect(escRefs).toContain(MATERIAL);
-    expect(escRefs).toContain(DEST);
-    // The run writes an `escalated` row alongside the question: the pair
+    const escalations = diagnostics(effects).filter(
+      (d) => d.code === "dome.agent.sweep.escalate-failures",
+    );
+    expect(escalations.length).toBe(1);
+    expect(escalations[0]!.severity).toBe("warning");
+    expect(escalations[0]!.message).toContain("failed attempts");
+    // The diagnostic cites the pair (material + destination), so two escalated
+    // pairs sharing a destination stay distinct under the projection dedup.
+    const refs = escalations[0]!.sourceRefs.map((r) => r.path as string);
+    expect(refs).toContain(MATERIAL);
+    expect(refs).toContain(DEST);
+    expect(effects.some((e) => (e as { kind: string }).kind === "question")).toBe(false);
+    // The run writes an `escalated` row alongside the diagnostic: the pair
     // settles (stops consuming attempts) and the cursor advances past it.
     const ledger = patchFor(effects, LEDGER);
     expect(ledger).toContain(
@@ -494,6 +493,9 @@ describe("dome.agent.sweep", () => {
     // The pair is settled: no question, no destination patch. Re-eligibility
     // is the owner hand-deleting the escalated row from the ledger.
     expect(questions(effects)).toHaveLength(0);
+    expect(
+      diagnostics(effects).some((d) => d.code?.startsWith("dome.agent.sweep.escalate") || d.code === "dome.agent.sweep.dest-too-large" || d.code === "dome.agent.sweep.material-too-large"),
+    ).toBe(false);
     expect(patchFor(effects, DEST)).toBeNull();
   });
 
@@ -794,19 +796,16 @@ describe("dome.agent.sweep", () => {
       stepFn: THROWING_STEP, // the oversized guard must never reach the model
     });
     const effects = await sweep.run(ctx);
-    const qs = questions(effects);
-    expect(qs).toHaveLength(1);
-    expect(qs[0]!.question).toContain("read window");
-    expect(qs[0]!.options).toEqual(["skip"]);
-    expect(qs[0]!.idempotencyKey).toBe(`dome.agent.sweep:escalate:${MATERIAL}->${DEST}`);
-    expect(qs[0]!.metadata?.automationPolicy).toBe("owner-needed");
-    const refs = qs[0]!.sourceRefs.map((r) => (r as { path: string }).path);
-    expect(refs).toContain(MATERIAL);
-    expect(refs).toContain(DEST);
+    const escalations = diagnostics(effects).filter(
+      (d) => d.code === "dome.agent.sweep.dest-too-large",
+    );
+    expect(escalations.length).toBe(1);
+    expect(escalations[0]!.severity).toBe("warning");
+    expect(effects.some((e) => (e as { kind: string }).kind === "question")).toBe(false);
     expect(patchFor(effects, DEST)).toBeNull();
     const ledger = patchFor(effects, LEDGER);
     expect(ledger).toContain(
-      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: questioned",
+      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: escalated",
     );
   });
 
@@ -936,7 +935,7 @@ describe("dome.agent.sweep", () => {
     expect([...tail].length).toBeLessThanOrEqual(200);
   });
 
-  test("C2c: oversized material (>100000 chars) skips the agent run, emits escalate question and questioned ledger row, no patch on dest", async () => {
+  test("C2c: oversized material (>100000 chars) skips the agent run, emits warning diagnostic and questioned ledger row, no patch on dest", async () => {
     const hugeMaterial = `Met [[wiki/entities/alice-henshaw]] today.\n${"x".repeat(101_000)}`;
     const ctx = makeCtx({
       files: { ...BASE_FILES, [MATERIAL]: hugeMaterial },
@@ -945,26 +944,20 @@ describe("dome.agent.sweep", () => {
     const effects = await sweep.run(ctx);
 
     // Zero model calls: the throwing step must not be reached.
-    const qs = questions(effects);
-    expect(qs).toHaveLength(1);
-    const q = qs[0]!;
-    expect(q.question).toContain("read window");
-    expect(q.options).toEqual(["skip"]);
-    expect(q.idempotencyKey).toBe(`dome.agent.sweep:escalate:${MATERIAL}->${DEST}`);
-    expect(q.metadata?.automationPolicy).toBe("owner-needed");
-    expect(q.metadata?.destination).toBe(DEST);
-    expect(q.metadata?.material).toBe(MATERIAL);
-    const refs = q.sourceRefs.map((r) => (r as { path: string }).path);
-    expect(refs).toContain(MATERIAL);
-    expect(refs).toContain(DEST);
+    const escalations = diagnostics(effects).filter(
+      (d) => d.code === "dome.agent.sweep.material-too-large",
+    );
+    expect(escalations.length).toBe(1);
+    expect(escalations[0]!.severity).toBe("warning");
+    expect(effects.some((e) => (e as { kind: string }).kind === "question")).toBe(false);
 
     // No patch on the destination.
     expect(patchFor(effects, DEST)).toBeNull();
 
-    // Questioned ledger row.
+    // Escalated ledger row (size-guards write escalated, not questioned).
     const ledger = patchFor(effects, LEDGER);
     expect(ledger).toContain(
-      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: questioned",
+      "- [[wiki/dailies/2026-06-09]] -> [[wiki/entities/alice-henshaw]] :: escalated",
     );
   });
 
