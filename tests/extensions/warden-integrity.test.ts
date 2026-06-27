@@ -3,19 +3,21 @@
 // The integrity warden is a garden-phase llm processor that judges each
 // changed wiki markdown page for integrity issues (historical-as-ongoing,
 // contradiction, self-corroboration, inference-as-fact) and emits a
-// QuestionEffect per non-trivial finding. It must NEVER emit a FactEffect or
-// a knowledge PatchEffect (wardens are questions-only). The durable artifact
-// is the human/agent resolution, not the model's inference — so a rebuild-
-// unsafe garden model processor only emits transient QuestionEffects.
+// DiagnosticEffect per non-trivial finding. It must NEVER emit a FactEffect or
+// a knowledge PatchEffect (wardens are diagnostics-only, no-graph-write).
+// Deterministic claim-collisions are surfaced as "warning" diagnostics with
+// code `dome.warden.integrity.claim-collision`; model findings are risk-mapped
+// (high → "warning", else "info") with code `dome.warden.integrity.<kind>`.
+// Diagnostics self-clear via `resolveStaleDiagnostics` when the page is
+// reconciled — there is no answer-handler or automation policy.
 //
 // We inject a fake `ModelInvokeFn` via `makeProcessorContext({ modelInvoke })`
 // so the tests are deterministic and never call a real model.
 
 import { describe, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
 
 import integrity from "../../assets/extensions/dome.warden/processors/integrity";
-import type { Effect, FactEffect, QuestionEffect } from "../../src/core/effect";
+import type { DiagnosticEffect, Effect, FactEffect } from "../../src/core/effect";
 import { makeManualProposal } from "../../src/core/proposal";
 import { commitOid } from "../../src/core/source-ref";
 import {
@@ -63,12 +65,14 @@ describe("dome.warden.integrity", () => {
         },
       ],
     });
-    const questions = effects.filter(isQuestion);
-    expect(questions.length).toBe(1);
-    expect(questions[0]?.metadata?.risk).toBe("medium");
+    const diagnostics = effects.filter(isDiagnostic);
+    expect(diagnostics.length).toBe(1);
+    // medium risk → info severity
+    expect(diagnostics[0]?.severity).toBe("info");
+    expect(effects.some((e) => e.kind === "question")).toBe(false);
   });
 
-  test("high-severity finding on a people page → owner-needed QuestionEffect, content-hash idempotencyKey, no fact/patch", async () => {
+  test("high-severity finding → warning DiagnosticEffect, no question/fact/patch", async () => {
     const path = "wiki/entities/danny.md";
     const content =
       "---\n" +
@@ -92,58 +96,45 @@ describe("dome.warden.integrity", () => {
       ],
     });
 
-    const questions = effects.filter(isQuestion);
-    expect(questions.length).toBe(1);
-    const q = questions[0];
-    if (q === undefined) throw new Error("expected a question");
-
-    // Questions-only invariant: nothing durable.
+    const diagnostics = effects.filter(isDiagnostic);
+    expect(diagnostics.length).toBe(1);
+    const d = diagnostics[0];
+    if (d === undefined) throw new Error("expected a diagnostic");
+    expect(effects.some((e) => e.kind === "question")).toBe(false);
     expect(effects.some((e) => e.kind === "fact")).toBe(false);
     expect(effects.some((e) => e.kind === "patch")).toBe(false);
-
-    // People/management content → owner-needed.
-    expect(q.metadata?.automationPolicy).toBe("owner-needed");
-    expect(q.metadata?.risk).toBe("high");
-    expect(typeof q.metadata?.confidence).toBe("number");
-    expect(q.metadata?.recommendedAnswer).toContain("shipped last quarter");
-
-    // Content-hash idempotencyKey scheme.
-    const digest = createHash("sha256").update(content).digest("hex").slice(0, 12);
-    expect(q.idempotencyKey).toBe(
-      `dome.warden.integrity:${path}:${digest}:historical-as-ongoing`,
-    );
-
-    // Cites the page.
-    expect(q.question).toContain(path);
-    expect(q.sourceRefs.length).toBe(1);
-    expect(q.sourceRefs[0]?.path as string).toBe(path);
+    expect(d.severity).toBe("warning"); // high risk → warning
+    expect(d.code).toBe("dome.warden.integrity.historical-as-ongoing");
+    expect(d.message).toContain(path);
+    expect(d.message).toContain("shipped last quarter"); // folded recommendedAnswer
+    expect(d.sourceRefs.length).toBe(1);
+    expect(d.sourceRefs[0]?.path as string).toBe(path);
   });
 
-  test("non-people page → agent-safe QuestionEffect", async () => {
+  test("deterministic claim-collision → warning diagnostic", async () => {
+    // Reuse this file's collision fixture (a page with two conflicting claim
+    // values for the same key). Build ctx as the other tests do, with
+    // ctx.projection.facts returning the colliding CLAIM_PREDICATE facts.
     const path = "wiki/concepts/migration.md";
     const content =
-      "---\n" +
-      "type: concept\n" +
-      "---\n" +
-      "# Migration\n\nThe migration is ongoing (it finished in March).\n";
-
+      "# Migration\n\n" +
+      "- **Status:** active\n" +
+      "- **Status:** shipped\n";
     const effects = await runIntegrity({
       path,
       content,
-      findings: [
-        {
-          kind: "historical-as-ongoing",
-          claim: "The migration is ongoing",
-          severity: "medium",
-          confidence: 0.6,
-          recommendedAnswer: "Reframe as completed: it finished in March.",
-        },
+      findings: [],
+      claimFacts: [
+        claimFact(path, "Status", "active"),
+        claimFact(path, "Status", "shipped"),
       ],
     });
-
-    const questions = effects.filter(isQuestion);
-    expect(questions.length).toBe(1);
-    expect(questions[0]?.metadata?.automationPolicy).toBe("agent-safe");
+    const collisions = effects.filter(isDiagnostic).filter(
+      (d) => d.code === "dome.warden.integrity.claim-collision",
+    );
+    expect(collisions.length).toBe(1);
+    expect(collisions[0]?.severity).toBe("warning");
+    expect(effects.some((e) => e.kind === "question")).toBe(false);
   });
 
   test("no findings → emits nothing", async () => {
@@ -293,18 +284,20 @@ describe("dome.warden.integrity", () => {
     ];
 
     const first = (await runIntegrity({ path, content, findings })).filter(
-      isQuestion,
+      (e) => e.kind === "diagnostic",
     );
     const second = (await runIntegrity({ path, content, findings })).filter(
-      isQuestion,
+      (e) => e.kind === "diagnostic",
     );
 
-    expect(first[0]?.idempotencyKey).toBe(second[0]?.idempotencyKey);
+    // Diagnostics are deterministic: same content → same code and message.
+    expect(first[0]?.code).toBe(second[0]?.code);
+    expect(first[0]?.message).toBe(second[0]?.message);
   });
 
   // ----- Claims-fact contradiction pre-filter (Task 2) --------------------
 
-  test("a real key-collision contradiction in claims facts surfaces a question — even when the model finds nothing", async () => {
+  test("a real key-collision contradiction in claims facts surfaces a diagnostic — even when the model finds nothing", async () => {
     const path = "wiki/concepts/migration.md";
     const content =
       "# Migration\n\n" +
@@ -319,22 +312,21 @@ describe("dome.warden.integrity", () => {
         claimFact(path, "Status", "shipped"),
       ],
     });
-    const questions = effects.filter(isQuestion);
-    expect(questions.length).toBe(1);
-    const q = questions[0];
-    if (q === undefined) throw new Error("expected a contradiction question");
-    expect(q.metadata?.risk).toBe("high");
-    expect(q.question.toLowerCase()).toContain("contradiction");
-    expect(q.question).toContain("Status");
-    // Questions-only: no fact/patch.
+    const collisions = effects.filter(isDiagnostic).filter(
+      (d) => d.code === "dome.warden.integrity.claim-collision",
+    );
+    expect(collisions.length).toBe(1);
+    const d = collisions[0];
+    if (d === undefined) throw new Error("expected a contradiction diagnostic");
+    expect(d.severity).toBe("warning");
+    expect(d.message.toLowerCase()).toContain("contradiction");
+    expect(d.message).toContain("Status");
+    // No fact/patch.
     expect(effects.some((e) => e.kind === "fact")).toBe(false);
     expect(effects.some((e) => e.kind === "patch")).toBe(false);
-    // Deterministic idempotencyKey keyed on the contradicted claim key.
-    expect(q.idempotencyKey).toContain("dome.warden.integrity:");
-    expect(q.idempotencyKey).toContain(":claim-collision:");
   });
 
-  test("same key with one consistent value is NOT a collision — no question", async () => {
+  test("same key with one consistent value is NOT a collision — no diagnostic", async () => {
     const path = "wiki/concepts/migration.md";
     const effects = await runIntegrity({
       path,
@@ -345,7 +337,7 @@ describe("dome.warden.integrity", () => {
         claimFact(path, "Status", "shipped"),
       ],
     });
-    expect(effects.filter(isQuestion).length).toBe(0);
+    expect(effects.filter((e) => e.kind === "diagnostic").length).toBe(0);
   });
 
   test("legitimate non-contradictory prose: a self-corroborating finding is suppressed without a collision backing", async () => {
@@ -372,7 +364,7 @@ describe("dome.warden.integrity", () => {
       claimFacts: [],
     });
     // Both noisy-class findings are suppressed: no collision backs them.
-    expect(effects.filter(isQuestion).length).toBe(0);
+    expect(effects.filter((e) => e.kind === "diagnostic").length).toBe(0);
   });
 
   test("a self-corroborating finding IS surfaced when a collision on the page backs it", async () => {
@@ -395,14 +387,14 @@ describe("dome.warden.integrity", () => {
         claimFact(path, "Owner", "Grace"),
       ],
     });
-    const questions = effects.filter(isQuestion);
-    // The deterministic collision question + the now-unsuppressed self-corroborating finding.
-    const kinds = questions.map((q) => q.idempotencyKey);
-    expect(kinds.some((k) => k.includes(":claim-collision:"))).toBe(true);
-    expect(kinds.some((k) => k.includes(":self-corroborating"))).toBe(true);
+    const diagnostics = effects.filter(isDiagnostic);
+    // The deterministic collision diagnostic + the now-unsuppressed self-corroborating finding.
+    const codes = diagnostics.map((d) => d.code);
+    expect(codes.some((c) => c === "dome.warden.integrity.claim-collision")).toBe(true);
+    expect(codes.some((c) => c === "dome.warden.integrity.self-corroborating")).toBe(true);
   });
 
-  test("confidence below the floor → no question (model finding gated out)", async () => {
+  test("confidence below the floor → no diagnostic (model finding gated out)", async () => {
     const path = "wiki/concepts/x.md";
     const effects = await runIntegrity({
       path,
@@ -418,10 +410,10 @@ describe("dome.warden.integrity", () => {
       ],
       config: { question_confidence_floor: 0.6 },
     });
-    expect(effects.filter(isQuestion).length).toBe(0);
+    expect(effects.filter((e) => e.kind === "diagnostic").length).toBe(0);
   });
 
-  test("confidence at/above the configured floor → question surfaces", async () => {
+  test("confidence at/above the configured floor → diagnostic surfaces", async () => {
     const path = "wiki/concepts/x.md";
     const effects = await runIntegrity({
       path,
@@ -437,7 +429,7 @@ describe("dome.warden.integrity", () => {
       ],
       config: { question_confidence_floor: 0.7 },
     });
-    expect(effects.filter(isQuestion).length).toBe(1);
+    expect(effects.filter((e) => e.kind === "diagnostic").length).toBe(1);
   });
 
   test("malformed question_confidence_floor → conservative default + ONE warning, review still runs", async () => {
@@ -456,14 +448,15 @@ describe("dome.warden.integrity", () => {
       ],
       config: { question_confidence_floor: "nonsense" },
     });
-    const diags = effects.filter((e) => e.kind === "diagnostic");
-    expect(diags).toHaveLength(1);
-    const diag = diags[0] as { code: string; severity: string; message: string };
-    expect(diag.code).toBe("dome.warden.confidence-config-invalid");
-    expect(diag.severity).toBe("warning");
-    expect(diag.message).toContain("question_confidence_floor");
+    const diags = effects.filter(isDiagnostic);
+    // One config-invalid warning + one finding diagnostic.
+    const configDiag = diags.find((d) => d.code === "dome.warden.confidence-config-invalid");
+    if (configDiag === undefined) throw new Error("expected config-invalid diagnostic");
+    expect(configDiag.code).toBe("dome.warden.confidence-config-invalid");
+    expect(configDiag.severity).toBe("warning");
+    expect(configDiag.message).toContain("question_confidence_floor");
     // Degrade-not-crash: a high-confidence finding still surfaces under the default floor.
-    expect(effects.filter(isQuestion).length).toBe(1);
+    expect(diags.filter((d) => d.code !== "dome.warden.confidence-config-invalid").length).toBe(1);
   });
 });
 
@@ -554,6 +547,6 @@ function fakeModelInvoke(findings: ReadonlyArray<Finding>): ModelInvokeFn {
   return Object.assign(fn, { structured }) as ModelInvokeFn;
 }
 
-function isQuestion(effect: Effect): effect is QuestionEffect {
-  return effect.kind === "question";
+function isDiagnostic(effect: Effect): effect is DiagnosticEffect {
+  return effect.kind === "diagnostic";
 }

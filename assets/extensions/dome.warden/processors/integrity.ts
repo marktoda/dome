@@ -1,26 +1,25 @@
 // dome.warden.integrity — a knowledge-integrity warden.
 //
 // A warden is a processor, not a new primitive: a garden-phase `kind: llm`
-// processor granted `model.invoke` + `question.ask` + `read`, and deliberately
-// NOT `patch.auto` over knowledge and NOT `graph.write`. The hard rule wardens
-// obey: they emit QuestionEffect only — never FactEffect, never a knowledge
-// PatchEffect.
+// processor granted `model.invoke` + `read`, and deliberately NOT `patch.auto`
+// over knowledge and NOT `graph.write`. The hard rule wardens obey: they emit
+// DiagnosticEffect only — never FactEffect, never a knowledge PatchEffect.
 //
-// Why: `src/engine/host/projection-rebuild.ts` REBUILD_SAFE_GARDEN_CAPABILITIES is
-// {read, graph.write, search.write, question.ask}. A garden processor holding
-// `model.invoke` is NOT re-run on rebuild, so any FactEffect it emitted would
-// vanish on `dome rebuild`. The durable artifact is the human/agent
-// *resolution* (answers.db, rehydrated on rebuild), not the model's inference.
-// So: model judgment → transient QuestionEffect; resolution → durable via the
-// answer-handler (`integrity-answer.ts`).
+// Why no FactEffect: `src/engine/host/projection-rebuild.ts`
+// REBUILD_SAFE_GARDEN_CAPABILITIES is {read, graph.write, search.write,
+// question.ask}. A garden processor holding `model.invoke` is NOT re-run on
+// rebuild, so any FactEffect it emitted would vanish on `dome rebuild`. Model
+// judgment is transient; findings surface as diagnostics and self-clear via
+// `resolveStaleDiagnostics` when the page is reconciled.
 //
 // For each changed wiki markdown page the warden asks the model to judge
 // whether any claim is (a) a completed/historical event framed as ongoing,
 // (b) internally / cross-page contradictory, (c) self-corroborating (its only
 // support cites this vault), or (d) agent-inference dressed as sourced fact.
-// Each non-trivial finding becomes a QuestionEffect whose idempotencyKey is
-// keyed on the page content hash, so a flag re-raises only when the page
-// content changes and settles by content-hash.
+// Each non-trivial finding becomes a DiagnosticEffect with a stable `code`
+// (`dome.warden.integrity.<finding.kind>`). Severity is risk-mapped: high-risk
+// findings → "warning"; everything else → "info". There is no automation
+// policy; resolution is a human or agent action, not an answer-handler.
 //
 // Precision (the claims consumer + the gate):
 //   - The warden reads `dome.claims.claim` facts via `ctx.projection` (garden
@@ -31,37 +30,34 @@
 //   - DETERMINISTIC PRE-FILTER: before trusting the model, the warden finds
 //     claim lines that mechanically disagree — same normalized claim key,
 //     different value, on the same page — and surfaces each collision as a
-//     high-risk contradiction QuestionEffect directly (no model needed to
-//     re-derive it from prose). Cross-page contradiction stays the model's
-//     job; same-page key collision is the honest deterministic subset.
+//     "warning" DiagnosticEffect with code `dome.warden.integrity.claim-collision`
+//     directly (no model needed to re-derive it from prose). Cross-page
+//     contradiction stays the model's job; same-page key collision is the
+//     honest deterministic subset.
 //   - CONFIDENCE FLOOR: model findings below
 //     `extensions.dome.warden.config.question_confidence_floor` (conservative
-//     default) do not become questions.
+//     default) do not become diagnostics.
 //   - NOISY-CLASS SUPPRESSION: the self-corroborating / inference-as-fact
 //     classes fire on legitimate synthesized prose, so they are suppressed
 //     unless a mechanical collision on the same page backs them.
-// The warden stays questions-only / no-graph-write / rebuild-safe: it never
+// The warden stays diagnostics-only / no-graph-write / rebuild-safe: it never
 // emits a FactEffect — the collision pre-filter reads facts but emits only
-// QuestionEffects (and the model-config DiagnosticEffects).
+// DiagnosticEffects (alongside the model-config DiagnosticEffects).
 
-import matter from "gray-matter";
 import { z } from "zod";
 
 import { CLAIM_PREDICATE } from "../../dome.claims/processors/claim-fact";
 import { normalizeClaimKey } from "../../dome.claims/processors/claims-shared";
 import {
   diagnosticEffect,
-  questionEffect,
   type Effect,
   type FactEffect,
-  type QuestionAutomationPolicy,
   type QuestionRisk,
 } from "../../../../src/core/effect";
 import {
   defineProcessorImplementation,
   type ProcessorContext,
 } from "../../../../src/core/processor";
-import { shortHash } from "../../../../src/core/short-hash";
 
 const MODEL_SCHEMA = "dome.warden.integrity/v1";
 
@@ -169,36 +165,18 @@ const integrity = defineProcessorImplementation({
       const content = await ctx.snapshot.readFile(path);
       if (content === null) continue;
 
-      const contentHash = shortHash(content, 12);
-      const policy: QuestionAutomationPolicy = isPeopleContent(path, content)
-        ? "owner-needed"
-        : "agent-safe";
       const pageCollisions = collisionsByPath.get(path) ?? new Map();
-      const ownerNeededMeta =
-        policy === "owner-needed"
-          ? {
-              ownerNeededReason:
-                "Page is people/management content; resolution may carry interpersonal nuance.",
-            }
-          : {};
 
       // 1) Deterministic collisions surface directly — the mechanical
       // contradiction is hard evidence, so it never depends on the model or
-      // the confidence floor. idempotencyKey keys on the page content hash +
-      // the normalized claim key, so it settles when the page is reconciled.
-      for (const [keyNorm, collision] of pageCollisions) {
+      // the confidence floor.
+      for (const [, collision] of pageCollisions) {
         effects.push(
-          questionEffect({
-            question: collisionQuestionText(path, collision),
+          diagnosticEffect({
+            severity: "warning", // hard mechanical contradiction
+            code: "dome.warden.integrity.claim-collision",
+            message: collisionDiagnosticMessage(path, collision),
             sourceRefs: [ctx.sourceRef(path)],
-            idempotencyKey: `dome.warden.integrity:${path}:${contentHash}:claim-collision:${keyNorm}`,
-            metadata: {
-              risk: "high",
-              confidence: 1,
-              recommendedAnswer: collisionRecommendedAnswer(collision),
-              automationPolicy: policy,
-              ...ownerNeededMeta,
-            },
           }),
         );
       }
@@ -227,20 +205,14 @@ const integrity = defineProcessorImplementation({
         if (finding.confidence < floor.value) continue;
         // Noisy-class suppression: self-corroboration / inference-as-fact fire
         // on legitimate prose, so they require a same-page mechanical collision
-        // backing them before they earn a question.
+        // backing them before they earn a diagnostic.
         if (NOISY_FINDING_KINDS.has(finding.kind) && !hasCollision) continue;
         effects.push(
-          questionEffect({
-            question: questionTextFor(path, finding),
+          diagnosticEffect({
+            severity: severityForRisk(finding.severity),
+            code: `dome.warden.integrity.${finding.kind}`,
+            message: findingDiagnosticMessage(path, finding),
             sourceRefs: [ctx.sourceRef(path)],
-            idempotencyKey: `dome.warden.integrity:${path}:${contentHash}:${finding.kind}`,
-            metadata: {
-              risk: finding.severity,
-              confidence: finding.confidence,
-              recommendedAnswer: finding.recommendedAnswer,
-              automationPolicy: policy,
-              ...ownerNeededMeta,
-            },
           }),
         );
       }
@@ -375,15 +347,6 @@ function safeJson(value: string): unknown {
   }
 }
 
-function collisionQuestionText(path: string, collision: Collision): string {
-  return (
-    `Integrity flag in ${path}: a claim contradiction — the key ` +
-    `"${collision.key}" is asserted with conflicting values ` +
-    `${collision.values.map((v) => `"${v}"`).join(" vs ")}. ` +
-    `Which value is correct, and should the others be removed or reframed?`
-  );
-}
-
 function collisionRecommendedAnswer(collision: Collision): string {
   return (
     `Reconcile the "${collision.key}" claims to a single current value ` +
@@ -395,20 +358,6 @@ function isWikiMarkdownPath(path: string): boolean {
   return /^wiki\/.+\.md$/i.test(path);
 }
 
-// People/management heuristic (kept deliberately simple + documented): the
-// page lives under `wiki/entities/` OR its frontmatter `type:` is `entity` or
-// `person`. Such content gets `owner-needed` so the owner — not an agent or
-// model — resolves the flag.
-function isPeopleContent(path: string, content: string): boolean {
-  if (path.startsWith("wiki/entities/")) return true;
-  try {
-    const type = matter(content).data.type;
-    return type === "entity" || type === "person";
-  } catch {
-    return false;
-  }
-}
-
 const FINDING_LABEL: Record<Finding["kind"], string> = {
   "historical-as-ongoing":
     "a completed/historical event is framed as ongoing",
@@ -418,11 +367,23 @@ const FINDING_LABEL: Record<Finding["kind"], string> = {
   "inference-as-fact": "agent inference dressed as a sourced fact",
 };
 
-function questionTextFor(path: string, finding: Finding): string {
+/** Risk → diagnostic severity. `low` is dropped upstream; `high` warns, the rest inform. */
+function severityForRisk(risk: QuestionRisk): "warning" | "info" {
+  return risk === "high" ? "warning" : "info";
+}
+
+function collisionDiagnosticMessage(path: string, collision: Collision): string {
+  return (
+    `Claim contradiction in ${path}: the key "${collision.key}" is asserted ` +
+    `with conflicting values ${collision.values.map((v) => `"${v}"`).join(" vs ")}. ` +
+    `Suggested fix: ${collisionRecommendedAnswer(collision)}`
+  );
+}
+
+function findingDiagnosticMessage(path: string, finding: Finding): string {
   return (
     `Integrity flag in ${path}: ${FINDING_LABEL[finding.kind]}. ` +
-    `Claim: "${finding.claim}". ` +
-    `How should this be resolved?`
+    `Claim: "${finding.claim}". Suggested fix: ${finding.recommendedAnswer}`
   );
 }
 
