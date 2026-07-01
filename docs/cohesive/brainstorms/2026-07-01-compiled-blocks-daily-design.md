@@ -51,16 +51,30 @@ question resolved. Coalesced to at most one signal per tick. Dispatched
 through the existing signal path; manifests subscribe like a file signal —
 the trigger vocabulary gains one kind and stays uniform.
 
-**1b. `ctx.questions` narrow garden read view.** Read-only
-(`ctx.questions.open()` → id, text, options, automationPolicy, risk,
-recommendedAnswer, askedAt, sourceRefs) for garden processors declaring a new
-`questions.read` capability, granted per-vault. Deliberately NOT full
-`ctx.projection` in garden phase: facts stay out of garden reads (no
-garden-writes-facts → garden-reads-facts loops). Loud by construction: a
-processor that declares `questions.read` and does not receive the store gets
-a **runtime-emitted warning diagnostic**, never a silent `undefined` — the
-NEEDS_ARE_LOUD pattern applied locally (the general invariant is a separate
-workstream).
+**1b. Questions read view via the existing operational pattern.** The
+codebase already has read-side capabilities gating a narrow garden view:
+`outbox.read` / `quarantine.read` / `run.read` expose `ctx.operational`
+(`OperationalQueryView`, "never a raw DB handle") to the health recovery
+processors. We extend that exact seam: a new **`questions.read`** capability
+exposes `ctx.operational.questions(filter?)` → open-question rows (id, text,
+options, automationPolicy, risk, recommendedAnswer, askedAt, processorId,
+sourceRefs). No new ctx field, no `ctx.projection` in garden phase: facts
+stay out of garden reads (no garden-writes-facts → garden-reads-facts
+loops). Loud by construction: a processor that declares `questions.read` and
+finds `ctx.operational?.questions` absent emits a **warning diagnostic**,
+never a silent empty render — the NEEDS_ARE_LOUD pattern applied locally
+(the general invariant is a separate workstream).
+
+**Signal mechanics (verified against the engine):** file signals are
+"computed once per Proposal from compileRange", but question mutations happen
+outside proposals too. Both mutation sites already sit on code paths with an
+outside-proposal garden dispatch precedent (`dispatchGardenRun` — the answer
+triggers in `src/engine/operational/answers.ts` use it): (a) the garden
+effect-routing epilogue, fired only when the open-question set actually
+changed (a new/refreshed-open row or a resolve — dedup no-ops never fire);
+(b) the resolve path. `Signal` is a closed union in `src/core/processor.ts`
+plus a manifest zod enum — both extend with `questions.changed`. No feedback
+loop: compose-blocks holds no `question.ask` capability.
 
 ## Section 2 — `dome.daily.compose-blocks` (the compositor)
 
@@ -89,6 +103,14 @@ writes the new ones (the `start-context` retirement precedent — one-time,
 idempotent, historical dailies untouched, old markers stay recognized for
 anomaly-scanning and non-reingestion).
 
+**Block registration (added in self-review):** the four new blocks (and
+`brief:compose-record`, §3) join `DAILY_GENERATED_BLOCKS`
+(`dome.daily/processors/daily-types.ts`) for anomaly-scanning and
+task-extraction exclusion, and — being projections (copies/digests of state
+owned elsewhere) — join the search indexer's strip list so agenda lines
+don't duplicate the calendar source file and question texts don't duplicate
+the store in search results.
+
 ## Section 3 — Slimmed brief + input-fingerprint gating
 
 `dome.agent.brief` keeps exactly three model blocks: `brief:today`,
@@ -98,27 +120,39 @@ deterministic agenda). Dead `ctx.projection?.` reads are **deleted, not
 fixed** (questions left the brief's charter; the stale-loops facts read dies
 with the attention-discount retirement track).
 
-**Staleness fix:** each model block's opening marker gains an optional
-`inputs=<short-hash>` attribute (one extension to the core generated-block
-grammar in `src/core/generated-block.ts`, parsed centrally). Material inputs
-per block: `meetings` → hash(today's calendar+slack blobs); `yesterday` →
-hash(yesterday's daily); `today` → hash(calendar + slack + today's
-sweep-ledger section). The brief keeps cron + source-file signals, but the
-gate becomes: a deterministic pre-pass compares stored fingerprints against
-current inputs; **only stale blocks get model turns**; all-fresh fires are
-zero-model, zero-effect no-ops. Cap: 3 model re-composes per day (info
-diagnostic beyond). Replaces the bespoke sources-seen gate with the general
-rule: *the model re-runs exactly when its inputs materially changed.* Fixes
-the observed 06-30 staleness: a mid-morning foreground calendar commit →
-signal → fingerprint mismatch → meetings+today re-compose, with the
-deterministic agenda already on the page since the file landed.
+**Staleness fix — the compose-record block (revised in self-review).** The
+original design put an `inputs=<hash>` attribute in the block markers; the
+code review killed that: the marker grammar
+(`src/core/generated-block.ts`) is a strict full-line match with
+body-sanitization defenses, the most safety-critical primitive in the
+codebase (three shipped bugs before it was centralized) — and the codebase
+already has the right mechanism. The sources-seen record *is* a fingerprint
+store: a deterministic, brief-owned block recording what the compose saw.
+We generalize it instead of touching the grammar: a
+**`dome.agent.brief:compose-record`** block (one italic line, rendered last
+in `## Start Here`) records short content-hashes of the material inputs at
+last successful compose, e.g.
+`_Composed 05:31 · calendar@a3f2 · slack@— · ledger@9b1c · yesterday@77e0_`.
+
+Gate: on any brief fire (cron or source-file signal), a deterministic
+pre-pass hashes current inputs and compares against the record; all-match →
+zero-model, zero-effect no-op. Granularity is **whole-brief** — the brief is
+one model turn over a prepared daily (verified: `taskTurn` in `brief.ts`),
+so any stale input re-composes all three narrative blocks. Cap: 3 model
+composes per day (info diagnostic beyond). The failure-stub contract's "has
+the brief successfully composed today" check reads the compose-record
+instead of the old sources record. Rule delivered: *the model re-runs
+exactly when its inputs materially changed.* Fixes the observed 06-30
+staleness: a mid-morning foreground calendar commit → signal → hash
+mismatch → re-compose, with the deterministic agenda already on the page
+since the file landed.
 
 ## Section 4 — Degradation ladder (updated rungs)
 
 | Missing input | Behavior |
 |---|---|
 | No model provider | Daily still carries agenda + questions + integrated + sources + open-loops + skeleton — a useful morning package with zero model. Brief stays a clean no-op. |
-| `questions.read` declared, store unavailable | Runtime warning diagnostic + questions block omitted. Loud, never silent — this rung was the original bug. |
+| `questions.read` declared, `ctx.operational?.questions` absent | Warning diagnostic + questions block omitted. Loud, never silent — this rung was the original bug. |
 | No calendar file | Agenda omitted; sources line renders `calendar —` honestly; when the file lands, the signal renders the agenda within one tick, no model needed. |
 | compose-blocks run fails | Deterministic ⇒ failure is a bug: run-ledger failure path, quarantine after 3 consecutive failures per trigger, existing health question. Patch is atomic — never a half-written package. |
 | Brief fails mid-flight | Existing failure-stub contract unchanged; blast radius shrinks (deterministic blocks already on the page from 05:25). |
@@ -130,11 +164,12 @@ deterministic agenda already on the page since the file landed.
 section-contract + block-ownership tables (four new `dome.daily:*` rows;
 `brief:questions/integrated/sources` → retired-legacy), degradation ladder,
 wake-tick section rewritten around fingerprint gating.
-[[wiki/specs/autonomous-agents]] — slimmed brief charter + fingerprint
+[[wiki/specs/autonomous-agents]] — slimmed brief charter + compose-record
 contract. [[wiki/specs/processors]] / [[wiki/specs/processor-execution]] —
-the `questions.changed` signal kind. [[wiki/specs/capabilities]] —
-`questions.read`. [[wiki/specs/task-lifecycle]] §generated-block grammar —
-the `inputs=` attribute.
+the `questions.changed` signal kind and its two synthesis sites.
+[[wiki/specs/capabilities]] — `questions.read` alongside the existing
+`outbox.read`/`quarantine.read`/`run.read` tier. The generated-block grammar
+is **untouched** (self-review revision).
 
 **Grants:** `dome.daily` gains `questions.read` + the compose-blocks patch
 entry; manifest `doctor.grantEntries` updated in the same change (existing
