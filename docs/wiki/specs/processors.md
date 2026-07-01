@@ -168,10 +168,13 @@ type Signal =
   | "document.changed"         // any of the above for a markdown file
   | "frontmatter.changed"      // frontmatter delta in a markdown file
   | "region.changed"           // marker-delimited region delta
-  | "link.added" | "link.removed";  // wikilink added/removed
+  | "link.added" | "link.removed"   // wikilink added/removed
+  | "questions.changed";       // question store mutated (see below) — NOT compileRange-derived
 ```
 
 Signals are synthesized by the engine from `compileRange(base, candidate)` ([[wiki/specs/adoption]] §"Compile range"). The engine never asks a processor "what signals fire" — it computes them once per Proposal and routes them to all subscribers.
+
+**`questions.changed` is the one exception to that synthesis path.** It is a store-change signal, not tree-diff-derived: `compileRange` never produces it. It is dispatched on its own channel (`src/engine/operational/questions-changed.ts`) after any tick that changed the open-question set — a new/refreshed-open `question.ask` insert, a stale-question resolution, or a durable answer — and after resolve (CLI/HTTP/MCP/auto-resolution). Subscribers are ordinary garden processors declaring `{ kind: "signal", name: "questions.changed" }`; the dispatch synthesizes `TriggerMatch`es directly rather than routing through `compileRange`'s per-Proposal computation, so there is no path filtering — `SignalEvent.path` is `""` for this signal.
 
 ### Phase × trigger matrix
 
