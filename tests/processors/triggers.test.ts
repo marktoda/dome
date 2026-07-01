@@ -44,6 +44,18 @@ describe("matchTriggers — signal triggers", () => {
     const r = matchTriggers(triggers, events);
     expect(r.length).toBe(0);
   });
+
+  test("questions.changed signal trigger matches a questions.changed event", () => {
+    const trigger = { kind: "signal", name: "questions.changed" } as const;
+    const matches = matchTriggers(
+      [trigger],
+      [{ signal: "questions.changed", path: "" }],
+    );
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.matchedSignals).toEqual([
+      { signal: "questions.changed", path: "" },
+    ]);
+  });
 });
 
 describe("matchTriggers — path triggers", () => {

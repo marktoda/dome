@@ -158,7 +158,8 @@ export type Signal =
   | "frontmatter.changed"
   | "region.changed"
   | "link.added"
-  | "link.removed";
+  | "link.removed"
+  | "questions.changed";
 
 // ----- Trigger --------------------------------------------------------------
 
@@ -224,6 +225,7 @@ export type Trigger =
  *   - `outbox.recover` — emit OutboxRecoveryEffect retry/abandon actions.
  *   - `quarantine.read` — read operational quarantine rows via `ctx.operational`.
  *   - `quarantine.recover` — emit QuarantineRecoveryEffect reset actions.
+ *   - `questions.read` — read question rows via `ctx.operational`.
  *   - `run.read`       — read stuck operational run rows via `ctx.operational`.
  *   - `run.recover`    — emit RunRecoveryEffect fail actions.
  */
@@ -284,6 +286,9 @@ export type OutboxRecoverCapability = {
 export type QuarantineReadCapability = {
   readonly kind: "quarantine.read";
 };
+export type QuestionsReadCapability = {
+  readonly kind: "questions.read";
+};
 export type QuarantineRecoverCapability = {
   readonly kind: "quarantine.recover";
   readonly actions: ReadonlyArray<QuarantineRecoveryEffect["action"]>;
@@ -319,6 +324,7 @@ export type Capability =
   | OutboxReadCapability
   | OutboxRecoverCapability
   | QuarantineReadCapability
+  | QuestionsReadCapability
   | QuarantineRecoverCapability
   | RunReadCapability
   | RunRecoverCapability;
@@ -732,6 +738,7 @@ export const SignalSchema = z.enum([
   "region.changed",
   "link.added",
   "link.removed",
+  "questions.changed",
 ]);
 
 export const SignalTriggerSchema = z
@@ -877,6 +884,12 @@ export const QuarantineReadCapabilitySchema = z
   })
   .strict();
 
+export const QuestionsReadCapabilitySchema = z
+  .object({
+    kind: z.literal("questions.read"),
+  })
+  .strict();
+
 export const QuarantineRecoverCapabilitySchema = z
   .object({
     kind: z.literal("quarantine.recover"),
@@ -922,6 +935,7 @@ export const CapabilitySchema = z.discriminatedUnion("kind", [
   OutboxReadCapabilitySchema,
   OutboxRecoverCapabilitySchema,
   QuarantineReadCapabilitySchema,
+  QuestionsReadCapabilitySchema,
   QuarantineRecoverCapabilitySchema,
   RunReadCapabilitySchema,
   RunRecoverCapabilitySchema,
