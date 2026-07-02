@@ -102,6 +102,52 @@ export const CAPTURED_HINT =
 export const CLOSE_START = CLOSE_MARKERS.start;
 export const CLOSE_END = CLOSE_MARKERS.end;
 
+// The edition's compiled-blocks identities (D6/compiled-daily): the
+// deterministic "To decide" / agenda / integrated / sources blocks rendered
+// by `dome.daily.compose-blocks` from `edition-blocks.ts`. Defined here (not
+// in edition-blocks.ts itself) so the identities sit alongside every other
+// daily-note block and register in `DAILY_GENERATED_BLOCKS` below —
+// [[wiki/specs/daily-surface]] §"Block ownership".
+// internal — not public API; exported for use by other daily-* modules
+export const QUESTIONS_BLOCK = "questions";
+// internal — not public API; exported for use by other daily-* modules
+export const AGENDA_BLOCK = "agenda";
+// internal — not public API; exported for use by other daily-* modules
+export const INTEGRATED_BLOCK = "integrated";
+// internal — not public API; exported for use by other daily-* modules
+export const SOURCES_BLOCK = "sources";
+export const QUESTIONS_MARKERS = generatedBlockMarkers(
+  DAILY_OWNER,
+  QUESTIONS_BLOCK,
+);
+export const AGENDA_MARKERS = generatedBlockMarkers(DAILY_OWNER, AGENDA_BLOCK);
+export const INTEGRATED_MARKERS = generatedBlockMarkers(
+  DAILY_OWNER,
+  INTEGRATED_BLOCK,
+);
+export const SOURCES_MARKERS = generatedBlockMarkers(
+  DAILY_OWNER,
+  SOURCES_BLOCK,
+);
+
+/**
+ * Retired-legacy brief block identities (recognized for migration/anomaly
+ * scanning, never written). Superseded by the `dome.daily:*` blocks above —
+ * [[wiki/specs/daily-surface]] §"Block ownership".
+ */
+export const LEGACY_BRIEF_QUESTIONS = Object.freeze({
+  owner: EDITION_YESTERDAY_OWNER,
+  block: "questions",
+});
+export const LEGACY_BRIEF_INTEGRATED = Object.freeze({
+  owner: EDITION_YESTERDAY_OWNER,
+  block: "integrated",
+});
+export const LEGACY_BRIEF_SOURCES = Object.freeze({
+  owner: EDITION_YESTERDAY_OWNER,
+  block: "sources",
+});
+
 /**
  * The generated blocks a daily note may carry, as `(owner, block)`
  * anomaly-scan targets — what splice call sites feed
@@ -133,6 +179,13 @@ export const DAILY_GENERATED_BLOCKS: ReadonlyArray<{
     block: EDITION_YESTERDAY_BLOCK_NAME,
   }),
   Object.freeze({ owner: DAILY_OWNER, block: CAPTURED_BLOCK }),
+  Object.freeze({ owner: DAILY_OWNER, block: QUESTIONS_BLOCK }),
+  Object.freeze({ owner: DAILY_OWNER, block: AGENDA_BLOCK }),
+  Object.freeze({ owner: DAILY_OWNER, block: INTEGRATED_BLOCK }),
+  Object.freeze({ owner: DAILY_OWNER, block: SOURCES_BLOCK }),
+  LEGACY_BRIEF_QUESTIONS,
+  LEGACY_BRIEF_INTEGRATED,
+  LEGACY_BRIEF_SOURCES,
 ]);
 
 export type DailyDate = {
