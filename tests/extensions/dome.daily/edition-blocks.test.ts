@@ -123,6 +123,25 @@ describe("questionsSection", () => {
     const section = questionsSection([question({ id: 1 })]);
     expect(section).not.toContain("more —");
   });
+
+  test("neutralizes wikilink syntax in question text and recommendedAnswer (projection must not re-enter link validation)", () => {
+    // The questions block is a projection of durable question rows; quoted
+    // vault syntax rendered verbatim would let validate-wikilinks re-flag the
+    // quoted link inside the daily and ask a second question about it — the
+    // question → render → question feedback loop.
+    const section = questionsSection([
+      question({
+        id: 9,
+        question: "Wikilink [[ambiguous]] has multiple targets.",
+        recommendedAnswer: "keep [[ambiguous]] unresolved",
+      }),
+    ]);
+    expect(section).not.toBeNull();
+    expect(section).toContain("Wikilink \\[\\[ambiguous\\]\\] has multiple targets.");
+    expect(section).toContain("recommended: keep \\[\\[ambiguous\\]\\] unresolved");
+    // The raw wikilink substring must be absent from the block body.
+    expect(section).not.toContain("[[ambiguous]]");
+  });
 });
 
 // ----- agendaSection -----------------------------------------------------------

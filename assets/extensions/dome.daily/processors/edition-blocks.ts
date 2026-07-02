@@ -49,13 +49,32 @@ export type EditionQuestion = {
 /** Top N open questions rendered before the `+N more` tail. */
 export const MAX_EDITION_QUESTIONS = 3;
 
+/**
+ * Neutralize wikilink syntax in quoted question prose. The questions block is
+ * a PROJECTION of durable question rows into the daily — vault syntax quoted
+ * inside a question's text must never re-enter link validation. Without this,
+ * an ambiguous-wikilink question regenerates itself through the daily:
+ * validate-wikilinks asks about `[[ambiguous]]` → compose-blocks renders that
+ * text into today's daily → validate-wikilinks re-scans the daily (an
+ * ordinary wiki/ markdown file), re-flags the quoted link, and asks a SECOND
+ * question about the daily — a question → render → question feedback loop.
+ * Escaping `[[` as `\[\[` and `]]` as `\]\]` breaks the loop: Obsidian
+ * renders the escaped form as literal brackets, and the wikilink scanner
+ * does not match it.
+ */
+function neutralizeWikilinks(text: string): string {
+  return text.replaceAll("[[", "\\[\\[").replaceAll("]]", "\\]\\]");
+}
+
 function questionBullet(q: EditionQuestion): string {
   const optionsSuffix =
     q.options.length > 0 ? ` [${q.options.join(" | ")}]` : "";
   const recommendedSuffix =
-    q.recommendedAnswer !== null ? ` — recommended: ${q.recommendedAnswer}` : "";
+    q.recommendedAnswer !== null
+      ? ` — recommended: ${neutralizeWikilinks(q.recommendedAnswer)}`
+      : "";
   const command = resolveQuestionCommand({ id: q.id, options: q.options });
-  return `- Q${q.id} (${q.automationPolicy}): ${q.question}${optionsSuffix}${recommendedSuffix} — resolve: \`${command}\``;
+  return `- Q${q.id} (${q.automationPolicy}): ${neutralizeWikilinks(q.question)}${optionsSuffix}${recommendedSuffix} — resolve: \`${command}\``;
 }
 
 /**

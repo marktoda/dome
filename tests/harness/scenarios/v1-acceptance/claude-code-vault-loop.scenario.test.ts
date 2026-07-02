@@ -271,9 +271,13 @@ extensions:
         - "wiki/**/*.md"
         - "wiki/dailies/*.md"
         - "notes/*.md"
+        - "sources/calendar/*.md"
+        - "sources/slack/*.md"
+        - "meta/sweep-ledger.md"
       patch.auto: ["wiki/**/*.md", "notes/*.md"]
       graph.write: ["dome.daily.*", "dome.attention.*"]
       question.ask: true
+      questions.read: true
   dome.lint:
     enabled: true
     grant:
