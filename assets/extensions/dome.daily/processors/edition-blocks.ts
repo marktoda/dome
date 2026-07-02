@@ -21,6 +21,7 @@ import {
 } from "../../../../src/core/generated-block";
 import { resolveQuestionCommand } from "../../../../src/question-resolution";
 import type { CalendarMeeting } from "./calendar-day";
+import { escapeRegExp } from "./daily-paths";
 import {
   AGENDA_MARKERS,
   INTEGRATED_MARKERS,
@@ -68,7 +69,9 @@ function neutralizeWikilinks(text: string): string {
 
 function questionBullet(q: EditionQuestion): string {
   const optionsSuffix =
-    q.options.length > 0 ? ` [${q.options.join(" | ")}]` : "";
+    q.options.length > 0
+      ? ` [${q.options.map(neutralizeWikilinks).join(" | ")}]`
+      : "";
   const recommendedSuffix =
     q.recommendedAnswer !== null
       ? ` — recommended: ${neutralizeWikilinks(q.recommendedAnswer)}`
@@ -194,10 +197,6 @@ export function sourcesSection(present: {
     `_Sources: ${parts.join(" · ")}_`,
     SOURCES_MARKERS.end,
   ].join("\n");
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**

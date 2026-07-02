@@ -34,6 +34,7 @@ import {
   questionEffect,
   type Effect,
 } from "../../../../src/core/effect";
+import { findGeneratedBlock } from "../../../../src/core/generated-block";
 import { generatedBlockAnomalyDiagnostics } from "../../../../src/core/generated-block-diagnostics";
 import {
   defineProcessorImplementation,
@@ -42,6 +43,13 @@ import {
 import type { SourceRef } from "../../../../src/core/source-ref";
 
 import { dailyPath, dailyPathSettings, formatDate, localDateParts, previousLocalDate } from "../../dome.daily/processors/daily-paths";
+import {
+  AGENDA_BLOCK as DAILY_AGENDA_BLOCK,
+  DAILY_OWNER,
+  INTEGRATED_BLOCK as DAILY_INTEGRATED_BLOCK,
+  QUESTIONS_BLOCK as DAILY_QUESTIONS_BLOCK,
+  SOURCES_BLOCK as DAILY_SOURCES_BLOCK,
+} from "../../dome.daily/processors/daily-types";
 import {
   previousDailyDigest,
   removeLegacyStartContextSection,
@@ -450,6 +458,14 @@ const brief = defineProcessorImplementation({
     // Start Here section (daily-surface §"Block ownership"); on re-composes
     // the in-place marker replace preserves that position.
     const composeTime = vaultLocalHhMm(ctx.now());
+    // "Rendered last" in ## Start Here (spec §"The brief blocks"): compose-blocks'
+    // questions/integrated/sources blocks sit after yesterday, so anchoring on
+    // yesterday alone would pin the record ABOVE them. Anchor after the FIRST
+    // PRESENT of sources → integrated → questions → yesterday so the record
+    // always lands below whichever of those is last on the page. On a re-compose
+    // the in-place marker replace preserves the position; the anchor only
+    // matters on first insert.
+    const recordAnchor = composeRecordAnchor(composed);
     composed = replaceBriefBlock({
       content: composed,
       markers: COMPOSE_RECORD_BLOCK,
@@ -459,7 +475,7 @@ const brief = defineProcessorImplementation({
         inputs: current,
       }),
       heading: "Start Here",
-      afterBlock: YESTERDAY_BLOCK,
+      ...(recordAnchor !== undefined ? { afterBlock: recordAnchor } : {}),
     });
 
     // The one allowed edit outside the daily note: an append of well-formed
@@ -637,6 +653,12 @@ function ensureBriefBlocks(input: {
         MEETINGS_BLOCK.end,
       ].join("\n"),
       heading: "Meetings",
+      // The prep prose sits BELOW the deterministic dome.daily:agenda block
+      // (daily-surface §"Block ownership": agenda top of ## Meetings, prep
+      // prose under it). Anchor after the agenda block compose-blocks landed
+      // at 05:25; a heading-insert (agenda absent — no calendar) falls back to
+      // the top of ## Meetings, which is correct when there is no agenda.
+      afterBlock: { owner: DAILY_OWNER, block: DAILY_AGENDA_BLOCK },
     });
   }
   return content;
@@ -781,6 +803,35 @@ function composeInputsMatch(
     a.ledger === b.ledger &&
     a.yesterday === b.yesterday
   );
+}
+
+/**
+ * The anchor for the compose-record block: the FIRST PRESENT of compose-blocks'
+ * Start-Here blocks (sources → integrated → questions) then the brief's own
+ * yesterday block, so the record renders BELOW whichever is last on the page
+ * ("rendered last" — [[wiki/specs/autonomous-agents]] §"The brief blocks").
+ * `undefined` (none present) falls the splice back to a heading-insert under
+ * ## Start Here. Only the `(owner, block)` identity is consulted by
+ * replaceBriefBlock, so the cross-bundle dome.daily identities work as anchors.
+ */
+function composeRecordAnchor(
+  content: string,
+): { readonly owner: string; readonly block: string } | undefined {
+  const candidates: ReadonlyArray<{ readonly owner: string; readonly block: string }> = [
+    { owner: DAILY_OWNER, block: DAILY_SOURCES_BLOCK },
+    { owner: DAILY_OWNER, block: DAILY_INTEGRATED_BLOCK },
+    { owner: DAILY_OWNER, block: DAILY_QUESTIONS_BLOCK },
+    { owner: YESTERDAY_BLOCK.owner, block: YESTERDAY_BLOCK.block },
+  ];
+  for (const candidate of candidates) {
+    if (
+      findGeneratedBlock(content, candidate.owner, candidate.block).range !==
+      null
+    ) {
+      return candidate;
+    }
+  }
+  return undefined;
 }
 
 /** "HH:MM" in the host-local timezone (same convention as localDateParts). */

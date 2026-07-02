@@ -1927,3 +1927,133 @@ describe("dome.agent.brief — compose-record gate", () => {
     expect(q.idempotencyKey).toBe("dome.agent.brief-failed:2026-06-09");
   });
 });
+
+// ----- Cross-task seam: compose-blocks output → the brief's ensure/splice ------
+//
+// The 05:25 compositor writes four deterministic dome.daily blocks (questions /
+// integrated / sources after yesterday, agenda at the top of ## Meetings); the
+// 05:30 brief then ensures its own blocks and splices its narrative over that
+// exact page. This test composes a daily in the real compose-blocks output
+// shape and runs the brief over it, asserting the final block ORDER — the seam
+// that finding 1 (meetings above agenda) and finding 2 (compose-record above
+// the compositor's blocks) both broke.
+
+import { MEETINGS_BLOCK } from "../../../assets/extensions/dome.agent/lib/brief-shared";
+import {
+  AGENDA_MARKERS,
+  INTEGRATED_MARKERS,
+  QUESTIONS_MARKERS,
+  SOURCES_MARKERS,
+} from "../../../assets/extensions/dome.daily/processors/daily-types";
+
+describe("dome.agent.brief × dome.daily.compose-blocks (block-ordering seam)", () => {
+  // A daily in the shape compose-blocks leaves at 05:25: today + yesterday
+  // brief blocks, then the compositor's questions / integrated / sources blocks
+  // after yesterday under ## Start Here, and the agenda block at the top of
+  // ## Meetings. No compose-record yet (the brief owns that).
+  const PRECOMPOSED = [
+    "---",
+    "type: daily",
+    "---",
+    "",
+    "# 2026-06-09",
+    "",
+    "## Start Here",
+    "",
+    "<!-- dome.agent.brief:today:start -->",
+    "<!-- dome.agent.brief:today:end -->",
+    "",
+    "<!-- dome.agent.brief:yesterday:start -->",
+    "### Yesterday",
+    "- carried context (from [[wiki/dailies/2026-06-08]])",
+    "<!-- dome.agent.brief:yesterday:end -->",
+    "",
+    "<!-- dome.daily:questions:start -->",
+    "### To decide",
+    "- Q1 (owner-needed): Ship it? — resolve: `dome resolve 1 yes`",
+    "<!-- dome.daily:questions:end -->",
+    "",
+    "<!-- dome.daily:integrated:start -->",
+    "### Integrated Overnight",
+    "- [[wiki/x]] ← [[inbox/y]]",
+    "<!-- dome.daily:integrated:end -->",
+    "",
+    "<!-- dome.daily:sources:start -->",
+    "_Sources: calendar ✓_",
+    "<!-- dome.daily:sources:end -->",
+    "",
+    "## Meetings",
+    "",
+    "<!-- dome.daily:agenda:start -->",
+    "- 09:00 — Team standup (Alice, Bob)",
+    "- 15:00 — 1:1 with Danny",
+    "<!-- dome.daily:agenda:end -->",
+    "",
+  ].join("\n");
+
+  test("final order: Start Here today→yesterday→questions→integrated→sources→compose-record; Meetings agenda→prep prose", async () => {
+    // The model fills its three narrative blocks; the deterministic dome.daily
+    // blocks (owned by compose-blocks) are untouched by the brief.
+    const modelDoc = [
+      "<!-- dome.agent.brief:today:start -->",
+      "Focused day on [[wiki/projects/cockpit]].",
+      "<!-- dome.agent.brief:today:end -->",
+      "<!-- dome.agent.brief:yesterday:start -->",
+      "### Yesterday",
+      "- Shipped the capture loop (from [[wiki/dailies/2026-06-08]])",
+      "<!-- dome.agent.brief:yesterday:end -->",
+      "<!-- dome.agent.brief:meetings:start -->",
+      "### Today's Meetings",
+      "- Standup prep: router PR context (from [[wiki/projects/cockpit]])",
+      "<!-- dome.agent.brief:meetings:end -->",
+    ].join("\n");
+    const ctx = makeCtx({
+      files: {
+        [TODAY_PATH]: PRECOMPOSED,
+        [YESTERDAY_PATH]: YESTERDAY_DAILY,
+        [CALENDAR_PATH]: CALENDAR_FILE,
+      },
+      steps: [
+        {
+          toolCalls: [
+            { id: "1", name: "writePage", input: { path: TODAY_PATH, content: modelDoc } },
+          ],
+        },
+        { text: "done" },
+      ],
+    });
+    const content = writtenDaily(await brief.run(ctx));
+
+    const at = (marker: string): number => {
+      const idx = content.indexOf(marker);
+      expect(idx).toBeGreaterThan(-1);
+      return idx;
+    };
+
+    // ## Start Here: today → yesterday → questions → integrated → sources →
+    // compose-record (compose-record rendered LAST — finding 2).
+    const order = [
+      at(TODAY_BLOCK.start),
+      at(YESTERDAY_BLOCK.start),
+      at(QUESTIONS_MARKERS.start),
+      at(INTEGRATED_MARKERS.start),
+      at(SOURCES_MARKERS.start),
+      at(COMPOSE_RECORD_BLOCK.start),
+    ];
+    for (let i = 1; i < order.length; i += 1) {
+      expect(order[i]).toBeGreaterThan(order[i - 1]!);
+    }
+
+    // The compose-record stays inside ## Start Here (above ## Meetings), and
+    // the parseable record proves it landed as a real successful compose.
+    const meetingsHeadingIdx = at("## Meetings");
+    expect(at(COMPOSE_RECORD_BLOCK.start)).toBeLessThan(meetingsHeadingIdx);
+    expect(parseBriefComposeRecord(content)).not.toBeNull();
+
+    // ## Meetings: the deterministic agenda block sits ABOVE the brief's prep
+    // prose block (finding 1 — the prose must not invert the agenda).
+    expect(at(AGENDA_MARKERS.start)).toBeGreaterThan(meetingsHeadingIdx);
+    expect(at(MEETINGS_BLOCK.start)).toBeGreaterThan(at(AGENDA_MARKERS.start));
+    expect(content).toContain("Standup prep: router PR context");
+  });
+});

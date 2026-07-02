@@ -133,14 +133,27 @@ describe("questionsSection", () => {
       question({
         id: 9,
         question: "Wikilink [[ambiguous]] has multiple targets.",
+        options: ["point at [[ProjectA]]", "point at [[ProjectB]]"],
         recommendedAnswer: "keep [[ambiguous]] unresolved",
       }),
     ]);
     expect(section).not.toBeNull();
     expect(section).toContain("Wikilink \\[\\[ambiguous\\]\\] has multiple targets.");
     expect(section).toContain("recommended: keep \\[\\[ambiguous\\]\\] unresolved");
-    // The raw wikilink substring must be absent from the block body.
-    expect(section).not.toContain("[[ambiguous]]");
+    // Options are projected verbatim too — a future question source with a
+    // [[wikilink]] in an option must not re-enter link validation either.
+    expect(section).toContain(
+      "[point at \\[\\[ProjectA\\]\\] | point at \\[\\[ProjectB\\]\\]]",
+    );
+    // The re-open vector is the human-readable prefix (question text + options
+    // display + recommendation) — rendered as plain markdown the validator
+    // scans. It must carry NO raw `[[…]]`. (The trailing `dome resolve` command
+    // echoes raw option values, but it sits inside a backtick code span, which
+    // findWikilinks ignores via markdownCodeRanges — not a re-open surface.)
+    const prefix = section!.split("— resolve:")[0]!;
+    expect(prefix).not.toContain("[[ambiguous]]");
+    expect(prefix).not.toContain("[[ProjectA]]");
+    expect(prefix).not.toContain("[[ProjectB]]");
   });
 });
 

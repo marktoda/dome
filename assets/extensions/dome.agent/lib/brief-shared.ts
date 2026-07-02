@@ -217,8 +217,13 @@ export function replaceBriefBlock(input: {
   readonly markers: BriefBlockMarkers;
   readonly section: string | null;
   readonly heading: string;
-  /** Insert after this block when present (e.g. questions after yesterday). */
-  readonly afterBlock?: BriefBlockMarkers;
+  /**
+   * Insert after this block when present (e.g. meetings prose after the
+   * deterministic `dome.daily:agenda` block, compose-record after the last
+   * Start-Here block). Only the `(owner, block)` identity is consulted, so a
+   * cross-bundle `dome.daily:*` identity works as an anchor too.
+   */
+  readonly afterBlock?: { readonly owner: string; readonly block: string };
 }): string {
   const replaced = replaceGeneratedBlock(
     input.content,
