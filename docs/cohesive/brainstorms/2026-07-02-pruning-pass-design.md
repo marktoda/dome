@@ -33,15 +33,28 @@ the deleted signal), not new surface.
 
 ## 1. Warden folds into consolidate; `dome.warden` retires
 
-The nightly `dome.agent.consolidate` charter absorbs integrity review: its
-janitor turn additionally flags internal/cross-page contradictions and
-completed-events-framed-as-ongoing, emitted as `info`/`warning` diagnostics
-(the questions-as-decisions contract: findings you fix by editing,
-self-clearing via `resolveStaleDiagnostics`). Model judgment stays
-transient — no facts, no auto-patches beyond consolidate's existing
-propose-not-auto envelope. Cost rides consolidate's existing budget and
-nightly cadence: integrity checking at marginal cost on a run that already
-reads the same pages, instead of 412 per-change runs/14d at $13.69.
+The nightly `dome.agent.consolidate` charter absorbs integrity review.
+Graft shape (consolidate is a tool-loop agent, the warden was a structured
+one-shot): the integrity finding taxonomy (historical-as-ongoing /
+contradiction / self-corroborating / inference-as-fact, with the
+noisy-class suppression and confidence floor) becomes a charter section in
+`consolidate-charter.ts`, and findings are emitted through a new
+`flagIntegrity` TOOL in consolidate's tool seam (mirrors `askOwner`) that
+deterministically emits `info`/`warning` diagnostics — the
+questions-as-decisions contract: findings you fix by editing, self-clearing
+via `resolveStaleDiagnostics`. Model judgment stays transient — no facts,
+no auto-patches beyond consolidate's propose-not-auto envelope. Cost rides
+consolidate's budget and nightly cadence instead of 412 per-change runs/14d
+at $13.69.
+
+**Scout finding — the warden's deterministic claim-collision pre-filter was
+likely dead code:** it reads `ctx.projection?.facts(...)` from garden phase,
+which omits the projection (the same silent-`?.` class as the brief's
+never-rendered questions block). The plan verifies; either way the
+pre-filter does NOT graft into consolidate — same-page claim-collision
+detection belongs in `dome.claims.index` (adoption-phase, already parses
+every claim line; a key collision there emits a deterministic diagnostic
+with no projection read at all).
 
 Deletions: `assets/extensions/dome.warden/` (bundle, manifest, processors),
 default-config stanza, matrix rows, warden tests (charter assertions move
@@ -70,10 +83,14 @@ untouched. [[wiki/specs/task-lifecycle]] rewritten in place (the
 attention-discounting sections retire; AC3: any `enforced_by` tests for
 discount invariants retire with their invariant docs or re-point).
 
-Rollout note: the two open quarantine-recovery questions (ids 2, 3) and
-the `quarantined.json` rows reference the deleted processor — the plan
-must determine the clean order (resolve-then-upgrade vs. state cleanup
-probe) rather than leave orphaned state.
+**Orphaned-state fix (scout-verified gap):** quarantine entries survive
+processor deletion with no registry filter, and the health emitter re-asks
+about them forever. `pruneUnknownProcessors` already exists in
+`src/processors/execution-state.ts` as an unwired mutator — the fix is
+wiring: at host startup (registry in hand), prune quarantine entries for
+unregistered processors, logged loudly. Rollout then resolves the two
+already-open recovery questions (ids 2, 3) manually — they stop re-emitting
+once the rows prune, but open rows never auto-resolve.
 
 ## 3. `current-facts` charter: external-only, entities-only, capped
 
@@ -84,12 +101,24 @@ probe) rather than leave orphaned state.
   block on non-entity pages when next touched — verify feasibility; if
   per-page-touch removal churns worse than a one-shot sweep, the plan may
   choose one deliberate cleanup patch per page batch).
-- **Content: claims whose source is a DIFFERENT page than the one being
-  rendered** — "what the rest of the vault says about this subject" —
-  never a restatement of the page's own body. Placeholder laundering dies
-  structurally (placeholders live in the page's own body).
-- **Cap:** 12 bullets, most-recent-first, `+N more — dome query <subject>`
-  tail (mirror the To-decide cap pattern).
+- **Content (revised in scouting — the approved "external-only" charter is
+  inexpressible today):** a claim carries NO source-page provenance — its
+  subject IS its containing page (`ClaimFact` has no origin field), so
+  "what other pages say about the subject" cannot be filtered from claim
+  structure. Cross-page subject attribution is recorded as claims-layer
+  backlog. What ships instead attacks the audit's actual complaints
+  directly: **cap 12 bullets, most-recent-`asOf`-first**, with a
+  `+N more — dome query <subject>` tail (the To-decide cap pattern), and a
+  **placeholder filter** — claims whose value is template-shaped
+  (`[...]`-bracketed placeholder text) never render. Kills the 75-line
+  danny.md digest and the `[Specific incident — fill in or drop]`
+  laundering without pretending to provenance the model lacks.
+- **Out-of-scope removal:** render-facts already has a splice-out branch;
+  the scope guard treats "non-entity page + block present" as removal
+  (remove-when-touched). The ~50 stale non-entity blocks clear either
+  lazily or via one newline-touch sweep commit at rollout — the exact
+  backfill idiom `claims.md` §"Backfilling coverage" already blesses
+  (rebuild/`dome run` structurally cannot do it).
 
 `stamp` and `index` (the identity + retrieval layers) are untouched —
 anchors are self-limiting churn; the digest was the firehose.
@@ -99,11 +128,19 @@ anchors are self-limiting churn; the digest was the firehose.
 
 Generalize the `questions.changed` pattern (shipped in compiled-blocks):
 
-- **`outbox.changed`** — emitted at the outbox store's mutation chokepoints
-  when a row enters/leaves a recovery-relevant state (`failed`,
-  stuck-`pending`); `dome.health.outbox-recovery-questions` subscribes,
-  per-minute cron dropped.
-- **`quarantine.changed`** — emitted on quarantine insert/reset;
+- **`outbox.changed`** — fired from the two internal terminal-failure
+  sites scout-verified as the complete set (`recordFailedAttempt`'s
+  terminal branch + `recoverExpiredDispatching`'s terminal branch in
+  `src/outbox/dispatch.ts` — the drain-boundary result array misses
+  lease-expiry failures, so the callback threads into both);
+  `dome.health.outbox-recovery-questions` subscribes, per-minute cron
+  dropped. Stuck-`pending` is a query-time condition, not a transition —
+  it cannot signal and is accepted as covered by the failed-transition
+  edge plus doctor.
+- **`quarantine.changed`** — fired narrowly at the threshold-trip in
+  `recordRetryableTerminalFailure` and at `clearQuarantine`/
+  `clearQuarantineIfCurrent` (precise set-changed semantics, not the
+  broader every-counter-tick `onEntriesChanged` persist hook);
   `quarantine-recovery-questions` subscribes, cron dropped.
 - **Orphan runs are absence, not change** — no signal can fire on a row
   that stopped moving. `orphan-run-recovery-questions` keeps a cron,
