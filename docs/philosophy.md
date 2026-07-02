@@ -80,3 +80,39 @@ right now, read cleaner and fail safer than N copies of the specific one?** If
 yes, generalize. If it only "might help later," wait. When in doubt, design it
 twice (see the `codebase-design` skill) and compare the two interfaces on depth,
 locality, and seam placement before committing.
+
+## The ownership ladder — engine vs. agents
+
+Dome's product boundary in one line: **the engine owns state contracts and
+their observability; agents own behavior.** The contract between them
+([[wiki/concepts/client-model]]) specifies *interfaces, not itineraries* —
+AGENTS.md teaches conventions (where things go, what commands exist), never
+routines ("each morning, do these five steps"). A workflow shipped as
+templated prose is the retired Workflow primitive re-entering through the
+documentation door: untestable, unledgered, outside the degradation ladder,
+and guaranteed to rot.
+
+When a feature idea contains "the agent should do X," walk the ladder; the
+feature belongs at the **first rung that can hold it**:
+
+1. **Can it be a file/state contract?** Vault-layout shape + a degradation
+   rung (absent means "not known", never fabricated). *Calendar day-files.*
+2. **Can it be deterministic?** Engine processor or subscription.
+   *The icalBuddy calendar fetch; compose-blocks.*
+3. **Does its absence need to be felt?** Doctor probe or an honest surface
+   line — Dome owns the *loudness*, never the behavior.
+   *`daily.calendar-source-missing`; the sources record.*
+4. **Does it genuinely need judgment or an interactive session?** Client
+   layer: a personal skill, a habit, a native-app flow. Dome ships at most a
+   **recipe** (non-normative docs), never a templated behavior.
+5. **"But every client needs the same steps."** Then it is almost certainly
+   rungs 1–3 in disguise — decompose it. (The `/morning` ritual decomposed
+   into: daemon calendar [2] + slack day-file shape [1] + missing-source
+   loudness [3] + one interactive fetch [4].)
+
+Both failure modes have names: too much in Dome → rotting prose workflows,
+agent-shaped opinions in the engine, harness lock-in. Too little → every
+client re-derives conventions, which is what AGENTS.md legitimately fixes.
+**Conventions yes, routines no.** The ladder retro-predicts the decision
+ledger: calendar-as-committed-source-files, connector-fetch-is-foreground-only,
+no `dome ask`, questions-as-decisions, the compiled daily.
