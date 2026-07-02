@@ -219,6 +219,9 @@ block yourself.
   notes directly under \`wiki/\` or \`notes/\`.
 - \`inbox/processed/\` is where \`dome.agent\` archives captures it has
   ingested and integrated into generated wiki material.
+- Context fetched interactively (Slack digests, live calendar) lands as
+  \`sources/<kind>/<date>.md\` day-files, committed normally — the engine
+  weaves whatever exists into the daily and omits what doesn't.
 - \`preferences/signals.md\` is the append-only preference-signal log — see
   "Preference signals" above for when and how to append to it.
 - \`.dome/config.yaml\` controls enabled extension bundles and grants.
