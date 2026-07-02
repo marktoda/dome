@@ -120,8 +120,8 @@ prose survives) — the work-vault rollout includes that refresh.
 
 ## Testing
 
-No new engine behavior except the sources.fetch no-poll change (unit-tested).
-The template follows whatever test posture `claude-calendar.sh` has (shipped
+No new engine behavior at all (the no-poll change descoped, §Part A). The
+template follows whatever test posture `claude-calendar.sh` has (shipped
 vault-side data); if untested there, untested here — consistency over
 ceremony. Acceptance is operational: one real morning where
 `sources/calendar/<date>.md` lands by ~05:15 via the daemon and the agenda
