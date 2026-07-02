@@ -138,19 +138,28 @@ function fakeClaudePath(stdout: string): string {
  * to:...`) and prints `stdout` verbatim with the given exit code — the
  * FETCH block in the shipped template is `icalbuddy ... > "$tmp_ical"`, so
  * this is exactly what the transform + validation steps then see.
+ *
+ * When `argvFile` is given, the shim dumps its received `"$@"` there, one
+ * argument per line (via a `for`/`printf` loop, never `echo "$@"`, so a
+ * word-split argv is distinguishable from one that arrived intact) — this
+ * is how the ICAL_CALENDARS quoting regression test observes exactly what
+ * the template invoked icalbuddy with.
  */
 function fakeIcalbuddyPath(
   stdout: string,
-  opts: { readonly exitCode?: number } = {},
+  opts: { readonly exitCode?: number; readonly argvFile?: string } = {},
 ): string {
   const binDir = join(vaultPath, ".dome", "fakebin");
   mkdirSync(binDir, { recursive: true });
   const path = join(binDir, "icalbuddy");
   const exitCode = opts.exitCode ?? 0;
+  const argvCapture = opts.argvFile
+    ? `for a in "$@"; do printf '%s\\n' "$a"; done > "${opts.argvFile}"\n`
+    : "";
   // Single-quote the heredoc body so the payload is emitted literally.
   writeFileSync(
     path,
-    `#!/bin/sh\ncat <<'DOME_FAKE_ICALBUDDY_EOF'\n${stdout}\nDOME_FAKE_ICALBUDDY_EOF\nexit ${exitCode}\n`,
+    `#!/bin/sh\n${argvCapture}cat <<'DOME_FAKE_ICALBUDDY_EOF'\n${stdout}\nDOME_FAKE_ICALBUDDY_EOF\nexit ${exitCode}\n`,
   );
   chmodSync(path, 0o755);
   return `${binDir}:/usr/bin:/bin`;
@@ -581,7 +590,11 @@ describe("the shipped icalbuddy-calendar.sh template", () => {
 
   async function runIcalbuddy(
     icalStdout: string,
-    opts: { readonly exitCode?: number } = {},
+    opts: {
+      readonly exitCode?: number;
+      readonly argvFile?: string;
+      readonly env?: Readonly<Record<string, string>>;
+    } = {},
   ) {
     // Observable temp files: macOS mktemp ignores TMPDIR (verified — it
     // uses the Darwin per-user temp dir regardless), so shim `mktemp`
@@ -605,7 +618,7 @@ describe("the shipped icalbuddy-calendar.sh template", () => {
         stdin: "ignore",
         stdout: "ignore",
         stderr: "pipe",
-        env: { ...process.env, PATH: path },
+        env: { ...process.env, PATH: path, ...opts.env },
       },
     );
     const [exitCode, stderrText] = await Promise.all([
@@ -812,6 +825,27 @@ describe("the shipped icalbuddy-calendar.sh template", () => {
     expect(stderrText).toContain("icalbuddy");
     expect(inHead(OUTPUT_PATH)).toBe(false);
     expect(leakedTmpFiles).toEqual([]); // the EXIT trap cleaned up
+  });
+
+  test("ICAL_CALENDARS with a space in a calendar name survives as ONE argument (word-splitting regression)", async () => {
+    // Regression: an unquoted `icalbuddy $ical_args` word-splits
+    // ICAL_CALENDARS on spaces, so "Team Calendar,Other" would arrive at
+    // icalbuddy as THREE args ("-ic", "Team", "Calendar,Other") — silently
+    // dropping the "Team" calendar from every agenda while still exiting 0.
+    // `set -- -ic "$ICAL_CALENDARS"` + `icalbuddy "$@"` must keep it as one.
+    const argvFile = join(vaultPath, ".dome", "icalbuddy-argv.txt");
+    const { exitCode, stderrText } = await runIcalbuddy("", {
+      argvFile,
+      env: { ICAL_CALENDARS: "Team Calendar,Other" },
+    });
+    expect(stderrText).toBe("");
+    expect(exitCode).toBe(0);
+    const argv = (await Bun.file(argvFile).text())
+      .split("\n")
+      .filter((line) => line.length > 0);
+    const icIndex = argv.indexOf("-ic");
+    expect(icIndex).toBeGreaterThanOrEqual(0);
+    expect(argv[icIndex + 1]).toBe("Team Calendar,Other");
   });
 });
 

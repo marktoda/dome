@@ -7,7 +7,8 @@
 # a headless `claude -p` against the owner's claude.ai Google Calendar
 # connector — foreground-only, see that file's header), this template reads
 # Calendar.app directly via `icalBuddy` (EventKit) and needs no interactive
-# login session, so a launchd/systemd-spawned daemon can run it unattended.
+# login session, so a launchd-spawned daemon (icalBuddy is macOS/EventKit-only,
+# so systemd is not applicable here) can run it unattended.
 #
 # Copy it into your vault — conventionally `.dome/bin/fetch-calendar.sh` —
 # and name it in the subscription:
@@ -93,9 +94,21 @@ trap 'rm -f "$tmp" "$tmp_ical"' EXIT
 # correctly. ICAL_CALENDARS: optional comma-separated include list
 # (icalBuddy -ic) to scope to specific calendars (e.g. your work account)
 # and keep Birthdays/US Holidays noise out. Empty = all calendars.
+# Note: this in-script default is what a launchd-spawned daemon actually
+# reads (see wiki/specs/vault-layout.md and wiki/specs/sources.md) — a
+# shell `export ICAL_CALENDARS=...` in your interactive shell never reaches
+# the daemon's process. Edit the default below in your copied
+# `.dome/bin/fetch-calendar.sh` instead.
 ICAL_CALENDARS="${ICAL_CALENDARS:-}"
-ical_args=""
-[ -n "$ICAL_CALENDARS" ] && ical_args="-ic $ICAL_CALENDARS"
+# set -- (not a plain string) so a calendar name containing spaces (e.g.
+# "Work Calendar") survives as ONE argument to icalbuddy -ic; word-splitting
+# an unquoted `$ical_args` would break it into "-ic" "Work" "Calendar" and
+# icalbuddy would silently drop the calendar instead of erroring.
+if [ -n "$ICAL_CALENDARS" ]; then
+  set -- -ic "$ICAL_CALENDARS"
+else
+  set --
+fi
 
 # The property separator is a TAB (embedded literally via printf — a real
 # tab char is version-proof, no reliance on icalBuddy's escape processing),
@@ -116,7 +129,7 @@ ps_tab="$(printf '|\t|')"
 # would be awk's, silently masking an icalBuddy failure (e.g. TCC denial)
 # as an empty-but-successful agenda. Capture to a file and check `$?`
 # explicitly instead.
-if ! LC_ALL=C icalbuddy $ical_args \
+if ! LC_ALL=C icalbuddy "$@" \
   -npn -nc -nrd -b '- ' \
   -iep "datetime,title,attendees" -po "datetime,title,attendees" \
   -ps "$ps_tab" -tf '%H:%M' -df '' \
