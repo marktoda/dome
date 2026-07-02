@@ -46,12 +46,11 @@ import { withCoreMemory } from "../lib/core-memory";
 import { agentPreamble } from "../lib/agent-preamble";
 import { resolveModelOverride, withStepModel } from "../lib/model-override";
 import { sweepCharter } from "../lib/sweep-charter";
+import { renderSweepRun, upsertCursor } from "../lib/sweep-ledger";
 import {
   parseSweepLedger,
-  renderSweepRun,
-  upsertCursor,
   type SweepSettlement,
-} from "../lib/sweep-ledger";
+} from "../../dome.daily/processors/sweep-ledger";
 import {
   buildSweepQueue,
   lineHasMaterialLink,

@@ -74,9 +74,7 @@ import {
   type CalendarMeeting,
   type SlackDigest,
 } from "../lib/brief-shared";
-import {
-  parseSweepLedger,
-} from "../lib/sweep-ledger";
+import { parseSweepLedger } from "../../dome.daily/processors/sweep-ledger";
 import { sweepLedgerPath } from "./sweep";
 import { makeBriefTools } from "../lib/brief-tools";
 import {
