@@ -1,5 +1,5 @@
 id: dome.daily
-version: 0.3.1
+version: 0.4.0
 processors:
   - id: dome.daily.normalize-task-syntax
     version: 0.2.0
@@ -220,6 +220,46 @@ processors:
       - kind: patch.auto
         paths: ["wiki/dailies/*.md", "notes/*.md"]
     module: processors/close-scaffold.ts
+
+  - id: dome.daily.compose-blocks
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "25 5 * * *"
+      - kind: signal
+        name: questions.changed
+      - kind: signal
+        name: file.created
+        pathPattern: "sources/calendar/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "sources/slack/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "sources/calendar/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "sources/slack/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "meta/sweep-ledger.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "meta/sweep-ledger.md"
+    capabilities:
+      - kind: read
+        paths:
+          - "wiki/dailies/*.md"
+          - "sources/calendar/*.md"
+          - "sources/slack/*.md"
+          - "meta/sweep-ledger.md"
+      - kind: patch.auto
+        paths: ["wiki/dailies/*.md"]
+      - kind: questions.read
+    execution:
+      class: deterministic
+    module: processors/compose-blocks.ts
 
   - id: dome.daily.reconcile-tasks
     version: 0.1.1

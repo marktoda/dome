@@ -122,6 +122,10 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
       // §"Attention discounting") emitted by dome.daily.attention-discount.
       "graph.write": ["dome.daily.*", "dome.attention.*"],
       "question.ask": true,
+      // dome.daily.compose-blocks reads open question rows via
+      // ctx.operational.questions to render the deterministic "To decide"
+      // block (daily-surface §"Block ownership").
+      "questions.read": true,
     }),
     extension("dome.claims", true, {
       read: ["wiki/**/*.md", "notes/*.md"],
