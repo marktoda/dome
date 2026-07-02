@@ -116,7 +116,17 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
       "graph.write": ["dome.graph.*"],
     }),
     extension("dome.daily", true, {
-      read: ["wiki/**/*.md", "notes/*.md"],
+      // sources/* + the sweep ledger feed dome.daily.compose-blocks (the
+      // deterministic agenda / integrated-overnight / sources blocks);
+      // without them the reads return null and the blocks silently never
+      // render (grant-scoped snapshot misses are silent).
+      read: [
+        "wiki/**/*.md",
+        "notes/*.md",
+        "sources/calendar/*.md",
+        "sources/slack/*.md",
+        "meta/sweep-ledger.md",
+      ],
       "patch.auto": ["wiki/**/*.md", "notes/*.md"],
       // dome.attention.* carries the attention-discount facts (task-lifecycle
       // §"Attention discounting") emitted by dome.daily.attention-discount.

@@ -14,6 +14,7 @@ import {
 import { resolveShippedBundlesRoot } from "../../src/cli/commands/sync-shared";
 import { loadCapabilityPolicy } from "../../src/engine/core/capability-policy";
 import { graphWriteCovers } from "../../src/engine/core/capability-broker";
+import { readablePath } from "../../src/engine/core/path-capabilities";
 import { loadBundles } from "../../src/extensions/loader";
 
 describe("default vault config", () => {
@@ -118,6 +119,60 @@ describe("default vault config", () => {
         .grantsForProcessor("dome.agent", "dome.agent.calendar-index")
         .filter((c) => c.kind === "graph.write");
       expect(graphWriteCovers("dome.agent.calendar.event", calendarGraphWrite)).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("default config feeds compose-blocks: declared ∩ granted covers its signal paths", async () => {
+    // Regression: the dome.daily bundle read grant predated compose-blocks'
+    // sources/ledger reads. Grant-scoped snapshot misses are silent (reads
+    // return null; the signal path-filter drops the event), so the agenda /
+    // integrated / sources blocks would silently never render — the exact
+    // silent-degradation mode the daily-surface design exists to eliminate.
+    // Verify with the SAME declared-∩-granted matcher the runtime's
+    // readableSignalsForProcessor / scoped snapshot use.
+    const root = mkdtempSync(join(tmpdir(), "dome-default-config-compose-"));
+    try {
+      await mkdir(join(root, ".dome"), { recursive: true });
+      await writeFile(
+        join(root, ".dome", "config.yaml"),
+        defaultConfigYaml(),
+        "utf8",
+      );
+      const policy = await loadCapabilityPolicy(root);
+      expect(policy.ok).toBe(true);
+      if (!policy.ok) throw new Error(policy.error);
+
+      const bundles = await loadBundles({
+        bundlesRoot: resolveShippedBundlesRoot(),
+        activeBundleIds: new Set(["dome.daily"]),
+      });
+      expect(bundles.ok).toBe(true);
+      if (!bundles.ok) throw new Error(bundles.error.kind);
+      const composeBlocks = bundles.value
+        .flatMap((bundle) => bundle.processors)
+        .find((processor) => processor.id === "dome.daily.compose-blocks");
+      expect(composeBlocks).toBeDefined();
+      if (composeBlocks === undefined) return;
+
+      const granted = policy.value.grantsForProcessor(
+        "dome.daily",
+        "dome.daily.compose-blocks",
+      );
+      // Representative concrete paths for every signal trigger pathPattern
+      // plus the daily itself.
+      for (const path of [
+        "sources/calendar/2026-01-02.md",
+        "sources/slack/2026-01-02.md",
+        "meta/sweep-ledger.md",
+        "wiki/dailies/2026-01-02.md",
+      ]) {
+        expect(
+          readablePath(path, composeBlocks.capabilities, granted),
+          `${path} must be readable under declared ∩ granted`,
+        ).not.toBeNull();
+      }
     } finally {
       await rm(root, { recursive: true, force: true });
     }
