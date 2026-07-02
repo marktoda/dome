@@ -52,6 +52,7 @@ import {
   runAnswerHandlers,
   type AnswerHandlerResult,
 } from "../operational/answers";
+import { runQuestionsChangedSubscribers } from "../operational/questions-changed";
 import {
   withCompilerHostBranchLock,
   type CompilerHostLockBusy,
@@ -175,6 +176,25 @@ export type CompilerHostTickResult =
 
 export type AdoptedCursor = {
   current: CommitOid;
+};
+
+/**
+ * Tick-scoped `questions.changed` accumulator. Every emit point that changes
+ * the open-question set during a tick — question.ask inserts/refreshes via the
+ * `recordQuestion` sink, stale-question deletions via `resolveQuestions`,
+ * durable auto-resolution answers — sets `changed`; after operational work
+ * completes, the tick epilogue snapshots+clears the flag and dispatches
+ * `questions.changed` subscribers ONCE (processors.md §"Triggers and
+ * signals"). Clearing BEFORE the dispatch is the recursion guard: question
+ * changes caused by the dispatch itself re-set the flag and wait for the next
+ * tick, so a tick never loops.
+ *
+ * Not process-global: each tick allocates its own flag, and ticks are
+ * serialized per branch by `withCompilerHostBranchLock`, so concurrent ticks
+ * cannot share or race one.
+ */
+export type QuestionsChangedFlag = {
+  changed: boolean;
 };
 
 type CompilerHostTickCommonOptions = {
@@ -492,7 +512,13 @@ async function runAdoptionCycle(opts: {
   });
 
   const vault = runtimeVault(runtime);
-  const sinksFor = sinksForRuntime(runtime, now);
+  // One flag for the whole tick: adoption-phase inserts, primary-garden work,
+  // sub-proposal cascades, and operational work all set it; the single
+  // epilogue inside runOperationalWorkForAdoptedUnlocked dispatches once.
+  const questionsChanged: QuestionsChangedFlag = { changed: false };
+  const sinksFor = sinksForRuntime(runtime, now, () => {
+    questionsChanged.changed = true;
+  });
 
   const sinks = sinksFor({ base: proposal.base, head: proposal.head });
 
@@ -573,6 +599,7 @@ async function runAdoptionCycle(opts: {
       now,
       adoptSubProposal,
       cursor,
+      questionsChanged,
       ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     });
 
@@ -610,6 +637,7 @@ export async function runOperationalWorkForAdopted(opts: {
   readonly sinks?: ApplyEffectSinks;
   readonly adoptSubProposal?: AdoptSubProposalFn;
   readonly cursor?: AdoptedCursor;
+  readonly questionsChanged?: QuestionsChangedFlag;
   readonly signal?: AbortSignal;
 }): Promise<OperationalWorkResult> {
   if (opts.branch !== undefined) {
@@ -640,10 +668,24 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
   readonly sinks?: ApplyEffectSinks;
   readonly adoptSubProposal?: AdoptSubProposalFn;
   readonly cursor?: AdoptedCursor;
+  /**
+   * The tick's questions-changed flag. `runAdoptionCycle` passes its own so
+   * one flag spans adoption + garden + operational work with a single
+   * epilogue dispatch (here, after operational work — the last point of the
+   * tick that can change the open-question set). Standalone entry points
+   * (in-sync ticks, the test harness drain) omit it and get a fresh
+   * flag scoped to this call.
+   */
+  readonly questionsChanged?: QuestionsChangedFlag;
   readonly signal?: AbortSignal;
 }): Promise<OperationalWorkResult> {
   const now = opts.now ?? ((): Date => new Date());
   const cursor = opts.cursor ?? { current: opts.adopted };
+  const questionsChanged: QuestionsChangedFlag =
+    opts.questionsChanged ?? { changed: false };
+  const onQuestionsChanged = (): void => {
+    questionsChanged.changed = true;
+  };
   if (opts.branch !== undefined) {
     await rebuildProjectionIfStale({
       runtime: opts.runtime,
@@ -653,7 +695,7 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
     });
   }
   const vault = runtimeVault(opts.runtime);
-  const sinksFor = sinksForRuntime(opts.runtime, now);
+  const sinksFor = sinksForRuntime(opts.runtime, now, onQuestionsChanged);
   const sinks =
     opts.sinks ?? sinksForCursor({ sinksFor, cursor });
   const adoptSubProposal =
@@ -698,10 +740,45 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
         }
       : {}),
     questionAutoResolve: opts.runtime.config.engine.autoResolveQuestions,
+    onQuestionsChanged,
     adoptSubProposal,
     currentAdopted: () => cursor.current,
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
   });
+
+  // Tick epilogue: dispatch questions.changed subscribers at most ONCE per
+  // tick, after every phase that can change the open-question set has run.
+  // Snapshot+clear BEFORE the dispatch — question changes the dispatch itself
+  // causes (subscriber emissions, nested sub-proposal gardens) re-set the flag
+  // and wait for the NEXT tick. That is the recursion guard; this call never
+  // loops. See QuestionsChangedFlag.
+  if (questionsChanged.changed) {
+    questionsChanged.changed = false;
+    await runQuestionsChangedSubscribers({
+      vault,
+      adopted: cursor.current,
+      currentAdopted: () => cursor.current,
+      resolveTree: makeResolveTree(opts.runtime.path),
+      sinks,
+      resolveGrants: opts.runtime.resolveGrants,
+      extensionIdFor: opts.runtime.extensionIdFor,
+      extensionConfigFor: opts.runtime.extensionConfigFor,
+      ledger: opts.runtime.ledgerDb,
+      executionState: opts.runtime.processorRuntime.executionState,
+      executionCap: opts.runtime.config.engine.executionCap,
+      operational: operationalQueryViewForRuntime(opts.runtime, now),
+      now,
+      adoptSubProposal,
+      registry: opts.runtime.registry,
+      ...(opts.runtime.modelProvider !== undefined
+        ? { modelProvider: opts.runtime.modelProvider }
+        : {}),
+      ...(opts.runtime.modelStepProvider !== undefined
+        ? { modelStepProvider: opts.runtime.modelStepProvider }
+        : {}),
+      ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+    });
+  }
 
   if (opts.branch !== undefined && cursor.current !== beforeOperational) {
     await rebuildProjectionIfGlobalConfigChanged({
@@ -815,6 +892,35 @@ async function runAnswerHandlersForQuestionUnlocked(opts: {
       : {}),
     adoptSubProposal,
     currentAdopted: () => cursor.current,
+  });
+
+  // The durable answer changed the open-question set; per processors.md
+  // §"Triggers and signals", the resolve path dispatches questions.changed
+  // subscribers after answer handlers complete (no tick epilogue runs here).
+  // Question changes the subscribers themselves cause are picked up by the
+  // next host tick's flag — no re-dispatch from this path.
+  await runQuestionsChangedSubscribers({
+    vault,
+    adopted: cursor.current,
+    currentAdopted: () => cursor.current,
+    resolveTree: makeResolveTree(opts.runtime.path),
+    sinks,
+    resolveGrants: opts.runtime.resolveGrants,
+    extensionIdFor: opts.runtime.extensionIdFor,
+    extensionConfigFor: opts.runtime.extensionConfigFor,
+    ledger: opts.runtime.ledgerDb,
+    executionState: opts.runtime.processorRuntime.executionState,
+    executionCap: opts.runtime.config.engine.executionCap,
+    operational: opts.runtime.operationalQueryView,
+    now,
+    adoptSubProposal,
+    registry: opts.runtime.registry,
+    ...(opts.runtime.modelProvider !== undefined
+      ? { modelProvider: opts.runtime.modelProvider }
+      : {}),
+    ...(opts.runtime.modelStepProvider !== undefined
+      ? { modelStepProvider: opts.runtime.modelStepProvider }
+      : {}),
   });
 
   if (cursor.current !== beforeHandlers) {
@@ -947,9 +1053,13 @@ function runtimeVault(runtime: VaultRuntime): {
 // Sinks are frame-aware: each Proposal/sub-Proposal gets its own
 // `(base, head)` pair so engine commit trailers and projection rows are
 // keyed to the proposal that actually produced them.
+// `onQuestionsChanged` (optional) is the tick's questions-changed flag setter,
+// forwarded to every frame's sinks so question mutations in any phase of the
+// tick land on the same flag.
 function sinksForRuntime(
   runtime: VaultRuntime,
   now?: () => Date,
+  onQuestionsChanged?: () => void,
 ): (
   frame: { readonly base: CommitOid; readonly head: CommitOid },
 ) => ApplyEffectSinks {
@@ -987,6 +1097,7 @@ function sinksForRuntime(
       projectionDb: runtime.projectionDb,
       outboxDb: runtime.outboxDb,
       adoptedCommit: frame.head,
+      ...(onQuestionsChanged !== undefined ? { onQuestionsChanged } : {}),
       projectionWriteLock: (fn) =>
         withProjectionWriteLock(
           { vaultPath: runtime.path, command: "projection-sink" },
