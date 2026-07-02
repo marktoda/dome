@@ -21,4 +21,5 @@ processors:
         name: questions.changed
     capabilities:
       - kind: question.ask
+      - kind: questions.read
     module: processors/subscriber.ts

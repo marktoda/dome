@@ -4,14 +4,16 @@
 // (processors.md §"Triggers and signals"):
 //
 //   1. A garden processor asks a question → the recordQuestion sink sets the
-//      tick's questions-changed flag → the tick epilogue dispatches the
+//      host's questions-changed flag → the tick epilogue dispatches the
 //      subscribed garden processor exactly once.
 //   2. Recursion guard: the subscriber itself asks a question during the
 //      epilogue dispatch (re-setting the flag mid-dispatch) — the tick must
-//      NOT loop; still exactly one subscriber run.
-//   3. No dispatch when nothing changed: a subsequent quiet tick (the
-//      subscriber's own question re-set was tick-scoped and dropped, and no
-//      new question activity occurs) leaves the run count unchanged.
+//      NOT loop; still exactly one subscriber run this tick.
+//   3. Carryover: the mid-dispatch re-set survives on the host-scoped flag,
+//      so the immediately following quiet tick dispatches exactly once more
+//      (the subscriber sees its follow-up already open and emits nothing).
+//   4. Termination: a third quiet tick has a clear flag and no question
+//      activity — zero further dispatches.
 
 import { expect } from "bun:test";
 import { join } from "node:path";
@@ -29,13 +31,14 @@ const QUESTIONS_CHANGED_BUNDLE_ROOT = join(
 
 scenario(
   {
-    name: "triggers: questions.changed dispatches subscribers once per tick, no same-tick loop",
+    name: "triggers: questions.changed dispatches once per tick; mid-dispatch changes carry to the next tick",
     tags: [
       { kind: "group", group: "triggers" },
       { kind: "trigger", trigger: "signal" },
       { kind: "effect", effect: "question" },
       { kind: "phase", phase: "garden" },
       { kind: "capability", capability: "question.ask" },
+      { kind: "capability", capability: "questions.read" },
     ],
     harness: {
       bundles: [
@@ -79,12 +82,25 @@ scenario(
     // own follow-up (asked during the epilogue dispatch).
     await h.expectProjection().questions().toHaveCount(2);
 
-    // Step 2: a quiet tick. Nothing touches the question store (the
-    // subscriber's mid-dispatch flag re-set was scoped to the previous tick),
-    // so the channel must stay silent — no second subscriber run.
+    // Step 2: carryover. The subscriber's mid-dispatch question re-set the
+    // host-scoped flag AFTER the epilogue cleared it, so this quiet tick's
+    // epilogue must dispatch exactly once more — despite the tick having no
+    // question activity of its own. The subscriber now sees its follow-up
+    // already open and emits nothing, so the flag stays clear.
     await h.tick();
     await h
       .expectLedger({ processorId: "test.questions-changed.subscriber" })
-      .toHaveExactlyOne();
+      .toHaveCount(2);
+    await h
+      .expectLedger({ processorId: "test.questions-changed.subscriber" })
+      .toAllHaveStatus("succeeded");
+    await h.expectProjection().questions().toHaveCount(2);
+
+    // Step 3: termination. Flag is clear and nothing touches the question
+    // store — no further dispatch.
+    await h.tick();
+    await h
+      .expectLedger({ processorId: "test.questions-changed.subscriber" })
+      .toHaveCount(2);
   },
 );

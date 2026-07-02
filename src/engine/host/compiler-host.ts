@@ -179,23 +179,40 @@ export type AdoptedCursor = {
 };
 
 /**
- * Tick-scoped `questions.changed` accumulator. Every emit point that changes
- * the open-question set during a tick — question.ask inserts/refreshes via the
- * `recordQuestion` sink, stale-question deletions via `resolveQuestions`,
- * durable auto-resolution answers — sets `changed`; after operational work
- * completes, the tick epilogue snapshots+clears the flag and dispatches
- * `questions.changed` subscribers ONCE (processors.md §"Triggers and
- * signals"). Clearing BEFORE the dispatch is the recursion guard: question
- * changes caused by the dispatch itself re-set the flag and wait for the next
- * tick, so a tick never loops.
+ * Host-scoped `questions.changed` accumulator (one per open VaultRuntime).
+ * Every emit point that changes the open-question set — question.ask
+ * inserts/refreshes via the `recordQuestion` sink, stale-question deletions
+ * via `resolveQuestions`, durable auto-resolution answers — sets `changed`;
+ * after operational work completes, the tick epilogue snapshots+clears the
+ * flag and dispatches `questions.changed` subscribers at most ONCE per tick
+ * (processors.md §"Triggers and signals"). Clearing BEFORE the dispatch is
+ * the recursion guard: question changes caused by the dispatch itself re-set
+ * the flag, and — because the flag outlives the tick — are CARRIED to the
+ * next tick's epilogue, which dispatches even if that tick had no question
+ * activity of its own. A tick still never loops; epilogue-caused changes are
+ * never dropped.
  *
- * Not process-global: each tick allocates its own flag, and ticks are
- * serialized per branch by `withCompilerHostBranchLock`, so concurrent ticks
- * cannot share or race one.
+ * Not shared across concurrent ticks: ticks are serialized per branch by
+ * `withCompilerHostBranchLock`, so the flag is only ever mutated under that
+ * lock (the resolve path takes the same lock).
  */
 export type QuestionsChangedFlag = {
   changed: boolean;
 };
+
+// Flag storage keyed by the long-lived runtime handle so the flag's lifetime
+// matches the host's, not a single tick's. WeakMap (not a VaultRuntime field)
+// keeps the mutable state owned by the compiler host — its only reader/writer.
+const questionsChangedFlags = new WeakMap<VaultRuntime, QuestionsChangedFlag>();
+
+function questionsChangedFlagFor(runtime: VaultRuntime): QuestionsChangedFlag {
+  let flag = questionsChangedFlags.get(runtime);
+  if (flag === undefined) {
+    flag = { changed: false };
+    questionsChangedFlags.set(runtime, flag);
+  }
+  return flag;
+}
 
 type CompilerHostTickCommonOptions = {
   readonly runtime: VaultRuntime;
@@ -512,12 +529,11 @@ async function runAdoptionCycle(opts: {
   });
 
   const vault = runtimeVault(runtime);
-  // One flag for the whole tick: adoption-phase inserts, primary-garden work,
+  // One host-scoped flag: adoption-phase inserts, primary-garden work,
   // sub-proposal cascades, and operational work all set it; the single
   // epilogue inside runOperationalWorkForAdoptedUnlocked dispatches once.
-  const questionsChanged: QuestionsChangedFlag = { changed: false };
   const sinksFor = sinksForRuntime(runtime, now, () => {
-    questionsChanged.changed = true;
+    questionsChangedFlagFor(runtime).changed = true;
   });
 
   const sinks = sinksFor({ base: proposal.base, head: proposal.head });
@@ -599,7 +615,6 @@ async function runAdoptionCycle(opts: {
       now,
       adoptSubProposal,
       cursor,
-      questionsChanged,
       ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     });
 
@@ -637,7 +652,6 @@ export async function runOperationalWorkForAdopted(opts: {
   readonly sinks?: ApplyEffectSinks;
   readonly adoptSubProposal?: AdoptSubProposalFn;
   readonly cursor?: AdoptedCursor;
-  readonly questionsChanged?: QuestionsChangedFlag;
   readonly signal?: AbortSignal;
 }): Promise<OperationalWorkResult> {
   if (opts.branch !== undefined) {
@@ -668,21 +682,14 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
   readonly sinks?: ApplyEffectSinks;
   readonly adoptSubProposal?: AdoptSubProposalFn;
   readonly cursor?: AdoptedCursor;
-  /**
-   * The tick's questions-changed flag. `runAdoptionCycle` passes its own so
-   * one flag spans adoption + garden + operational work with a single
-   * epilogue dispatch (here, after operational work — the last point of the
-   * tick that can change the open-question set). Standalone entry points
-   * (in-sync ticks, the test harness drain) omit it and get a fresh
-   * flag scoped to this call.
-   */
-  readonly questionsChanged?: QuestionsChangedFlag;
   readonly signal?: AbortSignal;
 }): Promise<OperationalWorkResult> {
   const now = opts.now ?? ((): Date => new Date());
   const cursor = opts.cursor ?? { current: opts.adopted };
-  const questionsChanged: QuestionsChangedFlag =
-    opts.questionsChanged ?? { changed: false };
+  // Host-scoped flag (see QuestionsChangedFlag): the same object the
+  // adoption/garden phases of this tick wrote through their sinks, and the
+  // same object any previous tick's epilogue-caused changes were carried on.
+  const questionsChanged = questionsChangedFlagFor(opts.runtime);
   const onQuestionsChanged = (): void => {
     questionsChanged.changed = true;
   };
@@ -749,9 +756,11 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
   // Tick epilogue: dispatch questions.changed subscribers at most ONCE per
   // tick, after every phase that can change the open-question set has run.
   // Snapshot+clear BEFORE the dispatch — question changes the dispatch itself
-  // causes (subscriber emissions, nested sub-proposal gardens) re-set the flag
-  // and wait for the NEXT tick. That is the recursion guard; this call never
-  // loops. See QuestionsChangedFlag.
+  // causes (subscriber emissions, nested sub-proposal gardens) re-set the
+  // host-scoped flag and are CARRIED to the next tick's epilogue, which
+  // dispatches even if that tick has no question activity of its own. That is
+  // the recursion guard; this call never loops and epilogue-caused changes
+  // are never dropped. See QuestionsChangedFlag.
   if (questionsChanged.changed) {
     questionsChanged.changed = false;
     await runQuestionsChangedSubscribers({
@@ -859,7 +868,13 @@ async function runAnswerHandlersForQuestionUnlocked(opts: {
 
   const adopted = commitOid(adoptedRaw);
   const vault = runtimeVault(opts.runtime);
-  const sinksFor = sinksForRuntime(opts.runtime);
+  // Same host-scoped flag as the tick epilogue: question changes made by
+  // answer handlers (and by the subscriber dispatch below) are recorded so
+  // dispatch-caused changes carry to the next tick.
+  const questionsChanged = questionsChangedFlagFor(opts.runtime);
+  const sinksFor = sinksForRuntime(opts.runtime, undefined, () => {
+    questionsChanged.changed = true;
+  });
   const cursor: AdoptedCursor = { current: adopted };
   const sinks = sinksForCursor({ sinksFor, cursor });
   const adoptSubProposal = makeAdoptSubProposal({
@@ -897,8 +912,10 @@ async function runAnswerHandlersForQuestionUnlocked(opts: {
   // The durable answer changed the open-question set; per processors.md
   // §"Triggers and signals", the resolve path dispatches questions.changed
   // subscribers after answer handlers complete (no tick epilogue runs here).
-  // Question changes the subscribers themselves cause are picked up by the
-  // next host tick's flag — no re-dispatch from this path.
+  // Same discipline as the epilogue: snapshot+clear the host flag first —
+  // this dispatch consumes the handler-made changes; changes the subscribers
+  // themselves cause re-set the flag and carry to the next tick's epilogue.
+  questionsChanged.changed = false;
   await runQuestionsChangedSubscribers({
     vault,
     adopted: cursor.current,
