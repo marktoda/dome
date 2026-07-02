@@ -115,7 +115,7 @@ processors:
     module: processors/consolidate.ts
 
   - id: dome.agent.brief
-    version: 0.2.0
+    version: 0.3.0
     phase: garden
     triggers:
       # 05:30, before dome.daily.create-daily's 06:00 tick. The brief creates
@@ -128,9 +128,9 @@ processors:
       # complete async (outbox → command → commit → adoption) — so a
       # wake-tick brief composes sourceless. These signals are the late
       # arrival's knock; the processor's deterministic, model-free gate
-      # (the dome.agent.brief:sources record in today's daily) decides
-      # between a free no-op and at most one re-compose per source kind
-      # per day. The 05:30 cron path is unchanged by the gate.
+      # (the dome.agent.brief:compose-record's per-input content hashes in
+      # today's daily) decides between a free no-op and a re-compose, capped
+      # at MAX_DAILY_COMPOSES per day. The gate runs on the 05:30 cron too.
       - kind: signal
         name: file.created
         pathPattern: "sources/calendar/*.md"
