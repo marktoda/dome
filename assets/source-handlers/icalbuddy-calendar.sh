@@ -97,6 +97,19 @@ ICAL_CALENDARS="${ICAL_CALENDARS:-}"
 ical_args=""
 [ -n "$ICAL_CALENDARS" ] && ical_args="-ic $ICAL_CALENDARS"
 
+# The property separator is a TAB (embedded literally via printf — a real
+# tab char is version-proof, no reliance on icalBuddy's escape processing),
+# NOT " — ": event titles can legitimately contain " — " (e.g.
+# "Q3 — Planning") and an em-dash separator would split INSIDE the title —
+# truncating it and fabricating an attendee from its tail, silently.
+# Titles and attendee names cannot contain tabs, so the tab split below is
+# collision-proof. The RENDERED output still uses " — " (that is the
+# parseMeetingLine contract, and it is safe on the way out: the parser
+# takes the leading time match and the LAST trailing "(attendees: ...)",
+# so em-dashes inside a rendered title never mis-parse — the collision
+# hazard was only in this intermediate property split).
+ps_tab="$(printf '|\t|')"
+
 # icalBuddy's own exit status is captured HERE, separately from the
 # transform pipe below: under plain `set -eu` (no `pipefail`, and this is
 # `sh` — not guaranteed to have it), the exit status of `icalbuddy | awk`
@@ -106,7 +119,7 @@ ical_args=""
 if ! LC_ALL=C icalbuddy $ical_args \
   -npn -nc -nrd -b '- ' \
   -iep "datetime,title,attendees" -po "datetime,title,attendees" \
-  -ps '| — |' -tf '%H:%M' -df '' \
+  -ps "$ps_tab" -tf '%H:%M' -df '' \
   eventsFrom:"$d 00:00:00" to:"$d 23:59:59" \
   >"$tmp_ical" 2>&1
 then
@@ -122,16 +135,17 @@ fi
   # one bullet, so a populated agenda still gets the heading/bullets gap.
   printf -- '---\ntype: calendar-day\ndate: %s\n---\n\n# Calendar %s\n' "$d" "$d"
   awk '
-      # icalBuddy emits: "- HH:MM - HH:MM — Title — attendee1, attendee2"
-      # (separator from -ps). Normalize into the parseMeetingLine shape:
+      # icalBuddy emits: "- HH:MM - HH:MM<TAB>Title<TAB>attendee1, attendee2"
+      # (tab separator from -ps — collision-proof, see above). Normalize
+      # into the parseMeetingLine shape:
       #   "- HH:MM–HH:MM — Title (attendees: a, b)"
-      # All-day events arrive with no leading time; pass them through as
-      #   "- Title" (parser yields time: null).
+      # All-day events arrive with no datetime property at all; pass them
+      # through as "- Title" (parser yields time: null).
       BEGIN { first = 1 }
       /^- / {
         if (first) { print ""; first = 0 }
         line = substr($0, 3)
-        n = split(line, parts, / — /)
+        n = split(line, parts, /\t/)
         time = ""; title = ""; att = ""
         if (parts[1] ~ /^[0-9]{1,2}:[0-9]{2}/) {
           time = parts[1]; title = parts[2]; att = parts[3]
@@ -150,11 +164,13 @@ fi
     ' "$tmp_ical"
 } > "$tmp"
 
-# ----- VALIDATE ---------------------------------------------------------------
+# ----- VALIDATE (defense-in-depth, NOT the primary gate) -----------------------
 # Refuse to commit something that is not a calendar-day file. The heading
-# and frontmatter are printf'd deterministically above, so this is defense
-# in depth (a broken `awk`/shell on some host, not a model refusal) rather
-# than the primary gate — the primary gate is the icalbuddy exit check above.
+# and frontmatter are printf'd deterministically above, so this stage can
+# only trip on a broken `awk`/shell on some host — never on bad calendar
+# data. The primary gate is the icalbuddy exit check above; keep it that
+# way if you edit this template (contract tests exercise the exit gate;
+# this stage is pinned by template-text assertions only).
 head -n 1 "$tmp" | grep -q '^---$' || {
   echo "fetch-calendar: output is not a calendar-day file (no frontmatter)" >&2
   exit 1
@@ -170,5 +186,7 @@ grep -q "^# Calendar $d$" "$tmp" || {
 
 # ----- LAND (ordinary non-engine commit; the daemon adopts it) ----------------
 mv "$tmp" "$f"
+rm -f "$tmp_ical"  # $tmp was consumed by the mv; without this the raw
+                   # icalBuddy capture would leak once the trap is dropped.
 trap - EXIT
 land
