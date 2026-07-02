@@ -77,6 +77,7 @@ import { readTree } from "../../git";
 import { openAnswersDb, type AnswersDb } from "../../answers/db";
 import { openProjectionDb, type ProjectionDb } from "../../projections/db";
 import { buildProjectionQueryView } from "../../projections/query-view";
+import { queryQuestionRecords } from "../../projections/questions";
 import { openOutboxDb, type OutboxDb } from "../../outbox/db";
 import type {
   ExternalHandler,
@@ -569,6 +570,7 @@ function buildVaultRuntime(input: {
     outbox: outboxDb,
     ledger: ledgerDb,
     executionState,
+    queryQuestions: (filter) => queryQuestionRecords(projectionDb, filter),
   });
   const processorRuntime = buildRuntime({
     registry: resolved.registry,

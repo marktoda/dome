@@ -546,6 +546,25 @@ export type OperationalQuarantineRow = {
   readonly reason: string;
 };
 
+/**
+ * A question row surfaced through `ctx.operational.questions`, gated by
+ * `questions.read` (declared ∩ granted) — distinct from
+ * `ctx.projection.questions` (`ProjectionQuestion`, gated by general
+ * projection access) so garden-phase processors cannot read the question
+ * store just because they hold graph/facts access. Mirrors `ProjectionQuestion`'s
+ * flattening convention (`QuestionEffect &` the durable row metadata) plus the
+ * `runId` that `QuestionRecord` (src/projections/questions.ts) carries.
+ */
+export type OperationalQuestionRow = QuestionEffect & {
+  readonly id: number;
+  readonly processorId: string;
+  readonly runId: string;
+  readonly adoptedCommit: CommitOid;
+  readonly askedAt: string;
+  readonly answeredAt: string | null;
+  readonly answer: string | null;
+};
+
 export type OperationalRunRow = {
   readonly id: string;
   readonly proposalId: string | null;
@@ -582,6 +601,13 @@ export type OperationalQueryView = {
      */
     readonly runningOlderThanMs?: number;
   }) => ReadonlyArray<OperationalRunRow>;
+  /**
+   * Read open/resolved question rows, gated by `questions.read`
+   * (declared ∩ granted) — see docs/wiki/specs/capabilities.md §"questions.read".
+   */
+  readonly questions: (filter?: {
+    readonly resolved?: boolean;
+  }) => ReadonlyArray<OperationalQuestionRow>;
 };
 
 // ----- ExtensionConfig ------------------------------------------------------

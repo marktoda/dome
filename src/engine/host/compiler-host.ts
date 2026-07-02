@@ -66,7 +66,10 @@ import {
   projectionRequiresRebuild,
 } from "../../projections/db";
 import { buildSqliteSinks } from "../../projections/sinks";
-import type { QuestionRecord } from "../../projections/questions";
+import {
+  queryQuestionRecords,
+  type QuestionRecord,
+} from "../../projections/questions";
 import { getAdoptedRef, getCurrentBranch } from "../../adopted-ref";
 import { currentSha, isAncestor } from "../../git";
 import { replayFinalizeJournal } from "../core/finalize-journal";
@@ -725,6 +728,8 @@ function operationalQueryViewForRuntime(
     outbox: runtime.outboxDb,
     ledger: runtime.ledgerDb,
     executionState: runtime.processorRuntime.executionState,
+    queryQuestions: (filter) =>
+      queryQuestionRecords(runtime.projectionDb, filter),
     now,
   });
 }

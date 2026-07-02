@@ -18,6 +18,7 @@ import {
   type ExecutionPolicyRequest,
   type OperationalOutboxRow,
   type OperationalQuarantineRow,
+  type OperationalQuestionRow,
   type OperationalQueryView,
   type ProjectionQueryView,
   type Processor,
@@ -609,6 +610,7 @@ describe("gardenRunner — executor diagnostics", () => {
       },
       quarantines: () => Object.freeze([]),
       orphanRuns: () => Object.freeze([]),
+      questions: () => Object.freeze([]),
     });
     const p = makeFixtureProcessor({
       id: "test.garden.operational",
@@ -656,6 +658,7 @@ describe("gardenRunner — executor diagnostics", () => {
       outbox: () => Object.freeze([]),
       quarantines: () => Object.freeze([row]),
       orphanRuns: () => Object.freeze([]),
+      questions: () => Object.freeze([]),
     });
     const seen: { allowed: ReadonlyArray<string>; denied: boolean } = {
       allowed: [],
@@ -698,6 +701,98 @@ describe("gardenRunner — executor diagnostics", () => {
 
     expect(seen.allowed).toEqual(["test.quarantined"]);
     expect(seen.denied).toBe(true);
+  });
+
+  test("garden processor receives question rows only with effective questions.read grant", async () => {
+    const questionsCap: Capability = { kind: "questions.read" };
+    const quarantineCap: Capability = { kind: "quarantine.read" };
+    const row: OperationalQuestionRow = Object.freeze({
+      kind: "question",
+      question: "Which vendor?",
+      sourceRefs: [],
+      idempotencyKey: "vendor-pick",
+      id: 1,
+      processorId: "test.asker",
+      runId: "run_1",
+      adoptedCommit: CANDIDATE,
+      askedAt: "2026-05-29T00:00:00.000Z",
+      answeredAt: null,
+      answer: null,
+    });
+    const operational: OperationalQueryView = Object.freeze({
+      outbox: () => Object.freeze([]),
+      quarantines: () => Object.freeze([]),
+      orphanRuns: () => Object.freeze([]),
+      questions: () => Object.freeze([row]),
+    });
+    const seen: {
+      allowed: ReadonlyArray<string>;
+      otherCapEmpty: boolean;
+      noDeclareAbsent: boolean;
+    } = {
+      allowed: [],
+      otherCapEmpty: false,
+      noDeclareAbsent: false,
+    };
+    const allowed = makeFixtureProcessor({
+      id: "test.garden.questions-read.allowed",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      capabilities: withRead(questionsCap),
+      run: async (ctx) => {
+        seen.allowed =
+          ctx.operational?.questions().map((q) => q.question) ?? [];
+        return [];
+      },
+    });
+    // Declares+is-granted a *different* operational read cap (quarantine.read)
+    // but not questions.read: ctx.operational is present (quarantine.read is
+    // effective) while the questions accessor self-gates to [].
+    const otherCap = makeFixtureProcessor({
+      id: "test.garden.questions-read.other-cap",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      capabilities: withRead(quarantineCap),
+      run: async (ctx) => {
+        seen.otherCapEmpty =
+          ctx.operational !== undefined &&
+          ctx.operational.questions().length === 0;
+        return [];
+      },
+    });
+    // Declares no operational read capability at all: ctx.operational is
+    // absent entirely (none of the four read caps are effective).
+    const noDeclare = makeFixtureProcessor({
+      id: "test.garden.questions-read.no-declare",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      capabilities: withRead(),
+      run: async (ctx) => {
+        seen.noDeclareAbsent = ctx.operational === undefined;
+        return [];
+      },
+    });
+    const rt = buildRuntimeFor([allowed, otherCap, noDeclare], {
+      resolveGrants: (processorId) =>
+        processorId === allowed.id
+          ? withRead(questionsCap)
+          : processorId === otherCap.id
+            ? withRead(quarantineCap)
+            : withRead(),
+      operational,
+    });
+
+    await rt.gardenRunner({
+      vault: STUB_VAULT,
+      adopted: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      proposal,
+    });
+
+    expect(seen.allowed).toEqual(["Which vendor?"]);
+    expect(seen.otherCapEmpty).toBe(true);
+    expect(seen.noDeclareAbsent).toBe(true);
   });
 
   test("model output parse errors preserve model-specific execution codes", async () => {
