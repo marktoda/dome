@@ -148,7 +148,11 @@ export type InspectionScope =
 /**
  * The closed set of engine-synthesized signals. The engine computes signals
  * once per Proposal from `compileRange(base, candidate)` and routes them to
- * subscribing processors. See processors.md §"Triggers and signals".
+ * subscribing processors — with one exception: `questions.changed` is
+ * store-change-derived, never minted by compileRange, and is dispatched on
+ * its own operational channel (`src/engine/operational/questions-changed.ts`)
+ * after a tick or resolve changes the open-question set. See processors.md
+ * §"Triggers and signals".
  */
 export type Signal =
   | "file.created"

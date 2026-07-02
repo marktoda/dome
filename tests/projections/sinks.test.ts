@@ -31,7 +31,7 @@ import { openOutboxDb, type OutboxDb } from "../../src/outbox/db";
 import { buildSqliteSinks } from "../../src/projections/sinks";
 import { factsBySubject } from "../../src/projections/facts";
 import { queryDiagnostics } from "../../src/projections/diagnostics";
-import { queryQuestions } from "../../src/projections/questions";
+import { answerQuestion, queryQuestions } from "../../src/projections/questions";
 import { nextEligibleJob } from "../../src/projections/jobs";
 import { insertPending, markFailed, queryOutbox } from "../../src/outbox/dispatch";
 import type { ApplyEffectSinks } from "../../src/engine/core/apply-effect";
@@ -256,6 +256,84 @@ describe("buildSqliteSinks projection-store sinks", () => {
     expect(got.length).toBe(1);
     expect(got[0]?.idempotencyKey).toBe("q-1");
     expect(got[0]?.metadata?.automationPolicy).toBe("agent-safe");
+  });
+
+  it("recordQuestion fires onQuestionsChanged for inserts/refreshes but NOT for answered rows", async () => {
+    let fired = 0;
+    const sinks = buildSqliteSinks({
+      projectionDb,
+      outboxDb,
+      adoptedCommit: ADOPTED,
+      applyPatch: noopApplyPatch,
+      captureView: noopCaptureView,
+      recoverQuarantine: noopRecoverQuarantine,
+      recoverRun: noopRecoverRun,
+      onQuestionsChanged: () => {
+        fired += 1;
+      },
+    });
+
+    const effect = questionEffect({
+      question: "still current?",
+      sourceRefs: [REF],
+      idempotencyKey: "q-signal",
+    });
+    const input = { effect, processorId: PROCESSOR_ID, runId: RUN_ID };
+
+    await sinks.recordQuestion(input); // fresh insert
+    expect(fired).toBe(1);
+    await sinks.recordQuestion(input); // refresh of the open row
+    expect(fired).toBe(2);
+
+    answerQuestion(projectionDb, { idempotencyKey: "q-signal", answer: "yes" });
+    await sinks.recordQuestion(input); // skipped-answered: open set unchanged
+    expect(fired).toBe(2);
+  });
+
+  it("resolveQuestions fires onQuestionsChanged only when stale rows were deleted", async () => {
+    let fired = 0;
+    const sinks = buildSqliteSinks({
+      projectionDb,
+      outboxDb,
+      adoptedCommit: ADOPTED,
+      applyPatch: noopApplyPatch,
+      captureView: noopCaptureView,
+      recoverQuarantine: noopRecoverQuarantine,
+      recoverRun: noopRecoverRun,
+      onQuestionsChanged: () => {
+        fired += 1;
+      },
+    });
+
+    const effect = questionEffect({
+      question: "stale soon?",
+      sourceRefs: [REF],
+      idempotencyKey: "q-stale-signal",
+    });
+    await sinks.recordQuestion({
+      effect,
+      processorId: PROCESSOR_ID,
+      runId: RUN_ID,
+    });
+    expect(fired).toBe(1);
+
+    // Re-inspection that re-emits the same key deletes nothing — no signal.
+    await sinks.resolveQuestions?.({
+      processorId: PROCESSOR_ID,
+      runId: RUN_ID,
+      inspectedPaths: ["wiki/x.md"],
+      emittedQuestions: [effect],
+    });
+    expect(fired).toBe(1);
+
+    // Re-inspection with no re-emit deletes the stale row — signal fires.
+    await sinks.resolveQuestions?.({
+      processorId: PROCESSOR_ID,
+      runId: RUN_ID,
+      inspectedPaths: ["wiki/x.md"],
+      emittedQuestions: [],
+    });
+    expect(fired).toBe(2);
   });
 
   it("enqueueJob writes a row visible via nextEligibleJob", async () => {

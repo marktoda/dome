@@ -1434,6 +1434,12 @@ function scopeTriggerMatchesForProcessor(
         matchedSignals: Object.freeze(
           match.matchedSignals.filter(
             (event) =>
+              // Pathless events (`path: ""`) pass through: the operational
+              // `questions.changed` channel synthesizes them (processors.md
+              // §"Triggers and signals" — store-change signals carry no vault
+              // path, so there is nothing to capability-scope). compileRange
+              // never mints an empty path, so tree-diff signals are unaffected.
+              event.path === "" ||
               readablePath(event.path, frame.declared, frame.granted) !== null,
           ),
         ),
