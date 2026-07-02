@@ -613,6 +613,12 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.agent.brief",
         "dome.daily.create-daily",
         "dome.daily.carry-forward",
+        // The deterministic compositor: composes the edition's generated
+        // blocks — the "To decide" questions list, agenda, integrated-overnight
+        // digest, and sources-seen record — into today's daily at 05:25 and on
+        // questions.changed + source-file + sweep-ledger signals (daily-surface
+        // §"Block ownership").
+        "dome.daily.compose-blocks",
         "dome.daily.close-scaffold",
         // The morning attention warden: surfaces stale/overdue open-loop tasks as
         // settle-stale questions, one per task, so the owner can close, defer, or

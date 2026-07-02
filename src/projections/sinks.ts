@@ -133,6 +133,15 @@ export type BuildSqliteSinksOpts = {
    * Injected by the engine layer. Run recovery mutates the run ledger.
    */
   readonly recoverRun: ApplyEffectSinks["recoverRun"];
+  /**
+   * Fired whenever a sink changed the open-question set: `recordQuestion`
+   * inserted or refreshed a row (a `"skipped-answered"` re-emit does NOT
+   * fire), or `resolveQuestions` deleted at least one stale row. The host
+   * wires this to its tick-scoped `questions.changed` flag; the tick epilogue
+   * dispatches subscribers once (processors.md §"Triggers and signals").
+   * Omitted → no signal channel (tests, isolated sinks).
+   */
+  readonly onQuestionsChanged?: () => void;
 };
 
 // ----- buildSqliteSinks -----------------------------------------------------
@@ -198,11 +207,12 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
       emittedQuestions,
     }) => {
       await projectionWrite(async () => {
-        resolveStaleQuestions(opts.projectionDb, {
+        const deleted = resolveStaleQuestions(opts.projectionDb, {
           processorId,
           inspectedPaths,
           emittedQuestions,
         });
+        if (deleted > 0) opts.onQuestionsChanged?.();
       });
     },
 
@@ -228,12 +238,14 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
 
     recordQuestion: async ({ effect, processorId, runId }) => {
       await projectionWrite(async () => {
-        insertQuestion(opts.projectionDb, {
+        const result = insertQuestion(opts.projectionDb, {
           effect,
           processorId,
           runId,
           adoptedCommit: opts.adoptedCommit,
         });
+        // "skipped-answered" leaves the open-question set untouched — no signal.
+        if (result !== "skipped-answered") opts.onQuestionsChanged?.();
       });
     },
 

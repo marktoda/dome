@@ -275,6 +275,7 @@ scenario(
           "      patch.auto: [\"wiki/**/*.md\", \"notes/*.md\"]",
           "      graph.write: [\"dome.daily.*\"]",
           "      question.ask: true",
+          "      questions.read: true",
           "  dome.agent:",
           "    enabled: true",
           "    grant:",
@@ -342,7 +343,7 @@ scenario(
     expect(report.status).toBe("unhealthy");
     // Every capability kind is granted — the kind-level probe stays quiet.
     expect(report.summary.capabilityGrantGaps).toBe(0);
-    expect(report.summary.capabilityGrantEntryGaps).toBe(10);
+    expect(report.summary.capabilityGrantEntryGaps).toBe(11);
 
     const entryGaps = report.findings.filter(
       (finding) => finding.code === "capability.grant-entry-missing",
@@ -357,6 +358,7 @@ scenario(
       "dome.agent.preference-promotion-answer",
       "dome.agent.preference-signals",
       "dome.daily.attention-discount",
+      "dome.daily.compose-blocks",
       "dome.markdown.core-size",
       "dome.markdown.page-status",
       "dome.markdown.render-index",
@@ -376,6 +378,23 @@ scenario(
     );
     expect(attention?.capability?.missingEntries).toEqual([
       { kind: "graph.write", target: "dome.attention.discount" },
+    ]);
+
+    // The compiled-daily rollout (D6): a pre-existing vault whose dome.daily
+    // read grant never gained the sources/ledger entries gets a doctor
+    // finding instead of silently never rendering the agenda / integrated /
+    // sources blocks (compose-blocks' reads return null outside the grant).
+    const composeBlocks = entryGaps.find(
+      (finding) =>
+        finding.capability?.processorId === "dome.daily.compose-blocks",
+    );
+    expect(composeBlocks?.recovery).toContain(
+      "extensions.dome.daily.grant.read",
+    );
+    expect(composeBlocks?.capability?.missingEntries).toEqual([
+      { kind: "read", target: "sources/calendar/*.md" },
+      { kind: "read", target: "sources/slack/*.md" },
+      { kind: "read", target: "meta/sweep-ledger.md" },
     ]);
 
     const answer = entryGaps.find(
@@ -426,8 +445,14 @@ scenario(
     expect(slackSource?.capability?.missingEntries).toEqual([
       { kind: "read", target: "sources/slack/2026-01-01.md" },
     ]);
+    // (compose-blocks' calendar gap above is dome.daily's own grant — the
+    // BRIEF's covered calendar entry must not fire a second row.)
     expect(
-      entryGaps.some((finding) => finding.id.includes("sources/calendar")),
+      entryGaps.some(
+        (finding) =>
+          finding.capability?.processorId === "dome.agent.brief" &&
+          finding.id.includes("sources/calendar"),
+      ),
     ).toBe(false);
   },
 );

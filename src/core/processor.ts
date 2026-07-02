@@ -148,7 +148,11 @@ export type InspectionScope =
 /**
  * The closed set of engine-synthesized signals. The engine computes signals
  * once per Proposal from `compileRange(base, candidate)` and routes them to
- * subscribing processors. See processors.md §"Triggers and signals".
+ * subscribing processors — with one exception: `questions.changed` is
+ * store-change-derived, never minted by compileRange, and is dispatched on
+ * its own operational channel (`src/engine/operational/questions-changed.ts`)
+ * after a tick or resolve changes the open-question set. See processors.md
+ * §"Triggers and signals".
  */
 export type Signal =
   | "file.created"
@@ -158,7 +162,8 @@ export type Signal =
   | "frontmatter.changed"
   | "region.changed"
   | "link.added"
-  | "link.removed";
+  | "link.removed"
+  | "questions.changed";
 
 // ----- Trigger --------------------------------------------------------------
 
@@ -224,6 +229,7 @@ export type Trigger =
  *   - `outbox.recover` — emit OutboxRecoveryEffect retry/abandon actions.
  *   - `quarantine.read` — read operational quarantine rows via `ctx.operational`.
  *   - `quarantine.recover` — emit QuarantineRecoveryEffect reset actions.
+ *   - `questions.read` — read question rows via `ctx.operational`.
  *   - `run.read`       — read stuck operational run rows via `ctx.operational`.
  *   - `run.recover`    — emit RunRecoveryEffect fail actions.
  */
@@ -284,6 +290,9 @@ export type OutboxRecoverCapability = {
 export type QuarantineReadCapability = {
   readonly kind: "quarantine.read";
 };
+export type QuestionsReadCapability = {
+  readonly kind: "questions.read";
+};
 export type QuarantineRecoverCapability = {
   readonly kind: "quarantine.recover";
   readonly actions: ReadonlyArray<QuarantineRecoveryEffect["action"]>;
@@ -319,6 +328,7 @@ export type Capability =
   | OutboxReadCapability
   | OutboxRecoverCapability
   | QuarantineReadCapability
+  | QuestionsReadCapability
   | QuarantineRecoverCapability
   | RunReadCapability
   | RunRecoverCapability;
@@ -540,6 +550,25 @@ export type OperationalQuarantineRow = {
   readonly reason: string;
 };
 
+/**
+ * A question row surfaced through `ctx.operational.questions`, gated by
+ * `questions.read` (declared ∩ granted) — distinct from
+ * `ctx.projection.questions` (`ProjectionQuestion`, gated by general
+ * projection access) so garden-phase processors cannot read the question
+ * store just because they hold graph/facts access. Mirrors `ProjectionQuestion`'s
+ * flattening convention (`QuestionEffect &` the durable row metadata) plus the
+ * `runId` that `QuestionRecord` (src/projections/questions.ts) carries.
+ */
+export type OperationalQuestionRow = QuestionEffect & {
+  readonly id: number;
+  readonly processorId: string;
+  readonly runId: string;
+  readonly adoptedCommit: CommitOid;
+  readonly askedAt: string;
+  readonly answeredAt: string | null;
+  readonly answer: string | null;
+};
+
 export type OperationalRunRow = {
   readonly id: string;
   readonly proposalId: string | null;
@@ -576,6 +605,13 @@ export type OperationalQueryView = {
      */
     readonly runningOlderThanMs?: number;
   }) => ReadonlyArray<OperationalRunRow>;
+  /**
+   * Read open/resolved question rows, gated by `questions.read`
+   * (declared ∩ granted) — see docs/wiki/specs/capabilities.md §"questions.read".
+   */
+  readonly questions: (filter?: {
+    readonly resolved?: boolean;
+  }) => ReadonlyArray<OperationalQuestionRow>;
 };
 
 // ----- ExtensionConfig ------------------------------------------------------
@@ -732,6 +768,7 @@ export const SignalSchema = z.enum([
   "region.changed",
   "link.added",
   "link.removed",
+  "questions.changed",
 ]);
 
 export const SignalTriggerSchema = z
@@ -877,6 +914,12 @@ export const QuarantineReadCapabilitySchema = z
   })
   .strict();
 
+export const QuestionsReadCapabilitySchema = z
+  .object({
+    kind: z.literal("questions.read"),
+  })
+  .strict();
+
 export const QuarantineRecoverCapabilitySchema = z
   .object({
     kind: z.literal("quarantine.recover"),
@@ -922,6 +965,7 @@ export const CapabilitySchema = z.discriminatedUnion("kind", [
   OutboxReadCapabilitySchema,
   OutboxRecoverCapabilitySchema,
   QuarantineReadCapabilitySchema,
+  QuestionsReadCapabilitySchema,
   QuarantineRecoverCapabilitySchema,
   RunReadCapabilitySchema,
   RunRecoverCapabilitySchema,

@@ -1,5 +1,5 @@
 id: dome.daily
-version: 0.3.1
+version: 0.4.0
 processors:
   - id: dome.daily.normalize-task-syntax
     version: 0.2.0
@@ -221,6 +221,46 @@ processors:
         paths: ["wiki/dailies/*.md", "notes/*.md"]
     module: processors/close-scaffold.ts
 
+  - id: dome.daily.compose-blocks
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "25 5 * * *"
+      - kind: signal
+        name: questions.changed
+      - kind: signal
+        name: file.created
+        pathPattern: "sources/calendar/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "sources/slack/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "sources/calendar/*.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "sources/slack/*.md"
+      - kind: signal
+        name: file.created
+        pathPattern: "meta/sweep-ledger.md"
+      - kind: signal
+        name: document.changed
+        pathPattern: "meta/sweep-ledger.md"
+    capabilities:
+      - kind: read
+        paths:
+          - "wiki/dailies/*.md"
+          - "sources/calendar/*.md"
+          - "sources/slack/*.md"
+          - "meta/sweep-ledger.md"
+      - kind: patch.auto
+        paths: ["wiki/dailies/*.md"]
+      - kind: questions.read
+    execution:
+      class: deterministic
+    module: processors/compose-blocks.ts
+
   - id: dome.daily.reconcile-tasks
     version: 0.1.1
     phase: garden
@@ -300,3 +340,18 @@ doctor:
       recovery: >-
         Add "dome.attention.*" to extensions.dome.daily.grant.graph.write
         in .dome/config.yaml.
+    - processorId: dome.daily.compose-blocks
+      entries:
+        - kind: read
+          target: sources/calendar/*.md
+        - kind: read
+          target: sources/slack/*.md
+        - kind: read
+          target: meta/sweep-ledger.md
+      why: >-
+        the agenda and integrated-overnight blocks silently never render —
+        calendar/slack/ledger reads return null outside the grant
+      recovery: >-
+        Add "sources/calendar/*.md", "sources/slack/*.md", and
+        "meta/sweep-ledger.md" to extensions.dome.daily.grant.read in
+        .dome/config.yaml.

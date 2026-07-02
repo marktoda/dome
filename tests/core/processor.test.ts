@@ -106,7 +106,7 @@ describe("TriggerSchema (discriminated union)", () => {
   });
 });
 
-describe("CapabilitySchema (discriminated union, 16 kinds)", () => {
+describe("CapabilitySchema (discriminated union, 17 kinds)", () => {
   test("read", () => {
     expect(CapabilitySchema.parse({ kind: "read", paths: ["wiki/**"] }).kind).toBe("read");
   });
@@ -198,11 +198,21 @@ describe("CapabilitySchema (discriminated union, 16 kinds)", () => {
       CapabilitySchema.parse({ kind: "run.recover", actions: ["fail"] }).kind,
     ).toBe("run.recover");
   });
+
+  test("questions.read", () => {
+    expect(CapabilitySchema.parse({ kind: "questions.read" }).kind).toBe(
+      "questions.read",
+    );
+  });
 });
 
 describe("ProcessorPhaseSchema + SignalSchema", () => {
   test("ProcessorPhaseSchema rejects an unknown phase string", () => {
     expect(() => ProcessorPhaseSchema.parse("invalid")).toThrow();
+  });
+
+  test("SignalSchema parses questions.changed", () => {
+    expect(SignalSchema.parse("questions.changed")).toBe("questions.changed");
   });
 
   test("SignalSchema rejects an unknown signal name", () => {

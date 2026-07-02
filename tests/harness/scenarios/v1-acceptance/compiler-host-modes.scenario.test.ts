@@ -319,6 +319,7 @@ extensions:
       patch.auto: ["wiki/**/*.md"]
       graph.write: ["dome.daily.*"]
       question.ask: true
+      questions.read: true
   dome.health:
     enabled: true
     grant:

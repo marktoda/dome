@@ -11,7 +11,7 @@
 // goes unprocessed for many nights, the window floor eventually ages it out.
 // Use the exported `safeCursor` helper to compute this value.
 
-import { type ParsedSweepLedger } from "./sweep-ledger";
+import { type ParsedSweepLedger } from "../../dome.daily/processors/sweep-ledger";
 
 // ----- Public types ---------------------------------------------------------
 

@@ -162,13 +162,29 @@ The staffing packet landed and hiring budget follow-up remains open.
       })
       .toHaveCount(0);
 
-    expect(capabilityUsesByRun(h.ledger, createRun.id as RunId)).toEqual([
+    // compose-blocks (cron 05:25) and create-daily (cron 06:00) both fire in
+    // this single catch-up tick. The earlier cron — compose-blocks — is the
+    // deterministic compositor and materializes today's daily skeleton first,
+    // so create-daily legitimately no-ops on the already-present daily. Assert
+    // the daily was created via an allowed patch.auto by whichever scheduled
+    // dome.daily writer ran first, without coupling the test to that ordering.
+    const composeRun = await h
+      .expectLedger({
+        processorId: "dome.daily.compose-blocks",
+        status: "succeeded",
+      })
+      .toHaveAtLeastOne();
+    const dailyWrites = [
+      ...capabilityUsesByRun(h.ledger, createRun.id as RunId),
+      ...capabilityUsesByRun(h.ledger, composeRun.id as RunId),
+    ];
+    expect(dailyWrites).toContainEqual(
       expect.objectContaining({
         capability: "patch.auto",
         resource: "wiki/dailies/2026-01-02.md",
         outcome: "allowed",
       }),
-    ]);
+    );
     const second = await h.tick();
     expect(second.adopted).toBe(true);
     await h
