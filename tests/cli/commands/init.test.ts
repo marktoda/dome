@@ -165,6 +165,11 @@ describe("runInit", () => {
       // `dome log` is the activity view (3a deferred item).
       expect(agentsBody).toContain("dome log");
       expect(agentsBody).toContain("activity view");
+      // Vault conventions: wiki structure, inbox roles, sources day-files, and
+      // config/state directories — the core contract agents operate in.
+      expect(agentsBody).toContain("## Vault conventions");
+      expect(agentsBody).toContain("sources/<kind>/<date>.md");
+      expect(agentsBody).toContain("weaves whatever exists into the daily");
       // Authoring conventions: page-type schema, source-backing, claim/task
       // anchors, and generated-block awareness — the cross-client quality
       // multiplier so an arbitrary agent writes adoption-clean pages.

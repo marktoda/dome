@@ -24,12 +24,14 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { parseCalendarDay } from "../../../assets/extensions/dome.daily/processors/calendar-day";
 import sourcesFetch from "../../../assets/extensions/dome.sources/external-handlers/sources.fetch";
 import { externalActionEffect } from "../../../src/core/effect";
 import { openOutboxDb, type OutboxDb } from "../../../src/outbox/db";
@@ -124,6 +126,40 @@ function fakeClaudePath(stdout: string): string {
   writeFileSync(
     path,
     `#!/bin/sh\ncat <<'DOME_FAKE_CLAUDE_EOF'\n${stdout}\nDOME_FAKE_CLAUDE_EOF\n`,
+  );
+  chmodSync(path, 0o755);
+  return `${binDir}:/usr/bin:/bin`;
+}
+
+/**
+ * Install a fake `icalbuddy` on a throwaway bin dir and return a PATH that
+ * puts it ahead of the system tools the icalbuddy-calendar.sh template
+ * needs (awk, git, sh). The fake ignores its args (flags, `eventsFrom:...
+ * to:...`) and prints `stdout` verbatim with the given exit code — the
+ * FETCH block in the shipped template is `icalbuddy ... > "$tmp_ical"`, so
+ * this is exactly what the transform + validation steps then see.
+ *
+ * When `argvFile` is given, the shim dumps its received `"$@"` there, one
+ * argument per line (via a `for`/`printf` loop, never `echo "$@"`, so a
+ * word-split argv is distinguishable from one that arrived intact) — this
+ * is how the ICAL_CALENDARS quoting regression test observes exactly what
+ * the template invoked icalbuddy with.
+ */
+function fakeIcalbuddyPath(
+  stdout: string,
+  opts: { readonly exitCode?: number; readonly argvFile?: string } = {},
+): string {
+  const binDir = join(vaultPath, ".dome", "fakebin");
+  mkdirSync(binDir, { recursive: true });
+  const path = join(binDir, "icalbuddy");
+  const exitCode = opts.exitCode ?? 0;
+  const argvCapture = opts.argvFile
+    ? `for a in "$@"; do printf '%s\\n' "$a"; done > "${opts.argvFile}"\n`
+    : "";
+  // Single-quote the heredoc body so the payload is emitted literally.
+  writeFileSync(
+    path,
+    `#!/bin/sh\n${argvCapture}cat <<'DOME_FAKE_ICALBUDDY_EOF'\n${stdout}\nDOME_FAKE_ICALBUDDY_EOF\nexit ${exitCode}\n`,
   );
   chmodSync(path, 0o755);
   return `${binDir}:/usr/bin:/bin`;
@@ -534,6 +570,282 @@ describe("the shipped claude-calendar.sh template", () => {
     const { exitCode } = await runCalendar(CAL_DAY);
     expect(exitCode).toBe(0);
     expect(git("show", `HEAD:${OUTPUT_PATH}`)).toBe(CAL_DAY + "\n");
+  });
+});
+
+describe("the shipped icalbuddy-calendar.sh template", () => {
+  // The deterministic daemon-safe calendar fetcher: no REPAIR stage (there
+  // is no model output to unwrap — icalBuddy either emits parseable agenda
+  // lines or fails outright), so this describe drives FETCH -> VALIDATE ->
+  // LAND directly through a fake `icalbuddy` PATH shim.
+  const icalTemplate = join(
+    import.meta.dir,
+    "..",
+    "..",
+    "..",
+    "assets",
+    "source-handlers",
+    "icalbuddy-calendar.sh",
+  );
+
+  async function runIcalbuddy(
+    icalStdout: string,
+    opts: {
+      readonly exitCode?: number;
+      readonly argvFile?: string;
+      readonly env?: Readonly<Record<string, string>>;
+    } = {},
+  ) {
+    // Observable temp files: macOS mktemp ignores TMPDIR (verified — it
+    // uses the Darwin per-user temp dir regardless), so shim `mktemp`
+    // itself on the fake PATH to create files in a per-vault dir the test
+    // can inspect. A clean run must leave it empty: the assembled doc is
+    // consumed by the mv, and the raw icalBuddy capture must be rm'd
+    // before the EXIT trap is dropped.
+    const tmpDir = join(vaultPath, ".dome", "script-tmp");
+    mkdirSync(tmpDir, { recursive: true });
+    const path = fakeIcalbuddyPath(icalStdout, opts);
+    const binDir = path.split(":")[0] ?? "";
+    writeFileSync(
+      join(binDir, "mktemp"),
+      `#!/bin/sh\nexec /usr/bin/mktemp "${tmpDir}/tmp.XXXXXXXX"\n`,
+    );
+    chmodSync(join(binDir, "mktemp"), 0o755);
+    const proc = Bun.spawn(
+      ["sh", icalTemplate, PAYLOAD.date, OUTPUT_PATH],
+      {
+        cwd: vaultPath,
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "pipe",
+        env: { ...process.env, PATH: path, ...opts.env },
+      },
+    );
+    const [exitCode, stderrText] = await Promise.all([
+      proc.exited,
+      new Response(proc.stderr).text(),
+    ]);
+    const leakedTmpFiles = readdirSync(tmpDir);
+    return { exitCode, stderrText, leakedTmpFiles };
+  }
+
+  test("commit-only retry: when the output file already exists the template commits it without fetching", async () => {
+    // The fixture has no `icalbuddy` on PATH: if the template tried to
+    // fetch, it would exit non-zero (command not found). Exit 0 + a new
+    // HEAD blob proves the fetch was skipped and the existing file just
+    // got committed.
+    mkdirSync(join(vaultPath, "sources", "calendar"), { recursive: true });
+    writeFileSync(
+      join(vaultPath, OUTPUT_PATH),
+      "---\ntype: calendar-day\ndate: 2026-06-10\n---\n\n# Calendar 2026-06-10\n",
+    );
+    const proc = Bun.spawn(
+      ["sh", icalTemplate, PAYLOAD.date, OUTPUT_PATH],
+      {
+        cwd: vaultPath,
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "pipe",
+        env: { ...process.env, PATH: "/usr/bin:/bin" }, // no icalbuddy here
+      },
+    );
+    const [exitCode, stderrText] = await Promise.all([
+      proc.exited,
+      new Response(proc.stderr).text(),
+    ]);
+    expect(stderrText).not.toContain("icalbuddy");
+    expect(exitCode).toBe(0);
+    expect(inHead(OUTPUT_PATH)).toBe(true);
+    expect(git("log", "-1", "--pretty=%s")).toContain(
+      "calendar: agenda for 2026-06-10",
+    );
+  });
+
+  test("gpg immunity: lands unsigned even when the vault config demands commit signing", async () => {
+    git("config", "commit.gpgsign", "true");
+    git("config", "gpg.program", "/nonexistent/gpg-not-here");
+    mkdirSync(join(vaultPath, "sources", "calendar"), { recursive: true });
+    writeFileSync(
+      join(vaultPath, OUTPUT_PATH),
+      "---\ntype: calendar-day\ndate: 2026-06-10\n---\n\n# Calendar 2026-06-10\n",
+    );
+    const proc = Bun.spawn(
+      ["sh", icalTemplate, PAYLOAD.date, OUTPUT_PATH],
+      {
+        cwd: vaultPath,
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "pipe",
+        env: { ...process.env, PATH: "/usr/bin:/bin" },
+      },
+    );
+    const [exitCode, stderrText] = await Promise.all([
+      proc.exited,
+      new Response(proc.stderr).text(),
+    ]);
+    expect(stderrText).toBe("");
+    expect(exitCode).toBe(0);
+    expect(inHead(OUTPUT_PATH)).toBe(true);
+    expect(git("cat-file", "commit", "HEAD")).not.toContain("gpgsig");
+  });
+
+  test("pathspec commit: staged human work is never swept into the fetch commit", async () => {
+    writeFileSync(join(vaultPath, "notes.md"), "# human work in flight\n");
+    git("add", "--", "notes.md");
+    mkdirSync(join(vaultPath, "sources", "calendar"), { recursive: true });
+    writeFileSync(
+      join(vaultPath, OUTPUT_PATH),
+      "---\ntype: calendar-day\ndate: 2026-06-10\n---\n\n# Calendar 2026-06-10\n",
+    );
+    const proc = Bun.spawn(
+      ["sh", icalTemplate, PAYLOAD.date, OUTPUT_PATH],
+      {
+        cwd: vaultPath,
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+        env: { ...process.env, PATH: "/usr/bin:/bin" },
+      },
+    );
+    expect(await proc.exited).toBe(0);
+    expect(inHead(OUTPUT_PATH)).toBe(true);
+    expect(inHead("notes.md")).toBe(false); // still only staged
+    const staged = git("diff", "--cached", "--name-only");
+    expect(staged).toContain("notes.md");
+  });
+
+  test("transform: timed meetings with and without attendees, plus an all-day event, parse into the calendar-day shape", async () => {
+    // A captured icalBuddy-style sample: emitted by
+    // `-npn -nc -nrd -b '- ' -iep "datetime,title,attendees" -po
+    // "datetime,title,attendees" -ps "$(printf '|\t|')" -tf '%H:%M'
+    // -df ''` — properties are TAB-separated (collision-proof; verified
+    // live against icalBuddy 1.10.1). A timed meeting with attendees, a
+    // timed meeting without, and an all-day event (no datetime property
+    // at all).
+    const fixture = [
+      "- 09:00 - 09:30\tStandup\tAlice, Bob",
+      "- 14:00 - 14:30\tSolo Sync",
+      "- Company Holiday",
+    ].join("\n");
+    const { exitCode, stderrText, leakedTmpFiles } =
+      await runIcalbuddy(fixture);
+    expect(stderrText).toBe("");
+    expect(exitCode).toBe(0);
+    expect(leakedTmpFiles).toEqual([]); // both mktemp files cleaned up
+    expect(inHead(OUTPUT_PATH)).toBe(true);
+    const written = git("show", `HEAD:${OUTPUT_PATH}`);
+    expect(written).toContain("---\ntype: calendar-day\ndate: 2026-06-10\n---");
+    expect(written).toContain("# Calendar 2026-06-10");
+    expect(written).toContain(
+      "- 09:00–09:30 — Standup (attendees: Alice, Bob)",
+    );
+    expect(written).toContain("- 14:00–14:30 — Solo Sync");
+    expect(written).not.toContain("14:30 — Solo Sync (attendees:");
+    // All-day: title-only bullet, no leading time, no attendees suffix.
+    expect(written).toContain("- Company Holiday");
+    expect(written).not.toContain("(attendees: )");
+    // And the shipped consumer parses it exactly.
+    expect(parseCalendarDay(written)).toEqual([
+      { time: "09:00–09:30", title: "Standup", attendees: ["Alice", "Bob"] },
+      { time: "14:00–14:30", title: "Solo Sync", attendees: [] },
+      { time: null, title: "Company Holiday", attendees: [] },
+    ]);
+  });
+
+  test("transform: a title containing ' — ' survives intact (tab-separated properties, no separator collision)", async () => {
+    // Regression: with an em-dash property separator, "Q3 — Planning"
+    // would split inside the title — truncating it to "Q3", fabricating
+    // "Planning" into the attendee slot, and dropping Alice — and the
+    // corrupted line would still parse, i.e. silent wrong data. The tab
+    // separator makes the intermediate split collision-proof; the
+    // RENDERED " — " is safe because parseMeetingLine anchors on the
+    // leading time and the trailing "(attendees: ...)".
+    const { exitCode, stderrText } = await runIcalbuddy(
+      "- 09:00 - 09:30\tQ3 — Planning\tAlice",
+    );
+    expect(stderrText).toBe("");
+    expect(exitCode).toBe(0);
+    const written = git("show", `HEAD:${OUTPUT_PATH}`);
+    expect(written).toContain("- 09:00–09:30 — Q3 — Planning (attendees: Alice)");
+    expect(parseCalendarDay(written)).toEqual([
+      { time: "09:00–09:30", title: "Q3 — Planning", attendees: ["Alice"] },
+    ]);
+  });
+
+  test("carries the deterministic FETCH, the TCC note, and the calendar-day validation", async () => {
+    // Template-text pins (the claude-slack.sh describe's pattern): the
+    // VALIDATE stage is defense-in-depth — the frontmatter and heading are
+    // printf'd deterministically, so no fake-icalbuddy scenario can reach
+    // it with a broken file. Pin its presence (and the load-bearing FETCH
+    // choices) against future template edits instead.
+    const text = await Bun.file(icalTemplate).text();
+    // FETCH: tab property separator (collision-proof vs em-dash titles),
+    // icalBuddy's own exit status checked (not masked by the awk pipe),
+    // and the TCC failure-mode + ICAL_CALENDARS documentation.
+    expect(text).toContain("ps_tab=\"$(printf '|\\t|')\"");
+    expect(text).toContain('-ps "$ps_tab"');
+    expect(text).toContain("if ! LC_ALL=C icalbuddy");
+    expect(text).toContain("Privacy & Security");
+    expect(text).toContain("ICAL_CALENDARS");
+    // VALIDATE: frontmatter fence, the date line, and the day heading.
+    expect(text).toContain("grep -q '^---$'");
+    expect(text).toContain('grep -q "^date: $d$"');
+    expect(text).toContain('grep -q "^# Calendar $d$"');
+    // LAND: pathspec-scoped, signing-immune commit with the calendar subject.
+    expect(text).toContain(
+      'git -c commit.gpgsign=false commit -m "calendar: agenda for $d" -- "$f"',
+    );
+    // No REPAIR stage — deterministic fetcher, nothing to unwrap. (The
+    // header COMMENT explains why REPAIR is absent, so pin on the
+    // function, not the word.)
+    expect(text).not.toContain("repair()");
+  });
+
+  test("empty agenda: zero events still writes and commits frontmatter + heading only", async () => {
+    const { exitCode, stderrText } = await runIcalbuddy("");
+    expect(stderrText).toBe("");
+    expect(exitCode).toBe(0);
+    expect(inHead(OUTPUT_PATH)).toBe(true);
+    const written = git("show", `HEAD:${OUTPUT_PATH}`);
+    expect(written).toBe(
+      "---\ntype: calendar-day\ndate: 2026-06-10\n---\n\n# Calendar 2026-06-10\n",
+    );
+  });
+
+  test("validation gate: icalbuddy failure (e.g. Calendar-access denial) exits non-zero and lands nothing", async () => {
+    // Simulates the TCC-denial failure mode: icalBuddy exits non-zero
+    // instead of emitting an agenda. Without checking icalbuddy's own exit
+    // status (as opposed to the exit status of a trailing `| awk` stage,
+    // which would mask it), this would silently look like an empty agenda.
+    const { exitCode, stderrText, leakedTmpFiles } = await runIcalbuddy(
+      "icalBuddy: Calendar access denied",
+      { exitCode: 1 },
+    );
+    expect(exitCode).not.toBe(0);
+    expect(stderrText).toContain("icalbuddy");
+    expect(inHead(OUTPUT_PATH)).toBe(false);
+    expect(leakedTmpFiles).toEqual([]); // the EXIT trap cleaned up
+  });
+
+  test("ICAL_CALENDARS with a space in a calendar name survives as ONE argument (word-splitting regression)", async () => {
+    // Regression: an unquoted `icalbuddy $ical_args` word-splits
+    // ICAL_CALENDARS on spaces, so "Team Calendar,Other" would arrive at
+    // icalbuddy as THREE args ("-ic", "Team", "Calendar,Other") — silently
+    // dropping the "Team" calendar from every agenda while still exiting 0.
+    // `set -- -ic "$ICAL_CALENDARS"` + `icalbuddy "$@"` must keep it as one.
+    const argvFile = join(vaultPath, ".dome", "icalbuddy-argv.txt");
+    const { exitCode, stderrText } = await runIcalbuddy("", {
+      argvFile,
+      env: { ICAL_CALENDARS: "Team Calendar,Other" },
+    });
+    expect(stderrText).toBe("");
+    expect(exitCode).toBe(0);
+    const argv = (await Bun.file(argvFile).text())
+      .split("\n")
+      .filter((line) => line.length > 0);
+    const icIndex = argv.indexOf("-ic");
+    expect(icIndex).toBeGreaterThanOrEqual(0);
+    expect(argv[icIndex + 1]).toBe("Team Calendar,Other");
   });
 });
 

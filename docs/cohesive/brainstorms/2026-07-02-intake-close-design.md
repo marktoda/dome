@@ -71,13 +71,13 @@ template as the deterministic macOS default.
   recipe documents the grant path (System Settings → Privacy & Security →
   Calendars, after the first attempt registers the daemon context).
 
-**Pruning (same subsystem, from the live-ops audit):** `dome.sources.fetch`
-currently runs 4×/hour as a ledger-visible no-op when every subscription is
-disabled (~1,400 runs/14d). Change: when no subscription is enabled, the
-tick must not produce full no-op run rows — the planner picks the seam from
-what exists (the run ledger's `skipped` state, quarantine's precedent, or a
-scheduler-level gate), preferring the cheapest one that keeps the ledger
-honest. Unit test: all-disabled → zero succeeded-with-no-effect rows.
+**Pruning — descoped to the pruning pass (plan-time finding):** the
+15-minute no-op polling (~1,400 rows/14d) cannot be silenced without new
+engine vocabulary — even quarantine's `skipped` path writes ledger rows,
+and a scheduler-level config gate built for one consumer is the
+generalize-at-N=1 trap ([[philosophy]]): the health trio's per-minute crons
+(~60k rows/14d) need the identical gate. One scheduler-gate design at N≥3
+belongs to the pruning pass; this project ships none of it.
 
 **Work-vault rollout (owner step gates acceptance):** Mark adds the Uniswap
 Google account to macOS Calendar (System Settings → Internet Accounts;
