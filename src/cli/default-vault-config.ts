@@ -122,7 +122,6 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
       // §"Attention discounting") emitted by dome.daily.attention-discount.
       "graph.write": ["dome.daily.*", "dome.attention.*"],
       "question.ask": true,
-      "questions.read": true,
     }),
     extension("dome.claims", true, {
       read: ["wiki/**/*.md", "notes/*.md"],
