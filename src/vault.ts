@@ -533,6 +533,7 @@ async function resolveQuestion(
     answers: runtime.answersDb,
     id,
     answer: value,
+    answeredBy: "owner",
   });
 
   switch (result.kind) {

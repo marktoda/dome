@@ -122,6 +122,7 @@ export async function runQuestionAutoResolution(
       answers: opts.answers,
       id: question.id,
       answer: plan.answer,
+      answeredBy: "auto",
       now: opts.now,
     });
     if (result.kind !== "answered") {

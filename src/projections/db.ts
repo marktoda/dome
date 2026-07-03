@@ -195,7 +195,12 @@ const DDL: ReadonlyArray<string> = Object.freeze([
 
   // 5. questions — QuestionEffect rows. `idempotency_key` UNIQUE dedups
   //    retries; `metadata_json` carries optional automation policy hints;
-  //    `answered_at` + `answer` are populated when the user responds.
+  //    `answered_at` + `answer` + `answered_by` are populated when the user
+  //    (or the auto-resolution pump) responds. `answered_by` is nullable
+  //    (null until answered) and needs no migration: this table is
+  //    rebuildable derived state — a schema-hash change here wipes and
+  //    recreates it via the WIPE+rebuild path below, unlike answers.db's
+  //    durable rows which require an in-place ALTER.
   "CREATE TABLE IF NOT EXISTS questions ("
     + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
     + "question TEXT NOT NULL,"
@@ -208,7 +213,8 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + "adopted_commit TEXT NOT NULL,"
     + "asked_at TEXT NOT NULL,"
     + "answered_at TEXT,"
-    + "answer TEXT"
+    + "answer TEXT,"
+    + "answered_by TEXT"
     + ")",
 
   // 6. scheduled_jobs — JobEffect rows for jobs with `runAfter` set.
@@ -322,6 +328,7 @@ const REQUIRED_TABLE_COLUMNS: ReadonlyArray<SqliteTableShape> = Object.freeze([
       "asked_at",
       "answered_at",
       "answer",
+      "answered_by",
     ],
   },
   {

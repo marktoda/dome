@@ -82,7 +82,10 @@ import { type SqliteTableShape } from "../sqlite-shape";
 import { computeDdlHash } from "../sqlite/hash";
 import { openSimpleStore, type StoreOpenError } from "../sqlite/open-store";
 
-const OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT =
+/** Schema hash of outbox.db before the `next_attempt_at` column. A store
+ * carrying exactly this hash is upgraded in place; any other mismatch still
+ * refuses (the outbox is unrebuildable — see the file-header WARNING). */
+export const OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT =
   "82000d3d8dd8578f9c34d23fcca621c085aaf78d5d228ee62df824b739f19a68";
 const OUTBOX_EPOCH_ISO = "1970-01-01T00:00:00.000Z";
 

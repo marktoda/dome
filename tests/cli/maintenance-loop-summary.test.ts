@@ -118,6 +118,7 @@ describe("collectMaintenanceLoopSummaries", () => {
       askedAt: "2026-06-01T00:00:00.000Z",
       answeredAt: null,
       answer: null,
+      answeredBy: null,
     };
     const agentQuestion: QuestionRecord = {
       ...ownerQuestion,
@@ -219,6 +220,7 @@ describe("collectMaintenanceLoopSummaries", () => {
       askedAt: "2026-06-01T00:00:00.000Z",
       answeredAt: null,
       answer: null,
+      answeredBy: null,
     };
 
     const [summary] = collectMaintenanceLoopSummaries({
@@ -535,6 +537,7 @@ describe("formatMaintenanceLoopDetailLines", () => {
       askedAt: "2026-06-01T00:00:00.000Z",
       answeredAt: null,
       answer: null,
+      answeredBy: null,
     };
     const [summary] = collectMaintenanceLoopSummaries({
       loops: [loop],

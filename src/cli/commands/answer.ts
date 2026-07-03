@@ -158,6 +158,7 @@ function printAnswerResult(
           statusLabel: `already answered question ${result.record.id}`,
           record: result.record,
           handlersSummary,
+          showActor: true,
         }));
       }
       return 0;
@@ -257,7 +258,12 @@ function buildDetailRows(record: QuestionRecord): Array<{ readonly label: string
     { label: "asked", value: record.askedAt },
     { label: "processor", value: record.processorId },
   ];
-  if (record.answeredAt !== null) rows.push({ label: "answered", value: record.answeredAt });
+  if (record.answeredAt !== null) {
+    rows.push({
+      label: "answered",
+      value: `${record.answeredAt} (answered by ${record.answeredBy ?? "owner"})`,
+    });
+  }
   return rows;
 }
 
@@ -267,6 +273,7 @@ function formatAnswerOutcome(input: {
   readonly statusLabel: string;
   readonly record: QuestionRecord;
   readonly handlersSummary: string;
+  readonly showActor?: boolean;
 }): string {
   const caps = resolveCaps();
   const cmd = input.commandLabel.split(/\s+/).pop() ?? input.commandLabel;
@@ -277,16 +284,20 @@ function formatAnswerOutcome(input: {
       caps,
     ),
   ];
+  const resultRows: Array<{ readonly label: string; readonly value: string }> = [
+    { label: "answer", value: input.record.answer ?? "none" },
+  ];
+  if (input.showActor === true) {
+    resultRows.push({
+      label: "actor",
+      value: `answered by ${input.record.answeredBy ?? "owner"}`,
+    });
+  }
+  resultRows.push({ label: "handlers", value: input.handlersSummary });
   lines.push(
     ...section(
       "Result",
-      kv(
-        [
-          { label: "answer", value: input.record.answer ?? "none" },
-          { label: "handlers", value: input.handlersSummary },
-        ],
-        caps,
-      ),
+      kv(resultRows, caps),
       caps,
     ),
   );
