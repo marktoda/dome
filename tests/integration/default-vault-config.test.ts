@@ -12,7 +12,10 @@ import {
   FIRST_PARTY_EXTENSION_DEFAULTS,
 } from "../../src/cli/default-vault-config";
 import { resolveShippedBundlesRoot } from "../../src/cli/commands/sync-shared";
-import { loadCapabilityPolicy } from "../../src/engine/core/capability-policy";
+import {
+  DEFAULT_RUNTIME_CONFIG,
+  loadCapabilityPolicy,
+} from "../../src/engine/core/capability-policy";
 import { graphWriteCovers } from "../../src/engine/core/capability-broker";
 import { readablePath } from "../../src/engine/core/path-capabilities";
 import { loadBundles } from "../../src/extensions/loader";
@@ -269,6 +272,39 @@ describe("default vault config", () => {
       "dome.search:read:**/*.md",
       "dome.search:search.write:**/*.md",
     ]);
+  });
+
+  test("shipped template enables agent-safe auto-resolution; engine built-in default stays off", async () => {
+    // Task 2: the vault template flips auto_resolve_questions on so new
+    // vaults get agent-safe question auto-resolution out of the box. The
+    // engine's own DEFAULT_RUNTIME_CONFIG (used when a vault has no config
+    // at all) must stay enabled: false — the template is what opts in, not
+    // the engine built-in.
+    const root = mkdtempSync(join(tmpdir(), "dome-default-config-autoresolve-"));
+    try {
+      await mkdir(join(root, ".dome"), { recursive: true });
+      await writeFile(
+        join(root, ".dome", "config.yaml"),
+        defaultConfigYaml(),
+        "utf8",
+      );
+      const policy = await loadCapabilityPolicy(root);
+      expect(policy.ok).toBe(true);
+      if (!policy.ok) throw new Error(policy.error);
+
+      expect(policy.value.runtime.engine.autoResolveQuestions).toEqual({
+        enabled: true,
+        policies: ["agent-safe"],
+        minConfidence: 0.6,
+        maxPerTick: 20,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+
+    expect(DEFAULT_RUNTIME_CONFIG.engine.autoResolveQuestions.enabled).toBe(
+      false,
+    );
   });
 
   test("typed default extensions match shipped first-party bundle directories", async () => {

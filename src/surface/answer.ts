@@ -21,6 +21,7 @@ export function questionRecordJson(record: QuestionRecord): Record<string, unkno
     question: record.effect.question,
     options: record.effect.options ?? null,
     answer: record.answer,
+    answered_by: record.answeredBy ?? null,
     asked_at: record.askedAt,
     answered_at: record.answeredAt,
     idempotency_key: record.effect.idempotencyKey,
