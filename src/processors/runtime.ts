@@ -1272,6 +1272,14 @@ function operationalContextField(
         }
         return operational.orphanRuns(filter);
       },
+      runs: (filter) => {
+        if (allowedRunStatuses === null) return Object.freeze([]);
+        return Object.freeze(
+          operational
+            .runs(filter)
+            .filter((row) => allowedRunStatuses.has(row.status)),
+        );
+      },
       questions: (filter) =>
         canReadQuestions ? operational.questions(filter) : Object.freeze([]),
     }),

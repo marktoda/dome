@@ -144,11 +144,17 @@ Permits emitting `QuarantineRecoveryEffect` for the listed actions. Today the on
 
 ### `run.read`
 
-Permits reading orphaned running rows through `ctx.operational.orphanRuns()`.
-The runtime exposes this query view only to non-adoption processors whose
-declaration and vault grant both include `run.read` with visibility of
-`status: "running"`. This is a read power, not a mutation power: processors
-recover stuck runs only by emitting `RunRecoveryEffect`.
+Permits reading run-ledger rows through two accessors: `ctx.operational.orphanRuns()`
+(running rows old enough to be considered stuck) and `ctx.operational.runs(filter?)`
+(any run row — `id`, `processorId`, `status`, `costUsd`, `durationMs`, `startedAt`,
+`finishedAt`, etc. — optionally bounded by `{ startedSince: string /* ISO */ }`).
+The runtime exposes both only to non-adoption processors whose declaration and
+vault grant both include `run.read`; the effective `statuses` scope (declared ∩
+granted) both filters `runs()`'s result rows and, for `orphanRuns()`, must
+include `status: "running"` or the accessor returns nothing. `runs()` feeds
+cost/outcome reporting (e.g. a weekly report-card processor) that needs run
+history beyond the orphan-detection case. This is a read power, not a mutation
+power: processors recover stuck runs only by emitting `RunRecoveryEffect`.
 
 ### `run.recover`
 
@@ -162,7 +168,15 @@ arbitrary run-ledger mutation.
 Permits reading open/resolved question rows through `ctx.operational.questions(filter?)` —
 the same operational-view seam as `outbox.read` / `quarantine.read` / `run.read`,
 extended to the question store (id, text, options, `automationPolicy`, risk,
-`recommendedAnswer`, `askedAt`, `processorId`, `sourceRefs`). This is deliberately
+`recommendedAnswer`, `askedAt`, `answeredAt`, `answer`, `processorId`,
+`sourceRefs`, and a `state: "open" | "resolved"` discriminant). `filter` accepts
+either `{ resolved?: boolean }` (the original open/resolved/all split) or
+`{ resolvedSince: string /* ISO */ }`, which returns the open backlog *plus*
+rows resolved at-or-after that timestamp in one read — the shape a weekly
+report-card processor needs (current backlog + what got resolved this window)
+without a second query. `state` is additive on every row regardless of which
+filter form is used, so callers that only ever pass `{ resolved: false }`
+(e.g. `dome.daily.compose-blocks`) see no shape change. This is deliberately
 *not* a projection read: garden-phase processors never gain `ctx.projection`
 access to facts through this capability, keeping garden-writes-facts and
 garden-reads-facts loops apart. Enforcement happens at view-construction time —

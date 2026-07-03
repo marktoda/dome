@@ -344,6 +344,7 @@ function questionRow(input: {
     askedAt: input.askedAt,
     answeredAt: null,
     answer: null,
+    state: "open",
   }) as OperationalQuestionRow;
 }
 
@@ -354,6 +355,7 @@ function viewOf(
     outbox: () => Object.freeze([]),
     quarantines: () => Object.freeze([]),
     orphanRuns: () => Object.freeze([]),
+    runs: () => Object.freeze([]),
     questions: () => questions,
   });
 }

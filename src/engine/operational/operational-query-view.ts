@@ -16,6 +16,7 @@ import type {
 import type { LedgerDb } from "../../ledger/db";
 import {
   orphanRuns,
+  queryRuns,
   ORPHAN_RECOVERY_EXCLUDED_PROCESSOR_PREFIXES,
   type RunRow,
 } from "../../ledger/runs";
@@ -41,6 +42,7 @@ export function buildOperationalQueryView(opts: {
    */
   readonly queryQuestions: (filter?: {
     readonly resolved?: boolean;
+    readonly resolvedSince?: string;
   }) => ReadonlyArray<QuestionRecord>;
   readonly now?: () => Date;
 }): OperationalQueryView {
@@ -72,6 +74,15 @@ export function buildOperationalQueryView(opts: {
       ),
     questions: (filter) =>
       Object.freeze(opts.queryQuestions(filter).map(toOperationalQuestionRow)),
+    runs: (filter) =>
+      Object.freeze(
+        queryRuns(
+          opts.ledger,
+          filter?.startedSince === undefined
+            ? undefined
+            : { sinceIso: filter.startedSince },
+        ).map(toOperationalRunRow),
+      ),
   });
 }
 
@@ -143,5 +154,6 @@ function toOperationalQuestionRow(
     askedAt: row.askedAt,
     answeredAt: row.answeredAt,
     answer: row.answer,
+    state: row.answeredAt === null ? "open" : "resolved",
   });
 }

@@ -555,6 +555,16 @@ export type OperationalQuarantineRow = {
  * store just because they hold graph/facts access. Mirrors `ProjectionQuestion`'s
  * flattening convention (`QuestionEffect &` the durable row metadata) plus the
  * `runId` that `QuestionRecord` (src/projections/questions.ts) carries.
+ *
+ * `state` is a convenience discriminant derived from `answeredAt`
+ * (`null` → `"open"`, otherwise `"resolved"`) — additive, not a
+ * restructuring: every row keeps the same flat field set regardless of
+ * state, so existing `{ resolved: false }` / `{ resolved: true }` callers
+ * (e.g. `dome.daily.compose-blocks`) stay source-compatible. It exists so
+ * `{ resolvedSince }` callers (docs/wiki/specs/capabilities.md
+ * §"questions.read") can distinguish the open backlog from the
+ * resolved-in-window rows in one mixed result set without re-deriving the
+ * check themselves.
  */
 export type OperationalQuestionRow = QuestionEffect & {
   readonly id: number;
@@ -564,6 +574,7 @@ export type OperationalQuestionRow = QuestionEffect & {
   readonly askedAt: string;
   readonly answeredAt: string | null;
   readonly answer: string | null;
+  readonly state: "open" | "resolved";
 };
 
 export type OperationalRunRow = {
@@ -603,11 +614,28 @@ export type OperationalQueryView = {
     readonly runningOlderThanMs?: number;
   }) => ReadonlyArray<OperationalRunRow>;
   /**
+   * Read run-ledger rows of any status (not just orphaned ones), gated by
+   * `run.read` (declared ∩ granted) — see docs/wiki/specs/capabilities.md
+   * §"run.read". Rows are filtered to the statuses the processor's
+   * declaration and grant both allow, same enforcement as `orphanRuns`.
+   * Feeds cost/outcome reporting (e.g. a weekly report-card processor) that
+   * needs run history beyond the orphan-detection case.
+   */
+  readonly runs: (filter?: {
+    /** ISO-8601 lower bound on `startedAt`. */
+    readonly startedSince?: string;
+  }) => ReadonlyArray<OperationalRunRow>;
+  /**
    * Read open/resolved question rows, gated by `questions.read`
    * (declared ∩ granted) — see docs/wiki/specs/capabilities.md §"questions.read".
+   * `resolvedSince` (ISO-8601) widens the result to the open backlog plus
+   * rows resolved at-or-after that timestamp, each tagged by `state`; pass
+   * `resolved` OR `resolvedSince`, not both — `resolvedSince` wins if both
+   * are given.
    */
   readonly questions: (filter?: {
     readonly resolved?: boolean;
+    readonly resolvedSince?: string;
   }) => ReadonlyArray<OperationalQuestionRow>;
 };
 
