@@ -72,6 +72,33 @@ describe("claimsFromMarkdown", () => {
     expect(claimsFromMarkdown("- **:** something\n")).toHaveLength(0);
   });
 
+  test("does not promote discourse-marker keys (session framing, not durable facts)", () => {
+    // Conversational/synthesis lines that leaked into Current facts during
+    // dogfooding — framing labels, not entity attributes. None should anchor.
+    const content = [
+      "# Thomas T",
+      "",
+      "- **Net:** positive, comp is the live lever",
+      "- **Tension to hold:** retain upside while managing flight risk",
+      "**TL;DR:** chasing a comp bump with Allison",
+      "- **Takeaway:** keep the thread warm",
+      "- **My read:** he stays if the number moves",
+      "- **Bottom line:** act before July",
+    ].join("\n");
+    expect(claimsFromMarkdown(content)).toHaveLength(0);
+  });
+
+  test("the denylist is key-scoped and case/space-insensitive, not a value scan", () => {
+    // Durable claims whose VALUES happen to contain framing words still promote.
+    const content = [
+      "- **Comp:** net positive trajectory, $300k base *(as of 2026-06-26)*",
+      "- **Status:** the bottom line is he is interviewing",
+      "- **tension to hold:** lowercase + spacing variant is still excluded",
+    ].join("\n");
+    const claims = claimsFromMarkdown(content);
+    expect(claims.map((c) => c.key)).toEqual(["Comp", "Status"]);
+  });
+
   test("bold emphasis without a trailing colon is not a claim", () => {
     expect(claimsFromMarkdown("**Important** this is just emphasis\n")).toHaveLength(0);
   });

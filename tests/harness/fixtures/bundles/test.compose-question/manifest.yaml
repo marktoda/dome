@@ -1,0 +1,15 @@
+id: test.compose-question
+version: 0.1.0
+processors:
+  - id: test.compose-question.ask
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: signal
+        name: file.created
+        pathPattern: queue/ask.md
+    capabilities:
+      - kind: read
+        paths: ["queue/ask.md"]
+      - kind: question.ask
+    module: processors/ask.ts

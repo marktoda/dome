@@ -9,6 +9,7 @@
 import type {
   OperationalOutboxRow,
   OperationalQuarantineRow,
+  OperationalQuestionRow,
   OperationalRunRow,
   OperationalQueryView,
 } from "../../core/processor";
@@ -24,6 +25,7 @@ import type {
   ProcessorExecutionState,
   ProcessorQuarantineSnapshot,
 } from "../../processors/execution-state";
+import type { QuestionRecord } from "../../projections/questions";
 
 export const DEFAULT_ORPHAN_RUN_AGE_MS = 5 * 60 * 1000;
 
@@ -31,6 +33,15 @@ export function buildOperationalQueryView(opts: {
   readonly outbox: OutboxDb;
   readonly ledger: LedgerDb;
   readonly executionState: ProcessorExecutionState;
+  /**
+   * Closure over the projection question store, not a raw `ProjectionDb`
+   * handle — keeps this builder decoupled from SQLite accessors (see the
+   * module comment) the same way `outbox`/`ledger` are already narrow
+   * store handles rather than the whole projection surface.
+   */
+  readonly queryQuestions: (filter?: {
+    readonly resolved?: boolean;
+  }) => ReadonlyArray<QuestionRecord>;
   readonly now?: () => Date;
 }): OperationalQueryView {
   const now = opts.now ?? ((): Date => new Date());
@@ -59,6 +70,8 @@ export function buildOperationalQueryView(opts: {
           },
         ).map(toOperationalRunRow),
       ),
+    questions: (filter) =>
+      Object.freeze(opts.queryQuestions(filter).map(toOperationalQuestionRow)),
   });
 }
 
@@ -115,5 +128,20 @@ function toOperationalRunRow(row: RunRow): OperationalRunRow {
     triggerKind: row.triggerKind,
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
+  });
+}
+
+function toOperationalQuestionRow(
+  row: QuestionRecord,
+): OperationalQuestionRow {
+  return Object.freeze({
+    ...row.effect,
+    id: row.id,
+    processorId: row.processorId,
+    runId: row.runId,
+    adoptedCommit: row.adoptedCommit,
+    askedAt: row.askedAt,
+    answeredAt: row.answeredAt,
+    answer: row.answer,
   });
 }

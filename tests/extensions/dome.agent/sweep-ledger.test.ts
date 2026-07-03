@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  parseSweepLedger,
   renderSweepRun,
   upsertCursor,
+} from "../../../assets/extensions/dome.agent/lib/sweep-ledger";
+import {
+  parseSweepLedger,
   type SweepDisposition,
   type SweepSettlement,
-} from "../../../assets/extensions/dome.agent/lib/sweep-ledger";
+} from "../../../assets/extensions/dome.daily/processors/sweep-ledger";
 
 const LEDGER = [
   "# Sweep ledger",

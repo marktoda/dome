@@ -393,6 +393,7 @@ const GRANT_KEYS = new Set([
   "quarantine.recover",
   "run.read",
   "run.recover",
+  "questions.read",
 ]);
 
 const EXTENSION_KEYS = new Set([
@@ -806,6 +807,9 @@ function normalizeGrantEntry(
     case "quarantine.read":
       if (raw !== true) return err(`${label} must be true`);
       return ok([{ kind: "quarantine.read" }]);
+    case "questions.read":
+      if (raw !== true) return err(`${label} must be true`);
+      return ok([{ kind: "questions.read" }]);
     case "quarantine.recover":
       return normalizeEnumCapability(
         raw,

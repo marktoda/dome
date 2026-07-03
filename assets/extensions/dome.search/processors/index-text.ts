@@ -350,6 +350,18 @@ const STRIPPED_SURFACE_BLOCKS: ReadonlyArray<{
   Object.freeze({ owner: "dome.daily", block: "carried-forward" }),
   Object.freeze({ owner: "dome.daily", block: "close" }),
   Object.freeze({ owner: "dome.agent.brief", block: "yesterday" }),
+  // The compiled-daily edition blocks (D6): deterministic digests of the
+  // calendar file / sweep ledger / open-questions projection — indexing them
+  // would duplicate that source-of-truth content in search results.
+  Object.freeze({ owner: "dome.daily", block: "questions" }),
+  Object.freeze({ owner: "dome.daily", block: "agenda" }),
+  Object.freeze({ owner: "dome.daily", block: "integrated" }),
+  Object.freeze({ owner: "dome.daily", block: "sources" }),
+  // Retired-legacy brief-namespace copies (recognized, never written) —
+  // historical dailies still carry these under dome.agent.brief.
+  Object.freeze({ owner: "dome.agent.brief", block: "questions" }),
+  Object.freeze({ owner: "dome.agent.brief", block: "integrated" }),
+  Object.freeze({ owner: "dome.agent.brief", block: "sources" }),
 ]);
 
 function stripGeneratedSurfaceBlocks(content: string): string {

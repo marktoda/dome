@@ -357,4 +357,58 @@ describe("dome.search.index-text", () => {
     expect(joined).not.toContain("projected close candidate");
     expect(joined).toContain("captured origin line stays indexed");
   });
+
+  test("compiled-daily edition blocks (questions/agenda/integrated/sources) and their retired-legacy brief-namespace copies stay stripped", async () => {
+    // The compiled-daily edition blocks (D6) are deterministic digests of the
+    // calendar file / sweep ledger / open-questions projection — indexing
+    // them would duplicate that source-of-truth content in search results.
+    // Historical dailies may still carry the retired-legacy
+    // dome.agent.brief:questions/integrated/sources copies, which must stay
+    // stripped too.
+    const daily = [
+      "# 2026-06-09",
+      "",
+      "## Start Here",
+      "",
+      "<!-- dome.daily:questions:start -->",
+      "### To decide",
+      "- Q1 (owner-needed): projected question must not be indexed — resolve: `dome resolve 1 <answer>`",
+      "<!-- dome.daily:questions:end -->",
+      "",
+      "<!-- dome.daily:integrated:start -->",
+      "### Integrated Overnight",
+      "- [[wiki/entities/alice]] ← [[wiki/dailies/2026-06-08]] projected integration must not be indexed",
+      "<!-- dome.daily:integrated:end -->",
+      "",
+      "<!-- dome.daily:sources:start -->",
+      "_Sources: calendar ✓ projected sources record must not be indexed_",
+      "<!-- dome.daily:sources:end -->",
+      "",
+      "<!-- dome.agent.brief:questions:start -->",
+      "- legacy projected question must not be indexed",
+      "<!-- dome.agent.brief:questions:end -->",
+      "",
+      "## Meetings",
+      "",
+      "<!-- dome.daily:agenda:start -->",
+      "- 09:30 — projected agenda meeting must not be indexed",
+      "<!-- dome.daily:agenda:end -->",
+      "",
+      "Hand-authored prose stays indexed.",
+    ].join("\n");
+    const files = new Map([["notes/2026-06-09.md", daily]]);
+    const effects = asSearchEffects(
+      await searchIndexText.run(makeContext(files, ["notes/2026-06-09.md"])),
+    );
+    const joined = effects
+      .filter((e) => e.operation === "upsert")
+      .map((e) => (e.operation === "upsert" ? e.body : ""))
+      .join("\n");
+    expect(joined).not.toContain("projected question must not be indexed");
+    expect(joined).not.toContain("projected integration must not be indexed");
+    expect(joined).not.toContain("projected sources record must not be indexed");
+    expect(joined).not.toContain("legacy projected question must not be indexed");
+    expect(joined).not.toContain("projected agenda meeting must not be indexed");
+    expect(joined).toContain("Hand-authored prose stays indexed.");
+  });
 });

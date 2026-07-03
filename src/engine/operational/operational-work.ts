@@ -72,6 +72,12 @@ export async function runOperationalWork(opts: {
    */
   readonly externalHandlerTimeoutMs?: number;
   readonly questionAutoResolve?: RuntimeQuestionAutoResolveConfig;
+  /**
+   * Forwarded to question auto-resolution: fired once per durable
+   * auto-answer, so the host's tick-scoped `questions.changed` flag catches
+   * changes that bypass the `recordQuestion` sink.
+   */
+  readonly onQuestionsChanged?: () => void;
   readonly operational?: OperationalQueryView;
   readonly ledger: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
@@ -163,6 +169,9 @@ export async function runOperationalWork(opts: {
           now: opts.now,
           resolveGrants: opts.resolveGrants,
           extensionIdFor: opts.extensionIdFor,
+          ...(opts.onQuestionsChanged !== undefined
+            ? { onQuestionsChanged: opts.onQuestionsChanged }
+            : {}),
           ...(opts.operational !== undefined
             ? { operational: opts.operational }
             : {}),

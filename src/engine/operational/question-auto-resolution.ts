@@ -46,6 +46,13 @@ type QuestionAutoResolutionOptions = GardenRunDeps & {
   readonly projection: ProjectionDb;
   readonly answers: AnswersDb;
   readonly now: () => Date;
+  /**
+   * Fired once per durably recorded auto-answer. Durable answers change the
+   * open-question set but bypass the `recordQuestion` sink, so the host's
+   * tick-scoped `questions.changed` flag is set here explicitly; the tick
+   * epilogue dispatches subscribers (no direct dispatch from this pump).
+   */
+  readonly onQuestionsChanged?: () => void;
 };
 
 export async function runQuestionAutoResolution(
@@ -123,6 +130,7 @@ export async function runQuestionAutoResolution(
     }
 
     answered += 1;
+    opts.onQuestionsChanged?.();
     const handler = await dispatchAutoAnswerHandlers({
       ...opts,
       question: result.record,

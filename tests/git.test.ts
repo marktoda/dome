@@ -11,6 +11,7 @@ import {
   fileInfoAtCommit,
   initRepo,
   isAncestor,
+  isWorkingTreeDirty,
   log,
   readBlob,
   readTree,
@@ -370,6 +371,69 @@ describe("git boundary", () => {
       expect(paths).not.toContain(".dome/state/locks/main.compiler-host.lock");
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("isWorkingTreeDirty: false on a clean tree, true with uncommitted edits", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-dirty-"));
+    try {
+      await initRepo(path);
+      await write(path, "wiki/a.md", "one\n");
+      await commit({
+        path,
+        message: "first",
+        files: ["wiki/a.md"],
+        committer: identityAt("2026-06-26T12:00:00.000Z"),
+      });
+
+      // Just committed — nothing uncommitted.
+      expect(await isWorkingTreeDirty(path)).toBe(false);
+
+      // A modified tracked file makes the tree dirty. (Different byte length
+      // than the committed content so the change is detected regardless of the
+      // git index stat-cache, which can short-circuit a same-size,
+      // same-mtime-second rewrite.)
+      await write(path, "wiki/a.md", "substantially different content\n");
+      expect(await isWorkingTreeDirty(path)).toBe(true);
+
+      // Committing the change returns the tree to clean.
+      await commit({
+        path,
+        message: "second",
+        files: ["wiki/a.md"],
+        committer: identityAt("2026-06-26T12:01:00.000Z"),
+      });
+      expect(await isWorkingTreeDirty(path)).toBe(false);
+
+      // A new untracked file also counts as dirty.
+      await write(path, "wiki/draft.md", "scratch\n");
+      expect(await isWorkingTreeDirty(path)).toBe(true);
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  test("isWorkingTreeDirty: gitignored untracked files do not count as dirty", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-dirty-ignored-"));
+    try {
+      await initRepo(path);
+      await write(path, ".gitignore", ".dome/state/\nscratch/\n");
+      await write(path, "wiki/a.md", "one\n");
+      await commit({
+        path,
+        message: "first",
+        files: [".gitignore", "wiki/a.md"],
+        committer: identityAt("2026-06-26T12:00:00.000Z"),
+      });
+      expect(await isWorkingTreeDirty(path)).toBe(false);
+
+      // Derived/ignored files (Dome state, ignored scratch) must not freeze the
+      // garden phase under the dirty-defer gate.
+      await write(path, "scratch/notes.md", "ephemeral\n");
+      await write(path, ".dome/state/projection.db", "binary\n");
+      expect(await isWorkingTreeDirty(path)).toBe(false);
+    } finally {
+      await rm(path, { recursive: true, force: true });
     }
   });
 });

@@ -85,6 +85,19 @@ export type AnswerQuestionResult =
     }
   | { readonly kind: "not-found" };
 
+/**
+ * What `insertQuestion` did to the open-question set. The sink layer uses
+ * this to decide whether the `questions.changed` operational signal should
+ * fire: `"inserted"` and `"refreshed"` change the open set;
+ * `"skipped-answered"` (a re-emit against an already-answered row, which the
+ * INSERT's `ON CONFLICT … WHERE answered_at IS NULL` guard leaves untouched)
+ * does not.
+ */
+export type InsertQuestionResult =
+  | "inserted"
+  | "refreshed"
+  | "skipped-answered";
+
 // ----- SQL ------------------------------------------------------------------
 
 const INSERT_QUESTION_SQL = `
@@ -101,6 +114,13 @@ ON CONFLICT(idempotency_key) DO UPDATE SET
   run_id = excluded.run_id,
   adopted_commit = excluded.adopted_commit
 WHERE questions.answered_at IS NULL
+`.trim();
+
+// Pre-insert probe backing InsertQuestionResult: `changes` alone cannot
+// separate a fresh insert from a conflict-refresh (both report 1), so the
+// discrimination reads the prior row state first. UNIQUE-indexed lookup.
+const ANSWERED_AT_BY_KEY_SQL = `
+SELECT answered_at FROM questions WHERE idempotency_key = ?
 `.trim();
 
 // Shared 12-column projection that maps positionally/by-name to QuestionRow →
@@ -202,13 +222,29 @@ const QuestionMetadataSchema = z
  * current provenance when source lines move; answered rows stay untouched so
  * durable answers remain auditable.
  *
+ * Returns what happened to the open-question set (`InsertQuestionResult`) so
+ * the sink layer can raise `questions.changed` only for real changes. The
+ * SELECT→INSERT pair is not a TOCTOU hazard: Bun's sqlite is a single
+ * synchronous connection, so no other writer can interleave between the two
+ * statements.
+ *
  * Throws on SQLite-level failure (disk full).
  */
 export function insertQuestion(
   db: ProjectionDb,
   opts: QuestionInsertOpts,
-): void {
+): InsertQuestionResult {
   const { effect, processorId, runId, adoptedCommit } = opts;
+  const existing = db.raw
+    .query<{ readonly answered_at: string | null }, [string]>(
+      ANSWERED_AT_BY_KEY_SQL,
+    )
+    .get(effect.idempotencyKey);
+  if (existing !== null && existing.answered_at !== null) {
+    // The conflict-update's `WHERE answered_at IS NULL` guard would make the
+    // INSERT a no-op anyway; skip the write and report it.
+    return "skipped-answered";
+  }
   const optionsJson =
     effect.options === undefined ? null : JSON.stringify(effect.options);
   const metadataJson =
@@ -224,6 +260,7 @@ export function insertQuestion(
     adoptedCommit,
     new Date().toISOString(),
   );
+  return existing === null ? "inserted" : "refreshed";
 }
 
 /**

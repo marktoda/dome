@@ -1234,10 +1234,12 @@ function operationalContextField(
     frame.declared,
     frame.granted,
   );
+  const canReadQuestions = effectiveQuestionsRead(frame.declared, frame.granted);
   if (
     allowedStatuses === null &&
     !canReadQuarantine &&
-    allowedRunStatuses === null
+    allowedRunStatuses === null &&
+    !canReadQuestions
   ) {
     return {};
   }
@@ -1270,6 +1272,8 @@ function operationalContextField(
         }
         return operational.orphanRuns(filter);
       },
+      questions: (filter) =>
+        canReadQuestions ? operational.questions(filter) : Object.freeze([]),
     }),
   };
 }
@@ -1310,6 +1314,16 @@ function effectiveQuarantineRead(
   return (
     declared.some((cap) => cap.kind === "quarantine.read") &&
     granted.some((cap) => cap.kind === "quarantine.read")
+  );
+}
+
+function effectiveQuestionsRead(
+  declared: ReadonlyArray<Capability>,
+  granted: ReadonlyArray<Capability>,
+): boolean {
+  return (
+    declared.some((cap) => cap.kind === "questions.read") &&
+    granted.some((cap) => cap.kind === "questions.read")
   );
 }
 
@@ -1420,6 +1434,12 @@ function scopeTriggerMatchesForProcessor(
         matchedSignals: Object.freeze(
           match.matchedSignals.filter(
             (event) =>
+              // Pathless events (`path: ""`) pass through: the operational
+              // `questions.changed` channel synthesizes them (processors.md
+              // §"Triggers and signals" — store-change signals carry no vault
+              // path, so there is nothing to capability-scope). compileRange
+              // never mints an empty path, so tree-diff signals are unaffected.
+              event.path === "" ||
               readablePath(event.path, frame.declared, frame.granted) !== null,
           ),
         ),

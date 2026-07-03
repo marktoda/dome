@@ -167,7 +167,6 @@ describe("runCheck", () => {
       ]),
       optional_processor_ids: [
         "dome.warden.integrity",
-        "dome.warden.integrity-answer",
         "dome.agent.preference-promotion-answer",
       ],
       questions: 1,

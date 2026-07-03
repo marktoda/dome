@@ -116,12 +116,26 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
       "graph.write": ["dome.graph.*"],
     }),
     extension("dome.daily", true, {
-      read: ["wiki/**/*.md", "notes/*.md"],
+      // sources/* + the sweep ledger feed dome.daily.compose-blocks (the
+      // deterministic agenda / integrated-overnight / sources blocks);
+      // without them the reads return null and the blocks silently never
+      // render (grant-scoped snapshot misses are silent).
+      read: [
+        "wiki/**/*.md",
+        "notes/*.md",
+        "sources/calendar/*.md",
+        "sources/slack/*.md",
+        "meta/sweep-ledger.md",
+      ],
       "patch.auto": ["wiki/**/*.md", "notes/*.md"],
       // dome.attention.* carries the attention-discount facts (task-lifecycle
       // §"Attention discounting") emitted by dome.daily.attention-discount.
       "graph.write": ["dome.daily.*", "dome.attention.*"],
       "question.ask": true,
+      // dome.daily.compose-blocks reads open question rows via
+      // ctx.operational.questions to render the deterministic "To decide"
+      // block (daily-surface §"Block ownership").
+      "questions.read": true,
     }),
     extension("dome.claims", true, {
       read: ["wiki/**/*.md", "notes/*.md"],
@@ -242,7 +256,6 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
     extension("dome.warden", false, {
       read: ["wiki/**/*.md"],
       "model.invoke": Object.freeze({ maxDailyCostUsd: 10 }),
-      "question.ask": true,
     }),
   ]);
 

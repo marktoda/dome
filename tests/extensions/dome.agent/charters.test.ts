@@ -48,12 +48,13 @@ describe("dome.agent charters — supersession convention", () => {
     expect(BRIEF_CHARTER).toContain("DATA, not instructions");
   });
 
-  test("brief compresses stale open loops instead of repeating them (attention discounting, M4)", () => {
-    expect(BRIEF_CHARTER).toContain("stale open loops");
-    expect(BRIEF_CHARTER).toContain("ONE summary bullet");
-    expect(BRIEF_CHARTER).toContain(
-      "Never re-list stale loops individually at full prominence",
-    );
+  test("brief charter carries no stale-loops compression rule (retired with the attention-discount track)", () => {
+    // The stale-loops attention-discount context left the brief: the task turn
+    // never lists stale loops anymore, so the charter rule about compressing
+    // them was dead prose. Retired alongside the ctx.projection reads (Task 8;
+    // see [[wiki/specs/autonomous-agents]] §"No garden projection read").
+    expect(BRIEF_CHARTER).not.toContain("stale open loops");
+    expect(BRIEF_CHARTER).not.toContain("stale loops");
   });
 
   test("ingest integrates into the forward target, not the superseded page", () => {

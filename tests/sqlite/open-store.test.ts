@@ -181,7 +181,10 @@ describe("store-opener seam", () => {
       if (!first.ok) return;
       first.value.raw.close();
 
-      let seen: string | null = null;
+      // Sentinel (not null): the only assignment is inside the synchronous
+      // tryMigrate closure below, which TS control-flow won't narrow through —
+      // a `string | null` here would narrow to `null` at the assertion.
+      let seen = "<tryMigrate-not-called>";
       const migrated = openSimpleStore(
         simpleSpec(dbPath, {
           withIndex: true,

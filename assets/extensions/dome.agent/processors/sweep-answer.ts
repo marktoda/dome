@@ -1,7 +1,7 @@
 // dome.agent.sweep-answer — deterministic answer handler for the nightly sweep.
 //
-// Matches questions in TWO key namespaces under the shared `dome.agent.sweep:`
-// prefix (the trigger matches both; this handler discriminates by key segment):
+// Matches questions in ONE key namespace under the shared `dome.agent.sweep:`
+// prefix:
 //
 //   dome.agent.sweep:uncertain:<material>-><dest>
 //     Options ["integrate", "skip"]. On "integrate": reads the destination from
@@ -10,14 +10,12 @@
 //     On "skip": no effects (the `questioned` ledger row already prevents
 //     re-queueing).
 //
-//   dome.agent.sweep:escalate:<material>-><dest>
-//     Options ["skip"] only; no proposedSection in metadata. The answer itself
-//     closes the question — the pair is already settled in the ledger (an
-//     `escalated` row for the repeated-failure threshold; a `questioned` row
-//     for the oversized-page guards), so this handler records nothing for any
-//     answer value and never re-queues the pair. Re-eligibility after an
-//     escalation is deliberately manual: the owner hand-deletes the
-//     `escalated` row from the ledger (no retry-granted flow).
+// Escalations (repeated-failure threshold + oversized-page guards) now surface
+// as `warning` diagnostics (codes dome.agent.sweep.escalate-failures /
+// .dest-too-large / .material-too-large) — they are not questions and have no
+// answer handler. A pre-migration `dome.agent.sweep:escalate:` answer falls
+// through to the unknown branch → a `dome.agent.sweep-answer-invalid` warning
+// diagnostic is emitted (unrecognized key shape).
 //
 // Settlement note: for uncertain→integrate, no ledger update is emitted here.
 // The pair's `:: questioned` row already prevents re-queueing by the sweep
@@ -54,13 +52,11 @@ import { ensureSourcesLink } from "./sweep";
 // ----- Key discrimination ----------------------------------------------------
 
 const UNCERTAIN_PREFIX = "dome.agent.sweep:uncertain:";
-const ESCALATE_PREFIX = "dome.agent.sweep:escalate:";
 
-type KeyKind = "uncertain" | "escalate" | "unknown";
+type KeyKind = "uncertain" | "unknown";
 
 function discriminateKey(key: string): KeyKind {
   if (key.startsWith(UNCERTAIN_PREFIX)) return "uncertain";
-  if (key.startsWith(ESCALATE_PREFIX)) return "escalate";
   return "unknown";
 }
 
@@ -155,19 +151,10 @@ const sweepAnswer = defineProcessorImplementation({
           code: "dome.agent.sweep-answer-invalid",
           message:
             `dome.agent.sweep-answer received an answer with an unrecognized key shape: "${key}". ` +
-            "Expected a key starting with dome.agent.sweep:uncertain: or dome.agent.sweep:escalate:",
+            "Expected a key starting with dome.agent.sweep:uncertain:",
           sourceRefs: input.question.sourceRefs,
         }),
       ];
-    }
-
-    // Escalation questions carry only "skip"; the answer itself closes the
-    // question and the ledger row (escalated for the failure threshold,
-    // questioned for the size guards) already settles the pair — nothing to
-    // emit, nothing re-queues. The owner re-arms an escalated pair only by
-    // hand-deleting its row from the ledger.
-    if (keyKind === "escalate") {
-      return Object.freeze([]);
     }
 
     // --- uncertain namespace ---

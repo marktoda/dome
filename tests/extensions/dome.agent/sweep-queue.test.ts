@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildSweepQueue, safeCursor } from "../../../assets/extensions/dome.agent/lib/sweep-queue";
-import { parseSweepLedger } from "../../../assets/extensions/dome.agent/lib/sweep-ledger";
+import { parseSweepLedger } from "../../../assets/extensions/dome.daily/processors/sweep-ledger";
 
 const TODAY = "2026-06-10";
 

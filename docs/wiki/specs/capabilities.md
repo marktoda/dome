@@ -5,14 +5,14 @@ updated: 2026-06-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
-description: "Capability broker: sixteen tiers, manifest-declared x vault-granted intersection, enforced at the single enforceCapability chokepoint"
+description: "Capability broker: seventeen tiers, manifest-declared x vault-granted intersection, enforced at the single enforceCapability chokepoint"
 ---
 
 # Capabilities
 
 This spec is normative for Dome's capability broker — the one chokepoint that decides whether an [[wiki/specs/effects|Effect]] emitted by a [[wiki/specs/processors|Processor]] is applied or rejected. Every effect, regardless of source, passes through `enforceCapability(effect, processor.capabilities, grants)` before the engine applies it. This is pinned by [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]].
 
-Note: the `read · capture · resolve · converse · author` vocabulary in [[wiki/specs/http-surface]] scopes *who can reach a route* (the HTTP surface's per-route access gate); the engine's sixteen capability tiers here scope *what an effect may do once the engine applies it* — they are orthogonal layers that compose, not duplicates of each other.
+Note: the `read · capture · resolve · converse · author` vocabulary in [[wiki/specs/http-surface]] scopes *who can reach a route* (the HTTP surface's per-route access gate); the engine's seventeen capability tiers here scope *what an effect may do once the engine applies it* — they are orthogonal layers that compose, not duplicates of each other.
 
 ## Why a capability broker
 
@@ -22,7 +22,7 @@ The v1 engine model treats every behavior as an extension — first-party `dome.
 
 ## Capability tiers
 
-Capabilities are about **effect power**, not arbitrary trust labels. Sixteen capability tiers cover every effect a processor can emit and every non-effect runtime power exposed through processor context:
+Capabilities are about **effect power**, not arbitrary trust labels. Seventeen capability tiers cover every effect a processor can emit and every non-effect runtime power exposed through processor context:
 
 ```ts
 type Capability =
@@ -41,7 +41,8 @@ type Capability =
   | { kind: "quarantine.read" }
   | { kind: "quarantine.recover"; actions: Array<"reset"> }      // QuarantineRecoveryEffect actions
   | { kind: "run.read";      statuses?: ("queued" | "running" | "succeeded" | "failed" | "skipped" | "timed_out" | "cancelled")[] }
-  | { kind: "run.recover";   actions: Array<"fail"> };           // RunRecoveryEffect actions
+  | { kind: "run.recover";   actions: Array<"fail"> }            // RunRecoveryEffect actions
+  | { kind: "questions.read" };                                  // ctx.operational.questions() — open/resolved question rows
 ```
 
 ### `read`
@@ -160,6 +161,24 @@ Permits emitting `RunRecoveryEffect` for the listed actions. Today the only
 action is `fail`, which marks one exact running-row generation failed after
 the user approves a `dome.health` recovery question. It does not permit
 arbitrary run-ledger mutation.
+
+### `questions.read`
+
+Permits reading open/resolved question rows through `ctx.operational.questions(filter?)` —
+the same operational-view seam as `outbox.read` / `quarantine.read` / `run.read`,
+extended to the question store (id, text, options, `automationPolicy`, risk,
+`recommendedAnswer`, `askedAt`, `processorId`, `sourceRefs`). This is deliberately
+*not* a projection read: garden-phase processors never gain `ctx.projection`
+access to facts through this capability, keeping garden-writes-facts and
+garden-reads-facts loops apart. Enforcement happens at view-construction time —
+the runtime exposes `ctx.operational.questions` only when both the processor's
+declaration and the vault grant include `questions.read` (declared ∩ granted) —
+not by the broker at effect-emission time, because there is no effect to
+intercept: this is a read power, like the other three `operational.*` reads. A
+processor that declares `questions.read` and finds `ctx.operational?.questions`
+absent must treat that as loud, not silent — see
+[[wiki/specs/daily-surface]] §"The degradation ladder"
+(`dome.daily.questions-view-missing`).
 
 ## Manifest schema
 
@@ -316,13 +335,13 @@ Called exactly once at the engine effect-routing boundary before an effect can m
 
 Every effect attempt with a capability dimension records a `CapabilityUse` row in the run ledger's `RunRecord` (per [[wiki/specs/run-ledger]] §"CapabilityUse"), including allowed, downgraded, and denied attempts. This is the audit surface for "what did this processor try to reach" and the input to per-extension cost / quota tracking.
 
-## Why sixteen tiers, not more
+## Why seventeen tiers, not more
 
-The sixteen cover every effect kind and the non-effect runtime powers (`model.invoke`, operational outbox reads, operational quarantine reads, and operational run reads). Three properties drive the closed set:
+The seventeen cover every effect kind and the non-effect runtime powers (`model.invoke`, operational outbox reads, operational quarantine reads, operational run reads, and operational question reads). Three properties drive the closed set:
 
-1. **Effect/runtime-power coverage.** Each effect kind in [[wiki/specs/effects]] has a corresponding required capability per [[wiki/matrices/effect-x-capability]], and non-effect runtime powers (`model.invoke`, `outbox.read`, `quarantine.read`, `run.read`) have explicit context gates. Adding capabilities beyond the sixteen would mean inventing effects or runtime powers without a routing target.
+1. **Effect/runtime-power coverage.** Each effect kind in [[wiki/specs/effects]] has a corresponding required capability per [[wiki/matrices/effect-x-capability]], and non-effect runtime powers (`model.invoke`, `outbox.read`, `quarantine.read`, `run.read`, `questions.read`) have explicit context gates. Adding capabilities beyond the seventeen would mean inventing effects or runtime powers without a routing target.
 2. **Trust dimensions are about effect power, not source.** Distinguishing "trusted plugin" from "untrusted plugin" via tier doesn't help; what matters is what the plugin can *do*. `external: "calendar.write"` is the trust dimension; the plugin is whoever holds it.
-3. **The enforcement code stays simple.** Sixteen cases across effect enforcement and context gating are auditable. A more granular set would push enforcement into per-effect-kind validators, dispersing the trust contract.
+3. **The enforcement code stays simple.** Seventeen cases across effect enforcement and context gating are auditable. A more granular set would push enforcement into per-effect-kind validators, dispersing the trust contract.
 
 ## Related
 
