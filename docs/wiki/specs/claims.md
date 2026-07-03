@@ -1,9 +1,10 @@
 ---
 type: spec
 created: 2026-06-09
-updated: 2026-06-12
+updated: 2026-07-02
 sources:
   - "[[cohesive/brainstorms/2026-06-09-meaning-consolidation-claims-and-sweeper]]"
+  - "[[cohesive/brainstorms/2026-07-02-pruning-pass-design]]"
 description: Claim-line grammar (bold key, as-of date, ^c anchor) and the dome.claims stamp/index/render-facts/stale-claims processors; supersession is an in-place edit under one anchor
 ---
 
@@ -47,7 +48,7 @@ blocks — recognized by shape on any page matched by the bundle's globs
 |---|---|---|---|
 | `dome.claims.stamp` | garden | deterministic, `patch.auto` | Anchors claim lines lacking `^c…` ids; converges at depth 1. |
 | `dome.claims.index` | adoption | deterministic, `graph.write dome.claims.*` | One `dome.claims.claim` fact per claim line: object = JSON `{key, value, asOf?}`, sourceRef carries the line range and, when the line is anchored, the stableId. Facts replace per path on edit and clear on delete (the manifest's `file.deleted` triggers are load-bearing). |
-| `dome.claims.render-facts` | garden | deterministic, `patch.auto` | Compiles the `## Current facts` digest block (a `dome.claims:current-facts` generated block, presentational — not claim grammar) at the head of pages with ≥ `current_facts_min_claims` (default 3) claim lines; splices it out below threshold; idempotent. |
+| `dome.claims.render-facts` | garden | deterministic, `patch.auto` | Compiles the `## Current facts` digest block (a `dome.claims:current-facts` generated block, presentational — not claim grammar) at the head of `wiki/entities/**` pages with ≥ `current_facts_min_claims` (default 3) non-placeholder claim lines, capped at 12 bullets; splices it out on any page below threshold or outside entity scope; idempotent. See §"`render-facts` charter" below. |
 | `dome.claims.stale-claims` | view | deterministic, read-only | Lists claims whose `*(as of)*` is older than `stale_claims_horizon_days` (default 120), computed at command time from the injected clock (`ctx.now()`) — a `ViewEffect`, never a persisted fact; invoked via `dome run stale-claims`. |
 
 The three state-maintaining processors are registered as the
@@ -61,6 +62,50 @@ each pass, never accreted. It renders a presentational `- **Key** — value`
 shape (bold key **without** the colon) so it is never re-parsed as a claim and
 fed back into the index; for the same reason `claimsFromMarkdown` excludes the
 `dome.claims:current-facts` block region.
+
+### `render-facts` charter
+
+Rechartered 2026-07-02 (pruning-pass design §3) after a live-vault audit found
+two failures on the busiest entity page: a 75-line digest that restated the
+page body word-for-word, and template placeholders
+(`[Specific incident — fill in or drop]`) promoted into rendered "facts."
+`render-facts` was also the single largest engine-commit churn category
+(211 commits/14d). The charter now reads:
+
+- **Scope: `wiki/entities/**` only.** A page outside that prefix is NEVER
+  desired, regardless of its claim count. `dome.claims.stamp` and
+  `dome.claims.index` are untouched — they still cover `wiki/**/*.md` and
+  `notes/*.md` — only the digest's render scope narrowed.
+- **Removal: the existing splice-out branch, unconditional outside scope.**
+  A non-entity page carrying a stale `dome.claims:current-facts` block gets it
+  spliced out (the same removal codepath that already fires below the claim
+  threshold) the next time that page is touched — there is no whole-vault
+  sweep; a page that is never edited again keeps its stale block until it is.
+- **Cap: 12 bullets, most-recent-`asOf`-first.** Claims sort by `asOf`
+  descending before capping; claims with no `asOf` sort last, ties keep
+  document order. When the page carries more than 12 renderable claims, a
+  `- +N more — \`dome query <subject>\`` tail line closes the list (the
+  same cap idiom as `dome.daily`'s "To decide" block; `<subject>` is the
+  page's own name, since the claim's subject IS its host page).
+- **Placeholder filter: `[`…`]`-bracketed values never render.** A claim
+  whose value (after stripping any inline as-of marker) is a single
+  `[`…`]`-bracketed span — template scaffolding like
+  `[Specific incident — fill in or drop]` — is dropped before the threshold
+  count and before rendering. A `[[wikilink]]` (double brackets) is real
+  content and is never treated as a placeholder.
+
+**Backlog — cross-page subject attribution is inexpressible today.** The
+originally-approved "external-only" charter (only surface what OTHER pages
+say about this page's subject) could not ship: a `ClaimFact` carries no
+source-page provenance field, so "what other pages say about the subject" is
+not a filter claim structure can express — the claim's subject IS its
+containing page, full stop. What shipped instead (scope + cap + placeholder
+filter) attacks the audit's actual complaints — the 75-line self-restatement
+and the laundered placeholders — without pretending to a provenance the claim
+model does not carry. Adding cross-page subject attribution (a claim
+recording which page(s) reference or discuss its subject, distinct from the
+claim's own host page) is deferred claims-layer work; see also
+§"Deferred" below.
 
 ## Backfilling coverage on an existing vault
 
@@ -155,3 +200,10 @@ A whole-file opt-out (frontmatter `claims: false`) and/or a templates-folder
 exclusion, motivated by `{{placeholder}}` template files in real vaults —
 required before enabling the bundle on a vault whose `notes/` carries
 Templater templates.
+
+**Cross-page subject attribution** — a `ClaimFact` carries no source-page
+provenance today, so "what other pages say about this subject" cannot be
+expressed as a filter over claim structure; see §"`render-facts` charter"
+above for the full rationale. Would need a provenance field on `ClaimFact`
+(or a separate cross-reference fact) before an "external-only" digest charter
+becomes expressible.

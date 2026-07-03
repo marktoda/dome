@@ -39,7 +39,7 @@ const THREE_CLAIMS = [
 
 describe("dome.claims.render-facts", () => {
   test("3-claim page with no block: one patch inserting the Current facts block after frontmatter + H1", async () => {
-    const path = "wiki/notes/phoenix.md";
+    const path = "wiki/entities/phoenix.md";
     const effects = await runRenderFacts([path], { [path]: THREE_CLAIMS });
 
     expect(effects).toHaveLength(1);
@@ -62,7 +62,7 @@ describe("dome.claims.render-facts", () => {
     // dome.claims.stamp will apply in the same garden cascade, so the first
     // rendered block is already the fixed-point block with backlinks.
     expect(
-      content.match(/\(\[\[wiki\/notes\/phoenix#\^c[0-9a-f]{8}\]\]\)/g) ??
+      content.match(/\(\[\[wiki\/entities\/phoenix#\^c[0-9a-f]{8}\]\]\)/g) ??
         [],
     ).toHaveLength(3);
     // Inserted AFTER frontmatter and the first H1: the H1 precedes the block,
@@ -80,7 +80,7 @@ describe("dome.claims.render-facts", () => {
   });
 
   test("idempotent: re-running on a page that already has the correct block yields ZERO effects", async () => {
-    const path = "wiki/notes/phoenix.md";
+    const path = "wiki/entities/phoenix.md";
     const first = expectPatch(await runRenderFacts([path], { [path]: THREE_CLAIMS }), 0);
     const written = first.changes.find((c) => String(c.path) === path);
     expect(written?.kind).toBe("write");
@@ -95,6 +95,141 @@ describe("dome.claims.render-facts", () => {
     const content = ["# Thin", "", "**Status:** Active", "**Owner:** [[Mark]]", ""].join("\n");
     const effects = await runRenderFacts([path], { [path]: content });
     expect(effects).toHaveLength(0);
+  });
+
+  test("non-entity page (wiki/notes) with an existing block ABOVE threshold: touched again → block removed (scope guard, not threshold)", async () => {
+    // Recharter: digests survive on wiki/entities/** ONLY. This page carries
+    // 3 claims (at/above the default min) and an existing correct block, so
+    // pre-recharter logic would consider it "desired" and leave it alone.
+    // Under the scope guard a non-entity page is NEVER desired, so the
+    // existing splice-out branch fires regardless of claim count.
+    const path = "wiki/notes/plenty.md";
+    const content = [
+      "# Plenty",
+      "",
+      START,
+      "## Current facts",
+      "",
+      "- **Status** — Active",
+      "- **Owner** — [[Mark]]",
+      "- **Stage** — Build",
+      END,
+      "",
+      "**Status:** Active",
+      "**Owner:** [[Mark]]",
+      "**Stage:** Build",
+      "",
+      "Surviving prose.",
+      "",
+    ].join("\n");
+
+    const effects = await runRenderFacts([path], { [path]: content });
+    expect(effects).toHaveLength(1);
+    const change = changesByPath(expectPatch(effects, 0)).get(path);
+    expect(change?.kind).toBe("write");
+    if (change?.kind !== "write") return;
+    expect(change.content).not.toContain(START);
+    expect(change.content).not.toContain(END);
+    expect(change.content).not.toContain("## Current facts");
+    expect(change.content).toContain("# Plenty");
+    expect(change.content).toContain("Surviving prose.");
+    // The original claim lines (human prose) survive untouched.
+    expect(change.content).toContain("**Status:** Active");
+  });
+
+  test("entity page renders a capped+sorted digest: most-recent-asOf-first", async () => {
+    const path = "wiki/entities/danny.md";
+    const content = [
+      "# Danny",
+      "",
+      "**Status:** Active *(as of 2026-06-01)*",
+      "**Owner:** [[Mark]] *(as of 2026-06-20)*",
+      "**Stage:** Build *(as of 2026-06-10)*",
+      "**Extra:** Undated claim",
+      "",
+    ].join("\n");
+
+    const patch = expectPatch(await runRenderFacts([path], { [path]: content }), 0);
+    const change = patch.changes.find((c) => String(c.path) === path);
+    expect(change?.kind).toBe("write");
+    if (change?.kind !== "write") return;
+    const block = change.content.slice(
+      change.content.indexOf(START),
+      change.content.indexOf(END) + END.length,
+    );
+    const bulletLines = block
+      .split("\n")
+      .filter((line) => line.startsWith("- **"));
+    // Most-recent-asOf-first; the undated claim (no asOf) sorts last. Anchors
+    // are stripped for comparison — they're deterministic but irrelevant
+    // noise for the ordering assertion this test cares about.
+    const stripAnchor = (line: string) => line.replace(/ \(\[\[.*?\]\]\)$/, "");
+    expect(bulletLines.map(stripAnchor)).toEqual([
+      "- **Owner** — [[Mark]] *(as of 2026-06-20)*",
+      "- **Stage** — Build *(as of 2026-06-10)*",
+      "- **Status** — Active *(as of 2026-06-01)*",
+      "- **Extra** — Undated claim",
+    ]);
+  });
+
+  test("placeholder claim ([-bracketed template text) is excluded from the rendered digest", async () => {
+    const path = "wiki/entities/template-page.md";
+    const content = [
+      "# Template Page",
+      "",
+      "**Status:** Active",
+      "**Owner:** [[Mark]]",
+      "**Stage:** Build",
+      "**Incident:** [Specific incident — fill in or drop]",
+      "",
+    ].join("\n");
+
+    const patch = expectPatch(await runRenderFacts([path], { [path]: content }), 0);
+    const change = patch.changes.find((c) => String(c.path) === path);
+    expect(change?.kind).toBe("write");
+    if (change?.kind !== "write") return;
+    const block = change.content.slice(
+      change.content.indexOf(START),
+      change.content.indexOf(END) + END.length,
+    );
+    // The real claims render; the placeholder never does.
+    expect(block).toContain("- **Status** — Active");
+    expect(block).toContain("- **Owner** — [[Mark]]");
+    expect(block).toContain("- **Stage** — Build");
+    expect(block).not.toContain("Incident");
+    expect(block).not.toContain("fill in or drop");
+    // The placeholder claim is excluded from the count too: only 3 bullets.
+    expect(block.split("\n").filter((line) => line.startsWith("- **"))).toHaveLength(3);
+  });
+
+  test("13 claims on an entity page: capped at 12 bullets + `+1 more — dome query <subject>` tail", async () => {
+    const path = "wiki/entities/prolific.md";
+    const claimLines = Array.from({ length: 13 }, (_, i) => {
+      const n = i + 1;
+      const day = String(n).padStart(2, "0");
+      return `**Key${n}:** Value ${n} *(as of 2026-01-${day})*`;
+    });
+    const content = ["# Prolific", "", ...claimLines, ""].join("\n");
+
+    const patch = expectPatch(await runRenderFacts([path], { [path]: content }), 0);
+    const change = patch.changes.find((c) => String(c.path) === path);
+    expect(change?.kind).toBe("write");
+    if (change?.kind !== "write") return;
+    const block = change.content.slice(
+      change.content.indexOf(START),
+      change.content.indexOf(END) + END.length,
+    );
+    const bulletLines = block
+      .split("\n")
+      .filter((line) => line.startsWith("- **"));
+    expect(bulletLines).toHaveLength(12);
+    // Most-recent-asOf-first: Key13 (2026-01-13) sorts first, Key2 is the
+    // 12th (last shown); Key1 (the oldest) is the one dropped.
+    expect(bulletLines[0]).toContain("Key13");
+    expect(bulletLines[11]).toContain("Key2");
+    // Key1 (2026-01-01, the oldest) is the one dropped by the cap.
+    expect(block).not.toContain("**Key1**");
+    expect(block).toContain("- +1 more — `dome query prolific`");
   });
 
   test("below threshold with a stale block: one patch splicing the block OUT, prose preserved", async () => {
@@ -132,7 +267,7 @@ describe("dome.claims.render-facts", () => {
   });
 
   test("rendered block body uses NO **Key:** claim grammar (cannot be re-indexed)", async () => {
-    const path = "wiki/notes/phoenix.md";
+    const path = "wiki/entities/phoenix.md";
     const patch = expectPatch(await runRenderFacts([path], { [path]: THREE_CLAIMS }), 0);
     const change = patch.changes.find((c) => String(c.path) === path);
     expect(change?.kind).toBe("write");
@@ -154,7 +289,7 @@ describe("dome.claims.render-facts", () => {
   });
 
   test("inline as-of marker renders the date EXACTLY ONCE (no doubling)", async () => {
-    const path = "wiki/notes/dated.md";
+    const path = "wiki/entities/dated.md";
     const content = [
       "# Dated",
       "",
@@ -182,7 +317,7 @@ describe("dome.claims.render-facts", () => {
     // sits MID-value with a `[[wikilink]]` AFTER it. claims-shared strips only
     // the trailing `^c…` anchor, so the marker stays embedded in `claim.value`.
     // A trailing-anchored strip would miss it and the date would double.
-    const path = "wiki/notes/superseded.md";
+    const path = "wiki/entities/superseded.md";
     const content = [
       "# Superseded",
       "",
@@ -228,7 +363,7 @@ describe("dome.claims.render-facts", () => {
   });
 
   test("replace→replace idempotency: editing one claim re-renders the block once, re-run is a no-op", async () => {
-    const path = "wiki/notes/phoenix.md";
+    const path = "wiki/entities/phoenix.md";
     // Seed: a page that already carries a correct block.
     const seeded = expectPatch(await runRenderFacts([path], { [path]: THREE_CLAIMS }), 0);
     const seededWrite = seeded.changes.find((c) => String(c.path) === path);
@@ -255,7 +390,7 @@ describe("dome.claims.render-facts", () => {
   });
 
   test("no frontmatter and no H1: block inserted at top of body, idempotent on re-run", async () => {
-    const path = "wiki/notes/bare.md";
+    const path = "wiki/entities/bare.md";
     const content = [
       "**Status:** Active",
       "**Owner:** [[Mark]]",
