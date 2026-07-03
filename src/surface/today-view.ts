@@ -41,6 +41,17 @@ export type TodayTaskRow = {
   readonly entities?: readonly string[];
   /** Obsidian task priority parsed by the producer; null/absent when untagged. */
   readonly priority?: "highest" | "high" | "medium" | "low" | "lowest" | null;
+  /**
+   * The task line's stamped `^block-anchor` id, when the source line already
+   * carries one (docs/wiki/invariants — settle's block-anchor identity;
+   * src/surface/settle.ts). Optional/compatible widening of the
+   * `dome.daily.today/v1` contract: a task without a stamped anchor omits
+   * this field entirely (e.g. one garden cascade behind stamp-block-id, or a
+   * body-hash-only fallback identity) — such rows are NOT settle-able and
+   * consumers must treat them as decorative-only, never invent a synthetic
+   * id to fill the gap.
+   */
+  readonly blockId?: string;
 };
 
 export type TodaySourceRef = {
@@ -128,6 +139,7 @@ const taskRowWireSchema = z.object({
   lastChangedAt: z.string().nullable().optional(),
   priority: z.enum(["highest", "high", "medium", "low", "lowest"]).nullable().optional(),
   sourceRefs: z.array(sourceRefWireSchema).readonly().optional(),
+  blockId: z.string().optional(),
 });
 
 const questionRowWireSchema = z.object({
@@ -263,6 +275,7 @@ function parseTaskRowRecord(r: Record<string, unknown>): TodayTaskRow | null {
       ? null
       : undefined;
   const sourceRefs = parseSourceRefs(r.sourceRefs);
+  const blockId = typeof r.blockId === "string" && r.blockId.length > 0 ? r.blockId : undefined;
   return {
     text,
     path: typeof r.path === "string" ? r.path : "",
@@ -275,6 +288,7 @@ function parseTaskRowRecord(r: Record<string, unknown>): TodayTaskRow | null {
     ...(sourceRefs.length > 0 ? { sourceRefs } : {}),
     ...(entities.length > 0 ? { entities } : {}),
     ...(priority !== null ? { priority } : {}),
+    ...(blockId !== undefined ? { blockId } : {}),
   };
 }
 

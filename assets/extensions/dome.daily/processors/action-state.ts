@@ -14,7 +14,11 @@ import {
 
 import { dailyPath, dailyPathSettings, formatDate, isValidDailyDate, localDateParts, parseDailyPath } from "./daily-paths";
 import { type DailyDate, type DailyOpenLoopSource, type DailyPathSettings } from "./daily-types";
-import { openLoopSurfaceKey, openSourceBackedOpenLoopsFromMarkdown } from "./open-loop-surface";
+import {
+  openLoopAnchorFromStableId,
+  openLoopSurfaceKey,
+  openSourceBackedOpenLoopsFromMarkdown,
+} from "./open-loop-surface";
 
 import { compareStrings } from "../../../../src/core/compare";
 // Fact values are clean semantic bodies. Origin is carried by a parallel
@@ -81,6 +85,13 @@ export type DailyTaskItem = {
   readonly sourceRefs: ReadonlyArray<SourceRef>;
   /** Decoded URL/path from an inline `([↗](target))` origin marker, if present. */
   readonly origin?: string;
+  /**
+   * The origin line's stamped `^block-anchor` id, when it carries one — the
+   * settle-able identity (src/surface/settle.ts). Absent for tasks not yet
+   * anchored (one garden cascade behind `dome.daily.stamp-block-id`, or a
+   * body-hash-only identity); never synthesized.
+   */
+  readonly blockId?: string;
 };
 
 export type DailyTaskPriority =
@@ -394,6 +405,9 @@ function taskItemFromFact(input: {
   // Correlate origin via the parallel dome.daily.task_origin fact using stableId.
   const sid = ref?.stableId;
   const origin = sid !== undefined ? input.originByStableId.get(sid) : undefined;
+  // Recover the raw ^anchor from the stableId, when it names one (not the
+  // transient body-hash fallback) — the settle-able identity.
+  const blockId = openLoopAnchorFromStableId(sid);
   const metadata = taskMetadata(body);
   const line = ref?.range?.startLine ?? null;
   const sourceRefs = Object.freeze([...fact.sourceRefs]);
@@ -409,6 +423,7 @@ function taskItemFromFact(input: {
     evidenceLabel: actionEvidenceLabel({ path, line, sourceRefs }),
     sourceRefs,
     ...(origin !== undefined ? { origin } : {}),
+    ...(blockId !== undefined ? { blockId } : {}),
   });
 }
 
@@ -446,6 +461,9 @@ function taskItemFromDailySurface(input: {
     }),
     sourceRefs,
     ...(input.item.origin !== undefined ? { origin: input.item.origin } : {}),
+    // DailyOpenLoopSource already carries the raw ^anchor directly — no
+    // stableId-string parsing needed on this path.
+    ...(input.item.anchor !== undefined ? { blockId: input.item.anchor } : {}),
   });
 }
 
@@ -658,6 +676,9 @@ function mergeDailyTaskItems(
     sourceRefs,
     ...((primary.origin ?? duplicate.origin) !== undefined
       ? { origin: primary.origin ?? duplicate.origin }
+      : {}),
+    ...((primary.blockId ?? duplicate.blockId) !== undefined
+      ? { blockId: primary.blockId ?? duplicate.blockId }
       : {}),
   });
 }

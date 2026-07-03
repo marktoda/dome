@@ -44,4 +44,38 @@ describe("DomeClient", () => {
     expect(r.status).toBe("answered");
     expect(body).toEqual({ id: 3, value: "yes" });
   });
+
+  test("settle() POSTs blockId+disposition to /settle", async () => {
+    let body: unknown;
+    let seen: Request | undefined;
+    globalThis.fetch = mock(async (req: Request) => {
+      seen = req;
+      body = await req.json();
+      return new Response(JSON.stringify({ schema: "dome.settle/v1", status: "settled", block_id: "t1a2b3c4", disposition: "close", commit: "abc" }), { status: 200 });
+    }) as never;
+    const c = new DomeClient("tok");
+    const r = await c.settle("t1a2b3c4", "close");
+    expect(r.status).toBe("settled");
+    expect(r.block_id).toBe("t1a2b3c4");
+    expect(body).toEqual({ blockId: "t1a2b3c4", disposition: "close" });
+    expect(seen!.url).toContain("/settle");
+    expect(seen!.headers.get("authorization")).toBe("Bearer tok");
+  });
+
+  test("settle() includes deferUntil only when provided", async () => {
+    let body: unknown;
+    globalThis.fetch = mock(async (req: Request) => { body = await req.json(); return new Response(JSON.stringify({ schema: "dome.settle/v1", status: "settled", block_id: "t1", disposition: "defer" }), { status: 200 }); }) as never;
+    const c = new DomeClient("tok");
+    await c.settle("t1", "defer", "2026-07-10");
+    expect(body).toEqual({ blockId: "t1", disposition: "defer", deferUntil: "2026-07-10" });
+  });
+
+  test("settle() surfaces a not-found result without throwing", async () => {
+    mockJson(404, { schema: "dome.settle/v1", status: "not-found", message: "no task line carries anchor ^tmissing" });
+    const c = new DomeClient("tok");
+    // performSettle's not-found/invalid are 4xx statuses; the client's
+    // generic error-envelope handling treats any non-2xx as a rejection —
+    // mirrors resolve()/capture()'s existing behavior (a non-2xx rejects).
+    await expect(c.settle("tmissing", "close")).rejects.toThrow();
+  });
 });

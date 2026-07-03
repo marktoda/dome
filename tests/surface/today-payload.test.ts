@@ -79,3 +79,23 @@ test("tolerates optional/nullable task fields (line/dueDate absent)", () => {
   });
   expect(r.success).toBe(true);
 });
+
+test("blockId is an optional (compatible-widening) task field", () => {
+  const r = todayPayloadSchema.safeParse({
+    ...(valid as Record<string, unknown>),
+    openTasks: [{ text: "anchored task", path: "p", blockId: "t1a2b3c4" }],
+  });
+  expect(r.success).toBe(true);
+  if (!r.success) return;
+  expect(r.data.openTasks[0]!.blockId).toBe("t1a2b3c4");
+
+  // A task with no blockId (not yet anchored) still validates — the field is
+  // fully optional, never synthesized by the schema.
+  const withoutBlockId = todayPayloadSchema.safeParse({
+    ...(valid as Record<string, unknown>),
+    openTasks: [{ text: "unanchored task", path: "p" }],
+  });
+  expect(withoutBlockId.success).toBe(true);
+  if (!withoutBlockId.success) return;
+  expect(withoutBlockId.data.openTasks[0]!.blockId).toBeUndefined();
+});

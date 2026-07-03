@@ -155,6 +155,12 @@ a.wl { text-decoration: underline; text-decoration-thickness: 1px; text-underlin
 .row.followup .text { color: #b8b4ab; }
 .row .due { font: 500 11px var(--mono); color: var(--amber); flex: none; margin-top: 2px; }
 
+/* live checkbox — a task with a settle-able blockId (glance-and-settle) */
+input.box { appearance: none; -webkit-appearance: none; padding: 0; background: transparent; cursor: pointer; }
+input.box:disabled { cursor: default; opacity: .7; }
+input.box:checked { background: var(--amber); border-color: var(--amber); }
+.row.settling .text { text-decoration: line-through; opacity: .55; }
+
 /* urgency buckets (overdue / today / this week / later) — painted from the shared view-model */
 .bucket-label { font: 500 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; margin: 10px 0 7px 2px; }
 .bucket-overdue { color: var(--coral); }

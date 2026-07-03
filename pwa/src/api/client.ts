@@ -1,4 +1,4 @@
-import type { AgentResult, CaptureResult, Recents, ResolveResult, StreamEvent, Today, Transcript } from "./types";
+import type { AgentResult, CaptureResult, Recents, ResolveResult, SettleDisposition, SettleResult, StreamEvent, Today, Transcript } from "./types";
 
 // Parse a buffer of SSE text into complete events + the leftover partial frame.
 export function parseSseChunk(buffer: string): { events: StreamEvent[]; rest: string } {
@@ -55,6 +55,11 @@ export class DomeClient {
 
   async resolve(id: number, value: string): Promise<ResolveResult> {
     return this.parse<ResolveResult>(await fetch(new Request(`${this.baseUrl}/resolve`, { method: "POST", headers: this.authHeaders(true), body: JSON.stringify({ id, value }) })));
+  }
+
+  async settle(blockId: string, disposition: SettleDisposition, deferUntil?: string): Promise<SettleResult> {
+    const body = { blockId, disposition, ...(deferUntil !== undefined ? { deferUntil } : {}) };
+    return this.parse<SettleResult>(await fetch(new Request(`${this.baseUrl}/settle`, { method: "POST", headers: this.authHeaders(true), body: JSON.stringify(body) })));
   }
 
   async transcribe(audio: Blob): Promise<Transcript> {

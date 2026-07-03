@@ -41,6 +41,10 @@ export type TodayItem = {
   origin?: string;
   entities?: string[];
   priority?: "highest" | "high" | "medium" | "low" | "lowest" | null;
+  /** Stamped ^block-anchor id (dome.daily.today/v1's optional widening) —
+   * present only when the task line is settle-able; absent tasks stay
+   * decorative-only (never a synthesized id). */
+  blockId?: string;
 };
 
 export type TodayQuestion = {
@@ -86,6 +90,21 @@ export type ResolveResult = {
   status: "answered" | "already-answered" | "invalid-option" | "error";
   options?: string[];
   question?: { id: number; status: string; question: string; answer: string | null };
+  message?: string;
+};
+
+export type SettleDisposition = "close" | "defer" | "keep";
+
+// Wire shape of POST /settle's response (dome.settle/v1). `block_id` is
+// snake_case on the wire — src/surface/settle.ts's settleResultJson mirrors
+// the same shape shared by the CLI/MCP/HTTP settle adapters; the PWA client
+// does not re-key it.
+export type SettleResult = {
+  schema: "dome.settle/v1";
+  status: "settled" | "not-found" | "invalid";
+  block_id?: string;
+  disposition?: SettleDisposition;
+  commit?: string | null;
   message?: string;
 };
 

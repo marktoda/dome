@@ -42,6 +42,21 @@ test("parseTaskRows carries priority for all five literals + null/unknown", () =
   expect(v.openTasks.map((t) => t.priority ?? null)).toEqual(["highest", "low", null, null]);
 });
 
+test("parseTaskRows carries blockId when present, omits it when absent (settle identity)", () => {
+  const v = parseTodayView({
+    date: "2026-06-23",
+    openTasks: [
+      { text: "anchored", path: "p", line: 1, dueDate: null, blockId: "t1a2b3c4" },
+      { text: "unanchored", path: "p", line: 2, dueDate: null },
+    ],
+    followups: [], questions: [],
+    counts: { openTasks: 2, followups: 0, questions: 0 },
+    brief: null, calendar: null, hero: null,
+  });
+  expect(v.openTasks[0]!.blockId).toBe("t1a2b3c4");
+  expect(v.openTasks[1]!.blockId).toBeUndefined();
+});
+
 test("parseTaskRows preserves task provenance metadata for why-lines", () => {
   const v = parseTodayView({
     date: "2026-06-14",

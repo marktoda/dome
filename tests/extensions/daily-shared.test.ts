@@ -19,6 +19,7 @@ import {
 } from "../../assets/extensions/dome.daily/processors/daily-scaffold";
 import {
   completedSourceBackedOpenLoopsFromMarkdown,
+  openLoopAnchorFromStableId,
   openLoopFreshnessKey,
   openLoopIdentity,
   openLoopStableId,
@@ -28,6 +29,7 @@ import {
   rankDailyOpenLoopSurfaceItems,
   replaceOpenLoopSurfaceSection,
   settledSourceBackedOpenLoopsFromMarkdown,
+  taskStableId,
 } from "../../assets/extensions/dome.daily/processors/open-loop-surface";
 
 describe("dome.daily shared date helpers", () => {
@@ -801,6 +803,44 @@ describe("dome.daily shared date helpers", () => {
 
     const section = openLoopSurfaceSection({ items });
     expect(section).not.toContain("^tdeadbeef");
+  });
+
+  // openLoopAnchorFromStableId — the today payload's `blockId` derivation
+  // (Task 9: PWA checkbox settles for real). Recovers a genuine settle-able
+  // ^anchor from a `dome.daily.open-loop:<...>` stableId, and MUST return
+  // undefined for the transient body-hash fallback (that identity names no
+  // real line in the markdown, so settle would 404 on it forever).
+  describe("openLoopAnchorFromStableId", () => {
+    test("recovers the anchor from an anchored stableId", () => {
+      const stableId = taskStableId({
+        sourcePath: "wiki/projects/alpha.md",
+        body: "Ship the thing",
+        anchor: "t1a2b3c4",
+      });
+      expect(openLoopAnchorFromStableId(stableId)).toBe("t1a2b3c4");
+    });
+
+    test("returns undefined for the body-hash fallback (not a real anchor)", () => {
+      const stableId = openLoopStableId({
+        sourcePath: "wiki/projects/alpha.md",
+        body: "Ship the thing",
+      });
+      expect(openLoopAnchorFromStableId(stableId)).toBeUndefined();
+    });
+
+    test("returns undefined for a non-open-loop stableId and undefined input", () => {
+      expect(openLoopAnchorFromStableId("dome.claims.claim:abc")).toBeUndefined();
+      expect(openLoopAnchorFromStableId(undefined)).toBeUndefined();
+    });
+
+    test("recovers a hand-authored (non-hash-shaped) anchor of any length", () => {
+      const stableId = taskStableId({
+        sourcePath: "wiki/projects/alpha.md",
+        body: "Ship the thing",
+        anchor: "thttpsettle1",
+      });
+      expect(openLoopAnchorFromStableId(stableId)).toBe("thttpsettle1");
+    });
   });
 
   test("rankDailyOpenLoopSurfaceItems folds repeated surface loops", () => {
