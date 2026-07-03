@@ -25,12 +25,14 @@
 // trivially testable and rebuild-safe, exactly like `src/core/block-anchor.ts`.
 
 import { parseBlockAnchor } from "../../../../src/core/block-anchor";
+import { findGeneratedBlock } from "../../../../src/core/generated-block";
 import {
   appendOriginMarker,
   parseOriginMarker,
   semanticActionBody,
   stripOriginMarker,
 } from "./action-extraction";
+import { DAILY_GENERATED_BLOCKS } from "./daily-types";
 
 /**
  * Find the line (0-indexed in `lines`) whose trailing `^id` block anchor
@@ -129,26 +131,55 @@ const HEADING_RE = /^#{1,6}\s/;
 
 /**
  * Append `bullet` under today's daily `### Done today` heading — the settle
- * seam's record half. Insertion-anchored, never positional: an existing
- * `### Done today` section (the human's, or the evening `dome.daily:close`
- * block's) gets the bullet as its last item; otherwise the section is created
- * under `## Done` (before `## Story of the Day` when present, appended
- * otherwise). Pure — the caller owns the fs/commit. This is the "Done today"
- * sibling of `daily-scaffold`'s `insertCloseScaffoldSection`; it deliberately
- * writes a bare heading (no generated-block markers) because a live settle is
- * a human bullet under the shared `## Done` section, not a machine-owned
- * block ([[wiki/specs/daily-surface]] §"Block ownership" — `## Done` is shared
+ * seam's record half. Insertion-anchored, never positional: an existing BARE
+ * `### Done today` section gets the bullet as its last item; otherwise the
+ * section is created under `## Done` (before `## Story of the Day` when
+ * present, appended otherwise). Pure — the caller owns the fs/commit.
+ *
+ * Generated blocks are OFF-LIMITS. The evening `dome.daily:close` block
+ * renders its own `### Done today` inside its markers (`closeScaffoldSection`
+ * in daily-scaffold.ts), and a human bullet spliced in there would become
+ * subject to the block's keep/delete semantics and be re-read as a close
+ * candidate by `previousDailyDigest`. So heading matches, `## Done`
+ * anchors, and the end-of-section scan all skip every registered
+ * `DAILY_GENERATED_BLOCKS` range: when the only existing `### Done today` is
+ * the close block's, a bare sibling heading is created OUTSIDE the markers.
+ * The bare heading carries no markers because a live settle is a human bullet
+ * under the shared `## Done` section, not a machine-owned block
+ * ([[wiki/specs/daily-surface]] §"Block ownership" — `## Done` is shared
  * scaffold + human bullets/edits).
  */
 export function appendDoneTodayBullet(content: string, bullet: string): string {
   const lines = content.split("\n");
-  const headingIdx = lines.findIndex((l) => /^###\s+Done today\s*$/.test(l));
+  // 1-indexed inclusive line ranges of EVERY registered daily generated block
+  // — including `dome.daily:captured`, which task extraction deliberately
+  // keeps but a settle write must still never touch.
+  const blockRanges: Array<{ start: number; end: number }> = [];
+  for (const block of DAILY_GENERATED_BLOCKS) {
+    const { range } = findGeneratedBlock(content, block.owner, block.block);
+    if (range !== null) {
+      blockRanges.push({ start: range.startLine, end: range.endLine });
+    }
+  }
+  const inGeneratedBlock = (idx: number): boolean =>
+    blockRanges.some((r) => idx + 1 >= r.start && idx + 1 <= r.end);
+
+  const headingIdx = lines.findIndex(
+    (l, i) => /^###\s+Done today\s*$/.test(l) && !inGeneratedBlock(i),
+  );
 
   if (headingIdx !== -1) {
-    // Insert at the end of the existing section (before the next heading),
-    // trimming trailing blank lines so the bullet lands flush.
+    // Insert at the end of the existing bare section — before the next
+    // heading OR the next generated-block boundary — trimming trailing blank
+    // lines so the bullet lands flush.
     let end = headingIdx + 1;
-    while (end < lines.length && !HEADING_RE.test(lines[end] ?? "")) end += 1;
+    while (
+      end < lines.length &&
+      !HEADING_RE.test(lines[end] ?? "") &&
+      !inGeneratedBlock(end)
+    ) {
+      end += 1;
+    }
     let insertAt = end;
     while (insertAt > headingIdx + 1 && (lines[insertAt - 1] ?? "").trim() === "") {
       insertAt -= 1;
@@ -157,16 +188,20 @@ export function appendDoneTodayBullet(content: string, bullet: string): string {
     return lines.join("\n");
   }
 
-  // No section yet — create it under `## Done`.
+  // No bare section yet — create it under `## Done`.
   const section = [DONE_TODAY_HEADING, bullet];
-  const doneIdx = lines.findIndex((l) => /^##\s+Done\s*$/.test(l));
+  const doneIdx = lines.findIndex(
+    (l, i) => /^##\s+Done\s*$/.test(l) && !inGeneratedBlock(i),
+  );
   if (doneIdx !== -1) {
     lines.splice(doneIdx + 1, 0, "", ...section);
     return lines.join("\n");
   }
 
   // No `## Done` heading — insert one before `## Story of the Day`, else append.
-  const storyIdx = lines.findIndex((l) => /^##\s+Story of the Day\s*$/.test(l));
+  const storyIdx = lines.findIndex(
+    (l, i) => /^##\s+Story of the Day\s*$/.test(l) && !inGeneratedBlock(i),
+  );
   const block = ["## Done", "", ...section, ""];
   if (storyIdx !== -1) {
     lines.splice(storyIdx, 0, ...block);

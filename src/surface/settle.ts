@@ -35,7 +35,6 @@ import { existsSync, readdirSync, readFileSync, type Dirent } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { parseBlockAnchor } from "../core/block-anchor";
 import {
   dailyPath,
   localDateParts,
@@ -45,6 +44,7 @@ import { DEFAULT_DAILY_PATH_SETTINGS } from "../../assets/extensions/dome.daily/
 import { renderDailySkeleton } from "../../assets/extensions/dome.daily/processors/daily-scaffold";
 import {
   appendDoneTodayBullet,
+  findAnchorLine,
   setCheckboxMark,
   setDueDate,
   taskLineBody,
@@ -262,12 +262,8 @@ function findAnchoredLine(
       continue;
     }
     const lines = text.split("\n");
-    for (let i = 0; i < lines.length; i += 1) {
-      const parsed = parseBlockAnchor(lines[i] ?? "");
-      if (parsed !== null && parsed.id === blockId) {
-        return { relPath, lineIdx: i, lines };
-      }
-    }
+    const lineIdx = findAnchorLine(lines, blockId);
+    if (lineIdx !== -1) return { relPath, lineIdx, lines };
   }
   return null;
 }

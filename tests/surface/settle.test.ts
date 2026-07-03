@@ -22,6 +22,10 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import {
+  CLOSE_END,
+  CLOSE_START,
+} from "../../assets/extensions/dome.daily/processors/daily-types";
 import { runInit } from "../../src/cli/commands/init";
 import { commitSingleFileOnHead, log, readBlob, resolveRef } from "../../src/git";
 import { performSettle } from "../../src/surface/settle";
@@ -118,6 +122,47 @@ function dailyFile(): string {
   ].join("\n");
 }
 
+/**
+ * A daily where the evening `dome.daily:close` scaffold has ALREADY rendered
+ * — its machine-owned block under `## Done` carries its own `### Done today`
+ * heading inside the markers (the exact `closeScaffoldSection` shape). A
+ * settle bullet must never land inside it.
+ */
+function dailyFileWithCloseBlock(): string {
+  return [
+    "---",
+    "type: daily",
+    "created: 2026-06-15",
+    "---",
+    "",
+    "# 2026-06-15",
+    "",
+    "## Start Here",
+    "",
+    "## Done",
+    "",
+    CLOSE_START,
+    "### Done today",
+    "Nothing recorded as settled today.",
+    "### Still open",
+    "- No loops still open.",
+    "### Story of the Day",
+    "The story stays yours — write it in the ## Story of the Day section below; the close never generates prose.",
+    CLOSE_END,
+    "",
+    "## Story of the Day",
+    "",
+  ].join("\n");
+}
+
+/** The close-block body (between the markers), for untouched-block asserts. */
+function closeBlockSlice(content: string): string {
+  const start = content.indexOf(CLOSE_START);
+  const end = content.indexOf(CLOSE_END);
+  if (start === -1 || end === -1) throw new Error("close block not found");
+  return content.slice(start, end + CLOSE_END.length);
+}
+
 // ----- close ----------------------------------------------------------------
 
 describe("performSettle — close", () => {
@@ -157,6 +202,49 @@ describe("performSettle — close", () => {
     const commits = await log({ path: vault, depth: 2 });
     expect(commits[0]!.oid).toBe(result.commit!);
     expect(commits[0]!.commit.parent[0]!).toBe(before);
+  });
+
+  test("never writes inside an already-rendered dome.daily:close block", async () => {
+    const vault = await initVault();
+    await commitFile(vault, ORIGIN_PATH, originFile(OPEN_TASK_LINE));
+    await commitFile(vault, TODAY_DAILY, dailyFileWithCloseBlock());
+    const fixtureBlock = closeBlockSlice(dailyFileWithCloseBlock());
+
+    const result = await performSettle(
+      vault,
+      { blockId: ANCHOR, disposition: "close" },
+      clock,
+    );
+    expect(result.status).toBe("settled");
+
+    const daily = await readAt(vault, TODAY_DAILY);
+    const bullet = `- ship the widget 📅 2026-06-01 ([[wiki/projects/alpha#^${ANCHOR}|from]])`;
+
+    // The machine-owned block is byte-identical — the bullet did NOT land
+    // between CLOSE_START…CLOSE_END (it would become subject to the block's
+    // keep/delete semantics and be re-read by previousDailyDigest).
+    expect(closeBlockSlice(daily)).toBe(fixtureBlock);
+
+    // The bullet landed under a bare `### Done today` OUTSIDE the markers.
+    expect(daily).toContain(bullet);
+    const bulletIdx = daily.indexOf(bullet);
+    const blockStartIdx = daily.indexOf(CLOSE_START);
+    expect(bulletIdx).toBeLessThan(blockStartIdx);
+    const bareHeadingIdx = daily.indexOf("### Done today");
+    expect(bareHeadingIdx).toBeLessThan(blockStartIdx);
+    expect(bareHeadingIdx).toBeLessThan(bulletIdx);
+
+    // Re-run stays idempotent: the line is already settled, so no new commit
+    // and no duplicate bullet.
+    const afterFirst = await headSha(vault);
+    const again = await performSettle(
+      vault,
+      { blockId: ANCHOR, disposition: "close" },
+      clock,
+    );
+    expect(again.status).toBe("settled");
+    expect(await headSha(vault)).toBe(afterFirst);
+    expect((await readAt(vault, TODAY_DAILY)).split(bullet).length - 1).toBe(1);
   });
 });
 
