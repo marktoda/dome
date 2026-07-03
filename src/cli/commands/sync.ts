@@ -118,7 +118,6 @@ type SyncGardenSummary = {
 
 type SyncOperationalSummary = {
   readonly scheduledCount: number;
-  readonly jobCount: number;
   readonly outboxCount: number;
   readonly autoResolvedQuestions: number;
   readonly diagnosticCount: number;
@@ -304,7 +303,6 @@ function printTickLines(
     const hasOperational =
       tick.operational !== null &&
       (tick.operational.scheduler.fired.length > 0 ||
-        tick.operational.jobs.drained.length > 0 ||
         tick.operational.outbox.length > 0 ||
         tick.operational.questionAutoResolution.answered > 0 ||
         tick.operational.diagnostics.length > 0);
@@ -316,7 +314,6 @@ function printTickLines(
       const op = tick.operational;
       const opRows: KvRow[] = [
         { label: "scheduled", value: `${op.scheduler.fired.length}` },
-        { label: "jobs", value: `${op.jobs.drained.length}` },
         { label: "outbox", value: `${op.outbox.length}` },
         { label: "auto-resolved", value: `${op.questionAutoResolution.answered}` },
         { label: "diagnostics", value: `${op.diagnostics.length}` },
@@ -578,7 +575,6 @@ function summarizeOperational(
   if (operational === null) return emptyOperationalSummary();
   return Object.freeze({
     scheduledCount: operational.scheduler.fired.length,
-    jobCount: operational.jobs.drained.length,
     outboxCount: operational.outbox.length,
     autoResolvedQuestions: operational.questionAutoResolution.answered,
     diagnosticCount: operational.diagnostics.length,
@@ -596,7 +592,6 @@ function emptyGardenSummary(): SyncGardenSummary {
 function emptyOperationalSummary(): SyncOperationalSummary {
   return Object.freeze({
     scheduledCount: 0,
-    jobCount: 0,
     outboxCount: 0,
     autoResolvedQuestions: 0,
     diagnosticCount: 0,

@@ -147,12 +147,6 @@ describe("CapabilitySchema (discriminated union, 17 kinds)", () => {
     ).toThrow();
   });
 
-  test("job.enqueue", () => {
-    expect(
-      CapabilitySchema.parse({ kind: "job.enqueue", processors: ["dome.worker.*"] }).kind,
-    ).toBe("job.enqueue");
-  });
-
   test("model.invoke", () => {
     expect(CapabilitySchema.parse({ kind: "model.invoke" }).kind).toBe("model.invoke");
   });

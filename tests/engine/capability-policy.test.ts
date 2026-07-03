@@ -52,7 +52,6 @@ extensions:
       patch.auto: ["wiki/**"]
       graph.write: ["dome.graph.*"]
       question.ask: true
-      job.enqueue: ["dome.worker.*"]
       external: ["calendar.write"]
       outbox.read: ["failed"]
       outbox.recover: true
@@ -83,10 +82,6 @@ extensions:
       namespaces: ["dome.graph.*"],
     });
     expect(grants).toContainEqual({ kind: "question.ask" });
-    expect(grants).toContainEqual({
-      kind: "job.enqueue",
-      processors: ["dome.worker.*"],
-    });
     expect(grants).toContainEqual({
       kind: "external",
       capability: "calendar.write",

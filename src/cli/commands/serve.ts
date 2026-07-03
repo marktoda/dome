@@ -124,7 +124,7 @@ export type RunServeRuntimeOptions = {
    */
   readonly signal?: AbortSignal;
   /**
-   * Internal/test knob for due scheduler/job/outbox work while HEAD is
+   * Internal/test knob for due scheduler/outbox work while HEAD is
    * already adopted. Production uses DEFAULT_OPERATIONAL_INTERVAL_MS.
    */
   readonly operationalIntervalMs?: number;
@@ -482,7 +482,7 @@ async function waitForDaemonHeartbeat(input: {
  * The poll loop. Runs until `cancel` aborts. Each iteration:
  *   1. Detect drift between HEAD and the adopted ref.
  *   2. If drift, build a manual Proposal and run `adopt()`.
- *   3. If in-sync and the operational cadence is due, drain scheduler/jobs/outbox.
+ *   3. If in-sync and the operational cadence is due, drain scheduler/outbox.
  *   4. Sleep for `pollIntervalMs` (cancellable).
  *
  * Adoption still runs to completion once started. Operational outbox handler
@@ -878,13 +878,12 @@ function printTickLine(
 
 function printOperationalLine(result: OperationalWorkResult): void {
   const scheduled = result.scheduler.fired.length;
-  const jobs = result.jobs.drained.length;
   const outbox = result.outbox.length;
   const autoResolved = result.questionAutoResolution.answered;
   const diagnostics = result.diagnostics.length;
-  if (scheduled + jobs + outbox + autoResolved + diagnostics > 0) {
+  if (scheduled + outbox + autoResolved + diagnostics > 0) {
     console.log(
-      `dome serve: operational work (${scheduled} scheduled, ${jobs} jobs, ${outbox} outbox, ${autoResolved} auto-resolved questions, ${diagnostics} diagnostics)`,
+      `dome serve: operational work (${scheduled} scheduled, ${outbox} outbox, ${autoResolved} auto-resolved questions, ${diagnostics} diagnostics)`,
     );
   }
 }

@@ -70,7 +70,7 @@
 //   - `../engine/core/runner-contract` for the shared RunId and structured
 //     execution-error type contracts.
 //
-// House-style notes (mirrors src/outbox/dispatch.ts, src/projections/jobs.ts):
+// House-style notes (mirrors src/outbox/dispatch.ts):
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
 //   - JSON columns (`effect_hashes_json`, `trigger_payload_json`) serialized
 //     via `JSON.stringify` on write, parsed on read.
@@ -145,8 +145,7 @@ export type TriggerKind =
   | "path"
   | "schedule"
   | "answer"
-  | "command"
-  | "job";
+  | "command";
 
 // ----- newRunId -------------------------------------------------------------
 
@@ -1366,7 +1365,6 @@ const TRIGGER_KINDS = [
   "schedule",
   "answer",
   "command",
-  "job",
 ] as const satisfies ReadonlyArray<TriggerKind>;
 
 function decodeRunStatus(status: string): RunStatus {

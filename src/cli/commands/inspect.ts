@@ -1333,8 +1333,6 @@ function capabilityScopeDetails(
       return [grantDetail(capability.kind, "paths", capability.paths)];
     case "graph.write":
       return [grantDetail(capability.kind, "namespaces", capability.namespaces)];
-    case "job.enqueue":
-      return [grantDetail(capability.kind, "processors", capability.processors)];
     case "model.invoke":
       return [
         ...(capability.maxDailyCostUsd === undefined

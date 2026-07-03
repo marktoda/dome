@@ -739,8 +739,8 @@ export async function makeSnapshot(
 }
 
 /**
- * Per-processor dispatch — shared by adoption, garden, view, scheduler, and
- * job dispatch.
+ * Per-processor dispatch — shared by adoption, garden, view, and scheduler
+ * dispatch.
  * Handles run-id allocation, ledger lifecycle (queued → skipped for
  * not-invoked policy denial, or queued → running → succeeded/failed/
  * timed_out/cancelled), context construction, executor invocation, and

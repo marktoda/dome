@@ -153,7 +153,7 @@ export type OutboxQueryFilter = {
   /**
    * Match only rows enqueued strictly before this timestamp. Used by
    * operational drains to avoid immediately retrying rows that were
-   * created by the same scheduler/job pump.
+   * created by the same scheduler pump.
    */
   readonly enqueuedBefore?: Date;
   /**
@@ -554,11 +554,9 @@ export function incrementAttempts(
  * expired claim **consumes an attempt**: the external call may or may not
  * have gone out before the crash, and an unbounded requeue would let a
  * handler that reliably crashes the host re-fire the call forever across
- * restarts. Mirrors the scheduled-jobs recovery split
- * (src/projections/jobs.ts `recoverExpiredRunningJobs`): under
- * `max_attempts` the row returns to `pending` with retry backoff; at
- * `max_attempts` it goes terminal `failed`, which routes it to the
- * engine-asks recovery path (dome.health questions + `dome resolve
+ * restarts. Under `max_attempts` the row returns to `pending` with retry
+ * backoff; at `max_attempts` it goes terminal `failed`, which routes it to
+ * the engine-asks recovery path (dome.health questions + `dome resolve
  * retry|abandon`).
  *
  * The UPDATE re-checks `status = 'dispatching' AND next_attempt_at <= now`

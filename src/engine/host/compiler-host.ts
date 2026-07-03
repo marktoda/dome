@@ -1194,7 +1194,6 @@ function sinksForCursor(opts: {
     recordSearchDocument: async (input) =>
       current().recordSearchDocument(input),
     recordQuestion: async (input) => current().recordQuestion(input),
-    enqueueJob: async (input) => current().enqueueJob(input),
     dispatchExternal: async (input) => current().dispatchExternal(input),
     recoverOutbox: async (input) => current().recoverOutbox(input),
     recoverQuarantine: async (input) => current().recoverQuarantine(input),
@@ -1203,8 +1202,8 @@ function sinksForCursor(opts: {
 }
 
 // Garden patches can spawn sub-Proposals recursively. The closure is
-// shared by the primary garden phase, scheduled garden work, and queued
-// jobs so every patch route lands back on the same adoption boundary.
+// shared by the primary garden phase and scheduled garden work so every
+// patch route lands back on the same adoption boundary.
 function makeAdoptSubProposal(opts: {
   readonly runtime: VaultRuntime;
   readonly vault: ReturnType<typeof runtimeVault>;
@@ -1290,7 +1289,7 @@ function makeAdoptSubProposal(opts: {
  * processors run through `src/engine/host/view-command.ts`, where their
  * ViewEffects are captured and returned to the surface adapter. This sink is
  * a defensive guard for any ViewEffect that somehow reaches adoption, garden,
- * answer, job, or operational routing; phase compatibility should reject those
+ * answer, or operational routing; phase compatibility should reject those
  * effects before the sink is called.
  */
 const captureViewPlaceholder: ApplyEffectSinks["captureView"] =

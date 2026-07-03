@@ -8,7 +8,6 @@ import {
 } from "../../assets/extensions/dome.daily/processors/action-extraction";
 import { dailyPath, dailyPathSettings, parseDailyPath } from "../../assets/extensions/dome.daily/processors/daily-paths";
 import {
-  carriedForwardSection,
   closeDigestFromDailyContent,
   closeScaffoldSection,
   ensureCloseScaffoldSection,
@@ -1095,53 +1094,5 @@ describe("dome.daily shared date helpers", () => {
         content: section ?? "",
       }),
     ).toEqual([]);
-  });
-
-  test("carriedForwardSection uses original provenance when available", () => {
-    expect(
-      carriedForwardSection({
-        yesterday: { yyyy: "2026", mm: "01", dd: "01" },
-        tasks: [
-          {
-            line: 1,
-            text: "- [ ] New task",
-            sourcePath: null,
-            body: "New task",
-            followup: false,
-          },
-          {
-            line: 2,
-            text: "- [ ] Already carried",
-            sourcePath: "wiki/dailies/2025-12-31",
-            body: "Already carried",
-            followup: false,
-          },
-        ],
-      }),
-    ).toContain(
-      [
-        "- [ ] New task (from [[wiki/dailies/2026-01-01]])",
-        "- [ ] Already carried (from [[wiki/dailies/2025-12-31]])",
-      ].join("\n"),
-    );
-  });
-
-  test("carriedForwardSection follows configured daily links", () => {
-    const settings = dailyPathSettings({ daily_path: "notes/{date}.md" });
-    expect(
-      carriedForwardSection({
-        yesterday: { yyyy: "2026", mm: "01", dd: "01" },
-        settings,
-        tasks: [
-          {
-            line: 1,
-            text: "- [ ] New task",
-            sourcePath: null,
-            body: "New task",
-            followup: false,
-          },
-        ],
-      }),
-    ).toContain("- [ ] New task (from [[notes/2026-01-01]])");
   });
 });

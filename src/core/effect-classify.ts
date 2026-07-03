@@ -28,7 +28,6 @@ const EFFECT_KIND_FACTS = {
   fact: { feedsProjection: true },
   "search-document": { feedsProjection: true },
   question: { feedsProjection: true },
-  job: { feedsProjection: false },
   external: { feedsProjection: false },
   "outbox-recovery": { feedsProjection: false },
   "quarantine-recovery": { feedsProjection: false },

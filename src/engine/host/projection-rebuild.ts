@@ -5,8 +5,8 @@
 // tree, runs adoption-phase processors plus explicitly deterministic,
 // projection-safe garden processors against that immutable snapshot, and routes
 // projection-producing effects through the normal applyEffect broker. It
-// deliberately does not apply PatchEffects, enqueue jobs, dispatch external
-// work, read operational recovery state, or make model calls.
+// deliberately does not apply PatchEffects, dispatch external work, read
+// operational recovery state, or make model calls.
 
 import { posix } from "node:path";
 

@@ -26,7 +26,6 @@ import type {
   ExternalActionEffect,
   FactEffect,
   FileChange,
-  JobEffect,
   OutboxRecoveryEffect,
   PatchEffect,
   QuarantineRecoveryEffect,
@@ -41,7 +40,6 @@ import type {
   ExternalActionEffectSchema,
   FactEffectSchema,
   FileChangeSchema,
-  JobEffectSchema,
   OutboxRecoveryEffectSchema,
   PatchEffectSchema,
   QuarantineRecoveryEffectSchema,
@@ -122,7 +120,7 @@ type LockstepFlatRefined<Schema extends z.ZodType, Hand> = [
 
 /**
  * The Effect-union fence. Direction 1 excludes the `search-document` kind,
- * which carries the flat-refined exception above; the other ten kinds are
+ * which carries the flat-refined exception above; the other nine kinds are
  * held to the full bidirectional contract at the union level too.
  */
 type LockstepEffectUnion<Schema extends z.ZodType, Hand> = [
@@ -145,7 +143,6 @@ export type SchemaTypeLockstep = AssertAll<
     Lockstep<typeof FactEffectSchema, FactEffect>,
     LockstepFlatRefined<typeof SearchDocumentEffectSchema, SearchDocumentEffect>,
     Lockstep<typeof QuestionEffectSchema, QuestionEffect>,
-    Lockstep<typeof JobEffectSchema, JobEffect>,
     Lockstep<typeof ExternalActionEffectSchema, ExternalActionEffect>,
     Lockstep<typeof OutboxRecoveryEffectSchema, OutboxRecoveryEffect>,
     Lockstep<typeof QuarantineRecoveryEffectSchema, QuarantineRecoveryEffect>,

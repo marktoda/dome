@@ -9,7 +9,6 @@ import {
   diagnosticEffect,
   externalActionEffect,
   factEffect,
-  jobEffect,
   outboxRecoveryEffect,
   patchEffect,
   quarantineRecoveryEffect,
@@ -270,31 +269,6 @@ describe("ViewEffect", () => {
       scope: [ref],
     });
     const r = enforceCapability(e, [read], [read]);
-    expect(r.kind).toBe("allow");
-  });
-});
-
-describe("JobEffect", () => {
-  test("denied when no matching job.enqueue grant exists", () => {
-    const e = jobEffect({
-      processorId: "dome.test",
-      input: null,
-      idempotencyKey: "j-1",
-    });
-    const r = enforceCapability(e, [], []);
-    expect(r.kind).toBe("deny");
-    if (r.kind !== "deny") return;
-    expect(r.diagnostic.code).toBe("capability-deny-job-enqueue");
-  });
-
-  test("allowed when job.enqueue covers the target processor", () => {
-    const e = jobEffect({
-      processorId: "dome.test.worker",
-      input: null,
-      idempotencyKey: "j-1",
-    });
-    const cap: Capability = { kind: "job.enqueue", processors: ["dome.test.*"] };
-    const r = enforceCapability(e, [cap], [cap]);
     expect(r.kind).toBe("allow");
   });
 });

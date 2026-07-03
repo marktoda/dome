@@ -1,4 +1,4 @@
-// daily-scaffold.ts — skeleton/close/yesterday/carried-forward rendering.
+// daily-scaffold.ts — skeleton/close/yesterday rendering.
 
 import {
   findGeneratedBlock,
@@ -12,15 +12,12 @@ import {
   CAPTURED_HEADING,
   CAPTURED_START,
   CAPTURED_END,
-  CARRIED_FORWARD_START,
-  CARRIED_FORWARD_END,
   CLOSE_START,
   CLOSE_END,
   EDITION_YESTERDAY_BLOCK,
   DEFAULT_DAILY_PATH_SETTINGS,
   type DailyDate,
   type DailyPathSettings,
-  type OpenTask,
   type PreviousDailyDigest,
   type DailyCloseDigest,
   type DailyCloseDoneCandidate,
@@ -36,7 +33,6 @@ import {
 import {
   dailyBlockRange,
   dailyBlockRangeFor,
-  carriedForwardBlockRange,
   endOfHeadingSection,
 } from "./open-loop-surface";
 
@@ -88,24 +84,6 @@ export function renderDailySkeleton(input: {
     "",
   );
   return lines.join("\n");
-}
-
-export function carriedForwardSection(input: {
-  readonly yesterday: DailyDate;
-  readonly tasks: ReadonlyArray<OpenTask>;
-  readonly settings?: DailyPathSettings;
-}): string {
-  const settings = input.settings ?? DEFAULT_DAILY_PATH_SETTINGS;
-  return [
-    CARRIED_FORWARD_START,
-    "### Carried Forward",
-    ...input.tasks.map((task) => {
-      const sourcePath =
-        task.sourcePath ?? dailyLink(input.yesterday, settings);
-      return `${task.text} (from [[${sourcePath}]])`;
-    }),
-    CARRIED_FORWARD_END,
-  ].join("\n");
 }
 
 export function previousDailyDigest(input: {
@@ -329,25 +307,6 @@ export function closeDigestFromDailyContent(
     kept: Object.freeze(kept),
     stillOpenCount,
   });
-}
-
-export function replaceCarriedForwardSection(input: {
-  readonly content: string;
-  readonly section: string;
-}): string {
-  const existing = carriedForwardBlockRange(input.content);
-  if (existing !== null) {
-    return `${input.content.slice(0, existing.start)}${input.section}${input.content.slice(existing.end)}`;
-  }
-
-  const notes = /^## Notes[ \t]*$/m.exec(input.content);
-  if (notes !== null && notes.index !== undefined) {
-    const insertAt = notes.index + notes[0].length;
-    return `${input.content.slice(0, insertAt)}\n\n${input.section}${input.content.slice(insertAt)}`;
-  }
-
-  const suffix = input.content.endsWith("\n") ? "" : "\n";
-  return `${input.content}${suffix}\n## Notes\n\n${input.section}\n`;
 }
 
 // ----- Private helpers -------------------------------------------------------

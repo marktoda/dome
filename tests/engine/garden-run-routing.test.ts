@@ -1,7 +1,7 @@
 // Projection-maintenance hooks on the shared non-signal garden routing path
 // (src/engine/garden/garden-run-routing.ts).
 //
-// Schedule fires, queued jobs, and answer handlers all route through
+// Schedule fires and answer handlers both route through
 // `routeGardenRunEffects`. Before this contract was pinned, the shared path
 // never called the resolveFacts / resolveDiagnostics / resolveQuestions
 // sinks that the signal-triggered garden path (garden.ts) calls — so a
@@ -264,7 +264,7 @@ describe("routeGardenRunEffects projection-maintenance hooks", () => {
 //
 // Before this fix, routeGardenRunEffects / dispatchGardenPatchEffect called
 // spawnGardenSubProposal with `cascadeDepth ?? 1` — no cap check. A
-// scheduler/job/answer-triggered processor at depth >= maxCascadeDepth would
+// scheduler/answer-triggered processor at depth >= maxCascadeDepth would
 // spawn sub-Proposals indefinitely. This suite pins the fix: an operational
 // garden source driven at cascadeDepth === maxCascadeDepth must emit a
 // `garden.cascade-cap` diagnostic and NOT spawn any sub-Proposals.

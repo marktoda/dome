@@ -9,7 +9,7 @@
 //
 // Per [[wiki/specs/processors]] §"View phase":
 //   - Read-only — never mutates state. The broker rejects PatchEffect /
-//     DiagnosticEffect(block) / FactEffect / QuestionEffect / JobEffect /
+//     DiagnosticEffect(block) / FactEffect / QuestionEffect /
 //     ExternalActionEffect from view-phase processors.
 //   - Reads from the projection store ([[wiki/specs/projection-store]])
 //     for indexed facts via `ctx.projection.facts(...)`.

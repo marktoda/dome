@@ -230,7 +230,6 @@ const SUPPORTED_PROJECTION_NAMES = Object.freeze([
   "facts",
   "fts_documents",
   "questions",
-  "scheduled_jobs",
 ]);
 
 const FACT_NAMESPACE_PROJECTION_RE = /^facts:[a-z0-9]+(?:[.-][a-z0-9]+)*\.\*$/;

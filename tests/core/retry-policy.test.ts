@@ -1,9 +1,9 @@
 // tests/core/retry-policy.test.ts
 //
 // The shared exponential-backoff curve. These literals ARE the behavior the
-// outbox dispatcher (src/outbox/dispatch.ts) and the operational job runner
-// (src/engine/operational/jobs.ts) each used to implement independently — a
-// curve that passes this test is provably equivalent to both prior copies.
+// outbox dispatcher (src/outbox/dispatch.ts) and the since-retired
+// operational job runner each used to implement independently — a curve
+// that passes this test is provably equivalent to both prior copies.
 //
 // `attemptCount` is "attempts including the one that just failed": the first
 // failure is n=1. delay = min(1000 * 2^max(0, n-1), 60_000) ms.

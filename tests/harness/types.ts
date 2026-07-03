@@ -146,7 +146,6 @@ export type RouteKind =
   | "adoption"
   | "garden-signal"
   | "garden-schedule"
-  | "garden-job"
   | "garden-answer"
   | "view-command";
 
@@ -469,7 +468,7 @@ export interface Harness {
   tick(): Promise<TickResult>;
   /** Move simulated time forward; call tick/drainOperationalWork to fire due work. */
   advance(ms: number): Promise<void>;
-  /** Drain due schedule, queued job, and outbox work against the adopted state. */
+  /** Drain due schedule and outbox work against the adopted state. */
   drainOperationalWork(): Promise<OperationalWorkResult>;
   /** Placeholder for future force-advance recovery semantics. */
   forceSync(): Promise<TickResult>;

@@ -1,12 +1,12 @@
 // dispatchGardenRun — the shared dispatch+route mechanism for one *garden run*:
-// a single non-signal garden-phase processor invocation (a schedule fire, a
-// queued job, or an answer handler), dispatched against the adopted snapshot
-// outside the adoption loop and routed via routeGardenRunEffects.
+// a single non-signal garden-phase processor invocation (a schedule fire or
+// an answer handler), dispatched against the adopted snapshot outside the
+// adoption loop and routed via routeGardenRunEffects.
 //
-// Before this module each of scheduler/jobs/answers repeated the snapshot
+// Before this module each of scheduler/answers repeated the snapshot
 // construction + the dispatchOneProcessor option spread + the
 // routeGardenRunEffects option spread verbatim, so every new runtime
-// dependency had to be threaded through three runners in lockstep. This module
+// dependency had to be threaded through both runners in lockstep. This module
 // owns that envelope; the runners keep only their eligibility selection, crash
 // policy, and bookkeeping.
 //
@@ -72,7 +72,7 @@ export type GardenRunDeps = {
   readonly adoptSubProposal?: AdoptSubProposalFn;
 };
 
-/** The per-run specifics — the only things that vary across the three sources. */
+/** The per-run specifics — the only things that vary across the two sources. */
 export type GardenRun = {
   readonly processor: Processor<unknown>;
   readonly phase: "adoption" | "garden" | "view";
@@ -85,8 +85,8 @@ export type GardenRun = {
   /**
    * The Date forwarded to dispatchOneProcessor (its run-ledger startedAt).
    * Schedule fires pin one instant (the runner computed it once for cursor
-   * math + envelope.firedAt); jobs and answers omit it, leaving the dispatch
-   * layer's internal default.
+   * math + envelope.firedAt); answers omit it, leaving the dispatch layer's
+   * internal default.
    */
   readonly now?: Date;
 };

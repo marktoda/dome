@@ -222,7 +222,6 @@ export type Trigger =
  *   - `graph.write`   — emit FactEffect under named namespaces.
  *   - `search.write`  — emit SearchDocumentEffect for indexed markdown paths.
  *   - `question.ask`  — emit QuestionEffect.
- *   - `job.enqueue`   — emit JobEffect targeting allowed processors.
  *   - `model.invoke`  — call `ctx.modelInvoke`; never granted to adoption phase.
  *   - `external`      — emit ExternalActionEffect with the named capability.
  *   - `outbox.read`   — read operational outbox rows via `ctx.operational`.
@@ -259,10 +258,6 @@ export type SearchWriteCapability = {
 };
 export type QuestionAskCapability = {
   readonly kind: "question.ask";
-};
-export type JobEnqueueCapability = {
-  readonly kind: "job.enqueue";
-  readonly processors: ReadonlyArray<string>;
 };
 export type ModelInvokeCapability = {
   readonly kind: "model.invoke";
@@ -322,7 +317,6 @@ export type Capability =
   | GraphWriteCapability
   | SearchWriteCapability
   | QuestionAskCapability
-  | JobEnqueueCapability
   | ModelInvokeCapability
   | ExternalCapability
   | OutboxReadCapability
@@ -581,7 +575,7 @@ export type OperationalRunRow = {
   readonly costUsd: number | null;
   readonly durationMs: number | null;
   readonly error: string | null;
-  readonly triggerKind: "signal" | "path" | "schedule" | "answer" | "command" | "job";
+  readonly triggerKind: "signal" | "path" | "schedule" | "answer" | "command";
   readonly startedAt: string;
   readonly finishedAt: string | null;
 };
@@ -864,13 +858,6 @@ export const QuestionAskCapabilitySchema = z
   })
   .strict();
 
-export const JobEnqueueCapabilitySchema = z
-  .object({
-    kind: z.literal("job.enqueue"),
-    processors: z.array(z.string().min(1)),
-  })
-  .strict();
-
 export const ModelInvokeCapabilitySchema = z
   .object({
     kind: z.literal("model.invoke"),
@@ -959,7 +946,6 @@ export const CapabilitySchema = z.discriminatedUnion("kind", [
   GraphWriteCapabilitySchema,
   SearchWriteCapabilitySchema,
   QuestionAskCapabilitySchema,
-  JobEnqueueCapabilitySchema,
   ModelInvokeCapabilitySchema,
   ExternalCapabilitySchema,
   OutboxReadCapabilitySchema,

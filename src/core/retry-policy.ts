@@ -1,10 +1,9 @@
 // src/core/retry-policy.ts
 //
-// The single home for the engine's retry backoff curve. Both the external-
-// action outbox dispatcher (src/outbox/dispatch.ts) and the operational job
-// runner (src/engine/operational/jobs.ts) reschedule failed work on this exact
-// curve; keeping it here means tuning the backoff can't silently diverge the
-// two retry surfaces.
+// The single home for the engine's retry backoff curve. The external-action
+// outbox dispatcher (src/outbox/dispatch.ts) reschedules failed work on this
+// exact curve; keeping it here means tuning the backoff can't silently
+// diverge from any future retry surface that needs the same shape.
 //
 // Curve: exponential backoff, one base interval after the first failure,
 // doubling each attempt, clamped at a ceiling.

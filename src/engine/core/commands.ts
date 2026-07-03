@@ -96,7 +96,7 @@ export type RunCommandResult =
  * routes its emitted effects through `applyEffect({ phase: "view", ... })`.
  *
  * View phase rejects mutation effects: PatchEffect / DiagnosticEffect
- * (severity: "block") / FactEffect / QuestionEffect / JobEffect /
+ * (severity: "block") / FactEffect / QuestionEffect /
  * ExternalActionEffect all surface as `phase-mismatch` diagnostics. The
  * diagnostics accumulate in `brokerDiagnostics` so the caller can render
  * "processor misbehaved" detail (the run still completes; the misbehaving

@@ -384,7 +384,6 @@ const GRANT_KEYS = new Set([
   "search.write",
   "graph.write",
   "question.ask",
-  "job.enqueue",
   "model.invoke",
   "external",
   "outbox.read",
@@ -755,9 +754,8 @@ const STRING_LIST_GRANTS: Record<
       | "patch.auto"
       | "owns.path"
       | "search.write"
-      | "graph.write"
-      | "job.enqueue";
-    readonly field: "paths" | "regionIds" | "namespaces" | "processors";
+      | "graph.write";
+    readonly field: "paths" | "regionIds" | "namespaces";
   }
 > = {
   read: { kind: "read", field: "paths" },
@@ -766,7 +764,6 @@ const STRING_LIST_GRANTS: Record<
   "owns.path": { kind: "owns.path", field: "paths" },
   "search.write": { kind: "search.write", field: "paths" },
   "graph.write": { kind: "graph.write", field: "namespaces" },
-  "job.enqueue": { kind: "job.enqueue", field: "processors" },
 };
 
 function normalizeGrantEntry(

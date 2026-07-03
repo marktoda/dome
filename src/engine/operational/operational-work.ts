@@ -2,12 +2,12 @@
 //
 // Adoption owns trusted-state convergence. This module owns the adjacent
 // operational queues that should make progress once trusted state is stable:
-// due schedule triggers, durable JobEffect rows, and pending outbox rows.
-// The outbox drain is bounded to rows that were already pending before
-// this pump started, so external effects created by scheduler/job work
-// do not get an immediate same-pump retry after a transient failure.
-// Keeping the pump explicit prevents each caller (`sync`, `serve`, tests,
-// future close/drain) from inventing its own partial lifecycle.
+// due schedule triggers and pending outbox rows. The outbox drain is bounded
+// to rows that were already pending before this pump started, so external
+// effects created by scheduler work do not get an immediate same-pump retry
+// after a transient failure. Keeping the pump explicit prevents each caller
+// (`sync`, `serve`, tests, future close/drain) from inventing its own partial
+// lifecycle.
 
 import type { DiagnosticEffect } from "../../core/effect";
 import type { AnswersDb } from "../../answers/db";
@@ -35,7 +35,6 @@ import type { ApplyEffectSinks } from "../core/apply-effect";
 import type { ApplyPatchInput } from "../core/apply-patch";
 import { resolveCurrentAdopted } from "../core/adoption-status";
 import type { RuntimeQuestionAutoResolveConfig } from "../core/capability-policy";
-import { runQueuedJobs, type JobDrainResult } from "./jobs";
 import {
   runQuestionAutoResolution,
   type QuestionAutoResolutionResult,
@@ -45,7 +44,6 @@ import type { EngineVault } from "../core/vault-shape";
 
 export type OperationalWorkResult = {
   readonly scheduler: SchedulerResult;
-  readonly jobs: JobDrainResult;
   readonly outbox: ReadonlyArray<ExternalDispatchResult>;
   readonly questionAutoResolution: QuestionAutoResolutionResult;
   readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
@@ -97,11 +95,7 @@ export async function runOperationalWork(opts: {
   const outboxNow = opts.now();
   const outboxDrainCutoff = outboxNow;
 
-  // The scheduler and the queued-job drain take the identical operational
-  // runner plumbing — assemble it once instead of spreading the same ~15
-  // fields into both calls. A new runtime dependency is added here once, not
-  // in lockstep across two call blocks.
-  const operationalRunnerOptions = {
+  const scheduler = await runScheduler({
     vault: opts.vault,
     adopted: opts.adopted,
     registry: opts.registry,
@@ -138,11 +132,7 @@ export async function runOperationalWork(opts: {
     ...(opts.applyGardenPatchToCandidate !== undefined
       ? { applyGardenPatchToCandidate: opts.applyGardenPatchToCandidate }
       : {}),
-  };
-
-  const scheduler = await runScheduler({ ...operationalRunnerOptions });
-
-  const jobs = await runQueuedJobs({ ...operationalRunnerOptions });
+  });
 
   const outbox = await dispatchPendingOutbox(opts.outbox, {
     handlers: opts.externalHandlers,
@@ -202,12 +192,10 @@ export async function runOperationalWork(opts: {
 
   return Object.freeze({
     scheduler,
-    jobs,
     outbox,
     questionAutoResolution,
     diagnostics: Object.freeze([
       ...scheduler.diagnostics,
-      ...jobs.diagnostics,
       ...questionAutoResolution.diagnostics,
     ]),
   });

@@ -23,7 +23,6 @@ const EXPECTED_RUNTIME_EXPORTS = new Set<string>([
   "factEffect",
   "questionEffect",
   "viewEffect",
-  "jobEffect",
   "externalActionEffect",
   "outboxRecoveryEffect",
   "quarantineRecoveryEffect",
