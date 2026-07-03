@@ -5,6 +5,7 @@
 import { existsSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import {
+  countRetainedForensicsRuns,
   latestActiveProblemRuns,
   orphanRuns,
   ORPHAN_RECOVERY_EXCLUDED_PROCESSOR_PREFIXES,
@@ -259,7 +260,13 @@ const HEALTH_PROBES: ReadonlyArray<HealthProbe> = [
     } catch {
       return [];
     }
-    const finding = ledgerOversizedFinding({ path: runsDbPath, sizeBytes });
+    const finding = ledgerOversizedFinding({
+      path: runsDbPath,
+      sizeBytes,
+      // Lazy: the COUNT only runs when the finding fires, so the ordinary
+      // (under-threshold) doctor pass never pays for it.
+      countRetainedForensicsRows: () => countRetainedForensicsRuns(c.ledger),
+    });
     return finding === null ? [] : [finding];
   },
 ];

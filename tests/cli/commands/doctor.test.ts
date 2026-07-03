@@ -137,6 +137,7 @@ describe("runDoctor", () => {
         readonly severity: string;
         readonly message: string;
         readonly recovery: string;
+        readonly ledger?: { readonly retainedForensicsRows: number | null };
       }>;
     };
     // Info severity: an oversized ledger is a nudge, not a health failure.
@@ -147,6 +148,12 @@ describe("runDoctor", () => {
     expect(finding?.severity).toBe("info");
     expect(finding?.message).toContain("500 MB");
     expect(finding?.recovery).toContain("ledger.retention_days");
+    // The recovery must name the failure mode retention can't fix (both
+    // remedies exempt failure forensics) and the detail carries the
+    // retained-forensics count (0 on this fresh ledger) so the operator
+    // isn't guessing which case they're in.
+    expect(finding?.recovery).toContain("failure-forensics");
+    expect(finding?.ledger?.retainedForensicsRows).toBe(0);
   });
 
   test("a normal-sized runs.db raises no ledger.oversized finding", async () => {

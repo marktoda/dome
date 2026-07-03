@@ -419,7 +419,11 @@ async function runCompilerHostTickUnlocked(opts: CompilerHostTickCommonOptions &
   // first tick after `dome serve`/`dome sync` starts always has one) and at
   // most once per 24h thereafter (docs/wiki/specs/run-ledger.md
   // §"Retention"). Cheap when disabled (`ledger.retention_days: 0`) or not
-  // due — see `maybeApplyRunLedgerRetention`'s early returns.
+  // due — see `maybeApplyRunLedgerRetention`'s early returns. Deliberately
+  // AFTER the unworkable-git-state early returns above: a tick that refuses
+  // adoption work (detached HEAD, no commits, diverged adopted ref) also
+  // defers background maintenance — those states want operator attention,
+  // not housekeeping mutations underneath them.
   maybeApplyRunLedgerRetention({ runtime: opts.runtime, now: now() });
 
   if (drift.kind === "in-sync") {

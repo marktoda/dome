@@ -1857,13 +1857,19 @@ still-affected paths (the owner's own `git commit`, custom vault-side
 scripts shelling plain `git commit`) with `git config --local
 commit.gpgsign false` as the opt-out if the owner wants unsigned human
 commits too — their call.
-When `runs.db` exceeds 500MB on disk, doctor raises a `ledger.oversized`
-**info** finding naming the file size and the threshold. Informational, not a
+When `runs.db` exceeds 500 MB on disk, doctor raises a `ledger.oversized`
+**info** finding naming the file size, the threshold, and the count of
+retained failure-forensics rows. Informational, not a
 health failure — the run ledger works fine at any size; the finding is a
 nudge toward lowering `ledger.retention_days` in `.dome/config.yaml`
 (default 30, applied automatically by the compiler host — see
 [[wiki/specs/run-ledger]] §"Retention") or running a one-off
-`dome repair run-ledger --older-than-days <n> --apply --vacuum`.
+`dome repair run-ledger --older-than-days <n> --apply --vacuum`. Both
+remedies share the eligibility predicate that never deletes failure
+forensics (`failed` / `timed_out` / `cancelled` / reason-bearing `skipped`),
+so the recovery text also names the case where pruning doesn't shrink the
+file: a failure-dominated ledger is fixed by fixing the failing processor,
+not by tightening the retention window.
 The implementation lives in `src/engine/host/health/` (one file per probe
 concern; `registry.ts` is the ordered probe list).
 

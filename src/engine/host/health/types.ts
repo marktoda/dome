@@ -413,6 +413,13 @@ export type HealthFinding =
         readonly path: string;
         readonly sizeBytes: number;
         readonly thresholdBytes: number;
+        /**
+         * Rows the retention predicate permanently exempts (failed /
+         * timed_out / cancelled / reason-bearing skipped) — the subset no
+         * retention remedy will ever shrink. Null when the probe had no
+         * counter to consult.
+         */
+        readonly retainedForensicsRows: number | null;
       };
     };
 

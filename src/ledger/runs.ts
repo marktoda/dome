@@ -620,6 +620,18 @@ DELETE FROM runs
 WHERE ${RETENTION_ELIGIBLE_RUN_WHERE_SQL}
 `.trim();
 
+// The permanent complement of RETENTION_ELIGIBLE_RUN_WHERE_SQL: rows
+// retention will NEVER delete regardless of age, because they carry active
+// forensics (failed / timed_out / cancelled, plus reason-bearing skipped).
+// Transient queued/running rows are deliberately not counted — they either
+// reach a terminal state or surface through the orphan-run path.
+const COUNT_RETAINED_FORENSICS_RUNS_SQL = `
+SELECT COUNT(*) AS count
+FROM runs
+WHERE status IN ('failed', 'timed_out', 'cancelled')
+   OR (status = 'skipped' AND error IS NOT NULL)
+`.trim();
+
 // ----- Raw row shape --------------------------------------------------------
 
 type RunRawRow = {
@@ -1244,6 +1256,21 @@ export function pruneRunLedger(
     prunedCapabilityUses,
     vacuumed: opts.vacuum === true,
   });
+}
+
+/**
+ * Count the rows the retention predicate permanently exempts: failure
+ * forensics (`failed` / `timed_out` / `cancelled` / reason-bearing
+ * `skipped`). The `ledger.oversized` doctor probe includes this so an
+ * operator whose runs.db is dominated by failure rows learns that neither
+ * `ledger.retention_days` nor `dome repair run-ledger` will shrink it —
+ * the fix is the failing processor, not the retention window.
+ */
+export function countRetainedForensicsRuns(db: LedgerDb): number {
+  const row = db.raw
+    .query<CountRawRow, []>(COUNT_RETAINED_FORENSICS_RUNS_SQL)
+    .get();
+  return row?.count ?? 0;
 }
 
 // ----- internals ------------------------------------------------------------

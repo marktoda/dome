@@ -41,11 +41,44 @@ describe("ledger.oversized", () => {
     expect(finding.id).toBe("runs_db");
     expect(finding.message).toContain("500 MB");
     expect(finding.recovery).toContain("ledger.retention_days");
+    // Both suggested remedies exempt failure forensics; the recovery text
+    // must name that failure mode so a "prune did nothing" operator isn't
+    // left guessing (the fix is the failing processor, not the window).
+    expect(finding.recovery).toContain("failure-forensics");
+    expect(finding.recovery).toContain("dome inspect runs --status failed");
     expect(finding.ledger).toEqual({
       path: RUNS_DB_PATH,
       sizeBytes,
       thresholdBytes: DEFAULT_LEDGER_OVERSIZED_THRESHOLD_BYTES,
+      retainedForensicsRows: null,
     });
+  });
+
+  test("includes the retained-forensics count when a counter is supplied", () => {
+    const sizeBytes = DEFAULT_LEDGER_OVERSIZED_THRESHOLD_BYTES + 1024;
+    const finding = ledgerOversizedFinding({
+      path: RUNS_DB_PATH,
+      sizeBytes,
+      countRetainedForensicsRows: () => 42,
+    });
+    expect(finding).not.toBeNull();
+    if (finding === null || finding.code !== "ledger.oversized") return;
+    expect(finding.ledger.retainedForensicsRows).toBe(42);
+    expect(finding.message).toContain("42 row(s) are failure forensics");
+  });
+
+  test("the forensics counter is lazy — never invoked under the threshold", () => {
+    let invoked = false;
+    const finding = ledgerOversizedFinding({
+      path: RUNS_DB_PATH,
+      sizeBytes: 1,
+      countRetainedForensicsRows: () => {
+        invoked = true;
+        return 0;
+      },
+    });
+    expect(finding).toBeNull();
+    expect(invoked).toBe(false);
   });
 
   test("honors a custom threshold override", () => {
