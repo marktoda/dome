@@ -7,6 +7,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { runDoctor } from "../../../src/cli/commands/doctor";
+import { ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY } from "../../../src/answers/db";
 
 import {
   readModelProviderProbeCache,
@@ -250,6 +251,74 @@ describe("runDoctor", () => {
       expect(row?.id).toBe("run-preserved");
     } finally {
       check.close();
+    }
+  });
+
+  test("--json: answers.db on the known pre-answered_by hash migrates instead of short-circuiting", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    // Hand-construct a legacy answers.db (schema hash from before the
+    // `answered_by` column existed) — the exact scenario openAnswersDb's
+    // `{kind:"migrate"}` policy upgrades in place on open. Mirrors the
+    // legacy-DDL construction in tests/answers/db.test.ts.
+    const answersPath = join(f.vaultPath, ".dome", "state", "answers.db");
+    const legacy = new Database(answersPath, { create: true });
+    legacy.run(
+      "CREATE TABLE question_answers ("
+        + "idempotency_key TEXT PRIMARY KEY,"
+        + "answer TEXT NOT NULL,"
+        + "answered_at TEXT NOT NULL,"
+        + "question_id INTEGER,"
+        + "question TEXT NOT NULL,"
+        + "processor_id TEXT NOT NULL,"
+        + "adopted_commit TEXT NOT NULL,"
+        + "handler_status TEXT NOT NULL DEFAULT 'pending',"
+        + "handler_attempts INTEGER NOT NULL DEFAULT 0,"
+        + "last_handler_attempt_at TEXT,"
+        + "handled_at TEXT,"
+        + "last_handler_error TEXT"
+        + ")",
+    );
+    legacy.run(
+      "CREATE TABLE answers_meta (schema_hash TEXT NOT NULL PRIMARY KEY, built_at TEXT NOT NULL)",
+    );
+    legacy.run(
+      "INSERT INTO answers_meta (schema_hash, built_at) VALUES (?, ?)",
+      [ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY, "2026-01-01T00:00:00.000Z"],
+    );
+    legacy.run(
+      "INSERT INTO question_answers (idempotency_key, answer, answered_at, question_id, question, processor_id, adopted_commit) VALUES ('k1','yes','2026-06-01T00:00:00.000Z',1,'q?','p','c')",
+    );
+    legacy.close();
+
+    const code = await runDoctor({ vault: f.vaultPath, json: true });
+    expect(code).toBe(0);
+    const blob = captured.out.find((line) => line.includes("\"status\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as {
+      readonly status: string;
+      readonly summary: { readonly operationalSchemaMismatch: number };
+    };
+    // No short-circuit: the pre-open probe saw the known-migratable prior
+    // hash as an info finding (not an error), so doctor proceeded to
+    // openVaultRuntime, the migration ran, and the post-open schema probe
+    // sees a matching hash — overall status is "ok".
+    expect(parsed.status).toBe("ok");
+    expect(parsed.summary.operationalSchemaMismatch).toBe(0);
+
+    const migrated = new Database(answersPath, { readonly: true });
+    try {
+      const row = migrated
+        .query<{ answered_by: string }, []>(
+          "SELECT answered_by FROM question_answers WHERE idempotency_key = 'k1'",
+        )
+        .get();
+      expect(row?.answered_by).toBe("owner");
+    } finally {
+      migrated.close();
     }
   });
 

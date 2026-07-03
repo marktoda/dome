@@ -4,9 +4,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
-import { computeAnswersSchemaHash } from "../../../answers/db";
+import {
+  ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY,
+  computeAnswersSchemaHash,
+} from "../../../answers/db";
 import { computeLedgerSchemaHash } from "../../../ledger/db";
-import { computeOutboxSchemaHash } from "../../../outbox/db";
+import {
+  computeOutboxSchemaHash,
+  OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT,
+} from "../../../outbox/db";
 import {
   type RunRow,
   type RunSummaryRow,
@@ -257,12 +263,14 @@ export function collectOperationalSchemaFindings(
         path: join(statePath, "answers.db"),
         table: "answers_meta",
         expected: computeAnswersSchemaHash(),
+        knownPriorHash: ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY,
       }),
       operationalSchemaFinding({
         database: "outbox",
         path: join(statePath, "outbox.db"),
         table: "outbox_meta",
         expected: computeOutboxSchemaHash(),
+        knownPriorHash: OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT,
       }),
       operationalSchemaFinding({
         database: "ledger",
@@ -279,22 +287,38 @@ export function operationalSchemaFinding(opts: {
   readonly path: string;
   readonly table: string;
   readonly expected: string;
+  /**
+   * The one prior schema hash this store's `{kind:"migrate"}` open policy
+   * upgrades in place (see `ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY` /
+   * `OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT`). This probe runs BEFORE
+   * `openVaultRuntime`, so a store sitting on exactly this hash is not
+   * broken — it self-heals the moment any runtime command opens the vault.
+   * Undefined for stores with no migratable prior hash (ledger refuses on
+   * any mismatch), in which case every mismatch is a hard error.
+   */
+  readonly knownPriorHash?: string;
 }): HealthFinding | null {
   if (!existsSync(opts.path)) return null;
   const stored = readOperationalSchemaHash(opts.path, opts.table);
   if (stored === opts.expected) return null;
+  const migratable = stored !== null && stored === opts.knownPriorHash;
   return Object.freeze({
     code: "operational.schema-mismatch" as const,
-    severity: "error" as const,
+    severity: migratable ? ("info" as const) : ("error" as const),
     subject: "storage" as const,
     id: `${opts.database}.schema`,
-    message:
-      `${opts.database}.db schema ${
-        stored === null ? "could not be verified" : `hash ${stored}`
-      }; expected ${opts.expected}.`,
-    recovery:
-      "Do not delete operational state. Keep the file intact and run a " +
-      "compatible Dome version or an explicit migration.",
+    message: migratable
+      ? `${opts.database}.db is one schema version behind (hash ${stored}); ` +
+        "it migrates in place automatically the next time the vault opens " +
+        "(dome sync, dome serve, or any runtime command)."
+      : `${opts.database}.db schema ${
+          stored === null ? "could not be verified" : `hash ${stored}`
+        }; expected ${opts.expected}.`,
+    recovery: migratable
+      ? "No action needed — open the vault with any runtime command (e.g. " +
+        "`dome sync`) and the additive migration applies automatically."
+      : "Do not delete operational state. Keep the file intact and run a " +
+        "compatible Dome version or an explicit migration.",
     storage: Object.freeze({
       database: opts.database,
       path: opts.path,
