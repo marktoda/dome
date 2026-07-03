@@ -81,19 +81,42 @@ export function isEntityScopedPage(path: string): boolean {
   return path.startsWith(ENTITY_SCOPE_PREFIX);
 }
 
+/** A trailing `[[wikilink]]` annotation. The sweep appends a source link
+ * after superseding a value (`… *(as of …)* [[meta/sources/x]]`), so a pure
+ * placeholder can arrive wearing a trailing wikilink — the annotation must be
+ * peeled BEFORE the placeholder-shape test or it shields the scaffolding from
+ * detection. */
+const TRAILING_WIKILINK_RE = /\[\[[^[\]\n]+\]\]\s*$/;
+
+/** Exactly ONE `[`…`]` pair wrapping the ENTIRE value, no interior brackets.
+ * Interior brackets mean bracketed fragments inside real prose (citations,
+ * version tags), not a template slot spanning the whole value. */
+const PLACEHOLDER_SHAPE_RE = /^\[[^[\]]*\]$/;
+
 /**
- * True when a claim's value is template-shaped placeholder text — the whole
- * value (after peeling off any inline as-of marker) is wrapped in a single
- * `[`…`]` bracket pair, e.g. `[Specific incident — fill in or drop]`. A
- * `[[wikilink]]` (double brackets) is real content, not a placeholder, so it
- * is explicitly excluded. Placeholder-shaped claims never render in the
- * digest — the audit's laundering complaint.
+ * True when a claim's value is template-shaped placeholder text: after
+ * stripping inline as-of markers and peeling trailing `[[wikilink]]`
+ * annotations, the ENTIRE remaining value is one `[`…`]` bracket pair —
+ * `[Specific incident — fill in or drop]`, with or without an appended
+ * `*(as of …)* [[source]]` supersession tail. Placeholder-shaped claims never
+ * render in the digest — the audit's laundering complaint.
+ *
+ * Deliberately conservative, the same posture as claims-shared's discourse
+ * denylist: a borderline real claim is let through rather than a real fact
+ * dropped. Bracketed fragments inside a larger value are real content, never
+ * placeholders — `[A] and [B]`, `Shipped v2 [beta] on 2026-06-01`, and
+ * `[Owner] and [[Mark]]` (an unfilled slot alongside substantive content)
+ * all render. A whole-value `[[wikilink]]` peels to nothing and is likewise
+ * never a placeholder.
  */
 export function isPlaceholderValue(value: string): boolean {
-  const stripped = value.replace(AS_OF_MARKER_RE, "").trim();
-  if (!stripped.startsWith("[") || !stripped.endsWith("]")) return false;
-  if (stripped.startsWith("[[") || stripped.endsWith("]]")) return false;
-  return true;
+  let stripped = value.replace(AS_OF_MARKER_RE, "").trim();
+  for (;;) {
+    const peeled = stripped.replace(TRAILING_WIKILINK_RE, "").trimEnd();
+    if (peeled === stripped) break;
+    stripped = peeled;
+  }
+  return PLACEHOLDER_SHAPE_RE.test(stripped);
 }
 
 /** Drop placeholder-shaped claims, preserving the remaining document order. */

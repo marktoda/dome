@@ -7,6 +7,7 @@
 import { describe, expect, test } from "bun:test";
 
 import renderFacts, {
+  isPlaceholderValue,
   renderCurrentFactsBlock,
   renderCurrentFactsBody,
 } from "../../assets/extensions/dome.claims/processors/render-facts";
@@ -200,6 +201,73 @@ describe("dome.claims.render-facts", () => {
     expect(block).not.toContain("fill in or drop");
     // The placeholder claim is excluded from the count too: only 3 bullets.
     expect(block.split("\n").filter((line) => line.startsWith("- **"))).toHaveLength(3);
+  });
+
+  test("placeholder shielded by a supersession tail (*(as of …)* [[source]]) is STILL excluded", async () => {
+    // The sweep supersedes values in place and appends `*(as of …)* [[source]]`.
+    // A never-filled placeholder that went through that path arrives wearing a
+    // trailing wikilink — a naive endsWith-`]]` wikilink guard would suppress
+    // detection and launder the scaffolding into the digest. The annotations
+    // must be peeled BEFORE the placeholder-shape test.
+    const path = "wiki/entities/laundered.md";
+    const content = [
+      "# Laundered",
+      "",
+      "**Status:** Active",
+      "**Owner:** [[Mark]]",
+      "**Stage:** Build",
+      "**Incident:** [Specific incident — fill in or drop] *(as of 2026-06-12)* [[meta/sources/x]]",
+      "",
+    ].join("\n");
+
+    const patch = expectPatch(await runRenderFacts([path], { [path]: content }), 0);
+    const change = patch.changes.find((c) => String(c.path) === path);
+    expect(change?.kind).toBe("write");
+    if (change?.kind !== "write") return;
+    const block = change.content.slice(
+      change.content.indexOf(START),
+      change.content.indexOf(END) + END.length,
+    );
+    expect(block).not.toContain("Incident");
+    expect(block).not.toContain("fill in or drop");
+    expect(block.split("\n").filter((line) => line.startsWith("- **"))).toHaveLength(3);
+  });
+
+  test("legitimate bracketed fragments inside a value are NOT placeholders and render", async () => {
+    // Bracket fragments inside real prose must never classify as placeholder:
+    // `[A] and [B]` (two bracketed citations), `Shipped v2 [beta] on …`
+    // (a mid-string version tag), and `[Owner] and [[Mark]]` (an unfilled slot
+    // alongside substantive content — borderline, and the conservative posture
+    // lets a borderline real claim through rather than dropping a real fact).
+    const path = "wiki/entities/bracketed.md";
+    const content = [
+      "# Bracketed",
+      "",
+      "**Cites:** [A] and [B]",
+      "**Release:** Shipped v2 [beta] on 2026-06-01",
+      "**Maintainers:** [Owner] and [[Mark]]",
+      "",
+    ].join("\n");
+
+    const patch = expectPatch(await runRenderFacts([path], { [path]: content }), 0);
+    const change = patch.changes.find((c) => String(c.path) === path);
+    expect(change?.kind).toBe("write");
+    if (change?.kind !== "write") return;
+    const block = change.content.slice(
+      change.content.indexOf(START),
+      change.content.indexOf(END) + END.length,
+    );
+    expect(block).toContain("- **Cites** — [A] and [B]");
+    expect(block).toContain("- **Release** — Shipped v2 [beta] on 2026-06-01");
+    expect(block).toContain("- **Maintainers** — [Owner] and [[Mark]]");
+    expect(block.split("\n").filter((line) => line.startsWith("- **"))).toHaveLength(3);
+  });
+
+  test("entity page BELOW threshold (2 claims), no block: zero effects — entity scope alone never forces a digest", async () => {
+    const path = "wiki/entities/thin-entity.md";
+    const content = ["# Thin Entity", "", "**Status:** Active", "**Owner:** [[Mark]]", ""].join("\n");
+    const effects = await runRenderFacts([path], { [path]: content });
+    expect(effects).toHaveLength(0);
   });
 
   test("13 claims on an entity page: capped at 12 bullets + `+1 more — dome query <subject>` tail", async () => {
@@ -442,6 +510,37 @@ describe("renderCurrentFactsBody / renderCurrentFactsBlock (pure)", () => {
     const block = renderCurrentFactsBlock(claims, "wiki/notes/phoenix");
     expect(block.startsWith(`${START}\n## Current facts\n`)).toBe(true);
     expect(block.endsWith(END)).toBe(true);
+  });
+});
+
+describe("isPlaceholderValue (pure)", () => {
+  test("placeholder: one bracket pair wrapping the entire value", () => {
+    expect(isPlaceholderValue("[Specific incident — fill in or drop]")).toBe(true);
+    expect(isPlaceholderValue("[fill in]")).toBe(true);
+  });
+
+  test("placeholder: supersession tail (as-of marker + trailing wikilinks) is peeled first", () => {
+    expect(
+      isPlaceholderValue(
+        "[Specific incident — fill in or drop] *(as of 2026-06-12)* [[meta/sources/x]]",
+      ),
+    ).toBe(true);
+    // Multiple trailing annotations peel too.
+    expect(isPlaceholderValue("[fill in] [[a]] [[b]]")).toBe(true);
+  });
+
+  test("not a placeholder: bracketed fragments inside a larger value", () => {
+    expect(isPlaceholderValue("[A] and [B]")).toBe(false);
+    expect(isPlaceholderValue("Shipped v2 [beta] on 2026-06-01")).toBe(false);
+    // An unfilled slot alongside substantive content is borderline — the
+    // conservative posture renders it rather than dropping a real fact.
+    expect(isPlaceholderValue("[Owner] and [[Mark]]")).toBe(false);
+  });
+
+  test("not a placeholder: whole-value wikilink, plain prose, empty-ish", () => {
+    expect(isPlaceholderValue("[[Mark]]")).toBe(false);
+    expect(isPlaceholderValue("Active")).toBe(false);
+    expect(isPlaceholderValue("Active *(as of 2026-06-12)*")).toBe(false);
   });
 });
 

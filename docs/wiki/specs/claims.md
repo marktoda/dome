@@ -88,11 +88,19 @@ page body word-for-word, and template placeholders
   same cap idiom as `dome.daily`'s "To decide" block; `<subject>` is the
   page's own name, since the claim's subject IS its host page).
 - **Placeholder filter: `[`…`]`-bracketed values never render.** A claim
-  whose value (after stripping any inline as-of marker) is a single
-  `[`…`]`-bracketed span — template scaffolding like
-  `[Specific incident — fill in or drop]` — is dropped before the threshold
-  count and before rendering. A `[[wikilink]]` (double brackets) is real
-  content and is never treated as a placeholder.
+  whose value — after stripping inline as-of markers and peeling trailing
+  `[[wikilink]]` annotations (the sweep appends a source link when it
+  supersedes a value; the annotation must not shield scaffolding from
+  detection) — is exactly ONE `[`…`]` pair wrapping the entire remainder,
+  with no interior brackets, is template scaffolding like
+  `[Specific incident — fill in or drop]` and is dropped before the
+  threshold count and before rendering. The test is deliberately
+  conservative (the same posture as the grammar's discourse denylist —
+  render a borderline real claim rather than drop a real fact): bracketed
+  fragments inside a larger value (`[A] and [B]`,
+  `Shipped v2 [beta] on 2026-06-01`, `[Owner] and [[Mark]]`) are real
+  content and render; a whole-value `[[wikilink]]` is likewise never a
+  placeholder.
 
 **Backlog — cross-page subject attribution is inexpressible today.** The
 originally-approved "external-only" charter (only surface what OTHER pages
