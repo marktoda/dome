@@ -4,6 +4,13 @@
 // or agent/model decision attached to a question is not rebuildable from
 // markdown, so this store keeps answers in a separate operational SQLite file
 // that survives projection rebuilds.
+//
+// Open policy: MIGRATE, not REFUSE. Durable answer rows are unrebuildable, so
+// an unknown schema-hash mismatch still refuses — but the one known prior
+// hash (pre-`answered_by`, see ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY) is
+// upgraded in place by an idempotent additive migration that defaults every
+// pre-existing row to `answered_by = 'owner'` (all rows written before the
+// auto-resolution pump existed were human decisions).
 
 import { Database } from "bun:sqlite";
 
@@ -11,6 +18,12 @@ import { err, ok, type Result } from "../types";
 import { type SqliteTableShape } from "../sqlite-shape";
 import { computeDdlHash } from "../sqlite/hash";
 import { openSimpleStore, type StoreOpenError } from "../sqlite/open-store";
+
+/** Schema hash of answers.db before the answered_by column (2026-06-27). A
+ * store carrying exactly this hash is upgraded in place; any other mismatch
+ * still refuses (durable answers are unrebuildable). */
+export const ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY =
+  "10b34ad0686bda70ca5325c3c9e71d6e32ea5ecef691f886952cfbcb648823b1";
 
 const DDL: ReadonlyArray<string> = Object.freeze([
   "CREATE TABLE IF NOT EXISTS answers_meta ("
@@ -25,6 +38,7 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + "question TEXT NOT NULL,"
     + "processor_id TEXT NOT NULL,"
     + "adopted_commit TEXT NOT NULL,"
+    + "answered_by TEXT NOT NULL DEFAULT 'owner',"
     + "handler_status TEXT NOT NULL DEFAULT 'pending',"
     + "handler_attempts INTEGER NOT NULL DEFAULT 0,"
     + "last_handler_attempt_at TEXT,"
@@ -52,6 +66,7 @@ const REQUIRED_TABLE_SHAPES: ReadonlyArray<SqliteTableShape> = Object.freeze([
       "question",
       "processor_id",
       "adopted_commit",
+      "answered_by",
       "handler_status",
       "handler_attempts",
       "last_handler_attempt_at",
@@ -73,7 +88,7 @@ export type OpenAnswersDbOpts = {
 
 export type OpenAnswersDbResult = {
   readonly db: AnswersDb;
-  readonly migration: "fresh" | "ok";
+  readonly migration: "fresh" | "ok" | "migrated";
 };
 
 /** Answers refuse on mismatch; their open errors are exactly the shared seam's. */
@@ -82,14 +97,23 @@ export type AnswersDbError = StoreOpenError;
 export async function openAnswersDb(
   opts: OpenAnswersDbOpts,
 ): Promise<Result<OpenAnswersDbResult, AnswersDbError>> {
-  // Durable human/agent decisions are unrebuildable → policy REFUSE on mismatch.
+  // Durable human/agent decisions are unrebuildable. Policy MIGRATE: the one
+  // known prior hash (pre-answered_by) is upgraded in place via the additive
+  // migration below; any other mismatch still refuses.
   const result = openSimpleStore({
     path: opts.path,
     metaTable: "answers_meta",
     ddl: DDL,
     currentHash: computeAnswersSchemaHash(),
     shapes: REQUIRED_TABLE_SHAPES,
-    policy: { kind: "refuse" },
+    policy: {
+      kind: "migrate",
+      tryMigrate: (db, storedHash) => {
+        if (storedHash !== ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY) return false;
+        applyAnsweredByMigration(db);
+        return true;
+      },
+    },
   });
   if (!result.ok) return err(result.error);
 
@@ -99,11 +123,30 @@ export async function openAnswersDb(
     schemaHash,
     close: () => raw.close(),
   });
-  // REFUSE never yields "migrated"; map onto the narrow answers enum.
-  const answersMigration: "fresh" | "ok" = migration === "fresh" ? "fresh" : "ok";
-  return ok(Object.freeze({ db, migration: answersMigration }));
+  // openSimpleStore's SimpleMigration is exactly the answers enum.
+  return ok(Object.freeze({ db, migration }));
 }
 
 export function computeAnswersSchemaHash(): string {
   return computeDdlHash(DDL);
+}
+
+// ----- internals ------------------------------------------------------------
+
+function applyAnsweredByMigration(db: Database): void {
+  db.run("BEGIN");
+  try {
+    const cols = db
+      .query<{ name: string }, []>("PRAGMA table_info(question_answers)")
+      .all();
+    if (!cols.some((c) => c.name === "answered_by")) {
+      db.run(
+        "ALTER TABLE question_answers ADD COLUMN answered_by TEXT NOT NULL DEFAULT 'owner'",
+      );
+    }
+    db.run("COMMIT");
+  } catch (e) {
+    db.run("ROLLBACK");
+    throw e;
+  }
 }

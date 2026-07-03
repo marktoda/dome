@@ -15,6 +15,7 @@ export type QuestionAnswerRecord = {
   readonly question: string;
   readonly processorId: string;
   readonly adoptedCommit: string;
+  readonly answeredBy: QuestionAnsweredBy;
   readonly handlerStatus: AnswerHandlerStatus;
   readonly handlerAttempts: number;
   readonly lastHandlerAttemptAt: string | null;
@@ -24,6 +25,10 @@ export type QuestionAnswerRecord = {
 
 export type AnswerHandlerStatus = "pending" | "handled" | "failed" | "skipped";
 
+/** Who supplied the durable answer: the vault owner (or an agent client
+ * acting on their behalf) vs. the background auto-resolution pump. */
+export type QuestionAnsweredBy = "owner" | "auto";
+
 export type RecordQuestionAnswerOpts = {
   readonly idempotencyKey: string;
   readonly answer: string;
@@ -32,25 +37,27 @@ export type RecordQuestionAnswerOpts = {
   readonly question: string;
   readonly processorId: string;
   readonly adoptedCommit: string;
+  readonly answeredBy: QuestionAnsweredBy;
 };
 
 const UPSERT_SQL = `
 INSERT INTO question_answers (
   idempotency_key, answer, answered_at, question_id,
-  question, processor_id, adopted_commit
-) VALUES (?, ?, ?, ?, ?, ?, ?)
+  question, processor_id, adopted_commit, answered_by
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(idempotency_key) DO UPDATE SET
   answer = excluded.answer,
   answered_at = excluded.answered_at,
   question_id = excluded.question_id,
   question = excluded.question,
   processor_id = excluded.processor_id,
-  adopted_commit = excluded.adopted_commit
+  adopted_commit = excluded.adopted_commit,
+  answered_by = excluded.answered_by
 `.trim();
 
 const QUERY_ALL_SQL = `
 SELECT idempotency_key, answer, answered_at, question_id,
-       question, processor_id, adopted_commit,
+       question, processor_id, adopted_commit, answered_by,
        handler_status, handler_attempts, last_handler_attempt_at,
        handled_at, last_handler_error
 FROM question_answers
@@ -59,7 +66,7 @@ ORDER BY answered_at, idempotency_key
 
 const QUERY_BY_KEY_SQL = `
 SELECT idempotency_key, answer, answered_at, question_id,
-       question, processor_id, adopted_commit,
+       question, processor_id, adopted_commit, answered_by,
        handler_status, handler_attempts, last_handler_attempt_at,
        handled_at, last_handler_error
 FROM question_answers
@@ -102,6 +109,7 @@ export function recordQuestionAnswer(
     opts.question,
     opts.processorId,
     opts.adoptedCommit,
+    opts.answeredBy,
   );
   return Object.freeze({
     idempotencyKey: opts.idempotencyKey,
@@ -111,6 +119,7 @@ export function recordQuestionAnswer(
     question: opts.question,
     processorId: opts.processorId,
     adoptedCommit: opts.adoptedCommit,
+    answeredBy: opts.answeredBy,
     handlerStatus: "pending",
     handlerAttempts: 0,
     lastHandlerAttemptAt: null,
@@ -181,6 +190,7 @@ type QuestionAnswerRow = {
   readonly question: string;
   readonly processor_id: string;
   readonly adopted_commit: string;
+  readonly answered_by: string;
   readonly handler_status: string;
   readonly handler_attempts: number;
   readonly last_handler_attempt_at: string | null;
@@ -197,12 +207,17 @@ function rowToRecord(row: QuestionAnswerRow): QuestionAnswerRecord {
     question: row.question,
     processorId: row.processor_id,
     adoptedCommit: row.adopted_commit,
+    answeredBy: parseAnsweredBy(row.answered_by),
     handlerStatus: parseHandlerStatus(row.handler_status),
     handlerAttempts: row.handler_attempts,
     lastHandlerAttemptAt: row.last_handler_attempt_at,
     handledAt: row.handled_at,
     lastHandlerError: row.last_handler_error,
   });
+}
+
+function parseAnsweredBy(value: string): QuestionAnsweredBy {
+  return value === "auto" ? "auto" : "owner";
 }
 
 function parseHandlerStatus(value: string): AnswerHandlerStatus {

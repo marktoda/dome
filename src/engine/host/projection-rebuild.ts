@@ -246,6 +246,7 @@ function restoreDurableQuestionAnswers(runtime: VaultRuntime): void {
       idempotencyKey: answer.idempotencyKey,
       answer: answer.answer,
       answeredAt: answer.answeredAt,
+      answeredBy: answer.answeredBy,
     });
   }
 }

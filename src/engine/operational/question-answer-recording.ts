@@ -7,7 +7,10 @@
 // handler dispatch in their own runtime host.
 
 import type { AnswersDb } from "../../answers/db";
-import { recordQuestionAnswer } from "../../answers/question-answers";
+import {
+  recordQuestionAnswer,
+  type QuestionAnsweredBy,
+} from "../../answers/question-answers";
 import type { ProjectionDb } from "../../projections/db";
 import {
   applyQuestionAnswer,
@@ -20,6 +23,7 @@ export type AnswerQuestionDurablyOpts = {
   readonly answers: AnswersDb;
   readonly id: number;
   readonly answer: string;
+  readonly answeredBy: QuestionAnsweredBy;
   readonly now?: () => Date;
 };
 
@@ -50,11 +54,13 @@ export function answerQuestionDurably(
     question: record.effect.question,
     processorId: record.processorId,
     adoptedCommit: record.adoptedCommit,
+    answeredBy: opts.answeredBy,
   });
   applyQuestionAnswer(opts.projection, {
     idempotencyKey: record.effect.idempotencyKey,
     answer: opts.answer,
     answeredAt,
+    answeredBy: opts.answeredBy,
   });
 
   const answered = getQuestionRecord(opts.projection, opts.id);
