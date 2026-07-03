@@ -63,7 +63,7 @@ CREATE TABLE runs (
   cost_usd             REAL,                     -- nullable; populated by model.invoke usage
   duration_ms          INTEGER,                  -- nullable; null while running
   error                TEXT,                     -- nullable; failure detail or not-invoked reason JSON
-  trigger_kind         TEXT NOT NULL,            -- "signal" | "path" | "schedule" | "answer" | "command" | "job"
+  trigger_kind         TEXT NOT NULL,            -- "signal" | "path" | "schedule" | "answer" | "command"
   trigger_payload_json TEXT NOT NULL,            -- the input that fired the trigger
   started_at           TEXT NOT NULL,
   finished_at          TEXT

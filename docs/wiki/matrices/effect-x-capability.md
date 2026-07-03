@@ -23,7 +23,6 @@ Per-Effect-kind capability requirements enforced by the broker at the engine rou
 | **FactEffect** | `graph.write` matching the namespace prefix of `predicate` | predicate `<namespace>.<key>` → namespace must be in the grant list | Denied; diagnostic with `code: capability-deny-graph-write`; effect discarded |
 | **SearchDocumentEffect** | `search.write` | indexed/deleted document path must match the grant's glob list | Denied; diagnostic with `code: capability-deny-search-write`; effect discarded |
 | **QuestionEffect** | `question.ask` | binary in v1; future scoped questions need an explicit effect field first | Denied; diagnostic with `code: capability-deny-question-ask`; effect discarded |
-| **JobEffect** | `job.enqueue` | target processor id or bundle-level glob | Denied; diagnostic with `code: capability-deny-job-enqueue`; effect discarded |
 | **ExternalActionEffect** | `external:<capability>` matching the effect's `capability` field | per-capability (e.g., `external: ["calendar.write"]` authorizes `capability: "calendar.write"`) | Denied; diagnostic with `code: capability-deny-external`; effect discarded |
 | **OutboxRecoveryEffect** | `outbox.recover` | requested action (`retry` or `abandon`) | Denied; diagnostic with `code: capability-deny-outbox-recover`; effect discarded |
 | **QuarantineRecoveryEffect** | `quarantine.recover` | requested action (`reset`) | Denied; diagnostic with `code: capability-deny-quarantine-recover`; effect discarded |
@@ -39,12 +38,6 @@ The broker has three outcomes per [[wiki/specs/capabilities]] §"Enforcement cho
 - **Deny** — no capability matches; effect discarded; diagnostic emitted.
 
 Downgrade is currently used for one case: PatchEffect `mode: "auto"` → `mode: "propose"` when the processor has `patch.propose` but not `patch.auto` for the touched paths. Other effects deny rather than downgrade.
-
-## Cross-bundle invocations
-
-A processor in bundle A that emits a `JobEffect { processorId: "B:foo" }` invokes a processor in bundle B. The broker checks bundle A's capability set for `job.enqueue` and requires the target processor id to match one of the granted `processors` entries.
-
-Same-bundle enqueue can be shipped as a default grant for first-party bundles, but it is still explicit in the effective capability set. Cross-bundle enqueue requires a grant such as `job.enqueue: ["B:*"]`.
 
 ## Capability lookup performance
 

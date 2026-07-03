@@ -41,7 +41,7 @@ Every API surface, every spec, every test reduces to four types.
 Vault         A markdown directory plus the engine that maintains it.
 Proposal      A commit range proposed for adoption. The only write path.
 Processor     Code that reads a snapshot and returns effects. The only behavior unit.
-Effect        What a processor returns. Eleven kinds; closed taxonomy.
+Effect        What a processor returns. Ten kinds; closed taxonomy.
 ```
 
 Everything else — first-party features, third-party plugins, integrations — composes from these. There is no separate "Hook," "Tool," or "Workflow" concept. Auto-cross-reference, intake compilation, daily-note generation, lint, search-indexing — every one of them is a processor that emits effects.

@@ -18,7 +18,7 @@ term that lives in only one spec is defined there, not here.
 - **Vault** — a git-backed markdown directory plus the engine that maintains it. [[wiki/specs/sdk-surface]]
 - **Proposal** — a commit range proposed for adoption; the only write path. [[wiki/specs/proposals]]
 - **Processor** — code that reads a vault snapshot and returns effects; the only behavior unit. [[wiki/specs/processors]]
-- **Effect** — what a processor returns; eleven kinds, closed taxonomy. [[wiki/specs/effects]]
+- **Effect** — what a processor returns; ten kinds, closed taxonomy. [[wiki/specs/effects]]
 
 ## Engine vocabulary
 

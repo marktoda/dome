@@ -183,11 +183,11 @@ Real pre-D3 vaults accumulated duplicate `# Captured today` / `## Captured today
 
 ### The `carried-forward` verdict: retired-legacy
 
-`dome.daily:carried-forward` has rendering and splice helpers in `daily-shared.ts` (`carriedForwardSection`, `replaceCarriedForwardSection`) but **no shipped call site writes it** — the carry-forward processor evolved into the ranked `dome.daily:open-loops` surface, which fully absorbed the block's job (surface yesterday's unfinished work with `(from [[origin]])` provenance). The verdict is **retire as a writer concept, keep the marker recognized**:
+`dome.daily:carried-forward` has **no shipped call site that writes it** — the carry-forward processor evolved into the ranked `dome.daily:open-loops` surface, which fully absorbed the block's job (surface yesterday's unfinished work with `(from [[origin]])` provenance). The verdict is **retire as a writer concept, keep the marker recognized**:
 
 - *Why not delete recognition:* real dailies written by earlier versions may carry the block. The grammar keeps it in `DAILY_GENERATED_BLOCKS`, so its contents stay excluded from task extraction (a legacy block's generated copies must not re-ingest as fresh tasks) and smuggled/mangled markers still surface as anomalies.
 - *Why not reserve for future use:* the open-loops surface owns the carried-forward semantics, and the close owns its own `dome.daily:close` block (§"The close block"). A reserved-but-unwritten marker is exactly the kind of ambient accretion this spec exists to prevent.
-- *Consequence:* no processor may adopt this marker for new output. The unused render helpers may be deleted whenever convenient; the recognition entries stay.
+- *Consequence:* no processor may adopt this marker for new output. The unused render/splice helpers (formerly `carriedForwardSection` / `replaceCarriedForwardSection` in `daily-scaffold.ts`) have been deleted; the recognition entries (`CARRIED_FORWARD_BLOCK`, `carriedForwardBlockRange` in `open-loop-surface.ts`) stay.
 
 ### The close block (D4)
 

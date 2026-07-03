@@ -142,7 +142,7 @@ View-phase processors run **on demand** when a query, CLI render, or UI request 
 - Read from the projection store ([[wiki/specs/projection-store]]) for indexed facts.
 - Return `ViewEffect` (the rendered output) or no effects.
 - Never mutate adopted state — `PatchEffect`, `FactEffect`,
-  `SearchDocumentEffect`, `QuestionEffect`, `JobEffect`, and
+  `SearchDocumentEffect`, `QuestionEffect`, and
   external/operational recovery effects from a view-phase processor are
   rejected by the broker as phase mismatches. Non-blocking
   `DiagnosticEffect`s are allowed for view/report findings; block-severity
@@ -342,7 +342,6 @@ plan in [[v1]]. Current status:
 | Scheduler | `schedule:` triggers fire on cron from `dome serve` and `dome sync` via the `projection.db.schedule_cursors` table; minimal in-tree cron evaluator (`src/engine/operational/cron.ts`); clock injection via `runOneAdoption({ now })` for deterministic harness testing. Same-tick ordering contract: all due processors are evaluated before any is dispatched, then dispatched in cron-time order — each fire's computed due time, processor id as the tiebreak; a brand-new processor (no cursor, no ledger history) became due "now" and sorts after every missed cron — so a wake-tick burst replays the overnight choreography in order, never registry order ([[wiki/specs/daily-surface]] §"Wake-tick choreography") | **Shipped** (Phase 4c) |
 | Answer-trigger dispatch | `dome resolve` / `dome answer` records a QuestionEffect answer, then garden-phase processors with matching `answer` triggers run through normal effect routing. Recovery handlers bind triggers to the originating question processor as well as idempotency-key prefixes. | **Shipped** |
 | Engine signal pub/sub | `signal: "engine.<name>"` namespace (terminal-failure, processor-quarantined, etc.) | Phase 4d |
-| JobEffect runtime | `scheduled_jobs` table + `runQueuedJobs` dispatcher firing due jobs as garden-phase work with retry/backoff | **Shipped** (Phase 4e) |
 
 The reset V1 plan now treats this substrate as shipped foundation and moves
 future work toward more useful automation, agent-resolvable decisions, and

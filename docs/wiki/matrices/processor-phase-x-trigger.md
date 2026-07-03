@@ -90,9 +90,9 @@ The phase × trigger matrix is **the canonical contract** that the manifest vali
 Periodic reports are garden work in v1, even when the same report can also be
 rendered on demand by a command-triggered view processor. The garden processor
 owns the schedule and emits durable effects: a PatchEffect for a report page,
-a DiagnosticEffect for an operator finding, a JobEffect for deferred work, or
-an ExternalActionEffect for outbox-mediated delivery. The view processor owns
-interactive rendering and declares only a command trigger.
+a DiagnosticEffect for an operator finding, or an ExternalActionEffect for
+outbox-mediated delivery. The view processor owns interactive rendering and
+declares only a command trigger.
 
 ## Related
 

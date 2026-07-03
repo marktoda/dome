@@ -123,7 +123,7 @@ Dome runs garden-phase and view-phase processors in a headless context:
 
 Garden-phase processors that hold the `model.invoke` capability call through the engine's provider-neutral model-invoke shim. Core records provider-reported cost in the run ledger and enforces the effective model allowlist plus per-bundle daily `maxDailyCostUsd`; concrete adapters such as an Anthropic or Vercel AI SDK provider are outside the `@dome/sdk` root import graph. The headless context is the engine running outside an interactive harness — it loads bundles, runs the processor, ledgers the run, returns.
 
-The end-to-end harness can inject a test `ModelProvider` through `HarnessOpts.modelProvider`, and its `tick()` path now mirrors `dome sync`: after adoption, and even when HEAD is already in sync, it drains due schedule, queued-job, and outbox work against the adopted state. Scenarios can call `drainOperationalWork()` directly when they need to isolate that operational pump from drift detection.
+The end-to-end harness can inject a test `ModelProvider` through `HarnessOpts.modelProvider`, and its `tick()` path now mirrors `dome sync`: after adoption, and even when HEAD is already in sync, it drains due schedule and outbox work against the adopted state. Scenarios can call `drainOperationalWork()` directly when they need to isolate that operational pump from drift detection.
 
 ### Other MCP-capable harnesses (Cursor, OpenCode, Codex CLI, future)
 

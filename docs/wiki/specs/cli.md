@@ -440,7 +440,7 @@ Composition (v1.0):
    - **detached HEAD** → exit 64 (EX_USAGE) with a clear stderr message.
    - **no commits** → exit 64 with a stderr message asking for an initial commit.
    - **diverged** → refuse before opening the adoption loop because the adopted ref is not an ancestor of HEAD; print recovery guidance and exit 1.
-   - **in-sync** → open the runtime, acquire the branch-level compiler-host lock, run one operational-work pump against the adopted commit (due schedule triggers, durable jobs, low-risk question auto-resolution when enabled, and outbox rows already pending before the pump started), print `dome sync: already in sync (<head> on <branch>)`, print durable attention / next-action lines when attention remains, exit 0.
+   - **in-sync** → open the runtime, acquire the branch-level compiler-host lock, run one operational-work pump against the adopted commit (due schedule triggers, low-risk question auto-resolution when enabled, and outbox rows already pending before the pump started), print `dome sync: already in sync (<head> on <branch>)`, print durable attention / next-action lines when attention remains, exit 0.
    - **drift** → open the runtime, acquire the branch-level compiler-host lock, run `runOneAdoption`, then after a successful adoption run the same operational-work pump against the new adopted commit; print the result block plus durable attention / next-action lines when attention remains (or the `--json` payload), exit 0 (adopted) or 1 (blocked).
    - **busy** → another Dome host already holds the branch-level compiler-host lock; print a retryable busy message, exit 75.
 4. Close the runtime on the way out.
@@ -448,13 +448,13 @@ Composition (v1.0):
 `--json` emits a single JSON object on stdout suitable for cross-tool consumption:
 
 ```json
-{"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"garden":{"subProposalCount":1,"rejectedPatchCount":0,"diagnosticCount":0},"operational":{"scheduledCount":0,"jobCount":0,"outboxCount":0,"autoResolvedQuestions":0,"diagnosticCount":0},"health":{"pendingRuns":0,"orphanRuns":0,"failedRuns":0,"diagnostics":0,"contentDiagnostics":0,"unlocatedDiagnostics":0,"attentionDiagnostics":0,"questions":0,"outboxPending":0,"outboxFailed":0,"quarantined":0},"attention_required":false,"attention":[],"next_actions":[],"diagnostics":[]}
+{"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"garden":{"subProposalCount":1,"rejectedPatchCount":0,"diagnosticCount":0},"operational":{"scheduledCount":0,"outboxCount":0,"autoResolvedQuestions":0,"diagnosticCount":0},"health":{"pendingRuns":0,"orphanRuns":0,"failedRuns":0,"diagnostics":0,"contentDiagnostics":0,"unlocatedDiagnostics":0,"attentionDiagnostics":0,"questions":0,"outboxPending":0,"outboxFailed":0,"quarantined":0},"attention_required":false,"attention":[],"next_actions":[],"diagnostics":[]}
 ```
 
 `status` is one of `"adopted" | "blocked" | "in-sync" | "busy" | "error"`. The `error` field is present on `"busy"` and error variants such as detached HEAD, no commits, runtime-open failure, or adopted-ref divergence.
 `garden` summarizes post-adoption garden PatchEffects that spawned
 sub-Proposals plus any garden-routing diagnostics. `operational` summarizes
-the scheduled/job/outbox/auto-resolution pump. `autoResolvedQuestions` counts
+the scheduled/outbox/auto-resolution pump. `autoResolvedQuestions` counts
 low-risk `QuestionEffect` rows answered through the durable `dome resolve`
 machinery by opt-in runtime policy; their answer handlers still route patches
 through garden and adoption. `health` summarizes durable post-tick attention
@@ -2058,7 +2058,7 @@ Composition (v1.0):
 5. Adoption runs; effects route through `buildSqliteSinks` (projection + outbox writes) + the engine's candidate-tree `applyPatch` sink. View delivery remains a placeholder sink in v1.0.
 6. Every adoption or operational-work pump acquires the same branch-level compiler-host lock that `dome sync` uses. A second host does not race the first; it reports busy and retries on the next poll.
 7. After an adoption finishes, `serve` checks drift again before sleeping. If HEAD moved while adoption was active, the next adoption starts immediately rather than waiting for the full poll interval. This coalesces stacked commits without overlapping compiler work.
-8. The host also runs operational-work pumps while HEAD is already in sync, on a quiet internal cadence. This is how schedule triggers, durable jobs, opt-in low-risk question auto-resolution, and outbox retries that become due solely because time passed make progress in a quiet vault. Default output stays silent; `--verbose` may print counts.
+8. The host also runs operational-work pumps while HEAD is already in sync, on a quiet internal cadence. This is how schedule triggers, opt-in low-risk question auto-resolution, and outbox retries that become due solely because time passed make progress in a quiet vault. Default output stays silent; `--verbose` may print counts.
 9. The host refreshes `.dome/state/serve-heartbeat.json` so `dome status`
    can report whether the local compiler appears `running`, `stale`, or
    `off`. The heartbeat is observability only; the branch-level compiler-host

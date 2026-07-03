@@ -21,8 +21,8 @@ Shipped in the current v1 runtime:
 
 - `src/processors/executor.ts` provides the executor boundary. It owns the per-invocation `AbortSignal`, asks the runtime to construct `ProcessorContext` from that signal, validates returned outputs, enforces per-invocation timeout/cancellation when called, and returns structured `ProcessorExecutionResult` variants with `processor.invalid-output`, `processor.threw`, `processor.timeout`, and `processor.cancelled` errors.
 - `src/ledger/runs.ts` can persist the full terminal status set, including `timed_out` and `cancelled`, through `markTimedOut` and `markCancelled`.
-- `src/processors/runtime.ts` dispatches adoption, garden, and view processors through `executeProcessor`. Runtime policy denial and quarantine are recorded as `skipped` with a structured not-invoked reason; executor terminal results are recorded as `succeeded`, `failed`, `timed_out`, or `cancelled`. The engine runner contracts accept an optional `AbortSignal`; aborting it cancels the active processor invocation and writes a terminal `cancelled` run row instead of leaving `running` state behind. Vault-level execution caps are threaded through every engine-owned processor dispatch path, including adoption/garden/view runners, schedule triggers, answer handlers, durable JobEffect drains, and deterministic projection rebuild processors.
-- `src/engine/operational/operational-work.ts` is the single pump for non-adoption engine work after trusted state is stable. It runs due schedule triggers, drains due durable JobEffect rows, and dispatches due outbox rows that were already pending before the pump started, in that order. `dome sync` runs this pump after successful adoption and once even when HEAD is already in sync; `dome serve` runs it on a quiet cadence while HEAD remains in sync and threads shutdown cancellation into retryable outbox dispatch attempts.
+- `src/processors/runtime.ts` dispatches adoption, garden, and view processors through `executeProcessor`. Runtime policy denial and quarantine are recorded as `skipped` with a structured not-invoked reason; executor terminal results are recorded as `succeeded`, `failed`, `timed_out`, or `cancelled`. The engine runner contracts accept an optional `AbortSignal`; aborting it cancels the active processor invocation and writes a terminal `cancelled` run row instead of leaving `running` state behind. Vault-level execution caps are threaded through every engine-owned processor dispatch path, including adoption/garden/view runners, schedule triggers, answer handlers, and deterministic projection rebuild processors.
+- `src/engine/operational/operational-work.ts` is the single pump for non-adoption engine work after trusted state is stable. It runs due schedule triggers and dispatches due outbox rows that were already pending before the pump started, in that order. `dome sync` runs this pump after successful adoption and once even when HEAD is already in sync; `dome serve` runs it on a quiet cadence while HEAD remains in sync and threads shutdown cancellation into retryable outbox dispatch attempts.
 - `RunnerResult.executionStatus` carries the runtime terminal status to engine consumers. Schedulers and other orchestration layers use this explicit status instead of inferring execution success from arbitrary processor-emitted diagnostics.
 - `src/processors/execution-state.ts` and `src/engine/operational/quarantine-store.ts` maintain processor quarantine state at `.dome/state/quarantined.json`. Garden runs, including schedule-triggered garden runs, are keyed by `(phase, processorId, processorVersion, triggerHash)` and skipped with `processor.quarantined` after repeated retryable failures.
 - `src/engine/core/model-invoke.ts` provides the provider-neutral `ctx.modelInvoke` shim. The core SDK imports no model vendor SDK; callers inject a `ModelProvider` or configure a command provider in `.dome/config.yaml`. The shim uses the same invocation signal as `ctx.signal`, enforces effective `model.invoke` grants, allowlists, and per-bundle daily cost caps, validates provider responses, enforces per-call timeout, retries one runtime-classified provider failure, reports structured JSON parse/schema errors, captures run-local cost, and records `model.invoke` capability-use rows.
@@ -128,16 +128,15 @@ A timed-out processor produces a `processor.timeout` diagnostic, the executor
 returns `status: "timed_out"`, and no returned Effects from that invocation
 are routed. The runtime records the timed-out row through `markTimedOut`; late
 effects leave `effect_hashes_json` empty because the invocation did not
-succeed. Timeouts are not retried inside the same processor invocation.
-Durable JobEffect retries may schedule a later attempt when the terminal
-failure is retryable, and repeated retryable timeouts can contribute to
-garden/scheduled quarantine.
+succeed. Timeouts are not retried inside the same processor invocation,
+though repeated retryable timeouts can contribute to garden/scheduled
+quarantine.
 
 The same resolved timeout policy applies no matter which engine subsystem
-initiates the run. Schedule-triggered processors, answer handlers, durable
-jobs, direct adoption/garden/view runners, and projection-rebuild dispatch all
-call the shared runtime boundary with the vault cap from `.dome/config.yaml`;
-none of those paths owns a private timeout interpretation.
+initiates the run. Schedule-triggered processors, answer handlers, direct
+adoption/garden/view runners, and projection-rebuild dispatch all call the
+shared runtime boundary with the vault cap from `.dome/config.yaml`; none of
+those paths owns a private timeout interpretation.
 
 The executor-created invocation signal is the only signal a processor observes.
 `ctx.signal` and `ctx.modelInvoke` share that lifecycle: when the executor
@@ -156,7 +155,7 @@ Processor.run(ctx): Promise<Effect[]>
 The executor boundary validates returned values before routing:
 
 1. The resolved value must be an array.
-2. Each array element must match one of the eleven Effect schemas in [[wiki/specs/effects]].
+2. Each array element must match one of the ten Effect schemas in [[wiki/specs/effects]].
 3. Effect-kind-specific invariants are checked before capability enforcement: non-empty PatchEffect changes, mandatory SourceRefs where required, confidence on inferred/generated facts, valid idempotency keys, valid SourceRef path/range shape.
 4. Runtime output policy is checked before routing. Today that policy requires non-adoption processors with an effective `model.invoke` grant to include at least one SourceRef on every PatchEffect.
 5. A bounded runaway guard rejects a single invocation that returns more than 100,000 effects. This protects the engine from accidental unbounded output while leaving deterministic indexers enough room for real-vault scale.
@@ -191,18 +190,17 @@ Adoption-phase processors cannot receive `ctx.modelInvoke`. Registration rejects
 
 Dome does not perform generic immediate whole-processor retries for adoption,
 garden, schedule, or command dispatch. `executeProcessor` remains a
-single-attempt boundary for timeout/cancellation/output validation. Durable
-whole-run retries belong to JobEffect rows in `scheduled_jobs`; model-provider
-transient retries belong inside the `ctx.modelInvoke` boundary while still
-respecting the run timeout.
+single-attempt boundary for timeout/cancellation/output validation;
+model-provider transient retries belong inside the `ctx.modelInvoke` boundary
+while still respecting the run timeout.
 
 The target runtime classifies run failures:
 
 | Class | Examples | Retry behavior |
 |---|---|---|
 | `deterministic` | invalid output, phase mismatch, capability schema violation | No automatic retry. Mark failed. |
-| `transient` | model provider 429/5xx, network timeout, temporary SQLite busy | No generic processor rerun. Model calls may retry internally; JobEffect attempts may retry durably. Retryable terminal failures count toward quarantine. |
-| `timeout` | phase timeout exceeded | No in-run retry. Garden jobs may be rescheduled if their JobEffect policy allows it. Retryable timeouts count toward quarantine. |
+| `transient` | model provider 429/5xx, network timeout, temporary SQLite busy | No generic processor rerun. Model calls may retry internally. Retryable terminal failures count toward quarantine. |
+| `timeout` | phase timeout exceeded | No in-run retry. Retryable timeouts count toward quarantine. |
 | `operator` | cancellation, shutdown | Mark cancelled; no retry unless explicitly re-run. |
 
 Processor code can opt into transient classification by throwing
@@ -271,7 +269,7 @@ The executor contract uses stable diagnostic codes:
 
 Diagnostics point at the processor/run, not at arbitrary vault content, unless the failed Effect carried valid SourceRefs before validation failed.
 
-Engine orchestration layers may add diagnostics outside a processor run: adoption emits `engine.adoption` rows for structural blockages such as `fixed-point.divergence`; the scheduler emits `engine.scheduler` rows for invalid cron or dispatch crashes; queued jobs emit `engine.jobs` rows for missing targets or dispatch crashes. These diagnostics are returned to callers for immediate control flow and also written through the same diagnostic projection sink so `dome inspect diagnostics` is the durable operator surface.
+Engine orchestration layers may add diagnostics outside a processor run: adoption emits `engine.adoption` rows for structural blockages such as `fixed-point.divergence`; the scheduler emits `engine.scheduler` rows for invalid cron or dispatch crashes. These diagnostics are returned to callers for immediate control flow and also written through the same diagnostic projection sink so `dome inspect diagnostics` is the durable operator surface.
 
 ## Test guarantees
 
@@ -301,6 +299,6 @@ Pending:
 - [[wiki/specs/effects]] — Effect schemas
 - [[wiki/specs/capabilities]] — broker and `model.invoke`
 - [[wiki/specs/run-ledger]] — RunRecord tables
-- [[wiki/specs/projection-store]] — scheduled jobs and projection rebuild
+- [[wiki/specs/projection-store]] — schedule cursors and projection rebuild
 - [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]
 - [[wiki/gotchas/processor-idempotency]]

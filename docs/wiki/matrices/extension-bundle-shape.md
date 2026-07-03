@@ -55,7 +55,7 @@ An **extension bundle** is a directory under `<vault>/.dome/extensions/<bundle-n
 | **`dome.migrate`** *(first-party)* | `anticipated` | — | — | `migrate-vault.ts` | — | `read: ["**"]`; `patch.auto: ["**"]` (migrations need broad reach by design) |
 | **`hello-world`** *(test fixture)* | `test-fixture` | `hello` | `preamble.md` | `say-hello.ts` | — | `read: wiki/**`; `patch.auto: ["wiki/hellos/**"]` |
 | **`acme.calendar-sync`** *(third-party — anticipated)* | `anticipated` | — | `preamble.md` | `sync-events.ts`, `event-to-task.ts` | `calendar.write.ts`, `calendar.read.ts` | `read: wiki/**`; `external: ["calendar.write", "calendar.read"]`; `patch.propose: ["wiki/dailies/**"]` |
-| **`community.spaced-repetition`** *(third-party — anticipated)* | `anticipated` | `flashcard` | `preamble.md` | `extract-cards.ts`, `schedule-review.ts` | — | `read: wiki/**`; `graph.write: ["community.spaced-repetition"]`; `job.enqueue: ["community.spaced-repetition.*"]`; `patch.auto: ["wiki/flashcards/**"]` |
+| **`community.spaced-repetition`** *(third-party — anticipated)* | `anticipated` | `flashcard` | `preamble.md` | `extract-cards.ts`, `schedule-review.ts` | — | `read: wiki/**`; `graph.write: ["community.spaced-repetition"]`; `patch.auto: ["wiki/flashcards/**"]` |
 
 ## Reading the matrix
 

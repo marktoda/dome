@@ -194,7 +194,7 @@ database handle.
 
 ### Population: write-through at the embed boundary, lazy backfill in the garden
 
-There is **no new Effect kind** — the eleven-kind taxonomy stays closed.
+There is **no new Effect kind** — the ten-kind taxonomy stays closed.
 Effects route durable consequences; a cache row has none (deleting it changes
 nothing), so vectors never travel through effect routing. Instead the
 runtime's embed boundary **memoizes**: every capability-checked

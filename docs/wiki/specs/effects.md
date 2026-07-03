@@ -5,14 +5,14 @@ updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
-description: Closed eleven-kind Effect union with per-kind routing and severity semantics; pins whole-content FileChange patches over unified diffs
+description: Closed ten-kind Effect union with per-kind routing and severity semantics; pins whole-content FileChange patches over unified diffs
 ---
 
 # Effects
 
-This spec is normative for the eleven-kind effect taxonomy. An **Effect** is the only thing a [[wiki/specs/processors|Processor]] returns. The engine routes effects through capability enforcement, then applies them — by patching markdown, writing to the projection store, queueing external actions, recovering operational rows, or rendering a view.
+This spec is normative for the ten-kind effect taxonomy. An **Effect** is the only thing a [[wiki/specs/processors|Processor]] returns. The engine routes effects through capability enforcement, then applies them — by patching markdown, writing to the projection store, queueing external actions, recovering operational rows, or rendering a view.
 
-The taxonomy is **closed**. New effect kinds require a spec change. Plugin/extension processors cannot extend the union; what they can do is emit any of the eleven existing kinds within their declared capabilities.
+The taxonomy is **closed**. New effect kinds require a spec change. Plugin/extension processors cannot extend the union; what they can do is emit any of the ten existing kinds within their declared capabilities.
 
 ## The Effect union
 
@@ -23,7 +23,6 @@ type Effect =
   | FactEffect
   | SearchDocumentEffect
   | QuestionEffect
-  | JobEffect
   | ExternalActionEffect
   | OutboxRecoveryEffect
   | QuarantineRecoveryEffect
@@ -96,7 +95,7 @@ block adoption because they run after it. In the view phase, `info`,
 `warning`, and `error` diagnostics may be recorded; `block` is rejected as a
 phase mismatch because a view command cannot block adoption.
 
-**Persistence:** diagnostics are written to `projection_store.diagnostics` ([[wiki/specs/projection-store]] §"Tables") with `(processor_id, code, proposal_id, subject_hash)` as the dedup key. Processor-emitted diagnostics and engine-created diagnostics (capability denials, phase mismatches, adoption/scheduler/job orchestration failures) use the same table; engine-created rows use synthetic producer ids such as `engine.adoption`, `engine.scheduler`, and `engine.jobs`. `dome inspect diagnostics` reads from there.
+**Persistence:** diagnostics are written to `projection_store.diagnostics` ([[wiki/specs/projection-store]] §"Tables") with `(processor_id, code, proposal_id, subject_hash)` as the dedup key. Processor-emitted diagnostics and engine-created diagnostics (capability denials, phase mismatches, adoption/scheduler orchestration failures) use the same table; engine-created rows use synthetic producer ids such as `engine.adoption` and `engine.scheduler`. `dome inspect diagnostics` reads from there.
 
 ## FactEffect
 
@@ -239,25 +238,6 @@ Automation policy means:
 `recommendedAnswer` is a source-preserving hint, not an instruction to bypass
 the grounding check. Open questions are advisory state and must not block
 unrelated adoption, garden work, or source edits.
-
-## JobEffect
-
-A request to run another processor later.
-
-```ts
-interface JobEffect {
-  readonly kind: "job";
-  readonly processorId: string;        // which processor to invoke
-  readonly input: unknown;             // passed as ProcessorContext.input
-  readonly runAfter?: string;          // ISO-8601; if absent, runs as soon as the queue permits
-  readonly idempotencyKey: string;     // dedup key
-  readonly maxAttempts?: number;       // default 3
-}
-```
-
-**Routing:** the engine enqueues the job in `projection.db.scheduled_jobs` when the processor holds `job.enqueue` for the target processor. After adoption/garden/scheduler work completes, due jobs are drained as garden-phase invocations of the named processor. The target sees `JobEffect.input` as `ctx.input`; its emitted effects route through the same garden boundary. Retryable job failures are retried up to `maxAttempts` with bounded backoff, then marked `failed`; deterministic failures are marked `failed` immediately.
-
-**Why a job vs a direct call:** a processor emits JobEffect when it wants follow-on work to happen *after* the current adoption loop completes, with its own RunRecord and capability scope. This is how an ingest processor can schedule a follow-on daily-surface refresh without synchronously calling it.
 
 ## ExternalActionEffect
 
@@ -414,7 +394,6 @@ The full matrix is at [[wiki/matrices/effect-x-capability]]. Summary:
 | FactEffect | `graph.write` for the namespace prefix of `predicate` |
 | SearchDocumentEffect | `search.write` for the indexed document path |
 | QuestionEffect | `question.ask` |
-| JobEffect | `job.enqueue` for the target processor id |
 | ExternalActionEffect | the named `capability` (e.g., `calendar.write`) |
 | OutboxRecoveryEffect | `outbox.recover` for `retry` or `abandon` |
 | QuarantineRecoveryEffect | `quarantine.recover` for `reset` |
@@ -427,7 +406,7 @@ Three properties depend on the union being closed:
 
 1. **Exhaustive routing.** The engine route layer uses TypeScript exhaustiveness to guarantee every kind has a route. Adding a kind without a route fails compilation.
 2. **Capability enforcement is tractable.** A finite kind set lets the broker's capability table stay finite. Open-ended effect kinds would require open-ended capability tables, which would degrade into "trust the manifest."
-3. **Substrate stability.** The eleven kinds cover the operations Dome's design needs (patch, validate, extract facts, index search documents, ask, enqueue work, touch the world, recover operational outbox/quarantine/run rows, render). A new kind is a *design move*, not a plugin's convenience.
+3. **Substrate stability.** The ten kinds cover the operations Dome's design needs (patch, validate, extract facts, index search documents, ask, touch the world, recover operational outbox/quarantine/run rows, render). A new kind is a *design move*, not a plugin's convenience.
 
 ## Related
 

@@ -22,7 +22,6 @@ The canonical mapping from Effect kind × processor phase → engine routing des
 | **FactEffect** | Recorded in `projection.db.facts` (namespace-scoped per `graph.write` capability) | Same | Rejected: `phase-mismatch` diagnostic (view-phase processors don't extract facts) |
 | **SearchDocumentEffect** | Upserts/deletes `projection.db.fts_documents` rows (path-scoped per `search.write` capability) | Same | Rejected: `phase-mismatch` diagnostic (view-phase processors query search; they do not mutate it) |
 | **QuestionEffect** | Recorded in `projection.db.questions`; surfaced via `dome check` and advanced `dome inspect questions`; resolved via `dome resolve <question-id>` (`dome answer` remains a compatibility alias) per [[wiki/specs/cli]] §"`dome resolve`" | Same | Rejected: `phase-mismatch` diagnostic |
-| **JobEffect** | Rejected: adoption-phase processors can't enqueue follow-on work (would re-trigger inside same loop iteration) | Enqueued in `projection.db.scheduled_jobs`; runs after `runAfter?` elapses or immediately if absent | Rejected: `phase-mismatch` diagnostic |
 | **ExternalActionEffect** | Rejected: adoption-phase processors can't touch the outside world (would race with the merge gate) | Inserted into `outbox.db`; dispatched to the registered external handler; status tracked per [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUGH_OUTBOX]] | Rejected: `phase-mismatch` diagnostic |
 | **OutboxRecoveryEffect** | Rejected: adoption-phase processors cannot recover operational rows before adoption is settled | Applies an engine-owned outbox recovery transition (`retry` or `abandon`) after `outbox.recover` capability enforcement | Rejected: `phase-mismatch` diagnostic |
 | **QuarantineRecoveryEffect** | Rejected: adoption-phase processors cannot recover operational rows before adoption is settled | Applies an engine-owned quarantine-generation recovery transition (`reset`) after `quarantine.recover` capability enforcement | Rejected: `phase-mismatch` diagnostic |
@@ -70,10 +69,10 @@ Three properties hold:
 
 ## Related
 
-- [[wiki/specs/effects]] — the eleven kinds
+- [[wiki/specs/effects]] — the ten kinds
 - [[wiki/specs/processors]] — phase semantics
 - [[wiki/specs/adoption]] — the fixed-point loop
-- [[wiki/specs/projection-store]] — where Facts / Diagnostics / Questions / Jobs land
+- [[wiki/specs/projection-store]] — where Facts / Diagnostics / Questions land
 - [[wiki/specs/run-ledger]] — where every routed effect is hashed into the RunRecord
 - [[wiki/matrices/effect-x-capability]] — what each kind requires capability-wise (upstream of routing)
 - [[wiki/invariants/ENGINE_IS_THE_ONLY_APPLIER]]
