@@ -188,9 +188,9 @@ view-time signal by construction, the same rebuild-safe pattern as
 `dome.search`'s recency decay.
 
 Same-page contradiction (a same-normalized-key/different-value collision) ships
-today via the integrity warden's deterministic pre-filter (above). The
+today via `dome.claims.index`'s key-collision diagnostic (above). The
 remaining health items are still **deferred**: cross-page contradiction
-(model judgment, not the warden's mechanical subset); `dome explain
+(model judgment, not the indexer's mechanical subset); `dome explain
 <page>#^c…`, the claim-value timeline rendered from block git history; and
 brief-count weaving — surfacing the stale count in the morning brief.
 
