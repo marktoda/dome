@@ -68,6 +68,20 @@ A schedule-driven (cron `0 6 * * *`, same as `create-daily`) garden processor, g
 
 The deterministic `dome.daily.settle-stale-answer` handler applies the owner's disposition: **close** marks the origin line `[-]` (reconcile propagates), **defer** advances the `📅` due date forward by `DEFER_DAYS`, **keep** is a no-op (the resolved question suppresses recurrence — it will not re-emit for the same task). No model, no `graph.write` — `patch.auto` only. Design: [[cohesive/brainstorms/2026-06-15-daily-phase2]].
 
+## The settle operation
+
+Settling a task is a **decision**, not authoring — the same shape as resolving a question (`dome resolve`), not editing a note. `performSettle` (`src/surface/settle.ts`) is the surface collector any client (CLI, HTTP, MCP, PWA) calls to settle a task by its `^block-anchor`. It is the **second commit-or-nothing remote-write operation** beside `performCapture` ([[wiki/specs/capture]] §"The remote-capture seam"), and it inherits capture's trust posture exactly: the change lands as one ordinary **human** commit (no `Dome-*` trailers), and the daemon constructs a Proposal from the branch drift ([[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]]). The seam never calls the engine, never writes a projection, never opens the runtime.
+
+**Addressing.** The task is named by its `^block-anchor` (§"Block-anchor identity") — move-stable, so the same id settles the task wherever it currently lives. `performSettle` scans the vault's markdown for the line carrying the anchor; an anchor no line carries answers `{ status: "not-found" }` and lands no commit.
+
+**Dispositions** — the tri-state `settle-stale-answer` offers, generalized to a surface op:
+
+- **close** — set the origin line to `- [x]` (done) and, in the SAME commit, append `- <task text> ([[<source page>#^<block>|from]])` under today's daily `### Done today` section (created under `## Done` when absent — `## Done` is shared scaffold + human bullets, [[wiki/specs/daily-surface]] §"Block ownership"). Commit-or-nothing: one commit carries both edits, or none. Idempotent — an already-settled line is a no-op.
+- **defer** — rewrite (or insert) the `📅 YYYY-MM-DD` due token to `deferUntil` (required, `YYYY-MM-DD`; a defer without it answers `{ status: "invalid" }`). The task stays open; the origin marker and trailing `^anchor` are preserved.
+- **keep** — touch nothing, record nothing, **commit nothing**: `{ status: "settled" }` with no commit. It exists so surfaces can offer the same tri-state as the stale-settle question without a spurious write.
+
+**Shared line mechanics, per-consumer semantics.** The find-by-anchor / flip-if-open / rewrite-`📅` transforms are pure and live once in `dome.daily`'s `task-disposition` module, imported by BOTH `performSettle` and the `dome.daily.settle-stale-answer` processor — so the surface and the processor can never diverge. The disposition **semantics** differ by consumer and stay with each: the processor's close CANCELS (`[-]`, reconcile propagates) an overdue task the owner disowned, whereas the surface's close COMPLETES (`[x]`) a task the owner finished and records it in Done-today. The processor keeps emitting `PatchEffect`s through the adoption loop; `performSettle` does the fs/git. The commit subject is `settle(<disposition>): <first 50 chars of task text>`.
+
 ### Open-loop ranking
 
 Carry-forward, `today`, `prep`, and `agenda-with` all rank open-loop items by **due-date, then recency** — a dated/overdue item outranks an undated one; within a bucket, more-recently-`lastHumanChangedAt`-touched items sort first. There is no discount term: an undated item's rank moves only with its own recency, never with how many times it has previously surfaced.

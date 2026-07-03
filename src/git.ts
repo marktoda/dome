@@ -309,28 +309,68 @@ export async function commitSingleFileOnHead(opts: {
    */
   beforeRefAdvance?: (attempt: number) => Promise<void>;
 }): Promise<string> {
+  return commitFilesOnHead({
+    path: opts.path,
+    files: [{ filepath: opts.filepath, content: opts.content }],
+    message: opts.message,
+    ...(opts.author !== undefined ? { author: opts.author } : {}),
+    ...(opts.beforeRefAdvance !== undefined
+      ? { beforeRefAdvance: opts.beforeRefAdvance }
+      : {}),
+  });
+}
+
+/**
+ * Commit a set of files against the CURRENT branch's HEAD tree — the
+ * multi-file generalization of {@link commitSingleFileOnHead}, and the
+ * commit-or-nothing seam behind `performCapture` (one file) and
+ * `performSettle` (up to two: the settled origin line + a Done-today bullet
+ * in today's daily). Each file's blob is spliced into the HEAD tree in one
+ * atomic commit; nothing else — staged or dirty — rides along, because the
+ * base is HEAD's tree, not the index. The branch ref advance is a
+ * compare-and-swap that retries onto a concurrently-advanced head (the serve
+ * host's adoption), so a daemon poll racing the write never clobbers or is
+ * clobbered. `files` must be non-empty; passing the same path twice keeps the
+ * last write.
+ */
+export async function commitFilesOnHead(opts: {
+  path: string;
+  files: ReadonlyArray<{ readonly filepath: string; readonly content: string }>;
+  message: string;
+  author?: CommitIdentity;
+  beforeRefAdvance?: (attempt: number) => Promise<void>;
+}): Promise<string> {
+  if (opts.files.length === 0) {
+    throw new Error("commitFilesOnHead: no files to commit");
+  }
   const { root, prefix } = await resolveGitContext(opts.path);
-  const fullpath = prefix === "" ? opts.filepath : posix.join(prefix, opts.filepath);
+  const fulls = opts.files.map((f) => ({
+    full: prefix === "" ? f.filepath : posix.join(prefix, f.filepath),
+    content: f.content,
+  }));
   const branch = await git.currentBranch({ fs, dir: root, fullname: true });
   if (branch === undefined) {
-    throw new Error("commitSingleFileOnHead: HEAD is detached; callers gate on a branch");
+    throw new Error("commitFilesOnHead: HEAD is detached; callers gate on a branch");
   }
   const author = opts.author ?? { name: "Dome", email: "dome@local" };
 
   let head = await git.resolveRef({ fs, dir: root, ref: "HEAD" });
   for (let attempt = 1; attempt <= COMMIT_SINGLE_FILE_MAX_ATTEMPTS; attempt += 1) {
     const { commit: headCommit } = await git.readCommit({ fs, dir: root, oid: head });
-    const blobOid = await git.writeBlob({
-      fs,
-      dir: root,
-      blob: new TextEncoder().encode(opts.content),
-    });
-    const treeOid = await spliceBlobIntoTree({
-      root,
-      treeOid: headCommit.tree,
-      segments: fullpath.split("/").filter((s) => s.length > 0),
-      blobOid,
-    });
+    let treeOid = headCommit.tree;
+    for (const f of fulls) {
+      const blobOid = await git.writeBlob({
+        fs,
+        dir: root,
+        blob: new TextEncoder().encode(f.content),
+      });
+      treeOid = await spliceBlobIntoTree({
+        root,
+        treeOid,
+        segments: f.full.split("/").filter((s) => s.length > 0),
+        blobOid,
+      });
+    }
     // Write the commit object without touching the branch; the ref advance
     // below is the only branch mutation, and it is compare-and-swap.
     const commitOid = await git.commit({
@@ -357,13 +397,15 @@ export async function commitSingleFileOnHead(opts: {
       head = current;
       continue;
     }
-    // Keep the index in sync for the new path so the working tree reads
+    // Keep the index in sync for the new paths so the working tree reads
     // clean after the commit; the caller already wrote `content` to disk.
-    await git.add({ fs, dir: root, filepath: fullpath });
+    for (const f of fulls) {
+      await git.add({ fs, dir: root, filepath: f.full });
+    }
     return commitOid;
   }
   throw new Error(
-    `commitSingleFileOnHead: ${branch} kept advancing concurrently; ` +
+    `commitFilesOnHead: ${branch} kept advancing concurrently; ` +
       `gave up after ${COMMIT_SINGLE_FILE_MAX_ATTEMPTS} attempts`,
   );
 }

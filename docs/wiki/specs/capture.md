@@ -267,6 +267,12 @@ MCP `capture` tool — `performCapture` in `src/cli/commands/capture.ts` — is
 the reference implementation of this contract; a relay wraps it, never
 reimplements it.
 
+**Settle is the second operation on this seam.** `performSettle`
+(`src/surface/settle.ts`) applies a close / defer / keep disposition to a task
+addressed by its `^block-anchor`, landing it as the same one ordinary human
+commit with the same trust posture — the write-side sibling of capture,
+detailed at [[wiki/specs/task-lifecycle]] §"The settle operation".
+
 **Why commit-or-nothing.** The seam inherits its security and consistency
 story from [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]]: because a
 remote capture is an ordinary human commit, the relay needs filesystem +

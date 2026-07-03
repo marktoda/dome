@@ -24,6 +24,11 @@ const ALLOWED_FILES = new Set([
   // editor + `git commit`. Not an engine write path — the daemon constructs
   // the Proposal from the resulting branch drift.
   "src/surface/capture.ts",
+  // The settle seam: `performSettle` flips a task checkbox / rewrites its 📅
+  // date and records a Done-today bullet, landing them as one ordinary human
+  // commit via commitFilesOnHead — exactly like `dome capture`. Same boundary
+  // class as capture.ts; the daemon constructs the Proposal from branch drift.
+  "src/surface/settle.ts",
   // The hosted agent's write path: create_document / edit_document write one
   // markdown file and land it as an ordinary human commit via
   // commitSingleFileOnHead — exactly like `dome capture`. Same boundary class
