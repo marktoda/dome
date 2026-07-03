@@ -254,11 +254,96 @@ model_provider:
         },
       },
       git: { auto_commit_workflows: false },
+      ledger: { retentionDays: 30 },
       modelProvider: {
         kind: "command",
         command: ["bun", ".dome/model-provider.ts"],
       },
     });
+  });
+
+  test("parses an explicit ledger.retention_days, including the 0-disables sentinel", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+ledger:
+  retention_days: 0
+extensions: {}
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.runtime.ledger).toEqual({ retentionDays: 0 });
+  });
+
+  test("defaults ledger.retention_days to 30 when the vault config omits it", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+extensions: {}
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.runtime.ledger).toEqual({ retentionDays: 30 });
+  });
+
+  test("rejects a negative ledger.retention_days", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+ledger:
+  retention_days: -1
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(
+      "ledger.retention_days must be a non-negative integer",
+    );
+  });
+
+  test("rejects unknown ledger config keys", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+ledger:
+  retentoin_days: 30
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(
+      "ledger.retentoin_days is not a known ledger config field",
+    );
   });
 
   test("rejects malformed runtime model provider config", async () => {

@@ -46,4 +46,8 @@ export {
   recurringOutboxFailureFindings,
   unreadableQuestionBacklogFindings,
 } from "./outbox";
-export { recurringTimeoutFindings } from "./operational";
+export {
+  DEFAULT_LEDGER_OVERSIZED_THRESHOLD_BYTES,
+  ledgerOversizedFinding,
+  recurringTimeoutFindings,
+} from "./operational";

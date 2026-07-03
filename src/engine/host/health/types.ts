@@ -401,6 +401,19 @@ export type HealthFinding =
       readonly id: "commit_gpgsign";
       readonly message: string;
       readonly recovery: string;
+    }
+  | {
+      readonly code: "ledger.oversized";
+      readonly severity: "info";
+      readonly subject: "runs";
+      readonly id: "runs_db";
+      readonly message: string;
+      readonly recovery: string;
+      readonly ledger: {
+        readonly path: string;
+        readonly sizeBytes: number;
+        readonly thresholdBytes: number;
+      };
     };
 
 export type HealthSummary = {
@@ -433,6 +446,7 @@ export type HealthSummary = {
   readonly recurringOutboxFailures: number;
   readonly unreadableQuestions: number;
   readonly recurringTimeouts: number;
+  readonly ledgerOversized: number;
 };
 
 /**

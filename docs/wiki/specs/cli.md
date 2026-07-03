@@ -1857,7 +1857,15 @@ still-affected paths (the owner's own `git commit`, custom vault-side
 scripts shelling plain `git commit`) with `git config --local
 commit.gpgsign false` as the opt-out if the owner wants unsigned human
 commits too — their call.
-The implementation lives in `src/engine/host/health.ts`.
+When `runs.db` exceeds 500MB on disk, doctor raises a `ledger.oversized`
+**info** finding naming the file size and the threshold. Informational, not a
+health failure — the run ledger works fine at any size; the finding is a
+nudge toward lowering `ledger.retention_days` in `.dome/config.yaml`
+(default 30, applied automatically by the compiler host — see
+[[wiki/specs/run-ledger]] §"Retention") or running a one-off
+`dome repair run-ledger --older-than-days <n> --apply --vacuum`.
+The implementation lives in `src/engine/host/health/` (one file per probe
+concern; `registry.ts` is the ordered probe list).
 
 **Model-provider probe.** When `.dome/config.yaml` carries a
 `model_provider: { kind: "command", ... }` stanza, `dome doctor` additionally
@@ -1960,7 +1968,12 @@ rows and idempotency-style `skipped` rows with no error, first deleting their
 `capability_uses` children inside the ledger layer. It preserves failed,
 timed-out, cancelled, queued, running, and reason-bearing skipped rows.
 `--vacuum` is valid only with `--apply` and runs SQLite `VACUUM` after the
-delete.
+delete. This is the manual, ad-hoc-window sibling of the automatic
+`ledger.retention_days` policy the compiler host applies on its own schedule
+(default 30 days, every 24h — [[wiki/specs/run-ledger]] §"Retention"); both
+share the same eligibility predicate in `src/ledger/runs.ts`, so reach for
+this command only when an immediate prune or a one-off window different from
+the configured default is wanted.
 
 ### `dome answer <question-id> [<value>]` *(advanced compatibility alias)*
 

@@ -3,11 +3,13 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { execFileSync } from "node:child_process";
+import { truncateSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { runDoctor } from "../../../src/cli/commands/doctor";
 
+import { openLedgerDb } from "../../../src/ledger/db";
 import {
   readModelProviderProbeCache,
 } from "../../../src/engine/host/model-provider-probe-cache";
@@ -105,6 +107,64 @@ describe("runDoctor", () => {
     expect(parsed.summary.gitCommitSigning).toBe(0);
     expect(
       parsed.findings.some((row) => row.code === "git.commit-signing"),
+    ).toBe(false);
+  });
+
+  test("runs.db over the 500MB threshold raises the ledger.oversized info finding", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    const ledgerPath = join(f.vaultPath, ".dome", "state", "runs.db");
+    const opened = await openLedgerDb({ path: ledgerPath });
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) return;
+    opened.value.db.close();
+    // Sparse-extend past the 500MB advisory threshold without writing real
+    // disk pages — the doctor probe only stats the file, and SQLite reads
+    // only the pages its header records, so trailing zero bytes are inert.
+    truncateSync(ledgerPath, 501 * 1024 * 1024);
+
+    expect(await runDoctor({ vault: f.vaultPath, json: true })).toBe(0);
+    const blob = captured.out.find((line) => line.includes("\"status\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as {
+      readonly status: string;
+      readonly summary: { readonly ledgerOversized: number };
+      readonly findings: ReadonlyArray<{
+        readonly code: string;
+        readonly severity: string;
+        readonly message: string;
+        readonly recovery: string;
+      }>;
+    };
+    // Info severity: an oversized ledger is a nudge, not a health failure.
+    expect(parsed.status).toBe("ok");
+    expect(parsed.summary.ledgerOversized).toBe(1);
+    const finding = parsed.findings.find((row) => row.code === "ledger.oversized");
+    expect(finding).toBeDefined();
+    expect(finding?.severity).toBe("info");
+    expect(finding?.message).toContain("500 MB");
+    expect(finding?.recovery).toContain("ledger.retention_days");
+  });
+
+  test("a normal-sized runs.db raises no ledger.oversized finding", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    expect(await runDoctor({ vault: f.vaultPath, json: true })).toBe(0);
+    const blob = captured.out.find((line) => line.includes("\"status\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as {
+      readonly summary: { readonly ledgerOversized: number };
+      readonly findings: ReadonlyArray<{ readonly code: string }>;
+    };
+    expect(parsed.summary.ledgerOversized).toBe(0);
+    expect(
+      parsed.findings.some((row) => row.code === "ledger.oversized"),
     ).toBe(false);
   });
 

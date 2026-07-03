@@ -130,6 +130,56 @@ export function latestProblemRunFinding(row: RunRow): HealthFinding {
   });
 }
 
+/**
+ * Advisory size threshold for `runs.db`, in bytes. 500 MB is well past what
+ * the default 30-day retention policy (`ledger.retention_days`,
+ * `src/ledger/retention.ts`) should ever let the file reach in ordinary
+ * use — a vault crossing it is either running with retention disabled
+ * (`retention_days: 0`) or predates the automatic policy and is carrying
+ * pre-Task-6 unbounded history (docs/wiki/specs/run-ledger.md §"Retention").
+ */
+export const DEFAULT_LEDGER_OVERSIZED_THRESHOLD_BYTES = 500 * 1024 * 1024;
+
+/**
+ * `runs.db` on-disk size exceeds the advisory threshold. Info severity: an
+ * oversized ledger is not unhealthy on its own (queries still work; disk is
+ * cheap), just worth a nudge toward `ledger.retention_days` or a one-off
+ * `dome repair run-ledger --apply --vacuum`. Returns `null` when the file is
+ * at or under the threshold — the caller (registry.ts) filters nulls, same
+ * pattern as `adoptedRefDivergenceFinding`.
+ */
+export function ledgerOversizedFinding(opts: {
+  readonly path: string;
+  readonly sizeBytes: number;
+  readonly thresholdBytes?: number;
+}): HealthFinding | null {
+  const thresholdBytes =
+    opts.thresholdBytes ?? DEFAULT_LEDGER_OVERSIZED_THRESHOLD_BYTES;
+  if (opts.sizeBytes <= thresholdBytes) return null;
+  return Object.freeze({
+    code: "ledger.oversized" as const,
+    severity: "info" as const,
+    subject: "runs" as const,
+    id: "runs_db" as const,
+    message:
+      `runs.db is ${formatMebibytes(opts.sizeBytes)} on disk, over the ` +
+      `${formatMebibytes(thresholdBytes)} advisory threshold.`,
+    recovery:
+      "Lower ledger.retention_days in .dome/config.yaml (default 30 — the " +
+      "host applies it automatically on the next tick) or run once: " +
+      "`dome repair run-ledger --older-than-days <n> --apply --vacuum`.",
+    ledger: Object.freeze({
+      path: opts.path,
+      sizeBytes: opts.sizeBytes,
+      thresholdBytes,
+    }),
+  });
+}
+
+function formatMebibytes(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
+}
+
 export function projectionCacheDriftFinding(): HealthFinding {
   return Object.freeze({
     code: "projection.cache-key-drift" as const,

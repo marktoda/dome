@@ -55,6 +55,7 @@ import {
   adoptedRefDivergenceFinding,
   collectOperationalSchemaFindings,
   instructionDriftFindings,
+  ledgerOversizedFinding,
   latestProblemRunFinding,
   orphanFinding,
   projectionCacheDriftFinding,
@@ -250,6 +251,17 @@ const HEALTH_PROBES: ReadonlyArray<HealthProbe> = [
     return divergence === null ? [] : [divergence];
   },
   (c) => instructionDriftFindings(c.vaultPath),
+  (c) => {
+    const runsDbPath = join(c.vaultPath, ".dome", "state", "runs.db");
+    let sizeBytes: number;
+    try {
+      sizeBytes = statSync(runsDbPath).size;
+    } catch {
+      return [];
+    }
+    const finding = ledgerOversizedFinding({ path: runsDbPath, sizeBytes });
+    return finding === null ? [] : [finding];
+  },
 ];
 
 export async function collectHealthReport(

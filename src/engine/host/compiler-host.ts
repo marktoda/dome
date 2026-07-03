@@ -81,6 +81,12 @@ import { currentSha, isAncestor } from "../../git";
 import { replayFinalizeJournal } from "../core/finalize-journal";
 import type { ApplyEffectSinks } from "../core/apply-effect";
 import { failRunIfCurrent } from "../../ledger/runs";
+import { pruneRunLedgerRetention } from "../../ledger/retention";
+import {
+  readRunLedgerRetentionCache,
+  runLedgerRetentionDue,
+  writeRunLedgerRetentionCache,
+} from "./run-ledger-retention-cache";
 import { buildOperationalQueryView } from "../operational/operational-query-view";
 import { withProjectionWriteLock } from "./projection-lock";
 
@@ -409,6 +415,13 @@ async function runCompilerHostTickUnlocked(opts: CompilerHostTickCommonOptions &
   // human edits that arrived after the crash.
   await replayFinalizeJournal(opts.runtime.path);
 
+  // Run-ledger retention: once at host startup (no cache file yet — the
+  // first tick after `dome serve`/`dome sync` starts always has one) and at
+  // most once per 24h thereafter (docs/wiki/specs/run-ledger.md
+  // §"Retention"). Cheap when disabled (`ledger.retention_days: 0`) or not
+  // due — see `maybeApplyRunLedgerRetention`'s early returns.
+  maybeApplyRunLedgerRetention({ runtime: opts.runtime, now: now() });
+
   if (drift.kind === "in-sync") {
     let operational: OperationalWorkResult | null = null;
     if (opts.runOperationalWhenInSync !== false) {
@@ -455,6 +468,36 @@ async function runCompilerHostTickUnlocked(opts: CompilerHostTickCommonOptions &
     finalAdoptedRef: cycle.finalAdoptedRef,
     projectionRebuild: cycle.projectionRebuild,
   });
+}
+
+/**
+ * The scheduling half of run-ledger retention. `src/ledger/retention.ts`
+ * owns the SQL and the vacuum decision (code organization: the host owns
+ * WHEN to run, the ledger module owns WHAT running means); this function
+ * owns the "once at startup, at most once per 24h thereafter" gate —
+ * reading/writing the persisted last-pruned timestamp lives beside other
+ * host state under `<vault>/.dome/state/`
+ * (`src/engine/host/run-ledger-retention-cache.ts`), never in the vault's
+ * git-tracked content.
+ *
+ * `retentionDays <= 0` short-circuits before any cache file I/O — a vault
+ * running with retention disabled pays zero per-tick cost for this check.
+ */
+function maybeApplyRunLedgerRetention(opts: {
+  readonly runtime: VaultRuntime;
+  readonly now: Date;
+}): void {
+  const { retentionDays } = opts.runtime.config.ledger;
+  if (retentionDays <= 0) return;
+
+  const cache = readRunLedgerRetentionCache(opts.runtime.path);
+  if (!runLedgerRetentionDue(cache, opts.now)) return;
+
+  pruneRunLedgerRetention(opts.runtime.ledgerDb, {
+    retentionDays,
+    now: opts.now,
+  });
+  writeRunLedgerRetentionCache(opts.runtime.path, opts.now);
 }
 
 function driftBranch(

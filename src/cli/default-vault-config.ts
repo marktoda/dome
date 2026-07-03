@@ -576,4 +576,11 @@ git:
   # the historical git-shaped flag to closure-commit code. When both keys
   # are present, they must agree.
   auto_commit_workflows: true
+
+# Run-ledger retention (docs/wiki/specs/run-ledger.md, "Retention" section). The
+# compiler host applies this automatically (once at startup, at most once
+# per 24h thereafter) — no cron or manual step needed. Uncomment to override
+# the default 30-day window; 0 disables automatic pruning entirely.
+# ledger:
+#   retention_days: 30
 `;

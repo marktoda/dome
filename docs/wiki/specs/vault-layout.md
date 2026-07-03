@@ -402,14 +402,15 @@ render tick rather than through `dome rebuild`. A one-shot migration script
     runs.db               # Bun.sqlite — run ledger
     outbox.db             # Bun.sqlite — external-action outbox
     quarantined.json      # processor quarantine state with generation ids
+    run-ledger-retention.json # last-pruned timestamp for the ledger.retention_days policy
     last-reconcile-mtime.txt   # marker file; mtime is the signal
 ```
 
 ### `config.yaml`
 
 The single config file. The accepted top-level keys are `extensions`,
-`engine`, `git`, `model_provider`, and `shared_config`; unknown top-level
-keys fail runtime open rather than being silently ignored.
+`engine`, `git`, `ledger`, `model_provider`, and `shared_config`; unknown
+top-level keys fail runtime open rather than being silently ignored.
 
 `shared_config` holds vault-level keys that merge as *defaults* under every
 extension's `config:` block (the extension's own key wins). It exists for
