@@ -12,6 +12,7 @@
 //   status         → buildStatusSnapshot     (status snapshot, stable keys)
 //   check          → buildCheckReport        (dome.check/v1)
 //   resolve        → vault.resolve           (dome.answer/v1)
+//   settle         → performSettle           (dome.settle/v1)
 //   tasks          → vault.runView("today")  (dome.daily.today/v1)
 //   brief          → today view + adopted-commit blob read
 //                                            (dome.mcp.brief/v1)
@@ -53,6 +54,7 @@ import {
   buildCheckReport,
   resolveScopes,
 } from "../surface/check";
+import { performSettle, settleResultJson } from "../surface/settle";
 import { buildStatusSnapshot } from "../surface/status";
 import {
   catalogViewProblemMessage,
@@ -95,6 +97,7 @@ Typical loop:
 - status: vault pulse — attention codes and next_actions.
 - check: explain attention — engine health, diagnostics, open decisions.
 - resolve: answer a Dome-raised question by id (omit value to read it).
+- settle: close, defer, or keep a task line by its block anchor.
 - query / export_context: adopted-state recall with source refs.
 - brief / tasks: today's daily note content and source-backed open loops.
 
@@ -446,6 +449,45 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
           }
         }),
       ),
+  );
+
+  // ----- settle --------------------------------------------------------------------
+
+  server.registerTool(
+    "settle",
+    {
+      title: "Settle a task line by its block anchor",
+      description:
+        "Apply a close / defer / keep disposition to a task line located by " +
+        "its `^block-anchor` — the decision op behind `dome settle`. `close` " +
+        "checks the box and records a Done-today bullet in today's daily; " +
+        "`defer` rewrites the due date to `deferUntil`; `keep` settles " +
+        "without writing anything. One ordinary human commit (none for " +
+        "`keep`). Returns the dome.settle/v1 JSON payload.",
+      inputSchema: {
+        blockId: z.string().min(1).describe(
+          "The task line's `^block-anchor` id.",
+        ),
+        disposition: z.enum(["close", "defer", "keep"]).describe(
+          "close | defer | keep.",
+        ),
+        deferUntil: z.string().optional().describe(
+          "YYYY-MM-DD; required iff disposition is defer.",
+        ),
+      },
+    },
+    async ({ blockId, disposition, deferUntil }) =>
+      enqueue(async () => {
+        const outcome = await performSettle(vault, {
+          blockId,
+          disposition,
+          deferUntil,
+        });
+        return {
+          ...jsonToolResult(settleResultJson(outcome)),
+          ...(outcome.status === "settled" ? {} : { isError: true }),
+        };
+      }),
   );
 
   // ----- tasks / brief ---------------------------------------------------------------

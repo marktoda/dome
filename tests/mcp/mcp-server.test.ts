@@ -44,6 +44,7 @@ const EXPECTED_TOOLS = [
   "export_context",
   "query",
   "resolve",
+  "settle",
   "status",
   "tasks",
 ];
@@ -173,7 +174,7 @@ async function callTool(
 // ----- The in-memory MCP session ------------------------------------------------
 
 describe("dome mcp server (in-memory transport)", () => {
-  test("initialize + tools/list expose the eight wedge tools", async () => {
+  test("initialize + tools/list expose the nine wedge tools", async () => {
     const { client } = await fixture();
     const tools = await client.listTools();
     const names = tools.tools.map((tool) => tool.name).sort();
@@ -362,6 +363,65 @@ describe("dome mcp server (in-memory transport)", () => {
     expect(call.json.schema).toBe("dome.answer/v1");
     expect(call.json.status).toBe("error");
     expect(call.json.error).toBe("question-not-found");
+  }, TEST_TIMEOUT_MS);
+
+  test("settle closes a task line by block-anchor and commits exactly that file", async () => {
+    const { client, vault } = await fixture();
+    const anchor = "tmcpsettle1";
+    const taskPath = "wiki/projects/mcp-settle.md";
+    const content = `# MCP settle fixture\n\n- [ ] #task ship the mcp settle tool ^${anchor}\n`;
+    await mkdir(join(vault, "wiki", "projects"), { recursive: true });
+    await writeFile(join(vault, taskPath), content, "utf8");
+    await add(vault, taskPath);
+    await commit({ path: vault, message: "fixture: mcp-settle task" });
+
+    const call = await callTool(client, "settle", {
+      blockId: anchor,
+      disposition: "close",
+    });
+    expect(call.isError).toBe(false);
+    expect(call.json.schema).toBe("dome.settle/v1");
+    expect(call.json.status).toBe("settled");
+    expect(call.json.block_id).toBe(anchor);
+    expect(call.json.disposition).toBe("close");
+    expect(typeof call.json.commit).toBe("string");
+
+    const entries = await log({ path: vault, depth: 1 });
+    expect(entries[0]?.commit.message).toContain("settle(close):");
+  }, TEST_TIMEOUT_MS);
+
+  test("settle keep settles without a commit", async () => {
+    const { client, vault } = await fixture();
+    const anchor = "tmcpsettle2";
+    const taskPath = "wiki/projects/mcp-settle-keep.md";
+    const content = `- [ ] #task keep me ^${anchor}\n`;
+    await mkdir(join(vault, "wiki", "projects"), { recursive: true });
+    await writeFile(join(vault, taskPath), content, "utf8");
+    await add(vault, taskPath);
+    await commit({ path: vault, message: "fixture: mcp-settle keep task" });
+    const before = await log({ path: vault, depth: 1 });
+
+    const call = await callTool(client, "settle", {
+      blockId: anchor,
+      disposition: "keep",
+    });
+    expect(call.isError).toBe(false);
+    expect(call.json.status).toBe("settled");
+    expect(call.json.commit).toBeNull();
+
+    const after = await log({ path: vault, depth: 1 });
+    expect(after[0]?.oid).toBe(before[0]?.oid);
+  }, TEST_TIMEOUT_MS);
+
+  test("settle of an unknown blockId is a tool error with dome.settle/v1 not-found", async () => {
+    const { client } = await fixture();
+    const call = await callTool(client, "settle", {
+      blockId: "tnosuchanchor",
+      disposition: "close",
+    });
+    expect(call.isError).toBe(true);
+    expect(call.json.schema).toBe("dome.settle/v1");
+    expect(call.json.status).toBe("not-found");
   }, TEST_TIMEOUT_MS);
 
   test("overlapping tool calls serialize through the mutex; both results parse cleanly", async () => {

@@ -33,6 +33,7 @@ describe("bin/dome process boundary", () => {
       "capture",
       "check",
       "resolve",
+      "settle",
       "query",
       "today",
       "log",

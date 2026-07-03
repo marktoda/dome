@@ -20,7 +20,7 @@ import { resolveBundleRoots } from "../../src/cli/commands/sync-shared";
 import { questionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { openVaultRuntime } from "../../src/engine/host/vault-runtime";
-import { log } from "../../src/git";
+import { commitSingleFileOnHead, log } from "../../src/git";
 import { createDomeHttpServer } from "../../src/http/server";
 import { insertQuestion, queryQuestionRecords } from "../../src/projections/questions";
 
@@ -145,6 +145,9 @@ describe("auth", () => {
       expect((await get("/status", null)).status).toBe(401);
       expect((await get("/status", "wrong-token")).status).toBe(401);
       expect((await post("/capture", { text: "x" }, null)).status).toBe(401);
+      expect(
+        (await post("/settle", { blockId: "x", disposition: "close" }, null)).status,
+      ).toBe(401);
     },
     TEST_TIMEOUT_MS,
   );
@@ -211,6 +214,120 @@ describe("POST /capture", () => {
     "rejects a body without text",
     async () => {
       const { status, json } = await post("/capture", { title: "no text" });
+      expect(status).toBe(400);
+      expect(json.status).toBe("error");
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+// ----- Settle (the second commit-or-nothing seam) -------------------------------------
+//
+// performSettle reads/writes the working tree + HEAD directly (no adoption
+// pass), so these commits never touch the adopted ref the read routes query
+// — safe to run in any order relative to the read-route describe blocks
+// below.
+
+describe("POST /settle", () => {
+  const ANCHOR = "thttpsettle1";
+  const TASK_PATH = "wiki/projects/http-settle.md";
+  const TASK_LINE = `- [ ] #task ship the http settle route ^${ANCHOR}`;
+
+  test(
+    "closes a task line by block-anchor and lands one commit",
+    async () => {
+      const f = await fixture();
+      const content = ["# HTTP settle fixture", "", TASK_LINE, ""].join("\n");
+      await mkdir(join(f.vault, "wiki", "projects"), { recursive: true });
+      await writeFile(join(f.vault, TASK_PATH), content, "utf8");
+      await commitSingleFileOnHead({
+        path: f.vault,
+        filepath: TASK_PATH,
+        content,
+        message: "fixture: http-settle task",
+        author: { name: "fixture", email: "fixture@local" },
+      });
+
+      const { status, json } = await post("/settle", {
+        blockId: ANCHOR,
+        disposition: "close",
+      });
+      expect(status).toBe(200);
+      expect(json.schema).toBe("dome.settle/v1");
+      expect(json.status).toBe("settled");
+      expect(json.block_id).toBe(ANCHOR);
+      expect(json.disposition).toBe("close");
+      expect(typeof json.commit).toBe("string");
+
+      const entries = await log({ path: f.vault, depth: 1 });
+      expect(entries[0]?.commit.message).toContain("settle(close):");
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "keep settles without a commit",
+    async () => {
+      const f = await fixture();
+      const keepAnchor = "thttpsettle2";
+      const keepPath = "wiki/projects/http-settle-keep.md";
+      const keepContent = `- [ ] #task keep me ^${keepAnchor}\n`;
+      await mkdir(join(f.vault, "wiki", "projects"), { recursive: true });
+      await writeFile(join(f.vault, keepPath), keepContent, "utf8");
+      await commitSingleFileOnHead({
+        path: f.vault,
+        filepath: keepPath,
+        content: keepContent,
+        message: "fixture: http-settle keep task",
+        author: { name: "fixture", email: "fixture@local" },
+      });
+      const before = await log({ path: f.vault, depth: 1 });
+
+      const { status, json } = await post("/settle", {
+        blockId: keepAnchor,
+        disposition: "keep",
+      });
+      expect(status).toBe(200);
+      expect(json.status).toBe("settled");
+      expect(json.commit).toBe(null);
+
+      const after = await log({ path: f.vault, depth: 1 });
+      expect(after[0]?.oid).toBe(before[0]?.oid);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "unknown blockId is a 404 with the settle error envelope",
+    async () => {
+      const { status, json } = await post("/settle", {
+        blockId: "tnosuchanchor",
+        disposition: "close",
+      });
+      expect(status).toBe(404);
+      expect(json.schema).toBe("dome.settle/v1");
+      expect(json.status).toBe("not-found");
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "defer without deferUntil is a 400 invalid",
+    async () => {
+      const { status, json } = await post("/settle", {
+        blockId: ANCHOR,
+        disposition: "defer",
+      });
+      expect(status).toBe(400);
+      expect(json.status).toBe("invalid");
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "rejects a body without blockId or disposition",
+    async () => {
+      const { status, json } = await post("/settle", { blockId: "" });
       expect(status).toBe(400);
       expect(json.status).toBe("error");
     },

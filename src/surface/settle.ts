@@ -84,6 +84,32 @@ export type SettleDeps = {
   readonly now?: (() => Date) | undefined;
 };
 
+/** Wire schema for the settle result document — shared by `dome settle`
+ * `--json`, `POST /settle`, and the MCP `settle` tool. */
+export const SETTLE_SCHEMA = "dome.settle/v1";
+
+/**
+ * Render a `SettleResult` as its `dome.settle/v1` document body — the one
+ * serialization shared by all three settle adapters (mirrors
+ * `questionRecordJson` in `src/surface/answer.ts`).
+ */
+export function settleResultJson(result: SettleResult): Record<string, unknown> {
+  if (result.status === "settled") {
+    return {
+      schema: SETTLE_SCHEMA,
+      status: "settled",
+      block_id: result.blockId,
+      disposition: result.disposition,
+      commit: result.commit ?? null,
+    };
+  }
+  return {
+    schema: SETTLE_SCHEMA,
+    status: result.status,
+    message: result.message,
+  };
+}
+
 const YYYY_MM_DD = /^\d{4}-\d{2}-\d{2}$/;
 
 // ----- performSettle ---------------------------------------------------------

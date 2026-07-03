@@ -37,6 +37,11 @@ dome check [--engine] [--content] [--decisions] [--loops] [--attention] [--limit
                                 diagnostics, and decisions.
 dome resolve <question-id> [<value>]
                                 Resolve a Dome-raised decision from `check`.
+dome settle <block-id> <close|defer|keep> [--until <yyyy-mm-dd>] [--json]
+                                Settle a task line by its ^block-anchor: close
+                                completes it (+ a Done-today bullet), defer
+                                rewrites the due date to --until, keep records
+                                nothing. One human commit (none for keep).
 dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]
                                 FTS + structured query against adopted state.
 dome export-context <topic> [--limit <n>] [--json]
@@ -64,15 +69,15 @@ dome uninstall [--vault <path>] [--json]
                                 Stop and remove the vault's ambient service.
 dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
                                 read/capture tools (capture, query, export_context,
-                                status, check, resolve, tasks, brief) for MCP
-                                harnesses. The daemon still owns compilation.
+                                status, check, resolve, settle, tasks, brief) for
+                                MCP harnesses. The daemon still owns compilation.
 dome http [--vault <path>] [--port <port>] [--host <host>] [--token <token>]
           [--model <id>] [--static-dir <path>] [--allow-write]
           [--transcribe-cmd <cmd>] [--transcribe-key <key>]
           [--transcribe-url <url>] [--transcribe-model <model>]
                                 Run the Dome HTTP surface (bearer-token auth;
-                                loopback by default): read/capture/resolve routes,
-                                the GET /today HTML cockpit, POST /agent (the
+                                loopback by default): read/capture/resolve/settle
+                                routes, the GET /today HTML cockpit, POST /agent (the
                                 hosted agent loop; converse capability),
                                 POST /agent/stream (SSE variant), POST /transcribe
                                 (voice STT; capture capability), and GET /recents.
@@ -92,7 +97,7 @@ dome recipe <kind> [--url <base>]
 
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
 
-- **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, and `dome resolve`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records an owner or agent answer to a Dome-raised decision and dispatches answer handlers.
+- **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, `dome resolve`, and `dome settle`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records an owner or agent answer to a Dome-raised decision and dispatches answer handlers; `settle` records an owner or agent decision on an open task by its `^block-anchor` (close / defer / keep) — resolve's sibling for tasks rather than questions (§"`dome settle`").
 - **Adopted-state recall surfaces:** `dome query` and `dome export-context` are the normal explicit read views when the user or a foreground agent asks for recall, planning, agenda context, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands. `dome log` is the activity-recall sibling with a CLI-native posture (the `dome status` stance — no runtime, no view boundary): it reads git history directly and joins the run ledger (§"`dome log`").
 - **Advanced/debug and compatibility surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer`, `dome run`, `dome rebuild`, and `dome reanchor` remain available for detailed state inspection, extension development, maintenance, and explicit recovery. They are hidden from top-level help and are not the normal Claude Code workflow.
 
@@ -1054,6 +1059,33 @@ answer, it prints the resolved answer and answer-handler summary.
 `--json` emits `dome.answer/v1` while preserving the root `status`,
 `question`, and `handlers` fields used by agent callers. Error cases emit
 `{ schema, status: "error", error, message }` to stdout.
+
+### `dome settle <block-id> <close|defer|keep> [--until <yyyy-mm-dd>] [--json]`
+
+Settle an open task by its `^block-anchor` — the decision channel for tasks,
+the sibling of `dome resolve` for questions ([[wiki/specs/task-lifecycle]]
+§"The settle operation"). `<block-id>` is the task line's anchor id (visible
+in `dome today` / `dome query` output as `^<id>`); `<disposition>` is one of
+`close` (mark the line done and append a `Done today` bullet to today's
+daily, in one commit), `defer` (rewrite the `📅` due token to `--until`), or
+`keep` (settle without writing anything — no commit). This is a **thin CLI
+binding**: all lookup, disposition, and commit semantics live in
+`performSettle` (`src/surface/settle.ts`), the same collector the HTTP
+`POST /settle` route and the MCP `settle` tool call — settle never opens the
+runtime and never talks to the engine, exactly like `dome capture`.
+
+`--until` is passed through untouched; `performSettle` owns validating it as
+`YYYY-MM-DD` (required iff `<disposition>` is `defer`).
+
+Text output is one line: `dome settle: <disposition> ^<block-id>` (plus the
+short commit oid when one landed). `--json` emits `dome.settle/v1`:
+`{ schema, status: "settled", block_id, disposition, commit }` (`commit` is
+`null` for `keep` and for an idempotent no-op) or
+`{ schema, status: "not-found" | "invalid", message }`.
+
+Exit codes: `0` on `settled`; `64` (`EX_USAGE`) on `not-found` (no line
+carries the anchor) or `invalid` (bad disposition, or `defer` without a
+well-formed `--until`).
 
 ### `dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]`
 

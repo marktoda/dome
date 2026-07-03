@@ -1,11 +1,12 @@
 ---
 type: spec
 created: 2026-06-10
-updated: 2026-06-19
+updated: 2026-07-02
 sources:
   - "[[wiki/specs/capture]]"
   - "[[wiki/specs/sdk-surface]]"
-description: "dome http converged adapter: bearer-token JSON routes, POST /capture seam, GET /today cockpit, POST /agent converse loop, POST /transcribe, GET /recents, author capability"
+  - "[[wiki/specs/task-lifecycle]]"
+description: "dome http converged adapter: bearer-token JSON routes, POST /capture seam, POST /settle, GET /today cockpit, POST /agent converse loop, POST /transcribe, GET /recents, author capability"
 ---
 
 # HTTP surface
@@ -79,6 +80,7 @@ One vault per process.
 | `GET /doc?path=…` | `vault.readDocument` (adopted ref) | `dome.http.document/v1` |
 | `GET /questions` | `vault.listQuestions` (open only) | `dome.http.questions/v1` |
 | `POST /resolve` `{id, value}` | `dome resolve` | `dome.answer/v1` |
+| `POST /settle` `{blockId, disposition, deferUntil?}` | `performSettle` (`resolve` capability — settling is a decision, same trust domain as resolve) | `dome.settle/v1` (`status: settled \| not-found \| invalid`) |
 | `POST /agent` `{question}` | hosted agent loop over vault tools (`converse` capability) | `dome.ask/v1` |
 | `POST /agent/stream` `{question}` | same loop, SSE stream of events (`converse` capability) | `dome.ask/v1` event stream |
 | `POST /transcribe` audio body | STT step: shell command or OpenAI-compatible cloud endpoint (`capture` capability; 501 when unconfigured) | `dome.transcribe/v1` `{text}` |
@@ -265,10 +267,10 @@ Tests: `tests/http/http-server.test.ts` §"request-body size cap".
 ## Boundary notes
 
 - **No engine control.** No sync/serve/init/rebuild routes; the daemon owns
-  compilation. The write-ish routes (`capture`, `resolve`, and agent writes
-  under `author`) are the established non-engine channels (ordinary commit;
-  `answers.db`). Agent writes (`create_document` / `edit_document`) require the
-  `author` capability (`--allow-write`).
+  compilation. The write-ish routes (`capture`, `resolve`, `settle`, and agent
+  writes under `author`) are the established non-engine channels (ordinary
+  commit; `answers.db`). Agent writes (`create_document` / `edit_document`)
+  require the `author` capability (`--allow-write`).
 - **One runtime at a time.** A route mutex serializes vault-opening work;
   each request opens and closes its own `Vault`, like one CLI invocation.
 - **No new dependencies.** The handler is a plain `fetch` function for
@@ -283,6 +285,8 @@ Tests: `tests/http/http-server.test.ts` §"request-body size cap".
 
 - [[wiki/specs/capture]] §"The remote-capture seam" — the contract
   `POST /capture` implements.
+- [[wiki/specs/task-lifecycle]] §"The settle operation" — the contract
+  `POST /settle` implements.
 - [[wiki/specs/mcp-surface]] — the sibling stdio adapter.
 - [[wiki/specs/cli]] §"`dome http`" — the verb.
 - [[wiki/matrices/protocol-adapter]] — the per-protocol operation map.

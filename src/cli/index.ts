@@ -30,6 +30,7 @@ import { runRecipe } from "./commands/recipe";
 import { runRebuild } from "./commands/rebuild";
 import { runResolve } from "./commands/resolve";
 import { runRun } from "./commands/run";
+import { runSettle } from "./commands/settle";
 import { runServe } from "./commands/serve";
 import { runStatus } from "./commands/status";
 import { runSync } from "./commands/sync";
@@ -329,6 +330,30 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           json: options.json,
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
+        }),
+      );
+    });
+
+  program
+    .command("settle")
+    .description("Settle a task line by its ^block-anchor: close, defer, or keep.")
+    .argument("<block-id>", "The task's ^block-anchor id.")
+    .argument("<disposition>", "close | defer | keep")
+    .option("--until <date>", "YYYY-MM-DD due date; required when disposition is defer.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .action(async (
+      blockId: string,
+      disposition: string,
+      options: SettleCliOptions,
+    ) => {
+      setExitCode(
+        await runSettle({
+          blockId,
+          disposition,
+          until: options.until,
+          json: options.json,
+          vault: options.vault,
         }),
       );
     });
@@ -876,6 +901,12 @@ type AnswerCliOptions = {
 };
 
 type ResolveCliOptions = AnswerCliOptions;
+
+type SettleCliOptions = {
+  readonly until?: string;
+  readonly json?: boolean;
+  readonly vault?: string;
+};
 
 type RunCliOptions = {
   readonly json?: boolean;

@@ -19,6 +19,7 @@ import {
   questionRecordJson,
 } from "../surface/answer";
 import { captureJsonDocument, performCapture } from "../surface/capture";
+import { performSettle, settleResultJson } from "../surface/settle";
 import { buildRecents } from "../surface/recents";
 import {
   catalogViewProblemMessage,
@@ -66,6 +67,7 @@ const ROUTE_CAPABILITY: Readonly<Record<string, Capability>> = {
   "POST /agent/stream": "converse",
   "POST /capture": "capture",
   "POST /resolve": "resolve",
+  "POST /settle": "resolve",
   "GET /tasks": "read",
   "GET /recents": "read",
   "GET /status": "read",
@@ -886,6 +888,30 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
             });
         }
       });
+    }
+
+    if (route === "POST /settle") {
+      const read = await jsonBody(request, maxBodyBytes);
+      if (read.kind === "too-large") {
+        return dataErrorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
+      }
+      const body = read.body;
+      const blockId = typeof body?.blockId === "string" ? body.blockId.trim() : "";
+      const disposition = typeof body?.disposition === "string" ? body.disposition : "";
+      if (blockId.length === 0 || disposition.length === 0) {
+        return dataErrorResponse(400, "settle-usage", "POST /settle requires a JSON body with non-empty `blockId` and `disposition` (optional `deferUntil`).");
+      }
+      // performSettle is runtime-free (locates the line + a human commit) —
+      // no enqueue/withVault needed, same as POST /capture.
+      const outcome = await performSettle(opts.vaultPath, {
+        blockId,
+        disposition: disposition as "close" | "defer" | "keep",
+        ...(typeof body?.deferUntil === "string" ? { deferUntil: body.deferUntil } : {}),
+      });
+      const doc = settleResultJson(outcome);
+      if (outcome.status === "not-found") return jsonResponse(404, doc);
+      if (outcome.status === "invalid") return jsonResponse(400, doc);
+      return jsonResponse(200, doc);
     }
 
     if (route === "GET /recents") {
