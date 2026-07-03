@@ -21,7 +21,6 @@ import {
   uniqueSourceRefs,
   type DailyActionState,
   type DailyQuestionItem,
-  type DailyTaskAttention,
   type DailyTaskItem,
   type DailyTaskPriority,
 } from "./action-state";
@@ -124,14 +123,6 @@ type AgendaItem = {
   readonly dueDate: string | null;
   readonly priority: DailyTaskPriority | null;
   readonly lastChangedAt: string | null;
-  /**
-   * Explainable attention-discount note (task-lifecycle §"Attention
-   * discounting"), mirroring `today`/`prep` rows: present when the item
-   * carries a dome.attention.discount derivation, `null` otherwise. The
-   * demoted ordering itself is inherited from `collectDailyActionState`,
-   * whose ranking compares discounted recency.
-   */
-  readonly attention: DailyTaskAttention | null;
   readonly evidenceLabel: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
@@ -207,7 +198,6 @@ function pushTaskItem(
     dueDate: task.dueDate,
     priority: task.priority,
     lastChangedAt: task.lastChangedAt,
-    attention: task.attention,
     evidenceLabel: task.evidenceLabel,
     sourceRefs: Object.freeze([...task.sourceRefs]),
   }));
@@ -233,7 +223,6 @@ function pushQuestionItem(
     dueDate: null,
     priority: null,
     lastChangedAt: question.lastChangedAt,
-    attention: null,
     evidenceLabel: question.evidenceLabel,
     sourceRefs: Object.freeze([...question.sourceRefs]),
   }));

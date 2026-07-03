@@ -153,8 +153,9 @@ extensions:
       "utf8",
     );
     // Seed quarantined.json directly with three counters: enabled (registered),
-    // disabled (configured-but-off), retired (neither). Only the retired one
-    // should be GC'd on open.
+    // disabled (configured-but-off), retired (neither, and ACTUALLY
+    // quarantined — the case the health emitter would otherwise re-ask
+    // about forever). Only the retired one should be GC'd on open.
     writeFileSync(
       join(root, ".dome", "state", "quarantined.json"),
       JSON.stringify({
@@ -179,7 +180,10 @@ extensions:
             processorId: "retired.bundle.worker",
             processorVersion: "0.1.0",
             triggerHash: "h-retired",
-            consecutiveRetryableFailures: 2,
+            consecutiveRetryableFailures: 3,
+            quarantineId: "q-retired-1",
+            quarantinedAt: "2026-06-18T00:00:00.000Z",
+            reason: "timeout",
           },
         ],
       }),
@@ -230,6 +234,12 @@ extensions:
       expect(ids).toEqual([
         "disabled.bundle.worker",
         "enabled.bundle.worker",
+      ]);
+      // The runtime reports exactly which processor ids it pruned — this is
+      // the field a host-startup CLI surface (`dome serve`) reads to log the
+      // GC loudly (src/cli/commands/serve.ts).
+      expect(runtimeResult.value.prunedUnknownProcessorQuarantines).toEqual([
+        "retired.bundle.worker",
       ]);
     } finally {
       await runtimeResult.value.close();
@@ -289,6 +299,10 @@ extensions:
       ) as { entries: ReadonlyArray<{ processorId: string }> };
       const ids = after.entries.map((e) => e.processorId).sort();
       expect(ids).toEqual(["retired.bundle.worker"]);
+      // Nothing to report either — the prune guard short-circuited.
+      expect(runtimeResult.value.prunedUnknownProcessorQuarantines).toEqual(
+        [],
+      );
     } finally {
       await runtimeResult.value.close();
     }

@@ -4,12 +4,12 @@ created: 2026-06-03
 updated: 2026-06-26
 sources:
   - "[[v1]]"
-description: "Task substrate: move-stable ^block anchors, splice-guard generated blocks, stamp/reconcile/normalize, lastHumanChangedAt, attention discounting"
+description: "Task substrate: move-stable ^block anchors, splice-guard generated blocks, stamp/reconcile/normalize, lastHumanChangedAt, overdue-only staleness"
 ---
 
 # Task lifecycle
 
-This spec is normative for Dome's task-lifecycle substrate — the `^block-anchor` line-identity primitive, the three deterministic `dome.daily` task processors (stamp / reconcile / normalize), the `lastHumanChangedAt` freshness rule, **attention discounting** (dismissal-derived impression discounting), and the **warden** pattern (model-gated garden processors). It explains why each piece sits where it does and what contract it holds.
+This spec is normative for Dome's task-lifecycle substrate — the `^block-anchor` line-identity primitive, the three deterministic `dome.daily` task processors (stamp / reconcile / normalize), the `lastHumanChangedAt` freshness rule, **staleness** (overdue-only stale-settle), and the **warden** pattern (model-gated garden processors). It explains why each piece sits where it does and what contract it holds.
 
 The task-lifecycle layer is the machinery behind "close a task in one place, close it everywhere." It introduces no new primitive: a "warden" is a [[wiki/specs/processors|Processor]] (`kind: llm`, garden phase), not a new concept beside Vault / Proposal / Processor / Effect. The four-concept core stays sealed.
 
@@ -56,50 +56,25 @@ Daily open-loop recency ranking must reflect *human* edit recency, not engine ch
 
 `src/git.ts` exposes `lastHumanChangedAt` alongside `lastChangedAt`: it is the timestamp of the latest commit touching the line that does **not** carry a `Dome-Run:` trailer — i.e. the latest *human* (non-engine) change. Daily open-loop recency ranking uses `lastHumanChangedAt`, so an engine rewrite such as anchor stamping cannot reset a task's human-edit recency. This depends on the trailer convention pinned by [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]: engine commits carry `Dome-Run`, human out-of-band commits do not, which makes the human/engine split structurally queryable.
 
-## Attention discounting
+## Staleness
 
-Items surfaced day after day without action stop earning their prominence. The attention-discount layer (memory-quality M4) derives an **implicit dismissal signal** from what the vault already records — which dailies showed an item, and when a human last touched its origin — and demotes accordingly. Per the memory plan's decision ledger (entry 5): dismissal is implicit, derived from git + markdown; demotion self-heals; due-dated and top-priority items are exempt. There is no explicit "dismiss" primitive (one may layer on later).
+Staleness is **overdue ≥ 14 days, period.** A task is stale iff it carries a `📅 YYYY-MM-DD` due date that is at least `STALE_OVERDUE_DAYS` (14) days before today. There is no other staleness rule: an **undated task is never a settle-question candidate**, no matter how many dailies have carried it forward. Instead, an undated task ranks purely by recency in open-loop surfaces (carry-forward, `today`, `prep`, `agenda-with`) until it is dated or settled — see "Open-loop ranking" below.
 
-### The deterministic substrate: `dome.daily.attention-discount`
+The system previously derived an implicit dismissal signal from repeated same-item impressions across dailies (the "attention-discount" layer, memory-quality M4) and used it both to demote undated items in ranking and as an alternate staleness trigger. It quarantined in production for 13+ days with zero felt loss and was retired in full: the processor, its fact namespace, and both consumption sites (ranking, staleness). Design and rationale: [[cohesive/brainstorms/2026-07-02-pruning-pass-design]] §2.
 
-A garden-phase processor (`execution.class: deterministic`, capabilities `read` + `graph.write` over `dome.attention.*` only, `inspection: all-readable-markdown`) emits one `dome.attention.discount` fact per discounted open-loop item. Because it is deterministic, signal-triggered, and confined to the rebuild-safe capability set, it is **rebuild-eligible** (`isRebuildEligibleGardenProcessor` in `src/engine/host/projection-rebuild.ts`): `dome rebuild` re-derives every discount fact from adopted markdown + git history alone, per [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]].
+### `dome.daily.stale-task-warden`
 
-Inputs, all derivable from the adopted tree and its git history — **no wall clock**:
+A schedule-driven (cron `0 6 * * *`, same as `create-daily`) garden processor, granted `read` + `question.ask`. For every open-loop item carrying a stamped `^block-anchor` and a `📅` due date at least 14 days overdue, it emits ONE owner question — idempotency key `dome.daily.settle-stale:<stableId>`, options close / defer / keep — capped at the 8 worst per run (most-overdue first; already-resolved questions never re-emit because the projection dedupes on idempotency key). It is **not** registered `execution.class: deterministic`: the overdue comparison reads `ctx.now()`, so output is a function of (snapshot, wall clock), not of the adopted tree alone. Unanchored tasks are skipped — the answer handler needs the anchor to locate the origin line; they become eligible once `stamp-block-id` anchors them.
 
-- **Impressions** — the number of distinct daily notes (the configured `daily_path` glob, bounded to the most recent **30** dailies for cost) whose generated open-loops block carries an open copy of the item. Matching is by the carried `^anchor` when present, falling back to the legacy `(origin path, normalized body)` identity only for old unanchored copies. A body edit on an anchored source line keeps the impression trail with the same task; an unanchored legacy body edit naturally restarts it.
-- **Action signal** — `lastHumanChangedAt` of the item's origin file (the `Dome-Run` trailer split, §"The `lastHumanChangedAt` freshness rule"). Only impressions in dailies dated **strictly after** the last-human-touch date count: any human edit to the origin file resets the impression count to the dailies since.
-- **Reference date** — the newest scanned daily's date, *not* the wall clock. "Days since last shown" is `newestDailyDate − lastShownDate`. This keeps the fact a pure function of the adopted tree: same content → same facts.
-- **Scope** — only items whose origin line carries a stamped `^block-anchor` participate (anchored identity is the durable one; `stamp-block-id` anchors new items within a tick). Settled items (resolved `[x]` / dismissed `[-]` anywhere) get **no facts** — settling is the cleanup.
+The deterministic `dome.daily.settle-stale-answer` handler applies the owner's disposition: **close** marks the origin line `[-]` (reconcile propagates), **defer** advances the `📅` due date forward by `DEFER_DAYS`, **keep** is a no-op (the resolved question suppresses recurrence — it will not re-emit for the same task). No model, no `graph.write` — `patch.auto` only. Design: [[cohesive/brainstorms/2026-06-15-daily-phase2]].
 
-### The formula
+### Open-loop ranking
 
-```
-discount = min(0.6, 0.1 × max(0, impressionsSinceLastHumanTouch − 2)) × 0.9^daysSinceLastShown
-```
-
-- **First 2 impressions are free** — being surfaced twice is the system doing its job, not evidence of dismissal.
-- Each further actionless impression adds **0.1**, hard-capped at **0.6** — a discount never buries an item outright.
-- The whole value decays by **0.9 per day since the item was last shown** (LinkedIn-style ImpCount × LastSeen decay).
-- **Hard exemptions:** an item carrying a due date (`📅 YYYY-MM-DD`) or top priority (`🔺`) has discount 0, always. Deadlines and explicit top priority outrank inferred boredom.
-
-The fact's value records `{ anchor, body, discount, impressions, lastShown }` (subject = the origin page; sourceRef pins the origin line + stable id). A fact is emitted only while `impressions ≥ 1`; it converges (re-runs over unchanged content emit identical facts, and the projection sink's per-path fact resolution clears stale rows).
-
-**Recovery is built in — demotion self-heals.** An item that stops being shown decays at 0.9^days and climbs back on its own; a human edit to the origin file zeroes the impression count instantly. Nothing needs to be un-dismissed.
-
-### Consumers: demote, compress — never delete
-
-- **Open-loop ranking** (carry-forward, `today`, `prep`, `agenda-with`) demotes multiplicatively: where ranking compares recency, the effective score is `0.995^hoursSinceLastHumanChange × (1 − discount)` — implemented as an equivalent recency penalty of `log(1 − discount)/log(0.995)` hours (≈ 3 days at discount 0.3, ≈ 7.6 days at the 0.6 cap). Demotion **reorders within the same list and never drops an item**: the only truncation is the surface's pre-existing item cap. `today`/`prep`/`agenda-with` JSON rows carry an explainable `attention: { discount, impressions, lastShown }` field (`null` when undiscounted).
-- **The morning brief** receives heavily-discounted items (discount ≥ 0.4) as deterministic pre-run DATA — "surfaced Nx without action" — and its charter compresses them into a single stale-loops line or one question instead of repeating them at full prominence. See [[wiki/specs/autonomous-agents]] §"`dome.agent.brief`".
-
-The asymmetry is by construction, mirroring the Gmail lesson ("buried something important" must be the rare error): discounting compresses and reorders presentation; it never resolves, dismisses, or deletes the underlying task line. Markdown stays the source of truth; the discount is presentation-layer judgment derived from it.
-
-## Stale-settle (finishing the attention path)
-
-**Stale-settle (finishing the attention path).** A task that is overdue beyond a threshold (default 14 days) OR undated and discounted ≥ `ATTENTION_STALE_THRESHOLD` is surfaced by `dome.daily.stale-task-warden` as ONE owner question — `dome.daily.settle-stale:<stableId>`, options close / defer / keep — capped at the 8 worst per run (most-overdue first). The deterministic `dome.daily.settle-stale-answer` handler applies the disposition: **close** marks the origin line `[-]` (reconcile propagates), **defer** moves the `📅` due date forward, **keep** is a no-op (the resolved question suppresses recurrence). Both processors are deterministic (clock-dependent, not rebuild-`deterministic`); the warden only asks and the handler only acts on the owner's answer — propose-not-auto. This finishes the existing attention path (no new staleness channel). Design: [[cohesive/brainstorms/2026-06-15-daily-phase2]].
+Carry-forward, `today`, `prep`, and `agenda-with` all rank open-loop items by **due-date, then recency** — a dated/overdue item outranks an undated one; within a bucket, more-recently-`lastHumanChangedAt`-touched items sort first. There is no discount term: an undated item's rank moves only with its own recency, never with how many times it has previously surfaced.
 
 ## Wardens
 
-A **warden** is an LLM-backed garden processor (`execution.class: llm`, `phase: garden`, granted `model.invoke`). It is not a new primitive — it is the model-gated shape of the existing Processor concept. `dome.daily.stale-task-warden` (§"Stale-settle" above) is one; knowledge-integrity review is the other, and it rides the nightly `dome.agent.consolidate` agent rather than a standalone bundle.
+A **warden** is an LLM-backed garden processor (`execution.class: llm`, `phase: garden`, granted `model.invoke`). It is not a new primitive — it is the model-gated shape of the existing Processor concept. `dome.daily.stale-task-warden` (§"Staleness" above) is one; knowledge-integrity review is the other, and it rides the nightly `dome.agent.consolidate` agent rather than a standalone bundle.
 
 ### Knowledge-integrity review folds into `dome.agent.consolidate`
 
@@ -118,8 +93,7 @@ When integrity review flags a **stale claim** (a page asserting something the va
 ## Related
 
 - [[wiki/invariants/MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS]] — the hard rule wardens hold: no garden `model.invoke` processor declares `graph.write`
-- [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]] — why model judgment must not become a durable fact, and why attention-discount facts are clock-free
-- [[memory]] — the memory-quality plan; M4 is attention discounting (decision ledger entry 5: implicit dismissal, self-healing, 📅/🔺 exempt)
+- [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]] — why model judgment must not become a durable fact
 - [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — anchors live in markdown; answers live in `answers.db`
 - [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]] — the `Dome-Run` split behind `lastHumanChangedAt`
 - [[wiki/specs/capabilities]] — `model.invoke`, `graph.write`, `patch.auto`, `question.ask` tiers

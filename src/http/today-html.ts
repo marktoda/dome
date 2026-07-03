@@ -320,9 +320,9 @@ function buildScriptHtml(
 
   // ── Polling ───────────────────────────────────────────────────────────
   // Project ONLY user-visible fields so the fingerprint is stable across ticks
-  // when nothing on the page changed. Volatile bookkeeping (attention counters,
-  // lastChangedAt, impressions/lastShown) is deliberately excluded — including
-  // it would trigger spurious location.reload() flashes every poll.
+  // when nothing on the page changed. Volatile bookkeeping (lastChangedAt) is
+  // deliberately excluded — including it would trigger spurious
+  // location.reload() flashes every poll.
   function fingerprint(data) {
     data = data || {};
     var hero = data.hero;

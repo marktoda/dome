@@ -759,6 +759,70 @@ extensions:
       }
     }
   }, 40_000);
+
+  test("logs a loud line when startup prunes a quarantine row for an unregistered processor", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    // A real quarantine row for a processor id that no bundle registers —
+    // e.g. left behind by a retired/uninstalled processor
+    // (docs/cohesive/brainstorms/2026-07-02-pruning-pass-design.md §2's
+    // "orphaned-state fix"). `.dome/state` already exists post-makeFixture.
+    await writeFile(
+      join(f.vaultPath, ".dome", "state", "quarantined.json"),
+      JSON.stringify({
+        version: 1,
+        entries: [
+          {
+            phase: "garden",
+            processorId: "dome.daily.attention-discount",
+            processorVersion: "0.1.1",
+            triggerHash: "h-retired",
+            consecutiveRetryableFailures: 3,
+            quarantineId: "q-retired-1",
+            quarantinedAt: "2026-06-18T00:00:00.000Z",
+            reason: "timeout",
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    silenceConsole();
+    const controller = new AbortController();
+    const servePromise = runServe(
+      { vault: f.vaultPath, bundlesRoot: f.bundlesRoot, pollIntervalMs: 20 },
+      { signal: controller.signal, operationalIntervalMs: 20 },
+    );
+
+    // Give the daemon one poll to open the runtime and print the startup
+    // banner (the prune line is emitted before the banner, at open time).
+    await waitFor(
+      async () =>
+        captured.err.some((line) => line.includes("pruned quarantine state")),
+      2000,
+    );
+
+    controller.abort();
+    const code = await servePromise;
+    expect(code).toBe(0);
+
+    const pruneLine = captured.err.find((line) =>
+      line.includes("pruned quarantine state")
+    );
+    expect(pruneLine).toBeDefined();
+    expect(pruneLine).toContain("dome.daily.attention-discount");
+    expect(pruneLine).toContain("1 unregistered processor");
+
+    // The row is actually gone — the log line isn't lying about the mutation.
+    const after = JSON.parse(
+      await readFile(
+        join(f.vaultPath, ".dome", "state", "quarantined.json"),
+        "utf8",
+      ),
+    ) as { entries: ReadonlyArray<{ processorId: string }> };
+    expect(after.entries).toEqual([]);
+  }, 10_000);
 });
 
 // ----- Test 2: detached HEAD ------------------------------------------------

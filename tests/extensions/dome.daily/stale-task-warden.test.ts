@@ -1,16 +1,14 @@
-// dome.daily.stale-task-warden — unit tests for the schedule-driven stale/overdue
-// task warden. The warden emits one QuestionEffect per stale task so the owner
-// can decide: close, defer, or keep.
+// dome.daily.stale-task-warden — unit tests for the schedule-driven overdue
+// task warden. The warden emits one QuestionEffect per stale (overdue ≥ 14
+// days) task so the owner can decide: close, defer, or keep.
 //
-// Staleness rule (OR, not AND):
-//   (a) Overdue: task has a 📅 date that is ≥ STALE_OVERDUE_DAYS before today.
-//   (b) Discounted: undated task with attention.discount ≥ ATTENTION_STALE_THRESHOLD.
+// Staleness rule (overdue-only, docs/cohesive/brainstorms/
+// 2026-07-02-pruning-pass-design.md §2): a task is stale iff it carries a
+// 📅 date that is ≥ STALE_OVERDUE_DAYS before today. Undated tasks are never
+// settle-question candidates — no discount, no fallback rule.
 //
 // "today" comes from ctx.now() — the processor is NOT deterministic.
 // Tests inject a fixed `now` so output is a pure function of (snapshot, now).
-//
-// Pattern mirrors tests/extensions/attention-discount.test.ts:
-// fakeSnapshot + makeProcessorContext, inspect QuestionEffects.
 
 import { describe, expect, test } from "bun:test";
 
@@ -43,7 +41,6 @@ const OVERDUE_15_DATE = "2026-05-31"; // 15 days before — clearly overdue
 const FRESH_DATED_DATE = "2026-06-14"; // 1 day overdue — NOT overdue by 14 days
 
 const ALPHA_PATH = "wiki/projects/alpha.md";
-const BETA_PATH = "wiki/projects/beta.md";
 const GAMMA_PATH = "wiki/projects/gamma.md";
 
 // Task (a): overdue by ≥14 days — has a 📅 date 15 days before today
@@ -51,22 +48,13 @@ const OVERDUE_TASK_BODY = `Review quarterly plan 📅 ${OVERDUE_15_DATE}`;
 const OVERDUE_TASK_ANCHOR = "toverdue1234567";
 const OVERDUE_TASK_LINE = `- [ ] ${OVERDUE_TASK_BODY} ^${OVERDUE_TASK_ANCHOR}`;
 
-// Task (b): undated + discounted ≥ 0.4
-// Shown 6x in dailies → discount = 0.4 (6 impressions: 6-2=4 × 0.1 = 0.4)
-// Must use #task so openLoopSurfaceSources picks it up for non-daily files.
-// Body after semantic normalization (strip #task prefix): "Draft architecture proposal".
-// Daily copies omit the #task marker — they are raw carry-forward copies.
-const DISCOUNTED_TASK_BODY = "Draft architecture proposal";
-const DISCOUNTED_TASK_ANCHOR = "tdiscounted1234";
-const DISCOUNTED_TASK_LINE = `- [ ] #task ${DISCOUNTED_TASK_BODY} ^${DISCOUNTED_TASK_ANCHOR}`;
+// Task (c): undated — never a settle-question candidate, regardless of how
+// many times it has been surfaced in dailies (no discount, no fallback rule).
+const UNDATED_TASK_BODY = "Draft architecture proposal";
+const UNDATED_TASK_ANCHOR = "tundated1234567";
+const UNDATED_TASK_LINE = `- [ ] #task ${UNDATED_TASK_BODY} ^${UNDATED_TASK_ANCHOR}`;
 
-// Task (c): fresh — undated, low discount (below threshold)
-// Must use #task to be surface-eligible.
-const FRESH_TASK_BODY = "Add unit tests for parser";
-const FRESH_TASK_ANCHOR = "tfresh12345678a";
-const FRESH_TASK_LINE = `- [ ] #task ${FRESH_TASK_BODY} ^${FRESH_TASK_ANCHOR}`;
-
-// Task (d): dated but only 1 day overdue — NOT stale by rule (a)
+// Task (d): dated but only 1 day overdue — NOT stale by the overdue rule
 const SLIGHTLY_OVERDUE_BODY = `Quick review 📅 ${FRESH_DATED_DATE}`;
 const SLIGHTLY_OVERDUE_ANCHOR = "tslightly12345a";
 const SLIGHTLY_OVERDUE_LINE = `- [ ] ${SLIGHTLY_OVERDUE_BODY} ^${SLIGHTLY_OVERDUE_ANCHOR}`;
@@ -85,17 +73,10 @@ function dailyWithLoops(date: string, copies: ReadonlyArray<string>): string {
   ].join("\n");
 }
 
-function discountedCopy(body = DISCOUNTED_TASK_BODY): string {
-  return `- [ ] ${body} (from [[${BETA_PATH.replace(/\.md$/, "")}]])`;
-}
-
 /**
  * A snapshot with:
- *   (a) alpha.md — overdue-14 task
- *   (b) beta.md — undated task shown 6x (discount ≥ 0.4)
- *   (c) gamma.md — fresh undated task (shown only once — below threshold)
- *   (d) alpha.md also has a slightly-overdue task (1 day — NOT ≥14)
- * Plus 6 dailies showing the discounted task (b) and 1 showing fresh (c).
+ *   (a) alpha.md — overdue-15 task + a slightly-overdue task (1 day — NOT ≥14)
+ *   (c) gamma.md — undated task, shown repeatedly in dailies — never stale
  */
 function makeFixtureSnapshot(): Snapshot {
   const files: Record<string, string> = {
@@ -107,34 +88,22 @@ function makeFixtureSnapshot(): Snapshot {
       SLIGHTLY_OVERDUE_LINE,
       "",
     ].join("\n"),
-    // (b): undated task to be discounted
-    [BETA_PATH]: [
-      "# Beta project",
-      "",
-      DISCOUNTED_TASK_LINE,
-      "",
-    ].join("\n"),
-    // (c): fresh undated task
+    // (c): undated task, repeatedly surfaced — must never produce a question
     [GAMMA_PATH]: [
       "# Gamma project",
       "",
-      FRESH_TASK_LINE,
+      UNDATED_TASK_LINE,
       "",
     ].join("\n"),
-    // 6 dailies showing beta task, including the reference (newest) daily 2026-06-15
-    // so daysSinceLastShown = 0 → discount = 0.4 exactly (≥ threshold).
-    // Formula: base = min(0.6, 0.1 * (6-2)) = 0.4; decayed = 0.4 * 0.9^0 = 0.4.
-    "wiki/dailies/2026-06-10.md": dailyWithLoops("2026-06-10", [discountedCopy()]),
-    "wiki/dailies/2026-06-11.md": dailyWithLoops("2026-06-11", [discountedCopy()]),
-    "wiki/dailies/2026-06-12.md": dailyWithLoops("2026-06-12", [discountedCopy()]),
-    "wiki/dailies/2026-06-13.md": dailyWithLoops("2026-06-13", [discountedCopy()]),
-    "wiki/dailies/2026-06-14.md": dailyWithLoops("2026-06-14", [discountedCopy()]),
-    // Reference daily (2026-06-15): shows beta task → 6th impression, lastShown = today
-    // Also shows fresh (gamma) task once — only 1 impression → discount 0 (below threshold)
-    "wiki/dailies/2026-06-15.md": dailyWithLoops("2026-06-15", [
-      discountedCopy(),
-      `- [ ] ${FRESH_TASK_BODY} (from [[${GAMMA_PATH.replace(/\.md$/, "")}]])`,
-    ]),
+    // Several dailies showing the undated task repeatedly — under the old
+    // attention-discount rule this would have crossed the discount
+    // threshold; overdue-only staleness must ignore that entirely.
+    "wiki/dailies/2026-06-10.md": dailyWithLoops("2026-06-10", [undatedCopy()]),
+    "wiki/dailies/2026-06-11.md": dailyWithLoops("2026-06-11", [undatedCopy()]),
+    "wiki/dailies/2026-06-12.md": dailyWithLoops("2026-06-12", [undatedCopy()]),
+    "wiki/dailies/2026-06-13.md": dailyWithLoops("2026-06-13", [undatedCopy()]),
+    "wiki/dailies/2026-06-14.md": dailyWithLoops("2026-06-14", [undatedCopy()]),
+    "wiki/dailies/2026-06-15.md": dailyWithLoops("2026-06-15", [undatedCopy()]),
   };
 
   return Object.freeze({
@@ -151,6 +120,10 @@ function makeFixtureSnapshot(): Snapshot {
       });
     },
   });
+}
+
+function undatedCopy(body = UNDATED_TASK_BODY): string {
+  return `- [ ] ${body} (from [[${GAMMA_PATH.replace(/\.md$/, "")}]])`;
 }
 
 async function runWarden(snapshot: Snapshot = makeFixtureSnapshot()) {
@@ -175,18 +148,13 @@ async function runWarden(snapshot: Snapshot = makeFixtureSnapshot()) {
 // ---------------------------------------------------------------------------
 
 describe("dome.daily.stale-task-warden", () => {
-  test("emits exactly two settle-stale questions: one for overdue task, one for discounted task", async () => {
+  test("emits exactly one settle-stale question: the overdue task", async () => {
     const effects = await runWarden();
     const questions = effects.filter(
       (e): e is QuestionEffect => e.kind === "question",
     );
-    expect(questions).toHaveLength(2);
-
-    const keys = questions.map((q) => q.idempotencyKey);
-    // Both keys must start with the prefix
-    for (const key of keys) {
-      expect(key).toStartWith(SETTLE_STALE_KEY_PREFIX);
-    }
+    expect(questions).toHaveLength(1);
+    expect(questions[0]!.idempotencyKey).toStartWith(SETTLE_STALE_KEY_PREFIX);
   });
 
   test("each question has options [close, defer, keep]", async () => {
@@ -214,7 +182,6 @@ describe("dome.daily.stale-task-warden", () => {
     const questions = effects.filter(
       (e): e is QuestionEffect => e.kind === "question",
     );
-    // The overdue task's question should mention alpha.md and the due date
     const overdueQ = questions.find((q) => q.question.includes(OVERDUE_15_DATE));
     expect(overdueQ).toBeDefined();
     expect(overdueQ!.question).toInclude(ALPHA_PATH);
@@ -225,28 +192,13 @@ describe("dome.daily.stale-task-warden", () => {
     expect(overdueQ!.metadata?.destination).toBe(ALPHA_PATH);
   });
 
-  test("discounted task question includes the source path", async () => {
+  test("undated task NEVER produces a settle-stale question, no matter how many times it is shown", async () => {
     const effects = await runWarden();
     const questions = effects.filter(
       (e): e is QuestionEffect => e.kind === "question",
     );
-    const discountedQ = questions.find((q) =>
-      q.question.includes(DISCOUNTED_TASK_BODY),
-    );
-    expect(discountedQ).toBeDefined();
-    expect(discountedQ!.question).toInclude(BETA_PATH);
-    const expectedKey = `${SETTLE_STALE_KEY_PREFIX}dome.daily.open-loop:${DISCOUNTED_TASK_ANCHOR}`;
-    expect(discountedQ!.idempotencyKey).toBe(expectedKey);
-    expect(discountedQ!.metadata?.destination).toBe(BETA_PATH);
-  });
-
-  test("no question for fresh task (gamma) — too little discount", async () => {
-    const effects = await runWarden();
-    const questions = effects.filter(
-      (e): e is QuestionEffect => e.kind === "question",
-    );
-    const freshQ = questions.find((q) => q.question.includes(FRESH_TASK_BODY));
-    expect(freshQ).toBeUndefined();
+    const undatedQ = questions.find((q) => q.question.includes(UNDATED_TASK_BODY));
+    expect(undatedQ).toBeUndefined();
   });
 
   test("no question for slightly-overdue task (< 14 days overdue)", async () => {
@@ -321,13 +273,39 @@ describe("dome.daily.stale-task-warden", () => {
     expect(questions).toHaveLength(0);
   });
 
-  test("exempt dated tasks are exempt from discount but overdue rule still applies", async () => {
-    // A 🔺-priority dated overdue task: exempt from discount (discount=0),
-    // but the overdue rule is purely date-based, so it should still be stale.
-    const exemptOverdueBody = `Top priority task 🔺 📅 ${OVERDUE_15_DATE}`;
-    const exemptAnchor = "texempt12345678";
+  test("15-days-overdue task alone (no other candidates) → exactly one question", async () => {
     const files: Record<string, string> = {
-      "wiki/projects/exempt.md": `# Exempt\n\n- [ ] ${exemptOverdueBody} ^${exemptAnchor}\n`,
+      "wiki/projects/solo.md": `# Solo\n\n- [ ] Solo overdue task 📅 ${OVERDUE_15_DATE} ^tsolo123456789a\n`,
+      "wiki/dailies/2026-06-15.md": dailyWithLoops("2026-06-15", []),
+    };
+    const snapshot = Object.freeze({
+      commit: HEAD_COMMIT,
+      tree: treeOid("cccccccccccccccccccccccccccccccccccccccc"),
+      readFile: async (p: string) => files[p] ?? null,
+      listMarkdownFiles: async () => Object.freeze(Object.keys(files)),
+      getFileInfo: async (p: string) => {
+        if (!(p in files)) return null;
+        return Object.freeze({
+          lastChangedCommit: HEAD_COMMIT,
+          lastChangedAt: "2026-05-01T10:00:00.000Z",
+          lastHumanChangedAt: null,
+        });
+      },
+    });
+
+    const effects = await runWarden(snapshot);
+    const questions = effects.filter(
+      (e): e is QuestionEffect => e.kind === "question",
+    );
+    expect(questions).toHaveLength(1);
+    expect(questions[0]!.question).toInclude("15 days overdue");
+  });
+
+  test("🔺-priority overdue task is still stale — priority does not exempt from the overdue rule", async () => {
+    const priorityOverdueBody = `Top priority task 🔺 📅 ${OVERDUE_15_DATE}`;
+    const priorityAnchor = "tpriority123456";
+    const files: Record<string, string> = {
+      "wiki/projects/priority.md": `# Priority\n\n- [ ] ${priorityOverdueBody} ^${priorityAnchor}\n`,
       "wiki/dailies/2026-06-15.md": dailyWithLoops("2026-06-15", []),
     };
     const snapshot = Object.freeze({
@@ -349,8 +327,6 @@ describe("dome.daily.stale-task-warden", () => {
     const questions = effects.filter(
       (e): e is QuestionEffect => e.kind === "question",
     );
-    // Overdue rule applies regardless of priority/exempt — 🔺 exempts from
-    // discount but NOT from the overdue date check.
     expect(questions).toHaveLength(1);
   });
 
@@ -520,8 +496,8 @@ describe("dome.daily.stale-task-warden", () => {
     // recommendedAnswer defaults to "keep" (bias toward not auto-disrupting).
     expect(overdueQ!.metadata?.recommendedAnswer).toBe("keep");
 
-    // anchor is carried in material so Task 2 (settle-stale-answer) can locate
-    // the origin line via `^${anchor}` in metadata.destination.
+    // anchor is carried in material so settle-stale-answer can locate the
+    // origin line via `^${anchor}` in metadata.destination.
     expect(overdueQ!.metadata?.material).toBe(OVERDUE_TASK_ANCHOR);
   });
 });

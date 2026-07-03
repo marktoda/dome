@@ -36,18 +36,11 @@ export type TodayTaskRow = {
   readonly origin?: string;
   readonly evidenceLabel?: string;
   readonly lastChangedAt?: string | null;
-  readonly attention?: TodayTaskAttention | null;
   readonly sourceRefs?: ReadonlyArray<TodaySourceRef>;
   /** Slugs of all `[[wikilink]]` targets found in the raw task text (order-preserving, deduped). */
   readonly entities?: readonly string[];
   /** Obsidian task priority parsed by the producer; null/absent when untagged. */
   readonly priority?: "highest" | "high" | "medium" | "low" | "lowest" | null;
-};
-
-export type TodayTaskAttention = {
-  readonly discount: number;
-  readonly impressions: number;
-  readonly lastShown: string;
 };
 
 export type TodaySourceRef = {
@@ -124,12 +117,6 @@ const sourceRefWireSchema = z.object({
     .optional(),
 });
 
-const attentionWireSchema = z.object({
-  discount: z.number(),
-  impressions: z.number(),
-  lastShown: z.string(),
-});
-
 const taskRowWireSchema = z.object({
   text: z.string(),
   path: z.string(),
@@ -139,7 +126,6 @@ const taskRowWireSchema = z.object({
   origin: z.string().optional(),
   evidenceLabel: z.string().optional(),
   lastChangedAt: z.string().nullable().optional(),
-  attention: attentionWireSchema.nullable().optional(),
   priority: z.enum(["highest", "high", "medium", "low", "lowest"]).nullable().optional(),
   sourceRefs: z.array(sourceRefWireSchema).readonly().optional(),
 });
@@ -276,7 +262,6 @@ function parseTaskRowRecord(r: Record<string, unknown>): TodayTaskRow | null {
     : r.lastChangedAt === null
       ? null
       : undefined;
-  const attention = parseAttention(r.attention);
   const sourceRefs = parseSourceRefs(r.sourceRefs);
   return {
     text,
@@ -287,23 +272,10 @@ function parseTaskRowRecord(r: Record<string, unknown>): TodayTaskRow | null {
     ...(origin !== undefined ? { origin } : {}),
     ...(evidenceLabel !== undefined ? { evidenceLabel } : {}),
     ...(lastChangedAt !== undefined ? { lastChangedAt } : {}),
-    ...(attention !== undefined ? { attention } : {}),
     ...(sourceRefs.length > 0 ? { sourceRefs } : {}),
     ...(entities.length > 0 ? { entities } : {}),
     ...(priority !== null ? { priority } : {}),
   };
-}
-
-function parseAttention(raw: unknown): TodayTaskAttention | null | undefined {
-  if (raw === null) return null;
-  if (!isRecord(raw)) return undefined;
-  const discount = typeof raw.discount === "number" ? raw.discount : null;
-  const impressions = typeof raw.impressions === "number" ? raw.impressions : null;
-  const lastShown = typeof raw.lastShown === "string" ? raw.lastShown : null;
-  if (discount === null || impressions === null || lastShown === null) {
-    return undefined;
-  }
-  return { discount, impressions, lastShown };
 }
 
 function parseSourceRefs(raw: unknown): ReadonlyArray<TodaySourceRef> {

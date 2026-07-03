@@ -49,7 +49,6 @@ extensions:
         - "notes/*.md"
       graph.write:
         - "dome.daily.*"
-        - "dome.attention.*"
       question.ask: true
   dome.agent:
     enabled: true

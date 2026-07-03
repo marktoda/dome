@@ -105,10 +105,9 @@ algorithm LLM-free and the file legible.
 ## Counter facts — `dome.agent.preference-signals`
 
 A deterministic garden processor (read + `graph.write` over
-`dome.preference.*` only — **rebuild-eligible**, like
-`dome.daily.attention-discount`) parses `preferences/signals.md` and the
-promoted block in `core.md`, and emits one `dome.preference.topic` fact per
-topic:
+`dome.preference.*` only — **rebuild-eligible**) parses
+`preferences/signals.md` and the promoted block in `core.md`, and emits one
+`dome.preference.topic` fact per topic:
 
 ```json
 {

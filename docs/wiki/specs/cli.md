@@ -1799,10 +1799,10 @@ kinds it additionally evaluates the **manifest-contributed grant-entry
 probes** (`doctor.grantEntries:` per [[wiki/matrices/extension-bundle-shape]]
 — each bundle declares its own; the runtime composes active bundles'
 entries): when an enabled processor's manifest declares a specific path or
-fact namespace that the vault's grant patterns miss (e.g. `dome.daily`
-without `"dome.attention.*"`, `dome.agent` without `"core.md"` read, the
-preference-promotion answer handler without its per-processor replacement
-grant), doctor raises a `capability.grant-entry-missing` warning whose
+fact namespace that the vault's grant patterns miss (e.g. `dome.agent`
+without `"core.md"` read, the preference-promotion answer handler without
+its per-processor replacement grant), doctor raises a
+`capability.grant-entry-missing` warning whose
 recovery text names the exact YAML to add — `dome init --refresh-config`
 fills only missing keys and never merges entries into existing grant lists,
 so these gaps are otherwise silent (see `docs/memory.md` §"Vault rollout").

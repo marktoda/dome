@@ -54,7 +54,6 @@ test("parseTaskRows preserves task provenance metadata for why-lines", () => {
         dueDate: "2026-06-10",
         evidenceLabel: "wiki/dailies/2026-06-14.md:20; source wiki/projects/client.md:7",
         lastChangedAt: "2026-06-13T10:00:00.000Z",
-        attention: { discount: 0.32, impressions: 4, lastShown: "2026-06-13" },
         sourceRefs: [
           {
             path: "wiki/dailies/2026-06-14.md",
@@ -81,7 +80,6 @@ test("parseTaskRows preserves task provenance metadata for why-lines", () => {
   expect(row.source).toBe("daily");
   expect(row.evidenceLabel).toBe("wiki/dailies/2026-06-14.md:20; source wiki/projects/client.md:7");
   expect(row.lastChangedAt).toBe("2026-06-13T10:00:00.000Z");
-  expect(row.attention).toEqual({ discount: 0.32, impressions: 4, lastShown: "2026-06-13" });
   expect(row.sourceRefs?.map((ref) => `${ref.path}:${ref.range?.startLine}:${ref.stableId}`)).toEqual([
     "wiki/dailies/2026-06-14.md:20:t1",
     "wiki/projects/client.md:7:t1",

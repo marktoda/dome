@@ -222,6 +222,16 @@ export async function runServe(
     current: runtimeResult.value,
     lastReloadError: null,
   };
+  // Registry-orphan GC (docs/cohesive/brainstorms/2026-07-02-pruning-pass-design.md
+  // §2): a quarantine row for a processor whose bundle was deleted/retired
+  // survives forever otherwise, and the health emitter re-asks about it on
+  // every run. Always logged — regardless of `--quiet` — so a startup that
+  // silently drops recovery state is never silent.
+  if (runtimeResult.value.prunedUnknownProcessorQuarantines.length > 0) {
+    console.error(
+      `dome serve: pruned quarantine state for ${runtimeResult.value.prunedUnknownProcessorQuarantines.length} unregistered processor(s) (bundle no longer installed): ${runtimeResult.value.prunedUnknownProcessorQuarantines.join(", ")}`,
+    );
+  }
 
   // ----- 4. Print startup banner --------------------------------------------
   // The branch label is derived from the startup drift result. `in-sync`,
@@ -693,6 +703,11 @@ async function reloadServeRuntime(input: {
 
   input.state.current = next.value;
   input.state.lastReloadError = null;
+  if (next.value.prunedUnknownProcessorQuarantines.length > 0) {
+    console.error(
+      `dome serve: pruned quarantine state for ${next.value.prunedUnknownProcessorQuarantines.length} unregistered processor(s) (bundle no longer installed): ${next.value.prunedUnknownProcessorQuarantines.join(", ")}`,
+    );
+  }
   if (!input.quiet) {
     console.log("dome serve: reloaded runtime configuration");
   }

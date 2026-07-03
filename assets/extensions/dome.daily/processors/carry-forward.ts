@@ -19,10 +19,6 @@ import {
 import type { SourceRef } from "../../../../src/core/source-ref";
 
 import {
-  attentionAdjustedRecencyIso,
-  collectAttentionDiscounts,
-} from "./attention-shared";
-import {
   dailyPath,
   dailyPathSettings,
   localDateParts,
@@ -185,14 +181,6 @@ async function collectOpenLoopSources(input: {
   } = input;
   const items: DailyOpenLoopCandidate[] = [];
   const itemByIdentity = new Map<string, DailyOpenLoopCandidate>();
-  // Attention discounting (task-lifecycle §"Attention discounting"): items
-  // surfaced repeatedly without action rank as if their last human change
-  // were log(1−d)/log(0.995) hours older. Demotion reorders within the same
-  // ranked list — it never filters an item out.
-  const discounts = await collectAttentionDiscounts({
-    snapshot: ctx.snapshot,
-    settings,
-  });
   for (const path of await ctx.snapshot.listMarkdownFiles()) {
     if (path === targetPath) continue;
     const content = await ctx.snapshot.readFile(path);
@@ -207,15 +195,12 @@ async function collectOpenLoopSources(input: {
       }
       const candidate: DailyOpenLoopCandidate = {
         ...item,
-        lastChangedAt: attentionAdjustedRecencyIso({
-          lastChangedAt: openLoopFreshnessKey({
-            path,
-            settings,
-            // Prefer the human-authored timestamp so an engine rewrite (e.g.
-            // ^block-anchor stamping) cannot reset open-loop recency.
-            lastChangedAt: info?.lastHumanChangedAt ?? info?.lastChangedAt,
-          }),
-          discount: discounts.get(openLoopIdentity(item))?.discount ?? 0,
+        lastChangedAt: openLoopFreshnessKey({
+          path,
+          settings,
+          // Prefer the human-authored timestamp so an engine rewrite (e.g.
+          // ^block-anchor stamping) cannot reset open-loop recency.
+          lastChangedAt: info?.lastHumanChangedAt ?? info?.lastChangedAt,
         }),
       };
       items.push(candidate);

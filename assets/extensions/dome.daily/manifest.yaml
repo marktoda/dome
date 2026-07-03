@@ -168,42 +168,6 @@ processors:
         paths: ["wiki/dailies/*.md", "notes/*.md"]
     module: processors/carry-forward.ts
 
-  - id: dome.daily.attention-discount
-    version: 0.1.1
-    phase: garden
-    triggers:
-      - kind: signal
-        name: document.changed
-        pathPattern: "wiki/**/*.md"
-      - kind: signal
-        name: file.created
-        pathPattern: "wiki/**/*.md"
-      - kind: signal
-        name: file.deleted
-        pathPattern: "wiki/**/*.md"
-      - kind: signal
-        name: document.changed
-        pathPattern: "notes/*.md"
-      - kind: signal
-        name: file.created
-        pathPattern: "notes/*.md"
-      - kind: signal
-        name: file.deleted
-        pathPattern: "notes/*.md"
-    capabilities:
-      - kind: read
-        paths: ["wiki/**/*.md", "notes/*.md"]
-      - kind: graph.write
-        namespaces: ["dome.attention.*"]
-    # Deterministic + read/graph.write-only keeps this in the rebuild-safe
-    # garden set (isRebuildEligibleGardenProcessor); all-readable-markdown
-    # inspection lets settled items' stale facts resolve on any run.
-    execution:
-      class: deterministic
-    inspection:
-      kind: all-readable-markdown
-    module: processors/attention-discount.ts
-
   # The evening close (daily-surface D4). Schedule-only BY DESIGN — no file
   # trigger: the close is a ritual moment, not a live surface; it snapshots
   # the day once, and a commit-triggered rewrite would fight the human's
@@ -287,11 +251,12 @@ processors:
     module: processors/reconcile-tasks.ts
 
   # Clock-aware warden: emits one settle-stale QuestionEffect per stale/overdue
-  # open-loop task. Stale = overdue ≥ 14 days (rule a) OR undated + discounted ≥ 0.4
-  # (rule b). Cron-only BY DESIGN: staleness is a daily property, not a per-commit
-  # fact; schedule matches create-daily so the owner sees fresh signals each morning.
-  # NOT registered as execution.class: deterministic because the output depends on
-  # ctx.now() for the overdue date comparison.
+  # open-loop task. Stale = overdue ≥ 14 days, PERIOD (undated tasks are never
+  # settle-question candidates). Cron-only BY DESIGN: staleness is a daily
+  # property, not a per-commit fact; schedule matches create-daily so the
+  # owner sees fresh signals each morning. NOT registered as
+  # execution.class: deterministic because the output depends on ctx.now()
+  # for the overdue date comparison.
   - id: dome.daily.stale-task-warden
     version: 0.1.0
     phase: garden
@@ -330,16 +295,6 @@ processors:
 # pre-rollout vault must add.
 doctor:
   grantEntries:
-    - processorId: dome.daily.attention-discount
-      entries:
-        - kind: graph.write
-          target: dome.attention.discount
-      why: >-
-        the dismissal-derived attention-discount facts are dropped by the
-        broker, so stale open loops are never demoted
-      recovery: >-
-        Add "dome.attention.*" to extensions.dome.daily.grant.graph.write
-        in .dome/config.yaml.
     - processorId: dome.daily.compose-blocks
       entries:
         - kind: read

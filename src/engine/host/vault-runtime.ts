@@ -54,6 +54,7 @@
 import { join } from "node:path";
 
 import { err, ok, type Result } from "../../types";
+import { compareStrings } from "../../core/compare";
 import type { CommitOid } from "../../core/source-ref";
 import {
   treeOid,
@@ -178,6 +179,15 @@ export type VaultRuntime = {
    * semantics.
    */
   readonly quarantineChangedFlag: { changed: boolean };
+  /**
+   * Registry-orphan GC report for this open: processor ids whose quarantine
+   * entries were just pruned because their bundle is no longer installed
+   * (see the prune call in `openVaultRuntime`). Empty when the prune guard
+   * didn't fire (no config / empty registry) or nothing was pruned. Engine
+   * code must not console.log — a host-startup CLI surface (`dome serve`)
+   * reads this and logs it loudly.
+   */
+  readonly prunedUnknownProcessorQuarantines: ReadonlyArray<string>;
   readonly modelProvider?: ModelProvider;
   readonly modelStepProvider?: ModelStepProvider;
   readonly close: () => Promise<void>;
@@ -395,12 +405,30 @@ export async function openVaultRuntime(
   // registry). A missing/empty config is almost always a read edge rather than
   // a deliberate full retirement, and pruning everything then would silently
   // discard live recovery state.
+  //
+  // Without this, a quarantine row for a deleted processor survives forever
+  // — the health emitter re-asks the operator about a processor that no
+  // longer exists (docs/cohesive/brainstorms/2026-07-02-pruning-pass-design.md
+  // §2's "orphaned-state fix"). `prunedUnknownProcessorQuarantines` captures
+  // WHICH quarantined processor ids this open just pruned (computed before
+  // the mutation) so a CLI host-startup surface (`dome serve`) can log it —
+  // engine/host code must not console.log itself.
+  let prunedUnknownProcessorQuarantines: ReadonlyArray<string> = [];
   if (
     policy.foundConfig &&
     (policy.configuredExtensions.length > 0 || resolved.value.registry.size > 0)
   ) {
+    const isKnownProcessor = isKnownProcessorFor(policy, resolved.value.registry);
+    prunedUnknownProcessorQuarantines = [
+      ...new Set(
+        operationalState.value.executionState
+          .quarantines()
+          .map((q) => q.key.processorId)
+          .filter((processorId) => !isKnownProcessor(processorId)),
+      ),
+    ].sort(compareStrings);
     operationalState.value.executionState.pruneUnknownProcessors(
-      isKnownProcessorFor(policy, resolved.value.registry),
+      isKnownProcessor,
     );
   }
 
@@ -410,6 +438,7 @@ export async function openVaultRuntime(
     resolved: resolved.value,
     settings,
     operationalState: operationalState.value,
+    prunedUnknownProcessorQuarantines,
   }));
 }
 
@@ -576,8 +605,16 @@ function buildVaultRuntime(input: {
   readonly resolved: ResolvedRegistry;
   readonly settings: RuntimeSettings;
   readonly operationalState: OperationalState;
+  readonly prunedUnknownProcessorQuarantines: ReadonlyArray<string>;
 }): VaultRuntime {
-  const { opts, policy, resolved, settings, operationalState } = input;
+  const {
+    opts,
+    policy,
+    resolved,
+    settings,
+    operationalState,
+    prunedUnknownProcessorQuarantines,
+  } = input;
   const {
     projectionDb,
     answersDb,
@@ -638,6 +675,7 @@ function buildVaultRuntime(input: {
     doctorGrantEntries: resolved.doctorGrantEntries,
     operationalQueryView,
     quarantineChangedFlag,
+    prunedUnknownProcessorQuarantines,
     ...(settings.modelProvider !== undefined
       ? { modelProvider: settings.modelProvider }
       : {}),
