@@ -61,6 +61,7 @@ Cycles are permitted *within* a layer (e.g. `apply-effect` ↔ `diagnostics` in 
 | `question-answer-recording` | `operational` | Durable QuestionEffect answer writes |
 | `question-auto-resolution` | `operational` | Opt-in background resolution for low-risk questions |
 | `questions-changed` | `operational` | Dispatch garden-phase `questions.changed` subscribers after the open-question set changes |
+| `store-changed` | `operational` | Dispatch garden-phase `outbox.changed` / `quarantine.changed` subscribers after a store's failure set changes |
 | `scheduler` | `operational` | Cron-driven processor dispatch |
 | `command-model-provider` | `host` | Config-driven model-provider wiring |
 | `compiler-host` | `host` | Runtime host operations over an open VaultRuntime (`dome serve`) |
