@@ -258,6 +258,17 @@ export type ExternalDispatchResult =
 type OutboxDispatchControls = {
   readonly handlerTimeoutMs?: number;
   readonly signal?: AbortSignal;
+  /**
+   * Fired whenever a row transitions to the terminal `failed` state — the two
+   * internal terminal-failure sites (`recordFailedAttempt`'s terminal branch
+   * and `recoverExpiredDispatching`'s terminal branch). The host wires this to
+   * its tick-scoped `outbox.changed` flag; the tick epilogue dispatches
+   * subscribers once (processors.md §"Triggers and signals"). A non-terminal
+   * retryable attempt (row stays `pending`) does NOT fire it. Recovery
+   * transitions (replay/abandon) are not new failures and never fire it.
+   * Omitted → no signal channel (tests, isolated dispatch).
+   */
+  readonly onOutboxChanged?: () => void;
 };
 
 // ----- SQL ------------------------------------------------------------------
@@ -466,7 +477,7 @@ export async function dispatchPendingOutbox(
   } & OutboxDispatchControls,
 ): Promise<ReadonlyArray<ExternalDispatchResult>> {
   const now = opts.now ?? new Date();
-  recoverExpiredDispatching(db, now);
+  recoverExpiredDispatching(db, now, opts.onOutboxChanged);
   const pending = queryOutbox(db, {
     status: "pending",
     nextAttemptAtOrBefore: now,
@@ -566,6 +577,7 @@ export function incrementAttempts(
 export function recoverExpiredDispatching(
   db: OutboxDb,
   now: Date = new Date(),
+  onOutboxChanged?: () => void,
 ): void {
   const expired = queryOutbox(db, {
     status: "dispatching",
@@ -585,6 +597,8 @@ export function recoverExpiredDispatching(
         row.idempotencyKey,
         now.toISOString(),
       );
+    // Terminal-failure site: the row just went `failed` (attempts exhausted).
+    if (terminal) onOutboxChanged?.();
   }
 }
 
@@ -811,7 +825,13 @@ async function dispatchOutboxRow(
   const handler = lookupHandler(handlers, row.capability);
   if (handler === undefined) {
     const msg = `No external handler registered for capability '${row.capability}'.`;
-    return recordFailedAttempt(db, row, msg, { terminal: true, now });
+    return recordFailedAttempt(db, row, msg, {
+      terminal: true,
+      now,
+      ...(controls.onOutboxChanged !== undefined
+        ? { onOutboxChanged: controls.onOutboxChanged }
+        : {}),
+    });
   }
 
   try {
@@ -847,6 +867,9 @@ async function dispatchOutboxRow(
     return recordFailedAttempt(db, row, errorMessage(e), {
       terminal: false,
       now,
+      ...(controls.onOutboxChanged !== undefined
+        ? { onOutboxChanged: controls.onOutboxChanged }
+        : {}),
     });
   }
 }
@@ -956,7 +979,11 @@ function recordFailedAttempt(
   db: OutboxDb,
   row: OutboxRow,
   lastError: string,
-  opts: { readonly terminal: boolean; readonly now: Date },
+  opts: {
+    readonly terminal: boolean;
+    readonly now: Date;
+    readonly onOutboxChanged?: () => void;
+  },
 ): ExternalDispatchResult {
   const attempts = row.attempts + 1;
   const terminal = opts.terminal || attempts >= row.maxAttempts;
@@ -968,6 +995,8 @@ function recordFailedAttempt(
     .query(RECORD_FAILED_ATTEMPT_SQL)
     .run(status, lastError, nextAttemptAt.toISOString(), row.idempotencyKey);
   if (terminal) {
+    // Terminal-failure site: fire the store-change signal callback.
+    opts.onOutboxChanged?.();
     return Object.freeze({
       kind: "failed",
       idempotencyKey: row.idempotencyKey,

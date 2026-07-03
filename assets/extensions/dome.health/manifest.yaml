@@ -1,12 +1,12 @@
 id: dome.health
-version: 0.1.1
+version: 0.1.2
 processors:
   - id: dome.health.outbox-recovery-questions
-    version: 0.1.1
+    version: 0.1.2
     phase: garden
     triggers:
-      - kind: schedule
-        cron: "* * * * *"
+      - kind: signal
+        name: outbox.changed
     capabilities:
       - kind: read
         paths: ["**"]
@@ -28,11 +28,11 @@ processors:
     module: processors/outbox-recovery-answer.ts
 
   - id: dome.health.quarantine-recovery-questions
-    version: 0.1.1
+    version: 0.1.2
     phase: garden
     triggers:
-      - kind: schedule
-        cron: "* * * * *"
+      - kind: signal
+        name: quarantine.changed
     capabilities:
       - kind: quarantine.read
       - kind: question.ask
@@ -51,11 +51,15 @@ processors:
     module: processors/quarantine-recovery-answer.ts
 
   - id: dome.health.orphan-run-recovery-questions
-    version: 0.1.1
+    version: 0.1.2
     phase: garden
     triggers:
+      # Orphan runs are absence, not change — no store transition can fire a
+      # signal on a row that stopped moving. Keeps a cron, demoted per-minute
+      # → hourly (crash artifacts; an hour's detection latency is fine and the
+      # recovery is human-gated). See 2026-07-02-pruning-pass-design §4.
       - kind: schedule
-        cron: "* * * * *"
+        cron: "0 * * * *"
     capabilities:
       - kind: run.read
         statuses: ["running"]

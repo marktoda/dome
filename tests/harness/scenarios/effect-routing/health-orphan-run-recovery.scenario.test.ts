@@ -65,7 +65,16 @@ extensions:
     expect(adopted).not.toBeNull();
     if (adopted === null) return;
 
-    const startedAt = new Date(h.clock.now().getTime() - 6 * 60_000);
+    // orphan-run-recovery-questions keeps a cron, demoted per-minute → hourly
+    // (`0 * * * *`) in the pruning pass — orphans are absence, not a store
+    // transition that could fire a signal. Advance past a top-of-hour FIRST
+    // (with no orphan rows present, so the NO_ORPHAN_RUNNING_LEDGER_ROWS
+    // always-true check does not trip on the hour of aging), then seed the
+    // running rows aged into the orphan window (5m detector floor < 7m < 10m
+    // invariant ceiling).
+    await h.advance(60 * 60_000);
+
+    const startedAt = new Date(h.clock.now().getTime() - 7 * 60_000);
     const orphanId = newRunId(startedAt, () => "eeeeee");
     insertQueued(h.ledger, {
       id: orphanId,
@@ -81,15 +90,15 @@ extensions:
     markRunning(h.ledger, orphanId, startedAt);
 
     // Self-referential orphan containment (Task 4b): the orphan-run-recovery
-    // processor's OWN runs can go orphan (minute cron). Seed one — the detector
-    // must NOT raise a question about itself, or it pelts the question pile
-    // every minute, while the real test.orphaned still surfaces.
+    // processor's OWN runs can go orphan. Seed one — the detector must NOT
+    // raise a question about itself, or it pelts the question pile, while the
+    // real test.orphaned still surfaces.
     const selfOrphanId = newRunId(startedAt, () => "ffffff");
     insertQueued(h.ledger, {
       id: selfOrphanId,
       proposalId: null,
       processorId: "dome.health.orphan-run-recovery-questions",
-      processorVersion: "0.1.1",
+      processorVersion: "0.1.2",
       phase: "garden",
       inputCommit: commitOid(adopted),
       triggerKind: "schedule",
@@ -98,7 +107,6 @@ extensions:
     });
     markRunning(h.ledger, selfOrphanId, startedAt);
 
-    await h.advance(60_000);
     const drained = await h.drainOperationalWork();
     expect(drained.scheduler.fired.map((fire) => fire.processorId)).toContain(
       "dome.health.orphan-run-recovery-questions",

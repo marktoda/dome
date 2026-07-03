@@ -3,11 +3,18 @@
 // Shipped dome.health processors should turn quarantined processor triggers
 // into normal questions, then reset the quarantine through answer-triggered
 // QuarantineRecoveryEffect routing.
+//
+// The quarantine-recovery-questions processor subscribes to the
+// `quarantine.changed` store-change signal (the per-minute cron was dropped in
+// the pruning pass). So the trip must happen through the LIVE runtime's
+// execution state (`h.executionState`) — that fires the store's
+// `onQuarantineChanged`, sets the runtime's tick-scoped `quarantine.changed`
+// flag, and the next operational drain's epilogue dispatches the subscriber
+// once. No CLI / reopen may run between the trip and the drain, or a fresh
+// runtime would lose the flag.
 
 import { expect } from "bun:test";
-import { join } from "node:path";
 
-import { openQuarantineStore } from "../../../../src/engine/operational/quarantine-store";
 import type { RunId } from "../../../../src/engine/core/runner-contract";
 import { capabilityUsesByRun } from "../../../../src/ledger/capability-uses";
 import { scenario } from "../../index";
@@ -51,22 +58,32 @@ extensions:
     const seed = await h.tick();
     expect(seed.adopted).toBe(true);
 
-    const quarantine = openQuarantineStore({
-      path: join(h.vaultPath, ".dome", "state", "quarantined.json"),
-      quarantineThreshold: 2,
-    });
-    if (!quarantine.ok) {
-      throw new Error(`quarantine open failed: ${quarantine.error.kind}`);
-    }
+    // Trip the quarantine through the LIVE runtime (default threshold 3) so the
+    // store fires `onQuarantineChanged` on the runtime the next drain uses.
     const key = Object.freeze({
       phase: "garden" as const,
       processorId: "test.quarantined",
       processorVersion: "0.1.0",
       triggerHash: "health-quarantine-trigger",
     });
-    quarantine.value.recordRetryableTerminalFailure(key, "first");
-    quarantine.value.recordRetryableTerminalFailure(key, "second");
-    await h.reopenRuntime();
+    h.executionState.recordRetryableTerminalFailure(key, "first");
+    h.executionState.recordRetryableTerminalFailure(key, "second");
+    const tripped = h.executionState.recordRetryableTerminalFailure(
+      key,
+      "third",
+    );
+    expect(tripped).not.toBeNull();
+
+    // No CLI / reopen between the trip and the drain: the epilogue reads the
+    // runtime's tick-scoped `quarantine.changed` flag the trip just set.
+    const drained = await h.drainOperationalWork();
+    expect(drained.scheduler.fired.map((fire) => fire.processorId)).not.toContain(
+      "dome.health.quarantine-recovery-questions",
+    );
+    await h
+      .expectProjection()
+      .questions()
+      .toContainQuestion("Processor test.quarantined is quarantined");
 
     const inspectBefore = await h.runCli(["inspect", "quarantine", "--json"]);
     expect(inspectBefore.exitCode).toBe(0);
@@ -77,19 +94,9 @@ extensions:
         processor: "test.quarantined",
         version: "0.1.0",
         trigger_hash: "health-quarantine-trigger",
-        failures: 2,
+        failures: 3,
       }),
     ]);
-
-    await h.advance(60_000);
-    const drained = await h.drainOperationalWork();
-    expect(drained.scheduler.fired.map((fire) => fire.processorId)).toContain(
-      "dome.health.quarantine-recovery-questions",
-    );
-    await h
-      .expectProjection()
-      .questions()
-      .toContainQuestion("Processor test.quarantined is quarantined");
 
     const questions = JSON.parse(
       (await h.runCli(["inspect", "questions", "--json"])).stdout,

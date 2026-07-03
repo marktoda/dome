@@ -76,6 +76,13 @@ export async function runOperationalWork(opts: {
    * changes that bypass the `recordQuestion` sink.
    */
   readonly onQuestionsChanged?: () => void;
+  /**
+   * Fired when the outbox drain terminally failed a row (either
+   * `recoverExpiredDispatching`'s terminal branch or a `dispatchPendingOutbox`
+   * attempt exhausting its retries). The host wires this to its tick-scoped
+   * `outbox.changed` flag; the tick epilogue dispatches subscribers once.
+   */
+  readonly onOutboxChanged?: () => void;
   readonly operational?: OperationalQueryView;
   readonly ledger: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
@@ -140,6 +147,9 @@ export async function runOperationalWork(opts: {
     now: outboxNow,
     ...(opts.externalHandlerTimeoutMs !== undefined
       ? { handlerTimeoutMs: opts.externalHandlerTimeoutMs }
+      : {}),
+    ...(opts.onOutboxChanged !== undefined
+      ? { onOutboxChanged: opts.onOutboxChanged }
       : {}),
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
   });

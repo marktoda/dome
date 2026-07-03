@@ -86,6 +86,7 @@ import type {
 } from "./types";
 import type { LedgerDb } from "../../src/ledger/db";
 import type { OutboxDb } from "../../src/outbox/db";
+import type { ProcessorExecutionState } from "../../src/processors/execution-state";
 import type { ProjectionDb } from "../../src/projections/db";
 import type { AnswersDb } from "../../src/answers/db";
 import type { ModelProvider } from "../../src/engine/core/model-invoke";
@@ -484,6 +485,17 @@ export class HarnessImpl implements Harness {
 
   get outbox(): OutboxDb {
     return this.runtime.outboxDb;
+  }
+
+  /**
+   * The LIVE runtime's processor-execution (quarantine) state. Scenarios trip
+   * a quarantine through THIS handle (not a separate `openQuarantineStore`) so
+   * the store's `onQuarantineChanged` callback sets the runtime's tick-scoped
+   * `quarantine.changed` flag — the store-change signal path that replaced the
+   * per-minute quarantine-recovery cron.
+   */
+  get executionState(): ProcessorExecutionState {
+    return this.runtime.processorRuntime.executionState;
   }
 
   // ----- Snapshot ----------------------------------------------------------

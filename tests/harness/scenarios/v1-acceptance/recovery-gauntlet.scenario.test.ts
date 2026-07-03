@@ -5,11 +5,9 @@
 // answer handlers recover the substrate through effect routing.
 
 import { expect } from "bun:test";
-import { join } from "node:path";
 
 import { externalActionEffect } from "../../../../src/core/effect";
 import { commitOid, sourceRef } from "../../../../src/core/source-ref";
-import { openQuarantineStore } from "../../../../src/engine/operational/quarantine-store";
 import type { RunId } from "../../../../src/engine/core/runner-contract";
 import { capabilityUsesByRun } from "../../../../src/ledger/capability-uses";
 import {
@@ -18,11 +16,7 @@ import {
   markRunning,
   newRunId,
 } from "../../../../src/ledger/runs";
-import {
-  insertPending,
-  markFailed,
-  queryOutbox,
-} from "../../../../src/outbox/dispatch";
+import { insertPending, queryOutbox } from "../../../../src/outbox/dispatch";
 import type { Harness } from "../../types";
 import { scenario } from "../../index";
 
@@ -99,6 +93,27 @@ extensions:
       commit: adoptedCommit,
       path: ".dome/config.yaml",
     });
+
+    // The recovery trio now fires on store-change signals (outbox.changed /
+    // quarantine.changed) with the orphan detector demoted to an hourly cron —
+    // the per-minute polls were dropped in the pruning pass. Two consequences
+    // reshape this gauntlet:
+    //   - the store-change flags are tick-scoped and a CLI reopen (runCli
+    //     closes+reopens the harness runtime) would drop them, so the broken
+    //     state is created LIVE and drained WITHOUT an intervening CLI; the
+    //     "before" broken state is read in-process rather than through a
+    //     pre-drain status/doctor snapshot;
+    //   - the orphan cron needs an hour to become due, and a long-lived orphan
+    //     row would trip the >10m NO_ORPHAN_RUNNING_LEDGER_ROWS invariant on
+    //     that advance — so we cross the hour with no orphan present, then seed
+    //     one aged into the (5m, 10m) window just before the drain.
+
+    // Cross a top-of-hour with no orphan rows so the orphan cron is due.
+    await h.advance(60 * 60_000);
+
+    // Outbox: a pending row for a capability with no registered handler fails
+    // terminally in the drain (firing outbox.changed). Enqueued on the harness
+    // clock so the drain's enqueued_before cutoff includes it.
     insertPending(h.outbox, {
       effect: externalActionEffect({
         capability: "calendar.write",
@@ -107,10 +122,12 @@ extensions:
         sourceRefs: [ref],
       }),
       runId: "seed-gauntlet-outbox",
+      now: h.clock.now(),
     });
-    markFailed(h.outbox, "gauntlet-outbox", "terminal failure");
 
-    const startedAt = new Date(h.clock.now().getTime() - 6 * 60_000);
+    // Orphan run aged into the orphan window (5m detector floor < 8m < 10m
+    // invariant ceiling); recovered by answer before it can age out.
+    const startedAt = new Date(h.clock.now().getTime() - 8 * 60_000);
     const orphanId = newRunId(startedAt, () => "aaaaaa");
     insertQueued(h.ledger, {
       id: orphanId,
@@ -125,113 +142,35 @@ extensions:
     });
     markRunning(h.ledger, orphanId, startedAt);
 
-    const quarantine = openQuarantineStore({
-      path: join(h.vaultPath, ".dome", "state", "quarantined.json"),
-      quarantineThreshold: 2,
+    // Quarantine: trip through the LIVE runtime (default threshold 3) so the
+    // store fires onQuarantineChanged on the runtime this drain uses.
+    const quarantineKey = Object.freeze({
+      phase: "garden" as const,
+      processorId: "test.gauntlet-quarantined",
+      processorVersion: "0.1.0",
+      triggerHash: "gauntlet-trigger",
     });
-    if (!quarantine.ok) {
-      throw new Error(`quarantine open failed: ${quarantine.error.kind}`);
-    }
-    quarantine.value.recordRetryableTerminalFailure(
-      {
-        phase: "garden",
-        processorId: "test.gauntlet-quarantined",
-        processorVersion: "0.1.0",
-        triggerHash: "gauntlet-trigger",
-      },
-      "first",
-    );
-    quarantine.value.recordRetryableTerminalFailure(
-      {
-        phase: "garden",
-        processorId: "test.gauntlet-quarantined",
-        processorVersion: "0.1.0",
-        triggerHash: "gauntlet-trigger",
-      },
-      "second",
-    );
-    await h.reopenRuntime();
+    h.executionState.recordRetryableTerminalFailure(quarantineKey, "first");
+    h.executionState.recordRetryableTerminalFailure(quarantineKey, "second");
+    h.executionState.recordRetryableTerminalFailure(quarantineKey, "third");
 
-    const statusBefore = JSON.parse(
-      (await successfulCli(h, ["status", "--json"])).stdout,
-    ) as {
-      readonly questions: number;
-      readonly outbox_failed: number;
-      readonly quarantined: number;
-      readonly failed_runs: number;
-    };
-    expect(statusBefore).toEqual(
-      expect.objectContaining({
-        questions: 0,
-        outbox_failed: 1,
-        quarantined: 1,
-        failed_runs: 0,
-      }),
-    );
+    // Before-recovery broken state, read in-process (no CLI reopen — that would
+    // drop the tick-scoped signal flags before the drain).
+    expect(queryOutbox(h.outbox).map((r) => r.status)).toEqual(["pending"]);
+    expect(
+      h.executionState.quarantines().map((q) => q.key.processorId),
+    ).toEqual(["test.gauntlet-quarantined"]);
 
-    const doctorBefore = JSON.parse(
-      (await successfulCli(h, ["doctor", "--json"])).stdout,
-    ) as {
-      readonly status: string;
-      readonly summary: {
-        readonly failedOutbox: number;
-        readonly orphanRuns: number;
-        readonly quarantinedProcessors: number;
-      };
-    };
-    expect(doctorBefore.status).toBe("unhealthy");
-    expect(doctorBefore.summary).toEqual(
-      expect.objectContaining({
-        failedOutbox: 1,
-        orphanRuns: 1,
-        quarantinedProcessors: 1,
-      }),
-    );
-
-    const outboxRows = JSON.parse(
-      (await successfulCli(h, ["inspect", "outbox", "--json"])).stdout,
-    ) as ReadonlyArray<{ readonly id: number; readonly status: string }>;
-    expect(outboxRows).toEqual([
-      expect.objectContaining({ id: 1, status: "failed" }),
-    ]);
-
-    const runRows = JSON.parse(
-      (await successfulCli(h, ["inspect", "runs", "--json"])).stdout,
-    ) as ReadonlyArray<{
-      readonly id: string;
-      readonly processor: string;
-      readonly status: string;
-    }>;
-    expect(runRows).toContainEqual(
-      expect.objectContaining({
-        id: orphanId,
-        processor: "test.gauntlet-orphaned",
-        status: "running",
-      }),
-    );
-
-    const quarantineRows = JSON.parse(
-      (await successfulCli(h, ["inspect", "quarantine", "--json"])).stdout,
-    ) as ReadonlyArray<{
-      readonly processor: string;
-      readonly failures: number;
-    }>;
-    expect(quarantineRows).toEqual([
-      expect.objectContaining({
-        processor: "test.gauntlet-quarantined",
-        failures: 2,
-      }),
-    ]);
-
+    // A one-minute advance makes the pending row's enqueued_before cutoff strict
+    // and keeps the orphan under the 10m invariant ceiling.
     await h.advance(60_000);
     const drained = await h.drainOperationalWork();
-    expect(drained.scheduler.fired.map((fire) => fire.processorId)).toEqual(
-      expect.arrayContaining([
-        "dome.health.outbox-recovery-questions",
-        "dome.health.quarantine-recovery-questions",
-        "dome.health.orphan-run-recovery-questions",
-      ]),
+    // Outbox + quarantine surface via the store-change epilogue dispatch (not
+    // the scheduler); only the orphan detector runs on its (hourly) cron.
+    expect(drained.scheduler.fired.map((fire) => fire.processorId)).toContain(
+      "dome.health.orphan-run-recovery-questions",
     );
+    expect(drained.outbox.map((r) => r.kind)).toEqual(["failed"]);
 
     const statusWithQuestions = JSON.parse(
       (await successfulCli(h, ["status", "--json"])).stdout,

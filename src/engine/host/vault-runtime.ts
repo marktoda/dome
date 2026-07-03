@@ -165,6 +165,19 @@ export type VaultRuntime = {
   /** Composed doctor grant-entry requirements from active bundles. */
   readonly doctorGrantEntries: ReadonlyArray<ManifestGrantEntryRequirement>;
   readonly operationalQueryView: OperationalQueryView;
+  /**
+   * Host-scoped `quarantine.changed` accumulator. The long-lived
+   * `executionState` fires `onQuarantineChanged` at the quarantine
+   * threshold-trip and at every clear (never a sub-threshold counter tick),
+   * setting `changed`; the compiler-host tick epilogue snapshots+clears it and
+   * dispatches `quarantine.changed` subscribers at most once per tick. Unlike
+   * `questions.changed`/`outbox.changed` (compiler-host WeakMaps injected into
+   * per-tick sinks), the quarantine store outlives any single tick and is
+   * constructed here, so its change-flag lives on the runtime. See
+   * `QuestionsChangedFlag` in compiler-host.ts for the coalescing/carry
+   * semantics.
+   */
+  readonly quarantineChangedFlag: { changed: boolean };
   readonly modelProvider?: ModelProvider;
   readonly modelStepProvider?: ModelStepProvider;
   readonly close: () => Promise<void>;
@@ -449,6 +462,7 @@ function runtimeSettingsForPolicy(input: {
 
 type OperationalState = {
   readonly executionState: ProcessorExecutionState;
+  readonly quarantineChangedFlag: { changed: boolean };
   readonly projectionDb: ProjectionDb;
   readonly answersDb: AnswersDb;
   readonly outboxDb: OutboxDb;
@@ -473,7 +487,15 @@ async function openOperationalState(input: {
     "state",
     "quarantined.json",
   );
-  const quarantineResult = openQuarantineStore({ path: quarantinePath });
+  // Host-scoped quarantine.changed flag: the store's threshold-trip / clear
+  // callback sets it; the compiler-host tick epilogue consumes it.
+  const quarantineChangedFlag = { changed: false };
+  const quarantineResult = openQuarantineStore({
+    path: quarantinePath,
+    onQuarantineChanged: () => {
+      quarantineChangedFlag.changed = true;
+    },
+  });
   if (!quarantineResult.ok) {
     return err({
       kind: "quarantine-store-open-failed",
@@ -536,6 +558,7 @@ async function openOperationalState(input: {
 
   return ok(Object.freeze({
     executionState,
+    quarantineChangedFlag,
     projectionDb,
     answersDb,
     outboxDb,
@@ -561,6 +584,7 @@ function buildVaultRuntime(input: {
     outboxDb,
     ledgerDb,
     executionState,
+    quarantineChangedFlag,
   } = operationalState;
 
   // `resolveTree` is wired against the live git boundary so the runtime's
@@ -613,6 +637,7 @@ function buildVaultRuntime(input: {
     maintenanceLoops: resolved.maintenanceLoops,
     doctorGrantEntries: resolved.doctorGrantEntries,
     operationalQueryView,
+    quarantineChangedFlag,
     ...(settings.modelProvider !== undefined
       ? { modelProvider: settings.modelProvider }
       : {}),

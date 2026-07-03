@@ -140,6 +140,14 @@ export type BuildSqliteSinksOpts = {
    * Omitted → no signal channel (tests, isolated sinks).
    */
   readonly onQuestionsChanged?: () => void;
+  /**
+   * Fired whenever a `dispatchExternal` attempt terminally failed an outbox
+   * row (the outbox dispatcher's `recordFailedAttempt` terminal branch). The
+   * host wires this to its tick-scoped `outbox.changed` flag; the tick epilogue
+   * dispatches subscribers once (processors.md §"Triggers and signals").
+   * Omitted → no signal channel (tests, isolated sinks).
+   */
+  readonly onOutboxChanged?: () => void;
 };
 
 // ----- buildSqliteSinks -----------------------------------------------------
@@ -254,6 +262,9 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
         handlers: opts.externalHandlers ?? EMPTY_EXTERNAL_HANDLERS,
         ...(opts.externalHandlerTimeoutMs !== undefined
           ? { handlerTimeoutMs: opts.externalHandlerTimeoutMs }
+          : {}),
+        ...(opts.onOutboxChanged !== undefined
+          ? { onOutboxChanged: opts.onOutboxChanged }
           : {}),
       });
     },

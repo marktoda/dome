@@ -27,6 +27,7 @@ import type { AnswersDb } from "../../src/answers/db";
 import type { LedgerDb } from "../../src/ledger/db";
 import type { RunStatus } from "../../src/ledger/runs";
 import type { OutboxDb } from "../../src/outbox/db";
+import type { ProcessorExecutionState } from "../../src/processors/execution-state";
 import type { ProjectionDb } from "../../src/projections/db";
 import type { Capability, ProcessorPhase, Trigger } from "../../src/core/processor";
 import type { Effect } from "../../src/core/effect";
@@ -436,6 +437,8 @@ export interface Harness {
   readonly projection: ProjectionDb;
   readonly answers: AnswersDb;
   readonly outbox: OutboxDb;
+  /** Live runtime quarantine/execution state — trip a quarantine in-band. */
+  readonly executionState: ProcessorExecutionState;
   readonly refs: RefsView;
   readonly git: GitView;
 

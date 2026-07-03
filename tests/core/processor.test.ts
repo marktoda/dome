@@ -209,6 +209,11 @@ describe("ProcessorPhaseSchema + SignalSchema", () => {
     expect(SignalSchema.parse("questions.changed")).toBe("questions.changed");
   });
 
+  test("SignalSchema parses the outbox.changed / quarantine.changed store signals", () => {
+    expect(SignalSchema.parse("outbox.changed")).toBe("outbox.changed");
+    expect(SignalSchema.parse("quarantine.changed")).toBe("quarantine.changed");
+  });
+
   test("SignalSchema rejects an unknown signal name", () => {
     expect(() => SignalSchema.parse("file.exploded")).toThrow();
   });

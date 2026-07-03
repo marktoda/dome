@@ -80,6 +80,18 @@ export function buildProcessorExecutionState(opts?: {
     entries: ReadonlyArray<ProcessorExecutionStateEntry>,
   ) => void;
   /**
+   * Fired only when the QUARANTINE SET changes — the threshold-trip in
+   * `recordRetryableTerminalFailure` (a key newly enters quarantine) and every
+   * clear (`clearQuarantine` / `clearQuarantineIfCurrent` removing a
+   * quarantined key). Deliberately NOT the broader every-counter-tick
+   * `onEntriesChanged` persist hook: a sub-threshold failure counter or a
+   * `recordSuccess` on a non-quarantined key does not change the quarantine set
+   * and does not fire. The host wires this to its tick-scoped
+   * `quarantine.changed` flag; the tick epilogue dispatches subscribers once
+   * (processors.md §"Triggers and signals"). Omitted → no signal channel.
+   */
+  readonly onQuarantineChanged?: () => void;
+  /**
    * Optional cross-process freshness hook. When present, every read and
    * mutation first replaces the in-memory entries with the hook's result,
    * so a durable store (the quarantined.json file) is the source of truth
@@ -175,6 +187,7 @@ export function buildProcessorExecutionState(opts?: {
       const entry =
         entries.get(id) ?? { consecutiveRetryableFailures: 0 };
       entry.consecutiveRetryableFailures += 1;
+      let tripped = false;
       if (
         entry.consecutiveRetryableFailures >= threshold &&
         entry.quarantinedAt === undefined
@@ -182,14 +195,24 @@ export function buildProcessorExecutionState(opts?: {
         entry.quarantineId = randomUUID();
         entry.quarantinedAt = new Date();
         entry.reason = reason;
+        tripped = true;
       }
       entries.set(id, entry);
       persist();
+      // Quarantine-set change: only the threshold-trip alters the set.
+      if (tripped) opts?.onQuarantineChanged?.();
       return quarantineFor(key);
     },
     clearQuarantine: (key) => {
       sync();
-      if (entries.delete(keyId(key))) persist();
+      const entry = entries.get(keyId(key));
+      const wasQuarantined = entry?.quarantinedAt !== undefined;
+      if (entries.delete(keyId(key))) {
+        persist();
+        // Fire only when a QUARANTINED key was removed (set changed); a
+        // sub-threshold counter deletion leaves the quarantine set untouched.
+        if (wasQuarantined) opts?.onQuarantineChanged?.();
+      }
     },
     clearQuarantineIfCurrent: (expected) => {
       sync();
@@ -207,6 +230,7 @@ export function buildProcessorExecutionState(opts?: {
       }
       entries.delete(id);
       persist();
+      opts?.onQuarantineChanged?.();
       return true;
     },
     pruneUnknownProcessors: (isKnownProcessor) => {

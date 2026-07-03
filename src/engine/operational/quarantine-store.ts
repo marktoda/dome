@@ -56,6 +56,12 @@ const QuarantineStoreFileSchema = z.object({
 export function openQuarantineStore(opts: {
   readonly path: string;
   readonly quarantineThreshold?: number;
+  /**
+   * Fired only when the QUARANTINE SET changes (threshold-trip or clear) — see
+   * `buildProcessorExecutionState`. The host wires this to its tick-scoped
+   * `quarantine.changed` flag.
+   */
+  readonly onQuarantineChanged?: () => void;
 }): Result<ProcessorExecutionState, OpenQuarantineStoreError> {
   const loaded = loadEntries(opts.path);
   if (!loaded.ok) return loaded;
@@ -65,6 +71,9 @@ export function openQuarantineStore(opts: {
       initialEntries: loaded.value,
       ...(opts.quarantineThreshold !== undefined
         ? { quarantineThreshold: opts.quarantineThreshold }
+        : {}),
+      ...(opts.onQuarantineChanged !== undefined
+        ? { onQuarantineChanged: opts.onQuarantineChanged }
         : {}),
       onEntriesChanged: (entries) => {
         writeEntries(opts.path, entries);
