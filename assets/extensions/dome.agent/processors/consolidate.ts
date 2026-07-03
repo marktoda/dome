@@ -16,7 +16,7 @@ import {
   type LedgerResolution,
 } from "../lib/agent-config";
 import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
-import { finishAgentRun } from "../lib/agent-run-effects";
+import { agentIntegrityEffects, finishAgentRun } from "../lib/agent-run-effects";
 import { withCoreMemory } from "../lib/core-memory";
 import {
   CONSOLIDATE_WRITABLE_PATHS,
@@ -99,7 +99,11 @@ const consolidate = defineProcessorImplementation({
       ledgerPath,
     });
 
-    const state: AgentRunState = { edits: new Map(), questions: [] };
+    const state: AgentRunState = {
+      edits: new Map(),
+      questions: [],
+      integrityFlags: [],
+    };
 
     let result;
     try {
@@ -159,6 +163,13 @@ const consolidate = defineProcessorImplementation({
           finalText: result.finalText,
         },
       }),
+      // Integrity review (folded in from the retired dome.warden.integrity):
+      // each flagged finding becomes a self-clearing diagnostic anchored to the
+      // flagged page — never a fact, never a patch. Model judgment stays
+      // transient, resolved by resolveStaleDiagnostics on reconciliation.
+      ...agentIntegrityEffects(state, (path, stableId) =>
+        ctx.sourceRef(path, undefined, stableId),
+      ),
     ]);
   },
 });

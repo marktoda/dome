@@ -112,18 +112,23 @@ The nightly sweeper (`dome.agent.sweep`, shipped — see [[wiki/specs/sweep]])
 supersedes claim values in place; `dome explain <page>#^c…` (planned) renders
 a claim's timeline from block git history.
 
-The **integrity warden** (`dome.warden.integrity`, shipped — see
-[[wiki/specs/task-lifecycle]] §"Wardens") is the wired consumer of the
-`dome.claims.claim` facts. It reads them through its garden-phase
-`ctx.projection` view and runs a deterministic same-page,
-same-normalized-key/different-value contradiction PRE-FILTER before trusting
-the model: each mechanical collision becomes a high-risk contradiction
-QuestionEffect directly (no model needed), and the collision also gates the
-warden's noisier model findings (§"Wardens"). Cross-page contradiction
-remains the model's judgment; same-page key collision is the deterministic
-subset the facts make cheap. The warden still emits QuestionEffects only — it
-never writes a fact — so this consumer keeps
-[[wiki/invariants/MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS]] intact.
+**Same-page key-collision (self-consumer).** The `dome.claims.index`
+processor is its own first consumer: because it already parses every claim
+line, a same-page, same-normalized-key/different-value contradiction is caught
+deterministically in the same pass and surfaced as a `warning`-severity
+`DiagnosticEffect` with code `dome.claims.key-collision`, identified by a
+per-key `stableId` so each colliding key self-clears via
+`resolveStaleDiagnostics` when the page is reconciled. No projection read, no
+model — the honest mechanical subset the claim lines make free. (This replaces
+the retired `dome.warden.integrity` pre-filter, whose garden-phase
+`ctx.projection.facts` read was dead code — garden phase omits the projection.)
+
+**Model-judgment integrity review** — the fuzzier classes (historical-as-ongoing,
+cross-page contradiction, self-corroboration, inference-as-fact) — rides the
+nightly `dome.agent.consolidate` agent's `flagIntegrity` tool (see
+[[wiki/specs/task-lifecycle]] §"Wardens" and [[wiki/specs/autonomous-agents]]
+§"`dome.agent.consolidate`"), which emits `DiagnosticEffect`s only, never a
+fact, keeping [[wiki/invariants/MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS]] intact.
 
 ### Health
 

@@ -196,13 +196,12 @@ describe("runInspect", () => {
       readonly processor: string;
       readonly model: string;
     }>;
-    expect(modelProcessors.length).toBe(5);
+    expect(modelProcessors.length).toBe(4);
     expect(modelProcessors.map((row) => row.processor).sort()).toEqual([
       "dome.agent.brief",
       "dome.agent.consolidate",
       "dome.agent.ingest",
       "dome.agent.sweep",
-      "dome.warden.integrity",
     ]);
     expect(modelProcessors.every((row) => row.model !== "none")).toBe(true);
   });
@@ -444,13 +443,6 @@ describe("runInspect", () => {
         status: "disabled",
         loaded: false,
         model_processors: 4,
-        model: "disabled-no-provider",
-      }),
-      expect.objectContaining({
-        bundle: "dome.warden",
-        status: "disabled",
-        loaded: false,
-        model_processors: 1,
         model: "disabled-no-provider",
       }),
     ]);
@@ -1197,7 +1189,7 @@ describe("runInspect cost", () => {
       startedAt: threeDaysAgo,
     });
     await seedCostRun(f, {
-      processorId: "dome.warden.integrity",
+      processorId: "dome.claims.index",
       costUsd: 0.125,
       startedAt: today,
     });
@@ -1223,7 +1215,7 @@ describe("runInspect cost", () => {
     // Ordered by total spend descending.
     expect(report.processors.map((row) => row.processor)).toEqual([
       "dome.agent.ingest",
-      "dome.warden.integrity",
+      "dome.claims.index",
     ]);
     expect(report.processors[0]).toEqual(
       expect.objectContaining({
@@ -1236,8 +1228,8 @@ describe("runInspect cost", () => {
     );
     expect(report.processors[1]).toEqual(
       expect.objectContaining({
-        processor: "dome.warden.integrity",
-        extension: "dome.warden",
+        processor: "dome.claims.index",
+        extension: "dome.claims",
         runs: 1,
         total_cost_usd: 0.125,
         today_cost_usd: 0.125,
@@ -1251,7 +1243,7 @@ describe("runInspect cost", () => {
         today_cost_usd: 0.25,
       }),
       expect.objectContaining({
-        extension: "dome.warden",
+        extension: "dome.claims",
         runs: 1,
         total_cost_usd: 0.125,
         today_cost_usd: 0.125,

@@ -275,7 +275,7 @@ const brief = defineProcessorImplementation({
     // Seed the accumulator with the prepared daily so the model's readPage
     // sees it (overlay) and a model that does nothing still lands the
     // deterministic skeleton + blocks.
-    const state: AgentRunState = { edits: new Map(), questions: [] };
+    const state: AgentRunState = { edits: new Map(), questions: [], integrityFlags: [] };
     state.edits.set(todayPath, {
       kind: "write",
       path: todayPath,

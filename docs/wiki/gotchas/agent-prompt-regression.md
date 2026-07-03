@@ -26,8 +26,8 @@ severity: high
 
 **Partial mitigation (shipped):** prompt-*text* drift is pinned by
 `tests/integration/agent-prompt-regression.test.ts` — snapshot fences over the
-agent charters (brief / ingest / consolidate / sweep) and the warden page
-prompt, so any prompt edit surfaces as a reviewable `.snap` diff. This guards
+agent charters (brief / ingest / consolidate / sweep), so any prompt edit
+surfaces as a reviewable `.snap` diff. This guards
 the text, not the semantics; model-upgrade regressions still need the eval
 suite below.
 

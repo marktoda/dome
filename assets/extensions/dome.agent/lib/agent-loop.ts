@@ -23,10 +23,37 @@ export type AgentQuestion = {
   readonly idempotencyKey: string;
 };
 
+/**
+ * The four knowledge-integrity finding kinds a tool-loop agent can flag via
+ * the `flagIntegrity` tool (folded in from the retired `dome.warden.integrity`
+ * warden). Model judgment stays transient: each flag becomes a self-clearing
+ * DiagnosticEffect, never a fact or a patch.
+ */
+export const INTEGRITY_FINDING_KINDS = [
+  "historical-as-ongoing",
+  "contradiction",
+  "self-corroborating",
+  "inference-as-fact",
+] as const;
+
+export type IntegrityFindingKind = (typeof INTEGRITY_FINDING_KINDS)[number];
+
+/** One accumulated `flagIntegrity` finding, mapped later to a DiagnosticEffect. */
+export type AgentIntegrityFlag = {
+  readonly path: string;
+  readonly kind: IntegrityFindingKind;
+  readonly claim: string;
+  /** Risk-mapped by the model: high-risk → "warning", else "info". */
+  readonly severity: "info" | "warning";
+  readonly fix: string;
+};
+
 /** Mutable accumulator threaded to every tool's execute. Last write per path wins. */
 export type AgentRunState = {
   readonly edits: Map<string, AgentEdit>;
   readonly questions: AgentQuestion[];
+  /** Knowledge-integrity findings flagged this run (consolidate's flagIntegrity tool). */
+  readonly integrityFlags: AgentIntegrityFlag[];
 };
 
 export type AgentTool = {
@@ -69,7 +96,8 @@ export async function runAgentLoop(opts: {
     { role: "system", content: opts.charter },
     { role: "user", content: opts.task },
   ];
-  const state: AgentRunState = opts.state ?? { edits: new Map(), questions: [] };
+  const state: AgentRunState =
+    opts.state ?? { edits: new Map(), questions: [], integrityFlags: [] };
   const schemas = opts.tools.map((t) => t.schema);
   const toolByName = new Map(opts.tools.map((t) => [t.schema.name, t] as const));
 

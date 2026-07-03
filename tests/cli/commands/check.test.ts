@@ -163,12 +163,9 @@ describe("runCheck", () => {
     )).toEqual(expect.objectContaining({
       question_scope: "all",
       processor_ids: expect.arrayContaining([
-        "dome.warden.integrity",
+        "dome.health.outbox-recovery-questions",
       ]),
-      optional_processor_ids: [
-        "dome.warden.integrity",
-        "dome.agent.preference-promotion-answer",
-      ],
+      optional_processor_ids: ["dome.agent.preference-promotion-answer"],
       questions: 1,
       agent_safe_questions: 0,
       model_safe_questions: 0,

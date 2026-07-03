@@ -3,6 +3,7 @@ import type { AgentTool } from "./agent-loop";
 import {
   askOwnerTool,
   deletePageTool,
+  flagIntegrityTool,
   listPagesTool,
   readPageTool,
   searchVaultTool,
@@ -54,5 +55,8 @@ export function makeConsolidatorTools(opts: {
     writePageTool(writable, guard),
     deletePageTool(writable, guard),
     askOwnerTool("dome.agent.consolidate:"),
+    // Integrity review (folded in from the retired dome.warden.integrity):
+    // findings surface as self-clearing diagnostics, never facts or edits.
+    flagIntegrityTool(),
   ];
 }

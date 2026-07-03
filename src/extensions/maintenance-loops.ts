@@ -311,7 +311,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
-        "LLM integration can produce noisy or incorrect pages; git history and the integrity warden are the safety nets.",
+        "LLM integration can produce noisy or incorrect pages; git history and consolidate's integrity review are the safety nets.",
         "Auto-merging into curated pages can overwrite nuance; the Dome-Run commit split keeps changes reviewable and revertable.",
       ],
     }),
@@ -498,10 +498,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.markdown.ambiguous-wikilink-answer",
         "dome.daily.ambiguous-followup-answer",
       ],
-      optionalProcessors: [
-        "dome.warden.integrity",
-        "dome.agent.preference-promotion-answer",
-      ],
+      optionalProcessors: ["dome.agent.preference-promotion-answer"],
       questionScope: "all",
       surfaces: [
         { kind: "status", name: "status" },

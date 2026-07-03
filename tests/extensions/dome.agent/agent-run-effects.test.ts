@@ -15,7 +15,7 @@ function stateWith(opts: {
   deletes?: ReadonlyArray<string>;
   questions?: ReadonlyArray<string>;
 }): AgentRunState {
-  const state: AgentRunState = { edits: new Map(), questions: [] };
+  const state: AgentRunState = { edits: new Map(), questions: [], integrityFlags: [] };
   for (const [path, content] of opts.writes ?? []) {
     state.edits.set(path, { kind: "write", path, content });
   }

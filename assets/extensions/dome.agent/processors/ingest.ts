@@ -130,7 +130,7 @@ const ingest = defineProcessorImplementation({
     // loop reads prior sources' in-run edits (via the overlay-aware tools) and
     // builds on them, and the whole batch lands as a SINGLE PatchEffect — so
     // there are no racing per-source sub-proposals to clobber a shared page.
-    const state: AgentRunState = { edits: new Map(), questions: [] };
+    const state: AgentRunState = { edits: new Map(), questions: [], integrityFlags: [] };
     const effects: Effect[] = [...pre.effects];
     let truncated = false;
     // The most recent non-blank final message across the batch — the

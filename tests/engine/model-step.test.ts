@@ -136,13 +136,13 @@ describe("modelInvokeForProcessor.step", () => {
     expect(uses.filter((u) => u === "allowed")).toHaveLength(2);
   });
 
-  // Per-processor model routing (dome.agent model_overrides / dome.warden
-  // model_override) rides the existing step({model}) field. These two tests
-  // pin the allowlist semantics that routing leans on: with NO modelAllowlist
-  // on either the declared or granted capability (the dome.agent/dome.warden
-  // manifests declare none), an arbitrary requested model flows to the
-  // provider unchecked; when an allowlist IS granted, an out-of-list override
-  // is denied — routing cannot bypass the allowlist.
+  // Per-processor model routing (dome.agent model_overrides) rides the
+  // existing step({model}) field. These two tests pin the allowlist semantics
+  // that routing leans on: with NO modelAllowlist on either the declared or
+  // granted capability (the dome.agent manifest declares none), an arbitrary
+  // requested model flows to the provider unchecked; when an allowlist IS
+  // granted, an out-of-list override is denied — routing cannot bypass the
+  // allowlist.
 
   test("step passes an arbitrary requested model through when NO allowlist is declared", async () => {
     const seen: Array<string | undefined> = [];

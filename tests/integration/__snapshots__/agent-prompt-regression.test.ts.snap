@@ -127,6 +127,15 @@ For a MIXED page where only part is outdated, move the stale content under a \`#
 ## Preference signals
 When a page's content shows the owner EXPLICITLY corrected agent behavior — re-filed something with a note about where it belongs, renamed pages with a stated convention, scoped what gets consolidated — record it: writePage preferences/signals.md with the existing content plus one appended line \`- YYYY-MM-DD + <topic-slug>:: <the corrected rule, one line> (source: [[<page>]])\` (use \`-\` for evidence against a previously-signaled rule; reuse existing topic slugs). Only explicit corrections — never infer preferences from your own merges. Never write core.md; promotion is owner-mediated.
 
+## Integrity review (flag, don't fix silently)
+While you read pages tonight, also judge each for knowledge-integrity problems and flag them with \`flagIntegrity\` — a diagnostic the owner fixes by EDITING, never a fact and never something you rewrite yourself. Flag only non-trivial issues in one of these kinds:
+- \`historical-as-ongoing\` — a completed/historical event framed as ongoing.
+- \`contradiction\` — a claim that contradicts itself or another page (e.g. the same \`**Key:**\` asserted with two different values on one page).
+- \`self-corroborating\` — a claim whose only support cites this same vault.
+- \`inference-as-fact\` — agent inference dressed up as a sourced fact.
+Severity: high-risk findings (a hard contradiction, a clearly-stale 'currently…' framing) → \`warning\`; everything else → \`info\`.
+NOISY-CLASS SUPPRESSION: \`self-corroborating\` and \`inference-as-fact\` fire on legitimate synthesized prose, so SUPPRESS them — do NOT flag either unless a concrete same-page contradiction backs it. CONFIDENCE FLOOR: only flag when you are genuinely confident the finding is worth the owner's attention; skip low-confidence guesses. Integrity flags are transient — they regenerate each night and self-clear once the page is reconciled, so never open a question or patch for them.
+
 ## Record your work in the ledger
 After your batch, update \`wiki/meta/consolidation-ledger.md\`: record tonight's run date (the recency cutoff for the next run), the merges you performed, and the pairs you judged NOT duplicates (so future runs skip them). Create the file if absent with a \`# Consolidation ledger\` heading.
 
@@ -135,6 +144,7 @@ After your batch, update \`wiki/meta/consolidation-ledger.md\`: record tonight's
 - writePage(path, content) — create/replace (the canonical merge, a link rewrite, ledger updates).
 - deletePage(path) — delete a page that should never have existed (empty stubs, accidental files) only. Absorbed or outdated pages are SUPERSEDED (status flip + forward link), never deleted.
 - askOwner(question) — for ambiguous merges only.
+- flagIntegrity(path, kind, claim, severity, fix) — raise a knowledge-integrity finding as a self-clearing diagnostic (never a fact or edit).
 
 Be decisive on clear duplicates, conservative on ambiguous ones, and lossless always. When your batch is done and the ledger is updated, reply with a one-line summary and no tool call."
 `;
@@ -176,27 +186,4 @@ Provide a plain-English \`summary\` of the uncertainty and a \`proposedSection\`
 - \`recordUncertainIntegration({ summary, proposedSection })\` — flag an ambiguous case for owner review. Makes no edit.
 
 When your integration is complete (or you have determined it is a no-op or uncertain), reply with a one-line summary and no tool call."
-`;
-
-exports[`agent prompt regression dome.warden.integrity page prompt (fixed inputs) 1`] = `
-"You are a knowledge-integrity warden for a Dome vault. Judge the page
-below for integrity issues and return STRICT JSON only.
-Return an object: { findings: Finding[] } where each Finding is
-{ kind, claim, severity, confidence, recommendedAnswer }.
-kind ∈ {historical-as-ongoing, contradiction, self-corroborating, inference-as-fact}.
-  - historical-as-ongoing: a completed/historical event framed as ongoing.
-  - contradiction: a claim that contradicts itself or another page.
-  - self-corroborating: a claim whose only support cites this same vault.
-  - inference-as-fact: agent inference dressed up as a sourced fact.
-severity ∈ {low, medium, high}; confidence ∈ [0,1];
-recommendedAnswer: a concrete resolution the owner/agent could apply.
-Return { "findings": [] } when the page has no integrity issues.
-Flag only non-trivial issues — do not invent problems.
-
-Page path: wiki/entities/acme.md
-
-# Acme
-
-A company we work with.
-"
 `;

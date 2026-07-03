@@ -96,6 +96,35 @@ describe("dome.agent charters — preference signals (M5)", () => {
   });
 });
 
+describe("dome.agent consolidate charter — integrity review (folds in dome.warden)", () => {
+  const consolidate = consolidateCharter({
+    ledgerPath: "meta/consolidation-ledger.md",
+    maxChangedFiles: 30,
+    targets: ["wiki/"],
+  });
+
+  test("carries the four integrity finding kinds as a charter section", () => {
+    expect(consolidate).toContain("## Integrity review");
+    expect(consolidate).toContain("historical-as-ongoing");
+    expect(consolidate).toContain("contradiction");
+    expect(consolidate).toContain("self-corroborating");
+    expect(consolidate).toContain("inference-as-fact");
+  });
+
+  test("carries noisy-class suppression and a confidence floor", () => {
+    // The two noisiest classes only earn a flag when a same-page
+    // contradiction backs them; low-confidence guesses stay unflagged.
+    expect(consolidate).toMatch(/suppress/i);
+    expect(consolidate).toMatch(/confiden/i);
+  });
+
+  test("names flagIntegrity as the emission path — a diagnostic, never a fact or edit", () => {
+    expect(consolidate).toContain("flagIntegrity");
+    // Integrity findings are diagnostics you fix by editing, not facts/patches.
+    expect(consolidate).toContain("diagnostic");
+  });
+});
+
 describe("dome.agent charters — captured-today task routing (daily-surface D3)", () => {
   test("ingest routes daily task lines through the captured seam, never writing the section itself", () => {
     expect(INGEST_CHARTER).toContain("## Captured today");

@@ -27,7 +27,7 @@ import {
 import { SWEEP_WRITABLE_PATHS } from "../../../assets/extensions/dome.agent/lib/sweep-tools";
 
 function freshState(): AgentRunState {
-  return { edits: new Map(), questions: [] };
+  return { edits: new Map(), questions: [], integrityFlags: [] };
 }
 
 const reader = (files: Record<string, string>) => ({

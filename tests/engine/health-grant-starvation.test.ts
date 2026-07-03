@@ -180,16 +180,16 @@ describe("capabilityGrantStarvationFindings", () => {
   });
 
   test("a grant that deliberately narrows WITHIN a declared pattern is quiet (partial coverage ≠ starvation)", () => {
-    // The work-vault warden shape: the manifest declares wiki/**/*.md and
+    // The work-vault consolidate shape: the manifest declares wiki/**/*.md and
     // the owner scoped the grant to the four category subtrees. The
     // processor acts on the granted subset — it is narrowed, not starving.
     expect(
       findingsFor({
         declared: {
-          "dome.warden.integrity": [read("wiki/**/*.md")],
+          "dome.agent.consolidate": [read("wiki/**/*.md")],
         },
         grants: {
-          "dome.warden.integrity": [
+          "dome.agent.consolidate": [
             read(
               "wiki/entities/**/*.md",
               "wiki/concepts/**/*.md",

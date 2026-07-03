@@ -8,9 +8,9 @@
 // accepted envelope shape cannot drift between handlers.
 //
 // Scope note: this is the dome.agent envelope (answeredAt required). The
-// dome.warden and dome.health bundles parse their own (simpler) envelopes —
-// bundles stay independently shippable, so they are intentionally not coupled
-// to this helper.
+// dome.health bundle parses its own (simpler) envelope — bundles stay
+// independently shippable, so they are intentionally not coupled to this
+// helper.
 //
 // This file lives under `assets/` (excluded from the root tsconfig). Imports
 // use relative paths into `src/`, resolved at runtime by Bun's loader.

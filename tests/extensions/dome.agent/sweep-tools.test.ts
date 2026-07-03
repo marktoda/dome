@@ -11,7 +11,7 @@ import {
 import { sweepCharter } from "../../../assets/extensions/dome.agent/lib/sweep-charter";
 
 function freshState(): AgentRunState {
-  return { edits: new Map(), questions: [] };
+  return { edits: new Map(), questions: [], integrityFlags: [] };
 }
 
 const reader = (files: Record<string, string>) => ({

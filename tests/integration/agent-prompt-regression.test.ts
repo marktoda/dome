@@ -14,7 +14,6 @@ import { consolidateCharter } from "../../assets/extensions/dome.agent/lib/conso
 import { BREVITY_FRAGMENT } from "../../assets/extensions/dome.agent/lib/charter-fragments";
 import { MAX_CHANGED_FILES } from "../../assets/extensions/dome.agent/processors/consolidate";
 import { sweepCharter } from "../../assets/extensions/dome.agent/lib/sweep-charter";
-import { promptForPage } from "../../assets/extensions/dome.warden/processors/integrity";
 
 describe("agent prompt regression", () => {
   test("brief and ingest share one brevity fragment", () => {
@@ -54,9 +53,4 @@ describe("agent prompt regression", () => {
     ).toMatchSnapshot();
   });
 
-  test("dome.warden.integrity page prompt (fixed inputs)", () => {
-    expect(
-      promptForPage("wiki/entities/acme.md", "# Acme\n\nA company we work with.\n"),
-    ).toMatchSnapshot();
-  });
 });

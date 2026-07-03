@@ -1975,8 +1975,8 @@ describe("runStatus", () => {
   });
 
   test("all-clear status is a short verdict + fingerprint (≤3 non-blank lines)", async () => {
-    // Build a vault with no attention: proper frontmatter + sync. The
-    // standard fixture uses bare "seed\n" content which the warden flags.
+    // Build a vault with no attention: proper frontmatter + sync. A bare
+    // "seed\n" fixture would draw lint diagnostics, so seed proper frontmatter.
     const vaultPath = mkdtempSync(join(tmpdir(), "cli-allclear-"));
     const { commit: commitGit } = await import("../../../src/git");
     const { execFileSync } = await import("node:child_process");
@@ -2005,7 +2005,7 @@ describe("runStatus", () => {
     if (jsonBlob === undefined) throw new Error("missing json output");
     const parsed = JSON.parse(jsonBlob) as Record<string, unknown>;
     if (parsed["attention_required"] === true) {
-      // If vault still has attention after sync (e.g. warden diagnostics),
+      // If vault still has attention after sync (e.g. lint diagnostics),
       // skip the fingerprint assertion — just verify healthy label absent and sections absent.
       captured.out = [];
       const code2 = await runStatus({ vault: vaultPath });

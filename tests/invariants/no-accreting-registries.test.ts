@@ -242,8 +242,8 @@ describe("NO_ACCRETING_REGISTRIES", () => {
   test("no model.invoke processor in any first-party manifest holds patch.auto over log.md or index files", () => {
     const processors = loadFirstPartyProcessors();
     const modelProcessors = processors.filter((p) => p.hasModelInvoke);
-    // ingest, consolidate, brief, sweep, warden.integrity.
-    expect(modelProcessors.length).toBeGreaterThanOrEqual(5);
+    // ingest, consolidate, brief, sweep.
+    expect(modelProcessors.length).toBeGreaterThanOrEqual(4);
 
     for (const processor of modelProcessors) {
       expectNoRegistryCoverage(
