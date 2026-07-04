@@ -38,8 +38,8 @@ import {
 } from "../surface/view-catalog";
 import type { Vault } from "../vault";
 import type { TextStreamPart, ToolSet } from "ai";
-import { runAgent, runAgentStream, type AgentStream } from "../agent/agent";
-import type { AgentResult } from "../agent/types";
+import { runAgent, runAgentStream, type AgentStream } from "../assistant/agent";
+import type { AgentResult } from "../assistant/types";
 import { buildStatusSnapshot } from "../surface/status";
 import { renderTodayHtml } from "./today-html";
 import { BASEL_BOOK_WOFF2_B64, BASEL_MEDIUM_WOFF2_B64 } from "./today-fonts";

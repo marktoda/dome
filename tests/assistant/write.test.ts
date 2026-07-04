@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import git from "isomorphic-git";
 import fs from "node:fs";
-import { createDocument, editDocument, AgentWriteError } from "../../src/agent/write";
+import { createDocument, editDocument, AgentWriteError } from "../../src/assistant/write";
 
 async function tempVault(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), "dome-agent-write-"));

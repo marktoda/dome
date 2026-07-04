@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { MockLanguageModelV3 } from "ai/test";
-import { runAgent } from "../../src/agent/agent";
+import { runAgent } from "../../src/assistant/agent";
 import { mkdtempSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";

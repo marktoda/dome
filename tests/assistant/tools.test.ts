@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import git from "isomorphic-git";
 import fs from "node:fs";
-import { buildAgentTools, type AgentWriteContext } from "../../src/agent/tools";
-import type { Citation, AgentChange } from "../../src/agent/types";
+import { buildAgentTools, type AgentWriteContext } from "../../src/assistant/tools";
+import type { Citation, AgentChange } from "../../src/assistant/types";
 
 // Real VaultViewResult shape: {kind: "ok", structured: {name, schema, data}, views, brokerDiagnostics}
 // Real query structured.data shape (dome.search.query/v1):

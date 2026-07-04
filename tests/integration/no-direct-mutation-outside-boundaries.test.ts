@@ -38,7 +38,7 @@ const ALLOWED_FILES = new Set([
   // markdown file and land it as an ordinary human commit via
   // commitSingleFileOnHead — exactly like `dome capture`. Same boundary class
   // as capture.ts; the daemon constructs the Proposal from the branch drift.
-  "src/agent/write.ts",
+  "src/assistant/write.ts",
   // The explicit adopted-ref divergence recovery chokepoint: moves
   // refs/dome/adopted/<branch> (with a refs/dome/backup/ copy first) via the
   // src/git ref helpers after the user confirms a history rewrite. The only

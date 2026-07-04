@@ -1,4 +1,4 @@
-// src/agent/types.ts
+// src/assistant/types.ts
 //
 // Types for the agent backend (companion entrypoint).
 //

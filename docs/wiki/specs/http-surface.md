@@ -86,6 +86,8 @@ One vault per process.
 | `POST /transcribe` audio body | STT step: shell command or OpenAI-compatible cloud endpoint (`capture` capability; 501 when unconfigured) | `dome.transcribe/v1` `{text}` |
 | `GET /recents` | recent vault changes (`read` capability) | `dome.recents/v1` `{count, entries}` |
 
+The `/agent` and `/agent/stream` routes are backed by the interactive assistant (`src/assistant/`) — a consumer surface distinct from the `dome.agent` background processor bundle that runs inside the garden phase.
+
 Errors are JSON envelopes (`{status: "error", error, message}`) with honest
 HTTP codes: 400 usage, 401 auth, 404 missing, 409 unworkable git state,
 413 oversized body, 503 adopted-ref churn, 500 the rest.

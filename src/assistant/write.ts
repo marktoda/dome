@@ -1,4 +1,4 @@
-// src/agent/write.ts
+// src/assistant/write.ts
 //
 // The hosted agent's vault write path. Mirrors `dome capture` (src/surface/capture.ts):
 // write one markdown file into the working tree and land it as an ordinary human

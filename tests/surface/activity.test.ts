@@ -155,8 +155,8 @@ describe("stripDomeTrailers — agent trailer", () => {
   test("a body consisting solely of Dome-Agent renders empty after stripping", async () => {
     // Smoke-check: agent commits have a body of exactly "Dome-Agent: <model>";
     // that line must not leak into `dome log` output. Build the commit with
-    // core helpers only — no import from src/agent/ — so the surface layer
-    // stays free of agent-layer dependencies.
+    // core helpers only — no import from src/assistant/ — so the surface layer
+    // stays free of assistant-layer dependencies.
     const dir = mkdtempSync(join(tmpdir(), "dome-activity-agent-"));
     await import("isomorphic-git").then(async (mod) => {
       const git = mod.default;

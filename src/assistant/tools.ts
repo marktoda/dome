@@ -1,4 +1,4 @@
-// src/agent/tools.ts
+// src/assistant/tools.ts
 //
 // Vault tools for the agent backend, expressed as a Vercel AI SDK
 // tool set (Record<string, Tool>). The AI SDK runs each tool's `execute` during

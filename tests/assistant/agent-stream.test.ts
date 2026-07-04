@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
-import { runAgentStream } from "../../src/agent/agent";
+import { runAgentStream } from "../../src/assistant/agent";
 
 function fakeVault() {
   return {

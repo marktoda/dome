@@ -1,4 +1,4 @@
-// src/agent/agent.ts
+// src/assistant/agent.ts
 //
 // Orchestration entry-point for the agent backend.
 //
