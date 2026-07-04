@@ -214,7 +214,7 @@ const HEALTH_PROBES: ReadonlyArray<HealthProbe> = [
       .map(stuckPendingOutboxFinding),
   // Self-referential orphan containment (Task 4b): the run.orphan finding is a
   // recovery surface, so it excludes the dome.health recovery processors' own
-  // minute-cadence runs — otherwise the orphan-run detector raises a finding
+  // 5-minute-cadence runs — otherwise the orphan-run detector raises a finding
   // about itself. A genuinely stuck health run is still visible via
   // `dome inspect orphan-runs` (which calls orphanRuns unfiltered).
   (c) =>

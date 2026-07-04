@@ -6,7 +6,7 @@ processors:
     phase: garden
     triggers:
       - kind: schedule
-        cron: "* * * * *"
+        cron: "*/5 * * * *"
     capabilities:
       - kind: read
         paths: ["**"]
@@ -32,7 +32,7 @@ processors:
     phase: garden
     triggers:
       - kind: schedule
-        cron: "* * * * *"
+        cron: "*/5 * * * *"
     capabilities:
       - kind: quarantine.read
       - kind: question.ask
@@ -55,7 +55,7 @@ processors:
     phase: garden
     triggers:
       - kind: schedule
-        cron: "* * * * *"
+        cron: "*/5 * * * *"
     capabilities:
       - kind: run.read
         statuses: ["running"]

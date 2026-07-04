@@ -59,7 +59,7 @@ export function buildOperationalQueryView(opts: {
         // `ctx.operational.orphanRuns()` feeds the dome.health orphan-run
         // recovery processor, so it excludes the recovery processors' own
         // runs — the detector must not raise self-referential questions about
-        // its minute-cadence runs (Task 4b).
+        // its 5-minute-cadence runs (Task 4b).
         orphanRuns(
           opts.ledger,
           normalizeOrphanRunAgeMs(filter?.runningOlderThanMs),

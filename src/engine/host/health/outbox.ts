@@ -70,7 +70,7 @@ export function stuckPendingOutboxFinding(row: OutboxRow): HealthFinding {
  * keeps re-failing on re-emit, not a fresh transient. The observable is enqueue
  * age: the row resets `attempts`/`status` on each recovery retry but never
  * `enqueued_at`, so a row whose `enqueuedAt` is older than the recurrence
- * window has survived its retry backoff plus a round of the minute-cadence
+ * window has survived its retry backoff plus a round of the 5-minute-cadence
  * dome.health recovery loop and is still failing — that is the
  * fix-the-command signal. A freshly-failed row stays the per-row
  * `outbox.failed` retry-or-abandon question (the normal transient path).
