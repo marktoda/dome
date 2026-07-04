@@ -1,7 +1,7 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-06-12
+updated: 2026-07-04
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
@@ -32,7 +32,7 @@ This is correctness-preserving by design (per [[wiki/invariants/ALL_MUTATION_GOE
 - **Run a compiler host while editing.** For early dogfood, that can be a foreground `dome serve` terminal in the Claude Code session. For users who want continuous compilation, wrap `dome serve` in launchd / systemd. Cost stays bounded because each Proposal stays small — the adopted ref advances frequently, leaving no pending range.
 - **Use `dome status`** to surface the adoption snapshot at any time — branch / HEAD / adopted / pending commits / dirty-tree state / pending outbox / runs summary. The pending-commits count tells the user how much catch-up the next sync will do.
 - **Use `dome status`** to surface the pending-commits count and drift state — the v1.0 canonical answer. A future `dome inspect drift-age` subject (v1.x, reads the `.dome/state/last-reconcile-mtime.txt` marker; supersedes the retired `dome doctor --time-since-reconcile` flag) surfaces drift age in CI / scripts / habitual checks once the marker semantics are settled.
-- **Cap intake-processor LLM cost** via the `model.invoke.maxDailyCostUsd` capability grant in `<vault>/.dome/config.yaml`. The `dome.agent` LLM processors default to $5/day each; once exceeded, that processor's `modelInvoke` calls are denied for the rest of the day. Accumulated files re-process the next day. Configurable per-vault per [[wiki/specs/capabilities]] §"model.invoke".
+- **Cap intake-processor LLM cost** via the `model.invoke.maxDailyCostUsd` capability grant in `<vault>/.dome/config.yaml`. The shipped default is a **$2.00/day** vault-wide pool shared across the whole `dome.agent` bundle (product-review-3 Task 17 — the guardrail that replaced shipping the bundle disabled); once exceeded, further `modelInvoke` calls across every `dome.agent` processor are denied for the rest of the day. Per-processor declared caps in the manifest (ingest/brief $5, consolidate/sweep $10 — [[wiki/specs/autonomous-agents]]) are narrower sub-limits within that pool and are almost never the binding constraint at the shipped default. Accumulated files re-process the next day. Configurable per-vault per [[wiki/specs/capabilities]] §"model.invoke".
 
 **What NOT to do:**
 

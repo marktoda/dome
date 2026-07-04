@@ -13,7 +13,11 @@ import { viewEffect } from "../../src/core/effect";
 import { defineProcessor } from "../../src/core/processor";
 import { pageTypeDeclaration } from "../../src/page-types";
 import { buildRegistry } from "../../src/processors/registry";
-import { openVaultRuntime } from "../../src/engine/host/vault-runtime";
+import {
+  AGENT_NO_MODEL_PROVIDER_MESSAGE,
+  openVaultRuntime,
+} from "../../src/engine/host/vault-runtime";
+import type { ModelProvider } from "../../src/engine/core/model-invoke";
 
 const roots: string[] = [];
 
@@ -304,6 +308,97 @@ extensions:
       expect(runtimeResult.value.prunedUnknownProcessorQuarantines).toEqual(
         [],
       );
+    } finally {
+      await runtimeResult.value.close();
+    }
+  });
+});
+
+describe("openVaultRuntime agentNoModelProviderWarning", () => {
+  function agentBundleConfig(enabled: boolean): string {
+    return `
+extensions:
+  dome.agent:
+    enabled: ${enabled}
+    grant: {}
+`;
+  }
+
+  test("dome.agent enabled, no model provider wired -> loud warning", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-runtime-agent-warn-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(join(root, ".dome", "config.yaml"), agentBundleConfig(true), "utf8");
+
+    const registryResult = buildRegistry([]);
+    expect(registryResult.ok).toBe(true);
+    if (!registryResult.ok) return;
+
+    const runtimeResult = await openVaultRuntime({
+      vaultPath: root,
+      registry: registryResult.value,
+      extensions: [],
+      processorVersions: [],
+    });
+    expect(runtimeResult.ok).toBe(true);
+    if (!runtimeResult.ok) return;
+    try {
+      expect(runtimeResult.value.agentNoModelProviderWarning).toEqual({
+        code: "agent.no-model-provider",
+        message: AGENT_NO_MODEL_PROVIDER_MESSAGE,
+      });
+    } finally {
+      await runtimeResult.value.close();
+    }
+  });
+
+  test("dome.agent enabled with a model provider wired -> no warning", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-runtime-agent-warn-provided-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(join(root, ".dome", "config.yaml"), agentBundleConfig(true), "utf8");
+
+    const registryResult = buildRegistry([]);
+    expect(registryResult.ok).toBe(true);
+    if (!registryResult.ok) return;
+
+    const stubProvider: ModelProvider = async () => ({ text: "stub" });
+    const runtimeResult = await openVaultRuntime({
+      vaultPath: root,
+      registry: registryResult.value,
+      extensions: [],
+      processorVersions: [],
+      modelProvider: stubProvider,
+    });
+    expect(runtimeResult.ok).toBe(true);
+    if (!runtimeResult.ok) return;
+    try {
+      expect(runtimeResult.value.agentNoModelProviderWarning).toBeNull();
+    } finally {
+      await runtimeResult.value.close();
+    }
+  });
+
+  test("dome.agent disabled, no model provider wired -> no warning", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-runtime-agent-warn-disabled-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(join(root, ".dome", "config.yaml"), agentBundleConfig(false), "utf8");
+
+    const registryResult = buildRegistry([]);
+    expect(registryResult.ok).toBe(true);
+    if (!registryResult.ok) return;
+
+    const runtimeResult = await openVaultRuntime({
+      vaultPath: root,
+      registry: registryResult.value,
+      extensions: [],
+      processorVersions: [],
+    });
+    expect(runtimeResult.ok).toBe(true);
+    if (!runtimeResult.ok) return;
+    try {
+      expect(runtimeResult.value.agentNoModelProviderWarning).toBeNull();
     } finally {
       await runtimeResult.value.close();
     }

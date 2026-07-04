@@ -142,7 +142,7 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
     }),
     extension(
       "dome.agent",
-      false,
+      true,
       {
         // core.md is deliberately read-only here (the canonical propose-only
         // grant shape): agents read core memory every run but never
@@ -186,7 +186,14 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
         // dome.agent.preference-signals; the model processors declare no
         // graph.write (MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS).
         "graph.write": ["dome.preference.*"],
-        "model.invoke": Object.freeze({ maxDailyCostUsd: 5 }),
+        // The shipped guardrail now that the bundle ships enabled by default
+        // (product-review-3 Task 17 — "the brain ships on"): a modest
+        // extension-wide daily pool, not a disabled bundle, protects model
+        // dollars. Per-processor declared caps in manifest.yaml (ingest/brief
+        // $5, consolidate/sweep $10) are unchanged and now sit above this
+        // pool, so $2/day is the binding limit across the whole bundle until
+        // an owner deliberately raises this grant.
+        "model.invoke": Object.freeze({ maxDailyCostUsd: 2 }),
         "question.ask": true,
       },
       {

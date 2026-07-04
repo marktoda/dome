@@ -6,9 +6,12 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { stringify as stringifyYaml } from "yaml";
+
 import { runInspect, INSPECT_COST_SCHEMA } from "../../../src/cli/commands/inspect";
 import { runSync } from "../../../src/cli/commands/sync";
 import {
+  defaultConfigRecord,
   defaultConfigYaml,
 } from "../../../src/cli/default-vault-config";
 
@@ -350,9 +353,17 @@ describe("runInspect", () => {
     const f = await makeFixture();
     fixtures.push(f);
     await mkdir(join(f.vaultPath, ".dome"), { recursive: true });
+    // dome.agent ships enabled by default (product-review-3 Task 17); flip
+    // it off explicitly here so the fixture still exercises the
+    // disabled-bundle manifest-inspection path this test is about (metadata
+    // surfaced straight from the manifest, no processor module imported).
+    const rec = structuredClone(defaultConfigRecord()) as {
+      extensions: Record<string, { enabled: boolean }>;
+    };
+    rec.extensions["dome.agent"]!.enabled = false;
     await writeFile(
       join(f.vaultPath, ".dome", "config.yaml"),
-      defaultConfigYaml(),
+      stringifyYaml(rec),
     );
 
     expect(
@@ -447,6 +458,60 @@ describe("runInspect", () => {
         model: "disabled-no-provider",
       }),
     ]);
+  });
+
+  test("subject 'bundles' shows the shipped default: dome.agent enabled, granted, no provider (Task 17)", async () => {
+    // The literal `defaultConfigYaml()` a fresh `dome init` writes now ships
+    // dome.agent enabled: true — the bundle loads and its model.invoke grant
+    // resolves, but a scratch vault has no model_provider configured, so
+    // `dome inspect bundles` must report "granted-no-provider", not the old
+    // shipped "disabled-no-provider" shape.
+    const f = await makeFixture();
+    fixtures.push(f);
+    await mkdir(join(f.vaultPath, ".dome"), { recursive: true });
+    await writeFile(
+      join(f.vaultPath, ".dome", "config.yaml"),
+      defaultConfigYaml(),
+    );
+
+    expect(
+      await runInspect({
+        subject: "bundles",
+        vault: f.vaultPath,
+        json: true,
+      }),
+    ).toBe(0);
+    const bundles = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly bundle: string;
+      readonly status: string;
+      readonly loaded: boolean;
+      readonly model_processors: number;
+      readonly model: string;
+    }>;
+    const agent = bundles.find((row) => row.bundle === "dome.agent");
+    expect(agent).toEqual(
+      expect.objectContaining({
+        status: "enabled",
+        loaded: true,
+        model_processors: 4,
+        model: "granted-no-provider",
+      }),
+    );
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "processors",
+        vault: f.vaultPath,
+        json: true,
+      }),
+    ).toBe(0);
+    const processors = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly processor: string;
+    }>;
+    expect(
+      processors.some((row) => row.processor.startsWith("dome.agent.")),
+    ).toBe(true);
   });
 
   test("--model filter is only valid for bundle and processor metadata", async () => {

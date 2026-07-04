@@ -122,6 +122,15 @@ const EMPTY_EXTERNAL_HANDLERS: ReadonlyMap<string, ExternalHandler> = new Map();
 const EMPTY_GRANT_ENTRY_REQUIREMENTS: ReadonlyArray<ManifestGrantEntryRequirement> =
   Object.freeze([]);
 
+/**
+ * The exact operator-facing message for `agentNoModelProviderWarning`
+ * (product-review-3 Task 17 — "loud when starved"). Shared as a constant so
+ * the host-open computation and its callers (and tests) never drift on
+ * wording.
+ */
+export const AGENT_NO_MODEL_PROVIDER_MESSAGE =
+  "dome.agent is enabled but no model provider is configured; run `dome init --with-model-provider` or set enabled: false";
+
 // ----- Public types ---------------------------------------------------------
 
 /**
@@ -188,9 +197,30 @@ export type VaultRuntime = {
    * reads this and logs it loudly.
    */
   readonly prunedUnknownProcessorQuarantines: ReadonlyArray<string>;
+  /**
+   * The runtime-complement to `dome doctor`'s `model.provider-missing`
+   * config-time probe (product-review-3 Task 17 — "loud when starved"):
+   * non-null exactly when the `dome.agent` extension is enabled for this
+   * open and no model provider was configured or injected. Computed once
+   * per `openVaultRuntime` call — engine/host code must not console.log
+   * itself, so a CLI host-startup surface (`dome serve`) reads this and
+   * logs it loudly, the same shape as `prunedUnknownProcessorQuarantines`.
+   * The actual silent no-op this replaces lives one layer down, inside
+   * `dome.agent`'s own `agentPreamble` helper (every garden-LLM processor
+   * calls it and no-ops on an absent model step) — that swallow point is
+   * per-processor-invocation, not per-host-start, so it is not where this
+   * field is computed; see the Task 17 report for the fuller discussion.
+   */
+  readonly agentNoModelProviderWarning: AgentNoModelProviderWarning | null;
   readonly modelProvider?: ModelProvider;
   readonly modelStepProvider?: ModelStepProvider;
   readonly close: () => Promise<void>;
+};
+
+/** See `VaultRuntime.agentNoModelProviderWarning`. */
+export type AgentNoModelProviderWarning = {
+  readonly code: "agent.no-model-provider";
+  readonly message: string;
 };
 
 /**
@@ -633,6 +663,21 @@ function buildVaultRuntime(input: {
     executionState,
     queryQuestions: (filter) => queryQuestionRecords(projectionDb, filter),
   });
+  // Once-per-host-start loud complement to the silent no-op (Task 17):
+  // dome.agent enabled for this open, but no model provider wired in
+  // (neither `opts.modelProvider`/`opts.modelStepProvider` nor a
+  // `model_provider:` config command resolved to one). `isExtensionEnabled`
+  // already covers both the config-found and compatibility-all-active
+  // (no `.dome/config.yaml`) cases.
+  const agentNoModelProviderWarning: AgentNoModelProviderWarning | null =
+    policy.isExtensionEnabled("dome.agent") &&
+    settings.modelProvider === undefined
+      ? Object.freeze({
+          code: "agent.no-model-provider" as const,
+          message: AGENT_NO_MODEL_PROVIDER_MESSAGE,
+        })
+      : null;
+
   const processorRuntime = buildRuntime({
     registry: resolved.registry,
     resolveGrants: settings.resolveGrants,
@@ -676,6 +721,7 @@ function buildVaultRuntime(input: {
     operationalQueryView,
     quarantineChangedFlag,
     prunedUnknownProcessorQuarantines,
+    agentNoModelProviderWarning,
     ...(settings.modelProvider !== undefined
       ? { modelProvider: settings.modelProvider }
       : {}),

@@ -270,7 +270,10 @@ describe("runInit", () => {
         defaultModelProviderConfig("anthropic"),
       );
       const extensions = record(parsedConfig.extensions);
-      expect(record(extensions["dome.agent"]).enabled).toBe(false);
+      // dome.agent ships enabled by default (product-review-3 Task 17);
+      // --with-model-provider wires the provider the already-enabled agent
+      // needs, it does not itself flip enablement.
+      expect(record(extensions["dome.agent"]).enabled).toBe(true);
 
       const providerBody = await readFile(providerPath, "utf8");
       expect(providerBody.startsWith("#!/usr/bin/env bun")).toBe(true);
@@ -753,7 +756,12 @@ describe("runInit", () => {
       expect(refreshed.extensions["dome.daily"]?.grant?.["patch.auto"])
         .toEqual(["wiki/**/*.md", "notes/*.md"]);
       expect(refreshed.extensions["dome.health"]?.enabled).toBe(false);
-      expect(refreshed.extensions["dome.agent"]?.enabled).toBe(false);
+      // dome.agent was absent from the hand-written config above, so refresh
+      // adds the whole stanza from the current shipped default — which now
+      // ships enabled: true (product-review-3 Task 17), same as dome.daily
+      // above. dome.health, by contrast, was explicitly written `enabled:
+      // false` already and refresh must leave an explicit value alone.
+      expect(refreshed.extensions["dome.agent"]?.enabled).toBe(true);
       expect(refreshed.extensions["custom.local"]?.grant).toBeUndefined();
       expect(refreshed.engine.max_iterations).toBe(25);
 

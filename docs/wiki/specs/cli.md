@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-12
+updated: 2026-07-04
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -215,14 +215,20 @@ The shipped initialization steps:
    `ANTHROPIC_OUTPUT_COST_PER_MTOK` are further env overrides. The template
    reports `costUsd` from token usage for known model families (built-in
    price table, env-overridable), which is what makes the engine's
-   `maxDailyCostUsd` caps effective by default. It does not enable
-   `dome.agent` or any other model-capable bundle. Enabling model-backed
-   loops remains an explicit config choice. Re-running
-   `dome init --with-model-provider anthropic` on an existing vault is the
-   supported wiring path for an already-initialized vault: the provider file
-   and the `model_provider` stanza are each first-write-only, so the re-run
-   adds whichever piece is missing and never overwrites a hand-edited
-   provider or stanza.
+   `maxDailyCostUsd` caps effective by default. It does not itself change
+   `dome.agent`'s enablement — that bundle ships `enabled: true` unconditionally
+   (product-review-3 Task 17: the brain is on by default, guarded by the
+   shipped `$2.00/day` model-spend cap rather than by silence). Running
+   `dome init` **without** `--with-model-provider` leaves `dome.agent`
+   enabled with no model provider configured, which surfaces as a loud
+   `agent.no-model-provider` warning once `dome serve` opens its runtime
+   (§"`dome serve`") — never a silent no-op. `--with-model-provider` wires
+   the provider the already-enabled agent processors need to actually run.
+   Re-running `dome init --with-model-provider anthropic` on an existing
+   vault is the supported wiring path for an already-initialized vault: the
+   provider file and the `model_provider` stanza are each first-write-only,
+   so the re-run adds whichever piece is missing and never overwrites a
+   hand-edited provider or stanza.
 4b. When `--with-source <kind>` is supplied (repeatable; shipped kinds:
    `calendar`, `slack` — any other kind is rejected with exit 64), scaffolds
    each requested source adapter: copies the shipped fetch template from
@@ -2159,7 +2165,7 @@ Runs the local compiler host — the canonical write path per [[v1]] §13.2 ("Cl
 
 Composition (v1.0):
 
-1. `openVaultRuntime({vaultPath, bundlesRoot, additionalBundlesRoots})` opens the operational databases (`projection.db`, `answers.db`, `outbox.db`, `runs.db`) and loads extension bundles from the resolved root set (SDK-shipped `assets/extensions/` by default, plus vault-local `.dome/extensions/` when present; `--bundles-root` replaces the set).
+1. `openVaultRuntime({vaultPath, bundlesRoot, additionalBundlesRoots})` opens the operational databases (`projection.db`, `answers.db`, `outbox.db`, `runs.db`) and loads extension bundles from the resolved root set (SDK-shipped `assets/extensions/` by default, plus vault-local `.dome/extensions/` when present; `--bundles-root` replaces the set). Two host-open findings are logged loudly right after open, regardless of `--quiet`: a pruned-quarantine line (a quarantine row for a processor id no active bundle registers, per the registry-orphan GC) and, when `dome.agent` is enabled with no model provider configured or injected, the one-line `agent.no-model-provider` warning ("dome.agent is enabled but no model provider is configured; run `dome init --with-model-provider` or set enabled: false") — the runtime complement to `dome doctor`'s `model.provider-missing` config-time probe (product-review-3 Task 17).
 2. Resolves the initial branch via `getCurrentBranch`. A detached HEAD is a startup error (the adopted-ref substrate requires a branch).
 3. Polls `refs/heads/<branch>` every `--poll-interval-ms <n>` (default 500ms). On each tick, compares HEAD to `refs/dome/adopted/<branch>`:
    - If the adopted ref is uninitialized: runs an empty-diff `(HEAD, HEAD)` adoption to initialize it.
@@ -2188,8 +2194,11 @@ Composition (v1.0):
 
 `--quiet` suppresses routine text output: startup banner, successful adoption
 summaries, operational-work summaries, and shutdown line. It still reports
-startup failures, detached-HEAD pauses, blocked adoption diagnostics, and
-unexpected tick errors. `--quiet` and `--verbose` are mutually exclusive.
+startup failures, detached-HEAD pauses, blocked adoption diagnostics,
+unexpected tick errors, and the two host-open findings named in step 1 above
+(pruned quarantine state, `agent.no-model-provider`) — a starved or
+recovering bundle is never silent, `--quiet` or not. `--quiet` and
+`--verbose` are mutually exclusive.
 
 `--daemon` starts the same compiler host in a detached background process and
 returns after the heartbeat proves the child is running. The child writes its

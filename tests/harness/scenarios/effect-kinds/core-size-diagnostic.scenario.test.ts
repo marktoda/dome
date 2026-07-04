@@ -32,6 +32,7 @@ scenario(
         "dome.graph",
         "dome.daily",
         "dome.claims",
+        "dome.agent",
         "dome.search",
         "dome.sources",
         "dome.health",

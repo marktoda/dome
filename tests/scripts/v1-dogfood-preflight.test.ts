@@ -331,6 +331,28 @@ async function makeInitializedVault(): Promise<string> {
   fixtures.push(vaultPath);
   const init = await runDome(["init", vaultPath, "--with-model-provider", "anthropic"]);
   expect(init.exitCode).toBe(0);
+
+  // dome.agent ships enabled by default (product-review-3 Task 17). This
+  // fixture stands in for "just initialized, not yet set up for capture
+  // dogfood" — the pre-Task-17 shipped default — so explicitly disable it
+  // here; `makeIntakeReadyVault` below flips it back on for the tests that
+  // want an intake-ready vault. Disabling here also keeps this baseline
+  // vault's sync from attempting a real model call against the freshly
+  // copied (real, keyless) anthropic.ts template.
+  const configPath = join(vaultPath, ".dome", "config.yaml");
+  const configBody = readFileSync(configPath, "utf8");
+  const disabled = configBody.replace(
+    /(^\s+dome\.agent:\s*\n\s+enabled:\s*)true/m,
+    "$1false",
+  );
+  expect(disabled).not.toBe(configBody);
+  await writeFile(configPath, disabled, "utf8");
+  await commit({
+    path: vaultPath,
+    message: "disable dome.agent for the preflight baseline fixture\n",
+    files: [".dome/config.yaml"],
+  });
+
   const sync = await runDome(["sync", "--vault", vaultPath, "--json"]);
   expect(sync.exitCode).toBe(0);
   expect(sync.stderr).toBe("");

@@ -233,6 +233,16 @@ export async function runServe(
       `dome serve: pruned quarantine state for ${runtimeResult.value.prunedUnknownProcessorQuarantines.length} unregistered processor(s) (bundle no longer installed): ${runtimeResult.value.prunedUnknownProcessorQuarantines.join(", ")}`,
     );
   }
+  // The no-provider diagnostic (product-review-3 Task 17 — "loud when
+  // starved"): dome.agent enabled with no model provider wired used to be a
+  // silent no-op every time a garden-LLM processor fired. Logged once here
+  // at host-open time, regardless of `--quiet`, same posture as the
+  // pruned-quarantine line above — a starved brain is never silent.
+  if (runtimeResult.value.agentNoModelProviderWarning !== null) {
+    console.error(
+      `dome serve: ${runtimeResult.value.agentNoModelProviderWarning.message}`,
+    );
+  }
 
   // ----- 4. Print startup banner --------------------------------------------
   // The branch label is derived from the startup drift result. `in-sync`,
@@ -736,6 +746,9 @@ async function reloadServeRuntime(input: {
     console.error(
       `dome serve: pruned quarantine state for ${next.value.prunedUnknownProcessorQuarantines.length} unregistered processor(s) (bundle no longer installed): ${next.value.prunedUnknownProcessorQuarantines.join(", ")}`,
     );
+  }
+  if (next.value.agentNoModelProviderWarning !== null) {
+    console.error(`dome serve: ${next.value.agentNoModelProviderWarning.message}`);
   }
   if (!input.quiet) {
     console.log("dome serve: reloaded runtime configuration");
