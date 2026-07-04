@@ -62,7 +62,7 @@ One-time `dome repair run-ledger --older-than-days 30 --apply --vacuum` with the
 ## Testing
 
 - Predicate: newest run per processor is never eligible; newest schedule-triggered run per processor is never eligible even when older than cutoff; an older schedule row WITH a newer schedule row IS eligible; failed/timed_out/running rows remain ineligible regardless of age; `capability_uses` children of pruned rows go, others stay.
-- Config: `ledger.retention_days` parses (absent → forever; malformed → degrade-not-crash with a warning finding, matching the config-parsing house style); template config parses with 30; engine default has no retention.
+- Config: `ledger.retention_days` parses (absent → forever; malformed → a config parse error at vault open, matching the strict house style of the sibling `engine:` sections); template config parses with 30; engine default has no retention.
 - Serve integration: with retention configured and eligible rows present, the daemon's first operational tick prunes and logs; a second tick within 24 h does not re-run the pass.
 - Doctor: oversized file → warning finding with both remedies; small file → no finding.
 
