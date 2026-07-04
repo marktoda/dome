@@ -24,7 +24,7 @@ export const DEFAULT_PENDING_OUTBOX_THRESHOLD_MS = 30 * 60 * 1000;
  * A failed outbox row whose enqueue age exceeds this window is treated as a
  * recurring (fix-the-command) failure rather than a fresh transient. One hour
  * is comfortably past the dispatch retry backoff plus a round of the
- * minute-cadence dome.health recovery loop, so a row still failing this long
+ * 5-minute-cadence dome.health recovery loop, so a row still failing this long
  * after first enqueue is not a blip.
  */
 export const DEFAULT_RECURRING_OUTBOX_FAILURE_THRESHOLD_MS = 60 * 60 * 1000;
@@ -37,7 +37,7 @@ export const DEFAULT_RECURRING_OUTBOX_FAILURE_THRESHOLD_MS = 60 * 60 * 1000;
 export const DEFAULT_RECURRING_TIMEOUT_THRESHOLD = 2;
 /**
  * How many recent runs the recurring-timeout probe scans. Bounded so the
- * health tick stays cheap; large enough to catch a minute-cadence loop.
+ * health tick stays cheap; large enough to catch a 5-minute-cadence loop.
  */
 export const RECURRING_TIMEOUT_SCAN_LIMIT = 200;
 export const SQLITE_BUSY_TIMEOUT_MS = 5_000;

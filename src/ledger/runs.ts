@@ -1115,9 +1115,9 @@ export function latestScheduleRunStartedAt(
 /**
  * Processor-id prefixes the orphan-run RECOVERY path excludes from detection
  * to contain self-referential growth: the dome.health recovery processors run
- * on a minute cron and their own runs can go orphan, so detecting them would
+ * on a 5-minute cron and their own runs can go orphan, so detecting them would
  * mint a fresh "mark this orphan failed?" question about the detector itself
- * every minute. Inspection surfaces deliberately do NOT apply this, so a
+ * every 5 minutes. Inspection surfaces deliberately do NOT apply this, so a
  * genuinely stuck health run remains operator-visible.
  */
 export const ORPHAN_RECOVERY_EXCLUDED_PROCESSOR_PREFIXES = Object.freeze([
@@ -1132,7 +1132,7 @@ export function orphanRuns(
     /**
      * Processor-id prefixes to exclude. The RECOVERY surfaces pass
      * `["dome.health."]` so the orphan-run detector never raises a
-     * self-referential question about its OWN minute-cadence runs (the
+     * self-referential question about its OWN 5-minute-cadence runs (the
      * dome.health recovery processors are the machinery doing the detecting).
      * Raw callers (e.g. `dome inspect orphan-runs`) pass nothing, so a
      * genuinely stuck health run stays visible to an operator — the exclusion
