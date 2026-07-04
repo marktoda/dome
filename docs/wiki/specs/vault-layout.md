@@ -523,8 +523,9 @@ JSON on stdout (for request/v1: `text`, optional `model`, optional `costUsd`).
 The scaffold expects `ANTHROPIC_API_KEY` at runtime (default model
 `claude-sonnet-4-6`, overridable via the envelope or `ANTHROPIC_MODEL`) and
 keeps vendor API wiring outside the SDK core.
-It does not enable `dome.agent`; model-capable bundles still require explicit
-`extensions.<bundle>.enabled: true` plus effective `model.invoke` grants.
+`dome.agent` ships enabled by default (with a $2/day `model.invoke` cap as
+the guardrail); wiring the provider is what makes it act — until then the
+host warns `agent.no-model-provider` at startup.
 
 Vault identity is currently git-native (`HEAD`, current branch, and
 `refs/dome/adopted/<branch>`), not a `vault:` config block. Axiom-tier
