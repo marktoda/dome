@@ -74,6 +74,12 @@ const reportCard = defineProcessorImplementation({
     const date = localDateParts(now);
     const windowEnd = formatDate(date);
     const todayPath = dailyPath(date, settings);
+    // Two deliberate window semantics coexist: runs/questions use an exact
+    // 168-hour ISO-instant bound (windowStartIso — the ledger rows carry
+    // timestamps), while retrieval misses use the trailing 7 vault-local
+    // calendar dates (windowDateSet — Task 12's entries carry only a
+    // YYYY-MM-DD). Both derive from the same firedAt, so re-renders stay
+    // byte-identical.
     const windowStartIso = new Date(
       now.getTime() - REPORT_CARD_WINDOW_DAYS * DAY_MS,
     ).toISOString();

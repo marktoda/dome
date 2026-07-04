@@ -215,7 +215,7 @@ describe("buildOperationalQueryView — runs", () => {
       markRunning(fixtures.ledger, oldId, new Date("2026-06-01T00:00:00.000Z"));
       markSucceeded(fixtures.ledger, {
         id: oldId,
-        effectHashes: [],
+        effectHashes: ["sha-effect-1", "sha-effect-2"],
         costUsd: 0.01,
         durationMs: 100,
         outputCommit: null,
@@ -260,11 +260,16 @@ describe("buildOperationalQueryView — runs", () => {
       expect(sinceRows[0]?.status).toBe("failed");
       expect(sinceRows[0]?.durationMs).toBe(250);
       expect(sinceRows[0]?.costUsd).toBeNull();
+      // A run that never reached succeeded has no effect hashes → count 0.
+      expect(sinceRows[0]?.effectCount).toBe(0);
 
       const oldRow = all.find((row) => row.id === oldId);
       expect(oldRow?.status).toBe("succeeded");
       expect(oldRow?.costUsd).toBe(0.01);
       expect(oldRow?.durationMs).toBe(100);
+      // effectCount is the derived length of the ledger's effect hashes —
+      // the no-op discriminator (0 on a succeeded run = genuine no-op).
+      expect(oldRow?.effectCount).toBe(2);
     } finally {
       fixtures.close();
     }

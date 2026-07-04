@@ -146,7 +146,9 @@ Permits emitting `QuarantineRecoveryEffect` for the listed actions. Today the on
 
 Permits reading run-ledger rows through two accessors: `ctx.operational.orphanRuns()`
 (running rows old enough to be considered stuck) and `ctx.operational.runs(filter?)`
-(any run row — `id`, `processorId`, `status`, `costUsd`, `durationMs`, `startedAt`,
+(any run row — `id`, `processorId`, `status`, `costUsd`, `durationMs`,
+`effectCount` (derived `effectHashes.length`; the raw sha256s stay internal to
+the ledger — `0` on a `succeeded` run means a genuine no-op), `startedAt`,
 `finishedAt`, etc. — optionally bounded by `{ startedSince: string /* ISO */ }`).
 The runtime exposes both only to non-adoption processors whose declaration and
 vault grant both include `run.read`; the effective `statuses` scope (declared ∩

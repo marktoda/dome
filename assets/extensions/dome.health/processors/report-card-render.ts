@@ -7,11 +7,12 @@
 // The processor (`report-card.ts`) owns the reads and the single PatchEffect.
 //
 // "Productive outcome" is defined crisply and deterministically as a run that
-// reached `succeeded`. The run ledger records per-run effect hashes, but the
-// operational read surface (`ctx.operational.runs`, gated by `run.read`) does
-// NOT expose them, so a genuine no-op (a succeeded run that emitted zero
-// effects) is indistinguishable here from a productive one and is counted as
-// productive. This is stated in the rendered card and in
+// reached `succeeded` AND emitted at least one effect (`effectCount > 0` —
+// the operational run row's derived view of the ledger's per-run effect
+// hashes). A succeeded zero-effect run is a genuine no-op: it counts as a run
+// but never as productive, which is what lets the "possibly idle" section
+// catch the dominant no-op-churn case (a deterministic indexer succeeding 200
+// times a week while doing nothing). Stated in the rendered card and in
 // [[wiki/specs/daily-surface]] §"Report card".
 
 import { generatedBlockMarkers } from "../../../../src/core/generated-block";
@@ -57,6 +58,8 @@ export type ReportCardRunRow = {
   readonly processorId: string;
   readonly status: ReportCardRunStatus;
   readonly costUsd: number | null;
+  /** Effects the run emitted; 0 on a succeeded run = a genuine no-op. */
+  readonly effectCount: number;
   /** Skipped-run error JSON; carries `processor.quarantined` for quarantines. */
   readonly error: string | null;
 };
@@ -109,7 +112,8 @@ const QUARANTINE_MARKER = "processor.quarantined";
  * (deterministic order). Quarantines are `skipped` runs whose error carries
  * the `processor.quarantined` marker (the runtime records a quarantine-gated
  * skip that way); failures are the terminal problem statuses; productive is
- * `succeeded` (see the module header on the no-op caveat).
+ * `succeeded` with at least one emitted effect (a succeeded zero-effect run
+ * is a genuine no-op — see the module header).
  */
 export function aggregateRunStats(
   rows: ReadonlyArray<ReportCardRunRow>,
@@ -135,7 +139,7 @@ export function aggregateRunStats(
     ) {
       stat.quarantines += 1;
     }
-    if (row.status === "succeeded") stat.productive += 1;
+    if (row.status === "succeeded" && row.effectCount > 0) stat.productive += 1;
     stat.costUsd += row.costUsd ?? 0;
     byId.set(row.processorId, stat);
   }
@@ -227,7 +231,7 @@ export function renderReportCard(data: ReportCardData): string {
     "",
     "# Weekly report card",
     "",
-    `_Trailing 7 days ending ${data.windowEnd}. Productive = runs that reached \`succeeded\`; the run ledger's per-run effect counts are not exposed to this processor, so genuine no-ops count as productive._`,
+    `_Trailing 7 days ending ${data.windowEnd}. Productive = \`succeeded\` runs that emitted at least one effect; a succeeded zero-effect run is a no-op — it counts as a run, never as productive._`,
     "",
     "## Per-processor",
     "",

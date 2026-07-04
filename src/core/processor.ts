@@ -588,6 +588,16 @@ export type OperationalRunRow = {
   readonly status: OperationalRunStatus;
   readonly costUsd: number | null;
   readonly durationMs: number | null;
+  /**
+   * How many effects the run emitted — derived from the ledger's per-run
+   * `effectHashes` (`length`; the raw sha256s stay internal to the ledger, a
+   * deliberately narrower exposure). `0` on a `succeeded` run means a genuine
+   * no-op (the processor ran and found nothing to do) — the discriminator
+   * outcome reporting needs (e.g. the weekly report card's productive-outcome
+   * count). Always `0` for runs that never reached `succeeded`
+   * (`markSucceeded` is the only writer of effect hashes).
+   */
+  readonly effectCount: number;
   readonly error: string | null;
   readonly triggerKind: "signal" | "path" | "schedule" | "answer" | "command";
   readonly startedAt: string;

@@ -73,6 +73,24 @@ describe("report-card renderers (pure)", () => {
     expect(b.costUsd).toBeCloseTo(0.75);
   });
 
+  test("a succeeded zero-effect run is a no-op — counted as a run, NOT productive", () => {
+    const stats = aggregateRunStats([
+      run({ processorId: "dome.noop", status: "succeeded", effectCount: 0 }),
+      run({ processorId: "dome.noop", status: "succeeded", effectCount: 0 }),
+      run({ processorId: "dome.noop", status: "succeeded", effectCount: 2 }),
+    ]);
+    expect(stats).toEqual([
+      {
+        processorId: "dome.noop",
+        runs: 3,
+        failures: 0,
+        quarantines: 0,
+        costUsd: 0,
+        productive: 1,
+      },
+    ]);
+  });
+
   test("possiblyIdle: ≥50 runs and zero productive", () => {
     const idle = possiblyIdle([
       { processorId: "dome.busy", runs: 60, failures: 60, quarantines: 0, costUsd: 0, productive: 0 },
@@ -184,6 +202,23 @@ describe("dome.health.report-card (processor run path)", () => {
     );
   });
 
+  test("possibly-idle: ≥50 SUCCEEDED no-op runs (zero effects) DOES flag idle", async () => {
+    // The dominant live-vault case: a deterministic indexer that succeeds on
+    // every fire while emitting nothing. Succeeding is not producing.
+    const runs = Array.from({ length: 60 }, () =>
+      run({ processorId: "dome.graph.indexer", status: "succeeded", effectCount: 0 }),
+    );
+    const { card } = await runReportCard(
+      { [TODAY_PATH]: BASE_DAILY },
+      { runs, questions: [] },
+    );
+    expect(card).toContain("| dome.graph.indexer | 60 | 0 | 0 | 0.00 | 0 |");
+    expect(card).toContain(
+      "- dome.graph.indexer — 60 runs, 0 productive outcomes",
+    );
+    expect(card).not.toContain("_None._");
+  });
+
   test("absent misses file omits the row; present file counts and renders it", async () => {
     const withoutFile = await runReportCard(
       { [TODAY_PATH]: BASE_DAILY },
@@ -278,6 +313,12 @@ function run(input: {
   readonly status: OperationalRunRow["status"];
   readonly costUsd?: number | null;
   readonly error?: string | null;
+  /**
+   * Defaults mirror the ledger: succeeded runs default to 1 emitted effect
+   * (productive), every other status to 0 (markSucceeded is the only effect-
+   * hash writer). Pass 0 explicitly to model a succeeded no-op run.
+   */
+  readonly effectCount?: number;
 }): OperationalRunRow {
   return Object.freeze({
     id: `run-${input.processorId}-${Math.random()}`,
@@ -290,6 +331,7 @@ function run(input: {
     status: input.status,
     costUsd: input.costUsd ?? null,
     durationMs: 100,
+    effectCount: input.effectCount ?? (input.status === "succeeded" ? 1 : 0),
     error: input.error ?? null,
     triggerKind: "schedule",
     startedAt: "2026-05-30T00:00:00.000Z",

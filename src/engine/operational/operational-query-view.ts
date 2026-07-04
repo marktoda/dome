@@ -135,6 +135,9 @@ function toOperationalRunRow(row: RunRow): OperationalRunRow {
     status: row.status,
     costUsd: row.costUsd,
     durationMs: row.durationMs,
+    // Derived count only — the raw effect sha256s stay internal to the
+    // ledger. 0 on a succeeded run = a genuine no-op (see OperationalRunRow).
+    effectCount: row.effectHashes.length,
     error: row.error,
     triggerKind: row.triggerKind,
     startedAt: row.startedAt,

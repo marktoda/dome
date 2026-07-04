@@ -254,7 +254,8 @@ Decisions and Story compression are unaffected in every row — the close does n
 
 **Definitions (crisp + deterministic).**
 
-- **Productive outcome** = a run that reached `succeeded`. The run ledger records per-run effect hashes, but the operational read surface (`ctx.operational.runs`, gated by `run.read`) does not expose them, so a genuine no-op (a succeeded run that emitted zero effects) is indistinguishable here from a productive one and is counted as productive. The rendered card states this in its subtitle.
+- **Productive outcome** = a run that reached `succeeded` AND emitted at least one effect (`effectCount > 0` on the operational run row — the derived view of the ledger's per-run effect hashes, [[wiki/specs/capabilities]] §"`run.read`"). A succeeded zero-effect run is a genuine no-op: it counts as a run, never as productive — this is what lets "Possibly idle" catch a deterministic processor that succeeds hundreds of times a week while doing nothing. The rendered card states the definition in its subtitle.
+- **Window semantics** (two, deliberately): runs and questions use an exact 168-hour ISO-instant bound derived from the schedule's `firedAt`; retrieval misses use the trailing 7 vault-local calendar dates (Task 12's entries carry only a `YYYY-MM-DD`). Both derive from the same `firedAt`, so re-renders stay byte-identical.
 - **Failures** = the terminal problem statuses (`failed`, `timed_out`, `cancelled`).
 - **Quarantines** = `skipped` runs whose error carries the `processor.quarantined` marker (the runtime records a quarantine-gated skip that way) — derived from `run.read` alone, no `quarantine.read` needed.
 - **Retrieval-miss count** = date-prefixed bullets in `meta/retrieval-misses.md` (Task 12's grammar `- YYYY-MM-DD — "<query>" — <note>`) whose date falls in the trailing 7 days. The card's misses line and the daily block's misses line render **only when the file exists**.
