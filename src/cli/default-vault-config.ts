@@ -301,6 +301,9 @@ export function defaultConfigRecord(opts: {
     git: {
       auto_commit_workflows: true,
     },
+    ledger: {
+      retention_days: 30,
+    },
   };
   if (opts.modelProvider !== undefined) {
     record.model_provider = defaultModelProviderConfig(opts.modelProvider);
@@ -588,4 +591,11 @@ git:
   # the historical git-shaped flag to closure-commit code. When both keys
   # are present, they must agree.
   auto_commit_workflows: true
+
+ledger:
+  # Prune succeeded/no-op run-ledger rows older than this many days. Audit
+  # rows for failures, timeouts, and each processor's newest runs are always
+  # kept. Comment out to retain forever; reclaim disk with
+  # \`dome repair run-ledger --apply --vacuum\`.
+  retention_days: 30
 `;

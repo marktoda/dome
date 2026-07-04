@@ -56,6 +56,7 @@ import {
   collectOperationalSchemaFindings,
   instructionDriftFindings,
   latestProblemRunFinding,
+  ledgerOversizedFinding,
   orphanFinding,
   projectionCacheDriftFinding,
   quarantineFinding,
@@ -93,6 +94,17 @@ type HealthProbe = (
  */
 const HEALTH_PROBES: ReadonlyArray<HealthProbe> = [
   (c) => collectOperationalSchemaFindings(c.vaultPath),
+  (c) => {
+    const runsDbPath = join(c.vaultPath, ".dome", "state", "runs.db");
+    let fileSizeBytes: number | null;
+    try {
+      fileSizeBytes = statSync(runsDbPath).size;
+    } catch {
+      fileSizeBytes = null;
+    }
+    const finding = ledgerOversizedFinding({ path: runsDbPath, fileSizeBytes });
+    return finding === null ? [] : [finding];
+  },
   (c) =>
     c.registry === undefined || c.resolveGrants === undefined
       ? []

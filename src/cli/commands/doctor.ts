@@ -179,7 +179,7 @@ function printDoctorText(
   if (s.projectionCacheDrift === 0) cleanCategories.push("projection");
   if (s.adoptedRefDivergence + s.gitCommitSigning === 0) cleanCategories.push("git");
   if (s.instructionDrift === 0) cleanCategories.push("instructions");
-  if (s.operationalSchemaMismatch === 0) cleanCategories.push("storage");
+  if (s.operationalSchemaMismatch + s.ledgerOversized === 0) cleanCategories.push("storage");
   if (s.capabilityGrantGaps + s.capabilityGrantEntryGaps + s.capabilityGrantStarvation === 0) cleanCategories.push("grants");
   if (s.dailyPathMismatch + s.dailyEditionNotCompiled + s.dailyCalendarSourceMissing === 0) cleanCategories.push("daily");
   if (s.duplicateTaskAnchors === 0) cleanCategories.push("tasks");

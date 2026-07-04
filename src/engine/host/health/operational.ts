@@ -356,6 +356,49 @@ export function readOperationalSchemaHash(path: string, table: string): string |
   }
 }
 
+/**
+ * `runs.db` size (bytes) above which `dome doctor`/`dome check` warn that
+ * unpruned run-ledger history is accumulating disk. 512 MB is comfortably
+ * past what a healthy pruned vault ever reaches, and roughly the order of
+ * magnitude the work-vault reclaim found before `ledger.retention_days`
+ * existed (wiki/specs/run-ledger.md §Retention).
+ */
+export const LEDGER_SIZE_WARNING_BYTES = 512 * 1024 * 1024;
+
+/**
+ * Warn when `runs.db` has grown past `LEDGER_SIZE_WARNING_BYTES`. The caller
+ * (the registry probe) does the `statSync` and passes the resulting size (or
+ * null when the file is absent / unreadable) so this stays a pure function —
+ * unit tests inject a size instead of creating a real 512MB file.
+ */
+export function ledgerOversizedFinding(opts: {
+  readonly path: string;
+  readonly fileSizeBytes: number | null;
+}): HealthFinding | null {
+  if (
+    opts.fileSizeBytes === null ||
+    opts.fileSizeBytes < LEDGER_SIZE_WARNING_BYTES
+  ) {
+    return null;
+  }
+  const sizeMb = Math.round(opts.fileSizeBytes / (1024 * 1024));
+  const thresholdMb = Math.round(LEDGER_SIZE_WARNING_BYTES / (1024 * 1024));
+  return Object.freeze({
+    code: "ledger.oversized" as const,
+    severity: "warning" as const,
+    subject: "storage" as const,
+    id: "ledger.size" as const,
+    message:
+      `runs.db is ${sizeMb} MB, over the ${thresholdMb} MB doctor warning ` +
+      "threshold — unpruned run-ledger history is accumulating disk.",
+    recovery:
+      "Set `ledger.retention_days` in `.dome/config.yaml` so `dome serve` " +
+      "prunes old succeeded/no-op run-ledger rows automatically, or run " +
+      "`dome repair run-ledger --apply --vacuum` to reclaim disk now.",
+    storage: Object.freeze({ path: opts.path, sizeBytes: opts.fileSizeBytes }),
+  });
+}
+
 export function quarantineFinding(row: ProcessorQuarantineSnapshot): HealthFinding {
   return Object.freeze({
     code: "processor.quarantined" as const,
