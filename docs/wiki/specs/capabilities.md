@@ -234,43 +234,43 @@ The schema is validated by Zod at bundle load. A capability with an unknown `kin
 
 ## Vault grants
 
-The vault's `<vault>/.dome/config.yaml` grants capabilities to specific extensions:
+The vault's `<vault>/.dome/config.yaml` grants capabilities to specific extensions. A fresh `dome init` writes the **`grants: standard` preset** — one top-level line — instead of an enumerated grant block per bundle:
+
+```yaml
+grants: standard
+extensions:
+  dome.lint:
+    enabled: true
+  dome.markdown:
+    enabled: true
+  dome.daily:
+    enabled: true
+  dome.agent:
+    enabled: true
+  dome.sources:
+    enabled: true
+    config:
+      subscriptions:
+        calendar:
+          enabled: false
+          schedule: "10 5 * * *"
+          output_path: "sources/calendar/{date}.md"
+          command: ["sh", ".dome/bin/fetch-calendar.sh"]
+```
+
+### The `grants: standard` preset
+
+`grants: standard` (a string literal; `standard` is the only accepted value for now, and any other value is rejected loudly) expands **at load time** to the union of every *enabled* first-party bundle's shipped default grants — the same bundle grant + per-processor replacement grants the SDK ships in `src/first-party-defaults.ts`. Expansion is entirely loader-level: the broker only ever sees concrete `Capability` records, exactly as if the grants had been enumerated by hand. It replaced the ~40 lines of grant YAML a fresh vault used to carry (a first-week wall for second users).
+
+Precedence is **fine-grained-wins-entirely, no merging within a bundle**:
+
+- A bundle carrying **any** explicit `grant:`, `grants:`, or `processors:` block opts out of the preset *for that bundle entirely* and uses only its own config. The preset is not merged in — an explicit block beside `grants: standard` is how one bundle overrides while the rest keep the defaults.
+- A bundle with no explicit block takes its shipped first-party defaults (if it is a first-party bundle) or **nothing** (third-party / unknown enabled bundles have no shipped defaults; they must carry an explicit block to receive any capability).
+
+The enumerated per-bundle form below stays valid config and is the **escape hatch** — write it when a bundle needs grants that differ from the shipped default:
 
 ```yaml
 extensions:
-  dome.agent:
-    enabled: true
-    grant:
-      read:
-        - wiki/**/*.md
-        - notes/**/*.md
-        - inbox/**/*.md
-        - index.md
-        - log.md
-      patch.auto:
-        - wiki/**/*.md
-        - notes/**/*.md
-        - inbox/processed/*.md
-        - inbox/raw/*.md
-      model.invoke:
-        maxDailyCostUsd: 15
-      question.ask: true
-
-  dome.daily:
-    enabled: true
-    config:
-      daily_path: notes/{date}.md
-    grant:
-      read:
-        - wiki/**/*.md
-        - notes/*.md
-      patch.auto:
-        - wiki/**/*.md
-        - notes/*.md
-      graph.write:
-        - dome.daily.*
-      question.ask: true
-
   dome.markdown:
     enabled: true
     grant:
@@ -296,7 +296,7 @@ extensions:
         - network.post
 ```
 
-With a config file present, `extensions.<bundle>.enabled: true` is the activation boundary: omitted bundles and `enabled: false` bundles are not registered into the runtime. The broker then enforces the **intersection** of declared capabilities (in `manifest.yaml`) and granted capabilities (in `config.yaml`) for active processors. A processor that declared `patch.auto: ["**"]` but was granted only `patch.auto: ["wiki/generated/**"]` has effective auto-patch reach of `wiki/generated/**` only.
+With a config file present, `extensions.<bundle>.enabled: true` is the activation boundary: omitted bundles and `enabled: false` bundles are not registered into the runtime. The broker then enforces the **intersection** of declared capabilities (in `manifest.yaml`) and granted capabilities (whether preset-expanded or enumerated in `config.yaml`) for active processors. A processor that declared `patch.auto: ["**"]` but was granted only `patch.auto: ["wiki/generated/**"]` has effective auto-patch reach of `wiki/generated/**` only.
 
 Processor-specific grants live under `extensions.<bundle>.processors.<processor-id>.grant` (or `grants`). A processor override is a **replacement** for the bundle grant, not an additive patch. Processors without an override inherit the bundle grant. This lets one bundle hold processors with different natural scopes: for example, a wikilink resolver may need to read all markdown to resolve targets while a frontmatter normalizer in the same bundle may be granted patches only under `wiki/**/*.md`.
 
@@ -309,7 +309,7 @@ it catches cases where an enabled processor would later skip, degrade, or
 block during capability enforcement because the bundle was installed without
 the matching grant kind.
 
-Shipped-default grants (the ones a fresh `dome init` writes): default-on first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches for frontmatter normalization, high-confidence existing-page wikilink repair, explicit source-backed concept/entity stub creation, and stale managed `updated:` metadata refresh, and `question.ask` for ambiguous-link questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.daily` is granted `wiki/**/*.md` plus root `notes/*.md` reads, matching auto-patches for daily creation, daily open-loop surfacing, and accepted follow-up answers, `dome.daily.*` fact writes, and `question.ask`; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted broad read for failed-row source provenance, failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` is granted markdown reads for its adopted-state report. `dome.agent` ships enabled with a populated grant block and a $2/day shipped `model.invoke` cap (the cost guardrail that replaced the old ships-disabled posture); it needs a vault-configured `ModelProvider` to act — enabled-without-provider is surfaced loudly at host start (`agent.no-model-provider`), never a silent no-op. It also receives `question.ask`, broad wiki/notes/inbox reads (`index.md` and `log.md` included, read-only), matching `patch.auto` for wiki/notes/inbox-processed/inbox-raw paths, and `model.invoke` so the ingest agent can integrate raw captures and the stale-check can inspect active inbox buckets. The `patch.auto` grant covers `notes/**` by design — the capability grant is the single write boundary, and `raw/**` is explicitly absent (see [[wiki/invariants/RAW_IS_IMMUTABLE]]). Third-party bundles default to inactive until the user explicitly opts in.
+Shipped-default grants (the ones the `grants: standard` preset expands to, and what a fresh `dome init` therefore gets): default-on first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches for frontmatter normalization, high-confidence existing-page wikilink repair, explicit source-backed concept/entity stub creation, and stale managed `updated:` metadata refresh, and `question.ask` for ambiguous-link questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.daily` is granted `wiki/**/*.md` plus root `notes/*.md` reads, matching auto-patches for daily creation, daily open-loop surfacing, and accepted follow-up answers, `dome.daily.*` fact writes, and `question.ask`; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted broad read for failed-row source provenance, failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` is granted markdown reads for its adopted-state report. `dome.agent` ships enabled with a populated grant block and a $2/day shipped `model.invoke` cap (the cost guardrail that replaced the old ships-disabled posture); it needs a vault-configured `ModelProvider` to act — enabled-without-provider is surfaced loudly at host start (`agent.no-model-provider`), never a silent no-op. It also receives `question.ask`, broad wiki/notes/inbox reads (`index.md` and `log.md` included, read-only), matching `patch.auto` for wiki/notes/inbox-processed/inbox-raw paths, and `model.invoke` so the ingest agent can integrate raw captures and the stale-check can inspect active inbox buckets. The `patch.auto` grant covers `notes/**` by design — the capability grant is the single write boundary, and `raw/**` is explicitly absent (see [[wiki/invariants/RAW_IS_IMMUTABLE]]). Third-party bundles default to inactive until the user explicitly opts in.
 
 `tests/integration/default-vault-config.test.ts` keeps broad shipped-default
 path grants in lockstep. Any new default path grant over `**`, `**/*`, or

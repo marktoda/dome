@@ -571,7 +571,7 @@ describe("runInit", () => {
     }
   });
 
-  test("--refresh-config preserves hand-written comments while filling defaults", async () => {
+  test("--refresh-config preserves hand-written comments while adding missing stanzas", async () => {
     const target = mkdtempSync(join(tmpdir(), "cli-init-comments-refresh-"));
     try {
       await mkdir(join(target, ".dome"), { recursive: true });
@@ -584,16 +584,21 @@ describe("runInit", () => {
       expectLinesPreservedInOrder(COMMENTED_CONFIG, after);
       const refreshed = record(parseYaml(after));
       const extensions = record(refreshed.extensions);
-      // Missing first-party stanzas were filled ...
+      // Missing first-party stanzas were filled enabled-only. Grants now come
+      // from the top-level `grants: standard` preset the loader expands, so
+      // refresh no longer renders per-bundle grant blocks (Task 18).
       expect(record(extensions["dome.lint"]).enabled).toBe(true);
       expect(record(extensions["dome.markdown"]).enabled).toBe(true);
-      // ... missing grant keys on the enabled commented bundle were filled ...
-      expect(record(record(extensions["dome.daily"]).grant)["patch.auto"])
-        .toEqual(["wiki/**/*.md", "notes/*.md"]);
-      // ... and the owner's narrowed read grant value was NOT changed.
+      expect(record(extensions["dome.lint"]).grant).toBeUndefined();
+      // The owner's hand-tuned dome.daily grant block is left untouched:
+      // refresh does not fill grant keys into an enabled bundle. read stays
+      // narrowed and no patch.auto is added. (A preset-aware grant merge for
+      // legacy enumerated configs is Task 20.)
       expect(record(record(extensions["dome.daily"]).grant).read).toEqual([
         "wiki/**/*.md",
       ]);
+      expect(record(record(extensions["dome.daily"]).grant)["patch.auto"])
+        .toBeUndefined();
       expect(record(refreshed.engine).max_iterations).toBe(25);
     } finally {
       await rm(target, { recursive: true, force: true });
@@ -696,7 +701,7 @@ describe("runInit", () => {
     }
   });
 
-  test("--refresh-config adds missing first-party bundles and fills default grant keys", async () => {
+  test("--refresh-config adds missing first-party bundles enabled-only and leaves present grants untouched", async () => {
     const target = mkdtempSync(join(tmpdir(), "cli-init-refresh-"));
     try {
       await mkdir(join(target, ".dome"), { recursive: true });
@@ -735,32 +740,38 @@ describe("runInit", () => {
         readonly engine: { readonly max_iterations: number };
       };
 
-      expect(refreshed.extensions["dome.lint"]?.grant?.read).toEqual([
-        "**/*.md",
-      ]);
+      // Grants now come from the top-level `grants: standard` preset the
+      // loader expands; refresh no longer writes per-bundle grant blocks
+      // (Task 18). A present enabled bundle with no grant stays grant-free —
+      // refresh does NOT inject an enumerated block (which would undo the
+      // preset collapse). Filling grants for legacy enumerated configs is
+      // Task 20.
+      expect(refreshed.extensions["dome.lint"]?.grant).toBeUndefined();
+      // Present enabled bundles keep their hand-written grants exactly — no
+      // default keys are merged in.
       expect(refreshed.extensions["dome.markdown"]?.grant?.read).toEqual([
         "notes/**/*.md",
       ]);
       expect(refreshed.extensions["dome.markdown"]?.grant?.["patch.auto"])
-        .toEqual(["**/*.md"]);
+        .toBeUndefined();
       expect(refreshed.extensions["dome.markdown"]?.grant?.["question.ask"])
-        .toBe(true);
+        .toBeUndefined();
       expect(refreshed.extensions["dome.search"]?.grants?.read).toEqual([
         "wiki/**/*.md",
       ]);
       expect(refreshed.extensions["dome.search"]?.grants?.["search.write"])
-        .toEqual(["**/*.md"]);
-      expect(refreshed.extensions["dome.graph"]?.grant?.["graph.write"])
-        .toEqual(["dome.graph.*"]);
+        .toBeUndefined();
+      // Absent bundles are added enabled-only (no grant block).
+      expect(refreshed.extensions["dome.graph"]?.enabled).toBe(true);
+      expect(refreshed.extensions["dome.graph"]?.grant).toBeUndefined();
       expect(refreshed.extensions["dome.daily"]?.enabled).toBe(true);
-      expect(refreshed.extensions["dome.daily"]?.grant?.["patch.auto"])
-        .toEqual(["wiki/**/*.md", "notes/*.md"]);
+      expect(refreshed.extensions["dome.daily"]?.grant).toBeUndefined();
+      // dome.health was explicitly written `enabled: false`; refresh must
+      // leave an explicit value alone.
       expect(refreshed.extensions["dome.health"]?.enabled).toBe(false);
       // dome.agent was absent from the hand-written config above, so refresh
-      // adds the whole stanza from the current shipped default — which now
-      // ships enabled: true (product-review-3 Task 17), same as dome.daily
-      // above. dome.health, by contrast, was explicitly written `enabled:
-      // false` already and refresh must leave an explicit value alone.
+      // adds the whole stanza from the current shipped default — which ships
+      // enabled: true (product-review-3 Task 17).
       expect(refreshed.extensions["dome.agent"]?.enabled).toBe(true);
       expect(refreshed.extensions["custom.local"]?.grant).toBeUndefined();
       expect(refreshed.engine.max_iterations).toBe(25);

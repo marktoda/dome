@@ -20,8 +20,21 @@ import {
   type Capability,
   type ExtensionConfig,
 } from "../../core/processor";
+import {
+  FIRST_PARTY_EXTENSION_DEFAULTS,
+  type FirstPartyExtensionDefault,
+} from "../../first-party-defaults";
 import type { ExecutionPolicyCap } from "../../processors/execution-policy";
 import { err, ok, type Result } from "../../types";
+
+/**
+ * The shipped first-party defaults keyed by bundle id — the data the
+ * `grants: standard` preset expands to at load time. Built once at module
+ * load. Third-party / unknown extension ids are absent (they have no shipped
+ * defaults; the preset grants them nothing).
+ */
+const FIRST_PARTY_DEFAULTS_BY_ID: ReadonlyMap<string, FirstPartyExtensionDefault> =
+  new Map(FIRST_PARTY_EXTENSION_DEFAULTS.map((entry) => [entry.id, entry]));
 
 export type CapabilityPolicy = {
   readonly foundConfig: boolean;
@@ -158,6 +171,9 @@ export async function loadCapabilityPolicy(
       return err(`${path} ${key} is not a known top-level config field`);
     }
   }
+  const grantsPreset = parseGrantsPreset(root.grants, path);
+  if (!grantsPreset.ok) return err(grantsPreset.error);
+  const presetEnabled = grantsPreset.value;
   const runtimeConfig = parseRuntimeConfig(root, path);
   if (!runtimeConfig.ok) return err(runtimeConfig.error);
 
@@ -213,6 +229,24 @@ export async function loadCapabilityPolicy(
         continue;
       }
       enabled.add(extensionId);
+
+      // Precedence: an extension carrying ANY explicit grant/grants/processors
+      // block opts out of the `grants: standard` preset entirely and uses only
+      // its own config — no merging within an extension (the fine-grained block
+      // wins). Extensions without an explicit block take the preset's shipped
+      // defaults (first-party bundles) or nothing (third-party / unknown).
+      const hasExplicitGrantBlock =
+        hasOwn(extension, "grant") ||
+        hasOwn(extension, "grants") ||
+        hasOwn(extension, "processors");
+      if (!hasExplicitGrantBlock && presetEnabled) {
+        const preset = presetGrantsForExtension(extensionId, extensionPath);
+        if (!preset.ok) return err(`${path} ${preset.error}`);
+        grants.set(extensionId, preset.value.grant);
+        processorGrants.set(extensionId, preset.value.processorGrants);
+        continue;
+      }
+
       if (hasOwn(extension, "grant") && hasOwn(extension, "grants")) {
         return err(`${path} ${extensionPath} must use grant or grants, not both`);
       }
@@ -379,12 +413,76 @@ function mergedConfigResolver(
 
 const ROOT_KEYS = new Set([
   "extensions",
+  "grants",
   "engine",
   "git",
   "ledger",
   "model_provider",
   "shared_config",
 ]);
+
+/**
+ * The top-level `grants:` preset. Only the string literal `standard` is
+ * accepted for now: it expands at load time (per enabled extension, below) to
+ * the shipped first-party default grants. Any other value is rejected loudly
+ * rather than silently ignored — the config surface never degrades quietly.
+ */
+function parseGrantsPreset(
+  raw: unknown,
+  path: string,
+): Result<boolean, string> {
+  if (raw === undefined) return ok(false);
+  if (raw === "standard") return ok(true);
+  return err(
+    `${path} grants must be "standard" (the only supported grants preset)`,
+  );
+}
+
+/**
+ * Expand the `grants: standard` preset for one enabled extension: parse its
+ * shipped first-party default grant + per-processor replacement grants into
+ * concrete Capabilities via the same parse path an explicit block takes.
+ * Third-party / unknown extensions have no shipped defaults, so the preset
+ * grants them nothing (their explicit block, if any, is handled by the caller).
+ */
+function presetGrantsForExtension(
+  extensionId: string,
+  extensionPath: string,
+): Result<
+  {
+    readonly grant: ReadonlyArray<Capability>;
+    readonly processorGrants: ReadonlyMap<string, ReadonlyArray<Capability>>;
+  },
+  string
+> {
+  const preset = FIRST_PARTY_DEFAULTS_BY_ID.get(extensionId);
+  if (preset === undefined) {
+    return ok({
+      grant: Object.freeze([]),
+      processorGrants: new Map<string, ReadonlyArray<Capability>>(),
+    });
+  }
+  const grant = parseGrantBlock(
+    preset.grant,
+    `${extensionPath}.grant (grants: standard)`,
+  );
+  if (!grant.ok) return grant;
+  const processorGrants = new Map<string, ReadonlyArray<Capability>>();
+  if (preset.processors !== undefined) {
+    for (const [processorId, grantRecord] of Object.entries(preset.processors)) {
+      const parsed = parseGrantBlock(
+        grantRecord,
+        `${extensionPath}.processors.${processorId}.grant (grants: standard)`,
+      );
+      if (!parsed.ok) return parsed;
+      processorGrants.set(processorId, parsed.value);
+    }
+  }
+  return ok({
+    grant: grant.value,
+    processorGrants: Object.freeze(processorGrants),
+  });
+}
 
 const GRANT_KEYS = new Set([
   "read",

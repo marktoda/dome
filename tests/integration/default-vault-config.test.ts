@@ -213,14 +213,21 @@ describe("default vault config", () => {
     // a vault-authored fetch command) and makes silence the default:
     // enabled must be EXACTLY false as shipped (wiki/specs/sources.md).
     const rendered = parseYaml(defaultConfigYaml()) as {
+      grants?: string;
       extensions: Record<
         string,
-        { enabled: boolean; config?: Record<string, unknown>; grant: Record<string, unknown> }
+        { enabled: boolean; config?: Record<string, unknown>; grant?: Record<string, unknown> }
       >;
     };
+    // Fresh vaults collapse grants to the one-line `grants: standard` preset —
+    // no per-bundle grant blocks are rendered. The read/external grant that
+    // used to sit here now comes from the loader's preset expansion (verified
+    // by the round-trip test below).
+    expect(rendered.grants).toBe("standard");
     const sources = rendered.extensions["dome.sources"];
     expect(sources).toBeDefined();
     expect(sources?.enabled).toBe(true);
+    expect(sources?.grant).toBeUndefined();
     expect(sources?.config).toEqual({
       subscriptions: {
         calendar: {
@@ -230,10 +237,6 @@ describe("default vault config", () => {
           command: ["sh", ".dome/bin/fetch-calendar.sh"],
         },
       },
-    });
-    expect(sources?.grant).toEqual({
-      read: ["sources/**/*.md", ".dome/config.yaml"],
-      external: ["sources.fetch"],
     });
   });
 
@@ -342,18 +345,23 @@ describe("default vault config", () => {
     // distinct from the per-processor declared caps in manifest.yaml — must
     // be the new $2.00/day default.
     const rendered = parseYaml(defaultConfigYaml()) as {
+      grants?: string;
       extensions: Record<
         string,
         {
           enabled: boolean;
-          grant: Record<string, unknown>;
+          grant?: Record<string, unknown>;
         }
       >;
     };
     const agent = rendered.extensions["dome.agent"];
     expect(agent).toBeDefined();
     expect(agent?.enabled).toBe(true);
-    expect(agent?.grant["model.invoke"]).toEqual({ maxDailyCostUsd: 2 });
+    // Grants collapse to the top-level preset; no per-bundle grant block is
+    // rendered. The $2/day cap is verified through the loaded policy below,
+    // where the preset expands it.
+    expect(rendered.grants).toBe("standard");
+    expect(agent?.grant).toBeUndefined();
 
     // Load-bearing round trip: the same cap is live once the capability
     // policy resolves the rendered config, and it is scoped to the vault

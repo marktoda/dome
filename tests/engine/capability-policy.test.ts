@@ -890,3 +890,230 @@ extensions:
     expect(result.ok).toBe(false);
   });
 });
+
+describe("grants: standard preset", () => {
+  test("expands to the shipped first-party defaults for enabled bundles", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    // No enumerated grant blocks anywhere — just enabled flags + the preset.
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+grants: standard
+extensions:
+  dome.daily:
+    enabled: true
+  dome.agent:
+    enabled: true
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Bundle-level default grant flows through (spot-check dome.daily's
+    // questions.read, which its compose-blocks processor needs).
+    expect(result.value.grantsForExtension("dome.daily")).toContainEqual({
+      kind: "questions.read",
+    });
+    expect(result.value.grantsForExtension("dome.daily")).toContainEqual({
+      kind: "graph.write",
+      namespaces: ["dome.daily.*"],
+    });
+    // Per-processor REPLACEMENT grants ride the preset: dome.agent's
+    // preference-promotion-answer is the gated core.md writer.
+    expect(
+      result.value.grantsForProcessor(
+        "dome.agent",
+        "dome.agent.preference-promotion-answer",
+      ),
+    ).toEqual([
+      { kind: "read", paths: ["core.md", "preferences/signals.md"] },
+      { kind: "patch.auto", paths: ["core.md", "preferences/signals.md"] },
+    ]);
+    // A dome.agent processor without a replacement grant falls back to the
+    // bundle grant (which carries the $2/day model.invoke pool).
+    expect(
+      result.value.grantsForProcessor("dome.agent", "dome.agent.ingest"),
+    ).toContainEqual({ kind: "model.invoke", maxDailyCostUsd: 2 });
+  });
+
+  test("an explicit grant block wins entirely — preset ignored for that extension", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+grants: standard
+extensions:
+  dome.daily:
+    enabled: true
+    grant:
+      read: ["notes/only.md"]
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // ONLY the explicit block — no preset defaults merged in (no questions.read,
+    // no graph.write from the shipped default).
+    expect(result.value.grantsForExtension("dome.daily")).toEqual([
+      { kind: "read", paths: ["notes/only.md"] },
+    ]);
+  });
+
+  test("an explicit processors block alone opts the extension out of the preset", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+grants: standard
+extensions:
+  dome.daily:
+    enabled: true
+    processors:
+      dome.daily.compose-blocks:
+        grant:
+          read: ["wiki/**/*.md"]
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The bundle grant is empty (no `grant:` block present, preset ignored),
+    // and the only processor grant is the explicit replacement.
+    expect(result.value.grantsForExtension("dome.daily")).toEqual([]);
+    expect(
+      result.value.grantsForProcessor(
+        "dome.daily",
+        "dome.daily.compose-blocks",
+      ),
+    ).toEqual([{ kind: "read", paths: ["wiki/**/*.md"] }]);
+  });
+
+  test("preset grants nothing to third-party / unknown enabled extensions", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+grants: standard
+extensions:
+  acme.calendar-sync:
+    enabled: true
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.isExtensionEnabled("acme.calendar-sync")).toBe(true);
+    expect(result.value.grantsForExtension("acme.calendar-sync")).toEqual([]);
+  });
+
+  test("accepts grants: standard as a known top-level key", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+grants: standard
+extensions: {}
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(true);
+  });
+
+  test("rejects any grants preset other than standard, loudly", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+grants: everything
+extensions: {}
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain('grants must be "standard"');
+  });
+
+  test("still rejects unknown top-level keys alongside the preset", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+grants: standard
+grantz: standard
+extensions: {}
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(
+      "grantz is not a known top-level config field",
+    );
+  });
+
+  test("the expanded preset grants participate in the policy hash", async () => {
+    // A vault with the preset (dome.daily gets its shipped default grants)
+    // must hash differently from the same vault WITHOUT the preset (dome.daily
+    // enabled but grantless) — proving the expanded concrete grants reach the
+    // hash, so a shipped-default change invalidates capability caches.
+    const rootWith = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    const rootWithout = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(rootWith, rootWithout);
+    mkdirSync(join(rootWith, ".dome"), { recursive: true });
+    mkdirSync(join(rootWithout, ".dome"), { recursive: true });
+    writeFileSync(
+      join(rootWith, ".dome", "config.yaml"),
+      `\ngrants: standard\nextensions:\n  dome.daily:\n    enabled: true\n`,
+      "utf8",
+    );
+    writeFileSync(
+      join(rootWithout, ".dome", "config.yaml"),
+      `\nextensions:\n  dome.daily:\n    enabled: true\n`,
+      "utf8",
+    );
+
+    const policyWith = await loadCapabilityPolicy(rootWith);
+    const policyWithout = await loadCapabilityPolicy(rootWithout);
+    expect(policyWith.ok && policyWithout.ok).toBe(true);
+    if (!policyWith.ok || !policyWithout.ok) return;
+    expect(computeCapabilityPolicyHash(policyWith.value)).not.toBe(
+      computeCapabilityPolicyHash(policyWithout.value),
+    );
+  });
+});
