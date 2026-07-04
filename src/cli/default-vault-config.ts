@@ -241,16 +241,38 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
         external: ["sources.fetch"],
       },
     ),
-    extension("dome.health", true, {
-      read: ["**"],
-      "outbox.read": ["failed"],
-      "question.ask": true,
-      "outbox.recover": true,
-      "quarantine.read": true,
-      "quarantine.recover": true,
-      "run.read": ["running"],
-      "run.recover": true,
-    }),
+    extension(
+      "dome.health",
+      true,
+      {
+        read: ["**"],
+        "outbox.read": ["failed"],
+        "question.ask": true,
+        "outbox.recover": true,
+        "quarantine.read": true,
+        "quarantine.recover": true,
+        "run.read": ["running"],
+        "run.recover": true,
+      },
+      {
+        // The weekly report card needs a WIDER run.read (all statuses, to count
+        // failures/quarantines/productive) plus patch.auto — neither of which
+        // the recovery-processor bundle grant carries. A replacement grant
+        // scopes it exactly: the two files it writes, all run statuses, and
+        // questions.read; it does NOT inherit the bundle's read:["**"], so the
+        // reads it needs are restated. Normative: daily-surface §"Report card".
+        "dome.health.report-card": Object.freeze({
+          read: [
+            "wiki/dailies/*.md",
+            "meta/report-card.md",
+            "meta/retrieval-misses.md",
+          ],
+          "patch.auto": ["meta/report-card.md", "wiki/dailies/*.md"],
+          "run.read": true,
+          "questions.read": true,
+        }),
+      },
+    ),
   ]);
 
 export function defaultConfigRecord(opts: {

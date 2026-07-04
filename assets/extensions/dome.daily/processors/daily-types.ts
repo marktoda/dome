@@ -183,6 +183,12 @@ export const DAILY_GENERATED_BLOCKS: ReadonlyArray<{
   Object.freeze({ owner: DAILY_OWNER, block: AGENDA_BLOCK }),
   Object.freeze({ owner: DAILY_OWNER, block: INTEGRATED_BLOCK }),
   Object.freeze({ owner: DAILY_OWNER, block: SOURCES_BLOCK }),
+  // Cross-bundle block: dome.health.report-card writes the weekly-review block
+  // into today's daily (Monday 05:22). dome.daily only RECOGNIZES the id (for
+  // anomaly scanning + task-extraction exclusion); the writer lives in
+  // dome.health. A plain string pair, like the dome.agent.brief entries above.
+  // Normative: [[wiki/specs/daily-surface]] §"Report card".
+  Object.freeze({ owner: "dome.health", block: "report-card" }),
   LEGACY_BRIEF_QUESTIONS,
   LEGACY_BRIEF_INTEGRATED,
   LEGACY_BRIEF_SOURCES,

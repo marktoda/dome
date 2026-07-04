@@ -1,5 +1,5 @@
 id: dome.health
-version: 0.1.2
+version: 0.2.0
 processors:
   - id: dome.health.outbox-recovery-questions
     version: 0.1.2
@@ -77,3 +77,53 @@ processors:
       - kind: run.recover
         actions: ["fail"]
     module: processors/orphan-run-recovery-answer.ts
+
+  # The weekly garden report (product review's "prove" instrument). Monday
+  # 05:22 — before the 05:30 brief, after the wake-tick sources/index/brief
+  # order so the card reflects the settled week. Deterministic: reads the run
+  # ledger (all statuses) + question rows over the trailing 7 days, emits ONE
+  # PatchEffect rewriting meta/report-card.md AND splicing the
+  # dome.health:report-card block into today's daily. No model, no facts, no
+  # questions. run.read declares no statuses → all statuses (the card counts
+  # succeeded/failed/quarantine-skipped alike). See
+  # [[wiki/specs/daily-surface]] §"Report card".
+  - id: dome.health.report-card
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "22 5 * * 1"
+    capabilities:
+      - kind: read
+        paths:
+          - "wiki/dailies/*.md"
+          - "meta/report-card.md"
+          - "meta/retrieval-misses.md"
+      - kind: patch.auto
+        paths: ["meta/report-card.md", "wiki/dailies/*.md"]
+      - kind: run.read
+      - kind: questions.read
+    execution:
+      class: deterministic
+    module: processors/report-card.ts
+
+# Doctor contributions (wiki/specs/cli.md §"dome doctor"): grant-entry probes
+# evaluated generically by the health report. dome init --refresh-config never
+# merges new entries into existing grant keys, so these name the exact YAML a
+# pre-rollout vault must add.
+doctor:
+  grantEntries:
+    - processorId: dome.health.report-card
+      entries:
+        - kind: patch.auto
+          target: meta/report-card.md
+        - kind: patch.auto
+          target: wiki/dailies/*.md
+      why: >-
+        the weekly report card silently never writes — the card file and the
+        daily block are outside the grant, so both patch writes are dropped
+      recovery: >-
+        Add "meta/report-card.md" and "wiki/dailies/*.md" to the
+        dome.health.report-card per-processor grant.patch.auto in
+        .dome/config.yaml (the report-card processor uses a replacement grant,
+        narrower than the dome.health bundle grant).
