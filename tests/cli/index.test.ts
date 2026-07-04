@@ -48,6 +48,10 @@ describe("runCli", () => {
         "log",
         "recipe",
         "export-context",
+        "prep",
+        "agenda-with",
+        "stale-claims",
+        "orphan-pages",
         "serve",
         "install",
         "uninstall",
@@ -57,8 +61,6 @@ describe("runCli", () => {
     }
     for (
       const hiddenCommand of [
-        "prep",
-        "agenda",
         "inspect",
         "doctor",
         "lint",

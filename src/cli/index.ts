@@ -16,6 +16,7 @@ import {
 import { runCapture } from "./commands/capture";
 import { runCheck } from "./commands/check";
 import { runAnswer } from "./commands/answer";
+import { runAgendaWith } from "./commands/agenda-with";
 import { runExportContext } from "./commands/export-context";
 import { runInit } from "./commands/init";
 import { runInstall, runRestart, runUninstall } from "./commands/install";
@@ -23,6 +24,8 @@ import { runDoctor } from "./commands/doctor";
 import { runInspect } from "./commands/inspect";
 import { runLint, type LintFailOn } from "./commands/lint";
 import { runLog } from "./commands/log";
+import { runOrphanPages } from "./commands/orphan-pages";
+import { runPrep } from "./commands/prep";
 import { runQuery } from "./commands/query";
 import { runReanchor } from "./commands/reanchor";
 import { runRepair } from "./commands/repair";
@@ -32,6 +35,7 @@ import { runResolve } from "./commands/resolve";
 import { runRun } from "./commands/run";
 import { runSettle } from "./commands/settle";
 import { runServe } from "./commands/serve";
+import { runStaleClaims } from "./commands/stale-claims";
 import { runStatus } from "./commands/status";
 import { runSync } from "./commands/sync";
 import { runToday } from "./commands/today";
@@ -538,6 +542,80 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("prep")
+    .description("Render a source-backed planning packet for a day.")
+    .option("--date <yyyy-mm-dd>", "Render a specific day (default: today).")
+    .option("--limit <n>", "Maximum rows per section.", parsePositiveIntegerOption)
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (options: PrepCliOptions) => {
+      setExitCode(
+        await runPrep({
+          date: options.date,
+          limit: options.limit,
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+        }),
+      );
+    });
+
+  program
+    .command("agenda-with")
+    .description("Render source-backed open tasks, follow-ups, and context for a person or topic.")
+    .argument("<person-or-topic...>", "Person or topic to filter by.")
+    .option("--date <yyyy-mm-dd>", "Daily-note context date (default: today).")
+    .option("--limit <n>", "Maximum rows per section.", parsePositiveIntegerOption)
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (topic: string[], options: AgendaWithCliOptions) => {
+      setExitCode(
+        await runAgendaWith({
+          topic: topic.join(" "),
+          date: options.date,
+          limit: options.limit,
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+        }),
+      );
+    });
+
+  program
+    .command("stale-claims")
+    .description("List claims whose *(as of)* date is older than the staleness horizon.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (options: StaleClaimsCliOptions) => {
+      setExitCode(
+        await runStaleClaims({
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+        }),
+      );
+    });
+
+  program
+    .command("orphan-pages")
+    .description("List markdown pages with no incoming wikilinks.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (options: OrphanPagesCliOptions) => {
+      setExitCode(
+        await runOrphanPages({
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+        }),
+      );
+    });
+
+  program
     .command("reanchor", { hidden: true })
     .description(
       "Re-anchor the adopted ref after a history rewrite (backs up the old SHA first).",
@@ -966,6 +1044,34 @@ type LogCliOptions = {
 type ExportContextCliOptions = {
   readonly limit?: number;
   readonly miss?: string | boolean;
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
+type PrepCliOptions = {
+  readonly date?: string;
+  readonly limit?: number;
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
+type AgendaWithCliOptions = {
+  readonly date?: string;
+  readonly limit?: number;
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
+type StaleClaimsCliOptions = {
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
+type OrphanPagesCliOptions = {
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;

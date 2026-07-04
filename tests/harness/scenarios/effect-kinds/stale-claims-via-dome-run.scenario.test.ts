@@ -136,3 +136,68 @@ scenario(
     expect(staleRow?.daysStale).toBeGreaterThan(120);
   },
 );
+
+// `dome stale-claims` (Task 14) is the dedicated top-level verb over the
+// same `dome.claims.stale-claims` view processor — previously reachable
+// only via the hidden `dome run stale-claims` dispatcher above. Unlike
+// `dome run <name>` (always the `{name,kind,schema,data}` envelope), the
+// dedicated verb renders a human summary by default and the bare
+// structured payload under `--json`.
+scenario(
+  {
+    name:
+      "effect-kinds: dome stale-claims (dedicated verb) dispatches to dome.claims.stale-claims",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "view" },
+      { kind: "trigger", trigger: "command" },
+    ],
+    harness: {
+      bundles: ["dome.claims"],
+      initialFiles: {
+        ".dome/config.yaml": CONFIG,
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/stale.md": [
+          "# Stale",
+          "",
+          "- **Status:** Shipped *(as of 2020-01-01)*",
+          "",
+        ].join("\n"),
+      },
+      message: "vault with one stale claim",
+    });
+    const result = await h.tick();
+    expect(result.adopted).toBe(true);
+    await h
+      .expectProjection()
+      .facts({ predicate: "dome.claims.claim" })
+      .toHaveCount(1);
+
+    const text = await h.runCli(["stale-claims"]);
+    expect(text.exitCode).toBe(0);
+    expect(text.stderr).toBe("");
+    expect(text.stdout).toContain("wiki/stale.md");
+    expect(text.stdout).not.toMatch(/^\s*[{[]/); // not a JSON envelope
+
+    const json = await h.runCli(["stale-claims", "--json"]);
+    expect(json.exitCode).toBe(0);
+    expect(json.stderr).toBe("");
+    const payload = JSON.parse(json.stdout) as {
+      readonly schema: string;
+      readonly horizonDays: number;
+      readonly staleClaims: ReadonlyArray<{ readonly path: string }>;
+    };
+    expect(payload.schema).toBe("dome.claims.stale-claims/v1");
+    expect(payload.horizonDays).toBe(120);
+    expect(payload.staleClaims.map((c) => c.path)).toContain("wiki/stale.md");
+  },
+);

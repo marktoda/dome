@@ -137,7 +137,13 @@ describe("runInit", () => {
       expect(agentsBody).toContain("dome query <text> --json");
       expect(agentsBody).toContain("The daily note should already be");
       expect(agentsBody).not.toContain("dome today");
-      expect(agentsBody).not.toContain("dome prep");
+      // Task 14: prep / agenda-with / stale-claims / orphan-pages are
+      // first-class verbs now (no longer behind the hidden `dome run`
+      // dispatcher), so the template advertises them directly.
+      expect(agentsBody).toContain("dome prep [--date <yyyy-mm-dd>]");
+      expect(agentsBody).toContain("dome agenda-with <person-or-topic>");
+      expect(agentsBody).toContain("dome stale-claims");
+      expect(agentsBody).toContain("dome orphan-pages");
       expect(agentsBody).toContain("dome export-context <topic>");
       expect(agentsBody).toContain("Advanced/debug commands");
       expect(agentsBody).toContain("dome inspect <subject>");

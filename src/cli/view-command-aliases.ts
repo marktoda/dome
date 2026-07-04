@@ -7,9 +7,13 @@
 export const DEDICATED_VIEW_COMMAND_ALIASES: ReadonlyMap<string, string> =
   Object.freeze(
     new Map<string, string>([
+      ["agenda-with", "agenda-with"],
       ["export-context", "export-context"],
       ["lint", "lint"],
+      ["orphan-pages", "orphan-pages"],
+      ["prep", "prep"],
       ["query", "query"],
+      ["stale-claims", "stale-claims"],
     ]),
   );
 

@@ -127,3 +127,52 @@ scenario(
     expect(payload.data.totalOrphans).toBe(orphanPaths.length);
   },
 );
+
+// `dome orphan-pages` (Task 14) is the dedicated top-level verb over the same
+// `dome.markdown.orphan-pages` view processor — previously reachable only
+// via the hidden `dome run orphan-pages` dispatcher above. Unlike
+// `dome run <name>` (always the `{name,kind,schema,data}` envelope), the
+// dedicated verb renders a human summary by default and the bare structured
+// payload under `--json`.
+scenario(
+  {
+    name: "effect-kinds: dome orphan-pages (dedicated verb) dispatches to dome.markdown.orphan-pages",
+    tags: [
+      { kind: "group", group: "effect-kinds" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "view" },
+      { kind: "trigger", trigger: "command" },
+    ],
+    harness: { bundles: ["dome.markdown", "dome.graph"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/lonely.md": "# lonely\n\nno one links here\n",
+      },
+      message: "vault with one orphan page",
+    });
+    const result = await h.tick();
+    expect(result.adopted).toBe(true);
+
+    const text = await h.runCli(["orphan-pages"]);
+    expect(text.exitCode).toBe(0);
+    expect(text.stderr).toBe("");
+    expect(text.stdout).toContain("wiki/lonely.md");
+    expect(text.stdout).not.toMatch(/^\s*[{[]/); // not a JSON envelope
+
+    const json = await h.runCli(["orphan-pages", "--json"]);
+    expect(json.exitCode).toBe(0);
+    expect(json.stderr).toBe("");
+    const payload = JSON.parse(json.stdout) as {
+      readonly schema: string;
+      readonly totalOrphans: number;
+      readonly orphans: ReadonlyArray<{ readonly path: string }>;
+    };
+    expect(payload.schema).toBe("dome.markdown.orphan-pages/v1");
+    expect(payload.orphans.map((o) => o.path)).toContain("wiki/lonely.md");
+  },
+);

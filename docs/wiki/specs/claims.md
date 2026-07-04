@@ -49,7 +49,7 @@ blocks — recognized by shape on any page matched by the bundle's globs
 | `dome.claims.stamp` | garden | deterministic, `patch.auto` | Anchors claim lines lacking `^c…` ids; converges at depth 1. |
 | `dome.claims.index` | adoption | deterministic, `graph.write dome.claims.*` | One `dome.claims.claim` fact per claim line: object = JSON `{key, value, asOf?}`, sourceRef carries the line range and, when the line is anchored, the stableId. Facts replace per path on edit and clear on delete (the manifest's `file.deleted` triggers are load-bearing). |
 | `dome.claims.render-facts` | garden | deterministic, `patch.auto` | Compiles the `## Current facts` digest block (a `dome.claims:current-facts` generated block, presentational — not claim grammar) at the head of `wiki/entities/**` pages with ≥ `current_facts_min_claims` (default 3) non-placeholder claim lines, capped at 12 bullets; splices it out on any page below threshold or outside entity scope; idempotent. See §"`render-facts` charter" below. |
-| `dome.claims.stale-claims` | view | deterministic, read-only | Lists claims whose `*(as of)*` is older than `stale_claims_horizon_days` (default 120), computed at command time from the injected clock (`ctx.now()`) — a `ViewEffect`, never a persisted fact; invoked via `dome run stale-claims`. |
+| `dome.claims.stale-claims` | view | deterministic, read-only | Lists claims whose `*(as of)*` is older than `stale_claims_horizon_days` (default 120), computed at command time from the injected clock (`ctx.now()`) — a `ViewEffect`, never a persisted fact; invoked via `dome stale-claims`. |
 
 The three state-maintaining processors are registered as the
 `dome.claim.coherence` maintenance loop; `stale-claims` is a read-only view,
@@ -186,7 +186,7 @@ fact, keeping [[wiki/invariants/MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS]] intact.
 ### Health
 
 Claim health splits into a **durable** signal and a **view-time** signal.
-`dome.claims.stale-claims` (`view`, invoked via `dome run stale-claims`) reads
+`dome.claims.stale-claims` (`view`, invoked via `dome stale-claims`) reads
 the durable `asOf` already on every claim fact — emitted clock-free by the
 adoption-phase indexer — and joins it against the current date at command time.
 Staleness can therefore never be a persisted fact: a rebuild at a later date

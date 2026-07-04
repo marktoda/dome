@@ -38,6 +38,10 @@ describe("bin/dome process boundary", () => {
       "today",
       "log",
       "export-context",
+      "prep",
+      "agenda-with",
+      "stale-claims",
+      "orphan-pages",
       "serve",
       "install",
       "restart",
@@ -49,8 +53,6 @@ describe("bin/dome process boundary", () => {
       "sync",
       "help",
     ]);
-    expect(help.stdout).not.toContain("agenda");
-    expect(help.stdout).not.toContain("prep");
     expect(help.stdout).not.toContain("inspect");
     expect(help.stdout).not.toContain("doctor");
     expect(help.stdout).not.toContain("lint");

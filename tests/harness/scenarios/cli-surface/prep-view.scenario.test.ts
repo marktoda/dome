@@ -444,6 +444,75 @@ scenario(
   },
 );
 
+// `dome prep` (Task 14) is the dedicated top-level verb over the same
+// `dome.daily.prep` view processor — previously reachable only via the
+// hidden `dome run prep` dispatcher. Unlike `dome run <name>` (which always
+// wraps output in a `{name, kind, schema, data}` envelope), the dedicated
+// verb renders human markdown by default and the bare structured payload
+// under `--json`, matching its `dome query` / `dome export-context` siblings.
+scenario(
+  {
+    name: "cli-surface: dome prep (dedicated verb) dispatches to dome.daily.prep",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "fact" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+    ],
+    harness: { bundles: ["dome.daily"] },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/dailies/2026-01-05.md": [
+          "---",
+          "type: daily",
+          "recurrence: 2026-01-05",
+          "---",
+          "",
+          "# 2026-01-05",
+          "",
+          "- [ ] Dedicated verb task",
+          "",
+        ].join("\n"),
+      },
+      message: "add dedicated-verb prep task",
+    });
+    const sync = await h.tick();
+    expect(sync.adopted).toBe(true);
+
+    // Default text output is the rendered markdown packet, not a JSON blob.
+    const text = await h.runCli(["prep", "--date", "2026-01-05"]);
+    expect(text.exitCode).toBe(0);
+    expect(text.stderr).toBe("");
+    expect(text.stdout).toContain("# Dome Prep: 2026-01-05");
+    expect(text.stdout).toContain("Dedicated verb task");
+    expect(text.stdout).not.toMatch(/^\s*[{[]/); // not a JSON envelope
+
+    // `--json` emits the bare `dome.daily.prep/v1` payload — no
+    // {name,kind,schema,data} wrapper (that's `dome run`'s shape, not this
+    // dedicated verb's).
+    const json = await h.runCli(["prep", "--date", "2026-01-05", "--json"]);
+    expect(json.exitCode).toBe(0);
+    expect(json.stderr).toBe("");
+    const payload = JSON.parse(json.stdout) as {
+      readonly schema: string;
+      readonly date: string;
+      readonly markdown: string;
+    };
+    expect(payload.schema).toBe("dome.daily.prep/v1");
+    expect(payload.date).toBe("2026-01-05");
+    expect(payload.markdown).toContain("Dedicated verb task");
+  },
+);
+
 function occurrences(value: string, needle: string): number {
   return value.split(needle).length - 1;
 }
