@@ -72,6 +72,14 @@ export type RuntimeConfig = {
   readonly git: {
     readonly auto_commit_workflows: boolean;
   };
+  /**
+   * Run-ledger housekeeping. Absent `retentionDays` means `dome serve`
+   * never auto-prunes; `dome repair run-ledger` remains the manual path
+   * regardless of this setting.
+   */
+  readonly ledger: {
+    readonly retentionDays?: number;
+  };
   readonly modelProvider?: RuntimeModelProviderConfig;
 };
 
@@ -341,6 +349,7 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   git: Object.freeze({
     auto_commit_workflows: true,
   }),
+  ledger: Object.freeze({}),
 });
 
 const EMPTY_EXTENSION_CONFIG: ExtensionConfig = Object.freeze({});
@@ -372,6 +381,7 @@ const ROOT_KEYS = new Set([
   "extensions",
   "engine",
   "git",
+  "ledger",
   "model_provider",
   "shared_config",
 ]);
@@ -427,6 +437,8 @@ function parseRuntimeConfig(
   if (engine === null) return err(`${path} engine must be a YAML mapping`);
   const git = root.git === undefined ? {} : asRecord(root.git);
   if (git === null) return err(`${path} git must be a YAML mapping`);
+  const ledger = root.ledger === undefined ? {} : asRecord(root.ledger);
+  if (ledger === null) return err(`${path} ledger must be a YAML mapping`);
   const modelProvider = parseModelProviderConfig(
     root.model_provider,
     `${path} model_provider`,
@@ -441,6 +453,11 @@ function parseRuntimeConfig(
   for (const key of Object.keys(git)) {
     if (!GIT_KEYS.has(key)) {
       return err(`${path} git.${key} is not a known git config field`);
+    }
+  }
+  for (const key of Object.keys(ledger)) {
+    if (!LEDGER_KEYS.has(key)) {
+      return err(`${path} ledger.${key} is not a known ledger config field`);
     }
   }
 
@@ -465,6 +482,11 @@ function parseRuntimeConfig(
     `${path} engine.external_handler_timeout_ms`,
   );
   if (!externalHandlerTimeoutMs.ok) return err(externalHandlerTimeoutMs.error);
+  const ledgerRetentionDays = parseOptionalPositiveInteger(
+    ledger.retention_days,
+    `${path} ledger.retention_days`,
+  );
+  if (!ledgerRetentionDays.ok) return err(ledgerRetentionDays.error);
 
   const engineAutoCommit = parseOptionalBoolean(
     engine.auto_commit_workflows,
@@ -514,6 +536,11 @@ function parseRuntimeConfig(
           gitAutoCommit.value ??
           DEFAULT_RUNTIME_CONFIG.git.auto_commit_workflows,
       }),
+      ledger: Object.freeze({
+        ...(ledgerRetentionDays.value !== undefined
+          ? { retentionDays: ledgerRetentionDays.value }
+          : {}),
+      }),
       ...(modelProvider.value !== undefined
         ? { modelProvider: modelProvider.value }
         : {}),
@@ -540,6 +567,7 @@ const ENGINE_KEYS = new Set([
   "auto_resolve_questions",
 ]);
 const GIT_KEYS = new Set(["auto_commit_workflows"]);
+const LEDGER_KEYS = new Set(["retention_days"]);
 
 function parseModelProviderConfig(
   raw: unknown,

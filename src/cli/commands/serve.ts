@@ -47,6 +47,7 @@ import type { OperationalWorkResult } from "../../engine/operational/operational
 import { getCurrentBranch } from "../../adopted-ref";
 import { compileRange } from "../../engine/core/compile-range";
 import { isWorkingTreeDirty } from "../../git";
+import { runLedgerRetentionPass } from "../../ledger/runs";
 import { resolveVaultPath } from "../../surface/resolve-vault";
 
 import {
@@ -527,6 +528,7 @@ async function pollLoop(input: {
   // gets one notification on transition, not one per poll tick.
   let lastKind: string | null = null;
   let nextOperationalAtMs = 0;
+  let nextLedgerGcAtMs = 0;
   let heartbeatBranch = initialBranch;
 
   while (!cancel.aborted) {
@@ -613,6 +615,33 @@ async function pollLoop(input: {
       if (operationalDue) {
         nextOperationalAtMs = nowMs + operationalIntervalMs;
       }
+
+      // Daily run-ledger retention (daemon-only; dome sync never prunes).
+      // In-process cadence: first pass on startup's first workable tick,
+      // then every 24h — no persisted state (a restart pruning once more
+      // is an idempotent no-op when nothing is eligible). Never VACUUMs.
+      const retentionDays = runtime.config.ledger.retentionDays;
+      if (retentionDays !== undefined && nowMs >= nextLedgerGcAtMs) {
+        nextLedgerGcAtMs = nowMs + 24 * 60 * 60 * 1000;
+        try {
+          const pruned = runLedgerRetentionPass({
+            ledger: runtime.ledgerDb,
+            retentionDays,
+          });
+          if (!quiet && pruned.prunedRuns > 0) {
+            console.error(
+              `dome serve: run-ledger retention pruned ${pruned.prunedRuns} runs (+${pruned.prunedCapabilityUses} capability uses) older than ${retentionDays}d`,
+            );
+          }
+        } catch (e) {
+          if (!quiet) {
+            console.error(
+              `dome serve: run-ledger retention failed: ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
+        }
+      }
+
       lastKind = tick?.kind ?? "tick-error";
       if (tick?.kind === "adopted" && !cancel.aborted) {
         const nextDrift = await detectDrift(vaultPath);

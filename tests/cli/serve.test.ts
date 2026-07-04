@@ -36,7 +36,15 @@ import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { commit, currentSha, initRepo } from "../../src/git";
 import { getAdoptedRef } from "../../src/adopted-ref";
 import { openLedgerDb } from "../../src/ledger/db";
-import { queryRuns } from "../../src/ledger/runs";
+import {
+  getRun,
+  insertQueued,
+  markRunning,
+  markSucceeded,
+  newRunId,
+  queryRuns,
+  type RunId,
+} from "../../src/ledger/runs";
 import { openOutboxDb } from "../../src/outbox/db";
 import { insertPending, queryOutbox } from "../../src/outbox/dispatch";
 
@@ -453,6 +461,118 @@ describe("runServe smoke", () => {
     controller.abort();
     const code = await servePromise;
     expect(code).toBe(0);
+  }, 10_000);
+
+  test("auto-prunes the run ledger daily when ledger.retention_days is configured", async () => {
+    const f = await makeFixture({
+      configYaml: `${defaultServeConfig()}
+ledger:
+  retention_days: 30
+`,
+    });
+    fixtures.push(f);
+    silenceConsole();
+
+    // Pre-seed the ledger BEFORE the daemon starts: two old succeeded runs
+    // for one processor (100d, 90d ago) plus a recent run (1d ago) that
+    // supersedes both. Per Task 1's hardened predicate, an old run is only
+    // eligible when a newer run exists for the same processor — the recent
+    // run makes both old rows eligible; it stays retained as the newest.
+    const ledgerPath = join(f.vaultPath, ".dome", "state", "runs.db");
+    const seeded = await openLedgerDb({ path: ledgerPath });
+    if (!seeded.ok) throw new Error(`could not seed ledger: ${seeded.error.kind}`);
+    const daysAgo = (days: number): Date =>
+      new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const seedRun = (suffix: string, startedAt: Date): RunId => {
+      const id = newRunId(startedAt, () => suffix);
+      insertQueued(seeded.value.db, {
+        id,
+        proposalId: null,
+        processorId: "test.retention-seed",
+        processorVersion: "1.0.0",
+        phase: "garden",
+        inputCommit: commitOid(f.initialSha),
+        triggerKind: "signal",
+        triggerPayload: null,
+        startedAt,
+      });
+      markRunning(seeded.value.db, id, startedAt);
+      const finishedAt = new Date(startedAt.getTime() + 10);
+      markSucceeded(seeded.value.db, {
+        id,
+        effectHashes: [],
+        costUsd: null,
+        durationMs: 10,
+        outputCommit: null,
+        finishedAt,
+      });
+      return id;
+    };
+    const oldRunA = seedRun("aaaaaa", daysAgo(100));
+    const oldRunB = seedRun("bbbbbb", daysAgo(90));
+    const recentRun = seedRun("cccccc", daysAgo(1));
+    seeded.value.db.close();
+
+    const intervalMs = 250;
+    const controller = new AbortController();
+    const servePromise = runServe(
+      {
+        vault: f.vaultPath,
+        bundlesRoot: f.bundlesRoot,
+        pollIntervalMs: intervalMs,
+      },
+      {
+        signal: controller.signal,
+        operationalIntervalMs: intervalMs,
+      },
+    );
+
+    await waitFor(
+      async () => (await getAdoptedRef(f.vaultPath, "main")) === f.initialSha,
+      3000,
+    );
+    // The retention pass fires on the first workable operational tick
+    // (its own clock starts at 0). Give it a couple of intervals to land.
+    await new Promise((r) => setTimeout(r, intervalMs * 2));
+
+    let afterFirstPass: {
+      readonly a: ReturnType<typeof getRun>;
+      readonly b: ReturnType<typeof getRun>;
+      readonly recent: ReturnType<typeof getRun>;
+    };
+    {
+      const check = await openLedgerDb({ path: ledgerPath });
+      if (!check.ok) throw new Error("could not reopen ledger");
+      try {
+        afterFirstPass = {
+          a: getRun(check.value.db, oldRunA),
+          b: getRun(check.value.db, oldRunB),
+          recent: getRun(check.value.db, recentRun),
+        };
+      } finally {
+        check.value.db.close();
+      }
+    }
+    expect(afterFirstPass.a).toBeNull();
+    expect(afterFirstPass.b).toBeNull();
+    expect(afterFirstPass.recent).not.toBeNull();
+
+    // A second operational tick must not error even though the 24h gate
+    // means retention simply doesn't re-fire — assert row-state stability,
+    // not timing.
+    await new Promise((r) => setTimeout(r, intervalMs * 2));
+
+    controller.abort();
+    const code = await servePromise;
+    expect(code).toBe(0);
+
+    const final = await openLedgerDb({ path: ledgerPath });
+    if (!final.ok) throw new Error("could not reopen ledger");
+    try {
+      expect(getRun(final.value.db, recentRun)).not.toBeNull();
+    } finally {
+      final.value.db.close();
+    }
   }, 10_000);
 
   test("defers operational work while the working tree is dirty, drains once clean", async () => {

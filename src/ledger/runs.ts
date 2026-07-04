@@ -1270,6 +1270,24 @@ export function pruneRunLedger(
   });
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * One automatic retention pass: prune rows older than `retentionDays`
+ * using the hardened eligibility predicate. Never VACUUMs — freed pages
+ * recycle in place; explicit reclamation stays with
+ * `dome repair run-ledger --apply --vacuum`.
+ */
+export function runLedgerRetentionPass(opts: {
+  readonly ledger: LedgerDb;
+  readonly retentionDays: number;
+  readonly now?: () => Date;
+}): PruneRunLedgerResult {
+  const nowMs = (opts.now ?? (() => new Date()))().getTime();
+  const cutoffIso = new Date(nowMs - opts.retentionDays * DAY_MS).toISOString();
+  return pruneRunLedger(opts.ledger, { cutoffIso, vacuum: false });
+}
+
 // ----- internals ------------------------------------------------------------
 
 // Row → RunRow / RunSummaryRow codecs are defined below, after the closed-enum
