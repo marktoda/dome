@@ -436,6 +436,10 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .option("--category <category>", "Filter by document category.")
     .option("--type <type>", "Filter by page type.")
     .option("--limit <n>", "Maximum matches to show.", parsePositiveIntegerOption)
+    .option(
+      "--miss [note]",
+      "Record this query as a retrieval miss after printing results (meta/retrieval-misses.md); optional note.",
+    )
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -446,6 +450,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           category: options.category,
           type: options.type,
           limit: options.limit,
+          miss: options.miss,
           json: options.json,
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
@@ -512,6 +517,10 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .description("Export a source-backed context packet for a topic.")
     .argument("<topic...>", "Topic to export.")
     .option("--limit <n>", "Maximum matches to include.", parsePositiveIntegerOption)
+    .option(
+      "--miss [note]",
+      "Record this topic as a retrieval miss after printing the packet (meta/retrieval-misses.md); optional note.",
+    )
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -520,6 +529,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
         await runExportContext({
           topic: topic.join(" "),
           limit: options.limit,
+          miss: options.miss,
           json: options.json,
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
@@ -927,6 +937,7 @@ type QueryCliOptions = {
   readonly category?: string;
   readonly type?: string;
   readonly limit?: number;
+  readonly miss?: string | boolean;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;
@@ -954,6 +965,7 @@ type LogCliOptions = {
 
 type ExportContextCliOptions = {
   readonly limit?: number;
+  readonly miss?: string | boolean;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;

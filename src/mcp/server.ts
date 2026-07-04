@@ -9,6 +9,7 @@
 //   query          → vault.runView("query")  (dome.search.query/v1)
 //   export_context → vault.runView("export-context")
 //                                            (dome.search.export-context/v1)
+//   report_miss    → reportMiss              (dome.report-miss/v1)
 //   status         → buildStatusSnapshot     (status snapshot, stable keys)
 //   check          → buildCheckReport        (dome.check/v1)
 //   resolve        → vault.resolve           (dome.answer/v1)
@@ -33,8 +34,9 @@
 //     ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY and enforced by
 //     tests/integration/bundle-deps.test.ts.
 //   - No engine control here: no sync/serve/init/rebuild tools. The daemon
-//     owns compilation; `capture` and `resolve` reuse the existing
-//     non-engine write channels (ordinary human commit; answers.db).
+//     owns compilation; `capture`, `resolve`, `settle`, and `report_miss`
+//     all reuse existing non-engine write channels (ordinary human commit;
+//     answers.db).
 
 import {
   McpServer,
@@ -55,6 +57,7 @@ import {
   resolveScopes,
 } from "../surface/check";
 import { performSettle, settleResultJson } from "../surface/settle";
+import { reportMiss, reportMissResultJson } from "../surface/report-miss";
 import { buildStatusSnapshot } from "../surface/status";
 import {
   catalogViewProblemMessage,
@@ -99,6 +102,8 @@ Typical loop:
 - resolve: answer a Dome-raised question by id (omit value to read it).
 - settle: close, defer, or keep a task line by its block anchor.
 - query / export_context: adopted-state recall with source refs.
+- report_miss: log a retrieval miss when a query/packet missed obvious
+  context — feeds the weekly report card's dogfood evidence.
 - brief / tasks: today's daily note content and source-backed open loops.
 
 All results are JSON documents matching the CLI's --json schemas.`;
@@ -322,6 +327,38 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
           }),
         });
         return run.kind === "error" ? run.result : jsonToolResult(run.data);
+      }),
+  );
+
+  // ----- report_miss -----------------------------------------------------------
+
+  server.registerTool(
+    "report_miss",
+    {
+      title: "Log a retrieval miss",
+      description:
+        "Append one dated entry to meta/retrieval-misses.md — the dogfood " +
+        "evidence base retrieval-quality work (banked embeddings) is gated " +
+        "on. Call this when a `query`/`export_context` result missed " +
+        "obvious context instead of just telling the user. One ordinary " +
+        "human commit (`miss: <query first 40 chars>`); never talks to the " +
+        "engine. Returns the dome.report-miss/v1 JSON payload.",
+      inputSchema: {
+        query: z.string().min(1).describe(
+          "The query or topic that missed.",
+        ),
+        note: z.string().optional().describe(
+          "What was missing. Defaults to 'no note'.",
+        ),
+      },
+    },
+    async ({ query, note }) =>
+      enqueue(async () => {
+        const outcome = await reportMiss(vault, { query, note });
+        return {
+          ...jsonToolResult(reportMissResultJson(outcome)),
+          ...(outcome.status === "recorded" ? {} : { isError: true }),
+        };
       }),
   );
 

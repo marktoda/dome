@@ -1087,7 +1087,7 @@ Exit codes: `0` on `settled`; `64` (`EX_USAGE`) on `not-found` (no line
 carries the anchor) or `invalid` (bad disposition, or `defer` without a
 well-formed `--until`).
 
-### `dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]`
+### `dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--miss [note]] [--json]`
 
 Invokes the `dome.search.query` view-phase processor against adopted-state
 projections. The processor reads FTS rows and related facts through
@@ -1179,6 +1179,26 @@ underlying row shape but bounds per-match related facts, diagnostics, and
 questions to the top topic-relevant rows; exhaustive provenance remains
 available through `dome inspect facts`, `dome inspect diagnostics`, and
 `dome inspect questions`.
+
+`--miss [note]` records this query as a retrieval-miss dogfood entry AFTER
+the results above have printed — the mechanical channel for the "note the
+miss" instruction the vault AGENTS.md template used to leave to hand-editing.
+The bare flag (no value) defaults the entry's note to `no note`; a supplied
+value becomes the note verbatim. This is a **thin CLI binding**: the append,
+grammar, and commit all live in `reportMiss` (`src/surface/report-miss.ts`,
+the same collector `dome export-context --miss` and the MCP `report_miss`
+tool call) — `dome query` never opens the retrieval-miss file itself. It
+appends one grammar-exact bullet to `meta/retrieval-misses.md` (created with
+a header on first miss) — `- YYYY-MM-DD — "<query>" — <note>` — and lands it
+as ONE ordinary human commit (`miss: <query first 40 chars>`, no `Dome-*`
+trailers), exactly like `dome capture`/`dome settle`; never opens the runtime
+and never talks to the engine. The acknowledgment (`dome query: miss
+recorded (<short-oid>)` or `... miss not recorded: <reason>`) prints to
+stderr so stdout stays exclusively the query's own output/JSON. This is the
+mechanical channel the retrieval miss-log gate ([[memory]] §"M6 — Banked
+embeddings design (spec-only)": "implementation proceeds when the log shows a
+real miss rate") was missing — see [[wiki/specs/vault-layout]]
+§"`meta/retrieval-misses.md`".
 
 ### `dome lint [--fail-on <severity>] [--limit <n>] [--json]`
 

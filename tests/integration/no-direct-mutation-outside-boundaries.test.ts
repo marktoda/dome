@@ -29,6 +29,11 @@ const ALLOWED_FILES = new Set([
   // commit via commitFilesOnHead — exactly like `dome capture`. Same boundary
   // class as capture.ts; the daemon constructs the Proposal from branch drift.
   "src/surface/settle.ts",
+  // The retrieval-miss log: appends one dated bullet to
+  // meta/retrieval-misses.md and lands it as one ordinary human commit via
+  // commitSingleFileOnHead — exactly like `dome capture`/`dome settle`. Same
+  // boundary class; the daemon constructs the Proposal from branch drift.
+  "src/surface/report-miss.ts",
   // The hosted agent's write path: create_document / edit_document write one
   // markdown file and land it as an ordinary human commit via
   // commitSingleFileOnHead — exactly like `dome capture`. Same boundary class

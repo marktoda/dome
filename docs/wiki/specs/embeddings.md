@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-09
-updated: 2026-06-12
+updated: 2026-07-03
 sources:
   - "[[memory]]"
   - "[[v1]]"
@@ -268,24 +268,33 @@ log shows a real miss rate** — concrete recall failures that BM25++
 demonstrably did not cover. This is [[memory]] decision 1 and [[v1]] decision
 4 made operational.
 
-The convention:
+The convention, shipped as Task 12 (the mechanical channel this section
+originally left to hand-appending never got): a documented `meta/`
+convention, not agent hand-editing.
 
-- **File:** `retrieval-misses.md` at the vault root (a plain markdown page,
-  human- and agent-appendable, adopted like any other page).
-- **Who writes:** foreground agents (and the user), at the moment a
-  `dome query` or `dome export-context` packet missed something that was later
-  found by hand. The vault-root AGENTS.md already instructs agents to "note
-  the miss"; this names the file and the line shape.
-- **Format:** one dated line per miss:
+- **File:** `meta/retrieval-misses.md` — a `meta/` convention beside
+  `preferences/signals.md`; see [[wiki/specs/vault-layout]]
+  §"`meta/retrieval-misses.md`". Created with a header on first miss, never
+  edited by hand.
+- **Who writes:** `dome query --miss [note]`, `dome export-context --miss
+  [note]`, and the MCP `report_miss` tool — all three call the same
+  `reportMiss` collector (`src/surface/report-miss.ts`). The earlier draft of
+  this section said "foreground agents append by hand"; that never got
+  operationalized (agents were told to "note the miss" with no mechanical
+  channel), so Task 12 built the channel instead: the caller who just saw the
+  miss records it in the same breath, one ordinary human commit per entry, no
+  hand-editing.
+- **Format:** one dated line per miss ([[wiki/specs/cli]] §"`dome query`"
+  is normative for the grammar):
 
   ```markdown
-  - YYYY-MM-DD query: "<text>" missed: [[page]] found-via: <how>
+  - YYYY-MM-DD — "<query>" — <note>
   ```
 
   Example:
 
   ```markdown
-  - 2026-06-12 query: "auth retro decisions" missed: [[wiki/syntheses/auth-retro]] found-via: manual grep for "retro"
+  - 2026-06-12 — "auth retro decisions" — missed wiki/syntheses/auth-retro; found via manual grep for "retro"
   ```
 
 The log is the evidence surface: misses where the query's terms simply don't
@@ -293,7 +302,9 @@ appear on the missed page (vocabulary mismatch — the one failure class dense
 vectors actually fix) justify building this spec; misses that trace to
 ranking, recency, or indexing bugs justify fixing M1 instead. A handful of
 entries is anecdote; a recurring vocabulary-mismatch pattern is the gate
-opening.
+opening. [[wiki/specs/daily-surface]] §"Report card" counts entries per week
+(`dome.health.report-card`) so the miss rate is visible without reading the
+raw log.
 
 ## Related
 

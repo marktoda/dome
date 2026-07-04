@@ -1,11 +1,12 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-12
+updated: 2026-07-03
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
   - "[[wedge]]"
+  - "[[memory]]"
 description: "Vault directory contract: wiki/raw/notes/inbox/meta roots and category table; raw immutable, notes never engine-written, meta/ generated bookkeeping, sources/ a committed feed"
 ---
 
@@ -310,6 +311,42 @@ derives rebuildable `dome.preference.*` facts from it; malformed lines
 degrade to one info diagnostic, never a crash. Append-only is convention
 (legibility + stable line refs), not broker-enforced in v1.
 
+## `meta/retrieval-misses.md` — retrieval-miss log (convention)
+
+`meta/retrieval-misses.md` is the **append-only retrieval-miss log** —
+the mechanical channel [[memory]] §"M6 — Banked embeddings design
+(spec-only)" gates implementation of banked embeddings on ("implementation
+proceeds when the log shows a real miss rate"). Task 12 built this channel
+because the earlier convention — telling agents to "note the miss in the
+relevant markdown" — was never operationalized; there was nowhere mechanical
+to write it. By the category table above, `meta/` is `external`; unlike the
+rest of `meta/` (engine-written via `patch.auto`), this file is
+**human-commit-authored**, the same non-engine write path as
+`preferences/signals.md`. Unlike `preferences/signals.md`, `dome init` does
+NOT scaffold it — it is created lazily, with a header, on the first miss.
+One dated line per miss:
+
+```markdown
+- 2026-06-12 — "auth retro decisions" — missed wiki/syntheses/auth-retro; found via manual grep for "retro"
+```
+
+Grammar (one line, no wrapping; [[wiki/specs/cli]] §"`dome query`" is
+normative):
+
+```
+- YYYY-MM-DD — "<query>" — <note>
+```
+
+Writers: `dome query --miss [note]`, `dome export-context --miss [note]`,
+and the MCP `report_miss` tool ([[wiki/specs/mcp-surface]]) — all three call
+`reportMiss` (`src/surface/report-miss.ts`), the single collector that owns
+the grammar (exported so nothing re-derives it), the header, and the commit
+(`miss: <query first 40 chars>`, no `Dome-*` trailers — the same
+commit-or-nothing seam as `dome capture`/`dome settle`; never opens the
+runtime, never talks to the engine). `dome.health.report-card`
+([[wiki/specs/daily-surface]] §"Report card") counts window-matched entries
+by date each week; a missing file just omits that row, never an error.
+
 ## `meta/` — generated bookkeeping (convention)
 
 `meta/` holds machine-owned bookkeeping files: the per-category index shards
@@ -563,6 +600,7 @@ The capability broker enforces ownership. Default rules:
 | `raw/**` | nobody — immutable per [[wiki/invariants/RAW_IS_IMMUTABLE]] |
 | `core.md` | propose-only — agents read it; the only auto-writers are the two gated block-scoped processors (`dome.agent.preference-promotion-answer` → promoted-preferences block; `dome.agent.active-projects` → active-projects block), each via a narrow per-processor grant ([[wiki/specs/preferences]] §"Two gated writers, block-scoped") |
 | `preferences/signals.md` | shared append surface — the three `dome.agent` charters, the promotion answer handler, foreground agents, and the owner all append signal lines (§"`preferences/signals.md`") |
+| `meta/retrieval-misses.md` | no agent grant — the only writer is `reportMiss` (`src/surface/report-miss.ts`) via `dome query --miss`, `dome export-context --miss`, or the MCP `report_miss` tool, an ordinary human commit outside the broker entirely (§"`meta/retrieval-misses.md`") |
 | `wiki/**/*.md` | open; `dome.daily.ambiguous-followup-answer` also has `patch.auto` for accepted follow-ups |
 | `wiki/**/*.md` | `dome.agent.ingest` (via `patch.auto`, within grant) |
 | `notes/**/*.md` | `dome.agent.ingest` (via `patch.auto`, within grant) — grant-as-boundary |

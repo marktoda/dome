@@ -16,6 +16,16 @@
 // [[wiki/specs/daily-surface]] §"Report card".
 
 import { generatedBlockMarkers } from "../../../../src/core/generated-block";
+import {
+  MISS_ENTRY_PATTERN,
+  RETRIEVAL_MISSES_PATH,
+} from "../../../../src/surface/report-miss";
+
+// The retrieval-miss log (Task 12); the miss row renders only when present.
+// Re-exported so existing importers of this module (report-card.ts, its
+// tests) keep working; src/surface/report-miss.ts is the single source of
+// both the path and the entry grammar — see `countRetrievalMisses` below.
+export { RETRIEVAL_MISSES_PATH };
 
 // ----- Identity + constants --------------------------------------------------
 
@@ -31,8 +41,6 @@ export const REPORT_CARD_MARKERS = generatedBlockMarkers(
 
 /** The full-card path, rewritten in place each week. */
 export const REPORT_CARD_PATH = "meta/report-card.md";
-/** The retrieval-miss log (Task 12); the miss row renders only when present. */
-export const RETRIEVAL_MISSES_PATH = "meta/retrieval-misses.md";
 /** Heading the daily block lands under. */
 export const WEEKLY_REVIEW_HEADING = "## Weekly review";
 
@@ -193,17 +201,18 @@ export function possiblyIdle(
 
 /**
  * Count retrieval-miss log entries whose date falls in the trailing window.
- * Task 12's entry grammar is `- YYYY-MM-DD — "<query>" — <note>`; this counts
- * the date-prefixed bullets whose date is one of `windowDates`.
+ * Task 12's entry grammar is `- YYYY-MM-DD — "<query>" — <note>`
+ * (`src/surface/report-miss.ts`'s `MISS_ENTRY_PATTERN` — the single source,
+ * imported rather than re-derived here); this counts the date-prefixed
+ * bullets whose date is one of `windowDates`.
  */
 export function countRetrievalMisses(
   content: string,
   windowDates: ReadonlySet<string>,
 ): number {
   let count = 0;
-  const re = /^- (\d{4}-\d{2}-\d{2}) —/;
   for (const line of content.split("\n")) {
-    const match = re.exec(line);
+    const match = MISS_ENTRY_PATTERN.exec(line);
     const date = match?.[1];
     if (date !== undefined && windowDates.has(date)) count += 1;
   }

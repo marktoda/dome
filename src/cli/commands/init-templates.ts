@@ -146,8 +146,10 @@ file hunting:
   prepared in markdown by Dome's background loop.
 
 Treat these as read-first surfaces, not mandatory ceremony. If a packet misses
-obvious context or returns noisy results, note the miss in the relevant markdown
-or tell the user; that feedback is V1 dogfood evidence.
+obvious context or returns noisy results, report it with
+\`dome query "<text>" --miss "what was missing"\` (or the same \`--miss\` flag on
+\`dome export-context\`) instead of just telling the user — that log is V1
+dogfood evidence.
 
 Advanced/debug commands:
 
