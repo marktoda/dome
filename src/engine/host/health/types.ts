@@ -405,6 +405,22 @@ export type HealthFinding =
       readonly id: "commit_gpgsign";
       readonly message: string;
       readonly recovery: string;
+    }
+  | {
+      // runs.db has grown past LEDGER_SIZE_WARNING_BYTES without pruning —
+      // surfaces the disk-growth problem `ledger.retention_days` exists to
+      // solve before the operator stumbles onto it (wiki/specs/run-ledger.md
+      // §Retention).
+      readonly code: "ledger.oversized";
+      readonly severity: "warning";
+      readonly subject: "storage";
+      readonly id: "ledger.size";
+      readonly message: string;
+      readonly recovery: string;
+      readonly storage: {
+        readonly path: string;
+        readonly sizeBytes: number;
+      };
     };
 
 export type HealthSummary = {
@@ -437,6 +453,7 @@ export type HealthSummary = {
   readonly recurringOutboxFailures: number;
   readonly unreadableQuestions: number;
   readonly recurringTimeouts: number;
+  readonly ledgerOversized: number;
 };
 
 /**

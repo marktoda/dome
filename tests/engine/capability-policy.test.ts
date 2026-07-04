@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import {
   computeCapabilityPolicyHash,
+  DEFAULT_RUNTIME_CONFIG,
   loadCapabilityPolicy,
 } from "../../src/engine/core/capability-policy";
 
@@ -259,11 +260,106 @@ model_provider:
         },
       },
       git: { auto_commit_workflows: false },
+      ledger: {},
       modelProvider: {
         kind: "command",
         command: ["bun", ".dome/model-provider.ts"],
       },
     });
+  });
+
+  test("parses ledger.retention_days from .dome/config.yaml", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+ledger:
+  retention_days: 30
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.runtime.ledger.retentionDays).toBe(30);
+  });
+
+  test("absent ledger config leaves retentionDays undefined", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+extensions: {}
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.runtime.ledger.retentionDays).toBeUndefined();
+  });
+
+  test.each([
+    ["0", "0"],
+    ["-1", "-1"],
+    ['"x"', '"x"'],
+  ])(
+    "rejects malformed ledger.retention_days (%s)",
+    async (_label, yamlValue) => {
+      const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+      roots.push(root);
+      mkdirSync(join(root, ".dome"), { recursive: true });
+      writeFileSync(
+        join(root, ".dome", "config.yaml"),
+        `
+ledger:
+  retention_days: ${yamlValue}
+`,
+        "utf8",
+      );
+
+      const result = await loadCapabilityPolicy(root);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toContain(
+        "ledger.retention_days must be a positive integer",
+      );
+    },
+  );
+
+  test("rejects unknown ledger config keys", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-policy-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(
+      join(root, ".dome", "config.yaml"),
+      `
+ledger:
+  vacuum: true
+`,
+      "utf8",
+    );
+
+    const result = await loadCapabilityPolicy(root);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(
+      "ledger.vacuum is not a known ledger config field",
+    );
+  });
+
+  test("DEFAULT_RUNTIME_CONFIG.ledger has no retention configured", () => {
+    expect(DEFAULT_RUNTIME_CONFIG.ledger).toEqual({});
   });
 
   test("rejects malformed runtime model provider config", async () => {

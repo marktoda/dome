@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-11
+updated: 2026-07-03
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -126,7 +126,24 @@ ledger forensics remain on the CLI operational surface.
 
 ## Retention
 
-Default retention: **forever**. The ledger is small (typically a few KB per run) and the audit value compounds over time. Users with vaults that grow into millions of runs can explicitly prune low-signal history with:
+Default retention: **forever**. The ledger is small (typically a few KB per run) and the audit value compounds over time. The engine's own built-in default (`DEFAULT_RUNTIME_CONFIG`, used when a vault has no config at all) never prunes — retention is opt-in per vault, not an engine-wide posture.
+
+The vault template shipped by `dome init` opts in at **30 days**:
+
+```yaml
+ledger:
+  # Prune succeeded/no-op run-ledger rows older than this many days. Audit
+  # rows for failures, timeouts, and each processor's newest runs are always
+  # kept. Comment out to retain forever; reclaim disk with
+  # `dome repair run-ledger --apply --vacuum`.
+  retention_days: 30
+```
+
+Comment out or remove the key to retain forever. When `ledger.retention_days` is set, `dome serve` prunes automatically: once on the daemon's first workable tick, then every 24 hours thereafter, using the same in-memory cadence as the operational tick (no persisted last-run state — a restart pruning once more is an idempotent no-op when nothing is newly eligible). `dome sync` never prunes; automatic retention is daemon-only. The daily pass never runs `VACUUM` — freed pages recycle in place inside the file, so the `.db` file's on-disk size does not shrink from the daily pass alone.
+
+Eligibility is narrow and safe by construction: only rows with `finished_at` set, older than the cutoff, and either `status = 'succeeded'` or `status = 'skipped'` with `error IS NULL` (idempotency-style skips) are ever eligible. Failed, timed-out, cancelled, queued, running, and reason-bearing skipped rows are never eligible because they carry active forensics. Two supersession guards additionally protect live behavior regardless of age or status: **a processor's newest run is never eligible** (`latestActiveProblemRuns` suppresses old failures only while a newer same-processor run exists, so deleting the newest success would resurface resolved failures), and **a processor's newest schedule-triggered run is never eligible** (after a projection rebuild the scheduler recovers last-fire times from the ledger via `latestScheduleRunStartedAt`; deleting it would re-fire the job — the 2026-06-10 "consolidate re-charged 11x" incident class).
+
+The manual command remains the explicit, disk-reclaiming path — same eligibility predicate, operator-controlled cutoff and `--vacuum`:
 
 ```sh
 dome repair run-ledger --older-than-days 365        # dry-run
@@ -134,16 +151,9 @@ dome repair run-ledger --older-than-days 365 --apply
 dome repair run-ledger --older-than-days 365 --apply --vacuum
 ```
 
-The command never creates a missing ledger, defaults to dry-run, and prunes only old successful rows plus idempotency-style skipped rows (`status = skipped` with no error). Failed, timed-out, cancelled, queued, running, and reason-bearing skipped rows are preserved because they carry active forensics. `--vacuum` is separate and opt-in because SQLite compaction can be expensive.
+The command never creates a missing ledger, defaults to dry-run, and prunes only the rows described above. `--vacuum` is separate and opt-in because SQLite compaction can be expensive; it is the only way to shrink the file on disk, since neither the manual command's non-vacuum runs nor the daemon's daily pass compact.
 
-A future background policy may opt into the same posture via `<vault>/.dome/config.yaml`:
-
-```yaml
-ledger:
-  retention_days: 365
-```
-
-The engine does not prune on `dome sync` in the current implementation; background retention needs an explicit policy implementation before it can run automatically. Even then, failed-run forensics should not be dropped silently.
+`dome doctor`/`dome check` additionally warn when `runs.db` grows past 512 MB regardless of the retention setting (`ledger.oversized`), naming the actual size and both remedies (`ledger.retention_days` and `dome repair run-ledger --apply --vacuum`) — unpruned or slow-growing ledgers are visible before disk pressure forces the question.
 
 ## What the ledger cannot do
 

@@ -565,12 +565,35 @@ WHERE id = ? AND status = 'running' AND started_at = ?
 // Retention deliberately prunes only boring terminal rows. Failed, timed_out,
 // cancelled, queued, running, and reason-bearing skipped rows keep their audit
 // value until an operator explicitly decides otherwise in a future wider tool.
+//
+// Two supersession guards make pruning safe by construction:
+//   - a processor's NEWEST run is never eligible: `latestActiveProblemRuns`
+//     suppresses old failures only while a newer same-processor run exists,
+//     so deleting the newest success would resurface resolved failures.
+//   - a processor's newest SCHEDULE-triggered run is never eligible: after a
+//     projection rebuild the scheduler recovers last-fire times from the
+//     ledger (`latestScheduleRunStartedAt`); deleting it re-fires the job
+//     (the 2026-06-10 "consolidate re-charged 11x" incident class).
 const RETENTION_ELIGIBLE_RUN_WHERE_SQL = `
 finished_at IS NOT NULL
   AND started_at < ?
   AND (
     status = 'succeeded'
     OR (status = 'skipped' AND error IS NULL)
+  )
+  AND EXISTS (
+    SELECT 1 FROM runs newer
+    WHERE newer.processor_id = runs.processor_id
+      AND newer.started_at > runs.started_at
+  )
+  AND (
+    runs.trigger_kind != 'schedule'
+    OR EXISTS (
+      SELECT 1 FROM runs newer_schedule
+      WHERE newer_schedule.processor_id = runs.processor_id
+        AND newer_schedule.trigger_kind = 'schedule'
+        AND newer_schedule.started_at > runs.started_at
+    )
   )
 `.trim();
 
@@ -1245,6 +1268,24 @@ export function pruneRunLedger(
     prunedCapabilityUses,
     vacuumed: opts.vacuum === true,
   });
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * One automatic retention pass: prune rows older than `retentionDays`
+ * using the hardened eligibility predicate. Never VACUUMs — freed pages
+ * recycle in place; explicit reclamation stays with
+ * `dome repair run-ledger --apply --vacuum`.
+ */
+export function runLedgerRetentionPass(opts: {
+  readonly ledger: LedgerDb;
+  readonly retentionDays: number;
+  readonly now?: () => Date;
+}): PruneRunLedgerResult {
+  const nowMs = (opts.now ?? (() => new Date()))().getTime();
+  const cutoffIso = new Date(nowMs - opts.retentionDays * DAY_MS).toISOString();
+  return pruneRunLedger(opts.ledger, { cutoffIso, vacuum: false });
 }
 
 // ----- internals ------------------------------------------------------------

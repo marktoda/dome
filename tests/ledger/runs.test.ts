@@ -38,10 +38,13 @@ import {
   newRunId,
   orphanRuns,
   ORPHAN_RUN_RECOVERY_ERROR_REASON,
+  planRunLedgerRetention,
+  pruneRunLedger,
   queryRunSummaries,
   queryRuns,
   updateOutputCommit,
   type RunId,
+  type TriggerKind,
 } from "../../src/ledger/runs";
 
 const INPUT_COMMIT = commitOid("abcdef0000000000000000000000000000000000");
@@ -1299,5 +1302,228 @@ describe("ORPHAN_RECOVERED_RUNS_ARE_SUPPRESSED", () => {
 
     expect(countLatestActiveProblemRuns(db)).toBe(0);
     expect(latestActiveProblemRuns(db)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// planRunLedgerRetention / pruneRunLedger — supersession guards
+//
+// The eligibility predicate must never let retention delete (a) a
+// processor's newest run — `latestActiveProblemRuns` suppresses old
+// failures only while a newer same-processor run exists, so deleting the
+// newest success would resurface resolved failures — or (b) a processor's
+// newest schedule-triggered run — the scheduler recovers last-fire times
+// from the ledger after a projection rebuild, so deleting it re-fires the
+// job (the 2026-06-10 "consolidate re-charged 11x" incident class).
+// ---------------------------------------------------------------------------
+
+describe("planRunLedgerRetention / pruneRunLedger — supersession guards", () => {
+  let root: string;
+  let db: LedgerDb;
+
+  beforeEach(async () => {
+    root = mkdtempSync(join(tmpdir(), "dome-ledger-retention-"));
+    const path = join(root, ".dome", "state", "runs.db");
+    const r = await openLedgerDb({ path });
+    if (!r.ok) throw new Error(`openLedgerDb failed: ${JSON.stringify(r.error)}`);
+    db = r.value.db;
+  });
+
+  afterEach(() => {
+    try {
+      db.close();
+    } catch {
+      // already closed
+    }
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  function daysAgoIso(days: number): string {
+    return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  type SeedTerminal = "succeeded" | "failed" | "skipped";
+
+  /** Insert one queued->terminal run row, ready for retention scanning. */
+  function seedRun(opts: {
+    readonly processorId: string;
+    readonly suffix: string;
+    readonly startedAt: Date;
+    readonly terminal: SeedTerminal;
+    readonly triggerKind?: TriggerKind;
+  }): RunId {
+    const id = newRunId(opts.startedAt, () => opts.suffix);
+    insertQueued(db, {
+      id,
+      proposalId: null,
+      processorId: opts.processorId,
+      processorVersion: "1.0.0",
+      phase: "garden",
+      inputCommit: INPUT_COMMIT,
+      triggerKind: opts.triggerKind ?? "signal",
+      triggerPayload: null,
+      startedAt: opts.startedAt,
+    });
+    const finishedAt = new Date(opts.startedAt.getTime() + 10);
+    if (opts.terminal === "succeeded") {
+      markRunning(db, id, opts.startedAt);
+      markSucceeded(db, {
+        id,
+        effectHashes: [],
+        costUsd: null,
+        durationMs: 10,
+        outputCommit: null,
+        finishedAt,
+      });
+    } else if (opts.terminal === "failed") {
+      markRunning(db, id, opts.startedAt);
+      markFailed(db, { id, error: "boom", durationMs: 10, finishedAt });
+    } else {
+      markSkipped(db, { id, finishedAt });
+    }
+    return id;
+  }
+
+  it("never deletes a processor's newest run, even when old and succeeded", () => {
+    seedRun({
+      processorId: "test.p1",
+      suffix: "aaaaaa",
+      startedAt: new Date(daysAgoIso(100)),
+      terminal: "succeeded",
+    });
+
+    const plan = planRunLedgerRetention(db, { cutoffIso: daysAgoIso(30) });
+    expect(plan.eligibleRuns).toBe(0);
+  });
+
+  it("an old succeeded run superseded by a newer run IS eligible", () => {
+    seedRun({
+      processorId: "test.p1",
+      suffix: "aaaaaa",
+      startedAt: new Date(daysAgoIso(100)),
+      terminal: "succeeded",
+    });
+    seedRun({
+      processorId: "test.p1",
+      suffix: "bbbbbb",
+      startedAt: new Date(daysAgoIso(1)),
+      terminal: "succeeded",
+    });
+
+    const plan = planRunLedgerRetention(db, { cutoffIso: daysAgoIso(30) });
+    expect(plan.eligibleRuns).toBe(1);
+  });
+
+  it("never deletes a processor's newest schedule-triggered run", () => {
+    // A is superseded as a run (B is newer), but A is the newest SCHEDULE
+    // run since B is non-schedule — A must stay ineligible.
+    seedRun({
+      processorId: "test.p1",
+      suffix: "aaaaaa",
+      startedAt: new Date(daysAgoIso(100)),
+      terminal: "succeeded",
+      triggerKind: "schedule",
+    });
+    seedRun({
+      processorId: "test.p1",
+      suffix: "bbbbbb",
+      startedAt: new Date(daysAgoIso(1)),
+      terminal: "succeeded",
+      triggerKind: "signal",
+    });
+
+    const plan = planRunLedgerRetention(db, { cutoffIso: daysAgoIso(30) });
+    expect(plan.eligibleRuns).toBe(0);
+  });
+
+  it("an old schedule run with a NEWER schedule run is eligible", () => {
+    const oldSchedule = seedRun({
+      processorId: "test.p1",
+      suffix: "aaaaaa",
+      startedAt: new Date(daysAgoIso(100)),
+      terminal: "succeeded",
+      triggerKind: "schedule",
+    });
+    const newSchedule = seedRun({
+      processorId: "test.p1",
+      suffix: "bbbbbb",
+      startedAt: new Date(daysAgoIso(1)),
+      terminal: "succeeded",
+      triggerKind: "schedule",
+    });
+    recordCapabilityUse(db, {
+      runId: oldSchedule,
+      capability: "patch.auto",
+      resource: "wiki/a.md",
+      outcome: "allowed",
+      recordedAt: new Date(daysAgoIso(100)),
+    });
+    recordCapabilityUse(db, {
+      runId: newSchedule,
+      capability: "patch.auto",
+      resource: "wiki/b.md",
+      outcome: "allowed",
+      recordedAt: new Date(daysAgoIso(1)),
+    });
+
+    const plan = planRunLedgerRetention(db, { cutoffIso: daysAgoIso(30) });
+    expect(plan.eligibleRuns).toBe(1);
+
+    const result = pruneRunLedger(db, { cutoffIso: daysAgoIso(30) });
+    expect(result.prunedRuns).toBe(1);
+    expect(result.prunedCapabilityUses).toBe(1);
+
+    expect(getRun(db, oldSchedule)).toBeNull();
+    expect(getRun(db, newSchedule)).not.toBeNull();
+    expect(capabilityUsesByRun(db, oldSchedule)).toEqual([]);
+    expect(capabilityUsesByRun(db, newSchedule).length).toBe(1);
+  });
+
+  it("multiple eligible same-processor rows are deleted in ONE pass, newest retained", () => {
+    // Guards the DELETE-with-correlated-EXISTS self-reference: SQLite must
+    // evaluate supersession against the statement's stable snapshot, so two
+    // independently-eligible rows both go while the superseding newest stays.
+    const a = seedRun({
+      processorId: "test.p1",
+      suffix: "aaaaaa",
+      startedAt: new Date(daysAgoIso(100)),
+      terminal: "succeeded",
+    });
+    const b = seedRun({
+      processorId: "test.p1",
+      suffix: "bbbbbb",
+      startedAt: new Date(daysAgoIso(90)),
+      terminal: "succeeded",
+    });
+    const c = seedRun({
+      processorId: "test.p1",
+      suffix: "cccccc",
+      startedAt: new Date(daysAgoIso(1)),
+      terminal: "succeeded",
+    });
+
+    const result = pruneRunLedger(db, { cutoffIso: daysAgoIso(30) });
+    expect(result.prunedRuns).toBe(2);
+    expect(getRun(db, a)).toBeNull();
+    expect(getRun(db, b)).toBeNull();
+    expect(getRun(db, c)).not.toBeNull();
+  });
+
+  it("failed and running rows remain ineligible regardless of supersession", () => {
+    seedRun({
+      processorId: "test.p1",
+      suffix: "aaaaaa",
+      startedAt: new Date(daysAgoIso(100)),
+      terminal: "failed",
+    });
+    seedRun({
+      processorId: "test.p1",
+      suffix: "bbbbbb",
+      startedAt: new Date(daysAgoIso(1)),
+      terminal: "succeeded",
+    });
+
+    const plan = planRunLedgerRetention(db, { cutoffIso: daysAgoIso(30) });
+    expect(plan.eligibleRuns).toBe(0);
   });
 });

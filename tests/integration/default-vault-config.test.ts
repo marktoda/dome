@@ -307,6 +307,32 @@ describe("default vault config", () => {
     );
   });
 
+  test("shipped template ships run-ledger retention on (30 days); engine built-in default stays forever", async () => {
+    // Task 3: the vault template ships `ledger.retention_days: 30` so new
+    // vaults auto-prune the run ledger out of the box (dome serve prunes
+    // daily once the knob is set). The engine's own DEFAULT_RUNTIME_CONFIG
+    // (used when a vault has no config at all) must stay retention-less
+    // ("forever") — the template is what opts in, not the engine built-in.
+    const root = mkdtempSync(join(tmpdir(), "dome-default-config-ledger-"));
+    try {
+      await mkdir(join(root, ".dome"), { recursive: true });
+      await writeFile(
+        join(root, ".dome", "config.yaml"),
+        defaultConfigYaml(),
+        "utf8",
+      );
+      const policy = await loadCapabilityPolicy(root);
+      expect(policy.ok).toBe(true);
+      if (!policy.ok) throw new Error(policy.error);
+
+      expect(policy.value.runtime.ledger.retentionDays).toBe(30);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+
+    expect(DEFAULT_RUNTIME_CONFIG.ledger).toEqual({});
+  });
+
   test("typed default extensions match shipped first-party bundle directories", async () => {
     const loaded = await loadBundles({ bundlesRoot: resolveShippedBundlesRoot() });
     expect(loaded.ok).toBe(true);

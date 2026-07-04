@@ -37,6 +37,7 @@ const SUMMARY_FIELD_BY_CODE = Object.freeze({
   "outbox.recurring-failure": "recurringOutboxFailures",
   "questions.unreadable-backlog": "unreadableQuestions",
   "run.recurring-timeout": "recurringTimeouts",
+  "ledger.oversized": "ledgerOversized",
 } as const) satisfies Readonly<Record<HealthFinding["code"], keyof HealthSummary>>;
 
 type CodeSummaryField =
