@@ -155,7 +155,6 @@ is read+capture+converse (the default safe posture); synthesis still comes from
 a client's own agent if none is co-located. (This co-located agent is the
 interactive assistant implemented in `src/assistant/` — a consumer surface
 distinct from the `dome.agent` background processor bundle.)
-a client's own agent if none is co-located.
 
 ## What "ask" and "recall" mean under this model
 
