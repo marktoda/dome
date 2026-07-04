@@ -78,9 +78,9 @@ describe("runInspect", () => {
     const agentBundle = bundles.find((row) => row.bundle === "dome.agent");
     expect(agentBundle).toEqual(
       expect.objectContaining({
-        processors: 12,
+        processors: 13,
         adoption: 2,
-        garden: 10,
+        garden: 11,
         view: 0,
         model_processors: 4,
         model: "granted-no-provider",
@@ -380,9 +380,9 @@ describe("runInspect", () => {
         loaded: false,
         inventory: "manifest",
         version: "0.5.0",
-        processors: 12,
+        processors: 13,
         adoption: 2,
-        garden: 10,
+        garden: 11,
         model_processors: 4,
         model: "disabled-no-provider",
       }),

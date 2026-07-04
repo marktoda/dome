@@ -351,10 +351,14 @@ by date each week; a missing file just omits that row, never an error.
 
 `meta/` holds machine-owned bookkeeping files: the per-category index shards
 (`meta/index-<category>.md`, `-N` suffix on overflow, rendered by
-`dome.markdown.render-index` — see §"`index.md`" below) and the dome.agent
+`dome.markdown.render-index` — see §"`index.md`" below), the dome.agent
 cursor ledgers (`meta/consolidation-ledger.md`, `meta/sweep-ledger.md` —
 defaults; the `consolidation_ledger_path` / `sweep_ledger_path` config knobs
-still relocate them). By the category table above `meta/*` derives `external`
+still relocate them), and the dome.agent **patrol** pair
+(`meta/patrol-queue.md`, `meta/patrol-ledger.md` — the nightly staleness
+selector's transient review queue and its bounded 60-day visit ledger, both
+full rewrites; [[wiki/specs/autonomous-agents]] §"Patrol"). By the category
+table above `meta/*` derives `external`
 — like `core.md`, this is a documented convention, not a new category, with
 one carve-out: unlike other external directories, `meta/` IS engine-written,
 via the explicit `patch.auto` grants each owner declares. Keeping the renders
@@ -601,6 +605,7 @@ The capability broker enforces ownership. Default rules:
 | `core.md` | propose-only — agents read it; the only auto-writers are the two gated block-scoped processors (`dome.agent.preference-promotion-answer` → promoted-preferences block; `dome.agent.active-projects` → active-projects block), each via a narrow per-processor grant ([[wiki/specs/preferences]] §"Two gated writers, block-scoped") |
 | `preferences/signals.md` | shared append surface — the three `dome.agent` charters, the promotion answer handler, foreground agents, and the owner all append signal lines (§"`preferences/signals.md`") |
 | `meta/retrieval-misses.md` | no agent grant — the only writer is `reportMiss` (`src/surface/report-miss.ts`) via `dome query --miss`, `dome export-context --miss`, or the MCP `report_miss` tool, an ordinary human commit outside the broker entirely (§"`meta/retrieval-misses.md`") |
+| `meta/patrol-queue.md`, `meta/patrol-ledger.md` | `dome.agent.patrol` (via a narrow per-processor `patch.auto` replacement grant) — the nightly staleness selector; full rewrites, the ledger bounded to 60 days ([[wiki/specs/autonomous-agents]] §"Patrol") |
 | `wiki/**/*.md` | open; `dome.daily.ambiguous-followup-answer` also has `patch.auto` for accepted follow-ups |
 | `wiki/**/*.md` | `dome.agent.ingest` (via `patch.auto`, within grant) |
 | `notes/**/*.md` | `dome.agent.ingest` (via `patch.auto`, within grant) — grant-as-boundary |

@@ -201,6 +201,23 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
           read: ["core.md", "wiki/dailies/*.md"],
           "patch.auto": ["core.md"],
         }),
+        // The deterministic staleness patrol (product-review-3 Task 15;
+        // wiki/specs/autonomous-agents.md §"Patrol"): a per-processor
+        // replacement grant, because it needs its own meta/patrol-* files
+        // that the bundle-wide grant does not cover. Reads the three page
+        // families it grooms (staleness + oversize scan) + its two meta files;
+        // writes ONLY the two meta files (queue + bounded ledger). No model,
+        // no facts.
+        "dome.agent.patrol": Object.freeze({
+          read: [
+            "wiki/entities/**/*.md",
+            "wiki/concepts/**/*.md",
+            "wiki/syntheses/**/*.md",
+            "meta/patrol-queue.md",
+            "meta/patrol-ledger.md",
+          ],
+          "patch.auto": ["meta/patrol-queue.md", "meta/patrol-ledger.md"],
+        }),
         // The DETERMINISTIC index extractors (not model processors) publish the
         // cross-bundle facts the cockpit's today view reads: brief-index emits
         // dome.agent.brief from the daily note's brief block, calendar-index

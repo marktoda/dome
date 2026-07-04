@@ -171,6 +171,39 @@ describe("dome.agent manifest cadence + grants", () => {
     ]);
   });
 
+  test("patrol is deterministic, scheduled at 01:45 (before consolidate), and scoped to its scan dirs + meta files", async () => {
+    const manifest = await loadManifest();
+    const processor = manifest.processors.find(
+      (p) => p.id === "dome.agent.patrol",
+    );
+    expect(processor).toBeDefined();
+    expect(processor?.phase).toBe("garden");
+    expect(processor?.execution?.class).toBe("deterministic");
+    expect(processor?.module).toBe("processors/patrol.ts");
+    expect(processor?.inspection).toEqual({ kind: "all-readable-markdown" });
+    expect(processor?.triggers).toEqual([
+      { kind: "schedule", cron: "45 1 * * *" },
+    ]);
+    const kinds = (processor?.capabilities ?? []).map((c) => c.kind).sort();
+    expect(kinds).toEqual(["patch.auto", "read"]);
+    const read = processor?.capabilities.find((c) => c.kind === "read");
+    expect(read?.kind === "read" ? [...read.paths].sort() : []).toEqual([
+      "meta/patrol-ledger.md",
+      "meta/patrol-queue.md",
+      "wiki/concepts/**/*.md",
+      "wiki/entities/**/*.md",
+      "wiki/syntheses/**/*.md",
+    ]);
+    const patch = processor?.capabilities.find((c) => c.kind === "patch.auto");
+    expect(patch?.kind === "patch.auto" ? [...patch.paths].sort() : []).toEqual([
+      "meta/patrol-ledger.md",
+      "meta/patrol-queue.md",
+    ]);
+    // Deterministic selector — never core.md, never graph.write, never a model.
+    expect(kinds).not.toContain("model.invoke");
+    expect(kinds).not.toContain("graph.write");
+  });
+
   test("the promotion answer handler is narrow: exactly the core + signals pages", async () => {
     const manifest = await loadManifest();
     const handler = manifest.processors.find(

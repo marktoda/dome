@@ -379,16 +379,18 @@ describe("NO_ACCRETING_REGISTRIES", () => {
         `default-vault-config replacement grant for ${processorId}`,
       );
     }
-    // Both gated patch writers must actually appear in the shipped replacement
-    // grants — if one vanishes, the exact-pin above silently stops checking.
-    // Deterministic graph-only processors may also have replacement grants.
+    // Both gated core.md patch writers must actually appear in the shipped
+    // replacement grants — if one vanishes, the exact-pin above silently stops
+    // checking. This is a SUBSET check, not exact equality: deterministic
+    // processors carry non-core.md patch.auto replacement grants too (e.g.
+    // dome.agent.patrol over meta/patrol-*), and those are registry-checked by
+    // the expectNoRegistryCoverage pass above.
     const patchAutoProcessorIds = Object.entries(agent.processors ?? {})
       .filter(([, grant]) => Array.isArray(grant["patch.auto"]))
-      .map(([processorId]) => processorId)
-      .sort();
-    expect(patchAutoProcessorIds).toEqual(
-      Object.keys(CORE_MD_WRITER_GRANTS).sort(),
-    );
+      .map(([processorId]) => processorId);
+    for (const writerId of Object.keys(CORE_MD_WRITER_GRANTS)) {
+      expect(patchAutoProcessorIds).toContain(writerId);
+    }
   });
 
   test("grant-aware tool writable-path mirrors exclude log.md and index files", () => {

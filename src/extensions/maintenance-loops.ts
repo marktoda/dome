@@ -380,6 +380,12 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         { kind: "projection", name: "facts:dome.page.*" },
         { kind: "operational", name: "diagnostics" },
         { kind: "operational", name: "questions" },
+        // The patrol's nightly review queue + its bounded visit ledger: the
+        // coverage arm that keeps the whole concept graph re-groomed on a
+        // rotation, not just what changed (wiki/specs/autonomous-agents.md
+        // §"Patrol").
+        { kind: "path", pattern: "meta/patrol-queue.md" },
+        { kind: "path", pattern: "meta/patrol-ledger.md" },
       ],
       processors: [
         "dome.markdown.validate-wikilinks",
@@ -399,22 +405,30 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.graph.links",
         "dome.graph.tag-index",
         "dome.agent.consolidate",
+        // The deterministic staleness patrol: queues the stalest
+        // entity/concept/synthesis pages nightly so consolidate reviews the
+        // frozen tail on a cycle (the signal-triggered garden alone never
+        // revisits a page that stopped changing). Also nudges oversized pages
+        // toward a split.
+        "dome.agent.patrol",
       ],
       surfaces: [
         { kind: "path", pattern: "**/*.md" },
+        { kind: "path", pattern: "meta/patrol-queue.md" },
         { kind: "projection", name: "diagnostics" },
         { kind: "status", name: "check" },
       ],
       settlement: {
         key: "link occurrence, duplicate page-pair, or metadata path plus content hash",
         noOpWhen:
-          "the link resolves, is intentionally unresolved, has exactly one open question, or the managed metadata already matches git history",
+          "the link resolves, is intentionally unresolved, has exactly one open question, the managed metadata already matches git history, or every scanned page has been patrolled within the revisit window",
         checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "Ambiguous broken links can create duplicate stub pages if confidence is not enforced.",
         "Duplicate consolidation must preserve source material: absorbed pages are superseded (status flip + forward link), not deleted.",
         "Supersession flips without a resolvable forward link strand readers in history; the lint warning is the guardrail.",
+        "Coverage patrol must stay bounded: the queue is a full rewrite and the ledger prunes to 60 days, so the tail is revisited on a rotation without accreting bookkeeping.",
       ],
     }),
     freezeLoop({

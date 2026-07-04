@@ -14,7 +14,7 @@ description: "Agent-as-processor framework: the ctx.modelInvoke.step tool-loop s
 
 This spec is normative for Dome's autonomous-agent capability — the framework, the `ctx.modelInvoke.step` seam, and the shipped agents (`dome.agent.ingest`, `dome.agent.consolidate`, `dome.agent.brief`, `dome.agent.sweep` with its answer handler `dome.agent.sweep-answer`). It introduces no new core primitive: an **agent is a processor too** — the same observation that "a warden is a processor" (see [[wiki/specs/task-lifecycle]] §"Wardens") now applies to processors that drive a full tool-use loop.
 
-The `dome.agent` bundle also ships four **deterministic** (non-LLM) processors: three for the preference lifecycle — `preference-signals` (counter facts), `preference-promotion` (promotion questions for candidates AND demotion questions for promoted rules whose confidence has decayed below the floor), and `preference-promotion-answer` (the gated writer handling promote/reject and demote/keep) — normative at [[wiki/specs/preferences]], plus `dome.agent.active-projects`, the core-memory renderer specced at §"`dome.agent.active-projects`" below. They share the bundle because they configure or maintain agent context (the promoted block and the active-projects block ride every agent run via core-memory injection), but they are ordinary deterministic processors, not agents.
+The `dome.agent` bundle also ships five **deterministic** (non-LLM) processors: three for the preference lifecycle — `preference-signals` (counter facts), `preference-promotion` (promotion questions for candidates AND demotion questions for promoted rules whose confidence has decayed below the floor), and `preference-promotion-answer` (the gated writer handling promote/reject and demote/keep) — normative at [[wiki/specs/preferences]], plus `dome.agent.active-projects`, the core-memory renderer specced at §"`dome.agent.active-projects`" below, and `dome.agent.patrol`, the nightly staleness selector specced at §"Patrol" below. They share the bundle because they configure or maintain agent context (the promoted block and the active-projects block ride every agent run via core-memory injection; the patrol feeds the consolidate agent its nightly review queue), but they are ordinary deterministic processors, not agents.
 
 ## The agent-as-processor model
 
@@ -311,6 +311,31 @@ just the daily surface.
   cron tick (recreating a deleted owner page nightly would be a patch-fight
   with the owner). A malformed `core_path` config degrades to the default
   with the shared `dome.agent.core-config-invalid` warning.
+
+## Patrol
+
+The garden is **signal-triggered**: every processor tends what changes and never revisits the frozen tail. A page that stops changing stops emitting signals, so it becomes structurally invisible to consolidate, sweep, and the wardens — the coverage gap the [[wedge]] deliberately deferred. `dome.agent.patrol` closes it by making gardening **cyclical**: a deterministic nightly selector that queues the stalest pages so the consolidate agent reviews the whole vault on a rotation, not just what happened to move.
+
+- **Phase / kind:** garden, **deterministic** (no model, no `graph.write`, no `question.ask`).
+- **Trigger:** `schedule` only, cron `45 1 * * *` — nightly, immediately **before** consolidate's `0 2 * * *` tick, so tonight's queue is already written when the consolidate agent wakes.
+- **What it scans:** `wiki/entities/**`, `wiki/concepts/**`, `wiki/syntheses/**` (the page families a coverage sweep grooms; dailies, sources, and meta bookkeeping are out of scope).
+- **Staleness metric:** each page's frontmatter `updated:` date. A page **without** a parseable `updated:` is **skipped** from the staleness queue (its size is still checked for the oversized nudge below) — staleness is `updated:`-driven, and a page with no date carries no freshness signal.
+- **Selection:** the **5 stalest eligible** pages, oldest `updated:` first (tiebreak page path ascending), **excluding** any page queued within the last **35 days** per the ledger (the revisit window — a page just reviewed should not re-queue until it has had time to drift again).
+- **Two files, one PatchEffect.** The run emits ONE `PatchEffect(mode:"auto")` rewriting **both**:
+  - `meta/patrol-queue.md` — tonight's pick, a **full rewrite** each night. Header states the contract in one line; then one bullet per queued page:
+
+    ```
+    - [[<page>]] — last updated <date>, <line count> lines
+    ```
+
+    An empty pick (nothing due) renders a fixed empty-state line, never an absent file.
+  - `meta/patrol-ledger.md` — the deterministic **visit record**: one line per queued page, `- <YYYY-MM-DD> [[<page>]]`, **pruned to the trailing 60 days on every render** ([[wiki/invariants/NO_ACCRETING_REGISTRIES]] — the ledger is bounded, never accreting). The queue is transient (rewritten nightly); the ledger is patrol's memory of what it already queued, which is what powers the 35-day revisit exclusion.
+- **Diff-before-emit:** a byte-identical render of both files emits **no patch** (a night where nothing is due and the ledger is already pruned is a clean no-op). Only the file(s) whose bytes changed are written.
+- **Determinism:** the fire date comes from `ctx.now()` through the shared `localDateParts`/`formatDate` seam every cron processor uses — patrol never calls `Date.now`. Given a fixed (page set, ledger, date) the two rendered files are byte-deterministic.
+- **Oversized-page nudge:** for any scanned page over **600 lines**, patrol emits an `info` `DiagnosticEffect` (`dome.agent.page.oversized`) — the deterministic propose-split nudge for the owner's "cohesive syntheses" preference (an accreted 1,100-line entity page violates it). The diagnostic anchors to the page path with a **stable** `SourceRef` (no line range), so its `subject_hash` is invariant under edits; once the page shrinks below the threshold the processor stops re-emitting and `resolveStaleDiagnostics` clears it (the processor declares `inspection: all-readable-markdown`, the self-clearing shape shared with the lint diagnostics).
+- **Grant:** `read` over `wiki/entities/**/*.md`, `wiki/concepts/**/*.md`, `wiki/syntheses/**/*.md`, `meta/patrol-queue.md`, `meta/patrol-ledger.md`; `patch.auto` over `meta/patrol-queue.md` + `meta/patrol-ledger.md` only — a per-processor replacement grant in the shipped vault config (the bundle-wide grant does not cover the patrol meta files). No model, no facts.
+
+**The queue is a contract Task 16 (`dome.agent.consolidate`) consumes.** Patrol only *selects and records*; it never reviews. The nightly consolidate reads `meta/patrol-queue.md` and, for each queued page, either gives it a clean bill (no drift found) or proposes a change (merge, tidy, supersede, or split), then the page **leaves the queue** — the queue-file header states exactly this. Patrol's ledger entry keeps that page out of the next 35 nights' queues regardless of consolidate's verdict, so the rotation advances instead of re-litigating the same tail. Consolidate consuming the queue is specced in §"`dome.agent.consolidate`" (its charter gains the queue as a standing worklist alongside recent drift).
 
 ## Preference signals (charter convention)
 
