@@ -181,19 +181,44 @@ The shipped initialization steps:
 3. Writes `<vault>/.dome/config.yaml` from a shipped default (extension
    activation + engine settings). First-write-only by default.
    `--refresh-config` is an explicit maintenance path for old or hand-edited
-   first-party configs: it adds missing first-party default bundle stanzas and
-   fills missing first-party default grant keys for already enabled first-party
-   bundles while preserving existing grant values, explicitly disabled bundles,
-   and third-party bundle config. When it changes the file, it edits through
-   the yaml Document API: only the inserted stanzas/keys are new text, and
-   hand-written comments and formatting on untouched nodes are preserved
-   (caveat: an inline comment trailing a block-collection key moves to the
-   next line — never deleted). It deliberately does NOT merge new entries
-   into grant lists the vault already carries — grant lists are user-owned
-   config and auto-merging is too risky. The detection half lives in
-   `dome doctor`'s `capability.grant-entry-missing` probe, which names the
-   exact YAML each missing first-party rollout entry needs (see
-   `docs/memory.md` §"Vault rollout").
+   first-party configs. It makes two insert-only edits (never removing or
+   narrowing an existing entry), always through the yaml Document API — only
+   inserted stanzas/keys are new text, and hand-written comments and formatting
+   on untouched nodes are preserved (caveat: an inline comment trailing a
+   block-collection key moves to the next line — never deleted):
+
+   - **Missing first-party bundle stanzas** are added. On a **legacy enumerated
+     vault** (one that opted out of the `grants: standard` preset with explicit
+     grant blocks) the added stanza carries its FULL shipped default grant block
+     (bundle grant + per-processor replacement grants) so a newly shipped bundle
+     is never stranded capability-starved. On a `grants: standard` vault the
+     stanza is added enabled-only — the preset supplies its grants at load time.
+   - **Present, enabled first-party bundles on a legacy enumerated vault** are
+     brought up to the shipped default in two ways. First, any grant KIND the
+     bundle's default declares but the vault omits entirely (`patch.auto`,
+     `graph.write`, `question.ask`, …) lands at its full shipped default — these
+     are capabilities the bundle's processors gained since the config was
+     written, the kind-level `capability.grant-missing` starvation. Second, a
+     kind the vault DOES list is owner-authored and is only merged into
+     surgically, gated by the bundle manifest's `doctor.grantEntries` — the same
+     rows `dome doctor`'s `capability.grant-entry-missing` probe checks: a
+     bundle-level entry adds the most-specific shipped default glob that covers
+     the entry's target (so a probe target like `sources/calendar/2026-01-01.md`
+     resolves to the canonical default glob `sources/calendar/*.md`, and
+     `core.md` resolves to `core.md` — never widening a deliberately narrowed
+     `read` list to `**/*.md`), and a per-processor entry (whose processor ships
+     a replacement grant) adds the full replacement stanza when the vault
+     carries none. When the vault uses `grants: standard`, this whole merge is a
+     no-op — the preset already tracks every enabled bundle's shipped defaults.
+
+   Explicitly disabled bundles (`enabled: false`) and third-party bundle config
+   are never touched. The run prints a summary of the grants and stanzas it
+   added (`grants_added` under `--json`). This closes the second-user blocker
+   where per-processor default grants never propagated to vaults with a
+   user-owned grant block (NEEDS_ARE_LOUD incident #4); `dome doctor`'s
+   `capability.grant-entry-missing` probe remains the detection half that names
+   the exact YAML for grants outside the first-party set (see `docs/memory.md`
+   §"Vault rollout").
 4. When `--with-model-provider anthropic` is supplied, copies the shipped
    first-party provider template from
    `<SDK>/assets/model-providers/anthropic.ts` to
@@ -1906,9 +1931,12 @@ fact namespace that the vault's grant patterns miss (e.g. `dome.agent`
 without `"core.md"` read, the preference-promotion answer handler without
 its per-processor replacement grant), doctor raises a
 `capability.grant-entry-missing` warning whose
-recovery text names the exact YAML to add — `dome init --refresh-config`
-fills only missing keys and never merges entries into existing grant lists,
-so these gaps are otherwise silent (see `docs/memory.md` §"Vault rollout").
+recovery text names the exact YAML to add. On a legacy enumerated vault,
+`dome init --refresh-config` now merges exactly these `doctor.grantEntries`
+rows into the vault's grant blocks automatically (§"`dome init`"), so the gap
+self-heals on refresh; the probe remains the detection half and the manual
+recovery for grants outside the first-party set (see `docs/memory.md`
+§"Vault rollout").
 Beyond the hand-curated rows, the **general grant-starvation probe**
 (`capability.grant-starved`, **info**) covers every loaded processor: for
 each manifest-declared `read` / `patch.auto` pattern it derives a

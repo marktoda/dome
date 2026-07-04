@@ -61,13 +61,14 @@ export function capabilityKinds(
 
 // ----- Grant-entry probes ------------------------------------------------------
 //
-// `dome init --refresh-config` fills only MISSING grant keys for already
-// enabled bundles — it never merges new entries into a key the vault already
-// carries (grant lists are user-owned config; auto-merging is too risky). So
-// a vault that predates a bundle's newer behavior keeps its old grant lists
-// and silently loses that behavior: the kind is granted but the specific
+// A vault that predates a bundle's newer behavior can keep old grant lists and
+// silently lose that behavior: the capability KIND is granted but the specific
 // entry is not, which the kind-level `capability.grant-missing` probe cannot
-// see. These probes name the exact YAML to add.
+// see. These probes name the exact YAML to add. They are also the merge gate
+// for `dome init --refresh-config`, which on a legacy enumerated vault now adds
+// exactly these missing entries automatically (wiki/specs/cli.md §"dome init");
+// this probe stays the detection half and the recovery for non-first-party
+// grants.
 //
 // The requirements are a MANIFEST CONTRIBUTION (`doctor.grantEntries`, per
 // [[wiki/gotchas/operator-surfaces-enumerate-first-party]]): each bundle
