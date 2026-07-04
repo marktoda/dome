@@ -86,6 +86,8 @@ export async function runOperationalWork(opts: {
   readonly operational?: OperationalQueryView;
   readonly ledger: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
+  /** NEEDS_ARE_LOUD session dedup set, threaded to dispatchGardenRun. */
+  readonly needUnmetSeen?: Set<string>;
   readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
   readonly modelStepProvider?: ModelStepProvider;
@@ -118,6 +120,9 @@ export async function runOperationalWork(opts: {
     ledger: opts.ledger,
     ...(opts.executionState !== undefined
       ? { executionState: opts.executionState }
+      : {}),
+    ...(opts.needUnmetSeen !== undefined
+      ? { needUnmetSeen: opts.needUnmetSeen }
       : {}),
     ...(opts.executionCap !== undefined
       ? { executionCap: opts.executionCap }
@@ -178,6 +183,9 @@ export async function runOperationalWork(opts: {
           ledger: opts.ledger,
           ...(opts.executionState !== undefined
             ? { executionState: opts.executionState }
+            : {}),
+          ...(opts.needUnmetSeen !== undefined
+            ? { needUnmetSeen: opts.needUnmetSeen }
             : {}),
           ...(opts.executionCap !== undefined
             ? { executionCap: opts.executionCap }

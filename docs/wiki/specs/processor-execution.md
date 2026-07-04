@@ -262,6 +262,7 @@ The executor contract uses stable diagnostic codes:
 | `processor.cancelled` | Engine cancelled the run during shutdown/operator intervention. |
 | `execution-policy.phase-class-denied` | Runtime refused to invoke a processor because its declared execution class is invalid for the phase; the run is marked `skipped`. |
 | `processor.quarantined` | A matching trigger is skipped because the processor is quarantined. |
+| `processor.need-unmet` | The processor RAN, but a declared capability had an empty effective grant intersection, or a declared operational read-view context field was absent at run time. **Warning** severity, deduped per `(processorId, need)` per host session. See "Needs are loud" below. |
 | `model.invoke.denied` | Missing model capability, model not allowlisted, or cost cap exceeded. |
 | `model.invoke.provider-failed` | The injected provider threw or returned a malformed response. |
 | `model.invoke.timeout` | A model call exceeded its per-call timeout or was aborted by the invocation boundary. |
@@ -272,6 +273,14 @@ Diagnostics point at the processor/run, not at arbitrary vault content, unless t
 
 Engine orchestration layers may add diagnostics outside a processor run: adoption emits `engine.adoption` rows for structural blockages such as `fixed-point.divergence`; the scheduler emits `engine.scheduler` rows for invalid cron or dispatch crashes. These diagnostics are returned to callers for immediate control flow and also written through the same diagnostic projection sink so `dome inspect diagnostics` is the durable operator surface.
 
+## Needs are loud
+
+When the runtime constructs an invocation it already resolves the processor's `declared` capabilities and the vault's `granted` set (and, for garden/view, the effective `ctx.operational` read accessors). If a **declared capability kind has an empty effective grant intersection**, or a **declared operational read-view context field is absent at run time** (a `*.read` capability whose accessor resolves to nothing — kind ungranted, or kind granted with an empty status intersection), the runtime emits a **warning** `processor.need-unmet` diagnostic naming the processor and the unmet need. The processor **still runs**: degradation stays graceful, only the silence dies.
+
+The warning is appended to the run's routed effect list (the same seam the runtime's skip diagnostics use), so it flows through `applyEffect`'s `DiagnosticEffect` route into `projection.db` attributed to that run — no processor-layer import of the engine. It is deduped once per `(processorId, need)` per host session via `ProcessorRuntime.needUnmetSeen`, which is threaded through every dispatch path (the adoption/garden/view runners and the operational garden-run / answer-handler / store-changed paths via `GardenRunDeps.needUnmetSeen`); a restart starts empty and re-emits, which is desirable.
+
+This is the **run-time complement** of `dome doctor`'s config-time grant-starvation probes (`capability.grant-missing`, `capability.grant-starved`). Finer path-glob starvation (declared `read wiki/**`, granted `read notes/**`) stays the doctor's representative-path probe; the runtime keys off what it resolves at invocation. There is no per-processor opt-out — a wholly empty effective intersection or an absent declared context accessor warns every session regardless of intent (loud beats silent; the dedup caps the noise at one per need per session). Pinned by [[wiki/invariants/NEEDS_ARE_LOUD]].
+
 ## Test guarantees
 
 The execution contract is pinned in stages.
@@ -281,6 +290,7 @@ Already pinned:
 - Executor-boundary tests assert success, thrown errors, invalid output, timeout, cancellation, diagnostic severity, discarded late effects, and model-provider abort propagation at `executeProcessor`.
 - Ledger tests assert `timed_out` / `cancelled` status persistence, structured error JSON, query filtering, and terminal transition filtering.
 - Runtime tests assert adoption failures become block diagnostics, garden failures become error diagnostics, invalid output is rejected, execution-policy denial skips without invoking `run`, garden timeout discards late output while recording `timed_out`, and runner cancellation records `cancelled` without leaving orphan `running` rows.
+- Invariant tests (`tests/invariants/needs-are-loud.test.ts`) assert a processor declaring an ungranted capability RUNS and lands a `processor.need-unmet` warning, a declared-but-absent operational read-view accessor warns, a fully-granted processor emits nothing, and the warning is deduped per `(processor, need)` per host session (a fresh runtime re-emits).
 - Runtime close tests assert `close()` cancels in-flight garden work, waits for
   the runner to settle, and leaves no orphan `running` rows before returning.
 - Lifecycle scenarios assert a throwing adoption processor records a failed ledger row, persists a block diagnostic for inspection, and does not advance the adopted ref.

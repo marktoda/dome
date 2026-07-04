@@ -54,6 +54,13 @@ export type GardenRunDeps = {
   readonly extensionConfigFor?: (extensionId: string) => ExtensionConfig;
   readonly ledger: LedgerDb;
   readonly executionState?: ProcessorExecutionState;
+  /**
+   * NEEDS_ARE_LOUD session dedup set (see `ProcessorRuntime.needUnmetSeen`).
+   * Threaded from the same runtime so a scheduled / answer-triggered garden
+   * dispatch shares the adoption/garden/view runners' per-session dedup — an
+   * unmet declared need warns once per host session, not once per fire.
+   */
+  readonly needUnmetSeen?: Set<string>;
   readonly executionCap?: ExecutionPolicyCap;
   readonly modelProvider?: ModelProvider;
   readonly modelStepProvider?: ModelStepProvider;
@@ -137,6 +144,9 @@ export async function dispatchGardenRun(
     ...(deps.signal !== undefined ? { signal: deps.signal } : {}),
     ...(deps.executionState !== undefined
       ? { executionState: deps.executionState }
+      : {}),
+    ...(deps.needUnmetSeen !== undefined
+      ? { needUnmetSeen: deps.needUnmetSeen }
       : {}),
     ...(deps.executionCap !== undefined
       ? { executionCap: deps.executionCap }

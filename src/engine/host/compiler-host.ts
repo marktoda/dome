@@ -769,6 +769,7 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
     now,
     ledger: opts.runtime.ledgerDb,
     executionState: opts.runtime.processorRuntime.executionState,
+    needUnmetSeen: opts.runtime.processorRuntime.needUnmetSeen,
     executionCap: opts.runtime.config.engine.executionCap,
     operational: operationalQueryViewForRuntime(opts.runtime, now),
     ...(opts.runtime.modelProvider !== undefined
@@ -948,6 +949,7 @@ async function runAnswerHandlersForQuestionUnlocked(opts: {
     extensionIdFor: opts.runtime.extensionIdFor,
     ledger: opts.runtime.ledgerDb,
     executionState: opts.runtime.processorRuntime.executionState,
+    needUnmetSeen: opts.runtime.processorRuntime.needUnmetSeen,
     executionCap: opts.runtime.config.engine.executionCap,
     operational: opts.runtime.operationalQueryView,
     ...(opts.runtime.modelProvider !== undefined
@@ -1145,6 +1147,7 @@ function storeChangedSignalDeps(opts: {
     extensionConfigFor: opts.runtime.extensionConfigFor,
     ledger: opts.runtime.ledgerDb,
     executionState: opts.runtime.processorRuntime.executionState,
+    needUnmetSeen: opts.runtime.processorRuntime.needUnmetSeen,
     executionCap: opts.runtime.config.engine.executionCap,
     operational: opts.operational,
     now: opts.now,

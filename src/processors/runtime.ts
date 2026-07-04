@@ -218,6 +218,17 @@ export type ProcessorRuntime = {
   readonly gardenRunner: GardenPhaseRunner;
   readonly viewRunner: ViewPhaseRunner;
   readonly executionState: ProcessorExecutionState;
+  /**
+   * In-memory dedup set for the NEEDS_ARE_LOUD runtime probe (keyed by
+   * `${processorId}\0${need}`). Lives for the host session: a restart starts
+   * empty and re-emits (desirable — a fresh process should re-announce an
+   * unmet declared need). Exposed so the operational garden-run / answer-
+   * handler dispatch paths (which call `dispatchOneProcessor` directly through
+   * `GardenRunDeps`, not the runners) share the SAME session dedup as the
+   * adoption/garden/view runners. Pinned by
+   * [[wiki/invariants/NEEDS_ARE_LOUD]].
+   */
+  readonly needUnmetSeen: Set<string>;
   readonly close: () => Promise<void>;
 };
 
@@ -336,6 +347,8 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
   } = opts;
   const executionState =
     opts.executionState ?? buildProcessorExecutionState();
+  // NEEDS_ARE_LOUD: one dedup set per host session (see ProcessorRuntime).
+  const needUnmetSeen = new Set<string>();
   const lifecycle = makeRuntimeLifecycle();
 
   const adoptionRunner: AdoptionPhaseRunner = (input) =>
@@ -392,6 +405,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
           ...(extensionConfigFor !== undefined ? { extensionConfigFor } : {}),
           ledger,
           executionState,
+          needUnmetSeen,
           ...(executionCap !== undefined ? { executionCap } : {}),
           ...(runnerSignal.signal !== undefined
             ? { signal: runnerSignal.signal }
@@ -489,6 +503,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
           ...(extensionConfigFor !== undefined ? { extensionConfigFor } : {}),
           ledger,
           executionState,
+          needUnmetSeen,
           ...(executionCap !== undefined ? { executionCap } : {}),
           ...(runnerSignal.signal !== undefined
             ? { signal: runnerSignal.signal }
@@ -588,6 +603,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
         ...(extensionConfigFor !== undefined ? { extensionConfigFor } : {}),
         ledger,
         executionState,
+        needUnmetSeen,
         ...(executionCap !== undefined ? { executionCap } : {}),
         ...(runnerSignal.signal !== undefined
           ? { signal: runnerSignal.signal }
@@ -615,6 +631,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
     gardenRunner,
     viewRunner,
     executionState,
+    needUnmetSeen,
     close: lifecycle.close,
   });
 }
@@ -790,6 +807,15 @@ export type DispatchOneProcessorOptions<TEnvelope> = {
    * never lands on an adoption context.
    */
   readonly projection?: ProjectionQueryView;
+  /**
+   * NEEDS_ARE_LOUD dedup set (per host session). When present, a
+   * `processor.need-unmet` warning for a given `(processorId, need)` is
+   * emitted at most once; when absent, every executed dispatch that finds an
+   * unmet need emits (loud beats silent — a caller with no shared set is
+   * typically a one-shot rebuild). Sourced from `ProcessorRuntime.needUnmetSeen`
+   * so the runner and operational garden-run paths share one session view.
+   */
+  readonly needUnmetSeen?: Set<string>;
 };
 
 type DispatchFrame = {
@@ -846,7 +872,123 @@ export async function dispatchOneProcessor<TEnvelope>(
     });
   }
 
-  return runnerResultForExecution(frame, execution);
+  // NEEDS_ARE_LOUD: the processor RAN (degradation stays graceful); if a
+  // declared capability had an empty effective grant intersection, or a
+  // declared operational read-view context field was absent at run time,
+  // surface a warning so a silent no-op can never masquerade as "nothing to
+  // do". Appended to the routed effect list (the same seam the skip paths use
+  // to land runtime diagnostics), so it flows through applyEffect's normal
+  // DiagnosticEffect route into `projection.db` attributed to this run.
+  return withNeedUnmetDiagnostics(
+    runnerResultForExecution(frame, execution),
+    frame,
+    opts.needUnmetSeen,
+  );
+}
+
+// ----- NEEDS_ARE_LOUD -------------------------------------------------------
+
+const OPERATIONAL_READ_KINDS: ReadonlySet<Capability["kind"]> = new Set([
+  "outbox.read",
+  "quarantine.read",
+  "run.read",
+  "questions.read",
+]);
+
+type UnmetNeed = { readonly need: string; readonly detail: string };
+
+/**
+ * The unmet declared needs for a dispatch, computed from the same declared ∩
+ * granted data the invocation already resolved. Two classes:
+ *
+ *   1. A declared capability KIND with no granted capability of that kind — an
+ *      empty effective grant intersection. The run-time complement of the
+ *      config-time `capability.grant-missing` doctor probe.
+ *   2. A declared operational read (`outbox/quarantine/run/questions.read`)
+ *      whose effective `ctx.operational` accessor is absent — the kind may be
+ *      granted while the status intersection is empty (e.g. `run.read`
+ *      [running] declared, [succeeded] granted). This is the "declared context
+ *      dependency absent at run time" class.
+ *
+ * Finer path-glob starvation (declared `read wiki/**`, granted `read notes/**`)
+ * stays the doctor's representative-path probe (`capability.grant-starved`,
+ * config-time, info); the runtime keys off what it resolves at invocation.
+ */
+function computeUnmetNeeds(frame: DispatchFrame): ReadonlyArray<UnmetNeed> {
+  const grantedKinds = new Set(frame.granted.map((cap) => cap.kind));
+  const declaredKinds = new Set(frame.declared.map((cap) => cap.kind));
+  const needs: UnmetNeed[] = [];
+  for (const kind of declaredKinds) {
+    if (frame.phase !== "adoption" && OPERATIONAL_READ_KINDS.has(kind)) {
+      if (!operationalAccessorEffective(kind, frame.declared, frame.granted)) {
+        needs.push({
+          need: kind,
+          detail:
+            `declares '${kind}' but its read-view context field is absent at ` +
+            `run time (empty effective grant intersection)`,
+        });
+      }
+      continue;
+    }
+    if (!grantedKinds.has(kind)) {
+      needs.push({
+        need: kind,
+        detail:
+          `declares '${kind}' but the effective grant intersection is empty ` +
+          `(no matching vault grant)`,
+      });
+    }
+  }
+  return needs;
+}
+
+function operationalAccessorEffective(
+  kind: Capability["kind"],
+  declared: ReadonlyArray<Capability>,
+  granted: ReadonlyArray<Capability>,
+): boolean {
+  switch (kind) {
+    case "outbox.read":
+      return effectiveOutboxReadStatuses(declared, granted) !== null;
+    case "run.read":
+      return effectiveRunReadStatuses(declared, granted) !== null;
+    case "quarantine.read":
+      return effectiveQuarantineRead(declared, granted);
+    case "questions.read":
+      return effectiveQuestionsRead(declared, granted);
+    default:
+      return true;
+  }
+}
+
+function withNeedUnmetDiagnostics(
+  result: RunnerResult,
+  frame: DispatchFrame,
+  seen: Set<string> | undefined,
+): RunnerResult {
+  const needs = computeUnmetNeeds(frame);
+  if (needs.length === 0) return result;
+  const fresh: Effect[] = [];
+  for (const { need, detail } of needs) {
+    const key = `${frame.processor.id} ${need}`;
+    if (seen !== undefined) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    fresh.push(
+      diagnosticEffect({
+        severity: "warning",
+        code: "processor.need-unmet",
+        message: `${frame.processor.id}: ${detail}`,
+        sourceRefs: [],
+      }),
+    );
+  }
+  if (fresh.length === 0) return result;
+  return Object.freeze({
+    ...result,
+    effects: Object.freeze([...result.effects, ...fresh]),
+  });
 }
 
 // ----- internals ------------------------------------------------------------
