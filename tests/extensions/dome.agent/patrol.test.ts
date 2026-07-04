@@ -10,6 +10,7 @@ import patrol from "../../../assets/extensions/dome.agent/processors/patrol";
 import {
   PATROL_LEDGER_PATH,
   PATROL_QUEUE_PATH,
+  parsePatrolQueue,
   renderPatrolLedger,
   renderPatrolQueue,
 } from "../../../assets/extensions/dome.agent/lib/patrol";
@@ -256,5 +257,46 @@ describe("dome.agent.patrol — byte-identical no-op", () => {
       now: "2026-07-01",
     });
     expect(effects).toEqual([]);
+  });
+});
+
+describe("parsePatrolQueue — the queue-file reader (consolidate side, Task 16)", () => {
+  test("round-trips renderPatrolQueue: bullet pages parse back to their wikilink targets", () => {
+    const selected = [
+      { page: "wiki/entities/acme", updated: "2026-01-01", lineCount: 40 },
+      { page: "wiki/concepts/liquidity", updated: "2026-02-15", lineCount: 1 },
+      { page: "wiki/syntheses/q3-review", updated: "2026-03-30", lineCount: 120 },
+    ];
+    expect(parsePatrolQueue(renderPatrolQueue(selected))).toEqual([
+      "wiki/entities/acme",
+      "wiki/concepts/liquidity",
+      "wiki/syntheses/q3-review",
+    ]);
+  });
+
+  test("the fixed empty-state render parses to zero pages (a quiet night)", () => {
+    expect(parsePatrolQueue(renderPatrolQueue([]))).toEqual([]);
+  });
+
+  test("tolerant of hand edits: the title, contract header, and blanks are ignored", () => {
+    const content = [
+      "# Patrol queue",
+      "",
+      "_Tonight's consolidate reviews these pages…_",
+      "",
+      "- [[wiki/entities/acme]] — last updated 2026-01-01, 40 lines",
+      "some stray hand-typed note without a bullet",
+      "- not a wikilink bullet",
+      "- [[wiki/concepts/liquidity]] — last updated 2026-02-15, 3 lines",
+      "",
+    ].join("\n");
+    expect(parsePatrolQueue(content)).toEqual([
+      "wiki/entities/acme",
+      "wiki/concepts/liquidity",
+    ]);
+  });
+
+  test("empty string parses to zero pages (missing-file callers pass '')", () => {
+    expect(parsePatrolQueue("")).toEqual([]);
   });
 });

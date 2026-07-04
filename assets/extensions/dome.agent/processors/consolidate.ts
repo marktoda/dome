@@ -26,6 +26,8 @@ import { consolidateCharter } from "../lib/consolidate-charter";
 import { formatDate, localDateParts } from "../../dome.daily/processors/daily-paths";
 import { agentPreamble } from "../lib/agent-preamble";
 import { resolveModelOverride, withStepModel } from "../lib/model-override";
+import { PATROL_QUEUE_PATH, parsePatrolQueue } from "../lib/patrol";
+import { globMatch } from "../../../../src/engine/core/glob-cache";
 
 const MAX_STEPS = 50;
 export const MAX_CHANGED_FILES = 30;
@@ -63,12 +65,44 @@ function consolidateTargets(config?: Readonly<Record<string, unknown>>) {
   );
 }
 
+/**
+ * Force tonight's patrol-queue pages into the run's scope. Patrol queues the
+ * stalest frozen-tail pages regardless of drift; joining them into the SAME
+ * `consolidate_targets` list the charter renders is how they become in-scope
+ * (no second scope mechanism). A queued page is added only when it is (a) not
+ * already covered by a configured target prefix — no redundant scope noise for
+ * the default whole-wiki scope — and (b) covered by the write grant, since a
+ * page the consolidator cannot write is not something it can act on. Order is
+ * preserved and the result is deduped.
+ */
+function scopeWithQueue(
+  targets: ReadonlyArray<string>,
+  queuePages: ReadonlyArray<string>,
+): ReadonlyArray<string> {
+  const covered = (page: string): boolean =>
+    targets.some((t) => page === t || page.startsWith(t));
+  const writable = (page: string): boolean =>
+    CONSOLIDATE_WRITABLE_PATHS.some((pattern) => globMatch(pattern, `${page}.md`));
+  const extra = queuePages.filter((page) => !covered(page) && writable(page));
+  return extra.length === 0 ? targets : Object.freeze([...targets, ...extra]);
+}
+
 const consolidate = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const ledger = consolidationLedgerPath(ctx.extensionConfig);
     const ledgerPath = ledger.path;
     const targets = consolidateTargets(ctx.extensionConfig);
     const sourceRefs = [ctx.sourceRef(ledgerPath)];
+
+    // Patrol queue (Task 16): the deterministic nightly selector wrote the
+    // stalest frozen-tail pages to meta/patrol-queue.md at 01:45. Read it under
+    // the bundle read grant and force its pages into the run's scope so the
+    // rotation advances even when consolidate_targets is narrowed. A missing or
+    // empty file parses to zero pages — behavior is unchanged from before Task
+    // 16. Reading is best-effort: a scoped-out read (null) is the empty case.
+    const queueRaw = await ctx.snapshot.readFile(PATROL_QUEUE_PATH);
+    const queuePages = queueRaw === null ? [] : parsePatrolQueue(queueRaw);
+    const scopedTargets = scopeWithQueue(targets.value, queuePages);
 
     // step check + coreMemorySection read + config-problem diagnostics
     // (ledger path + targets problems share the consolidate-config-invalid
@@ -111,7 +145,7 @@ const consolidate = defineProcessorImplementation({
         charter: consolidateCharter({
           ledgerPath,
           maxChangedFiles: MAX_CHANGED_FILES,
-          targets: targets.value,
+          targets: scopedTargets,
         }),
         task: withCoreMemory(core.section, taskTurn(ctx.now(), ledgerPath)),
         tools,

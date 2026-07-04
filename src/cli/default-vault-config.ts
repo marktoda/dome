@@ -158,6 +158,11 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
           "log.md",
           "meta/consolidation-ledger.md",
           "meta/sweep-ledger.md",
+          // The staleness patrol's nightly review queue: dome.agent.patrol
+          // writes it (its own replacement grant), dome.agent.consolidate READS
+          // it under this bundle grant to pull the frozen tail into scope
+          // (wiki/specs/autonomous-agents.md §"Patrol").
+          "meta/patrol-queue.md",
           "sources/calendar/*.md",
           "sources/slack/*.md",
           "core.md",

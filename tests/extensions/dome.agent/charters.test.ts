@@ -125,6 +125,44 @@ describe("dome.agent consolidate charter — integrity review (folds in dome.war
   });
 });
 
+describe("dome.agent consolidate charter — patrol queue (Task 16)", () => {
+  const consolidate = consolidateCharter({
+    ledgerPath: "meta/consolidation-ledger.md",
+    maxChangedFiles: 30,
+    targets: ["wiki/"],
+  });
+
+  test("carries a patrol-queue section pointing at the queue file", () => {
+    expect(consolidate).toContain("## Patrol queue");
+    expect(consolidate).toContain("meta/patrol-queue.md");
+    // The frozen-tail rationale: queued pages are IN SCOPE even without drift.
+    expect(consolidate).toMatch(/in scope/i);
+  });
+
+  test("names all four per-page verdicts (split / reconcile / refresh / clean bill)", () => {
+    expect(consolidate).toMatch(/split/i);
+    expect(consolidate).toMatch(/reconcile|duplicat/i);
+    expect(consolidate).toMatch(/refresh/i);
+    expect(consolidate).toMatch(/clean bill/i);
+    // exactly one of the four, per queued page.
+    expect(consolidate).toMatch(/exactly one/i);
+  });
+
+  test("splits are proposed (askOwner), never auto-applied — consolidate never reorganizes", () => {
+    // The patrol verdict for an accreted multi-document is propose-not-auto:
+    // consolidate asks rather than splitting (it does not reorganize).
+    const patrol = consolidate.slice(consolidate.indexOf("## Patrol queue"));
+    expect(patrol).toContain("askOwner");
+  });
+
+  test("the clean bill lands in the consolidation ledger, and the queue file is patrol-owned", () => {
+    const patrol = consolidate.slice(consolidate.indexOf("## Patrol queue"));
+    expect(patrol).toContain("meta/consolidation-ledger.md");
+    // Consolidate reads the queue but never rewrites it — patrol owns it.
+    expect(patrol).toMatch(/never (edit|rewrite|write)|patrol owns/i);
+  });
+});
+
 describe("dome.agent charters — captured-today task routing (daily-surface D3)", () => {
   test("ingest routes daily task lines through the captured seam, never writing the section itself", () => {
     expect(INGEST_CHARTER).toContain("## Captured today");

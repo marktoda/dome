@@ -93,6 +93,12 @@ processors:
           - "index.md"
           - "log.md"
           - "meta/consolidation-ledger.md"
+          # The nightly staleness patrol writes tonight's frozen-tail review
+          # queue here (dome.agent.patrol, 01:45); consolidate READS it at
+          # 02:00 to force those pages into scope. Patrol owns the write grant;
+          # consolidate only needs read (wiki/specs/autonomous-agents.md
+          # §"Patrol").
+          - "meta/patrol-queue.md"
           # Owner core memory — read-only by design (propose-only page).
           - "core.md"
           - "preferences/signals.md"
@@ -485,6 +491,18 @@ doctor:
         the overnight Slack weave silently renders nothing
       recovery: >-
         Add "sources/slack/*.md" to extensions.dome.agent.grant.read in
+        .dome/config.yaml.
+    - processorId: dome.agent.consolidate
+      entries:
+        - kind: read
+          target: meta/patrol-queue.md
+      why: >-
+        the nightly patrol queue is grant-scoped out of consolidate's
+        snapshot, so the frozen-tail rotation stalls — consolidate only ever
+        reviews pages that recently drifted and never the stale tail patrol
+        queues
+      recovery: >-
+        Add "meta/patrol-queue.md" to extensions.dome.agent.grant.read in
         .dome/config.yaml.
     - processorId: dome.agent.preference-signals
       entries:

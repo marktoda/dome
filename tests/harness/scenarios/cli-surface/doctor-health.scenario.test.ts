@@ -343,7 +343,7 @@ scenario(
     expect(report.status).toBe("unhealthy");
     // Every capability kind is granted — the kind-level probe stays quiet.
     expect(report.summary.capabilityGrantGaps).toBe(0);
-    expect(report.summary.capabilityGrantEntryGaps).toBe(10);
+    expect(report.summary.capabilityGrantEntryGaps).toBe(12);
 
     const entryGaps = report.findings.filter(
       (finding) => finding.code === "capability.grant-entry-missing",
@@ -355,6 +355,14 @@ scenario(
       "dome.agent.brief",
       "dome.agent.brief",
       "dome.agent.brief",
+      // The patrol queue that consolidate reads (Task 16): a pre-rollout
+      // dome.agent read grant never gained meta/patrol-queue.md, so the
+      // frozen-tail rotation stalls until the owner adds it.
+      "dome.agent.consolidate",
+      // The staleness patrol's own meta files (Task 15): a pre-rollout vault
+      // lacks the per-processor replacement grant, so its queue/ledger writes
+      // are ungranted.
+      "dome.agent.patrol",
       "dome.agent.preference-promotion-answer",
       "dome.agent.preference-signals",
       "dome.daily.compose-blocks",
@@ -660,6 +668,10 @@ scenario(
           // is the only one.
           "        - \"meta/consolidation-ledger.md\"",
           "        - \"meta/sweep-ledger.md\"",
+          // The patrol queue consolidate reads (Task 16): grant the read so
+          // consolidate's grant-entry probe stays quiet and the model-provider
+          // finding is the only one.
+          "        - \"meta/patrol-queue.md\"",
           "      patch.auto:",
           "        - \"wiki/**/*.md\"",
           "        - \"notes/**/*.md\"",
@@ -698,6 +710,21 @@ scenario(
           "            - \"wiki/dailies/*.md\"",
           "          patch.auto:",
           "            - \"core.md\"",
+          // The staleness patrol's replacement grant (Task 15): its own
+          // meta/patrol-* files sit outside the bundle grant, so without this
+          // stanza the grant-entry + starvation probes fire and the
+          // model-provider finding would not be the only one.
+          "      dome.agent.patrol:",
+          "        grant:",
+          "          read:",
+          "            - \"wiki/entities/**/*.md\"",
+          "            - \"wiki/concepts/**/*.md\"",
+          "            - \"wiki/syntheses/**/*.md\"",
+          "            - \"meta/patrol-queue.md\"",
+          "            - \"meta/patrol-ledger.md\"",
+          "          patch.auto:",
+          "            - \"meta/patrol-queue.md\"",
+          "            - \"meta/patrol-ledger.md\"",
         ].join("\n"),
         "AGENTS.md":
           "# This is a Dome vault.\n\n" +

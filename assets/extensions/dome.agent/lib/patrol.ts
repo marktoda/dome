@@ -155,6 +155,32 @@ export function lastVisitByPage(
   return latest;
 }
 
+// ----- Queue read side (the consolidate consumer, Task 16) -------------------
+
+const QUEUE_LINE_RE = /^- \[\[([^\]]+)\]\]/;
+
+/**
+ * Parse the queue file's page bullets (`- [[<page>]] — last updated …`) into
+ * their wikilink targets, in file order. Non-bullet lines (the title, the
+ * contract header, the empty-state line, blanks, hand-typed notes) are ignored
+ * — the queue is advisory input the consolidate agent reviews, so a malformed
+ * or empty file degrades to "no queued pages" rather than throwing. A missing
+ * file's caller passes `""`, which parses to the empty list.
+ */
+export function parsePatrolQueue(content: string): ReadonlyArray<string> {
+  const pages: string[] = [];
+  const seen = new Set<string>();
+  for (const line of content.split(/\r?\n/)) {
+    const m = QUEUE_LINE_RE.exec(line);
+    if (m === null) continue;
+    const page = m[1]!.trim();
+    if (page.length === 0 || seen.has(page)) continue;
+    seen.add(page);
+    pages.push(page);
+  }
+  return Object.freeze(pages);
+}
+
 // ----- Selection -------------------------------------------------------------
 
 /**

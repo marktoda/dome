@@ -505,6 +505,85 @@ describe("dome.agent.consolidate", () => {
     expect(diag.message).toContain("must be a string");
   });
 
+  test("patrol queue: a queued page OUTSIDE the configured scope joins the charter targets", async () => {
+    // The frozen-tail contract (Task 16): patrol queues stale pages regardless
+    // of drift; even when consolidate_targets is narrowed, the queued page is
+    // force-added to the run's scope through the SAME targets → charter path.
+    const seenSystem: string[] = [];
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      seenSystem.push(messages.find((m) => m.role === "system")?.content ?? "");
+      return { text: "done" };
+    };
+    const queue = [
+      "# Patrol queue",
+      "",
+      "_review these_",
+      "",
+      "- [[wiki/concepts/orphaned-idea]] — last updated 2025-01-01, 12 lines",
+      "",
+    ].join("\n");
+    const effects = await consolidate.run(
+      makeCtx({
+        files: { "index.md": "x", "meta/patrol-queue.md": queue },
+        extensionConfig: { consolidate_targets: ["wiki/entities/"] },
+        stepFn,
+      }),
+    );
+    // The queued concepts page lands in the charter scope even though the
+    // configured scope was only wiki/entities/.
+    expect(seenSystem[0]).toContain("wiki/concepts/orphaned-idea");
+    expect(seenSystem[0]).toContain("wiki/entities/");
+    // Valid config + queue → no config-invalid diagnostic.
+    expect(
+      effects.some(
+        (e) =>
+          e.kind === "diagnostic" &&
+          (e as DiagnosticEffect).code === "dome.agent.consolidate-config-invalid",
+      ),
+    ).toBe(false);
+  });
+
+  test("patrol queue: a missing queue file changes nothing (baseline no-op is preserved)", async () => {
+    const stepFn = async (): Promise<ModelStepResult> => ({
+      text: "No drift tonight.",
+    });
+    // No meta/patrol-queue.md present at all.
+    const effects = await consolidate.run(
+      makeCtx({ files: { "index.md": "x" }, stepFn }),
+    );
+    // Exactly the baseline no-op diagnostic, no crash, no extra effects.
+    expect(effects).toHaveLength(1);
+    const diag = effects[0] as DiagnosticEffect;
+    expect(diag.code).toBe("dome.agent.consolidate-no-op");
+    expect(effects.some((e) => e.kind === "patch")).toBe(false);
+  });
+
+  test("patrol queue: an empty-state queue file adds no scope pages (quiet night)", async () => {
+    const seenSystem: string[] = [];
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      seenSystem.push(messages.find((m) => m.role === "system")?.content ?? "");
+      return { text: "done" };
+    };
+    const emptyQueue =
+      "# Patrol queue\n\n_No pages are due for patrol — every scanned page has been groomed within the last 35 days._\n";
+    await consolidate.run(
+      makeCtx({
+        files: { "index.md": "x", "meta/patrol-queue.md": emptyQueue },
+        stepFn,
+      }),
+    );
+    // Default scope, no queued pages spliced into it.
+    expect(seenSystem[0]).toContain("pages under: wiki/.");
+  });
+
   test("model_overrides.consolidate routes every step call", async () => {
     const seen: Array<string | undefined> = [];
     const effects = await consolidate.run(
