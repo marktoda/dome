@@ -915,10 +915,10 @@ function addPerProcessorReplacementGrant(
 /**
  * Merge one missing grant entry into a bundle grant list. Returns the glob
  * added, or null when nothing was added (already covered, no covering default
- * glob, or a non-list — user-owned — grant value). The glob added is the
- * most-specific shipped default glob that covers `target`, so a doctor probe
- * target resolves to the canonical default pattern rather than a one-off path,
- * and a narrow default (e.g. `core.md`) wins over a broad one (`**\/*.md`).
+ * glob, or a value refresh must respect). The glob added is the most-specific
+ * shipped default glob that covers `target`, so a doctor probe target resolves
+ * to the canonical default pattern rather than a one-off path, and a narrow
+ * default (e.g. `core.md`) wins over a broad one (`**\/*.md`).
  */
 function mergeGrantEntry(
   doc: Document,
@@ -936,10 +936,15 @@ function mergeGrantEntry(
     grantMap.set(doc.createNode(kind), doc.createNode([glob]));
     return glob;
   }
-  // A scalar grant value (`read: off`) is user-owned config the refresh has no
-  // safe way to merge a list entry into — leave it alone.
+  // A scalar grant value (`read: off`, `question.ask: false`) is user-owned
+  // config the refresh has no safe way to merge a list entry into — leave it
+  // alone.
   if (!isSeq(existing)) return null;
   const items = existing.toJSON() as unknown[];
+  // An explicitly EMPTY list is deliberate withholding, not stale config
+  // (omission ≠ withholding — wiki/specs/cli.md §"dome init"): never merged
+  // into, even when a doctor row names a missing entry for the kind.
+  if (items.length === 0) return null;
   const covered = items.some(
     (item) => typeof item === "string" && globMatch(item, target),
   );

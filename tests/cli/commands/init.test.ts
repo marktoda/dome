@@ -940,6 +940,58 @@ describe("runInit", () => {
     }
   });
 
+  test("--refresh-config respects present-but-empty kinds (omission ≠ withholding)", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cli-init-refresh-withhold-"));
+    try {
+      await mkdir(join(target, ".dome"), { recursive: true });
+      const configPath = join(target, ".dome", "config.yaml");
+      // The owner deliberately withheld write + question powers from
+      // dome.daily: patch.auto declared empty (list kind), question.ask
+      // declared false (boolean kind). Both are PRESENT values — the
+      // wholly-missing-kind refill must skip them, and the surgical
+      // doctor-entry merge must never insert into the explicitly empty list
+      // (wiki/specs/cli.md §"dome init": omission ≠ withholding).
+      await writeFile(
+        configPath,
+        "extensions:\n" +
+          "  dome.daily:\n" +
+          "    enabled: true\n" +
+          "    grant:\n" +
+          "      read:\n" +
+          '        - "wiki/**/*.md"\n' +
+          "      patch.auto: []\n" +
+          "      question.ask: false\n",
+        "utf8",
+      );
+
+      expect(await runInit({ path: target, refreshConfig: true })).toBe(0);
+
+      const after = record(parseYaml(await readFile(configPath, "utf8")));
+      const daily = record(
+        record(after.extensions)["dome.daily"],
+      );
+      const grant = record(daily.grant);
+      // Withheld kinds survive byte-for-byte: never refilled, never merged
+      // into.
+      expect(grant["patch.auto"]).toEqual([]);
+      expect(grant["question.ask"]).toBe(false);
+      // The present non-empty read list still receives its doctor-gated
+      // surgical merges — withholding one kind doesn't freeze the others.
+      expect(grant.read).toEqual([
+        "wiki/**/*.md",
+        "sources/calendar/*.md",
+        "sources/slack/*.md",
+        "meta/sweep-ledger.md",
+      ]);
+      // And the summary printed nothing for the withheld kinds.
+      const printed = captured.out.join("\n");
+      expect(printed).not.toContain("dome.daily patch.auto");
+      expect(printed).not.toContain("dome.daily question.ask");
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
   test("--refresh-instructions repairs old orientation shims", async () => {
     const target = mkdtempSync(join(tmpdir(), "cli-init-instructions-"));
     try {

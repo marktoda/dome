@@ -208,8 +208,14 @@ The shipped initialization steps:
      `core.md` resolves to `core.md` — never widening a deliberately narrowed
      `read` list to `**/*.md`), and a per-processor entry (whose processor ships
      a replacement grant) adds the full replacement stanza when the vault
-     carries none. When the vault uses `grants: standard`, this whole merge is a
-     no-op — the preset already tracks every enabled bundle's shipped defaults.
+     carries none. **Omission ≠ withholding:** a default grant kind the vault
+     omits entirely is treated as stale config and refilled, so a kind the owner
+     wants withheld must be declared present-but-empty (`patch.auto: []`,
+     `question.ask: false`) — refresh always respects a present value: it is
+     never refilled, and an explicitly empty list is never merged into, even
+     when a `doctor.grantEntries` row names a missing entry for it. When the
+     vault uses `grants: standard`, this whole merge is a no-op — the preset
+     already tracks every enabled bundle's shipped defaults.
 
    Explicitly disabled bundles (`enabled: false`) and third-party bundle config
    are never touched. The run prints a summary of the grants and stanzas it
