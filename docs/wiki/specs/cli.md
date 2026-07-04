@@ -1909,13 +1909,13 @@ still-affected paths (the owner's own `git commit`, custom vault-side
 scripts shelling plain `git commit`) with `git config --local
 commit.gpgsign false` as the opt-out if the owner wants unsigned human
 commits too — their call.
-When `runs.db` exceeds 500 MB on disk, doctor raises a `ledger.oversized`
-**info** finding naming the file size, the threshold, and the count of
-retained failure-forensics rows. Informational, not a
-health failure — the run ledger works fine at any size; the finding is a
-nudge toward lowering `ledger.retention_days` in `.dome/config.yaml`
-(default 30, applied automatically by the compiler host — see
-[[wiki/specs/run-ledger]] §"Retention") or running a one-off
+When `runs.db` exceeds 512 MB on disk, doctor raises a `ledger.oversized`
+**warning** finding naming the file size, the threshold, and the count of
+retained failure-forensics rows. The run ledger works fine at any size; the
+finding is a nudge toward setting `ledger.retention_days` in
+`.dome/config.yaml` (the `dome init` template opts in at 30 days; `dome
+serve` applies it daily — see [[wiki/specs/run-ledger]] §"Retention") or
+running a one-off
 `dome repair run-ledger --older-than-days <n> --apply --vacuum`. Both
 remedies share the eligibility predicate that never deletes failure
 forensics (`failed` / `timed_out` / `cancelled` / reason-bearing `skipped`),
@@ -2027,8 +2027,9 @@ rows and idempotency-style `skipped` rows with no error, first deleting their
 timed-out, cancelled, queued, running, and reason-bearing skipped rows.
 `--vacuum` is valid only with `--apply` and runs SQLite `VACUUM` after the
 delete. This is the manual, ad-hoc-window sibling of the automatic
-`ledger.retention_days` policy the compiler host applies on its own schedule
-(default 30 days, every 24h — [[wiki/specs/run-ledger]] §"Retention"); both
+`ledger.retention_days` policy `dome serve` applies daily when the key is set
+(the init template opts in at 30 days — [[wiki/specs/run-ledger]]
+§"Retention"); both
 share the same eligibility predicate in `src/ledger/runs.ts`, so reach for
 this command only when an immediate prune or a one-off window different from
 the configured default is wanted.

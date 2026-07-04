@@ -736,6 +736,7 @@ function collectRows(
         answer: q.answer ?? "-",
         asked_at: q.askedAt,
         answered_at: q.answeredAt ?? "-",
+        answered_by: q.answeredBy ?? "-",
         idempotency_key: q.effect.idempotencyKey,
       }));
     }

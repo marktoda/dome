@@ -18,6 +18,7 @@
 
 import { z } from "zod";
 
+import type { QuestionAnsweredBy } from "../answers/question-answers";
 import type { QuestionEffect, QuestionMetadata } from "../core/effect";
 import { questionEffect, QuestionEffectSchema } from "../core/effect";
 import { commitOid, type CommitOid, type SourceRef } from "../core/source-ref";
@@ -57,6 +58,8 @@ export type QuestionRecord = {
   readonly askedAt: string;
   readonly answeredAt: string | null;
   readonly answer: string | null;
+  /** Who answered — null until the question is answered. */
+  readonly answeredBy: QuestionAnsweredBy | null;
 };
 
 export type AnswerQuestionOpts = {
@@ -75,6 +78,7 @@ export type ApplyQuestionAnswerOpts = {
   readonly idempotencyKey: string;
   readonly answer: string;
   readonly answeredAt: string;
+  readonly answeredBy: QuestionAnsweredBy;
 };
 
 export type ResolveStaleQuestionsOpts = {
@@ -139,7 +143,8 @@ SELECT answered_at FROM questions WHERE idempotency_key = ?
 // 3-column shape for the stale-question scan.)
 const SELECT_QUESTIONS_BASE = `
 SELECT id, question, options_json, metadata_json, source_refs, idempotency_key,
-       processor_id, run_id, adopted_commit, asked_at, answered_at, answer
+       processor_id, run_id, adopted_commit, asked_at, answered_at, answer,
+       answered_by
 FROM questions`.trim();
 
 const QUERY_ALL_SQL = `${SELECT_QUESTIONS_BASE}\nORDER BY id`;
@@ -168,7 +173,7 @@ WHERE id = ? AND answered_at IS NULL
 
 const APPLY_ANSWER_SQL = `
 UPDATE questions
-SET answer = ?, answered_at = ?
+SET answer = ?, answered_at = ?, answered_by = ?
 WHERE idempotency_key = ?
 `.trim();
 
@@ -198,6 +203,7 @@ type QuestionRow = {
   readonly asked_at: string;
   readonly answered_at: string | null;
   readonly answer: string | null;
+  readonly answered_by: string | null;
 };
 
 type QuestionStaleRow = {
@@ -424,6 +430,7 @@ export function applyQuestionAnswer(
   db.raw.query(APPLY_ANSWER_SQL).run(
     opts.answer,
     opts.answeredAt,
+    opts.answeredBy,
     opts.idempotencyKey,
   );
 }
@@ -507,7 +514,12 @@ function rowToQuestionRecord(row: QuestionRow): QuestionRecord {
     askedAt: row.asked_at,
     answeredAt: row.answered_at,
     answer: row.answer,
+    answeredBy: parseAnsweredByColumn(row.answered_by),
   });
+}
+
+function parseAnsweredByColumn(value: string | null): QuestionAnsweredBy | null {
+  return value === "auto" ? "auto" : value === "owner" ? "owner" : null;
 }
 
 function rowToQuestion(row: QuestionRow): QuestionEffect {

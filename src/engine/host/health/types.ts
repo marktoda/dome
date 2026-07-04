@@ -217,7 +217,11 @@ export type HealthFinding =
     }
   | {
       readonly code: "operational.schema-mismatch";
-      readonly severity: "error";
+      // "info" when the stored hash is a known-migratable prior hash for
+      // this store (see `operationalSchemaFinding`'s `knownPriorHash`) — it
+      // self-heals in place the next time the vault opens. "error" for any
+      // other mismatch (unknown hash, or a store with no migrate policy).
+      readonly severity: "error" | "info";
       readonly subject: "storage";
       readonly id: string;
       readonly message: string;
@@ -403,16 +407,19 @@ export type HealthFinding =
       readonly recovery: string;
     }
   | {
+      // runs.db has grown past LEDGER_SIZE_WARNING_BYTES without pruning —
+      // surfaces the disk-growth problem `ledger.retention_days` exists to
+      // solve before the operator stumbles onto it (wiki/specs/run-ledger.md
+      // §Retention).
       readonly code: "ledger.oversized";
-      readonly severity: "info";
-      readonly subject: "runs";
-      readonly id: "runs_db";
+      readonly severity: "warning";
+      readonly subject: "storage";
+      readonly id: "ledger.size";
       readonly message: string;
       readonly recovery: string;
-      readonly ledger: {
+      readonly storage: {
         readonly path: string;
         readonly sizeBytes: number;
-        readonly thresholdBytes: number;
         /**
          * Rows the retention predicate permanently exempts (failed /
          * timed_out / cancelled / reason-bearing skipped) — the subset no

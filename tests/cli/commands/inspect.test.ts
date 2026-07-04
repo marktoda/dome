@@ -30,6 +30,7 @@ import {
   insertDiagnostic,
 } from "../../../src/projections/diagnostics";
 import {
+  applyQuestionAnswer,
   insertQuestion,
 } from "../../../src/projections/questions";
 
@@ -874,6 +875,54 @@ describe("runInspect", () => {
       }),
     );
     expect(rows[0]?.source_refs).toContain("wiki/new.md:1");
+  });
+
+  test("subject 'questions' --json exposes the answered_by audit field", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const projection = await openProjectionDb({
+      path: join(f.vaultPath, ".dome", "state", "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    expect(projection.ok).toBe(true);
+    if (!projection.ok) return;
+    try {
+      const adopted = commitOid(f.headSha);
+      insertQuestion(projection.value.db, {
+        effect: questionEffect({
+          question: "Auto-resolved question?",
+          sourceRefs: [sourceRef({ commit: adopted, path: "wiki/new.md" })],
+          idempotencyKey: "inspect-question-answered-by",
+        }),
+        processorId: "test.question",
+        runId: "run-cli-question",
+        adoptedCommit: adopted,
+      });
+      applyQuestionAnswer(projection.value.db, {
+        idempotencyKey: "inspect-question-answered-by",
+        answer: "track",
+        answeredAt: new Date().toISOString(),
+        answeredBy: "auto",
+      });
+    } finally {
+      projection.value.db.close();
+    }
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "questions",
+        vault: f.vaultPath,
+        json: true,
+      }),
+    ).toBe(0);
+    const rows = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly answered_by: string;
+    }>;
+    expect(rows[0]?.answered_by).toBe("auto");
   });
 
   test("corrupt operational JSON returns a clear state-read failure", async () => {

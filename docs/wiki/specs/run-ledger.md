@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-07-02
+updated: 2026-07-04
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -126,24 +126,28 @@ ledger forensics remain on the CLI operational surface.
 
 ## Retention
 
-`runs.db` is audit history with a **bounded horizon for routine rows and an unbounded one for failure forensics**. The bounded-horizon claim applies to the `succeeded` / clean-`skipped` subset only; the failure family (`failed`, `timed_out`, `cancelled`, reason-bearing `skipped`) is retained **indefinitely, by design** — those rows are forensics, and no retention path (automatic or manual) ever deletes them. This split is a deliberate narrowing of [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]: that invariant is about **writing** — every `Processor.run()` invocation lands exactly one row, no exceptions — not about keeping every row forever. Retention deletes old routine rows; it never skips writing a new one. The two are independent knobs and neither weakens the other.
+Default retention: **forever**. The ledger is small (typically a few KB per run) and the audit value compounds over time. The engine's own built-in default (`DEFAULT_RUNTIME_CONFIG`, used when a vault has no config at all) never prunes — retention is opt-in per vault, not an engine-wide posture.
 
-Default retention: **30 days** (`ledger.retention_days: 30`), applied automatically. Set `0` to disable (revert to unbounded growth).
+The vault template shipped by `dome init` opts in at **30 days**:
 
 ```yaml
 ledger:
-  retention_days: 30   # default; 0 disables automatic pruning
+  # Prune succeeded/no-op run-ledger rows older than this many days. Audit
+  # rows for failures, timeouts, and each processor's newest runs are always
+  # kept. Comment out to retain forever; reclaim disk with
+  # `dome repair run-ledger --apply --vacuum`.
+  retention_days: 30
 ```
 
-The compiler host (`runCompilerHostTick`, `src/engine/host/compiler-host.ts`) applies the policy once at host startup (no `run-ledger-retention.json` cache file yet) and at most once per 24h thereafter — the last-pruned timestamp is persisted beside other derived host state under `<vault>/.dome/state/`, not in git-tracked vault content. The SQL and the vacuum decision live in `src/ledger/retention.ts`, which is a thin policy layer over `src/ledger/runs.ts`'s `planRunLedgerRetention` / `pruneRunLedger` — the same eligibility predicate backs both the automatic policy and the manual `dome repair run-ledger` command below, so they can never disagree about which rows are prunable.
+Comment out or remove the key to retain forever. When `ledger.retention_days` is set, `dome serve` prunes automatically: once on the daemon's first workable tick, then every 24 hours thereafter, using the same in-memory cadence as the operational tick (no persisted last-run state — a restart pruning once more is an idempotent no-op when nothing is newly eligible). `dome sync` never prunes; automatic retention is daemon-only. The daily pass never runs `VACUUM` — freed pages recycle in place inside the file, so the `.db` file's on-disk size does not shrink from the daily pass alone.
 
-The eligibility predicate deletes only old `succeeded` rows and idempotency-style `skipped` rows (`status = skipped` with no error). **Every row with diagnostic value is preserved regardless of age**: `failed`, `timed_out`, `cancelled`, `queued`, and `running` rows, plus reason-bearing `skipped` rows, never age out automatically. This is stricter than "preserve rows referenced by open quarantine state" — the processor-quarantine store (`src/engine/operational/quarantine-store.ts`) tracks `(processorId, processorVersion, phase, triggerHash)` counters with no `run_id` back-reference, so there is no per-row join from "this quarantine entry" to "this specific failed run." Categorically preserving every failure-forensics row is the safer superset: it protects quarantine evidence without needing a join key the schema doesn't carry, and it doesn't retroactively make evidence prunable just because a quarantine counter later clears.
+Retention is a deliberate narrowing of [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]: that invariant is about **writing** — every `Processor.run()` invocation lands exactly one row, no exceptions — not about keeping every row forever. Retention deletes old routine rows; it never skips writing a new one. The two are independent knobs and neither weakens the other. The bounded horizon applies to the `succeeded` / clean-`skipped` subset only; the failure family (`failed`, `timed_out`, `cancelled`, reason-bearing `skipped`) is retained **indefinitely, by design** — those rows are forensics.
 
-**Consequence for oversized-ledger recovery:** because both the automatic policy and the manual command share the failure-exempting predicate, a ledger dominated by failure-forensics rows will not shrink from either remedy. That is working as intended — the fix for failure bloat is fixing the failing processor (its rows stop accumulating and the noise stops), not widening what retention may delete. `dome doctor`'s `ledger.oversized` finding includes the retained-forensics row count and says this explicitly, so an operator whose prune "did nothing" isn't left guessing.
+Eligibility is narrow and safe by construction: only rows with `finished_at` set, older than the cutoff, and either `status = 'succeeded'` or `status = 'skipped'` with `error IS NULL` (idempotency-style skips) are ever eligible. Failed, timed-out, cancelled, queued, running, and reason-bearing skipped rows are never eligible because they carry active forensics. Two supersession guards additionally protect live behavior regardless of age or status: **a processor's newest run is never eligible** (`latestActiveProblemRuns` suppresses old failures only while a newer same-processor run exists, so deleting the newest success would resurface resolved failures), and **a processor's newest schedule-triggered run is never eligible** (after a projection rebuild the scheduler recovers last-fire times from the ledger via `latestScheduleRunStartedAt`; deleting it would re-fire the job — the 2026-06-10 "consolidate re-charged 11x" incident class).
 
-`VACUUM` only runs when a single prune pass deletes more than 10,000 rows (`RUN_LEDGER_RETENTION_VACUUM_THRESHOLD`) — below that, freed pages stay in SQLite's freelist for reuse, which is cheap; a full-file rewrite on every ordinary-sized prune is not. `dome doctor` separately raises an info-severity `ledger.oversized` finding when `runs.db` exceeds 500 MB on disk — a nudge toward lowering `ledger.retention_days`, running a one-off manual prune, or (per the previous paragraph) fixing a failing processor; not a health failure.
+**Consequence for oversized-ledger recovery:** because both the automatic pass and the manual command share the failure-exempting predicate, a ledger dominated by failure-forensics rows will not shrink from either remedy. That is working as intended — the fix for failure bloat is fixing the failing processor (its rows stop accumulating and the noise stops), not widening what retention may delete. `dome doctor`'s `ledger.oversized` finding includes the retained-forensics row count and says this explicitly, so an operator whose prune "did nothing" isn't left guessing.
 
-Users who want an immediate one-off prune (rather than waiting for the next host tick, or with a different window than the configured default) can still reach for the manual command:
+The manual command remains the explicit, disk-reclaiming path — same eligibility predicate, operator-controlled cutoff and `--vacuum`:
 
 ```sh
 dome repair run-ledger --older-than-days 365        # dry-run
@@ -151,7 +155,9 @@ dome repair run-ledger --older-than-days 365 --apply
 dome repair run-ledger --older-than-days 365 --apply --vacuum
 ```
 
-The command never creates a missing ledger and defaults to dry-run. `--vacuum` is separate and opt-in there too, for the same reason: SQLite compaction can be expensive, so a manual invocation should ask for it explicitly rather than always paying the cost.
+The command never creates a missing ledger, defaults to dry-run, and prunes only the rows described above. `--vacuum` is separate and opt-in because SQLite compaction can be expensive; it is the only way to shrink the file on disk, since neither the manual command's non-vacuum runs nor the daemon's daily pass compact.
+
+`dome doctor`/`dome check` additionally warn when `runs.db` grows past 512 MB regardless of the retention setting (`ledger.oversized`), naming the actual size, both remedies (`ledger.retention_days` and `dome repair run-ledger --apply --vacuum`), and the retained-forensics row count — unpruned or slow-growing ledgers are visible before disk pressure forces the question, and a failure-dominated ledger is identified as such rather than leaving the operator to wonder why pruning did nothing.
 
 ## What the ledger cannot do
 

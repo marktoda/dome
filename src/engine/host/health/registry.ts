@@ -56,8 +56,8 @@ import {
   adoptedRefDivergenceFinding,
   collectOperationalSchemaFindings,
   instructionDriftFindings,
-  ledgerOversizedFinding,
   latestProblemRunFinding,
+  ledgerOversizedFinding,
   orphanFinding,
   projectionCacheDriftFinding,
   quarantineFinding,
@@ -95,6 +95,23 @@ type HealthProbe = (
  */
 const HEALTH_PROBES: ReadonlyArray<HealthProbe> = [
   (c) => collectOperationalSchemaFindings(c.vaultPath),
+  (c) => {
+    const runsDbPath = join(c.vaultPath, ".dome", "state", "runs.db");
+    let fileSizeBytes: number | null;
+    try {
+      fileSizeBytes = statSync(runsDbPath).size;
+    } catch {
+      fileSizeBytes = null;
+    }
+    const finding = ledgerOversizedFinding({
+      path: runsDbPath,
+      fileSizeBytes,
+      // Lazy: the COUNT only runs when the finding fires, so the ordinary
+      // (under-threshold) doctor pass never pays for it.
+      countRetainedForensicsRows: () => countRetainedForensicsRuns(c.ledger),
+    });
+    return finding === null ? [] : [finding];
+  },
   (c) =>
     c.registry === undefined || c.resolveGrants === undefined
       ? []
@@ -252,23 +269,6 @@ const HEALTH_PROBES: ReadonlyArray<HealthProbe> = [
     return divergence === null ? [] : [divergence];
   },
   (c) => instructionDriftFindings(c.vaultPath),
-  (c) => {
-    const runsDbPath = join(c.vaultPath, ".dome", "state", "runs.db");
-    let sizeBytes: number;
-    try {
-      sizeBytes = statSync(runsDbPath).size;
-    } catch {
-      return [];
-    }
-    const finding = ledgerOversizedFinding({
-      path: runsDbPath,
-      sizeBytes,
-      // Lazy: the COUNT only runs when the finding fires, so the ordinary
-      // (under-threshold) doctor pass never pays for it.
-      countRetainedForensicsRows: () => countRetainedForensicsRuns(c.ledger),
-    });
-    return finding === null ? [] : [finding];
-  },
 ];
 
 export async function collectHealthReport(

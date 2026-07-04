@@ -4,9 +4,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
-import { computeAnswersSchemaHash } from "../../../answers/db";
+import {
+  ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY,
+  computeAnswersSchemaHash,
+} from "../../../answers/db";
 import { computeLedgerSchemaHash } from "../../../ledger/db";
-import { computeOutboxSchemaHash } from "../../../outbox/db";
+import {
+  computeOutboxSchemaHash,
+  OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT,
+} from "../../../outbox/db";
 import {
   type RunRow,
   type RunSummaryRow,
@@ -128,79 +134,6 @@ export function latestProblemRunFinding(row: RunRow): HealthFinding {
       error: row.error,
     }),
   });
-}
-
-/**
- * Advisory size threshold for `runs.db`, in bytes. 500 MB — decimal
- * megabytes, matching the "500 MB" label the finding renders — is well past
- * what the default 30-day retention policy (`ledger.retention_days`,
- * `src/ledger/retention.ts`) should ever let the file reach in ordinary
- * use. A vault crossing it is either running with retention disabled
- * (`retention_days: 0`), carrying pre-policy unbounded history, or
- * dominated by failure-forensics rows that retention deliberately never
- * deletes (docs/wiki/specs/run-ledger.md §"Retention").
- */
-export const DEFAULT_LEDGER_OVERSIZED_THRESHOLD_BYTES = 500 * 1000 * 1000;
-
-/**
- * `runs.db` on-disk size exceeds the advisory threshold. Info severity: an
- * oversized ledger is not unhealthy on its own (queries still work; disk is
- * cheap), just worth a nudge toward `ledger.retention_days` or a one-off
- * `dome repair run-ledger --apply --vacuum`. Returns `null` when the file is
- * at or under the threshold — the caller (registry.ts) filters nulls, same
- * pattern as `adoptedRefDivergenceFinding`.
- *
- * `countRetainedForensicsRows` is a lazy thunk, invoked only when the
- * finding actually fires, returning how many rows the retention predicate
- * permanently exempts (failed / timed_out / cancelled / reason-bearing
- * skipped). Both suggested remedies share that predicate, so a ledger
- * bloated by long-running failures will NOT shrink from either — the count
- * (and the recovery text's last sentence) keeps the operator from chasing
- * the retention window when the real fix is the failing processor.
- */
-export function ledgerOversizedFinding(opts: {
-  readonly path: string;
-  readonly sizeBytes: number;
-  readonly thresholdBytes?: number;
-  readonly countRetainedForensicsRows?: () => number;
-}): HealthFinding | null {
-  const thresholdBytes =
-    opts.thresholdBytes ?? DEFAULT_LEDGER_OVERSIZED_THRESHOLD_BYTES;
-  if (opts.sizeBytes <= thresholdBytes) return null;
-  const retainedForensicsRows = opts.countRetainedForensicsRows?.() ?? null;
-  return Object.freeze({
-    code: "ledger.oversized" as const,
-    severity: "info" as const,
-    subject: "runs" as const,
-    id: "runs_db" as const,
-    message:
-      `runs.db is ${formatMegabytes(opts.sizeBytes)} on disk, over the ` +
-      `${formatMegabytes(thresholdBytes)} advisory threshold.` +
-      (retainedForensicsRows !== null
-        ? ` ${retainedForensicsRows} row(s) are failure forensics ` +
-          "(failed / timed_out / cancelled / reason-bearing skipped), " +
-          "which retention never deletes."
-        : ""),
-    recovery:
-      "Lower ledger.retention_days in .dome/config.yaml (default 30 — the " +
-      "host applies it automatically on the next tick) or run once: " +
-      "`dome repair run-ledger --older-than-days <n> --apply --vacuum`. " +
-      "If the size does not drop after pruning, the ledger is dominated by " +
-      "failure-forensics rows, which both paths deliberately preserve — " +
-      "investigate and fix the failing processor " +
-      "(`dome inspect runs --status failed`) rather than tightening the " +
-      "retention window.",
-    ledger: Object.freeze({
-      path: opts.path,
-      sizeBytes: opts.sizeBytes,
-      thresholdBytes,
-      retainedForensicsRows,
-    }),
-  });
-}
-
-function formatMegabytes(bytes: number): string {
-  return `${(bytes / 1_000_000).toFixed(0)} MB`;
 }
 
 export function projectionCacheDriftFinding(): HealthFinding {
@@ -330,12 +263,14 @@ export function collectOperationalSchemaFindings(
         path: join(statePath, "answers.db"),
         table: "answers_meta",
         expected: computeAnswersSchemaHash(),
+        knownPriorHash: ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY,
       }),
       operationalSchemaFinding({
         database: "outbox",
         path: join(statePath, "outbox.db"),
         table: "outbox_meta",
         expected: computeOutboxSchemaHash(),
+        knownPriorHash: OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT,
       }),
       operationalSchemaFinding({
         database: "ledger",
@@ -352,22 +287,38 @@ export function operationalSchemaFinding(opts: {
   readonly path: string;
   readonly table: string;
   readonly expected: string;
+  /**
+   * The one prior schema hash this store's `{kind:"migrate"}` open policy
+   * upgrades in place (see `ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY` /
+   * `OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT`). This probe runs BEFORE
+   * `openVaultRuntime`, so a store sitting on exactly this hash is not
+   * broken — it self-heals the moment any runtime command opens the vault.
+   * Undefined for stores with no migratable prior hash (ledger refuses on
+   * any mismatch), in which case every mismatch is a hard error.
+   */
+  readonly knownPriorHash?: string;
 }): HealthFinding | null {
   if (!existsSync(opts.path)) return null;
   const stored = readOperationalSchemaHash(opts.path, opts.table);
   if (stored === opts.expected) return null;
+  const migratable = stored !== null && stored === opts.knownPriorHash;
   return Object.freeze({
     code: "operational.schema-mismatch" as const,
-    severity: "error" as const,
+    severity: migratable ? ("info" as const) : ("error" as const),
     subject: "storage" as const,
     id: `${opts.database}.schema`,
-    message:
-      `${opts.database}.db schema ${
-        stored === null ? "could not be verified" : `hash ${stored}`
-      }; expected ${opts.expected}.`,
-    recovery:
-      "Do not delete operational state. Keep the file intact and run a " +
-      "compatible Dome version or an explicit migration.",
+    message: migratable
+      ? `${opts.database}.db is one schema version behind (hash ${stored}); ` +
+        "it migrates in place automatically the next time the vault opens " +
+        "(dome sync, dome serve, or any runtime command)."
+      : `${opts.database}.db schema ${
+          stored === null ? "could not be verified" : `hash ${stored}`
+        }; expected ${opts.expected}.`,
+    recovery: migratable
+      ? "No action needed — open the vault with any runtime command (e.g. " +
+        "`dome sync`) and the additive migration applies automatically."
+      : "Do not delete operational state. Keep the file intact and run a " +
+        "compatible Dome version or an explicit migration.",
     storage: Object.freeze({
       database: opts.database,
       path: opts.path,
@@ -403,6 +354,73 @@ export function readOperationalSchemaHash(path: string, table: string): string |
   } finally {
     db.close();
   }
+}
+
+/**
+ * `runs.db` size (bytes) above which `dome doctor`/`dome check` warn that
+ * unpruned run-ledger history is accumulating disk. 512 MB is comfortably
+ * past what a healthy pruned vault ever reaches, and roughly the order of
+ * magnitude the work-vault reclaim found before `ledger.retention_days`
+ * existed (wiki/specs/run-ledger.md §Retention).
+ */
+export const LEDGER_SIZE_WARNING_BYTES = 512 * 1024 * 1024;
+
+/**
+ * Warn when `runs.db` has grown past `LEDGER_SIZE_WARNING_BYTES`. The caller
+ * (the registry probe) does the `statSync` and passes the resulting size (or
+ * null when the file is absent / unreadable) so this stays a pure function —
+ * unit tests inject a size instead of creating a real 512MB file.
+ *
+ * `countRetainedForensicsRows` is a lazy thunk, invoked only when the
+ * finding actually fires, returning how many rows the retention predicate
+ * permanently exempts (failed / timed_out / cancelled / reason-bearing
+ * skipped). Both suggested remedies share that predicate, so a ledger
+ * bloated by long-running failures will NOT shrink from either — the count
+ * (and the recovery text's last sentence) keeps the operator from chasing
+ * the retention window when the real fix is the failing processor.
+ */
+export function ledgerOversizedFinding(opts: {
+  readonly path: string;
+  readonly fileSizeBytes: number | null;
+  readonly countRetainedForensicsRows?: () => number;
+}): HealthFinding | null {
+  if (
+    opts.fileSizeBytes === null ||
+    opts.fileSizeBytes < LEDGER_SIZE_WARNING_BYTES
+  ) {
+    return null;
+  }
+  const sizeMb = Math.round(opts.fileSizeBytes / (1024 * 1024));
+  const thresholdMb = Math.round(LEDGER_SIZE_WARNING_BYTES / (1024 * 1024));
+  const retainedForensicsRows = opts.countRetainedForensicsRows?.() ?? null;
+  return Object.freeze({
+    code: "ledger.oversized" as const,
+    severity: "warning" as const,
+    subject: "storage" as const,
+    id: "ledger.size" as const,
+    message:
+      `runs.db is ${sizeMb} MB, over the ${thresholdMb} MB doctor warning ` +
+      "threshold — unpruned run-ledger history is accumulating disk." +
+      (retainedForensicsRows !== null
+        ? ` ${retainedForensicsRows} row(s) are failure forensics ` +
+          "(failed / timed_out / cancelled / reason-bearing skipped), " +
+          "which retention never deletes."
+        : ""),
+    recovery:
+      "Set `ledger.retention_days` in `.dome/config.yaml` so `dome serve` " +
+      "prunes old succeeded/no-op run-ledger rows automatically, or run " +
+      "`dome repair run-ledger --apply --vacuum` to reclaim disk now. " +
+      "If the size does not drop after pruning, the ledger is dominated by " +
+      "failure-forensics rows, which both paths deliberately preserve — " +
+      "investigate and fix the failing processor " +
+      "(`dome inspect runs --status failed`) rather than tightening the " +
+      "retention window.",
+    storage: Object.freeze({
+      path: opts.path,
+      sizeBytes: opts.fileSizeBytes,
+      retainedForensicsRows,
+    }),
+  });
 }
 
 export function quarantineFinding(row: ProcessorQuarantineSnapshot): HealthFinding {

@@ -47,7 +47,7 @@ export {
   unreadableQuestionBacklogFindings,
 } from "./outbox";
 export {
-  DEFAULT_LEDGER_OVERSIZED_THRESHOLD_BYTES,
+  LEDGER_SIZE_WARNING_BYTES,
   ledgerOversizedFinding,
   recurringTimeoutFindings,
 } from "./operational";

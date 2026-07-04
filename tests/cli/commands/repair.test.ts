@@ -142,6 +142,22 @@ describe("dome repair run-ledger", () => {
         outcome: "allowed",
         recordedAt: new Date("2020-01-01T00:00:01.000Z"),
       });
+      // Supersession guards (RETENTION_ELIGIBLE_RUN_WHERE_SQL) require a
+      // newer same-processor (schedule-triggered) run to exist before an
+      // old succeeded/skipped run is eligible — without these, oldSucceeded
+      // and oldSkipped would be their processors' only/newest run and stay
+      // ineligible. A non-terminal placeholder is enough: it supersedes
+      // without itself affecting cost/status-count assertions.
+      seedRunningRun(ledger, {
+        suffix: "oldsuc-newer",
+        processorId: "test.oldsuc",
+        startedAt: new Date(),
+      });
+      seedRunningRun(ledger, {
+        suffix: "oldskp-newer",
+        processorId: "test.oldskp",
+        startedAt: new Date(),
+      });
     } finally {
       ledger.close();
     }
@@ -167,7 +183,7 @@ describe("dome repair run-ledger", () => {
 
     const after = await openTestLedger(vault);
     try {
-      expect(queryRuns(after).length).toBe(6);
+      expect(queryRuns(after).length).toBe(8);
     } finally {
       after.close();
     }
@@ -194,6 +210,13 @@ describe("dome repair run-ledger", () => {
         outcome: "allowed",
         recordedAt: new Date("2020-01-01T00:00:01.000Z"),
       });
+      // See the dry-run test above: a newer same-processor run must exist
+      // for oldSucceeded to clear the supersession guard.
+      seedRunningRun(ledger, {
+        suffix: "oldsuc-newer",
+        processorId: "test.oldsuc",
+        startedAt: new Date(),
+      });
     } finally {
       ledger.close();
     }
@@ -216,7 +239,7 @@ describe("dome repair run-ledger", () => {
     const after = await openTestLedger(vault);
     try {
       const runs = queryRuns(after);
-      expect(runs.map((run) => run.status)).toEqual(["failed"]);
+      expect(runs.map((run) => run.status)).toEqual(["running", "failed"]);
       const capUseCount = after.raw
         .query<{ count: number }, []>(
           "SELECT COUNT(*) AS count FROM capability_uses",
@@ -244,13 +267,17 @@ function seedQueuedRun(
   opts: {
     readonly suffix: string;
     readonly startedAt: Date;
+    // Defaults to `test.${suffix}`; pass explicitly to place a second run
+    // under the same processor (e.g. a newer run that supersedes an older
+    // one for the retention-eligibility guards).
+    readonly processorId?: string;
   },
 ): RunId {
   const id = newRunId(opts.startedAt, () => opts.suffix);
   insertQueued(db, {
     id,
     proposalId: null,
-    processorId: `test.${opts.suffix}`,
+    processorId: opts.processorId ?? `test.${opts.suffix}`,
     processorVersion: "0.0.1",
     phase: "garden",
     inputCommit: INPUT_COMMIT,
@@ -266,6 +293,7 @@ function seedRunningRun(
   opts: {
     readonly suffix: string;
     readonly startedAt: Date;
+    readonly processorId?: string;
   },
 ): RunId {
   const id = seedQueuedRun(db, opts);
@@ -279,6 +307,7 @@ function seedSucceededRun(
     readonly suffix: string;
     readonly startedAt: Date;
     readonly costUsd: number | null;
+    readonly processorId?: string;
   },
 ): RunId {
   const id = seedRunningRun(db, opts);
@@ -299,6 +328,7 @@ function seedSkippedRun(
     readonly suffix: string;
     readonly startedAt: Date;
     readonly error?: string;
+    readonly processorId?: string;
   },
 ): RunId {
   const id = seedQueuedRun(db, opts);
@@ -315,6 +345,7 @@ function seedFailedRun(
   opts: {
     readonly suffix: string;
     readonly startedAt: Date;
+    readonly processorId?: string;
   },
 ): RunId {
   const id = seedRunningRun(db, opts);

@@ -306,10 +306,19 @@ export function defaultConfigRecord(opts: {
     ),
     engine: {
       max_iterations: 100,
+      auto_resolve_questions: {
+        enabled: true,
+        policies: ["agent-safe"],
+        min_confidence: 0.6,
+        max_per_tick: 20,
+      },
       auto_commit_workflows: true,
     },
     git: {
       auto_commit_workflows: true,
+    },
+    ledger: {
+      retention_days: 30,
     },
   };
   if (opts.modelProvider !== undefined) {
@@ -576,17 +585,17 @@ const DEFAULT_CONFIG_FOOTER = `engine:
   # when a dome.sources subscription's fetch command runs a headless model:
   # external_handler_timeout_ms: 300000
   #
-  # Optional low-risk question auto-resolution. When enabled, Dome may answer
-  # unresolved questions that declare low risk, an allowed automation policy,
-  # sufficient confidence, and a recommended answer that is valid for the
-  # question options. Answer handlers still run through the normal garden /
-  # adoption path.
-  # auto_resolve_questions:
-  #   enabled: false
-  #   policies:
-  #     - "agent-safe"
-  #   min_confidence: 0.6
-  #   max_per_tick: 20
+  # Low-risk question auto-resolution. Dome answers unresolved questions that
+  # declare low risk, an allowed automation policy, sufficient confidence, and
+  # a recommended answer valid for the question options. Answer handlers still
+  # run through the normal garden / adoption path. Answers are stamped
+  # answered_by: auto in answers.db. Set enabled: false to opt out.
+  auto_resolve_questions:
+    enabled: true
+    policies:
+      - "agent-safe"
+    min_confidence: 0.6
+    max_per_tick: 20
 
   # Auto-commit closure commits when adoption-phase processors emit
   # patches that converge. When false, processors that emit PatchEffect
@@ -599,10 +608,10 @@ git:
   # are present, they must agree.
   auto_commit_workflows: true
 
-# Run-ledger retention (docs/wiki/specs/run-ledger.md, "Retention" section). The
-# compiler host applies this automatically (once at startup, at most once
-# per 24h thereafter) — no cron or manual step needed. Uncomment to override
-# the default 30-day window; 0 disables automatic pruning entirely.
-# ledger:
-#   retention_days: 30
+ledger:
+  # Prune succeeded/no-op run-ledger rows older than this many days. Audit
+  # rows for failures, timeouts, and each processor's newest runs are always
+  # kept. Comment out to retain forever; reclaim disk with
+  # \`dome repair run-ledger --apply --vacuum\`.
+  retention_days: 30
 `;

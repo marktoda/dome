@@ -73,14 +73,12 @@ export type RuntimeConfig = {
     readonly auto_commit_workflows: boolean;
   };
   /**
-   * Run-ledger retention policy (docs/wiki/specs/run-ledger.md §"Retention").
-   * The compiler host applies this automatically (once at startup, at most
-   * once per 24h thereafter) — see `src/ledger/retention.ts` +
-   * `src/engine/host/compiler-host.ts`.
+   * Run-ledger housekeeping. Absent `retentionDays` means `dome serve`
+   * never auto-prunes; `dome repair run-ledger` remains the manual path
+   * regardless of this setting.
    */
   readonly ledger: {
-    /** Days of run-ledger history to keep. `0` disables automatic pruning. */
-    readonly retentionDays: number;
+    readonly retentionDays?: number;
   };
   readonly modelProvider?: RuntimeModelProviderConfig;
 };
@@ -351,9 +349,7 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   git: Object.freeze({
     auto_commit_workflows: true,
   }),
-  ledger: Object.freeze({
-    retentionDays: 30,
-  }),
+  ledger: Object.freeze({}),
 });
 
 const EMPTY_EXTENSION_CONFIG: ExtensionConfig = Object.freeze({});
@@ -463,12 +459,6 @@ function parseRuntimeConfig(
       return err(`${path} ledger.${key} is not a known ledger config field`);
     }
   }
-  const retentionDays = parseNonNegativeInteger(
-    ledger.retention_days,
-    `${path} ledger.retention_days`,
-    DEFAULT_RUNTIME_CONFIG.ledger.retentionDays,
-  );
-  if (!retentionDays.ok) return err(retentionDays.error);
 
   const maxIterations = parsePositiveInteger(
     engine.max_iterations,
@@ -491,6 +481,11 @@ function parseRuntimeConfig(
     `${path} engine.external_handler_timeout_ms`,
   );
   if (!externalHandlerTimeoutMs.ok) return err(externalHandlerTimeoutMs.error);
+  const ledgerRetentionDays = parseOptionalPositiveInteger(
+    ledger.retention_days,
+    `${path} ledger.retention_days`,
+  );
+  if (!ledgerRetentionDays.ok) return err(ledgerRetentionDays.error);
 
   const engineAutoCommit = parseOptionalBoolean(
     engine.auto_commit_workflows,
@@ -541,7 +536,9 @@ function parseRuntimeConfig(
           DEFAULT_RUNTIME_CONFIG.git.auto_commit_workflows,
       }),
       ledger: Object.freeze({
-        retentionDays: retentionDays.value,
+        ...(ledgerRetentionDays.value !== undefined
+          ? { retentionDays: ledgerRetentionDays.value }
+          : {}),
       }),
       ...(modelProvider.value !== undefined
         ? { modelProvider: modelProvider.value }
@@ -688,22 +685,6 @@ function parseOptionalPositiveInteger(
   if (raw === undefined) return ok(undefined);
   if (typeof raw !== "number" || !Number.isSafeInteger(raw) || raw <= 0) {
     return err(`${label} must be a positive integer`);
-  }
-  return ok(raw);
-}
-
-/**
- * Like `parsePositiveInteger`, but `0` is valid (the disable sentinel for
- * `ledger.retention_days`).
- */
-function parseNonNegativeInteger(
-  raw: unknown,
-  label: string,
-  fallback: number,
-): Result<number, string> {
-  if (raw === undefined) return ok(fallback);
-  if (typeof raw !== "number" || !Number.isSafeInteger(raw) || raw < 0) {
-    return err(`${label} must be a non-negative integer`);
   }
   return ok(raw);
 }

@@ -125,7 +125,7 @@ extensions:
           },
         },
         git: { auto_commit_workflows: false },
-        ledger: { retentionDays: 30 },
+        ledger: {},
       });
       expect(runtimeResult.value.pageTypes.types.has("enabled-type")).toBe(true);
       expect(runtimeResult.value.pageTypes.types.has("disabled-type")).toBe(false);

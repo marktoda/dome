@@ -439,7 +439,6 @@ render tick rather than through `dome rebuild`. A one-shot migration script
     runs.db               # Bun.sqlite — run ledger
     outbox.db             # Bun.sqlite — external-action outbox
     quarantined.json      # processor quarantine state with generation ids
-    run-ledger-retention.json # last-pruned timestamp for the ledger.retention_days policy
     last-reconcile-mtime.txt   # marker file; mtime is the signal
 ```
 
@@ -525,9 +524,10 @@ It does not enable `dome.agent`; model-capable bundles still require explicit
 
 Vault identity is currently git-native (`HEAD`, current branch, and
 `refs/dome/adopted/<branch>`), not a `vault:` config block. Axiom-tier
-invariants are not user-toggleable. Ledger retention is not configurable in
-v1; operational databases are preserved unless the user explicitly removes
-them.
+invariants are not user-toggleable. Run-ledger retention is opt-in per vault
+via `ledger.retention_days` ([[wiki/specs/run-ledger]] §"Retention");
+operational databases are otherwise preserved unless the user explicitly
+removes them.
 
 `engine.auto_resolve_questions`, when enabled, lets the operational pump answer
 low-risk unresolved `QuestionEffect` rows that carry an allowed automation

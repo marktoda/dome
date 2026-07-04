@@ -73,7 +73,6 @@ Cycles are permitted *within* a layer (e.g. `apply-effect` ↔ `diagnostics` in 
 | `projection-lock` | `host` | Shared exclusion for projection.db writes |
 | `projection-rebuild` | `host` | Rebuild projection.db from the adopted commit |
 | `question-answering` | `host` | Durable answer orchestration (records the answer, then runs a compiler tick) |
-| `run-ledger-retention-cache` | `host` | Persisted last-pruned timestamp for the automatic run-ledger retention policy |
 | `vault-runtime` | `host` | The composed v1 runtime handle (stores + providers) |
 | `view-command` | `host` | Engine-owned runtime boundary for command-triggered view processors |
 
