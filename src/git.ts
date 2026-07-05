@@ -1009,6 +1009,55 @@ export async function readRef(opts: { path: string; ref: string }): Promise<stri
 }
 
 /**
+ * Bounded retry for the CAS `update-ref` path below. Live-vault evidence: 14
+ * days of serve logs show 2 hard "Failed to advance ... cannot lock ref"
+ * adoption failures where a concurrent Dome host (or a foreground git
+ * operation) held the ref's `.lock` file at the moment this ran. That is a
+ * transient filesystem lock, not a real conflict, so it is retried here
+ * instead of surfacing as a hard failure.
+ *
+ * `REF_LOCK_RETRY_LIMIT` retries after the initial attempt (6 tries total).
+ * The n-th retry (1-indexed) waits `100ms * 2^(n-1)` — 100ms, 200ms, 400ms,
+ * 800ms, 1.6s — plus up to `REF_LOCK_JITTER_FRACTION` extra on top. Jitter is
+ * strictly additive (never below the un-jittered base) and its max (25% of
+ * the base) is well under the 2x step to the next base, so growth is
+ * monotonic regardless of the random draw.
+ */
+const REF_LOCK_RETRY_LIMIT = 5;
+const REF_LOCK_BASE_DELAY_MS = 100;
+const REF_LOCK_JITTER_FRACTION = 0.25;
+
+/**
+ * True iff `error` is git's ref-*lock*-contention shape: a held or stale
+ * `.lock` file from a concurrent git process sitting on the same ref —
+ * `cannot lock ref '<ref>': Unable to create '<path>.lock': File exists.`
+ *
+ * Deliberately narrower than matching on "cannot lock ref" alone: git reuses
+ * that same prefix for a real compare-and-swap conflict — `cannot lock ref
+ * '<ref>': is at <X> but expected <Y>` — when the ref moved out from under an
+ * `expectedOld` check. That shape is a genuine divergence, not a transient
+ * lock, and must not be retried here (it is either a caller bug or a race
+ * `commitFilesOnHead` already handles by rebuilding onto the new head).
+ */
+function isRefLockContentionError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    /unable to create '[^']+\.lock'/i.test(error.message) &&
+    /file exists/i.test(error.message)
+  );
+}
+
+/** The backoff delay in ms for the `retryNumber`-th retry (1-indexed). */
+function refLockRetryDelayMs(retryNumber: number): number {
+  const base = REF_LOCK_BASE_DELAY_MS * 2 ** (retryNumber - 1);
+  return base + Math.random() * base * REF_LOCK_JITTER_FRACTION;
+}
+
+async function defaultSleep(ms: number): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+/**
  * Write `ref` to point at `value` (a commit OID). Used to advance
  * `refs/dome/adopted/<branch>` per ADOPTED_REF_IS_SEMANTIC_CURSOR. The caller
  * is responsible for any fast-forward / divergence semantics; this is a
@@ -1024,11 +1073,31 @@ export async function writeRef(opts: {
    * - null: ref must not exist.
    */
   expectedOld?: string | null;
+  /**
+   * Test seam: overrides the delay used between ref-lock-contention retries.
+   * Defaults to a real timer-based sleep; tests inject a fake so the backoff
+   * shape can be asserted without waiting in real time.
+   */
+  sleep?: (ms: number) => Promise<void>;
 }): Promise<void> {
   const { root } = await resolveGitContext(opts.path);
   if ("expectedOld" in opts) {
     const expected = opts.expectedOld ?? "0000000000000000000000000000000000000000";
-    await runNativeGit(["-C", root, "update-ref", opts.ref, opts.value, expected]);
+    const sleep = opts.sleep ?? defaultSleep;
+    for (let attempt = 1; attempt <= REF_LOCK_RETRY_LIMIT + 1; attempt += 1) {
+      try {
+        await runNativeGit(["-C", root, "update-ref", opts.ref, opts.value, expected]);
+        return;
+      } catch (error) {
+        const retriesExhausted = attempt > REF_LOCK_RETRY_LIMIT;
+        if (!isRefLockContentionError(error) || retriesExhausted) {
+          // Non-lock errors throw immediately (zero retries); lock errors
+          // that outlast the retry budget surface as-is, not rewrapped.
+          throw error;
+        }
+        await sleep(refLockRetryDelayMs(attempt));
+      }
+    }
     return;
   }
   await git.writeRef({ fs, dir: root, ref: opts.ref, value: opts.value, force: true });
