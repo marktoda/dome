@@ -140,7 +140,7 @@ extensions:
 });
 
 describe("openVaultRuntime registry-orphan GC", () => {
-  test("prunes a retired-bundle counter on open, keeps enabled + disabled", async () => {
+  test("prunes retired-bundle + deleted-processor rows on open, keeps registered + disabled", async () => {
     const root = mkdtempSync(join(tmpdir(), "dome-runtime-gc-"));
     roots.push(root);
     mkdirSync(join(root, ".dome", "state"), { recursive: true });
@@ -187,6 +187,21 @@ extensions:
             triggerHash: "h-retired",
             consecutiveRetryableFailures: 3,
             quarantineId: "q-retired-1",
+            quarantinedAt: "2026-06-18T00:00:00.000Z",
+            reason: "timeout",
+          },
+          {
+            // A processor DELETED from a still-enabled bundle (the
+            // dome.daily.attention-discount case): bundle configured and
+            // enabled, processor absent from the registry. The registry is
+            // authoritative for enabled bundles, so this row must prune —
+            // otherwise the health surfaces re-report it forever.
+            phase: "garden",
+            processorId: "enabled.bundle.deleted-worker",
+            processorVersion: "0.1.1",
+            triggerHash: "h-deleted",
+            consecutiveRetryableFailures: 3,
+            quarantineId: "q-deleted-1",
             quarantinedAt: "2026-06-18T00:00:00.000Z",
             reason: "timeout",
           },
@@ -244,6 +259,7 @@ extensions:
       // the field a host-startup CLI surface (`dome serve`) reads to log the
       // GC loudly (src/cli/commands/serve.ts).
       expect(runtimeResult.value.prunedUnknownProcessorQuarantines).toEqual([
+        "enabled.bundle.deleted-worker",
         "retired.bundle.worker",
       ]);
     } finally {
