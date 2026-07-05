@@ -236,6 +236,27 @@ export function hashEffect(effect: Effect): string {
   return createHash("sha256").update(JSON.stringify(effect)).digest("hex");
 }
 
+/** Cap on stored per-effect hashes per run. Mass re-emission processors
+ * (graph.links, search.index-text) emit hundreds of effects per run whose
+ * hashes differ every run anyway (each effect embeds its sourceRef commit),
+ * so past this cap the list records a count sentinel instead — 87% of the
+ * column's bytes lived in 2% of rows. Nothing verifies these hashes; the
+ * content record for every effect lives in its typed sink keyed by runId.
+ * Mirrors MATCHED_SIGNALS_MAX (src/processors/runtime.ts). */
+export const EFFECT_HASHES_MAX = 100;
+
+const EFFECT_HASHES_SENTINEL_RE = /^…\+(\d+) more effect hashes$/;
+
+/** True emitted-effect count for a stored hash list: parses the trailing
+ * truncation sentinel when present, else the plain length. Exported for the
+ * inspect surface. */
+export function effectHashCount(hashes: ReadonlyArray<string>): number {
+  const last = hashes[hashes.length - 1];
+  const m = last === undefined ? null : EFFECT_HASHES_SENTINEL_RE.exec(last);
+  if (m === null) return hashes.length;
+  return hashes.length - 1 + Number(m[1]);
+}
+
 type RunOutcome =
   | { readonly kind: "returned"; readonly value: unknown }
   | { readonly kind: "threw"; readonly error: unknown }
@@ -435,6 +456,14 @@ function outputResult(input: {
       durationMs: input.durationMs,
       error,
     });
+  }
+
+  if (effectHashes.length > EFFECT_HASHES_MAX) {
+    const dropped = effectHashes.length - EFFECT_HASHES_MAX;
+    effectHashes = [
+      ...effectHashes.slice(0, EFFECT_HASHES_MAX),
+      `…+${dropped} more effect hashes`,
+    ];
   }
 
   const frozenEffects = Object.freeze(effects.slice());
