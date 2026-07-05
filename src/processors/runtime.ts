@@ -998,7 +998,7 @@ function withNeedUnmetDiagnostics(
   if (needs.length === 0) return result;
   const fresh: Effect[] = [];
   for (const { need, detail } of needs) {
-    const key = `${frame.processor.id} ${need}`;
+    const key = `${frame.processor.id}\u0000${need}`;
     if (seen !== undefined) {
       if (seen.has(key)) continue;
       seen.add(key);

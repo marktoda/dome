@@ -251,10 +251,10 @@ export function renderPatrolLedger(opts: {
     (v) => daysAgo(opts.today, v.date) < opts.retentionDays,
   );
   const merged = new Map<string, PatrolVisit>();
-  for (const v of kept) merged.set(`${v.date} ${v.page}`, v);
+  for (const v of kept) merged.set(`${v.date}\u0000${v.page}`, v);
   for (const page of opts.selectedPages) {
     const v = { date: opts.today, page };
-    merged.set(`${v.date} ${v.page}`, v);
+    merged.set(`${v.date}\u0000${v.page}`, v);
   }
   const sorted = [...merged.values()].sort((a, b) => {
     const byDate = compareStrings(b.date, a.date); // newest first
