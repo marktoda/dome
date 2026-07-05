@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-07-04
+updated: 2026-07-05
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -24,7 +24,7 @@ The ledger augments the trailers with data git cannot carry:
 |---|---|---|
 | Commit provenance (run id, extension, base, source head) | git trailers | Reachable via `git log`; survives clone; readable without Dome |
 | Run status (queued / running / succeeded / failed / skipped / timed_out / cancelled) | ledger | git only records successful commits; failed runs leave no trace |
-| Effect hashes | ledger | what the run produced, even when no commit was made |
+| Effect hashes | ledger | what the run produced, even when no commit was made; capped at `EFFECT_HASHES_MAX` (100) with a `…+N more effect hashes` count sentinel past the cap |
 | Capability uses | ledger | audit surface for "this processor wrote to dome.tasks namespace" |
 | Cost (LLM tokens × pricing) | ledger | per-processor spend tracking |
 | Wall-clock duration | ledger | performance debugging |
@@ -59,7 +59,7 @@ CREATE TABLE runs (
   input_commit         TEXT NOT NULL,            -- the snapshot OID the processor ran against
   output_commit        TEXT,                     -- nullable; set when run contributed to a closure commit
   status               TEXT NOT NULL,            -- "queued" | "running" | "succeeded" | "failed" | "skipped" | "timed_out" | "cancelled"
-  effect_hashes_json   TEXT NOT NULL,            -- JSON-encoded string[] (sha256 of each emitted effect)
+  effect_hashes_json   TEXT NOT NULL,            -- JSON-encoded string[] (sha256 of each emitted effect); capped at EFFECT_HASHES_MAX (100), truncated list ends in a "…+N more effect hashes" sentinel
   cost_usd             REAL,                     -- nullable; populated by model.invoke usage
   duration_ms          INTEGER,                  -- nullable; null while running
   error                TEXT,                     -- nullable; failure detail or not-invoked reason JSON

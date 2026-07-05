@@ -1768,11 +1768,21 @@ function modelSpendForToday(opts: {
   return persisted + opts.currentRunCostUsd;
 }
 
+/** Cap on stored matched-signal events per trigger entry. The full fan-in of
+ * a bulk adoption (thousands of {signal, path} pairs duplicated into every
+ * subscribed processor's row) was 75% of trigger-payload bytes in 1.4% of
+ * rows; past this cap the payload records a marker with the dropped count
+ * instead. No reader parses the payload structurally (row codec validates
+ * well-formedness only), so the cap is an audit-granularity bound, not a
+ * behavior change. */
+const MATCHED_SIGNALS_MAX = 50;
+
 /**
  * Capture the matched-trigger detail as the `trigger_payload_json` column
- * value (per-trigger kind + matched signal events). The full match list is
- * stored, not just the first match — a future audit surface can replay the
- * exact fan-in that caused the run.
+ * value (per-trigger kind + matched signal events). The match list is
+ * stored up to `MATCHED_SIGNALS_MAX` per trigger; past that, a single
+ * `dome.ledger.truncated` marker entry records the dropped count instead of
+ * the full fan-in — this is an audit-granularity bound, not a replay log.
  *
  * The matched events are the (signal, path) pairs that fired the trigger;
  * they're the input the processor saw, modulo the runtime's
@@ -1780,11 +1790,29 @@ function modelSpendForToday(opts: {
  */
 function triggerPayloadOf(
   matches: ReadonlyArray<TriggerMatch>,
-): ReadonlyArray<{ readonly trigger: TriggerMatch["trigger"]; readonly matchedSignals: TriggerMatch["matchedSignals"] }> {
-  return matches.map((m) => ({
-    trigger: m.trigger,
-    matchedSignals: m.matchedSignals,
-  }));
+): ReadonlyArray<{
+  readonly trigger: TriggerMatch["trigger"];
+  readonly matchedSignals: ReadonlyArray<{
+    readonly signal: string;
+    readonly path: string;
+  }>;
+}> {
+  return matches.map((m) => {
+    if (m.matchedSignals.length <= MATCHED_SIGNALS_MAX) {
+      return { trigger: m.trigger, matchedSignals: m.matchedSignals };
+    }
+    const dropped = m.matchedSignals.length - MATCHED_SIGNALS_MAX;
+    return {
+      trigger: m.trigger,
+      matchedSignals: [
+        ...m.matchedSignals.slice(0, MATCHED_SIGNALS_MAX),
+        {
+          signal: "dome.ledger.truncated",
+          path: `…+${dropped} more matched signals`,
+        },
+      ],
+    };
+  });
 }
 
 /**

@@ -1,7 +1,7 @@
 ---
 type: invariant
 created: 2026-05-27
-updated: 2026-06-11
+updated: 2026-07-05
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 description: Every emitted Effect leaves an audit record (run-ledger hashes, projection/outbox rows, commit trailers); even denied effects are logged
@@ -15,7 +15,7 @@ tier: shipped-default
 
 **Tier:** Shipped default — enabled by default; disable only in tightly-resource-constrained vaults via `<vault>/.dome/config.yaml`.
 
-**Statement:** Every Effect emitted by a Processor produces an audit record. PatchEffects that adopt are recoverable via `git log --grep="^Dome-Run:"` + the run ledger join. DiagnosticEffects, FactEffects, QuestionEffects, ExternalActionEffects, OutboxRecoveryEffects, QuarantineRecoveryEffects, and ViewEffects land in their respective tables in `projection.db`, `outbox.db`, operational state, or are part of the run ledger's effect-hashes list — every emission is traceable.
+**Statement:** Every Effect emitted by a Processor produces an audit record. PatchEffects that adopt are recoverable via `git log --grep="^Dome-Run:"` + the run ledger join. DiagnosticEffects, FactEffects, QuestionEffects, ExternalActionEffects, OutboxRecoveryEffects, and QuarantineRecoveryEffects land in their respective tables in `projection.db`, `outbox.db`, or operational state, keyed by `runId` (ViewEffects are captured for return to the view-phase caller and are traced via the hash list, not a durable sink). Every effect of every kind additionally contributes a hash to its run's `effect_hashes_json` fingerprint-and-count list — every emission is traceable.
 
 This invariant replaces v0.5's `EVERY_WRITE_IS_LOGGED`. The shape generalized: the v0.5 surface was Tool effects (only the three on-disk-mutation kinds) tracked in `log.md`; v1's surface is the ten-kind effect taxonomy tracked across the run ledger, outbox, projection store, and operational recovery state, with `log.md` now a projection of the run ledger.
 
@@ -23,8 +23,8 @@ This invariant replaces v0.5's `EVERY_WRITE_IS_LOGGED`. The shape generalized: t
 
 **Structural enforcement:**
 
-1. **The engine applier writes an audit record per effect.** `src/engine/core/apply-effect.ts` calls the appropriate sink for each Effect kind: `ledger.recordEffect()` for the effect hash; `projections.facts.insert()` for FactEffects; `outbox.insert()` for ExternalActionEffects; `commitEngineChange()` carries the run id in the trailer for adopting PatchEffects.
-2. **Per [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]**, the RunRecord row carries `effect_hashes_json` — a sha256 list of every emitted effect for the run. Joined back to projection tables by the per-effect lookup, the union is the complete audit history.
+1. **The engine applier writes each effect's content to its typed sink.** `src/engine/core/apply-effect.ts` dispatches every Effect kind, by kind, to the sink that holds its CONTENT record: `sinks.recordFact()` for FactEffects and `sinks.recordDiagnostic()` for DiagnosticEffects (both land in `projection.db`), `sinks.dispatchExternal()` for ExternalActionEffects (`outbox.db`), and adopting PatchEffects carry the run id in the commit's `Dome-Run` trailer via `commitEngineChange()`. Every sink call is keyed by `runId`, so the content record for any effect is recoverable by run.
+2. **Per [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]**, the RunRecord row also carries `effect_hashes_json` — a batch fingerprint-and-count index, not a per-effect join key. The executor computes `effects.map(hashEffect)` once per run (`src/processors/executor.ts`) and `markSucceeded` persists the resulting list on the run row (`src/ledger/runs.ts`); past `EFFECT_HASHES_MAX` (100) the list is truncated to a `…+N more effect hashes` count sentinel, and `dome inspect patches` reports the true total via `effectHashCount`. These hashes are non-canonical `JSON.stringify` digests that embed each effect's sourceRef commit OID, so the same logical effect hashes differently run over run — nothing looks a hash up or verifies it against sink content. The audit record for what an effect actually did is the sink write in item 1, keyed by `runId`; the hash list only answers "how many effects, and did the set change since last run."
 3. **The human-readable activity view is `dome log`**, joining engine commit trailers (and narrative commit bodies) with the run ledger on demand — the ledger DB and `dome inspect runs` are the structured audit surfaces. The once-planned `dome.log` markdown projection is retired per [[wiki/invariants/NO_ACCRETING_REGISTRIES]]; `log.md` is frozen.
 4. **The engine/storage tests exercise audit landings by sink.** `tests/engine/adopt-capability-uses.test.ts` verifies capability-use ledger rows for adoption PatchEffects, `tests/engine/model-invoke.test.ts` verifies runtime capability-use audit rows, `tests/outbox/dispatch.test.ts` covers ExternalActionEffect outbox rows, and projection/answer tests cover durable projection landings.
 

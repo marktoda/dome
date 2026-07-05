@@ -79,6 +79,7 @@ import {
   startOfLocalDay,
   type ProcessorCostRow,
 } from "../../ledger/runs";
+import { effectHashCount } from "../../processors/executor";
 import {
   queryDiagnosticRecords,
   type DiagnosticsFilter,
@@ -684,7 +685,7 @@ function collectRows(
         paths: patch.resource ?? "-",
         input: shortOid(patch.inputCommit),
         output: patch.outputCommit === null ? "-" : shortOid(patch.outputCommit),
-        effect_hashes: patch.effectHashes.length,
+        effect_hashes: effectHashCount(patch.effectHashes),
         started_at: patch.startedAt,
         finished_at: patch.finishedAt ?? "-",
         recorded_at: patch.recordedAt,

@@ -14,6 +14,7 @@ import type {
   OperationalQueryView,
 } from "../../core/processor";
 import type { LedgerDb } from "../../ledger/db";
+import { effectHashCount } from "../../processors/executor";
 import {
   orphanRuns,
   queryRuns,
@@ -61,7 +62,7 @@ export function buildOperationalQueryView(opts: {
         // `ctx.operational.orphanRuns()` feeds the dome.health orphan-run
         // recovery processor, so it excludes the recovery processors' own
         // runs — the detector must not raise self-referential questions about
-        // its minute-cadence runs (Task 4b).
+        // its 5-minute-cadence runs (Task 4b).
         orphanRuns(
           opts.ledger,
           normalizeOrphanRunAgeMs(filter?.runningOlderThanMs),
@@ -137,7 +138,9 @@ function toOperationalRunRow(row: RunRow): OperationalRunRow {
     durationMs: row.durationMs,
     // Derived count only — the raw effect sha256s stay internal to the
     // ledger. 0 on a succeeded run = a genuine no-op (see OperationalRunRow).
-    effectCount: row.effectHashes.length,
+    // effectHashCount, not .length: past EFFECT_HASHES_MAX the stored list
+    // ends in a count sentinel, and the true total must survive the cap.
+    effectCount: effectHashCount(row.effectHashes),
     error: row.error,
     triggerKind: row.triggerKind,
     startedAt: row.startedAt,

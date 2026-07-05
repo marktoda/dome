@@ -38,7 +38,11 @@ import type { EngineVault } from "../../src/engine/core/vault-shape";
 import type { ModelProvider } from "../../src/engine/core/model-invoke";
 import type { ExecutionPolicyCap } from "../../src/processors/execution-policy";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
-import { capabilityUsesByRun } from "../../src/ledger/capability-uses";
+import {
+  capabilityUsesByRun,
+  queryPatchRecords,
+  recordCapabilityUse,
+} from "../../src/ledger/capability-uses";
 import { queryRuns, type RunId } from "../../src/ledger/runs";
 
 // Stub EngineVault — the runtime never touches it.
@@ -768,6 +772,229 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
     const rows = queryRuns(ledger, { processorId: "test.ledger.execution-cap" });
     expect(rows.length).toBe(1);
     expect(rows[0]?.status).toBe("timed_out");
+  });
+
+  // Bulk-adoption fan-in previously stored every matched (signal, path) pair
+  // verbatim — up to thousands per row, 75% of trigger_payload_json bytes in
+  // 1.4% of rows. The ledger caps matched signals at MATCHED_SIGNALS_MAX (50)
+  // per trigger with a truncation marker; no reader parses the payload
+  // structurally, so this is an audit-granularity bound, not a behavior
+  // change.
+  function manySignals(count: number): ReadonlyArray<SignalEvent> {
+    return Array.from({ length: count }, (_, i) =>
+      Object.freeze({ signal: "file.created" as const, path: `wiki/${i}.md` }),
+    );
+  }
+
+  test("trigger payload stores at most 50 matched signals per trigger, with a truncation marker", async () => {
+    const ledger = await openLedger();
+    const p = makeFixtureProcessor({
+      id: "test.ledger.truncation",
+      phase: "adoption",
+      triggers: [{ kind: "signal", name: "file.created" }],
+    });
+    const rt = buildRuntimeFor([p], ledger);
+    const signals = manySignals(120);
+
+    await rt.adoptionRunner({
+      vault: STUB_VAULT,
+      candidate: CANDIDATE,
+      changedPaths: signals.map((s) => s.path),
+      signals,
+      iteration: 1,
+      proposal,
+    });
+
+    const rows = queryRuns(ledger, { processorId: "test.ledger.truncation" });
+    expect(rows.length).toBe(1);
+    const row = rows[0];
+    if (row === undefined) throw new Error("expected row");
+    const payload = row.triggerPayload as ReadonlyArray<{
+      trigger: unknown;
+      matchedSignals: ReadonlyArray<{ signal: string; path: string }>;
+    }>;
+    expect(payload.length).toBe(1);
+    expect(payload[0]!.matchedSignals.length).toBe(51); // 50 + marker
+    expect(payload[0]!.matchedSignals[50]).toEqual({
+      signal: "dome.ledger.truncated",
+      path: "…+70 more matched signals",
+    });
+  });
+
+  test("trigger payload with ≤50 matched signals is stored unchanged (no marker)", async () => {
+    const ledger = await openLedger();
+    const p = makeFixtureProcessor({
+      id: "test.ledger.no-truncation",
+      phase: "adoption",
+      triggers: [{ kind: "signal", name: "file.created" }],
+    });
+    const rt = buildRuntimeFor([p], ledger);
+    const signals = manySignals(3);
+
+    await rt.adoptionRunner({
+      vault: STUB_VAULT,
+      candidate: CANDIDATE,
+      changedPaths: signals.map((s) => s.path),
+      signals,
+      iteration: 1,
+      proposal,
+    });
+
+    const rows = queryRuns(ledger, { processorId: "test.ledger.no-truncation" });
+    expect(rows.length).toBe(1);
+    const row = rows[0];
+    if (row === undefined) throw new Error("expected row");
+    const payload = row.triggerPayload as ReadonlyArray<{
+      trigger: unknown;
+      matchedSignals: ReadonlyArray<{ signal: string; path: string }>;
+    }>;
+    expect(payload.length).toBe(1);
+    expect(payload[0]!.matchedSignals.length).toBe(3);
+    for (const m of payload[0]!.matchedSignals) {
+      expect(m.signal).not.toBe("dome.ledger.truncated");
+    }
+  });
+
+  test("exactly 50 matched signals is the boundary: stored whole, no marker", async () => {
+    // An off-by-one in the <= comparison would mislabel every truncated row's
+    // dropped count; pin the boundary explicitly.
+    const ledger = await openLedger();
+    const p = makeFixtureProcessor({
+      id: "test.ledger.boundary",
+      phase: "adoption",
+      triggers: [{ kind: "signal", name: "file.created" }],
+    });
+    const rt = buildRuntimeFor([p], ledger);
+    const signals = manySignals(50);
+
+    await rt.adoptionRunner({
+      vault: STUB_VAULT,
+      candidate: CANDIDATE,
+      changedPaths: signals.map((s) => s.path),
+      signals,
+      iteration: 1,
+      proposal,
+    });
+
+    const rows = queryRuns(ledger, { processorId: "test.ledger.boundary" });
+    const payload = rows[0]!.triggerPayload as ReadonlyArray<{
+      matchedSignals: ReadonlyArray<{ signal: string; path: string }>;
+    }>;
+    expect(payload[0]!.matchedSignals.length).toBe(50);
+    for (const m of payload[0]!.matchedSignals) {
+      expect(m.signal).not.toBe("dome.ledger.truncated");
+    }
+  });
+
+  test("multiple triggers truncate independently", async () => {
+    const ledger = await openLedger();
+    const p = makeFixtureProcessor({
+      id: "test.ledger.multi-trigger-truncation",
+      phase: "adoption",
+      triggers: [
+        { kind: "signal", name: "file.created" },
+        { kind: "signal", name: "file.deleted" },
+      ],
+    });
+    const rt = buildRuntimeFor([p], ledger);
+    const created = manySignals(120);
+    const deleted = Array.from({ length: 2 }, (_, i) =>
+      Object.freeze({ signal: "file.deleted" as const, path: `wiki/gone-${i}.md` }),
+    );
+    const signals = [...created, ...deleted];
+
+    await rt.adoptionRunner({
+      vault: STUB_VAULT,
+      candidate: CANDIDATE,
+      changedPaths: signals.map((s) => s.path),
+      signals,
+      iteration: 1,
+      proposal,
+    });
+
+    const rows = queryRuns(ledger, {
+      processorId: "test.ledger.multi-trigger-truncation",
+    });
+    expect(rows.length).toBe(1);
+    const row = rows[0];
+    if (row === undefined) throw new Error("expected row");
+    const payload = row.triggerPayload as ReadonlyArray<{
+      trigger: { name: string };
+      matchedSignals: ReadonlyArray<{ signal: string; path: string }>;
+    }>;
+    expect(payload.length).toBe(2);
+    const createdEntry = payload.find((e) => e.trigger.name === "file.created");
+    const deletedEntry = payload.find((e) => e.trigger.name === "file.deleted");
+    if (createdEntry === undefined || deletedEntry === undefined) {
+      throw new Error("expected both trigger entries");
+    }
+    expect(createdEntry.matchedSignals.length).toBe(51);
+    expect(createdEntry.matchedSignals[50]).toEqual({
+      signal: "dome.ledger.truncated",
+      path: "…+70 more matched signals",
+    });
+    expect(deletedEntry.matchedSignals.length).toBe(2);
+  });
+
+  // Mirrors the matched-signals cap above but for effect_hashes_json: mass
+  // re-emission processors emit hundreds of effects per run, and past
+  // EFFECT_HASHES_MAX the ledger stores a count sentinel instead of every
+  // hash (see EFFECT_HASHES_MAX in src/processors/executor.ts).
+  test("effect hashes are capped at 100 per run, with a count sentinel, round-tripped through both readers", async () => {
+    const ledger = await openLedger();
+    const effects = Array.from({ length: 120 }, (_, i) =>
+      diagnosticEffect({
+        severity: "info",
+        code: `test.many.${i}`,
+        message: "ok",
+        sourceRefs: [],
+      }),
+    );
+    const p = makeFixtureProcessor({
+      id: "test.ledger.effect-hash-truncation",
+      phase: "adoption",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      emitsEffects: effects,
+    });
+    const rt = buildRuntimeFor([p], ledger);
+
+    await rt.adoptionRunner({
+      vault: STUB_VAULT,
+      candidate: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      iteration: 1,
+      proposal,
+    });
+
+    const rows = queryRuns(ledger, {
+      processorId: "test.ledger.effect-hash-truncation",
+    });
+    expect(rows.length).toBe(1);
+    const row = rows[0];
+    if (row === undefined) throw new Error("expected row");
+    expect(row.effectHashes.length).toBe(101);
+    expect(row.effectHashes[100]).toBe("…+20 more effect hashes");
+    for (const h of row.effectHashes.slice(0, 100)) {
+      expect(/^[0-9a-f]{64}$/.test(h)).toBe(true);
+    }
+
+    // The patch-records JOIN codec (queryPatchRecords) reads the same
+    // effect_hashes_json column through its own schema — pin that it
+    // decodes the sentinel-bearing list too, not just queryRuns' codec.
+    recordCapabilityUse(ledger, {
+      runId: row.id,
+      capability: "patch.auto",
+      resource: "wiki/a.md",
+      outcome: "allowed",
+      recordedAt: new Date(),
+    });
+    const patches = queryPatchRecords(ledger, {
+      processorId: "test.ledger.effect-hash-truncation",
+    });
+    expect(patches.length).toBe(1);
+    expect(patches[0]!.effectHashes.length).toBe(101);
+    expect(patches[0]!.effectHashes[100]).toBe("…+20 more effect hashes");
   });
 
 });

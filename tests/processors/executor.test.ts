@@ -91,6 +91,74 @@ describe("executeProcessor", () => {
     expect(result.effectHashes[0]?.length).toBe(64);
   });
 
+  // Mass re-emission processors (graph.links, search.index-text) can emit
+  // hundreds of effects per run whose hashes differ every run anyway (each
+  // effect embeds its sourceRef commit) — 87% of the ledger's
+  // effect_hashes_json bytes lived in 2% of rows. Past EFFECT_HASHES_MAX the
+  // stored list records a count sentinel instead of every hash. Mirrors
+  // MATCHED_SIGNALS_MAX (src/processors/runtime.ts).
+  test("caps effect hashes at 100 with a count-bearing sentinel", async () => {
+    const effects = Array.from({ length: 120 }, (_, i) =>
+      diagnosticEffect({
+        severity: "info",
+        code: `test.ok.${i}`,
+        message: "ok",
+        sourceRefs: [],
+      }),
+    );
+    const result = await executeProcessor({
+      processorId: "test.executor.many-effects",
+      phase: "adoption",
+      runId: RUN_ID,
+      makeContext: contextWithSignal,
+      policy: {
+        class: "deterministic",
+        timeoutMs: 100,
+        lateEffectBehavior: "discard",
+      },
+      run: async () => effects,
+    });
+
+    expect(result.status).toBe("succeeded");
+    if (result.status !== "succeeded") return;
+    expect(result.effectHashes.length).toBe(101);
+    for (const h of result.effectHashes.slice(0, 100)) {
+      expect(h).toMatch(/^[0-9a-f]{64}$/);
+    }
+    expect(result.effectHashes[100]).toBe("…+20 more effect hashes");
+    expect(result.effects.length).toBe(120); // effects themselves untouched
+  });
+
+  test("exactly 100 effects is the boundary: all hashes stored, no sentinel", async () => {
+    const effects = Array.from({ length: 100 }, (_, i) =>
+      diagnosticEffect({
+        severity: "info",
+        code: `test.ok.${i}`,
+        message: "ok",
+        sourceRefs: [],
+      }),
+    );
+    const result = await executeProcessor({
+      processorId: "test.executor.boundary-effects",
+      phase: "adoption",
+      runId: RUN_ID,
+      makeContext: contextWithSignal,
+      policy: {
+        class: "deterministic",
+        timeoutMs: 100,
+        lateEffectBehavior: "discard",
+      },
+      run: async () => effects,
+    });
+
+    expect(result.status).toBe("succeeded");
+    if (result.status !== "succeeded") return;
+    expect(result.effectHashes.length).toBe(100);
+    expect(result.effectHashes.every((h) => /^[0-9a-f]{64}$/.test(h))).toBe(
+      true,
+    );
+  });
+
   test("returned non-array fails invalid-output and routes no effects", async () => {
     const result = await executeProcessor({
       processorId: "test.executor.nonarray",
