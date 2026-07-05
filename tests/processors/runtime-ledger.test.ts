@@ -38,7 +38,11 @@ import type { EngineVault } from "../../src/engine/core/vault-shape";
 import type { ModelProvider } from "../../src/engine/core/model-invoke";
 import type { ExecutionPolicyCap } from "../../src/processors/execution-policy";
 import { openLedgerDb, type LedgerDb } from "../../src/ledger/db";
-import { capabilityUsesByRun } from "../../src/ledger/capability-uses";
+import {
+  capabilityUsesByRun,
+  queryPatchRecords,
+  recordCapabilityUse,
+} from "../../src/ledger/capability-uses";
 import { queryRuns, type RunId } from "../../src/ledger/runs";
 
 // Stub EngineVault — the runtime never touches it.
@@ -930,6 +934,67 @@ describe("runtime — ledger lifecycle (Phase 6)", () => {
       path: "…+70 more matched signals",
     });
     expect(deletedEntry.matchedSignals.length).toBe(2);
+  });
+
+  // Mirrors the matched-signals cap above but for effect_hashes_json: mass
+  // re-emission processors emit hundreds of effects per run, and past
+  // EFFECT_HASHES_MAX the ledger stores a count sentinel instead of every
+  // hash (see EFFECT_HASHES_MAX in src/processors/executor.ts).
+  test("effect hashes are capped at 100 per run, with a count sentinel, round-tripped through both readers", async () => {
+    const ledger = await openLedger();
+    const effects = Array.from({ length: 120 }, (_, i) =>
+      diagnosticEffect({
+        severity: "info",
+        code: `test.many.${i}`,
+        message: "ok",
+        sourceRefs: [],
+      }),
+    );
+    const p = makeFixtureProcessor({
+      id: "test.ledger.effect-hash-truncation",
+      phase: "adoption",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      emitsEffects: effects,
+    });
+    const rt = buildRuntimeFor([p], ledger);
+
+    await rt.adoptionRunner({
+      vault: STUB_VAULT,
+      candidate: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      iteration: 1,
+      proposal,
+    });
+
+    const rows = queryRuns(ledger, {
+      processorId: "test.ledger.effect-hash-truncation",
+    });
+    expect(rows.length).toBe(1);
+    const row = rows[0];
+    if (row === undefined) throw new Error("expected row");
+    expect(row.effectHashes.length).toBe(101);
+    expect(row.effectHashes[100]).toBe("…+20 more effect hashes");
+    for (const h of row.effectHashes.slice(0, 100)) {
+      expect(/^[0-9a-f]{64}$/.test(h)).toBe(true);
+    }
+
+    // The patch-records JOIN codec (queryPatchRecords) reads the same
+    // effect_hashes_json column through its own schema — pin that it
+    // decodes the sentinel-bearing list too, not just queryRuns' codec.
+    recordCapabilityUse(ledger, {
+      runId: row.id,
+      capability: "patch.auto",
+      resource: "wiki/a.md",
+      outcome: "allowed",
+      recordedAt: new Date(),
+    });
+    const patches = queryPatchRecords(ledger, {
+      processorId: "test.ledger.effect-hash-truncation",
+    });
+    expect(patches.length).toBe(1);
+    expect(patches[0]!.effectHashes.length).toBe(101);
+    expect(patches[0]!.effectHashes[100]).toBe("…+20 more effect hashes");
   });
 
 });

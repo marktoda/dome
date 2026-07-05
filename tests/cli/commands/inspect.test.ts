@@ -18,6 +18,7 @@ import {
 } from "../../../src/core/effect";
 import { commitOid, sourceRef } from "../../../src/core/source-ref";
 import { commit } from "../../../src/git";
+import { recordCapabilityUse } from "../../../src/ledger/capability-uses";
 import { openLedgerDb } from "../../../src/ledger/db";
 import {
   insertQueued,
@@ -25,6 +26,7 @@ import {
   markSucceeded,
   newRunId,
 } from "../../../src/ledger/runs";
+import { effectHashCount } from "../../../src/processors/executor";
 import { openProjectionDb } from "../../../src/projections/db";
 import {
   insertDiagnostic,
@@ -345,6 +347,70 @@ describe("runInspect", () => {
       }),
     ).toBe(0);
     expect(JSON.parse(captured.out.join("\n"))).toEqual([]);
+  });
+
+  // Mass re-emission processors store a truncation sentinel past
+  // EFFECT_HASHES_MAX (src/processors/executor.ts) instead of every hash.
+  // The `patches` subject must report the true emitted-effect count, not the
+  // stored list's length (which would undercount past the cap).
+  test("subject 'patches' reports true effect-hash counts through the truncation sentinel", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    const ledger = await openLedgerDb({
+      path: join(f.vaultPath, ".dome", "state", "runs.db"),
+    });
+    if (!ledger.ok) throw new Error(`ledger open failed: ${ledger.error.kind}`);
+    const startedAt = new Date();
+    const id = newRunId(startedAt);
+    const hashes = [
+      ...Array.from({ length: 100 }, (_, i) =>
+        ("0".repeat(64) + i.toString(16)).slice(-64),
+      ),
+      "…+724 more effect hashes",
+    ];
+    insertQueued(ledger.value.db, {
+      id,
+      proposalId: null,
+      processorId: "dome.test.mass-emit",
+      processorVersion: "0.0.1",
+      phase: "garden",
+      inputCommit: commitOid(f.headSha),
+      triggerKind: "schedule",
+      triggerPayload: null,
+      startedAt,
+    });
+    markRunning(ledger.value.db, id, startedAt);
+    markSucceeded(ledger.value.db, {
+      id,
+      effectHashes: hashes,
+      costUsd: null,
+      durationMs: 10,
+      outputCommit: null,
+      finishedAt: startedAt,
+    });
+    recordCapabilityUse(ledger.value.db, {
+      runId: id,
+      capability: "patch.auto",
+      resource: "wiki/a.md",
+      outcome: "allowed",
+      recordedAt: startedAt,
+    });
+    ledger.value.db.close();
+
+    captured.out = [];
+    expect(
+      await runInspect({
+        subject: "patches",
+        vault: f.vaultPath,
+        processor: "dome.test.mass-emit",
+        json: true,
+      }),
+    ).toBe(0);
+    const rows = JSON.parse(captured.out.join("\n")) as ReadonlyArray<{
+      readonly effect_hashes: number;
+    }>;
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.effect_hashes).toBe(824);
   });
 
   test("subject 'bundles' shows configured disabled bundles without loading them", async () => {
@@ -1386,6 +1452,22 @@ describe("runInspect cost", () => {
     expect(captured.err.join("\n")).toContain(
       "--days is only valid for the cost subject",
     );
+  });
+});
+
+describe("effectHashCount", () => {
+  test("no truncation sentinel: returns the plain stored length", () => {
+    expect(effectHashCount(["a", "b", "c"])).toBe(3);
+    expect(effectHashCount([])).toBe(0);
+  });
+
+  test("with a truncation sentinel: returns stored hashes + dropped count", () => {
+    const hashes = [...Array.from({ length: 100 }, () => "a"), "…+724 more effect hashes"];
+    expect(effectHashCount(hashes)).toBe(824);
+  });
+
+  test("malformed sentinel-ish last element falls back to the plain length", () => {
+    expect(effectHashCount(["a", "b", "…+x more effect hashes"])).toBe(3);
   });
 });
 
