@@ -14,8 +14,10 @@ import type {
   OperationalQueryView,
 } from "../../core/processor";
 import type { LedgerDb } from "../../ledger/db";
+import { effectHashCount } from "../../processors/executor";
 import {
   orphanRuns,
+  queryRuns,
   ORPHAN_RECOVERY_EXCLUDED_PROCESSOR_PREFIXES,
   type RunRow,
 } from "../../ledger/runs";
@@ -41,6 +43,7 @@ export function buildOperationalQueryView(opts: {
    */
   readonly queryQuestions: (filter?: {
     readonly resolved?: boolean;
+    readonly resolvedSince?: string;
   }) => ReadonlyArray<QuestionRecord>;
   readonly now?: () => Date;
 }): OperationalQueryView {
@@ -72,6 +75,15 @@ export function buildOperationalQueryView(opts: {
       ),
     questions: (filter) =>
       Object.freeze(opts.queryQuestions(filter).map(toOperationalQuestionRow)),
+    runs: (filter) =>
+      Object.freeze(
+        queryRuns(
+          opts.ledger,
+          filter?.startedSince === undefined
+            ? undefined
+            : { sinceIso: filter.startedSince },
+        ).map(toOperationalRunRow),
+      ),
   });
 }
 
@@ -124,6 +136,11 @@ function toOperationalRunRow(row: RunRow): OperationalRunRow {
     status: row.status,
     costUsd: row.costUsd,
     durationMs: row.durationMs,
+    // Derived count only — the raw effect sha256s stay internal to the
+    // ledger. 0 on a succeeded run = a genuine no-op (see OperationalRunRow).
+    // effectHashCount, not .length: past EFFECT_HASHES_MAX the stored list
+    // ends in a count sentinel, and the true total must survive the cap.
+    effectCount: effectHashCount(row.effectHashes),
     error: row.error,
     triggerKind: row.triggerKind,
     startedAt: row.startedAt,
@@ -143,5 +160,6 @@ function toOperationalQuestionRow(
     askedAt: row.askedAt,
     answeredAt: row.answeredAt,
     answer: row.answer,
+    state: row.answeredAt === null ? "open" : "resolved",
   });
 }

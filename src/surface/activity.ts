@@ -179,9 +179,9 @@ function matchesGrep(row: JoinedRow, grep: string | undefined): boolean {
  * (DOME_TRAILER_KEYS) — prose paragraphs that merely mention "Dome-Run:"
  * mid-line survive.
  *
- * Also drop the hosted agent's attribution trailer (src/agent/write.ts
+ * Also drop the hosted assistant's attribution trailer (src/assistant/write.ts
  * AGENT_TRAILER_KEY = "Dome-Agent"). Kept as a literal — activity.ts is core
- * and must not import the agent layer — and deliberately out of DOME_TRAILER_KEYS
+ * and must not import the assistant layer — and deliberately out of DOME_TRAILER_KEYS
  * so it never affects engine/human commit classification.
  */
 const DOME_TRAILER_LINE = new RegExp(`^(?:${[...DOME_TRAILER_KEYS, "Dome-Agent"].join("|")}):`);

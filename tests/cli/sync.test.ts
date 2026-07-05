@@ -90,7 +90,6 @@ const EMPTY_GARDEN_SUMMARY = Object.freeze({
 });
 const EMPTY_OPERATIONAL_SUMMARY = Object.freeze({
   scheduledCount: 0,
-  jobCount: 0,
   outboxCount: 0,
   autoResolvedQuestions: 0,
   diagnosticCount: 0,
@@ -196,6 +195,9 @@ extensions:
         - ".dome/page-types.yaml"
       patch.auto:
         - "**/*.md"
+      graph.write:
+        - "dome.page.*"
+      question.ask: true
 `,
   );
 

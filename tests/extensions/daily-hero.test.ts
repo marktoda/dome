@@ -20,7 +20,6 @@ function task(overrides: Partial<DailyTaskItem> & { text: string }): DailyTaskIt
     dueDate: null,
     priority: null,
     lastChangedAt: null,
-    attention: null,
     evidenceLabel: overrides.text,
     sourceRefs: Object.freeze([]),
   });
@@ -46,18 +45,17 @@ function question(overrides: Partial<DailyQuestionItem> & { automationPolicy: st
 }
 
 describe("selectHero", () => {
-  test("hero picks the most-urgent non-discounted overdue task (zombie discounted out)", () => {
-    const zombie = task({
+  test("hero picks the higher-priority overdue task when both are overdue", () => {
+    const unprioritized = task({
       text: "old",
       dueDate: "2026-01-01",
-      attention: { discount: 0.95, impressions: 40, lastShown: "2026-06-01" },
     });
-    const real = task({
+    const prioritized = task({
       text: "due-ish",
       dueDate: "2026-06-10",
       priority: "high",
     });
-    expect(selectHero({ openTasks: [zombie, real], questions: [], today: "2026-06-14" })).toEqual({ kind: "task", item: real });
+    expect(selectHero({ openTasks: [unprioritized, prioritized], questions: [], today: "2026-06-14" })).toEqual({ kind: "task", item: prioritized });
   });
 
   test("hero falls back to an owner-needed question when no overdue task", () => {
@@ -74,16 +72,6 @@ describe("selectHero", () => {
     const highPriority = task({ text: "high", dueDate: "2026-06-10", priority: "high" });
     const result = selectHero({ openTasks: [lowPriority, highPriority], questions: [], today: "2026-06-14" });
     expect(result).toEqual({ kind: "task", item: highPriority });
-  });
-
-  test("discount exactly at floor is excluded (discount >= HERO_DISCOUNT_FLOOR)", () => {
-    const borderline = task({ text: "borderline", dueDate: "2026-06-10", attention: { discount: 0.5, impressions: 10, lastShown: "2026-06-01" } });
-    expect(selectHero({ openTasks: [borderline], questions: [], today: "2026-06-14" })).toBeNull();
-  });
-
-  test("discount just below floor is hero-eligible", () => {
-    const nearBorder = task({ text: "near", dueDate: "2026-06-10", attention: { discount: 0.49, impressions: 10, lastShown: "2026-06-01" } });
-    expect(selectHero({ openTasks: [nearBorder], questions: [], today: "2026-06-14" })).toEqual({ kind: "task", item: nearBorder });
   });
 
   test("non-overdue task is hero when no overdue/question candidates", () => {

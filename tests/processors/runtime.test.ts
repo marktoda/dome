@@ -610,6 +610,7 @@ describe("gardenRunner — executor diagnostics", () => {
       },
       quarantines: () => Object.freeze([]),
       orphanRuns: () => Object.freeze([]),
+      runs: () => Object.freeze([]),
       questions: () => Object.freeze([]),
     });
     const p = makeFixtureProcessor({
@@ -658,6 +659,7 @@ describe("gardenRunner — executor diagnostics", () => {
       outbox: () => Object.freeze([]),
       quarantines: () => Object.freeze([row]),
       orphanRuns: () => Object.freeze([]),
+      runs: () => Object.freeze([]),
       questions: () => Object.freeze([]),
     });
     const seen: { allowed: ReadonlyArray<string>; denied: boolean } = {
@@ -718,11 +720,13 @@ describe("gardenRunner — executor diagnostics", () => {
       askedAt: "2026-05-29T00:00:00.000Z",
       answeredAt: null,
       answer: null,
+      state: "open",
     });
     const operational: OperationalQueryView = Object.freeze({
       outbox: () => Object.freeze([]),
       quarantines: () => Object.freeze([]),
       orphanRuns: () => Object.freeze([]),
+      runs: () => Object.freeze([]),
       questions: () => Object.freeze([row]),
     });
     const seen: {

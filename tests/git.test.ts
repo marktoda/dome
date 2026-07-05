@@ -17,6 +17,7 @@ import {
   readTree,
   resolveRef,
   statusMatrix,
+  writeRef,
 } from "../src/git";
 
 describe("git boundary", () => {
@@ -432,6 +433,137 @@ describe("git boundary", () => {
       await write(path, "scratch/notes.md", "ephemeral\n");
       await write(path, ".dome/state/projection.db", "binary\n");
       expect(await isWorkingTreeDirty(path)).toBe(false);
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  // Live-vault evidence: 14 days of serve logs show 2 hard "Failed to advance
+  // refs/heads/main ... cannot lock ref" adoption failures caused by a
+  // concurrent Dome host (or a foreground git operation) holding the ref's
+  // `.lock` file at the moment `writeRef`'s CAS ran. That is a transient
+  // filesystem lock, not a real conflict — it should be retried, not
+  // surfaced as a hard failure. These three tests exercise the retry
+  // directly against a real stray `.lock` file (the exact shape `git
+  // update-ref` produces), with an injected `sleep` so no test waits in
+  // real time.
+  test("writeRef retries a CAS update through transient ref-lock contention and succeeds once the lock clears", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-ref-lock-retry-"));
+    try {
+      await initRepo(path);
+      await write(path, "wiki/a.md", "one\n");
+      const base = await commit({ path, message: "base", files: ["wiki/a.md"] });
+
+      const lockPath = join(path, ".git/refs/heads/main.lock");
+      await write(path, ".git/refs/heads/main.lock", "stray lock\n");
+
+      const delays: number[] = [];
+      const fakeSleep = async (ms: number): Promise<void> => {
+        delays.push(ms);
+        if (delays.length === 2) {
+          // Simulate the concurrent host releasing the ref on the 2nd retry.
+          await rm(lockPath, { force: true });
+        }
+      };
+
+      await writeRef({
+        path,
+        ref: "refs/heads/main",
+        value: base,
+        expectedOld: base,
+        sleep: fakeSleep,
+      });
+
+      expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(base);
+      // Two failed attempts (lock still present) before the third succeeds.
+      expect(delays).toHaveLength(2);
+      expect(delays[0]).toBeGreaterThanOrEqual(100);
+      expect(delays[1]).toBeGreaterThan(delays[0] as number);
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  test("writeRef throws immediately (zero retries) on a non-lock ref-update error", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-ref-cas-mismatch-"));
+    try {
+      await initRepo(path);
+      await write(path, "wiki/a.md", "one\n");
+      const base = await commit({ path, message: "base", files: ["wiki/a.md"] });
+      await write(path, "wiki/b.md", "two\n");
+      const second = await commit({ path, message: "second", files: ["wiki/b.md"] });
+      // The branch already advanced to `second`; claiming `base` as the
+      // expected old value is a real compare-and-swap conflict, not a lock.
+      // git's message for this shape is "cannot lock ref '<ref>': is at
+      // <X> but expected <Y>" — it contains the phrase "cannot lock ref"
+      // too, so the classifier must not key off that alone.
+
+      const delays: number[] = [];
+      const fakeSleep = async (ms: number): Promise<void> => {
+        delays.push(ms);
+      };
+
+      await expect(
+        writeRef({
+          path,
+          ref: "refs/heads/main",
+          value: second,
+          expectedOld: base,
+          sleep: fakeSleep,
+        }),
+      ).rejects.toThrow(/is at .* but expected/i);
+      expect(delays).toHaveLength(0);
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  test("writeRef exhausts retries and surfaces the original lock error with a bounded, jittered backoff", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-ref-lock-exhaust-"));
+    try {
+      await initRepo(path);
+      await write(path, "wiki/a.md", "one\n");
+      const base = await commit({ path, message: "base", files: ["wiki/a.md"] });
+
+      // The lock never clears — every attempt fails.
+      await write(path, ".git/refs/heads/main.lock", "stray lock\n");
+
+      const delays: number[] = [];
+      const fakeSleep = async (ms: number): Promise<void> => {
+        delays.push(ms);
+      };
+
+      await expect(
+        writeRef({
+          path,
+          ref: "refs/heads/main",
+          value: base,
+          expectedOld: base,
+          sleep: fakeSleep,
+        }),
+        // The surfaced error is the ORIGINAL git error, not a generic
+        // retry-exhausted wrapper.
+      ).rejects.toThrow(/Unable to create '.*\.lock'.*File exists/is);
+
+      // 5 retries between 6 total attempts.
+      expect(delays).toHaveLength(5);
+      // First delay >= the 100ms base.
+      expect(delays[0]).toBeGreaterThanOrEqual(100);
+      // Monotonically increasing (each attempt's jittered delay stays below
+      // the next attempt's un-jittered base, since jitter is a fraction of
+      // the base rather than a full doubling).
+      for (let i = 1; i < delays.length; i += 1) {
+        expect(delays[i]).toBeGreaterThan(delays[i - 1] as number);
+      }
+      // Bounded: the curve's endpoints are 100ms and 1.6s: attempt n's
+      // un-jittered base is 100 * 2^(n-1), with jitter adding at most 25%
+      // on top.
+      const expectedBases = [100, 200, 400, 800, 1600];
+      delays.forEach((delay, i) => {
+        const base = expectedBases[i] as number;
+        expect(delay).toBeGreaterThanOrEqual(base);
+        expect(delay).toBeLessThanOrEqual(base * 1.25);
+      });
     } finally {
       await rm(path, { recursive: true, force: true });
     }

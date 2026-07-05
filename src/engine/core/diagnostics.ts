@@ -2,7 +2,7 @@
 //
 // Processor-emitted DiagnosticEffects flow through applyEffect's normal
 // DiagnosticEffect route. Engine-created diagnostics (phase mismatch,
-// capability rejection, scheduler/job/garden orchestration failures) need the
+// capability rejection, scheduler/garden orchestration failures) need the
 // same durable projection row without pretending they came from a processor
 // run. This helper keeps that write path consistent and leaves the caller to
 // choose the right producer id (`test.processor`, `engine.scheduler`, etc.).

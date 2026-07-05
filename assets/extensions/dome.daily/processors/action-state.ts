@@ -12,14 +12,13 @@ import {
   resolveQuestionCommand,
 } from "../../../../src/question-resolution";
 
-import {
-  attentionAdjustedRecencyMs,
-  collectAttentionDiscounts,
-  type AttentionDiscount,
-} from "./attention-shared";
 import { dailyPath, dailyPathSettings, formatDate, isValidDailyDate, localDateParts, parseDailyPath } from "./daily-paths";
 import { type DailyDate, type DailyOpenLoopSource, type DailyPathSettings } from "./daily-types";
-import { openLoopIdentity, openLoopSurfaceKey, openSourceBackedOpenLoopsFromMarkdown } from "./open-loop-surface";
+import {
+  openLoopAnchorFromStableId,
+  openLoopSurfaceKey,
+  openSourceBackedOpenLoopsFromMarkdown,
+} from "./open-loop-surface";
 
 import { compareStrings } from "../../../../src/core/compare";
 // Fact values are clean semantic bodies. Origin is carried by a parallel
@@ -82,23 +81,17 @@ export type DailyTaskItem = {
   readonly dueDate: string | null;
   readonly priority: DailyTaskPriority | null;
   readonly lastChangedAt: string | null;
-  /**
-   * Explainable attention-discount note (task-lifecycle §"Attention
-   * discounting"): present when the item carries a dome.attention.discount
-   * derivation, `null` otherwise. Ranking demotes by `(1 − discount)`
-   * multiplicatively; it never drops the item.
-   */
-  readonly attention: DailyTaskAttention | null;
   readonly evidenceLabel: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
   /** Decoded URL/path from an inline `([↗](target))` origin marker, if present. */
   readonly origin?: string;
-};
-
-export type DailyTaskAttention = {
-  readonly discount: number;
-  readonly impressions: number;
-  readonly lastShown: string;
+  /**
+   * The origin line's stamped `^block-anchor` id, when it carries one — the
+   * settle-able identity (src/surface/settle.ts). Absent for tasks not yet
+   * anchored (one garden cascade behind `dome.daily.stamp-block-id`, or a
+   * body-hash-only identity); never synthesized.
+   */
+  readonly blockId?: string;
 };
 
 export type DailyTaskPriority =
@@ -124,19 +117,13 @@ export type DailyQuestionItem = {
 };
 
 // ---------------------------------------------------------------------------
-// Hero selection — discount-aware "most important item right now" for the
-// cockpit briefing surface.
+// Hero selection — "most important item right now" for the cockpit briefing
+// surface.
 // ---------------------------------------------------------------------------
 
 export type DailyHero =
   | { readonly kind: "task"; readonly item: DailyTaskItem }
   | { readonly kind: "question"; readonly item: DailyQuestionItem };
-
-/**
- * Tasks discounted at or above this level are ineligible for hero status.
- * Value mirrors the zombie-suppression threshold used in display ordering.
- */
-const HERO_DISCOUNT_FLOOR = 0.5;
 
 const HERO_PRIORITY_WEIGHT: Record<DailyTaskPriority, number> = {
   highest: 5,
@@ -148,9 +135,9 @@ const HERO_PRIORITY_WEIGHT: Record<DailyTaskPriority, number> = {
 
 /**
  * Select the single most-important action item for the cockpit briefing:
- * 1. Highest-priority non-discounted overdue task (discount < 0.5).
+ * 1. Highest-priority overdue task.
  * 2. Fallback: first `owner-needed` question (needs human judgment).
- * 3. Fallback: soonest upcoming non-discounted dated task.
+ * 3. Fallback: soonest upcoming dated task.
  * 4. null — nothing qualifies.
  */
 export function selectHero(input: {
@@ -158,11 +145,7 @@ export function selectHero(input: {
   readonly questions: ReadonlyArray<DailyQuestionItem>;
   readonly today: string;
 }): DailyHero | null {
-  const eligible = input.openTasks.filter(
-    (t) => (t.attention?.discount ?? 0) < HERO_DISCOUNT_FLOOR,
-  );
-
-  const overdue = eligible
+  const overdue = input.openTasks
     .filter((t) => t.dueDate !== null && t.dueDate < input.today)
     .sort((a, b) => heroRank(b) - heroRank(a));
   if (overdue[0] !== undefined) return { kind: "task", item: overdue[0] };
@@ -170,7 +153,7 @@ export function selectHero(input: {
   const ownerQ = input.questions.find((q) => q.automationPolicy === "owner-needed");
   if (ownerQ !== undefined) return { kind: "question", item: ownerQ };
 
-  const soonest = eligible
+  const soonest = input.openTasks
     .filter((t) => t.dueDate !== null)
     .sort((a, b) => (a.dueDate! < b.dueDate! ? -1 : 1));
   if (soonest[0] !== undefined) return { kind: "task", item: soonest[0] };
@@ -205,14 +188,6 @@ export async function collectDailyActionState(
       content: dailyContent,
     });
 
-  // Attention discounting: derived from the snapshot (same deterministic
-  // inputs the dome.daily.attention-discount facts record), so the view
-  // agrees with the markdown it reads regardless of projection freshness.
-  const attentionDiscounts = await collectAttentionDiscounts({
-    snapshot: ctx.snapshot,
-    settings,
-  });
-
   const openFacts = uniqueFactsByKey(ctx.projection.facts({
     predicate: OPEN_TASK_PREDICATE,
   }));
@@ -244,7 +219,6 @@ export async function collectDailyActionState(
       dailyPath: path,
       item,
       sourceLastChangedAt,
-      attentionDiscounts,
     })
   );
   const openTasks = [
@@ -255,7 +229,6 @@ export async function collectDailyActionState(
         followup: followupKeys.has(factKey(fact)),
         dailyPath: path,
         sourceLastChangedAt,
-        attentionDiscounts,
         originByStableId,
       })
     ),
@@ -268,7 +241,6 @@ export async function collectDailyActionState(
         followup: true,
         dailyPath: path,
         sourceLastChangedAt,
-        attentionDiscounts,
         originByStableId,
       })
     ),
@@ -423,7 +395,6 @@ function taskItemFromFact(input: {
   readonly followup: boolean;
   readonly dailyPath: string;
   readonly sourceLastChangedAt: ReadonlyMap<string, string>;
-  readonly attentionDiscounts: ReadonlyMap<string, AttentionDiscount>;
   readonly originByStableId: ReadonlyMap<string, string>;
 }): DailyTaskItem {
   const { fact } = input;
@@ -434,6 +405,9 @@ function taskItemFromFact(input: {
   // Correlate origin via the parallel dome.daily.task_origin fact using stableId.
   const sid = ref?.stableId;
   const origin = sid !== undefined ? input.originByStableId.get(sid) : undefined;
+  // Recover the raw ^anchor from the stableId, when it names one (not the
+  // transient body-hash fallback) — the settle-able identity.
+  const blockId = openLoopAnchorFromStableId(sid);
   const metadata = taskMetadata(body);
   const line = ref?.range?.startLine ?? null;
   const sourceRefs = Object.freeze([...fact.sourceRefs]);
@@ -446,14 +420,10 @@ function taskItemFromFact(input: {
     dueDate: metadata.dueDate,
     priority: metadata.priority,
     lastChangedAt: input.sourceLastChangedAt.get(path) ?? null,
-    attention: taskAttention(input.attentionDiscounts, {
-      sourcePath: path,
-      body,
-      ...(sid !== undefined ? { stableId: sid } : {}),
-    }),
     evidenceLabel: actionEvidenceLabel({ path, line, sourceRefs }),
     sourceRefs,
     ...(origin !== undefined ? { origin } : {}),
+    ...(blockId !== undefined ? { blockId } : {}),
   });
 }
 
@@ -462,7 +432,6 @@ function taskItemFromDailySurface(input: {
   readonly dailyPath: string;
   readonly item: DailyOpenLoopSource;
   readonly sourceLastChangedAt: ReadonlyMap<string, string>;
-  readonly attentionDiscounts: ReadonlyMap<string, AttentionDiscount>;
 }): DailyTaskItem {
   const metadata = taskMetadata(input.item.body);
   const surfaceRef = input.ctx.sourceRef(
@@ -485,12 +454,6 @@ function taskItemFromDailySurface(input: {
     dueDate: metadata.dueDate,
     priority: metadata.priority,
     lastChangedAt: input.sourceLastChangedAt.get(input.dailyPath) ?? null,
-    attention: taskAttention(input.attentionDiscounts, {
-      sourcePath: input.item.sourcePath,
-      body: input.item.body,
-      stableId: input.item.stableId,
-      ...(input.item.anchor !== undefined ? { anchor: input.item.anchor } : {}),
-    }),
     evidenceLabel: actionEvidenceLabel({
       path: input.dailyPath,
       line: input.item.line,
@@ -498,26 +461,9 @@ function taskItemFromDailySurface(input: {
     }),
     sourceRefs,
     ...(input.item.origin !== undefined ? { origin: input.item.origin } : {}),
-  });
-}
-
-function taskAttention(
-  discounts: ReadonlyMap<string, AttentionDiscount>,
-  item: {
-    readonly sourcePath: string;
-    readonly body: string;
-    readonly stableId?: string;
-    readonly anchor?: string;
-  },
-): DailyTaskAttention | null {
-  const entry =
-    (item.stableId === undefined ? undefined : discounts.get(item.stableId)) ??
-    discounts.get(openLoopIdentity(item));
-  if (entry === undefined) return null;
-  return Object.freeze({
-    discount: entry.discount,
-    impressions: entry.impressions,
-    lastShown: entry.lastShown,
+    // DailyOpenLoopSource already carries the raw ^anchor directly — no
+    // stableId-string parsing needed on this path.
+    ...(input.item.anchor !== undefined ? { blockId: input.item.anchor } : {}),
   });
 }
 
@@ -731,6 +677,9 @@ function mergeDailyTaskItems(
     ...((primary.origin ?? duplicate.origin) !== undefined
       ? { origin: primary.origin ?? duplicate.origin }
       : {}),
+    ...((primary.blockId ?? duplicate.blockId) !== undefined
+      ? { blockId: primary.blockId ?? duplicate.blockId }
+      : {}),
   });
 }
 
@@ -915,7 +864,7 @@ function compareTaskActionPriority(
   if (bucketCmp !== 0) return bucketCmp;
 
   const priorityCmp = taskPriorityRank(a.priority) - taskPriorityRank(b.priority);
-  const changedCmp = compareDiscountedRecencyDesc(a, b);
+  const changedCmp = compareOptionalDateDesc(a.lastChangedAt, b.lastChangedAt);
 
   if (bucketA === 0) {
     const dueCmp = compareOptionalDateDesc(a.dueDate, b.dueDate);
@@ -945,33 +894,6 @@ function taskActionBucket(task: DailyTaskItem, date: string | null): number {
   if (task.priority !== null) return 1;
   if (task.dueDate !== null) return 2;
   return 3;
-}
-
-/**
- * Recency comparison with attention demotion (task-lifecycle §"Attention
- * discounting"): a discounted item compares as if its last human change were
- * `log(1 − discount)/log(0.995)` hours older — the order-equivalent of
- * multiplying the recency score by `(1 − discount)`. With discount 0 this is
- * exactly the plain `lastChangedAt` descending comparison. Demotion reorders;
- * it never removes an item from the list.
- */
-function compareDiscountedRecencyDesc(
-  a: DailyTaskItem,
-  b: DailyTaskItem,
-): number {
-  if (a.lastChangedAt === null || b.lastChangedAt === null) {
-    return compareOptionalDateDesc(a.lastChangedAt, b.lastChangedAt);
-  }
-  const aMs = attentionAdjustedRecencyMs({
-    lastChangedAt: a.lastChangedAt,
-    discount: a.attention?.discount ?? 0,
-  });
-  const bMs = attentionAdjustedRecencyMs({
-    lastChangedAt: b.lastChangedAt,
-    discount: b.attention?.discount ?? 0,
-  });
-  if (aMs === bMs) return 0;
-  return bMs > aMs ? 1 : -1;
 }
 
 function compareOptionalDate(a: string | null, b: string | null): number {

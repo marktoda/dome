@@ -35,7 +35,6 @@ const taskFixture = {
   source: "daily",
   priority: null,
   lastChangedAt: null,
-  attention: null,
   evidenceLabel: "wiki/dailies/2026-06-14.md:5",
   sourceRefs: [],
 };
@@ -50,7 +49,7 @@ const base = {
     followups: { overdue: 0, today: 0, upcoming: 0, undated: 0 },
   },
   openTasks: [
-    { text: "ship <the> cockpit", path: "wiki/dailies/2026-06-14.md", line: 5, dueDate: "2026-06-14", followup: false, source: "daily", priority: null, lastChangedAt: null, attention: null, evidenceLabel: "wiki/dailies/2026-06-14.md:5", sourceRefs: [] },
+    { text: "ship <the> cockpit", path: "wiki/dailies/2026-06-14.md", line: 5, dueDate: "2026-06-14", followup: false, source: "daily", priority: null, lastChangedAt: null, evidenceLabel: "wiki/dailies/2026-06-14.md:5", sourceRefs: [] },
   ],
   followups: [],
   questions: [
@@ -211,7 +210,7 @@ describe("renderTodayHtml", () => {
 
   // ── Task 6: narrow poll fingerprint + token scrub ──────────────────────
 
-  test("poll fingerprint excludes volatile attention/lastChangedAt fields", () => {
+  test("poll fingerprint excludes volatile lastChangedAt field", () => {
     const html = renderTodayHtml(base, { refreshSeconds: 15 });
     // fingerprint should project visible fields, not stringify the whole doc
     expect(html).not.toContain("return JSON.stringify(data);");

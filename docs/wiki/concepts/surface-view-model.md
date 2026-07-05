@@ -60,6 +60,20 @@ fallbacks) sits between the contract and the view-model on the render path; it
 stays total (never throws) for render resilience, while the schema is strict for
 the producer + agent/MCP consumers.
 
+**Compatible widening — `blockId` (Task 9, 2026-07):** each task row optionally
+carries its stamped `^block-anchor` id (`TodayTaskRow.blockId` /
+`taskRowWireSchema`), sourced from `DailyTaskItem.blockId` in
+`assets/extensions/dome.daily/processors/action-state.ts`
+(`openLoopAnchorFromStableId` recovers it from the task's
+`dome.daily.open-loop:<...>` stableId — undefined for the transient body-hash
+fallback, never a synthesized id). It is the identity `performSettle`
+(`src/surface/settle.ts`) looks up by `^anchor` scan. The PWA Brief panel is
+the first consumer: a row with `blockId` gets a live checkbox that dispatches
+`POST /settle` with `disposition: "close"`; a row without one stays
+decorative. Adding the field is a pure widening — the schema, the lenient
+parser, and every existing consumer treat its absence as "not yet anchored",
+not an error.
+
 ## The generic layer: the View Contract (built)
 
 The generic surface-view layer now exists. Each first-party catalog entry

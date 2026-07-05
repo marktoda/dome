@@ -101,6 +101,7 @@ const DOCTOR_SUMMARY_KEYS = Object.freeze([
   "recurringOutboxFailures",
   "unreadableQuestions",
   "recurringTimeouts",
+  "ledgerOversized",
 ]);
 
 const QUERY_KEYS = Object.freeze([

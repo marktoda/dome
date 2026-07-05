@@ -710,10 +710,9 @@ function deferred<T>(): {
 // Crash-recovery accounting. A process that dies mid-handler leaves the row
 // in `dispatching` with an expired lease; nothing in-process records the
 // failure. Recovery must consume an attempt and route through the
-// `attempts >= max_attempts → failed` branch (the jobs-store pattern,
-// src/projections/jobs.ts) — otherwise a handler that reliably crashes the
-// host re-fires the external call unboundedly across restarts and never
-// reaches the engine-asks recovery path.
+// `attempts >= max_attempts → failed` branch — otherwise a handler that
+// reliably crashes the host re-fires the external call unboundedly across
+// restarts and never reaches the engine-asks recovery path.
 describe("expired dispatching claim recovery", () => {
   let root: string;
   let db: OutboxDb;

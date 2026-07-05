@@ -42,6 +42,21 @@ test("parseTaskRows carries priority for all five literals + null/unknown", () =
   expect(v.openTasks.map((t) => t.priority ?? null)).toEqual(["highest", "low", null, null]);
 });
 
+test("parseTaskRows carries blockId when present, omits it when absent (settle identity)", () => {
+  const v = parseTodayView({
+    date: "2026-06-23",
+    openTasks: [
+      { text: "anchored", path: "p", line: 1, dueDate: null, blockId: "t1a2b3c4" },
+      { text: "unanchored", path: "p", line: 2, dueDate: null },
+    ],
+    followups: [], questions: [],
+    counts: { openTasks: 2, followups: 0, questions: 0 },
+    brief: null, calendar: null, hero: null,
+  });
+  expect(v.openTasks[0]!.blockId).toBe("t1a2b3c4");
+  expect(v.openTasks[1]!.blockId).toBeUndefined();
+});
+
 test("parseTaskRows preserves task provenance metadata for why-lines", () => {
   const v = parseTodayView({
     date: "2026-06-14",
@@ -54,7 +69,6 @@ test("parseTaskRows preserves task provenance metadata for why-lines", () => {
         dueDate: "2026-06-10",
         evidenceLabel: "wiki/dailies/2026-06-14.md:20; source wiki/projects/client.md:7",
         lastChangedAt: "2026-06-13T10:00:00.000Z",
-        attention: { discount: 0.32, impressions: 4, lastShown: "2026-06-13" },
         sourceRefs: [
           {
             path: "wiki/dailies/2026-06-14.md",
@@ -81,7 +95,6 @@ test("parseTaskRows preserves task provenance metadata for why-lines", () => {
   expect(row.source).toBe("daily");
   expect(row.evidenceLabel).toBe("wiki/dailies/2026-06-14.md:20; source wiki/projects/client.md:7");
   expect(row.lastChangedAt).toBe("2026-06-13T10:00:00.000Z");
-  expect(row.attention).toEqual({ discount: 0.32, impressions: 4, lastShown: "2026-06-13" });
   expect(row.sourceRefs?.map((ref) => `${ref.path}:${ref.range?.startLine}:${ref.stableId}`)).toEqual([
     "wiki/dailies/2026-06-14.md:20:t1",
     "wiki/projects/client.md:7:t1",

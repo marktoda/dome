@@ -414,7 +414,15 @@ function outputResult(input: {
         error,
       });
     }
-    effects.push(parsed.data as Effect);
+    // The zod-inferred shape carries plain-string `commit`/path fields where
+    // the hand-written Effect union brands them (CommitOid, VaultPath, etc.)
+    // — the same schema/type gap tests/types/schema-type-lockstep.ts pins.
+    // With fewer Effect kinds in the discriminated union, TS's "sufficient
+    // overlap" check for a direct `as Effect` no longer finds a member pair
+    // it considers structurally close enough, so the cast must go through
+    // `unknown` first (this is a compile-time-only widening; runtime shape
+    // is unchanged).
+    effects.push(parsed.data as unknown as Effect);
   }
 
   const outputPolicyError = validateOutputPolicy({

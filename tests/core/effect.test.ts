@@ -1,4 +1,4 @@
-// Smoke tests for src/core/effect.ts: the eleven-kind Effect union — each
+// Smoke tests for src/core/effect.ts: the ten-kind Effect union — each
 // kind's per-schema parse, the discriminated-union EffectSchema parse, the
 // FactEffect semantic refinements, and the constructor freeze + kind-stamp
 // invariants.
@@ -10,7 +10,6 @@ import {
   diagnosticEffect,
   externalActionEffect,
   factEffect,
-  jobEffect,
   outboxRecoveryEffect,
   patchEffect,
   quarantineRecoveryEffect,
@@ -66,12 +65,6 @@ const minEffects = {
       question: "ok?",
       sourceRefs: refs,
       idempotencyKey: "q-1",
-    }),
-  job: () =>
-    jobEffect({
-      processorId: "dome.test",
-      input: null,
-      idempotencyKey: "j-1",
     }),
   external: () =>
     externalActionEffect({
@@ -201,29 +194,6 @@ describe("per-kind schema round-trip + EffectSchema parse", () => {
     if (parsed.kind !== "question") return;
     expect(parsed.metadata?.automationPolicy).toBe("agent-safe");
     expect(parsed.metadata?.recommendedAnswer).toBe("track");
-  });
-
-  test("JobEffect", () => {
-    const e = minEffects.job();
-    expect(EffectSchema.parse(e).kind).toBe("job");
-  });
-
-  test("JobEffect requires JSON input", () => {
-    expect(
-      EffectSchema.safeParse({
-        kind: "job",
-        processorId: "dome.test",
-        idempotencyKey: "missing-input",
-      }).success,
-    ).toBe(false);
-    expect(
-      EffectSchema.safeParse({
-        kind: "job",
-        processorId: "dome.test",
-        input: 1n,
-        idempotencyKey: "bigint-input",
-      }).success,
-    ).toBe(false);
   });
 
   test("ExternalActionEffect", () => {
@@ -358,7 +328,6 @@ describe("constructor freeze + kind discriminator stamp", () => {
     expect(Object.isFrozen(minEffects.fact())).toBe(true);
     expect(Object.isFrozen(minEffects["search-document"]())).toBe(true);
     expect(Object.isFrozen(minEffects.question())).toBe(true);
-    expect(Object.isFrozen(minEffects.job())).toBe(true);
     expect(Object.isFrozen(minEffects.external())).toBe(true);
     expect(Object.isFrozen(minEffects["outbox-recovery"]())).toBe(true);
     expect(Object.isFrozen(minEffects["quarantine-recovery"]())).toBe(true);
@@ -372,7 +341,6 @@ describe("constructor freeze + kind discriminator stamp", () => {
     expect(minEffects.fact().kind).toBe("fact");
     expect(minEffects["search-document"]().kind).toBe("search-document");
     expect(minEffects.question().kind).toBe("question");
-    expect(minEffects.job().kind).toBe("job");
     expect(minEffects.external().kind).toBe("external");
     expect(minEffects["outbox-recovery"]().kind).toBe("outbox-recovery");
     expect(minEffects["quarantine-recovery"]().kind).toBe(
@@ -436,7 +404,6 @@ describe("exhaustive-routing self-test", () => {
       "fact",
       "search-document",
       "question",
-      "job",
       "external",
       "outbox-recovery",
       "quarantine-recovery",

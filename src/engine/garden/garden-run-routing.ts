@@ -1,17 +1,17 @@
 // Shared effect routing for one non-signal garden processor run.
 //
-// Schedule fires, queued jobs, and answer handlers all dispatch exactly one
-// garden-phase processor against the adopted snapshot. Their source-specific
-// code decides when to run and what summary to record; this helper owns the
-// common effect routing contract: PatchEffects go through garden sub-Proposal
-// dispatch, while all other effects go through the generic effect applier.
+// Schedule fires and answer handlers both dispatch exactly one garden-phase
+// processor against the adopted snapshot. Their source-specific code decides
+// when to run and what summary to record; this helper owns the common effect
+// routing contract: PatchEffects go through garden sub-Proposal dispatch,
+// while all other effects go through the generic effect applier.
 //
 // It also owns the projection-maintenance hooks for these runs, mirroring
 // the signal-triggered garden path in garden.ts: a successful run resolves
 // stale facts for its inspected paths before new facts route, and resolves
 // stale diagnostics/questions after routing (passing the run's emitted plus
 // routing-produced diagnostics so re-emitted findings survive). Without
-// these hooks, schedule/job/answer-driven processors accumulate stale
+// these hooks, schedule/answer-driven processors accumulate stale
 // projection rows that only a full rebuild would clear.
 
 import type { DiagnosticEffect } from "../../core/effect";
@@ -53,7 +53,7 @@ export async function routeGardenRunEffects(opts: {
   /**
    * The cascade depth of the CURRENT run (parent depth). Forwarded to
    * dispatchGardenPatchEffect → spawnGardenSubProposal. Defaults to 0 for
-   * top-level operational runs (scheduler/jobs/answers).
+   * top-level operational runs (scheduler/answers).
    */
   readonly cascadeDepth?: number;
   /**

@@ -463,7 +463,7 @@ const sweep = defineProcessorImplementation({
         continue;
       }
 
-      const state: AgentRunState = { edits: new Map(), questions: [] };
+      const state: AgentRunState = { edits: new Map(), questions: [], integrityFlags: [] };
       let pendingQuestion: {
         readonly summary: string;
         readonly proposedSection: string;

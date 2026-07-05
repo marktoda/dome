@@ -60,7 +60,6 @@ import "../scenarios/cli-surface/sync-rebuilds-stale-projections.scenario.test";
 import "../scenarios/cli-surface/view-command-failure.scenario.test";
 import "../scenarios/cli-surface/structured-view-contract.scenario.test";
 import "../scenarios/cli-surface/today-task-view.scenario.test";
-import "../scenarios/cli-surface/attention-discount.scenario.test";
 import "../scenarios/cli-surface/prep-view.scenario.test";
 import "../scenarios/cli-surface/export-context.scenario.test";
 import "../scenarios/cli-surface/json-fixtures.scenario.test";
@@ -83,7 +82,6 @@ import "../scenarios/effect-kinds/wikilink-ambiguity-questions.scenario.test";
 import "../scenarios/effect-kinds/stale-dates-diagnostics.scenario.test";
 import "../scenarios/effect-kinds/view-effect-via-dome-run.scenario.test";
 import "../scenarios/effect-kinds/sources-subscription-fetch.scenario.test";
-import "../scenarios/effect-routing/job-effect-drains-worker-patch.scenario.test";
 import "../scenarios/effect-routing/outbox-recovery-answer.scenario.test";
 import "../scenarios/effect-routing/health-outbox-recovery.scenario.test";
 import "../scenarios/effect-routing/health-quarantine-recovery.scenario.test";
@@ -208,7 +206,6 @@ const EFFECT_KINDS_ALL: ReadonlyArray<EffectKind> = [
   "fact",
   "search-document",
   "question",
-  "job",
   "external",
   "outbox-recovery",
   "quarantine-recovery",
@@ -232,7 +229,6 @@ const CAPABILITY_KINDS_ALL: ReadonlyArray<CapabilityKind> = [
   "graph.write",
   "search.write",
   "question.ask",
-  "job.enqueue",
   "model.invoke",
   "external",
   "outbox.read",
@@ -253,7 +249,6 @@ const ROUTES_ALL: ReadonlyArray<RouteKind> = [
   "adoption",
   "garden-signal",
   "garden-schedule",
-  "garden-job",
   "garden-answer",
   "view-command",
 ];
@@ -266,7 +261,6 @@ const ROUTES_ALL: ReadonlyArray<RouteKind> = [
 const DEFERRED_EFFECTS: ReadonlySet<EffectKind> = new Set<EffectKind>([
   // Phase 13a unblocked: fact (dome.graph.links), view (dome.markdown.orphan-pages).
   // Phase 13b unblocked: question (dome.markdown.ambiguous-wikilink).
-  // Effect-routing fixture coverage unblocked: job.
   // Effect-routing fixture coverage unblocked: outbox-recovery.
   // Sources-subscription coverage unblocked: external (dome.sources.fetch,
   // scenarios/effect-kinds/sources-subscription-fetch).
@@ -282,7 +276,6 @@ const DEFERRED_TRIGGERS: ReadonlySet<TriggerKind> = new Set<TriggerKind>([
 const DEFERRED_CAPABILITIES: ReadonlySet<CapabilityKind> = new Set<CapabilityKind>([
   // Phase 13a unblocked: graph.write (dome.graph.links declares `dome.graph.*`).
   // Phase 13b unblocked: question.ask (dome.markdown.ambiguous-wikilink).
-  // Effect-routing fixture coverage unblocked: job.enqueue.
   // Harness operational-work coverage unblocked: model.invoke.
   // Effect-routing fixture coverage unblocked: outbox.recover.
   // Sources-subscription coverage unblocked: external (dome.sources.fetch,

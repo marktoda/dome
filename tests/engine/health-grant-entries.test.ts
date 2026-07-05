@@ -20,12 +20,6 @@ import type { ProcessorRegistry } from "../../src/processors/registry";
 // shipped-manifest lockstep lives in tests/extensions/loader.test.ts.
 const REQUIREMENTS: ReadonlyArray<ManifestGrantEntryRequirement> = [
   {
-    processorId: "dome.daily.attention-discount",
-    entries: [{ kind: "graph.write", target: "dome.attention.discount" }],
-    why: "attention-discount facts are dropped by the broker",
-    recovery: 'Add "dome.attention.*" to extensions.dome.daily.grant.graph.write in .dome/config.yaml.',
-  },
-  {
     processorId: "dome.agent.brief",
     entries: [{ kind: "read", target: "core.md" }],
     why: "agents cannot load the owner's core-memory page",
@@ -88,10 +82,6 @@ function graphWrite(...namespaces: string[]): Capability {
 // Declared capability sets mirroring the shipped manifests (only the
 // path/namespace entries the probes care about).
 const DECLARED: Readonly<Record<string, ReadonlyArray<Capability>>> = {
-  "dome.daily.attention-discount": [
-    read("wiki/**/*.md", "notes/*.md"),
-    graphWrite("dome.attention.*"),
-  ],
   "dome.agent.brief": [
     read(
       "wiki/**/*.md",
@@ -142,11 +132,6 @@ function findingsFor(opts: {
 const ALL_IDS = Object.keys(DECLARED);
 
 // The pre-rollout grant shape: every kind present, none of the new entries.
-const PRE_ROLLOUT_DAILY = [
-  read("wiki/**/*.md", "notes/*.md"),
-  patchAuto("wiki/**/*.md", "notes/*.md"),
-  graphWrite("dome.daily.*"),
-];
 const PRE_ROLLOUT_AGENT = [
   read("wiki/**/*.md", "notes/**/*.md", "inbox/**/*.md", "index.md", "log.md"),
   patchAuto("wiki/**/*.md", "notes/**/*.md", "index.md", "log.md"),
@@ -163,7 +148,6 @@ describe("capabilityGrantEntryFindings", () => {
     const findings = findingsFor({
       processorIds: ALL_IDS,
       grants: {
-        "dome.daily.attention-discount": PRE_ROLLOUT_DAILY,
         "dome.agent.brief": PRE_ROLLOUT_AGENT,
         "dome.agent.preference-signals": PRE_ROLLOUT_AGENT,
         "dome.agent.preference-promotion-answer": PRE_ROLLOUT_AGENT,
@@ -187,19 +171,11 @@ describe("capabilityGrantEntryFindings", () => {
       "dome.agent.brief|read:preferences/signals.md|patch.auto:preferences/signals.md",
       "dome.agent.preference-promotion-answer|read:core.md|read:preferences/signals.md|patch.auto:core.md|patch.auto:preferences/signals.md",
       "dome.agent.preference-signals|graph.write:dome.preference.topic",
-      "dome.daily.attention-discount|graph.write:dome.attention.discount",
       "dome.markdown.core-size|read:core.md",
       "dome.markdown.page-status|graph.write:dome.page.status",
     ]);
 
     // Each recovery names the exact YAML to add.
-    const attention = findings.find((f) =>
-      f.id.startsWith("dome.daily.attention-discount"),
-    );
-    expect(attention?.recovery).toContain('"dome.attention.*"');
-    expect(attention?.recovery).toContain(
-      "extensions.dome.daily.grant.graph.write",
-    );
     const answer = findings.find((f) =>
       f.id.startsWith("dome.agent.preference-promotion-answer"),
     );
@@ -230,10 +206,6 @@ describe("capabilityGrantEntryFindings", () => {
       findingsFor({
         processorIds: ALL_IDS,
         grants: {
-          "dome.daily.attention-discount": [
-            ...PRE_ROLLOUT_DAILY,
-            graphWrite("dome.attention.*"),
-          ],
           "dome.agent.brief": rolledOutAgent,
           "dome.agent.preference-signals": rolledOutAgent,
           "dome.agent.preference-promotion-answer": [

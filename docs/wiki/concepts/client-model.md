@@ -152,7 +152,9 @@ agent** via `POST /agent` and `POST /agent/stream` when launched with
 `--allow-write` — this is the always-on-host path: an agent running beside the
 vault that a phone can reach directly. Without `--allow-write` the HTTP surface
 is read+capture+converse (the default safe posture); synthesis still comes from
-a client's own agent if none is co-located.
+a client's own agent if none is co-located. (This co-located agent is the
+interactive assistant implemented in `src/assistant/` — a consumer surface
+distinct from the `dome.agent` background processor bundle.)
 
 ## What "ask" and "recall" mean under this model
 

@@ -573,7 +573,6 @@ function taskWhyLine(task: TodayTaskRow, today: string): string {
   const parts = [
     dueWhy(task, today),
     ...sourceWhy(task),
-    attentionWhy(task),
     task.origin !== undefined ? `origin ${task.origin}` : null,
   ].filter((part): part is string => part !== null && part.length > 0);
   return parts.length === 0 ? "" : `why: ${parts.join(" · ")}`;
@@ -612,14 +611,6 @@ function sourceWhy(task: TodayTaskRow): ReadonlyArray<string> {
 function firstBackingRef(task: TodayTaskRow): TodaySourceRef | null {
   const refs = task.sourceRefs ?? [];
   return refs.find((ref) => ref.path !== task.path) ?? refs[0] ?? null;
-}
-
-function attentionWhy(task: TodayTaskRow): string | null {
-  const attention = task.attention;
-  if (attention === undefined) return null;
-  if (attention === null) return "attention undiscounted";
-  return `attention discount ${Math.round(attention.discount * 100)}% after ` +
-    `${attention.impressions} impressions (last ${attention.lastShown})`;
 }
 
 function formatTaskLocation(task: TodayTaskRow): string {

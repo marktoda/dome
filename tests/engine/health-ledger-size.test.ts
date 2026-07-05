@@ -65,4 +65,34 @@ describe("ledgerOversizedFinding", () => {
       ledgerOversizedFinding({ path: RUNS_DB_PATH, fileSizeBytes: null }),
     ).toBeNull();
   });
+
+  test("includes the retained-forensics count when a counter is supplied", () => {
+    const finding = ledgerOversizedFinding({
+      path: RUNS_DB_PATH,
+      fileSizeBytes: LEDGER_SIZE_WARNING_BYTES + 1024,
+      countRetainedForensicsRows: () => 42,
+    });
+    expect(finding).not.toBeNull();
+    if (finding === null || finding.code !== "ledger.oversized") return;
+    expect(finding.storage.retainedForensicsRows).toBe(42);
+    expect(finding.message).toContain("42 row(s) are failure forensics");
+    // Both remedies exempt forensics rows; the recovery names the failure
+    // mode so a "prune did nothing" operator isn't left guessing.
+    expect(finding.recovery).toContain("failure-forensics");
+    expect(finding.recovery).toContain("dome inspect runs --status failed");
+  });
+
+  test("the forensics counter is lazy — never invoked under the threshold", () => {
+    let invoked = false;
+    const finding = ledgerOversizedFinding({
+      path: RUNS_DB_PATH,
+      fileSizeBytes: 1,
+      countRetainedForensicsRows: () => {
+        invoked = true;
+        return 0;
+      },
+    });
+    expect(finding).toBeNull();
+    expect(invoked).toBe(false);
+  });
 });

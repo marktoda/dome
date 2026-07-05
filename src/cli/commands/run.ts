@@ -6,7 +6,7 @@
 //
 // Per [[wiki/specs/processors]] §"View phase":
 //   - View-phase processors are read-only. PatchEffect / DiagnosticEffect
-//     (severity: "block") / FactEffect / QuestionEffect / JobEffect /
+//     (severity: "block") / FactEffect / QuestionEffect /
 //     ExternalActionEffect are rejected by the broker as `phase-mismatch`.
 //     The phase-mismatch diagnostics accumulate in
 //     `runViewCommand`'s `brokerDiagnostics` for the caller to surface.

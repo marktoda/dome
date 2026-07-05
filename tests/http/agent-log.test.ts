@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDomeHttpServer } from "../../src/http/server";
-import type { AgentStream } from "../../src/agent/agent";
+import type { AgentStream } from "../../src/assistant/agent";
 import type { TextStreamPart, ToolSet } from "ai";
 
 const TOKEN = "test-token";

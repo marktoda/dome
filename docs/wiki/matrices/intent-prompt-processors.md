@@ -43,8 +43,8 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 | Intent | Status | Processor | Phase | Prompt source | Effects emitted |
 |---|---|---|---|---|---|
 | "What did I decide about X" | shipped | `dome.search.query` | view (command via `dome query`) | none (FTS + projection-signal recall; narrative rendering remains planned) | ViewEffect (structured adopted-state matches) |
-| "What's on the agenda with [person]" | hidden compatibility; prefer `dome export-context` | `dome.daily.agenda-with` | view (hidden command wrapper / `dome run agenda-with`) | none | ViewEffect (source-backed agenda markdown + structured payload) |
-| "Prep for tomorrow" | hidden compatibility; prefer `dome export-context` | `dome.daily.prep` | view (hidden command wrapper / `dome run prep`) | none | ViewEffect (source-backed prep markdown + structured payload) |
+| "What's on the agenda with [person]" | shipped | `dome.daily.agenda-with` | view (command via `dome agenda-with <person-or-topic>`) | none | ViewEffect (source-backed agenda markdown + structured payload) |
+| "Prep for tomorrow" | shipped | `dome.daily.prep` | view (command via `dome prep`) | none | ViewEffect (source-backed prep markdown + structured payload) |
 | "Week in review" | planned | `dome.daily.week-review`, future `dome.daily.create-week-review` | view command + garden schedule | `assets/extensions/dome.daily/processors/week-review.prompt.md` | ViewEffect (interactive review markdown); scheduled garden PatchEffect can write a review to `wiki/syntheses/` |
 | "Export context for cross-AI handoff" | shipped | `dome.search.export-context` | view (command via `dome export-context <topic>`) | none (FTS + projection-signal recall; narrative rendering remains planned) | ViewEffect (portable context packet) |
 

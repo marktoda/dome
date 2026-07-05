@@ -1,11 +1,12 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-12
+updated: 2026-07-03
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
   - "[[wedge]]"
+  - "[[memory]]"
 description: "Vault directory contract: wiki/raw/notes/inbox/meta roots and category table; raw immutable, notes never engine-written, meta/ generated bookkeeping, sources/ a committed feed"
 ---
 
@@ -310,14 +311,54 @@ derives rebuildable `dome.preference.*` facts from it; malformed lines
 degrade to one info diagnostic, never a crash. Append-only is convention
 (legibility + stable line refs), not broker-enforced in v1.
 
+## `meta/retrieval-misses.md` — retrieval-miss log (convention)
+
+`meta/retrieval-misses.md` is the **append-only retrieval-miss log** —
+the mechanical channel [[memory]] §"M6 — Banked embeddings design
+(spec-only)" gates implementation of banked embeddings on ("implementation
+proceeds when the log shows a real miss rate"). Task 12 built this channel
+because the earlier convention — telling agents to "note the miss in the
+relevant markdown" — was never operationalized; there was nowhere mechanical
+to write it. By the category table above, `meta/` is `external`; unlike the
+rest of `meta/` (engine-written via `patch.auto`), this file is
+**human-commit-authored**, the same non-engine write path as
+`preferences/signals.md`. Unlike `preferences/signals.md`, `dome init` does
+NOT scaffold it — it is created lazily, with a header, on the first miss.
+One dated line per miss:
+
+```markdown
+- 2026-06-12 — "auth retro decisions" — missed wiki/syntheses/auth-retro; found via manual grep for "retro"
+```
+
+Grammar (one line, no wrapping; [[wiki/specs/cli]] §"`dome query`" is
+normative):
+
+```
+- YYYY-MM-DD — "<query>" — <note>
+```
+
+Writers: `dome query --miss [note]`, `dome export-context --miss [note]`,
+and the MCP `report_miss` tool ([[wiki/specs/mcp-surface]]) — all three call
+`reportMiss` (`src/surface/report-miss.ts`), the single collector that owns
+the grammar (exported so nothing re-derives it), the header, and the commit
+(`miss: <query first 40 chars>`, no `Dome-*` trailers — the same
+commit-or-nothing seam as `dome capture`/`dome settle`; never opens the
+runtime, never talks to the engine). `dome.health.report-card`
+([[wiki/specs/daily-surface]] §"Report card") counts window-matched entries
+by date each week; a missing file just omits that row, never an error.
+
 ## `meta/` — generated bookkeeping (convention)
 
 `meta/` holds machine-owned bookkeeping files: the per-category index shards
 (`meta/index-<category>.md`, `-N` suffix on overflow, rendered by
-`dome.markdown.render-index` — see §"`index.md`" below) and the dome.agent
+`dome.markdown.render-index` — see §"`index.md`" below), the dome.agent
 cursor ledgers (`meta/consolidation-ledger.md`, `meta/sweep-ledger.md` —
 defaults; the `consolidation_ledger_path` / `sweep_ledger_path` config knobs
-still relocate them). By the category table above `meta/*` derives `external`
+still relocate them), and the dome.agent **patrol** pair
+(`meta/patrol-queue.md`, `meta/patrol-ledger.md` — the nightly staleness
+selector's transient review queue and its bounded 60-day visit ledger, both
+full rewrites; [[wiki/specs/autonomous-agents]] §"Patrol"). By the category
+table above `meta/*` derives `external`
 — like `core.md`, this is a documented convention, not a new category, with
 one carve-out: unlike other external directories, `meta/` IS engine-written,
 via the explicit `patch.auto` grants each owner declares. Keeping the renders
@@ -408,8 +449,8 @@ render tick rather than through `dome rebuild`. A one-shot migration script
 ### `config.yaml`
 
 The single config file. The accepted top-level keys are `extensions`,
-`engine`, `git`, `model_provider`, and `shared_config`; unknown top-level
-keys fail runtime open rather than being silently ignored.
+`engine`, `git`, `ledger`, `model_provider`, and `shared_config`; unknown
+top-level keys fail runtime open rather than being silently ignored.
 
 `shared_config` holds vault-level keys that merge as *defaults* under every
 extension's `config:` block (the extension's own key wins). It exists for
@@ -482,14 +523,16 @@ JSON on stdout (for request/v1: `text`, optional `model`, optional `costUsd`).
 The scaffold expects `ANTHROPIC_API_KEY` at runtime (default model
 `claude-sonnet-4-6`, overridable via the envelope or `ANTHROPIC_MODEL`) and
 keeps vendor API wiring outside the SDK core.
-It does not enable `dome.agent`; model-capable bundles still require explicit
-`extensions.<bundle>.enabled: true` plus effective `model.invoke` grants.
+`dome.agent` ships enabled by default (with a $2/day `model.invoke` cap as
+the guardrail); wiring the provider is what makes it act — until then the
+host warns `agent.no-model-provider` at startup.
 
 Vault identity is currently git-native (`HEAD`, current branch, and
 `refs/dome/adopted/<branch>`), not a `vault:` config block. Axiom-tier
-invariants are not user-toggleable. Ledger retention is not configurable in
-v1; operational databases are preserved unless the user explicitly removes
-them.
+invariants are not user-toggleable. Run-ledger retention is opt-in per vault
+via `ledger.retention_days` ([[wiki/specs/run-ledger]] §"Retention");
+operational databases are otherwise preserved unless the user explicitly
+removes them.
 
 `engine.auto_resolve_questions`, when enabled, lets the operational pump answer
 low-risk unresolved `QuestionEffect` rows that carry an allowed automation
@@ -562,6 +605,8 @@ The capability broker enforces ownership. Default rules:
 | `raw/**` | nobody — immutable per [[wiki/invariants/RAW_IS_IMMUTABLE]] |
 | `core.md` | propose-only — agents read it; the only auto-writers are the two gated block-scoped processors (`dome.agent.preference-promotion-answer` → promoted-preferences block; `dome.agent.active-projects` → active-projects block), each via a narrow per-processor grant ([[wiki/specs/preferences]] §"Two gated writers, block-scoped") |
 | `preferences/signals.md` | shared append surface — the three `dome.agent` charters, the promotion answer handler, foreground agents, and the owner all append signal lines (§"`preferences/signals.md`") |
+| `meta/retrieval-misses.md` | no agent grant — the only writer is `reportMiss` (`src/surface/report-miss.ts`) via `dome query --miss`, `dome export-context --miss`, or the MCP `report_miss` tool, an ordinary human commit outside the broker entirely (§"`meta/retrieval-misses.md`") |
+| `meta/patrol-queue.md`, `meta/patrol-ledger.md` | `dome.agent.patrol` (via a narrow per-processor `patch.auto` replacement grant) — the nightly staleness selector; full rewrites, the ledger bounded to 60 days ([[wiki/specs/autonomous-agents]] §"Patrol") |
 | `wiki/**/*.md` | open; `dome.daily.ambiguous-followup-answer` also has `patch.auto` for accepted follow-ups |
 | `wiki/**/*.md` | `dome.agent.ingest` (via `patch.auto`, within grant) |
 | `notes/**/*.md` | `dome.agent.ingest` (via `patch.auto`, within grant) — grant-as-boundary |

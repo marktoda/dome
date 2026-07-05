@@ -6,10 +6,9 @@
 // resulting head in a garden-source Proposal, and re-enters adoption through
 // the caller's `adoptSubProposal` boundary.
 //
-// Cascade-cap enforcement: all four sources (signal via garden.ts, scheduler,
-// queued jobs, answer handlers) funnel through `spawnGardenSubProposal`. The
-// cap check lives here so every source is equally bounded — not just the
-// signal path.
+// Cascade-cap enforcement: all three sources (signal via garden.ts, scheduler,
+// answer handlers) funnel through `spawnGardenSubProposal`. The cap check
+// lives here so every source is equally bounded — not just the signal path.
 
 import type { DiagnosticEffect, PatchEffect } from "../../core/effect";
 import { diagnosticEffect } from "../../core/effect";
@@ -102,7 +101,7 @@ export async function spawnGardenSubProposal(opts: {
    * The sub-Proposal adoption is called at `cascadeDepth + 1`.
    *
    * - Signal path (garden.ts at depth 0): pass 0 → adoptSubProposal gets 1.
-   * - Operational sources (scheduler/jobs/answers at top level): pass 0 →
+   * - Operational sources (scheduler/answers at top level): pass 0 →
    *   adoptSubProposal gets 1.
    *
    * The cap check `cascadeDepth >= maxCascadeDepth` fires at the parent

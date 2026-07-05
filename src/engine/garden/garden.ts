@@ -472,8 +472,8 @@ async function runGardenPhaseInner(opts: {
       });
     } else {
       // Spawn sub-Proposals for each authorized patch through the shared
-      // conversion boundary used by garden, scheduler, queued jobs, and
-      // answer handlers. The cascade-cap check now lives inside
+      // conversion boundary used by garden, scheduler, and answer handlers.
+      // The cascade-cap check now lives inside
       // spawnGardenSubProposal (the single chokepoint) so all sources are
       // equally bounded. We collect any cascade-capped results and emit a
       // single batched diagnostic — preserving the pre-fix message format.

@@ -299,7 +299,6 @@ describe("dome today: Briefing terminal restyle", () => {
           source: "daily",
           dueDate: "2026-06-10",
           evidenceLabel: "wiki/dailies/2026-06-14.md:20",
-          attention: { discount: 0.32, impressions: 4, lastShown: "2026-06-13" },
           origin: "https://slk/p1",
           sourceRefs: [
             { path: "wiki/dailies/2026-06-14.md", range: { startLine: 20, endLine: 20 } },
@@ -320,7 +319,6 @@ describe("dome today: Briefing terminal restyle", () => {
     expect(oneLineVerbose).toContain("overdue by 4d");
     expect(oneLineVerbose).toContain("source-backed from wiki/projects/client.md:7");
     expect(oneLineVerbose).toContain("carried-forward projection at wiki/dailies/2026-06-14.md:20");
-    expect(oneLineVerbose).toContain("attention discount 32%");
     expect(oneLineVerbose).toContain("origin https://slk/p1");
   });
 

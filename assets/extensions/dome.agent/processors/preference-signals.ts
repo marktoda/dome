@@ -35,9 +35,9 @@ import {
   preferenceTopicFactValue,
 } from "../lib/preferences-shared";
 
-// Defense-in-depth (mirrors dome.daily.attention-discount): the broker
-// enforces the declared `dome.preference.*` namespace; a drifted predicate
-// fails loudly at the source instead of being silently rejected.
+// Defense-in-depth: the broker enforces the declared `dome.preference.*`
+// namespace; a drifted predicate fails loudly at the source instead of
+// being silently rejected.
 const REQUIRED_NAMESPACE_PREFIX = "dome.preference.";
 
 const preferenceSignals = defineProcessorImplementation({

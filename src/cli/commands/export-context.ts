@@ -1,7 +1,8 @@
 // cli/commands/export-context: source-backed markdown packets for handoff.
 
 import { FIRST_PARTY_VIEWS } from "../../surface/view-catalog";
-import { printViewCommandError } from "./view-shared";
+import { resolveVaultPath } from "../../surface/resolve-vault";
+import { printMissOutcome, printViewCommandError } from "./view-shared";
 import { runCliStructuredView } from "../structured-view-command";
 
 export type ExportContextCommandOptions = {
@@ -10,6 +11,8 @@ export type ExportContextCommandOptions = {
   readonly bundlesRoot?: string | undefined;
   readonly json?: boolean | undefined;
   readonly limit?: number | undefined;
+  /** `--miss [note]`: Commander's optional-value shape — see `reportMissFromCliFlag`. */
+  readonly miss?: string | boolean | undefined;
 };
 
 export async function runExportContext(
@@ -28,7 +31,7 @@ export async function runExportContext(
     return 64;
   }
 
-  return runCliStructuredView({
+  const exitCode = await runCliStructuredView({
     commandLabel: "dome export-context",
     entry: FIRST_PARTY_VIEWS.exportContext,
     commandArgs: Object.freeze({
@@ -43,4 +46,15 @@ export async function runExportContext(
     failedError: "export-context-failed",
     renderHuman: (data) => data.markdown,
   });
+
+  // After printing the packet: --miss records this topic as a retrieval
+  // miss (see src/cli/commands/query.ts's identical wiring).
+  await printMissOutcome({
+    commandLabel: "dome export-context",
+    vault: resolveVaultPath(options.vault),
+    query: topic,
+    flag: options.miss,
+  });
+
+  return exitCode;
 }

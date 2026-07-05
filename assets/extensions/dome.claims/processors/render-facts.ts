@@ -1,16 +1,22 @@
 // dome.claims.render-facts — garden processor: compile a deterministic
-// `## Current facts` digest block for claim-rich pages. Snapshot-in →
+// `## Current facts` digest block for claim-rich ENTITY pages. Snapshot-in →
 // patches-out: it reads page content off the snapshot (garden processors
 // can't read the projection) and re-parses claim lines with the shared
 // `claimsFromMarkdown` grammar, so the digest stays a pure function of the
 // adopted markdown.
 //
-// For each changed `.md` page: parse its claim lines. When the count is at or
-// above `current_facts_min_claims` (default 3), render the digest block and
-// splice it in after the frontmatter and the first `# ` H1 (so it reads as a
-// fact header). When the count is below threshold and a stale block exists,
-// splice it OUT, preserving the surrounding prose. Matching desired state
-// yields zero effects — idempotent.
+// CHARTER (2026-07-02 pruning pass, design §3): digests survive on
+// `wiki/entities/**` ONLY. For each changed `.md` page under that scope:
+// parse its claim lines, drop placeholder-shaped values (never render
+// template scaffolding as fact), and when the remaining count is at or above
+// `current_facts_min_claims` (default 3), render the digest — capped at
+// `CURRENT_FACTS_CAP` (12) bullets, most-recent-`asOf`-first, with a
+// `+N more — dome query <subject>` tail when capped — and splice it in after
+// the frontmatter and the first `# ` H1 (so it reads as a fact header). A
+// page OUTSIDE `wiki/entities/**` is never desired regardless of claim count:
+// when it carries a stale block and is touched again, the existing
+// splice-out branch removes it. Matching desired state yields zero effects —
+// idempotent.
 //
 // LOAD-BEARING: the rendered block NEVER uses `**Key:**` claim grammar. It
 // renders `- **Key** — value` (bold key WITHOUT the colon), so the digest can
@@ -46,6 +52,16 @@ const HEADING = "## Current facts";
 const ANOMALY_CODE = "dome.claims.generated-block-anomaly";
 const DEFAULT_MIN_CLAIMS = 3;
 
+/** Digest scope: entity pages only (design §3, the "external-only" charter
+ * revised to entities-only in scouting — see docs/wiki/specs/claims.md
+ * §render-facts charter for the full rationale). */
+const ENTITY_SCOPE_PREFIX = "wiki/entities/";
+
+/** Bullet cap: most-recent-`asOf`-first, with a `+N more` tail past this
+ * (the To-decide cap pattern; see dome.daily's `edition-blocks.ts`
+ * `questionsSection`). */
+export const CURRENT_FACTS_CAP = 12;
+
 // The inline `*(as of YYYY-MM-DD)*` marker is stripped GLOBALLY and
 // position-independently (shared `AS_OF_MARKER_RE` from ./claim-fact) so the
 // dated suffix can be re-appended exactly once. A trailing anchor (`^c…`) is
@@ -58,11 +74,109 @@ const DEFAULT_MIN_CLAIMS = 3;
 // the caller. The shared regex keeps this in lockstep with the decode-side
 // strip in parseClaimFact.
 
+// ----- Pure scope/filter/cap helpers -----------------------------------------
+
+/** True when a page is in the digest's charter scope: `wiki/entities/**` only. */
+export function isEntityScopedPage(path: string): boolean {
+  return path.startsWith(ENTITY_SCOPE_PREFIX);
+}
+
+/** A trailing `[[wikilink]]` annotation. The sweep appends a source link
+ * after superseding a value (`… *(as of …)* [[meta/sources/x]]`), so a pure
+ * placeholder can arrive wearing a trailing wikilink — the annotation must be
+ * peeled BEFORE the placeholder-shape test or it shields the scaffolding from
+ * detection. */
+const TRAILING_WIKILINK_RE = /\[\[[^[\]\n]+\]\]\s*$/;
+
+/** Exactly ONE `[`…`]` pair wrapping the ENTIRE value, no interior brackets.
+ * Interior brackets mean bracketed fragments inside real prose (citations,
+ * version tags), not a template slot spanning the whole value. */
+const PLACEHOLDER_SHAPE_RE = /^\[[^[\]]*\]$/;
+
+/**
+ * True when a claim's value is template-shaped placeholder text: after
+ * stripping inline as-of markers and peeling trailing `[[wikilink]]`
+ * annotations, the ENTIRE remaining value is one `[`…`]` bracket pair —
+ * `[Specific incident — fill in or drop]`, with or without an appended
+ * `*(as of …)* [[source]]` supersession tail. Placeholder-shaped claims never
+ * render in the digest — the audit's laundering complaint.
+ *
+ * Deliberately conservative, the same posture as claims-shared's discourse
+ * denylist: a borderline real claim is let through rather than a real fact
+ * dropped. Bracketed fragments inside a larger value are real content, never
+ * placeholders — `[A] and [B]`, `Shipped v2 [beta] on 2026-06-01`, and
+ * `[Owner] and [[Mark]]` (an unfilled slot alongside substantive content)
+ * all render. A whole-value `[[wikilink]]` peels to nothing and is likewise
+ * never a placeholder.
+ */
+export function isPlaceholderValue(value: string): boolean {
+  let stripped = value.replace(AS_OF_MARKER_RE, "").trim();
+  for (;;) {
+    const peeled = stripped.replace(TRAILING_WIKILINK_RE, "").trimEnd();
+    if (peeled === stripped) break;
+    stripped = peeled;
+  }
+  return PLACEHOLDER_SHAPE_RE.test(stripped);
+}
+
+/** Drop placeholder-shaped claims, preserving the remaining document order. */
+export function filterPlaceholderClaims(
+  claims: ReadonlyArray<ClaimLine>,
+): ReadonlyArray<ClaimLine> {
+  return Object.freeze(claims.filter((claim) => !isPlaceholderValue(claim.value)));
+}
+
+/**
+ * Most-recent-`asOf`-first. Claims with no `asOf` sort last (they cannot be
+ * "most recent"); ties (including all-null) keep document order via a
+ * stable sort.
+ */
+export function sortByAsOfDesc(
+  claims: ReadonlyArray<ClaimLine>,
+): ReadonlyArray<ClaimLine> {
+  return Object.freeze(
+    [...claims].sort((a, b) => {
+      if (a.asOf === b.asOf) return 0;
+      if (a.asOf === null) return 1;
+      if (b.asOf === null) return -1;
+      return a.asOf < b.asOf ? 1 : -1;
+    }),
+  );
+}
+
+export type DigestSelection = {
+  readonly shown: ReadonlyArray<ClaimLine>;
+  readonly moreCount: number;
+};
+
+/** Sort most-recent-first, then cap to `cap` bullets; the remainder count
+ * drives the `+N more` tail. */
+export function selectDigestClaims(
+  claims: ReadonlyArray<ClaimLine>,
+  cap: number = CURRENT_FACTS_CAP,
+): DigestSelection {
+  const sorted = sortByAsOfDesc(claims);
+  return Object.freeze({
+    shown: Object.freeze(sorted.slice(0, cap)),
+    moreCount: Math.max(0, sorted.length - cap),
+  });
+}
+
+/** The `dome query <subject>` tail's subject: the page's own name (last path
+ * segment, no directories) — the entity IS the subject of its own digest. */
+export function digestSubject(page: string): string {
+  const segments = page.split("/");
+  return segments[segments.length - 1] ?? page;
+}
+
 // ----- Pure renderers --------------------------------------------------------
 
 /**
- * Render the digest body: one line per claim in document order,
- * `- **Key** — value *(as of …)*? ([[page#^anchor]])?`. `cleanValue` strips
+ * Render the digest body: one bullet per claim, most-recent-`asOf`-first,
+ * capped at `CURRENT_FACTS_CAP` with a `+N more — \`dome query <subject>\``
+ * tail line when capped (the To-decide cap pattern). Placeholder-shaped
+ * claims are dropped before sorting/capping — they never render. Each bullet
+ * is `- **Key** — value *(as of …)*? ([[page#^anchor]])?`. `cleanValue` strips
  * every inline as-of marker (wherever it sits) and collapses whitespace, then
  * the dated suffix is re-appended from `claim.asOf` so the date appears exactly
  * once — even for the sweep's mid-value marker + trailing wikilink shape.
@@ -72,17 +186,20 @@ export function renderCurrentFactsBody(
   claims: ReadonlyArray<ClaimLine>,
   page: string,
 ): string {
-  return claims
-    .map((claim) => {
-      const cleanValue = claim.value
-        .replace(AS_OF_MARKER_RE, "")
-        .replace(/\s+/g, " ")
-        .trim();
-      const asOf = claim.asOf === null ? "" : ` *(as of ${claim.asOf})*`;
-      const anchor = claim.anchor === null ? "" : ` ([[${page}#^${claim.anchor}]])`;
-      return `- **${claim.key}** — ${cleanValue}${asOf}${anchor}`;
-    })
-    .join("\n");
+  const { shown, moreCount } = selectDigestClaims(filterPlaceholderClaims(claims));
+  const lines = shown.map((claim) => {
+    const cleanValue = claim.value
+      .replace(AS_OF_MARKER_RE, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const asOf = claim.asOf === null ? "" : ` *(as of ${claim.asOf})*`;
+    const anchor = claim.anchor === null ? "" : ` ([[${page}#^${claim.anchor}]])`;
+    return `- **${claim.key}** — ${cleanValue}${asOf}${anchor}`;
+  });
+  if (moreCount > 0) {
+    lines.push(`- +${moreCount} more — \`dome query ${digestSubject(page)}\``);
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -200,7 +317,15 @@ const renderFacts = defineProcessorImplementation({
       );
 
       const claims = claimsWithStableAnchors({ path, content });
-      const desired = claims.length >= minClaims;
+      // Scope guard (design §3): a page outside wiki/entities/** is NEVER
+      // desired, regardless of claim count — its digest (if any) is stale
+      // scaffolding from before the recharter and gets spliced OUT below via
+      // the existing removal branch. Placeholder-shaped claims (the audit's
+      // laundering complaint) are excluded from the threshold count too, so
+      // a page whose only claims are unfilled template text never renders an
+      // empty-looking digest.
+      const renderableCount = filterPlaceholderClaims(claims).length;
+      const desired = isEntityScopedPage(path) && renderableCount >= minClaims;
       const { range } = findGeneratedBlock(content, OWNER, BLOCK);
       // The page name in wikilinks drops the `.md` extension (Obsidian style).
       const page = path.replace(/\.md$/, "");

@@ -1,9 +1,10 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-06-12
+updated: 2026-07-02
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
+  - "[[wiki/specs/task-lifecycle]]"
 description: Crosses operations (capture, query, read, resolve...) with consumer surfaces (CLI/MCP/HTTP/voice), showing what each protocol exposes in v1.
 ---
 
@@ -38,6 +39,7 @@ remain CLI-only in v1.
 | **Get instructions** | `surface.instructions` | `dome inspect instructions` (v1.x subject) | `serverInfo.instructions` (shipped) | `GET /instructions` | Read at session start by voice client |
 | **Get adoption status / attention** | `vault.getAdoptionStatus()` (engine, not AbstractSurface) | `dome status --json` / `dome check --json` | `status` / `check` tools | `GET /status` (shipped; `read` capability; `check` route v2+) | n/a |
 | **Resolve a Dome question** | (engine, not AbstractSurface) | `dome resolve <id> [<value>]` | `resolve` tool | `GET /questions` + `POST /resolve` (shipped; `resolve` capability) | n/a |
+| **Settle a task (by `^block-anchor`)** | n/a (git-native commit-or-nothing seam, not AbstractSurface) | `dome settle <block-id> <close\|defer\|keep> [--until <date>]` | `settle` tool | `POST /settle` (shipped; `resolve` capability — settling is a decision, same trust domain as resolve) | "Mark that done" / "push that to next week" |
 | **Rebuild projection** | `vault.rebuild()` (engine) | `dome rebuild` | n/a (engine control, not exposed via MCP) | `POST /rebuild` (auth-gated in hosted mode) | n/a |
 | **Engine control (sync, init, serve, advanced detail)** | (engine, not AbstractSurface) | `dome sync`, `dome init`, `dome serve`/`install`, plus advanced `dome inspect` / `dome doctor` / `dome answer` | n/a (engine control surface is CLI-only) | (hosted-only; v2+) | n/a |
 

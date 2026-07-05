@@ -1,7 +1,7 @@
 // Shared garden PatchEffect dispatch for non-signal garden sources.
 //
-// Scheduled processors, queued jobs, and answer handlers all run against the
-// adopted snapshot outside the main signal-triggered garden orchestrator. When
+// Scheduled processors and answer handlers both run against the adopted
+// snapshot outside the main signal-triggered garden orchestrator. When
 // they emit a garden PatchEffect, the effect still follows the same path:
 // broker route, capability-use ledger row, optional disabled-spawn diagnostic,
 // then sub-Proposal adoption.
@@ -54,7 +54,7 @@ export async function dispatchGardenPatchEffect(opts: {
   };
   /**
    * The cascade depth of the CURRENT orchestrator run (the parent depth). For a
-   * top-level operational run (scheduler/jobs/answers) this is 0; the spawned
+   * top-level operational run (scheduler/answers) this is 0; the spawned
    * sub-Proposal adoption runs at depth 1. Defaults to 0 when omitted (matches
    * the top-level default of the signal path in garden.ts).
    */

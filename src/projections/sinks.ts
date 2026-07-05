@@ -5,7 +5,7 @@
 // that replaces `noopSinks()` from `src/engine/core/apply-effect.ts` once the
 // projection + outbox stores are open.
 //
-// Nine sinks are owned here (delegating to the per-table accessors):
+// Eight sinks are owned here (delegating to the per-table accessors):
 //
 //   - recordDiagnostic → src/projections/diagnostics.ts: insertDiagnostic
 //   - resolveFacts     → src/projections/facts.ts:       resolveStalePageFacts
@@ -13,7 +13,6 @@
 //   - recordSearchDocument → src/projections/search.ts:  applySearchDocumentEffect
 //   - recordQuestion   → src/projections/questions.ts:   insertQuestion
 //   - resolveQuestions → src/projections/questions.ts:   resolveStaleQuestions
-//   - enqueueJob       → src/projections/jobs.ts:        enqueueJob
 //   - dispatchExternal → src/outbox/dispatch.ts:         dispatchExternalEffect
 //   - recoverOutbox    → src/outbox/dispatch.ts:         recoverFailedOutboxRow
 //
@@ -71,7 +70,6 @@ import { insertDiagnostic, resolveStaleDiagnostics } from "./diagnostics";
 import { insertFact, resolveStalePageFacts } from "./facts";
 import { applySearchDocumentEffect } from "./search";
 import { insertQuestion, resolveStaleQuestions } from "./questions";
-import { enqueueJob as enqueueJobRow } from "./jobs";
 import {
   dispatchExternalEffect,
   recoverFailedOutboxRow,
@@ -142,6 +140,14 @@ export type BuildSqliteSinksOpts = {
    * Omitted → no signal channel (tests, isolated sinks).
    */
   readonly onQuestionsChanged?: () => void;
+  /**
+   * Fired whenever a `dispatchExternal` attempt terminally failed an outbox
+   * row (the outbox dispatcher's `recordFailedAttempt` terminal branch). The
+   * host wires this to its tick-scoped `outbox.changed` flag; the tick epilogue
+   * dispatches subscribers once (processors.md §"Triggers and signals").
+   * Omitted → no signal channel (tests, isolated sinks).
+   */
+  readonly onOutboxChanged?: () => void;
 };
 
 // ----- buildSqliteSinks -----------------------------------------------------
@@ -249,15 +255,6 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
       });
     },
 
-    enqueueJob: async ({ effect, processorId }) => {
-      await projectionWrite(async () => {
-        enqueueJobRow(opts.projectionDb, {
-          effect,
-          processorId,
-        });
-      });
-    },
-
     dispatchExternal: async ({ effect, runId }) => {
       await dispatchExternalEffect(opts.outboxDb, {
         effect,
@@ -265,6 +262,9 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
         handlers: opts.externalHandlers ?? EMPTY_EXTERNAL_HANDLERS,
         ...(opts.externalHandlerTimeoutMs !== undefined
           ? { handlerTimeoutMs: opts.externalHandlerTimeoutMs }
+          : {}),
+        ...(opts.onOutboxChanged !== undefined
+          ? { onOutboxChanged: opts.onOutboxChanged }
           : {}),
       });
     },

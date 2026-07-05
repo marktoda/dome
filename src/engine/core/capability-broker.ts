@@ -55,7 +55,6 @@ import type {
   Effect,
   ExternalActionEffect,
   FactEffect,
-  JobEffect,
   OutboxRecoveryEffect,
   PatchEffect,
   QuarantineRecoveryEffect,
@@ -70,7 +69,6 @@ import {
   pathIsOwnedByThirdParty,
   readablePath,
 } from "./path-capabilities";
-import { globMatch } from "./glob-cache";
 import { predicateNamespace } from "./effect-capability-use";
 
 // ----- EnforcementResult ----------------------------------------------------
@@ -203,7 +201,6 @@ function enforceRecovery(
  *   - fact       → `graph.write` matching the predicate's namespace
  *   - search-document → `search.write` matching the document path
  *   - question   → `question.ask`
- *   - job        → `job.enqueue` matching the target processor id
  *   - external   → `external:<capability>` matching effect's `capability`
  *   - outbox-recovery → `outbox.recover` matching effect's action
  *   - quarantine-recovery → `quarantine.recover` matching effect's action
@@ -240,8 +237,6 @@ function enforceEffectKindCapability(
       return enforceSearchDocument(effect, declared, granted);
     case "question":
       return enforceQuestion(declared, granted);
-    case "job":
-      return enforceJob(effect, declared, granted);
     case "external":
       return enforceExternal(effect, declared, granted);
     case "outbox-recovery":
@@ -316,7 +311,6 @@ function sourceRefsForReadCheck(effect: Effect): ReadonlyArray<SourceRef> {
       return effect.sourceRefs;
     case "view":
       return effect.scope;
-    case "job":
     case "outbox-recovery":
     case "quarantine-recovery":
     case "run-recovery":
@@ -561,30 +555,6 @@ function enforceQuestion(
   );
 }
 
-// ----- JobEffect enforcement ------------------------------------------------
-
-/**
- * JobEffect requires a `job.enqueue` grant whose processor patterns cover
- * the target processor id.
- */
-function enforceJob(
-  effect: JobEffect,
-  declared: ReadonlyArray<Capability>,
-  granted: ReadonlyArray<Capability>,
-): EnforcementResult {
-  if (processorEffectiveFor(effect.processorId, declared, granted)) {
-    return allow();
-  }
-  return deny(
-    diagnosticEffect({
-      severity: "error",
-      code: "capability-deny-job-enqueue",
-      message: `JobEffect denied: target processor '${effect.processorId}' has no effective 'job.enqueue' grant. Declare 'job.enqueue' with a matching processor id or glob and grant it in config.yaml.`,
-      sourceRefs: [],
-    }),
-  );
-}
-
 // ----- ExternalActionEffect enforcement ------------------------------------
 
 /**
@@ -605,28 +575,6 @@ function enforceExternal(
       code: "capability-deny-external",
       message: `ExternalActionEffect denied: capability '${effect.capability}' has no effective 'external' grant. Declare 'external: ${effect.capability}' in the manifest and grant it in config.yaml.`,
     },
-  );
-}
-
-// ----- Processor-id / glob helpers -----------------------------------------
-
-function processorEffectiveFor(
-  processorId: string,
-  declared: ReadonlyArray<Capability>,
-  granted: ReadonlyArray<Capability>,
-): boolean {
-  return effective(declared, granted, (c) =>
-    jobEnqueueCovers(c, processorId),
-  );
-}
-
-function jobEnqueueCovers(
-  capability: Capability,
-  processorId: string,
-): boolean {
-  return (
-    capability.kind === "job.enqueue" &&
-    capability.processors.some((pattern) => globMatch(pattern, processorId))
   );
 }
 

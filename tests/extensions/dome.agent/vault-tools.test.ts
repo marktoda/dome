@@ -3,7 +3,7 @@ import { deletePageTool, readPageTool } from "../../../assets/extensions/dome.ag
 import type { AgentRunState } from "../../../assets/extensions/dome.agent/lib/agent-loop";
 
 function freshState(): AgentRunState {
-  return { edits: new Map(), questions: [] };
+  return { edits: new Map(), questions: [], integrityFlags: [] };
 }
 const reader = (files: Record<string, string>) => ({
   readFile: async (p: string) => files[p] ?? null,

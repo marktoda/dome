@@ -85,7 +85,7 @@ import type {
 import type { Proposal } from "../core/proposal";
 import { commitOid, type CommitOid } from "../core/source-ref";
 import type { PageTypeRegistry } from "../page-types";
-import { fileInfoAtCommit, readBlob, readTree } from "../git";
+import { fileInfoAtCommit, readBlobByOid, readTree } from "../git";
 import type {
   AdoptionPhaseRunner,
   GardenPhaseRunner,
@@ -218,6 +218,17 @@ export type ProcessorRuntime = {
   readonly gardenRunner: GardenPhaseRunner;
   readonly viewRunner: ViewPhaseRunner;
   readonly executionState: ProcessorExecutionState;
+  /**
+   * In-memory dedup set for the NEEDS_ARE_LOUD runtime probe (keyed by
+   * `${processorId}\0${need}`). Lives for the host session: a restart starts
+   * empty and re-emits (desirable — a fresh process should re-announce an
+   * unmet declared need). Exposed so the operational garden-run / answer-
+   * handler dispatch paths (which call `dispatchOneProcessor` directly through
+   * `GardenRunDeps`, not the runners) share the SAME session dedup as the
+   * adoption/garden/view runners. Pinned by
+   * [[wiki/invariants/NEEDS_ARE_LOUD]].
+   */
+  readonly needUnmetSeen: Set<string>;
   readonly close: () => Promise<void>;
 };
 
@@ -336,6 +347,8 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
   } = opts;
   const executionState =
     opts.executionState ?? buildProcessorExecutionState();
+  // NEEDS_ARE_LOUD: one dedup set per host session (see ProcessorRuntime).
+  const needUnmetSeen = new Set<string>();
   const lifecycle = makeRuntimeLifecycle();
 
   const adoptionRunner: AdoptionPhaseRunner = (input) =>
@@ -392,6 +405,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
           ...(extensionConfigFor !== undefined ? { extensionConfigFor } : {}),
           ledger,
           executionState,
+          needUnmetSeen,
           ...(executionCap !== undefined ? { executionCap } : {}),
           ...(runnerSignal.signal !== undefined
             ? { signal: runnerSignal.signal }
@@ -489,6 +503,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
           ...(extensionConfigFor !== undefined ? { extensionConfigFor } : {}),
           ledger,
           executionState,
+          needUnmetSeen,
           ...(executionCap !== undefined ? { executionCap } : {}),
           ...(runnerSignal.signal !== undefined
             ? { signal: runnerSignal.signal }
@@ -588,6 +603,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
         ...(extensionConfigFor !== undefined ? { extensionConfigFor } : {}),
         ledger,
         executionState,
+        needUnmetSeen,
         ...(executionCap !== undefined ? { executionCap } : {}),
         ...(runnerSignal.signal !== undefined
           ? { signal: runnerSignal.signal }
@@ -615,6 +631,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
     gardenRunner,
     viewRunner,
     executionState,
+    needUnmetSeen,
     close: lifecycle.close,
   });
 }
@@ -692,6 +709,17 @@ function combineAbortSignals(
  * Used by both `adoptionRunner` (commit = candidate) and `gardenRunner`
  * (commit = adopted). Identical shape; the only variation is which commit
  * the closures resolve against.
+ *
+ * Read cost: `readFile` and `listMarkdownFiles` share ONE lazily-built
+ * `path → blob-OID` index (a single walk of the commit tree). `readFile`
+ * then reads each blob directly by OID (`readBlobByOid`) rather than
+ * re-resolving commit→tree→per-path-segment on every call. For an
+ * `all-readable-markdown` inspection over a large vault this is the
+ * difference between O(files × tree-depth) repeated tree decompressions and
+ * one walk plus O(files) direct object reads — measured ~14× faster at 2k
+ * files, and the fix for the 30s adoption-lint timeouts observed at ~1k
+ * files. A processor that touches neither closure pays nothing: the index is
+ * built only on first `readFile`/`listMarkdownFiles`.
  */
 export async function makeSnapshot(
   vaultPath: string,
@@ -701,7 +729,13 @@ export async function makeSnapshot(
   const tree = await resolveTree(commit);
   const readFileCache = new Map<string, Promise<string | null>>();
   const fileInfoCache = new Map<string, Promise<SnapshotFileInfo | null>>();
-  let markdownFilesCache: Promise<ReadonlyArray<string>> | null = null;
+  // Lazily-built `path → blob-OID` index over the whole commit tree, shared
+  // by readFile (direct object read) and listMarkdownFiles (the .md subset).
+  let blobOidIndex: Promise<ReadonlyMap<string, string>> | null = null;
+  const treeIndex = (): Promise<ReadonlyMap<string, string>> => {
+    blobOidIndex ??= buildBlobOidIndex(vaultPath, commit);
+    return blobOidIndex;
+  };
 
   return Object.freeze({
     commit,
@@ -709,14 +743,25 @@ export async function makeSnapshot(
     readFile: (path: string) => {
       let cached = readFileCache.get(path);
       if (cached === undefined) {
-        cached = readBlob({ path: vaultPath, commit, filepath: path });
+        cached = treeIndex().then((index) => {
+          const oid = index.get(path);
+          // Not a blob in the tree (missing path, directory) → null, matching
+          // the prior readBlob(commit, filepath) contract.
+          if (oid === undefined) return null;
+          return readBlobByOid({ path: vaultPath, oid });
+        });
         readFileCache.set(path, cached);
       }
       return cached;
     },
-    listMarkdownFiles: () => {
-      markdownFilesCache ??= listMarkdownPathsInTree(vaultPath, commit);
-      return markdownFilesCache;
+    listMarkdownFiles: async () => {
+      const index = await treeIndex();
+      const paths: string[] = [];
+      for (const path of index.keys()) {
+        if (path.endsWith(".md")) paths.push(path);
+      }
+      paths.sort();
+      return Object.freeze(paths);
     },
     getFileInfo: async (path: string) => {
       let cached = fileInfoCache.get(path);
@@ -739,8 +784,8 @@ export async function makeSnapshot(
 }
 
 /**
- * Per-processor dispatch — shared by adoption, garden, view, scheduler, and
- * job dispatch.
+ * Per-processor dispatch — shared by adoption, garden, view, and scheduler
+ * dispatch.
  * Handles run-id allocation, ledger lifecycle (queued → skipped for
  * not-invoked policy denial, or queued → running → succeeded/failed/
  * timed_out/cancelled), context construction, executor invocation, and
@@ -790,6 +835,15 @@ export type DispatchOneProcessorOptions<TEnvelope> = {
    * never lands on an adoption context.
    */
   readonly projection?: ProjectionQueryView;
+  /**
+   * NEEDS_ARE_LOUD dedup set (per host session). When present, a
+   * `processor.need-unmet` warning for a given `(processorId, need)` is
+   * emitted at most once; when absent, every executed dispatch that finds an
+   * unmet need emits (loud beats silent — a caller with no shared set is
+   * typically a one-shot rebuild). Sourced from `ProcessorRuntime.needUnmetSeen`
+   * so the runner and operational garden-run paths share one session view.
+   */
+  readonly needUnmetSeen?: Set<string>;
 };
 
 type DispatchFrame = {
@@ -846,7 +900,123 @@ export async function dispatchOneProcessor<TEnvelope>(
     });
   }
 
-  return runnerResultForExecution(frame, execution);
+  // NEEDS_ARE_LOUD: the processor RAN (degradation stays graceful); if a
+  // declared capability had an empty effective grant intersection, or a
+  // declared operational read-view context field was absent at run time,
+  // surface a warning so a silent no-op can never masquerade as "nothing to
+  // do". Appended to the routed effect list (the same seam the skip paths use
+  // to land runtime diagnostics), so it flows through applyEffect's normal
+  // DiagnosticEffect route into `projection.db` attributed to this run.
+  return withNeedUnmetDiagnostics(
+    runnerResultForExecution(frame, execution),
+    frame,
+    opts.needUnmetSeen,
+  );
+}
+
+// ----- NEEDS_ARE_LOUD -------------------------------------------------------
+
+const OPERATIONAL_READ_KINDS: ReadonlySet<Capability["kind"]> = new Set([
+  "outbox.read",
+  "quarantine.read",
+  "run.read",
+  "questions.read",
+]);
+
+type UnmetNeed = { readonly need: string; readonly detail: string };
+
+/**
+ * The unmet declared needs for a dispatch, computed from the same declared ∩
+ * granted data the invocation already resolved. Two classes:
+ *
+ *   1. A declared capability KIND with no granted capability of that kind — an
+ *      empty effective grant intersection. The run-time complement of the
+ *      config-time `capability.grant-missing` doctor probe.
+ *   2. A declared operational read (`outbox/quarantine/run/questions.read`)
+ *      whose effective `ctx.operational` accessor is absent — the kind may be
+ *      granted while the status intersection is empty (e.g. `run.read`
+ *      [running] declared, [succeeded] granted). This is the "declared context
+ *      dependency absent at run time" class.
+ *
+ * Finer path-glob starvation (declared `read wiki/**`, granted `read notes/**`)
+ * stays the doctor's representative-path probe (`capability.grant-starved`,
+ * config-time, info); the runtime keys off what it resolves at invocation.
+ */
+function computeUnmetNeeds(frame: DispatchFrame): ReadonlyArray<UnmetNeed> {
+  const grantedKinds = new Set(frame.granted.map((cap) => cap.kind));
+  const declaredKinds = new Set(frame.declared.map((cap) => cap.kind));
+  const needs: UnmetNeed[] = [];
+  for (const kind of declaredKinds) {
+    if (frame.phase !== "adoption" && OPERATIONAL_READ_KINDS.has(kind)) {
+      if (!operationalAccessorEffective(kind, frame.declared, frame.granted)) {
+        needs.push({
+          need: kind,
+          detail:
+            `declares '${kind}' but its read-view context field is absent at ` +
+            `run time (empty effective grant intersection)`,
+        });
+      }
+      continue;
+    }
+    if (!grantedKinds.has(kind)) {
+      needs.push({
+        need: kind,
+        detail:
+          `declares '${kind}' but the effective grant intersection is empty ` +
+          `(no matching vault grant)`,
+      });
+    }
+  }
+  return needs;
+}
+
+function operationalAccessorEffective(
+  kind: Capability["kind"],
+  declared: ReadonlyArray<Capability>,
+  granted: ReadonlyArray<Capability>,
+): boolean {
+  switch (kind) {
+    case "outbox.read":
+      return effectiveOutboxReadStatuses(declared, granted) !== null;
+    case "run.read":
+      return effectiveRunReadStatuses(declared, granted) !== null;
+    case "quarantine.read":
+      return effectiveQuarantineRead(declared, granted);
+    case "questions.read":
+      return effectiveQuestionsRead(declared, granted);
+    default:
+      return true;
+  }
+}
+
+function withNeedUnmetDiagnostics(
+  result: RunnerResult,
+  frame: DispatchFrame,
+  seen: Set<string> | undefined,
+): RunnerResult {
+  const needs = computeUnmetNeeds(frame);
+  if (needs.length === 0) return result;
+  const fresh: Effect[] = [];
+  for (const { need, detail } of needs) {
+    const key = `${frame.processor.id}\u0000${need}`;
+    if (seen !== undefined) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    fresh.push(
+      diagnosticEffect({
+        severity: "warning",
+        code: "processor.need-unmet",
+        message: `${frame.processor.id}: ${detail}`,
+        sourceRefs: [],
+      }),
+    );
+  }
+  if (fresh.length === 0) return result;
+  return Object.freeze({
+    ...result,
+    effects: Object.freeze([...result.effects, ...fresh]),
+  });
 }
 
 // ----- internals ------------------------------------------------------------
@@ -1272,6 +1442,14 @@ function operationalContextField(
         }
         return operational.orphanRuns(filter);
       },
+      runs: (filter) => {
+        if (allowedRunStatuses === null) return Object.freeze([]);
+        return Object.freeze(
+          operational
+            .runs(filter)
+            .filter((row) => allowedRunStatuses.has(row.status)),
+        );
+      },
       questions: (filter) =>
         canReadQuestions ? operational.questions(filter) : Object.freeze([]),
     }),
@@ -1638,39 +1816,41 @@ function triggerPayloadOf(
 }
 
 /**
- * Walk the tree at `commit` and return every blob path ending in `.md`,
- * sorted lexicographically for determinism. Used to back the
- * `Snapshot.listMarkdownFiles` closure — adoption-phase processors that
- * resolve wikilink targets need the full markdown file set for the
- * candidate snapshot.
+ * Walk the tree at `commit` once and return a `path → blob-OID` map for every
+ * blob in the tree. Backs both `Snapshot.readFile` (direct read by OID) and
+ * `Snapshot.listMarkdownFiles` (the `.md` subset). Materializing the OID index
+ * up front is what lets `readFile` skip the per-call commit→tree→path-segment
+ * walk that dominated adoption-lint cost on large vaults.
  *
  * Path strings are POSIX-joined (matches the convention in
  * `src/engine/core/compile-range.ts`'s walker). Non-blob entries (subtrees) are
- * recursed into; the recursion is bounded by the tree's natural depth.
+ * recursed into; the recursion is bounded by the tree's natural depth. Symlink
+ * entries surface as blobs (git tree `type: "blob"`), so `readFile` returns the
+ * link's target-path blob content — identical to the prior
+ * `readBlob(commit, filepath)` behavior, which also did not follow links.
  */
-async function listMarkdownPathsInTree(
+async function buildBlobOidIndex(
   vaultPath: string,
   commit: CommitOid,
-): Promise<ReadonlyArray<string>> {
-  const out: string[] = [];
-  await walkTreeForMarkdown(vaultPath, commit, "", out);
-  out.sort();
-  return Object.freeze(out);
+): Promise<ReadonlyMap<string, string>> {
+  const index = new Map<string, string>();
+  await walkTreeForBlobOids(vaultPath, commit, "", index);
+  return index;
 }
 
-async function walkTreeForMarkdown(
+async function walkTreeForBlobOids(
   vaultPath: string,
   oid: string,
   prefix: string,
-  out: string[],
+  out: Map<string, string>,
 ): Promise<void> {
   const tree = await readTree({ path: vaultPath, oid });
   for (const entry of tree.tree) {
     const path = prefix === "" ? entry.path : posix.join(prefix, entry.path);
     if (entry.type === "tree") {
-      await walkTreeForMarkdown(vaultPath, entry.oid, path, out);
-    } else if (entry.type === "blob" && path.endsWith(".md")) {
-      out.push(path);
+      await walkTreeForBlobOids(vaultPath, entry.oid, path, out);
+    } else if (entry.type === "blob") {
+      out.set(path, entry.oid);
     }
   }
 }

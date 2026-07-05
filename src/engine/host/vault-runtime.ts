@@ -54,6 +54,7 @@
 import { join } from "node:path";
 
 import { err, ok, type Result } from "../../types";
+import { compareStrings } from "../../core/compare";
 import type { CommitOid } from "../../core/source-ref";
 import {
   treeOid,
@@ -121,6 +122,15 @@ const EMPTY_EXTERNAL_HANDLERS: ReadonlyMap<string, ExternalHandler> = new Map();
 const EMPTY_GRANT_ENTRY_REQUIREMENTS: ReadonlyArray<ManifestGrantEntryRequirement> =
   Object.freeze([]);
 
+/**
+ * The exact operator-facing message for `agentNoModelProviderWarning`
+ * (product-review-3 Task 17 — "loud when starved"). Shared as a constant so
+ * the host-open computation and its callers (and tests) never drift on
+ * wording.
+ */
+export const AGENT_NO_MODEL_PROVIDER_MESSAGE =
+  "dome.agent is enabled but no model provider is configured; run `dome init --with-model-provider` or set enabled: false";
+
 // ----- Public types ---------------------------------------------------------
 
 /**
@@ -165,9 +175,52 @@ export type VaultRuntime = {
   /** Composed doctor grant-entry requirements from active bundles. */
   readonly doctorGrantEntries: ReadonlyArray<ManifestGrantEntryRequirement>;
   readonly operationalQueryView: OperationalQueryView;
+  /**
+   * Host-scoped `quarantine.changed` accumulator. The long-lived
+   * `executionState` fires `onQuarantineChanged` at the quarantine
+   * threshold-trip and at every clear (never a sub-threshold counter tick),
+   * setting `changed`; the compiler-host tick epilogue snapshots+clears it and
+   * dispatches `quarantine.changed` subscribers at most once per tick. Unlike
+   * `questions.changed`/`outbox.changed` (compiler-host WeakMaps injected into
+   * per-tick sinks), the quarantine store outlives any single tick and is
+   * constructed here, so its change-flag lives on the runtime. See
+   * `QuestionsChangedFlag` in compiler-host.ts for the coalescing/carry
+   * semantics.
+   */
+  readonly quarantineChangedFlag: { changed: boolean };
+  /**
+   * Registry-orphan GC report for this open: processor ids whose quarantine
+   * entries were just pruned because their bundle is no longer installed
+   * (see the prune call in `openVaultRuntime`). Empty when the prune guard
+   * didn't fire (no config / empty registry) or nothing was pruned. Engine
+   * code must not console.log — a host-startup CLI surface (`dome serve`)
+   * reads this and logs it loudly.
+   */
+  readonly prunedUnknownProcessorQuarantines: ReadonlyArray<string>;
+  /**
+   * The runtime-complement to `dome doctor`'s `model.provider-missing`
+   * config-time probe (product-review-3 Task 17 — "loud when starved"):
+   * non-null exactly when the `dome.agent` extension is enabled for this
+   * open and no model provider was configured or injected. Computed once
+   * per `openVaultRuntime` call — engine/host code must not console.log
+   * itself, so a CLI host-startup surface (`dome serve`) reads this and
+   * logs it loudly, the same shape as `prunedUnknownProcessorQuarantines`.
+   * The actual silent no-op this replaces lives one layer down, inside
+   * `dome.agent`'s own `agentPreamble` helper (every garden-LLM processor
+   * calls it and no-ops on an absent model step) — that swallow point is
+   * per-processor-invocation, not per-host-start, so it is not where this
+   * field is computed; see the Task 17 report for the fuller discussion.
+   */
+  readonly agentNoModelProviderWarning: AgentNoModelProviderWarning | null;
   readonly modelProvider?: ModelProvider;
   readonly modelStepProvider?: ModelStepProvider;
   readonly close: () => Promise<void>;
+};
+
+/** See `VaultRuntime.agentNoModelProviderWarning`. */
+export type AgentNoModelProviderWarning = {
+  readonly code: "agent.no-model-provider";
+  readonly message: string;
 };
 
 /**
@@ -382,12 +435,30 @@ export async function openVaultRuntime(
   // registry). A missing/empty config is almost always a read edge rather than
   // a deliberate full retirement, and pruning everything then would silently
   // discard live recovery state.
+  //
+  // Without this, a quarantine row for a deleted processor survives forever
+  // — the health emitter re-asks the operator about a processor that no
+  // longer exists (docs/cohesive/brainstorms/2026-07-02-pruning-pass-design.md
+  // §2's "orphaned-state fix"). `prunedUnknownProcessorQuarantines` captures
+  // WHICH quarantined processor ids this open just pruned (computed before
+  // the mutation) so a CLI host-startup surface (`dome serve`) can log it —
+  // engine/host code must not console.log itself.
+  let prunedUnknownProcessorQuarantines: ReadonlyArray<string> = [];
   if (
     policy.foundConfig &&
     (policy.configuredExtensions.length > 0 || resolved.value.registry.size > 0)
   ) {
+    const isKnownProcessor = isKnownProcessorFor(policy, resolved.value.registry);
+    prunedUnknownProcessorQuarantines = [
+      ...new Set(
+        operationalState.value.executionState
+          .quarantines()
+          .map((q) => q.key.processorId)
+          .filter((processorId) => !isKnownProcessor(processorId)),
+      ),
+    ].sort(compareStrings);
     operationalState.value.executionState.pruneUnknownProcessors(
-      isKnownProcessorFor(policy, resolved.value.registry),
+      isKnownProcessor,
     );
   }
 
@@ -397,6 +468,7 @@ export async function openVaultRuntime(
     resolved: resolved.value,
     settings,
     operationalState: operationalState.value,
+    prunedUnknownProcessorQuarantines,
   }));
 }
 
@@ -449,6 +521,7 @@ function runtimeSettingsForPolicy(input: {
 
 type OperationalState = {
   readonly executionState: ProcessorExecutionState;
+  readonly quarantineChangedFlag: { changed: boolean };
   readonly projectionDb: ProjectionDb;
   readonly answersDb: AnswersDb;
   readonly outboxDb: OutboxDb;
@@ -473,7 +546,15 @@ async function openOperationalState(input: {
     "state",
     "quarantined.json",
   );
-  const quarantineResult = openQuarantineStore({ path: quarantinePath });
+  // Host-scoped quarantine.changed flag: the store's threshold-trip / clear
+  // callback sets it; the compiler-host tick epilogue consumes it.
+  const quarantineChangedFlag = { changed: false };
+  const quarantineResult = openQuarantineStore({
+    path: quarantinePath,
+    onQuarantineChanged: () => {
+      quarantineChangedFlag.changed = true;
+    },
+  });
   if (!quarantineResult.ok) {
     return err({
       kind: "quarantine-store-open-failed",
@@ -536,6 +617,7 @@ async function openOperationalState(input: {
 
   return ok(Object.freeze({
     executionState,
+    quarantineChangedFlag,
     projectionDb,
     answersDb,
     outboxDb,
@@ -553,14 +635,23 @@ function buildVaultRuntime(input: {
   readonly resolved: ResolvedRegistry;
   readonly settings: RuntimeSettings;
   readonly operationalState: OperationalState;
+  readonly prunedUnknownProcessorQuarantines: ReadonlyArray<string>;
 }): VaultRuntime {
-  const { opts, policy, resolved, settings, operationalState } = input;
+  const {
+    opts,
+    policy,
+    resolved,
+    settings,
+    operationalState,
+    prunedUnknownProcessorQuarantines,
+  } = input;
   const {
     projectionDb,
     answersDb,
     outboxDb,
     ledgerDb,
     executionState,
+    quarantineChangedFlag,
   } = operationalState;
 
   // `resolveTree` is wired against the live git boundary so the runtime's
@@ -572,6 +663,21 @@ function buildVaultRuntime(input: {
     executionState,
     queryQuestions: (filter) => queryQuestionRecords(projectionDb, filter),
   });
+  // Once-per-host-start loud complement to the silent no-op (Task 17):
+  // dome.agent enabled for this open, but no model provider wired in
+  // (neither `opts.modelProvider`/`opts.modelStepProvider` nor a
+  // `model_provider:` config command resolved to one). `isExtensionEnabled`
+  // already covers both the config-found and compatibility-all-active
+  // (no `.dome/config.yaml`) cases.
+  const agentNoModelProviderWarning: AgentNoModelProviderWarning | null =
+    policy.isExtensionEnabled("dome.agent") &&
+    settings.modelProvider === undefined
+      ? Object.freeze({
+          code: "agent.no-model-provider" as const,
+          message: AGENT_NO_MODEL_PROVIDER_MESSAGE,
+        })
+      : null;
+
   const processorRuntime = buildRuntime({
     registry: resolved.registry,
     resolveGrants: settings.resolveGrants,
@@ -613,6 +719,9 @@ function buildVaultRuntime(input: {
     maintenanceLoops: resolved.maintenanceLoops,
     doctorGrantEntries: resolved.doctorGrantEntries,
     operationalQueryView,
+    quarantineChangedFlag,
+    prunedUnknownProcessorQuarantines,
+    agentNoModelProviderWarning,
     ...(settings.modelProvider !== undefined
       ? { modelProvider: settings.modelProvider }
       : {}),

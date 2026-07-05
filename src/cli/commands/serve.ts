@@ -125,7 +125,7 @@ export type RunServeRuntimeOptions = {
    */
   readonly signal?: AbortSignal;
   /**
-   * Internal/test knob for due scheduler/job/outbox work while HEAD is
+   * Internal/test knob for due scheduler/outbox work while HEAD is
    * already adopted. Production uses DEFAULT_OPERATIONAL_INTERVAL_MS.
    */
   readonly operationalIntervalMs?: number;
@@ -223,6 +223,26 @@ export async function runServe(
     current: runtimeResult.value,
     lastReloadError: null,
   };
+  // Registry-orphan GC (docs/cohesive/brainstorms/2026-07-02-pruning-pass-design.md
+  // §2): a quarantine row for a processor whose bundle was deleted/retired
+  // survives forever otherwise, and the health emitter re-asks about it on
+  // every run. Always logged — regardless of `--quiet` — so a startup that
+  // silently drops recovery state is never silent.
+  if (runtimeResult.value.prunedUnknownProcessorQuarantines.length > 0) {
+    console.error(
+      `dome serve: pruned quarantine state for ${runtimeResult.value.prunedUnknownProcessorQuarantines.length} unregistered processor(s) (bundle no longer installed): ${runtimeResult.value.prunedUnknownProcessorQuarantines.join(", ")}`,
+    );
+  }
+  // The no-provider diagnostic (product-review-3 Task 17 — "loud when
+  // starved"): dome.agent enabled with no model provider wired used to be a
+  // silent no-op every time a garden-LLM processor fired. Logged once here
+  // at host-open time, regardless of `--quiet`, same posture as the
+  // pruned-quarantine line above — a starved brain is never silent.
+  if (runtimeResult.value.agentNoModelProviderWarning !== null) {
+    console.error(
+      `dome serve: ${runtimeResult.value.agentNoModelProviderWarning.message}`,
+    );
+  }
 
   // ----- 4. Print startup banner --------------------------------------------
   // The branch label is derived from the startup drift result. `in-sync`,
@@ -483,7 +503,7 @@ async function waitForDaemonHeartbeat(input: {
  * The poll loop. Runs until `cancel` aborts. Each iteration:
  *   1. Detect drift between HEAD and the adopted ref.
  *   2. If drift, build a manual Proposal and run `adopt()`.
- *   3. If in-sync and the operational cadence is due, drain scheduler/jobs/outbox.
+ *   3. If in-sync and the operational cadence is due, drain scheduler/outbox.
  *   4. Sleep for `pollIntervalMs` (cancellable).
  *
  * Adoption still runs to completion once started. Operational outbox handler
@@ -722,6 +742,14 @@ async function reloadServeRuntime(input: {
 
   input.state.current = next.value;
   input.state.lastReloadError = null;
+  if (next.value.prunedUnknownProcessorQuarantines.length > 0) {
+    console.error(
+      `dome serve: pruned quarantine state for ${next.value.prunedUnknownProcessorQuarantines.length} unregistered processor(s) (bundle no longer installed): ${next.value.prunedUnknownProcessorQuarantines.join(", ")}`,
+    );
+  }
+  if (next.value.agentNoModelProviderWarning !== null) {
+    console.error(`dome serve: ${next.value.agentNoModelProviderWarning.message}`);
+  }
   if (!input.quiet) {
     console.log("dome serve: reloaded runtime configuration");
   }
@@ -907,13 +935,12 @@ function printTickLine(
 
 function printOperationalLine(result: OperationalWorkResult): void {
   const scheduled = result.scheduler.fired.length;
-  const jobs = result.jobs.drained.length;
   const outbox = result.outbox.length;
   const autoResolved = result.questionAutoResolution.answered;
   const diagnostics = result.diagnostics.length;
-  if (scheduled + jobs + outbox + autoResolved + diagnostics > 0) {
+  if (scheduled + outbox + autoResolved + diagnostics > 0) {
     console.log(
-      `dome serve: operational work (${scheduled} scheduled, ${jobs} jobs, ${outbox} outbox, ${autoResolved} auto-resolved questions, ${diagnostics} diagnostics)`,
+      `dome serve: operational work (${scheduled} scheduled, ${outbox} outbox, ${autoResolved} auto-resolved questions, ${diagnostics} diagnostics)`,
     );
   }
 }

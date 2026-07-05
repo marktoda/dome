@@ -1,6 +1,6 @@
 // dispatchGardenRun — the shared dispatch+route mechanism for one garden run
-// (a non-signal garden-phase processor invocation: schedule fire, queued job,
-// or answer handler). See src/engine/garden/garden-run.ts.
+// (a non-signal garden-phase processor invocation: schedule fire or answer
+// handler). See src/engine/garden/garden-run.ts.
 //
 // These tests pin the module's interface: it builds the adopted snapshot,
 // dispatches the processor, routes its effects through routeGardenRunEffects,

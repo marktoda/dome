@@ -171,7 +171,7 @@ export type AdoptionPhaseRunner = (input: {
  * processors:
  *   - See the adopted snapshot (read-only).
  *   - Return `ViewEffect` (the rendered output) or no effects. Mutation
- *     effects (Patch / Diagnostic-block / Fact / Question / Job /
+ *     effects (Patch / Diagnostic-block / Fact / Question /
  *     External) are rejected by the broker as `phase-mismatch`.
  *   - Are at most one per command name (collision = registry-build failure
  *     with `duplicate-command-trigger`).

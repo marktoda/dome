@@ -242,14 +242,12 @@ export function printHostFollowupLines(
   if (
     operational !== null &&
     (operational.scheduler.fired.length > 0 ||
-      operational.jobs.drained.length > 0 ||
       operational.outbox.length > 0 ||
       operational.questionAutoResolution.answered > 0 ||
       operational.diagnostics.length > 0)
   ) {
     const opRows: KvRow[] = [
       { label: "scheduled", value: `${operational.scheduler.fired.length}` },
-      { label: "jobs", value: `${operational.jobs.drained.length}` },
       { label: "outbox", value: `${operational.outbox.length}` },
       { label: "auto-resolved", value: `${operational.questionAutoResolution.answered}` },
       { label: "diagnostics", value: `${operational.diagnostics.length}` },

@@ -1,7 +1,7 @@
 ---
 type: invariant
 created: 2026-05-27
-updated: 2026-06-11
+updated: 2026-07-02
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 description: Every processor invocation writes one RunRecord row to runs.db with a terminal status, even when failed, skipped, timed out, or cancelled
@@ -16,6 +16,8 @@ tier: shipped-default
 **Tier:** Shipped default — enabled by default; disable in `.dome/config.yaml` only for tightly-resource-constrained vaults.
 
 **Statement:** Every Processor invocation, regardless of phase (adoption / garden / view) or outcome (succeeded / failed / skipped / timed_out / cancelled), writes one `RunRecord` row to the run ledger (`<vault>/.dome/state/runs.db`). The row captures `runId`, `processorId`, `processorVersion`, `phase`, `proposalId?`, `inputCommit`, `outputCommit?`, `status`, `effectHashes`, `capabilityUses`, `cost?`, `error?`, `startedAt`, `finishedAt?`.
+
+**Scope note — this is about writing, not eternal retention.** This invariant pins that the row gets **written**; it says nothing about how long the row survives afterward. `runs.db` is audit history with a bounded horizon for routine rows, not an accreting log: the `ledger.retention_days` policy (opt-in; the `dome init` template sets 30 days and `dome serve` applies it daily — `runLedgerRetentionPass`, `src/ledger/runs.ts`) deletes old `succeeded` and clean `skipped` rows automatically, and `dome repair run-ledger` does the same on demand. Retention never skips writing a row — a processor invocation that would be immediately eligible for pruning still gets its RunRecord written first, in full, per the structural enforcement below. Failure-forensics rows (`failed`, `timed_out`, `cancelled`, and reason-bearing `skipped`) are retained indefinitely by design — excluded from both retention paths regardless of age — so this invariant's audit guarantee for the cases that matter most — "what went wrong" — holds without a horizon.
 
 **Why:** The ledger is the audit surface for "what did Dome do." Without it, failed processor invocations leave no trace (git only records successful commits), cost tracking is impossible, and capability use is unauditable. The ledger is also the join surface for engine commit trailers (`Dome-Run` matches `runs.id`) — the dual-surface enforcement of provenance.
 
@@ -41,7 +43,7 @@ tier: shipped-default
 **Test guarantee:** `tests/invariants/every-processor-run-is-ledgered.test.ts` is the AC3 lockstep marker that keeps this invariant document present at the canonical path. Behavioral coverage lives in the runtime, ledger, executor, scheduler, and lifecycle tests: those assert terminal status persistence, structured executor errors, skipped not-invoked rows, capability-use joins, and adoption blocking on failed processor execution.
 
 **Related:**
-- [[wiki/specs/run-ledger]]
+- [[wiki/specs/run-ledger]] §"Retention" — the bounded-horizon policy this invariant's scope note references
 - [[wiki/specs/processors]]
 - [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]] — dual provenance surface
 - [[wiki/invariants/EVERY_EFFECT_IS_LEDGERED]]

@@ -15,7 +15,7 @@ Maps the three processor phases (adoption / garden / view) to the trigger kinds 
 
 | Trigger kind ↓ \ Phase → | adoption | garden | view |
 |---|---|---|---|
-| **`signal`** (`file.created`, `file.modified`, `file.deleted`, `document.changed`, `frontmatter.changed`, `region.changed`, `link.added`, `link.removed`) | ✓ Allowed | ✓ Allowed | ✗ Rejected |
+| **`signal`** — tree-diff-derived (`file.created`, `file.modified`, `file.deleted`, `document.changed`, `frontmatter.changed`, `region.changed`, `link.added`, `link.removed`) and store-change-derived (`questions.changed`, `outbox.changed`, `quarantine.changed`; garden-only in practice — dispatched by the operational channels, not `compileRange`) | ✓ Allowed | ✓ Allowed | ✗ Rejected |
 | **`path`** (path glob pattern) | ✓ Allowed | ✓ Allowed | ✗ Rejected |
 | **`schedule`** (cron expression) | ✗ Rejected — adoption is per-Proposal, not periodic | ✓ Allowed | ✗ Rejected — scheduled work needs a durable route; use garden |
 | **`answer`** (QuestionEffect answer, optionally narrowed by idempotency-key prefix) | ✗ Rejected — answers are user decisions after adoption | ✓ Allowed | ✗ Rejected |
@@ -90,9 +90,9 @@ The phase × trigger matrix is **the canonical contract** that the manifest vali
 Periodic reports are garden work in v1, even when the same report can also be
 rendered on demand by a command-triggered view processor. The garden processor
 owns the schedule and emits durable effects: a PatchEffect for a report page,
-a DiagnosticEffect for an operator finding, a JobEffect for deferred work, or
-an ExternalActionEffect for outbox-mediated delivery. The view processor owns
-interactive rendering and declares only a command trigger.
+a DiagnosticEffect for an operator finding, or an ExternalActionEffect for
+outbox-mediated delivery. The view processor owns interactive rendering and
+declares only a command trigger.
 
 ## Related
 

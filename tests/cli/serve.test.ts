@@ -879,6 +879,142 @@ extensions:
       }
     }
   }, 40_000);
+
+  test("logs a loud line when startup prunes a quarantine row for an unregistered processor", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    // A real quarantine row for a processor id that no bundle registers —
+    // e.g. left behind by a retired/uninstalled processor
+    // (docs/cohesive/brainstorms/2026-07-02-pruning-pass-design.md §2's
+    // "orphaned-state fix"). `.dome/state` already exists post-makeFixture.
+    await writeFile(
+      join(f.vaultPath, ".dome", "state", "quarantined.json"),
+      JSON.stringify({
+        version: 1,
+        entries: [
+          {
+            phase: "garden",
+            processorId: "dome.daily.attention-discount",
+            processorVersion: "0.1.1",
+            triggerHash: "h-retired",
+            consecutiveRetryableFailures: 3,
+            quarantineId: "q-retired-1",
+            quarantinedAt: "2026-06-18T00:00:00.000Z",
+            reason: "timeout",
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    silenceConsole();
+    const controller = new AbortController();
+    const servePromise = runServe(
+      { vault: f.vaultPath, bundlesRoot: f.bundlesRoot, pollIntervalMs: 20 },
+      { signal: controller.signal, operationalIntervalMs: 20 },
+    );
+
+    // Give the daemon one poll to open the runtime and print the startup
+    // banner (the prune line is emitted before the banner, at open time).
+    await waitFor(
+      async () =>
+        captured.err.some((line) => line.includes("pruned quarantine state")),
+      2000,
+    );
+
+    controller.abort();
+    const code = await servePromise;
+    expect(code).toBe(0);
+
+    const pruneLine = captured.err.find((line) =>
+      line.includes("pruned quarantine state")
+    );
+    expect(pruneLine).toBeDefined();
+    expect(pruneLine).toContain("dome.daily.attention-discount");
+    expect(pruneLine).toContain("1 unregistered processor");
+
+    // The row is actually gone — the log line isn't lying about the mutation.
+    const after = JSON.parse(
+      await readFile(
+        join(f.vaultPath, ".dome", "state", "quarantined.json"),
+        "utf8",
+      ),
+    ) as { entries: ReadonlyArray<{ processorId: string }> };
+    expect(after.entries).toEqual([]);
+  }, 10_000);
+
+  test("logs a loud line at startup when dome.agent is enabled with no model provider configured", async () => {
+    // The real host-start path (product-review-3 Task 17 — "loud when
+    // starved"): dome.agent enabled, no model_provider stanza in
+    // .dome/config.yaml, nothing injected. This used to be a totally silent
+    // no-op every time a garden-LLM processor fired; now it is a loud
+    // one-line startup warning, same posture as the pruned-quarantine line.
+    const f = await makeFixture({
+      configYaml: `
+extensions:
+  dome.agent:
+    enabled: true
+    grant: {}
+`,
+    });
+    fixtures.push(f);
+
+    silenceConsole();
+    const controller = new AbortController();
+    const servePromise = runServe(
+      { vault: f.vaultPath, bundlesRoot: f.bundlesRoot, pollIntervalMs: 20 },
+      { signal: controller.signal, operationalIntervalMs: 20 },
+    );
+
+    await waitFor(
+      async () =>
+        captured.err.some((line) =>
+          line.includes("no model provider is configured"),
+        ),
+      2000,
+    );
+
+    controller.abort();
+    const code = await servePromise;
+    expect(code).toBe(0);
+
+    const warningLine = captured.err.find((line) =>
+      line.includes("no model provider is configured"),
+    );
+    expect(warningLine).toBeDefined();
+    expect(warningLine).toContain("dome.agent is enabled");
+    expect(warningLine).toContain("dome init --with-model-provider");
+  }, 10_000);
+
+  test("does not log the no-provider warning when dome.agent is disabled", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    silenceConsole();
+    const controller = new AbortController();
+    const servePromise = runServe(
+      { vault: f.vaultPath, bundlesRoot: f.bundlesRoot, pollIntervalMs: 20 },
+      { signal: controller.signal, operationalIntervalMs: 20 },
+    );
+
+    // Give the daemon a couple of polls to open the runtime and print its
+    // startup banner before asserting the negative.
+    await waitFor(
+      async () => captured.out.some((line) => line.includes("watching")),
+      2000,
+    );
+
+    controller.abort();
+    const code = await servePromise;
+    expect(code).toBe(0);
+
+    expect(
+      captured.err.some((line) =>
+        line.includes("no model provider is configured"),
+      ),
+    ).toBe(false);
+  }, 10_000);
 });
 
 // ----- Test 2: detached HEAD ------------------------------------------------

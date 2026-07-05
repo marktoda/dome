@@ -144,7 +144,7 @@ describe("runStatus", () => {
     expect(out).toContain("content"); expect(out).toContain("2 pages"); // content summary
     expect(out).toContain("links 0"); // wikilinks in content
     expect(out).toContain("projection"); expect(out).toContain("√ fresh"); // projection row
-    expect(out).toContain("loops"); expect(out).toContain("9 known"); // loops summary
+    expect(out).toContain("loops"); expect(out).toContain("10 known"); // loops summary
     expect(out).not.toContain("\n  LOOPS\n"); // no loop detail section
     expect(out).toContain("diagnostics"); expect(out).toContain("√ 0"); // diagnostic row
     expect(out).toContain("questions"); expect(out).toContain("√ 0"); // questions row
@@ -162,7 +162,7 @@ describe("runStatus", () => {
     expect(code).toBe(0);
 
     const out = captured.out.join("\n");
-    expect(out).toContain("loops"); expect(out).toContain("9 known"); // loops summary
+    expect(out).toContain("loops"); expect(out).toContain("10 known"); // loops summary
     expect(out).toContain("\n  LOOPS\n"); // loop detail section header (ALLCAPS, indent 2)
     // Tree connectors present (ASCII form — tests run without UTF locale)
     expect(out).toMatch(/[|`][-]/); // |- or `- tree connectors
@@ -215,7 +215,7 @@ describe("runStatus", () => {
     expect(Array.isArray(parsed["maintenance_loops"])).toBe(true);
     const loops =
       parsed["maintenance_loops"] as ReadonlyArray<Record<string, unknown>>;
-    expect(loops).toHaveLength(9);
+    expect(loops).toHaveLength(10);
     expect(loops[0]).toEqual(expect.objectContaining({
       questions: 0,
       agent_safe_questions: 0,
@@ -1975,8 +1975,8 @@ describe("runStatus", () => {
   });
 
   test("all-clear status is a short verdict + fingerprint (≤3 non-blank lines)", async () => {
-    // Build a vault with no attention: proper frontmatter + sync. The
-    // standard fixture uses bare "seed\n" content which the warden flags.
+    // Build a vault with no attention: proper frontmatter + sync. A bare
+    // "seed\n" fixture would draw lint diagnostics, so seed proper frontmatter.
     const vaultPath = mkdtempSync(join(tmpdir(), "cli-allclear-"));
     const { commit: commitGit } = await import("../../../src/git");
     const { execFileSync } = await import("node:child_process");
@@ -2005,7 +2005,7 @@ describe("runStatus", () => {
     if (jsonBlob === undefined) throw new Error("missing json output");
     const parsed = JSON.parse(jsonBlob) as Record<string, unknown>;
     if (parsed["attention_required"] === true) {
-      // If vault still has attention after sync (e.g. warden diagnostics),
+      // If vault still has attention after sync (e.g. lint diagnostics),
       // skip the fingerprint assertion — just verify healthy label absent and sections absent.
       captured.out = [];
       const code2 = await runStatus({ vault: vaultPath });

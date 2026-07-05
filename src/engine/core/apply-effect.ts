@@ -59,7 +59,6 @@ import type {
   Effect,
   ExternalActionEffect,
   FactEffect,
-  JobEffect,
   OutboxRecoveryEffect,
   PatchEffect,
   QuarantineRecoveryEffect,
@@ -107,11 +106,6 @@ export const EFFECT_PHASE_COMPATIBILITY = Object.freeze({
   }),
   question: Object.freeze({
     adoption: true,
-    garden: true,
-    view: false,
-  }),
-  job: Object.freeze({
-    adoption: false,
     garden: true,
     view: false,
   }),
@@ -243,13 +237,6 @@ export type ApplyEffectSinks = {
   /** QuestionEffect — written to `projection_store.questions`. */
   readonly recordQuestion: (input: {
     readonly effect: QuestionEffect;
-    readonly processorId: string;
-    readonly runId: RunId;
-  }) => Promise<void>;
-
-  /** JobEffect — enqueued in the runtime job queue. */
-  readonly enqueueJob: (input: {
-    readonly effect: JobEffect;
     readonly processorId: string;
     readonly runId: RunId;
   }) => Promise<void>;
@@ -403,7 +390,6 @@ export function noopSinks(): ApplyEffectSinks {
     recordFact: async () => undefined,
     recordSearchDocument: async () => undefined,
     recordQuestion: async () => undefined,
-    enqueueJob: async () => undefined,
     dispatchExternal: async () => undefined,
     recoverOutbox: async () => true,
     recoverQuarantine: async () => true,
@@ -677,11 +663,11 @@ function demoteGardenBlockSeverity(
  * Per docs/wiki/matrices/effect-router-targets.md, the (kind, phase) cells
  * marked "Rejected: phase-mismatch":
  *
- *   - adoption: JobEffect, ExternalActionEffect, OutboxRecoveryEffect,
+ *   - adoption: ExternalActionEffect, OutboxRecoveryEffect,
  *               QuarantineRecoveryEffect, RunRecoveryEffect, ViewEffect
  *   - garden:   ViewEffect
  *   - view:     PatchEffect, DiagnosticEffect (severity: "block"),
- *               FactEffect, SearchDocumentEffect, QuestionEffect, JobEffect,
+ *               FactEffect, SearchDocumentEffect, QuestionEffect,
  *               ExternalActionEffect, OutboxRecoveryEffect,
  *               QuarantineRecoveryEffect, RunRecoveryEffect
  *
@@ -771,13 +757,6 @@ async function routeToSink(
       return EMPTY_SINK_RESULT;
     case "question":
       await opts.sinks.recordQuestion({
-        effect,
-        processorId: opts.processorId,
-        runId: opts.runId,
-      });
-      return EMPTY_SINK_RESULT;
-    case "job":
-      await opts.sinks.enqueueJob({
         effect,
         processorId: opts.processorId,
         runId: opts.runId,

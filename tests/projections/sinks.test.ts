@@ -13,7 +13,6 @@ import {
   diagnosticEffect,
   externalActionEffect,
   factEffect,
-  jobEffect,
   outboxRecoveryEffect,
   patchEffect,
   quarantineRecoveryEffect,
@@ -32,7 +31,6 @@ import { buildSqliteSinks } from "../../src/projections/sinks";
 import { factsBySubject } from "../../src/projections/facts";
 import { queryDiagnostics } from "../../src/projections/diagnostics";
 import { answerQuestion, queryQuestions } from "../../src/projections/questions";
-import { nextEligibleJob } from "../../src/projections/jobs";
 import { insertPending, markFailed, queryOutbox } from "../../src/outbox/dispatch";
 import type { ApplyEffectSinks } from "../../src/engine/core/apply-effect";
 import type { RunId } from "../../src/engine/core/runner-contract";
@@ -108,7 +106,6 @@ describe("buildSqliteSinks shape", () => {
     expect(typeof sinks.recordFact).toBe("function");
     expect(typeof sinks.recordSearchDocument).toBe("function");
     expect(typeof sinks.recordQuestion).toBe("function");
-    expect(typeof sinks.enqueueJob).toBe("function");
     expect(typeof sinks.dispatchExternal).toBe("function");
     expect(typeof sinks.recoverOutbox).toBe("function");
     expect(typeof sinks.recoverQuarantine).toBe("function");
@@ -334,33 +331,6 @@ describe("buildSqliteSinks projection-store sinks", () => {
       emittedQuestions: [],
     });
     expect(fired).toBe(2);
-  });
-
-  it("enqueueJob writes a row visible via nextEligibleJob", async () => {
-    const sinks = buildSqliteSinks({
-      projectionDb,
-      outboxDb,
-      adoptedCommit: ADOPTED,
-      applyPatch: noopApplyPatch,
-      captureView: noopCaptureView,
-      recoverQuarantine: noopRecoverQuarantine,
-      recoverRun: noopRecoverRun,
-    });
-
-    const effect = jobEffect({
-      processorId: "dome.target",
-      input: { x: 1 },
-      idempotencyKey: "j-1",
-    });
-    await sinks.enqueueJob({
-      effect,
-      processorId: PROCESSOR_ID,
-      runId: RUN_ID,
-    });
-
-    const next = nextEligibleJob(projectionDb, new Date());
-    expect(next).not.toBeNull();
-    expect(next?.idempotencyKey).toBe("j-1");
   });
 
   it("dispatchExternal writes a row and dispatches through the outbox handler", async () => {

@@ -16,6 +16,7 @@ import {
 import { runCapture } from "./commands/capture";
 import { runCheck } from "./commands/check";
 import { runAnswer } from "./commands/answer";
+import { runAgendaWith } from "./commands/agenda-with";
 import { runExportContext } from "./commands/export-context";
 import { runInit } from "./commands/init";
 import { runInstall, runRestart, runUninstall } from "./commands/install";
@@ -23,6 +24,8 @@ import { runDoctor } from "./commands/doctor";
 import { runInspect } from "./commands/inspect";
 import { runLint, type LintFailOn } from "./commands/lint";
 import { runLog } from "./commands/log";
+import { runOrphanPages } from "./commands/orphan-pages";
+import { runPrep } from "./commands/prep";
 import { runQuery } from "./commands/query";
 import { runReanchor } from "./commands/reanchor";
 import { runRepair } from "./commands/repair";
@@ -30,7 +33,9 @@ import { runRecipe } from "./commands/recipe";
 import { runRebuild } from "./commands/rebuild";
 import { runResolve } from "./commands/resolve";
 import { runRun } from "./commands/run";
+import { runSettle } from "./commands/settle";
 import { runServe } from "./commands/serve";
+import { runStaleClaims } from "./commands/stale-claims";
 import { runStatus } from "./commands/status";
 import { runSync } from "./commands/sync";
 import { runToday } from "./commands/today";
@@ -334,6 +339,30 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("settle")
+    .description("Settle a task line by its ^block-anchor: close, defer, or keep.")
+    .argument("<block-id>", "The task's ^block-anchor id.")
+    .argument("<disposition>", "close | defer | keep")
+    .option("--until <date>", "YYYY-MM-DD due date; required when disposition is defer.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .action(async (
+      blockId: string,
+      disposition: string,
+      options: SettleCliOptions,
+    ) => {
+      setExitCode(
+        await runSettle({
+          blockId,
+          disposition,
+          until: options.until,
+          json: options.json,
+          vault: options.vault,
+        }),
+      );
+    });
+
+  program
     .command("answer", { hidden: true })
     .description("Resolve an engine-raised question.")
     .argument("<question-id>", "Question row id from `dome inspect questions`.")
@@ -411,6 +440,10 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .option("--category <category>", "Filter by document category.")
     .option("--type <type>", "Filter by page type.")
     .option("--limit <n>", "Maximum matches to show.", parsePositiveIntegerOption)
+    .option(
+      "--miss [note]",
+      "Record this query as a retrieval miss after printing results (meta/retrieval-misses.md); optional note.",
+    )
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -421,6 +454,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           category: options.category,
           type: options.type,
           limit: options.limit,
+          miss: options.miss,
           json: options.json,
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
@@ -487,6 +521,10 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .description("Export a source-backed context packet for a topic.")
     .argument("<topic...>", "Topic to export.")
     .option("--limit <n>", "Maximum matches to include.", parsePositiveIntegerOption)
+    .option(
+      "--miss [note]",
+      "Record this topic as a retrieval miss after printing the packet (meta/retrieval-misses.md); optional note.",
+    )
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -495,6 +533,81 @@ function buildProgram(setExitCode: (code: number) => void): Command {
         await runExportContext({
           topic: topic.join(" "),
           limit: options.limit,
+          miss: options.miss,
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+        }),
+      );
+    });
+
+  program
+    .command("prep")
+    .description("Render a source-backed planning packet for a day.")
+    .option("--date <yyyy-mm-dd>", "Render a specific day (default: today).")
+    .option("--limit <n>", "Maximum rows per section.", parsePositiveIntegerOption)
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (options: PrepCliOptions) => {
+      setExitCode(
+        await runPrep({
+          date: options.date,
+          limit: options.limit,
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+        }),
+      );
+    });
+
+  program
+    .command("agenda-with")
+    .description("Render source-backed open tasks, follow-ups, and context for a person or topic.")
+    .argument("<person-or-topic...>", "Person or topic to filter by.")
+    .option("--date <yyyy-mm-dd>", "Daily-note context date (default: today).")
+    .option("--limit <n>", "Maximum rows per section.", parsePositiveIntegerOption)
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (topic: string[], options: AgendaWithCliOptions) => {
+      setExitCode(
+        await runAgendaWith({
+          topic: topic.join(" "),
+          date: options.date,
+          limit: options.limit,
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+        }),
+      );
+    });
+
+  program
+    .command("stale-claims")
+    .description("List claims whose *(as of)* date is older than the staleness horizon.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (options: StaleClaimsCliOptions) => {
+      setExitCode(
+        await runStaleClaims({
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+        }),
+      );
+    });
+
+  program
+    .command("orphan-pages")
+    .description("List markdown pages with no incoming wikilinks.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (options: OrphanPagesCliOptions) => {
+      setExitCode(
+        await runOrphanPages({
           json: options.json,
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
@@ -877,6 +990,12 @@ type AnswerCliOptions = {
 
 type ResolveCliOptions = AnswerCliOptions;
 
+type SettleCliOptions = {
+  readonly until?: string;
+  readonly json?: boolean;
+  readonly vault?: string;
+};
+
 type RunCliOptions = {
   readonly json?: boolean;
   readonly vault?: string;
@@ -896,6 +1015,7 @@ type QueryCliOptions = {
   readonly category?: string;
   readonly type?: string;
   readonly limit?: number;
+  readonly miss?: string | boolean;
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;
@@ -923,6 +1043,35 @@ type LogCliOptions = {
 
 type ExportContextCliOptions = {
   readonly limit?: number;
+  readonly miss?: string | boolean;
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
+type PrepCliOptions = {
+  readonly date?: string;
+  readonly limit?: number;
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
+type AgendaWithCliOptions = {
+  readonly date?: string;
+  readonly limit?: number;
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
+type StaleClaimsCliOptions = {
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
+type OrphanPagesCliOptions = {
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;

@@ -5,7 +5,7 @@ tags:
   - second-user
   - ws6
 created: 2026-06-12
-updated: 2026-06-12
+updated: 2026-07-04
 sources:
   - "[[cohesive/second-user-blockers]]"
   - "[[wiki/specs/cli]]"
@@ -159,13 +159,32 @@ propose, the engine applies, git history is the audit trail.
 
 Captures are *digested* (filed into the wiki, archived to
 `inbox/processed/`) by `dome.agent.ingest`, and **`dome.agent` ships
-disabled** because it spends model dollars. `dome status` will nudge you when
-raw captures are waiting. To turn it on: edit `.dome/config.yaml`, set
-`enabled: true` under `extensions.dome.agent`, commit. Without a working API
-key the agent processors run and fail *visibly* — `dome check` shows
-`dome.agent.*-failed` warnings (`source-failed` for a capture being ingested,
-`brief-failed` for the brief) and your captures simply stay in `inbox/raw/`
-until the key works.
+enabled** — the brain is on from the first commit. The old protection was a
+disabled bundle; the new protection is a shipped **$2.00/day** model-spend
+cap (`extensions.dome.agent.grant.model.invoke.maxDailyCostUsd` in
+`.dome/config.yaml`), a modest pool shared across ingest/consolidate/sweep/
+brief. If you ran `dome init --with-model-provider` (step 2) and the API key
+is present in the daemon's environment, ingest runs on the next sync — no
+extra flip required. Two ways it can be starved, and both are **loud, never
+silent**:
+
+- **No model provider configured at all** (`dome init` without
+  `--with-model-provider`, or the `model_provider:` stanza removed): `dome
+  serve` logs a one-line `agent.no-model-provider` warning once per host
+  start — "dome.agent is enabled but no model provider is configured; run
+  `dome init --with-model-provider` or set `enabled: false`." `dome
+  doctor`'s `model.provider-missing` finding reports the same gap on
+  demand (also from `dome sync`, which doesn't keep a long-running host to
+  log at boot).
+- **A provider is configured but the key is missing or bad**: the agent
+  processors run and fail *visibly* — `dome check` shows
+  `dome.agent.*-failed` warnings (`source-failed` for a capture being
+  ingested, `brief-failed` for the brief) and your captures simply stay in
+  `inbox/raw/` until the key works.
+
+`dome status` nudges you either way when raw captures are waiting. To turn
+the bundle off entirely: edit `.dome/config.yaml`, set `enabled: false` under
+`extensions.dome.agent`, commit.
 
 Then look around:
 

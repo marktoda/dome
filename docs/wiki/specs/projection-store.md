@@ -10,9 +10,9 @@ description: "Bun.sqlite derived-state layer: rebuildable projection.db keyed by
 
 # Projection store
 
-This spec is normative for Dome's derived-state layer. The **projection store** is a Bun.sqlite-backed cache of facts, search indexes, diagnostics, questions, scheduled jobs, and schedule cursors. The adjacent outbox database is operational retry/audit state for external side effects. Together they answer "where do view-phase processors read from" and "how does the engine recover operational work."
+This spec is normative for Dome's derived-state layer. The **projection store** is a Bun.sqlite-backed cache of facts, search indexes, diagnostics, questions, and schedule cursors. The adjacent outbox database is operational retry/audit state for external side effects. Together they answer "where do view-phase processors read from" and "how does the engine recover operational work."
 
-The projection store is **derived** for adopted-state knowledge rows. Markdown + git history is the knowledge source of truth ([[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]]); facts, diagnostics, search rows, and rebuild-eligible questions in `projection.db` can be deleted and rebuilt at any time from adopted markdown plus deterministic processors. Projection-local operational rows (`scheduled_jobs`, `schedule_cursors`) reset during rebuild by design. The adjacent `answers.db`, `runs.db`, and `outbox.db` files are durable operational state and are not covered by the projection-rebuild guarantee. This is pinned by [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]].
+The projection store is **derived** for adopted-state knowledge rows. Markdown + git history is the knowledge source of truth ([[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]]); facts, diagnostics, search rows, and rebuild-eligible questions in `projection.db` can be deleted and rebuilt at any time from adopted markdown plus deterministic processors. The projection-local `schedule_cursors` table resets during rebuild by design. The adjacent `answers.db`, `runs.db`, and `outbox.db` files are durable operational state and are not covered by the projection-rebuild guarantee. This is pinned by [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]].
 
 ## Why SQLite (and why Bun.sqlite)
 
@@ -26,7 +26,7 @@ Three properties drive the choice:
 
 ```
 <vault>/.dome/state/
-  projection.db       # this spec — facts, fts, diagnostics, questions, scheduled_jobs, schedule_cursors
+  projection.db       # this spec — facts, fts, diagnostics, questions, schedule_cursors
   answers.db          # durable user answers to QuestionEffect rows
   runs.db             # see [[wiki/specs/run-ledger]]
   outbox.db           # see §"Outbox" below
@@ -157,7 +157,7 @@ rebuild *is* the migration.
 
 ### `diagnostics`
 
-Stores `DiagnosticEffect` rows. Both processor-emitted diagnostics and engine-created diagnostics land here; engine-created rows use synthetic `processor_id` producer ids such as `engine.adoption`, `engine.scheduler`, `engine.jobs`, and `engine.garden`.
+Stores `DiagnosticEffect` rows. Both processor-emitted diagnostics and engine-created diagnostics land here; engine-created rows use synthetic `processor_id` producer ids such as `engine.adoption`, `engine.scheduler`, and `engine.garden`.
 
 ```sql
 CREATE TABLE diagnostics (
@@ -260,31 +260,6 @@ the same `idempotency_key`; otherwise it is deleted. This keeps pending
 questions aligned with the currently adopted markdown when a user removes or
 clarifies ambiguous prose, without giving processors a direct delete API.
 
-### `scheduled_jobs`
-
-Stores `JobEffect` rows for deferred garden-phase work. `runAfter` defaults
-to enqueue time when absent, so immediate jobs and delayed jobs share the same
-durable queue. The engine atomically claims one due `pending` row by moving it
-to `running` and incrementing `attempts` before invoking target processor code.
-Retryable target-processor failures return the row to `pending` with bounded
-backoff until `max_attempts` is exhausted; non-retryable failures move directly
-to `failed`.
-
-```sql
-CREATE TABLE scheduled_jobs (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  processor_id    TEXT NOT NULL,        -- target processor id
-  input_json      TEXT NOT NULL,
-  run_after       TEXT NOT NULL,        -- ISO-8601
-  idempotency_key TEXT NOT NULL UNIQUE,
-  max_attempts    INTEGER NOT NULL DEFAULT 3,
-  attempts        INTEGER NOT NULL DEFAULT 0,
-  status          TEXT NOT NULL,        -- "pending" | "running" | "succeeded" | "failed"
-  enqueued_at     TEXT NOT NULL,
-  completed_at    TEXT
-);
-```
-
 ### `schedule_cursors`
 
 Tracks last-fire times for cron-driven processors. Replaces v0.5's `<vault>/.dome/state/scheduled.json` JSON file.
@@ -350,7 +325,7 @@ This is the structural fence behind [[wiki/invariants/EXTERNAL_EFFECTS_GO_THROUG
 
 ## Rebuild path
 
-`dome rebuild` walks the current adopted commit's tree and re-runs every deterministic adoption-phase processor that contributes to projections, then re-runs deterministic garden-phase processors that produce projection outputs (Facts, Diagnostics, Questions). A garden processor is rebuild-eligible only when it explicitly declares `execution.class: deterministic`, has signal/path triggers, and declares only projection-safe capabilities (`read`, `graph.write`, `search.write`, `question.ask`). The rebuild does NOT re-run processors that produced patches (those patches already landed in adopted commits), does NOT enqueue jobs, does NOT read or mutate operational recovery state, does NOT re-fire external actions (the outbox is preserved), and does NOT make fresh model calls. LLM-derived durable claims must either be materialized into adopted markdown with SourceRefs or treated as cache entries that can be dropped and regenerated only by an explicit non-rebuild garden run.
+`dome rebuild` walks the current adopted commit's tree and re-runs every deterministic adoption-phase processor that contributes to projections, then re-runs deterministic garden-phase processors that produce projection outputs (Facts, Diagnostics, Questions). A garden processor is rebuild-eligible only when it explicitly declares `execution.class: deterministic`, has signal/path triggers, and declares only projection-safe capabilities (`read`, `graph.write`, `search.write`, `question.ask`). The rebuild does NOT re-run processors that produced patches (those patches already landed in adopted commits), does NOT read or mutate operational recovery state, does NOT re-fire external actions (the outbox is preserved), and does NOT make fresh model calls. LLM-derived durable claims must either be materialized into adopted markdown with SourceRefs or treated as cache entries that can be dropped and regenerated only by an explicit non-rebuild garden run.
 
 ```text
 dome rebuild
@@ -445,7 +420,7 @@ interface ProjectionQueryView {
 
 ## Related
 
-- [[wiki/specs/effects]] §"FactEffect" / "DiagnosticEffect" / "QuestionEffect" / "JobEffect" / "ExternalActionEffect" — what writes to the store
+- [[wiki/specs/effects]] §"FactEffect" / "DiagnosticEffect" / "QuestionEffect" / "ExternalActionEffect" — what writes to the store
 - [[wiki/specs/processors]] — view-phase reading
 - [[wiki/specs/run-ledger]] — adjacent SQLite file for processor-run history
 - [[wiki/specs/capabilities]] — graph.write namespace scoping

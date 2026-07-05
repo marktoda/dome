@@ -70,7 +70,7 @@
 //   - `../engine/core/runner-contract` for the shared RunId and structured
 //     execution-error type contracts.
 //
-// House-style notes (mirrors src/outbox/dispatch.ts, src/projections/jobs.ts):
+// House-style notes (mirrors src/outbox/dispatch.ts):
 //   - `type X = { ... }` aliases (not `interface`), every field `readonly`.
 //   - JSON columns (`effect_hashes_json`, `trigger_payload_json`) serialized
 //     via `JSON.stringify` on write, parsed on read.
@@ -145,8 +145,7 @@ export type TriggerKind =
   | "path"
   | "schedule"
   | "answer"
-  | "command"
-  | "job";
+  | "command";
 
 // ----- newRunId -------------------------------------------------------------
 
@@ -642,6 +641,18 @@ WHERE run_id IN (
 const DELETE_RETENTION_ELIGIBLE_RUNS_SQL = `
 DELETE FROM runs
 WHERE ${RETENTION_ELIGIBLE_RUN_WHERE_SQL}
+`.trim();
+
+// The permanent complement of RETENTION_ELIGIBLE_RUN_WHERE_SQL: rows
+// retention will NEVER delete regardless of age, because they carry active
+// forensics (failed / timed_out / cancelled, plus reason-bearing skipped).
+// Transient queued/running rows are deliberately not counted — they either
+// reach a terminal state or surface through the orphan-run path.
+const COUNT_RETAINED_FORENSICS_RUNS_SQL = `
+SELECT COUNT(*) AS count
+FROM runs
+WHERE status IN ('failed', 'timed_out', 'cancelled')
+   OR (status = 'skipped' AND error IS NOT NULL)
 `.trim();
 
 // ----- Raw row shape --------------------------------------------------------
@@ -1270,6 +1281,21 @@ export function pruneRunLedger(
   });
 }
 
+/**
+ * Count the rows the retention predicate permanently exempts: failure
+ * forensics (`failed` / `timed_out` / `cancelled` / reason-bearing
+ * `skipped`). The `ledger.oversized` doctor probe includes this so an
+ * operator whose runs.db is dominated by failure rows learns that neither
+ * `ledger.retention_days` nor `dome repair run-ledger` will shrink it —
+ * the fix is the failing processor, not the retention window.
+ */
+export function countRetainedForensicsRuns(db: LedgerDb): number {
+  const row = db.raw
+    .query<CountRawRow, []>(COUNT_RETAINED_FORENSICS_RUNS_SQL)
+    .get();
+  return row?.count ?? 0;
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -1287,7 +1313,6 @@ export function runLedgerRetentionPass(opts: {
   const cutoffIso = new Date(nowMs - opts.retentionDays * DAY_MS).toISOString();
   return pruneRunLedger(opts.ledger, { cutoffIso, vacuum: false });
 }
-
 // ----- internals ------------------------------------------------------------
 
 // Row → RunRow / RunSummaryRow codecs are defined below, after the closed-enum
@@ -1407,7 +1432,6 @@ const TRIGGER_KINDS = [
   "schedule",
   "answer",
   "command",
-  "job",
 ] as const satisfies ReadonlyArray<TriggerKind>;
 
 function decodeRunStatus(status: string): RunStatus {

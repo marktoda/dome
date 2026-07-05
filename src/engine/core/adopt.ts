@@ -431,7 +431,7 @@ export async function adopt(opts: {
         // §"Structural enforcement" §2. The broker's structured verdict
         // surfaces on `applied.capabilityUse` (populated for enforced
         // effect kinds — patch / fact / question / external; undefined
-        // for diagnostic / view / job and for `rejected-by-phase` outcomes
+        // for diagnostic / view and for `rejected-by-phase` outcomes
         // where the broker was never consulted). Written here, with the
         // runtime-allocated `runId` joining the row to the ledger's
         // `runs.id`.
@@ -1168,8 +1168,6 @@ function summarizeEffect(effect: Effect): string {
       return `search-document:${effect.operation}:${effect.path}`;
     case "question":
       return `question:${effect.idempotencyKey}`;
-    case "job":
-      return `job:${effect.processorId}`;
     case "external":
       return `external:${effect.capability}`;
     case "outbox-recovery":

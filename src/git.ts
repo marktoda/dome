@@ -309,28 +309,68 @@ export async function commitSingleFileOnHead(opts: {
    */
   beforeRefAdvance?: (attempt: number) => Promise<void>;
 }): Promise<string> {
+  return commitFilesOnHead({
+    path: opts.path,
+    files: [{ filepath: opts.filepath, content: opts.content }],
+    message: opts.message,
+    ...(opts.author !== undefined ? { author: opts.author } : {}),
+    ...(opts.beforeRefAdvance !== undefined
+      ? { beforeRefAdvance: opts.beforeRefAdvance }
+      : {}),
+  });
+}
+
+/**
+ * Commit a set of files against the CURRENT branch's HEAD tree — the
+ * multi-file generalization of {@link commitSingleFileOnHead}, and the
+ * commit-or-nothing seam behind `performCapture` (one file) and
+ * `performSettle` (up to two: the settled origin line + a Done-today bullet
+ * in today's daily). Each file's blob is spliced into the HEAD tree in one
+ * atomic commit; nothing else — staged or dirty — rides along, because the
+ * base is HEAD's tree, not the index. The branch ref advance is a
+ * compare-and-swap that retries onto a concurrently-advanced head (the serve
+ * host's adoption), so a daemon poll racing the write never clobbers or is
+ * clobbered. `files` must be non-empty; passing the same path twice keeps the
+ * last write.
+ */
+export async function commitFilesOnHead(opts: {
+  path: string;
+  files: ReadonlyArray<{ readonly filepath: string; readonly content: string }>;
+  message: string;
+  author?: CommitIdentity;
+  beforeRefAdvance?: (attempt: number) => Promise<void>;
+}): Promise<string> {
+  if (opts.files.length === 0) {
+    throw new Error("commitFilesOnHead: no files to commit");
+  }
   const { root, prefix } = await resolveGitContext(opts.path);
-  const fullpath = prefix === "" ? opts.filepath : posix.join(prefix, opts.filepath);
+  const fulls = opts.files.map((f) => ({
+    full: prefix === "" ? f.filepath : posix.join(prefix, f.filepath),
+    content: f.content,
+  }));
   const branch = await git.currentBranch({ fs, dir: root, fullname: true });
   if (branch === undefined) {
-    throw new Error("commitSingleFileOnHead: HEAD is detached; callers gate on a branch");
+    throw new Error("commitFilesOnHead: HEAD is detached; callers gate on a branch");
   }
   const author = opts.author ?? { name: "Dome", email: "dome@local" };
 
   let head = await git.resolveRef({ fs, dir: root, ref: "HEAD" });
   for (let attempt = 1; attempt <= COMMIT_SINGLE_FILE_MAX_ATTEMPTS; attempt += 1) {
     const { commit: headCommit } = await git.readCommit({ fs, dir: root, oid: head });
-    const blobOid = await git.writeBlob({
-      fs,
-      dir: root,
-      blob: new TextEncoder().encode(opts.content),
-    });
-    const treeOid = await spliceBlobIntoTree({
-      root,
-      treeOid: headCommit.tree,
-      segments: fullpath.split("/").filter((s) => s.length > 0),
-      blobOid,
-    });
+    let treeOid = headCommit.tree;
+    for (const f of fulls) {
+      const blobOid = await git.writeBlob({
+        fs,
+        dir: root,
+        blob: new TextEncoder().encode(f.content),
+      });
+      treeOid = await spliceBlobIntoTree({
+        root,
+        treeOid,
+        segments: f.full.split("/").filter((s) => s.length > 0),
+        blobOid,
+      });
+    }
     // Write the commit object without touching the branch; the ref advance
     // below is the only branch mutation, and it is compare-and-swap.
     const commitOid = await git.commit({
@@ -357,13 +397,15 @@ export async function commitSingleFileOnHead(opts: {
       head = current;
       continue;
     }
-    // Keep the index in sync for the new path so the working tree reads
+    // Keep the index in sync for the new paths so the working tree reads
     // clean after the commit; the caller already wrote `content` to disk.
-    await git.add({ fs, dir: root, filepath: fullpath });
+    for (const f of fulls) {
+      await git.add({ fs, dir: root, filepath: f.full });
+    }
     return commitOid;
   }
   throw new Error(
-    `commitSingleFileOnHead: ${branch} kept advancing concurrently; ` +
+    `commitFilesOnHead: ${branch} kept advancing concurrently; ` +
       `gave up after ${COMMIT_SINGLE_FILE_MAX_ATTEMPTS} attempts`,
   );
 }
@@ -450,6 +492,39 @@ export async function readBlob(opts: {
   } catch (e) {
     // isomorphic-git throws NotFoundError when the path doesn't exist in the
     // tree; treat that as "no such file" (null). Any other error propagates.
+    if (e instanceof Error && /not found|ENOENT|NotFoundError/i.test(e.message)) {
+      return null;
+    }
+    if (typeof e === "object" && e !== null && "code" in e) {
+      const code = (e as { code: unknown }).code;
+      if (code === "NotFoundError") return null;
+    }
+    throw e;
+  }
+}
+
+/**
+ * Read a blob's content as a UTF-8 string given the blob's own object OID
+ * (not a commit + filepath). Skips the commit→tree→per-path-segment walk that
+ * {@link readBlob} performs on every call: a caller that already knows a
+ * path's blob OID (e.g. from a single up-front tree walk) can read the object
+ * directly. This is the fast path behind `Snapshot.readFile` when the tree
+ * index is materialized — for an `all-readable-markdown` inspection over a
+ * large vault it turns O(files × tree-depth) repeated tree decompressions into
+ * one tree walk plus O(files) direct object reads (~14× faster at 2k files).
+ *
+ * Returns null on a not-found object (mirrors {@link readBlob}); other errors
+ * (corrupt object, I/O failure) propagate.
+ */
+export async function readBlobByOid(opts: {
+  path: string;
+  oid: string;
+}): Promise<string | null> {
+  const { root } = await resolveGitContext(opts.path);
+  try {
+    const result = await git.readBlob({ fs, dir: root, oid: opts.oid });
+    return Buffer.from(result.blob).toString("utf8");
+  } catch (e) {
     if (e instanceof Error && /not found|ENOENT|NotFoundError/i.test(e.message)) {
       return null;
     }
@@ -934,6 +1009,55 @@ export async function readRef(opts: { path: string; ref: string }): Promise<stri
 }
 
 /**
+ * Bounded retry for the CAS `update-ref` path below. Live-vault evidence: 14
+ * days of serve logs show 2 hard "Failed to advance ... cannot lock ref"
+ * adoption failures where a concurrent Dome host (or a foreground git
+ * operation) held the ref's `.lock` file at the moment this ran. That is a
+ * transient filesystem lock, not a real conflict, so it is retried here
+ * instead of surfacing as a hard failure.
+ *
+ * `REF_LOCK_RETRY_LIMIT` retries after the initial attempt (6 tries total).
+ * The n-th retry (1-indexed) waits `100ms * 2^(n-1)` — 100ms, 200ms, 400ms,
+ * 800ms, 1.6s — plus up to `REF_LOCK_JITTER_FRACTION` extra on top. Jitter is
+ * strictly additive (never below the un-jittered base) and its max (25% of
+ * the base) is well under the 2x step to the next base, so growth is
+ * monotonic regardless of the random draw.
+ */
+const REF_LOCK_RETRY_LIMIT = 5;
+const REF_LOCK_BASE_DELAY_MS = 100;
+const REF_LOCK_JITTER_FRACTION = 0.25;
+
+/**
+ * True iff `error` is git's ref-*lock*-contention shape: a held or stale
+ * `.lock` file from a concurrent git process sitting on the same ref —
+ * `cannot lock ref '<ref>': Unable to create '<path>.lock': File exists.`
+ *
+ * Deliberately narrower than matching on "cannot lock ref" alone: git reuses
+ * that same prefix for a real compare-and-swap conflict — `cannot lock ref
+ * '<ref>': is at <X> but expected <Y>` — when the ref moved out from under an
+ * `expectedOld` check. That shape is a genuine divergence, not a transient
+ * lock, and must not be retried here (it is either a caller bug or a race
+ * `commitFilesOnHead` already handles by rebuilding onto the new head).
+ */
+function isRefLockContentionError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    /unable to create '[^']+\.lock'/i.test(error.message) &&
+    /file exists/i.test(error.message)
+  );
+}
+
+/** The backoff delay in ms for the `retryNumber`-th retry (1-indexed). */
+function refLockRetryDelayMs(retryNumber: number): number {
+  const base = REF_LOCK_BASE_DELAY_MS * 2 ** (retryNumber - 1);
+  return base + Math.random() * base * REF_LOCK_JITTER_FRACTION;
+}
+
+async function defaultSleep(ms: number): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+/**
  * Write `ref` to point at `value` (a commit OID). Used to advance
  * `refs/dome/adopted/<branch>` per ADOPTED_REF_IS_SEMANTIC_CURSOR. The caller
  * is responsible for any fast-forward / divergence semantics; this is a
@@ -949,11 +1073,31 @@ export async function writeRef(opts: {
    * - null: ref must not exist.
    */
   expectedOld?: string | null;
+  /**
+   * Test seam: overrides the delay used between ref-lock-contention retries.
+   * Defaults to a real timer-based sleep; tests inject a fake so the backoff
+   * shape can be asserted without waiting in real time.
+   */
+  sleep?: (ms: number) => Promise<void>;
 }): Promise<void> {
   const { root } = await resolveGitContext(opts.path);
   if ("expectedOld" in opts) {
     const expected = opts.expectedOld ?? "0000000000000000000000000000000000000000";
-    await runNativeGit(["-C", root, "update-ref", opts.ref, opts.value, expected]);
+    const sleep = opts.sleep ?? defaultSleep;
+    for (let attempt = 1; attempt <= REF_LOCK_RETRY_LIMIT + 1; attempt += 1) {
+      try {
+        await runNativeGit(["-C", root, "update-ref", opts.ref, opts.value, expected]);
+        return;
+      } catch (error) {
+        const retriesExhausted = attempt > REF_LOCK_RETRY_LIMIT;
+        if (!isRefLockContentionError(error) || retriesExhausted) {
+          // Non-lock errors throw immediately (zero retries); lock errors
+          // that outlast the retry budget surface as-is, not rewrapped.
+          throw error;
+        }
+        await sleep(refLockRetryDelayMs(attempt));
+      }
+    }
     return;
   }
   await git.writeRef({ fs, dir: root, ref: opts.ref, value: opts.value, force: true });

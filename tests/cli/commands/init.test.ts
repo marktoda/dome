@@ -137,7 +137,13 @@ describe("runInit", () => {
       expect(agentsBody).toContain("dome query <text> --json");
       expect(agentsBody).toContain("The daily note should already be");
       expect(agentsBody).not.toContain("dome today");
-      expect(agentsBody).not.toContain("dome prep");
+      // Task 14: prep / agenda-with / stale-claims / orphan-pages are
+      // first-class verbs now (no longer behind the hidden `dome run`
+      // dispatcher), so the template advertises them directly.
+      expect(agentsBody).toContain("dome prep [--date <yyyy-mm-dd>]");
+      expect(agentsBody).toContain("dome agenda-with <person-or-topic>");
+      expect(agentsBody).toContain("dome stale-claims");
+      expect(agentsBody).toContain("dome orphan-pages");
       expect(agentsBody).toContain("dome export-context <topic>");
       expect(agentsBody).toContain("Advanced/debug commands");
       expect(agentsBody).toContain("dome inspect <subject>");
@@ -264,7 +270,10 @@ describe("runInit", () => {
         defaultModelProviderConfig("anthropic"),
       );
       const extensions = record(parsedConfig.extensions);
-      expect(record(extensions["dome.agent"]).enabled).toBe(false);
+      // dome.agent ships enabled by default (product-review-3 Task 17);
+      // --with-model-provider wires the provider the already-enabled agent
+      // needs, it does not itself flip enablement.
+      expect(record(extensions["dome.agent"]).enabled).toBe(true);
 
       const providerBody = await readFile(providerPath, "utf8");
       expect(providerBody.startsWith("#!/usr/bin/env bun")).toBe(true);
@@ -562,7 +571,7 @@ describe("runInit", () => {
     }
   });
 
-  test("--refresh-config preserves hand-written comments while filling defaults", async () => {
+  test("--refresh-config preserves hand-written comments while merging grant entries + adding stanzas", async () => {
     const target = mkdtempSync(join(tmpdir(), "cli-init-comments-refresh-"));
     try {
       await mkdir(join(target, ".dome"), { recursive: true });
@@ -572,20 +581,48 @@ describe("runInit", () => {
       expect(await runInit({ path: target, refreshConfig: true })).toBe(0);
 
       const after = await readFile(configPath, "utf8");
+      // Comment preservation (b681311 precedent): every hand-written line —
+      // including the inline `- "wiki/**/*.md" # only the wiki` comment on an
+      // existing grant seq item that the merge appends after — survives in
+      // order. The edit is insert-only.
       expectLinesPreservedInOrder(COMMENTED_CONFIG, after);
       const refreshed = record(parseYaml(after));
       const extensions = record(refreshed.extensions);
-      // Missing first-party stanzas were filled ...
+      // This config has no top-level `grants: standard`, so it is a legacy
+      // enumerated vault: missing first-party stanzas are added with their
+      // FULL shipped default grant block (Task 20, superseding Task 18's
+      // interim grantless add).
       expect(record(extensions["dome.lint"]).enabled).toBe(true);
+      expect(record(record(extensions["dome.lint"]).grant).read).toEqual([
+        "**/*.md",
+      ]);
       expect(record(extensions["dome.markdown"]).enabled).toBe(true);
-      // ... missing grant keys on the enabled commented bundle were filled ...
-      expect(record(record(extensions["dome.daily"]).grant)["patch.auto"])
-        .toEqual(["wiki/**/*.md", "notes/*.md"]);
-      // ... and the owner's narrowed read grant value was NOT changed.
+      expect(record(record(extensions["dome.markdown"]).grant)["patch.auto"])
+        .toEqual(["**/*.md"]);
+      // The owner's hand-tuned dome.daily `read` is never narrowed: its
+      // load-bearing `doctor.grantEntries` read globs (calendar/slack/ledger)
+      // are merged in and the owner's `wiki/**/*.md` stays. The kinds the
+      // enumerated grant omits (`patch.auto`, etc.) are wholly-missing default
+      // kinds and land at the full shipped default.
       expect(record(record(extensions["dome.daily"]).grant).read).toEqual([
         "wiki/**/*.md",
+        "sources/calendar/*.md",
+        "sources/slack/*.md",
+        "meta/sweep-ledger.md",
+      ]);
+      expect(record(record(extensions["dome.daily"]).grant)["patch.auto"])
+        .toEqual(["wiki/**/*.md", "notes/*.md"]);
+      // dome.sources declares no doctor grant entries, so its narrowed grant is
+      // byte-untouched.
+      expect(record(record(extensions["dome.sources"]).grant).read).toEqual([
+        "sources/**/*.md",
       ]);
       expect(record(refreshed.engine).max_iterations).toBe(25);
+
+      // Idempotent: a second refresh adds nothing (all entries now covered).
+      const firstRefresh = after;
+      expect(await runInit({ path: target, refreshConfig: true })).toBe(0);
+      expect(await readFile(configPath, "utf8")).toBe(firstRefresh);
     } finally {
       await rm(target, { recursive: true, force: true });
     }
@@ -687,7 +724,7 @@ describe("runInit", () => {
     }
   });
 
-  test("--refresh-config adds missing first-party bundles and fills default grant keys", async () => {
+  test("--refresh-config merges load-bearing grant entries into present bundles and adds missing bundles with full default grants", async () => {
     const target = mkdtempSync(join(tmpdir(), "cli-init-refresh-"));
     try {
       await mkdir(join(target, ".dome"), { recursive: true });
@@ -722,38 +759,234 @@ describe("runInit", () => {
           readonly enabled?: boolean;
           readonly grant?: Record<string, unknown>;
           readonly grants?: Record<string, unknown>;
+          readonly processors?: Record<string, { readonly grant?: Record<string, unknown> }>;
         }>;
         readonly engine: { readonly max_iterations: number };
       };
 
+      // dome.lint is present-enabled with NO grant block at all — a stale
+      // enumerated config written before/without grants. Refresh fills its
+      // wholly-missing default kind (`read`) so its processors stop arriving
+      // capability-starved (the kind-level `capability.grant-missing` gap).
       expect(refreshed.extensions["dome.lint"]?.grant?.read).toEqual([
         "**/*.md",
       ]);
+      // dome.markdown is present with a narrowed `read` grant and no other
+      // kind. The owner's `read` is respected: only the load-bearing doctor
+      // entry `core.md` is merged in (most-specific default glob — `core.md`
+      // wins over `**/*.md`, so `notes/**/*.md` is NOT widened). The kinds the
+      // enumerated grant omits entirely (`patch.auto`, `graph.write`,
+      // `question.ask`) are new capabilities and land at their full default.
       expect(refreshed.extensions["dome.markdown"]?.grant?.read).toEqual([
         "notes/**/*.md",
+        "core.md",
       ]);
       expect(refreshed.extensions["dome.markdown"]?.grant?.["patch.auto"])
         .toEqual(["**/*.md"]);
+      expect(refreshed.extensions["dome.markdown"]?.grant?.["graph.write"])
+        .toEqual(["dome.page.*"]);
       expect(refreshed.extensions["dome.markdown"]?.grant?.["question.ask"])
         .toBe(true);
+      // dome.search's owner-authored `read` is respected (no doctor entry
+      // names it, so it is left exactly as written), while its wholly-missing
+      // `search.write` kind lands at the full default.
       expect(refreshed.extensions["dome.search"]?.grants?.read).toEqual([
         "wiki/**/*.md",
       ]);
       expect(refreshed.extensions["dome.search"]?.grants?.["search.write"])
         .toEqual(["**/*.md"]);
+      // Absent bundles are added with their FULL shipped default grant block
+      // (legacy enumerated vault — no `grants: standard` preset to inherit).
+      expect(refreshed.extensions["dome.graph"]?.enabled).toBe(true);
+      expect(refreshed.extensions["dome.graph"]?.grant?.read).toEqual([
+        "**/*.md",
+      ]);
       expect(refreshed.extensions["dome.graph"]?.grant?.["graph.write"])
         .toEqual(["dome.graph.*"]);
       expect(refreshed.extensions["dome.daily"]?.enabled).toBe(true);
       expect(refreshed.extensions["dome.daily"]?.grant?.["patch.auto"])
         .toEqual(["wiki/**/*.md", "notes/*.md"]);
+      // dome.health was explicitly written `enabled: false`; refresh must
+      // leave an explicit value alone (no grant merge for a disabled bundle).
       expect(refreshed.extensions["dome.health"]?.enabled).toBe(false);
-      expect(refreshed.extensions["dome.agent"]?.enabled).toBe(false);
+      expect(refreshed.extensions["dome.health"]?.grant).toBeUndefined();
+      // dome.agent was absent, so refresh adds the whole stanza from the
+      // shipped default — enabled: true (Task 17) with its bundle grant AND its
+      // per-processor replacement grants (e.g. dome.agent.patrol).
+      expect(refreshed.extensions["dome.agent"]?.enabled).toBe(true);
+      expect(refreshed.extensions["dome.agent"]?.grant?.["model.invoke"])
+        .toEqual({ maxDailyCostUsd: 2 });
+      expect(
+        refreshed.extensions["dome.agent"]?.processors?.["dome.agent.patrol"]
+          ?.grant?.["patch.auto"],
+      ).toEqual(["meta/patrol-queue.md", "meta/patrol-ledger.md"]);
+      // Third-party bundles are never touched.
       expect(refreshed.extensions["custom.local"]?.grant).toBeUndefined();
       expect(refreshed.engine.max_iterations).toBe(25);
 
       const firstRefresh = await readFile(configPath, "utf8");
       expect(await runInit({ path: target, refreshConfig: true })).toBe(0);
       expect(await readFile(configPath, "utf8")).toBe(firstRefresh);
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  test("--refresh-config is a no-op for grants under the `grants: standard` preset", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cli-init-refresh-preset-"));
+    try {
+      await mkdir(join(target, ".dome"), { recursive: true });
+      const configPath = join(target, ".dome", "config.yaml");
+      await writeFile(
+        configPath,
+        "grants: standard\n" +
+          "extensions:\n" +
+          "  dome.markdown:\n" +
+          "    enabled: true\n" +
+          "    grant:\n" +
+          "      read:\n" +
+          "        - \"notes/**/*.md\"\n" +
+          "engine:\n" +
+          "  max_iterations: 25\n",
+        "utf8",
+      );
+
+      expect(await runInit({ path: target, refreshConfig: true })).toBe(0);
+      const refreshed = parseYaml(await readFile(configPath, "utf8")) as {
+        readonly grants?: string;
+        readonly extensions: Record<string, {
+          readonly enabled?: boolean;
+          readonly grant?: Record<string, unknown>;
+        }>;
+      };
+
+      // The preset stays; it is the single source of grants at load time.
+      expect(refreshed.grants).toBe("standard");
+      // A present enabled bundle's grant block is NOT merged into — the preset
+      // already tracks defaults, so refresh leaves it byte-identical (no core.md
+      // / patch.auto / graph.write injected the way a legacy enumerated vault
+      // would get).
+      expect(refreshed.extensions["dome.markdown"]?.grant?.read).toEqual([
+        "notes/**/*.md",
+      ]);
+      expect(refreshed.extensions["dome.markdown"]?.grant?.["patch.auto"])
+        .toBeUndefined();
+      expect(refreshed.extensions["dome.markdown"]?.grant?.["graph.write"])
+        .toBeUndefined();
+      // Missing bundles are still added, but enabled-only — the preset supplies
+      // their grants, so NO enumerated grant block is written (which would undo
+      // the preset collapse Task 18 introduced).
+      expect(refreshed.extensions["dome.lint"]?.enabled).toBe(true);
+      expect(refreshed.extensions["dome.lint"]?.grant).toBeUndefined();
+      expect(refreshed.extensions["dome.agent"]?.enabled).toBe(true);
+      expect(refreshed.extensions["dome.agent"]?.grant).toBeUndefined();
+
+      const firstRefresh = await readFile(configPath, "utf8");
+      expect(await runInit({ path: target, refreshConfig: true })).toBe(0);
+      expect(await readFile(configPath, "utf8")).toBe(firstRefresh);
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  test("--refresh-config prints a summary of the grant entries it added", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cli-init-refresh-summary-"));
+    try {
+      await mkdir(join(target, ".dome"), { recursive: true });
+      const configPath = join(target, ".dome", "config.yaml");
+      await writeFile(
+        configPath,
+        "extensions:\n" +
+          "  dome.daily:\n" +
+          "    enabled: true\n" +
+          "    grant:\n" +
+          "      read:\n" +
+          "        - \"wiki/**/*.md\"\n" +
+          "engine:\n" +
+          "  max_iterations: 25\n",
+        "utf8",
+      );
+
+      expect(await runInit({ path: target, refreshConfig: true })).toBe(0);
+      const printed = captured.out.join("\n");
+      // The human summary names the merged grant globs and the bundles it
+      // added with their default grants.
+      expect(printed).toContain("GRANTS ADDED");
+      expect(printed).toContain("sources/calendar/*.md");
+      expect(printed).toContain("dome.agent (bundle added with default grants)");
+
+      // --json surfaces the same list under `grants_added`.
+      captured.out.length = 0;
+      const jsonTarget = mkdtempSync(join(tmpdir(), "cli-init-refresh-json-"));
+      await mkdir(join(jsonTarget, ".dome"), { recursive: true });
+      await writeFile(
+        join(jsonTarget, ".dome", "config.yaml"),
+        "extensions:\n  dome.daily:\n    enabled: true\n    grant:\n      read:\n        - \"wiki/**/*.md\"\nengine:\n  max_iterations: 25\n",
+        "utf8",
+      );
+      expect(
+        await runInit({ path: jsonTarget, refreshConfig: true, json: true }),
+      ).toBe(0);
+      const parsed = JSON.parse(captured.out.join("\n")) as {
+        readonly grants_added: ReadonlyArray<string>;
+      };
+      expect(parsed.grants_added.length).toBeGreaterThan(0);
+      expect(
+        parsed.grants_added.some((line) => line.includes("sources/calendar/*.md")),
+      ).toBe(true);
+      await rm(jsonTarget, { recursive: true, force: true });
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  test("--refresh-config respects present-but-empty kinds (omission ≠ withholding)", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cli-init-refresh-withhold-"));
+    try {
+      await mkdir(join(target, ".dome"), { recursive: true });
+      const configPath = join(target, ".dome", "config.yaml");
+      // The owner deliberately withheld write + question powers from
+      // dome.daily: patch.auto declared empty (list kind), question.ask
+      // declared false (boolean kind). Both are PRESENT values — the
+      // wholly-missing-kind refill must skip them, and the surgical
+      // doctor-entry merge must never insert into the explicitly empty list
+      // (wiki/specs/cli.md §"dome init": omission ≠ withholding).
+      await writeFile(
+        configPath,
+        "extensions:\n" +
+          "  dome.daily:\n" +
+          "    enabled: true\n" +
+          "    grant:\n" +
+          "      read:\n" +
+          '        - "wiki/**/*.md"\n' +
+          "      patch.auto: []\n" +
+          "      question.ask: false\n",
+        "utf8",
+      );
+
+      expect(await runInit({ path: target, refreshConfig: true })).toBe(0);
+
+      const after = record(parseYaml(await readFile(configPath, "utf8")));
+      const daily = record(
+        record(after.extensions)["dome.daily"],
+      );
+      const grant = record(daily.grant);
+      // Withheld kinds survive byte-for-byte: never refilled, never merged
+      // into.
+      expect(grant["patch.auto"]).toEqual([]);
+      expect(grant["question.ask"]).toBe(false);
+      // The present non-empty read list still receives its doctor-gated
+      // surgical merges — withholding one kind doesn't freeze the others.
+      expect(grant.read).toEqual([
+        "wiki/**/*.md",
+        "sources/calendar/*.md",
+        "sources/slack/*.md",
+        "meta/sweep-ledger.md",
+      ]);
+      // And the summary printed nothing for the withheld kinds.
+      const printed = captured.out.join("\n");
+      expect(printed).not.toContain("dome.daily patch.auto");
+      expect(printed).not.toContain("dome.daily question.ask");
     } finally {
       await rm(target, { recursive: true, force: true });
     }

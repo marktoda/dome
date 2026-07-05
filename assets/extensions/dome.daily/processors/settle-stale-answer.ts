@@ -33,13 +33,9 @@ import {
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
-import { parseBlockAnchor } from "../../../../src/core/block-anchor";
 import { parseAnswerInput } from "../../dome.agent/lib/answer-input";
-import {
-  appendOriginMarker,
-  parseOriginMarker,
-} from "./action-extraction";
 import { formatDate, localDateParts } from "./daily-paths";
+import { findAnchorLine, setCheckboxMark, setDueDate } from "./task-disposition";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -78,36 +74,6 @@ function parseStaleMetadata(
 // ---------------------------------------------------------------------------
 
 /**
- * Find the line (0-indexed in `lines`) that ends with ` ^<anchor>`.
- * Returns the index or -1 if not found.
- */
-function findAnchorLine(lines: ReadonlyArray<string>, anchor: string): number {
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i] ?? "";
-    const parsed = parseBlockAnchor(line);
-    if (parsed !== null && parsed.id === anchor) return i;
-  }
-  return -1;
-}
-
-/**
- * True iff `line` is an OPEN checkbox (`- [ ] `).
- */
-function isOpenCheckbox(line: string): boolean {
-  return /^\s*[-*]\s+\[ \]/.test(line);
-}
-
-/**
- * Apply the "close" rewrite to a single line: `- [ ]` → `- [-]`.
- * Only rewrites open checkboxes; returns null for non-open lines (idempotent).
- */
-function applyClose(line: string): string | null {
-  if (!isOpenCheckbox(line)) return null;
-  // Replace the first `[ ]` with `[-]`
-  return line.replace(/^(\s*[-*]\s+)\[ \]/, "$1[-]");
-}
-
-/**
  * Advance a `Date` by `days` days (UTC-safe: operates on epoch ms).
  * Returns the result as a YYYY-MM-DD string in LOCAL time (consistent with
  * dome's vault-date policy — see daily-paths.ts `localDateParts`).
@@ -117,48 +83,10 @@ function addDays(base: Date, days: number): string {
   return formatDate(localDateParts(next));
 }
 
-/**
- * Apply the "defer" rewrite to a single line:
- *   1. Split off the trailing `^anchor` with `parseBlockAnchor`.
- *   2. Strip any origin marker from the body region (preserving its target).
- *   3. Replace or append the `📅 YYYY-MM-DD` date in the bare body.
- *   4. Re-append the origin marker (canonical position: after date, before anchor).
- *   5. Re-attach the anchor suffix.
- *
- * Canonical order: `body text 📅 date ([↗](url)) ^anchor`
- * This ensures the marker always lands in canonical position regardless of its
- * position in the input (e.g. marker-before-date inputs are normalized on defer).
- */
-function applyDefer(line: string, newDate: string): string {
-  const parsed = parseBlockAnchor(line);
-  const bodyPart = parsed !== null ? parsed.withoutAnchor : line.trimEnd();
-  const anchorSuffix = parsed !== null ? ` ^${parsed.id}` : "";
-
-  // Strip origin marker from body, remembering the target for re-attachment.
-  const originParsed = parseOriginMarker(bodyPart);
-  const bareBody = originParsed !== null ? originParsed.body.trimEnd() : bodyPart;
-  const originTarget = originParsed?.target ?? "";
-
-  const dateRe = /(?:^|(\s))📅\s*\d{4}-\d{2}-\d{2}/u;
-  let newBareBody: string;
-  if (dateRe.test(bareBody)) {
-    // Replace existing 📅 date in the bare body
-    newBareBody = bareBody.replace(
-      /(\s?)📅\s*\d{4}-\d{2}-\d{2}/u,
-      (_, leadingSpace: string | undefined) =>
-        `${leadingSpace ?? ""} 📅 ${newDate}`.replace(/\s{2,}/g, " "),
-    );
-  } else {
-    // No existing date — append to the end of the bare body.
-    newBareBody = `${bareBody.trimEnd()} 📅 ${newDate}`;
-  }
-
-  // Re-append origin marker in canonical position (after date, before anchor).
-  // appendOriginMarker is idempotent and a no-op when originTarget is empty.
-  const newBody = appendOriginMarker(newBareBody, originTarget);
-
-  return `${newBody}${anchorSuffix}`;
-}
+// The mechanical line transforms (find-by-anchor, flip-if-open, rewrite-📅)
+// live in the shared pure `task-disposition` module so `performSettle` shares
+// them. This processor owns only the disposition SEMANTICS: "close" cancels
+// (`[-]`), and "defer" pushes the date forward by DEFER_DAYS from ctx.now().
 
 // ---------------------------------------------------------------------------
 // Processor
@@ -243,8 +171,9 @@ const settleStaleAnswer = defineProcessorImplementation({
     let rewrittenLine: string | null = null;
 
     if (answer === "close") {
-      // Retry-idempotent: only patch if the line is still open.
-      rewrittenLine = applyClose(originalLine);
+      // Retry-idempotent: only patch if the line is still open. Close here
+      // CANCELS the task (`[-]`); reconcile propagates the cancelled state.
+      rewrittenLine = setCheckboxMark(originalLine, "-");
       if (rewrittenLine === null) {
         // Already non-open ([-] or [x]) — nothing to do.
         return Object.freeze([]);
@@ -252,7 +181,7 @@ const settleStaleAnswer = defineProcessorImplementation({
     } else {
       // answer === "defer"
       const newDate = addDays(ctx.now(), DEFER_DAYS);
-      rewrittenLine = applyDefer(originalLine, newDate);
+      rewrittenLine = setDueDate(originalLine, newDate);
       // If the rewrite is identical (somehow), no patch needed.
       if (rewrittenLine === originalLine) return Object.freeze([]);
     }

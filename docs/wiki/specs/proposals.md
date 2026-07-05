@@ -10,7 +10,7 @@ description: "Proposal as the only trusted write path: manual branch-drift and g
 
 # Proposals
 
-This spec is normative for Dome's write path. A **Proposal** is the only thing that mutates trusted state. Every write — human, agent, garden processor, scheduled job — becomes a Proposal that the engine then routes through the adoption loop.
+This spec is normative for Dome's write path. A **Proposal** is the only thing that mutates trusted state. Every write — human, agent, garden processor — becomes a Proposal that the engine then routes through the adoption loop.
 
 ## The Proposal type
 

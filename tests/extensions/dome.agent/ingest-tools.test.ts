@@ -12,7 +12,7 @@ import type { AgentRunState } from "../../../assets/extensions/dome.agent/lib/ag
 import { archivedCapturePath } from "../../../assets/extensions/dome.agent/lib/vault-tools";
 
 function freshState(): AgentRunState {
-  return { edits: new Map(), questions: [] };
+  return { edits: new Map(), questions: [], integrityFlags: [] };
 }
 
 const reader = (files: Record<string, string>) => ({

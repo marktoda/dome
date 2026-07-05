@@ -2,8 +2,8 @@
 //
 // The broker decides whether an effect is allowed, downgraded, or denied.
 // This module translates that decision into the durable `capability_uses`
-// row shape so adoption, garden, scheduler, jobs, and view commands do not
-// each hand-roll slightly different audit labels.
+// row shape so adoption, garden, scheduler, and view commands do not each
+// hand-roll slightly different audit labels.
 
 import type { Effect, PatchEffect } from "../../core/effect";
 import { recordCapabilityUse } from "../../ledger/capability-uses";
@@ -43,12 +43,6 @@ export function capabilityUseForEffect(
       return Object.freeze({
         capability: "question.ask",
         resource: null,
-        outcome,
-      });
-    case "job":
-      return Object.freeze({
-        capability: "job.enqueue",
-        resource: effect.processorId,
         outcome,
       });
     case "external":

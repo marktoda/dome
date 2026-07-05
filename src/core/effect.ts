@@ -1,4 +1,4 @@
-// The eleven-kind Effect union: the only value a Processor returns.
+// The ten-kind Effect union: the only value a Processor returns.
 //
 // The engine routes effects through capability enforcement, then applies
 // them — patching markdown, writing to the projection store, queueing
@@ -279,21 +279,6 @@ export type QuestionEffect = {
 };
 
 /**
- * A request to run another processor later. `input` is opaque to the
- * engine — it's the receiving processor's `ProcessorContext.input`.
- * `runAfter`, when present, is an ISO-8601 timestamp; the engine
- * enqueues with a delay. `idempotencyKey` de-dupes the job row.
- */
-export type JobEffect = {
-  readonly kind: "job";
-  readonly processorId: string;
-  readonly input: JsonValue;
-  readonly runAfter?: string;
-  readonly idempotencyKey: string;
-  readonly maxAttempts?: number;
-};
-
-/**
  * An effect that touches the outside world (calendar write, email send,
  * webhook POST, notification). The engine inserts an outbox row before
  * attempting the external call; idempotencyKey de-dups retries. Pinned
@@ -383,7 +368,6 @@ export type Effect =
   | FactEffect
   | SearchDocumentEffect
   | QuestionEffect
-  | JobEffect
   | ExternalActionEffect
   | OutboxRecoveryEffect
   | QuarantineRecoveryEffect
@@ -630,17 +614,6 @@ export const QuestionEffectSchema = z
   })
   .strict();
 
-export const JobEffectSchema = z
-  .object({
-    kind: z.literal("job"),
-    processorId: z.string().min(1),
-    input: JsonValueSchema,
-    runAfter: z.string().datetime({ offset: true }).optional(),
-    idempotencyKey: z.string().min(1),
-    maxAttempts: z.number().int().positive().optional(),
-  })
-  .strict();
-
 export const ExternalActionEffectSchema = z
   .object({
     kind: z.literal("external"),
@@ -702,7 +675,7 @@ export const ViewEffectSchema = z
   .strict();
 
 /**
- * Discriminated union over the eleven effect kinds. Use this at engine
+ * Discriminated union over the ten effect kinds. Use this at engine
  * entry points (broker validation, sqlite reads). Not exported as the
  * inferred type — consumers should type from the `Effect` union to
  * preserve `exactOptionalPropertyTypes` semantics (see
@@ -719,7 +692,6 @@ export const EffectSchema = z.discriminatedUnion("kind", [
   FactEffectSchema,
   SearchDocumentEffectSchema,
   QuestionEffectSchema,
-  JobEffectSchema,
   ExternalActionEffectSchema,
   OutboxRecoveryEffectSchema,
   QuarantineRecoveryEffectSchema,
@@ -824,18 +796,6 @@ export function questionEffect(
   };
   if (input.options !== undefined) e.options = input.options;
   if (input.metadata !== undefined) e.metadata = Object.freeze(input.metadata);
-  return Object.freeze(e);
-}
-
-export function jobEffect(input: Omit<JobEffect, "kind">): JobEffect {
-  const e: { -readonly [K in keyof JobEffect]: JobEffect[K] } = {
-    kind: "job",
-    processorId: input.processorId,
-    input: input.input,
-    idempotencyKey: input.idempotencyKey,
-  };
-  if (input.runAfter !== undefined) e.runAfter = input.runAfter;
-  if (input.maxAttempts !== undefined) e.maxAttempts = input.maxAttempts;
   return Object.freeze(e);
 }
 

@@ -22,14 +22,14 @@ const EXEMPT_FIRST_PARTY_PROCESSORS = new Set([
   // Read-only report surface; it explains diagnostics but does not maintain a
   // desired state itself.
   "dome.lint.report",
-  // Read-only `dome run stale-claims` staleness audit over claim asOf dates; it
+  // Read-only `dome stale-claims` staleness audit over claim asOf dates; it
   // reports on the claim loop's coherence over time but maintains no desired
   // state of its own (the dome.claim.coherence loop owns the claim facts).
   "dome.claims.stale-claims",
 ]);
 
 describe("first-party maintenance loops", () => {
-  test("declare the nine first-party loop design units", () => {
+  test("declare the ten first-party loop design units", () => {
     expect(FIRST_PARTY_MAINTENANCE_LOOPS.map((loop) => loop.id)).toEqual([
       "dome.capture.digest",
       "dome.open-loop.continuity",
@@ -37,6 +37,7 @@ describe("first-party maintenance loops", () => {
       "dome.context.packet",
       "dome.claim.coherence",
       "dome.question.continuity",
+      "dome.system.report-card",
       "dome.preference.promotion",
       "dome.meaning.integration",
       "dome.daily.edition",

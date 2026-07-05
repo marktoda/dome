@@ -1,18 +1,18 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-11
+updated: 2026-07-04
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
-description: "Capability broker: seventeen tiers, manifest-declared x vault-granted intersection, enforced at the single enforceCapability chokepoint"
+description: "Capability broker: sixteen tiers, manifest-declared x vault-granted intersection, enforced at the single enforceCapability chokepoint"
 ---
 
 # Capabilities
 
 This spec is normative for Dome's capability broker — the one chokepoint that decides whether an [[wiki/specs/effects|Effect]] emitted by a [[wiki/specs/processors|Processor]] is applied or rejected. Every effect, regardless of source, passes through `enforceCapability(effect, processor.capabilities, grants)` before the engine applies it. This is pinned by [[wiki/invariants/EVERY_EFFECT_IS_CAPABILITY_CHECKED]].
 
-Note: the `read · capture · resolve · converse · author` vocabulary in [[wiki/specs/http-surface]] scopes *who can reach a route* (the HTTP surface's per-route access gate); the engine's seventeen capability tiers here scope *what an effect may do once the engine applies it* — they are orthogonal layers that compose, not duplicates of each other.
+Note: the `read · capture · resolve · converse · author` vocabulary in [[wiki/specs/http-surface]] scopes *who can reach a route* (the HTTP surface's per-route access gate); the engine's sixteen capability tiers here scope *what an effect may do once the engine applies it* — they are orthogonal layers that compose, not duplicates of each other.
 
 ## Why a capability broker
 
@@ -22,7 +22,7 @@ The v1 engine model treats every behavior as an extension — first-party `dome.
 
 ## Capability tiers
 
-Capabilities are about **effect power**, not arbitrary trust labels. Seventeen capability tiers cover every effect a processor can emit and every non-effect runtime power exposed through processor context:
+Capabilities are about **effect power**, not arbitrary trust labels. Sixteen capability tiers cover every effect a processor can emit and every non-effect runtime power exposed through processor context:
 
 ```ts
 type Capability =
@@ -33,7 +33,6 @@ type Capability =
   | { kind: "graph.write";   namespaces: string[] }             // FactEffect namespaces
   | { kind: "search.write";  paths: string[] }                  // SearchDocumentEffect paths
   | { kind: "question.ask" }                                    // QuestionEffect emission
-  | { kind: "job.enqueue";   processors: string[] }             // JobEffect target processor ids or glob patterns
   | { kind: "model.invoke";  maxDailyCostUsd?: number; modelAllowlist?: string[] }
   | { kind: "external";      capability: string }               // ExternalActionEffect capabilities (e.g., "calendar.write")
   | { kind: "outbox.read";   statuses?: ("pending" | "sent" | "failed" | "abandoned")[] }
@@ -89,10 +88,6 @@ FTS5 upsert/delete SQL.
 
 Permits emitting QuestionEffects. Questions are a user-interruption channel, so the power is separate from `graph.write`: extracting facts does not automatically authorize asking the user to make an operational decision. V1 enforcement is binary (`question.ask` present or absent) because `QuestionEffect` has no namespace/channel field. Namespaced question grants are deliberately rejected until the effect shape carries a real scope. Operational recovery answer handlers must separately bind their `answer` triggers to the originating question processor plus the idempotency-key prefix; that is the current confused-deputy guard for privileged recovery flows.
 
-### `job.enqueue`
-
-Permits emitting JobEffects. The `processors` list scopes which target processor ids can be scheduled; entries may be exact ids (`dome.daily.refresh-brief`) or bundle-level globs (`dome.daily.*`). Same-bundle enqueue can be granted by default in shipped first-party manifests, but it is still represented as a capability so scheduled follow-on work is explicit and ledgered.
-
 ### `model.invoke`
 
 Permits the processor to call LLMs via `ctx.modelInvoke`. Adoption-phase processors **never** get this capability — the loader rejects `model.invoke` in adoption manifests at registration time. Garden- and view-phase processors receive a model handle only when the capability is both declared and granted. The handle is provider-neutral: core receives an injected `ModelProvider` or a vault-configured command provider, not a direct import of a vendor SDK.
@@ -119,7 +114,7 @@ Optional fields:
   declared caps plus headroom for interactive ones.
 - `modelAllowlist: string[]` — restrict to specific model identifiers (e.g., `["claude-3-5-sonnet"]`); default allows the harness's configured default.
 
-The runtime enforces the intersection of the declared and granted allowlists before any provider call, and records each model-call attempt in `capability_uses` with `capability = "model.invoke"` and the resolved model as the resource when known. It also enforces both `maxDailyCostUsd` scopes (declared cap against the processor's own spend, granted cap against the extension pool — see above): before a provider call it denies when either cap is already spent; after a provider-reported cost is recorded it denies the output if that call pushed either scope over its cap. The model handle shares the processor invocation signal, so processor timeout/cancellation aborts in-flight provider calls. Provider responses are validated inside the model boundary before processor code receives them. A command provider is configured in `.dome/config.yaml` as `model_provider: { kind: "command", command: [...] }`; it runs from the vault root, receives a `dome.model-provider.request/v1` JSON object on stdin, and must return `{ "text": string, "model"?: string, "costUsd"?: number }` on stdout. The same command may also receive a `dome.model-provider.step/v1` envelope (the tool-use step seam, see [[wiki/specs/autonomous-agents]]) and a `dome.model-provider.probe/v1` envelope. The probe envelope is `{ "schema": "dome.model-provider.probe/v1" }`; a probe-aware provider answers `{ "schema": "dome.model-provider.probe/v1", "ok": true, "provider"?: string, "keyPresent"?: boolean, "defaultModel"?: string }` on stdout and exits 0 **without making any network or paid API call** — `keyPresent` reports whether the provider's credential environment variable is set, and the probe must succeed even when it is not. Providers that predate the probe envelope may reject it with a non-zero exit; the prober treats that as "alive but probe-unsupported", not as a failure. `dome doctor` reports a read-only preflight warning when active processors both declare and receive `model.invoke` but no model provider is configured or injected into the host, and probes a configured command provider (spawnable? probe-responsive? credential present?) per [[wiki/specs/cli]] §"dome doctor". Structured output uses `ctx.modelInvoke.structured({ schemaName, parse })`; parse failures become nominal runtime-created `model.output.*` run errors rather than generic `processor.threw`. Processor-thrown or provider-thrown objects cannot opt into model execution codes by shape. Model-capable PatchEffects are additionally required to carry SourceRefs at the executor boundary so LLM-written vault changes are evidence-backed before capability routing.
+The runtime enforces the intersection of the declared and granted allowlists before any provider call, and records each model-call attempt in `capability_uses` with `capability = "model.invoke"` and the resolved model as the resource when known. It also enforces both `maxDailyCostUsd` scopes (declared cap against the processor's own spend, granted cap against the extension pool — see above): before a provider call it denies when either cap is already spent; after a provider-reported cost is recorded it denies the output if that call pushed either scope over its cap. The model handle shares the processor invocation signal, so processor timeout/cancellation aborts in-flight provider calls. Provider responses are validated inside the model boundary before processor code receives them. A command provider is configured in `.dome/config.yaml` as `model_provider: { kind: "command", command: [...] }`; it runs from the vault root, receives a `dome.model-provider.request/v1` JSON object on stdin, and must return `{ "text": string, "model"?: string, "costUsd"?: number }` on stdout. The same command may also receive a `dome.model-provider.step/v1` envelope (the tool-use step seam, see [[wiki/specs/autonomous-agents]]) and a `dome.model-provider.probe/v1` envelope. The probe envelope is `{ "schema": "dome.model-provider.probe/v1" }`; a probe-aware provider answers `{ "schema": "dome.model-provider.probe/v1", "ok": true, "provider"?: string, "keyPresent"?: boolean, "defaultModel"?: string }` on stdout and exits 0 **without making any network or paid API call** — `keyPresent` reports whether the provider's credential environment variable is set, and the probe must succeed even when it is not. Providers that predate the probe envelope may reject it with a non-zero exit; the prober treats that as "alive but probe-unsupported", not as a failure. `dome doctor` reports a read-only preflight warning when active processors both declare and receive `model.invoke` but no model provider is configured or injected into the host, and probes a configured command provider (spawnable? probe-responsive? credential present?) per [[wiki/specs/cli]] §"dome doctor". `dome serve`'s host-open path carries the runtime complement (product-review-3 Task 17): when `dome.agent` is enabled with no model provider configured or injected, the host logs a one-line `agent.no-model-provider` warning once per host start, regardless of `--quiet` — the shipped default ships the bundle **enabled** ([[wiki/specs/cli]] §"`dome init`"), so a starved brain is loud automatically rather than requiring an explicit `dome doctor` run to notice. (`dome sync`'s one-shot open goes through the public `openVault` wrapper, which does not surface this operator-internal field — same scope as the pre-existing pruned-quarantine-state line, both reserved for `dome serve`.) The per-processor silent early-exit this replaces (`ctx.modelInvoke?.step` absent → the processor returns zero effects) still applies underneath — the loud warning is a host-level signal layered on top, not a change to the per-run degradation itself. Structured output uses `ctx.modelInvoke.structured({ schemaName, parse })`; parse failures become nominal runtime-created `model.output.*` run errors rather than generic `processor.threw`. Processor-thrown or provider-thrown objects cannot opt into model execution codes by shape. Model-capable PatchEffects are additionally required to carry SourceRefs at the executor boundary so LLM-written vault changes are evidence-backed before capability routing.
 
 ### `external`
 
@@ -149,11 +144,19 @@ Permits emitting `QuarantineRecoveryEffect` for the listed actions. Today the on
 
 ### `run.read`
 
-Permits reading orphaned running rows through `ctx.operational.orphanRuns()`.
-The runtime exposes this query view only to non-adoption processors whose
-declaration and vault grant both include `run.read` with visibility of
-`status: "running"`. This is a read power, not a mutation power: processors
-recover stuck runs only by emitting `RunRecoveryEffect`.
+Permits reading run-ledger rows through two accessors: `ctx.operational.orphanRuns()`
+(running rows old enough to be considered stuck) and `ctx.operational.runs(filter?)`
+(any run row — `id`, `processorId`, `status`, `costUsd`, `durationMs`,
+`effectCount` (derived `effectHashes.length`; the raw sha256s stay internal to
+the ledger — `0` on a `succeeded` run means a genuine no-op), `startedAt`,
+`finishedAt`, etc. — optionally bounded by `{ startedSince: string /* ISO */ }`).
+The runtime exposes both only to non-adoption processors whose declaration and
+vault grant both include `run.read`; the effective `statuses` scope (declared ∩
+granted) both filters `runs()`'s result rows and, for `orphanRuns()`, must
+include `status: "running"` or the accessor returns nothing. `runs()` feeds
+cost/outcome reporting (e.g. a weekly report-card processor) that needs run
+history beyond the orphan-detection case. This is a read power, not a mutation
+power: processors recover stuck runs only by emitting `RunRecoveryEffect`.
 
 ### `run.recover`
 
@@ -167,7 +170,15 @@ arbitrary run-ledger mutation.
 Permits reading open/resolved question rows through `ctx.operational.questions(filter?)` —
 the same operational-view seam as `outbox.read` / `quarantine.read` / `run.read`,
 extended to the question store (id, text, options, `automationPolicy`, risk,
-`recommendedAnswer`, `askedAt`, `processorId`, `sourceRefs`). This is deliberately
+`recommendedAnswer`, `askedAt`, `answeredAt`, `answer`, `processorId`,
+`sourceRefs`, and a `state: "open" | "resolved"` discriminant). `filter` accepts
+either `{ resolved?: boolean }` (the original open/resolved/all split) or
+`{ resolvedSince: string /* ISO */ }`, which returns the open backlog *plus*
+rows resolved at-or-after that timestamp in one read — the shape a weekly
+report-card processor needs (current backlog + what got resolved this window)
+without a second query. `state` is additive on every row regardless of which
+filter form is used, so callers that only ever pass `{ resolved: false }`
+(e.g. `dome.daily.compose-blocks`) see no shape change. This is deliberately
 *not* a projection read: garden-phase processors never gain `ctx.projection`
 access to facts through this capability, keeping garden-writes-facts and
 garden-reads-facts loops apart. Enforcement happens at view-construction time —
@@ -205,8 +216,6 @@ processors:
         paths:
           - "wiki/**/*.md"
           - "notes/**/*.md"
-          - "index.md"
-          - "log.md"
           - "inbox/processed/*.md"
           - "inbox/raw/*.md"
       - kind: model.invoke
@@ -225,45 +234,43 @@ The schema is validated by Zod at bundle load. A capability with an unknown `kin
 
 ## Vault grants
 
-The vault's `<vault>/.dome/config.yaml` grants capabilities to specific extensions:
+The vault's `<vault>/.dome/config.yaml` grants capabilities to specific extensions. A fresh `dome init` writes the **`grants: standard` preset** — one top-level line — instead of an enumerated grant block per bundle:
+
+```yaml
+grants: standard
+extensions:
+  dome.lint:
+    enabled: true
+  dome.markdown:
+    enabled: true
+  dome.daily:
+    enabled: true
+  dome.agent:
+    enabled: true
+  dome.sources:
+    enabled: true
+    config:
+      subscriptions:
+        calendar:
+          enabled: false
+          schedule: "10 5 * * *"
+          output_path: "sources/calendar/{date}.md"
+          command: ["sh", ".dome/bin/fetch-calendar.sh"]
+```
+
+### The `grants: standard` preset
+
+`grants: standard` (a string literal; `standard` is the only accepted value for now, and any other value is rejected loudly) expands **at load time** to the union of every *enabled* first-party bundle's shipped default grants — the same bundle grant + per-processor replacement grants the SDK ships in `src/first-party-defaults.ts`. Expansion is entirely loader-level: the broker only ever sees concrete `Capability` records, exactly as if the grants had been enumerated by hand. It replaced the ~40 lines of grant YAML a fresh vault used to carry (a first-week wall for second users).
+
+Precedence is **fine-grained-wins-entirely, no merging within a bundle**:
+
+- A bundle carrying **any** explicit `grant:`, `grants:`, or `processors:` block opts out of the preset *for that bundle entirely* and uses only its own config. The preset is not merged in — an explicit block beside `grants: standard` is how one bundle overrides while the rest keep the defaults.
+- A bundle with no explicit block takes its shipped first-party defaults (if it is a first-party bundle) or **nothing** (third-party / unknown enabled bundles have no shipped defaults; they must carry an explicit block to receive any capability).
+
+The enumerated per-bundle form below stays valid config and is the **escape hatch** — write it when a bundle needs grants that differ from the shipped default:
 
 ```yaml
 extensions:
-  dome.agent:
-    enabled: true
-    grant:
-      read:
-        - wiki/**/*.md
-        - notes/**/*.md
-        - inbox/**/*.md
-        - index.md
-        - log.md
-      patch.auto:
-        - wiki/**/*.md
-        - notes/**/*.md
-        - index.md
-        - log.md
-        - inbox/processed/*.md
-        - inbox/raw/*.md
-      model.invoke:
-        maxDailyCostUsd: 15
-      question.ask: true
-
-  dome.daily:
-    enabled: true
-    config:
-      daily_path: notes/{date}.md
-    grant:
-      read:
-        - wiki/**/*.md
-        - notes/*.md
-      patch.auto:
-        - wiki/**/*.md
-        - notes/*.md
-      graph.write:
-        - dome.daily.*
-      question.ask: true
-
   dome.markdown:
     enabled: true
     grant:
@@ -289,7 +296,7 @@ extensions:
         - network.post
 ```
 
-With a config file present, `extensions.<bundle>.enabled: true` is the activation boundary: omitted bundles and `enabled: false` bundles are not registered into the runtime. The broker then enforces the **intersection** of declared capabilities (in `manifest.yaml`) and granted capabilities (in `config.yaml`) for active processors. A processor that declared `patch.auto: ["**"]` but was granted only `patch.auto: ["wiki/generated/**"]` has effective auto-patch reach of `wiki/generated/**` only.
+With a config file present, `extensions.<bundle>.enabled: true` is the activation boundary: omitted bundles and `enabled: false` bundles are not registered into the runtime. The broker then enforces the **intersection** of declared capabilities (in `manifest.yaml`) and granted capabilities (whether preset-expanded or enumerated in `config.yaml`) for active processors. A processor that declared `patch.auto: ["**"]` but was granted only `patch.auto: ["wiki/generated/**"]` has effective auto-patch reach of `wiki/generated/**` only.
 
 Processor-specific grants live under `extensions.<bundle>.processors.<processor-id>.grant` (or `grants`). A processor override is a **replacement** for the bundle grant, not an additive patch. Processors without an override inherit the bundle grant. This lets one bundle hold processors with different natural scopes: for example, a wikilink resolver may need to read all markdown to resolve targets while a frontmatter normalizer in the same bundle may be granted patches only under `wiki/**/*.md`.
 
@@ -302,7 +309,7 @@ it catches cases where an enabled processor would later skip, degrade, or
 block during capability enforcement because the bundle was installed without
 the matching grant kind.
 
-Shipped-default grants (the ones a fresh `dome init` writes): default-on first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches for frontmatter normalization, high-confidence existing-page wikilink repair, explicit source-backed concept/entity stub creation, and stale managed `updated:` metadata refresh, and `question.ask` for ambiguous-link questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.daily` is granted `wiki/**/*.md` plus root `notes/*.md` reads, matching auto-patches for daily creation, daily open-loop surfacing, and accepted follow-up answers, `dome.daily.*` fact writes, and `question.ask`; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted broad read for failed-row source provenance, failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` is granted markdown reads for its adopted-state report. `dome.agent` is shipped with an opt-in disabled grant skeleton because it needs a vault-configured `ModelProvider`; when enabled, it also receives `question.ask`, broad wiki/notes/inbox reads, matching `patch.auto` for wiki/notes/index/log/inbox-processed/inbox-raw paths, and `model.invoke` so the ingest agent can integrate raw captures and the stale-check can inspect active inbox buckets. The `patch.auto` grant covers `notes/**` by design — the capability grant is the single write boundary, and `raw/**` is explicitly absent (see [[wiki/invariants/RAW_IS_IMMUTABLE]]). Third-party bundles default to inactive until the user explicitly opts in.
+Shipped-default grants (the ones the `grants: standard` preset expands to, and what a fresh `dome init` therefore gets): default-on first-party bundles receive their declared capabilities. `dome.markdown` is granted markdown/image reads, markdown auto-patches for frontmatter normalization, high-confidence existing-page wikilink repair, explicit source-backed concept/entity stub creation, and stale managed `updated:` metadata refresh, and `question.ask` for ambiguous-link questions; `dome.graph` is granted markdown reads and `dome.graph.*` fact writes; `dome.daily` is granted `wiki/**/*.md` plus root `notes/*.md` reads, matching auto-patches for daily creation, daily open-loop surfacing, and accepted follow-up answers, `dome.daily.*` fact writes, and `question.ask`; `dome.search` is granted markdown reads and `search.write` for `**/*.md`; `dome.health` is granted broad read for failed-row source provenance, failed-row `outbox.read`, `outbox.recover`, `quarantine.read`, `quarantine.recover`, running-row `run.read`, `run.recover`, and `question.ask`; `dome.lint` is granted markdown reads for its adopted-state report. `dome.agent` ships enabled with a populated grant block and a $2/day shipped `model.invoke` cap (the cost guardrail that replaced the old ships-disabled posture); it needs a vault-configured `ModelProvider` to act — enabled-without-provider is surfaced loudly at host start (`agent.no-model-provider`), never a silent no-op. It also receives `question.ask`, broad wiki/notes/inbox reads (`index.md` and `log.md` included, read-only), matching `patch.auto` for wiki/notes/inbox-processed/inbox-raw paths, and `model.invoke` so the ingest agent can integrate raw captures and the stale-check can inspect active inbox buckets. The `patch.auto` grant covers `notes/**` by design — the capability grant is the single write boundary, and `raw/**` is explicitly absent (see [[wiki/invariants/RAW_IS_IMMUTABLE]]). Third-party bundles default to inactive until the user explicitly opts in.
 
 `tests/integration/default-vault-config.test.ts` keeps broad shipped-default
 path grants in lockstep. Any new default path grant over `**`, `**/*`, or
@@ -335,13 +342,13 @@ Called exactly once at the engine effect-routing boundary before an effect can m
 
 Every effect attempt with a capability dimension records a `CapabilityUse` row in the run ledger's `RunRecord` (per [[wiki/specs/run-ledger]] §"CapabilityUse"), including allowed, downgraded, and denied attempts. This is the audit surface for "what did this processor try to reach" and the input to per-extension cost / quota tracking.
 
-## Why seventeen tiers, not more
+## Why sixteen tiers, not more
 
-The seventeen cover every effect kind and the non-effect runtime powers (`model.invoke`, operational outbox reads, operational quarantine reads, operational run reads, and operational question reads). Three properties drive the closed set:
+The sixteen cover every effect kind and the non-effect runtime powers (`model.invoke`, operational outbox reads, operational quarantine reads, operational run reads, and operational question reads). Three properties drive the closed set:
 
-1. **Effect/runtime-power coverage.** Each effect kind in [[wiki/specs/effects]] has a corresponding required capability per [[wiki/matrices/effect-x-capability]], and non-effect runtime powers (`model.invoke`, `outbox.read`, `quarantine.read`, `run.read`, `questions.read`) have explicit context gates. Adding capabilities beyond the seventeen would mean inventing effects or runtime powers without a routing target.
+1. **Effect/runtime-power coverage.** Each effect kind in [[wiki/specs/effects]] has a corresponding required capability per [[wiki/matrices/effect-x-capability]], and non-effect runtime powers (`model.invoke`, `outbox.read`, `quarantine.read`, `run.read`, `questions.read`) have explicit context gates. Adding capabilities beyond the sixteen would mean inventing effects or runtime powers without a routing target.
 2. **Trust dimensions are about effect power, not source.** Distinguishing "trusted plugin" from "untrusted plugin" via tier doesn't help; what matters is what the plugin can *do*. `external: "calendar.write"` is the trust dimension; the plugin is whoever holds it.
-3. **The enforcement code stays simple.** Seventeen cases across effect enforcement and context gating are auditable. A more granular set would push enforcement into per-effect-kind validators, dispersing the trust contract.
+3. **The enforcement code stays simple.** Sixteen cases across effect enforcement and context gating are auditable. A more granular set would push enforcement into per-effect-kind validators, dispersing the trust contract.
 
 ## Related
 

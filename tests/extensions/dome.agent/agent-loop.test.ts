@@ -89,7 +89,7 @@ describe("runAgentLoop", () => {
   });
 
   test("an injected shared state accumulates edits across successive runs", async () => {
-    const shared: AgentRunState = { edits: new Map(), questions: [] };
+    const shared: AgentRunState = { edits: new Map(), questions: [], integrityFlags: [] };
     const writeOnce = (path: string, content: string): ModelStepFn => {
       let n = 0;
       return async () => {

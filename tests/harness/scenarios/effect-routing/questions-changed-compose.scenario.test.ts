@@ -91,7 +91,7 @@ extensions:
         - "sources/slack/*.md"
         - "meta/sweep-ledger.md"
       patch.auto: ["wiki/dailies/*.md", "notes/*.md"]
-      graph.write: ["dome.daily.*", "dome.attention.*"]
+      graph.write: ["dome.daily.*"]
       question.ask: true
       questions.read: true
   test.compose-question:

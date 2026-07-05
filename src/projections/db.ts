@@ -217,24 +217,7 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + "answered_by TEXT"
     + ")",
 
-  // 6. scheduled_jobs — JobEffect rows for jobs with `runAfter` set.
-  //    Status transitions: pending -> running -> succeeded | failed.
-  "CREATE TABLE IF NOT EXISTS scheduled_jobs ("
-    + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-    + "processor_id TEXT NOT NULL,"
-    + "input_json TEXT NOT NULL,"
-    + "run_after TEXT NOT NULL,"
-    + "idempotency_key TEXT NOT NULL UNIQUE,"
-    + "max_attempts INTEGER NOT NULL DEFAULT 3,"
-    + "attempts INTEGER NOT NULL DEFAULT 0,"
-    + "status TEXT NOT NULL,"
-    + "enqueued_at TEXT NOT NULL,"
-    + "claimed_at TEXT,"
-    + "claim_expires_at TEXT,"
-    + "completed_at TEXT"
-    + ")",
-
-  // 7. schedule_cursors — last-fire / next-fire for cron-driven processors.
+  // 6. schedule_cursors — last-fire / next-fire for cron-driven processors.
   //    Replaces v0.5's `.dome/state/scheduled.json` JSON file.
   "CREATE TABLE IF NOT EXISTS schedule_cursors ("
     + "processor_id TEXT NOT NULL PRIMARY KEY,"
@@ -252,7 +235,6 @@ const DDL: ReadonlyArray<string> = Object.freeze([
 // underlying shadow tables automatically.
 const DROP_DDL: ReadonlyArray<string> = Object.freeze([
   "DROP TABLE IF EXISTS schedule_cursors",
-  "DROP TABLE IF EXISTS scheduled_jobs",
   "DROP TABLE IF EXISTS questions",
   "DROP TABLE IF EXISTS diagnostics",
   "DROP TABLE IF EXISTS fts_documents",
@@ -329,23 +311,6 @@ const REQUIRED_TABLE_COLUMNS: ReadonlyArray<SqliteTableShape> = Object.freeze([
       "answered_at",
       "answer",
       "answered_by",
-    ],
-  },
-  {
-    table: "scheduled_jobs",
-    columns: [
-      "id",
-      "processor_id",
-      "input_json",
-      "run_after",
-      "idempotency_key",
-      "max_attempts",
-      "attempts",
-      "status",
-      "enqueued_at",
-      "claimed_at",
-      "claim_expires_at",
-      "completed_at",
     ],
   },
   {
@@ -718,10 +683,10 @@ export async function openProjectionDb(
 
 /**
  * Wipe and recreate every table in projection.db on an already-open handle.
- * Most rows are rebuildable projections. `scheduled_jobs` and
- * `schedule_cursors` are volatile operational rows that intentionally reset
- * with the projection cache; durable answers, run history, outbox rows, and
- * quarantine state live outside this database.
+ * Most rows are rebuildable projections. `schedule_cursors` is a volatile
+ * operational row set that intentionally resets with the projection cache;
+ * durable answers, run history, outbox rows, and quarantine state live
+ * outside this database.
  */
 export function resetProjectionDb(db: ProjectionDb): void {
   applyDdlInTransaction(db.raw, DROP_DDL);

@@ -126,10 +126,13 @@ Optional adopted-state views:
 - \`dome query <text>\` - search adopted markdown and related extracted facts.
 - \`dome export-context <topic>\` - portable source-backed context packet for
   another Claude session or review.
-- \`dome run today\` / \`dome run prep\` / \`dome run agenda-with <person-or-topic>\` -
-  deterministic daily / planning / meeting-prep views, invoked through the
-  \`dome run <name>\` dispatcher (they are view processors, not standalone
-  top-level commands).
+- \`dome prep [--date <yyyy-mm-dd>]\` - deterministic source-backed planning
+  packet for a day.
+- \`dome agenda-with <person-or-topic>\` - deterministic open tasks, follow-ups,
+  and context filtered to a person or topic.
+- \`dome stale-claims\` - claims whose \`*(as of)*\` date is older than the
+  staleness horizon (default 120 days).
+- \`dome orphan-pages\` - markdown pages with no incoming wikilinks.
 
 ## Read-first context
 
@@ -146,8 +149,10 @@ file hunting:
   prepared in markdown by Dome's background loop.
 
 Treat these as read-first surfaces, not mandatory ceremony. If a packet misses
-obvious context or returns noisy results, note the miss in the relevant markdown
-or tell the user; that feedback is V1 dogfood evidence.
+obvious context or returns noisy results, report it with
+\`dome query "<text>" --miss "what was missing"\` (or the same \`--miss\` flag on
+\`dome export-context\`) instead of just telling the user — that log is V1
+dogfood evidence.
 
 Advanced/debug commands:
 

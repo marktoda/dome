@@ -360,6 +360,36 @@ export function openLoopStableId(input: {
   return `dome.daily.open-loop:${hash}`;
 }
 
+// The body-hash fallback is always exactly a 24-lowercase-hex-char slice of a
+// sha256 digest (see `openLoopStableId` above) — never `dome.daily.stamp-
+// block-id`'s own anchor shape (`t` + 8 hex = 9 chars; `action-extraction.ts`
+// `taskAnchorId`), and vanishingly unlikely to collide with a hand-authored
+// `^anchor` (block-anchor.ts's grammar allows any alphanumeric-dash id, of
+// any length). This lets `openLoopAnchorFromStableId` recover a genuine
+// settle-able anchor from a stableId without re-plumbing the raw anchor
+// through every fact/sourceRef that carries one.
+const OPEN_LOOP_HASH_FALLBACK_RE = /^[0-9a-f]{24}$/;
+
+/**
+ * Recover the raw `^block-anchor` id from an open-loop `stableId`
+ * (`dome.daily.open-loop:<anchor-or-hash>`), when the identity was built
+ * from a stamped anchor rather than the transient body-hash fallback
+ * (`taskStableId`'s two branches). Returns `undefined` for non-open-loop
+ * stableIds and for the hash-fallback shape — that identity does not name a
+ * real line in the markdown, so `performSettle`'s `^anchor` scan could never
+ * find it (docs/wiki/specs/task-lifecycle.md §"Block-anchor identity").
+ * Never invents an id: absence here means "not yet anchored", full stop.
+ */
+export function openLoopAnchorFromStableId(
+  stableId: string | undefined,
+): string | undefined {
+  if (stableId === undefined || !stableId.startsWith("dome.daily.open-loop:")) {
+    return undefined;
+  }
+  const suffix = stableId.slice("dome.daily.open-loop:".length);
+  return OPEN_LOOP_HASH_FALLBACK_RE.test(suffix) ? undefined : suffix;
+}
+
 export function rankDailyOpenLoopSurfaceItems(
   items: ReadonlyArray<DailyOpenLoopCandidate>,
   limit = 12,

@@ -2,7 +2,7 @@
 //
 // The Effect classifier is the single place that knows how Effect kinds map to
 // semantic categories. The `satisfies Record<Effect["kind"], …>` tables here
-// (and inside effect-classify.ts) are the load-bearing guard: adding a 12th
+// (and inside effect-classify.ts) are the load-bearing guard: adding an 11th
 // Effect kind fails to compile in both the map and this test until it is
 // consciously classified.
 
@@ -13,7 +13,6 @@ import {
   type Effect,
   externalActionEffect,
   factEffect,
-  jobEffect,
   outboxRecoveryEffect,
   patchEffect,
   quarantineRecoveryEffect,
@@ -62,7 +61,6 @@ const byKind: Record<Effect["kind"], Effect> = {
     sourceRefs: refs,
     idempotencyKey: "q-1",
   }),
-  job: jobEffect({ processorId: "dome.test", input: null, idempotencyKey: "j-1" }),
   external: externalActionEffect({
     capability: "calendar.write",
     idempotencyKey: "e-1",
@@ -139,7 +137,6 @@ describe("isProjectionEffect", () => {
     fact: true,
     "search-document": true,
     question: true,
-    job: false,
     external: false,
     "outbox-recovery": false,
     "quarantine-recovery": false,

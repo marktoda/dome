@@ -148,11 +148,12 @@ export type InspectionScope =
 /**
  * The closed set of engine-synthesized signals. The engine computes signals
  * once per Proposal from `compileRange(base, candidate)` and routes them to
- * subscribing processors — with one exception: `questions.changed` is
- * store-change-derived, never minted by compileRange, and is dispatched on
- * its own operational channel (`src/engine/operational/questions-changed.ts`)
- * after a tick or resolve changes the open-question set. See processors.md
- * §"Triggers and signals".
+ * subscribing processors — with three exceptions: `questions.changed`,
+ * `outbox.changed`, and `quarantine.changed` are store-change-derived, never
+ * minted by compileRange, and are dispatched on their own operational channel
+ * (`src/engine/operational/questions-changed.ts` +
+ * `src/engine/operational/store-changed.ts`) after a tick or resolve changes
+ * the corresponding store. See processors.md §"Triggers and signals".
  */
 export type Signal =
   | "file.created"
@@ -163,7 +164,9 @@ export type Signal =
   | "region.changed"
   | "link.added"
   | "link.removed"
-  | "questions.changed";
+  | "questions.changed"
+  | "outbox.changed"
+  | "quarantine.changed";
 
 // ----- Trigger --------------------------------------------------------------
 
@@ -222,7 +225,6 @@ export type Trigger =
  *   - `graph.write`   — emit FactEffect under named namespaces.
  *   - `search.write`  — emit SearchDocumentEffect for indexed markdown paths.
  *   - `question.ask`  — emit QuestionEffect.
- *   - `job.enqueue`   — emit JobEffect targeting allowed processors.
  *   - `model.invoke`  — call `ctx.modelInvoke`; never granted to adoption phase.
  *   - `external`      — emit ExternalActionEffect with the named capability.
  *   - `outbox.read`   — read operational outbox rows via `ctx.operational`.
@@ -259,10 +261,6 @@ export type SearchWriteCapability = {
 };
 export type QuestionAskCapability = {
   readonly kind: "question.ask";
-};
-export type JobEnqueueCapability = {
-  readonly kind: "job.enqueue";
-  readonly processors: ReadonlyArray<string>;
 };
 export type ModelInvokeCapability = {
   readonly kind: "model.invoke";
@@ -322,7 +320,6 @@ export type Capability =
   | GraphWriteCapability
   | SearchWriteCapability
   | QuestionAskCapability
-  | JobEnqueueCapability
   | ModelInvokeCapability
   | ExternalCapability
   | OutboxReadCapability
@@ -558,6 +555,16 @@ export type OperationalQuarantineRow = {
  * store just because they hold graph/facts access. Mirrors `ProjectionQuestion`'s
  * flattening convention (`QuestionEffect &` the durable row metadata) plus the
  * `runId` that `QuestionRecord` (src/projections/questions.ts) carries.
+ *
+ * `state` is a convenience discriminant derived from `answeredAt`
+ * (`null` → `"open"`, otherwise `"resolved"`) — additive, not a
+ * restructuring: every row keeps the same flat field set regardless of
+ * state, so existing `{ resolved: false }` / `{ resolved: true }` callers
+ * (e.g. `dome.daily.compose-blocks`) stay source-compatible. It exists so
+ * `{ resolvedSince }` callers (docs/wiki/specs/capabilities.md
+ * §"questions.read") can distinguish the open backlog from the
+ * resolved-in-window rows in one mixed result set without re-deriving the
+ * check themselves.
  */
 export type OperationalQuestionRow = QuestionEffect & {
   readonly id: number;
@@ -567,6 +574,7 @@ export type OperationalQuestionRow = QuestionEffect & {
   readonly askedAt: string;
   readonly answeredAt: string | null;
   readonly answer: string | null;
+  readonly state: "open" | "resolved";
 };
 
 export type OperationalRunRow = {
@@ -580,8 +588,18 @@ export type OperationalRunRow = {
   readonly status: OperationalRunStatus;
   readonly costUsd: number | null;
   readonly durationMs: number | null;
+  /**
+   * How many effects the run emitted — derived from the ledger's per-run
+   * `effectHashes` (`length`; the raw sha256s stay internal to the ledger, a
+   * deliberately narrower exposure). `0` on a `succeeded` run means a genuine
+   * no-op (the processor ran and found nothing to do) — the discriminator
+   * outcome reporting needs (e.g. the weekly report card's productive-outcome
+   * count). Always `0` for runs that never reached `succeeded`
+   * (`markSucceeded` is the only writer of effect hashes).
+   */
+  readonly effectCount: number;
   readonly error: string | null;
-  readonly triggerKind: "signal" | "path" | "schedule" | "answer" | "command" | "job";
+  readonly triggerKind: "signal" | "path" | "schedule" | "answer" | "command";
   readonly startedAt: string;
   readonly finishedAt: string | null;
 };
@@ -606,11 +624,28 @@ export type OperationalQueryView = {
     readonly runningOlderThanMs?: number;
   }) => ReadonlyArray<OperationalRunRow>;
   /**
+   * Read run-ledger rows of any status (not just orphaned ones), gated by
+   * `run.read` (declared ∩ granted) — see docs/wiki/specs/capabilities.md
+   * §"run.read". Rows are filtered to the statuses the processor's
+   * declaration and grant both allow, same enforcement as `orphanRuns`.
+   * Feeds cost/outcome reporting (e.g. a weekly report-card processor) that
+   * needs run history beyond the orphan-detection case.
+   */
+  readonly runs: (filter?: {
+    /** ISO-8601 lower bound on `startedAt`. */
+    readonly startedSince?: string;
+  }) => ReadonlyArray<OperationalRunRow>;
+  /**
    * Read open/resolved question rows, gated by `questions.read`
    * (declared ∩ granted) — see docs/wiki/specs/capabilities.md §"questions.read".
+   * `resolvedSince` (ISO-8601) widens the result to the open backlog plus
+   * rows resolved at-or-after that timestamp, each tagged by `state`; pass
+   * `resolved` OR `resolvedSince`, not both — `resolvedSince` wins if both
+   * are given.
    */
   readonly questions: (filter?: {
     readonly resolved?: boolean;
+    readonly resolvedSince?: string;
   }) => ReadonlyArray<OperationalQuestionRow>;
 };
 
@@ -769,6 +804,8 @@ export const SignalSchema = z.enum([
   "link.added",
   "link.removed",
   "questions.changed",
+  "outbox.changed",
+  "quarantine.changed",
 ]);
 
 export const SignalTriggerSchema = z
@@ -864,13 +901,6 @@ export const QuestionAskCapabilitySchema = z
   })
   .strict();
 
-export const JobEnqueueCapabilitySchema = z
-  .object({
-    kind: z.literal("job.enqueue"),
-    processors: z.array(z.string().min(1)),
-  })
-  .strict();
-
 export const ModelInvokeCapabilitySchema = z
   .object({
     kind: z.literal("model.invoke"),
@@ -959,7 +989,6 @@ export const CapabilitySchema = z.discriminatedUnion("kind", [
   GraphWriteCapabilitySchema,
   SearchWriteCapabilitySchema,
   QuestionAskCapabilitySchema,
-  JobEnqueueCapabilitySchema,
   ModelInvokeCapabilitySchema,
   ExternalCapabilitySchema,
   OutboxReadCapabilitySchema,

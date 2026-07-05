@@ -11,7 +11,7 @@ import {
   type QueryResultData,
   type QuerySourceRef,
 } from "../../surface/query-view";
-import { printViewCommandError } from "./view-shared";
+import { printMissOutcome, printViewCommandError } from "./view-shared";
 import { runCliStructuredView } from "../structured-view-command";
 import { formatCommand } from "../human-output";
 import {
@@ -35,6 +35,8 @@ export type QueryCommandOptions = {
   readonly limit?: number | undefined;
   readonly category?: string | undefined;
   readonly type?: string | undefined;
+  /** `--miss [note]`: Commander's optional-value shape — see `reportMissFromCliFlag`. */
+  readonly miss?: string | boolean | undefined;
 };
 
 export async function runQuery(
@@ -52,7 +54,7 @@ export async function runQuery(
     return 64;
   }
 
-  return runCliStructuredView({
+  const exitCode = await runCliStructuredView({
     commandLabel: "dome query",
     entry: FIRST_PARTY_VIEWS.query,
     commandArgs: Object.freeze({
@@ -69,6 +71,19 @@ export async function runQuery(
     failedError: "query-failed",
     renderHuman: (data) => formatQueryResult(data, resolveCaps(), vaultPath),
   });
+
+  // After printing results: --miss records this query as a retrieval miss
+  // (docs/wiki/specs/preferences.md-style append-only log at
+  // meta/retrieval-misses.md). Side-channel message on stderr so stdout
+  // stays the query's own output/JSON, unpolluted.
+  await printMissOutcome({
+    commandLabel: "dome query",
+    vault: vaultPath,
+    query: text,
+    flag: options.miss,
+  });
+
+  return exitCode;
 }
 
 export function formatQueryResult(data: QueryResultData, caps: Caps, vault?: string): string {

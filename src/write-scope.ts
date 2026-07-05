@@ -2,9 +2,9 @@
 //
 // Path-scoped write authorization for agent write paths. A configurable layer
 // ON TOP OF the unconditional structural floors (`.dome/`, RAW, .md-only) that
-// src/agent/write.ts enforces directly. Reuses the engine's single `globMatch`
+// src/assistant/write.ts enforces directly. Reuses the engine's single `globMatch`
 // matcher — no parallel glob language. Designed as the shared chokepoint both
-// the hosted agent (src/agent/write.ts) and, later, the in-engine agents can
+// the hosted assistant (src/assistant/write.ts) and, later, the in-engine agents can
 // consult (review §3.1 / §4.2).
 
 import { globMatch } from "./engine/core/glob-cache";

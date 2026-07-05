@@ -1,6 +1,6 @@
 // Proposal: the only thing that mutates trusted state. Every write — human,
-// agent, garden processor, scheduled job — becomes a Proposal that the engine
-// routes through the adoption loop. The Proposal abstraction is the seam that
+// agent, garden processor — becomes a Proposal that the engine routes through
+// the adoption loop. The Proposal abstraction is the seam that
 // makes local-eventual and hosted-protected mode the same loop with different
 // cursors.
 //

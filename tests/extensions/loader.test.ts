@@ -1361,9 +1361,8 @@ describe("loadBundles — manifest doctor grant entries", () => {
         bundle.doctorGrantEntries.map((req) => req.processorId),
       ),
     );
-    // The seven entries that moved out of FIRST_PARTY_GRANT_ENTRY_REQUIREMENTS.
+    // The entries that moved out of FIRST_PARTY_GRANT_ENTRY_REQUIREMENTS.
     for (const processorId of [
-      "dome.daily.attention-discount",
       "dome.agent.brief",
       "dome.agent.preference-signals",
       "dome.agent.preference-promotion-answer",

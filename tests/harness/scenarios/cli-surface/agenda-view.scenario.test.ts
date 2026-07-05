@@ -215,6 +215,90 @@ scenario(
   },
 );
 
+// `dome agenda-with` (Task 14) is the dedicated top-level verb over the same
+// `dome.daily.agenda-with` view processor — previously reachable only via
+// the hidden `dome run agenda-with` dispatcher. `--json` emits the bare
+// structured payload (no `{name,kind,schema,data}` envelope), matching its
+// `dome query` / `dome export-context` siblings.
+scenario(
+  {
+    name: "cli-surface: dome agenda-with (dedicated verb) dispatches to dome.daily.agenda-with",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "fact" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+    ],
+    harness: {
+      clock: new TestClock("2026-01-05T15:00:00.000Z"),
+      bundles: ["dome.daily"],
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/dailies/2026-01-05.md": [
+          "---",
+          "type: daily",
+          "recurrence: 2026-01-05",
+          "---",
+          "",
+          "# 2026-01-05",
+          "",
+          "- [ ] Ask Cy about the launch",
+          "",
+        ].join("\n"),
+      },
+      message: "add dedicated-verb agenda task",
+    });
+    const sync = await h.tick();
+    expect(sync.adopted).toBe(true);
+
+    // Missing person/topic is a usage error (64) before the vault opens.
+    const missing = await h.runCli(["agenda-with", "--date", "2026-01-05"]);
+    expect(missing.exitCode).toBe(64);
+
+    // Default text output is the rendered markdown packet.
+    const text = await h.runCli([
+      "agenda-with",
+      "Cy",
+      "--date",
+      "2026-01-05",
+    ]);
+    expect(text.exitCode).toBe(0);
+    expect(text.stderr).toBe("");
+    expect(text.stdout).toContain("# Dome Agenda: Cy");
+    expect(text.stdout).toContain("Ask Cy about the launch");
+    expect(text.stdout).not.toMatch(/^\s*[{[]/); // not a JSON envelope
+
+    // `--json` emits the bare `dome.daily.agenda-with/v1` payload.
+    const json = await h.runCli([
+      "agenda-with",
+      "Cy",
+      "--date",
+      "2026-01-05",
+      "--json",
+    ]);
+    expect(json.exitCode).toBe(0);
+    expect(json.stderr).toBe("");
+    const payload = JSON.parse(json.stdout) as {
+      readonly schema: string;
+      readonly topic: string;
+      readonly markdown: string;
+    };
+    expect(payload.schema).toBe("dome.daily.agenda-with/v1");
+    expect(payload.topic).toBe("Cy");
+    expect(payload.markdown).toContain("Ask Cy about the launch");
+  },
+);
+
 function structuredData(stdout: string): unknown {
   const envelope = JSON.parse(stdout) as { readonly data?: unknown };
   return envelope.data;

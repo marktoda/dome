@@ -46,7 +46,7 @@ test("passes through the producer's extra envelope fields (consumed-subset contr
   expect(r.success).toBe(true);
 });
 
-test("validates priority and attention, and still strips unknown extras", () => {
+test("validates priority and still strips unknown extras", () => {
   const parsed = todayPayloadSchema.parse({
     date: "2026-06-23",
     counts: { openTasks: 1, followups: 0, questions: 0 },
@@ -57,23 +57,13 @@ test("validates priority and attention, and still strips unknown extras", () => 
         line: 1,
         dueDate: null,
         priority: "high",
-        attention: { discount: 0.1, impressions: 4, lastShown: "2026-06-22" },
         zebra: 1,
       },
     ],
     followups: [], questions: [], brief: null, calendar: null, hero: null,
   });
   expect(parsed.openTasks[0]!.priority).toBe("high");
-  expect(parsed.openTasks[0]!.attention).toEqual({ discount: 0.1, impressions: 4, lastShown: "2026-06-22" });
   expect((parsed.openTasks[0] as Record<string, unknown>).zebra).toBeUndefined(); // unknown extra stripped
-});
-
-test("rejects a half-formed attention object (consumed field, not an extra)", () => {
-  const r = todayPayloadSchema.safeParse({
-    ...(valid as Record<string, unknown>),
-    openTasks: [{ text: "a", path: "p", attention: { discount: 0.1 } }],
-  });
-  expect(r.success).toBe(false);
 });
 
 test("rejects a payload missing a required consumed field", () => {
@@ -88,4 +78,24 @@ test("tolerates optional/nullable task fields (line/dueDate absent)", () => {
     openTasks: [{ text: "no due date", path: "p" }],
   });
   expect(r.success).toBe(true);
+});
+
+test("blockId is an optional (compatible-widening) task field", () => {
+  const r = todayPayloadSchema.safeParse({
+    ...(valid as Record<string, unknown>),
+    openTasks: [{ text: "anchored task", path: "p", blockId: "t1a2b3c4" }],
+  });
+  expect(r.success).toBe(true);
+  if (!r.success) return;
+  expect(r.data.openTasks[0]!.blockId).toBe("t1a2b3c4");
+
+  // A task with no blockId (not yet anchored) still validates — the field is
+  // fully optional, never synthesized by the schema.
+  const withoutBlockId = todayPayloadSchema.safeParse({
+    ...(valid as Record<string, unknown>),
+    openTasks: [{ text: "unanchored task", path: "p" }],
+  });
+  expect(withoutBlockId.success).toBe(true);
+  if (!withoutBlockId.success) return;
+  expect(withoutBlockId.data.openTasks[0]!.blockId).toBeUndefined();
 });

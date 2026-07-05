@@ -77,17 +77,25 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 
-import { isMap, parseDocument, type Document, type YAMLMap } from "yaml";
+import { isMap, isSeq, parseDocument, type Document, type YAMLMap } from "yaml";
 
 import { commit, currentSha, initRepo, isGitRepo } from "../../git";
 import {
+  type DefaultGrantValue,
   type DefaultModelProvider,
   type DefaultSourceKind,
+  type FirstPartyExtensionDefault,
+  FIRST_PARTY_EXTENSION_DEFAULTS,
   defaultModelProviderConfig,
   defaultConfigRecord,
   defaultConfigYaml,
   defaultSourceSubscription,
 } from "../default-vault-config";
+import { globMatch } from "../../engine/core/glob-cache";
+import {
+  parseManifest,
+  type ManifestGrantEntryRequirement,
+} from "../../extensions/manifest-schema";
 import { formatJson } from "../../surface/format";
 import {
   bullets,
@@ -98,6 +106,7 @@ import {
   section,
 } from "../presenter";
 import {
+  resolveShippedBundlesRoot,
   resolveShippedModelProvidersRoot,
   resolveShippedSourceHandlersRoot,
 } from "./sync-shared";
@@ -140,6 +149,8 @@ type InitSummary = {
   readonly inboxProcessedDir: StepOutcome;
   readonly stateDir: StepOutcome;
   readonly configYaml: StepOutcome;
+  /** Grants/stanzas a `--refresh-config` merge added (empty otherwise). */
+  readonly grantsAdded: ReadonlyArray<string>;
   readonly modelProvider: StepOutcome;
   readonly sources: StepOutcome;
   readonly gitignore: StepOutcome;
@@ -172,6 +183,8 @@ type InitJsonResult =
         readonly claude_md: StepOutcome;
         readonly initial_commit: StepOutcome;
       };
+      /** Grants/stanzas a `--refresh-config` merge added. */
+      readonly grants_added: ReadonlyArray<string>;
     }
   | {
       readonly schema: "dome.init/v1";
@@ -234,7 +247,7 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
     //    default bundle stanzas and grant keys with `--refresh-config`.
     const configPath = join(vaultPath, ".dome", "config.yaml");
     const sourceKinds = [...new Set(options.withSource ?? [])];
-    const configOutcome = await ensureConfigYaml({
+    const configResult = await ensureConfigYaml({
       path: configPath,
       refresh: options.refreshConfig === true,
       modelProvider: options.modelProvider,
@@ -326,7 +339,8 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
       inboxRawDir: inboxRawOutcome,
       inboxProcessedDir: inboxProcessedOutcome,
       stateDir: stateOutcome,
-      configYaml: configOutcome,
+      configYaml: configResult.outcome,
+      grantsAdded: configResult.grantsAdded,
       modelProvider: modelProviderOutcome,
       sources: sourcesOutcome,
       gitignore: gitignoreOutcome,
@@ -393,12 +407,18 @@ async function writeExecutableIfMissing(
   return "created";
 }
 
+type ConfigYamlResult = {
+  readonly outcome: StepOutcome;
+  /** Human-readable one-liners describing each grant/stanza the refresh added. */
+  readonly grantsAdded: ReadonlyArray<string>;
+};
+
 async function ensureConfigYaml(opts: {
   readonly path: string;
   readonly refresh: boolean;
   readonly modelProvider?: DefaultModelProvider | undefined;
   readonly sources?: ReadonlyArray<DefaultSourceKind> | undefined;
-}): Promise<StepOutcome> {
+}): Promise<ConfigYamlResult> {
   if (!existsSync(opts.path)) {
     await writeFile(
       opts.path,
@@ -408,18 +428,61 @@ async function ensureConfigYaml(opts: {
       }),
       "utf8",
     );
-    return "created";
+    return { outcome: "created", grantsAdded: [] };
   }
-  if (!opts.refresh) return "skipped (already present)";
+  if (!opts.refresh) return { outcome: "skipped (already present)", grantsAdded: [] };
 
   const body = await readFile(opts.path, "utf8");
   const doc = parseConfigDocument(body);
-  const defaults = defaultConfigRecord();
+  // A vault on the `grants: standard` preset (Task 18) already tracks every
+  // enabled first-party bundle's shipped default grants at load time — refresh
+  // is a no-op for grants there, and missing bundles are added enabled-only so
+  // the preset keeps supplying their grants. Only a LEGACY ENUMERATED vault
+  // (one that opted out of the preset with explicit grant blocks) gets the
+  // grant merge below.
+  const grantMergeEnabled = configRoot(doc).get("grants") !== "standard";
+  const doctorEntriesById = grantMergeEnabled
+    ? await loadFirstPartyDoctorGrantEntries()
+    : new Map<string, ReadonlyArray<ManifestGrantEntryRequirement>>();
 
-  const changed = refreshFirstPartyDefaultConfig(doc, defaults);
-  if (!changed) return "skipped (already present)";
+  const { changed, grantsAdded } = refreshFirstPartyDefaultConfig(
+    doc,
+    grantMergeEnabled,
+    doctorEntriesById,
+  );
+  if (!changed) return { outcome: "skipped (already present)", grantsAdded: [] };
   await writeFile(opts.path, stringifyConfigDocument(doc), "utf8");
-  return "updated";
+  return { outcome: "updated", grantsAdded };
+}
+
+/**
+ * Read the shipped first-party bundle manifests and return each bundle's
+ * `doctor.grantEntries` requirements, keyed by bundle id. These are the same
+ * declarative rows `dome doctor`'s `capability.grant-entry-missing` probe
+ * evaluates; `--refresh-config` uses them as the merge gate so it fills exactly
+ * the load-bearing grants a legacy enumerated vault is missing (not the whole
+ * default block, which would undo an owner's deliberate narrowing). A manifest
+ * that won't parse is skipped — that broader failure surfaces via `dome doctor`
+ * / `dome serve`, and refresh just declines to merge for that bundle.
+ */
+async function loadFirstPartyDoctorGrantEntries(): Promise<
+  Map<string, ReadonlyArray<ManifestGrantEntryRequirement>>
+> {
+  const root = resolveShippedBundlesRoot();
+  const byId = new Map<string, ReadonlyArray<ManifestGrantEntryRequirement>>();
+  for (const def of FIRST_PARTY_EXTENSION_DEFAULTS) {
+    try {
+      const manifestPath = join(root, def.id, "manifest.yaml");
+      if (!existsSync(manifestPath)) continue;
+      const parsed = parseManifest(parseDocument(await readFile(manifestPath, "utf8")).toJSON());
+      if (!parsed.ok) continue;
+      const entries = parsed.value.doctor?.grantEntries ?? [];
+      if (entries.length > 0) byId.set(def.id, entries);
+    } catch {
+      // Unreadable shipped manifest — skip this bundle's grant merge.
+    }
+  }
+  return byId;
 }
 
 // ----- Comment-preserving config edits ---------------------------------------
@@ -681,75 +744,245 @@ function extractManagedUserProseSection(body: string): string | null {
   return body.slice(begin, end + USER_PROSE_END.length).trimEnd() + "\n";
 }
 
+// ----- First-party default reconciliation (`--refresh-config`) --------------
+//
+// Two distinct edits, both insert-only (never remove or narrow an existing
+// entry; b681311's comment-preserving Document-API path is used throughout):
+//
+//   1. A MISSING first-party bundle stanza is added. On a legacy enumerated
+//      vault it carries its FULL shipped default grant block (bundle grant +
+//      per-processor replacement grants) so the bundle is not stranded
+//      grantless — the failure mode NEEDS_ARE_LOUD incident #4 named. On a
+//      `grants: standard` vault it is added enabled-only (the preset supplies
+//      the grants).
+//
+//   2. A PRESENT, enabled first-party bundle on a legacy enumerated vault is
+//      brought up to the shipped default. A grant KIND the default declares but
+//      the vault omits entirely (`patch.auto`, `graph.write`, `question.ask`, …)
+//      lands at its full default — a capability the bundle's processors gained
+//      since the config was written (the kind-level `capability.grant-missing`
+//      starvation, NEEDS_ARE_LOUD incident #4). A kind the vault DOES list is
+//      owner-authored and is merged into only surgically, gated by the bundle
+//      manifest's `doctor.grantEntries` — the same rows `dome doctor`'s
+//      `capability.grant-entry-missing` probe checks. Such a bundle-level entry
+//      adds the most-specific shipped default glob that covers the entry's
+//      target (a probe target like `sources/calendar/2026-01-01.md` yields the
+//      default glob `sources/calendar/*.md`, and `core.md` yields `core.md`,
+//      never `**/*.md` — a deliberately narrowed list survives). Per-processor
+//      entries (whose processor has a shipped replacement grant) add the full
+//      replacement stanza when the vault carries none, matching the doctor
+//      recovery text. A `grants: standard` vault skips (2) entirely — the preset
+//      already tracks defaults.
+
 function refreshFirstPartyDefaultConfig(
   doc: Document,
-  defaults: Record<string, unknown>,
-): boolean {
+  grantMergeEnabled: boolean,
+  doctorEntriesById: ReadonlyMap<string, ReadonlyArray<ManifestGrantEntryRequirement>>,
+): { readonly changed: boolean; readonly grantsAdded: ReadonlyArray<string> } {
   const extensions = mapAt(configRoot(doc), "extensions");
-  const defaultExtensions = recordFromYaml(defaults.extensions);
-  if (extensions === null || defaultExtensions === null) return false;
+  if (extensions === null) return { changed: false, grantsAdded: [] };
 
   let changed = false;
-  for (const extensionId of Object.keys(defaultExtensions).sort()) {
-    const defaultExtension = recordFromYaml(defaultExtensions[extensionId]);
-    if (defaultExtension === null) continue;
-    if (!extensions.has(extensionId)) {
+  const grantsAdded: string[] = [];
+  const sorted = [...FIRST_PARTY_EXTENSION_DEFAULTS].sort((a, b) =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+  );
+  for (const def of sorted) {
+    if (!extensions.has(def.id)) {
       extensions.set(
-        doc.createNode(extensionId),
-        doc.createNode(defaultExtension),
+        doc.createNode(def.id),
+        doc.createNode(missingBundleStanza(def, grantMergeEnabled)),
       );
       changed = true;
+      grantsAdded.push(
+        grantMergeEnabled
+          ? `${def.id} (bundle added with default grants)`
+          : `${def.id} (bundle added)`,
+      );
       continue;
     }
 
-    const extension = mapAt(extensions, extensionId);
+    const extension = mapAt(extensions, def.id);
     if (extension === null) continue;
     if (extension.get("enabled") !== true) continue;
+    // `grants: standard` vaults keep the preset as the single source of grants:
+    // present bundles are left byte-untouched.
+    if (!grantMergeEnabled) continue;
 
-    const defaultGrant = grantRecord(defaultExtension);
-    if (defaultGrant === null) continue;
+    const requirements = doctorEntriesById.get(def.id) ?? [];
     const grantKey = grantKeyFor(extension);
-    if (!extension.has(grantKey)) {
-      extension.set(doc.createNode(grantKey), doc.createNode({}));
+    // A non-mapping grant value (`grant: off`) is user-owned config the refresh
+    // has no safe way to reconcile — leave the whole bundle alone.
+    const existingGrant = extension.get(grantKey);
+    if (existingGrant !== undefined && !isMap(existingGrant)) continue;
+    const bundleGrant = ensureMapAt(doc, extension, grantKey);
+
+    // (1) Fill wholly-missing default grant KINDS with the full shipped default.
+    // A kind the enumerated grant does not list at all is a capability the
+    // bundle's processors gained since the config was written — the
+    // "arrives capability-starved" gap (NEEDS_ARE_LOUD incident #4), and the
+    // kind-level `capability.grant-missing` doctor finding. There is no
+    // owner-authored value to respect, so the whole default lands. A kind the
+    // vault DOES list is owner-authored and is only merged into surgically (2).
+    for (const kind of Object.keys(def.grant)) {
+      if (bundleGrant.has(kind)) continue;
+      bundleGrant.set(doc.createNode(kind), doc.createNode(structuredClone(def.grant[kind])));
       changed = true;
+      grantsAdded.push(`${def.id}.${grantKey}.${kind} (default grant added)`);
     }
-    const grant = mapAt(extension, grantKey);
-    // A non-mapping grant value (`grant: off`) is user-owned config the
-    // refresh has no safe way to fill into — leave it alone.
-    if (grant !== null) {
-      for (const key of Object.keys(defaultGrant).sort()) {
-        if (grant.has(key)) continue;
-        grant.set(doc.createNode(key), doc.createNode(defaultGrant[key]));
-        changed = true;
+
+    // (2) Merge the load-bearing `doctor.grantEntries` into kinds the vault
+    // already carries (surgical — respects a deliberately narrowed list) and
+    // add per-processor replacement grants the vault lacks.
+    for (const requirement of requirements) {
+      const replacement = def.processors?.[requirement.processorId];
+      if (replacement !== undefined) {
+        if (
+          addPerProcessorReplacementGrant(doc, extension, requirement.processorId, replacement)
+        ) {
+          changed = true;
+          grantsAdded.push(
+            `${def.id}.processors."${requirement.processorId}".grant (replacement grant added)`,
+          );
+        }
+        continue;
+      }
+      for (const entry of requirement.entries) {
+        const added = mergeGrantEntry(
+          doc,
+          bundleGrant,
+          entry.kind,
+          entry.target,
+          def.grant[entry.kind],
+        );
+        if (added !== null) {
+          changed = true;
+          grantsAdded.push(`${def.id}.${grantKey}.${entry.kind} += ${JSON.stringify(added)}`);
+        }
       }
     }
-
-    // Per-processor replacement grants (e.g. the preference-promotion
-    // answer handler's narrow core.md write) are filled wholesale when the
-    // vault has no processors block; an existing block is user-owned.
-    const defaultProcessors = recordFromYaml(defaultExtension.processors);
-    if (defaultProcessors !== null && !extension.has("processors")) {
-      extension.set(
-        doc.createNode("processors"),
-        doc.createNode(defaultProcessors),
-      );
-      changed = true;
-    }
   }
-  return changed;
+  return { changed, grantsAdded };
+}
+
+/**
+ * The stanza inserted for a first-party bundle that a refreshed config lacks.
+ * On a legacy enumerated vault it carries the full shipped default grant block
+ * (bundle grant + per-processor replacement grants, each wrapped as
+ * `processors.<id>.grant`). On a `grants: standard` vault it is enabled-only
+ * (with any shipped `config:`), leaving the preset to supply grants.
+ */
+function missingBundleStanza(
+  def: FirstPartyExtensionDefault,
+  grantMergeEnabled: boolean,
+): Record<string, unknown> {
+  const stanza: Record<string, unknown> = { enabled: def.enabled };
+  if (def.config !== undefined) stanza.config = structuredClone(def.config);
+  if (!grantMergeEnabled) return stanza;
+  stanza.grant = structuredClone(def.grant);
+  if (def.processors !== undefined) {
+    stanza.processors = Object.fromEntries(
+      Object.entries(def.processors).map(([procId, grant]) => [
+        procId,
+        { grant: structuredClone(grant) },
+      ]),
+    );
+  }
+  return stanza;
+}
+
+/**
+ * Add a per-processor replacement grant stanza
+ * (`extensions.<bundle>.processors.<id>.grant`) from the shipped default when
+ * the vault carries none for that processor. An existing per-processor block is
+ * user-owned config — left untouched.
+ */
+function addPerProcessorReplacementGrant(
+  doc: Document,
+  extension: YAMLMap,
+  processorId: string,
+  grant: Readonly<Record<string, DefaultGrantValue>>,
+): boolean {
+  const processors = ensureMapAt(doc, extension, "processors");
+  if (processors.has(processorId)) return false;
+  processors.set(
+    doc.createNode(processorId),
+    doc.createNode({ grant: structuredClone(grant) }),
+  );
+  return true;
+}
+
+/**
+ * Merge one missing grant entry into a bundle grant list. Returns the glob
+ * added, or null when nothing was added (already covered, no covering default
+ * glob, or a value refresh must respect). The glob added is the most-specific
+ * shipped default glob that covers `target`, so a doctor probe target resolves
+ * to the canonical default pattern rather than a one-off path, and a narrow
+ * default (e.g. `core.md`) wins over a broad one (`**\/*.md`).
+ */
+function mergeGrantEntry(
+  doc: Document,
+  grantMap: YAMLMap,
+  kind: string,
+  target: string,
+  defaultValue: DefaultGrantValue | undefined,
+): string | null {
+  const covering = grantGlobList(defaultValue).filter((glob) => globMatch(glob, target));
+  if (covering.length === 0) return null;
+  const glob = mostSpecificGlob(covering);
+
+  const existing = grantMap.get(kind);
+  if (existing === undefined) {
+    grantMap.set(doc.createNode(kind), doc.createNode([glob]));
+    return glob;
+  }
+  // A scalar grant value (`read: off`, `question.ask: false`) is user-owned
+  // config the refresh has no safe way to merge a list entry into — leave it
+  // alone.
+  if (!isSeq(existing)) return null;
+  const items = existing.toJSON() as unknown[];
+  // An explicitly EMPTY list is deliberate withholding, not stale config
+  // (omission ≠ withholding — wiki/specs/cli.md §"dome init"): never merged
+  // into, even when a doctor row names a missing entry for the kind.
+  if (items.length === 0) return null;
+  const covered = items.some(
+    (item) => typeof item === "string" && globMatch(item, target),
+  );
+  if (covered || items.includes(glob)) return null;
+  existing.add(doc.createNode(glob));
+  return glob;
+}
+
+/** The string globs of a shipped default grant value (a path/namespace list). */
+function grantGlobList(value: DefaultGrantValue | undefined): ReadonlyArray<string> {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+/**
+ * The most-specific glob: fewest `*` wildcards, then longest, then lexical.
+ * `core.md` beats `**\/*.md`; `sources/calendar/*.md` is the sole cover for a
+ * dated probe path.
+ */
+function mostSpecificGlob(globs: ReadonlyArray<string>): string {
+  return [...globs].sort((a, b) => {
+    const byStars = starCount(a) - starCount(b);
+    if (byStars !== 0) return byStars;
+    if (a.length !== b.length) return b.length - a.length;
+    return a < b ? -1 : a > b ? 1 : 0;
+  })[0]!;
+}
+
+function starCount(glob: string): number {
+  let n = 0;
+  for (const ch of glob) if (ch === "*") n += 1;
+  return n;
 }
 
 function grantKeyFor(extension: YAMLMap): "grant" | "grants" {
   return extension.has("grants") && !extension.has("grant")
     ? "grants"
     : "grant";
-}
-
-function grantRecord(
-  extension: Record<string, unknown>,
-): Record<string, unknown> | null {
-  const raw = hasOwn(extension, "grant") ? extension.grant : extension.grants;
-  return recordFromYaml(raw);
 }
 
 /**
@@ -802,10 +1035,6 @@ function recordFromYaml(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-function hasOwn(record: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(record, key);
-}
-
 /**
  * Print a small block summarizing what `dome init` did. One line per
  * step. The format is human-oriented; downstream
@@ -827,6 +1056,9 @@ function printSummary(s: InitSummary, json: boolean): void {
   const steps = initStepRows(s);
   lines.push(...section("Created", bullets(steps.created, caps, "none"), caps));
   lines.push(...section("Updated", bullets(steps.updated, caps, "none"), caps));
+  if (s.grantsAdded.length > 0) {
+    lines.push(...section("Grants Added", bullets(s.grantsAdded, caps, "none"), caps));
+  }
   lines.push(...section("Already Present", bullets(steps.alreadyPresent, caps, "none"), caps));
   lines.push(...section("Skipped", bullets(steps.skipped, caps, "none"), caps));
   lines.push(...footer({ tone: "ok", label: "vault ready" }, caps));
@@ -900,6 +1132,7 @@ function summaryToJson(s: InitSummary): InitJsonResult {
       claude_md: s.claudeMd,
       initial_commit: s.initialCommit,
     },
+    grants_added: s.grantsAdded,
   };
 }
 

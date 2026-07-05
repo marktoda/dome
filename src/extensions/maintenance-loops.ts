@@ -230,7 +230,6 @@ const SUPPORTED_PROJECTION_NAMES = Object.freeze([
   "facts",
   "fts_documents",
   "questions",
-  "scheduled_jobs",
 ]);
 
 const FACT_NAMESPACE_PROJECTION_RE = /^facts:[a-z0-9]+(?:[.-][a-z0-9]+)*\.\*$/;
@@ -312,7 +311,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
-        "LLM integration can produce noisy or incorrect pages; git history and the integrity warden are the safety nets.",
+        "LLM integration can produce noisy or incorrect pages; git history and consolidate's integrity review are the safety nets.",
         "Auto-merging into curated pages can overwrite nuance; the Dome-Run commit split keeps changes reviewable and revertable.",
       ],
     }),
@@ -325,7 +324,6 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         { kind: "path", pattern: "notes/*.md" },
         { kind: "path", pattern: "sources/calendar/*.md" },
         { kind: "projection", name: "facts:dome.daily.*" },
-        { kind: "projection", name: "facts:dome.attention.*" },
         { kind: "operational", name: "questions" },
       ],
       processors: [
@@ -334,7 +332,6 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.daily.stamp-block-id",
         "dome.daily.reconcile-tasks",
         "dome.daily.normalize-task-syntax",
-        "dome.daily.attention-discount",
         "dome.daily.ambiguous-followup-answer",
         "dome.daily.today",
         "dome.daily.prep",
@@ -383,6 +380,12 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         { kind: "projection", name: "facts:dome.page.*" },
         { kind: "operational", name: "diagnostics" },
         { kind: "operational", name: "questions" },
+        // The patrol's nightly review queue + its bounded visit ledger: the
+        // coverage arm that keeps the whole concept graph re-groomed on a
+        // rotation, not just what changed (wiki/specs/autonomous-agents.md
+        // §"Patrol").
+        { kind: "path", pattern: "meta/patrol-queue.md" },
+        { kind: "path", pattern: "meta/patrol-ledger.md" },
       ],
       processors: [
         "dome.markdown.validate-wikilinks",
@@ -402,22 +405,30 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.graph.links",
         "dome.graph.tag-index",
         "dome.agent.consolidate",
+        // The deterministic staleness patrol: queues the stalest
+        // entity/concept/synthesis pages nightly so consolidate reviews the
+        // frozen tail on a cycle (the signal-triggered garden alone never
+        // revisits a page that stopped changing). Also nudges oversized pages
+        // toward a split.
+        "dome.agent.patrol",
       ],
       surfaces: [
         { kind: "path", pattern: "**/*.md" },
+        { kind: "path", pattern: "meta/patrol-queue.md" },
         { kind: "projection", name: "diagnostics" },
         { kind: "status", name: "check" },
       ],
       settlement: {
         key: "link occurrence, duplicate page-pair, or metadata path plus content hash",
         noOpWhen:
-          "the link resolves, is intentionally unresolved, has exactly one open question, or the managed metadata already matches git history",
+          "the link resolves, is intentionally unresolved, has exactly one open question, the managed metadata already matches git history, or every scanned page has been patrolled within the revisit window",
         checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "Ambiguous broken links can create duplicate stub pages if confidence is not enforced.",
         "Duplicate consolidation must preserve source material: absorbed pages are superseded (status flip + forward link), not deleted.",
         "Supersession flips without a resolvable forward link strand readers in history; the lint warning is the guardrail.",
+        "Coverage patrol must stay bounded: the queue is a full rewrite and the ledger prunes to 60 days, so the tail is revisited on a rotation without accreting bookkeeping.",
       ],
     }),
     freezeLoop({
@@ -499,10 +510,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.markdown.ambiguous-wikilink-answer",
         "dome.daily.ambiguous-followup-answer",
       ],
-      optionalProcessors: [
-        "dome.warden.integrity",
-        "dome.agent.preference-promotion-answer",
-      ],
+      optionalProcessors: ["dome.agent.preference-promotion-answer"],
       questionScope: "all",
       surfaces: [
         { kind: "status", name: "status" },
@@ -519,6 +527,31 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       risks: [
         "Open questions can become user chores if safe agent-resolution metadata is missing.",
         "Answer handlers must keep routing patches through garden and adoption.",
+      ],
+    }),
+    freezeLoop({
+      id: "dome.system.report-card",
+      goal:
+        "Every running processor's weekly cost and output stays owner-visible; retire-or-keep decisions have evidence.",
+      evidence: [
+        { kind: "operational", name: "runs" },
+        { kind: "operational", name: "questions" },
+        { kind: "path", pattern: "meta/retrieval-misses.md" },
+      ],
+      processors: ["dome.health.report-card"],
+      surfaces: [
+        { kind: "path", pattern: "meta/report-card.md" },
+        { kind: "path", pattern: "wiki/dailies/*.md" },
+      ],
+      settlement: {
+        key: "trailing-7-day window per processor",
+        noOpWhen:
+          "the rendered card and the daily's weekly-review block are byte-identical to the current window's aggregates",
+        checks: STANDARD_SETTLEMENT_CHECKS,
+      },
+      risks: [
+        "A card nobody reads is silent accounting — the daily weekly-review block is the load-bearing surface; meta/report-card.md is the archive.",
+        "Productive-outcome counts read succeeded runs with at least one emitted effect; a diagnostic-only run counts as productive.",
       ],
     }),
     freezeLoop({

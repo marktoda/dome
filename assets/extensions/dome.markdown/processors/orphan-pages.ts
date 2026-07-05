@@ -1,7 +1,7 @@
 // dome.markdown.orphan-pages — Phase 13a view-phase processor.
 //
 // The first view-phase processor with real behavior. Invoked on demand
-// via `dome run orphan-pages`, reads the projection's `links_to` facts
+// via `dome orphan-pages`, reads the projection's `links_to` facts
 // (emitted by `dome.graph.links`), computes incoming-link counts per
 // markdown page, and emits a single `ViewEffect` listing every page
 // with zero incoming links AND not already implicitly linked from a
@@ -9,7 +9,7 @@
 //
 // Per [[wiki/specs/processors]] §"View phase":
 //   - Read-only — never mutates state. The broker rejects PatchEffect /
-//     DiagnosticEffect(block) / FactEffect / QuestionEffect / JobEffect /
+//     DiagnosticEffect(block) / FactEffect / QuestionEffect /
 //     ExternalActionEffect from view-phase processors.
 //   - Reads from the projection store ([[wiki/specs/projection-store]])
 //     for indexed facts via `ctx.projection.facts(...)`.
@@ -34,7 +34,7 @@
 // "structured"` with a schema id (`dome.markdown.orphan-pages/v1`) so
 // downstream renderers can validate against the schema. The structured
 // data shape is documented at the call site and mirrored in the
-// `dome run orphan-pages` JSON output.
+// `dome orphan-pages` JSON output.
 //
 // This file lives under `assets/` which is excluded from the root
 // `tsconfig.json`. Imports use relative paths into `src/`, resolved at

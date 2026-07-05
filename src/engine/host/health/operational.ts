@@ -370,10 +370,19 @@ export const LEDGER_SIZE_WARNING_BYTES = 512 * 1024 * 1024;
  * (the registry probe) does the `statSync` and passes the resulting size (or
  * null when the file is absent / unreadable) so this stays a pure function —
  * unit tests inject a size instead of creating a real 512MB file.
+ *
+ * `countRetainedForensicsRows` is a lazy thunk, invoked only when the
+ * finding actually fires, returning how many rows the retention predicate
+ * permanently exempts (failed / timed_out / cancelled / reason-bearing
+ * skipped). Both suggested remedies share that predicate, so a ledger
+ * bloated by long-running failures will NOT shrink from either — the count
+ * (and the recovery text's last sentence) keeps the operator from chasing
+ * the retention window when the real fix is the failing processor.
  */
 export function ledgerOversizedFinding(opts: {
   readonly path: string;
   readonly fileSizeBytes: number | null;
+  readonly countRetainedForensicsRows?: () => number;
 }): HealthFinding | null {
   if (
     opts.fileSizeBytes === null ||
@@ -383,6 +392,7 @@ export function ledgerOversizedFinding(opts: {
   }
   const sizeMb = Math.round(opts.fileSizeBytes / (1024 * 1024));
   const thresholdMb = Math.round(LEDGER_SIZE_WARNING_BYTES / (1024 * 1024));
+  const retainedForensicsRows = opts.countRetainedForensicsRows?.() ?? null;
   return Object.freeze({
     code: "ledger.oversized" as const,
     severity: "warning" as const,
@@ -390,12 +400,26 @@ export function ledgerOversizedFinding(opts: {
     id: "ledger.size" as const,
     message:
       `runs.db is ${sizeMb} MB, over the ${thresholdMb} MB doctor warning ` +
-      "threshold — unpruned run-ledger history is accumulating disk.",
+      "threshold — unpruned run-ledger history is accumulating disk." +
+      (retainedForensicsRows !== null
+        ? ` ${retainedForensicsRows} row(s) are failure forensics ` +
+          "(failed / timed_out / cancelled / reason-bearing skipped), " +
+          "which retention never deletes."
+        : ""),
     recovery:
       "Set `ledger.retention_days` in `.dome/config.yaml` so `dome serve` " +
       "prunes old succeeded/no-op run-ledger rows automatically, or run " +
-      "`dome repair run-ledger --apply --vacuum` to reclaim disk now.",
-    storage: Object.freeze({ path: opts.path, sizeBytes: opts.fileSizeBytes }),
+      "`dome repair run-ledger --apply --vacuum` to reclaim disk now. " +
+      "If the size does not drop after pruning, the ledger is dominated by " +
+      "failure-forensics rows, which both paths deliberately preserve — " +
+      "investigate and fix the failing processor " +
+      "(`dome inspect runs --status failed`) rather than tightening the " +
+      "retention window.",
+    storage: Object.freeze({
+      path: opts.path,
+      sizeBytes: opts.fileSizeBytes,
+      retainedForensicsRows,
+    }),
   });
 }
 

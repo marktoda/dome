@@ -8,7 +8,6 @@ import {
 } from "../../assets/extensions/dome.daily/processors/action-extraction";
 import { dailyPath, dailyPathSettings, parseDailyPath } from "../../assets/extensions/dome.daily/processors/daily-paths";
 import {
-  carriedForwardSection,
   closeDigestFromDailyContent,
   closeScaffoldSection,
   ensureCloseScaffoldSection,
@@ -20,6 +19,7 @@ import {
 } from "../../assets/extensions/dome.daily/processors/daily-scaffold";
 import {
   completedSourceBackedOpenLoopsFromMarkdown,
+  openLoopAnchorFromStableId,
   openLoopFreshnessKey,
   openLoopIdentity,
   openLoopStableId,
@@ -29,6 +29,7 @@ import {
   rankDailyOpenLoopSurfaceItems,
   replaceOpenLoopSurfaceSection,
   settledSourceBackedOpenLoopsFromMarkdown,
+  taskStableId,
 } from "../../assets/extensions/dome.daily/processors/open-loop-surface";
 
 describe("dome.daily shared date helpers", () => {
@@ -804,6 +805,44 @@ describe("dome.daily shared date helpers", () => {
     expect(section).not.toContain("^tdeadbeef");
   });
 
+  // openLoopAnchorFromStableId — the today payload's `blockId` derivation
+  // (Task 9: PWA checkbox settles for real). Recovers a genuine settle-able
+  // ^anchor from a `dome.daily.open-loop:<...>` stableId, and MUST return
+  // undefined for the transient body-hash fallback (that identity names no
+  // real line in the markdown, so settle would 404 on it forever).
+  describe("openLoopAnchorFromStableId", () => {
+    test("recovers the anchor from an anchored stableId", () => {
+      const stableId = taskStableId({
+        sourcePath: "wiki/projects/alpha.md",
+        body: "Ship the thing",
+        anchor: "t1a2b3c4",
+      });
+      expect(openLoopAnchorFromStableId(stableId)).toBe("t1a2b3c4");
+    });
+
+    test("returns undefined for the body-hash fallback (not a real anchor)", () => {
+      const stableId = openLoopStableId({
+        sourcePath: "wiki/projects/alpha.md",
+        body: "Ship the thing",
+      });
+      expect(openLoopAnchorFromStableId(stableId)).toBeUndefined();
+    });
+
+    test("returns undefined for a non-open-loop stableId and undefined input", () => {
+      expect(openLoopAnchorFromStableId("dome.claims.claim:abc")).toBeUndefined();
+      expect(openLoopAnchorFromStableId(undefined)).toBeUndefined();
+    });
+
+    test("recovers a hand-authored (non-hash-shaped) anchor of any length", () => {
+      const stableId = taskStableId({
+        sourcePath: "wiki/projects/alpha.md",
+        body: "Ship the thing",
+        anchor: "thttpsettle1",
+      });
+      expect(openLoopAnchorFromStableId(stableId)).toBe("thttpsettle1");
+    });
+  });
+
   test("rankDailyOpenLoopSurfaceItems folds repeated surface loops", () => {
     const duplicateBody = "Send budget update";
     expect(openLoopSurfaceKey({ body: duplicateBody })).toBe(
@@ -1095,53 +1134,5 @@ describe("dome.daily shared date helpers", () => {
         content: section ?? "",
       }),
     ).toEqual([]);
-  });
-
-  test("carriedForwardSection uses original provenance when available", () => {
-    expect(
-      carriedForwardSection({
-        yesterday: { yyyy: "2026", mm: "01", dd: "01" },
-        tasks: [
-          {
-            line: 1,
-            text: "- [ ] New task",
-            sourcePath: null,
-            body: "New task",
-            followup: false,
-          },
-          {
-            line: 2,
-            text: "- [ ] Already carried",
-            sourcePath: "wiki/dailies/2025-12-31",
-            body: "Already carried",
-            followup: false,
-          },
-        ],
-      }),
-    ).toContain(
-      [
-        "- [ ] New task (from [[wiki/dailies/2026-01-01]])",
-        "- [ ] Already carried (from [[wiki/dailies/2025-12-31]])",
-      ].join("\n"),
-    );
-  });
-
-  test("carriedForwardSection follows configured daily links", () => {
-    const settings = dailyPathSettings({ daily_path: "notes/{date}.md" });
-    expect(
-      carriedForwardSection({
-        yesterday: { yyyy: "2026", mm: "01", dd: "01" },
-        settings,
-        tasks: [
-          {
-            line: 1,
-            text: "- [ ] New task",
-            sourcePath: null,
-            body: "New task",
-            followup: false,
-          },
-        ],
-      }),
-    ).toContain("- [ ] New task (from [[notes/2026-01-01]])");
   });
 });

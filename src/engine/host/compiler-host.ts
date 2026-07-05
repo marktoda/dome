@@ -52,7 +52,12 @@ import {
   runAnswerHandlers,
   type AnswerHandlerResult,
 } from "../operational/answers";
-import { runQuestionsChangedSubscribers } from "../operational/questions-changed";
+import {
+  runQuestionsChangedSubscribers,
+  type QuestionsChangedOptions,
+} from "../operational/questions-changed";
+import { runStoreChangedSubscribers } from "../operational/store-changed";
+import type { OperationalQueryView } from "../../core/processor";
 import {
   withCompilerHostBranchLock,
   type CompilerHostLockBusy,
@@ -210,6 +215,26 @@ function questionsChangedFlagFor(runtime: VaultRuntime): QuestionsChangedFlag {
   if (flag === undefined) {
     flag = { changed: false };
     questionsChangedFlags.set(runtime, flag);
+  }
+  return flag;
+}
+
+/**
+ * Host-scoped `outbox.changed` accumulator — the exact peer of
+ * `QuestionsChangedFlag`. The outbox dispatcher's terminal-failure sites fire
+ * `onOutboxChanged` through the per-tick sinks and the operational drain
+ * (compiler-host injects the setter, same per-tick model as questions); the
+ * tick epilogue snapshots+clears and dispatches `outbox.changed` subscribers at
+ * most once per tick. (`quarantine.changed`'s flag lives on the runtime instead
+ * — its store outlives a tick; see VaultRuntime.quarantineChangedFlag.)
+ */
+const outboxChangedFlags = new WeakMap<VaultRuntime, QuestionsChangedFlag>();
+
+function outboxChangedFlagFor(runtime: VaultRuntime): QuestionsChangedFlag {
+  let flag = outboxChangedFlags.get(runtime);
+  if (flag === undefined) {
+    flag = { changed: false };
+    outboxChangedFlags.set(runtime, flag);
   }
   return flag;
 }
@@ -532,9 +557,16 @@ async function runAdoptionCycle(opts: {
   // One host-scoped flag: adoption-phase inserts, primary-garden work,
   // sub-proposal cascades, and operational work all set it; the single
   // epilogue inside runOperationalWorkForAdoptedUnlocked dispatches once.
-  const sinksFor = sinksForRuntime(runtime, now, () => {
-    questionsChangedFlagFor(runtime).changed = true;
-  });
+  const sinksFor = sinksForRuntime(
+    runtime,
+    now,
+    () => {
+      questionsChangedFlagFor(runtime).changed = true;
+    },
+    () => {
+      outboxChangedFlagFor(runtime).changed = true;
+    },
+  );
 
   const sinks = sinksFor({ base: proposal.base, head: proposal.head });
 
@@ -693,6 +725,10 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
   const onQuestionsChanged = (): void => {
     questionsChanged.changed = true;
   };
+  const outboxChanged = outboxChangedFlagFor(opts.runtime);
+  const onOutboxChanged = (): void => {
+    outboxChanged.changed = true;
+  };
   if (opts.branch !== undefined) {
     await rebuildProjectionIfStale({
       runtime: opts.runtime,
@@ -702,7 +738,12 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
     });
   }
   const vault = runtimeVault(opts.runtime);
-  const sinksFor = sinksForRuntime(opts.runtime, now, onQuestionsChanged);
+  const sinksFor = sinksForRuntime(
+    opts.runtime,
+    now,
+    onQuestionsChanged,
+    onOutboxChanged,
+  );
   const sinks =
     opts.sinks ?? sinksForCursor({ sinksFor, cursor });
   const adoptSubProposal =
@@ -728,6 +769,7 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
     now,
     ledger: opts.runtime.ledgerDb,
     executionState: opts.runtime.processorRuntime.executionState,
+    needUnmetSeen: opts.runtime.processorRuntime.needUnmetSeen,
     executionCap: opts.runtime.config.engine.executionCap,
     operational: operationalQueryViewForRuntime(opts.runtime, now),
     ...(opts.runtime.modelProvider !== undefined
@@ -748,44 +790,46 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
       : {}),
     questionAutoResolve: opts.runtime.config.engine.autoResolveQuestions,
     onQuestionsChanged,
+    onOutboxChanged,
     adoptSubProposal,
     currentAdopted: () => cursor.current,
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
   });
 
-  // Tick epilogue: dispatch questions.changed subscribers at most ONCE per
-  // tick, after every phase that can change the open-question set has run.
-  // Snapshot+clear BEFORE the dispatch — question changes the dispatch itself
+  // Tick epilogue: dispatch the three store-change signals at most ONCE per
+  // tick each, after every phase that can change the corresponding store has
+  // run. Snapshot+clear BEFORE each dispatch — changes the dispatch itself
   // causes (subscriber emissions, nested sub-proposal gardens) re-set the
   // host-scoped flag and are CARRIED to the next tick's epilogue, which
-  // dispatches even if that tick has no question activity of its own. That is
-  // the recursion guard; this call never loops and epilogue-caused changes
-  // are never dropped. See QuestionsChangedFlag.
+  // dispatches even if that tick has no activity of its own. That is the
+  // recursion guard; this call never loops and epilogue-caused changes are
+  // never dropped. See QuestionsChangedFlag.
+  const signalDeps = storeChangedSignalDeps({
+    runtime: opts.runtime,
+    vault,
+    cursor,
+    sinks,
+    adoptSubProposal,
+    operational: operationalQueryViewForRuntime(opts.runtime, now),
+    now,
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+  });
   if (questionsChanged.changed) {
     questionsChanged.changed = false;
-    await runQuestionsChangedSubscribers({
-      vault,
-      adopted: cursor.current,
-      currentAdopted: () => cursor.current,
-      resolveTree: makeResolveTree(opts.runtime.path),
-      sinks,
-      resolveGrants: opts.runtime.resolveGrants,
-      extensionIdFor: opts.runtime.extensionIdFor,
-      extensionConfigFor: opts.runtime.extensionConfigFor,
-      ledger: opts.runtime.ledgerDb,
-      executionState: opts.runtime.processorRuntime.executionState,
-      executionCap: opts.runtime.config.engine.executionCap,
-      operational: operationalQueryViewForRuntime(opts.runtime, now),
-      now,
-      adoptSubProposal,
-      registry: opts.runtime.registry,
-      ...(opts.runtime.modelProvider !== undefined
-        ? { modelProvider: opts.runtime.modelProvider }
-        : {}),
-      ...(opts.runtime.modelStepProvider !== undefined
-        ? { modelStepProvider: opts.runtime.modelStepProvider }
-        : {}),
-      ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+    await runQuestionsChangedSubscribers(signalDeps);
+  }
+  if (outboxChanged.changed) {
+    outboxChanged.changed = false;
+    await runStoreChangedSubscribers({
+      ...signalDeps,
+      storeSignal: "outbox.changed",
+    });
+  }
+  if (opts.runtime.quarantineChangedFlag.changed) {
+    opts.runtime.quarantineChangedFlag.changed = false;
+    await runStoreChangedSubscribers({
+      ...signalDeps,
+      storeSignal: "quarantine.changed",
     });
   }
 
@@ -872,9 +916,17 @@ async function runAnswerHandlersForQuestionUnlocked(opts: {
   // answer handlers (and by the subscriber dispatch below) are recorded so
   // dispatch-caused changes carry to the next tick.
   const questionsChanged = questionsChangedFlagFor(opts.runtime);
-  const sinksFor = sinksForRuntime(opts.runtime, undefined, () => {
-    questionsChanged.changed = true;
-  });
+  const outboxChanged = outboxChangedFlagFor(opts.runtime);
+  const sinksFor = sinksForRuntime(
+    opts.runtime,
+    undefined,
+    () => {
+      questionsChanged.changed = true;
+    },
+    () => {
+      outboxChanged.changed = true;
+    },
+  );
   const cursor: AdoptedCursor = { current: adopted };
   const sinks = sinksForCursor({ sinksFor, cursor });
   const adoptSubProposal = makeAdoptSubProposal({
@@ -897,6 +949,7 @@ async function runAnswerHandlersForQuestionUnlocked(opts: {
     extensionIdFor: opts.runtime.extensionIdFor,
     ledger: opts.runtime.ledgerDb,
     executionState: opts.runtime.processorRuntime.executionState,
+    needUnmetSeen: opts.runtime.processorRuntime.needUnmetSeen,
     executionCap: opts.runtime.config.engine.executionCap,
     operational: opts.runtime.operationalQueryView,
     ...(opts.runtime.modelProvider !== undefined
@@ -909,36 +962,38 @@ async function runAnswerHandlersForQuestionUnlocked(opts: {
     currentAdopted: () => cursor.current,
   });
 
-  // The durable answer changed the open-question set; per processors.md
-  // §"Triggers and signals", the resolve path dispatches questions.changed
-  // subscribers after answer handlers complete (no tick epilogue runs here).
-  // Same discipline as the epilogue: snapshot+clear the host flag first —
-  // this dispatch consumes the handler-made changes; changes the subscribers
-  // themselves cause re-set the flag and carry to the next tick's epilogue.
-  questionsChanged.changed = false;
-  await runQuestionsChangedSubscribers({
+  // The durable answer changed engine stores; per processors.md §"Triggers and
+  // signals", the resolve path dispatches the store-change signals after answer
+  // handlers complete (no tick epilogue runs here). A recovery answer clears a
+  // quarantine (quarantine.changed) or replays outbox rows; and question
+  // changes flow through questions.changed. Same discipline as the epilogue:
+  // snapshot+clear each host flag first — changes the subscribers themselves
+  // cause re-set the flag and carry to the next tick's epilogue.
+  const signalDeps = storeChangedSignalDeps({
+    runtime: opts.runtime,
     vault,
-    adopted: cursor.current,
-    currentAdopted: () => cursor.current,
-    resolveTree: makeResolveTree(opts.runtime.path),
+    cursor,
     sinks,
-    resolveGrants: opts.runtime.resolveGrants,
-    extensionIdFor: opts.runtime.extensionIdFor,
-    extensionConfigFor: opts.runtime.extensionConfigFor,
-    ledger: opts.runtime.ledgerDb,
-    executionState: opts.runtime.processorRuntime.executionState,
-    executionCap: opts.runtime.config.engine.executionCap,
+    adoptSubProposal,
     operational: opts.runtime.operationalQueryView,
     now,
-    adoptSubProposal,
-    registry: opts.runtime.registry,
-    ...(opts.runtime.modelProvider !== undefined
-      ? { modelProvider: opts.runtime.modelProvider }
-      : {}),
-    ...(opts.runtime.modelStepProvider !== undefined
-      ? { modelStepProvider: opts.runtime.modelStepProvider }
-      : {}),
   });
+  questionsChanged.changed = false;
+  await runQuestionsChangedSubscribers(signalDeps);
+  if (outboxChanged.changed) {
+    outboxChanged.changed = false;
+    await runStoreChangedSubscribers({
+      ...signalDeps,
+      storeSignal: "outbox.changed",
+    });
+  }
+  if (opts.runtime.quarantineChangedFlag.changed) {
+    opts.runtime.quarantineChangedFlag.changed = false;
+    await runStoreChangedSubscribers({
+      ...signalDeps,
+      storeSignal: "quarantine.changed",
+    });
+  }
 
   if (cursor.current !== beforeHandlers) {
     await rebuildProjectionIfGlobalConfigChanged({
@@ -1067,6 +1122,47 @@ function runtimeVault(runtime: VaultRuntime): {
   };
 }
 
+// The shared GardenRunDeps + registry the three store-change dispatch channels
+// (questions/outbox/quarantine) all consume. Built once per dispatch point so
+// the questions.changed call and the two new store-changed calls stay
+// byte-identical except for the store signal.
+function storeChangedSignalDeps(opts: {
+  readonly runtime: VaultRuntime;
+  readonly vault: ReturnType<typeof runtimeVault>;
+  readonly cursor: AdoptedCursor;
+  readonly sinks: ApplyEffectSinks;
+  readonly adoptSubProposal: AdoptSubProposalFn;
+  readonly operational: OperationalQueryView;
+  readonly now: () => Date;
+  readonly signal?: AbortSignal;
+}): QuestionsChangedOptions {
+  return {
+    vault: opts.vault,
+    adopted: opts.cursor.current,
+    currentAdopted: () => opts.cursor.current,
+    resolveTree: makeResolveTree(opts.runtime.path),
+    sinks: opts.sinks,
+    resolveGrants: opts.runtime.resolveGrants,
+    extensionIdFor: opts.runtime.extensionIdFor,
+    extensionConfigFor: opts.runtime.extensionConfigFor,
+    ledger: opts.runtime.ledgerDb,
+    executionState: opts.runtime.processorRuntime.executionState,
+    needUnmetSeen: opts.runtime.processorRuntime.needUnmetSeen,
+    executionCap: opts.runtime.config.engine.executionCap,
+    operational: opts.operational,
+    now: opts.now,
+    adoptSubProposal: opts.adoptSubProposal,
+    registry: opts.runtime.registry,
+    ...(opts.runtime.modelProvider !== undefined
+      ? { modelProvider: opts.runtime.modelProvider }
+      : {}),
+    ...(opts.runtime.modelStepProvider !== undefined
+      ? { modelStepProvider: opts.runtime.modelStepProvider }
+      : {}),
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+  };
+}
+
 // Sinks are frame-aware: each Proposal/sub-Proposal gets its own
 // `(base, head)` pair so engine commit trailers and projection rows are
 // keyed to the proposal that actually produced them.
@@ -1077,6 +1173,7 @@ function sinksForRuntime(
   runtime: VaultRuntime,
   now?: () => Date,
   onQuestionsChanged?: () => void,
+  onOutboxChanged?: () => void,
 ): (
   frame: { readonly base: CommitOid; readonly head: CommitOid },
 ) => ApplyEffectSinks {
@@ -1115,6 +1212,7 @@ function sinksForRuntime(
       outboxDb: runtime.outboxDb,
       adoptedCommit: frame.head,
       ...(onQuestionsChanged !== undefined ? { onQuestionsChanged } : {}),
+      ...(onOutboxChanged !== undefined ? { onOutboxChanged } : {}),
       projectionWriteLock: (fn) =>
         withProjectionWriteLock(
           { vaultPath: runtime.path, command: "projection-sink" },
@@ -1194,7 +1292,6 @@ function sinksForCursor(opts: {
     recordSearchDocument: async (input) =>
       current().recordSearchDocument(input),
     recordQuestion: async (input) => current().recordQuestion(input),
-    enqueueJob: async (input) => current().enqueueJob(input),
     dispatchExternal: async (input) => current().dispatchExternal(input),
     recoverOutbox: async (input) => current().recoverOutbox(input),
     recoverQuarantine: async (input) => current().recoverQuarantine(input),
@@ -1203,8 +1300,8 @@ function sinksForCursor(opts: {
 }
 
 // Garden patches can spawn sub-Proposals recursively. The closure is
-// shared by the primary garden phase, scheduled garden work, and queued
-// jobs so every patch route lands back on the same adoption boundary.
+// shared by the primary garden phase and scheduled garden work so every
+// patch route lands back on the same adoption boundary.
 function makeAdoptSubProposal(opts: {
   readonly runtime: VaultRuntime;
   readonly vault: ReturnType<typeof runtimeVault>;
@@ -1290,7 +1387,7 @@ function makeAdoptSubProposal(opts: {
  * processors run through `src/engine/host/view-command.ts`, where their
  * ViewEffects are captured and returned to the surface adapter. This sink is
  * a defensive guard for any ViewEffect that somehow reaches adoption, garden,
- * answer, job, or operational routing; phase compatibility should reject those
+ * answer, or operational routing; phase compatibility should reject those
  * effects before the sink is called.
  */
 const captureViewPlaceholder: ApplyEffectSinks["captureView"] =

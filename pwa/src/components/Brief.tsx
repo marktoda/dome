@@ -27,13 +27,31 @@ function PriorityMark({ priority }: { priority: TodayTaskRow["priority"] }): Rea
   return <span className={`prio ${high ? "prio-high" : "prio-low"}`}>{chars} </span>;
 }
 
-function TaskRow({ item }: { item: TodayTaskRow }): React.ReactElement {
+function TaskRow(
+  { item, settling, onSettle }: {
+    item: TodayTaskRow;
+    settling: boolean;
+    onSettle: (blockId: string) => void;
+  },
+): React.ReactElement {
+  const blockId = item.blockId;
   return (
-    <div className="row">
-      {/* Non-interactive for now: completing a task = editing markdown = a git commit,
-          which needs a co-located checkout the phone lacks. Make this a checkable
-          control once there's a phone write-path (the deferred authoring boundary). */}
-      <div className="box" />
+    <div className={`row${settling ? " settling" : ""}`}>
+      {blockId !== undefined ? (
+        <input
+          type="checkbox"
+          className="box"
+          checked={settling}
+          disabled={settling}
+          aria-label={item.text}
+          onChange={() => onSettle(blockId)}
+        />
+      ) : (
+        // No blockId (not yet anchored) — decorative-only. Completing a task
+        // here means a git commit; without a stable ^block-anchor there's no
+        // settle identity to write to, so the box stays inert.
+        <div className="box" />
+      )}
       <div className="text"><PriorityMark priority={item.priority} />{renderRich(item.text)}</div>
       {item.dueDate !== null ? <span className="due">{fmtDue(item.dueDate)}</span> : null}
     </div>
@@ -52,12 +70,29 @@ function QuestionCard({ q, onResolve }: { q: TodayQuestionRow; onResolve: (id: n
 }
 
 /** One urgency bucket (overdue / today / this week / later) — header + rows; nothing when empty. */
-function Bucket({ label, cls, items }: { label: string; cls: string; items: ReadonlyArray<TodayTaskRow> }): React.ReactElement | null {
+function Bucket(
+  { label, cls, items, settlingIds, onSettle }: {
+    label: string;
+    cls: string;
+    items: ReadonlyArray<TodayTaskRow>;
+    settlingIds: ReadonlySet<string>;
+    onSettle: (blockId: string) => void;
+  },
+): React.ReactElement | null {
   if (items.length === 0) return null;
   return (
     <>
       <div className={`bucket-label ${cls}`}>{label} · {items.length}</div>
-      <div className="rows">{items.map((t, i) => <TaskRow key={`${cls}${i}`} item={t} />)}</div>
+      <div className="rows">
+        {items.map((t, i) => (
+          <TaskRow
+            key={`${cls}${i}`}
+            item={t}
+            settling={t.blockId !== undefined && settlingIds.has(t.blockId)}
+            onSettle={onSettle}
+          />
+        ))}
+      </div>
     </>
   );
 }
@@ -65,13 +100,33 @@ function Bucket({ label, cls, items }: { label: string; cls: string; items: Read
 type Props = {
   today: Today;
   onResolve: (id: number, value: string) => void;
+  /** Settle a task closed by its ^block-anchor id; resolves to whether it
+   * actually settled — the caller owns the API call, this component owns
+   * only the optimistic strike-through + revert-on-failure UI state. */
+  onSettle?: (blockId: string) => Promise<boolean>;
   collapsed?: boolean;
   hasMessages?: boolean;
   onToggle?: () => void;
 };
 
-export function Brief({ today, onResolve, collapsed = false, hasMessages = false, onToggle = () => {} }: Props): React.ReactElement | null {
+export function Brief(
+  { today, onResolve, onSettle = async () => false, collapsed = false, hasMessages = false, onToggle = () => {} }: Props,
+): React.ReactElement | null {
   const [showAll, setShowAll] = useState(false);
+  const [settlingIds, setSettlingIds] = useState<ReadonlySet<string>>(new Set());
+
+  const handleSettle = (blockId: string): void => {
+    setSettlingIds((prev) => new Set(prev).add(blockId));
+    const revert = (): void => {
+      setSettlingIds((prev) => {
+        if (!prev.has(blockId)) return prev;
+        const next = new Set(prev);
+        next.delete(blockId);
+        return next;
+      });
+    };
+    void onSettle(blockId).then((ok) => { if (!ok) revert(); }).catch(revert);
+  };
 
   // Paint the SHARED view-model — same urgency classification, sections, and
   // counts the CLI and HTTP cockpit render (src/surface/today-view.ts). The PWA
@@ -144,10 +199,10 @@ export function Brief({ today, onResolve, collapsed = false, hasMessages = false
       {shownInline > 0 || laterAll.length > 0 ? (
         <div className="section">
           <div className="label">Still open</div>
-          <Bucket label="overdue" cls="bucket-overdue" items={overdue} />
-          <Bucket label="today" cls="bucket-today" items={dueToday} />
-          <Bucket label="this week" cls="bucket-week" items={thisWeek} />
-          {showAll ? <Bucket label="later" cls="bucket-later" items={laterAll} /> : null}
+          <Bucket label="overdue" cls="bucket-overdue" items={overdue} settlingIds={settlingIds} onSettle={handleSettle} />
+          <Bucket label="today" cls="bucket-today" items={dueToday} settlingIds={settlingIds} onSettle={handleSettle} />
+          <Bucket label="this week" cls="bucket-week" items={thisWeek} settlingIds={settlingIds} onSettle={handleSettle} />
+          {showAll ? <Bucket label="later" cls="bucket-later" items={laterAll} settlingIds={settlingIds} onSettle={handleSettle} /> : null}
           {!showAll && hidden > 0 ? (
             <button type="button" className="brief-more" onClick={() => setShowAll(true)}>+{hidden} more, later ▾</button>
           ) : null}

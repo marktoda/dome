@@ -242,8 +242,8 @@ describe("NO_ACCRETING_REGISTRIES", () => {
   test("no model.invoke processor in any first-party manifest holds patch.auto over log.md or index files", () => {
     const processors = loadFirstPartyProcessors();
     const modelProcessors = processors.filter((p) => p.hasModelInvoke);
-    // ingest, consolidate, brief, sweep, warden.integrity.
-    expect(modelProcessors.length).toBeGreaterThanOrEqual(5);
+    // ingest, consolidate, brief, sweep.
+    expect(modelProcessors.length).toBeGreaterThanOrEqual(4);
 
     for (const processor of modelProcessors) {
       expectNoRegistryCoverage(
@@ -379,16 +379,18 @@ describe("NO_ACCRETING_REGISTRIES", () => {
         `default-vault-config replacement grant for ${processorId}`,
       );
     }
-    // Both gated patch writers must actually appear in the shipped replacement
-    // grants — if one vanishes, the exact-pin above silently stops checking.
-    // Deterministic graph-only processors may also have replacement grants.
+    // Both gated core.md patch writers must actually appear in the shipped
+    // replacement grants — if one vanishes, the exact-pin above silently stops
+    // checking. This is a SUBSET check, not exact equality: deterministic
+    // processors carry non-core.md patch.auto replacement grants too (e.g.
+    // dome.agent.patrol over meta/patrol-*), and those are registry-checked by
+    // the expectNoRegistryCoverage pass above.
     const patchAutoProcessorIds = Object.entries(agent.processors ?? {})
       .filter(([, grant]) => Array.isArray(grant["patch.auto"]))
-      .map(([processorId]) => processorId)
-      .sort();
-    expect(patchAutoProcessorIds).toEqual(
-      Object.keys(CORE_MD_WRITER_GRANTS).sort(),
-    );
+      .map(([processorId]) => processorId);
+    for (const writerId of Object.keys(CORE_MD_WRITER_GRANTS)) {
+      expect(patchAutoProcessorIds).toContain(writerId);
+    }
   });
 
   test("grant-aware tool writable-path mirrors exclude log.md and index files", () => {

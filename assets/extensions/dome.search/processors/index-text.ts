@@ -357,6 +357,10 @@ const STRIPPED_SURFACE_BLOCKS: ReadonlyArray<{
   Object.freeze({ owner: "dome.daily", block: "agenda" }),
   Object.freeze({ owner: "dome.daily", block: "integrated" }),
   Object.freeze({ owner: "dome.daily", block: "sources" }),
+  // The weekly report card's daily block (dome.health.report-card): a
+  // deterministic digest of the run ledger + report-card page — indexing it
+  // would duplicate that source-of-truth content in search results.
+  Object.freeze({ owner: "dome.health", block: "report-card" }),
   // Retired-legacy brief-namespace copies (recognized, never written) —
   // historical dailies still carry these under dome.agent.brief.
   Object.freeze({ owner: "dome.agent.brief", block: "questions" }),

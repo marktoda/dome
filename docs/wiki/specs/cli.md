@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-12
+updated: 2026-07-04
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -37,6 +37,11 @@ dome check [--engine] [--content] [--decisions] [--loops] [--attention] [--limit
                                 diagnostics, and decisions.
 dome resolve <question-id> [<value>]
                                 Resolve a Dome-raised decision from `check`.
+dome settle <block-id> <close|defer|keep> [--until <yyyy-mm-dd>] [--json]
+                                Settle a task line by its ^block-anchor: close
+                                completes it (+ a Done-today bullet), defer
+                                rewrites the due date to --until, keep records
+                                nothing. One human commit (none for keep).
 dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]
                                 FTS + structured query against adopted state.
 dome export-context <topic> [--limit <n>] [--json]
@@ -45,6 +50,14 @@ dome today [--date <yyyy-mm-dd>] [--limit <n>] [--watch] [--interval <seconds>] 
                                 Render today's action surface (open tasks,
                                 follow-ups, questions) — the terminal cockpit.
                                 --watch re-renders on an interval until ctrl-c.
+dome prep [--date <yyyy-mm-dd>] [--limit <n>] [--json]
+                                Deterministic source-backed planning packet for a day.
+dome agenda-with <person-or-topic> [--date <yyyy-mm-dd>] [--limit <n>] [--json]
+                                Deterministic open tasks, follow-ups, and context
+                                filtered to a person or topic.
+dome stale-claims [--json]     Claims whose *(as of)* date is older than the
+                                staleness horizon (default 120 days).
+dome orphan-pages [--json]     Markdown pages with no incoming wikilinks.
 dome log [--since <date>] [--processor <id>] [--grep <text>] [--limit <n>] [--json]
                                 Vault activity: git history joined with the
                                 run ledger. Engine commit bodies carry the
@@ -64,15 +77,15 @@ dome uninstall [--vault <path>] [--json]
                                 Stop and remove the vault's ambient service.
 dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
                                 read/capture tools (capture, query, export_context,
-                                status, check, resolve, tasks, brief) for MCP
-                                harnesses. The daemon still owns compilation.
+                                status, check, resolve, settle, tasks, brief) for
+                                MCP harnesses. The daemon still owns compilation.
 dome http [--vault <path>] [--port <port>] [--host <host>] [--token <token>]
           [--model <id>] [--static-dir <path>] [--allow-write]
           [--transcribe-cmd <cmd>] [--transcribe-key <key>]
           [--transcribe-url <url>] [--transcribe-model <model>]
                                 Run the Dome HTTP surface (bearer-token auth;
-                                loopback by default): read/capture/resolve routes,
-                                the GET /today HTML cockpit, POST /agent (the
+                                loopback by default): read/capture/resolve/settle
+                                routes, the GET /today HTML cockpit, POST /agent (the
                                 hosted agent loop; converse capability),
                                 POST /agent/stream (SSE variant), POST /transcribe
                                 (voice STT; capture capability), and GET /recents.
@@ -92,8 +105,8 @@ dome recipe <kind> [--url <base>]
 
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
 
-- **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, and `dome resolve`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records an owner or agent answer to a Dome-raised decision and dispatches answer handlers.
-- **Adopted-state recall surfaces:** `dome query` and `dome export-context` are the normal explicit read views when the user or a foreground agent asks for recall, planning, agenda context, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands. `dome log` is the activity-recall sibling with a CLI-native posture (the `dome status` stance — no runtime, no view boundary): it reads git history directly and joins the run ledger (§"`dome log`").
+- **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, `dome resolve`, and `dome settle`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records an owner or agent answer to a Dome-raised decision and dispatches answer handlers; `settle` records an owner or agent decision on an open task by its `^block-anchor` (close / defer / keep) — resolve's sibling for tasks rather than questions (§"`dome settle`").
+- **Adopted-state recall surfaces:** `dome query` and `dome export-context` are the normal explicit read views when the user or a foreground agent asks for recall, planning, agenda context, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands. `dome log` is the activity-recall sibling with a CLI-native posture (the `dome status` stance — no runtime, no view boundary): it reads git history directly and joins the run ledger (§"`dome log`"). `dome prep`, `dome agenda-with`, `dome stale-claims`, and `dome orphan-pages` are deterministic sibling views over the same view-command boundary — source-backed daily planning/agenda filters and claims/link-graph consistency audits — for the debugging, scripting, and unambiguous-filter cases where a natural-language `query` / `export-context` request isn't the goal. All four were previously reachable only through the hidden `dome run <name>` dispatcher; a feature behind a debug verb is unreachable, so they now have first-class top-level bindings like their `query` / `export-context` / `today` siblings.
 - **Advanced/debug and compatibility surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer`, `dome run`, `dome rebuild`, and `dome reanchor` remain available for detailed state inspection, extension development, maintenance, and explicit recovery. They are hidden from top-level help and are not the normal Claude Code workflow.
 
 `dome doctor` is read-only in V1. The `--repair` flag is a reserved surface for
@@ -101,7 +114,7 @@ future answer-mediated mitigations and exits with usage status instead of
 mutating state. Operational recovery mutations ship through `dome.health`
 questions and `dome resolve`, so recovery still goes through normal Effect
 routing and capability checks.
-- **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, and `dome today` — command-triggered view-phase processors invoked through the shared view-command boundary. `dome today` is the dedicated cockpit wrapper over the `dome.daily.today` view; the other daily planning processors (`prep`, `agenda-with`) remain available through `dome run` for tests/debugging without dedicated top-level CLI verbs.
+- **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep`, `dome agenda-with`, `dome stale-claims`, and `dome orphan-pages` — command-triggered view-phase processors invoked through the shared view-command boundary. `dome run <name>` remains available as the generic escape hatch for extension-authored view processors that have not (yet) earned a dedicated top-level verb.
 - **Capture ingress:** `dome capture` — the frictionless write-side entry point ([[wedge]] §"Phase 3 — Capture loop"). It writes a timestamped raw source into `inbox/raw/` and lands it as an ordinary human commit on the current branch; adoption and `dome.agent.ingest` handle everything after the commit boundary. See [[wiki/specs/capture]] for the capture-loop spec and the phone/voice ingress recipe.
 - **Lifecycle:** `dome init` — vault construction; `dome install` / `dome restart` / `dome uninstall` — ambient service lifecycle for the local compiler host (a launchd LaunchAgent on macOS, a systemd `--user` unit on Linux, both around `dome serve`, per [[wedge]] §"Phase 1 — Ambient daemon"). Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
 - **Protocol adapters:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"; [[wiki/specs/mcp-surface]]) — and `dome http` — the HTTP read+capture+converse surface and first shipped form of the remote-capture seam ([[wiki/specs/http-surface]]). Both are thin adapters over the public `openVault` wrapper plus the protocol-neutral `src/surface/` collectors. `dome recipe` prints client-side setup text (`ios`: the queue-first iOS Shortcut against `dome http`; `capture-queue`: the laptop-side iCloud queue drain; `core-seed`: the owner interview that seeds `core.md` — §"`dome recipe`").
@@ -168,19 +181,50 @@ The shipped initialization steps:
 3. Writes `<vault>/.dome/config.yaml` from a shipped default (extension
    activation + engine settings). First-write-only by default.
    `--refresh-config` is an explicit maintenance path for old or hand-edited
-   first-party configs: it adds missing first-party default bundle stanzas and
-   fills missing first-party default grant keys for already enabled first-party
-   bundles while preserving existing grant values, explicitly disabled bundles,
-   and third-party bundle config. When it changes the file, it edits through
-   the yaml Document API: only the inserted stanzas/keys are new text, and
-   hand-written comments and formatting on untouched nodes are preserved
-   (caveat: an inline comment trailing a block-collection key moves to the
-   next line — never deleted). It deliberately does NOT merge new entries
-   into grant lists the vault already carries — grant lists are user-owned
-   config and auto-merging is too risky. The detection half lives in
-   `dome doctor`'s `capability.grant-entry-missing` probe, which names the
-   exact YAML each missing first-party rollout entry needs (see
-   `docs/memory.md` §"Vault rollout").
+   first-party configs. It makes two insert-only edits (never removing or
+   narrowing an existing entry), always through the yaml Document API — only
+   inserted stanzas/keys are new text, and hand-written comments and formatting
+   on untouched nodes are preserved (caveat: an inline comment trailing a
+   block-collection key moves to the next line — never deleted):
+
+   - **Missing first-party bundle stanzas** are added. On a **legacy enumerated
+     vault** (one that opted out of the `grants: standard` preset with explicit
+     grant blocks) the added stanza carries its FULL shipped default grant block
+     (bundle grant + per-processor replacement grants) so a newly shipped bundle
+     is never stranded capability-starved. On a `grants: standard` vault the
+     stanza is added enabled-only — the preset supplies its grants at load time.
+   - **Present, enabled first-party bundles on a legacy enumerated vault** are
+     brought up to the shipped default in two ways. First, any grant KIND the
+     bundle's default declares but the vault omits entirely (`patch.auto`,
+     `graph.write`, `question.ask`, …) lands at its full shipped default — these
+     are capabilities the bundle's processors gained since the config was
+     written, the kind-level `capability.grant-missing` starvation. Second, a
+     kind the vault DOES list is owner-authored and is only merged into
+     surgically, gated by the bundle manifest's `doctor.grantEntries` — the same
+     rows `dome doctor`'s `capability.grant-entry-missing` probe checks: a
+     bundle-level entry adds the most-specific shipped default glob that covers
+     the entry's target (so a probe target like `sources/calendar/2026-01-01.md`
+     resolves to the canonical default glob `sources/calendar/*.md`, and
+     `core.md` resolves to `core.md` — never widening a deliberately narrowed
+     `read` list to `**/*.md`), and a per-processor entry (whose processor ships
+     a replacement grant) adds the full replacement stanza when the vault
+     carries none. **Omission ≠ withholding:** a default grant kind the vault
+     omits entirely is treated as stale config and refilled, so a kind the owner
+     wants withheld must be declared present-but-empty (`patch.auto: []`,
+     `question.ask: false`) — refresh always respects a present value: it is
+     never refilled, and an explicitly empty list is never merged into, even
+     when a `doctor.grantEntries` row names a missing entry for it. When the
+     vault uses `grants: standard`, this whole merge is a no-op — the preset
+     already tracks every enabled bundle's shipped defaults.
+
+   Explicitly disabled bundles (`enabled: false`) and third-party bundle config
+   are never touched. The run prints a summary of the grants and stanzas it
+   added (`grants_added` under `--json`). This closes the second-user blocker
+   where per-processor default grants never propagated to vaults with a
+   user-owned grant block (NEEDS_ARE_LOUD incident #4); `dome doctor`'s
+   `capability.grant-entry-missing` probe remains the detection half that names
+   the exact YAML for grants outside the first-party set (see `docs/memory.md`
+   §"Vault rollout").
 4. When `--with-model-provider anthropic` is supplied, copies the shipped
    first-party provider template from
    `<SDK>/assets/model-providers/anthropic.ts` to
@@ -202,14 +246,20 @@ The shipped initialization steps:
    `ANTHROPIC_OUTPUT_COST_PER_MTOK` are further env overrides. The template
    reports `costUsd` from token usage for known model families (built-in
    price table, env-overridable), which is what makes the engine's
-   `maxDailyCostUsd` caps effective by default. It does not enable
-   `dome.agent` or any other model-capable bundle. Enabling model-backed
-   loops remains an explicit config choice. Re-running
-   `dome init --with-model-provider anthropic` on an existing vault is the
-   supported wiring path for an already-initialized vault: the provider file
-   and the `model_provider` stanza are each first-write-only, so the re-run
-   adds whichever piece is missing and never overwrites a hand-edited
-   provider or stanza.
+   `maxDailyCostUsd` caps effective by default. It does not itself change
+   `dome.agent`'s enablement — that bundle ships `enabled: true` unconditionally
+   (product-review-3 Task 17: the brain is on by default, guarded by the
+   shipped `$2.00/day` model-spend cap rather than by silence). Running
+   `dome init` **without** `--with-model-provider` leaves `dome.agent`
+   enabled with no model provider configured, which surfaces as a loud
+   `agent.no-model-provider` warning once `dome serve` opens its runtime
+   (§"`dome serve`") — never a silent no-op. `--with-model-provider` wires
+   the provider the already-enabled agent processors need to actually run.
+   Re-running `dome init --with-model-provider anthropic` on an existing
+   vault is the supported wiring path for an already-initialized vault: the
+   provider file and the `model_provider` stanza are each first-write-only,
+   so the re-run adds whichever piece is missing and never overwrites a
+   hand-edited provider or stanza.
 4b. When `--with-source <kind>` is supplied (repeatable; shipped kinds:
    `calendar`, `slack` — any other kind is rejected with exit 64), scaffolds
    each requested source adapter: copies the shipped fetch template from
@@ -440,7 +490,7 @@ Composition (v1.0):
    - **detached HEAD** → exit 64 (EX_USAGE) with a clear stderr message.
    - **no commits** → exit 64 with a stderr message asking for an initial commit.
    - **diverged** → refuse before opening the adoption loop because the adopted ref is not an ancestor of HEAD; print recovery guidance and exit 1.
-   - **in-sync** → open the runtime, acquire the branch-level compiler-host lock, run one operational-work pump against the adopted commit (due schedule triggers, durable jobs, low-risk question auto-resolution when enabled, and outbox rows already pending before the pump started), print `dome sync: already in sync (<head> on <branch>)`, print durable attention / next-action lines when attention remains, exit 0.
+   - **in-sync** → open the runtime, acquire the branch-level compiler-host lock, run one operational-work pump against the adopted commit (due schedule triggers, low-risk question auto-resolution when enabled, and outbox rows already pending before the pump started), print `dome sync: already in sync (<head> on <branch>)`, print durable attention / next-action lines when attention remains, exit 0.
    - **drift** → open the runtime, acquire the branch-level compiler-host lock, run `runOneAdoption`, then after a successful adoption run the same operational-work pump against the new adopted commit; print the result block plus durable attention / next-action lines when attention remains (or the `--json` payload), exit 0 (adopted) or 1 (blocked).
    - **busy** → another Dome host already holds the branch-level compiler-host lock; print a retryable busy message, exit 75.
 4. Close the runtime on the way out.
@@ -448,13 +498,13 @@ Composition (v1.0):
 `--json` emits a single JSON object on stdout suitable for cross-tool consumption:
 
 ```json
-{"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"garden":{"subProposalCount":1,"rejectedPatchCount":0,"diagnosticCount":0},"operational":{"scheduledCount":0,"jobCount":0,"outboxCount":0,"autoResolvedQuestions":0,"diagnosticCount":0},"health":{"pendingRuns":0,"orphanRuns":0,"failedRuns":0,"diagnostics":0,"contentDiagnostics":0,"unlocatedDiagnostics":0,"attentionDiagnostics":0,"questions":0,"outboxPending":0,"outboxFailed":0,"quarantined":0},"attention_required":false,"attention":[],"next_actions":[],"diagnostics":[]}
+{"status":"adopted","branch":"main","base":"abc...","head":"def...","adoptedRef":"def...","iterations":1,"closureCommit":null,"garden":{"subProposalCount":1,"rejectedPatchCount":0,"diagnosticCount":0},"operational":{"scheduledCount":0,"outboxCount":0,"autoResolvedQuestions":0,"diagnosticCount":0},"health":{"pendingRuns":0,"orphanRuns":0,"failedRuns":0,"diagnostics":0,"contentDiagnostics":0,"unlocatedDiagnostics":0,"attentionDiagnostics":0,"questions":0,"outboxPending":0,"outboxFailed":0,"quarantined":0},"attention_required":false,"attention":[],"next_actions":[],"diagnostics":[]}
 ```
 
 `status` is one of `"adopted" | "blocked" | "in-sync" | "busy" | "error"`. The `error` field is present on `"busy"` and error variants such as detached HEAD, no commits, runtime-open failure, or adopted-ref divergence.
 `garden` summarizes post-adoption garden PatchEffects that spawned
 sub-Proposals plus any garden-routing diagnostics. `operational` summarizes
-the scheduled/job/outbox/auto-resolution pump. `autoResolvedQuestions` counts
+the scheduled/outbox/auto-resolution pump. `autoResolvedQuestions` counts
 low-risk `QuestionEffect` rows answered through the durable `dome resolve`
 machinery by opt-in runtime policy; their answer handlers still route patches
 through garden and adoption. `health` summarizes durable post-tick attention
@@ -1055,7 +1105,34 @@ answer, it prints the resolved answer and answer-handler summary.
 `question`, and `handlers` fields used by agent callers. Error cases emit
 `{ schema, status: "error", error, message }` to stdout.
 
-### `dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]`
+### `dome settle <block-id> <close|defer|keep> [--until <yyyy-mm-dd>] [--json]`
+
+Settle an open task by its `^block-anchor` — the decision channel for tasks,
+the sibling of `dome resolve` for questions ([[wiki/specs/task-lifecycle]]
+§"The settle operation"). `<block-id>` is the task line's anchor id (visible
+in `dome today` / `dome query` output as `^<id>`); `<disposition>` is one of
+`close` (mark the line done and append a `Done today` bullet to today's
+daily, in one commit), `defer` (rewrite the `📅` due token to `--until`), or
+`keep` (settle without writing anything — no commit). This is a **thin CLI
+binding**: all lookup, disposition, and commit semantics live in
+`performSettle` (`src/surface/settle.ts`), the same collector the HTTP
+`POST /settle` route and the MCP `settle` tool call — settle never opens the
+runtime and never talks to the engine, exactly like `dome capture`.
+
+`--until` is passed through untouched; `performSettle` owns validating it as
+`YYYY-MM-DD` (required iff `<disposition>` is `defer`).
+
+Text output is one line: `dome settle: <disposition> ^<block-id>` (plus the
+short commit oid when one landed). `--json` emits `dome.settle/v1`:
+`{ schema, status: "settled", block_id, disposition, commit }` (`commit` is
+`null` for `keep` and for an idempotent no-op) or
+`{ schema, status: "not-found" | "invalid", message }`.
+
+Exit codes: `0` on `settled`; `64` (`EX_USAGE`) on `not-found` (no line
+carries the anchor) or `invalid` (bad disposition, or `defer` without a
+well-formed `--until`).
+
+### `dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--miss [note]] [--json]`
 
 Invokes the `dome.search.query` view-phase processor against adopted-state
 projections. The processor reads FTS rows and related facts through
@@ -1147,6 +1224,26 @@ underlying row shape but bounds per-match related facts, diagnostics, and
 questions to the top topic-relevant rows; exhaustive provenance remains
 available through `dome inspect facts`, `dome inspect diagnostics`, and
 `dome inspect questions`.
+
+`--miss [note]` records this query as a retrieval-miss dogfood entry AFTER
+the results above have printed — the mechanical channel for the "note the
+miss" instruction the vault AGENTS.md template used to leave to hand-editing.
+The bare flag (no value) defaults the entry's note to `no note`; a supplied
+value becomes the note verbatim. This is a **thin CLI binding**: the append,
+grammar, and commit all live in `reportMiss` (`src/surface/report-miss.ts`,
+the same collector `dome export-context --miss` and the MCP `report_miss`
+tool call) — `dome query` never opens the retrieval-miss file itself. It
+appends one grammar-exact bullet to `meta/retrieval-misses.md` (created with
+a header on first miss) — `- YYYY-MM-DD — "<query>" — <note>` — and lands it
+as ONE ordinary human commit (`miss: <query first 40 chars>`, no `Dome-*`
+trailers), exactly like `dome capture`/`dome settle`; never opens the runtime
+and never talks to the engine. The acknowledgment (`dome query: miss
+recorded (<short-oid>)` or `... miss not recorded: <reason>`) prints to
+stderr so stdout stays exclusively the query's own output/JSON. This is the
+mechanical channel the retrieval miss-log gate ([[memory]] §"M6 — Banked
+embeddings design (spec-only)": "implementation proceeds when the log shows a
+real miss rate") was missing — see [[wiki/specs/vault-layout]]
+§"`meta/retrieval-misses.md`".
 
 ### `dome lint [--fail-on <severity>] [--limit <n>] [--json]`
 
@@ -1250,8 +1347,9 @@ structured consumers.
 The terminal cockpit — a typed dedicated wrapper over the command-triggered
 `today` view (`dome.daily.today`, structured schema `dome.daily.today/v1`),
 exactly the `dome query` posture: the `dome.daily.today` processor owns the
-action surface (see §"Run-only daily view processors" for the underlying
-view's normative behavior); this verb owns CLI ergonomics and rendering. It
+action surface (see §"Daily view processors — shared substrate" for the
+underlying view's normative behavior); this verb owns CLI ergonomics and
+rendering. It
 routes through the same shared view-command boundary and validates the same
 one-view/effect-name/schema contract as the other dedicated wrappers.
 
@@ -1421,7 +1519,16 @@ their own option shapes without changing the core CLI parser.
 Exit codes: 0 on success; 64 when no matching view processor exists or the
 vault has no usable adopted ref; 1 on runtime or dispatch failure.
 
-### Run-only daily view processors
+### Daily view processors — shared substrate
+
+`dome today`, `dome prep`, and `dome agenda-with` are three dedicated
+top-level verbs over the same source-backed daily action state — this
+section is the normative behavior shared across all three; each command's
+own `###` section above/below owns only its CLI-specific ergonomics
+(rendering, flags). `dome run today` additionally exercises the raw
+`dome.daily.today` view for deterministic debugging (always-JSON, no
+presenter); `dome prep` and `dome agenda-with` are themselves the dedicated
+verbs — there is no separate "run-only" flavor of those two left.
 
 The target daily-note path comes from `dome.daily` extension config. Default is
 `wiki/dailies/{date}.md`; vaults that keep Obsidian daily notes at the root of
@@ -1529,12 +1636,13 @@ folded row's complete `sourceRefs`. `shown` and `omitted` mirror the bounded arr
 agents do not need to infer truncation from array lengths. `--date` is for
 reviewing another day and for deterministic tests; omitted means local today.
 
-`dome run prep --date <YYYY-MM-DD> [--limit <n>] [--json]` exercises the
+`dome prep [--date <YYYY-MM-DD>] [--limit <n>] [--json]` wraps the
 `dome.daily.prep` view processor. It uses the same source-backed daily action
-state as `dome run today`, then renders a portable planning packet for the
-target day. V1 keeps it as a debug/test view; normal planning and meeting-prep
-context should come from prepared daily markdown plus `query` /
-`export-context`.
+state as `dome today`, then renders a portable planning packet for the
+target day. It is a deterministic filter over that state, not a substitute
+for natural-language planning/meeting-prep requests — `query` /
+`export-context` remain preferred when the request isn't already shaped as
+"today's plan for a specific day."
 
 Default text output is markdown:
 
@@ -1550,7 +1658,7 @@ Default text output is markdown:
   "Start Here", and instead render an "already listed" count for those rows,
 - SourceRefs for the backing daily note and the rendered facts/questions.
 
-The shared daily action model is the same as `dome run today`: each
+The shared daily action model is the same as `dome today`: each
 task/followup/question carries a `daily` or `backlog` source scope, items from
 the target daily note appear before wider vault backlog within each bounded
 action section, wider-backlog task/followup rows use the same due-date /
@@ -1563,7 +1671,7 @@ acted on without a separate diagnostic command when the decision is clear.
 
 `--limit` bounds the prioritized start list and samples detailed action
 sections per source group, using the same "up to `<limit>` daily rows plus up
-to `<limit>` backlog rows" rule as `dome run today`. Detailed sections do not
+to `<limit>` backlog rows" rule as `dome today`. Detailed sections do not
 repeat rows already shown in "Start Here"; they render an "already listed"
 count and then show the remaining bounded rows by source group. The markdown
 packet's SourceRefs section is bounded by the rendered planning/action scope.
@@ -1574,9 +1682,9 @@ compact `evidenceLabel` values, plus the markdown packet under `markdown`.
 `--date` is for prepping a chosen day and for deterministic tests; omitted
 means local today.
 
-`dome run agenda-with <person-or-topic> [--date <YYYY-MM-DD>] [--limit <n>]
-[--json]` exercises the `dome.daily.agenda-with` view processor. It reuses the
-same source-backed daily action state as `dome run today` / `dome run prep`,
+`dome agenda-with <person-or-topic> [--date <YYYY-MM-DD>] [--limit <n>]
+[--json]` wraps the `dome.daily.agenda-with` view processor. It reuses the
+same source-backed daily action state as `dome today` / `dome prep`,
 filters open tasks, followups, and unresolved daily questions by the supplied
 person or topic, and joins adopted-state search matches when `dome.search` has
 populated the projection. For V1 user/agent workflow, a natural-language
@@ -1602,6 +1710,32 @@ and JSON sets `hasMore.context: true`. `--json` emits the structured
 `priority` metadata, compact `evidenceLabel` values, and the markdown packet
 under `markdown`. `--date` provides daily-note context; omitted means local
 today.
+
+### `dome stale-claims [--json]`
+
+Wraps the `dome.claims.stale-claims` view processor: lists every claim whose
+inline `*(as of YYYY-MM-DD)*` marker is older than the configured horizon
+(`stale_claims_horizon_days` config key, default 120), computed at command
+time against the injected clock — never persisted, since staleness is
+relative to "now" and a rebuild at a later date must not mint different rows
+from identical adopted markdown (see [[wiki/specs/claims]]
+§"`dome.claims.stale-claims`"). Default text output lists each stale claim's
+page, key/value, `asOf` date, and days-stale count; `--json` emits the
+structured `dome.claims.stale-claims/v1` payload (`horizonDays` plus the full
+`staleClaims` array). Exit code is always 0 — staleness is a report, not a
+failure condition.
+
+### `dome orphan-pages [--json]`
+
+Wraps the `dome.markdown.orphan-pages` view processor: lists every markdown
+page with zero incoming wikilinks that is not itself a root `index.md` and
+not implicitly linked from one (a root's `index.md` is treated as linking to
+every other file under that root even without an explicit `[[wikilink]]`).
+Reads `dome.graph.links_to` facts from the projection plus the adopted
+snapshot's full markdown file list. Default text output lists each orphan
+page's path; `--json` emits the structured `dome.markdown.orphan-pages/v1`
+payload (`totalScanned`, `totalOrphans`, and the full `orphans` array). Exit
+code is always 0.
 
 ### `dome rebuild`
 
@@ -1799,13 +1933,16 @@ kinds it additionally evaluates the **manifest-contributed grant-entry
 probes** (`doctor.grantEntries:` per [[wiki/matrices/extension-bundle-shape]]
 — each bundle declares its own; the runtime composes active bundles'
 entries): when an enabled processor's manifest declares a specific path or
-fact namespace that the vault's grant patterns miss (e.g. `dome.daily`
-without `"dome.attention.*"`, `dome.agent` without `"core.md"` read, the
-preference-promotion answer handler without its per-processor replacement
-grant), doctor raises a `capability.grant-entry-missing` warning whose
-recovery text names the exact YAML to add — `dome init --refresh-config`
-fills only missing keys and never merges entries into existing grant lists,
-so these gaps are otherwise silent (see `docs/memory.md` §"Vault rollout").
+fact namespace that the vault's grant patterns miss (e.g. `dome.agent`
+without `"core.md"` read, the preference-promotion answer handler without
+its per-processor replacement grant), doctor raises a
+`capability.grant-entry-missing` warning whose
+recovery text names the exact YAML to add. On a legacy enumerated vault,
+`dome init --refresh-config` now merges exactly these `doctor.grantEntries`
+rows into the vault's grant blocks automatically (§"`dome init`"), so the gap
+self-heals on refresh; the probe remains the detection half and the manual
+recovery for grants outside the first-party set (see `docs/memory.md`
+§"Vault rollout").
 Beyond the hand-curated rows, the **general grant-starvation probe**
 (`capability.grant-starved`, **info**) covers every loaded processor: for
 each manifest-declared `read` / `patch.auto` pattern it derives a
@@ -1857,7 +1994,21 @@ still-affected paths (the owner's own `git commit`, custom vault-side
 scripts shelling plain `git commit`) with `git config --local
 commit.gpgsign false` as the opt-out if the owner wants unsigned human
 commits too — their call.
-The implementation lives in `src/engine/host/health.ts`.
+When `runs.db` exceeds 512 MB on disk, doctor raises a `ledger.oversized`
+**warning** finding naming the file size, the threshold, and the count of
+retained failure-forensics rows. The run ledger works fine at any size; the
+finding is a nudge toward setting `ledger.retention_days` in
+`.dome/config.yaml` (the `dome init` template opts in at 30 days; `dome
+serve` applies it daily — see [[wiki/specs/run-ledger]] §"Retention") or
+running a one-off
+`dome repair run-ledger --older-than-days <n> --apply --vacuum`. Both
+remedies share the eligibility predicate that never deletes failure
+forensics (`failed` / `timed_out` / `cancelled` / reason-bearing `skipped`),
+so the recovery text also names the case where pruning doesn't shrink the
+file: a failure-dominated ledger is fixed by fixing the failing processor,
+not by tightening the retention window.
+The implementation lives in `src/engine/host/health/` (one file per probe
+concern; `registry.ts` is the ordered probe list).
 
 **Model-provider probe.** When `.dome/config.yaml` carries a
 `model_provider: { kind: "command", ... }` stanza, `dome doctor` additionally
@@ -1960,7 +2111,13 @@ rows and idempotency-style `skipped` rows with no error, first deleting their
 `capability_uses` children inside the ledger layer. It preserves failed,
 timed-out, cancelled, queued, running, and reason-bearing skipped rows.
 `--vacuum` is valid only with `--apply` and runs SQLite `VACUUM` after the
-delete.
+delete. This is the manual, ad-hoc-window sibling of the automatic
+`ledger.retention_days` policy `dome serve` applies daily when the key is set
+(the init template opts in at 30 days — [[wiki/specs/run-ledger]]
+§"Retention"); both
+share the same eligibility predicate in `src/ledger/runs.ts`, so reach for
+this command only when an immediate prune or a one-off window different from
+the configured default is wanted.
 
 ### `dome answer <question-id> [<value>]` *(advanced compatibility alias)*
 
@@ -2042,7 +2199,7 @@ Runs the local compiler host — the canonical write path per [[v1]] §13.2 ("Cl
 
 Composition (v1.0):
 
-1. `openVaultRuntime({vaultPath, bundlesRoot, additionalBundlesRoots})` opens the operational databases (`projection.db`, `answers.db`, `outbox.db`, `runs.db`) and loads extension bundles from the resolved root set (SDK-shipped `assets/extensions/` by default, plus vault-local `.dome/extensions/` when present; `--bundles-root` replaces the set).
+1. `openVaultRuntime({vaultPath, bundlesRoot, additionalBundlesRoots})` opens the operational databases (`projection.db`, `answers.db`, `outbox.db`, `runs.db`) and loads extension bundles from the resolved root set (SDK-shipped `assets/extensions/` by default, plus vault-local `.dome/extensions/` when present; `--bundles-root` replaces the set). Two host-open findings are logged loudly right after open, regardless of `--quiet`: a pruned-quarantine line (a quarantine row for a processor id no active bundle registers, per the registry-orphan GC) and, when `dome.agent` is enabled with no model provider configured or injected, the one-line `agent.no-model-provider` warning ("dome.agent is enabled but no model provider is configured; run `dome init --with-model-provider` or set enabled: false") — the runtime complement to `dome doctor`'s `model.provider-missing` config-time probe (product-review-3 Task 17).
 2. Resolves the initial branch via `getCurrentBranch`. A detached HEAD is a startup error (the adopted-ref substrate requires a branch).
 3. Polls `refs/heads/<branch>` every `--poll-interval-ms <n>` (default 500ms). On each tick, compares HEAD to `refs/dome/adopted/<branch>`:
    - If the adopted ref is uninitialized: runs an empty-diff `(HEAD, HEAD)` adoption to initialize it.
@@ -2058,7 +2215,7 @@ Composition (v1.0):
 5. Adoption runs; effects route through `buildSqliteSinks` (projection + outbox writes) + the engine's candidate-tree `applyPatch` sink. View delivery remains a placeholder sink in v1.0.
 6. Every adoption or operational-work pump acquires the same branch-level compiler-host lock that `dome sync` uses. A second host does not race the first; it reports busy and retries on the next poll.
 7. After an adoption finishes, `serve` checks drift again before sleeping. If HEAD moved while adoption was active, the next adoption starts immediately rather than waiting for the full poll interval. This coalesces stacked commits without overlapping compiler work.
-8. The host also runs operational-work pumps while HEAD is already in sync, on a quiet internal cadence. This is how schedule triggers, durable jobs, opt-in low-risk question auto-resolution, and outbox retries that become due solely because time passed make progress in a quiet vault. Default output stays silent; `--verbose` may print counts.
+8. The host also runs operational-work pumps while HEAD is already in sync, on a quiet internal cadence. This is how schedule triggers, opt-in low-risk question auto-resolution, and outbox retries that become due solely because time passed make progress in a quiet vault. Default output stays silent; `--verbose` may print counts.
 9. The host refreshes `.dome/state/serve-heartbeat.json` so `dome status`
    can report whether the local compiler appears `running`, `stale`, or
    `off`. The heartbeat is observability only; the branch-level compiler-host
@@ -2071,8 +2228,11 @@ Composition (v1.0):
 
 `--quiet` suppresses routine text output: startup banner, successful adoption
 summaries, operational-work summaries, and shutdown line. It still reports
-startup failures, detached-HEAD pauses, blocked adoption diagnostics, and
-unexpected tick errors. `--quiet` and `--verbose` are mutually exclusive.
+startup failures, detached-HEAD pauses, blocked adoption diagnostics,
+unexpected tick errors, and the two host-open findings named in step 1 above
+(pruned quarantine state, `agent.no-model-provider`) — a starved or
+recovering bundle is never silent, `--quiet` or not. `--quiet` and
+`--verbose` are mutually exclusive.
 
 `--daemon` starts the same compiler host in a detached background process and
 returns after the heartbeat proves the child is running. The child writes its
@@ -2402,10 +2562,13 @@ bindings. The intended shape is:
 - `dome migrate` — explicit vault/schema upgrade orchestration beyond the
   current open-time SQLite migration and projection rebuild paths.
 
-Until these aliases ship, command-triggered view processors are invoked via
-`dome run <command-name>`. The shipped run-only first-party view commands are
-`dome run orphan-pages`, `dome run stale-claims`, `dome run today`,
-`dome run prep`, and `dome run agenda-with`.
+Until these two ship, their processors would be invoked via `dome run
+<command-name>` if they existed today. Every shipped first-party
+command-triggered view processor already has a dedicated top-level verb —
+`dome query`, `dome export-context`, `dome lint`, `dome today`, `dome prep`,
+`dome agenda-with`, `dome stale-claims`, and `dome orphan-pages` — so
+`dome run <name>` is reserved for extension-authored view processors under
+active development or debugging.
 
 ## Adding a new command
 

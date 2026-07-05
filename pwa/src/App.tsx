@@ -60,6 +60,20 @@ function Screen({ token }: { token: string }): React.ReactElement {
     void client.resolve(id, value).then(refresh).catch(() => {});
   };
 
+  // Glance-and-settle: tap the checkbox -> settle 'close' via /settle. Brief
+  // owns the optimistic strike-through + revert; this just makes the call and
+  // reports success/failure, then refetches on success so the settled task
+  // drops off the list for good.
+  const settle = (blockId: string): Promise<boolean> => {
+    return client.settle(blockId, "close")
+      .then((r) => {
+        const ok = r.status === "settled";
+        if (ok) refresh();
+        return ok;
+      })
+      .catch(() => false);
+  };
+
   return (
     <main className="screen">
       <header className="masthead">
@@ -68,7 +82,7 @@ function Screen({ token }: { token: string }): React.ReactElement {
       </header>
       <div className="scroll">
         {today !== null ? (
-          <Brief today={today} onResolve={resolve} collapsed={briefCollapsed} hasMessages={hasMessages} onToggle={() => setBriefCollapsed((c) => !c)} />
+          <Brief today={today} onResolve={resolve} onSettle={settle} collapsed={briefCollapsed} hasMessages={hasMessages} onToggle={() => setBriefCollapsed((c) => !c)} />
         ) : null}
         {recents !== null ? (
           <details className="recents-wrap">

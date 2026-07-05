@@ -13,7 +13,6 @@ import { capabilityUsesByRun } from "../../../../src/ledger/capability-uses";
 import {
   insertPending,
   markAbandoned,
-  markFailed,
   queryOutbox,
 } from "../../../../src/outbox/dispatch";
 import { scenario } from "../../index";
@@ -61,6 +60,15 @@ extensions:
       path: ".dome/config.yaml",
     });
 
+    // The outbox-recovery-questions processor subscribes to the `outbox.changed`
+    // store-change signal (the per-minute cron was dropped in the pruning pass).
+    // So we drive REAL terminal failures through the operational drain: seed
+    // PENDING rows for a capability with no registered handler, then drain — the
+    // dispatcher's missing-handler terminal branch fires `outbox.changed`, whose
+    // tick epilogue dispatches the subscriber once. Rows are enqueued on the
+    // harness clock so the drain's `enqueued_before` cutoff includes them.
+    const MISSING_HANDLER_ERROR =
+      "No external handler registered for capability 'calendar.write'.";
     for (const key of ["health-retry", "health-abandon"] as const) {
       insertPending(h.outbox, {
         effect: externalActionEffect({
@@ -70,13 +78,19 @@ extensions:
           sourceRefs: [ref],
         }),
         runId: `seed-${key}`,
+        now: h.clock.now(),
       });
-      markFailed(h.outbox, key, "terminal failure");
     }
 
     await h.advance(60_000);
     const drained = await h.drainOperationalWork();
-    expect(drained.scheduler.fired.map((fire) => fire.processorId)).toContain(
+    // The rows fail terminally in the drain (missing handler); the recovery
+    // processor runs on the `outbox.changed` epilogue dispatch, not the
+    // scheduler.
+    expect(
+      drained.outbox.map((r) => r.kind),
+    ).toEqual(["failed", "failed"]);
+    expect(drained.scheduler.fired.map((fire) => fire.processorId)).not.toContain(
       "dome.health.outbox-recovery-questions",
     );
     await h
@@ -191,14 +205,25 @@ extensions:
         lastError: null,
       },
       {
+        // Abandoned after its terminal drain failure — attempts/lastError are
+        // whatever the missing-handler terminal branch recorded.
         key: "health-abandon",
         status: "abandoned",
-        attempts: 0,
-        lastError: "terminal failure",
+        attempts: 1,
+        lastError: MISSING_HANDLER_ERROR,
       },
     ]);
 
-    markFailed(h.outbox, "health-retry", "failed again");
+    // Re-notification: health-retry (replayed to pending) fails terminally
+    // again, firing `outbox.changed` a second time so a fresh recovery question
+    // opens. The CLI replay stamped `next_attempt_at` on wall-clock time; realign
+    // it to the harness clock so the operational drain re-attempts (and, with no
+    // handler, re-fails) it.
+    h.outbox.raw
+      .query(
+        "UPDATE outbox SET next_attempt_at = ? WHERE idempotency_key = 'health-retry'",
+      )
+      .run(h.clock.now().toISOString());
     await h.advance(60_000);
     await h.drainOperationalWork();
     const afterRetryFailure = JSON.parse(

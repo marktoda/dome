@@ -12,7 +12,6 @@ import {
   diagnosticEffect,
   externalActionEffect,
   factEffect,
-  jobEffect,
   outboxRecoveryEffect,
   patchEffect,
   quarantineRecoveryEffect,
@@ -45,7 +44,6 @@ test("phase compatibility table covers every effect kind and phase", () => {
     "diagnostic",
     "external",
     "fact",
-    "job",
     "outbox-recovery",
     "patch",
     "quarantine-recovery",
@@ -191,20 +189,6 @@ describe("garden-phase PatchEffect routing", () => {
 });
 
 describe("phase-mismatch rejections", () => {
-  test("JobEffect in adoption phase", async () => {
-    const r = await applyEffect({
-      ...baseOpts,
-      phase: "adoption",
-      effect: jobEffect({
-        processorId: "p",
-        input: null,
-        idempotencyKey: "j-1",
-      }),
-    });
-    expect(r.outcome).toBe("rejected-by-phase");
-    expect(r.diagnostics[0]?.code).toBe("phase-mismatch");
-  });
-
   test("ExternalActionEffect in adoption phase", async () => {
     const r = await applyEffect({
       ...baseOpts,
@@ -492,27 +476,6 @@ describe("successful routes (noopSinks)", () => {
     expect(r.capabilityUse?.resource).toBe("wiki/x.md");
   });
 
-  test("JobEffect in garden phase with job.enqueue granted → applied", async () => {
-    const enqueue: Capability = {
-      kind: "job.enqueue",
-      processors: ["test.worker"],
-    };
-    const r = await applyEffect({
-      ...baseOpts,
-      declared: [enqueue],
-      granted: [enqueue],
-      phase: "garden",
-      effect: jobEffect({
-        processorId: "test.worker",
-        input: null,
-        idempotencyKey: "j-1",
-      }),
-    });
-    expect(r.outcome).toBe("applied");
-    expect(r.capabilityUse?.capability).toBe("job.enqueue");
-    expect(r.capabilityUse?.resource).toBe("test.worker");
-  });
-
   test("OutboxRecoveryEffect in garden phase with outbox.recover granted → applied", async () => {
     const recover: Capability = {
       kind: "outbox.recover",
@@ -671,22 +634,6 @@ describe("capability denial flows through", () => {
       resource: "wiki/x.md",
       outcome: "denied",
     });
-  });
-
-  test("JobEffect with no matching job.enqueue grant is denied", async () => {
-    const r = await applyEffect({
-      ...baseOpts,
-      phase: "garden",
-      effect: jobEffect({
-        processorId: "test.worker",
-        input: null,
-        idempotencyKey: "j-1",
-      }),
-    });
-    expect(r.outcome).toBe("denied");
-    expect(r.diagnostics[0]?.code).toBe("capability-deny-job-enqueue");
-    expect(r.capabilityUse?.capability).toBe("job.enqueue");
-    expect(r.capabilityUse?.resource).toBe("test.worker");
   });
 
   test("OutboxRecoveryEffect with no outbox.recover grant is denied", async () => {

@@ -1,12 +1,14 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-12
+updated: 2026-07-03
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
   - "[[wedge]]"
-description: "dome mcp stdio adapter: eight typed tools mirroring CLI --json documents over shared collectors; engine import graph stays MCP-free"
+  - "[[wiki/specs/task-lifecycle]]"
+  - "[[memory]]"
+description: "dome mcp stdio adapter: ten typed tools mirroring CLI --json documents over shared collectors; engine import graph stays MCP-free"
 ---
 
 # MCP surface
@@ -37,8 +39,10 @@ The adapter is deliberately thin and **consumes data-returning boundaries — it
 
 - `capture` calls `performCapture` (the data core behind `dome capture`) and renders the shared `dome.capture/v1` document via `captureJsonDocument`.
 - `query` / `export_context` / `tasks` dispatch their view processors through the public `vault.runView` surface (`openVault` → `src/engine/host/view-command.ts`), with the same expected-view/schema validation the CLI wrappers enforce.
+- `report_miss` calls `reportMiss` (the data core behind `dome query --miss` / `dome export-context --miss`, `src/surface/report-miss.ts`) and renders the shared `dome.report-miss/v1` document via `reportMissResultJson` — the mechanical retrieval-miss-log channel [[memory]] §"M6" gates banked embeddings on.
 - `status` / `check` call `buildStatusSnapshot` / `buildCheckReport` (the data collectors behind `dome status --json` / `dome check --json`) and return the identical documents.
 - `resolve` calls `vault.resolve` (durable answer + answer-handler dispatch — the same path as `dome resolve`) and renders `dome.answer/v1` via the shared `src/surface/answer.ts` mappers.
+- `settle` calls `performSettle` (the data core behind `dome settle`, `src/surface/settle.ts`) and renders the shared `dome.settle/v1` document via `settleResultJson` — resolve's sibling for tasks: a decision by `^block-anchor` (close / defer / keep), not a document edit.
 - `brief` runs the today view to locate the daily note (config-aware path template), then reads its content at the adopted commit via the git read boundary.
 
 Nothing in a tool call prints, so stdout stays exclusively the MCP protocol channel — load-bearing for a stdio server. A tool mutex still serializes calls: each call opens and closes its own `Vault`/runtime exactly like one CLI invocation, so at most one set of SQLite handles is open against the vault at a time and none is held between calls.
@@ -58,9 +62,11 @@ MCP tool names are bare verbs — harness clients already namespace by server na
 | `capture` | `dome capture --json` | `dome.capture/v1` | Write a thought into `inbox/raw/` and commit it on the current branch. |
 | `query` | `dome query --json` | `dome.search.query/v1` | FTS + structured query against adopted state, with SourceRefs. |
 | `export_context` | `dome export-context --json` | `dome.search.export-context/v1` | Portable source-backed context packet for a topic. |
+| `report_miss` | `dome query --miss` / `dome export-context --miss` | `dome.report-miss/v1` | Log a retrieval miss to `meta/retrieval-misses.md` — the weekly report card's dogfood evidence. |
 | `status` | `dome status --json` | status snapshot (stable keys) | Vault pulse: attention codes, `next_actions`, serve state, counts. |
 | `check` | `dome check --json` | `dome.check/v1` | Explain attention: engine health, content diagnostics, open decisions. |
 | `resolve` | `dome resolve --json` | `dome.answer/v1` | Answer a Dome-raised question by id; omit `value` to read the question. |
+| `settle` | `dome settle --json` | `dome.settle/v1` | Close, defer, or keep a task line by its `^block-anchor`. |
 | `tasks` | `dome run today --json` | `dome.daily.today/v1` | Source-backed open loops / followups / questions for a day. |
 | `brief` | today view + adopted-commit read | `dome.mcp.brief/v1` | Today's daily note content — the morning-brief read surface. |
 
@@ -72,9 +78,11 @@ Zod raw shapes, summarized:
 capture:        { text: string (required), title?: string }
 query:          { text: string (required), limit?: int>0, category?: string, type?: string }
 export_context: { topic: string (required), limit?: int>0 }
+report_miss:    { query: string (required), note?: string }
 status:         {}
 check:          { engine?: bool, content?: bool, decisions?: bool, attention?: bool, limit?: int>0 }
 resolve:        { id: int>0 (required), value?: string }
+settle:         { blockId: string (required), disposition: "close"|"defer"|"keep" (required), deferUntil?: string }
 tasks:          { date?: "YYYY-MM-DD", limit?: int>0 }
 brief:          { date?: "YYYY-MM-DD" }
 ```
@@ -100,12 +108,14 @@ counts: { openTasks, followups, questions }  # from dome.daily.today
 
 ## Writes and lifecycle
 
-The MCP server is a **read/capture surface over an existing vault** (no hosted model — the MCP surface brings typed tools for harnesses that already carry their own agent; the HTTP surface's `POST /agent` is the co-located agent path). It runs no adoption loop, no scheduler, and no garden processors — the daemon (`dome serve`, kept alive by `dome install`, per [[wedge]] §"Phase 1") owns compilation. The two write-shaped tools reuse existing non-engine write channels unchanged:
+The MCP server is a **read/capture/decision surface over an existing vault** (no hosted model — the MCP surface brings typed tools for harnesses that already carry their own agent; the HTTP surface's `POST /agent` is the co-located agent path). It runs no adoption loop, no scheduler, and no garden processors — the daemon (`dome serve`, kept alive by `dome install`, per [[wedge]] §"Phase 1") owns compilation. The four write-shaped tools reuse existing non-engine write channels unchanged:
 
 - **`capture`** lands an ordinary human commit via the same single-file commit path as `dome capture` (no `Dome-*` trailers; the daemon constructs the Proposal from branch drift, per [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]]). The payload's `compile_pending` / `serve_status` fields tell the caller whether a daemon will pick it up.
 - **`resolve`** records an answer durably in `answers.db` and dispatches answer handlers via the identical `answerQuestionDurably` path `dome resolve` uses.
+- **`settle`** lands the same commit-or-nothing human commit as `dome settle` via `performSettle` ([[wiki/specs/task-lifecycle]] §"The settle operation"): `close` / `defer` edit the located `^block-anchor` line (and, for `close`, append a Done-today bullet) in one commit; `keep` writes and commits nothing.
+- **`report_miss`** appends one grammar-exact bullet to `meta/retrieval-misses.md` (created with a header on first miss) via `reportMiss`, landing as one ordinary human commit (`miss: <query first 40 chars>`) — the same collector `dome query --miss` / `dome export-context --miss` call. This is the mechanical retrieval-miss-log channel [[memory]] §"M6 — Banked embeddings design (spec-only)" gates implementation of banked embeddings on; see [[wiki/specs/vault-layout]] §"`meta/retrieval-misses.md`".
 
-An earlier draft of this spec said "no write tools." Wedge Phase 5 deliberately amends that: `capture` and `resolve` are the validated wedge loop's ingress and decision channels, both already designed as non-engine write paths, and an MCP server launched locally by the vault owner sits in the same trust domain as the owner's CLI.
+An earlier draft of this spec said "no write tools." Wedge Phase 5 deliberately amends that: `capture` and `resolve` are the validated wedge loop's ingress and decision channels, both already designed as non-engine write paths, and an MCP server launched locally by the vault owner sits in the same trust domain as the owner's CLI. `settle` and `report_miss` join them: `settle` is the decision channel for tasks; `report_miss` is the dogfood-evidence channel for retrieval quality.
 
 **Composition with `dome serve`:** run both. The MCP server gives an agent typed read/capture access; the daemon compiles what the agent captures. Captures and resolutions made over MCP are durable immediately and compile on the daemon's next tick (or the next `dome sync`). The MCP server stays correct with no daemon running — reads serve the last-adopted state and `capture` reports `compile_pending: true` — it just goes stale.
 
@@ -137,7 +147,7 @@ The server's `instructions` field carries cold-start orientation (the daily loop
 To keep the surface minimal:
 
 - **No engine control.** No `sync`, `serve`, `init`, `install`, `rebuild` tools. Daemon lifecycle and adoption catch-up stay CLI/git-native.
-- **No document mutation beyond `capture`'s inbox ingress.** No `write_document`, no `move_document`, no `delete_document`. External writes are git-native. This is also why `tasks` is list-only: settling a task is a markdown edit (check the box, commit), and no existing non-engine write channel covers targeted document edits. A `tasks settle` verb waits for a designed write path, not an ad-hoc one.
+- **No general document mutation.** No `write_document`, no `move_document`, no `delete_document`. External writes are git-native, and the one targeted-edit exception is `settle`: a typed decision (close / defer / keep) on a task line located by its `^block-anchor`, not a free-form edit tool — the same commit-or-nothing seam `dome settle` and `POST /settle` use ([[wiki/specs/task-lifecycle]] §"The settle operation"). `tasks` itself stays list-only; settling a listed task goes through the `settle` tool, not through `tasks`.
 - **No privileged operations.** No way to advance the adopted ref, bypass capability checks, or write the projection store.
 - **No engine-internal queries.** No run-ledger access (use `dome inspect runs` when needed).
 - **No multi-vault routing.** One vault per server process.
@@ -151,6 +161,9 @@ To keep the surface minimal:
 - [[wiki/specs/sdk-surface]] §"Consumer surfaces" — the planned AbstractSurface this adapter will converge with.
 - [[wiki/specs/harnesses]] — when MCP earns its keep vs the CLI path.
 - [[wiki/specs/capture]] — the capture loop the `capture` tool feeds.
+- [[wiki/specs/task-lifecycle]] §"The settle operation" — the contract the `settle` tool implements.
+- [[wiki/specs/vault-layout]] §"`meta/retrieval-misses.md`" — the file the `report_miss` tool writes.
+- [[memory]] §"M6 — Banked embeddings design (spec-only)" — the retrieval-miss-log gate `report_miss` operationalizes.
 - [[wiki/specs/processors]] §"Phase × trigger matrix" — `query`/`export_context`/`tasks` invoke command-triggered view-phase processors.
 - [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] — core/MCP separation.
 - [[wiki/gotchas/transitive-llm-dependency]] — the dep-fence that catches MCP leak into core.

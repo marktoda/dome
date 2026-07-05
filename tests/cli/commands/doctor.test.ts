@@ -3,12 +3,14 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { execFileSync } from "node:child_process";
+import { truncateSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { runDoctor } from "../../../src/cli/commands/doctor";
 import { ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY } from "../../../src/answers/db";
 
+import { openLedgerDb } from "../../../src/ledger/db";
 import {
   readModelProviderProbeCache,
 } from "../../../src/engine/host/model-provider-probe-cache";
@@ -106,6 +108,69 @@ describe("runDoctor", () => {
     expect(parsed.summary.gitCommitSigning).toBe(0);
     expect(
       parsed.findings.some((row) => row.code === "git.commit-signing"),
+    ).toBe(false);
+  });
+
+  test("runs.db over the 512MB threshold raises the ledger.oversized warning", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    const ledgerPath = join(f.vaultPath, ".dome", "state", "runs.db");
+    const opened = await openLedgerDb({ path: ledgerPath });
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) return;
+    opened.value.db.close();
+    // Sparse-extend past the 512MB warning threshold without writing real
+    // disk pages — the doctor probe only stats the file, and SQLite reads
+    // only the pages its header records, so trailing zero bytes are inert.
+    truncateSync(ledgerPath, 513 * 1024 * 1024);
+
+    expect(await runDoctor({ vault: f.vaultPath, json: true })).toBe(0);
+    const blob = captured.out.find((line) => line.includes("\"status\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as {
+      readonly status: string;
+      readonly summary: { readonly ledgerOversized: number };
+      readonly findings: ReadonlyArray<{
+        readonly code: string;
+        readonly severity: string;
+        readonly message: string;
+        readonly recovery: string;
+        readonly storage?: { readonly retainedForensicsRows: number | null };
+      }>;
+    };
+    expect(parsed.summary.ledgerOversized).toBe(1);
+    const finding = parsed.findings.find((row) => row.code === "ledger.oversized");
+    expect(finding).toBeDefined();
+    expect(finding?.severity).toBe("warning");
+    expect(finding?.message).toContain("512 MB");
+    expect(finding?.recovery).toContain("ledger.retention_days");
+    // The recovery must name the failure mode retention can't fix (both
+    // remedies exempt failure forensics) and the detail carries the
+    // retained-forensics count (0 on this fresh ledger) so the operator
+    // isn't guessing which case they're in.
+    expect(finding?.recovery).toContain("failure-forensics");
+    expect(finding?.storage?.retainedForensicsRows).toBe(0);
+  });
+
+  test("a normal-sized runs.db raises no ledger.oversized finding", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    expect(await runDoctor({ vault: f.vaultPath, json: true })).toBe(0);
+    const blob = captured.out.find((line) => line.includes("\"status\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as {
+      readonly summary: { readonly ledgerOversized: number };
+      readonly findings: ReadonlyArray<{ readonly code: string }>;
+    };
+    expect(parsed.summary.ledgerOversized).toBe(0);
+    expect(
+      parsed.findings.some((row) => row.code === "ledger.oversized"),
     ).toBe(false);
   });
 

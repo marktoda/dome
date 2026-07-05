@@ -921,6 +921,101 @@ scenario(
   },
 );
 
+// Task 9 (PWA checkbox settles for real): the today payload's `blockId` field
+// — a compatible widening of dome.daily.today/v1. A task line that already
+// carries a stamped ^block-anchor surfaces it as `blockId` (the identity
+// `performSettle` looks up); a task with no anchor omits the field entirely
+// — never a synthesized id.
+//
+// `dome.daily.stamp-block-id` auto-stamps every unanchored task line within
+// the SAME tick (garden cascade resolves inline in this harness), so a
+// genuinely-unanchored probe needs a path outside its `patch.auto` grant —
+// here, `wiki/projects/**` is read-only (stamping silently skipped per
+// stamp-block-id.ts's "narrow grant simply skips the stamp" design), while
+// `wiki/dailies/*.md` keeps the default patch.auto grant.
+scenario(
+  {
+    name: "cli-surface: dome run today carries blockId for anchored tasks, omits it otherwise",
+    tags: [
+      { kind: "group", group: "cli-surface" },
+      { kind: "effect", effect: "fact" },
+      { kind: "effect", effect: "patch" },
+      { kind: "effect", effect: "view" },
+      { kind: "phase", phase: "adoption" },
+      { kind: "phase", phase: "garden" },
+      { kind: "phase", phase: "view" },
+      { kind: "capability", capability: "graph.write" },
+      { kind: "capability", capability: "patch.auto" },
+      { kind: "trigger", trigger: "signal" },
+      { kind: "trigger", trigger: "command" },
+    ],
+    harness: {
+      clock: new TestClock("2026-01-05T15:00:00.000Z"),
+      bundles: ["dome.daily"],
+      initialFiles: {
+        ".dome/config.yaml": `
+extensions:
+  dome.daily:
+    enabled: true
+    grant:
+      read: ["wiki/**/*.md", "notes/*.md"]
+      patch.auto: ["wiki/dailies/*.md"]
+      graph.write: ["dome.daily.*"]
+      question.ask: true
+`,
+      },
+    },
+  },
+  async (h) => {
+    const seed = await h.tick();
+    expect(seed.adopted).toBe(true);
+
+    await h.userCommit({
+      files: {
+        "wiki/dailies/2026-01-05.md": [
+          "---",
+          "type: daily",
+          "recurrence: 2026-01-05",
+          "---",
+          "",
+          "# 2026-01-05",
+          "",
+          "- [ ] Ship the anchored task ^t1a2b3c4",
+          "",
+        ].join("\n"),
+        "wiki/projects/backlog.md": [
+          "# Backlog",
+          "",
+          "TODO: Backlog anchored task ^tdeadbeef",
+          "TODO: Backlog unanchored task",
+          "",
+        ].join("\n"),
+      },
+      message: "add anchored and unanchored tasks",
+    });
+    const sync = await h.tick();
+    expect(sync.adopted).toBe(true);
+
+    const json = await h.runCli(["run", "today", "--date", "2026-01-05", "--json"]);
+    expect(json.exitCode).toBe(0);
+    const payload = structuredData(json.stdout) as {
+      readonly openTasks: ReadonlyArray<{
+        readonly text: string;
+        readonly source: "daily" | "backlog";
+        readonly blockId?: string;
+      }>;
+    };
+
+    const anchoredDaily = payload.openTasks.find((t) => t.text === "Ship the anchored task");
+    const anchoredBacklog = payload.openTasks.find((t) => t.text === "Backlog anchored task");
+    const unanchoredBacklog = payload.openTasks.find((t) => t.text === "Backlog unanchored task");
+
+    expect(anchoredDaily?.blockId).toBe("t1a2b3c4");
+    expect(anchoredBacklog?.blockId).toBe("tdeadbeef");
+    expect(unanchoredBacklog?.blockId).toBeUndefined();
+  },
+);
+
 scenario(
   {
     name: "cli-surface: dome run today respects configured daily note path",

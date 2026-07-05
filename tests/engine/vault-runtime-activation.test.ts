@@ -13,7 +13,11 @@ import { viewEffect } from "../../src/core/effect";
 import { defineProcessor } from "../../src/core/processor";
 import { pageTypeDeclaration } from "../../src/page-types";
 import { buildRegistry } from "../../src/processors/registry";
-import { openVaultRuntime } from "../../src/engine/host/vault-runtime";
+import {
+  AGENT_NO_MODEL_PROVIDER_MESSAGE,
+  openVaultRuntime,
+} from "../../src/engine/host/vault-runtime";
+import type { ModelProvider } from "../../src/engine/core/model-invoke";
 
 const roots: string[] = [];
 
@@ -154,8 +158,9 @@ extensions:
       "utf8",
     );
     // Seed quarantined.json directly with three counters: enabled (registered),
-    // disabled (configured-but-off), retired (neither). Only the retired one
-    // should be GC'd on open.
+    // disabled (configured-but-off), retired (neither, and ACTUALLY
+    // quarantined — the case the health emitter would otherwise re-ask
+    // about forever). Only the retired one should be GC'd on open.
     writeFileSync(
       join(root, ".dome", "state", "quarantined.json"),
       JSON.stringify({
@@ -180,7 +185,10 @@ extensions:
             processorId: "retired.bundle.worker",
             processorVersion: "0.1.0",
             triggerHash: "h-retired",
-            consecutiveRetryableFailures: 2,
+            consecutiveRetryableFailures: 3,
+            quarantineId: "q-retired-1",
+            quarantinedAt: "2026-06-18T00:00:00.000Z",
+            reason: "timeout",
           },
         ],
       }),
@@ -231,6 +239,12 @@ extensions:
       expect(ids).toEqual([
         "disabled.bundle.worker",
         "enabled.bundle.worker",
+      ]);
+      // The runtime reports exactly which processor ids it pruned — this is
+      // the field a host-startup CLI surface (`dome serve`) reads to log the
+      // GC loudly (src/cli/commands/serve.ts).
+      expect(runtimeResult.value.prunedUnknownProcessorQuarantines).toEqual([
+        "retired.bundle.worker",
       ]);
     } finally {
       await runtimeResult.value.close();
@@ -290,6 +304,101 @@ extensions:
       ) as { entries: ReadonlyArray<{ processorId: string }> };
       const ids = after.entries.map((e) => e.processorId).sort();
       expect(ids).toEqual(["retired.bundle.worker"]);
+      // Nothing to report either — the prune guard short-circuited.
+      expect(runtimeResult.value.prunedUnknownProcessorQuarantines).toEqual(
+        [],
+      );
+    } finally {
+      await runtimeResult.value.close();
+    }
+  });
+});
+
+describe("openVaultRuntime agentNoModelProviderWarning", () => {
+  function agentBundleConfig(enabled: boolean): string {
+    return `
+extensions:
+  dome.agent:
+    enabled: ${enabled}
+    grant: {}
+`;
+  }
+
+  test("dome.agent enabled, no model provider wired -> loud warning", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-runtime-agent-warn-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(join(root, ".dome", "config.yaml"), agentBundleConfig(true), "utf8");
+
+    const registryResult = buildRegistry([]);
+    expect(registryResult.ok).toBe(true);
+    if (!registryResult.ok) return;
+
+    const runtimeResult = await openVaultRuntime({
+      vaultPath: root,
+      registry: registryResult.value,
+      extensions: [],
+      processorVersions: [],
+    });
+    expect(runtimeResult.ok).toBe(true);
+    if (!runtimeResult.ok) return;
+    try {
+      expect(runtimeResult.value.agentNoModelProviderWarning).toEqual({
+        code: "agent.no-model-provider",
+        message: AGENT_NO_MODEL_PROVIDER_MESSAGE,
+      });
+    } finally {
+      await runtimeResult.value.close();
+    }
+  });
+
+  test("dome.agent enabled with a model provider wired -> no warning", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-runtime-agent-warn-provided-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(join(root, ".dome", "config.yaml"), agentBundleConfig(true), "utf8");
+
+    const registryResult = buildRegistry([]);
+    expect(registryResult.ok).toBe(true);
+    if (!registryResult.ok) return;
+
+    const stubProvider: ModelProvider = async () => ({ text: "stub" });
+    const runtimeResult = await openVaultRuntime({
+      vaultPath: root,
+      registry: registryResult.value,
+      extensions: [],
+      processorVersions: [],
+      modelProvider: stubProvider,
+    });
+    expect(runtimeResult.ok).toBe(true);
+    if (!runtimeResult.ok) return;
+    try {
+      expect(runtimeResult.value.agentNoModelProviderWarning).toBeNull();
+    } finally {
+      await runtimeResult.value.close();
+    }
+  });
+
+  test("dome.agent disabled, no model provider wired -> no warning", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-runtime-agent-warn-disabled-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(join(root, ".dome", "config.yaml"), agentBundleConfig(false), "utf8");
+
+    const registryResult = buildRegistry([]);
+    expect(registryResult.ok).toBe(true);
+    if (!registryResult.ok) return;
+
+    const runtimeResult = await openVaultRuntime({
+      vaultPath: root,
+      registry: registryResult.value,
+      extensions: [],
+      processorVersions: [],
+    });
+    expect(runtimeResult.ok).toBe(true);
+    if (!runtimeResult.ok) return;
+    try {
+      expect(runtimeResult.value.agentNoModelProviderWarning).toBeNull();
     } finally {
       await runtimeResult.value.close();
     }

@@ -163,7 +163,7 @@ The convention is enforced and consumed deterministically:
 - **Facts** — the `dome.markdown.page-status` adoption processor emits `dome.page.status` (the `status:` value) and `dome.page.superseded_by` (the forward target, recorded as written) facts from frontmatter for managed `wiki/` pages. Rebuildable by construction: derived from adopted markdown only, per [[wiki/invariants/PROJECTIONS_ARE_REBUILDABLE]].
 - **Lint** — `dome.markdown.lint-supersession` emits a **warning** (`dome.markdown.superseded-missing-forward-link`) when a `status: superseded` page has no `superseded_by:` wikilink that resolves to a vault page, and an **info** diagnostic (`dome.markdown.link-to-superseded`) when a non-superseded page wikilinks a superseded page — with the forward target as the hint — except for links inside a `## Superseded` section or on a frontmatter `superseded_by:` line (the supersession chain itself is never flagged).
 - **Ranking** — the `dome.search` composite ranker multiplicatively downranks superseded pages (×0.3) by reading the status facts, and explains itself with a "superseded by X" signal. Superseded pages are **downranked, never filtered** — they remain findable for history questions.
-- **Agents** — the consolidate charter proposes status flips + forward links instead of rewriting or deleting outdated/duplicated prose; the brief and ingest charters treat superseded pages as history and follow the forward link for current context. The warden's stale-claim flags gain a durable resolution: flip the status (see [[wiki/specs/task-lifecycle]] §"Wardens").
+- **Agents** — the consolidate charter proposes status flips + forward links instead of rewriting or deleting outdated/duplicated prose; the brief and ingest charters treat superseded pages as history and follow the forward link for current context. consolidate's integrity-review stale-claim flags gain a durable resolution: flip the status (see [[wiki/specs/task-lifecycle]] §"Wardens").
 
 **Why this design:** the ADR convention is the only markdown supersession pattern with a proven maintenance record. One flip + one forward link keeps the writer cost near zero, keeps git history honest (no destructive rewrites), and gives every deterministic consumer (lint, facts, ranking) a single unambiguous signal to key on.
 
@@ -225,5 +225,5 @@ Three properties make page schemas substrate-friendly:
 - [[wiki/specs/processors]] — `dome.markdown` is the adoption-phase validator.
 - [[wiki/specs/effects]] §"DiagnosticEffect" — validation failures become diagnostics.
 - [[wiki/gotchas/boundary-validation-via-zod]] — the Zod boundary at frontmatter parse.
-- [[wiki/specs/task-lifecycle]] §"Wardens" — warden stale-claim flags resolve via the supersession status flip.
+- [[wiki/specs/task-lifecycle]] §"Wardens" — integrity-review stale-claim flags resolve via the supersession status flip.
 - [[memory]] §"M2" — the memory-quality plan that landed supersession.

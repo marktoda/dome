@@ -13,7 +13,12 @@
 // semantics cannot drift.
 
 import { globMatch } from "../../../../src/engine/core/glob-cache";
-import type { AgentRunState, AgentTool } from "./agent-loop";
+import {
+  INTEGRITY_FINDING_KINDS,
+  type AgentIntegrityFlag,
+  type AgentRunState,
+  type AgentTool,
+} from "./agent-loop";
 import {
   isValidSignalsAppend,
   PREFERENCE_SIGNALS_PATH,
@@ -307,6 +312,48 @@ export function askOwnerTool(idempotencyPrefix: string): AgentTool {
       const { question } = input as { question: string };
       state.questions.push({ question, idempotencyKey: `${idempotencyPrefix}${question}` });
       return "asked the owner";
+    },
+  };
+}
+
+/**
+ * The knowledge-integrity flag tool (folded in from the retired
+ * `dome.warden.integrity` warden — see [[wiki/specs/autonomous-agents]]
+ * §"Integrity review"). It mirrors `askOwner`: it accumulates a structured
+ * finding into the run state, and the processor's epilogue
+ * ({@link import("./agent-run-effects").agentIntegrityEffects}) maps each one
+ * to a self-clearing `info`/`warning` DiagnosticEffect. It never emits a fact
+ * or an edit — integrity findings are diagnostics the owner fixes by editing,
+ * and model judgment stays transient (regenerated each nightly run, cleared by
+ * `resolveStaleDiagnostics` when the page is reconciled).
+ */
+export function flagIntegrityTool(): AgentTool {
+  return {
+    schema: {
+      name: "flagIntegrity",
+      description:
+        "Flag a knowledge-integrity problem on a page as a diagnostic the owner fixes by editing (never a fact, never an edit). kind is one of historical-as-ongoing | contradiction | self-corroborating | inference-as-fact; severity is warning for high-risk findings, else info.",
+      inputSchema: objectSchema(
+        {
+          path: STRING,
+          kind: { type: "string", enum: [...INTEGRITY_FINDING_KINDS] },
+          claim: STRING,
+          severity: { type: "string", enum: ["info", "warning"] },
+          fix: STRING,
+        },
+        ["path", "kind", "claim", "severity", "fix"],
+      ),
+    },
+    execute: async (input, state) => {
+      const flag = input as AgentIntegrityFlag;
+      state.integrityFlags.push({
+        path: flag.path,
+        kind: flag.kind,
+        claim: flag.claim,
+        severity: flag.severity,
+        fix: flag.fix,
+      });
+      return `flagged ${flag.kind} on ${flag.path}`;
     },
   };
 }

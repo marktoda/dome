@@ -17,7 +17,13 @@ import {
   type FileChangeInput,
 } from "../../../../src/core/effect";
 import type { SourceRef } from "../../../../src/core/source-ref";
-import type { AgentRunResult, AgentRunState } from "./agent-loop";
+import { shortHash } from "../../../../src/core/short-hash";
+import type {
+  AgentIntegrityFlag,
+  AgentRunResult,
+  AgentRunState,
+  IntegrityFindingKind,
+} from "./agent-loop";
 
 /** AgentRunState edits → PatchEffect change list (last write per path wins). */
 export function agentChanges(
@@ -40,6 +46,47 @@ export function agentQuestionEffects(
       question: q.question,
       idempotencyKey: q.idempotencyKey,
       sourceRefs,
+    }),
+  );
+}
+
+const INTEGRITY_LABEL: Record<IntegrityFindingKind, string> = {
+  "historical-as-ongoing": "a completed/historical event framed as ongoing",
+  contradiction: "an internal or cross-page contradiction",
+  "self-corroborating":
+    "a claim whose only support cites this vault (self-corroboration)",
+  "inference-as-fact": "agent inference dressed as a sourced fact",
+};
+
+function integrityDiagnosticMessage(flag: AgentIntegrityFlag): string {
+  return (
+    `Integrity flag in ${flag.path}: ${INTEGRITY_LABEL[flag.kind]}. ` +
+    `Claim: "${flag.claim}". Suggested fix: ${flag.fix}`
+  );
+}
+
+/**
+ * One DiagnosticEffect per accumulated `flagIntegrity` finding (the tool-loop
+ * successor to the retired `dome.warden.integrity` warden). Model judgment is
+ * transient: each finding is an `info`/`warning` DiagnosticEffect — never a
+ * fact, never a patch — that self-clears via `resolveStaleDiagnostics` when the
+ * page is reconciled. `sourceRef(path, stableId)` binds the diagnostic to the
+ * flagged page with a per-finding stableId (`<kind>:<hash(claim)>`), so two
+ * findings on one page get distinct subject hashes and both survive the
+ * projection's INSERT OR IGNORE dedup (code alone is per-kind, not per-finding).
+ */
+export function agentIntegrityEffects(
+  state: AgentRunState,
+  sourceRef: (path: string, stableId: string) => SourceRef,
+): ReadonlyArray<Effect> {
+  return state.integrityFlags.map((flag) =>
+    diagnosticEffect({
+      severity: flag.severity,
+      code: `dome.agent.integrity.${flag.kind}`,
+      message: integrityDiagnosticMessage(flag),
+      sourceRefs: [
+        sourceRef(flag.path, `${flag.kind}:${shortHash(flag.claim, 12)}`),
+      ],
     }),
   );
 }
@@ -146,7 +193,8 @@ export function finishAgentRun(opts: {
     opts.noOp !== undefined &&
     opts.stopReason === "final" &&
     changes.length === 0 &&
-    opts.state.questions.length === 0
+    opts.state.questions.length === 0 &&
+    opts.state.integrityFlags.length === 0
   ) {
     effects.push(
       diagnosticEffect({

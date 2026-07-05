@@ -102,12 +102,13 @@ describe("default vault config", () => {
     const root = mkdtempSync(join(tmpdir(), "dome-default-config-grant-"));
     try {
       await mkdir(join(root, ".dome"), { recursive: true });
-      // dome.agent ships disabled by default; enable it so its (deterministic
-      // indexer) per-processor grants are loaded by the capability policy.
+      // dome.agent ships enabled by default (product-review-3 Task 17), so
+      // its (deterministic indexer) per-processor grants are already loaded
+      // by the capability policy from the unmodified default record.
       const rec = structuredClone(defaultConfigRecord()) as {
         extensions: Record<string, { enabled: boolean }>;
       };
-      rec.extensions["dome.agent"]!.enabled = true;
+      expect(rec.extensions["dome.agent"]!.enabled).toBe(true);
       await writeFile(join(root, ".dome", "config.yaml"), stringifyYaml(rec), "utf8");
       const policy = await loadCapabilityPolicy(root);
       expect(policy.ok).toBe(true);
@@ -212,14 +213,21 @@ describe("default vault config", () => {
     // a vault-authored fetch command) and makes silence the default:
     // enabled must be EXACTLY false as shipped (wiki/specs/sources.md).
     const rendered = parseYaml(defaultConfigYaml()) as {
+      grants?: string;
       extensions: Record<
         string,
-        { enabled: boolean; config?: Record<string, unknown>; grant: Record<string, unknown> }
+        { enabled: boolean; config?: Record<string, unknown>; grant?: Record<string, unknown> }
       >;
     };
+    // Fresh vaults collapse grants to the one-line `grants: standard` preset —
+    // no per-bundle grant blocks are rendered. The read/external grant that
+    // used to sit here now comes from the loader's preset expansion (verified
+    // by the round-trip test below).
+    expect(rendered.grants).toBe("standard");
     const sources = rendered.extensions["dome.sources"];
     expect(sources).toBeDefined();
     expect(sources?.enabled).toBe(true);
+    expect(sources?.grant).toBeUndefined();
     expect(sources?.config).toEqual({
       subscriptions: {
         calendar: {
@@ -229,10 +237,6 @@ describe("default vault config", () => {
           command: ["sh", ".dome/bin/fetch-calendar.sh"],
         },
       },
-    });
-    expect(sources?.grant).toEqual({
-      read: ["sources/**/*.md", ".dome/config.yaml"],
-      external: ["sources.fetch"],
     });
   });
 
@@ -331,6 +335,82 @@ describe("default vault config", () => {
     }
 
     expect(DEFAULT_RUNTIME_CONFIG.ledger).toEqual({});
+  });
+
+  test("dome.agent ships enabled with the $2/day guardrail cap (Task 17: brain on by default)", async () => {
+    // The old protection was a disabled bundle; the new protection is a
+    // shipped daily cost cap. `dome.agent` must ship `enabled: true` so a
+    // fresh `dome init` yields a working brief within 24h given an API key,
+    // and the vault-wide `model.invoke` grant — the extension-wide pool,
+    // distinct from the per-processor declared caps in manifest.yaml — must
+    // be the new $2.00/day default.
+    const rendered = parseYaml(defaultConfigYaml()) as {
+      grants?: string;
+      extensions: Record<
+        string,
+        {
+          enabled: boolean;
+          grant?: Record<string, unknown>;
+        }
+      >;
+    };
+    const agent = rendered.extensions["dome.agent"];
+    expect(agent).toBeDefined();
+    expect(agent?.enabled).toBe(true);
+    // Grants collapse to the top-level preset; no per-bundle grant block is
+    // rendered. The $2/day cap is verified through the loaded policy below,
+    // where the preset expands it.
+    expect(rendered.grants).toBe("standard");
+    expect(agent?.grant).toBeUndefined();
+
+    // Load-bearing round trip: the same cap is live once the capability
+    // policy resolves the rendered config, and it is scoped to the vault
+    // grant (the pooled cap) — not a substitute for the manifest's
+    // per-processor declared caps, which stay unchanged.
+    const root = mkdtempSync(join(tmpdir(), "dome-default-config-agent-cap-"));
+    try {
+      await mkdir(join(root, ".dome"), { recursive: true });
+      await writeFile(
+        join(root, ".dome", "config.yaml"),
+        defaultConfigYaml(),
+        "utf8",
+      );
+      const policy = await loadCapabilityPolicy(root);
+      expect(policy.ok).toBe(true);
+      if (!policy.ok) throw new Error(policy.error);
+
+      expect(policy.value.isExtensionEnabled("dome.agent")).toBe(true);
+      const grantedModelInvoke = policy.value
+        .grantsForExtension("dome.agent")
+        .find((c) => c.kind === "model.invoke");
+      expect(grantedModelInvoke).toEqual({
+        kind: "model.invoke",
+        maxDailyCostUsd: 2,
+      });
+
+      const bundles = await loadBundles({
+        bundlesRoot: resolveShippedBundlesRoot(),
+        activeBundleIds: new Set(policy.value.enabledExtensionIds),
+      });
+      expect(bundles.ok).toBe(true);
+      if (!bundles.ok) throw new Error(bundles.error.kind);
+      const ingest = bundles.value
+        .find((b) => b.id === "dome.agent")
+        ?.processors.find((p) => p.id === "dome.agent.ingest");
+      expect(ingest).toBeDefined();
+      // The per-processor declared cap (ingest's own $5/day promise) is
+      // untouched — the $2/day pool is the tighter, binding constraint now,
+      // not a replacement for the declared caps.
+      const declaredModelInvoke = ingest?.capabilities.find(
+        (c) => c.kind === "model.invoke",
+      );
+      expect(declaredModelInvoke).toEqual({
+        kind: "model.invoke",
+        maxDailyCostUsd: 5,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test("typed default extensions match shipped first-party bundle directories", async () => {

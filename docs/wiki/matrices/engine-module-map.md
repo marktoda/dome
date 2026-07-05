@@ -21,7 +21,7 @@ Ordered innermost-first. A module may import modules in its own layer or any low
 |---|---|---|---|---|
 | 0 | **core** | `src/engine/core/` | The adoption loop, effect application, capability machinery, and shared engine contracts. Pure machinery: no daemon, no scheduling, no model-provider wiring. | `core` |
 | 1 | **garden** | `src/engine/garden/` | Garden-phase orchestration: patch routing, sub-Proposal construction, run-effect routing. | `garden`, `core` |
-| 2 | **operational** | `src/engine/operational/` | Post-adoption operational work: jobs, cron scheduling, answers and question lifecycle, quarantine state, operational query views. | `operational`, `garden`, `core` |
+| 2 | **operational** | `src/engine/operational/` | Post-adoption operational work: cron scheduling, answers and question lifecycle, quarantine state, operational query views. | `operational`, `garden`, `core` |
 | 3 | **host** | `src/engine/host/` | Long-running orchestration and process-level concerns: the compiler host, locks, vault-runtime assembly, projection rebuild lifecycle, view command execution, health probes, model-provider wiring. | any engine layer |
 
 Cycles are permitted *within* a layer (e.g. `apply-effect` ↔ `diagnostics` in core) but never across layers.
@@ -50,18 +50,18 @@ Cycles are permitted *within* a layer (e.g. `apply-effect` ↔ `diagnostics` in 
 | `vault-shape` | `core` | EngineVault — the minimal structural shape the engine reads |
 | `garden` | `garden` | The garden-phase orchestrator |
 | `garden-patch-dispatch` | `garden` | Shared garden PatchEffect dispatch for non-signal garden sources |
-| `garden-run` | `garden` | `dispatchGardenRun` — shared snapshot + dispatch + route for one non-signal garden run (schedule / job / answer) |
+| `garden-run` | `garden` | `dispatchGardenRun` — shared snapshot + dispatch + route for one non-signal garden run (schedule / answer) |
 | `garden-run-routing` | `garden` | Shared effect routing for one non-signal garden processor run |
 | `garden-sub-proposals` | `garden` | Garden PatchEffect → sub-Proposal conversion (cascade-depth bookkeeping) |
 | `answers` | `operational` | Dispatch garden-phase processors after a user answer |
 | `cron` | `operational` | Minimal 5-field cron expression evaluator |
-| `jobs` | `operational` | Drain JobEffect rows as garden-phase processor invocations |
 | `operational-query-view` | `operational` | Read-only operational state for processors |
 | `operational-work` | `operational` | One pump for non-adoption engine work |
 | `quarantine-store` | `operational` | Processor quarantine state store |
 | `question-answer-recording` | `operational` | Durable QuestionEffect answer writes |
 | `question-auto-resolution` | `operational` | Opt-in background resolution for low-risk questions |
 | `questions-changed` | `operational` | Dispatch garden-phase `questions.changed` subscribers after the open-question set changes |
+| `store-changed` | `operational` | Dispatch garden-phase `outbox.changed` / `quarantine.changed` subscribers after a store's failure set changes |
 | `scheduler` | `operational` | Cron-driven processor dispatch |
 | `command-model-provider` | `host` | Config-driven model-provider wiring |
 | `compiler-host` | `host` | Runtime host operations over an open VaultRuntime (`dome serve`) |
@@ -78,7 +78,7 @@ Cycles are permitted *within* a layer (e.g. `apply-effect` ↔ `diagnostics` in 
 
 ## Where new engine modules go
 
-Pick the lowest layer whose "May import" column covers everything the module needs. A module that needs the compiler host or vault-runtime is `host`; a module that only routes effects and patches is `core` or `garden`; cron/jobs/question-lifecycle work is `operational`. If a `core`/`garden`/`operational` module finds itself needing an upward import, that is the design signal to either move the module up a layer or extract the shared part downward — not to add the import.
+Pick the lowest layer whose "May import" column covers everything the module needs. A module that needs the compiler host or vault-runtime is `host`; a module that only routes effects and patches is `core` or `garden`; cron/question-lifecycle work is `operational`. If a `core`/`garden`/`operational` module finds itself needing an upward import, that is the design signal to either move the module up a layer or extract the shared part downward — not to add the import.
 
 ## Related
 

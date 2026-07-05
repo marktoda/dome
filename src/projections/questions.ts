@@ -39,6 +39,14 @@ export type QuestionInsertOpts = {
 
 export type QuestionsFilter = {
   readonly resolved?: boolean;
+  /**
+   * ISO-8601 lower bound on `answered_at`. When set, the result is the open
+   * backlog (`answered_at IS NULL`) plus rows resolved at-or-after this
+   * timestamp — the shape a report-card processor needs (current backlog +
+   * what got resolved this window) in one read. Takes priority over
+   * `resolved` when both are set.
+   */
+  readonly resolvedSince?: string;
 };
 
 export type QuestionRecord = {
@@ -144,6 +152,10 @@ const QUERY_ALL_SQL = `${SELECT_QUESTIONS_BASE}\nORDER BY id`;
 const QUERY_RESOLVED_SQL = `${SELECT_QUESTIONS_BASE}\nWHERE answered_at IS NOT NULL\nORDER BY id`;
 
 const QUERY_UNRESOLVED_SQL = `${SELECT_QUESTIONS_BASE}\nWHERE answered_at IS NULL\nORDER BY id`;
+
+// Backs `resolvedSince`: the open backlog plus rows resolved at-or-after the
+// bound, in one read — see `QuestionsFilter.resolvedSince`.
+const QUERY_OPEN_OR_RESOLVED_SINCE_SQL = `${SELECT_QUESTIONS_BASE}\nWHERE answered_at IS NULL OR answered_at >= ?\nORDER BY id`;
 
 const QUERY_BY_ID_SQL = `${SELECT_QUESTIONS_BASE}\nWHERE id = ?`;
 
@@ -328,7 +340,11 @@ export function queryQuestionRecords(
   onSkip?: QuestionReadSkipSink,
 ): ReadonlyArray<QuestionRecord> {
   let rows: ReadonlyArray<QuestionRow>;
-  if (filter?.resolved === true) {
+  if (filter?.resolvedSince !== undefined) {
+    rows = db.raw
+      .query<QuestionRow, [string]>(QUERY_OPEN_OR_RESOLVED_SINCE_SQL)
+      .all(filter.resolvedSince);
+  } else if (filter?.resolved === true) {
     rows = db.raw.query<QuestionRow, []>(QUERY_RESOLVED_SQL).all();
   } else if (filter?.resolved === false) {
     rows = db.raw.query<QuestionRow, []>(QUERY_UNRESOLVED_SQL).all();

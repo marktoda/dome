@@ -22,7 +22,7 @@ This is by design. Adoption-phase processors must be bounded and deterministic; 
 
 **Structural mitigation:** **explicit drain/wait surfaces for callers that need garden completion before read.**
 
-The internal harness already has `drainOperationalWork()` for deterministic scenarios. The target public API includes `vault.drainProcessors(): Promise<void>` (per [[wiki/specs/sdk-surface]] §"Vault surface") — idempotent; awaits garden/scheduled/job/answer work and any in-flight outbox dispatch. That public drain surface is staged for v1.x; the current runtime close path releases SQLite handles but does not expose a complete user-facing drain API. CLI surface is also deferred to v1.x; the candidate verb is `dome wait` (or `dome status --wait-quiet`). Drain is a *synchronization* primitive, not a mutation; it doesn't fit the engine-asks model and gets its own thin verb.
+The internal harness already has `drainOperationalWork()` for deterministic scenarios. The target public API includes `vault.drainProcessors(): Promise<void>` (per [[wiki/specs/sdk-surface]] §"Vault surface") — idempotent; awaits garden/scheduled/answer work and any in-flight outbox dispatch. That public drain surface is staged for v1.x; the current runtime close path releases SQLite handles but does not expose a complete user-facing drain API. CLI surface is also deferred to v1.x; the candidate verb is `dome wait` (or `dome status --wait-quiet`). Drain is a *synchronization* primitive, not a mutation; it doesn't fit the engine-asks model and gets its own thin verb.
 
 Reserved use cases:
 

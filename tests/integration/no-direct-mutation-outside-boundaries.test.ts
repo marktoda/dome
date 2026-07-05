@@ -24,11 +24,21 @@ const ALLOWED_FILES = new Set([
   // editor + `git commit`. Not an engine write path — the daemon constructs
   // the Proposal from the resulting branch drift.
   "src/surface/capture.ts",
+  // The settle seam: `performSettle` flips a task checkbox / rewrites its 📅
+  // date and records a Done-today bullet, landing them as one ordinary human
+  // commit via commitFilesOnHead — exactly like `dome capture`. Same boundary
+  // class as capture.ts; the daemon constructs the Proposal from branch drift.
+  "src/surface/settle.ts",
+  // The retrieval-miss log: appends one dated bullet to
+  // meta/retrieval-misses.md and lands it as one ordinary human commit via
+  // commitSingleFileOnHead — exactly like `dome capture`/`dome settle`. Same
+  // boundary class; the daemon constructs the Proposal from branch drift.
+  "src/surface/report-miss.ts",
   // The hosted agent's write path: create_document / edit_document write one
   // markdown file and land it as an ordinary human commit via
   // commitSingleFileOnHead — exactly like `dome capture`. Same boundary class
   // as capture.ts; the daemon constructs the Proposal from the branch drift.
-  "src/agent/write.ts",
+  "src/assistant/write.ts",
   // The explicit adopted-ref divergence recovery chokepoint: moves
   // refs/dome/adopted/<branch> (with a refs/dome/backup/ copy first) via the
   // src/git ref helpers after the user confirms a history rewrite. The only

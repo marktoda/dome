@@ -143,10 +143,20 @@ scenario(
       expect(doctor.stderr).toBe("");
       const report = JSON.parse(doctor.stdout) as {
         readonly status: string;
-        readonly summary: { readonly capabilityGrantGaps: number };
+        readonly summary: {
+          readonly capabilityGrantGaps: number;
+          readonly modelProviderMissing: number;
+        };
       };
-      expect(report.status).toBe("ok");
+      // The refresh itself is clean: zero capability-grant gaps. But
+      // dome.agent ships enabled by default (product-review-3 Task 17) and
+      // was absent from the hand-written config above, so refresh adds it —
+      // enabled, with no model provider configured in this fixture. That is
+      // the new loud `model.provider-missing` warning working as intended,
+      // not a regression: silence is the thing Task 17 removed.
       expect(report.summary.capabilityGrantGaps).toBe(0);
+      expect(report.summary.modelProviderMissing).toBe(1);
+      expect(report.status).toBe("unhealthy");
     } finally {
       await rm(target, { recursive: true, force: true });
     }
@@ -193,10 +203,19 @@ scenario(
       expect(doctor.stderr).toBe("");
       const report = JSON.parse(doctor.stdout) as {
         readonly status: string;
-        readonly summary: { readonly instructionDrift: number };
+        readonly summary: {
+          readonly instructionDrift: number;
+          readonly modelProviderMissing: number;
+        };
       };
-      expect(report.status).toBe("ok");
+      // No `.dome/config.yaml` existed before this run, so `dome init`'s
+      // first-write path renders the shipped default — dome.agent enabled
+      // (product-review-3 Task 17) with no model provider configured in
+      // this fixture, which is the new loud `model.provider-missing`
+      // warning, not silence. The instruction-refresh itself is clean.
       expect(report.summary.instructionDrift).toBe(0);
+      expect(report.summary.modelProviderMissing).toBe(1);
+      expect(report.status).toBe("unhealthy");
 
       const agents = await readFile(join(target, "AGENTS.md"), "utf8");
       expect(agents.startsWith("# This is a Dome vault.")).toBe(true);

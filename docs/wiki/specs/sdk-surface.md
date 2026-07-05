@@ -170,7 +170,7 @@ A Processor is code that reads a vault snapshot and returns effects. The only be
 
 ### Effect
 
-An Effect is what a processor returns. Eleven kinds; closed taxonomy. See [[wiki/specs/effects]] for the full spec.
+An Effect is what a processor returns. Ten kinds; closed taxonomy. See [[wiki/specs/effects]] for the full spec.
 
 ## Submission API
 
@@ -275,8 +275,6 @@ processors:
         paths:
           - "wiki/**/*.md"
           - "notes/**/*.md"
-          - "index.md"
-          - "log.md"
           - "inbox/processed/*.md"
           - "inbox/raw/*.md"
       - kind: model.invoke
@@ -553,10 +551,12 @@ up caching by re-copying the template (`cp assets/model-providers/anthropic.ts
 Batches API was considered for the agent workload and deferred: agent loops
 are *sequential* — step N+1's messages contain step N's tool results, so the
 steps of one run cannot be batched, and an up-to-24-hour async turnaround
-cannot sit inside a loop. The only batchable shipped calls are warden
-one-shots ([[wiki/specs/task-lifecycle]] §"Wardens"), whose volume today does
-not justify an async submit/poll bridge through the command-provider
-protocol. Revisit if warden volume grows. This supersedes the v1 plan's WS2
+cannot sit inside a loop. Every shipped model call now rides a sequential
+agent loop — the retired `dome.warden.integrity` one-shot folded into
+`dome.agent.consolidate`'s tool loop ([[wiki/specs/task-lifecycle]]
+§"Wardens") — so there is no batchable one-shot workload left to bridge
+through the command-provider protocol. Revisit if a batchable one-shot
+processor is ever added. This supersedes the v1 plan's WS2
 batch premise, which assumed a mostly single-shot workload; caching + routing
 are the economics levers that shipped.
 
