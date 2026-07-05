@@ -67,7 +67,7 @@ describe("runCheck", () => {
 
     expect(await runCheck({ vault: f.vaultPath, loops: true })).toBe(0);
     const out = captured.out.join("\n");
-    // loop detail rows are shown under --loops; "9 known" is AT A GLANCE (verbose-only)
+    // loop detail rows are shown under --loops; "10 known" is AT A GLANCE (verbose-only)
     expect(out).toContain("  LOOPS\n");
     expect(out).toContain("[inactive] dome.capture.digest");
     expect(out).toContain("surfaces: path:wiki/sources/*.md");
@@ -157,7 +157,7 @@ describe("runCheck", () => {
     expect(Array.isArray(parsed["maintenance_loops"])).toBe(true);
     const maintenanceLoops =
       parsed["maintenance_loops"] as ReadonlyArray<Record<string, unknown>>;
-    expect(maintenanceLoops).toHaveLength(9);
+    expect(maintenanceLoops).toHaveLength(10);
     expect(maintenanceLoops.find((loop) =>
       loop["id"] === "dome.question.continuity"
     )).toEqual(expect.objectContaining({

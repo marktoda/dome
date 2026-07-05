@@ -195,6 +195,9 @@ extensions:
         - ".dome/page-types.yaml"
       patch.auto:
         - "**/*.md"
+      graph.write:
+        - "dome.page.*"
+      question.ask: true
 `,
   );
 

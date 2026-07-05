@@ -156,6 +156,8 @@ function markdownConfig(opts: { readonly processorTimeoutMs: number }): string {
     "        - \"raw/**\"",
     "      patch.auto:",
     "        - \"**/*.md\"",
+    "      graph.write:",
+    "        - \"dome.page.*\"",
     "      question.ask: true",
     "",
   ].join("\n");

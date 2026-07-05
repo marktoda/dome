@@ -144,7 +144,7 @@ describe("runStatus", () => {
     expect(out).toContain("content"); expect(out).toContain("2 pages"); // content summary
     expect(out).toContain("links 0"); // wikilinks in content
     expect(out).toContain("projection"); expect(out).toContain("√ fresh"); // projection row
-    expect(out).toContain("loops"); expect(out).toContain("9 known"); // loops summary
+    expect(out).toContain("loops"); expect(out).toContain("10 known"); // loops summary
     expect(out).not.toContain("\n  LOOPS\n"); // no loop detail section
     expect(out).toContain("diagnostics"); expect(out).toContain("√ 0"); // diagnostic row
     expect(out).toContain("questions"); expect(out).toContain("√ 0"); // questions row
@@ -162,7 +162,7 @@ describe("runStatus", () => {
     expect(code).toBe(0);
 
     const out = captured.out.join("\n");
-    expect(out).toContain("loops"); expect(out).toContain("9 known"); // loops summary
+    expect(out).toContain("loops"); expect(out).toContain("10 known"); // loops summary
     expect(out).toContain("\n  LOOPS\n"); // loop detail section header (ALLCAPS, indent 2)
     // Tree connectors present (ASCII form — tests run without UTF locale)
     expect(out).toMatch(/[|`][-]/); // |- or `- tree connectors
@@ -215,7 +215,7 @@ describe("runStatus", () => {
     expect(Array.isArray(parsed["maintenance_loops"])).toBe(true);
     const loops =
       parsed["maintenance_loops"] as ReadonlyArray<Record<string, unknown>>;
-    expect(loops).toHaveLength(9);
+    expect(loops).toHaveLength(10);
     expect(loops[0]).toEqual(expect.objectContaining({
       questions: 0,
       agent_safe_questions: 0,
