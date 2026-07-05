@@ -503,6 +503,39 @@ export async function readBlob(opts: {
   }
 }
 
+/**
+ * Read a blob's content as a UTF-8 string given the blob's own object OID
+ * (not a commit + filepath). Skips the commit→tree→per-path-segment walk that
+ * {@link readBlob} performs on every call: a caller that already knows a
+ * path's blob OID (e.g. from a single up-front tree walk) can read the object
+ * directly. This is the fast path behind `Snapshot.readFile` when the tree
+ * index is materialized — for an `all-readable-markdown` inspection over a
+ * large vault it turns O(files × tree-depth) repeated tree decompressions into
+ * one tree walk plus O(files) direct object reads (~14× faster at 2k files).
+ *
+ * Returns null on a not-found object (mirrors {@link readBlob}); other errors
+ * (corrupt object, I/O failure) propagate.
+ */
+export async function readBlobByOid(opts: {
+  path: string;
+  oid: string;
+}): Promise<string | null> {
+  const { root } = await resolveGitContext(opts.path);
+  try {
+    const result = await git.readBlob({ fs, dir: root, oid: opts.oid });
+    return Buffer.from(result.blob).toString("utf8");
+  } catch (e) {
+    if (e instanceof Error && /not found|ENOENT|NotFoundError/i.test(e.message)) {
+      return null;
+    }
+    if (typeof e === "object" && e !== null && "code" in e) {
+      const code = (e as { code: unknown }).code;
+      if (code === "NotFoundError") return null;
+    }
+    throw e;
+  }
+}
+
 async function treeOidIfCommit(
   root: string,
   oid: string,
