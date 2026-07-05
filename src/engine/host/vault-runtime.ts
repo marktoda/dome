@@ -424,11 +424,14 @@ export async function openVaultRuntime(
   if (!operationalState.ok) return operationalState;
 
   // Registry-orphan GC: drop execution-state counters (quarantined.json) for
-  // processors whose bundle is no longer installed (the stale
-  // dome.intake.synthesize-rollup counter that lived forever). A
-  // registered-but-DISABLED bundle is still configured, so its counters are
-  // preserved — `isKnownProcessor` treats a processor as known when its bundle
-  // is configured (enabled or disabled) OR it is in the resolved registry.
+  // processors that no longer exist — a retired bundle's rows (the stale
+  // dome.intake.synthesize-rollup counter that lived forever) AND a deleted
+  // processor's rows inside a still-enabled bundle (the quarantined
+  // dome.daily.attention-discount rows that outlived the processor's
+  // retirement). A registered-but-DISABLED bundle is still configured and its
+  // processors are deliberately absent from the registry, so its counters are
+  // preserved — `isKnownProcessor` treats a processor as known when it is in
+  // the resolved registry OR its bundle is configured-but-disabled.
   //
   // Conservatively gated: only prune when we actually established a non-empty
   // known set (config found + at least one configured extension or a non-empty
@@ -1093,12 +1096,19 @@ function isKnownProcessorFor(
   policy: CapabilityPolicy,
   registry: ProcessorRegistry,
 ): (processorId: string) => boolean {
-  const configuredExtensionIds = policy.configuredExtensions.map(
-    (status) => status.id,
-  );
+  // A DISABLED bundle's processors are absent from the resolved registry by
+  // design, so its counters get the conservative bundle-prefix escape. An
+  // ENABLED bundle's processors are all registered — for those bundles the
+  // registry is authoritative, and a quarantine row for an unregistered
+  // processor id means the processor was deleted from the bundle (the
+  // dome.daily.attention-discount case: retired processor, live bundle) and
+  // must prune, or the health surfaces re-report it forever.
+  const disabledExtensionIds = policy.configuredExtensions
+    .filter((status) => !status.enabled)
+    .map((status) => status.id);
   return (processorId: string): boolean => {
     if (registry.get(processorId) !== undefined) return true;
-    return configuredExtensionIds.some(
+    return disabledExtensionIds.some(
       (extensionId) =>
         processorId === extensionId ||
         processorId.startsWith(`${extensionId}.`),
