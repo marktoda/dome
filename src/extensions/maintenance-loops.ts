@@ -530,6 +530,31 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       ],
     }),
     freezeLoop({
+      id: "dome.system.report-card",
+      goal:
+        "Every running processor's weekly cost and output stays owner-visible; retire-or-keep decisions have evidence.",
+      evidence: [
+        { kind: "operational", name: "runs" },
+        { kind: "operational", name: "questions" },
+        { kind: "path", pattern: "meta/retrieval-misses.md" },
+      ],
+      processors: ["dome.health.report-card"],
+      surfaces: [
+        { kind: "path", pattern: "meta/report-card.md" },
+        { kind: "path", pattern: "wiki/dailies/*.md" },
+      ],
+      settlement: {
+        key: "trailing-7-day window per processor",
+        noOpWhen:
+          "the rendered card and the daily's weekly-review block are byte-identical to the current window's aggregates",
+        checks: STANDARD_SETTLEMENT_CHECKS,
+      },
+      risks: [
+        "A card nobody reads is silent accounting — the daily weekly-review block is the load-bearing surface; meta/report-card.md is the archive.",
+        "Productive-outcome counts read succeeded runs with at least one emitted effect; a diagnostic-only run counts as productive.",
+      ],
+    }),
+    freezeLoop({
       id: "dome.preference.promotion",
       goal:
         "Recurring owner corrections become standing preferences in core memory, with owner consent.",

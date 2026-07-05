@@ -293,6 +293,16 @@ extensions:
       run.read: ["running"]
       run.recover: ["fail"]
       question.ask: true
+    processors:
+      dome.health.report-card:
+        grant:
+          read:
+            - "wiki/dailies/*.md"
+            - "meta/report-card.md"
+            - "meta/retrieval-misses.md"
+          patch.auto: ["meta/report-card.md", "wiki/dailies/*.md"]
+          run.read: true
+          questions.read: true
 `;
 }
 
