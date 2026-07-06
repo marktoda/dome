@@ -2582,8 +2582,9 @@ I/O failure.
 
 Runs the Dome MCP server over stdio for one vault — the shipped protocol
 adapter per [[wiki/specs/mcp-surface]] ([[wedge]] §"Phase 5 — MCP server").
-The server exposes eight typed tools (`capture`, `query`, `export_context`,
-`status`, `check`, `resolve`, `tasks`, `brief`) whose results are the same
+The server exposes thirteen typed tools (`capture`, `query`, `export_context`,
+`report_miss`, `status`, `check`, `resolve`, `settle`, `tasks`, `brief`,
+`proposals`, `apply_proposal`, `reject_proposal`) whose results are the same
 JSON documents the corresponding CLI verbs emit under `--json`; the adapter
 consumes the same data paths rather than re-implementing them.
 
