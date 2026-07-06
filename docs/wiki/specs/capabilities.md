@@ -197,10 +197,15 @@ absent must treat that as loud, not silent — see
 Permits reading pending-proposal rows through `ctx.operational.proposals(filter?)` —
 the garden-review counterpart to `questions.read`, sourced from the durable
 `proposals.db` pending-proposals store rather than the projection. Each row
-carries `id`, `processorId`, `reason`, `paths` (derived from the underlying
-`FileChange[]` — `changes.map(c => c.path)`; the raw write content / delete
-payload stays internal to `proposals.db`), `createdAt`, and `status`
-(`"pending" | "applied" | "rejected"`). `filter` accepts `{ status? }` to
+carries `id`, `processorId`, `extensionId` (the producer's bundle — lets a
+reviewer like the trust ladder resolve the producer's per-processor grant
+without guessing from the id prefix), `reason`, `paths` (derived from the
+underlying `FileChange[]` — `changes.map(c => c.path)`; the raw write content
+/ delete payload stays internal to `proposals.db`), `createdAt`, `status`
+(`"pending" | "applied" | "rejected"`), and `decidedAt` (ISO decision instant
+for decided rows, `null` while pending — windowed accept-rate reads such as
+the trust ladder bucket by the decision time, not enqueue time). `filter`
+accepts `{ status? }` to
 narrow to one status; omitted, all statuses are returned. This is deliberately
 *not* a projection or `proposals.db` write surface: garden-phase processors
 gain only the narrow read this capability names — mutating a proposal's

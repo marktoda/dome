@@ -348,6 +348,11 @@ describe("buildOperationalQueryView — proposals", () => {
       expect(pending[0]?.status).toBe("pending");
       expect(typeof pending[0]?.id).toBe("number");
       expect(pending[0]?.createdAt).toBe("2026-07-06T00:00:00.000Z");
+      // Producer bundle id + decision instant surface on the view row (the
+      // trust ladder buckets accept rates by decidedAt, per-processor grants
+      // resolve by extensionId).
+      expect(pending[0]?.extensionId).toBe("test");
+      expect(pending[0]?.decidedAt).toBeNull();
 
       expect(view.proposals?.({ status: "applied" })).toEqual([]);
     } finally {

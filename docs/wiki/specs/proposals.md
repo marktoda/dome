@@ -216,6 +216,74 @@ The engine emits `engine.proposal.<state>` events on every transition. The run l
 - **Mutate state outside `<vault>/`.** Proposals are git commits; they cannot touch arbitrary filesystem paths.
 - **Reach past the capability broker.** Every effect emitted during the Proposal's adoption passes capability enforcement ([[wiki/specs/capabilities]]).
 
+## Trust ladder
+
+The trust ladder is how the gardener earns (and loses) autonomy **through the
+review loop itself** — no new engine primitive, no self-granted capability.
+`dome.health.trust-review` (weekly, Monday 05:24, deterministic; two minutes
+after the report card whose trust section shows the same evidence) reads the
+durable pending-proposals store (`proposals.read`), the run ledger
+(`run.read`), and `.dome/config.yaml`, and emits ordinary effects:
+
+**Promotion.** A proposal producer is promoted from propose-only to
+auto-apply when ALL of the following hold over the trailing **28 days**:
+
+- its effective vault grant is propose-only for the paths it proposes
+  (granted-side check via the engine's own config parser —
+  `parseCapabilityPolicy` — never a parallel grant reader);
+- **≥ 8** of its proposals were decided (applied or rejected, bucketed by
+  `decidedAt`);
+- its accept rate (`applied / decided`) is **≥ 0.75**;
+- no trust-review promotion proposal for it is still pending review;
+- no promotion for it was **rejected within the last 28 days** (derived from
+  the rejected row's `decidedAt` — the store is the state, there is no
+  separate cool-down ledger).
+
+The promotion itself is a **config diff as a proposal**: one `mode:
+"propose"` PatchEffect whose single change rewrites `.dome/config.yaml` via a
+comment-preserving yaml Document edit (the `dome init` ensure-path
+precedent), setting `extensions.<bundle>.processors.<id>.grant` to the
+producer's current effective grant record **plus** `patch.auto` over the
+paths it currently proposes. Because a per-processor grant *replaces* the
+bundle grant, the edit carries the other grants over rather than stripping
+them, and it materializes the `grants: standard` preset into explicit blocks
+first when needed (an explicit `processors:` block opts the extension out of
+the preset). The edited body is structurally self-checked — it must re-parse
+through `parseCapabilityPolicy` and actually grant the promotion — before it
+is ever proposed. The owner reviews with `dome proposals` / `dome apply`
+like any other proposal; the `reason` carries the evidence (e.g.
+`trust-review: promote dome.agent.consolidate to auto-apply — 19/20
+proposals applied over 28d`).
+
+Two structural fences keep this honest: the effect is always `mode:
+"propose"`, and trust-review's own grant holds `patch.propose` on
+`.dome/config.yaml` **only** — the gardener cannot auto-apply its own
+autonomy change even if it emitted the wrong mode. A producer whose proposals
+touch `.dome/config.yaml` is never promoted (auto-granting config writes
+would be an unreviewed privilege escalation), and trust-review never promotes
+itself.
+
+**Demotion / dormancy.** A processor that accrued model cost > $0 over the
+trailing **21 days** with zero productive effects (no `succeeded` run that
+emitted an effect) is flagged with an **owner-needed question** (stable
+idempotency key `dome.health.trust-review:dormant:<processorId>`). This is a
+question rather than a config diff because per-processor disable is not
+expressible in `.dome/config.yaml` — `extensions.<bundle>.processors.<id>`
+accepts only `grant`/`grants` (`PROCESSOR_KEYS` in
+`src/engine/core/capability-policy.ts`); disabling means flipping the whole
+bundle's `enabled` or narrowing its grant, which stays an owner decision.
+
+**Evidence surface.** The weekly report card ([[wiki/specs/daily-surface]]
+§"Report card") renders a trust-ladder section — per proposal-producing
+processor: autonomy (auto / propose / unknown), decided/applied counts, and
+accept rate over the card's window — so the owner sees the same evidence the
+ladder acts on.
+
+Idempotence: an open promotion proposal suppresses re-emission, the
+pending-proposals dedupe key absorbs byte-identical re-emission, rejected
+promotions stay suppressed for 28 days, and dormancy questions dedupe on
+their idempotency key. Re-running with unchanged inputs emits nothing new.
+
 ## Related
 
 - [[wiki/specs/adoption]] — the loop that consumes Proposals

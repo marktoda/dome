@@ -598,10 +598,19 @@ export type OperationalQuestionRow = QuestionEffect & {
 export type OperationalProposalRow = {
   readonly id: number;
   readonly processorId: string;
+  /** The emitting processor's bundle id — lets a reviewer processor (e.g.
+   * `dome.health.trust-review`) resolve the producer's per-processor grant
+   * (`extensions.<extensionId>.processors.<processorId>`) without guessing
+   * the bundle from the processor-id prefix. */
+  readonly extensionId: string;
   readonly reason: string;
   readonly paths: ReadonlyArray<string>;
   readonly createdAt: string;
   readonly status: "pending" | "applied" | "rejected";
+  /** ISO decision instant for `applied`/`rejected` rows; `null` while
+   * `pending`. Windowed accept-rate reads (the trust ladder, the report
+   * card's trust section) bucket by the DECISION time, not enqueue time. */
+  readonly decidedAt: string | null;
 };
 
 export type OperationalRunRow = {

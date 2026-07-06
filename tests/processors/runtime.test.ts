@@ -806,10 +806,12 @@ describe("gardenRunner — executor diagnostics", () => {
     const row: OperationalProposalRow = Object.freeze({
       id: 1,
       processorId: "test.garden",
+      extensionId: "test",
       reason: "tidy up the notes",
       paths: ["notes/a.md"],
       createdAt: "2026-07-06T00:00:00.000Z",
       status: "pending",
+      decidedAt: null,
     });
     const operational: OperationalQueryView = Object.freeze({
       outbox: () => Object.freeze([]),
