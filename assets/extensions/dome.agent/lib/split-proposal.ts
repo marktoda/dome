@@ -11,11 +11,17 @@
 // one sub-page. The hub/sub-pages may ADD lines (summaries, links, fresh
 // frontmatter) but may never LOSE one — a split that silently drops content
 // is worse than no split at all.
+//
+// Accounting is MULTISET (frequency-map) matching — a deliberate
+// stricter-than-plan choice: the plan's wording ("appears verbatim in the
+// hub or ≥1 sub-page") is set membership, but a line repeated N times in
+// the original must be matched N times across the hub + sub-pages combined,
+// otherwise a split could silently collapse duplicated occurrences (e.g.
+// a recurring `- [ ] follow up` task line) while keeping one copy.
 
-import { basename, dirname } from "node:path/posix";
+import { dirname } from "node:path/posix";
 
 import { blankGeneratedBlocks } from "../../../../src/core/generated-block";
-import { wikilinkSlugs } from "../../../../src/core/wikilink";
 
 export type SplitProposalInput = {
   readonly hubPath: string;
@@ -105,6 +111,25 @@ function lineCounts(lines: ReadonlyArray<string>): Map<string, number> {
 const DESCRIPTION_LINE_RE = /^description:\s*\S/m;
 
 /**
+ * Full-path wikilink targets in `text`: for each `[[target]]`,
+ * `[[target|alias]]`, or `[[target#anchor]]`, the target segment before any
+ * `#` anchor or `|` alias, trimmed. The vault convention is FULL-PATH
+ * wikilinks (`[[wiki/entities/danny-promo-2026]]`, not
+ * `[[danny-promo-2026]]`) — `dome.markdown.validate-wikilinks` can flag
+ * short forms, so the hub-links-its-children check below must demand the
+ * full path exactly, never a basename reduction.
+ */
+function wikilinkTargets(text: string): Set<string> {
+  const targets = new Set<string>();
+  const pattern = /\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    targets.add((match[1] ?? "").trim());
+  }
+  return targets;
+}
+
+/**
  * null = valid. See the module doc for the lossless-accounting rule. Checks
  * run cheapest-first: shape (extension, count, directory) before the O(n)
  * line-accounting pass, then the wikilink/frontmatter checks. Returns the
@@ -132,6 +157,7 @@ export function validateSplitProposal(
   }
 
   const hubDir = dirname(input.hubPath);
+  const seenSubPaths = new Set<string>();
   for (const sub of input.subPages) {
     if (!sub.path.endsWith(".md")) {
       return {
@@ -145,6 +171,13 @@ export function validateSplitProposal(
         message: `sub-page ${sub.path} must live under the hub's directory (${hubDir}/), not ${dirname(sub.path)}/`,
       };
     }
+    if (seenSubPaths.has(sub.path)) {
+      return {
+        code: "duplicate-sub-page-path",
+        message: `sub-page path ${sub.path} appears more than once in the proposal; each sub-page needs a distinct path.`,
+      };
+    }
+    seenSubPaths.add(sub.path);
   }
 
   const originalBody = stripKnownGeneratedBlocks(stripFrontmatter(original));
@@ -173,13 +206,16 @@ export function validateSplitProposal(
     };
   }
 
-  const hubSlugs = new Set(wikilinkSlugs(input.hubContent));
+  const hubTargets = wikilinkTargets(input.hubContent);
   for (const sub of input.subPages) {
-    const slug = basename(sub.path, ".md");
-    if (!hubSlugs.has(slug)) {
+    const fullTarget = sub.path.slice(0, -".md".length);
+    if (!hubTargets.has(fullTarget)) {
       return {
         code: "missing-hub-wikilink",
-        message: `hubContent must link every sub-page as a [[wikilink]]; missing a link to ${sub.path} (slug ${slug})`,
+        message:
+          `hubContent must link every sub-page as a FULL-PATH [[wikilink]]; ` +
+          `missing [[${fullTarget}]] (short forms like [[${fullTarget.split("/").pop()}]] ` +
+          `don't count — the vault convention is full-path links).`,
       };
     }
   }

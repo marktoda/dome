@@ -335,7 +335,55 @@ describe("validateSplitProposal — structural checks", () => {
       DANNY_ORIGINAL,
     );
     expect(result?.code).toBe("missing-hub-wikilink");
-    expect(result?.message).toContain("danny-onboarding");
+    expect(result?.message).toContain("[[wiki/entities/danny-onboarding]]");
+  });
+
+  test("a SHORT-FORM hub link ([[danny-onboarding]]) does NOT satisfy the check — full path required, message teaches the fix", () => {
+    const hubShortLink = DANNY_HUB.replace(
+      "- [[wiki/entities/danny-onboarding]] — onboarding history",
+      "- [[danny-onboarding]] — onboarding history",
+    );
+    const result = validateSplitProposal(
+      dannyInput({ hubContent: hubShortLink }),
+      DANNY_ORIGINAL,
+    );
+    expect(result?.code).toBe("missing-hub-wikilink");
+    // The error is the model's self-correction signal: it must name the
+    // exact full-path form to write and call out the short form as invalid.
+    expect(result?.message).toContain("FULL-PATH");
+    expect(result?.message).toContain("[[wiki/entities/danny-onboarding]]");
+    expect(result?.message).toContain("[[danny-onboarding]]");
+  });
+
+  test("full-path hub links with an |alias or #anchor suffix still satisfy the check", () => {
+    const hubDecoratedLinks = DANNY_HUB.replace(
+      "- [[wiki/entities/danny-promo-2026]] — the 2026 promo packet push",
+      "- [[wiki/entities/danny-promo-2026|the promo push]] — the 2026 promo packet push",
+    ).replace(
+      "- [[wiki/entities/danny-onboarding]] — onboarding history",
+      "- [[wiki/entities/danny-onboarding#Onboarding notes]] — onboarding history",
+    );
+    const result = validateSplitProposal(
+      dannyInput({ hubContent: hubDecoratedLinks }),
+      DANNY_ORIGINAL,
+    );
+    // The lossless check is unaffected: the replaced lines were hub
+    // additions, not original body lines.
+    expect(result).toBeNull();
+  });
+
+  test("a duplicated sub-page path is rejected (silent overwrite otherwise)", () => {
+    const result = validateSplitProposal(
+      dannyInput({
+        subPages: [
+          { path: "wiki/entities/danny-promo-2026.md", content: DANNY_SUB_PROMO },
+          { path: "wiki/entities/danny-promo-2026.md", content: DANNY_SUB_ONBOARDING },
+        ],
+      }),
+      DANNY_ORIGINAL,
+    );
+    expect(result?.code).toBe("duplicate-sub-page-path");
+    expect(result?.message).toContain("wiki/entities/danny-promo-2026.md");
   });
 
   test("every sub-page needs frontmatter with a description: line", () => {

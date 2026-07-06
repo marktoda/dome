@@ -93,7 +93,7 @@ export function proposeSplitTool(reader: VaultReader): AgentTool {
     schema: {
       name: "proposeSplit",
       description:
-        "Propose splitting an oversized/multi-topic page into a hub (rewritten original) + 2-6 new sub-pages, for the owner to review and apply with `dome apply`. Never applies directly — do not also writePage the hub or sub-pages. Every line of the original page must land in the hub or a sub-page (lossless); the hub must link every sub-page as a [[wikilink]]; every sub-page needs frontmatter with a description:. One split proposal per run.",
+        "Propose splitting an oversized/multi-topic page into a hub (rewritten original) + 2-6 new sub-pages, for the owner to review and apply with `dome apply`. Never applies directly — do not also writePage the hub or sub-pages. Every line of the original page must land in the hub or a sub-page (lossless); the hub must link every sub-page as a FULL-PATH [[wikilink]] (e.g. [[wiki/entities/danny-promo-2026]], never the short [[danny-promo-2026]] form); every sub-page needs frontmatter with a description:. One split proposal per run.",
       inputSchema: objectSchema(
         {
           hubPath: STRING,
