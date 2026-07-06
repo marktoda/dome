@@ -13,6 +13,7 @@ import type {
   ModelStepResult,
   ModelToolSchema,
 } from "../../../../src/core/processor";
+import type { SplitProposalInput } from "./split-proposal";
 
 export type AgentEdit =
   | { readonly kind: "write"; readonly path: string; readonly content: string }
@@ -54,6 +55,16 @@ export type AgentRunState = {
   readonly questions: AgentQuestion[];
   /** Knowledge-integrity findings flagged this run (consolidate's flagIntegrity tool). */
   readonly integrityFlags: AgentIntegrityFlag[];
+  /**
+   * At most one accumulated `proposeSplit` call this run — assigned once,
+   * never merged (a second call is a tool-time error: "one split proposal
+   * per run"). Deliberately NOT readonly: the tool sets it by assignment,
+   * unlike the append-only containers above. `finishAgentRun` emits it as a
+   * second, propose-mode PatchEffect that is neither capped by
+   * `maxChangedFiles` nor rolled back by an auto-patch cap overreach — it
+   * was never applied, so there is nothing to roll back.
+   */
+  splitProposal?: SplitProposalInput | null;
 };
 
 export type AgentTool = {
