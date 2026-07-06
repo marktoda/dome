@@ -19,7 +19,7 @@ processors:
     module: processors/page-status.ts
 
   - id: dome.markdown.lint-supersession
-    version: 0.1.1
+    version: 0.1.2
     phase: adoption
     triggers:
       - kind: signal
@@ -34,15 +34,18 @@ processors:
     inspection:
       kind: all-readable-markdown
     # Whole-vault scan: reads + parses status of every readable markdown page
-    # on each run. The 10s adoption default is too tight on a large vault;
-    # 30s headroom keeps the merge gate bounded (adoption ceiling is 60s).
+    # on each run. Measured near-linear and read-bound post the makeSnapshot
+    # OID-index fix: ~0.3s at 1k files, ~0.8s at 2k (synthetic bench, medians).
+    # Even so, this fired 62 timeouts/7d at 30s on the ~1k-file live vault
+    # (pre-fix), so take the full 60s adoption ceiling — the merge gate stays
+    # bounded and the headroom absorbs cold caches and loaded machines.
     execution:
       class: deterministic
-      timeoutMs: 30000
+      timeoutMs: 60000
     module: processors/lint-supersession.ts
 
   - id: dome.markdown.validate-wikilinks
-    version: 0.4.1
+    version: 0.4.2
     phase: adoption
     triggers:
       - kind: signal
@@ -57,6 +60,16 @@ processors:
       - kind: question.ask
     inspection:
       kind: all-readable-markdown
+    # Whole-vault scan, same shape as lint-supersession. Measured near-linear
+    # and read-bound: ~0.3-0.5s at 1k files, ~0.6-1.2s at 2k (synthetic bench,
+    # medians; the fuzzy-suggest pass adds an O(broken-links × files) term
+    # that stays sub-second at realistic broken-link counts). It still fired
+    # 43 timeouts/7d riding the 10s adoption default on the ~1k-file live
+    # vault (pre the makeSnapshot OID-index fix); 30s explicit headroom keeps
+    # the merge gate bounded (adoption ceiling is 60s).
+    execution:
+      class: deterministic
+      timeoutMs: 30000
     module: processors/validate-wikilinks.ts
 
   - id: dome.markdown.ambiguous-wikilink-answer
