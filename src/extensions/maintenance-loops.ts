@@ -402,6 +402,11 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.markdown.raw-immutable",
         "dome.markdown.core-size",
         "dome.markdown.orphan-pages",
+        // Weekly janitor (stock-gardening phase 1, Task 7): proposes
+        // archive-moves for 0-byte / Untitled-stub dead pages — vault
+        // hygiene of the same coherence loop, just at the "should this page
+        // exist at all" layer rather than link/metadata correctness.
+        "dome.markdown.attic-sweep",
         "dome.graph.links",
         "dome.graph.tag-index",
         "dome.agent.consolidate",
@@ -429,6 +434,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "Duplicate consolidation must preserve source material: absorbed pages are superseded (status flip + forward link), not deleted.",
         "Supersession flips without a resolvable forward link strand readers in history; the lint warning is the guardrail.",
         "Coverage patrol must stay bounded: the queue is a full rewrite and the ledger prunes to 60 days, so the tail is revisited on a rotation without accreting bookkeeping.",
+        "The attic-sweep janitor only proposes — it never deletes vault content on its own initiative; a missed `dome apply` leaves the archive-move pending in proposals.db indefinitely, not silently lost.",
       ],
     }),
     freezeLoop({

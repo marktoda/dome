@@ -115,6 +115,11 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
         "raw/**",
       ],
       "patch.auto": ["**/*.md"],
+      // Stock-gardening phase 1, Task 7: the weekly attic-sweep janitor's
+      // archive-move (write attic/<path> + delete <path>) never applies
+      // inline — a SEPARATE capability from patch.auto above, routed to
+      // proposals.db for `dome apply`.
+      "patch.propose": ["notes/**", "wiki/**", "attic/**"],
       "graph.write": ["dome.page.*"],
       "question.ask": true,
     }),

@@ -186,6 +186,26 @@ processors:
         paths: ["**/*.md"]
     module: processors/refresh-updated.ts
 
+  - id: dome.markdown.attic-sweep
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "45 4 * * 0"
+    capabilities:
+      - kind: read
+        paths: ["**/*.md"]
+      # The archive-move never applies inline — it lands in proposals.db for
+      # `dome apply` (stock-gardening phase 1, Task 7), same posture as
+      # dome.agent.consolidate's proposeSplit patch: a SEPARATE capability
+      # from patch.auto, and ManifestGrantEntry's kind enum ("read" |
+      # "patch.auto" | "graph.write") has no patch.propose slot, so this
+      # relies on the general kind-level `capability.grant-missing` doctor
+      # probe rather than a doctor.grantEntries row.
+      - kind: patch.propose
+        paths: ["notes/**", "wiki/**", "attic/**"]
+    module: processors/attic-sweep.ts
+
   - id: dome.markdown.core-size
     version: 0.1.0
     phase: adoption
