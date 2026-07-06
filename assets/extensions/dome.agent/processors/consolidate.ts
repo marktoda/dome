@@ -196,6 +196,10 @@ const consolidate = defineProcessorImplementation({
             `Model's final message: ${excerpt}`,
           finalText: result.finalText,
         },
+        // The split-proposal patch's sourceRefs point at the HUB page being
+        // split (operation 4), not the ledger sourceRefs above — mirrors the
+        // agentIntegrityEffects callback convention below.
+        sourceRef: (path) => ctx.sourceRef(path),
       }),
       // Integrity review (folded in from the retired dome.warden.integrity):
       // each flagged finding becomes a self-clearing diagnostic anchored to the

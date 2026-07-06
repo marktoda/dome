@@ -61,6 +61,10 @@ export function makeConsolidatorTools(opts: {
     searchVaultTool(reader),
     writePageTool(writable, guard),
     deletePageTool(writable, guard),
+    // Operation 4 (stock-gardening phase 1, Task 6): validated lossless
+    // split proposals. Emits a SEPARATE mode:"propose" PatchEffect at
+    // finishAgentRun — never applied through writePage/deletePage above.
+    proposeSplitTool(reader),
     askOwnerTool("dome.agent.consolidate:"),
     // Integrity review (folded in from the retired dome.warden.integrity):
     // findings surface as self-clearing diagnostics, never facts or edits.
@@ -76,9 +80,8 @@ export function makeConsolidatorTools(opts: {
  * `dome apply` — the model itself never applies a split (never via
  * `writePage`).
  *
- * NOT wired into {@link makeConsolidatorTools} yet — a later task adds it to
- * the consolidate charter + tool set once the charter teaches the operation.
- * Exported standalone so it can be composed and tested independently.
+ * Wired into {@link makeConsolidatorTools} (stock-gardening phase 1, Task 6);
+ * exported standalone too so it can be composed and tested independently.
  *
  * Existence is checked here (against the injected reader), not inside the
  * pure validator: the hub page must already exist (that's what's being

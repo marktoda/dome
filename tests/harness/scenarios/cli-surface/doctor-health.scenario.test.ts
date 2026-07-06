@@ -296,6 +296,12 @@ scenario(
           "        - \"meta/consolidation-ledger.md\"",
           "        - \"inbox/processed/*.md\"",
           "        - \"inbox/raw/*.md\"",
+          // Operation 4 (stock-gardening phase 1, Task 6): proposeSplit's
+          // patch.propose kind must be granted here too, or the kind-level
+          // capability.grant-missing probe would fire and this scenario is
+          // specifically about the ENTRY-level gaps, not kind-level ones.
+          "      patch.propose:",
+          "        - \"wiki/**/*.md\"",
           "      graph.write: [\"dome.daily.*\"]",
           "      model.invoke:",
           "        maxDailyCostUsd: 5",
@@ -683,6 +689,12 @@ scenario(
           "        - \"preferences/signals.md\"",
           "        - \"meta/consolidation-ledger.md\"",
           "        - \"meta/sweep-ledger.md\"",
+          // Operation 4 (stock-gardening phase 1, Task 6): consolidate's
+          // proposeSplit declares patch.propose — grant it here too, or the
+          // kind-level capability.grant-missing probe fires and the
+          // model-provider finding is no longer the only one.
+          "      patch.propose:",
+          "        - \"wiki/**/*.md\"",
           // The deterministic preference counter declares graph.write
           // (dome.preference.*); granting the kind keeps this scenario's
           // capabilityGrantGaps at 0 so the model-provider finding is the

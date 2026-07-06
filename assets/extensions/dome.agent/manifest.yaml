@@ -111,6 +111,19 @@ processors:
           - "wiki/**/*.md"
           - "meta/consolidation-ledger.md"
           - "preferences/signals.md"
+      # Operation 4 (stock-gardening phase 1, Task 6): proposeSplit's hub +
+      # sub-page changes never apply directly — they land as a SEPARATE
+      # mode:"propose" PatchEffect the owner reviews with `dome apply`. This
+      # is intentionally a distinct capability from patch.auto above (the
+      # broker checks per-PatchEffect, and this patch is never in the
+      # auto-applied set); ManifestGrantEntry's kind enum ("read" |
+      # "patch.auto" | "graph.write") has no slot for patch.propose, so this
+      # capability relies on the general kind-level `capability.grant-missing`
+      # doctor probe (same posture as questions.read/proposals.read) rather
+      # than a doctor.grantEntries row.
+      - kind: patch.propose
+        paths:
+          - "wiki/**/*.md"
       - kind: model.invoke
         maxDailyCostUsd: 10
       - kind: question.ask

@@ -148,11 +148,15 @@ describe("dome.agent consolidate charter — patrol queue (Task 16)", () => {
     expect(consolidate).toMatch(/exactly one/i);
   });
 
-  test("splits are proposed (askOwner), never auto-applied — consolidate never reorganizes", () => {
+  test("splits are proposed via proposeSplit (operation 4), never askOwner or writePage — consolidate never reorganizes itself", () => {
     // The patrol verdict for an accreted multi-document is propose-not-auto:
-    // consolidate asks rather than splitting (it does not reorganize).
-    const patrol = consolidate.slice(consolidate.indexOf("## Patrol queue"));
-    expect(patrol).toContain("askOwner");
+    // consolidate prepares a validated split and proposes it (operation 4),
+    // it does not ask the owner to reorganize and it never writePages a split.
+    const patrolStart = consolidate.indexOf("## Patrol queue");
+    const nextHeading = consolidate.indexOf("## The map", patrolStart);
+    const patrol = consolidate.slice(patrolStart, nextHeading);
+    expect(patrol).toContain("proposeSplit");
+    expect(patrol).not.toContain("askOwner");
   });
 
   test("the clean bill lands in the consolidation ledger, and the queue file is patrol-owned", () => {
@@ -160,6 +164,37 @@ describe("dome.agent consolidate charter — patrol queue (Task 16)", () => {
     expect(patrol).toContain("meta/consolidation-ledger.md");
     // Consolidate reads the queue but never rewrites it — patrol owns it.
     expect(patrol).toMatch(/never (edit|rewrite|write)|patrol owns/i);
+  });
+});
+
+describe("dome.agent consolidate charter — splitting oversized pages (operation 4, Task 6)", () => {
+  const consolidate = consolidateCharter({
+    ledgerPath: "meta/consolidation-ledger.md",
+    maxChangedFiles: 30,
+    targets: ["wiki/"],
+  });
+
+  test("carries the operation-4 splitting section with the exact heading", () => {
+    expect(consolidate).toContain(
+      "## Splitting oversized pages (operation 4 — propose, never apply)",
+    );
+    expect(consolidate).toContain("proposeSplit");
+    expect(consolidate).toContain("Never split by writePage");
+    expect(consolidate).toContain("page.oversized");
+    expect(consolidate).toContain("2–6 sub-pages");
+  });
+
+  test("the opening line reconciles never-split-yourself with the propose-a-split allowance", () => {
+    expect(consolidate).toContain(
+      "an oversized or accreted-multi-document page is PROPOSED for a split (operation 4, `proposeSplit`) for the owner to apply; you never split via `writePage`",
+    );
+  });
+
+  test("the Tools list documents proposeSplit as owner-applied, never self-applied", () => {
+    expect(consolidate).toContain(
+      "proposeSplit(hubPath, hubContent, subPages, reason)",
+    );
+    expect(consolidate).toContain("Never writePage a split yourself");
   });
 });
 

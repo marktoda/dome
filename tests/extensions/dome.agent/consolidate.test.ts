@@ -1,13 +1,27 @@
 import { describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import consolidate, {
   consolidationLedgerPath,
 } from "../../../assets/extensions/dome.agent/processors/consolidate";
 import type { ProcessorContext, ModelStepResult } from "../../../src/core/processor";
-import type {
-  DiagnosticEffect,
-  PatchEffect,
-  QuestionEffect,
+import {
+  patchEffect,
+  type DiagnosticEffect,
+  type PatchEffect,
+  type QuestionEffect,
 } from "../../../src/core/effect";
+import { applyEffect, noopSinks } from "../../../src/engine/core/apply-effect";
+import { loadCapabilityPolicy } from "../../../src/engine/core/capability-policy";
+import { flattenBundleProcessors, loadBundles } from "../../../src/extensions/loader";
+import { commitOid, sourceRef } from "../../../src/core/source-ref";
+import type { RunId } from "../../../src/engine/core/runner-contract";
+
+const THIS_FILE = fileURLToPath(import.meta.url);
+const REPO_ROOT = resolve(dirname(THIS_FILE), "..", "..", "..");
+const SHIPPED_BUNDLES_ROOT = join(REPO_ROOT, "assets", "extensions");
 
 function makeCtx(opts: {
   files: Record<string, string>;
@@ -628,5 +642,221 @@ describe("dome.agent.consolidate", () => {
     ) as DiagnosticEffect | undefined;
     expect(diag?.severity).toBe("warning");
     expect(diag?.message).toContain("model_overrides must be an object");
+  });
+});
+
+// ----- Operation 4: proposeSplit through the real processor (stock-gardening
+// phase 1, Task 6) -----------------------------------------------------------
+
+describe("dome.agent.consolidate proposes a page split (operation 4)", () => {
+  const HUB_PATH = "wiki/entities/danny.md";
+  const ORIGINAL = [
+    "---",
+    "type: entity",
+    "description: Danny — colleague and cross-team collaborator",
+    "---",
+    "# Danny",
+    "",
+    "## Promo push 2026",
+    "Danny is leading the promo packet effort for the 2026 cycle.",
+    "",
+    "## Onboarding notes",
+    "Danny onboarded in March and paired with the platform team.",
+    "",
+  ].join("\n");
+  const HUB = [
+    "---",
+    "type: entity",
+    "description: Danny — colleague and cross-team collaborator",
+    "---",
+    "# Danny",
+    "",
+    "## Split into",
+    "- [[wiki/entities/danny-promo-2026]] — the 2026 promo packet push",
+    "- [[wiki/entities/danny-onboarding]] — onboarding history",
+    "",
+  ].join("\n");
+  const SUB_PROMO = [
+    "---",
+    "description: Danny's 2026 promo packet push",
+    "---",
+    "# Danny — promo push 2026",
+    "## Promo push 2026",
+    "Danny is leading the promo packet effort for the 2026 cycle.",
+    "",
+  ].join("\n");
+  const SUB_ONBOARDING = [
+    "---",
+    "description: Danny's onboarding history",
+    "---",
+    "# Danny — onboarding",
+    "## Onboarding notes",
+    "Danny onboarded in March and paired with the platform team.",
+    "",
+  ].join("\n");
+
+  test("a mocked run calling proposeSplit emits one propose PatchEffect (hub+subs) alongside the ledger auto patch", async () => {
+    const files = {
+      "index.md": "x",
+      [HUB_PATH]: ORIGINAL,
+    };
+    const stepFn = async ({
+      messages,
+    }: {
+      readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>;
+    }): Promise<ModelStepResult> => {
+      const turns = messages.filter((m) => m.role === "assistant").length;
+      if (turns === 0) {
+        return {
+          toolCalls: [
+            {
+              id: "1",
+              name: "proposeSplit",
+              input: {
+                hubPath: HUB_PATH,
+                hubContent: HUB,
+                subPages: [
+                  { path: "wiki/entities/danny-promo-2026.md", content: SUB_PROMO },
+                  { path: "wiki/entities/danny-onboarding.md", content: SUB_ONBOARDING },
+                ],
+                reason: "dome.agent.consolidate: split danny.md into promo + onboarding",
+              },
+            },
+          ],
+        };
+      }
+      if (turns === 1) {
+        return {
+          toolCalls: [
+            {
+              id: "2",
+              name: "writePage",
+              input: {
+                path: "meta/consolidation-ledger.md",
+                content: "# Consolidation ledger\n2026-06-09 proposed split of danny.md",
+              },
+            },
+          ],
+        };
+      }
+      return { text: "proposed a split of danny.md; ledger updated" };
+    };
+    const effects = await consolidate.run(makeCtx({ files, stepFn }));
+    const patches = effects.filter((e) => e.kind === "patch") as PatchEffect[];
+    expect(patches).toHaveLength(2);
+    const auto = patches.find((p) => p.mode === "auto");
+    const propose = patches.find((p) => p.mode === "propose");
+    expect(auto).toBeDefined();
+    expect(propose).toBeDefined();
+    if (auto === undefined || propose === undefined) return;
+    expect(auto.changes.map((c) => String(c.path))).toEqual([
+      "meta/consolidation-ledger.md",
+    ]);
+    expect(propose.changes.map((c) => String(c.path))).toEqual([
+      HUB_PATH,
+      "wiki/entities/danny-promo-2026.md",
+      "wiki/entities/danny-onboarding.md",
+    ]);
+    expect(propose.reason).toBe(
+      "dome.agent.consolidate: split danny.md into promo + onboarding",
+    );
+    // The split patch's sourceRef resolves to the HUB page being split (the
+    // consolidate processor's `sourceRef` wiring in finishAgentRun), not the
+    // ledger sourceRefs the auto patch carries.
+    expect(propose.sourceRefs).toHaveLength(1);
+    expect(String(propose.sourceRefs[0]?.path)).toBe(HUB_PATH);
+    expect(auto.sourceRefs.every((r) => String(r.path) !== HUB_PATH)).toBe(true);
+  });
+});
+
+// ----- Broker-level: the shipped manifest + default grant actually
+// authorizes the split-proposal patch (stock-gardening phase 1, Task 6)
+// -----------------------------------------------------------------------
+
+describe("consolidate's split-proposal patch is authorized end-to-end by the shipped manifest + default grant", () => {
+  test("the real manifest declares patch.propose and the standard-preset default grants it", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-consolidate-propose-"));
+    try {
+      mkdirSync(join(root, ".dome"), { recursive: true });
+      writeFileSync(
+        join(root, ".dome", "config.yaml"),
+        "grants: standard\nextensions:\n  dome.agent:\n    enabled: true\n",
+        "utf8",
+      );
+      const policyResult = await loadCapabilityPolicy(root);
+      expect(policyResult.ok).toBe(true);
+      if (!policyResult.ok) return;
+      const granted = policyResult.value.grantsForProcessor(
+        "dome.agent",
+        "dome.agent.consolidate",
+      );
+      expect(granted).toContainEqual({
+        kind: "patch.propose",
+        paths: ["wiki/**/*.md"],
+      });
+
+      const bundles = await loadBundles({ bundlesRoot: SHIPPED_BUNDLES_ROOT });
+      expect(bundles.ok).toBe(true);
+      if (!bundles.ok) return;
+      const processor = flattenBundleProcessors(bundles.value).find(
+        (p) => p.id === "dome.agent.consolidate",
+      );
+      expect(processor).toBeDefined();
+      if (processor === undefined) return;
+      expect(processor.capabilities).toContainEqual({
+        kind: "patch.propose",
+        paths: ["wiki/**/*.md"],
+      });
+
+      // Broker-level: feed a real declared/granted pair through the real
+      // capability-checked applier with an enqueueProposal sink wired (the
+      // shipped shape once proposals.db is threaded in) — the split patch
+      // must queue for review, not be denied or dropped.
+      const hubRef = sourceRef({
+        commit: commitOid("a".repeat(40)),
+        path: "wiki/entities/danny.md",
+      });
+      const splitPatch = patchEffect({
+        mode: "propose",
+        changes: [
+          { kind: "write", path: "wiki/entities/danny.md", content: "hub\n" },
+          {
+            kind: "write",
+            path: "wiki/entities/danny-promo-2026.md",
+            content: "sub\n",
+          },
+        ],
+        reason: "dome.agent.consolidate: split danny.md",
+        sourceRefs: [hubRef],
+      });
+      const enqueued: string[] = [];
+      const result = await applyEffect({
+        processorId: "dome.agent.consolidate",
+        extensionId: "dome.agent",
+        runId: "run-1" as RunId,
+        proposalId: "prop_1_aaaaaa",
+        phase: "garden",
+        declared: processor.capabilities,
+        granted,
+        effect: splitPatch,
+        candidate: commitOid("0000000000000000000000000000000000000001"),
+        sinks: {
+          ...noopSinks(),
+          enqueueProposal: async (input) => {
+            enqueued.push(String(input.effect.reason));
+            return { inserted: true, refreshed: false, id: 1 };
+          },
+        },
+      });
+      expect(result.outcome).toBe("queued-for-review");
+      expect(result.capabilityUse).toEqual({
+        capability: "patch.propose",
+        resource: "wiki/entities/danny.md,wiki/entities/danny-promo-2026.md",
+        outcome: "allowed",
+      });
+      expect(enqueued).toEqual(["dome.agent.consolidate: split danny.md"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
