@@ -284,6 +284,58 @@ describe("performApply", () => {
     expect(await proposalStatus(vault, id)).toBe("pending");
   });
 
+  test("a new-file proposal (baseContents null, file still absent) is not stale and applies cleanly", async () => {
+    const vault = await initVault();
+    const id = await enqueueProposal(vault, {
+      reason: "create a fresh page",
+      changes: [
+        fileChange({ kind: "write", path: "wiki/new-page.md", content: "brand new content\n" }),
+      ],
+      baseContents: { "wiki/new-page.md": null },
+    });
+
+    // Not stale: null base + still-absent working file agree.
+    const listed = await collectProposals(vault);
+    expect(listed.proposals[0]!.stale).toBe(false);
+
+    const before = await headSha(vault);
+    const result = await performApply(vault, id);
+    expect(result.status).toBe("applied");
+    if (result.status !== "applied") throw new Error("unreachable");
+    expect(result.commit).not.toBe(before);
+
+    // The file was created with the proposed content and the row is applied.
+    const written = await Bun.file(join(vault, "wiki/new-page.md")).text();
+    expect(written).toBe("brand new content\n");
+    expect(await proposalStatus(vault, id)).toBe("applied");
+  });
+
+  test("a new-file proposal is stale when the file has been created since enqueue", async () => {
+    const vault = await initVault();
+    const id = await enqueueProposal(vault, {
+      reason: "create a fresh page",
+      changes: [
+        fileChange({ kind: "write", path: "wiki/new-page.md", content: "brand new content\n" }),
+      ],
+      baseContents: { "wiki/new-page.md": null },
+    });
+
+    // The owner (or another process) creates the file after enqueue.
+    await mutateWorkingFile(vault, "wiki/new-page.md", "owner wrote this first\n");
+    const before = await headSha(vault);
+
+    const result = await performApply(vault, id);
+    expect(result.status).toBe("stale");
+    if (result.status !== "stale") throw new Error("unreachable");
+    expect(result.changedPaths).toEqual(["wiki/new-page.md"]);
+
+    // No commit, the owner's content is untouched, and the row stays pending.
+    expect(await headSha(vault)).toBe(before);
+    const onDisk = await Bun.file(join(vault, "wiki/new-page.md")).text();
+    expect(onDisk).toBe("owner wrote this first\n");
+    expect(await proposalStatus(vault, id)).toBe("pending");
+  });
+
   test("a delete-change proposal is unsupported", async () => {
     const vault = await initVault();
     await commitFile(vault, "wiki/stale-page.md", "old content\n");
