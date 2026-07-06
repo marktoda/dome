@@ -412,6 +412,54 @@ describe("dome.daily.compose-blocks (D6)", () => {
     expect(cleared.written).not.toBeNull();
     expect(cleared.written!).not.toContain(QUESTIONS_START);
   });
+
+  // ----- Aging escalation (Task 10) -------------------------------------------
+
+  test("aging: a question asked ≥7 days ago (default) escalates to one summary line, not a bullet", async () => {
+    const oldQuestion = questionRow({
+      id: 9,
+      question: "Rewrite the onboarding doc?",
+      askedAt: "2026-05-26T09:00:00.000Z", // 10 days before the 2026-06-05 fire
+      automationPolicy: "owner-needed",
+    });
+    const { written } = await runCompose(
+      { [TODAY_PATH]: BASE_DAILY },
+      { operational: viewOf([oldQuestion]) },
+    );
+    expect(written).not.toBeNull();
+    expect(written!).not.toContain("Rewrite the onboarding doc?");
+    expect(written!).toContain(
+      "- 🕰 1 aging decision(s) — weekly review (`dome check --decisions`)",
+    );
+  });
+
+  test("aging: question_aging_days config is respected (degrade-not-crash)", async () => {
+    const fourDaysOld = questionRow({
+      id: 10,
+      question: "Deprecate the old widget?",
+      askedAt: "2026-06-01T09:00:00.000Z", // 4 days before the fire
+      automationPolicy: "owner-needed",
+    });
+    const strict = await runCompose(
+      { [TODAY_PATH]: BASE_DAILY },
+      { operational: viewOf([fourDaysOld]) },
+      { question_aging_days: 3 },
+    );
+    expect(strict.written).not.toBeNull();
+    expect(strict.written!).not.toContain("Deprecate the old widget?");
+    expect(strict.written!).toContain("- 🕰 1 aging decision(s)");
+
+    // An invalid config value degrades to the default (7 days) rather than
+    // crashing — a 4-day-old question stays fresh under the default.
+    const degraded = await runCompose(
+      { [TODAY_PATH]: BASE_DAILY },
+      { operational: viewOf([fourDaysOld]) },
+      { question_aging_days: "not-a-number" },
+    );
+    expect(degraded.written).not.toBeNull();
+    expect(degraded.written!).toContain("Deprecate the old widget?");
+    expect(degraded.written!).not.toContain("aging decision");
+  });
 });
 
 // ----- Harness ---------------------------------------------------------------
@@ -464,6 +512,7 @@ function viewOf(
 async function runCompose(
   files: Readonly<Record<string, string>>,
   opts: { readonly operational?: OperationalQueryView },
+  extensionConfig?: Readonly<Record<string, unknown>>,
 ): Promise<{
   readonly patch: PatchEffect | undefined;
   readonly written: string | null;
@@ -478,6 +527,7 @@ async function runCompose(
     now: new Date(FIRED_AT),
     input: { kind: "schedule", cron: "25 5 * * *", firedAt: FIRED_AT },
     ...(opts.operational !== undefined ? { operational: opts.operational } : {}),
+    ...(extensionConfig !== undefined ? { extensionConfig } : {}),
   });
   const effects = await composeBlocks.run(ctx);
   const patch = effects.find(

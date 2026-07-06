@@ -19,12 +19,15 @@ import {
 } from "../../../assets/extensions/dome.daily/processors/daily-types";
 import {
   agendaSection,
+  DEFAULT_QUESTION_AGING_DAYS,
   type EditionProposal,
   type EditionQuestion,
   integratedSection,
   MAX_EDITION_PROPOSALS,
   MAX_EDITION_QUESTIONS,
+  partitionQuestionsByAge,
   proposalsSection,
+  questionBullet,
   questionsSection,
   replaceEditionBlock,
   sourcesSection,
@@ -43,6 +46,9 @@ function question(
     ...overrides,
   });
 }
+
+// The aging-escalation fixture instant (Task 10).
+const NOW_ISO = "2026-06-09T05:00:00.000Z";
 
 // ----- questionsSection -------------------------------------------------------
 
@@ -158,6 +164,114 @@ describe("questionsSection", () => {
     expect(prefix).not.toContain("[[ambiguous]]");
     expect(prefix).not.toContain("[[ProjectA]]");
     expect(prefix).not.toContain("[[ProjectB]]");
+  });
+
+  // ----- Aging escalation (Task 10) -------------------------------------------
+
+  test("opts absent → behaves exactly as today (all fresh, no aging line)", () => {
+    const questions = [1, 2].map((id) =>
+      question({ id, askedAt: "2026-05-01T00:00:00.000Z" }), // 39 days old
+    );
+    const section = questionsSection(questions);
+    expect(section).not.toContain("🕰");
+    expect(section).not.toContain("aging decision");
+  });
+
+  test("an 8-day-old question (default agingDays=7) renders as the aging line, not a bullet", () => {
+    const fresh = question({ id: 1, askedAt: "2026-06-08T00:00:00.000Z" }); // 1 day old
+    const old = question({ id: 2, askedAt: "2026-06-01T00:00:00.000Z" }); // 8 days old
+    const section = questionsSection([fresh, old], { nowIso: NOW_ISO });
+    expect(section).not.toBeNull();
+    expect(section).toContain("- Q1");
+    expect(section).not.toContain("- Q2");
+    expect(section).toContain(
+      "- 🕰 1 aging decision(s) — weekly review (`dome check --decisions`)",
+    );
+  });
+
+  test("fresh cap/tail unaffected by aging partition: +N more counts fresh only", () => {
+    const fresh = [1, 2, 3, 4].map((id) =>
+      question({ id, askedAt: "2026-06-08T00:00:00.000Z" }), // 1 day old, all fresh
+    );
+    const aging = [5].map((id) =>
+      question({ id, askedAt: "2026-06-01T00:00:00.000Z" }), // 8 days old
+    );
+    const section = questionsSection([...fresh, ...aging], { nowIso: NOW_ISO });
+    expect(section).not.toBeNull();
+    const rendered = [...section!.matchAll(/- Q(\d+)/g)];
+    expect(rendered).toHaveLength(3);
+    // +1 more — the 4th fresh question, not the aging one.
+    expect(section).toContain("+1 more — `dome check`");
+    expect(section).toContain("- 🕰 1 aging decision(s)");
+  });
+
+  test("all-aging → block has no question bullets, just the heading and the aging line", () => {
+    const questions = [1, 2].map((id) =>
+      question({ id, askedAt: "2026-06-01T00:00:00.000Z" }), // 8 days old
+    );
+    const section = questionsSection(questions, { nowIso: NOW_ISO });
+    expect(section).not.toBeNull();
+    expect(section).toContain("### To decide");
+    expect(section).not.toMatch(/- Q\d+/);
+    expect(section).not.toContain("more —");
+    expect(section).toContain("- 🕰 2 aging decision(s)");
+  });
+
+  test("question_aging_days: 3 respected — a 4-day-old question ages out", () => {
+    const question4d = question({ id: 1, askedAt: "2026-06-05T00:00:00.000Z" }); // 4 days old
+    const section = questionsSection([question4d], {
+      nowIso: NOW_ISO,
+      agingDays: 3,
+    });
+    expect(section).not.toContain("- Q1");
+    expect(section).toContain("- 🕰 1 aging decision(s)");
+  });
+
+  test("boundary: exactly agingDays old is still fresh (< strict comparison)", () => {
+    const exact = question({ id: 1, askedAt: "2026-06-02T05:00:00.000Z" }); // exactly 7 days
+    const section = questionsSection([exact], { nowIso: NOW_ISO });
+    expect(section).toContain("- Q1");
+    expect(section).not.toContain("🕰");
+  });
+
+  test("no aging questions → no aging line", () => {
+    const section = questionsSection(
+      [question({ id: 1, askedAt: "2026-06-08T00:00:00.000Z" })],
+      { nowIso: NOW_ISO },
+    );
+    expect(section).not.toContain("🕰");
+  });
+});
+
+describe("partitionQuestionsByAge", () => {
+  test("splits fresh vs aging using a strict < cutoff comparison", () => {
+    const rows = [
+      { askedAt: "2026-06-08T00:00:00.000Z" }, // 1 day old — fresh
+      { askedAt: "2026-06-01T00:00:00.000Z" }, // 8 days old — aging
+      { askedAt: "2026-06-02T05:00:00.000Z" }, // exactly 7 days — fresh (boundary)
+    ];
+    const { fresh, aging } = partitionQuestionsByAge(rows, {
+      agingDays: 7,
+      nowIso: NOW_ISO,
+    });
+    expect(fresh).toHaveLength(2);
+    expect(aging).toHaveLength(1);
+    expect(aging[0]).toBe(rows[1]);
+  });
+
+  test("respects DEFAULT_QUESTION_AGING_DAYS = 7", () => {
+    expect(DEFAULT_QUESTION_AGING_DAYS).toBe(7);
+  });
+});
+
+describe("questionBullet (exported for cross-bundle reuse — dome.health.report-card)", () => {
+  test("renders the same bullet shape questionsSection uses", () => {
+    const bullet = questionBullet(
+      question({ id: 42, question: "Merge?", recommendedAnswer: "yes" }),
+    );
+    expect(bullet).toBe(
+      "- Q42 (owner-needed): Merge? — recommended: yes — resolve: `dome resolve 42 <answer>`",
+    );
   });
 });
 

@@ -1,11 +1,14 @@
 // dome.health.report-card — the weekly garden report (product review's "prove"
 // instrument). Cron `22 5 * * 1` (Monday 05:22, before the 05:30 brief).
 //
-// Deterministic garden processor: NO model, NO facts, NO questions. Reads the
-// run ledger (run.read) and question rows (questions.read) over the trailing 7
-// days plus the optional retrieval-miss log, and emits ONE PatchEffect that
-// rewrites `meta/report-card.md` (the full per-processor card) AND splices the
-// `dome.health:report-card` block into TODAY's daily under `## Weekly review`.
+// Deterministic garden processor: NO model, NO facts, NO questions asked (it
+// only reads them). Reads the run ledger (run.read) and question rows
+// (questions.read) — both the trailing-7-day window (opened/resolved stats)
+// and the full open backlog (Task 10's aging-decisions partition, §"Question
+// aging escalation") — plus the optional retrieval-miss log, and emits ONE
+// PatchEffect that rewrites `meta/report-card.md` (the full per-processor
+// card) AND splices the `dome.health:report-card` block into TODAY's daily
+// under `## Weekly review`.
 // Byte-identical re-render is a no-op (the deterministic gate): when neither
 // file's content changes, no patch is emitted. When the operational run view
 // is absent (run.read declared but ungranted), the card is NOT overwritten and
@@ -15,6 +18,7 @@
 // 05:22 Monday + block-ownership row); the block id registers in dome.daily's
 // DAILY_GENERATED_BLOCKS and dome.search's strip list.
 
+import { compareStrings } from "../../../../src/core/compare";
 import {
   diagnosticEffect,
   patchEffect,
@@ -35,7 +39,12 @@ import {
   previousLocalDate,
 } from "../../dome.daily/processors/daily-paths";
 import { renderDailySkeleton } from "../../dome.daily/processors/daily-scaffold";
-import { replaceEditionBlock } from "../../dome.daily/processors/edition-blocks";
+import {
+  partitionQuestionsByAge,
+  questionAgingDaysFromConfig,
+  replaceEditionBlock,
+  toEditionQuestion,
+} from "../../dome.daily/processors/edition-blocks";
 
 import {
   aggregateQuestionStats,
@@ -74,6 +83,10 @@ const reportCard = defineProcessorImplementation({
     const date = localDateParts(now);
     const windowEnd = formatDate(date);
     const todayPath = dailyPath(date, settings);
+    // Task 10's aging threshold — same key + default as dome.daily.compose-
+    // blocks (questionAgingDaysFromConfig), resolved from THIS processor's own
+    // extensionConfig (a per-processor grant, not shared state).
+    const agingDays = questionAgingDaysFromConfig(ctx.extensionConfig);
     // Two deliberate window semantics coexist: runs/questions use an exact
     // 168-hour ISO-instant bound (windowStartIso — the ledger rows carry
     // timestamps), while retrieval misses use the trailing 7 vault-local
@@ -107,6 +120,7 @@ const reportCard = defineProcessorImplementation({
     // (LOUD warning), the card still renders from run data.
     const questionsView = ctx.operational?.questions;
     let questionStats: ReportCardData["questions"] = Object.freeze([]);
+    let agingQuestions: ReportCardData["agingQuestions"] = Object.freeze([]);
     if (questionsView === undefined) {
       diagnostics.push(
         diagnosticEffect({
@@ -121,6 +135,18 @@ const reportCard = defineProcessorImplementation({
       questionStats = aggregateQuestionStats(
         questionsView({ resolvedSince: windowStartIso }),
         windowStartIso,
+      );
+      // Task 10: the full open backlog (not window-scoped — a question opened
+      // long before this week's window can still be aging), partitioned by
+      // the same rule dome.daily.compose-blocks uses, oldest-first.
+      const { aging } = partitionQuestionsByAge(questionsView({ resolved: false }), {
+        agingDays,
+        nowIso: now.toISOString(),
+      });
+      agingQuestions = Object.freeze(
+        [...aging]
+          .map(toEditionQuestion)
+          .sort((a, b) => compareStrings(a.askedAt, b.askedAt)),
       );
     }
 
@@ -141,6 +167,7 @@ const reportCard = defineProcessorImplementation({
       questions: questionStats,
       missCount,
       idle: possiblyIdle(runStats),
+      agingQuestions,
     });
 
     // The full card — rewritten in place.

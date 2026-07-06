@@ -32,10 +32,8 @@ import { generatedBlockAnomalyDiagnostics } from "../../../../src/core/generated
 import {
   defineProcessorImplementation,
   type OperationalProposalRow,
-  type OperationalQuestionRow,
   type ProcessorContext,
 } from "../../../../src/core/processor";
-import { questionAutomationPolicy } from "../../../../src/question-resolution";
 
 import { parseCalendarDay } from "./calendar-day";
 import {
@@ -64,11 +62,12 @@ import {
   agendaSection,
   integratedSection,
   proposalsSection,
+  questionAgingDaysFromConfig,
   questionsSection,
   replaceEditionBlock,
   sourcesSection,
+  toEditionQuestion,
   type EditionProposal,
-  type EditionQuestion,
 } from "./edition-blocks";
 import { parseSweepLedger } from "./sweep-ledger";
 
@@ -83,9 +82,11 @@ const composeBlocks = defineProcessorImplementation({
     // vault-local date (signal fires carry no firedAt). Clock only via
     // ctx.now() (the processor-clock fence).
     const firedAt = parseScheduleInput(ctx.input)?.firedAt ?? null;
-    const date = localDateParts(firedAt === null ? ctx.now() : new Date(firedAt));
+    const now = firedAt === null ? ctx.now() : new Date(firedAt);
+    const date = localDateParts(now);
     const todayPath = dailyPath(date, settings);
     const todayStr = formatDate(date);
+    const agingDays = questionAgingDaysFromConfig(ctx.extensionConfig);
 
     const existing = await ctx.snapshot.readFile(todayPath);
     const base =
@@ -131,7 +132,10 @@ const composeBlocks = defineProcessorImplementation({
         content,
         owner: DAILY_OWNER,
         block: QUESTIONS_BLOCK,
-        section: questionsSection(questions),
+        section: questionsSection(questions, {
+          agingDays,
+          nowIso: now.toISOString(),
+        }),
         heading: START_HERE_HEADING,
         afterBlock: EDITION_YESTERDAY_BLOCK,
       });
@@ -252,23 +256,6 @@ const composeBlocks = defineProcessorImplementation({
 });
 
 export default composeBlocks;
-
-/**
- * Map a durable operational question row to the plain `EditionQuestion` shape
- * the "To decide" renderer consumes: the automation policy is derived from the
- * row's metadata (defaulting to owner-needed), and the recommended answer is
- * the optional `metadata.recommendedAnswer` normalized to `null`.
- */
-function toEditionQuestion(row: OperationalQuestionRow): EditionQuestion {
-  return Object.freeze({
-    id: row.id,
-    question: row.question,
-    options: row.options ?? [],
-    automationPolicy: questionAutomationPolicy(row.metadata),
-    recommendedAnswer: row.metadata?.recommendedAnswer ?? null,
-    askedAt: row.askedAt,
-  });
-}
 
 /**
  * Map a durable operational proposal row to the plain `EditionProposal`

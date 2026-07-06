@@ -20,6 +20,10 @@ import {
   MISS_ENTRY_PATTERN,
   RETRIEVAL_MISSES_PATH,
 } from "../../../../src/surface/report-miss";
+import {
+  questionBullet,
+  type EditionQuestion,
+} from "../../dome.daily/processors/edition-blocks";
 
 // The retrieval-miss log (Task 12); the miss row renders only when present.
 // Re-exported so existing importers of this module (report-card.ts, its
@@ -106,6 +110,15 @@ export type ReportCardData = {
   readonly missCount: number | null;
   /** Processors with ≥ POSSIBLY_IDLE_MIN_RUNS runs and zero productive. */
   readonly idle: ReadonlyArray<ProcessorRunStats>;
+  /**
+   * Open questions aged past the (report-card-local) `question_aging_days`
+   * threshold (Task 10) — the weekly review's escalation destination for the
+   * daily "To decide" block's `- 🕰 N aging decision(s)` summary line. The
+   * processor partitions `questionsView({ resolved: false })` with the same
+   * `partitionQuestionsByAge` rule `dome.daily.compose-blocks` uses; this
+   * module only renders the already-aging subset.
+   */
+  readonly agingQuestions: ReadonlyArray<EditionQuestion>;
 };
 
 const FAILURE_STATUSES: ReadonlySet<ReportCardRunStatus> = new Set([
@@ -269,6 +282,12 @@ export function renderReportCard(data: ReportCardData): string {
       ),
     );
   }
+  lines.push("", "### Aging decisions", "");
+  if (data.agingQuestions.length === 0) {
+    lines.push("_No aging decisions this week._");
+  } else {
+    lines.push(...data.agingQuestions.map(questionBullet));
+  }
   if (data.missCount !== null) {
     lines.push(
       "",
@@ -291,10 +310,14 @@ export function renderReportCard(data: ReportCardData): string {
 }
 
 /**
- * Render the `dome.health:report-card` daily block (≤10 lines): total model
- * cost, top-3 spenders with productive counts, questions opened/resolved, the
- * miss count (only when the misses file exists), and the full-card link. Plain
- * `-` bullets only. Returns the full block including markers.
+ * Render the `dome.health:report-card` daily block: total model cost, top-3
+ * spenders with productive counts, questions opened/resolved, the miss count
+ * (only when the misses file exists), an "### Aging decisions" subsection
+ * (Task 10 — one bullet per aging question in the `questionBullet` style,
+ * omitted entirely when there are none — the weekly review is where the
+ * daily "To decide" block's `- 🕰 N aging decision(s)` summary line points),
+ * and the full-card link. Plain `-` bullets only. Returns the full block
+ * including markers.
  */
 export function renderDailyReviewBlock(data: ReportCardData): string {
   const totalCost = data.runs.reduce((sum, s) => sum + s.costUsd, 0);
@@ -328,6 +351,9 @@ export function renderDailyReviewBlock(data: ReportCardData): string {
   ];
   if (data.missCount !== null) {
     lines.push(`- Retrieval misses: ${data.missCount}`);
+  }
+  if (data.agingQuestions.length > 0) {
+    lines.push("", "### Aging decisions", ...data.agingQuestions.map(questionBullet));
   }
   lines.push("- Full card: [[meta/report-card]]", REPORT_CARD_MARKERS.end);
   return lines.join("\n");
