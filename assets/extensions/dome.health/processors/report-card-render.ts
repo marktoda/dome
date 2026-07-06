@@ -119,6 +119,24 @@ export type ReportCardData = {
    * module only renders the already-aging subset.
    */
   readonly agingQuestions: ReadonlyArray<EditionQuestion>;
+  /**
+   * The trust-ladder section (wiki/specs/proposals.md §"Trust ladder"): per
+   * proposal-producing processor in the window — granted autonomy for the
+   * paths it proposes (auto / propose / "unknown" when the config was
+   * unreadable), decided/applied counts by decidedAt. The processor
+   * aggregates via trust-review-shared's `aggregateProposalActivity` +
+   * `grantedAutonomy`; this module only renders. Trust-review's own
+   * promotion proposals are excluded (ladder bookkeeping, not producer
+   * evidence).
+   */
+  readonly trust: ReadonlyArray<ProcessorTrustRow>;
+};
+
+export type ProcessorTrustRow = {
+  readonly processorId: string;
+  readonly autonomy: "auto" | "propose" | "unknown";
+  readonly decided: number;
+  readonly applied: number;
 };
 
 const FAILURE_STATUSES: ReadonlySet<ReportCardRunStatus> = new Set([
@@ -238,6 +256,11 @@ function money(n: number): string {
   return n.toFixed(2);
 }
 
+/** `applied/decided` to two places; an undecided row renders an em dash. */
+function acceptRate(t: ProcessorTrustRow): string {
+  return t.decided === 0 ? "—" : (t.applied / t.decided).toFixed(2);
+}
+
 /**
  * Render the full `meta/report-card.md` card — deterministic markdown,
  * rewritten in place each week. Per-processor table, questions table, an
@@ -287,6 +310,19 @@ export function renderReportCard(data: ReportCardData): string {
     lines.push("_No aging decisions this week._");
   } else {
     lines.push(...data.agingQuestions.map(questionBullet));
+  }
+  lines.push("", "## Trust ladder", "");
+  if (data.trust.length === 0) {
+    lines.push("_No proposals in the last 7 days._");
+  } else {
+    lines.push(
+      "| Processor | Autonomy | Decided | Applied | Accept rate |",
+      "| --- | --- | --: | --: | --: |",
+      ...data.trust.map(
+        (t) =>
+          `| ${t.processorId} | ${t.autonomy} | ${t.decided} | ${t.applied} | ${acceptRate(t)} |`,
+      ),
+    );
   }
   if (data.missCount !== null) {
     lines.push(

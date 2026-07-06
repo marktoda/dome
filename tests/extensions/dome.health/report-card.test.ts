@@ -28,11 +28,13 @@ import type { DiagnosticEffect, PatchEffect } from "../../../src/core/effect";
 import { commitOid, type CommitOid } from "../../../src/core/source-ref";
 import {
   treeOid,
+  type OperationalProposalRow,
   type OperationalQueryView,
   type OperationalRunRow,
   type OperationalQuestionRow,
   type Snapshot,
 } from "../../../src/core/processor";
+import { CONFIG_PATH } from "../../../assets/extensions/dome.health/processors/trust-review-shared";
 import { makeProcessorContext } from "../../../src/processors/context";
 
 const HEAD_COMMIT = commitOid("8888888888888888888888888888888888888888");
@@ -357,6 +359,92 @@ describe("dome.health.report-card (processor run path)", () => {
   });
 });
 
+describe("report-card trust ladder section", () => {
+  const TRUST_CONFIG = [
+    "extensions:",
+    "  dome.acme:",
+    "    enabled: true",
+    "    grant:",
+    '      read: ["wiki/**/*.md"]',
+    '      patch.propose: ["wiki/**/*.md"]',
+    "",
+  ].join("\n");
+
+  function trustProposal(input: {
+    readonly id: number;
+    readonly status: "pending" | "applied" | "rejected";
+    readonly decidedAt?: string | null;
+  }): OperationalProposalRow {
+    return Object.freeze({
+      id: input.id,
+      processorId: "dome.acme.tidy",
+      extensionId: "dome.acme",
+      reason: "tidy the notes",
+      paths: Object.freeze(["wiki/notes/a.md"]),
+      createdAt: "2026-05-29T00:00:00.000Z",
+      status: input.status,
+      decidedAt: input.decidedAt ?? null,
+    });
+  }
+
+  test("renders per-producer autonomy + decided/applied + accept rate", async () => {
+    const { card } = await runReportCard(
+      { [TODAY_PATH]: BASE_DAILY, [CONFIG_PATH]: TRUST_CONFIG },
+      {
+        runs: [run({ processorId: "dome.x", status: "succeeded" })],
+        questions: [],
+        proposals: [
+          trustProposal({ id: 1, status: "applied", decidedAt: "2026-05-30T00:00:00.000Z" }),
+          trustProposal({ id: 2, status: "rejected", decidedAt: "2026-05-31T00:00:00.000Z" }),
+          trustProposal({ id: 3, status: "pending" }),
+        ],
+      },
+    );
+    expect(card).toContain("## Trust ladder");
+    expect(card).toContain("| dome.acme.tidy | propose | 2 | 1 | 0.50 |");
+  });
+
+  test("autonomy renders 'unknown' when the config is unreadable (degrade, never crash)", async () => {
+    const { card } = await runReportCard(
+      { [TODAY_PATH]: BASE_DAILY }, // no .dome/config.yaml in the snapshot
+      {
+        runs: [run({ processorId: "dome.x", status: "succeeded" })],
+        questions: [],
+        proposals: [
+          trustProposal({ id: 1, status: "applied", decidedAt: "2026-05-30T00:00:00.000Z" }),
+        ],
+      },
+    );
+    expect(card).toContain("| dome.acme.tidy | unknown | 1 | 1 | 1.00 |");
+  });
+
+  test("no proposals in the window renders the fallback line", async () => {
+    const { card } = await runReportCard(
+      { [TODAY_PATH]: BASE_DAILY },
+      { runs: [run({ processorId: "dome.x", status: "succeeded" })], questions: [] },
+    );
+    expect(card).toContain("## Trust ladder");
+    expect(card).toContain("_No proposals in the last 7 days._");
+  });
+
+  test("missing proposals view is LOUD (warning) and the section falls back empty", async () => {
+    const { card, diagnostics } = await runReportCard(
+      { [TODAY_PATH]: BASE_DAILY },
+      {
+        runs: [run({ processorId: "dome.x", status: "succeeded" })],
+        questions: [],
+        proposals: null,
+      },
+    );
+    expect(card).toContain("_No proposals in the last 7 days._");
+    const missing = diagnostics.find(
+      (d) => d.code === "dome.health.report-card-proposals-view-missing",
+    );
+    expect(missing).toBeDefined();
+    expect(missing!.severity).toBe("warning");
+  });
+});
+
 // ----- Fixtures + harness ----------------------------------------------------
 
 const BASE_DAILY = [
@@ -432,13 +520,19 @@ function q(input: {
 function viewOf(inputs: {
   readonly runs: ReadonlyArray<OperationalRunRow>;
   readonly questions: ReadonlyArray<OperationalQuestionRow>;
+  /** `null` models a missing proposals view (proposals.read ungranted). */
+  readonly proposals?: ReadonlyArray<OperationalProposalRow> | null;
 }): OperationalQueryView {
+  const proposals = inputs.proposals === undefined ? [] : inputs.proposals;
   return Object.freeze({
     outbox: () => Object.freeze([]),
     quarantines: () => Object.freeze([]),
     orphanRuns: () => Object.freeze([]),
     runs: () => Object.freeze([...inputs.runs]),
     questions: () => Object.freeze([...inputs.questions]),
+    ...(proposals !== null
+      ? { proposals: () => Object.freeze([...proposals]) }
+      : {}),
   });
 }
 
@@ -448,6 +542,7 @@ async function runReportCard(
     | {
         readonly runs: ReadonlyArray<OperationalRunRow>;
         readonly questions: ReadonlyArray<OperationalQuestionRow>;
+        readonly proposals?: ReadonlyArray<OperationalProposalRow> | null;
       }
     | undefined,
   extensionConfig?: Readonly<Record<string, unknown>>,
