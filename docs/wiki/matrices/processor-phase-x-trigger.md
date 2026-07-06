@@ -1,7 +1,7 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-06-12
+updated: 2026-07-06
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 description: Crosses processor phases with trigger kinds (signal/path/schedule/answer/command) — which pairs the manifest validator allows, and why.
@@ -75,7 +75,7 @@ The phase × trigger matrix is **the canonical contract** that the manifest vali
   - `src/processors/triggers.ts:matchTriggers` consumes `signal` and `path` triggers; `schedule`, `answer`, and `command` triggers return no match because each has a dedicated dispatcher.
   - **Adoption-phase runner** (`adoptionRunner` in `src/processors/runtime.ts`) — operational since Phase 3.
   - **Garden-phase runner** (`gardenRunner` in `src/processors/runtime.ts`) — operational as of Phase 4a. Fires garden-phase processors against post-adoption signals + paths.
-  - **Garden-emitted PatchEffect → sub-Proposal spawn** (`src/engine/garden/garden.ts`) — operational as of Phase 4a'. Auto-mode PatchEffects from garden-phase processors go through broker enforcement, then spawn sub-Proposals routed through `adopt()` recursively. Cascade depth capped at `DEFAULT_MAX_CASCADE_DEPTH` (10); cap-hit emits `garden.cascade-cap` DiagnosticEffect via the sinks. Propose-mode patches log+drop in v1.0 pending the lint-review surface.
+  - **Garden-emitted PatchEffect → sub-Proposal spawn** (`src/engine/garden/garden.ts`) — operational as of Phase 4a'. Auto-mode PatchEffects from garden-phase processors go through broker enforcement, then spawn sub-Proposals routed through `adopt()` recursively. Cascade depth capped at `DEFAULT_MAX_CASCADE_DEPTH` (10); cap-hit emits `garden.cascade-cap` DiagnosticEffect via the sinks. Propose-mode patches (and auto→propose downgrades) enqueue a durable row in `proposals.db` for owner review — `dome proposals` / `dome apply` / `dome reject` — via the optional `enqueueProposal` sink ([[wiki/specs/effects]] §"PatchEffect"); sink-less contexts (e.g. the `dome run` view harness) keep the legacy log+drop.
   - **View-phase runner** (`viewRunner` in `src/processors/runtime.ts` + `runViewCommand` in `src/engine/core/commands.ts`) — operational as of Phase 4b. Command-triggered view-phase processors fire on `runViewCommand(name, args)` invocation; the runner finds the at-most-one matching processor (collisions rejected by registry validation as `duplicate-command-trigger`), builds a read-only snapshot at the adopted commit, and routes emitted ViewEffects through `applyEffect({ phase: "view" })`. Non-View effect emissions surface as `phase-mismatch` diagnostics in the result's `brokerDiagnostics` field.
   - **Scheduler** (`runScheduler` in `src/engine/operational/scheduler.ts` + minimal cron evaluator in `src/engine/operational/cron.ts`) — operational as of Phase 4c. Schedule-triggered garden processors fire when due per their cron expression, against `projection.db.schedule_cursors`. The scheduler runs once per top-level adoption attempt (not per sub-Proposal). Cursor lifecycle: new processor fires on first tick; cron change resets the cursor; missed intervals collapse (at-most-once-per-sync clamp per [[wiki/gotchas/scheduled-hook-idempotency]]). Clock injection via `runOneAdoption({ now })` lets the harness's `TestClock` drive deterministic schedule testing.
   - **Answer-trigger dispatch** (`src/engine/operational/answers.ts`) — operational. Garden-phase answer handlers match answered QuestionEffect rows by optional originating `questionProcessorId` plus optional `idempotencyKeyPrefix`.

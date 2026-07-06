@@ -117,7 +117,8 @@ Primary compiler commands:
 - \`dome check --json\` - unified read-only explanation for remaining attention:
   engine health, content diagnostics, and open decisions.
 - \`dome resolve <id> <value>\` - resolve a Dome-raised decision from
-  \`dome check\`.
+  \`dome check\`; \`dome proposals\` lists garden-proposed edits awaiting
+  review, decided with \`dome apply <id>\` or \`dome reject <id>\`.
 
 Optional adopted-state views:
 

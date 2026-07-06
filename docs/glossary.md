@@ -1,7 +1,7 @@
 ---
 type: glossary
 created: 2026-06-10
-updated: 2026-06-26
+updated: 2026-07-06
 tags:
   - orientation
   - vocabulary
@@ -36,6 +36,7 @@ term that lives in only one spec is defined there, not here.
 - **Run ledger** — one audit row per processor invocation. [[wiki/specs/run-ledger]]
 - **Outbox** — the durable queue for external actions; row inserted before the call, idempotency-keyed.
 - **Question / decision** — the same thing at two altitudes: a `QuestionEffect` is the mechanism; `dome check` presents the open ones as *decisions* for `dome resolve`.
+- **Aging decision** — an open question whose `askedAt` is older than `question_aging_days` (default **7**). It stops rendering as a daily "To decide" bullet and collapses into one `🕰 N aging decision(s)` summary line, plus a bullet in the weekly report card's "Aging decisions" section — the escalation path for decisions the owner hasn't gotten to. [[wiki/specs/daily-surface]] §"`dome.daily:questions`"
 - **Answer handler** — a garden processor triggered by a durable answer.
 - **Quarantine** — where a repeatedly-failing processor sits until recovered.
 - **Compiler host** — the tick loop behind `dome serve` / `dome sync`: detect branch drift, construct the Proposal, run adoption.
@@ -61,6 +62,7 @@ term that lives in only one spec is defined there, not here.
 - **Sweep** — the nightly meaning-integration pass over recent material. [[wiki/specs/sweep]]
 - **Subscription** — a declared external-feed fetch in `dome.sources`: schedule + vault-authored command + output path. [[wiki/specs/sources]]
 - **View Contract** — a first-party view's single declaration (`FirstPartyViewEntry` in `src/surface/view-catalog.ts`): command trigger, expected ViewEffect name + version tag (`schemaTag`), the zod **payload** schema (tier 1 — validates the structured data, retiring `data: unknown`), and an optional **view-model** builder (tier 2). The view-layer analog of the sqlite row-codec; adapters validate against it and paint. [[wiki/concepts/surface-view-model]]
+- **Proposal review** — the owner-facing decision loop over a garden processor's `patch.propose`-mode (or auto→propose-downgraded) edits: the patch enqueues a durable row in `proposals.db`, surfaces in the daily "To review" block and `dome check`, and the owner decides with `dome apply <id>` (one ordinary commit, settle pattern) or `dome reject <id>`. Distinct from a *Proposal* (the commit-range write path) — a proposal-review row is a candidate edit awaiting that decision, not itself an adoption unit. [[wiki/specs/effects]] §"PatchEffect"
 
 ## Processor shapes (not primitives)
 

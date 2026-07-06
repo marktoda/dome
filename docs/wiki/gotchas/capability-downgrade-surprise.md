@@ -1,11 +1,11 @@
 ---
 type: gotcha
 created: 2026-05-27
-updated: 2026-06-12
+updated: 2026-07-06
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 coverage: off-matrix
-description: Processor declared patch.auto but the broker downgrades some patches to proposed at runtime, blocking adoption or queuing review unexpectedly.
+description: Processor declared patch.auto but the broker downgrades some patches to proposed at runtime, blocking adoption or queuing them in proposals.db for review unexpectedly.
 enforced_at: src/engine/core/capability-broker.ts
 enforced_at_status: implemented
 first_observed: 2026-05-27 (anticipated; surfaced in v1 design)
@@ -14,7 +14,7 @@ severity: low
 
 # Capability downgrade surprise
 
-**Symptom:** A processor declared `patch.auto: ["wiki/**"]` in its manifest, but at runtime some of its auto-patches are downgraded to proposed patches instead of applying directly. In adoption this blocks the Proposal for review; in async/review-queue flows the patch surfaces for explicit user approval. The user is confused — they thought the processor was a trusted auto-patcher.
+**Symptom:** A processor declared `patch.auto: ["wiki/**"]` in its manifest, but at runtime some of its auto-patches are downgraded to proposed patches instead of applying directly. In adoption this blocks the Proposal for review; in garden-phase flows the downgraded patch now queues in `proposals.db` for owner review (`dome proposals` / `dome apply` / `dome reject`) instead of silently dropping. The user is confused — they thought the processor was a trusted auto-patcher.
 
 **Root cause:** The vault's `<vault>/.dome/config.yaml` grants the processor only `patch.auto: ["wiki/dailies/**"]`, not the full `wiki/**` the manifest requested. The capability broker enforces the **intersection** of declared and granted, so auto-patches to paths outside `wiki/dailies/**` are downgraded to `mode: "propose"` and emit a `capability-downgrade-surprise` diagnostic.
 
@@ -32,7 +32,7 @@ sourceRefs: [<patched paths>]
 The diagnostic surfaces:
 - In `dome sync` / `dome serve` output for the current Proposal, followed by a block diagnostic `patch.propose.requires-review` when this happens inside adoption.
 - In `dome inspect diagnostics --code capability-downgrade-surprise`.
-- In the relevant review surface (for example the future lint/review queue) when the downgraded patch is presented for approval.
+- In `dome proposals` — a garden-phase downgrade (auto→propose) enqueues a durable row there for owner review, diagnosed with info `garden.patch-proposed`; an adoption-phase downgrade still blocks the current Proposal (`patch.propose.requires-review`) since no CLI apply surface exists for that blocking path.
 
 The user resolves by either:
 1. **Granting wider scope** in `<vault>/.dome/config.yaml`:
@@ -42,7 +42,7 @@ The user resolves by either:
        grants:
          patch.auto: ["wiki/**"]   # widened from wiki/dailies/**
    ```
-2. **Accepting the propose-mode flow** — reviewing the proposed patch once the v1.x review/apply queue lands. In v1.0, adoption-phase propose-mode patches block because no CLI apply surface is shipped.
+2. **Accepting the propose-mode flow** — for a garden-phase processor, review and act on the queued proposal via `dome proposals` / `dome apply <id>` / `dome reject <id>` (per [[wiki/specs/effects]] §"PatchEffect", "Garden phase, `mode: \"propose\"`"). Adoption-phase propose-mode patches still block adoption outright; there is no CLI apply surface for that path in v1.0.
 
 **Specific scenarios:**
 

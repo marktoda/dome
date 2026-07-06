@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-09
-updated: 2026-06-12
+updated: 2026-07-06
 sources:
   - "[[memory]]"
   - "[[wiki/specs/autonomous-agents]]"
@@ -472,14 +472,18 @@ Banked as future pressure, in dependency order:
    The propose-only intent (memory decision 4) is enforced for interactive
    agents (`dome.agent`'s grant excludes `core.md`), but dome.markdown's
    deterministic hygiene processors still auto-write it under the default
-   `**/*.md` grant. Excluding it today produces either an adoption-blocking
-   deny/downgrade or a silently-dropped garden patch — not a review
-   proposal (see [[wiki/specs/vault-layout]] §"`core.md`" for the full
-   analysis). Gate the exclusion on the garden propose review queue (the
-   `garden.patch-propose-review-unavailable` follow-up in
-   [[wiki/specs/effects]]), then pin it with a test that a
-   `normalize-frontmatter` patch against `core.md` lands on the visible
-   review path instead of vanishing.
+   `**/*.md` grant. Excluding it today produces an adoption-blocking
+   deny/downgrade, not a review proposal — `normalize-frontmatter` runs in
+   the adoption phase, where a downgraded/`propose`-mode patch still blocks
+   the Proposal outright with no apply surface for that path (see
+   [[wiki/specs/vault-layout]] §"`core.md`" for the full analysis).
+   Product-review-4 shipped the garden-phase review queue (`proposals.db` /
+   `dome proposals` / `dome apply` / `dome reject`; [[wiki/specs/effects]]
+   §"PatchEffect"), but it doesn't reach an adoption-phase processor. Gate
+   the exclusion on moving `normalize-frontmatter`'s `core.md` handling to
+   the garden phase (or a future adoption-phase apply surface), then pin it
+   with a test that a `normalize-frontmatter` patch against `core.md` lands
+   on the visible review path instead of vanishing or blocking adoption.
 
 ## Related
 

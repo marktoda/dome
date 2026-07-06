@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-07-03
+updated: 2026-07-06
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -266,22 +266,26 @@ evolved.
 
 **Known gap: `dome.markdown`'s default `patch.auto: ["**/*.md"]` still
 covers `core.md`** — deliberately, for now. Excluding it cannot produce the
-quiet "review proposal" the propose-only intent imagines, because no such
-surface exists in v1.0: the broker downgrade (auto→propose) requires an
-effective `patch.propose` grant dome.markdown does not declare, so a bare
-grant exclusion yields a *deny* — and in the adoption phase both a denied
-auto-patch and a downgraded propose-patch escalate to `severity: "block"`
-diagnostics (`capability-deny-patch` / `patch.propose.requires-review`) that
-refuse to adopt the human's own commit; worse, the broker verdict is
-per-effect while `normalize-frontmatter` batches every changed file into one
-PatchEffect, so a batch containing `core.md` would wedge the unrelated files
-too. In the garden phase the downgrade degrades the other way: the patch is
-*dropped* with only a diagnostic row (`garden.patch-propose-review-unavailable`
-— [[wiki/specs/effects]] §PatchEffect), leaving nothing reviewable or
-applyable. Since dome.markdown's writers are deterministic hygiene
-(frontmatter key order, date refresh, wikilink repair), not knowledge
-writers, the exclusion waits for the garden propose review queue — tracked
-as a follow-up in [[wiki/specs/preferences]] §"Follow-ups".
+quiet "review proposal" the propose-only intent imagines, because
+`normalize-frontmatter` runs in the **adoption** phase: the broker downgrade
+(auto→propose) requires an effective `patch.propose` grant dome.markdown
+does not declare, so a bare grant exclusion yields a *deny* — and in the
+adoption phase both a denied auto-patch and a downgraded propose-patch
+escalate to `severity: "block"` diagnostics (`capability-deny-patch` /
+`patch.propose.requires-review`) that refuse to adopt the human's own
+commit, with no apply surface for that blocking path; worse, the broker
+verdict is per-effect while `normalize-frontmatter` batches every changed
+file into one PatchEffect, so a batch containing `core.md` would wedge the
+unrelated files too. Product-review-4 shipped a garden-phase review queue
+(`proposals.db` — a downgrade or `patch.propose` patch enqueues there and is
+decided with `dome proposals` / `dome apply` / `dome reject`; [[wiki/specs/effects]]
+§PatchEffect, "Garden phase, `mode: \"propose\"`"), but it doesn't reach an
+adoption-phase processor. Since dome.markdown's writers are deterministic
+hygiene (frontmatter key order, date refresh, wikilink repair), not
+knowledge writers, the exclusion remains a follow-up — gated on moving
+`normalize-frontmatter`'s `core.md` handling to the garden phase (or a
+future adoption-phase apply surface) — tracked in
+[[wiki/specs/preferences]] §"Follow-ups".
 
 `dome init` scaffolds a commented `core.md` skeleton (first-write-only, never
 overwritten on re-run) — see [[wiki/specs/cli]] §"dome init". `dome recipe
