@@ -592,6 +592,9 @@ async function runAdoptionCycle(opts: {
     () => {
       outboxChangedFlagFor(runtime).changed = true;
     },
+    () => {
+      markProposalsChanged(runtime);
+    },
   );
 
   const sinks = sinksFor({ base: proposal.base, head: proposal.head });
@@ -769,6 +772,9 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
     now,
     onQuestionsChanged,
     onOutboxChanged,
+    () => {
+      markProposalsChanged(opts.runtime);
+    },
   );
   const sinks =
     opts.sinks ?? sinksForCursor({ sinksFor, cursor });
@@ -959,6 +965,9 @@ async function runAnswerHandlersForQuestionUnlocked(opts: {
     },
     () => {
       outboxChanged.changed = true;
+    },
+    () => {
+      markProposalsChanged(opts.runtime);
     },
   );
   const cursor: AdoptedCursor = { current: adopted };
@@ -1216,6 +1225,7 @@ function sinksForRuntime(
   now?: () => Date,
   onQuestionsChanged?: () => void,
   onOutboxChanged?: () => void,
+  onProposalsChanged?: () => void,
 ): (
   frame: { readonly base: CommitOid; readonly head: CommitOid },
 ) => ApplyEffectSinks {
@@ -1255,6 +1265,9 @@ function sinksForRuntime(
       adoptedCommit: frame.head,
       ...(onQuestionsChanged !== undefined ? { onQuestionsChanged } : {}),
       ...(onOutboxChanged !== undefined ? { onOutboxChanged } : {}),
+      proposalsDb: runtime.proposalsDb,
+      vaultPath: runtime.path,
+      ...(onProposalsChanged !== undefined ? { onProposalsChanged } : {}),
       projectionWriteLock: (fn) =>
         withProjectionWriteLock(
           { vaultPath: runtime.path, command: "projection-sink" },
@@ -1322,6 +1335,12 @@ function sinksForCursor(opts: {
   const current = (): ApplyEffectSinks =>
     opts.sinksFor({ base: opts.cursor.current, head: opts.cursor.current });
 
+  // `enqueueProposal`'s presence is determined once, by whether the wrapped
+  // `sinksFor` closure was built with a proposals.db handle (see
+  // `sinksForRuntime`) — invariant across cursor advances within one host
+  // tick, so a single-frame probe here is sufficient.
+  const hasEnqueueProposal = current().enqueueProposal !== undefined;
+
   return Object.freeze({
     applyPatch: async (input) => current().applyPatch(input),
     captureView: async (input) => current().captureView(input),
@@ -1338,6 +1357,15 @@ function sinksForCursor(opts: {
     recoverOutbox: async (input) => current().recoverOutbox(input),
     recoverQuarantine: async (input) => current().recoverQuarantine(input),
     recoverRun: async (input) => current().recoverRun(input),
+    ...(hasEnqueueProposal
+      ? {
+          enqueueProposal: async (
+            input: Parameters<
+              NonNullable<ApplyEffectSinks["enqueueProposal"]>
+            >[0],
+          ) => current().enqueueProposal!(input),
+        }
+      : {}),
   } satisfies ApplyEffectSinks);
 }
 

@@ -7,6 +7,7 @@ import {
   EFFECT_PHASE_COMPATIBILITY,
   applyEffect,
   noopSinks,
+  type ApplyEffectSinks,
 } from "../../src/engine/core/apply-effect";
 import {
   diagnosticEffect,
@@ -185,6 +186,187 @@ describe("garden-phase PatchEffect routing", () => {
       outcome: "allowed",
     });
     expect(recorded).toEqual(["garden.patch-propose-review-unavailable"]);
+  });
+});
+
+describe("garden propose patches queue for review (enqueueProposal sink)", () => {
+  // product-review-4 Task 3: when the engine wires an `enqueueProposal` sink,
+  // garden-phase propose-mode patches (plain, or an auto->propose downgrade
+  // rewrite) land in proposals.db instead of being surfaced and dropped.
+  const gardenRef = sourceRef({ commit: commitOid("abc"), path: "wiki/x.md" });
+  const proposeCap: Capability = { kind: "patch.propose", paths: ["wiki/**"] };
+  const autoPatch = patchEffect({
+    mode: "auto",
+    changes: [{ kind: "write", path: "wiki/x.md", content: "x\n" }],
+    reason: "test auto patch",
+    sourceRefs: [gardenRef],
+  });
+  const proposePatch = patchEffect({
+    mode: "propose",
+    changes: [{ kind: "write", path: "wiki/x.md", content: "x\n" }],
+    reason: "test propose patch",
+    sourceRefs: [gardenRef],
+  });
+
+  test("(a) authorized propose patch with sink queues for review and calls the sink", async () => {
+    const recorded: string[] = [];
+    const enqueueCalls: Array<
+      Parameters<NonNullable<ApplyEffectSinks["enqueueProposal"]>>[0]
+    > = [];
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "garden",
+      extensionId: "dome.example",
+      declared: [proposeCap, read],
+      granted: [proposeCap, read],
+      effect: proposePatch,
+      sinks: {
+        ...noopSinks(),
+        recordDiagnostic: async ({ effect }) => {
+          recorded.push(effect.code);
+        },
+        enqueueProposal: async (input) => {
+          enqueueCalls.push(input);
+          return { inserted: true, id: 7 };
+        },
+      },
+    });
+    expect(r.outcome).toBe("queued-for-review");
+    expect(r.appliedEffect).toBe(proposePatch);
+    expect(r.diagnostics).toHaveLength(1);
+    expect(r.diagnostics[0]?.code).toBe("garden.patch-proposed");
+    expect(r.diagnostics[0]?.severity).toBe("info");
+    expect(r.diagnostics[0]?.message).toContain("P7");
+    expect(r.capabilityUse).toEqual({
+      capability: "patch.propose",
+      resource: "wiki/x.md",
+      outcome: "allowed",
+    });
+    expect(recorded).toEqual(["garden.patch-proposed"]);
+    expect(enqueueCalls).toHaveLength(1);
+    expect(enqueueCalls[0]?.effect).toBe(proposePatch);
+    expect(enqueueCalls[0]?.processorId).toBe("test.proc");
+    expect(enqueueCalls[0]?.extensionId).toBe("dome.example");
+    expect(enqueueCalls[0]?.runId).toBe(baseOpts.runId);
+    expect(enqueueCalls[0]?.baseCommit).toBe(baseOpts.candidate);
+  });
+
+  test("(b) authorized propose patch without sink still drops (legacy behavior unchanged)", async () => {
+    // Same case as the pre-Task-3 "authorized propose patch is dropped until
+    // the review surface exists" test above — re-asserted here to pin that
+    // omitting `enqueueProposal` (noopSinks()) preserves the legacy outcome.
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "garden",
+      declared: [proposeCap, read],
+      granted: [proposeCap, read],
+      effect: proposePatch,
+      sinks: noopSinks(),
+    });
+    expect(r.outcome).toBe("blocked-for-review");
+    expect(r.diagnostics[0]?.code).toBe(
+      "garden.patch-propose-review-unavailable",
+    );
+  });
+
+  test("(c) auto patch downgraded to propose, with sink, queues for review and preserves the downgrade warning", async () => {
+    const recorded: string[] = [];
+    const enqueueCalls: Array<
+      Parameters<NonNullable<ApplyEffectSinks["enqueueProposal"]>>[0]
+    > = [];
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "garden",
+      extensionId: "dome.example",
+      declared: [proposeCap, read],
+      granted: [proposeCap, read],
+      effect: autoPatch,
+      sinks: {
+        ...noopSinks(),
+        recordDiagnostic: async ({ effect }) => {
+          recorded.push(effect.code);
+        },
+        enqueueProposal: async (input) => {
+          enqueueCalls.push(input);
+          return { inserted: true, id: 3 };
+        },
+      },
+    });
+    expect(r.outcome).toBe("queued-for-review");
+    expect(r.appliedEffect).not.toBeNull();
+    expect(r.appliedEffect?.kind).toBe("patch");
+    if (r.appliedEffect?.kind === "patch") {
+      expect(r.appliedEffect.mode).toBe("propose");
+    }
+    expect(r.diagnostics).toHaveLength(2);
+    expect(r.diagnostics[0]?.code).toBe("capability-downgrade-surprise");
+    expect(r.diagnostics[1]?.code).toBe("garden.patch-proposed");
+    expect(r.diagnostics[1]?.message).toContain("P3");
+    expect(r.capabilityUse).toEqual({
+      capability: "patch.auto",
+      resource: "wiki/x.md",
+      outcome: "downgraded",
+    });
+    expect(recorded).toEqual([
+      "capability-downgrade-surprise",
+      "garden.patch-proposed",
+    ]);
+    expect(enqueueCalls).toHaveLength(1);
+    expect(enqueueCalls[0]?.processorId).toBe("test.proc");
+    expect(enqueueCalls[0]?.extensionId).toBe("dome.example");
+    expect(enqueueCalls[0]?.baseCommit).toBe(baseOpts.candidate);
+    // The auto-mode capability was authorized only after being rewritten to a
+    // propose-mode shape — the enqueued effect must reflect that rewrite, not
+    // the processor's original auto-mode emission.
+    expect(enqueueCalls[0]?.effect.mode).toBe("propose");
+  });
+
+  test("(d) auto patch downgraded to propose, without sink, is unchanged (legacy behavior)", async () => {
+    const recorded: string[] = [];
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "garden",
+      declared: [proposeCap, read],
+      granted: [proposeCap, read],
+      effect: autoPatch,
+      sinks: {
+        ...noopSinks(),
+        recordDiagnostic: async ({ effect }) => {
+          recorded.push(effect.code);
+        },
+      },
+    });
+    expect(r.outcome).toBe("downgraded");
+    expect(r.appliedEffect).toBeNull();
+    expect(r.diagnostics).toHaveLength(1);
+    expect(r.diagnostics[0]?.code).toBe("capability-downgrade-surprise");
+    expect(recorded).toEqual(["capability-downgrade-surprise"]);
+  });
+});
+
+describe("adoption propose patches unaffected by the garden review sink", () => {
+  // (d) from the Task 3 brief: adoption-phase propose patches still block —
+  // an enqueueProposal sink has no effect outside the garden phase.
+  test("adoption propose patch still blocks even when enqueueProposal is wired", async () => {
+    const propose: Capability = { kind: "patch.propose", paths: ["wiki/**"] };
+    const r = await applyEffect({
+      ...baseOpts,
+      phase: "adoption",
+      declared: [propose, read],
+      granted: [propose, read],
+      effect: patchEffect({
+        mode: "propose",
+        changes: [{ kind: "write", path: "wiki/x.md", content: "x\n" }],
+        reason: "adoption propose",
+        sourceRefs: [ref],
+      }),
+      sinks: {
+        ...noopSinks(),
+        enqueueProposal: async () => ({ inserted: true, id: 1 }),
+      },
+    });
+    expect(r.outcome).toBe("blocked-for-review");
+    expect(r.diagnostics[0]?.code).toBe("patch.propose.requires-review");
   });
 });
 

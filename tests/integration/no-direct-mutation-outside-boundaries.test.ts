@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 const ALLOWED_DIRS = [
   "src/engine/",
   "src/answers/",
+  "src/proposals/",
   "src/projections/",
   "src/ledger/",
   "src/outbox/",

@@ -34,7 +34,11 @@
 //     broker is enforced here, then an authorized auto-mode patch resolves to
 //     `queued-for-spawn` (it is NOT written through the patch sink). The garden
 //     orchestrator reads `appliedEffect` and spawns a sub-Proposal. Propose-mode
-//     and downgraded garden patches are surfaced and dropped.
+//     and downgraded garden patches enqueue a durable pending-proposal row
+//     (`queued-for-review`) when the optional `enqueueProposal` sink is wired;
+//     when it isn't (sink-less harnesses, e.g. `dome run`), they are surfaced
+//     and dropped instead (`blocked-for-review` /
+//     `garden.patch-propose-review-unavailable`).
 //   - In the adoption phase, a DiagnosticEffect with `severity: "block"` is
 //     *recorded* via `sinks.recordDiagnostic` and the router returns
 //     `outcome: "applied"`. The blocking itself happens one layer up, in
@@ -282,6 +286,32 @@ export type ApplyEffectSinks = {
     readonly processorId: string;
     readonly runId: RunId;
   }) => Promise<void>;
+
+  /**
+   * Optional garden-propose review sink. A garden-phase PatchEffect under
+   * `mode: "propose"` — either emitted directly or produced by an
+   * auto→propose capability downgrade — enqueues a durable pending-proposal
+   * row via this sink instead of being dropped. Omitted (the v1.0 default
+   * before this sink existed, and any sink-less harness such as `dome run`)
+   * → the legacy behavior: the patch is surfaced via an info diagnostic and
+   * dropped (`garden.patch-propose-review-unavailable`).
+   *
+   * `effect` is the propose-mode patch actually being enqueued — for a
+   * downgrade this is the broker's rewritten shape, not the processor's
+   * original auto-mode emission. `baseCommit` is the adoption-loop
+   * candidate at routing time, captured so the human-side apply path
+   * (`dome apply`) can detect staleness against it. Returns the same
+   * `{inserted, id}` shape as `enqueuePendingProposal`
+   * (`src/proposals/pending-proposals.ts`) so a dedupe-hit re-emission is
+   * distinguishable from a fresh row.
+   */
+  readonly enqueueProposal?: (input: {
+    readonly effect: PatchEffect;
+    readonly processorId: string;
+    readonly extensionId: string;
+    readonly runId: RunId;
+    readonly baseCommit: CommitOid;
+  }) => Promise<{ readonly inserted: boolean; readonly id: number | null }>;
 };
 
 // ----- ApplyEffectResult ----------------------------------------------------
@@ -305,9 +335,11 @@ export type ApplyEffectSinks = {
  *                           not be auto-applied. In adoption this is a
  *                           `mode: "propose"` patch; `diagnostics` carries a
  *                           `block` diagnostic that stops adoption. In garden
- *                           this is a `mode: "propose"` patch with no review
- *                           surface in v1.0; `diagnostics` carries an `info`
- *                           `garden.patch-propose-review-unavailable`
+ *                           this is a `mode: "propose"` patch (or an
+ *                           auto→propose downgrade) reached when no
+ *                           `enqueueProposal` sink is wired (e.g. the `dome
+ *                           run` view harness); `diagnostics` carries an
+ *                           `info` `garden.patch-propose-review-unavailable`
  *                           diagnostic that does not halt anything. Nothing
  *                           routed either way.
  *   - `queued-for-spawn`  — a garden-phase auto-mode PatchEffect the broker
@@ -315,11 +347,21 @@ export type ApplyEffectSinks = {
  *                           patch sink; instead the garden orchestrator reads
  *                           `appliedEffect` and spawns a sub-Proposal from it.
  *                           `diagnostics` is empty.
+ *   - `queued-for-review` — a garden-phase `mode: "propose"` PatchEffect (or
+ *                           an auto→propose downgrade rewrite) the broker
+ *                           allowed AND the wired `enqueueProposal` sink
+ *                           accepted into `proposals.db` for human review.
+ *                           `diagnostics` carries an info
+ *                           `garden.patch-proposed` diagnostic naming the
+ *                           enqueued proposal id, plus the
+ *                           `capability-downgrade-surprise` warning when this
+ *                           came from a downgrade. `appliedEffect` carries
+ *                           the enqueued (possibly rewritten) patch.
  *
  * `appliedEffect` is the effect that was authorized and routed onward — to a
- * sink (`applied`, `downgraded`) or to the spawn queue (`queued-for-spawn`).
- * It is `null` when nothing was routed: `denied`, `rejected-by-phase`, and
- * `blocked-for-review`.
+ * sink (`applied`, `downgraded`), to the spawn queue (`queued-for-spawn`), or
+ * to the proposals store (`queued-for-review`). It is `null` when nothing was
+ * routed: `denied`, `rejected-by-phase`, and `blocked-for-review`.
  *
  * `diagnostics` is empty for plain `applied`; it carries the broker's
  * diagnostic for `downgraded` / `denied` and the router's `phase-mismatch`
@@ -334,7 +376,8 @@ export type ApplyEffectResult = {
     | "denied"
     | "rejected-by-phase"
     | "blocked-for-review"
-    | "queued-for-spawn";
+    | "queued-for-spawn"
+    | "queued-for-review";
   readonly appliedEffect: Effect | null;
   readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
   /**
@@ -421,6 +464,16 @@ export async function applyEffect(opts: {
   readonly granted: ReadonlyArray<Capability>;
   readonly sinks: ApplyEffectSinks;
   /**
+   * The processor's owning extension/bundle id. Threaded through so a
+   * garden-phase `mode: "propose"` PatchEffect (or an auto→propose
+   * downgrade) can stamp `pending_proposals.extension_id` when the
+   * `enqueueProposal` sink is wired — see `ApplyEffectSinks.enqueueProposal`.
+   * Every other effect kind and phase ignores this field; callers that never
+   * route garden PatchEffects through this router (adoption, view) may omit
+   * it.
+   */
+  readonly extensionId?: string;
+  /**
    * The current adoption-loop candidate OID. Threaded into the `applyPatch`
    * sink so the candidate-tree mutator can apply the patch against the
    * correct base commit. Other effect kinds ignore it. Pinned by Phase
@@ -484,12 +537,33 @@ export async function applyEffect(opts: {
 
   // Garden-phase PatchEffects do not write through the patch sink. The broker
   // decision is shared with adoption (deny handled above); only the post-broker
-  // routing differs: a downgraded patch or a propose-mode patch is surfaced and
-  // dropped, and an authorized auto-mode patch is queued for the garden
+  // routing differs: an authorized auto-mode patch is queued for the garden
   // orchestrator to spawn as a sub-Proposal — it reads the patch off
-  // `appliedEffect`. There is no garden propose review surface in v1.0.
+  // `appliedEffect`. A downgraded patch or a propose-mode patch enqueues a
+  // pending-proposal row when `enqueueProposal` is wired; without that sink,
+  // it is surfaced and dropped instead.
   if (opts.phase === "garden" && opts.effect.kind === "patch") {
     if (verdict.kind === "downgrade") {
+      if (opts.sinks.enqueueProposal !== undefined) {
+        // `routed` is the broker's auto→propose rewrite —
+        // `demoteGardenBlockSeverity` is a no-op for PatchEffects, so it is
+        // safe to enqueue verbatim.
+        const proposePatch = routed as PatchEffect;
+        const queued = await queueGardenProposal({
+          sinks: opts.sinks,
+          enqueueProposal: opts.sinks.enqueueProposal,
+          originalEffect: opts.effect,
+          patch: proposePatch,
+          processorId: opts.processorId,
+          extensionId: opts.extensionId,
+          runId: opts.runId,
+          baseCommit: opts.candidate,
+          proposalId: opts.proposalId,
+          extraDiagnostics: verdictDiagnostics,
+          capabilityOutcome: "downgraded",
+        });
+        return queued;
+      }
       const downgraded = frozen({
         outcome: "downgraded",
         appliedEffect: null,
@@ -506,6 +580,22 @@ export async function applyEffect(opts: {
       return downgraded;
     }
     if (routed.kind === "patch" && routed.mode === "propose") {
+      if (opts.sinks.enqueueProposal !== undefined) {
+        const queued = await queueGardenProposal({
+          sinks: opts.sinks,
+          enqueueProposal: opts.sinks.enqueueProposal,
+          originalEffect: opts.effect,
+          patch: routed,
+          processorId: opts.processorId,
+          extensionId: opts.extensionId,
+          runId: opts.runId,
+          baseCommit: opts.candidate,
+          proposalId: opts.proposalId,
+          extraDiagnostics: EMPTY_DIAGNOSTICS,
+          capabilityOutcome: "allowed",
+        });
+        return queued;
+      }
       const reviewDiagnostic = diagnosticEffect({
         severity: "info",
         code: "garden.patch-propose-review-unavailable",
@@ -628,6 +718,85 @@ function capabilityUseField(
   }
   const capabilityUse = capabilityUseForEffect(effect, outcome);
   return capabilityUse === null ? {} : { capabilityUse };
+}
+
+/**
+ * Shared implementation for both `queued-for-review` routes — a plain
+ * garden-phase propose-mode PatchEffect, and an auto→propose downgrade
+ * rewrite. Calls the (already narrowed-non-undefined) `enqueueProposal`
+ * sink, builds the `garden.patch-proposed` info diagnostic naming the
+ * enqueued row, persists diagnostics via `recordDiagnosticsViaSink`, and
+ * returns the frozen result. `extraDiagnostics` carries the downgrade
+ * warning for the downgrade route (empty for the plain propose route).
+ * `capabilityOutcome` mirrors the sink-less routes' choice: `"downgraded"`
+ * for the auto→propose path (ledgered against the original `patch.auto`
+ * capability per the outcome doc on `ApplyEffectResult`), `"allowed"` for
+ * the plain propose path.
+ */
+async function queueGardenProposal(opts: {
+  readonly sinks: ApplyEffectSinks;
+  readonly enqueueProposal: NonNullable<ApplyEffectSinks["enqueueProposal"]>;
+  readonly originalEffect: Effect;
+  readonly patch: PatchEffect;
+  readonly processorId: string;
+  readonly extensionId: string | undefined;
+  readonly runId: RunId;
+  readonly baseCommit: CommitOid;
+  readonly proposalId: string | null;
+  readonly extraDiagnostics: ReadonlyArray<DiagnosticEffect>;
+  readonly capabilityOutcome: "allowed" | "downgraded";
+}): Promise<ApplyEffectResult> {
+  const enqueueResult = await opts.enqueueProposal({
+    effect: opts.patch,
+    processorId: opts.processorId,
+    extensionId: opts.extensionId ?? "",
+    runId: opts.runId,
+    baseCommit: opts.baseCommit,
+  });
+  const proposedDiagnostic = gardenPatchProposedDiagnostic({
+    processorId: opts.processorId,
+    proposalRowId: enqueueResult.id,
+    patch: opts.patch,
+  });
+  const queued = frozen({
+    outcome: "queued-for-review",
+    appliedEffect: opts.patch,
+    diagnostics: Object.freeze([...opts.extraDiagnostics, proposedDiagnostic]),
+    ...capabilityUseField(opts.originalEffect, opts.capabilityOutcome),
+  });
+  await recordDiagnosticsViaSink({
+    sinks: opts.sinks,
+    diagnostics: queued.diagnostics,
+    processorId: opts.processorId,
+    proposalId: opts.proposalId,
+    runId: opts.runId,
+  });
+  return queued;
+}
+
+/**
+ * The info diagnostic recorded whenever a garden propose-mode (or downgrade-
+ * rewritten) patch lands in `proposals.db`. Names the enqueued row so `dome
+ * proposals`/`dome apply` are directly actionable from `dome check` /
+ * `dome inspect diagnostics` output.
+ */
+function gardenPatchProposedDiagnostic(opts: {
+  readonly processorId: string;
+  readonly proposalRowId: number | null;
+  readonly patch: PatchEffect;
+}): DiagnosticEffect {
+  const proposalLabel =
+    opts.proposalRowId === null
+      ? "a proposal"
+      : `proposal P${opts.proposalRowId}`;
+  return diagnosticEffect({
+    severity: "info",
+    code: "garden.patch-proposed",
+    message:
+      `Garden PatchEffect from ${opts.processorId} queued ${proposalLabel} ` +
+      `for review — \`dome proposals\`: ${opts.patch.reason}`,
+    sourceRefs: opts.patch.sourceRefs,
+  });
 }
 
 /**

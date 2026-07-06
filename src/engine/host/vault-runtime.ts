@@ -76,6 +76,7 @@ import {
 } from "./command-model-provider";
 import { readTree } from "../../git";
 import { openAnswersDb, type AnswersDb } from "../../answers/db";
+import { openProposalsDb, type ProposalsDb } from "../../proposals/db";
 import { openProjectionDb, type ProjectionDb } from "../../projections/db";
 import { buildProjectionQueryView } from "../../projections/query-view";
 import { queryQuestionRecords } from "../../projections/questions";
@@ -150,6 +151,7 @@ export type VaultRuntime = {
   readonly path: string;
   readonly projectionDb: ProjectionDb;
   readonly answersDb: AnswersDb;
+  readonly proposalsDb: ProposalsDb;
   readonly outboxDb: OutboxDb;
   readonly ledgerDb: LedgerDb;
   readonly extensions: ReadonlyArray<{
@@ -333,7 +335,8 @@ export type OpenVaultRuntimeOpts =
  * actionable error.
  *
  *   - `projection-db-open-failed`, `answers-db-open-failed`,
- *     `outbox-db-open-failed`, `ledger-db-open-failed`: DB-open seams.
+ *     `proposals-db-open-failed`, `outbox-db-open-failed`,
+ *     `ledger-db-open-failed`: DB-open seams.
  *   - `quarantine-store-open-failed`: the processor quarantine JSON store
  *     could not be read or parsed.
  *   - `bundle-load-failed`: the bundle loader rejected the bundlesRoot
@@ -347,6 +350,7 @@ export type OpenVaultRuntimeOpts =
 export type OpenVaultRuntimeError =
   | { readonly kind: "projection-db-open-failed"; readonly cause: string }
   | { readonly kind: "answers-db-open-failed"; readonly cause: string }
+  | { readonly kind: "proposals-db-open-failed"; readonly cause: string }
   | { readonly kind: "outbox-db-open-failed"; readonly cause: string }
   | { readonly kind: "ledger-db-open-failed"; readonly cause: string }
   | { readonly kind: "quarantine-store-open-failed"; readonly cause: string }
@@ -527,6 +531,7 @@ type OperationalState = {
   readonly quarantineChangedFlag: { changed: boolean };
   readonly projectionDb: ProjectionDb;
   readonly answersDb: AnswersDb;
+  readonly proposalsDb: ProposalsDb;
   readonly outboxDb: OutboxDb;
   readonly ledgerDb: LedgerDb;
 };
@@ -592,10 +597,24 @@ async function openOperationalState(input: {
   }
   const answersDb = answersResult.value.db;
 
+  const proposalsResult = await openProposalsDb({
+    path: statePath(input.vaultPath, "proposals.db"),
+  });
+  if (!proposalsResult.ok) {
+    answersDb.close();
+    projectionDb.close();
+    return err({
+      kind: "proposals-db-open-failed",
+      cause: proposalsResult.error.kind,
+    });
+  }
+  const proposalsDb = proposalsResult.value.db;
+
   const outboxResult = await openOutboxDb({
     path: statePath(input.vaultPath, "outbox.db"),
   });
   if (!outboxResult.ok) {
+    proposalsDb.close();
     answersDb.close();
     projectionDb.close();
     return err({
@@ -610,6 +629,7 @@ async function openOperationalState(input: {
   });
   if (!ledgerResult.ok) {
     outboxDb.close();
+    proposalsDb.close();
     answersDb.close();
     projectionDb.close();
     return err({
@@ -623,6 +643,7 @@ async function openOperationalState(input: {
     quarantineChangedFlag,
     projectionDb,
     answersDb,
+    proposalsDb,
     outboxDb,
     ledgerDb: ledgerResult.value.db,
   }));
@@ -651,6 +672,7 @@ function buildVaultRuntime(input: {
   const {
     projectionDb,
     answersDb,
+    proposalsDb,
     outboxDb,
     ledgerDb,
     executionState,
@@ -705,6 +727,7 @@ function buildVaultRuntime(input: {
     path: opts.vaultPath,
     projectionDb,
     answersDb,
+    proposalsDb,
     outboxDb,
     ledgerDb,
     extensions: resolved.extensions,
@@ -737,6 +760,7 @@ function buildVaultRuntime(input: {
       // `sqlite3_close_v2`, so a double-close is safe.
       ledgerDb.close();
       outboxDb.close();
+      proposalsDb.close();
       answersDb.close();
       projectionDb.close();
     },
