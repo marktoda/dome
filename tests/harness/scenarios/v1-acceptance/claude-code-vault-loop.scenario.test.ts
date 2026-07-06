@@ -293,6 +293,8 @@ extensions:
       run.read: ["running"]
       run.recover: ["fail"]
       question.ask: true
+      proposals.read: true
+      patch.propose: [".dome/config.yaml"]
     processors:
       dome.health.report-card:
         grant:
@@ -300,9 +302,11 @@ extensions:
             - "wiki/dailies/*.md"
             - "meta/report-card.md"
             - "meta/retrieval-misses.md"
+            - ".dome/config.yaml"
           patch.auto: ["meta/report-card.md", "wiki/dailies/*.md"]
           run.read: true
           questions.read: true
+          proposals.read: true
 `;
 }
 

@@ -332,6 +332,8 @@ extensions:
       run.read: ["running"]
       run.recover: ["fail"]
       question.ask: true
+      proposals.read: true
+      patch.propose: [".dome/config.yaml"]
 `;
 }
 
