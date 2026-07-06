@@ -324,6 +324,9 @@ function mergeRetainedOpenLoops(input: {
       return;
     }
 
+    // Deliberately checked LAST: at the item cap a near-duplicate replace
+    // above must still be able to upgrade an incumbent — only net-new
+    // appends are capped.
     if (out.length >= input.limit) return;
     identities.add(identity);
     surfaceKeys.add(surfaceKey);

@@ -332,8 +332,12 @@ const NEAR_DUPLICATE_TASK_TAG_RE = /#(?:task|follow-?up)\b/gi;
 const NEAR_DUPLICATE_POSSESSIVE_RE = /'s\b/g;
 const NEAR_DUPLICATE_TOKEN_SPLIT_RE = /[^a-z0-9]+/;
 // Bodies this short carry too little signal for token-overlap comparison to
-// be trustworthy — never treated as a near-duplicate of anything.
-const NEAR_DUPLICATE_MIN_TOKENS = 4;
+// be trustworthy — never treated as a near-duplicate of anything. Six, not
+// four: terse "verb + entity + preposition + noun" bodies ("Ping [[danny]]
+// re budget" vs "Ping [[danny]] re travel") share their stopword/entity
+// scaffolding and reach J=0.6 while naming DIFFERENT tasks — and a false
+// fold hides a real task, strictly worse than a missed fold.
+const NEAR_DUPLICATE_MIN_TOKENS = 6;
 
 /**
  * Lowercased alphanumeric tokens of an open-loop body, for near-duplicate
@@ -379,9 +383,11 @@ export const NEAR_DUPLICATE_JACCARD = 0.6;
  * True when two open-loop bodies are the same real-world task phrased
  * differently: token-set Jaccard similarity (see
  * {@link normalizedOpenLoopTokens}) at or above {@link NEAR_DUPLICATE_JACCARD}.
- * Conservative: bodies under {@link NEAR_DUPLICATE_MIN_TOKENS} tokens never
- * match — too little signal to distinguish "same task" from "coincidental
- * overlap".
+ * Conservative: bodies under 6 tokens ({@link NEAR_DUPLICATE_MIN_TOKENS} —
+ * BOTH bodies must clear it) never match. Terse bodies lack signal: a
+ * "verb + entity + preposition + noun" pair differing only in the noun
+ * ("Ping danny re budget" / "Ping danny re travel") clears 0.6 on shared
+ * scaffolding alone, and a false fold hides a real task.
  */
 export function nearDuplicateOpenLoops(a: string, b: string): boolean {
   const tokensA = normalizedOpenLoopTokens(a);

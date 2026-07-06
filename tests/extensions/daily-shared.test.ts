@@ -1185,6 +1185,16 @@ describe("nearDuplicateOpenLoops", () => {
     expect(jaccard(BODY_5, BODY_6)).toBeLessThan(NEAR_DUPLICATE_JACCARD - 0.3);
   });
 
+  test("calibration: all four real positive bodies clear the 6-token floor comfortably", () => {
+    // The token floor rejects terse bodies, not real prose tasks — every
+    // production bullet tokenizes well above 6, so raising the floor from 4
+    // (after the ping-pair false-fold review finding below) costs nothing
+    // on the actual bug the fold exists for.
+    for (const body of [BODY_1, BODY_2, BODY_3, BODY_4]) {
+      expect(normalizedOpenLoopTokens(body).size).toBeGreaterThanOrEqual(10);
+    }
+  });
+
   test("folds the Danny receipts pair (synthesis wording vs. anchored/dated daily wording)", () => {
     expect(nearDuplicateOpenLoops(BODY_1, BODY_2)).toBe(true);
     expect(nearDuplicateOpenLoops(BODY_2, BODY_1)).toBe(true);
@@ -1198,10 +1208,28 @@ describe("nearDuplicateOpenLoops", () => {
     expect(nearDuplicateOpenLoops(BODY_5, BODY_6)).toBe(false);
   });
 
-  test("never folds bodies under 4 tokens, even near-identical ones", () => {
-    expect(normalizedOpenLoopTokens("Ping Sam").size).toBeLessThan(4);
+  test("never folds bodies under 6 tokens, even near-identical ones", () => {
+    expect(normalizedOpenLoopTokens("Ping Sam").size).toBeLessThan(6);
     expect(nearDuplicateOpenLoops("Ping Sam", "Ping Sam now")).toBe(false);
     expect(nearDuplicateOpenLoops("Buy milk", "Buy milk")).toBe(false);
+  });
+
+  // Regression (review finding): terse "verb + entity + preposition + noun"
+  // bodies share their stopword/entity scaffolding — at a 4-token floor,
+  // {ping, danny, re, budget} vs {ping, danny, re, travel} is J=3/5=0.6,
+  // folding two DIFFERENT tasks. The 6-token floor makes both ineligible.
+  test("does not fold terse same-scaffold different-noun tasks (4 tokens)", () => {
+    const budget = "Ping [[wiki/entities/danny]] re budget #task";
+    const travel = "Ping [[wiki/entities/danny]] re travel #task";
+    expect(normalizedOpenLoopTokens(budget).size).toBe(4);
+    expect(nearDuplicateOpenLoops(budget, travel)).toBe(false);
+  });
+
+  test("does not fold the 5-token variant either (Q2 budget vs Q2 travel)", () => {
+    const budget = "Ping [[wiki/entities/danny]] re Q2 budget #task";
+    const travel = "Ping [[wiki/entities/danny]] re Q2 travel #task";
+    expect(normalizedOpenLoopTokens(budget).size).toBe(5);
+    expect(nearDuplicateOpenLoops(budget, travel)).toBe(false);
   });
 
   test("a body is never a near-duplicate of unrelated short text", () => {
