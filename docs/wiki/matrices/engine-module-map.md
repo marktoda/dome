@@ -57,6 +57,7 @@ Cycles are permitted *within* a layer (e.g. `apply-effect` ↔ `diagnostics` in 
 | `cron` | `operational` | Minimal 5-field cron expression evaluator |
 | `operational-query-view` | `operational` | Read-only operational state for processors |
 | `operational-work` | `operational` | One pump for non-adoption engine work |
+| `proposal-expiry` | `operational` | Subject-liveness expiry — auto-rejects PENDING garden proposals whose owning processor is retired |
 | `quarantine-store` | `operational` | Processor quarantine state store |
 | `question-answer-recording` | `operational` | Durable QuestionEffect answer writes |
 | `question-auto-resolution` | `operational` | Opt-in background resolution for low-risk questions |

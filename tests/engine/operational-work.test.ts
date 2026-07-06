@@ -5,13 +5,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { openAnswersDb } from "../../src/answers/db";
-import { externalActionEffect, questionEffect } from "../../src/core/effect";
+import {
+  externalActionEffect,
+  fileChange,
+  questionEffect,
+} from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { defineProcessor, treeOid } from "../../src/core/processor";
 import { runOperationalWork } from "../../src/engine/operational/operational-work";
 import { openOutboxDb } from "../../src/outbox/db";
 import { insertPending, queryOutbox } from "../../src/outbox/dispatch";
 import { openProjectionDb } from "../../src/projections/db";
+import { openProposalsDb } from "../../src/proposals/db";
+import {
+  enqueuePendingProposal,
+  getProposal,
+} from "../../src/proposals/pending-proposals";
 import { insertQuestion } from "../../src/projections/questions";
 import { getCursor } from "../../src/projections/schedule-cursors";
 import { buildRegistry } from "../../src/processors/registry";
@@ -478,6 +487,120 @@ describe("runOperationalWork", () => {
     } finally {
       ledger.close();
       answers.value.db.close();
+      outbox.value.db.close();
+      projection.value.db.close();
+    }
+  });
+
+  test("proposal expiry fires onProposalsChanged once, and 0 on a second idempotent run", async () => {
+    const root = mkdtempSync(join(tmpdir(), "operational-work-"));
+    tmpRoots.push(root);
+
+    const projection = await openProjectionDb({
+      path: join(root, "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    if (!projection.ok) {
+      throw new Error(`projection open failed: ${projection.error.kind}`);
+    }
+
+    const outbox = await openOutboxDb({ path: join(root, "outbox.db") });
+    if (!outbox.ok) {
+      projection.value.db.close();
+      throw new Error(`outbox open failed: ${outbox.error.kind}`);
+    }
+
+    const proposals = await openProposalsDb({ path: join(root, "proposals.db") });
+    if (!proposals.ok) {
+      outbox.value.db.close();
+      projection.value.db.close();
+      throw new Error(`proposals open failed: ${proposals.error.kind}`);
+    }
+
+    const ledger = await openTestLedger();
+    try {
+      const enqueueResult = enqueuePendingProposal(proposals.value.db, {
+        processorId: "dome.warden.integrity",
+        extensionId: "dome.warden",
+        runId: "run_1",
+        reason: "test proposal",
+        changes: [
+          fileChange({ kind: "write", path: "wiki/a.md", content: "hello" }),
+        ],
+        sourceRefs: [],
+        baseCommit: "a".repeat(40),
+        baseContents: { "wiki/a.md": null },
+        createdAt: "2026-07-01T00:00:00.000Z",
+      });
+      if (enqueueResult.id === null) {
+        throw new Error("enqueue failed to produce an id");
+      }
+      const proposalId = enqueueResult.id;
+
+      const registry = buildRegistry([]);
+      if (!registry.ok) {
+        throw new Error(`registry build failed: ${registry.error.kind}`);
+      }
+
+      let proposalsChangedFires = 0;
+      const run = (): ReturnType<typeof runOperationalWork> =>
+        runOperationalWork({
+          vault: {
+            path: root,
+            config: { git: { auto_commit_workflows: true } },
+          },
+          adopted: commitOid("b".repeat(40)),
+          registry: registry.value,
+          projection: projection.value.db,
+          proposals: proposals.value.db,
+          outbox: outbox.value.db,
+          disabledExtensionIds: [],
+          onProposalsChanged: () => {
+            proposalsChangedFires += 1;
+          },
+          sinks: {
+            applyPatch: async () => null,
+            captureView: async () => {},
+            recordDiagnostic: async () => {},
+            recordFact: async () => {},
+            recordSearchDocument: async () => {},
+            recordQuestion: async () => {},
+            dispatchExternal: async () => {},
+            recoverOutbox: async () => true,
+            recoverQuarantine: async () => true,
+            recoverRun: async () => true,
+          },
+          resolveTree: async () => treeOid("c".repeat(40)),
+          now: () => new Date("2026-07-06T00:00:00.000Z"),
+          resolveGrants: () => [],
+          extensionIdFor: (processorId) => processorId,
+          externalHandlers: {},
+          ledger,
+        });
+
+      const result = await run();
+
+      expect(result.proposalExpiry.expired).toBe(1);
+      expect(proposalsChangedFires).toBe(1);
+      expect(
+        result.proposalExpiry.diagnostics.map((d) => d.code),
+      ).toEqual(["proposal.expired-subject-retired"]);
+      expect(result.diagnostics.map((d) => d.code)).toContain(
+        "proposal.expired-subject-retired",
+      );
+      expect(getProposal(proposals.value.db, proposalId)?.status).toBe(
+        "rejected",
+      );
+
+      proposalsChangedFires = 0;
+      const second = await run();
+      expect(second.proposalExpiry.expired).toBe(0);
+      expect(proposalsChangedFires).toBe(0);
+    } finally {
+      ledger.close();
+      proposals.value.db.close();
       outbox.value.db.close();
       projection.value.db.close();
     }

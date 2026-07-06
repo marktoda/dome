@@ -278,6 +278,24 @@ Stamping it would let this same expiry rule durably answer the question
 `"expired"` the instant its named processor retires, leaving the orphan run
 permanently undisposable.
 
+**Pending-proposal expiry.** The same subject-liveness rule applies to
+garden-proposed patches queued in `proposals.db` (§"Garden phase, `mode:
+'propose'`" above). A PENDING row's subject is simply its owning
+`processor_id` — proposals have no `subjectProcessorId` indirection, since
+only the emitting processor itself ever authored the change set. An
+operational pump (`src/engine/operational/proposal-expiry.ts`, run once per
+tick after question expiry) auto-rejects a pending proposal whose processor
+is retired — absent from the active `ProcessorRegistry` AND not covered by a
+configured-but-disabled extension's id prefix, the identical disabled-bundle
+exemption question expiry uses. Expiry decides the row directly via the
+existing CAS `decideProposal` (`status: "rejected"`, `decidedBy: "expired"`,
+`note: "processor retired"`) — applied/rejected rows are already decided and
+untouched — raises one info diagnostic per row,
+`proposal.expired-subject-retired`, naming the proposal id and the retired
+processor (recorded durably and returned on the operational-work result),
+and sets the tick-scoped `proposals.changed` flag so subscribers (e.g. the
+daily To-review compiler) refresh the same tick.
+
 ## ExternalActionEffect
 
 An effect that touches the outside world (calendar write, email send, webhook POST, notification).
