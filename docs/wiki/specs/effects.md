@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-12
+updated: 2026-07-06
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -62,7 +62,7 @@ PatchEffect `sourceRefs` are not globally non-empty because some deterministic p
 - **Adoption phase, `mode: "auto"`:** the engine overlays the changes onto the candidate tree and writes one new commit per PatchEffect (with the four `Dome-*` trailers), then re-runs the loop. If `patch.auto` capability is not granted for any touched path, the effect is downgraded to `mode: "propose"` and emits a `capability-downgrade-surprise` diagnostic; the proposed patch then follows the blocking review path below.
 - **Adoption phase, `mode: "propose"`:** the engine blocks adoption with `patch.propose.requires-review`, naming the proposed changes. The review/apply surface is planned; no shipped v1 CLI command applies the proposed patch directly yet.
 - **Garden phase, `mode: "auto"`:** the engine constructs a new Proposal from the changes and routes it through the adoption loop (per [[wiki/specs/proposals]] §"Garden-emitted Proposals").
-- **Garden phase, `mode: "propose"`:** records the allowed `patch.propose` capability use (or, for an auto→propose downgrade, `patch.auto` with `outcome: "downgraded"`) and enqueues a durable row in `proposals.db` via the optional `enqueueProposal` sink — outcome `queued-for-review`, diagnosed with an info `garden.patch-proposed` naming the enqueued proposal id (`dome proposals` / `dome apply` review it). Sink-less contexts (e.g. the `dome run` view harness) keep the pre-product-review-4 behavior: diagnosed as `garden.patch-propose-review-unavailable` and dropped.
+- **Garden phase, `mode: "propose"`:** records the allowed `patch.propose` capability use (or, for an auto→propose downgrade, `patch.auto` with `outcome: "downgraded"`) and enqueues a durable row in `proposals.db` via the optional `enqueueProposal` sink — outcome `queued-for-review`, diagnosed with an info `garden.patch-proposed` naming the enqueued proposal id (`dome proposals` / `dome apply` review it). Sink-less contexts (e.g. the `dome run` view harness) keep the pre-product-review-4 behavior: diagnosed as `garden.patch-propose-review-unavailable` and dropped. Two first-party producers ship on this path (stock-gardening phase 1): `dome.agent.consolidate`'s `proposeSplit` tool, which proposes lossless page splits ([[wiki/specs/autonomous-agents]] §"Splitting oversized pages"), and `dome.markdown.attic-sweep`, which proposes archive-moves of dead-stub pages ([[wiki/specs/vault-layout]] §"`attic/`").
 - **View phase:** rejected — view processors cannot emit patches.
 
 **Idempotency requirement:** a processor that re-runs against the same input must produce the same change list (byte-equivalent `content` for writes, same `path` for deletes). If applying the changes a second time would produce no tree-level diff (because the contents already match), the processor returns no effect. This is what makes the fixed-point loop converge.

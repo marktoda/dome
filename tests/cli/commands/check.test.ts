@@ -467,9 +467,12 @@ describe("runCheck", () => {
         "    grant:",
         // Mirror the manifest's full declared read set — a narrowed grant
         // would (deliberately) raise info-severity capability.grant-starved
-        // findings, and this test pins the findings list exactly.
+        // findings, and this test pins the findings list exactly. Also
+        // grant patch.propose so attic-sweep's declared need doesn't add
+        // an unrelated capability.grant-missing finding here.
         '      read: ["**/*.md", "core.md", ".dome/page-types.yaml", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}", "raw/**"]',
         '      patch.auto: ["**/*.md"]',
+        '      patch.propose: ["notes/**", "wiki/**", "attic/**"]',
         '      graph.write: ["dome.page.*"]',
         "      question.ask: true",
         "",
@@ -1479,6 +1482,8 @@ describe("runCheck", () => {
     // Instead, use the simplest path: capability finding is warning. We need
     // the fixture to produce exactly countable findings.
     // writeDoctorConfigBody with restricted grant → 1 warning capability finding.
+    // patch.propose is granted so attic-sweep's declared need doesn't add a
+    // second, unrelated capability.grant-missing finding here.
     await writeDoctorConfigBody(
       f,
       [
@@ -1488,6 +1493,7 @@ describe("runCheck", () => {
         "    grant:",
         '      read: ["wiki/**/*.md", ".dome/page-types.yaml", "**/*.{png,jpg,jpeg,gif,webp,svg,avif}", "raw/**"]',
         '      patch.auto: ["**/*.md"]',
+        '      patch.propose: ["notes/**", "wiki/**", "attic/**"]',
         '      graph.write: ["dome.page.*"]',
         "      question.ask: true",
         "",
