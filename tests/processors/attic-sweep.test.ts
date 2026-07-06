@@ -144,6 +144,37 @@ describe("dome.markdown.attic-sweep", () => {
     );
   });
 
+  test("skips a dead stub outside the patch.propose grant scope (notes/**, wiki/**, attic/**)", async () => {
+    const effects = await runAtticSweep({
+      files: {
+        "sources/dead.md": { content: "", lastChangedAt: daysBeforeNow(90) },
+        "Untitled.md": { content: "", lastChangedAt: daysBeforeNow(90) },
+      },
+    });
+
+    expect(effects).toHaveLength(0);
+  });
+
+  test("still proposes in-scope candidates alongside an out-of-scope dead stub", async () => {
+    const effects = await runAtticSweep({
+      files: {
+        "sources/dead.md": { content: "", lastChangedAt: daysBeforeNow(90) },
+        "notes/empty.md": { content: "", lastChangedAt: daysBeforeNow(40) },
+      },
+    });
+
+    expect(effects).toHaveLength(1);
+    const patch = expectPatch(effects, 0);
+    expect(patch.changes).toEqual([
+      expect.objectContaining({
+        kind: "write",
+        path: `${ATTIC_PREFIX}notes/empty.md`,
+        content: "",
+      }),
+      expect.objectContaining({ kind: "delete", path: "notes/empty.md" }),
+    ]);
+  });
+
   test("zero candidates yields zero effects (idempotent)", async () => {
     const effects = await runAtticSweep({ files: {} });
     expect(effects).toHaveLength(0);

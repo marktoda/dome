@@ -338,4 +338,37 @@ describe("proposals.db + pending-proposals", () => {
     expect(row?.status).toBe("rejected");
     expect(row?.baseContents).toEqual({ "notes/a.md": "original base" });
   });
+
+  it("re-enqueuing identical changes against an applied row does not refresh its base", async () => {
+    const db = await openDb();
+    const inserted = enqueuePendingProposal(
+      db,
+      baseInput({ baseContents: { "notes/a.md": "original base" } }),
+    );
+    if (inserted.id === null) throw new Error("expected id");
+
+    decideProposal(db, {
+      id: inserted.id,
+      status: "applied",
+      decidedBy: "owner",
+      appliedCommit: "c".repeat(40),
+      decidedAt: "2026-07-06T06:00:00.000Z",
+    });
+
+    const reEnqueued = enqueuePendingProposal(
+      db,
+      baseInput({
+        runId: "run_3",
+        baseContents: { "notes/a.md": "attempted new base" },
+      }),
+    );
+
+    expect(reEnqueued.inserted).toBe(false);
+    expect(reEnqueued.refreshed).toBe(false);
+    expect(reEnqueued.id).toBe(inserted.id);
+
+    const row = getProposal(db, inserted.id);
+    expect(row?.status).toBe("applied");
+    expect(row?.baseContents).toEqual({ "notes/a.md": "original base" });
+  });
 });

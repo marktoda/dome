@@ -13,6 +13,7 @@
 
 import { basename } from "node:path/posix";
 
+import { globMatch } from "../../../../src/engine/core/glob-cache";
 import {
   patchEffect,
   type Effect,
@@ -27,6 +28,27 @@ import type { SourceRef } from "../../../../src/core/source-ref";
 
 /** Destination root for proposed archive-moves. */
 export const ATTIC_PREFIX = "attic/";
+
+/**
+ * Bundle-local mirror of the `dome.markdown.attic-sweep` manifest
+ * `patch.propose` grant (assets/extensions/dome.markdown/manifest.yaml).
+ * Pinned by name to that grant — edit both together.
+ *
+ * The sweep scans `**\/*.md` (minus `attic_exclude_prefixes`), which is
+ * broader than the propose grant. The broker's propose verdict is
+ * all-or-nothing per PatchEffect (same posture CONSOLIDATE_WRITABLE_PATHS
+ * documents for dome.agent.consolidate's patch.auto grant, assets/
+ * extensions/dome.agent/lib/consolidate-tools.ts): one candidate outside
+ * the grant — a dead stub under `sources/` or the vault root — would deny
+ * the whole weekly batch. Filtering candidates to this scope keeps a
+ * stray out-of-grant stub from poisoning in-grant candidates in the same
+ * run.
+ */
+export const ATTIC_PROPOSE_SCOPE: ReadonlyArray<string> = Object.freeze([
+  "notes/**",
+  "wiki/**",
+  "attic/**",
+]);
 
 /** Default `attic_min_age_days` — a candidate must be at least this old. */
 export const DEFAULT_ATTIC_MIN_AGE_DAYS = 30;
@@ -70,6 +92,10 @@ const atticSweep = defineProcessorImplementation({
 
     for (const path of paths) {
       if (excludePrefixes.some((prefix) => path.startsWith(prefix))) continue;
+      // Out-of-grant paths never become candidates — see ATTIC_PROPOSE_SCOPE.
+      if (!ATTIC_PROPOSE_SCOPE.some((pattern) => globMatch(pattern, path))) {
+        continue;
+      }
 
       const content = await ctx.snapshot.readFile(path);
       if (content === null) continue;
