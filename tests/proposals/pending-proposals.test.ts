@@ -266,4 +266,76 @@ describe("proposals.db + pending-proposals", () => {
     const row = getProposal(db, inserted.id);
     expect(row?.status).toBe("rejected");
   });
+
+  it("re-enqueuing identical changes against a pending row refreshes its recorded base (stale-pending wedge)", async () => {
+    const db = await openDb();
+    const first = enqueuePendingProposal(
+      db,
+      baseInput({
+        baseCommit: "b".repeat(40),
+        baseContents: { "notes/a.md": "old base" },
+        createdAt: "2026-07-06T00:00:00.000Z",
+      }),
+    );
+    expect(first.inserted).toBe(true);
+    expect(first.refreshed).toBe(false);
+    if (first.id === null) throw new Error("expected id");
+
+    const second = enqueuePendingProposal(
+      db,
+      baseInput({
+        runId: "run_2",
+        baseCommit: "c".repeat(40),
+        baseContents: { "notes/a.md": "new base" },
+        createdAt: "2026-07-06T05:00:00.000Z",
+      }),
+    );
+
+    expect(second.inserted).toBe(false);
+    expect(second.refreshed).toBe(true);
+    expect(second.id).toBe(first.id);
+
+    const row = getProposal(db, first.id);
+    expect(row?.id).toBe(first.id);
+    expect(row?.baseContents).toEqual({ "notes/a.md": "new base" });
+    expect(row?.baseCommit).toBe("c".repeat(40));
+    // created_at, status, and changes are untouched by a refresh.
+    expect(row?.createdAt).toBe("2026-07-06T00:00:00.000Z");
+    expect(row?.status).toBe("pending");
+    expect(row?.changes).toEqual(baseInput().changes);
+
+    expect(listProposals(db)).toHaveLength(1);
+  });
+
+  it("re-enqueuing identical changes against a rejected row does not refresh its base", async () => {
+    const db = await openDb();
+    const inserted = enqueuePendingProposal(
+      db,
+      baseInput({ baseContents: { "notes/a.md": "original base" } }),
+    );
+    if (inserted.id === null) throw new Error("expected id");
+
+    decideProposal(db, {
+      id: inserted.id,
+      status: "rejected",
+      decidedBy: "owner",
+      decidedAt: "2026-07-06T06:00:00.000Z",
+    });
+
+    const reEnqueued = enqueuePendingProposal(
+      db,
+      baseInput({
+        runId: "run_3",
+        baseContents: { "notes/a.md": "attempted new base" },
+      }),
+    );
+
+    expect(reEnqueued.inserted).toBe(false);
+    expect(reEnqueued.refreshed).toBe(false);
+    expect(reEnqueued.id).toBe(inserted.id);
+
+    const row = getProposal(db, inserted.id);
+    expect(row?.status).toBe("rejected");
+    expect(row?.baseContents).toEqual({ "notes/a.md": "original base" });
+  });
 });

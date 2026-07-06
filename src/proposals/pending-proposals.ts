@@ -19,6 +19,16 @@
 // garden re-runs should not re-nag them with a patch they turned down. A
 // processor that wants a fresh decision must propose different content
 // (which changes the dedupe key).
+//
+// A dedupe-hit against a still-PENDING row is different: the processor read
+// the CURRENT working-tree snapshot to produce this (identical) patch, so its
+// re-emission means "these changes, against today's base" — not "today's
+// base equals whatever the first emission saw." `enqueuePendingProposal`
+// refreshes that row's `base_contents_json`/`base_commit` in place (leaving
+// `created_at`, `dedupe_key`, `status`, and `changes_json` untouched) so the
+// owner's later `dome apply` staleness check compares against the current
+// tree instead of wedging permanently stale. This is the "stale-pending
+// wedge" fix; see `EnqueuePendingProposalResult.refreshed`.
 
 import type { FileChange } from "../core/effect";
 import type { SourceRef } from "../core/source-ref";
@@ -54,6 +64,14 @@ export type EnqueuePendingProposalInput = Omit<
 
 export type EnqueuePendingProposalResult = {
   readonly inserted: boolean;
+  /**
+   * True when this call hit an existing **pending** row's dedupe key and
+   * refreshed its recorded `baseContents`/`baseCommit` in place (the
+   * stale-pending wedge fix — see the module header's "refresh" paragraph).
+   * False for a fresh insert, and false for a dedupe-hit against an
+   * `applied`/`rejected` row (those stay decided, untouched).
+   */
+  readonly refreshed: boolean;
   readonly id: number | null;
 };
 
@@ -73,8 +91,14 @@ INSERT OR IGNORE INTO pending_proposals (
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `.trim();
 
-const SELECT_ID_BY_DEDUPE_KEY_SQL = `
-SELECT id FROM pending_proposals WHERE dedupe_key = ?
+const SELECT_ID_STATUS_BY_DEDUPE_KEY_SQL = `
+SELECT id, status FROM pending_proposals WHERE dedupe_key = ?
+`.trim();
+
+const REFRESH_BASE_SQL = `
+UPDATE pending_proposals
+SET base_contents_json = ?, base_commit = ?, created_at = created_at
+WHERE id = ? AND status = 'pending'
 `.trim();
 
 const SELECT_COLUMNS = `
@@ -124,34 +148,59 @@ export function proposalDedupeKey(
 /**
  * Enqueue a garden-proposed patch. `INSERT OR IGNORE` on the `dedupe_key`
  * UNIQUE constraint: a re-emission of the identical (processorId, changes)
- * pair — whatever its current status — is a no-op, and this returns
- * `{inserted: false, id: <the existing row's id>}` so the caller can still
- * report on it. See the module header for the "stays decided" rationale.
+ * pair against an already-DECIDED row (`applied`/`rejected`) is a pure no-op
+ * — `{inserted: false, refreshed: false, id: <the existing row's id>}` — per
+ * the module header's "stays decided" rationale. A re-emission that dedupe-
+ * hits a still-PENDING row instead refreshes that row's recorded
+ * `baseContents`/`baseCommit` from this call's input (the "stale-pending
+ * wedge" fix — module header) and returns `{inserted: false, refreshed:
+ * true, id}`. Transactional: the insert attempt, the dedupe-key lookup, and
+ * the conditional refresh all run inside one `db.raw.transaction`.
  */
 export function enqueuePendingProposal(
   db: ProposalsDb,
   input: EnqueuePendingProposalInput,
 ): EnqueuePendingProposalResult {
   const dedupeKey = proposalDedupeKey(input.processorId, input.changes);
-  const result = db.raw.query(INSERT_SQL).run(
-    dedupeKey,
-    input.processorId,
-    input.extensionId,
-    input.runId,
-    input.reason,
-    JSON.stringify(input.changes),
-    JSON.stringify(input.sourceRefs),
-    input.baseCommit,
-    JSON.stringify(input.baseContents),
-    input.createdAt,
+  const run = db.raw.transaction(
+    (): EnqueuePendingProposalResult => {
+      const inserted = db.raw.query(INSERT_SQL).run(
+        dedupeKey,
+        input.processorId,
+        input.extensionId,
+        input.runId,
+        input.reason,
+        JSON.stringify(input.changes),
+        JSON.stringify(input.sourceRefs),
+        input.baseCommit,
+        JSON.stringify(input.baseContents),
+        input.createdAt,
+      );
+      if (inserted.changes > 0) {
+        return { inserted: true, refreshed: false, id: Number(inserted.lastInsertRowid) };
+      }
+
+      const existing = db.raw
+        .query<{ id: number; status: string }, [string]>(
+          SELECT_ID_STATUS_BY_DEDUPE_KEY_SQL,
+        )
+        .get(dedupeKey);
+      if (existing === null) {
+        return { inserted: false, refreshed: false, id: null };
+      }
+      if (existing.status !== "pending") {
+        return { inserted: false, refreshed: false, id: existing.id };
+      }
+
+      db.raw.query(REFRESH_BASE_SQL).run(
+        JSON.stringify(input.baseContents),
+        input.baseCommit,
+        existing.id,
+      );
+      return { inserted: false, refreshed: true, id: existing.id };
+    },
   );
-  if (result.changes > 0) {
-    return Object.freeze({ inserted: true, id: Number(result.lastInsertRowid) });
-  }
-  const existing = db.raw
-    .query<{ id: number }, [string]>(SELECT_ID_BY_DEDUPE_KEY_SQL)
-    .get(dedupeKey);
-  return Object.freeze({ inserted: false, id: existing?.id ?? null });
+  return Object.freeze(run());
 }
 
 /**
