@@ -26,8 +26,10 @@ export type QuestionAnswerRecord = {
 export type AnswerHandlerStatus = "pending" | "handled" | "failed" | "skipped";
 
 /** Who supplied the durable answer: the vault owner (or an agent client
- * acting on their behalf) vs. the background auto-resolution pump. */
-export type QuestionAnsweredBy = "owner" | "auto";
+ * acting on their behalf), the background auto-resolution pump, or the
+ * subject-liveness expiry pump forcing a terminal answer for a question
+ * whose subject processor is retired. */
+export type QuestionAnsweredBy = "owner" | "auto" | "expired";
 
 export type RecordQuestionAnswerOpts = {
   readonly idempotencyKey: string;
@@ -217,7 +219,8 @@ function rowToRecord(row: QuestionAnswerRow): QuestionAnswerRecord {
 }
 
 function parseAnsweredBy(value: string): QuestionAnsweredBy {
-  return value === "auto" ? "auto" : "owner";
+  if (value === "auto" || value === "expired") return value;
+  return "owner";
 }
 
 function parseHandlerStatus(value: string): AnswerHandlerStatus {

@@ -228,6 +228,7 @@ const QuestionMetadataSchema = z
     destination: z.string().min(1).optional(),
     material: z.string().min(1).optional(),
     proposedSection: z.string().min(1).max(4000).optional(),
+    subjectProcessorId: z.string().min(1).optional(),
   })
   .strict();
 
@@ -519,7 +520,10 @@ function rowToQuestionRecord(row: QuestionRow): QuestionRecord {
 }
 
 function parseAnsweredByColumn(value: string | null): QuestionAnsweredBy | null {
-  return value === "auto" ? "auto" : value === "owner" ? "owner" : null;
+  if (value === "auto" || value === "owner" || value === "expired") {
+    return value;
+  }
+  return null;
 }
 
 function rowToQuestion(row: QuestionRow): QuestionEffect {
@@ -563,6 +567,7 @@ function questionMetadata(raw: {
   readonly destination?: string | undefined;
   readonly material?: string | undefined;
   readonly proposedSection?: string | undefined;
+  readonly subjectProcessorId?: string | undefined;
 }): QuestionMetadata {
   const metadata: {
     -readonly [K in keyof QuestionMetadata]: QuestionMetadata[K];
@@ -582,6 +587,9 @@ function questionMetadata(raw: {
   if (raw.material !== undefined) metadata.material = raw.material;
   if (raw.proposedSection !== undefined) {
     metadata.proposedSection = raw.proposedSection;
+  }
+  if (raw.subjectProcessorId !== undefined) {
+    metadata.subjectProcessorId = raw.subjectProcessorId;
   }
   return Object.freeze(metadata);
 }

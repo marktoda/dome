@@ -54,6 +54,7 @@ function questionForOrphanRun(row: OperationalRunRow): QuestionEffect {
       confidence: 1,
       recommendedAnswer: "fail",
       automationPolicy: "agent-safe",
+      subjectProcessorId: row.processorId,
     },
   });
 }

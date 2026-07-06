@@ -937,10 +937,11 @@ function printOperationalLine(result: OperationalWorkResult): void {
   const scheduled = result.scheduler.fired.length;
   const outbox = result.outbox.length;
   const autoResolved = result.questionAutoResolution.answered;
+  const expired = result.questionExpiry.expired;
   const diagnostics = result.diagnostics.length;
-  if (scheduled + outbox + autoResolved + diagnostics > 0) {
+  if (scheduled + outbox + autoResolved + expired + diagnostics > 0) {
     console.log(
-      `dome serve: operational work (${scheduled} scheduled, ${outbox} outbox, ${autoResolved} auto-resolved questions, ${diagnostics} diagnostics)`,
+      `dome serve: operational work (${scheduled} scheduled, ${outbox} outbox, ${autoResolved} auto-resolved questions, ${expired} expired questions, ${diagnostics} diagnostics)`,
     );
   }
 }

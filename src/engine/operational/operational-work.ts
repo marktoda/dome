@@ -39,6 +39,7 @@ import {
   runQuestionAutoResolution,
   type QuestionAutoResolutionResult,
 } from "./question-auto-resolution";
+import { expireOrphanSubjectQuestions } from "./question-expiry";
 import { runScheduler, type SchedulerResult } from "./scheduler";
 import type { EngineVault } from "../core/vault-shape";
 
@@ -46,6 +47,8 @@ export type OperationalWorkResult = {
   readonly scheduler: SchedulerResult;
   readonly outbox: ReadonlyArray<ExternalDispatchResult>;
   readonly questionAutoResolution: QuestionAutoResolutionResult;
+  /** Count of OPEN questions released this tick by subject-liveness expiry. */
+  readonly questionExpiry: { readonly expired: number };
   readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
 };
 
@@ -208,10 +211,22 @@ export async function runOperationalWork(opts: {
             : {}),
         });
 
+  const questionExpiry =
+    opts.answers === undefined
+      ? { expired: 0 }
+      : await expireOrphanSubjectQuestions({
+          registry: opts.registry,
+          questions: opts.projection,
+          answers: opts.answers,
+          recordDiagnostic: opts.sinks.recordDiagnostic,
+          now: opts.now,
+        });
+
   return Object.freeze({
     scheduler,
     outbox,
     questionAutoResolution,
+    questionExpiry,
     diagnostics: Object.freeze([
       ...scheduler.diagnostics,
       ...questionAutoResolution.diagnostics,

@@ -260,6 +260,15 @@ export type QuestionMetadata = {
   readonly destination?: string;
   readonly material?: string;
   readonly proposedSection?: string;
+  /**
+   * The processor this question is actually about, when it differs from the
+   * emitting processor (the health-recovery shape: e.g.
+   * `dome.health.orphan-run-recovery-questions` asks on behalf of a stuck
+   * run's own processor). Subject-liveness expiry
+   * (`engine/operational/question-expiry.ts`) treats an OPEN question as
+   * expired once either the emitter or this subject is no longer registered.
+   */
+  readonly subjectProcessorId?: string;
 };
 
 /**
@@ -608,6 +617,7 @@ export const QuestionEffectSchema = z
         destination: z.string().min(1).optional(),
         material: z.string().min(1).optional(),
         proposedSection: z.string().min(1).max(4000).optional(),
+        subjectProcessorId: z.string().min(1).optional(),
       })
       .strict()
       .optional(),

@@ -5,6 +5,7 @@
 // answer handlers recover the substrate through effect routing.
 
 import { expect } from "bun:test";
+import { join } from "node:path";
 
 import { externalActionEffect } from "../../../../src/core/effect";
 import { commitOid, sourceRef } from "../../../../src/core/source-ref";
@@ -19,6 +20,22 @@ import {
 import { insertPending, queryOutbox } from "../../../../src/outbox/dispatch";
 import type { Harness } from "../../types";
 import { scenario } from "../../index";
+
+// A registered no-op processor id, standing in for "some active processor
+// hit operational trouble" — the run/quarantine subject must resolve in the
+// live ProcessorRegistry, or subject-liveness expiry
+// (src/engine/operational/question-expiry.ts) releases the orphan-run and
+// quarantine-recovery questions the instant they are raised, before this
+// gauntlet gets to exercise their answer-routed recovery.
+const GAUNTLET_PROCESSOR_ID = "test.orphaned-run.worker";
+const GAUNTLET_FIXTURE_BUNDLE = join(
+  import.meta.dir,
+  "..",
+  "..",
+  "fixtures",
+  "bundles",
+  "test.orphaned-run",
+);
 
 scenario(
   {
@@ -44,7 +61,10 @@ scenario(
       { kind: "capability", capability: "question.ask" },
     ],
     harness: {
-      bundles: ["dome.health"],
+      bundles: [
+        "dome.health",
+        { id: "test.orphaned-run", root: GAUNTLET_FIXTURE_BUNDLE },
+      ],
       initialFiles: {
         ".dome/config.yaml": `
 extensions:
@@ -69,13 +89,8 @@ extensions:
           patch.auto: ["meta/report-card.md", "wiki/dailies/*.md"]
           run.read: true
           questions.read: true
-  # The synthetic 'test' bundle the seeded gauntlet counters belong to:
-  # configured so the registry-orphan GC treats test.gauntlet-* as known and
-  # leaves their quarantine counters intact (an unconfigured bundle's counter
-  # would be pruned as a retired-bundle orphan on runtime open).
-  test:
-    enabled: false
-    grant: {}
+  test.orphaned-run:
+    enabled: true
 `,
         "AGENTS.md": [
           "# This is a Dome vault.",
@@ -142,7 +157,7 @@ extensions:
     insertQueued(h.ledger, {
       id: orphanId,
       proposalId: null,
-      processorId: "test.gauntlet-orphaned",
+      processorId: GAUNTLET_PROCESSOR_ID,
       processorVersion: "0.1.0",
       phase: "garden",
       inputCommit: adoptedCommit,
@@ -156,7 +171,7 @@ extensions:
     // store fires onQuarantineChanged on the runtime this drain uses.
     const quarantineKey = Object.freeze({
       phase: "garden" as const,
-      processorId: "test.gauntlet-quarantined",
+      processorId: GAUNTLET_PROCESSOR_ID,
       processorVersion: "0.1.0",
       triggerHash: "gauntlet-trigger",
     });
@@ -169,7 +184,7 @@ extensions:
     expect(queryOutbox(h.outbox).map((r) => r.status)).toEqual(["pending"]);
     expect(
       h.executionState.quarantines().map((q) => q.key.processorId),
-    ).toEqual(["test.gauntlet-quarantined"]);
+    ).toEqual([GAUNTLET_PROCESSOR_ID]);
 
     // A one-minute advance makes the pending row's enqueued_before cutoff strict
     // and keeps the orphan under the 10m invariant ceiling.

@@ -198,6 +198,7 @@ interface QuestionEffect {
     readonly destination?: string;           // answer-handler round-trip: the page the question is about
     readonly material?: string;              // answer-handler round-trip: the document that prompted it
     readonly proposedSection?: string;       // answer-handler round-trip: proposed content (schema-capped at 4000 chars)
+    readonly subjectProcessorId?: string;    // the processor this question is actually about, when it differs from the emitter
   };
 }
 ```
@@ -238,6 +239,28 @@ Automation policy means:
 `recommendedAnswer` is a source-preserving hint, not an instruction to bypass
 the grounding check. Open questions are advisory state and must not block
 unrelated adoption, garden work, or source edits.
+
+**Subject-liveness expiry.** A question's *subject* is the processor it is
+actually about: the emitting `processor_id` by default, or
+`metadata.subjectProcessorId` when the emitter is asking on behalf of a
+different processor (the health-recovery shape — e.g.
+`dome.health.orphan-run-recovery-questions` asks about a stuck run's own
+processor, `dome.health.quarantine-recovery-questions` asks about the
+quarantined processor). If a bundle is uninstalled, its questions — and any
+question whose declared subject was that bundle's processor — can never be
+answered through the normal handler flow again. An operational pump
+(`src/engine/operational/question-expiry.ts`, run once per tick after
+question auto-resolution) releases them: an OPEN question expires when
+either its emitting processor or its `subjectProcessorId` is no longer in
+the active `ProcessorRegistry`. Expiry writes a durable answer row
+(`answer: "expired"`, `answered_by: "expired"`, `handler_status: "handled"`)
+directly — bypassing the question's own `options` allow-list, since
+"expired" is an engine-forced terminal state, not a value the emitting
+processor ever offered — and raises one info diagnostic,
+`question.expired-subject-retired`, naming the question and the retired
+processor. Outbox-recovery questions are never stamped with
+`subjectProcessorId`: their subject is an external handler capability, not a
+processor.
 
 ## ExternalActionEffect
 
