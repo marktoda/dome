@@ -1190,18 +1190,25 @@ status, stale, diff_stat }] }`. `diff_stat` is a simple set-free line-count
 diff per changed path (`added` / `removed`); it is display-only and not
 exact-diff-algorithm equivalent.
 
-`dome apply <id>` writes every change in the proposal and lands ONE commit
-(`apply(P<id>): <reason first 60 chars>`, author `dome apply
+`dome apply <id>` writes and/or deletes every change in the proposal and
+lands ONE commit (`apply(P<id>): <reason first 60 chars>`, author `dome apply
 <dome-apply@local>`), then CAS-decides the row to `applied`. Before writing,
-it re-reads every changed path's current working content and compares it to
-the `baseContents` recorded when the proposal was enqueued; any drift aborts
-with `stale` and writes nothing — the row stays `pending` so a regenerated
-garden proposal (or a manual `dome reject`) can supersede it. Delete-change
-proposals are `unsupported` in v1 (`apply` does not delete files; reject the
-proposal and delete it manually). Text output is one line: `dome apply:
-applied P<id> (<short-commit>)` on success, or `dome apply: <message>` on
-`stale` / `not-found` / `not-pending` / `invalid` / `unsupported` (stderr).
-`--json` emits `dome.apply/v1`: `{ schema, status: "applied", id, commit }`,
+it classifies every change against the current working tree relative to the
+`baseContents` recorded when the proposal was enqueued: a write or delete
+whose working content still matches its recorded base is *eligible*; a
+delete whose working file is already absent is already-*satisfied* (skipped
+as an idempotent no-op, not stale); anything else is *stale*, which aborts
+before any write — the row stays `pending` so a regenerated garden proposal
+(or a manual `dome reject`) can supersede it. Delete-changes are removed from
+the working tree and passed as `content: null` entries to the tree-removal
+commit helper. A proposal that is entirely already-satisfied deletes has
+nothing left to write or remove, so it lands **no commit** — it is reported
+`applied` with `commit: null` (mirrors `dome settle`'s `keep`). Text output
+is one line: `dome apply: applied P<id> (<short-commit>)` on success (the
+`(<short-commit>)` suffix is omitted when no commit landed), or `dome apply:
+<message>` on `stale` / `not-found` / `not-pending` / `invalid` (stderr).
+`--json` emits `dome.apply/v1`: `{ schema, status: "applied", id, commit }`
+(`commit` is `null` when nothing was left to commit),
 `{ schema, status: "stale", id, changed_paths, message }`, or
 `{ schema, status, message }` for the remaining outcomes.
 

@@ -23,9 +23,8 @@ export type RunApplyOptions = {
 /**
  * Execute `dome apply`. Returns the exit code: 0 on `applied`; 64
  * (EX_USAGE) on every other outcome (`stale`, `not-found`, `not-pending`,
- * `invalid`, `unsupported`). All staleness/write/CAS semantics live in
- * `performApply` — this handler only parses CLI input and renders the
- * outcome.
+ * `invalid`). All staleness/write/CAS semantics live in `performApply` —
+ * this handler only parses CLI input and renders the outcome.
  */
 export async function runApply(options: RunApplyOptions = {}): Promise<number> {
   const json = options.json === true;
@@ -43,7 +42,8 @@ export async function runApply(options: RunApplyOptions = {}): Promise<number> {
   }
 
   if (result.status === "applied") {
-    console.log(`dome apply: applied P${result.id} (${result.commit.slice(0, 7)})`);
+    const suffix = result.commit !== undefined ? ` (${result.commit.slice(0, 7)})` : "";
+    console.log(`dome apply: applied P${result.id}${suffix}`);
     return 0;
   }
   console.error(`dome apply: ${result.message}`);

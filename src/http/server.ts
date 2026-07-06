@@ -951,7 +951,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       const doc = applyResultJson(outcome);
       if (outcome.status === "not-found") return jsonResponse(404, doc);
       if (outcome.status === "not-pending" || outcome.status === "stale") return jsonResponse(409, doc);
-      if (outcome.status === "invalid" || outcome.status === "unsupported") return jsonResponse(400, doc);
+      if (outcome.status === "invalid") return jsonResponse(400, doc);
       return jsonResponse(200, doc);
     }
 
