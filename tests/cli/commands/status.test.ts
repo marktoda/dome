@@ -18,9 +18,12 @@ import { runSync } from "../../../src/cli/commands/sync";
 import {
   diagnosticEffect,
   externalActionEffect,
+  fileChange,
   questionEffect,
 } from "../../../src/core/effect";
 import { commitOid, sourceRef } from "../../../src/core/source-ref";
+import { openProposalsDb } from "../../../src/proposals/db";
+import { enqueuePendingProposal } from "../../../src/proposals/pending-proposals";
 import { commit, currentSha } from "../../../src/git";
 import {
   createServeHeartbeatHandle,
@@ -121,6 +124,7 @@ const STATUS_JSON_KEYS = Object.freeze([
   "outbox_pending",
   "outbox_failed",
   "quarantined",
+  "pending_proposals",
 ]);
 
 // ----- runStatus ------------------------------------------------------------
@@ -305,6 +309,52 @@ describe("runStatus", () => {
     expect(parsed["outbox_pending"]).toBe(0);
     expect(parsed["outbox_failed"]).toBe(0);
     expect(parsed["quarantined"]).toBe(0);
+    expect(parsed["pending_proposals"]).toBe(0);
+  });
+
+  test("--json counts pending proposals and routes the dome proposals next action", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+
+    const opened = await openProposalsDb({
+      path: join(f.vaultPath, ".dome", "state", "proposals.db"),
+    });
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) return;
+    try {
+      enqueuePendingProposal(opened.value.db, {
+        processorId: "dome.test.garden",
+        extensionId: "test",
+        runId: "run_1",
+        reason: "tidy up the note",
+        changes: [fileChange({ kind: "write", path: "wiki/seed.md", content: "seed\nmore\n" })],
+        sourceRefs: [sourceRef({ commit: commitOid(f.headSha), path: "wiki/seed.md" })],
+        baseCommit: f.headSha,
+        baseContents: { "wiki/seed.md": "seed\n" },
+        createdAt: "2026-07-06T00:00:00.000Z",
+      });
+    } finally {
+      opened.value.db.close();
+    }
+
+    expect(await runStatus({ vault: f.vaultPath, json: true })).toBe(0);
+    const blob = captured.out.find((l) => l.includes("\"vault\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    expect(parsed["pending_proposals"]).toBe(1);
+    expect(parsed["attention"]).toEqual(
+      expect.arrayContaining(["pending_proposals"]),
+    );
+    expect(parsed["next_actions"]).toEqual(
+      expect.arrayContaining([
+        {
+          reasons: ["pending_proposals"],
+          command: "dome proposals",
+          description: "1 proposals awaiting review — dome proposals",
+        },
+      ]),
+    );
   });
 
   test("--json routes waiting raw captures when intake loop is inactive", async () => {

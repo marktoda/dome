@@ -17,6 +17,7 @@ import { runCapture } from "./commands/capture";
 import { runCheck } from "./commands/check";
 import { runAnswer } from "./commands/answer";
 import { runAgendaWith } from "./commands/agenda-with";
+import { runApply } from "./commands/apply";
 import { runExportContext } from "./commands/export-context";
 import { runInit } from "./commands/init";
 import { runInstall, runRestart, runUninstall } from "./commands/install";
@@ -26,8 +27,10 @@ import { runLint, type LintFailOn } from "./commands/lint";
 import { runLog } from "./commands/log";
 import { runOrphanPages } from "./commands/orphan-pages";
 import { runPrep } from "./commands/prep";
+import { runProposals } from "./commands/proposals";
 import { runQuery } from "./commands/query";
 import { runReanchor } from "./commands/reanchor";
+import { runReject } from "./commands/reject";
 import { runRepair } from "./commands/repair";
 import { runRecipe } from "./commands/recipe";
 import { runRebuild } from "./commands/rebuild";
@@ -356,6 +359,60 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           blockId,
           disposition,
           until: options.until,
+          json: options.json,
+          vault: options.vault,
+        }),
+      );
+    });
+
+  program
+    .command("proposals")
+    .description("List pending garden propose-mode patches awaiting review.")
+    .option("--all", "Include applied and rejected proposals, not just pending.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .action(async (options: ProposalsCliOptions) => {
+      setExitCode(
+        await runProposals({
+          all: options.all,
+          json: options.json,
+          vault: options.vault,
+        }),
+      );
+    });
+
+  program
+    .command("apply")
+    .description("Apply a pending proposal: write its changes and land one commit.")
+    .argument("<id>", "Proposal row id from `dome proposals`.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .action(async (id: string, options: ApplyCliOptions) => {
+      setExitCode(
+        await runApply({
+          id,
+          json: options.json,
+          vault: options.vault,
+        }),
+      );
+    });
+
+  program
+    .command("reject")
+    .description("Reject a pending proposal. Records the decision; writes no files.")
+    .argument("<id>", "Proposal row id from `dome proposals`.")
+    .argument("[note...]", "Optional note explaining the rejection.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .action(async (
+      id: string,
+      note: string[] | undefined,
+      options: RejectCliOptions,
+    ) => {
+      setExitCode(
+        await runReject({
+          id,
+          note: note !== undefined && note.length > 0 ? note.join(" ") : undefined,
           json: options.json,
           vault: options.vault,
         }),
@@ -992,6 +1049,22 @@ type ResolveCliOptions = AnswerCliOptions;
 
 type SettleCliOptions = {
   readonly until?: string;
+  readonly json?: boolean;
+  readonly vault?: string;
+};
+
+type ProposalsCliOptions = {
+  readonly all?: boolean;
+  readonly json?: boolean;
+  readonly vault?: string;
+};
+
+type ApplyCliOptions = {
+  readonly json?: boolean;
+  readonly vault?: string;
+};
+
+type RejectCliOptions = {
   readonly json?: boolean;
   readonly vault?: string;
 };

@@ -52,6 +52,7 @@ import { resolveVaultPath } from "./resolve-vault";
 
 export const PROPOSALS_SCHEMA = "dome.proposals/v1";
 export const APPLY_SCHEMA = "dome.apply/v1";
+export const REJECT_SCHEMA = "dome.reject/v1";
 
 export type ProposalView = {
   readonly id: number;
@@ -279,6 +280,14 @@ export function applyResultJson(r: ApplyResult): Record<string, unknown> {
     };
   }
   return { schema: APPLY_SCHEMA, status: r.status, message: r.message };
+}
+
+/** Render a `RejectResult` as its `dome.reject/v1` document body — mirrors `applyResultJson`. */
+export function rejectResultJson(r: RejectResult): Record<string, unknown> {
+  if (r.status === "rejected") {
+    return { schema: REJECT_SCHEMA, status: "rejected", id: r.id };
+  }
+  return { schema: REJECT_SCHEMA, status: r.status, message: r.message };
 }
 
 // ----- internals ---------------------------------------------------------------

@@ -42,4 +42,5 @@ export type StatusReason =
   | "outbox_pending"
   | "outbox_failed"
   | "quarantined"
-  | "capture_loop_inactive";
+  | "capture_loop_inactive"
+  | "pending_proposals";

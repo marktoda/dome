@@ -26,6 +26,7 @@ import {
 } from "../projections/db";
 import { queryDiagnostics } from "../projections/diagnostics";
 import { queryQuestionRecords } from "../projections/questions";
+import { collectProposals, type ProposalView } from "./proposals";
 import {
   countQuestionAutomationPolicies,
   questionAutomationPolicy,
@@ -140,6 +141,11 @@ export type CheckDecisionReport = {
   readonly shownItems: number;
   readonly omittedItems: number;
   readonly items: ReadonlyArray<CheckQuestionItem>;
+  /** Pending garden propose-mode patches awaiting `dome apply` / `dome reject`
+   * — the review-loop sibling of the question items above. Read via
+   * `collectProposals` (src/surface/proposals.ts); best-effort empty on an
+   * uninitialized proposals store, exactly like `dome status`. */
+  readonly proposals: ReadonlyArray<ProposalView>;
 };
 
 export type CheckQuestionItem = {
@@ -237,6 +243,7 @@ export async function buildCheckReport(opts: {
     const decisions = scopes.decisions
       ? collectDecisionReport({
           questions: unresolvedQuestions,
+          proposals: (await collectProposals(runtime.path)).proposals,
           limit,
         })
       : null;
@@ -352,6 +359,7 @@ function collectContentReport(opts: {
 
 function collectDecisionReport(opts: {
   readonly questions: ReturnType<typeof queryQuestionRecords>;
+  readonly proposals: ReadonlyArray<ProposalView>;
   readonly limit: number;
 }): CheckDecisionReport {
   const items = Object.freeze(
@@ -392,6 +400,7 @@ function collectDecisionReport(opts: {
     shownItems: items.length,
     omittedItems: Math.max(0, opts.questions.length - items.length),
     items,
+    proposals: opts.proposals,
   });
 }
 

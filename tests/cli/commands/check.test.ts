@@ -8,6 +8,7 @@ import { runCheck } from "../../../src/cli/commands/check";
 
 import {
   diagnosticEffect,
+  fileChange,
   questionEffect,
 } from "../../../src/core/effect";
 import { commitOid, sourceRef } from "../../../src/core/source-ref";
@@ -25,6 +26,8 @@ import {
 import {
   insertQuestion,
 } from "../../../src/projections/questions";
+import { openProposalsDb } from "../../../src/proposals/db";
+import { enqueuePendingProposal } from "../../../src/proposals/pending-proposals";
 
 import {
   captured,
@@ -228,6 +231,48 @@ describe("runCheck", () => {
     expect(captured.out.join("\n")).toContain(
       "policy: owner-needed; risk medium; confidence 0.80",
     );
+  });
+
+  test("--json decisions include pending proposals awaiting dome apply/reject", async () => {
+    const f = await makeFixture();
+    fixtures.push(f);
+    await writeDoctorConfig(f);
+
+    const proposalsDb = await openProposalsDb({
+      path: join(f.vaultPath, ".dome", "state", "proposals.db"),
+    });
+    expect(proposalsDb.ok).toBe(true);
+    if (!proposalsDb.ok) return;
+    let proposalId: number | null = null;
+    try {
+      const inserted = enqueuePendingProposal(proposalsDb.value.db, {
+        processorId: "dome.test.garden",
+        extensionId: "test",
+        runId: "run_1",
+        reason: "tidy up the seed page",
+        changes: [fileChange({ kind: "write", path: "wiki/seed.md", content: "seed\nmore\n" })],
+        sourceRefs: [sourceRef({ commit: commitOid(f.headSha), path: "wiki/seed.md" })],
+        baseCommit: f.headSha,
+        baseContents: { "wiki/seed.md": "seed\n" },
+        createdAt: "2026-07-06T00:00:00.000Z",
+      });
+      proposalId = inserted.id;
+    } finally {
+      proposalsDb.value.db.close();
+    }
+
+    expect(await runCheck({ vault: f.vaultPath, json: true })).toBe(0);
+    const blob = captured.out.find((l) => l.includes("\"schema\""));
+    expect(blob).toBeDefined();
+    if (blob === undefined) return;
+    const parsed = JSON.parse(blob) as Record<string, unknown>;
+    const proposals =
+      record(parsed["decisions"])["proposals"] as ReadonlyArray<Record<string, unknown>>;
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0]?.["id"]).toBe(proposalId);
+    expect(proposals[0]?.["processorId"]).toBe("dome.test.garden");
+    expect(proposals[0]?.["reason"]).toBe("tidy up the seed page");
+    expect(proposals[0]?.["status"]).toBe("pending");
   });
 
   test("--json treats info-only diagnostics as visible but non-attention", async () => {
