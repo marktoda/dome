@@ -118,7 +118,7 @@ dome recipe <kind> [--url <base>]
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
 
 - **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, `dome resolve`, `dome settle`, `dome proposals`, `dome apply`, and `dome reject`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records an owner or agent answer to a Dome-raised decision and dispatches answer handlers; `settle` records an owner or agent decision on an open task by its `^block-anchor` (close / defer / keep) — resolve's sibling for tasks rather than questions (§"`dome settle`"). `dome proposals` / `dome apply` / `dome reject` are the review-loop siblings for garden propose-mode patches: a downgraded or explicitly-proposed `PatchEffect` lands as a durable row in `proposals.db` instead of being silently dropped, and `apply`/`reject` are the human-side decision verbs — the same settle pattern (staleness check → working-tree write → one ordinary commit) applied to garden-authored changes instead of task lines (§"`dome proposals` / `dome apply` / `dome reject`").
-- **Adopted-state recall surfaces:** `dome query` and `dome export-context` are the normal explicit read views when the user or a foreground agent asks for recall, planning, agenda context, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands. `dome log` is the activity-recall sibling with a CLI-native posture (the `dome status` stance — no runtime, no view boundary): it reads git history directly and joins the run ledger (§"`dome log`"). `dome prep`, `dome agenda-with`, `dome stale-claims`, and `dome orphan-pages` are deterministic sibling views over the same view-command boundary — source-backed daily planning/agenda filters and claims/link-graph consistency audits — for the debugging, scripting, and unambiguous-filter cases where a natural-language `query` / `export-context` request isn't the goal. All four were previously reachable only through the hidden `dome run <name>` dispatcher; a feature behind a debug verb is unreachable, so they now have first-class top-level bindings like their `query` / `export-context` / `today` siblings.
+- **Adopted-state recall surfaces:** `dome query` and `dome export-context` are the normal explicit read views when the user or a foreground agent asks for recall, planning, agenda context, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands. `dome log` is the activity-recall sibling with a CLI-native posture (the `dome status` stance — no runtime, no view boundary): it reads git history directly and joins the run ledger (§"`dome log`"). `dome explain` is the provenance debugger over the same adopted state: for a page or one anchored claim it renders the chain claim → facts → runs → engine commits (§"`dome explain`"). `dome prep`, `dome agenda-with`, `dome stale-claims`, and `dome orphan-pages` are deterministic sibling views over the same view-command boundary — source-backed daily planning/agenda filters and claims/link-graph consistency audits — for the debugging, scripting, and unambiguous-filter cases where a natural-language `query` / `export-context` request isn't the goal. All four were previously reachable only through the hidden `dome run <name>` dispatcher; a feature behind a debug verb is unreachable, so they now have first-class top-level bindings like their `query` / `export-context` / `today` siblings.
 - **Advanced/debug and compatibility surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer` (deprecated alias — use `dome resolve`), `dome run`, `dome rebuild`, and `dome reanchor` remain available for detailed state inspection, extension development, maintenance, and explicit recovery. They are hidden from top-level help and are not the normal Claude Code workflow.
 
 `dome doctor` is read-only in V1. The `--repair` flag is a reserved surface for
@@ -1537,6 +1537,47 @@ Tests: `tests/cli/commands/log.test.ts` and `tests/surface/activity.test.ts`.
 Exit codes: 0 on a clean read (including an empty history); 1 when the vault
 has no git history surface (not a repo) or the activity read fails.
 
+### `dome explain <target> [--json]`
+
+The provenance debugger — the answer to "why do I believe X" for a vault
+page or one anchored claim on it. `<target>` is `"<path>"` or
+`"<path>#^<anchor>"`. The chain it renders, top-down:
+
+1. **claim** — when the target carries a `^c…` anchor, the adopted-state
+   `dome.claims.claim` fact whose sourceRef `stableId` is that anchor,
+   decoded to `{ key, value, as_of, anchor, line }` via the canonical
+   claim-fact codec ([[wiki/specs/claims]]). The projection row is the
+   adopted-state truth — nothing re-parses markdown here. `null` for a bare
+   path (or when the anchor names no claim).
+2. **facts** — projection fact rows whose page subject is the target path
+   (narrowed to the anchor's sourceRefs when one is given), with the
+   inspection provenance the store carries: namespace, predicate, producing
+   `processor_id`, `run_id`, `adopted_commit`, `written_at`, and the
+   path-matching sourceRef.
+3. **runs** — the distinct `run_id`s above joined against the run ledger
+   ([[wiki/specs/run-ledger]]): `started_at`, `status`, `cost_usd`. A run
+   the retention pass has pruned still appears with `in_ledger: false` —
+   aged-out evidence is loud, not silently dropped.
+4. **commits** — the newest 10 commits touching the path, with the
+   `Dome-Run` / `Dome-Extension` trailers pre-parsed (the engine-commit end
+   of the chain; the `Dome-Run` value is the `runs.id` join key).
+
+Read-only; degrades gracefully — a path with no claims or facts still
+explains its commits. The collector is `collectExplain` /
+`buildExplain` in `src/surface/explain.ts` (a `dome.explain/v1` document,
+shared with the MCP `explain` tool). Like the status/check collectors it
+opens the vault runtime directly: the chain reads projection + ledger guts
+the public `Vault` wrapper hides.
+
+- `--json` — emit the `dome.explain/v1` payload (`{ schema, target, path,
+  anchor, adopted_commit, claim, facts, runs, commits }`).
+
+Tests: `tests/cli/commands/explain.test.ts`.
+
+Exit codes: 0 on a rendered view; 64 for an invalid target or a path absent
+from the adopted state (with the `dome.command-error/v1` envelope on stdout
+under `--json`); 1 when the vault runtime fails to open.
+
 ### `dome recipe <kind> [--url <base>]`
 
 Prints a setup recipe — plain text on stdout, by design: recipes change when
@@ -2591,11 +2632,11 @@ I/O failure.
 
 Runs the Dome MCP server over stdio for one vault — the shipped protocol
 adapter per [[wiki/specs/mcp-surface]] ([[wedge]] §"Phase 5 — MCP server").
-The server exposes thirteen typed tools (`capture`, `query`, `export_context`,
+The server exposes fourteen typed tools (`capture`, `query`, `export_context`,
 `report_miss`, `status`, `check`, `resolve`, `settle`, `tasks`, `brief`,
-`proposals`, `apply_proposal`, `reject_proposal`) whose results are the same
-JSON documents the corresponding CLI verbs emit under `--json`; the adapter
-consumes the same data paths rather than re-implementing them.
+`proposals`, `apply_proposal`, `reject_proposal`, `explain`) whose results are
+the same JSON documents the corresponding CLI verbs emit under `--json`; the
+adapter consumes the same data paths rather than re-implementing them.
 
 Boundary discipline:
 
