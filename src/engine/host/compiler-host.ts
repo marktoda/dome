@@ -822,6 +822,12 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
         }
       : {}),
     questionAutoResolve: opts.runtime.config.engine.autoResolveQuestions,
+    // Subject-liveness expiry exempts configured-but-disabled bundles'
+    // processors (the quarantine-GC posture: registry is authoritative only
+    // for enabled bundles).
+    disabledExtensionIds: opts.runtime.configuredExtensions
+      .filter((status) => !status.enabled)
+      .map((status) => status.id),
     onQuestionsChanged,
     onOutboxChanged,
     adoptSubProposal,

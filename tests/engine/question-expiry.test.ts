@@ -96,6 +96,7 @@ describe("expireOrphanSubjectQuestions", () => {
       const now = () => new Date("2026-07-06T00:00:00.000Z");
       const result = await expireOrphanSubjectQuestions({
         registry: registryWith(["dome.other.active"]),
+        disabledExtensionIds: [],
         questions: projection,
         answers,
         recordDiagnostic: async (input) => {
@@ -105,6 +106,12 @@ describe("expireOrphanSubjectQuestions", () => {
       });
 
       expect(result.expired).toBe(1);
+      // Dual pattern: the diagnostic is returned on the result AND recorded
+      // through the sink.
+      expect(result.diagnostics).toHaveLength(1);
+      expect(result.diagnostics[0]?.code).toBe(
+        "question.expired-subject-retired",
+      );
 
       const row = getQuestionRecord(projection, 1);
       expect(row?.answeredAt).toBe(now().toISOString());
@@ -156,6 +163,7 @@ describe("expireOrphanSubjectQuestions", () => {
       const now = () => new Date("2026-07-06T00:00:00.000Z");
       const result = await expireOrphanSubjectQuestions({
         registry: registryWith(["dome.health.orphan-run-recovery-questions"]),
+        disabledExtensionIds: [],
         questions: projection,
         answers,
         recordDiagnostic: async () => {},
@@ -206,6 +214,7 @@ describe("expireOrphanSubjectQuestions", () => {
           "dome.health.quarantine-recovery-questions",
           "dome.active.subject",
         ]),
+        disabledExtensionIds: [],
         questions: projection,
         answers,
         recordDiagnostic: async (input) => {
@@ -245,6 +254,7 @@ describe("expireOrphanSubjectQuestions", () => {
 
       const deps = {
         registry: registryWith(["dome.other.active"]),
+        disabledExtensionIds: [],
         questions: projection,
         answers,
         recordDiagnostic: async (_input: {
@@ -264,6 +274,104 @@ describe("expireOrphanSubjectQuestions", () => {
       // Idempotent write too: the answer row is unchanged by the no-op pass.
       const answerRow = getQuestionAnswer(answers, "orphan-run:idempotent");
       expect(answerRow?.handlerStatus).toBe("handled");
+    } finally {
+      answers.close();
+      projection.close();
+    }
+  });
+
+  test("a disabled-but-configured bundle's question survives; it expires once the bundle is removed from config", async () => {
+    const root = mkdtempSync(join(tmpdir(), "question-expiry-"));
+    tmpRoots.push(root);
+    const projection = await openTestProjection(root);
+    const answers = await openTestAnswers(root);
+    try {
+      // Emitter absent from the registry (disabled bundles' processors are
+      // never registered), but the bundle is still configured — the
+      // quarantine-GC posture: registry is authoritative only for ENABLED
+      // bundles, disabled ones keep the conservative prefix escape.
+      insertQuestion(projection, {
+        effect: questionEffect({
+          question: "Reset quarantine for the paused warden?",
+          options: ["reset", "ignore"],
+          sourceRefs: [],
+          idempotencyKey: "quarantine:disabled-bundle",
+        }),
+        processorId: "dome.warden.integrity",
+        runId: "run_5",
+        adoptedCommit: commitOid("e".repeat(40)),
+      });
+
+      const recorded: DiagnosticEffect[] = [];
+      const depsBase = {
+        registry: registryWith(["dome.other.active"]),
+        questions: projection,
+        answers,
+        recordDiagnostic: async (input: {
+          readonly effect: DiagnosticEffect;
+          readonly processorId: string;
+          readonly proposalId: string | null;
+        }) => {
+          recorded.push(input.effect);
+        },
+        now: () => new Date("2026-07-06T00:00:00.000Z"),
+      };
+
+      // Bundle configured but disabled → exempt, nothing expires.
+      const whileDisabled = await expireOrphanSubjectQuestions({
+        ...depsBase,
+        disabledExtensionIds: ["dome.warden"],
+      });
+      expect(whileDisabled.expired).toBe(0);
+      expect(recorded).toHaveLength(0);
+      expect(getQuestionRecord(projection, 1)?.answeredAt).toBeNull();
+
+      // Same question, bundle removed from config entirely → retired, expires.
+      const afterRemoval = await expireOrphanSubjectQuestions({
+        ...depsBase,
+        disabledExtensionIds: [],
+      });
+      expect(afterRemoval.expired).toBe(1);
+      expect(getQuestionRecord(projection, 1)?.answer).toBe("expired");
+      expect(
+        getQuestionAnswer(answers, "quarantine:disabled-bundle")?.answeredBy,
+      ).toBe("expired");
+    } finally {
+      answers.close();
+      projection.close();
+    }
+  });
+
+  test("a retired subjectProcessorId under a disabled bundle prefix is exempt too", async () => {
+    const root = mkdtempSync(join(tmpdir(), "question-expiry-"));
+    tmpRoots.push(root);
+    const projection = await openTestProjection(root);
+    const answers = await openTestAnswers(root);
+    try {
+      insertQuestion(projection, {
+        effect: questionEffect({
+          question: "Fail the paused warden's stuck run?",
+          options: ["fail", "ignore"],
+          sourceRefs: [],
+          idempotencyKey: "orphan-run:disabled-subject",
+          metadata: { subjectProcessorId: "dome.warden.integrity" },
+        }),
+        processorId: "dome.health.orphan-run-recovery-questions",
+        runId: "run_6",
+        adoptedCommit: commitOid("f".repeat(40)),
+      });
+
+      const result = await expireOrphanSubjectQuestions({
+        registry: registryWith(["dome.health.orphan-run-recovery-questions"]),
+        disabledExtensionIds: ["dome.warden"],
+        questions: projection,
+        answers,
+        recordDiagnostic: async () => {},
+        now: () => new Date("2026-07-06T00:00:00.000Z"),
+      });
+
+      expect(result.expired).toBe(0);
+      expect(getQuestionRecord(projection, 1)?.answeredAt).toBeNull();
     } finally {
       answers.close();
       projection.close();

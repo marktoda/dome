@@ -251,16 +251,26 @@ question whose declared subject was that bundle's processor — can never be
 answered through the normal handler flow again. An operational pump
 (`src/engine/operational/question-expiry.ts`, run once per tick after
 question auto-resolution) releases them: an OPEN question expires when
-either its emitting processor or its `subjectProcessorId` is no longer in
-the active `ProcessorRegistry`. Expiry writes a durable answer row
+either its emitting processor or its `subjectProcessorId` is *retired* —
+absent from the active `ProcessorRegistry` AND not covered by a
+configured-but-disabled extension's id prefix. The disabled-bundle exemption
+mirrors the quarantine GC's posture (`isKnownProcessorFor` in
+`src/engine/host/vault-runtime.ts`: "registry is authoritative for enabled
+bundles"): a disabled bundle's processors are deliberately absent from the
+registry but the bundle is still installed, so its open questions survive
+intact for re-enabling; for enabled bundles the registry is authoritative,
+and an unregistered processor id means the processor was deleted. Expiry
+writes a durable answer row
 (`answer: "expired"`, `answered_by: "expired"`, `handler_status: "handled"`)
 directly — bypassing the question's own `options` allow-list, since
 "expired" is an engine-forced terminal state, not a value the emitting
-processor ever offered — and raises one info diagnostic,
+processor ever offered — raises one info diagnostic,
 `question.expired-subject-retired`, naming the question and the retired
-processor. Outbox-recovery questions are never stamped with
-`subjectProcessorId`: their subject is an external handler capability, not a
-processor.
+processor (recorded durably and returned on the operational-work result),
+and sets the tick-scoped `questions.changed` flag so subscribers (e.g. the
+daily To-decide compiler) refresh the same tick. Outbox-recovery questions
+are never stamped with `subjectProcessorId`: their subject is an external
+handler capability, not a processor.
 
 ## ExternalActionEffect
 

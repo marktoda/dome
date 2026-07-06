@@ -4,13 +4,15 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { externalActionEffect } from "../../src/core/effect";
+import { openAnswersDb } from "../../src/answers/db";
+import { externalActionEffect, questionEffect } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { defineProcessor, treeOid } from "../../src/core/processor";
 import { runOperationalWork } from "../../src/engine/operational/operational-work";
 import { openOutboxDb } from "../../src/outbox/db";
 import { insertPending, queryOutbox } from "../../src/outbox/dispatch";
 import { openProjectionDb } from "../../src/projections/db";
+import { insertQuestion } from "../../src/projections/questions";
 import { getCursor } from "../../src/projections/schedule-cursors";
 import { buildRegistry } from "../../src/processors/registry";
 import { openTestLedger } from "../support/test-ledger";
@@ -322,6 +324,160 @@ describe("runOperationalWork", () => {
       expect(row?.lastError).toBeNull();
     } finally {
       ledger.close();
+      outbox.value.db.close();
+      projection.value.db.close();
+    }
+  });
+
+  test("question expiry fires onQuestionsChanged, surfaces diagnostics, and exempts disabled bundles", async () => {
+    const root = mkdtempSync(join(tmpdir(), "operational-work-"));
+    tmpRoots.push(root);
+
+    const projection = await openProjectionDb({
+      path: join(root, "projection.db"),
+      extensionSet: [],
+      processorVersions: [],
+      capabilityPolicyHash: "test-policy",
+    });
+    if (!projection.ok) {
+      throw new Error(`projection open failed: ${projection.error.kind}`);
+    }
+
+    const outbox = await openOutboxDb({ path: join(root, "outbox.db") });
+    if (!outbox.ok) {
+      projection.value.db.close();
+      throw new Error(`outbox open failed: ${outbox.error.kind}`);
+    }
+
+    const answers = await openAnswersDb({ path: join(root, "answers.db") });
+    if (!answers.ok) {
+      outbox.value.db.close();
+      projection.value.db.close();
+      throw new Error(`answers open failed: ${answers.error.kind}`);
+    }
+
+    const ledger = await openTestLedger();
+    try {
+      const adopted = commitOid("b".repeat(40));
+      // Two open questions from unregistered emitters: one under a
+      // configured-but-DISABLED bundle (exempt), one genuinely retired.
+      insertQuestion(projection.value.db, {
+        effect: questionEffect({
+          question: "Reset the paused warden?",
+          sourceRefs: [],
+          idempotencyKey: "disabled-bundle-question",
+        }),
+        processorId: "dome.paused.checker",
+        runId: "run_disabled",
+        adoptedCommit: adopted,
+      });
+      insertQuestion(projection.value.db, {
+        effect: questionEffect({
+          question: "Fail the retired warden's stuck run?",
+          sourceRefs: [],
+          idempotencyKey: "retired-question",
+        }),
+        processorId: "dome.warden.integrity",
+        runId: "run_retired",
+        adoptedCommit: adopted,
+      });
+
+      const registry = buildRegistry([]);
+      if (!registry.ok) {
+        throw new Error(`registry build failed: ${registry.error.kind}`);
+      }
+
+      let questionsChangedFires = 0;
+      const result = await runOperationalWork({
+        vault: {
+          path: root,
+          config: { git: { auto_commit_workflows: true } },
+        },
+        adopted,
+        registry: registry.value,
+        projection: projection.value.db,
+        answers: answers.value.db,
+        outbox: outbox.value.db,
+        disabledExtensionIds: ["dome.paused"],
+        onQuestionsChanged: () => {
+          questionsChangedFires += 1;
+        },
+        sinks: {
+          applyPatch: async () => null,
+          captureView: async () => {},
+          recordDiagnostic: async () => {},
+          recordFact: async () => {},
+          recordSearchDocument: async () => {},
+          recordQuestion: async () => {},
+          dispatchExternal: async () => {},
+          recoverOutbox: async () => true,
+          recoverQuarantine: async () => true,
+          recoverRun: async () => true,
+        },
+        resolveTree: async () => treeOid("c".repeat(40)),
+        now: () => new Date("2026-07-06T00:00:00.000Z"),
+        resolveGrants: () => [],
+        extensionIdFor: (processorId) => processorId,
+        externalHandlers: {},
+        ledger,
+      });
+
+      // Only the retired emitter's question expired; the disabled bundle's
+      // question is exempt (quarantine-GC posture).
+      expect(result.questionExpiry.expired).toBe(1);
+      // Expiry changes the open-question set outside the recordQuestion sink,
+      // so the tick-scoped questions.changed flag must be raised — same
+      // contract as auto-resolution's durable answers.
+      expect(questionsChangedFires).toBe(1);
+      // Dual diagnostics pattern (scheduler.ts): the expiry diagnostic is on
+      // the result, folded into the aggregate diagnostics array.
+      expect(
+        result.questionExpiry.diagnostics.map((d) => d.code),
+      ).toEqual(["question.expired-subject-retired"]);
+      expect(result.diagnostics.map((d) => d.code)).toContain(
+        "question.expired-subject-retired",
+      );
+
+      // A second pump run expires nothing and does NOT re-fire the flag.
+      questionsChangedFires = 0;
+      const second = await runOperationalWork({
+        vault: {
+          path: root,
+          config: { git: { auto_commit_workflows: true } },
+        },
+        adopted,
+        registry: registry.value,
+        projection: projection.value.db,
+        answers: answers.value.db,
+        outbox: outbox.value.db,
+        disabledExtensionIds: ["dome.paused"],
+        onQuestionsChanged: () => {
+          questionsChangedFires += 1;
+        },
+        sinks: {
+          applyPatch: async () => null,
+          captureView: async () => {},
+          recordDiagnostic: async () => {},
+          recordFact: async () => {},
+          recordSearchDocument: async () => {},
+          recordQuestion: async () => {},
+          dispatchExternal: async () => {},
+          recoverOutbox: async () => true,
+          recoverQuarantine: async () => true,
+          recoverRun: async () => true,
+        },
+        resolveTree: async () => treeOid("c".repeat(40)),
+        now: () => new Date("2026-07-06T00:00:00.000Z"),
+        resolveGrants: () => [],
+        extensionIdFor: (processorId) => processorId,
+        externalHandlers: {},
+        ledger,
+      });
+      expect(second.questionExpiry.expired).toBe(0);
+      expect(questionsChangedFires).toBe(0);
+    } finally {
+      ledger.close();
+      answers.value.db.close();
       outbox.value.db.close();
       projection.value.db.close();
     }
