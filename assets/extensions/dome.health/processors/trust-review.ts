@@ -52,6 +52,7 @@ import {
   DORMANT_WINDOW_DAYS,
   grantedAutonomy,
   policyFromConfigBody,
+  PROMOTE_MIN_DECIDED,
   promoteProcessorGrantInConfig,
   promotionSuppression,
   TRUST_WINDOW_DAYS,
@@ -100,21 +101,32 @@ const trustReview = defineProcessorImplementation({
       );
     } else {
       const rows = proposalsView();
-      configBody = await ctx.snapshot.readFile(CONFIG_PATH);
-      const policy =
-        configBody === null ? null : policyFromConfigBody(configBody);
-      if (policy === null) {
-        warn(
-          "dome.health.trust-review-config-unreadable",
-          configBody === null
-            ? "dome.health.trust-review could not read .dome/config.yaml from the snapshot; trust promotions are skipped"
-            : "dome.health.trust-review could not parse .dome/config.yaml; trust promotions are skipped",
-        );
-        // `grantedAutonomy` resolves to "unknown" without a policy, so the
-        // decide core refuses every promotion — evidence still aggregates.
+      const activity = aggregateProposalActivity(rows, proposalWindowStartIso);
+      // The config read is a need only once some producer clears the decided
+      // volume bar — a quiet vault (fresh init, no proposal traffic) must not
+      // collect a weekly config nag for a promotion pass that has nothing to
+      // evaluate. Past the bar, an unreadable config IS loud (NEEDS_ARE_LOUD):
+      // trust review genuinely cannot classify autonomy there.
+      let policy: ReturnType<typeof policyFromConfigBody> = null;
+      const hasPromotionVolume = activity.some(
+        (row) => row.decided >= PROMOTE_MIN_DECIDED,
+      );
+      if (hasPromotionVolume) {
+        configBody = await ctx.snapshot.readFile(CONFIG_PATH);
+        policy = configBody === null ? null : policyFromConfigBody(configBody);
+        if (policy === null) {
+          warn(
+            "dome.health.trust-review-config-unreadable",
+            configBody === null
+              ? "dome.health.trust-review could not read .dome/config.yaml from the snapshot; trust promotions are skipped"
+              : "dome.health.trust-review could not parse .dome/config.yaml; trust promotions are skipped",
+          );
+          // `grantedAutonomy` resolves to "unknown" without a policy, so the
+          // decide core refuses every promotion — evidence still aggregates.
+        }
       }
       proposalStats = Object.freeze(
-        aggregateProposalActivity(rows, proposalWindowStartIso).map(
+        activity.map(
           (activity) => {
             const suppression = promotionSuppression(rows, activity.processorId);
             return Object.freeze({

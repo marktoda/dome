@@ -613,6 +613,26 @@ describe("dome.health.trust-review (processor shell)", () => {
     ).toBe(true);
   });
 
+  test("a quiet vault (no promotion volume) never reads config — no weekly nag", async () => {
+    // Fresh-init posture: proposals view present but empty, config absent from
+    // the snapshot. The config read is a need only once a producer clears
+    // PROMOTE_MIN_DECIDED, so no diagnostic may fire here.
+    const quiet = await runTrustReview({}, viewOf({ proposals: [] }));
+    expect(quiet.patches).toEqual([]);
+    expect(quiet.diagnostics).toEqual([]);
+
+    // Below-volume traffic (a handful of decided rows) is still quiet.
+    const belowVolume = await runTrustReview(
+      {},
+      viewOf({ proposals: promotableRows().slice(0, 4) }),
+    );
+    expect(
+      belowVolume.diagnostics.filter(
+        (d) => d.code === "dome.health.trust-review-config-unreadable",
+      ),
+    ).toEqual([]);
+  });
+
   test("re-running with unchanged inputs emits the identical patch (dedupe-key idempotence upstream)", async () => {
     const first = await runTrustReview(
       { [CONFIG_PATH]: SHELL_CONFIG },
