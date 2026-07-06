@@ -1,7 +1,7 @@
 ---
 type: matrix
 created: 2026-06-10
-updated: 2026-06-12
+updated: 2026-07-06
 sources:
   - "[[cohesive/reviews/2026-06-10-oop-abstraction-layers-architecture-review]]"
 description: Maps every src/engine/ module to its layer (core/garden/operational/host) — the placement table the import-direction linter enforces.
@@ -60,6 +60,7 @@ Cycles are permitted *within* a layer (e.g. `apply-effect` ↔ `diagnostics` in 
 | `quarantine-store` | `operational` | Processor quarantine state store |
 | `question-answer-recording` | `operational` | Durable QuestionEffect answer writes |
 | `question-auto-resolution` | `operational` | Opt-in background resolution for low-risk questions |
+| `question-expiry` | `operational` | Subject-liveness expiry — releases OPEN questions whose subject processor is retired |
 | `questions-changed` | `operational` | Dispatch garden-phase `questions.changed` subscribers after the open-question set changes |
 | `store-changed` | `operational` | Dispatch garden-phase `outbox.changed` / `quarantine.changed` subscribers after a store's failure set changes |
 | `scheduler` | `operational` | Cron-driven processor dispatch |
