@@ -39,6 +39,7 @@ import { applyPatchToCandidate } from "../../src/engine/core/apply-patch";
 import { patchEffect } from "../../src/core/effect";
 import { commitOid, type CommitOid } from "../../src/core/source-ref";
 import { commit, initRepo } from "../../src/git";
+import { parseBlockAnchor } from "../../src/core/block-anchor";
 import {
   claimsFromMarkdown,
   claimsWithStableAnchors,
@@ -68,9 +69,11 @@ afterEach(async () => {
 
 const PATH = "notes/2026-06-16.md";
 
-// S0: frontmatter + H1 + 3 un-anchored claim lines + prose. The claim lines
-// sit BELOW the H1, so render's after-H1 splice and stamp's on-claim-line
-// anchors touch disjoint regions.
+// S0: frontmatter + H1 + 3 un-anchored claims + prose. The claim lines sit
+// BELOW the H1, so render's after-H1 splice and stamp's on-claim-line anchors
+// touch disjoint regions. The Stage claim hard-wraps onto a lazy-continuation
+// line, so the whole composition also covers the multi-line claim grammar:
+// stamp anchors the LAST line, render digests the full joined value.
 const S0 = [
   "---",
   "title: Standup",
@@ -81,7 +84,8 @@ const S0 = [
   "",
   "- **Status:** Active",
   "- **Owner:** [[Mark]]",
-  "- **Stage:** Build",
+  "- **Stage:** Build phase mid-flight with an obvious multi-hop test",
+  "  case that hard-wraps onto an indented continuation line.",
   "",
   "Closing prose paragraph.",
   "",
@@ -163,6 +167,12 @@ describe("dome.claims render-facts <-> stamp whole-file write composition", () =
     expect(stampContent).not.toBeNull();
     expect(stampContent!).toMatch(ANCHOR_RE);
     expect(stampContent!).not.toContain(DIGEST_START); // stamp adds no digest
+    // The wrapped Stage claim is anchored on its LAST (continuation) line.
+    const stampLines = stampContent!.split("\n");
+    const stageIdx = stampLines.findIndex((l) => l.includes("**Stage:**"));
+    expect(stageIdx).toBeGreaterThanOrEqual(0);
+    expect(parseBlockAnchor(stampLines[stageIdx]!)).toBeNull();
+    expect(parseBlockAnchor(stampLines[stageIdx + 1]!)?.id).toMatch(/^c[0-9a-f]{8}$/);
 
     // ---- render's whole-file write (REAL render logic against S0) ----
     const renderContent = renderWholeFile(S0);
@@ -206,6 +216,10 @@ describe("dome.claims render-facts <-> stamp whole-file write composition", () =
     expect(merged!).toContain(DIGEST_HEADING);
     // All three claim keys still present, now anchored.
     expect(claimsFromMarkdown(merged!).filter((c) => c.anchor !== null)).toHaveLength(3);
+    // The wrapped Stage claim's digest bullet carries the FULL joined value.
+    expect(merged!).toContain(
+      "- **Stage** — Build phase mid-flight with an obvious multi-hop test case that hard-wraps onto an indented continuation line.",
+    );
 
     // ---- convergence / fixed point ----
     // stamp is now a no-op: every claim source line is already anchored.

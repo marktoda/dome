@@ -42,7 +42,8 @@ const claimIndex = defineProcessorImplementation({
       const firstByKey = new Map<string, { value: string; line: number }>();
       const flagged = new Set<string>();
       for (const claim of claimsFromMarkdown(content)) {
-        const range = { startLine: claim.line, endLine: claim.line };
+        // A hard-wrapped claim spans line..endLine (== line when single-line).
+        const range = { startLine: claim.line, endLine: claim.endLine };
         const ref =
           claim.anchor !== null
             ? ctx.sourceRef(path, range, claim.anchor)

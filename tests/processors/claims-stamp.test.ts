@@ -3,6 +3,8 @@ import { describe, expect, test } from "bun:test";
 
 import {
   claimAnchorId,
+  claimsFromMarkdown,
+  claimsWithStableAnchors,
   stampClaimAnchors,
 } from "../../assets/extensions/dome.claims/processors/claims-shared";
 import { parseBlockAnchor } from "../../src/core/block-anchor";
@@ -71,5 +73,53 @@ describe("stampClaimAnchors", () => {
     expect(stampClaimAnchors({ path: PATH, content })).toBe(
       stampClaimAnchors({ path: PATH, content }),
     );
+  });
+});
+
+describe("stampClaimAnchors on wrapped (lazy-continuation) claims", () => {
+  const WRAPPED = [
+    "- **Testing:** team needs to be better at testing — there was an obvious multi-hop test",
+    "  case that should have caught this (matches RCA root cause #3).",
+    "",
+  ].join("\n");
+
+  test("stamps the anchor on the claim's LAST line, not the first", () => {
+    const stamped = stampClaimAnchors({ path: PATH, content: WRAPPED });
+    expect(stamped).not.toBeNull();
+    const lines = stamped!.split("\n");
+    expect(parseBlockAnchor(lines[0]!)).toBeNull();
+    expect(parseBlockAnchor(lines[1]!)?.id).toMatch(/^c[0-9a-f]{8}$/);
+  });
+
+  test("convergence: stamp → parse → stamp is a no-op, value and endLine survive", () => {
+    const stamped = stampClaimAnchors({ path: PATH, content: WRAPPED })!;
+    // The stamped document re-parses to the SAME claim, now anchored.
+    const claims = claimsFromMarkdown(stamped);
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({ line: 1, endLine: 2 });
+    expect(claims[0]!.anchor).toMatch(/^c[0-9a-f]{8}$/);
+    expect(claims[0]!.value).toBe(
+      "team needs to be better at testing — there was an obvious multi-hop test case that should have caught this (matches RCA root cause #3).",
+    );
+    // Fixed point: a second stamp changes nothing.
+    expect(stampClaimAnchors({ path: PATH, content: stamped })).toBeNull();
+  });
+
+  test("a legacy FIRST-line anchor on a wrapped claim is stable: re-stamp is a no-op", () => {
+    const legacy = [
+      `- **Testing:** wraps onto a ^${claimAnchorId({ path: PATH, key: "Testing", occurrence: 0 })}`,
+      "  second line here",
+      "",
+    ].join("\n");
+    expect(stampClaimAnchors({ path: PATH, content: legacy })).toBeNull();
+  });
+
+  test("claimsWithStableAnchors mirrors stamping exactly (the post-stamp fixed point)", () => {
+    const predicted = claimsWithStableAnchors({ path: PATH, content: WRAPPED });
+    expect(predicted).toHaveLength(1);
+    const stamped = stampClaimAnchors({ path: PATH, content: WRAPPED })!;
+    const actual = claimsFromMarkdown(stamped);
+    expect(actual[0]!.anchor).toBe(predicted[0]!.anchor);
+    expect(actual[0]!.value).toBe(predicted[0]!.value);
   });
 });

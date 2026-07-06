@@ -6,6 +6,13 @@
 // `^c…` block anchor. Lines inside YAML frontmatter, fenced code blocks,
 // and blockquotes are never claims, so quoted material can't be
 // over-anchored. Pure (string-only, no IO) like daily-shared's extractors.
+//
+// A hand-authored claim that hard-wraps continues onto markdown
+// lazy-continuation lines: indented non-blank lines that are not themselves a
+// blockquote, bullet, heading, claim line, or anchor-only line. Continuations
+// join the value with single spaces; the claim's `^c…` anchor lives on its
+// LAST line (stamping writes it there), though a legacy first-line anchor is
+// still recognized — and wins — for documents stamped by the old grammar.
 
 import {
   appendBlockAnchor,
@@ -16,11 +23,19 @@ import { findAllGeneratedBlocks } from "../../../../src/core/generated-block";
 import { fencedCodeBlockLineRanges } from "../../../../src/core/markdown-scan";
 
 export type ClaimLine = {
-  /** 1-based line number in the document. */
+  /** 1-based line number in the document where the claim starts. */
   readonly line: number;
+  /**
+   * 1-based line number of the claim's last lazy-continuation line;
+   * `== line` for single-line claims.
+   */
+  readonly endLine: number;
   /** The key exactly as written (untrimmed of internal spacing). */
   readonly key: string;
-  /** The value text with any trailing block anchor removed. */
+  /**
+   * The value text with any trailing block anchor removed; continuation
+   * lines are joined onto it with single spaces.
+   */
   readonly value: string;
   /** The `*(as of YYYY-MM-DD)*` date when present. */
   readonly asOf: string | null;
@@ -36,6 +51,12 @@ type ClaimAnchorAssignment = {
 /** Optional indent + optional bullet, then a line-opening `**Key:**` + value. */
 const CLAIM_LINE_RE = /^(\s*(?:[-*]\s+)?)\*\*([^*\n]+):\*\*\s+(\S.*)$/;
 const AS_OF_RE = /\*\(as of (\d{4}-\d{2}-\d{2})\)\*/;
+
+// Lazy-continuation shape gates: a continuation must be indented and
+// non-blank, and must NOT open a new structure of its own.
+const CONTINUATION_RE = /^\s+\S/;
+const BULLET_RE = /^\s*[-*+]\s/;
+const HEADING_RE = /^\s*#/;
 
 /**
  * Discourse-marker keys that are session framing, not durable entity facts.
@@ -112,19 +133,53 @@ export function claimsFromMarkdown(
     const match = CLAIM_LINE_RE.exec(body);
     if (match === null) continue;
     const key = (match[2] ?? "").trim();
-    const value = (match[3] ?? "").trim();
-    if (key.length === 0 || value.length === 0) continue;
+    const firstValue = (match[3] ?? "").trim();
+    if (key.length === 0 || firstValue.length === 0) continue;
     if (isDiscourseMarkerKey(key)) continue;
     if (isNumberedKey(key)) continue;
+
+    // Absorb markdown lazy-continuation lines: a hand-authored claim that
+    // hard-wraps keeps its value on following indented non-blank lines. A
+    // continuation must not be excluded, a blockquote, a new bullet, a
+    // heading, a claim line of its own, or an anchor-only line.
+    const parts = [firstValue];
+    let endIdx = i;
+    let lastLineAnchor: string | null = null;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      if (excluded[j] === true) break;
+      const contRaw = lines[j] ?? "";
+      if (!CONTINUATION_RE.test(contRaw)) break;
+      if (contRaw.trimStart().startsWith(">")) break;
+      if (BULLET_RE.test(contRaw)) break;
+      if (HEADING_RE.test(contRaw)) break;
+      const contAnchored = parseBlockAnchor(contRaw);
+      const contBody =
+        contAnchored === null ? contRaw : contAnchored.withoutAnchor;
+      if (CLAIM_LINE_RE.test(contBody)) break;
+      const contText = contBody.trim();
+      if (contText.length === 0) break; // anchor-only line
+      parts.push(contText);
+      endIdx = j;
+      // Only the FINAL consumed line's trailing anchor is the claim's anchor;
+      // re-assigned every iteration so an earlier line's anchor never leaks.
+      lastLineAnchor = contAnchored?.id ?? null;
+    }
+
+    const value = parts.join(" ");
     claims.push(
       Object.freeze({
         line: i + 1,
+        endLine: endIdx + 1,
         key,
         value,
         asOf: AS_OF_RE.exec(value)?.[1] ?? null,
-        anchor: anchored?.id ?? null,
+        // A legacy first-line anchor (old stamping wrote it there) is still
+        // recognized and wins over a last-line anchor when both exist.
+        anchor: anchored?.id ?? lastLineAnchor,
       }),
     );
+    // Consumed continuation lines are never re-scanned as fresh claims.
+    i = endIdx;
   }
   return Object.freeze(claims);
 }
@@ -264,9 +319,11 @@ export function claimsWithStableAnchors(input: {
 }
 
 /**
- * Stamp a stable `^c…` anchor onto every claim line that lacks one,
- * returning the rewritten document — or `null` when nothing needs stamping
- * (the idempotent fixed point). Occurrence counting includes already-anchored
+ * Stamp a stable `^c…` anchor onto every claim that lacks one, returning the
+ * rewritten document — or `null` when nothing needs stamping (the idempotent
+ * fixed point). The anchor is appended to the claim's LAST line (`endLine`),
+ * so a hard-wrapped claim keeps its anchor after the final continuation —
+ * where the parse reads it back. Occurrence counting includes already-anchored
  * claims so a later re-run assigns the same ids it would have on first sight.
  *
  * Deduplication: before the loop, all existing trailing block-anchor ids in
@@ -285,7 +342,7 @@ export function stampClaimAnchors(input: {
   let changed = false;
   for (const { claim, anchor } of stableClaimAnchorAssignments(input)) {
     if (claim.anchor !== null) continue;
-    const idx = claim.line - 1;
+    const idx = claim.endLine - 1;
     const line = lines[idx];
     if (line === undefined) continue;
     lines[idx] = appendBlockAnchor(line, anchor);

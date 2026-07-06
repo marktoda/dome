@@ -152,6 +152,129 @@ describe("claimsFromMarkdown", () => {
     expect(claims.map((c) => c.key)).toEqual(["Owner"]);
   });
 
+  test("a hard-wrapped claim absorbs its lazy-continuation line: full joined value + endLine", () => {
+    // The verified real-world truncation: a hand-authored bullet hard-wraps
+    // and the line-based grammar used to cut the value at the wrap, so the
+    // Current facts digest rendered the fragment ending "multi-hop test".
+    const content = [
+      "# Retro",
+      "",
+      "- **Testing:** team needs to be better at testing — there was an obvious multi-hop test",
+      "  case that should have caught this (matches RCA root cause #3).",
+      "",
+    ].join("\n");
+    const claims = claimsFromMarkdown(content);
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({ line: 3, endLine: 4, key: "Testing" });
+    expect(claims[0]!.value).toBe(
+      "team needs to be better at testing — there was an obvious multi-hop test case that should have caught this (matches RCA root cause #3).",
+    );
+  });
+
+  test("a single-line claim has endLine == line", () => {
+    const claims = claimsFromMarkdown("- **Level:** UNI-4\n");
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({ line: 1, endLine: 1 });
+  });
+
+  test("a blank line ends the claim: the paragraph after it is not absorbed", () => {
+    const content = ["- **A:** one", "", "  indented paragraph after a blank"].join("\n");
+    const claims = claimsFromMarkdown(content);
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({ value: "one", endLine: 1 });
+  });
+
+  test("a nested bullet is a new item, never a continuation", () => {
+    const content = ["- **A:** one", "  - nested bullet detail"].join("\n");
+    const claims = claimsFromMarkdown(content);
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({ value: "one", endLine: 1 });
+  });
+
+  test("an indented claim line is a new claim, never a continuation", () => {
+    const content = ["- **A:** one", "  **B:** two"].join("\n");
+    const claims = claimsFromMarkdown(content);
+    expect(claims.map((c) => c.key)).toEqual(["A", "B"]);
+    expect(claims[0]).toMatchObject({ value: "one", endLine: 1 });
+    expect(claims[1]).toMatchObject({ line: 2, endLine: 2, value: "two" });
+  });
+
+  test("an indented heading is never a continuation", () => {
+    const content = ["- **A:** one", "  ## Not part of the claim"].join("\n");
+    const claims = claimsFromMarkdown(content);
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({ value: "one", endLine: 1 });
+  });
+
+  test("an indented blockquote is never a continuation", () => {
+    const content = ["- **A:** one", "  > quoted material"].join("\n");
+    const claims = claimsFromMarkdown(content);
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({ value: "one", endLine: 1 });
+  });
+
+  test("an anchor-only line is never a continuation", () => {
+    const content = ["- **A:** one", "  ^cAAAA"].join("\n");
+    const claims = claimsFromMarkdown(content);
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({ value: "one", endLine: 1, anchor: null });
+  });
+
+  test("an excluded line (fence inside the list item) is never a continuation", () => {
+    const content = ["- **A:** one", "  ```", "  code", "  ```"].join("\n");
+    const claims = claimsFromMarkdown(content);
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({ value: "one", endLine: 1 });
+  });
+
+  test("a trailing anchor on the LAST line is the claim's anchor, stripped from the value", () => {
+    const content = [
+      "- **Testing:** wraps onto a",
+      "  second line here ^c1a2b3c4d",
+    ].join("\n");
+    const claims = claimsFromMarkdown(content);
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({
+      endLine: 2,
+      anchor: "c1a2b3c4d",
+      value: "wraps onto a second line here",
+    });
+  });
+
+  test("a legacy anchor on the FIRST line is still recognized on a wrapped claim", () => {
+    const content = [
+      "- **Testing:** wraps onto a ^cAAAA",
+      "  second line here",
+    ].join("\n");
+    const claims = claimsFromMarkdown(content);
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({
+      endLine: 2,
+      anchor: "cAAAA",
+      value: "wraps onto a second line here",
+    });
+  });
+
+  test("when both first- and last-line anchors exist, the legacy FIRST-line anchor wins", () => {
+    const content = [
+      "- **Testing:** wraps onto a ^cFIRST",
+      "  second line here ^cLAST",
+    ].join("\n");
+    const claims = claimsFromMarkdown(content);
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({ anchor: "cFIRST" });
+  });
+
+  test("an as-of marker on a continuation line is found (matched on the joined value)", () => {
+    const content = [
+      "- **Status:** shipped after the long",
+      "  bake period *(as of 2026-06-01)*",
+    ].join("\n");
+    const claims = claimsFromMarkdown(content);
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({ asOf: "2026-06-01", endLine: 2 });
+  });
+
   test("an unterminated start marker bounds no block, so the claim below it IS parsed", () => {
     const content = [
       "# Atlas",
