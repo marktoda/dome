@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import {
   commit,
+  commitFilesOnHead,
   commitSingleFileOnHead,
   countCommitsSince,
   fileInfoAtCommit,
@@ -343,6 +344,122 @@ describe("git boundary", () => {
         }),
       ).rejects.toThrow(/kept advancing concurrently.*5 attempts/);
       expect(advances).toBe(5);
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  // Task 3 (stock-gardening phase 1): commitFilesOnHead's `files` entries
+  // widen to `{ filepath, content: string | null }` — `null` removes the
+  // path from the tree. This is the tree-removal counterpart the janitor's
+  // archive-move (write to attic/ + delete original) needs.
+  test("commitFilesOnHead removes a file from the HEAD tree; the working tree copy is untouched", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-delete-"));
+    try {
+      await initRepo(path);
+      await write(path, "wiki/a.md", "keep\n");
+      await write(path, "wiki/b.md", "remove me\n");
+      const base = await commit({
+        path,
+        message: "base",
+        files: ["wiki/a.md", "wiki/b.md"],
+      });
+
+      const oid = await commitFilesOnHead({
+        path,
+        files: [{ filepath: "wiki/b.md", content: null }],
+        message: "delete b",
+      });
+
+      expect(await readBlob({ path, commit: oid, filepath: "wiki/b.md" })).toBeNull();
+      expect(await readBlob({ path, commit: oid, filepath: "wiki/a.md" })).toBe("keep\n");
+      expect(
+        await isAncestor({ path, ancestor: base, descendant: oid }),
+      ).toBe(true);
+
+      // Tree-only: the helper never touches the working tree, so the file
+      // the caller wrote to disk is still there (unlike the working-tree
+      // unlink, which is the surface caller's job — Task 4, not this one).
+      expect(existsSync(join(path, "wiki/b.md"))).toBe(true);
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  test("commitFilesOnHead deletes one file and writes another in a single commit", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-delete-write-"));
+    try {
+      await initRepo(path);
+      await write(path, "wiki/old.md", "stale\n");
+      await commit({ path, message: "base", files: ["wiki/old.md"] });
+
+      await write(path, "wiki/new.md", "fresh\n");
+      const oid = await commitFilesOnHead({
+        path,
+        files: [
+          { filepath: "wiki/old.md", content: null },
+          { filepath: "wiki/new.md", content: "fresh\n" },
+        ],
+        message: "swap old for new",
+      });
+
+      expect(await readBlob({ path, commit: oid, filepath: "wiki/old.md" })).toBeNull();
+      expect(await readBlob({ path, commit: oid, filepath: "wiki/new.md" })).toBe("fresh\n");
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  test("commitFilesOnHead deleting an absent path is a no-op entry; the rest of the commit still lands", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-delete-absent-"));
+    try {
+      await initRepo(path);
+      await write(path, "wiki/a.md", "one\n");
+      await commit({ path, message: "base", files: ["wiki/a.md"] });
+
+      const oid = await commitFilesOnHead({
+        path,
+        files: [
+          { filepath: "wiki/never-existed.md", content: null },
+          { filepath: "wiki/a.md", content: "two\n" },
+        ],
+        message: "no-op delete + real write",
+      });
+
+      expect(
+        await readBlob({ path, commit: oid, filepath: "wiki/never-existed.md" }),
+      ).toBeNull();
+      expect(await readBlob({ path, commit: oid, filepath: "wiki/a.md" })).toBe("two\n");
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  test("commitFilesOnHead: deleting the only file in a subdirectory leaves no empty tree entry", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-delete-empty-subtree-"));
+    try {
+      await initRepo(path);
+      await write(path, "wiki/sub/only.md", "lonely\n");
+      await write(path, "wiki/other.md", "sibling\n");
+      await commit({
+        path,
+        message: "base",
+        files: ["wiki/sub/only.md", "wiki/other.md"],
+      });
+
+      const oid = await commitFilesOnHead({
+        path,
+        files: [{ filepath: "wiki/sub/only.md", content: null }],
+        message: "delete the only file in wiki/sub",
+      });
+
+      const rootTree = await readTree({ path, oid });
+      expect(rootTree.tree.map((entry) => entry.path)).toEqual(["wiki"]);
+      const wikiEntry = rootTree.tree.find((entry) => entry.path === "wiki");
+      if (wikiEntry === undefined) throw new Error("expected wiki entry");
+      const wikiTree = await readTree({ path, oid: wikiEntry.oid });
+      // `sub` is gone entirely — no empty tree object left behind.
+      expect(wikiTree.tree.map((entry) => entry.path)).toEqual(["other.md"]);
     } finally {
       await rm(path, { recursive: true, force: true });
     }

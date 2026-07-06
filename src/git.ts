@@ -331,11 +331,19 @@ export async function commitSingleFileOnHead(opts: {
  * compare-and-swap that retries onto a concurrently-advanced head (the serve
  * host's adoption), so a daemon poll racing the write never clobbers or is
  * clobbered. `files` must be non-empty; passing the same path twice keeps the
- * last write.
+ * last write. A `null` content entry removes that path from the tree instead
+ * of writing a blob — this helper is tree-only either way: it never reads or
+ * mutates the working tree copy of a deleted path (callers that also want
+ * the on-disk file gone, e.g. the janitor's archive-move, unlink it
+ * themselves before or after calling in).
  */
 export async function commitFilesOnHead(opts: {
   path: string;
-  files: ReadonlyArray<{ readonly filepath: string; readonly content: string }>;
+  files: ReadonlyArray<{
+    readonly filepath: string;
+    /** `null` removes the path from the tree (see `spliceRemoveFromTree`). */
+    readonly content: string | null;
+  }>;
   message: string;
   author?: CommitIdentity;
   beforeRefAdvance?: (attempt: number) => Promise<void>;
@@ -359,6 +367,11 @@ export async function commitFilesOnHead(opts: {
     const { commit: headCommit } = await git.readCommit({ fs, dir: root, oid: head });
     let treeOid = headCommit.tree;
     for (const f of fulls) {
+      const segments = f.full.split("/").filter((s) => s.length > 0);
+      if (f.content === null) {
+        treeOid = await spliceRemoveFromTree({ root, treeOid, segments });
+        continue;
+      }
       const blobOid = await git.writeBlob({
         fs,
         dir: root,
@@ -367,7 +380,7 @@ export async function commitFilesOnHead(opts: {
       treeOid = await spliceBlobIntoTree({
         root,
         treeOid,
-        segments: f.full.split("/").filter((s) => s.length > 0),
+        segments,
         blobOid,
       });
     }
@@ -397,9 +410,22 @@ export async function commitFilesOnHead(opts: {
       head = current;
       continue;
     }
-    // Keep the index in sync for the new paths so the working tree reads
-    // clean after the commit; the caller already wrote `content` to disk.
+    // Keep the index in sync for the touched paths so the working tree reads
+    // clean after the commit. Writes: the caller already wrote `content` to
+    // disk, so `git.add` picks it up. Deletes: this helper is tree-only (see
+    // module header) and never touches the working tree itself, but the
+    // caller may have already unlinked the path on disk before calling in —
+    // `git.remove` stages that removal from the index either way; if the
+    // path was never tracked there is nothing to stage.
     for (const f of fulls) {
+      if (f.content === null) {
+        try {
+          await git.remove({ fs, dir: root, filepath: f.full });
+        } catch {
+          // Not present in the index — nothing to stage.
+        }
+        continue;
+      }
       await git.add({ fs, dir: root, filepath: f.full });
     }
     return commitOid;
@@ -445,6 +471,60 @@ async function spliceBlobIntoTree(opts: {
     });
     entries.push({ mode: "040000", path: segment, oid: newChild, type: "tree" });
   }
+  return git.writeTree({ fs, dir: opts.root, tree: entries });
+}
+
+/**
+ * Return the OID of `treeOid` with the entry at the nested path `segments`
+ * removed, writing every intermediate tree object that actually changed.
+ * Mirrors {@link spliceBlobIntoTree}'s recursive descent in reverse:
+ *
+ *   - A `segments` path absent anywhere along the descent is a no-op — the
+ *     input `treeOid` is returned unchanged (idempotent re-removal).
+ *   - Removing the last entry of a subtree removes that subtree's own entry
+ *     from ITS parent in turn (propagated recursively up the call stack), so
+ *     no empty tree objects are left behind in the written tree.
+ */
+async function spliceRemoveFromTree(opts: {
+  readonly root: string;
+  readonly treeOid: string;
+  readonly segments: ReadonlyArray<string>;
+}): Promise<string> {
+  const [segment, ...rest] = opts.segments;
+  if (segment === undefined) {
+    throw new Error("commitFilesOnHead: empty filepath");
+  }
+  const { tree } = await git.readTree({ fs, dir: opts.root, oid: opts.treeOid });
+  const existing = tree.find((entry) => entry.path === segment);
+  if (existing === undefined) {
+    // Path absent at this level — nothing to remove.
+    return opts.treeOid;
+  }
+  if (rest.length === 0) {
+    const entries = tree.filter((entry) => entry.path !== segment);
+    return git.writeTree({ fs, dir: opts.root, tree: entries });
+  }
+  if (existing.type !== "tree") {
+    // The remaining segments expect a subdirectory here, but this entry is a
+    // blob (or other non-tree) — the target path doesn't exist. No-op.
+    return opts.treeOid;
+  }
+  const newChildOid = await spliceRemoveFromTree({
+    root: opts.root,
+    treeOid: existing.oid,
+    segments: rest,
+  });
+  if (newChildOid === existing.oid) {
+    // Nothing changed further down (path was absent) — propagate the no-op.
+    return opts.treeOid;
+  }
+  const entries = tree.filter((entry) => entry.path !== segment);
+  const { tree: childEntries } = await git.readTree({ fs, dir: opts.root, oid: newChildOid });
+  if (childEntries.length > 0) {
+    entries.push({ mode: existing.mode, path: segment, oid: newChildOid, type: "tree" });
+  }
+  // else: the subtree is now empty — drop its entry from the parent instead
+  // of writing an empty tree object.
   return git.writeTree({ fs, dir: opts.root, tree: entries });
 }
 
