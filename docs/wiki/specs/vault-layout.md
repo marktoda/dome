@@ -27,13 +27,14 @@ A Dome vault is a git repository ([[wiki/invariants/VAULT_IS_GIT_REPO]]) contain
   raw/                # immutable raw captures (per RAW_IS_IMMUTABLE)
   notes/              # user-authored content Dome reads but does not write
   inbox/              # ephemeral drop-zones for intake (per INBOX_IS_EPHEMERAL)
+  attic/              # engine-proposed archive destination for dead-stub pages (see §"attic/")
   meta/               # generated bookkeeping — index shards + processor ledgers (engine-written; see §"meta/")
   log.md              # frozen history — activity lives in git, via `dome log` (per NO_ACCRETING_REGISTRIES)
   index.md            # generated render of the wiki/ catalogue map (dome.markdown.render-index; shards live in meta/)
   core.md             # always-loaded core memory page (see §"core.md" below)
 ```
 
-`wiki/`, `raw/`, `notes/`, `inbox/`, and `meta/` are top-level directories. `log.md` and `index.md` are top-level files. Additional top-level directories that aren't recognized by Dome (e.g., the project's `cohesive/` substrate residue, `scripts/`, or anything else) are tolerated as **external** — readable, never written by the engine. `sources/` is one such external directory with a documented convention (see §"`sources/` — committed external feeds" below); `meta/` is the same convention with one carve-out — it IS engine-written, via explicit grants (see §"`meta/`" below).
+`wiki/`, `raw/`, `notes/`, `inbox/`, `attic/`, and `meta/` are top-level directories. `log.md` and `index.md` are top-level files. Additional top-level directories that aren't recognized by Dome (e.g., the project's `cohesive/` substrate residue, `scripts/`, or anything else) are tolerated as **external** — readable, never written by the engine. `sources/` is one such external directory with a documented convention (see §"`sources/` — committed external feeds" below); `meta/` and `attic/` are the same convention with one carve-out each — `meta/` IS engine-written via explicit grants (see §"`meta/`" below), `attic/` is engine-**proposed** via `patch.propose` (see §"`attic/`" below).
 
 ## Category derivation
 
@@ -105,6 +106,14 @@ inbox/
 Files in `inbox/<bucket>/` (except `inbox/review/` and `inbox/processed/`) are the trigger surface for that bucket's ingest processor via `signal:file.created` + a bucket path pattern. The shipped `dome.agent.ingest` processor handles `inbox/raw/*.md` — it runs a tool-use loop to read the raw source, create/update wiki pages (source, entities, concepts) with bidirectional wikilinks and one-line `description:` frontmatter (the index renders from it — agents never edit index files or `log.md`), route action-items to the daily note or entity pages, and archive the raw file to `inbox/processed/`. All edits land as one `PatchEffect`. The shipped `dome.agent.inbox-stale-check` processor emits `inbox.stale` warnings for old files that remain under active inbox buckets. Pinned by [[wiki/invariants/INBOX_IS_EPHEMERAL]] — inbox files are expected to move out or surface a recoverable diagnostic. See [[wiki/specs/autonomous-agents]] for the full agent framework and ingest workflow.
 
 `inbox/review/` is the planned destination for dedicated lint reports. It is **not** an intake (no processor runs on writes to it). The user reviews lint reports there; applied findings produce engine commits annotating the report once the fuller lint workflow ships.
+
+## `attic/` — engine-proposed archive (convention)
+
+`attic/` is the destination for engine-**proposed** archive-moves of dead content — the mirror image of `inbox/`: files leaving the working vault instead of entering it. By the category table above `attic/*` derives `external` — like `meta/` and `core.md`, this is a documented convention, not a new category, with the same one carve-out as `meta/`: the engine touches it, here via `patch.propose` rather than `patch.auto`.
+
+The shipped `dome.markdown.attic-sweep` janitor (garden phase, weekly cron `45 4 * * 0`) is the only first-party producer. It scans every tracked markdown page outside `attic/`, `inbox/`, `meta/`, `templates/`, and the daily-notes directory (`attic_exclude_prefixes` config, default `["attic/", "inbox/", "meta/", "templates/", "wiki/dailies/"]`) for **dead stubs** — a 0-byte page, or a basename matching `Untitled( N)?.md` — whose last human change is at least `attic_min_age_days` old (default 30; inclusive — a file changed exactly `attic_min_age_days` days ago qualifies). Oldest-first, capped at `attic_max_files` (default 20), it emits ONE `mode: "propose"` PatchEffect per run: for each candidate, a write of `attic/<original path>` (the full original content, mirroring the original path under `attic/`) paired with a delete of the original. Nothing moves until the owner reviews the `proposals.db` row and runs `dome apply` ([[wiki/specs/cli]] §"`dome apply`"); a batch with zero candidates emits zero effects, and an already-archived file cannot re-qualify (the scan excludes `attic/` itself) — the sweep is idempotent by construction, not by a dedupe check.
+
+**Search treatment (decision).** `dome.search.index-text` reads `**/*.md` with no `attic/` exclusion (`assets/extensions/dome.search/manifest.yaml`'s `read` grant is unscoped), so an archived page is indexed and ranks in `dome query` / `dome export-context` results exactly like any other page today. Downranking or excluding `attic/` from search is not implemented — this is an honest current-state note, not a planned follow-up.
 
 ## `sources/` — committed external feeds (convention)
 

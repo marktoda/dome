@@ -159,6 +159,10 @@ extensions:
         - ".dome/page-types.yaml"
       patch.auto:
         - "**/*.md"
+      patch.propose:
+        - "notes/**"
+        - "wiki/**"
+        - "attic/**"
 `;
 }
 

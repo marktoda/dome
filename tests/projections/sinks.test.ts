@@ -756,7 +756,9 @@ describe("buildSqliteSinks enqueueProposal", () => {
     });
 
     expect(first?.inserted).toBe(true);
+    expect(first?.refreshed).toBe(false);
     expect(second?.inserted).toBe(false);
+    expect(second?.refreshed).toBe(true);
     expect(second?.id).toBe(first?.id ?? null);
     expect(changed).toEqual(["changed"]);
   });

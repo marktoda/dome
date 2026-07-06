@@ -301,9 +301,11 @@ export type ApplyEffectSinks = {
    * original auto-mode emission. `baseCommit` is the adoption-loop
    * candidate at routing time, captured so the human-side apply path
    * (`dome apply`) can detect staleness against it. Returns the same
-   * `{inserted, id}` shape as `enqueuePendingProposal`
-   * (`src/proposals/pending-proposals.ts`) so a dedupe-hit re-emission is
-   * distinguishable from a fresh row.
+   * `{inserted, refreshed, id}` shape as `enqueuePendingProposal`
+   * (`src/proposals/pending-proposals.ts`): `inserted` for a fresh row,
+   * `refreshed` when the call instead dedupe-hit a still-pending row and
+   * refreshed its recorded base (the stale-pending wedge fix — neither is
+   * true for a dedupe-hit against an already-decided row).
    */
   readonly enqueueProposal?: (input: {
     readonly effect: PatchEffect;
@@ -311,7 +313,11 @@ export type ApplyEffectSinks = {
     readonly extensionId: string;
     readonly runId: RunId;
     readonly baseCommit: CommitOid;
-  }) => Promise<{ readonly inserted: boolean; readonly id: number | null }>;
+  }) => Promise<{
+    readonly inserted: boolean;
+    readonly refreshed: boolean;
+    readonly id: number | null;
+  }>;
 };
 
 // ----- ApplyEffectResult ----------------------------------------------------

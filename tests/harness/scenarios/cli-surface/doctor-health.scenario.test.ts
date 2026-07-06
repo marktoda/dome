@@ -193,13 +193,14 @@ scenario(
     };
 
     expect(report.status).toBe("unhealthy");
-    expect(report.summary.capabilityGrantGaps).toBe(7);
+    expect(report.summary.capabilityGrantGaps).toBe(8);
 
     const grantGaps = report.findings.filter(
       (finding) => finding.code === "capability.grant-missing",
     );
     expect(grantGaps.map((finding) => finding.id).sort()).toEqual([
       "dome.markdown.ambiguous-wikilink-answer",
+      "dome.markdown.attic-sweep",
       "dome.markdown.normalize-frontmatter",
       "dome.markdown.page-status",
       "dome.markdown.refresh-updated",
@@ -207,6 +208,14 @@ scenario(
       "dome.markdown.repair-wikilinks",
       "dome.markdown.validate-wikilinks",
     ]);
+    expect(grantGaps).toContainEqual(
+      expect.objectContaining({
+        capability: {
+          processorId: "dome.markdown.attic-sweep",
+          missingKinds: ["patch.propose"],
+        },
+      }),
+    );
     expect(grantGaps).toContainEqual(
       expect.objectContaining({
         capability: {
@@ -296,6 +305,12 @@ scenario(
           "        - \"meta/consolidation-ledger.md\"",
           "        - \"inbox/processed/*.md\"",
           "        - \"inbox/raw/*.md\"",
+          // Operation 4 (stock-gardening phase 1, Task 6): proposeSplit's
+          // patch.propose kind must be granted here too, or the kind-level
+          // capability.grant-missing probe would fire and this scenario is
+          // specifically about the ENTRY-level gaps, not kind-level ones.
+          "      patch.propose:",
+          "        - \"wiki/**/*.md\"",
           "      graph.write: [\"dome.daily.*\"]",
           "      model.invoke:",
           "        maxDailyCostUsd: 5",
@@ -305,6 +320,10 @@ scenario(
           "    grant:",
           "      read: [\"wiki/**/*.md\", \".dome/page-types.yaml\"]",
           "      patch.auto: [\"wiki/**/*.md\"]",
+          // attic-sweep's patch.propose kind must be granted here too, for
+          // the same reason as dome.agent's above — this scenario is about
+          // entry-level gaps, not kind-level ones.
+          "      patch.propose: [\"notes/**\", \"wiki/**\", \"attic/**\"]",
           "      graph.write: [\"dome.daily.*\"]",
           "      question.ask: true",
         ].join("\n"),
@@ -683,6 +702,12 @@ scenario(
           "        - \"preferences/signals.md\"",
           "        - \"meta/consolidation-ledger.md\"",
           "        - \"meta/sweep-ledger.md\"",
+          // Operation 4 (stock-gardening phase 1, Task 6): consolidate's
+          // proposeSplit declares patch.propose — grant it here too, or the
+          // kind-level capability.grant-missing probe fires and the
+          // model-provider finding is no longer the only one.
+          "      patch.propose:",
+          "        - \"wiki/**/*.md\"",
           // The deterministic preference counter declares graph.write
           // (dome.preference.*); granting the kind keeps this scenario's
           // capabilityGrantGaps at 0 so the model-provider finding is the

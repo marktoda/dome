@@ -796,6 +796,7 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
     registry: opts.runtime.registry,
     projection: opts.runtime.projectionDb,
     answers: opts.runtime.answersDb,
+    proposals: opts.runtime.proposalsDb,
     outbox: opts.runtime.outboxDb,
     sinks,
     resolveTree: makeResolveTree(opts.runtime.path),
@@ -830,6 +831,9 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
       .map((status) => status.id),
     onQuestionsChanged,
     onOutboxChanged,
+    onProposalsChanged: () => {
+      markProposalsChanged(opts.runtime);
+    },
     adoptSubProposal,
     currentAdopted: () => cursor.current,
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),

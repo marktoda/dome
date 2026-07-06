@@ -24,6 +24,7 @@ import type {
   AgentRunState,
   IntegrityFindingKind,
 } from "./agent-loop";
+import type { SplitProposalInput } from "./split-proposal";
 
 /** AgentRunState edits → PatchEffect change list (last write per path wins). */
 export function agentChanges(
@@ -106,6 +107,19 @@ export function agentTruncatedEffect(opts: {
   });
 }
 
+/** The accumulated `proposeSplit` call, if any, as a propose-mode PatchEffect
+ * change list: the hub rewrite, then each new sub-page. */
+function splitProposalChanges(
+  split: SplitProposalInput,
+): ReadonlyArray<FileChangeInput> {
+  return [
+    { kind: "write", path: split.hubPath, content: split.hubContent },
+    ...split.subPages.map(
+      (sub) => ({ kind: "write", path: sub.path, content: sub.content }) as const,
+    ),
+  ];
+}
+
 export type AgentRunCap = {
   readonly maxChangedFiles: number;
   /** Diagnostic code for an overreaching run (e.g. `dome.agent.consolidate-overreach`). */
@@ -182,19 +196,33 @@ export function finishAgentRun(opts: {
    * an info diagnostic carrying the model's final text. Without it such a
    * run records "succeeded" with no trace and the model's reasoning is
    * discarded (the silent-no-op blind spot of 2026-06-10). Info severity:
-   * a quiet night is legitimate and must not raise attention.
+   * a quiet night is legitimate and must not raise attention. A run whose
+   * ONLY output is `state.splitProposal` is real output, not a no-op — the
+   * check below excludes it.
    */
   readonly noOp?: AgentRunNoOp;
+  /**
+   * Resolver for the split-proposal patch's sourceRefs: one ref to the hub
+   * path (the page being split), not the run's general `sourceRefs` (which
+   * usually point at a ledger/config page unrelated to the split). Mirrors
+   * the `agentIntegrityEffects(state, (path, stableId) => ...)` callback
+   * convention. Falls back to `sourceRefs` when omitted, so callers that
+   * never produce split proposals are unaffected.
+   */
+  readonly sourceRef?: (path: string) => SourceRef;
 }): ReadonlyArray<Effect> {
   const effects: Effect[] = [];
   const changes = agentChanges(opts.state);
+  const split = opts.state.splitProposal;
+  const hasSplit = split !== undefined && split !== null;
 
   if (
     opts.noOp !== undefined &&
     opts.stopReason === "final" &&
     changes.length === 0 &&
     opts.state.questions.length === 0 &&
-    opts.state.integrityFlags.length === 0
+    opts.state.integrityFlags.length === 0 &&
+    !hasSplit
   ) {
     effects.push(
       diagnosticEffect({
@@ -222,6 +250,23 @@ export function finishAgentRun(opts: {
         changes,
         reason: patchNarrative(opts.patchReason, opts.finalText),
         sourceRefs: opts.sourceRefs,
+      }),
+    );
+  }
+
+  // The split-proposal patch is independent of the auto patch's cap/no-op
+  // branches above: it was never applied (mode: "propose"), so it neither
+  // counts against `maxChangedFiles` nor gets rolled back on cap overreach.
+  if (hasSplit) {
+    effects.push(
+      patchEffect({
+        mode: "propose",
+        changes: splitProposalChanges(split),
+        reason: split.reason,
+        sourceRefs:
+          opts.sourceRef !== undefined
+            ? [opts.sourceRef(split.hubPath)]
+            : opts.sourceRefs,
       }),
     );
   }

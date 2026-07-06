@@ -359,6 +359,32 @@ describe("writable-glob constants mirror manifest.yaml patch.auto grants", () =>
     );
   });
 
+  // The propose grant (operation 4, proposeSplit) is a SEPARATE capability
+  // from patch.auto above — the split patch never auto-applies, so it is
+  // never in CONSOLIDATE_WRITABLE_PATHS's tool-time boundary. Pinned here
+  // directly against manifest.yaml so the two paths cannot silently drift.
+  test("consolidate's patch.propose grant covers wiki/**/*.md (operation 4)", async () => {
+    const raw = await readFile(
+      join(
+        import.meta.dir,
+        "../../../assets/extensions/dome.agent/manifest.yaml",
+      ),
+      "utf8",
+    );
+    const manifest = parseYaml(raw) as {
+      processors: ReadonlyArray<{
+        id: string;
+        capabilities: ReadonlyArray<{ kind: string; paths?: ReadonlyArray<string> }>;
+      }>;
+    };
+    const processor = manifest.processors.find(
+      (p) => p.id === "dome.agent.consolidate",
+    );
+    if (processor === undefined) throw new Error("no processor dome.agent.consolidate");
+    const cap = processor.capabilities.find((c) => c.kind === "patch.propose");
+    expect(cap?.paths).toEqual(["wiki/**/*.md"]);
+  });
+
   test("brief", async () => {
     expect([...BRIEF_WRITABLE_PATHS].sort()).toEqual(
       [...(await manifestPatchAutoPaths("dome.agent.brief"))].sort(),

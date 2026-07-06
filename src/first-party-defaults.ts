@@ -115,6 +115,11 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
         "raw/**",
       ],
       "patch.auto": ["**/*.md"],
+      // Stock-gardening phase 1, Task 7: the weekly attic-sweep janitor's
+      // archive-move (write attic/<path> + delete <path>) never applies
+      // inline — a SEPARATE capability from patch.auto above, routed to
+      // proposals.db for `dome apply`.
+      "patch.propose": ["notes/**", "wiki/**", "attic/**"],
       "graph.write": ["dome.page.*"],
       "question.ask": true,
     }),
@@ -192,6 +197,11 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
           "inbox/raw/*.md",
           "preferences/signals.md",
         ],
+        // Operation 4 (stock-gardening phase 1, Task 6): consolidate's
+        // proposeSplit tool emits a SEPARATE mode:"propose" PatchEffect for
+        // the owner to review with `dome apply` — never auto-applied, so it
+        // is its own capability rather than folded into patch.auto above.
+        "patch.propose": ["wiki/**/*.md"],
         // dome.preference.* carries the deterministic preference counter
         // facts (wiki/specs/preferences.md) emitted by
         // dome.agent.preference-signals; the model processors declare no

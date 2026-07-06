@@ -96,8 +96,8 @@ const EMPTY_OPERATIONAL_SUMMARY = Object.freeze({
 });
 const FIRST_SYNC_OPERATIONAL_SUMMARY = Object.freeze({
   ...EMPTY_OPERATIONAL_SUMMARY,
-  // refresh-updated, repair-wikilinks, render-index.
-  scheduledCount: 3,
+  // refresh-updated, repair-wikilinks, render-index, attic-sweep.
+  scheduledCount: 4,
 });
 const EMPTY_HEALTH_SUMMARY = Object.freeze({
   pendingRuns: 0,
@@ -195,6 +195,10 @@ extensions:
         - ".dome/page-types.yaml"
       patch.auto:
         - "**/*.md"
+      patch.propose:
+        - "notes/**"
+        - "wiki/**"
+        - "attic/**"
       graph.write:
         - "dome.page.*"
       question.ask: true

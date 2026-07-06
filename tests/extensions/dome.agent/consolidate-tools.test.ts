@@ -14,7 +14,7 @@ function freshState(): AgentRunState {
 }
 
 describe("makeConsolidatorTools", () => {
-  test("provides the consolidator tool set incl. deletePage + flagIntegrity, excl. inbox tools", async () => {
+  test("provides the consolidator tool set incl. deletePage + flagIntegrity + proposeSplit, excl. inbox tools", async () => {
     const names = makeConsolidatorTools({
       reader: reader(),
       ledgerPath: "meta/consolidation-ledger.md",
@@ -26,6 +26,7 @@ describe("makeConsolidatorTools", () => {
       "deletePage",
       "flagIntegrity",
       "listPages",
+      "proposeSplit",
       "readPage",
       "searchVault",
       "writePage",

@@ -27,6 +27,7 @@ import {
 } from "../../outbox/dispatch";
 import type { OutboxDb } from "../../outbox/db";
 import type { ProjectionDb } from "../../projections/db";
+import type { ProposalsDb } from "../../proposals/db";
 import type { ExecutionPolicyCap } from "../../processors/execution-policy";
 import type { ProcessorExecutionState } from "../../processors/execution-state";
 import type { ProcessorRegistry } from "../../processors/registry";
@@ -35,6 +36,10 @@ import type { ApplyEffectSinks } from "../core/apply-effect";
 import type { ApplyPatchInput } from "../core/apply-patch";
 import { resolveCurrentAdopted } from "../core/adoption-status";
 import type { RuntimeQuestionAutoResolveConfig } from "../core/capability-policy";
+import {
+  expireOrphanProposals,
+  type ProposalExpiryResult,
+} from "./proposal-expiry";
 import {
   runQuestionAutoResolution,
   type QuestionAutoResolutionResult,
@@ -53,6 +58,9 @@ export type OperationalWorkResult = {
   /** Subject-liveness expiry: OPEN questions released this tick + their
    * diagnostics (also folded into `diagnostics` below). */
   readonly questionExpiry: QuestionExpiryResult;
+  /** Subject-liveness expiry: PENDING proposals auto-rejected this tick +
+   * their diagnostics (also folded into `diagnostics` below). */
+  readonly proposalExpiry: ProposalExpiryResult;
   readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
 };
 
@@ -62,6 +70,8 @@ export async function runOperationalWork(opts: {
   readonly registry: ProcessorRegistry;
   readonly projection: ProjectionDb;
   readonly answers?: AnswersDb;
+  /** The pending-proposals store; absent → proposal expiry is skipped (parity with `answers` gating question expiry). */
+  readonly proposals?: ProposalsDb;
   readonly outbox: OutboxDb;
   readonly sinks: ApplyEffectSinks;
   readonly resolveTree: (commit: CommitOid) => Promise<TreeOid>;
@@ -86,11 +96,20 @@ export async function runOperationalWork(opts: {
    */
   readonly onQuestionsChanged?: () => void;
   /**
+   * Fired once after the proposal subject-liveness expiry pump when it
+   * expired anything — the pending-proposals list shrank outside the
+   * `enqueueProposal` sink, so the host's tick-scoped `proposals.changed`
+   * flag must be set here explicitly (same contract as `onQuestionsChanged`
+   * above). The host wires this to `markProposalsChanged`.
+   */
+  readonly onProposalsChanged?: () => void;
+  /**
    * Extension ids configured but DISABLED, threaded to subject-liveness
-   * question expiry: their processors are absent from the registry by design
-   * and must NOT have their questions expired (the quarantine-GC posture —
-   * see `isKnownProcessorFor` in src/engine/host/vault-runtime.ts). Absent →
-   * treated as empty (registry fully authoritative).
+   * question AND proposal expiry: their processors are absent from the
+   * registry by design and must NOT have their questions/proposals expired
+   * (the quarantine-GC posture — see `isKnownProcessorFor` in
+   * src/engine/host/vault-runtime.ts). Absent → treated as empty (registry
+   * fully authoritative).
    */
   readonly disabledExtensionIds?: ReadonlyArray<string>;
   /**
@@ -241,20 +260,41 @@ export async function runOperationalWork(opts: {
   // subscribers (e.g. the daily To-decide compiler) refresh this tick.
   if (questionExpiry.expired > 0) opts.onQuestionsChanged?.();
 
+  const proposalExpiry =
+    opts.proposals === undefined
+      ? emptyProposalExpiry()
+      : await expireOrphanProposals({
+          registry: opts.registry,
+          disabledExtensionIds: opts.disabledExtensionIds ?? [],
+          proposals: opts.proposals,
+          recordDiagnostic: opts.sinks.recordDiagnostic,
+          now: opts.now,
+        });
+  // Same bypass as question expiry: proposal decisions land outside the
+  // `enqueueProposal` sink, so the tick-scoped `proposals.changed` flag must
+  // be raised here explicitly.
+  if (proposalExpiry.expired > 0) opts.onProposalsChanged?.();
+
   return Object.freeze({
     scheduler,
     outbox,
     questionAutoResolution,
     questionExpiry,
+    proposalExpiry,
     diagnostics: Object.freeze([
       ...scheduler.diagnostics,
       ...questionAutoResolution.diagnostics,
       ...questionExpiry.diagnostics,
+      ...proposalExpiry.diagnostics,
     ]),
   });
 }
 
 function emptyQuestionExpiry(): QuestionExpiryResult {
+  return Object.freeze({ expired: 0, diagnostics: Object.freeze([]) });
+}
+
+function emptyProposalExpiry(): ProposalExpiryResult {
   return Object.freeze({ expired: 0, diagnostics: Object.freeze([]) });
 }
 

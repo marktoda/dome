@@ -12,12 +12,16 @@
 //   - A second apply on the same id is `not-pending`.
 //   - A working-tree mutation since enqueue makes apply `stale` and leaves
 //     the file (and the row) untouched.
-//   - A delete-change proposal is `unsupported` in v1.
+//   - A delete-change proposal applies: the file is removed from the working
+//     tree and from HEAD via `commitFilesOnHead`'s `content: null` entries.
+//   - An already-satisfied delete (file already absent) is skipped as
+//     idempotent, not stale; a proposal that is all-satisfied-deletes with no
+//     writes lands no commit.
 //   - performReject CAS-decides the row to `rejected` and lands no commit.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { chmodSync, existsSync, mkdtempSync } from "node:fs";
+import { mkdir, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -226,7 +230,7 @@ describe("performApply", () => {
 
     // Exactly one new commit, message prefixed `apply(P<id>)`.
     const commits = await log({ path: vault, depth: 2 });
-    expect(commits[0]!.oid).toBe(result.commit);
+    expect(commits[0]!.oid).toBe(result.commit ?? "");
     expect(commits[0]!.commit.parent[0]!).toBe(before);
     expect(commits[0]!.commit.message.startsWith(`apply(P${id}):`)).toBe(true);
 
@@ -336,20 +340,160 @@ describe("performApply", () => {
     expect(await proposalStatus(vault, id)).toBe("pending");
   });
 
-  test("a delete-change proposal is unsupported", async () => {
+  test("a delete-change proposal applies: file removed, one commit, row applied", async () => {
     const vault = await initVault();
     await commitFile(vault, "wiki/stale-page.md", "old content\n");
     const id = await enqueueProposal(vault, {
+      reason: "archive the dead stub",
       changes: [fileChange({ kind: "delete", path: "wiki/stale-page.md" })],
       baseContents: { "wiki/stale-page.md": "old content\n" },
     });
     const before = await headSha(vault);
 
     const result = await performApply(vault, id);
-    expect(result.status).toBe("unsupported");
+    expect(result.status).toBe("applied");
+    if (result.status !== "applied") throw new Error("unreachable");
+    expect(result.commit).not.toBe(before);
+
+    const commits = await log({ path: vault, depth: 2 });
+    expect(commits[0]!.oid).toBe(result.commit ?? "");
+    expect(commits[0]!.commit.message.startsWith(`apply(P${id}):`)).toBe(true);
+
+    expect(existsSync(join(vault, "wiki/stale-page.md"))).toBe(false);
+    expect(await proposalStatus(vault, id)).toBe("applied");
+  });
+
+  test("a mixed write+delete proposal lands one commit with both effects", async () => {
+    const vault = await initVault();
+    await commitFile(vault, "wiki/note.md", "line1\n");
+    await commitFile(vault, "wiki/old.md", "retired content\n");
+    const id = await enqueueProposal(vault, {
+      reason: "consolidate the note and archive the old page",
+      changes: [
+        fileChange({ kind: "write", path: "wiki/note.md", content: "line1\nline2\n" }),
+        fileChange({ kind: "delete", path: "wiki/old.md" }),
+      ],
+      baseContents: { "wiki/note.md": "line1\n", "wiki/old.md": "retired content\n" },
+    });
+    const before = await headSha(vault);
+
+    const result = await performApply(vault, id);
+    expect(result.status).toBe("applied");
+    if (result.status !== "applied") throw new Error("unreachable");
+    expect(result.commit).not.toBe(before);
+
+    // Exactly one new commit.
+    const commits = await log({ path: vault, depth: 2 });
+    expect(commits[0]!.oid).toBe(result.commit ?? "");
+    expect(commits[0]!.commit.parent[0]!).toBe(before);
+
+    const written = await Bun.file(join(vault, "wiki/note.md")).text();
+    expect(written).toBe("line1\nline2\n");
+    expect(existsSync(join(vault, "wiki/old.md"))).toBe(false);
+    expect(await proposalStatus(vault, id)).toBe("applied");
+  });
+
+  test("a delete-change is stale when the file was edited (not deleted) since enqueue", async () => {
+    const vault = await initVault();
+    await commitFile(vault, "wiki/stale-page.md", "old content\n");
+    const id = await enqueueProposal(vault, {
+      changes: [fileChange({ kind: "delete", path: "wiki/stale-page.md" })],
+      baseContents: { "wiki/stale-page.md": "old content\n" },
+    });
+
+    await mutateWorkingFile(vault, "wiki/stale-page.md", "someone edited this already\n");
+    const before = await headSha(vault);
+
+    const result = await performApply(vault, id);
+    expect(result.status).toBe("stale");
+    if (result.status !== "stale") throw new Error("unreachable");
+    expect(result.changedPaths).toEqual(["wiki/stale-page.md"]);
 
     expect(await headSha(vault)).toBe(before);
+    const onDisk = await Bun.file(join(vault, "wiki/stale-page.md")).text();
+    expect(onDisk).toBe("someone edited this already\n");
     expect(await proposalStatus(vault, id)).toBe("pending");
+  });
+
+  test("an already-absent delete is skipped as satisfied — not stale", async () => {
+    const vault = await initVault();
+    await commitFile(vault, "wiki/stale-page.md", "old content\n");
+    await enqueueProposal(vault, {
+      changes: [fileChange({ kind: "delete", path: "wiki/stale-page.md" })],
+      baseContents: { "wiki/stale-page.md": "old content\n" },
+    });
+
+    // Someone (or another apply) already removed the file from the working
+    // tree without going through this proposal.
+    await unlink(join(vault, "wiki/stale-page.md"));
+
+    const listed = await collectProposals(vault);
+    expect(listed.proposals[0]!.stale).toBe(false);
+  });
+
+  test("a proposal that is all already-satisfied deletes applies with no commit", async () => {
+    const vault = await initVault();
+    await commitFile(vault, "wiki/stale-page.md", "old content\n");
+    const id = await enqueueProposal(vault, {
+      changes: [fileChange({ kind: "delete", path: "wiki/stale-page.md" })],
+      baseContents: { "wiki/stale-page.md": "old content\n" },
+    });
+    await unlink(join(vault, "wiki/stale-page.md"));
+    const before = await headSha(vault);
+
+    const result = await performApply(vault, id);
+    expect(result.status).toBe("applied");
+    if (result.status !== "applied") throw new Error("unreachable");
+    expect(result.commit).toBeUndefined();
+
+    // No new commit landed (there was nothing to commit).
+    expect(await headSha(vault)).toBe(before);
+    expect(await proposalStatus(vault, id)).toBe("applied");
+
+    const json = applyResultJson(result);
+    expect(json["status"]).toBe("applied");
+    expect(json["commit"]).toBeNull();
+  });
+
+  test("diffStat for a delete reports the base line count as removed, zero added", async () => {
+    const vault = await initVault();
+    await commitFile(vault, "wiki/stale-page.md", "line1\nline2\nline3\n");
+    await enqueueProposal(vault, {
+      changes: [fileChange({ kind: "delete", path: "wiki/stale-page.md" })],
+      baseContents: { "wiki/stale-page.md": "line1\nline2\nline3\n" },
+    });
+
+    const result = await collectProposals(vault);
+    // lineDiffStat's split("\n") includes the trailing empty segment after
+    // the final newline, so a 3-line file with a trailing newline counts 4.
+    expect(result.proposals[0]!.diffStat).toEqual([
+      { path: "wiki/stale-page.md", added: 0, removed: 4 },
+    ]);
+  });
+
+  test("readWorkingFile rethrows non-ENOENT errors (EACCES), which performApply surfaces as invalid", async () => {
+    if (process.getuid && process.getuid() === 0) {
+      // Running as root bypasses permission bits — skip gracefully.
+      return;
+    }
+    const vault = await initVault();
+    await commitFile(vault, "wiki/locked.md", "secret content\n");
+    const id = await enqueueProposal(vault, {
+      changes: [fileChange({ kind: "write", path: "wiki/locked.md", content: "new content\n" })],
+      baseContents: { "wiki/locked.md": "secret content\n" },
+    });
+
+    const filePath = join(vault, "wiki/locked.md");
+    chmodSync(filePath, 0o000);
+    try {
+      const result = await performApply(vault, id);
+      expect(result.status).toBe("invalid");
+      if (result.status !== "invalid") throw new Error("unreachable");
+      expect(result.message).toContain("apply failed");
+      expect(await proposalStatus(vault, id)).toBe("pending");
+    } finally {
+      chmodSync(filePath, 0o644);
+    }
   });
 
   test("an unknown id is not-found", async () => {

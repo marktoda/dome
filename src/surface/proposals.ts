@@ -17,8 +17,13 @@
 //     `stale` (any change's path drifted from its recorded `baseContents`
 //     since enqueue) and a lightweight `diffStat` for display.
 //   - performApply     → staleness check (working tree vs `baseContents`) →
-//     write every change's content → ONE commit → CAS the row to `applied`.
-//     Delete-changes are not supported in v1 (`unsupported`).
+//     write/delete every eligible change → ONE commit → CAS the row to
+//     `applied`. Delete-changes remove the path from the working tree and
+//     pass a `content: null` entry to `commitFilesOnHead` (tree removal). A
+//     delete whose working file is already absent is treated as already
+//     satisfied — skipped, not stale — so a proposal that is entirely
+//     already-satisfied deletes applies with no commit (mirrors
+//     `performSettle`'s `keep`).
 //   - performReject    → CAS the row to `rejected`. Touches no files.
 //
 // Mutation-boundary note: like `src/surface/capture.ts` and
@@ -33,7 +38,7 @@
 // a `finally` so it never lingers across the write.
 
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import type { FileChange } from "../core/effect";
@@ -61,7 +66,11 @@ export type ProposalView = {
   readonly paths: ReadonlyArray<string>;
   readonly createdAt: string;
   readonly status: ProposalStatus;
-  /** true when any change's path in the working tree no longer matches the `baseContents` recorded at enqueue time. */
+  /**
+   * true when any change's path in the working tree no longer matches the
+   * `baseContents` recorded at enqueue time. A delete whose working file is
+   * already absent is treated as already-satisfied, not stale.
+   */
   readonly stale: boolean;
   readonly diffStat: ReadonlyArray<{
     readonly path: string;
@@ -71,7 +80,16 @@ export type ProposalView = {
 };
 
 export type ApplyResult =
-  | { readonly status: "applied"; readonly id: number; readonly commit: string }
+  | {
+      readonly status: "applied";
+      readonly id: number;
+      /**
+       * Absent when the proposal was entirely already-satisfied deletes —
+       * nothing was left to write or remove, so no commit landed (mirrors
+       * `performSettle`'s `keep`).
+       */
+      readonly commit?: string;
+    }
   | {
       readonly status: "stale";
       readonly id: number;
@@ -79,7 +97,7 @@ export type ApplyResult =
       readonly message: string;
     }
   | {
-      readonly status: "not-found" | "not-pending" | "invalid" | "unsupported";
+      readonly status: "not-found" | "not-pending" | "invalid";
       readonly message: string;
     };
 
@@ -121,10 +139,11 @@ export async function collectProposals(
  * Apply a pending proposal's changes as one ordinary human commit — the
  * settle pattern. See the module header for the step-by-step contract:
  * vault preconditions → open store → not-found/not-pending guards →
- * delete-change rejection → staleness check → write + commit → CAS decide.
- * The commit is truth: if the CAS decide races and loses (e.g. the row was
- * concurrently decided elsewhere), the already-landed commit is still
- * reported as `applied`.
+ * per-change staleness classification → write/delete the eligible changes →
+ * commit (skipped when nothing is eligible) → CAS decide. The commit is
+ * truth: if the CAS decide races and loses (e.g. the row was concurrently
+ * decided elsewhere), the already-landed commit is still reported as
+ * `applied`.
  */
 export async function performApply(vault: string, id: number): Promise<ApplyResult> {
   const vaultPath = resolveVaultPath(vault);
@@ -150,19 +169,18 @@ export async function performApply(vault: string, id: number): Promise<ApplyResu
         message: `proposal P${id} is already ${row.status}`,
       });
     }
-    if (row.changes.some((change) => change.kind === "delete")) {
-      return Object.freeze({
-        status: "unsupported" as const,
-        message:
-          "delete-changes are not applied by dome apply in v1; apply manually and reject the proposal",
-      });
-    }
-
-    // Staleness: every write's current working content must still match what
-    // was recorded at enqueue time. Any mismatch aborts before any write.
-    const changedPaths = row.changes
-      .filter((change) => readWorkingFile(vaultPath, change.path) !== baseContentFor(row, change))
-      .map((change) => change.path);
+    // Per-change staleness classification: every change is `eligible`
+    // (working content matches the recorded base — safe to apply),
+    // `satisfied` (a delete whose working file is already absent — the
+    // change already happened, idempotent no-op), or `stale` (working
+    // content drifted from base). Any stale change aborts before any write.
+    const classified = row.changes.map((change) => ({
+      change,
+      status: classifyChangeStatus(vaultPath, row, change),
+    }));
+    const changedPaths = classified
+      .filter((c) => c.status === "stale")
+      .map((c) => c.change.path);
     if (changedPaths.length > 0) {
       return Object.freeze({
         status: "stale" as const,
@@ -172,20 +190,43 @@ export async function performApply(vault: string, id: number): Promise<ApplyResu
       });
     }
 
-    const writes = row.changes.filter(
+    const eligible = classified.filter((c) => c.status === "eligible").map((c) => c.change);
+    const writes = eligible.filter(
       (change): change is Extract<FileChange, { kind: "write" }> => change.kind === "write",
     );
+    const deletes = eligible.filter(
+      (change): change is Extract<FileChange, { kind: "delete" }> => change.kind === "delete",
+    );
+
     for (const change of writes) {
       await mkdir(dirname(join(vaultPath, change.path)), { recursive: true });
       await writeFile(join(vaultPath, change.path), change.content, "utf8");
     }
+    for (const change of deletes) {
+      try {
+        await unlink(join(vaultPath, change.path));
+      } catch (e) {
+        if (!isEnoent(e)) throw e;
+      }
+    }
 
-    const commit = await commitFilesOnHead({
-      path: vaultPath,
-      files: writes.map((change) => ({ filepath: change.path, content: change.content })),
-      message: `apply(P${id}): ${row.reason.slice(0, 60)}`,
-      author: { name: "dome apply", email: "dome-apply@local" },
-    });
+    const files = [
+      ...writes.map((change) => ({ filepath: change.path, content: change.content as string | null })),
+      ...deletes.map((change) => ({ filepath: change.path, content: null as string | null })),
+    ];
+
+    // All changes were already-satisfied deletes: nothing to write or
+    // remove, so there is nothing to commit — mirrors performSettle's
+    // `keep` (applied, no commit).
+    const commit =
+      files.length > 0
+        ? await commitFilesOnHead({
+            path: vaultPath,
+            files,
+            message: `apply(P${id}): ${row.reason.slice(0, 60)}`,
+            author: { name: "dome apply", email: "dome-apply@local" },
+          })
+        : undefined;
 
     // Commit is truth: report `applied` with the landed commit regardless of
     // whether the CAS below wins the race (see module header).
@@ -193,11 +234,11 @@ export async function performApply(vault: string, id: number): Promise<ApplyResu
       id,
       status: "applied",
       decidedBy: "owner",
-      appliedCommit: commit,
+      ...(commit !== undefined ? { appliedCommit: commit } : {}),
       decidedAt: new Date().toISOString(),
     });
 
-    return Object.freeze({ status: "applied" as const, id, commit });
+    return Object.freeze({ status: "applied" as const, id, ...(commit !== undefined ? { commit } : {}) });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return invalid(`apply failed: ${msg}`);
@@ -268,7 +309,7 @@ export function proposalsJson(
 /** Render an `ApplyResult` as its `dome.apply/v1` document body — mirrors `settleResultJson`. */
 export function applyResultJson(r: ApplyResult): Record<string, unknown> {
   if (r.status === "applied") {
-    return { schema: APPLY_SCHEMA, status: "applied", id: r.id, commit: r.commit };
+    return { schema: APPLY_SCHEMA, status: "applied", id: r.id, commit: r.commit ?? null };
   }
   if (r.status === "stale") {
     return {
@@ -326,24 +367,63 @@ async function checkVaultPreconditions(
   return null;
 }
 
+/**
+ * Read a working-tree file's full content. `null` when the file doesn't
+ * exist — not an error condition, since a change's path may not exist yet
+ * (a new-file write) or may already be gone (a satisfied delete). Any other
+ * read failure (permissions, I/O error) propagates — mirrors the
+ * ENOENT-only helper in `src/projections/sinks.ts`.
+ */
 function readWorkingFile(vaultPath: string, relPath: string): string | null {
   try {
     return readFileSync(join(vaultPath, relPath), "utf8");
-  } catch {
-    return null;
+  } catch (error) {
+    if (isEnoent(error)) return null;
+    throw error;
   }
+}
+
+function isEnoent(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { readonly code?: unknown }).code === "ENOENT"
+  );
 }
 
 function baseContentFor(row: PendingProposalRow, change: FileChange): string | null {
   return row.baseContents[change.path] ?? null;
 }
 
+type ChangeApplyStatus = "eligible" | "satisfied" | "stale";
+
+/**
+ * Classify one change against the working tree relative to its recorded
+ * base content:
+ *   - `eligible`  — working content matches `baseContents[path]`; safe to
+ *     apply (write the proposed content, or delete the path).
+ *   - `satisfied` — a delete whose working file is already absent: the
+ *     change already happened outside this proposal (idempotent no-op),
+ *     not stale.
+ *   - `stale`     — working content has drifted from the recorded base.
+ */
+function classifyChangeStatus(
+  vaultPath: string,
+  row: PendingProposalRow,
+  change: FileChange,
+): ChangeApplyStatus {
+  const base = baseContentFor(row, change);
+  const working = readWorkingFile(vaultPath, change.path);
+  if (change.kind === "delete" && working === null) return "satisfied";
+  return working === base ? "eligible" : "stale";
+}
+
 function toProposalView(vaultPath: string, row: PendingProposalRow): ProposalView {
   let stale = false;
   const diffStat = row.changes.map((change) => {
     const base = baseContentFor(row, change);
-    const working = readWorkingFile(vaultPath, change.path);
-    if (working !== base) stale = true;
+    if (classifyChangeStatus(vaultPath, row, change) === "stale") stale = true;
     const proposed = change.kind === "write" ? change.content : null;
     return { path: change.path, ...lineDiffStat(base, proposed) };
   });

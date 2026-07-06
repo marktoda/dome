@@ -227,7 +227,7 @@ describe("garden propose patches queue for review (enqueueProposal sink)", () =>
         },
         enqueueProposal: async (input) => {
           enqueueCalls.push(input);
-          return { inserted: true, id: 7 };
+          return { inserted: true, refreshed: false, id: 7 };
         },
       },
     });
@@ -288,7 +288,7 @@ describe("garden propose patches queue for review (enqueueProposal sink)", () =>
         },
         enqueueProposal: async (input) => {
           enqueueCalls.push(input);
-          return { inserted: true, id: 3 };
+          return { inserted: true, refreshed: false, id: 3 };
         },
       },
     });
@@ -362,7 +362,7 @@ describe("adoption propose patches unaffected by the garden review sink", () => 
       }),
       sinks: {
         ...noopSinks(),
-        enqueueProposal: async () => ({ inserted: true, id: 1 }),
+        enqueueProposal: async () => ({ inserted: true, refreshed: false, id: 1 }),
       },
     });
     expect(r.outcome).toBe("blocked-for-review");

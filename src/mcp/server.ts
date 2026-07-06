@@ -571,11 +571,11 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
     {
       title: "Apply a pending proposal",
       description:
-        "Apply a pending garden-proposed edit's changes as one ordinary " +
-        "human commit — the settle-pattern write behind `dome apply`. Fails " +
-        "if the proposal is not pending, is stale (the working tree drifted " +
-        "since it was proposed), or contains an unsupported delete-change. " +
-        "Returns the dome.apply/v1 JSON payload.",
+        "Apply a pending garden-proposed edit's changes (writes and/or " +
+        "deletes) as one ordinary human commit — the settle-pattern write " +
+        "behind `dome apply`. Fails if the proposal is not pending or is " +
+        "stale (the working tree drifted since it was proposed). Returns " +
+        "the dome.apply/v1 JSON payload.",
       inputSchema: {
         id: z.number().int().positive().describe(
           "Proposal id from the proposals tool.",
