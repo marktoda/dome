@@ -14,6 +14,9 @@
 //   check          → buildCheckReport        (dome.check/v1)
 //   resolve        → vault.resolve           (dome.answer/v1)
 //   settle         → performSettle           (dome.settle/v1)
+//   proposals      → collectProposals        (dome.proposals/v1)
+//   apply_proposal → performApply            (dome.apply/v1)
+//   reject_proposal→ performReject           (dome.reject/v1)
 //   tasks          → vault.runView("today")  (dome.daily.today/v1)
 //   brief          → today view + adopted-commit blob read
 //                                            (dome.mcp.brief/v1)
@@ -34,9 +37,9 @@
 //     ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY and enforced by
 //     tests/integration/bundle-deps.test.ts.
 //   - No engine control here: no sync/serve/init/rebuild tools. The daemon
-//     owns compilation; `capture`, `resolve`, `settle`, and `report_miss`
-//     all reuse existing non-engine write channels (ordinary human commit;
-//     answers.db).
+//     owns compilation; `capture`, `resolve`, `settle`, `apply_proposal`,
+//     `reject_proposal`, and `report_miss` all reuse existing non-engine
+//     write channels (ordinary human commit; answers.db; proposals.db CAS).
 
 import {
   McpServer,
@@ -57,6 +60,14 @@ import {
   resolveScopes,
 } from "../surface/check";
 import { performSettle, settleResultJson } from "../surface/settle";
+import {
+  applyResultJson,
+  collectProposals,
+  performApply,
+  performReject,
+  proposalsJson,
+  rejectResultJson,
+} from "../surface/proposals";
 import { reportMiss, reportMissResultJson } from "../surface/report-miss";
 import { buildStatusSnapshot } from "../surface/status";
 import {
@@ -101,6 +112,8 @@ Typical loop:
 - check: explain attention — engine health, diagnostics, open decisions.
 - resolve: answer a Dome-raised question by id (omit value to read it).
 - settle: close, defer, or keep a task line by its block anchor.
+- proposals / apply_proposal / reject_proposal: review pending garden-
+  proposed edits before they land — list them, then apply or reject by id.
 - query / export_context: adopted-state recall with source refs.
 - report_miss: log a retrieval miss when a query/packet missed obvious
   context — feeds the weekly report card's dogfood evidence.
@@ -523,6 +536,85 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
         return {
           ...jsonToolResult(settleResultJson(outcome)),
           ...(outcome.status === "settled" ? {} : { isError: true }),
+        };
+      }),
+  );
+
+  // ----- proposals / apply_proposal / reject_proposal ---------------------------------
+
+  server.registerTool(
+    "proposals",
+    {
+      title: "List pending garden-proposed edits",
+      description:
+        "List proposals from proposals.db — pending garden-processor edits " +
+        "awaiting owner review, the decision surface behind `dome proposals`. " +
+        "Defaults to pending rows only; set `all` to include applied/rejected " +
+        "rows too. Returns the dome.proposals/v1 JSON payload.",
+      inputSchema: {
+        all: z.boolean().optional().describe(
+          "Include applied/rejected rows too (default: pending only).",
+        ),
+      },
+    },
+    async ({ all }) =>
+      enqueue(async () => {
+        const doc = proposalsJson(
+          await collectProposals(vault, all !== undefined ? { all } : {}),
+        );
+        return jsonToolResult(doc);
+      }),
+  );
+
+  server.registerTool(
+    "apply_proposal",
+    {
+      title: "Apply a pending proposal",
+      description:
+        "Apply a pending garden-proposed edit's changes as one ordinary " +
+        "human commit — the settle-pattern write behind `dome apply`. Fails " +
+        "if the proposal is not pending, is stale (the working tree drifted " +
+        "since it was proposed), or contains an unsupported delete-change. " +
+        "Returns the dome.apply/v1 JSON payload.",
+      inputSchema: {
+        id: z.number().int().positive().describe(
+          "Proposal id from the proposals tool.",
+        ),
+      },
+    },
+    async ({ id }) =>
+      enqueue(async () => {
+        const outcome = await performApply(vault, id);
+        return {
+          ...jsonToolResult(applyResultJson(outcome)),
+          ...(outcome.status === "applied" ? {} : { isError: true }),
+        };
+      }),
+  );
+
+  server.registerTool(
+    "reject_proposal",
+    {
+      title: "Reject a pending proposal",
+      description:
+        "Reject a pending garden-proposed edit — the decision op behind " +
+        "`dome reject`. CAS-decides the row only; touches no files. Optional " +
+        "`note` records why. Returns the dome.reject/v1 JSON payload.",
+      inputSchema: {
+        id: z.number().int().positive().describe(
+          "Proposal id from the proposals tool.",
+        ),
+        note: z.string().optional().describe(
+          "Optional note recording why the proposal was rejected.",
+        ),
+      },
+    },
+    async ({ id, note }) =>
+      enqueue(async () => {
+        const outcome = await performReject(vault, id, note);
+        return {
+          ...jsonToolResult(rejectResultJson(outcome)),
+          ...(outcome.status === "rejected" ? {} : { isError: true }),
         };
       }),
   );

@@ -17,12 +17,14 @@ import { join } from "node:path";
 import { runInit } from "../../src/cli/commands/init";
 import { runSync } from "../../src/cli/commands/sync";
 import { resolveBundleRoots } from "../../src/cli/commands/sync-shared";
-import { questionEffect } from "../../src/core/effect";
+import { fileChange, questionEffect, type FileChange } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { openVaultRuntime } from "../../src/engine/host/vault-runtime";
 import { commitSingleFileOnHead, log } from "../../src/git";
 import { createDomeHttpServer } from "../../src/http/server";
 import { insertQuestion, queryQuestionRecords } from "../../src/projections/questions";
+import { openProposalsDb } from "../../src/proposals/db";
+import { enqueuePendingProposal } from "../../src/proposals/pending-proposals";
 
 const TEST_TIMEOUT_MS = 120_000;
 const TOKEN = "test-relay-token";
@@ -136,6 +138,45 @@ async function jsonOf(res: Response): Promise<Record<string, unknown>> {
   return JSON.parse(text) as Record<string, unknown>;
 }
 
+/**
+ * Enqueue a pending proposal row directly through the Task 1 store API
+ * (the engine sink is out of scope here) — mirrors
+ * tests/cli/commands/proposals.test.ts's `enqueueProposal` fixture.
+ */
+async function enqueueProposal(
+  vault: string,
+  overrides: {
+    readonly processorId?: string;
+    readonly reason?: string;
+    readonly changes: ReadonlyArray<FileChange>;
+    readonly baseContents: Readonly<Record<string, string | null>>;
+  },
+): Promise<number> {
+  const opened = await openProposalsDb({
+    path: join(vault, ".dome", "state", "proposals.db"),
+  });
+  expect(opened.ok).toBe(true);
+  if (!opened.ok) throw new Error("open failed");
+  try {
+    const result = enqueuePendingProposal(opened.value.db, {
+      processorId: overrides.processorId ?? "dome.test.garden",
+      extensionId: "test",
+      runId: "run_1",
+      reason: overrides.reason ?? "tidy up the note",
+      changes: overrides.changes,
+      sourceRefs: [sourceRef({ commit: commitOid("a".repeat(40)), path: "wiki/note.md" })],
+      baseCommit: "b".repeat(40),
+      baseContents: overrides.baseContents,
+      createdAt: "2026-07-06T00:00:00.000Z",
+    });
+    expect(result.inserted).toBe(true);
+    if (result.id === null) throw new Error("expected id");
+    return result.id;
+  } finally {
+    opened.value.db.close();
+  }
+}
+
 // ----- Auth ------------------------------------------------------------------------
 
 describe("auth", () => {
@@ -148,6 +189,9 @@ describe("auth", () => {
       expect(
         (await post("/settle", { blockId: "x", disposition: "close" }, null)).status,
       ).toBe(401);
+      expect((await get("/proposals", null)).status).toBe(401);
+      expect((await post("/apply", { id: 1 }, null)).status).toBe(401);
+      expect((await post("/reject", { id: 1 }, null)).status).toBe(401);
     },
     TEST_TIMEOUT_MS,
   );
@@ -328,6 +372,228 @@ describe("POST /settle", () => {
     "rejects a body without blockId or disposition",
     async () => {
       const { status, json } = await post("/settle", { blockId: "" });
+      expect(status).toBe(400);
+      expect(json.status).toBe("error");
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+// ----- Proposals (the third commit-or-nothing seam) -----------------------------------
+//
+// performApply/performReject/collectProposals are runtime-free (they open
+// proposals.db directly, never the VaultRuntime) — no enqueue/withVault
+// needed, same as POST /capture and POST /settle above. Proposals are
+// enqueued directly through the Task 1 store API since the engine sink is
+// out of scope here (mirrors tests/cli/commands/proposals.test.ts).
+
+describe("GET /proposals", () => {
+  test(
+    "lists a pending proposal as dome.proposals/v1",
+    async () => {
+      const f = await fixture();
+      await writeFile(join(f.vault, "wiki/note.md"), "line1\n", "utf8");
+      await commitSingleFileOnHead({
+        path: f.vault,
+        filepath: "wiki/note.md",
+        content: "line1\n",
+        message: "fixture: http-proposals note",
+        author: { name: "fixture", email: "fixture@local" },
+      });
+      const id = await enqueueProposal(f.vault, {
+        changes: [fileChange({ kind: "write", path: "wiki/note.md", content: "line1\nline2\n" })],
+        baseContents: { "wiki/note.md": "line1\n" },
+      });
+
+      const { status, json } = await get("/proposals");
+      expect(status).toBe(200);
+      expect(json.schema).toBe("dome.proposals/v1");
+      const proposals = json.proposals as Array<Record<string, unknown>>;
+      expect(proposals.some((p) => p.id === id && p.status === "pending")).toBe(true);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "all=1 includes decided rows; default is pending-only",
+    async () => {
+      const f = await fixture();
+      await writeFile(join(f.vault, "wiki/note2.md"), "line1\n", "utf8");
+      await commitSingleFileOnHead({
+        path: f.vault,
+        filepath: "wiki/note2.md",
+        content: "line1\n",
+        message: "fixture: http-proposals note2",
+        author: { name: "fixture", email: "fixture@local" },
+      });
+      const id = await enqueueProposal(f.vault, {
+        changes: [fileChange({ kind: "write", path: "wiki/note2.md", content: "line1\nline2\n" })],
+        baseContents: { "wiki/note2.md": "line1\n" },
+      });
+      expect((await post("/reject", { id })).status).toBe(200);
+
+      const defaultView = await get("/proposals");
+      expect((defaultView.json.proposals as unknown[]).some((p) => (p as { id: number }).id === id)).toBe(false);
+
+      const allView = await get("/proposals?all=1");
+      const rows = allView.json.proposals as Array<Record<string, unknown>>;
+      expect(rows.some((p) => p.id === id && p.status === "rejected")).toBe(true);
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+describe("POST /apply", () => {
+  test(
+    "applies a pending proposal, writes the file, and lands one commit",
+    async () => {
+      const f = await fixture();
+      await writeFile(join(f.vault, "wiki/apply-me.md"), "line1\n", "utf8");
+      await commitSingleFileOnHead({
+        path: f.vault,
+        filepath: "wiki/apply-me.md",
+        content: "line1\n",
+        message: "fixture: http-apply note",
+        author: { name: "fixture", email: "fixture@local" },
+      });
+      const id = await enqueueProposal(f.vault, {
+        changes: [fileChange({ kind: "write", path: "wiki/apply-me.md", content: "line1\nline2\n" })],
+        baseContents: { "wiki/apply-me.md": "line1\n" },
+      });
+
+      const { status, json } = await post("/apply", { id });
+      expect(status).toBe(200);
+      expect(json.schema).toBe("dome.apply/v1");
+      expect(json.status).toBe("applied");
+      expect(json.id).toBe(id);
+      expect(typeof json.commit).toBe("string");
+
+      const entries = await log({ path: f.vault, depth: 1 });
+      expect(entries[0]?.commit.message).toContain(`apply(P${id}):`);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "unknown id is a 404 with the apply error envelope",
+    async () => {
+      const { status, json } = await post("/apply", { id: 999_999 });
+      expect(status).toBe(404);
+      expect(json.schema).toBe("dome.apply/v1");
+      expect(json.status).toBe("not-found");
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "a stale proposal is a 409 conflict",
+    async () => {
+      const f = await fixture();
+      await writeFile(join(f.vault, "wiki/stale-me.md"), "line1\n", "utf8");
+      await commitSingleFileOnHead({
+        path: f.vault,
+        filepath: "wiki/stale-me.md",
+        content: "line1\n",
+        message: "fixture: http-apply stale note",
+        author: { name: "fixture", email: "fixture@local" },
+      });
+      const id = await enqueueProposal(f.vault, {
+        changes: [fileChange({ kind: "write", path: "wiki/stale-me.md", content: "line1\nline2\n" })],
+        baseContents: { "wiki/stale-me.md": "line1\n" },
+      });
+      await writeFile(join(f.vault, "wiki/stale-me.md"), "someone edited this already\n", "utf8");
+
+      const { status, json } = await post("/apply", { id });
+      expect(status).toBe(409);
+      expect(json.schema).toBe("dome.apply/v1");
+      expect(json.status).toBe("stale");
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "rejects a body without a positive integer id",
+    async () => {
+      const { status, json } = await post("/apply", { id: "not-a-number" });
+      expect(status).toBe(400);
+      expect(json.status).toBe("error");
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+describe("POST /reject", () => {
+  test(
+    "rejects a pending proposal and lands no commit",
+    async () => {
+      const f = await fixture();
+      await writeFile(join(f.vault, "wiki/reject-me.md"), "line1\n", "utf8");
+      await commitSingleFileOnHead({
+        path: f.vault,
+        filepath: "wiki/reject-me.md",
+        content: "line1\n",
+        message: "fixture: http-reject note",
+        author: { name: "fixture", email: "fixture@local" },
+      });
+      const id = await enqueueProposal(f.vault, {
+        changes: [fileChange({ kind: "write", path: "wiki/reject-me.md", content: "line1\nline2\n" })],
+        baseContents: { "wiki/reject-me.md": "line1\n" },
+      });
+      const before = await log({ path: f.vault, depth: 1 });
+
+      const { status, json } = await post("/reject", { id, note: "not needed" });
+      expect(status).toBe(200);
+      expect(json.schema).toBe("dome.reject/v1");
+      expect(json.status).toBe("rejected");
+      expect(json.id).toBe(id);
+
+      const after = await log({ path: f.vault, depth: 1 });
+      expect(after[0]?.oid).toBe(before[0]?.oid);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "unknown id is a 404 with the reject error envelope",
+    async () => {
+      const { status, json } = await post("/reject", { id: 999_999 });
+      expect(status).toBe(404);
+      expect(json.schema).toBe("dome.reject/v1");
+      expect(json.status).toBe("not-found");
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "a second reject on the same id is a 409 conflict",
+    async () => {
+      const f = await fixture();
+      await writeFile(join(f.vault, "wiki/double-reject.md"), "line1\n", "utf8");
+      await commitSingleFileOnHead({
+        path: f.vault,
+        filepath: "wiki/double-reject.md",
+        content: "line1\n",
+        message: "fixture: http-reject double note",
+        author: { name: "fixture", email: "fixture@local" },
+      });
+      const id = await enqueueProposal(f.vault, {
+        changes: [fileChange({ kind: "write", path: "wiki/double-reject.md", content: "line1\nline2\n" })],
+        baseContents: { "wiki/double-reject.md": "line1\n" },
+      });
+      expect((await post("/reject", { id })).status).toBe(200);
+
+      const { status, json } = await post("/reject", { id });
+      expect(status).toBe(409);
+      expect(json.schema).toBe("dome.reject/v1");
+      expect(json.status).toBe("not-pending");
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "rejects a body without a positive integer id",
+    async () => {
+      const { status, json } = await post("/reject", { id: "not-a-number" });
       expect(status).toBe(400);
       expect(json.status).toBe("error");
     },

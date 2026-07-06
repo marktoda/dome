@@ -20,6 +20,14 @@ import {
 } from "../surface/answer";
 import { captureJsonDocument, performCapture } from "../surface/capture";
 import { performSettle, settleResultJson } from "../surface/settle";
+import {
+  applyResultJson,
+  collectProposals,
+  performApply,
+  performReject,
+  proposalsJson,
+  rejectResultJson,
+} from "../surface/proposals";
 import { buildRecents } from "../surface/recents";
 import {
   catalogViewProblemMessage,
@@ -68,6 +76,9 @@ const ROUTE_CAPABILITY: Readonly<Record<string, Capability>> = {
   "POST /capture": "capture",
   "POST /resolve": "resolve",
   "POST /settle": "resolve",
+  "GET /proposals": "read",
+  "POST /apply": "resolve",
+  "POST /reject": "resolve",
   "GET /tasks": "read",
   "GET /recents": "read",
   "GET /status": "read",
@@ -910,6 +921,59 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       });
       const doc = settleResultJson(outcome);
       if (outcome.status === "not-found") return jsonResponse(404, doc);
+      if (outcome.status === "invalid") return jsonResponse(400, doc);
+      return jsonResponse(200, doc);
+    }
+
+    if (route === "GET /proposals") {
+      // collectProposals is runtime-free (reads proposals.db directly) —
+      // no enqueue/withVault needed, same as POST /capture and POST /settle.
+      const all = url.searchParams.get("all") === "1";
+      const doc = proposalsJson(await collectProposals(opts.vaultPath, { all }));
+      return jsonResponse(200, doc);
+    }
+
+    if (route === "POST /apply") {
+      const read = await jsonBody(request, maxBodyBytes);
+      if (read.kind === "too-large") {
+        return dataErrorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
+      }
+      const body = read.body;
+      const id = typeof body?.id === "number" && Number.isInteger(body.id) && body.id > 0
+        ? body.id
+        : null;
+      if (id === null) {
+        return dataErrorResponse(400, "apply-usage", "POST /apply requires a JSON body with a positive integer `id`.");
+      }
+      // performApply is runtime-free (locates the proposal + a human commit) —
+      // no enqueue/withVault needed, same as POST /settle.
+      const outcome = await performApply(opts.vaultPath, id);
+      const doc = applyResultJson(outcome);
+      if (outcome.status === "not-found") return jsonResponse(404, doc);
+      if (outcome.status === "not-pending" || outcome.status === "stale") return jsonResponse(409, doc);
+      if (outcome.status === "invalid" || outcome.status === "unsupported") return jsonResponse(400, doc);
+      return jsonResponse(200, doc);
+    }
+
+    if (route === "POST /reject") {
+      const read = await jsonBody(request, maxBodyBytes);
+      if (read.kind === "too-large") {
+        return dataErrorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
+      }
+      const body = read.body;
+      const id = typeof body?.id === "number" && Number.isInteger(body.id) && body.id > 0
+        ? body.id
+        : null;
+      if (id === null) {
+        return dataErrorResponse(400, "reject-usage", "POST /reject requires a JSON body with a positive integer `id` (optional `note`).");
+      }
+      const note = typeof body?.note === "string" ? body.note : undefined;
+      // performReject is runtime-free (CAS-decides the row only) — no
+      // enqueue/withVault needed, same as POST /apply.
+      const outcome = await performReject(opts.vaultPath, id, note);
+      const doc = rejectResultJson(outcome);
+      if (outcome.status === "not-found") return jsonResponse(404, doc);
+      if (outcome.status === "not-pending") return jsonResponse(409, doc);
       if (outcome.status === "invalid") return jsonResponse(400, doc);
       return jsonResponse(200, doc);
     }
