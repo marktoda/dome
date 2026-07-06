@@ -60,6 +60,7 @@ extensions:
       quarantine.recover: true
       run.read: ["running"]
       run.recover: true
+      proposals.read: true
   disabled.bundle:
     enabled: false
     grant:
@@ -108,6 +109,7 @@ extensions:
       kind: "run.recover",
       actions: ["fail"],
     });
+    expect(grants).toContainEqual({ kind: "proposals.read" });
     expect(result.value.grantsForExtension("disabled.bundle")).toEqual([]);
     expect(result.value.grantsForExtension("omitted-enabled.bundle")).toEqual([]);
     expect(result.value.grantsForExtension("missing.bundle")).toEqual([]);

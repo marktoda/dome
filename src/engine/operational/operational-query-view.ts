@@ -8,6 +8,7 @@
 
 import type {
   OperationalOutboxRow,
+  OperationalProposalRow,
   OperationalQuarantineRow,
   OperationalQuestionRow,
   OperationalRunRow,
@@ -28,6 +29,10 @@ import type {
   ProcessorQuarantineSnapshot,
 } from "../../processors/execution-state";
 import type { QuestionRecord } from "../../projections/questions";
+import type {
+  PendingProposalRow,
+  ProposalStatus,
+} from "../../proposals/pending-proposals";
 
 export const DEFAULT_ORPHAN_RUN_AGE_MS = 5 * 60 * 1000;
 
@@ -45,6 +50,14 @@ export function buildOperationalQueryView(opts: {
     readonly resolved?: boolean;
     readonly resolvedSince?: string;
   }) => ReadonlyArray<QuestionRecord>;
+  /**
+   * Closure over the pending-proposals store, mirroring `queryQuestions`'
+   * decoupling rationale — keeps this builder ignorant of `ProposalsDb`'s
+   * SQLite accessors, just a narrow query function over `PendingProposalRow`.
+   */
+  readonly queryProposals: (filter?: {
+    readonly status?: ProposalStatus;
+  }) => ReadonlyArray<PendingProposalRow>;
   readonly now?: () => Date;
 }): OperationalQueryView {
   const now = opts.now ?? ((): Date => new Date());
@@ -84,6 +97,8 @@ export function buildOperationalQueryView(opts: {
             : { sinceIso: filter.startedSince },
         ).map(toOperationalRunRow),
       ),
+    proposals: (filter) =>
+      Object.freeze(opts.queryProposals(filter).map(toOperationalProposalRow)),
   });
 }
 
@@ -161,5 +176,18 @@ function toOperationalQuestionRow(
     answeredAt: row.answeredAt,
     answer: row.answer,
     state: row.answeredAt === null ? "open" : "resolved",
+  });
+}
+
+function toOperationalProposalRow(
+  row: PendingProposalRow,
+): OperationalProposalRow {
+  return Object.freeze({
+    id: row.id,
+    processorId: row.processorId,
+    reason: row.reason,
+    paths: Object.freeze(row.changes.map((change) => change.path)),
+    createdAt: row.createdAt,
+    status: row.status,
   });
 }

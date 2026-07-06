@@ -81,6 +81,7 @@ import { currentSha, isAncestor } from "../../git";
 import { replayFinalizeJournal } from "../core/finalize-journal";
 import type { ApplyEffectSinks } from "../core/apply-effect";
 import { failRunIfCurrent } from "../../ledger/runs";
+import { listProposals } from "../../proposals/pending-proposals";
 import { buildOperationalQueryView } from "../operational/operational-query-view";
 import { withProjectionWriteLock } from "./projection-lock";
 
@@ -900,6 +901,7 @@ function operationalQueryViewForRuntime(
     executionState: runtime.processorRuntime.executionState,
     queryQuestions: (filter) =>
       queryQuestionRecords(runtime.projectionDb, filter),
+    queryProposals: (filter) => listProposals(runtime.proposalsDb, filter),
     now,
   });
 }

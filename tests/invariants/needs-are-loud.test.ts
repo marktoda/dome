@@ -53,6 +53,7 @@ const GRAPH_WRITE: Capability = {
   namespaces: ["dome.test"],
 };
 const QUESTIONS_READ: Capability = { kind: "questions.read" };
+const PROPOSALS_READ: Capability = { kind: "proposals.read" };
 
 const SIGNAL: SignalEvent = Object.freeze({
   signal: "file.created",
@@ -162,6 +163,25 @@ describe("NEEDS_ARE_LOUD (runtime invariant)", () => {
     if (warning.kind !== "diagnostic") throw new Error("expected diagnostic");
     expect(warning.severity).toBe("warning");
     expect(warning.message).toContain("questions.read");
+  });
+
+  test("absent declared proposals.read context field → processor.need-unmet warning", async () => {
+    const p = makeGardenProcessor({
+      id: "test.need.proposals-read",
+      capabilities: [READ_WIKI, PROPOSALS_READ],
+    });
+    // proposals.read declared but not granted → ctx.operational.proposals
+    // accessor absent at run time.
+    const rt = buildRuntimeFor([p], () => [READ_WIKI]);
+
+    const results = await runGardenOnce(rt);
+
+    const warnings = needUnmetDiagnostics(results[0]?.effects ?? []);
+    expect(warnings.length).toBe(1);
+    const warning = warnings[0]!;
+    if (warning.kind !== "diagnostic") throw new Error("expected diagnostic");
+    expect(warning.severity).toBe("warning");
+    expect(warning.message).toContain("proposals.read");
   });
 
   test("fully granted processor emits no processor.need-unmet diagnostic", async () => {

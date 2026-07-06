@@ -198,6 +198,12 @@ describe("CapabilitySchema (discriminated union, 17 kinds)", () => {
       "questions.read",
     );
   });
+
+  test("proposals.read", () => {
+    expect(CapabilitySchema.parse({ kind: "proposals.read" }).kind).toBe(
+      "proposals.read",
+    );
+  });
 });
 
 describe("ProcessorPhaseSchema + SignalSchema", () => {

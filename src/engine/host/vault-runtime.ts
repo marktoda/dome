@@ -77,6 +77,7 @@ import {
 import { readTree } from "../../git";
 import { openAnswersDb, type AnswersDb } from "../../answers/db";
 import { openProposalsDb, type ProposalsDb } from "../../proposals/db";
+import { listProposals } from "../../proposals/pending-proposals";
 import { openProjectionDb, type ProjectionDb } from "../../projections/db";
 import { buildProjectionQueryView } from "../../projections/query-view";
 import { queryQuestionRecords } from "../../projections/questions";
@@ -687,6 +688,7 @@ function buildVaultRuntime(input: {
     ledger: ledgerDb,
     executionState,
     queryQuestions: (filter) => queryQuestionRecords(projectionDb, filter),
+    queryProposals: (filter) => listProposals(proposalsDb, filter),
   });
   // Once-per-host-start loud complement to the silent no-op (Task 17):
   // dome.agent enabled for this open, but no model provider wired in

@@ -1367,6 +1367,7 @@ function capabilityScopeDetails(
     case "question.ask":
     case "quarantine.read":
     case "questions.read":
+    case "proposals.read":
       return [grantDetail(capability.kind, "all", [])];
   }
 }
