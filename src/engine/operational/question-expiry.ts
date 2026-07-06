@@ -5,10 +5,19 @@
 // actually about: the emitting `processor_id` by default, or
 // `metadata.subjectProcessorId` when the emitter is asking on behalf of a
 // different processor (the health-recovery shape — e.g.
-// `dome.health.orphan-run-recovery-questions` asking about a stuck run's
-// `processorId`). When a bundle retires, its questions can never be answered
+// `dome.health.quarantine-recovery-questions` asking about the quarantined
+// processor's id). When a bundle retires, its questions can never be answered
 // through the normal flow (no handler will ever run for it again) and would
 // otherwise re-render forever. This pump releases them.
+//
+// `dome.health.orphan-run-recovery-questions` is a deliberate exception: it
+// never stamps `subjectProcessorId`, even though its question names a stuck
+// run's processor. The run row in runs.db outlives that processor's
+// retirement, and the recovery question is the run's ONLY disposition path
+// (`fail` is how the row ever leaves `running`) — expiring it on the
+// retired-subject rule would durably answer it "expired" and leave the run
+// permanently undisposable. Only the emitter itself (always active while
+// dome.health is installed) is checked for that question's subject.
 //
 // Deliberately NOT a mirror of `question-auto-resolution.ts`'s handler
 // dispatch: there is no handler to run for a retired subject, so expiry

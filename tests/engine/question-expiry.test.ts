@@ -1,13 +1,18 @@
 // tests/engine/question-expiry: subject-liveness expiry for OPEN questions
 // whose emitting or subject processor is retired (no longer registered).
 //
-// Covers the four cases from docs/superpowers/plans/2026-07-06-product-review-4-tier1.md
-// Task 9:
+// Covers the cases from docs/superpowers/plans/2026-07-06-product-review-4-tier1.md
+// Task 9, plus the orphan-run hotfix (Task 9 stamped `subjectProcessorId` on
+// BOTH health-recovery emitters; orphan-run recovery must not carry it — see
+// assets/extensions/dome.health/processors/orphan-run-recovery-questions.ts):
 //   (a) retired emitting processor -> expired + durable answer row + diagnostic
 //   (b) ACTIVE emitter, metadata.subjectProcessorId of a retired processor
-//       (the work-vault zombie shape) -> expired
+//       (the quarantine-recovery shape) -> expired
 //   (c) both processors active -> untouched
 //   (d) idempotent: a second pump run expires nothing further
+//   (e) orphan-run recovery question, ACTIVE emitter, NO subjectProcessorId,
+//       even though its text names a retired processor's stuck run ->
+//       untouched (the run row is the question's only disposition path)
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
@@ -134,7 +139,17 @@ describe("expireOrphanSubjectQuestions", () => {
     }
   });
 
-  test("expires the work-vault zombie shape: active emitter, retired subjectProcessorId", async () => {
+  test("does NOT expire an orphan-run recovery question even though its text names a retired processor's stuck run", async () => {
+    // The work-vault zombie shape was originally miswired: Task 9 stamped
+    // `subjectProcessorId` on orphan-run recovery questions too, so this
+    // exact case (active emitter, question about a retired processor's
+    // stuck run) expired on the same tick it was raised. That is wrong —
+    // the run row in runs.db outlives the retired processor, and this
+    // question (resolve `fail`) is the run's ONLY disposition path. Fixed
+    // by never stamping `subjectProcessorId` on this emitter's questions
+    // (assets/extensions/dome.health/processors/orphan-run-recovery-questions.ts);
+    // only the (always-active-while-installed) emitting processor id is
+    // checked for this question's subject.
     const root = mkdtempSync(join(tmpdir(), "question-expiry-"));
     tmpRoots.push(root);
     const projection = await openTestProjection(root);
@@ -152,7 +167,7 @@ describe("expireOrphanSubjectQuestions", () => {
             confidence: 1,
             recommendedAnswer: "fail",
             automationPolicy: "agent-safe",
-            subjectProcessorId: "dome.warden.integrity",
+            // Deliberately no subjectProcessorId — see the emitter's comment.
           },
         }),
         processorId: "dome.health.orphan-run-recovery-questions",
@@ -160,9 +175,64 @@ describe("expireOrphanSubjectQuestions", () => {
         adoptedCommit: commitOid("b".repeat(40)),
       });
 
+      const recorded: DiagnosticEffect[] = [];
       const now = () => new Date("2026-07-06T00:00:00.000Z");
       const result = await expireOrphanSubjectQuestions({
         registry: registryWith(["dome.health.orphan-run-recovery-questions"]),
+        disabledExtensionIds: [],
+        questions: projection,
+        answers,
+        recordDiagnostic: async (input) => {
+          recorded.push(input.effect);
+        },
+        now,
+      });
+
+      expect(result.expired).toBe(0);
+      expect(recorded).toHaveLength(0);
+      const row = getQuestionRecord(projection, 1);
+      expect(row?.answeredAt).toBeNull();
+      expect(getQuestionAnswer(answers, "orphan-run:zombie")).toBeNull();
+    } finally {
+      answers.close();
+      projection.close();
+    }
+  });
+
+  test("expires a quarantine-recovery question when its subjectProcessorId is retired, even with an active emitter", async () => {
+    // The correct half of Task 9's stamp: quarantine-recovery questions ARE
+    // stamped with `subjectProcessorId` (the quarantined processor's id),
+    // and SHOULD expire once that subject retires — the quarantine row
+    // itself is disposed by the registry-authoritative quarantine GC, so the
+    // question asking to reset it is moot.
+    const root = mkdtempSync(join(tmpdir(), "question-expiry-"));
+    tmpRoots.push(root);
+    const projection = await openTestProjection(root);
+    const answers = await openTestAnswers(root);
+    try {
+      insertQuestion(projection, {
+        effect: questionEffect({
+          question:
+            "Processor dome.warden.integrity is quarantined for trigger abc123. Reset it?",
+          options: ["reset", "ignore"],
+          sourceRefs: [],
+          idempotencyKey: "quarantine:zombie",
+          metadata: {
+            risk: "medium",
+            confidence: 1,
+            recommendedAnswer: "reset",
+            automationPolicy: "owner-needed",
+            subjectProcessorId: "dome.warden.integrity",
+          },
+        }),
+        processorId: "dome.health.quarantine-recovery-questions",
+        runId: "run_7",
+        adoptedCommit: commitOid("1".repeat(40)),
+      });
+
+      const now = () => new Date("2026-07-06T00:00:00.000Z");
+      const result = await expireOrphanSubjectQuestions({
+        registry: registryWith(["dome.health.quarantine-recovery-questions"]),
         disabledExtensionIds: [],
         questions: projection,
         answers,
@@ -172,10 +242,11 @@ describe("expireOrphanSubjectQuestions", () => {
 
       expect(result.expired).toBe(1);
       const row = getQuestionRecord(projection, 1);
-      expect(row?.answeredAt).not.toBeNull();
+      expect(row?.answeredAt).toBe(now().toISOString());
       expect(row?.answer).toBe("expired");
 
-      const answerRow = getQuestionAnswer(answers, "orphan-run:zombie");
+      const answerRow = getQuestionAnswer(answers, "quarantine:zombie");
+      expect(answerRow?.answer).toBe("expired");
       expect(answerRow?.handlerStatus).toBe("handled");
     } finally {
       answers.close();

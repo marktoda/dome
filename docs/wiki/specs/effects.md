@@ -244,9 +244,8 @@ unrelated adoption, garden work, or source edits.
 actually about: the emitting `processor_id` by default, or
 `metadata.subjectProcessorId` when the emitter is asking on behalf of a
 different processor (the health-recovery shape — e.g.
-`dome.health.orphan-run-recovery-questions` asks about a stuck run's own
-processor, `dome.health.quarantine-recovery-questions` asks about the
-quarantined processor). If a bundle is uninstalled, its questions — and any
+`dome.health.quarantine-recovery-questions` asks about the quarantined
+processor). If a bundle is uninstalled, its questions — and any
 question whose declared subject was that bundle's processor — can never be
 answered through the normal handler flow again. An operational pump
 (`src/engine/operational/question-expiry.ts`, run once per tick after
@@ -270,7 +269,14 @@ processor (recorded durably and returned on the operational-work result),
 and sets the tick-scoped `questions.changed` flag so subscribers (e.g. the
 daily To-decide compiler) refresh the same tick. Outbox-recovery questions
 are never stamped with `subjectProcessorId`: their subject is an external
-handler capability, not a processor.
+handler capability, not a processor. Orphan-run recovery questions
+(`dome.health.orphan-run-recovery-questions`) are never stamped either, even
+though their text names the stuck run's processor: the run row in `runs.db`
+survives that processor's retirement, and the recovery question — resolved
+`fail`/`ignore` via `dome resolve` — is the run's *only* disposition path.
+Stamping it would let this same expiry rule durably answer the question
+`"expired"` the instant its named processor retires, leaving the orphan run
+permanently undisposable.
 
 ## ExternalActionEffect
 

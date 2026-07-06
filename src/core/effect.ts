@@ -263,10 +263,14 @@ export type QuestionMetadata = {
   /**
    * The processor this question is actually about, when it differs from the
    * emitting processor (the health-recovery shape: e.g.
-   * `dome.health.orphan-run-recovery-questions` asks on behalf of a stuck
-   * run's own processor). Subject-liveness expiry
+   * `dome.health.quarantine-recovery-questions` asks on behalf of the
+   * quarantined processor). Subject-liveness expiry
    * (`engine/operational/question-expiry.ts`) treats an OPEN question as
    * expired once either the emitter or this subject is no longer registered.
+   * `dome.health.orphan-run-recovery-questions` deliberately never sets this:
+   * the stuck run it asks about outlives its processor's retirement, and the
+   * question is the run's only disposition path — stamping it would let
+   * expiry durably bury an undisposable orphan run.
    */
   readonly subjectProcessorId?: string;
 };

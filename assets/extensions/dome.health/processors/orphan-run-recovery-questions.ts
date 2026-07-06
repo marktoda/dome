@@ -54,7 +54,17 @@ function questionForOrphanRun(row: OperationalRunRow): QuestionEffect {
       confidence: 1,
       recommendedAnswer: "fail",
       automationPolicy: "agent-safe",
-      subjectProcessorId: row.processorId,
+      // Deliberately NOT stamped with `subjectProcessorId`. Subject-liveness
+      // expiry (src/engine/operational/question-expiry.ts) releases any open
+      // question whose subject is a retired processor — right for the
+      // quarantine-recovery shape, whose GC-owned quarantine row the retired
+      // processor makes moot. But the stuck run row in runs.db survives its
+      // processor's retirement regardless, and THIS question is the run's
+      // only disposition path (`fail` is how the row ever leaves `running`).
+      // Stamping the run's processor here would let the same tick that
+      // raises the question expire it, permanently burying an undisposable
+      // orphan run behind a durable "expired" answer. So this question's
+      // only subject is its own (always-active-while-installed) emitter.
     },
   });
 }
