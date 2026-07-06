@@ -82,7 +82,7 @@ One vault per process.
 | `POST /resolve` `{id, value}` | `dome resolve` | `dome.answer/v1` |
 | `POST /settle` `{blockId, disposition, deferUntil?}` | `performSettle` (`resolve` capability — settling is a decision, same trust domain as resolve) | `dome.settle/v1` (`status: settled \| not-found \| invalid`) |
 | `GET /proposals?all=1` | `collectProposals` (`read` capability; defaults to pending rows only) | `dome.proposals/v1` |
-| `POST /apply` `{id}` | `performApply` (`resolve` capability — the settle pattern for garden-proposed edits) | `dome.apply/v1` (`status: applied \| stale \| not-found \| not-pending \| unsupported \| invalid`) |
+| `POST /apply` `{id}` | `performApply` (`resolve` capability — the settle pattern for garden-proposed edits) | `dome.apply/v1` (`status: applied \| stale \| not-found \| not-pending \| invalid`) |
 | `POST /reject` `{id, note?}` | `performReject` (`resolve` capability) | `dome.reject/v1` (`status: rejected \| not-found \| not-pending \| invalid`) |
 | `POST /agent` `{question}` | hosted agent loop over vault tools (`converse` capability) | `dome.ask/v1` |
 | `POST /agent/stream` `{question}` | same loop, SSE stream of events (`converse` capability) | `dome.ask/v1` event stream |
