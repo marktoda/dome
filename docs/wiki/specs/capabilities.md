@@ -55,7 +55,7 @@ Default for adoption-phase processors: the paths their triggers match (read what
 
 ### `patch.propose`
 
-Permits `PatchEffect` with `mode: "propose"` for paths matching the glob. Propose-mode patches are **not applied** in the adoption phase — they emit a diagnostic naming the proposed patch. The review/apply UX is still a v1.x lint surface; until it ships, proposed patches are visible as diagnostics rather than silently mutating the vault. Safe-by-default for processors with broad write intent.
+Permits `PatchEffect` with `mode: "propose"` for paths matching the glob. Propose-mode patches are **not applied** in the adoption phase — they emit a blocking diagnostic naming the proposed patch. In the garden phase they queue as pending proposals for owner review (`dome proposals` / `dome apply` / `dome reject`; see [[wiki/specs/effects]] §PatchEffect for the full routing split). Safe-by-default for processors with broad write intent.
 
 ### `patch.auto`
 
