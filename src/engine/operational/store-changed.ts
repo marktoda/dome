@@ -1,14 +1,19 @@
 // engine/operational/store-changed: dispatch garden processors subscribed to a
 // store-change signal after a tick (or resolve) changed the backing engine
 // store. Generalizes the `questions.changed` pattern
-// (src/engine/operational/questions-changed.ts) to the two additional
-// store-change signals shipped by the pruning pass:
+// (src/engine/operational/questions-changed.ts) to the additional
+// store-change signals shipped by the pruning pass and the proposal-review
+// loop:
 //
 //   - `outbox.changed`     — fired from the outbox dispatcher's two internal
 //     terminal-failure sites (recordFailedAttempt terminal branch +
 //     recoverExpiredDispatching terminal branch).
 //   - `quarantine.changed` — fired narrowly from the processor-execution-state
 //     store at the quarantine threshold-trip and at every clear.
+//   - `proposals.changed`  — fired when a garden propose (or downgraded)
+//     patch is newly enqueued into `proposals.db` (src/proposals/); a
+//     dedupe-hit re-enqueue does NOT fire it. Set via
+//     `compiler-host.ts`'s exported `markProposalsChanged`.
 //
 // Like `questions.changed`, these signals are NOT synthesized by
 // `compileRange` — they are store-change-derived, not tree-diff-derived
@@ -39,7 +44,10 @@ import {
 } from "../garden/garden-run";
 
 /** The store-change signals dispatched through this operational channel. */
-export type StoreChangeSignal = "outbox.changed" | "quarantine.changed";
+export type StoreChangeSignal =
+  | "outbox.changed"
+  | "quarantine.changed"
+  | "proposals.changed";
 
 export type StoreChangedOptions = GardenRunDeps & {
   // `storeSignal` (not `signal`): `GardenRunDeps.signal` is the AbortSignal.

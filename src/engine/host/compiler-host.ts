@@ -239,6 +239,32 @@ function outboxChangedFlagFor(runtime: VaultRuntime): QuestionsChangedFlag {
   return flag;
 }
 
+/**
+ * Host-scoped `proposals.changed` accumulator — the exact peer of
+ * `QuestionsChangedFlag` / the `outbox.changed` flag. Fired by the
+ * `enqueueProposal` sink (src/projections/sinks.ts) when a garden propose (or
+ * downgraded) patch is newly inserted into `proposals.db`; a dedupe-hit
+ * re-enqueue does not set it. The tick epilogue snapshots+clears and
+ * dispatches `proposals.changed` subscribers at most once per tick, same
+ * recursion guard as `outbox.changed`. `markProposalsChanged` is exported so
+ * the sink — which lives outside this module — can set the flag without
+ * reaching into the WeakMap directly.
+ */
+const proposalsChangedFlags = new WeakMap<VaultRuntime, QuestionsChangedFlag>();
+
+function proposalsChangedFlagFor(runtime: VaultRuntime): QuestionsChangedFlag {
+  let flag = proposalsChangedFlags.get(runtime);
+  if (flag === undefined) {
+    flag = { changed: false };
+    proposalsChangedFlags.set(runtime, flag);
+  }
+  return flag;
+}
+
+export function markProposalsChanged(runtime: VaultRuntime): void {
+  proposalsChangedFlagFor(runtime).changed = true;
+}
+
 type CompilerHostTickCommonOptions = {
   readonly runtime: VaultRuntime;
   readonly now?: () => Date;
@@ -796,7 +822,7 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
   });
 
-  // Tick epilogue: dispatch the three store-change signals at most ONCE per
+  // Tick epilogue: dispatch the four store-change signals at most ONCE per
   // tick each, after every phase that can change the corresponding store has
   // run. Snapshot+clear BEFORE each dispatch — changes the dispatch itself
   // causes (subscriber emissions, nested sub-proposal gardens) re-set the
@@ -830,6 +856,14 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
     await runStoreChangedSubscribers({
       ...signalDeps,
       storeSignal: "quarantine.changed",
+    });
+  }
+  const proposalsChanged = proposalsChangedFlagFor(opts.runtime);
+  if (proposalsChanged.changed) {
+    proposalsChanged.changed = false;
+    await runStoreChangedSubscribers({
+      ...signalDeps,
+      storeSignal: "proposals.changed",
     });
   }
 
@@ -994,6 +1028,14 @@ async function runAnswerHandlersForQuestionUnlocked(opts: {
       storeSignal: "quarantine.changed",
     });
   }
+  const proposalsChangedResolve = proposalsChangedFlagFor(opts.runtime);
+  if (proposalsChangedResolve.changed) {
+    proposalsChangedResolve.changed = false;
+    await runStoreChangedSubscribers({
+      ...signalDeps,
+      storeSignal: "proposals.changed",
+    });
+  }
 
   if (cursor.current !== beforeHandlers) {
     await rebuildProjectionIfGlobalConfigChanged({
@@ -1122,10 +1164,10 @@ function runtimeVault(runtime: VaultRuntime): {
   };
 }
 
-// The shared GardenRunDeps + registry the three store-change dispatch channels
-// (questions/outbox/quarantine) all consume. Built once per dispatch point so
-// the questions.changed call and the two new store-changed calls stay
-// byte-identical except for the store signal.
+// The shared GardenRunDeps + registry the four store-change dispatch channels
+// (questions/outbox/quarantine/proposals) all consume. Built once per
+// dispatch point so the questions.changed call and the store-changed calls
+// stay byte-identical except for the store signal.
 function storeChangedSignalDeps(opts: {
   readonly runtime: VaultRuntime;
   readonly vault: ReturnType<typeof runtimeVault>;

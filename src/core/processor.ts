@@ -148,9 +148,10 @@ export type InspectionScope =
 /**
  * The closed set of engine-synthesized signals. The engine computes signals
  * once per Proposal from `compileRange(base, candidate)` and routes them to
- * subscribing processors — with three exceptions: `questions.changed`,
- * `outbox.changed`, and `quarantine.changed` are store-change-derived, never
- * minted by compileRange, and are dispatched on their own operational channel
+ * subscribing processors — with four exceptions: `questions.changed`,
+ * `outbox.changed`, `quarantine.changed`, and `proposals.changed` are
+ * store-change-derived, never minted by compileRange, and are dispatched on
+ * their own operational channel
  * (`src/engine/operational/questions-changed.ts` +
  * `src/engine/operational/store-changed.ts`) after a tick or resolve changes
  * the corresponding store. See processors.md §"Triggers and signals".
@@ -166,7 +167,8 @@ export type Signal =
   | "link.removed"
   | "questions.changed"
   | "outbox.changed"
-  | "quarantine.changed";
+  | "quarantine.changed"
+  | "proposals.changed";
 
 // ----- Trigger --------------------------------------------------------------
 
@@ -806,6 +808,7 @@ export const SignalSchema = z.enum([
   "questions.changed",
   "outbox.changed",
   "quarantine.changed",
+  "proposals.changed",
 ]);
 
 export const SignalTriggerSchema = z

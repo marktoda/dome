@@ -171,16 +171,18 @@ type Signal =
   | "link.added" | "link.removed"   // wikilink added/removed
   | "questions.changed"        // question store mutated (see below) — NOT compileRange-derived
   | "outbox.changed"           // outbox row failed terminally (see below) — NOT compileRange-derived
-  | "quarantine.changed";      // quarantine set changed (see below) — NOT compileRange-derived
+  | "quarantine.changed"       // quarantine set changed (see below) — NOT compileRange-derived
+  | "proposals.changed";       // a garden propose patch was newly enqueued (see below) — NOT compileRange-derived
 ```
 
 Signals are synthesized by the engine from `compileRange(base, candidate)` ([[wiki/specs/adoption]] §"Compile range"). The engine never asks a processor "what signals fire" — it computes them once per Proposal and routes them to all subscribers.
 
-**Three signals are store-change-derived exceptions to that synthesis path** — `compileRange` never produces them. They are dispatched on their own operational channels (`src/engine/operational/questions-changed.ts` and `src/engine/operational/store-changed.ts`) after a tick (or a resolve, once answer handlers have run) changed the backing engine store. Subscribers are ordinary garden processors declaring `{ kind: "signal", name: <store signal> }`; each dispatch synthesizes `TriggerMatch`es directly rather than routing through `compileRange`'s per-Proposal computation, so there is no path filtering — `SignalEvent.path` is `""`. Each tick dispatches at most once per signal, after operational work; changes caused by a dispatch itself carry to the next tick (the recursion guard: the host snapshots+clears the tick-scoped flag before dispatching).
+**Four signals are store-change-derived exceptions to that synthesis path** — `compileRange` never produces them. They are dispatched on their own operational channels (`src/engine/operational/questions-changed.ts` and `src/engine/operational/store-changed.ts`) after a tick (or a resolve, once answer handlers have run) changed the backing engine store. Subscribers are ordinary garden processors declaring `{ kind: "signal", name: <store signal> }`; each dispatch synthesizes `TriggerMatch`es directly rather than routing through `compileRange`'s per-Proposal computation, so there is no path filtering — `SignalEvent.path` is `""`. Each tick dispatches at most once per signal, after operational work; changes caused by a dispatch itself carry to the next tick (the recursion guard: the host snapshots+clears the tick-scoped flag before dispatching).
 
 - **`questions.changed`** — the open-question set changed: a new/refreshed-open `question.ask` insert, a stale-question resolution, or a durable answer (including auto-resolution).
 - **`outbox.changed`** — an outbox row transitioned to the terminal `failed` state, fired from the outbox dispatcher's two internal terminal-failure sites (`recordFailedAttempt`'s terminal branch and `recoverExpiredDispatching`'s terminal branch in `src/outbox/dispatch.ts`). Stuck-`pending` is a query-time condition, not a transition — it cannot signal (covered by the failed-transition edge plus `dome doctor`). Recovery transitions (replay/abandon) are not new failures and do not fire it.
 - **`quarantine.changed`** — the quarantine SET changed: the threshold-trip in `recordRetryableTerminalFailure`, or a clear (`clearQuarantine` / `clearQuarantineIfCurrent`) in `src/processors/execution-state.ts`. A sub-threshold failure counter tick and a `recordSuccess` on a non-quarantined key do NOT fire it. Orphaned runs are absence, not a transition, so there is deliberately no `runs.changed` signal — `dome.health.orphan-run-recovery-questions` keeps a (demoted, hourly) cron.
+- **`proposals.changed`** — a garden propose (or auto→propose downgraded) patch was newly inserted into `proposals.db` (`src/proposals/`) by the `enqueueProposal` sink. A dedupe-key hit on an already-known patch does NOT fire it (no re-nag on re-emission).
 
 ### Phase × trigger matrix
 
