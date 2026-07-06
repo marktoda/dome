@@ -331,7 +331,9 @@ export async function commitSingleFileOnHead(opts: {
  * compare-and-swap that retries onto a concurrently-advanced head (the serve
  * host's adoption), so a daemon poll racing the write never clobbers or is
  * clobbered. `files` must be non-empty; passing the same path twice keeps the
- * last write. A `null` content entry removes that path from the tree instead
+ * last entry — this covers delete-vs-write ordering too: a later write
+ * resurrects an earlier delete of the same path, and a later delete wins
+ * over an earlier write. A `null` content entry removes that path from the tree instead
  * of writing a blob — this helper is tree-only either way: it never reads or
  * mutates the working tree copy of a deleted path (callers that also want
  * the on-disk file gone, e.g. the janitor's archive-move, unlink it

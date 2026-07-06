@@ -465,6 +465,115 @@ describe("git boundary", () => {
     }
   });
 
+  test("commitFilesOnHead: deleting the only leaf collapses empty subtrees all the way to the root", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-delete-cascade-"));
+    try {
+      await initRepo(path);
+      // a/b/c.md with NO siblings at any level — deleting c.md must drop b
+      // from a AND a from the root (cascading empty-subtree collapse).
+      await write(path, "a/b/c.md", "deep and lonely\n");
+      await commit({ path, message: "base", files: ["a/b/c.md"] });
+
+      const oid = await commitFilesOnHead({
+        path,
+        files: [{ filepath: "a/b/c.md", content: null }],
+        message: "delete the only leaf",
+      });
+
+      const rootTree = await readTree({ path, oid });
+      // No `a` entry survives — the collapse cascaded past b up to the root.
+      expect(rootTree.tree.map((entry) => entry.path)).toEqual([]);
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  test("commitFilesOnHead: same-path delete+write in one call — last entry wins in both orders", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-delete-order-"));
+    try {
+      await initRepo(path);
+      await write(path, "wiki/s.md", "before\n");
+      await commit({ path, message: "base", files: ["wiki/s.md"] });
+
+      // delete-then-write: the later write wins — the file exists with the
+      // written content.
+      await write(path, "wiki/s.md", "after\n");
+      const first = await commitFilesOnHead({
+        path,
+        files: [
+          { filepath: "wiki/s.md", content: null },
+          { filepath: "wiki/s.md", content: "after\n" },
+        ],
+        message: "delete then write",
+      });
+      expect(await readBlob({ path, commit: first, filepath: "wiki/s.md" })).toBe(
+        "after\n",
+      );
+
+      // write-then-delete: the later delete wins — the file is absent.
+      const second = await commitFilesOnHead({
+        path,
+        files: [
+          { filepath: "wiki/s.md", content: "phantom\n" },
+          { filepath: "wiki/s.md", content: null },
+        ],
+        message: "write then delete",
+      });
+      expect(
+        await readBlob({ path, commit: second, filepath: "wiki/s.md" }),
+      ).toBeNull();
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
+  // Mirror of the commitSingleFileOnHead concurrent-advance test for the
+  // delete path: the concurrent head advance itself deletes the same path,
+  // so the CAS-retry rebuild must treat the delete as a no-op (path already
+  // absent from the new head's tree) and still land the commit.
+  test("commitFilesOnHead delete retries onto a concurrent head that already deleted the path", async () => {
+    const path = mkdtempSync(join(tmpdir(), "dome-git-delete-race-"));
+    try {
+      await initRepo(path);
+      await write(path, "wiki/a.md", "keep\n");
+      await write(path, "wiki/x.md", "doomed\n");
+      await commit({ path, message: "base", files: ["wiki/a.md", "wiki/x.md"] });
+
+      let concurrent: string | null = null;
+      const oid = await commitFilesOnHead({
+        path,
+        files: [{ filepath: "wiki/x.md", content: null }],
+        message: "delete x",
+        beforeRefAdvance: async (attempt) => {
+          if (attempt === 1) {
+            // The concurrent writer deletes the very same path before this
+            // helper's ref advance (commit()'s files list stages removals
+            // for unlinked paths).
+            await rm(join(path, "wiki/x.md"), { force: true });
+            concurrent = await commit({
+              path,
+              message: "concurrent: also deletes x",
+              files: ["wiki/x.md"],
+            });
+          }
+        },
+      });
+      if (concurrent === null) throw new Error("expected a concurrent commit");
+
+      // The branch landed on our commit, whose parent is the concurrent
+      // commit — the retry rebuilt on the new head, where the delete was a
+      // no-op, and still landed.
+      expect(await resolveRef({ path, ref: "refs/heads/main" })).toBe(oid);
+      const entries = await log({ path, depth: 2 });
+      expect(entries[0]?.oid).toBe(oid);
+      expect(entries[0]?.commit.parent).toEqual([concurrent]);
+      expect(await readBlob({ path, commit: oid, filepath: "wiki/x.md" })).toBeNull();
+      expect(await readBlob({ path, commit: oid, filepath: "wiki/a.md" })).toBe("keep\n");
+    } finally {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
+
   test("statusMatrix excludes nested vault Dome state", async () => {
     const root = mkdtempSync(join(tmpdir(), "dome-git-nested-status-"));
     const vaultPath = join(root, "docs");
