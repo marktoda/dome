@@ -1177,7 +1177,10 @@ P12  dome.agent.consolidate  2d  wiki/entities/danny.md (+41 −238)
      apply: dome apply 12   ·   reject: dome reject 12
 ```
 
-A stale row (the working tree has drifted from the proposal's recorded base
+A multi-path proposal renders the first path's diff stat and appends
+` +N more` to the header line for the remaining paths (the full path list is
+always available under `--json`). A stale row (the working tree has drifted
+from the proposal's recorded base
 content since it was proposed) appends
 ` [stale — regenerates on next garden pass]` to the header line. With no
 pending proposals, text mode prints one friendly line:
@@ -1218,7 +1221,9 @@ is nonzero — the same treatment as open questions, so a garden review backlog
 does not silently sit outside the normal attention loop. `dome check --json`
 includes the same pending rows under `decisions.proposals` (an array of the
 `dome.proposals/v1` proposal view) alongside the existing question decisions,
-so the unified attention report surfaces both decision kinds together.
+and a pending proposal flips check's `status` to `"attention"` exactly like an
+open question — both are decisions awaiting the owner, so the unified
+attention report surfaces and routes both decision kinds together.
 
 ### `dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--miss [note]] [--json]`
 

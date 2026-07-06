@@ -238,6 +238,16 @@ describe("runCheck", () => {
     fixtures.push(f);
     await writeDoctorConfig(f);
 
+    // Baseline: no pending proposals and no other attention → status "ok".
+    expect(await runCheck({ vault: f.vaultPath, json: true })).toBe(0);
+    const baselineBlob = captured.out.find((l) => l.includes("\"schema\""));
+    expect(baselineBlob).toBeDefined();
+    if (baselineBlob === undefined) return;
+    const baseline = JSON.parse(baselineBlob) as Record<string, unknown>;
+    expect(baseline["status"]).toBe("ok");
+    expect(record(baseline["decisions"])["proposals"]).toEqual([]);
+    captured.out = [];
+
     const proposalsDb = await openProposalsDb({
       path: join(f.vaultPath, ".dome", "state", "proposals.db"),
     });
@@ -266,6 +276,9 @@ describe("runCheck", () => {
     expect(blob).toBeDefined();
     if (blob === undefined) return;
     const parsed = JSON.parse(blob) as Record<string, unknown>;
+    // A pending proposal is an open decision: it flips check to "attention"
+    // exactly like an open question does.
+    expect(parsed["status"]).toBe("attention");
     const proposals =
       record(parsed["decisions"])["proposals"] as ReadonlyArray<Record<string, unknown>>;
     expect(proposals).toHaveLength(1);

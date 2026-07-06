@@ -421,13 +421,20 @@ function buildReport(input: {
     : input.engine.summary.errorCount + input.engine.summary.warningCount;
   const attentionDiagnostics = input.content?.attention_diagnostics ?? 0;
   const questions = input.decisions?.questions ?? 0;
+  // Pending proposals are the same routing class as open questions — both
+  // are decisions awaiting the owner — so both flip check to "attention"
+  // (mirrors dome status's pending_proposals attention reason). The
+  // proposals array is pending-only by construction (collectProposals's
+  // default filter), so its length is the pending count.
+  const pendingProposals = input.decisions?.proposals.length ?? 0;
   return Object.freeze({
     schema: SCHEMA,
     status:
       input.projection.stale ||
       engineFindings > 0 ||
       attentionDiagnostics > 0 ||
-      questions > 0
+      questions > 0 ||
+      pendingProposals > 0
       ? "attention"
       : "ok",
     generatedAt: input.generatedAt,
