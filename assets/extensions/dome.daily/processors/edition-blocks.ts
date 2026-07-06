@@ -25,6 +25,7 @@ import { escapeRegExp } from "./daily-paths";
 import {
   AGENDA_MARKERS,
   INTEGRATED_MARKERS,
+  PROPOSALS_MARKERS,
   QUESTIONS_MARKERS,
   SOURCES_MARKERS,
 } from "./daily-types";
@@ -108,6 +109,53 @@ export function questionsSection(
     lines.push(`- +${sorted.length - shown.length} more — \`dome check\``);
   }
   lines.push(QUESTIONS_MARKERS.end);
+  return lines.join("\n");
+}
+
+/**
+ * A pending garden proposal ready to render into the "To review" block.
+ * Callers (the compose-blocks processor) derive `pathCount` from the durable
+ * `OperationalProposalRow.paths` (`paths.length`) — this module takes the
+ * plain, already-mapped shape and never touches `OperationalProposalRow`
+ * itself (processors stay pure; `src/proposals` is off-limits here).
+ */
+export type EditionProposal = {
+  readonly id: number;
+  readonly processorId: string;
+  readonly reason: string;
+  readonly pathCount: number;
+};
+
+/** Top N pending proposals rendered before the `+N more` tail. */
+export const MAX_EDITION_PROPOSALS = 3;
+
+function proposalBullet(p: EditionProposal): string {
+  const fileWord = p.pathCount === 1 ? "file" : "files";
+  return `- P${p.id} (${p.processorId}): ${neutralizeWikilinks(p.reason)} — ${p.pathCount} ${fileWord} — apply: \`dome apply ${p.id}\``;
+}
+
+/**
+ * Render the "To review" generated block: pending garden proposals, oldest
+ * first (callers pre-sort by `createdAt` ascending — this renderer trusts
+ * the given order), capped at `MAX_EDITION_PROPOSALS` with a
+ * `+N more — \`dome proposals\`` tail. Plain `-` bullets — never `- [ ]`
+ * checkboxes. `null` when there are no pending proposals (the block is
+ * removed entirely, not rendered empty).
+ */
+export function proposalsSection(
+  proposals: ReadonlyArray<EditionProposal>,
+): string | null {
+  if (proposals.length === 0) return null;
+  const shown = proposals.slice(0, MAX_EDITION_PROPOSALS);
+  const lines = [
+    PROPOSALS_MARKERS.start,
+    "### To review",
+    ...shown.map(proposalBullet),
+  ];
+  if (proposals.length > shown.length) {
+    lines.push(`- +${proposals.length - shown.length} more — \`dome proposals\``);
+  }
+  lines.push(PROPOSALS_MARKERS.end);
   return lines.join("\n");
 }
 

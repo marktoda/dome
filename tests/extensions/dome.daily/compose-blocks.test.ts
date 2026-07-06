@@ -25,6 +25,7 @@ import {
 } from "../../../src/core/source-ref";
 import {
   treeOid,
+  type OperationalProposalRow,
   type OperationalQuestionRow,
   type OperationalQueryView,
   type Snapshot,
@@ -51,6 +52,7 @@ const QUESTIONS_START = "<!-- dome.daily:questions:start -->";
 const AGENDA_START = "<!-- dome.daily:agenda:start -->";
 const INTEGRATED_START = "<!-- dome.daily:integrated:start -->";
 const SOURCES_START = "<!-- dome.daily:sources:start -->";
+const PROPOSALS_START = "<!-- dome.daily:proposals:start -->";
 
 // An owner-needed question asked TODAY and an agent-safe question asked
 // earlier: the owner-needed row must sort first even though it is younger.
@@ -72,6 +74,15 @@ const SEEDED: ReadonlyArray<OperationalQuestionRow> = Object.freeze([
   OWNER_NEEDED,
   AGENT_SAFE_OLDER,
 ]);
+
+const PENDING_PROPOSAL: OperationalProposalRow = Object.freeze({
+  id: 12,
+  processorId: "dome.agent.consolidate",
+  reason: "split oversized entity page into danny + danny-promo-2026",
+  paths: Object.freeze(["wiki/entities/danny.md"]),
+  createdAt: "2026-06-03T09:00:00.000Z",
+  status: "pending",
+});
 
 const BASE_DAILY = [
   "---",
@@ -298,6 +309,94 @@ describe("dome.daily.compose-blocks (D6)", () => {
     expect(second.patch).toBeUndefined();
   });
 
+  test("proposals: renders the To-review block between questions and integrated", async () => {
+    const ledger = [
+      `## Run ${TODAY_STR}`,
+      "- [[inbox/raw/a]] -> [[wiki/b]] :: integrated",
+    ].join("\n");
+    const { written } = await runCompose(
+      { [TODAY_PATH]: BASE_DAILY, [LEDGER_PATH]: ledger },
+      { operational: viewOf(SEEDED, [PENDING_PROPOSAL]) },
+    );
+    expect(written).not.toBeNull();
+    expect(written!).toContain(PROPOSALS_START);
+    expect(written!).toContain("### To review");
+    expect(written!).toContain(
+      "- P12 (dome.agent.consolidate): split oversized entity page into danny + danny-promo-2026 — 1 file — apply: `dome apply 12`",
+    );
+    const questionsAt = written!.indexOf(QUESTIONS_START);
+    const proposalsAt = written!.indexOf(PROPOSALS_START);
+    const integratedAt = written!.indexOf(INTEGRATED_START);
+    expect(proposalsAt).toBeGreaterThan(questionsAt);
+    expect(integratedAt).toBeGreaterThan(proposalsAt);
+  });
+
+  test("proposals: sorted oldest-first before rendering", async () => {
+    const older = Object.freeze({
+      ...PENDING_PROPOSAL,
+      id: 5,
+      reason: "older proposal",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
+    const newer = Object.freeze({
+      ...PENDING_PROPOSAL,
+      id: 6,
+      reason: "newer proposal",
+      createdAt: "2026-06-04T00:00:00.000Z",
+    });
+    const { written } = await runCompose(
+      { [TODAY_PATH]: BASE_DAILY },
+      { operational: viewOf([], [newer, older]) },
+    );
+    expect(written).not.toBeNull();
+    const olderAt = written!.indexOf("older proposal");
+    const newerAt = written!.indexOf("newer proposal");
+    expect(olderAt).toBeGreaterThanOrEqual(0);
+    expect(newerAt).toBeGreaterThan(olderAt);
+  });
+
+  test("proposals: declared but missing view is LOUD (warning), block omitted", async () => {
+    const { written, diagnostics } = await runCompose(
+      { [TODAY_PATH]: BASE_DAILY },
+      { operational: viewOf(SEEDED) }, // questions present, proposals absent
+    );
+    const missing = diagnostics.find(
+      (d) => d.code === "dome.daily.proposals-view-missing",
+    );
+    expect(missing).toBeDefined();
+    expect(missing!.severity).toBe("warning");
+    expect(written ?? "").not.toContain(PROPOSALS_START);
+  });
+
+  test("proposals: empty-set removal — an existing block is dropped when none pending", async () => {
+    const seeded = await runCompose(
+      { [TODAY_PATH]: BASE_DAILY },
+      { operational: viewOf([], [PENDING_PROPOSAL]) },
+    );
+    expect(seeded.written).not.toBeNull();
+    expect(seeded.written!).toContain(PROPOSALS_START);
+
+    const cleared = await runCompose(
+      { [TODAY_PATH]: seeded.written! },
+      { operational: viewOf([], []) },
+    );
+    expect(cleared.written).not.toBeNull();
+    expect(cleared.written!).not.toContain(PROPOSALS_START);
+  });
+
+  test("proposals: idempotent recompose emits no patch", async () => {
+    const first = await runCompose(
+      { [TODAY_PATH]: BASE_DAILY },
+      { operational: viewOf(SEEDED, [PENDING_PROPOSAL]) },
+    );
+    expect(first.written).not.toBeNull();
+    const second = await runCompose(
+      { [TODAY_PATH]: first.written! },
+      { operational: viewOf(SEEDED, [PENDING_PROPOSAL]) },
+    );
+    expect(second.patch).toBeUndefined();
+  });
+
   test("empty-set removal: an existing questions block is dropped when none open", async () => {
     const seeded = await runCompose(
       { [TODAY_PATH]: BASE_DAILY },
@@ -350,6 +449,7 @@ function questionRow(input: {
 
 function viewOf(
   questions: ReadonlyArray<OperationalQuestionRow>,
+  proposals?: ReadonlyArray<OperationalProposalRow>,
 ): OperationalQueryView {
   return Object.freeze({
     outbox: () => Object.freeze([]),
@@ -357,6 +457,7 @@ function viewOf(
     orphanRuns: () => Object.freeze([]),
     runs: () => Object.freeze([]),
     questions: () => questions,
+    ...(proposals !== undefined ? { proposals: () => proposals } : {}),
   });
 }
 

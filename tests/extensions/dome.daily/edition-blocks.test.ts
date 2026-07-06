@@ -13,14 +13,18 @@ import type { CalendarMeeting } from "../../../assets/extensions/dome.daily/proc
 import {
   AGENDA_MARKERS,
   INTEGRATED_MARKERS,
+  PROPOSALS_MARKERS,
   QUESTIONS_MARKERS,
   SOURCES_MARKERS,
 } from "../../../assets/extensions/dome.daily/processors/daily-types";
 import {
   agendaSection,
+  type EditionProposal,
   type EditionQuestion,
   integratedSection,
+  MAX_EDITION_PROPOSALS,
   MAX_EDITION_QUESTIONS,
+  proposalsSection,
   questionsSection,
   replaceEditionBlock,
   sourcesSection,
@@ -263,6 +267,75 @@ describe("sourcesSection", () => {
     const section = sourcesSection({ calendar: false, slack: true });
     expect(section).toContain("slack ✓");
     expect(section).not.toContain("calendar");
+  });
+});
+
+// ----- proposalsSection -------------------------------------------------------
+
+function proposal(
+  overrides: Partial<EditionProposal> & { readonly id: number },
+): EditionProposal {
+  return Object.freeze({
+    processorId: "dome.agent.consolidate",
+    reason: `split oversized page ${overrides.id}`,
+    pathCount: 1,
+    ...overrides,
+  });
+}
+
+describe("proposalsSection", () => {
+  test("empty input → null", () => {
+    expect(proposalsSection([])).toBeNull();
+  });
+
+  test("happy path: heading, bullet shape, apply command", () => {
+    const section = proposalsSection([
+      proposal({
+        id: 12,
+        processorId: "dome.agent.consolidate",
+        reason: "split oversized entity page into danny + danny-promo-2026",
+        pathCount: 1,
+      }),
+    ]);
+    expect(section).not.toBeNull();
+    expect(section).toContain("### To review");
+    expect(section).toContain(
+      "- P12 (dome.agent.consolidate): split oversized entity page into danny + danny-promo-2026 — 1 file — apply: `dome apply 12`",
+    );
+    expect(section!.trimStart()).toStartWith(PROPOSALS_MARKERS.start);
+    expect(section!.trimEnd()).toEndWith(PROPOSALS_MARKERS.end);
+  });
+
+  test("pluralizes the file count", () => {
+    const section = proposalsSection([proposal({ id: 1, pathCount: 3 })]);
+    expect(section).toContain("— 3 files — apply:");
+  });
+
+  test("singular file count has no trailing s", () => {
+    const section = proposalsSection([proposal({ id: 1, pathCount: 1 })]);
+    expect(section).toContain("— 1 file — apply:");
+  });
+
+  test("neutralizes wikilink syntax in the reason", () => {
+    const section = proposalsSection([
+      proposal({ id: 1, reason: "merge [[Danny]] into [[Daniel]]" }),
+    ]);
+    expect(section).toContain("merge \\[\\[Danny\\]\\] into \\[\\[Daniel\\]\\]");
+  });
+
+  test("caps at MAX_EDITION_PROPOSALS with a +N more tail", () => {
+    expect(MAX_EDITION_PROPOSALS).toBe(3);
+    const proposals = [1, 2, 3, 4, 5].map((id) => proposal({ id }));
+    const section = proposalsSection(proposals);
+    expect(section).not.toBeNull();
+    const rendered = [...section!.matchAll(/- P(\d+)/g)];
+    expect(rendered).toHaveLength(3);
+    expect(section).toContain("+2 more — `dome proposals`");
+  });
+
+  test("no tail line when the count is within the cap", () => {
+    const section = proposalsSection([proposal({ id: 1 })]);
+    expect(section).not.toContain("more —");
   });
 });
 

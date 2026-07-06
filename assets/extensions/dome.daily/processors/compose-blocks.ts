@@ -1,8 +1,9 @@
 // dome.daily.compose-blocks — the deterministic compositor (daily-surface D6).
 //
-// At 05:25 (schedule) and on `questions.changed` + source-file + sweep-ledger
-// signals, this processor composes the deterministic edition blocks into
-// TODAY's daily: the "To decide" questions list, the agenda, the
+// At 05:25 (schedule) and on `questions.changed` + `proposals.changed` +
+// source-file + sweep-ledger signals, this processor composes the
+// deterministic edition blocks into TODAY's daily: the "To decide" questions
+// list, the "To review" pending-proposals list, the agenda, the
 // integrated-overnight sweep digest, and the honest sources-seen record — each
 // rendered from current inputs by the pure renderers in `edition-blocks.ts`.
 // It also performs the one-time migration that removes the retired
@@ -13,11 +14,12 @@
 // patch (the recompose is a no-op when inputs are unchanged), the patch is
 // atomic (never a half-written package), and the only path it ever writes is
 // TODAY's daily — historical dailies are closed records. When `questions.read`
-// is declared but `ctx.operational.questions` is absent, the questions block
-// is omitted and a LOUD `dome.daily.questions-view-missing` warning fires —
-// never a silent empty render (the degradation ladder's questions-view rung).
-// Normative: [[wiki/specs/daily-surface]] §"Block ownership" + §"The
-// degradation ladder"; choreography row 05:25.
+// (or `proposals.read`) is declared but `ctx.operational.questions` (or
+// `.proposals`) is absent, the corresponding block is omitted and a LOUD
+// `dome.daily.questions-view-missing` / `dome.daily.proposals-view-missing`
+// warning fires — never a silent empty render (the degradation ladder's
+// view-missing rungs). Normative: [[wiki/specs/daily-surface]] §"Block
+// ownership" + §"The degradation ladder"; choreography row 05:25.
 
 import {
   diagnosticEffect,
@@ -25,9 +27,11 @@ import {
   type Effect,
   type FileChangeInput,
 } from "../../../../src/core/effect";
+import { compareStrings } from "../../../../src/core/compare";
 import { generatedBlockAnomalyDiagnostics } from "../../../../src/core/generated-block-diagnostics";
 import {
   defineProcessorImplementation,
+  type OperationalProposalRow,
   type OperationalQuestionRow,
   type ProcessorContext,
 } from "../../../../src/core/processor";
@@ -52,15 +56,18 @@ import {
   LEGACY_BRIEF_INTEGRATED,
   LEGACY_BRIEF_QUESTIONS,
   LEGACY_BRIEF_SOURCES,
+  PROPOSALS_BLOCK,
   QUESTIONS_BLOCK,
   SOURCES_BLOCK,
 } from "./daily-types";
 import {
   agendaSection,
   integratedSection,
+  proposalsSection,
   questionsSection,
   replaceEditionBlock,
   sourcesSection,
+  type EditionProposal,
   type EditionQuestion,
 } from "./edition-blocks";
 import { parseSweepLedger } from "./sweep-ledger";
@@ -146,6 +153,39 @@ const composeBlocks = defineProcessorImplementation({
       afterBlock: { owner: DAILY_OWNER, block: QUESTIONS_BLOCK },
     });
 
+    // Proposals — the "To review" block. `proposals.read` is declared; a
+    // missing operational view is LOUD (the block is omitted, never a silent
+    // empty render). NEEDS_ARE_LOUD applied locally, mirroring the questions
+    // view above. Anchored to the questions block (not integrated) so a
+    // first-time render lands the "To review" block between "To decide" and
+    // "Integrated Overnight" — this call runs after the integrated splice
+    // above, so its insert (right after the questions block's end) pushes
+    // the already-spliced integrated block down rather than the reverse.
+    const proposalsView = ctx.operational?.proposals;
+    if (proposalsView === undefined) {
+      diagnostics.push(
+        diagnosticEffect({
+          severity: "warning",
+          code: "dome.daily.proposals-view-missing",
+          message:
+            "dome.daily.compose-blocks declares proposals.read but received no proposals view; the To-review block is omitted",
+          sourceRefs: [ctx.sourceRef(todayPath)],
+        }),
+      );
+    } else {
+      const proposals = [...proposalsView({ status: "pending" })]
+        .sort((a, b) => compareStrings(a.createdAt, b.createdAt))
+        .map(toEditionProposal);
+      content = replaceEditionBlock({
+        content,
+        owner: DAILY_OWNER,
+        block: PROPOSALS_BLOCK,
+        section: proposalsSection(proposals),
+        heading: START_HERE_HEADING,
+        afterBlock: { owner: DAILY_OWNER, block: QUESTIONS_BLOCK },
+      });
+    }
+
     // Sources-seen — one line per source kind whose day-file exists today.
     const calendar = await ctx.snapshot.readFile(
       `sources/calendar/${todayStr}.md`,
@@ -227,5 +267,20 @@ function toEditionQuestion(row: OperationalQuestionRow): EditionQuestion {
     automationPolicy: questionAutomationPolicy(row.metadata),
     recommendedAnswer: row.metadata?.recommendedAnswer ?? null,
     askedAt: row.askedAt,
+  });
+}
+
+/**
+ * Map a durable operational proposal row to the plain `EditionProposal`
+ * shape the "To review" renderer consumes — `pathCount` is derived from the
+ * row's `paths` (its raw `FileChange` payload stays internal to
+ * `proposals.db`, per `OperationalProposalRow`'s narrower view contract).
+ */
+function toEditionProposal(row: OperationalProposalRow): EditionProposal {
+  return Object.freeze({
+    id: row.id,
+    processorId: row.processorId,
+    reason: row.reason,
+    pathCount: row.paths.length,
   });
 }

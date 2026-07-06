@@ -276,6 +276,7 @@ scenario(
           "      graph.write: [\"dome.daily.*\"]",
           "      question.ask: true",
           "      questions.read: true",
+          "      proposals.read: true",
           "  dome.agent:",
           "    enabled: true",
           "    grant:",
