@@ -103,6 +103,26 @@ describe("claimsFromMarkdown", () => {
     expect(claimsFromMarkdown("**Important** this is just emphasis\n")).toHaveLength(0);
   });
 
+  test("numbered narrative headers are not claim keys (enumeration, not durable facts)", () => {
+    // The exact danny.md line: an unfinished narrative list item whose bold
+    // prefix happens to be `**Key:**`-shaped. `1. Tone feedback delivered
+    // (R4 head-on)` is a narrative enumeration header, not a Key: value
+    // attribute — it must never anchor into Current facts.
+    const content =
+      "**1. Tone feedback delivered (R4 head-on):** told Danny he needs to outwardly own his";
+    expect(claimsFromMarkdown(content)).toHaveLength(0);
+  });
+
+  test("paren-numbered narrative headers are also excluded", () => {
+    expect(claimsFromMarkdown("**3) Follow-up:** scheduled\n")).toHaveLength(0);
+  });
+
+  test("a key that merely starts with digits (not `N. `/`N) `-shaped) still parses", () => {
+    const content = ["**Level:** M4", "**2025 Goal:** ship v2"].join("\n");
+    const claims = claimsFromMarkdown(content);
+    expect(claims.map((c) => c.key)).toEqual(["Level", "2025 Goal"]);
+  });
+
   test("claim lines inside a generated block are not parsed as claims", () => {
     const content = [
       "# Atlas",

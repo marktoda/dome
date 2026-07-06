@@ -62,6 +62,7 @@ const STATUS_KEYS = Object.freeze([
   "outbox_pending",
   "outbox_failed",
   "quarantined",
+  "pending_proposals",
 ]);
 
 const DOCTOR_KEYS = Object.freeze([

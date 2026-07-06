@@ -51,6 +51,7 @@ function questionForQuarantine(row: OperationalQuarantineRow): QuestionEffect {
       automationPolicy: "owner-needed",
       ownerNeededReason:
         "Resetting a quarantined processor can rerun work that previously failed.",
+      subjectProcessorId: row.processorId,
     },
   });
 }

@@ -81,6 +81,7 @@ import { currentSha, isAncestor } from "../../git";
 import { replayFinalizeJournal } from "../core/finalize-journal";
 import type { ApplyEffectSinks } from "../core/apply-effect";
 import { failRunIfCurrent } from "../../ledger/runs";
+import { listProposals } from "../../proposals/pending-proposals";
 import { buildOperationalQueryView } from "../operational/operational-query-view";
 import { withProjectionWriteLock } from "./projection-lock";
 
@@ -237,6 +238,32 @@ function outboxChangedFlagFor(runtime: VaultRuntime): QuestionsChangedFlag {
     outboxChangedFlags.set(runtime, flag);
   }
   return flag;
+}
+
+/**
+ * Host-scoped `proposals.changed` accumulator — the exact peer of
+ * `QuestionsChangedFlag` / the `outbox.changed` flag. Fired by the
+ * `enqueueProposal` sink (src/projections/sinks.ts) when a garden propose (or
+ * downgraded) patch is newly inserted into `proposals.db`; a dedupe-hit
+ * re-enqueue does not set it. The tick epilogue snapshots+clears and
+ * dispatches `proposals.changed` subscribers at most once per tick, same
+ * recursion guard as `outbox.changed`. `markProposalsChanged` is exported so
+ * the sink — which lives outside this module — can set the flag without
+ * reaching into the WeakMap directly.
+ */
+const proposalsChangedFlags = new WeakMap<VaultRuntime, QuestionsChangedFlag>();
+
+function proposalsChangedFlagFor(runtime: VaultRuntime): QuestionsChangedFlag {
+  let flag = proposalsChangedFlags.get(runtime);
+  if (flag === undefined) {
+    flag = { changed: false };
+    proposalsChangedFlags.set(runtime, flag);
+  }
+  return flag;
+}
+
+export function markProposalsChanged(runtime: VaultRuntime): void {
+  proposalsChangedFlagFor(runtime).changed = true;
 }
 
 type CompilerHostTickCommonOptions = {
@@ -566,6 +593,9 @@ async function runAdoptionCycle(opts: {
     () => {
       outboxChangedFlagFor(runtime).changed = true;
     },
+    () => {
+      markProposalsChanged(runtime);
+    },
   );
 
   const sinks = sinksFor({ base: proposal.base, head: proposal.head });
@@ -743,6 +773,9 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
     now,
     onQuestionsChanged,
     onOutboxChanged,
+    () => {
+      markProposalsChanged(opts.runtime);
+    },
   );
   const sinks =
     opts.sinks ?? sinksForCursor({ sinksFor, cursor });
@@ -789,6 +822,12 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
         }
       : {}),
     questionAutoResolve: opts.runtime.config.engine.autoResolveQuestions,
+    // Subject-liveness expiry exempts configured-but-disabled bundles'
+    // processors (the quarantine-GC posture: registry is authoritative only
+    // for enabled bundles).
+    disabledExtensionIds: opts.runtime.configuredExtensions
+      .filter((status) => !status.enabled)
+      .map((status) => status.id),
     onQuestionsChanged,
     onOutboxChanged,
     adoptSubProposal,
@@ -796,7 +835,7 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
   });
 
-  // Tick epilogue: dispatch the three store-change signals at most ONCE per
+  // Tick epilogue: dispatch the four store-change signals at most ONCE per
   // tick each, after every phase that can change the corresponding store has
   // run. Snapshot+clear BEFORE each dispatch — changes the dispatch itself
   // causes (subscriber emissions, nested sub-proposal gardens) re-set the
@@ -832,6 +871,14 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
       storeSignal: "quarantine.changed",
     });
   }
+  const proposalsChanged = proposalsChangedFlagFor(opts.runtime);
+  if (proposalsChanged.changed) {
+    proposalsChanged.changed = false;
+    await runStoreChangedSubscribers({
+      ...signalDeps,
+      storeSignal: "proposals.changed",
+    });
+  }
 
   if (opts.branch !== undefined && cursor.current !== beforeOperational) {
     await rebuildProjectionIfGlobalConfigChanged({
@@ -860,6 +907,7 @@ function operationalQueryViewForRuntime(
     executionState: runtime.processorRuntime.executionState,
     queryQuestions: (filter) =>
       queryQuestionRecords(runtime.projectionDb, filter),
+    queryProposals: (filter) => listProposals(runtime.proposalsDb, filter),
     now,
   });
 }
@@ -925,6 +973,9 @@ async function runAnswerHandlersForQuestionUnlocked(opts: {
     },
     () => {
       outboxChanged.changed = true;
+    },
+    () => {
+      markProposalsChanged(opts.runtime);
     },
   );
   const cursor: AdoptedCursor = { current: adopted };
@@ -992,6 +1043,14 @@ async function runAnswerHandlersForQuestionUnlocked(opts: {
     await runStoreChangedSubscribers({
       ...signalDeps,
       storeSignal: "quarantine.changed",
+    });
+  }
+  const proposalsChangedResolve = proposalsChangedFlagFor(opts.runtime);
+  if (proposalsChangedResolve.changed) {
+    proposalsChangedResolve.changed = false;
+    await runStoreChangedSubscribers({
+      ...signalDeps,
+      storeSignal: "proposals.changed",
     });
   }
 
@@ -1122,10 +1181,10 @@ function runtimeVault(runtime: VaultRuntime): {
   };
 }
 
-// The shared GardenRunDeps + registry the three store-change dispatch channels
-// (questions/outbox/quarantine) all consume. Built once per dispatch point so
-// the questions.changed call and the two new store-changed calls stay
-// byte-identical except for the store signal.
+// The shared GardenRunDeps + registry the four store-change dispatch channels
+// (questions/outbox/quarantine/proposals) all consume. Built once per
+// dispatch point so the questions.changed call and the store-changed calls
+// stay byte-identical except for the store signal.
 function storeChangedSignalDeps(opts: {
   readonly runtime: VaultRuntime;
   readonly vault: ReturnType<typeof runtimeVault>;
@@ -1174,6 +1233,7 @@ function sinksForRuntime(
   now?: () => Date,
   onQuestionsChanged?: () => void,
   onOutboxChanged?: () => void,
+  onProposalsChanged?: () => void,
 ): (
   frame: { readonly base: CommitOid; readonly head: CommitOid },
 ) => ApplyEffectSinks {
@@ -1213,6 +1273,9 @@ function sinksForRuntime(
       adoptedCommit: frame.head,
       ...(onQuestionsChanged !== undefined ? { onQuestionsChanged } : {}),
       ...(onOutboxChanged !== undefined ? { onOutboxChanged } : {}),
+      proposalsDb: runtime.proposalsDb,
+      vaultPath: runtime.path,
+      ...(onProposalsChanged !== undefined ? { onProposalsChanged } : {}),
       projectionWriteLock: (fn) =>
         withProjectionWriteLock(
           { vaultPath: runtime.path, command: "projection-sink" },
@@ -1280,6 +1343,12 @@ function sinksForCursor(opts: {
   const current = (): ApplyEffectSinks =>
     opts.sinksFor({ base: opts.cursor.current, head: opts.cursor.current });
 
+  // `enqueueProposal`'s presence is determined once, by whether the wrapped
+  // `sinksFor` closure was built with a proposals.db handle (see
+  // `sinksForRuntime`) — invariant across cursor advances within one host
+  // tick, so a single-frame probe here is sufficient.
+  const hasEnqueueProposal = current().enqueueProposal !== undefined;
+
   return Object.freeze({
     applyPatch: async (input) => current().applyPatch(input),
     captureView: async (input) => current().captureView(input),
@@ -1296,6 +1365,15 @@ function sinksForCursor(opts: {
     recoverOutbox: async (input) => current().recoverOutbox(input),
     recoverQuarantine: async (input) => current().recoverQuarantine(input),
     recoverRun: async (input) => current().recoverRun(input),
+    ...(hasEnqueueProposal
+      ? {
+          enqueueProposal: async (
+            input: Parameters<
+              NonNullable<ApplyEffectSinks["enqueueProposal"]>
+            >[0],
+          ) => current().enqueueProposal!(input),
+        }
+      : {}),
   } satisfies ApplyEffectSinks);
 }
 

@@ -141,6 +141,10 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
       // ctx.operational.questions to render the deterministic "To decide"
       // block (daily-surface §"Block ownership").
       "questions.read": true,
+      // dome.daily.compose-blocks reads pending garden-proposal rows via
+      // ctx.operational.proposals to render the deterministic "To review"
+      // block (daily-surface §"Block ownership").
+      "proposals.read": true,
     }),
     extension("dome.claims", true, {
       read: ["wiki/**/*.md", "notes/*.md"],

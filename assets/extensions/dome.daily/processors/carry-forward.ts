@@ -40,6 +40,7 @@ import {
   type DailySettledOpenLoopSource,
 } from "./daily-types";
 import {
+  nearDuplicateOpenLoops,
   openLoopFreshnessKey,
   openLoopIdentity,
   openLoopSurfaceKey,
@@ -50,6 +51,11 @@ import {
   replaceOpenLoopSurfaceSection,
   settledSourceBackedOpenLoopsFromMarkdown,
 } from "./open-loop-surface";
+
+// A due-date token stamped on the rendered line (`📅 2026-07-03`) — one of
+// the two "more complete" signals (alongside a stamped `^anchor`) that makes
+// one near-duplicate phrasing the preferred survivor over another.
+const DUE_TOKEN_RE = /📅 \d{4}-\d{2}-\d{2}/;
 
 const OPEN_LOOP_SURFACE_LIMIT = 12;
 
@@ -293,11 +299,35 @@ function mergeRetainedOpenLoops(input: {
   const surfaceKeys = new Set<string>();
 
   const append = (item: DailyOpenLoopSource): void => {
-    if (out.length >= input.limit) return;
     const identity = openLoopIdentity(item);
     if (identities.has(identity)) return;
     const surfaceKey = openLoopSurfaceKey(item);
     if (surfaceKeys.has(surfaceKey)) return;
+
+    // Conservative semantic fold: the same real-world task phrased
+    // differently in two source files (the July-5 double-render bug) still
+    // shares enough tokens to be recognized here even though the exact-key
+    // checks above missed it. On a match, the more complete phrasing
+    // (stamped `^anchor`, then a due-date token) replaces the incumbent IN
+    // PLACE — position in `out` is preserved — so recomposing a daily that
+    // already carries both duplicates (both retained) collapses to one.
+    const dupIndex = out.findIndex((existing) =>
+      nearDuplicateOpenLoops(existing.body, item.body)
+    );
+    if (dupIndex !== -1) {
+      const incumbent = out[dupIndex];
+      if (incumbent !== undefined && shouldReplaceNearDuplicate(incumbent, item)) {
+        identities.add(identity);
+        surfaceKeys.add(surfaceKey);
+        out[dupIndex] = item;
+      }
+      return;
+    }
+
+    // Deliberately checked LAST: at the item cap a near-duplicate replace
+    // above must still be able to upgrade an incumbent — only net-new
+    // appends are capped.
+    if (out.length >= input.limit) return;
     identities.add(identity);
     surfaceKeys.add(surfaceKey);
     out.push(item);
@@ -310,6 +340,24 @@ function mergeRetainedOpenLoops(input: {
   for (const ranked of input.rankedItems) append(ranked);
 
   return Object.freeze(out);
+}
+
+/**
+ * True when `newcomer` should replace `incumbent` as the survivor of a
+ * near-duplicate fold: the newcomer carries strictly more identity/schedule
+ * signal. A stamped `^anchor` outranks everything (anchors are move- and
+ * edit-stable identity); on an anchor tie, a due-date token the incumbent
+ * lacks wins. Otherwise the incumbent — first seen — is kept.
+ */
+function shouldReplaceNearDuplicate(
+  incumbent: DailyOpenLoopSource,
+  newcomer: DailyOpenLoopSource,
+): boolean {
+  const incumbentAnchored = incumbent.anchor !== undefined;
+  const newcomerAnchored = newcomer.anchor !== undefined;
+  if (!incumbentAnchored && newcomerAnchored) return true;
+  if (incumbentAnchored !== newcomerAnchored) return false;
+  return !DUE_TOKEN_RE.test(incumbent.body) && DUE_TOKEN_RE.test(newcomer.body);
 }
 
 function patchSourceRefs(

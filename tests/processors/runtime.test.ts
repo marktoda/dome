@@ -17,6 +17,7 @@ import {
   type Capability,
   type ExecutionPolicyRequest,
   type OperationalOutboxRow,
+  type OperationalProposalRow,
   type OperationalQuarantineRow,
   type OperationalQuestionRow,
   type OperationalQueryView,
@@ -796,6 +797,96 @@ describe("gardenRunner — executor diagnostics", () => {
 
     expect(seen.allowed).toEqual(["Which vendor?"]);
     expect(seen.otherCapEmpty).toBe(true);
+    expect(seen.noDeclareAbsent).toBe(true);
+  });
+
+  test("garden processor receives proposal rows only with effective proposals.read grant", async () => {
+    const proposalsCap: Capability = { kind: "proposals.read" };
+    const quarantineCap: Capability = { kind: "quarantine.read" };
+    const row: OperationalProposalRow = Object.freeze({
+      id: 1,
+      processorId: "test.garden",
+      reason: "tidy up the notes",
+      paths: ["notes/a.md"],
+      createdAt: "2026-07-06T00:00:00.000Z",
+      status: "pending",
+    });
+    const operational: OperationalQueryView = Object.freeze({
+      outbox: () => Object.freeze([]),
+      quarantines: () => Object.freeze([]),
+      orphanRuns: () => Object.freeze([]),
+      runs: () => Object.freeze([]),
+      questions: () => Object.freeze([]),
+      proposals: () => Object.freeze([row]),
+    });
+    const seen: {
+      allowed: ReadonlyArray<string>;
+      otherCapAbsent: boolean;
+      noDeclareAbsent: boolean;
+    } = {
+      allowed: [],
+      otherCapAbsent: false,
+      noDeclareAbsent: false,
+    };
+    const allowed = makeFixtureProcessor({
+      id: "test.garden.proposals-read.allowed",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      capabilities: withRead(proposalsCap),
+      run: async (ctx) => {
+        seen.allowed =
+          ctx.operational?.proposals?.().map((p) => p.reason) ?? [];
+        return [];
+      },
+    });
+    // Declares+is-granted a *different* operational read cap (quarantine.read)
+    // but not proposals.read: ctx.operational is present (quarantine.read is
+    // effective) while the `proposals` field itself is absent — unlike the
+    // other operational accessors, `proposals` degrades by key omission, not
+    // by returning [] (docs/wiki/specs/capabilities.md §"proposals.read").
+    const otherCap = makeFixtureProcessor({
+      id: "test.garden.proposals-read.other-cap",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      capabilities: withRead(quarantineCap),
+      run: async (ctx) => {
+        seen.otherCapAbsent =
+          ctx.operational !== undefined && ctx.operational.proposals === undefined;
+        return [];
+      },
+    });
+    // Declares no operational read capability at all: ctx.operational is
+    // absent entirely.
+    const noDeclare = makeFixtureProcessor({
+      id: "test.garden.proposals-read.no-declare",
+      phase: "garden",
+      triggers: [{ kind: "signal", name: "file.created" }],
+      capabilities: withRead(),
+      run: async (ctx) => {
+        seen.noDeclareAbsent = ctx.operational === undefined;
+        return [];
+      },
+    });
+    const rt = buildRuntimeFor([allowed, otherCap, noDeclare], {
+      resolveGrants: (processorId) =>
+        processorId === allowed.id
+          ? withRead(proposalsCap)
+          : processorId === otherCap.id
+            ? withRead(quarantineCap)
+            : withRead(),
+      operational,
+    });
+
+    await rt.gardenRunner({
+      vault: STUB_VAULT,
+      adopted: CANDIDATE,
+      changedPaths: ["wiki/a.md"],
+      signals: [SIGNAL_CREATED],
+      proposal,
+    });
+
+    expect(seen.allowed).toEqual(["tidy up the notes"]);
+    expect(seen.otherCapAbsent).toBe(true);
     expect(seen.noDeclareAbsent).toBe(true);
   });
 

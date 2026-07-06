@@ -19,6 +19,9 @@ import {
 } from "../../assets/extensions/dome.daily/processors/daily-scaffold";
 import {
   completedSourceBackedOpenLoopsFromMarkdown,
+  NEAR_DUPLICATE_JACCARD,
+  nearDuplicateOpenLoops,
+  normalizedOpenLoopTokens,
   openLoopAnchorFromStableId,
   openLoopFreshnessKey,
   openLoopIdentity,
@@ -1134,5 +1137,102 @@ describe("dome.daily shared date helpers", () => {
         content: section ?? "",
       }),
     ).toEqual([]);
+  });
+});
+
+// nearDuplicateOpenLoops — the July-5 double-render bug: the same
+// real-world task, worded differently across a synthesis page and an older
+// daily, must fold even though exact-key dedup (openLoopIdentity /
+// openLoopSurfaceKey) cannot see the match. The four bodies below are the
+// REAL production bullets (wiki/dailies/2026-07-05.md), copied verbatim.
+describe("nearDuplicateOpenLoops", () => {
+  // Pair 1: a synthesis-page phrasing vs. an anchored+dated daily phrasing.
+  const BODY_1 =
+    "Send Danny the exact text passages he asked for (blame-forward lines vs. the ownership-first counterfactual) — receipts compiled on [[wiki/entities/danny]] #task";
+  const BODY_2 =
+    "Send Danny the exact blame-forward passages vs. ownership-first counterfactual he asked for [[wiki/entities/danny]] #task 📅 2026-07-03";
+  // Pair 2: same shape, a different real task from the same daily.
+  const BODY_3 =
+    "Post Mark's system-level ownership message in the rollout thread (drafted 7/02) #task";
+  const BODY_4 =
+    "Post the system-level ownership message in the swapsteps rollout thread [[wiki/syntheses/per-hop-slippage-incident-2026-07]] #task 📅 2026-07-02";
+  // Negative control: two DISTINCT real tasks from the same daily — must
+  // never fold no matter how "task-shaped" they both are.
+  const BODY_5 =
+    "Confirm the fix-forward plan lands with a single named owner after Monday's session (Eric S booked it) #task";
+  const BODY_6 =
+    "Decide whether per-hop floors block or gate the Guidestar ramp checkpoints (Cody's plan says continue; Nezlobin wants care in reading experiment data) #task";
+
+  function jaccard(a: string, b: string): number {
+    const tokensA = normalizedOpenLoopTokens(a);
+    const tokensB = normalizedOpenLoopTokens(b);
+    let intersection = 0;
+    for (const token of tokensA) if (tokensB.has(token)) intersection += 1;
+    const union = tokensA.size + tokensB.size - intersection;
+    return union === 0 ? 0 : intersection / union;
+  }
+
+  // Calibration: the tokenizer must clear the threshold for both REAL
+  // positive pairs and stay well clear of it for the REAL negative pair —
+  // pinned so a future tokenizer tweak can't silently regress the fix.
+  test("calibration: token-set Jaccard on the real July-5 bullets", () => {
+    expect(jaccard(BODY_1, BODY_2)).toBeGreaterThanOrEqual(
+      NEAR_DUPLICATE_JACCARD,
+    );
+    expect(jaccard(BODY_3, BODY_4)).toBeGreaterThanOrEqual(
+      NEAR_DUPLICATE_JACCARD,
+    );
+    expect(jaccard(BODY_5, BODY_6)).toBeLessThan(NEAR_DUPLICATE_JACCARD - 0.3);
+  });
+
+  test("calibration: all four real positive bodies clear the 6-token floor comfortably", () => {
+    // The token floor rejects terse bodies, not real prose tasks — every
+    // production bullet tokenizes well above 6, so raising the floor from 4
+    // (after the ping-pair false-fold review finding below) costs nothing
+    // on the actual bug the fold exists for.
+    for (const body of [BODY_1, BODY_2, BODY_3, BODY_4]) {
+      expect(normalizedOpenLoopTokens(body).size).toBeGreaterThanOrEqual(10);
+    }
+  });
+
+  test("folds the Danny receipts pair (synthesis wording vs. anchored/dated daily wording)", () => {
+    expect(nearDuplicateOpenLoops(BODY_1, BODY_2)).toBe(true);
+    expect(nearDuplicateOpenLoops(BODY_2, BODY_1)).toBe(true);
+  });
+
+  test("folds the rollout-message pair (Mark's phrasing vs. the wikilinked/dated phrasing)", () => {
+    expect(nearDuplicateOpenLoops(BODY_3, BODY_4)).toBe(true);
+  });
+
+  test("does not fold two distinct real tasks from the same daily", () => {
+    expect(nearDuplicateOpenLoops(BODY_5, BODY_6)).toBe(false);
+  });
+
+  test("never folds bodies under 6 tokens, even near-identical ones", () => {
+    expect(normalizedOpenLoopTokens("Ping Sam").size).toBeLessThan(6);
+    expect(nearDuplicateOpenLoops("Ping Sam", "Ping Sam now")).toBe(false);
+    expect(nearDuplicateOpenLoops("Buy milk", "Buy milk")).toBe(false);
+  });
+
+  // Regression (review finding): terse "verb + entity + preposition + noun"
+  // bodies share their stopword/entity scaffolding — at a 4-token floor,
+  // {ping, danny, re, budget} vs {ping, danny, re, travel} is J=3/5=0.6,
+  // folding two DIFFERENT tasks. The 6-token floor makes both ineligible.
+  test("does not fold terse same-scaffold different-noun tasks (4 tokens)", () => {
+    const budget = "Ping [[wiki/entities/danny]] re budget #task";
+    const travel = "Ping [[wiki/entities/danny]] re travel #task";
+    expect(normalizedOpenLoopTokens(budget).size).toBe(4);
+    expect(nearDuplicateOpenLoops(budget, travel)).toBe(false);
+  });
+
+  test("does not fold the 5-token variant either (Q2 budget vs Q2 travel)", () => {
+    const budget = "Ping [[wiki/entities/danny]] re Q2 budget #task";
+    const travel = "Ping [[wiki/entities/danny]] re Q2 travel #task";
+    expect(normalizedOpenLoopTokens(budget).size).toBe(5);
+    expect(nearDuplicateOpenLoops(budget, travel)).toBe(false);
+  });
+
+  test("a body is never a near-duplicate of unrelated short text", () => {
+    expect(nearDuplicateOpenLoops(BODY_1, "Buy milk")).toBe(false);
   });
 });

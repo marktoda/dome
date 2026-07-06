@@ -5,7 +5,7 @@
 // by asserting a row is visible via the corresponding read accessor.
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -32,6 +32,8 @@ import { factsBySubject } from "../../src/projections/facts";
 import { queryDiagnostics } from "../../src/projections/diagnostics";
 import { answerQuestion, queryQuestions } from "../../src/projections/questions";
 import { insertPending, markFailed, queryOutbox } from "../../src/outbox/dispatch";
+import { openProposalsDb, type ProposalsDb } from "../../src/proposals/db";
+import { getProposal } from "../../src/proposals/pending-proposals";
 import type { ApplyEffectSinks } from "../../src/engine/core/apply-effect";
 import type { RunId } from "../../src/engine/core/runner-contract";
 
@@ -613,5 +615,149 @@ describe("buildSqliteSinks pass-through injections", () => {
     expect(calls[0]?.effect).toBe(effect);
     expect(calls[0]?.processorId).toBe(PROCESSOR_ID);
     expect(calls[0]?.runId).toBe(RUN_ID);
+  });
+});
+
+describe("buildSqliteSinks enqueueProposal", () => {
+  let proposalsDb: ProposalsDb;
+
+  beforeEach(async () => {
+    const proposalsPath = join(root, ".dome", "state", "proposals.db");
+    const result = await openProposalsDb({ path: proposalsPath });
+    if (!result.ok) {
+      throw new Error(`openProposalsDb failed: ${JSON.stringify(result.error)}`);
+    }
+    proposalsDb = result.value.db;
+  });
+
+  afterEach(() => {
+    try {
+      proposalsDb.close();
+    } catch {
+      // already closed
+    }
+  });
+
+  const proposePatch: PatchEffect = patchEffect({
+    mode: "propose",
+    changes: [{ kind: "write", path: "wiki/x.md", content: "new\n" }],
+    reason: "garden propose test",
+    sourceRefs: [REF],
+  });
+
+  it("is omitted when proposalsDb/vaultPath are not supplied", () => {
+    const sinks = buildSqliteSinks({
+      projectionDb,
+      outboxDb,
+      adoptedCommit: ADOPTED,
+      applyPatch: noopApplyPatch,
+      captureView: noopCaptureView,
+      recoverQuarantine: noopRecoverQuarantine,
+      recoverRun: noopRecoverRun,
+    });
+    expect(sinks.enqueueProposal).toBeUndefined();
+  });
+
+  it("reads the CURRENT working-tree content into baseContents and inserts a row", async () => {
+    mkdirSync(join(root, "wiki"), { recursive: true });
+    writeFileSync(join(root, "wiki", "x.md"), "old\n", "utf8");
+
+    const changed: string[] = [];
+    const sinks = buildSqliteSinks({
+      projectionDb,
+      outboxDb,
+      adoptedCommit: ADOPTED,
+      applyPatch: noopApplyPatch,
+      captureView: noopCaptureView,
+      recoverQuarantine: noopRecoverQuarantine,
+      recoverRun: noopRecoverRun,
+      proposalsDb,
+      vaultPath: root,
+      onProposalsChanged: () => {
+        changed.push("changed");
+      },
+    });
+
+    const result = await sinks.enqueueProposal?.({
+      effect: proposePatch,
+      processorId: PROCESSOR_ID,
+      extensionId: "dome.example",
+      runId: RUN_ID,
+      baseCommit: ADOPTED,
+    });
+
+    expect(result?.inserted).toBe(true);
+    expect(result?.id).not.toBeNull();
+    const row = getProposal(proposalsDb, result!.id!);
+    expect(row).not.toBeNull();
+    expect(row?.processorId).toBe(PROCESSOR_ID);
+    expect(row?.extensionId).toBe("dome.example");
+    expect(row?.runId).toBe(RUN_ID);
+    expect(row?.baseCommit).toBe(ADOPTED);
+    expect(row?.baseContents).toEqual({ "wiki/x.md": "old\n" });
+    expect(changed).toEqual(["changed"]);
+  });
+
+  it("captures null baseContents for a path that does not exist yet", async () => {
+    const sinks = buildSqliteSinks({
+      projectionDb,
+      outboxDb,
+      adoptedCommit: ADOPTED,
+      applyPatch: noopApplyPatch,
+      captureView: noopCaptureView,
+      recoverQuarantine: noopRecoverQuarantine,
+      recoverRun: noopRecoverRun,
+      proposalsDb,
+      vaultPath: root,
+    });
+
+    const result = await sinks.enqueueProposal?.({
+      effect: proposePatch,
+      processorId: PROCESSOR_ID,
+      extensionId: "dome.example",
+      runId: RUN_ID,
+      baseCommit: ADOPTED,
+    });
+
+    const row = getProposal(proposalsDb, result!.id!);
+    expect(row?.baseContents).toEqual({ "wiki/x.md": null });
+  });
+
+  it("fires onProposalsChanged only on a fresh insert, not on a dedupe-hit re-enqueue", async () => {
+    const changed: string[] = [];
+    const sinks = buildSqliteSinks({
+      projectionDb,
+      outboxDb,
+      adoptedCommit: ADOPTED,
+      applyPatch: noopApplyPatch,
+      captureView: noopCaptureView,
+      recoverQuarantine: noopRecoverQuarantine,
+      recoverRun: noopRecoverRun,
+      proposalsDb,
+      vaultPath: root,
+      onProposalsChanged: () => {
+        changed.push("changed");
+      },
+    });
+
+    const first = await sinks.enqueueProposal?.({
+      effect: proposePatch,
+      processorId: PROCESSOR_ID,
+      extensionId: "dome.example",
+      runId: RUN_ID,
+      baseCommit: ADOPTED,
+    });
+    const second = await sinks.enqueueProposal?.({
+      effect: proposePatch,
+      processorId: PROCESSOR_ID,
+      extensionId: "dome.example",
+      runId: RUN_ID,
+      baseCommit: ADOPTED,
+    });
+
+    expect(first?.inserted).toBe(true);
+    expect(second?.inserted).toBe(false);
+    expect(second?.id).toBe(first?.id ?? null);
+    expect(changed).toEqual(["changed"]);
   });
 });

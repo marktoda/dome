@@ -288,6 +288,73 @@ describe("dome.health.report-card (processor run path)", () => {
     expect(daily).toContain(`# ${TODAY_STR}`);
     expect(daily).toContain(BLOCK_START);
   });
+
+  // ----- Aging decisions (Task 10) --------------------------------------------
+
+  test("aging: an open question ≥7 days old lists in BOTH the card and the daily block, with a resolve command", async () => {
+    const agingQuestion = q({
+      processorId: "dome.some.processor",
+      askedAt: "2026-05-20T00:00:00.000Z", // 12 days before the 2026-06-01 fire
+    });
+    const { card, daily } = await runReportCard(
+      { [TODAY_PATH]: BASE_DAILY },
+      {
+        runs: [run({ processorId: "dome.x", status: "succeeded" })],
+        questions: [agingQuestion],
+      },
+    );
+    expect(card).toContain("### Aging decisions");
+    expect(card).toContain("resolve: `dome resolve 1 <answer>`");
+    expect(daily).toContain("### Aging decisions");
+    expect(daily).toContain("resolve: `dome resolve 1 <answer>`");
+  });
+
+  test("no aging questions: card shows the fallback line, daily block omits the section", async () => {
+    const fresh = q({
+      processorId: "dome.some.processor",
+      askedAt: "2026-05-30T00:00:00.000Z", // 2 days before the fire — fresh
+    });
+    const { card, daily } = await runReportCard(
+      { [TODAY_PATH]: BASE_DAILY },
+      {
+        runs: [run({ processorId: "dome.x", status: "succeeded" })],
+        questions: [fresh],
+      },
+    );
+    expect(card).toContain("### Aging decisions");
+    expect(card).toContain("_No aging decisions this week._");
+    expect(daily).not.toContain("### Aging decisions");
+  });
+
+  test("aging: question_aging_days config is respected (degrade-not-crash)", async () => {
+    const fourDaysOld = q({
+      processorId: "dome.some.processor",
+      askedAt: "2026-05-28T00:00:00.000Z", // 4 days before the fire
+    });
+    const strict = await runReportCard(
+      { [TODAY_PATH]: BASE_DAILY },
+      {
+        runs: [run({ processorId: "dome.x", status: "succeeded" })],
+        questions: [fourDaysOld],
+      },
+      { question_aging_days: 3 },
+    );
+    expect(strict.card).not.toContain("_No aging decisions this week._");
+    expect(strict.daily).toContain("### Aging decisions");
+
+    // An invalid config value degrades to the default (7 days) rather than
+    // crashing — a 4-day-old question stays fresh under the default.
+    const degraded = await runReportCard(
+      { [TODAY_PATH]: BASE_DAILY },
+      {
+        runs: [run({ processorId: "dome.x", status: "succeeded" })],
+        questions: [fourDaysOld],
+      },
+      { question_aging_days: "not-a-number" },
+    );
+    expect(degraded.card).toContain("_No aging decisions this week._");
+    expect(degraded.daily).not.toContain("### Aging decisions");
+  });
 });
 
 // ----- Fixtures + harness ----------------------------------------------------
@@ -383,6 +450,7 @@ async function runReportCard(
         readonly questions: ReadonlyArray<OperationalQuestionRow>;
       }
     | undefined,
+  extensionConfig?: Readonly<Record<string, unknown>>,
 ): Promise<{
   readonly patch: PatchEffect | undefined;
   readonly card: string | null;
@@ -398,6 +466,7 @@ async function runReportCard(
     now: new Date(FIRED_AT),
     input: { kind: "schedule", cron: "22 5 * * 1", firedAt: FIRED_AT },
     ...(inputs !== undefined ? { operational: viewOf(inputs) } : {}),
+    ...(extensionConfig !== undefined ? { extensionConfig } : {}),
   });
   const effects = await reportCard.run(ctx);
   const patch = effects.find(

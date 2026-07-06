@@ -65,6 +65,7 @@ export function nextActionsForStatus(
     readonly dirtyUntracked?: number;
     readonly dirtyModifiedPaths?: ReadonlyArray<string>;
     readonly dirtyUntrackedPaths?: ReadonlyArray<string>;
+    readonly pendingProposals?: number;
   },
 ): ReadonlyArray<CliNextAction> {
   const out: CliNextAction[] = [];
@@ -74,6 +75,7 @@ export function nextActionsForStatus(
     dirtyUntracked = 0,
     dirtyModifiedPaths = [],
     dirtyUntrackedPaths = [],
+    pendingProposals = 0,
   } = input;
   pushAction(out, attention, DIRTY_REASONS, {
     command: "git status --short",
@@ -90,6 +92,10 @@ export function nextActionsForStatus(
       "Raw captures are waiting but the capture digestion loop is inactive " +
       "or not model-ready; inspect dome.agent, enable it in " +
       ".dome/config.yaml when ready, commit, then run dome sync --json.",
+  });
+  pushAction(out, attention, ["pending_proposals"], {
+    command: "dome proposals",
+    description: pendingProposalsDescription(pendingProposals),
   });
   pushAction(out, attention, ["adopted_ref_diverged"], {
     command: "dome reanchor",
@@ -152,6 +158,10 @@ export function nextActionsForStatus(
     });
   }
   return Object.freeze(out);
+}
+
+function pendingProposalsDescription(pendingProposals: number): string {
+  return `${pendingProposals} proposals awaiting review — dome proposals`;
 }
 
 function dirtyStatusDescription(input: {

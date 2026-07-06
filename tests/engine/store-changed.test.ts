@@ -1,7 +1,8 @@
 // store-changed — the operational dispatch channel for engine store-change
 // signals (docs/wiki/specs/processors.md §"Triggers and signals"). Mirrors
-// tests/engine/questions-changed.test.ts: the two NEW store-change signals
-// `outbox.changed` and `quarantine.changed` generalize the same pattern.
+// tests/engine/questions-changed.test.ts: the store-change signals
+// `outbox.changed`, `quarantine.changed`, and `proposals.changed` generalize
+// the same pattern.
 //
 // Surfaces under test:
 //   1. `runStoreChangedSubscribers` (src/engine/operational/store-changed.ts)
@@ -13,7 +14,9 @@
 //      terminal-failure sites in the outbox dispatcher fire `onOutboxChanged`
 //      (a non-terminal retryable attempt does NOT), and the quarantine store
 //      fires `onQuarantineChanged` at the threshold-trip and at every clear
-//      (a sub-threshold counter tick does NOT).
+//      (a sub-threshold counter tick does NOT). `proposals.changed`'s flag is
+//      set by the (later) proposal-enqueue sink; this file only exercises the
+//      shared dispatch channel for it.
 
 import {
   afterAll,
@@ -101,6 +104,7 @@ describe("runStoreChangedSubscribers", () => {
   for (const signal of [
     "outbox.changed",
     "quarantine.changed",
+    "proposals.changed",
   ] as const satisfies ReadonlyArray<StoreChangeSignal>) {
     test(`dispatches exactly the ${signal} subscribers with the synthesized garden envelope`, async () => {
       const vault = makeVault();

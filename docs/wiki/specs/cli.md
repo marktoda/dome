@@ -42,6 +42,18 @@ dome settle <block-id> <close|defer|keep> [--until <yyyy-mm-dd>] [--json]
                                 completes it (+ a Done-today bullet), defer
                                 rewrites the due date to --until, keep records
                                 nothing. One human commit (none for keep).
+dome proposals [--all] [--json]
+                                List pending garden propose-mode patches
+                                awaiting review (P<id>, path, diff stat,
+                                reason, apply/reject hints). --all also lists
+                                applied and rejected rows.
+dome apply <id> [--json]       Apply a pending proposal: write its changes
+                                and land ONE ordinary human commit. Refuses
+                                (stale) when the working tree has drifted
+                                from the proposal's recorded base content.
+dome reject <id> [note...] [--json]
+                                Reject a pending proposal. Records the
+                                decision only; writes no files.
 dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]
                                 FTS + structured query against adopted state.
 dome export-context <topic> [--limit <n>] [--json]
@@ -105,7 +117,7 @@ dome recipe <kind> [--url <base>]
 
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
 
-- **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, `dome resolve`, and `dome settle`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records an owner or agent answer to a Dome-raised decision and dispatches answer handlers; `settle` records an owner or agent decision on an open task by its `^block-anchor` (close / defer / keep) — resolve's sibling for tasks rather than questions (§"`dome settle`").
+- **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, `dome resolve`, `dome settle`, `dome proposals`, `dome apply`, and `dome reject`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records an owner or agent answer to a Dome-raised decision and dispatches answer handlers; `settle` records an owner or agent decision on an open task by its `^block-anchor` (close / defer / keep) — resolve's sibling for tasks rather than questions (§"`dome settle`"). `dome proposals` / `dome apply` / `dome reject` are the review-loop siblings for garden propose-mode patches: a downgraded or explicitly-proposed `PatchEffect` lands as a durable row in `proposals.db` instead of being silently dropped, and `apply`/`reject` are the human-side decision verbs — the same settle pattern (staleness check → working-tree write → one ordinary commit) applied to garden-authored changes instead of task lines (§"`dome proposals` / `dome apply` / `dome reject`").
 - **Adopted-state recall surfaces:** `dome query` and `dome export-context` are the normal explicit read views when the user or a foreground agent asks for recall, planning, agenda context, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands. `dome log` is the activity-recall sibling with a CLI-native posture (the `dome status` stance — no runtime, no view boundary): it reads git history directly and joins the run ledger (§"`dome log`"). `dome prep`, `dome agenda-with`, `dome stale-claims`, and `dome orphan-pages` are deterministic sibling views over the same view-command boundary — source-backed daily planning/agenda filters and claims/link-graph consistency audits — for the debugging, scripting, and unambiguous-filter cases where a natural-language `query` / `export-context` request isn't the goal. All four were previously reachable only through the hidden `dome run <name>` dispatcher; a feature behind a debug verb is unreachable, so they now have first-class top-level bindings like their `query` / `export-context` / `today` siblings.
 - **Advanced/debug and compatibility surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer`, `dome run`, `dome rebuild`, and `dome reanchor` remain available for detailed state inspection, extension development, maintenance, and explicit recovery. They are hidden from top-level help and are not the normal Claude Code workflow.
 
@@ -490,7 +502,7 @@ Composition (v1.0):
    - **detached HEAD** → exit 64 (EX_USAGE) with a clear stderr message.
    - **no commits** → exit 64 with a stderr message asking for an initial commit.
    - **diverged** → refuse before opening the adoption loop because the adopted ref is not an ancestor of HEAD; print recovery guidance and exit 1.
-   - **in-sync** → open the runtime, acquire the branch-level compiler-host lock, run one operational-work pump against the adopted commit (due schedule triggers, low-risk question auto-resolution when enabled, and outbox rows already pending before the pump started), print `dome sync: already in sync (<head> on <branch>)`, print durable attention / next-action lines when attention remains, exit 0.
+   - **in-sync** → open the runtime, acquire the branch-level compiler-host lock, run one operational-work pump against the adopted commit (due schedule triggers, low-risk question auto-resolution when enabled, outbox rows already pending before the pump started, and subject-liveness question expiry — see [[wiki/specs/effects]] §"QuestionEffect"), print `dome sync: already in sync (<head> on <branch>)`, print durable attention / next-action lines when attention remains, exit 0.
    - **drift** → open the runtime, acquire the branch-level compiler-host lock, run `runOneAdoption`, then after a successful adoption run the same operational-work pump against the new adopted commit; print the result block plus durable attention / next-action lines when attention remains (or the `--json` payload), exit 0 (adopted) or 1 (blocked).
    - **busy** → another Dome host already holds the branch-level compiler-host lock; print a retryable busy message, exit 75.
 4. Close the runtime on the way out.
@@ -751,7 +763,8 @@ readability option.
   "questions": 0,
   "outbox_pending": 0,
   "outbox_failed": 0,
-  "quarantined": 0
+  "quarantined": 0,
+  "pending_proposals": 0
 }
 ```
 
@@ -811,15 +824,17 @@ agent can safely follow. Current reasons include `adopted_ref_diverged`,
 `sync_needed`, `projection_stale`, `dirty_modified`, `dirty_untracked`,
 `pending_runs`, `failed_runs`, `serve_stale`, `service_not_loaded`,
 `model_provider_unreachable`, `diagnostics`, `questions`,
-`outbox_pending`, `outbox_failed`, `quarantined`, and
-`capture_loop_inactive`. This set is closed: the `StatusReason` union in
+`outbox_pending`, `outbox_failed`, `quarantined`,
+`capture_loop_inactive`, and `pending_proposals`. This set is closed: the `StatusReason` union in
 `src/surface/attention-reasons.ts` is its canonical inventory, and the emitter
 (`statusAttention`), the next-action buckets, and the CLI signal painter are all
 type-checked against it, so a code cannot be added or removed without the
 compiler flagging every site that must react. `adopted_ref_diverged` routes to `dome reanchor`
 (inspect first; see [[wiki/gotchas/adopted-ref-divergence]]);
 `service_not_loaded` routes to `dome restart`; `model_provider_unreachable`
-routes to `dome doctor --json`. Dirty reasons include bounded path samples in
+routes to `dome doctor --json`; `pending_proposals` routes to `dome proposals`
+(the review-loop sibling of `questions`; see §"`dome proposals` / `dome apply`
+/ `dome reject`"). Dirty reasons include bounded path samples in
 `dirty_modified_paths` and `dirty_untracked_paths`, and the dirty-state
 next-action description names those paths so a foreground agent can see the
 immediate draft files without issuing another status command. The counts remain
@@ -947,7 +962,11 @@ Default scope includes:
   warning/error/block content diagnostics that require attention;
 - **decisions:** unresolved QuestionEffect rows with row ids, options,
   per-row `dome resolve` commands, SourceRefs, and optional automation
-  metadata that separates agent/model-safe work from owner-needed decisions.
+  metadata that separates agent/model-safe work from owner-needed decisions,
+  plus a `proposals` array of pending garden propose-mode patches awaiting
+  `dome apply` / `dome reject` (the same `dome.proposals/v1` proposal view
+  `dome proposals` renders; §"`dome proposals` / `dome apply` / `dome
+  reject`").
 
 The `--engine`, `--content`, and `--decisions` flags narrow the report to one
 or more scopes. Plain text mode is attention-focused by default: it preserves
@@ -1028,7 +1047,8 @@ Abbreviated example:
     "owner_needed_questions": 1,
     "shownItems": 1,
     "omittedItems": 0,
-    "items": [{"id": 42, "question": "Retry failed outbox row?", "resolveCommand": "dome resolve 42 <retry|abandon>"}]
+    "items": [{"id": 42, "question": "Retry failed outbox row?", "resolveCommand": "dome resolve 42 <retry|abandon>"}],
+    "proposals": [{"id": 12, "processorId": "dome.agent.consolidate", "reason": "...", "paths": ["wiki/entities/danny.md"], "createdAt": "2026-05-29T10:00:00.000Z", "status": "pending", "stale": false, "diffStat": [{"path": "wiki/entities/danny.md", "added": 41, "removed": 238}]}]
   },
   "maintenance_loops": [
     {
@@ -1131,6 +1151,79 @@ short commit oid when one landed). `--json` emits `dome.settle/v1`:
 Exit codes: `0` on `settled`; `64` (`EX_USAGE`) on `not-found` (no line
 carries the anchor) or `invalid` (bad disposition, or `defer` without a
 well-formed `--until`).
+
+### `dome proposals [--all] [--json]` / `dome apply <id> [--json]` / `dome reject <id> [note...] [--json]`
+
+The review-loop verbs for garden propose-mode patches — a `PatchEffect` under
+`mode: "propose"` (or an auto-mode patch a capability policy downgraded to
+propose) is enqueued as a durable row in `proposals.db` instead of being
+silently dropped. `dome proposals` / `dome apply` / `dome reject` are the
+human-side decision surface, exactly the settle pattern (staleness check →
+working-tree write → one ordinary commit) applied to garden-authored changes
+instead of task lines. All three are **thin CLI bindings**: the collectors
+(`collectProposals`, `performApply`, `performReject` in
+`src/surface/proposals.ts`) are the same code the MCP `proposals` /
+`apply_proposal` / `reject_proposal` tools and the HTTP `GET /proposals`,
+`POST /apply`, `POST /reject` routes call — these commands never open the
+runtime and never talk to the engine, exactly like `dome capture` and
+`dome settle`.
+
+`dome proposals` defaults to pending rows only; `--all` also lists applied
+and rejected rows. Text output renders one block per proposal:
+
+```text
+P12  dome.agent.consolidate  2d  wiki/entities/danny.md (+41 −238)
+     split oversized entity page into danny + danny-promo-2026
+     apply: dome apply 12   ·   reject: dome reject 12
+```
+
+A multi-path proposal renders the first path's diff stat and appends
+` +N more` to the header line for the remaining paths (the full path list is
+always available under `--json`). A stale row (the working tree has drifted
+from the proposal's recorded base
+content since it was proposed) appends
+` [stale — regenerates on next garden pass]` to the header line. With no
+pending proposals, text mode prints one friendly line:
+`dome proposals: nothing awaiting review.` `--json` emits `dome.proposals/v1`:
+`{ schema, proposals: [{ id, processor_id, reason, paths, created_at,
+status, stale, diff_stat }] }`. `diff_stat` is a simple set-free line-count
+diff per changed path (`added` / `removed`); it is display-only and not
+exact-diff-algorithm equivalent.
+
+`dome apply <id>` writes every change in the proposal and lands ONE commit
+(`apply(P<id>): <reason first 60 chars>`, author `dome apply
+<dome-apply@local>`), then CAS-decides the row to `applied`. Before writing,
+it re-reads every changed path's current working content and compares it to
+the `baseContents` recorded when the proposal was enqueued; any drift aborts
+with `stale` and writes nothing — the row stays `pending` so a regenerated
+garden proposal (or a manual `dome reject`) can supersede it. Delete-change
+proposals are `unsupported` in v1 (`apply` does not delete files; reject the
+proposal and delete it manually). Text output is one line: `dome apply:
+applied P<id> (<short-commit>)` on success, or `dome apply: <message>` on
+`stale` / `not-found` / `not-pending` / `invalid` / `unsupported` (stderr).
+`--json` emits `dome.apply/v1`: `{ schema, status: "applied", id, commit }`,
+`{ schema, status: "stale", id, changed_paths, message }`, or
+`{ schema, status, message }` for the remaining outcomes.
+
+`dome reject <id> [note...]` CAS-decides the row to `rejected` and writes no
+files — the trailing words are an optional free-form note (mirrors `dome
+resolve`'s variadic value). Text output: `dome reject: rejected P<id>` on
+success, `dome reject: <message>` (stderr) on `not-found` / `not-pending` /
+`invalid`. `--json` emits `dome.reject/v1`: `{ schema, status: "rejected",
+id }` or `{ schema, status, message }`.
+
+Exit codes for both `apply` and `reject`: `0` on the success status
+(`applied` / `rejected`); `64` (`EX_USAGE`) on every other outcome.
+
+`dome status --json` carries a `pending_proposals` count and routes a
+`pending_proposals` attention reason (next action: `dome proposals`) when it
+is nonzero — the same treatment as open questions, so a garden review backlog
+does not silently sit outside the normal attention loop. `dome check --json`
+includes the same pending rows under `decisions.proposals` (an array of the
+`dome.proposals/v1` proposal view) alongside the existing question decisions,
+and a pending proposal flips check's `status` to `"attention"` exactly like an
+open question — both are decisions awaiting the owner, so the unified
+attention report surfaces and routes both decision kinds together.
 
 ### `dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--miss [note]] [--json]`
 
@@ -2215,7 +2308,7 @@ Composition (v1.0):
 5. Adoption runs; effects route through `buildSqliteSinks` (projection + outbox writes) + the engine's candidate-tree `applyPatch` sink. View delivery remains a placeholder sink in v1.0.
 6. Every adoption or operational-work pump acquires the same branch-level compiler-host lock that `dome sync` uses. A second host does not race the first; it reports busy and retries on the next poll.
 7. After an adoption finishes, `serve` checks drift again before sleeping. If HEAD moved while adoption was active, the next adoption starts immediately rather than waiting for the full poll interval. This coalesces stacked commits without overlapping compiler work.
-8. The host also runs operational-work pumps while HEAD is already in sync, on a quiet internal cadence. This is how schedule triggers, opt-in low-risk question auto-resolution, and outbox retries that become due solely because time passed make progress in a quiet vault. Default output stays silent; `--verbose` may print counts.
+8. The host also runs operational-work pumps while HEAD is already in sync, on a quiet internal cadence. This is how schedule triggers, opt-in low-risk question auto-resolution, subject-liveness question expiry, and outbox retries that become due solely because time passed make progress in a quiet vault. Default output stays silent; `--verbose` may print counts.
 9. The host refreshes `.dome/state/serve-heartbeat.json` so `dome status`
    can report whether the local compiler appears `running`, `stale`, or
    `off`. The heartbeat is observability only; the branch-level compiler-host
@@ -2489,8 +2582,9 @@ I/O failure.
 
 Runs the Dome MCP server over stdio for one vault — the shipped protocol
 adapter per [[wiki/specs/mcp-surface]] ([[wedge]] §"Phase 5 — MCP server").
-The server exposes eight typed tools (`capture`, `query`, `export_context`,
-`status`, `check`, `resolve`, `tasks`, `brief`) whose results are the same
+The server exposes thirteen typed tools (`capture`, `query`, `export_context`,
+`report_miss`, `status`, `check`, `resolve`, `settle`, `tasks`, `brief`,
+`proposals`, `apply_proposal`, `reject_proposal`) whose results are the same
 JSON documents the corresponding CLI verbs emit under `--json`; the adapter
 consumes the same data paths rather than re-implementing them.
 

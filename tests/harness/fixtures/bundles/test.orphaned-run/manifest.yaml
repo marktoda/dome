@@ -1,0 +1,11 @@
+id: test.orphaned-run
+version: 0.1.0
+processors:
+  - id: test.orphaned-run.worker
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "* * * * *"
+    capabilities: []
+    module: processors/worker.ts

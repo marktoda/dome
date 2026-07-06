@@ -19,12 +19,20 @@ import {
   findGeneratedBlock,
   replaceGeneratedBlock,
 } from "../../../../src/core/generated-block";
-import { resolveQuestionCommand } from "../../../../src/question-resolution";
+import type {
+  ExtensionConfig,
+  OperationalQuestionRow,
+} from "../../../../src/core/processor";
+import {
+  questionAutomationPolicy,
+  resolveQuestionCommand,
+} from "../../../../src/question-resolution";
 import type { CalendarMeeting } from "./calendar-day";
 import { escapeRegExp } from "./daily-paths";
 import {
   AGENDA_MARKERS,
   INTEGRATED_MARKERS,
+  PROPOSALS_MARKERS,
   QUESTIONS_MARKERS,
   SOURCES_MARKERS,
 } from "./daily-types";
@@ -51,6 +59,75 @@ export type EditionQuestion = {
 export const MAX_EDITION_QUESTIONS = 3;
 
 /**
+ * Map a durable operational question row to the plain `EditionQuestion` shape
+ * this module's renderers consume — shared by `dome.daily.compose-blocks`
+ * (the "To decide" block) and `dome.health.report-card` (the "Aging
+ * decisions" section), so both surfaces derive automation policy and
+ * recommended-answer the same way without re-deriving the mapping.
+ */
+export function toEditionQuestion(row: OperationalQuestionRow): EditionQuestion {
+  return Object.freeze({
+    id: row.id,
+    question: row.question,
+    options: row.options ?? [],
+    automationPolicy: questionAutomationPolicy(row.metadata),
+    recommendedAnswer: row.metadata?.recommendedAnswer ?? null,
+    askedAt: row.askedAt,
+  });
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Default `question_aging_days` — the age (in days) past which an open
+ * question stops repeating in the daily "To decide" block and escalates to
+ * the weekly review instead. Single source for both `dome.daily.compose-
+ * blocks` and `dome.health.report-card`'s config resolution, so the two
+ * surfaces can never drift on the threshold or its default.
+ */
+export const DEFAULT_QUESTION_AGING_DAYS = 7;
+
+/**
+ * Resolve `question_aging_days` from an extension's config, degrade-not-crash
+ * (mirrors `minClaimsFromConfig` in `dome.claims/processors/render-facts.ts`):
+ * a missing, non-numeric, non-integer, or non-positive value falls back to
+ * `DEFAULT_QUESTION_AGING_DAYS` rather than throwing.
+ */
+export function questionAgingDaysFromConfig(config?: ExtensionConfig): number {
+  const raw = config?.["question_aging_days"];
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw <= 0) {
+    return DEFAULT_QUESTION_AGING_DAYS;
+  }
+  return raw;
+}
+
+/**
+ * Partition rows by askedAt age against `nowIso`: a row is "aging" when its
+ * `askedAt` is strictly before `nowIso - agingDays` (an exactly-`agingDays`-
+ * old row is still fresh — a boundary-inclusive comparison would flip a row's
+ * bucket on the day it turns exactly N days old and back the next tick).
+ * Generic over any row shape carrying `askedAt` so both the plain
+ * `EditionQuestion` (compose-blocks) and the raw `OperationalQuestionRow`
+ * (report-card, which only needs the aging subset) share one aging rule.
+ */
+export function partitionQuestionsByAge<T extends { readonly askedAt: string }>(
+  rows: ReadonlyArray<T>,
+  opts: { readonly agingDays: number; readonly nowIso: string },
+): { readonly fresh: ReadonlyArray<T>; readonly aging: ReadonlyArray<T> } {
+  const cutoffMs = Date.parse(opts.nowIso) - opts.agingDays * DAY_MS;
+  const fresh: T[] = [];
+  const aging: T[] = [];
+  for (const row of rows) {
+    if (Date.parse(row.askedAt) < cutoffMs) {
+      aging.push(row);
+    } else {
+      fresh.push(row);
+    }
+  }
+  return Object.freeze({ fresh: Object.freeze(fresh), aging: Object.freeze(aging) });
+}
+
+/**
  * Neutralize wikilink syntax in quoted question prose. The questions block is
  * a PROJECTION of durable question rows into the daily — vault syntax quoted
  * inside a question's text must never re-enter link validation. Without this,
@@ -67,7 +144,16 @@ function neutralizeWikilinks(text: string): string {
   return text.replaceAll("[[", "\\[\\[").replaceAll("]]", "\\]\\]");
 }
 
-function questionBullet(q: EditionQuestion): string {
+/**
+ * Render one question as a "To decide" bullet: policy, text, options,
+ * recommendation, and the literal resolve command. Exported for cross-bundle
+ * reuse by `dome.health.report-card`'s "Aging decisions" section (both the
+ * full card and the daily weekly-review block render aging questions in this
+ * same bullet shape) — the `dome.health/processors/report-card.ts` import of
+ * `replaceEditionBlock` from this module is the existing cross-bundle
+ * precedent.
+ */
+export function questionBullet(q: EditionQuestion): string {
   const optionsSuffix =
     q.options.length > 0
       ? ` [${q.options.map(neutralizeWikilinks).join(" | ")}]`
@@ -87,12 +173,30 @@ function questionBullet(q: EditionQuestion): string {
  * bullets — never `- [ ]` checkboxes. `null` when there are no open
  * questions (resolving the last question cleans the page — the block is
  * removed entirely, not rendered empty).
+ *
+ * `opts` is the aging-escalation seam (Task 10): when both `nowIso` and
+ * (optionally) `agingDays` are given, questions asked `agingDays` or more
+ * ago (`partitionQuestionsByAge`, default `DEFAULT_QUESTION_AGING_DAYS`) are
+ * excluded from the fresh list — and from its cap/tail count — and folded
+ * into one summary line appended before the end marker instead:
+ * `- 🕰 N aging decision(s) — weekly review (\`dome check --decisions\`)`.
+ * When `opts` is absent (or `nowIso` is absent — this renderer is pure and
+ * has no clock of its own to fall back to), every question is treated as
+ * fresh: exactly today's behavior, so existing callers/tests are unaffected.
  */
 export function questionsSection(
   questions: ReadonlyArray<EditionQuestion>,
+  opts?: { readonly agingDays?: number; readonly nowIso?: string },
 ): string | null {
   if (questions.length === 0) return null;
-  const sorted = [...questions].sort((a, b) => {
+  const { fresh, aging } =
+    opts?.nowIso === undefined
+      ? { fresh: questions, aging: [] as ReadonlyArray<EditionQuestion> }
+      : partitionQuestionsByAge(questions, {
+          agingDays: opts.agingDays ?? DEFAULT_QUESTION_AGING_DAYS,
+          nowIso: opts.nowIso,
+        });
+  const sorted = [...fresh].sort((a, b) => {
     const aOwnerNeeded = a.automationPolicy === "owner-needed" ? 0 : 1;
     const bOwnerNeeded = b.automationPolicy === "owner-needed" ? 0 : 1;
     if (aOwnerNeeded !== bOwnerNeeded) return aOwnerNeeded - bOwnerNeeded;
@@ -107,7 +211,59 @@ export function questionsSection(
   if (sorted.length > shown.length) {
     lines.push(`- +${sorted.length - shown.length} more — \`dome check\``);
   }
+  if (aging.length > 0) {
+    lines.push(
+      `- 🕰 ${aging.length} aging decision(s) — weekly review (\`dome check --decisions\`)`,
+    );
+  }
   lines.push(QUESTIONS_MARKERS.end);
+  return lines.join("\n");
+}
+
+/**
+ * A pending garden proposal ready to render into the "To review" block.
+ * Callers (the compose-blocks processor) derive `pathCount` from the durable
+ * `OperationalProposalRow.paths` (`paths.length`) — this module takes the
+ * plain, already-mapped shape and never touches `OperationalProposalRow`
+ * itself (processors stay pure; `src/proposals` is off-limits here).
+ */
+export type EditionProposal = {
+  readonly id: number;
+  readonly processorId: string;
+  readonly reason: string;
+  readonly pathCount: number;
+};
+
+/** Top N pending proposals rendered before the `+N more` tail. */
+export const MAX_EDITION_PROPOSALS = 3;
+
+function proposalBullet(p: EditionProposal): string {
+  const fileWord = p.pathCount === 1 ? "file" : "files";
+  return `- P${p.id} (${p.processorId}): ${neutralizeWikilinks(p.reason)} — ${p.pathCount} ${fileWord} — apply: \`dome apply ${p.id}\``;
+}
+
+/**
+ * Render the "To review" generated block: pending garden proposals, oldest
+ * first (callers pre-sort by `createdAt` ascending — this renderer trusts
+ * the given order), capped at `MAX_EDITION_PROPOSALS` with a
+ * `+N more — \`dome proposals\`` tail. Plain `-` bullets — never `- [ ]`
+ * checkboxes. `null` when there are no pending proposals (the block is
+ * removed entirely, not rendered empty).
+ */
+export function proposalsSection(
+  proposals: ReadonlyArray<EditionProposal>,
+): string | null {
+  if (proposals.length === 0) return null;
+  const shown = proposals.slice(0, MAX_EDITION_PROPOSALS);
+  const lines = [
+    PROPOSALS_MARKERS.start,
+    "### To review",
+    ...shown.map(proposalBullet),
+  ];
+  if (proposals.length > shown.length) {
+    lines.push(`- +${proposals.length - shown.length} more — \`dome proposals\``);
+  }
+  lines.push(PROPOSALS_MARKERS.end);
   return lines.join("\n");
 }
 

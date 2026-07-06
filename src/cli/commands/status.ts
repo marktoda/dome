@@ -263,7 +263,8 @@ type SignalSlotId =
   | "service"
   | "model"
   | "quarantine"
-  | "inbox";
+  | "inbox"
+  | "proposals";
 
 const SLOT_BY_REASON: Record<StatusReason, SignalSlotId> = {
   sync_needed: "sync",
@@ -282,6 +283,7 @@ const SLOT_BY_REASON: Record<StatusReason, SignalSlotId> = {
   model_provider_unreachable: "model",
   quarantined: "quarantine",
   capture_loop_inactive: "inbox",
+  pending_proposals: "proposals",
 };
 
 // Per-slot signal row (tone + detail). The first five reuse the same
@@ -310,6 +312,7 @@ const SLOT_SIGNAL: Record<SignalSlotId, (s: StatusSnapshot, caps: Caps) => Statu
     label: `probe ${s.model_provider_probe_status ?? "failed"}`,
   }),
   inbox: () => ({ tone: "warn", label: "capture loop inactive" }),
+  proposals: (s) => ({ tone: "warn", label: String(s.pending_proposals) }),
 };
 
 type SignalEntry = { label: string; tone: Tone; detail: string };
@@ -352,6 +355,7 @@ const HEALTHY_SLOTS: ReadonlyArray<{
   { slot: "draft" },
   { slot: "diagnostics" },
   { slot: "questions" },
+  { slot: "proposals" },
   { slot: "serve", visible: (s) => s.serve_status !== "off" },
   { slot: "runs", visible: (s) => s.last_sync !== null },
   { slot: "outbox", visible: (s) => s.last_sync !== null },

@@ -62,7 +62,7 @@ PatchEffect `sourceRefs` are not globally non-empty because some deterministic p
 - **Adoption phase, `mode: "auto"`:** the engine overlays the changes onto the candidate tree and writes one new commit per PatchEffect (with the four `Dome-*` trailers), then re-runs the loop. If `patch.auto` capability is not granted for any touched path, the effect is downgraded to `mode: "propose"` and emits a `capability-downgrade-surprise` diagnostic; the proposed patch then follows the blocking review path below.
 - **Adoption phase, `mode: "propose"`:** the engine blocks adoption with `patch.propose.requires-review`, naming the proposed changes. The review/apply surface is planned; no shipped v1 CLI command applies the proposed patch directly yet.
 - **Garden phase, `mode: "auto"`:** the engine constructs a new Proposal from the changes and routes it through the adoption loop (per [[wiki/specs/proposals]] §"Garden-emitted Proposals").
-- **Garden phase, `mode: "propose"`:** v1.0 records the allowed `patch.propose` capability use, emits `garden.patch-propose-review-unavailable`, and drops the patch because the garden review queue is not wired yet. v1.x will route this to a PR/review queue rather than applying inline.
+- **Garden phase, `mode: "propose"`:** records the allowed `patch.propose` capability use (or, for an auto→propose downgrade, `patch.auto` with `outcome: "downgraded"`) and enqueues a durable row in `proposals.db` via the optional `enqueueProposal` sink — outcome `queued-for-review`, diagnosed with an info `garden.patch-proposed` naming the enqueued proposal id (`dome proposals` / `dome apply` review it). Sink-less contexts (e.g. the `dome run` view harness) keep the pre-product-review-4 behavior: diagnosed as `garden.patch-propose-review-unavailable` and dropped.
 - **View phase:** rejected — view processors cannot emit patches.
 
 **Idempotency requirement:** a processor that re-runs against the same input must produce the same change list (byte-equivalent `content` for writes, same `path` for deletes). If applying the changes a second time would produce no tree-level diff (because the contents already match), the processor returns no effect. This is what makes the fixed-point loop converge.
@@ -198,6 +198,7 @@ interface QuestionEffect {
     readonly destination?: string;           // answer-handler round-trip: the page the question is about
     readonly material?: string;              // answer-handler round-trip: the document that prompted it
     readonly proposedSection?: string;       // answer-handler round-trip: proposed content (schema-capped at 4000 chars)
+    readonly subjectProcessorId?: string;    // the processor this question is actually about, when it differs from the emitter
   };
 }
 ```
@@ -238,6 +239,38 @@ Automation policy means:
 `recommendedAnswer` is a source-preserving hint, not an instruction to bypass
 the grounding check. Open questions are advisory state and must not block
 unrelated adoption, garden work, or source edits.
+
+**Subject-liveness expiry.** A question's *subject* is the processor it is
+actually about: the emitting `processor_id` by default, or
+`metadata.subjectProcessorId` when the emitter is asking on behalf of a
+different processor (the health-recovery shape — e.g.
+`dome.health.orphan-run-recovery-questions` asks about a stuck run's own
+processor, `dome.health.quarantine-recovery-questions` asks about the
+quarantined processor). If a bundle is uninstalled, its questions — and any
+question whose declared subject was that bundle's processor — can never be
+answered through the normal handler flow again. An operational pump
+(`src/engine/operational/question-expiry.ts`, run once per tick after
+question auto-resolution) releases them: an OPEN question expires when
+either its emitting processor or its `subjectProcessorId` is *retired* —
+absent from the active `ProcessorRegistry` AND not covered by a
+configured-but-disabled extension's id prefix. The disabled-bundle exemption
+mirrors the quarantine GC's posture (`isKnownProcessorFor` in
+`src/engine/host/vault-runtime.ts`: "registry is authoritative for enabled
+bundles"): a disabled bundle's processors are deliberately absent from the
+registry but the bundle is still installed, so its open questions survive
+intact for re-enabling; for enabled bundles the registry is authoritative,
+and an unregistered processor id means the processor was deleted. Expiry
+writes a durable answer row
+(`answer: "expired"`, `answered_by: "expired"`, `handler_status: "handled"`)
+directly — bypassing the question's own `options` allow-list, since
+"expired" is an engine-forced terminal state, not a value the emitting
+processor ever offered — raises one info diagnostic,
+`question.expired-subject-retired`, naming the question and the retired
+processor (recorded durably and returned on the operational-work result),
+and sets the tick-scoped `questions.changed` flag so subscribers (e.g. the
+daily To-decide compiler) refresh the same tick. Outbox-recovery questions
+are never stamped with `subjectProcessorId`: their subject is an external
+handler capability, not a processor.
 
 ## ExternalActionEffect
 

@@ -23,6 +23,11 @@ blocks — recognized by shape on any page matched by the bundle's globs
 - The line-opening `**Key:**` bold prefix is the recognizer (after an optional
   list bullet). Lines inside YAML frontmatter, fenced code blocks, and
   blockquotes are never claims, so quoted material can't be over-anchored.
+  Two key shapes are recognized but excluded, in the same grammar chokepoint:
+  discourse-marker keys (`**Net:**`, `**Takeaway:**`, …session framing, not
+  entity attributes) and numbered narrative headers (`**1. Tone feedback
+  delivered:**`, `**3) Follow-up:**` — an enumeration label, not a `Key:
+  value` attribute).
 - The `*(as of date)*` marker is optional; omitted dates carry no assertion;
   consumers may fall back to coarser context (enclosing dated section, git date)
   as a convention — no standard read-time algorithm is defined yet.

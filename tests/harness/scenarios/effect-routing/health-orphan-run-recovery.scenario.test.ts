@@ -5,6 +5,7 @@
 // answer-triggered RunRecoveryEffect routing.
 
 import { expect } from "bun:test";
+import { join } from "node:path";
 
 import { questionEffect } from "../../../../src/core/effect";
 import { commitOid } from "../../../../src/core/source-ref";
@@ -24,6 +25,22 @@ import {
 import { orphanRunRecoveryQuestionKey } from "../../../../assets/extensions/dome.health/processors/orphan-run-recovery-shared";
 import { scenario } from "../../index";
 
+// A registered no-op processor id (not "dome.health.*", which
+// ORPHAN_RECOVERY_EXCLUDED_PROCESSOR_PREFIXES excludes from orphan-run
+// detection): stands in for "some still-active processor whose run got
+// orphaned" so subject-liveness expiry (question-expiry.ts) does not treat
+// the simulated orphan's question as a retired-subject expiry the moment it
+// is created.
+const ORPHANED_PROCESSOR_ID = "test.orphaned-run.worker";
+const ORPHANED_RUN_FIXTURE_BUNDLE = join(
+  import.meta.dir,
+  "..",
+  "..",
+  "fixtures",
+  "bundles",
+  "test.orphaned-run",
+);
+
 scenario(
   {
     name: "effect-routing: dome.health questions recover orphaned runs",
@@ -39,7 +56,10 @@ scenario(
       { kind: "trigger", trigger: "answer" },
     ],
     harness: {
-      bundles: ["dome.health"],
+      bundles: [
+        "dome.health",
+        { id: "test.orphaned-run", root: ORPHANED_RUN_FIXTURE_BUNDLE },
+      ],
       initialFiles: {
         ".dome/config.yaml": `
 extensions:
@@ -53,6 +73,8 @@ extensions:
       run.read: ["running"]
       question.ask: true
       run.recover: ["fail"]
+  test.orphaned-run:
+    enabled: true
 `,
       },
     },
@@ -79,7 +101,7 @@ extensions:
     insertQueued(h.ledger, {
       id: orphanId,
       proposalId: null,
-      processorId: "test.orphaned",
+      processorId: ORPHANED_PROCESSOR_ID,
       processorVersion: "0.1.0",
       phase: "garden",
       inputCommit: commitOid(adopted),
@@ -92,7 +114,7 @@ extensions:
     // Self-referential orphan containment (Task 4b): the orphan-run-recovery
     // processor's OWN runs can go orphan. Seed one — the detector must NOT
     // raise a question about itself, or it pelts the question pile, while the
-    // real test.orphaned still surfaces.
+    // real ORPHANED_PROCESSOR_ID orphan still surfaces.
     const selfOrphanId = newRunId(startedAt, () => "ffffff");
     insertQueued(h.ledger, {
       id: selfOrphanId,
@@ -114,7 +136,9 @@ extensions:
     await h
       .expectProjection()
       .questions()
-      .toContainQuestion(`Run ${orphanId} for processor test.orphaned`);
+      .toContainQuestion(
+        `Run ${orphanId} for processor ${ORPHANED_PROCESSOR_ID}`,
+      );
 
     // No question about the detector's own orphaned run.
     const selfQuestions = queryQuestionRecords(h.projection).filter((q) =>

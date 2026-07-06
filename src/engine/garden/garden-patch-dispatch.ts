@@ -69,6 +69,7 @@ export async function dispatchGardenPatchEffect(opts: {
   const applied = await applyEffect({
     effect: opts.effect,
     processorId: opts.processorId,
+    extensionId: opts.extensionId,
     runId: opts.runId,
     proposalId: opts.proposalId,
     phase: "garden",
@@ -76,7 +77,8 @@ export async function dispatchGardenPatchEffect(opts: {
     granted: opts.granted,
     sinks: opts.sinks,
     // Garden patches never write through the patch sink, so the candidate OID
-    // is unused on this path; pass the adopted commit for completeness.
+    // is unused by `applyPatch` on this path; a propose-mode patch still uses
+    // it as `enqueueProposal`'s `baseCommit` when the review sink is wired.
     candidate: opts.adopted,
   });
   recordEffectCapabilityUse({

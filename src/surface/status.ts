@@ -176,6 +176,7 @@ import {
   nextActionsForStatus,
   type CliNextAction,
 } from "./next-actions";
+import { collectProposals } from "./proposals";
 import { probeServiceState, type ServiceDeps } from "./service-probe";
 import { resolveVaultPath } from "./resolve-vault";
 import { collectVaultAnalytics } from "./vault-analytics";
@@ -262,6 +263,7 @@ export type StatusSnapshot = {
   readonly outbox_pending: number;
   readonly outbox_failed: number;
   readonly quarantined: number;
+  readonly pending_proposals: number;
 };
 
 export type RunStatusOptions = {
@@ -435,6 +437,10 @@ export async function buildStatusSnapshot(
     }).length;
     const quarantined =
       runtime.processorRuntime.executionState.quarantines().length;
+    // Best-effort: an uninitialized (or schema-refused) proposals store
+    // yields an empty list rather than throwing — see collectProposals's
+    // header. Status is a cheap pulse, not a write path.
+    const pending_proposals = (await collectProposals(vaultPath)).proposals.length;
     const activeProcessorIds = new Set(
       runtime.registry.all().map((processor) => processor.id),
     );
@@ -472,6 +478,7 @@ export async function buildStatusSnapshot(
       outboxFailed: outbox_failed,
       quarantined,
       captureLoopInactive,
+      pendingProposals: pending_proposals,
     });
 
     const snapshot: StatusSnapshot = {
@@ -492,6 +499,7 @@ export async function buildStatusSnapshot(
         dirtyUntracked: analytics.dirty_untracked,
         dirtyModifiedPaths: analytics.dirty_modified_paths,
         dirtyUntrackedPaths: analytics.dirty_untracked_paths,
+        pendingProposals: pending_proposals,
       }),
       dirty_modified: analytics.dirty_modified,
       dirty_untracked: analytics.dirty_untracked,
@@ -534,6 +542,7 @@ export async function buildStatusSnapshot(
       outbox_pending,
       outbox_failed,
       quarantined,
+      pending_proposals,
     };
 
     return Object.freeze({ kind: "ok" as const, snapshot });
@@ -636,6 +645,7 @@ function statusAttention(input: {
   readonly outboxFailed: number;
   readonly quarantined: number;
   readonly captureLoopInactive: boolean;
+  readonly pendingProposals: number;
 }): ReadonlyArray<StatusReason> {
   const out: StatusReason[] = [];
   if (input.adoptedDiverged) out.push("adopted_ref_diverged");
@@ -654,6 +664,7 @@ function statusAttention(input: {
   if (input.outboxFailed > 0) out.push("outbox_failed");
   if (input.quarantined > 0) out.push("quarantined");
   if (input.captureLoopInactive) out.push("capture_loop_inactive");
+  if (input.pendingProposals > 0) out.push("pending_proposals");
   return Object.freeze(out);
 }
 

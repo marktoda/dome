@@ -39,6 +39,10 @@ import {
   runQuestionAutoResolution,
   type QuestionAutoResolutionResult,
 } from "./question-auto-resolution";
+import {
+  expireOrphanSubjectQuestions,
+  type QuestionExpiryResult,
+} from "./question-expiry";
 import { runScheduler, type SchedulerResult } from "./scheduler";
 import type { EngineVault } from "../core/vault-shape";
 
@@ -46,6 +50,9 @@ export type OperationalWorkResult = {
   readonly scheduler: SchedulerResult;
   readonly outbox: ReadonlyArray<ExternalDispatchResult>;
   readonly questionAutoResolution: QuestionAutoResolutionResult;
+  /** Subject-liveness expiry: OPEN questions released this tick + their
+   * diagnostics (also folded into `diagnostics` below). */
+  readonly questionExpiry: QuestionExpiryResult;
   readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
 };
 
@@ -71,11 +78,21 @@ export async function runOperationalWork(opts: {
   readonly externalHandlerTimeoutMs?: number;
   readonly questionAutoResolve?: RuntimeQuestionAutoResolveConfig;
   /**
-   * Forwarded to question auto-resolution: fired once per durable
-   * auto-answer, so the host's tick-scoped `questions.changed` flag catches
-   * changes that bypass the `recordQuestion` sink.
+   * Forwarded to question auto-resolution (fired once per durable
+   * auto-answer) and fired once after the subject-liveness expiry pump when
+   * it expired anything — both change the open-question set while bypassing
+   * the `recordQuestion` sink, so the host's tick-scoped `questions.changed`
+   * flag must be set here explicitly.
    */
   readonly onQuestionsChanged?: () => void;
+  /**
+   * Extension ids configured but DISABLED, threaded to subject-liveness
+   * question expiry: their processors are absent from the registry by design
+   * and must NOT have their questions expired (the quarantine-GC posture —
+   * see `isKnownProcessorFor` in src/engine/host/vault-runtime.ts). Absent →
+   * treated as empty (registry fully authoritative).
+   */
+  readonly disabledExtensionIds?: ReadonlyArray<string>;
   /**
    * Fired when the outbox drain terminally failed a row (either
    * `recoverExpiredDispatching`'s terminal branch or a `dispatchPendingOutbox`
@@ -208,15 +225,37 @@ export async function runOperationalWork(opts: {
             : {}),
         });
 
+  const questionExpiry =
+    opts.answers === undefined
+      ? emptyQuestionExpiry()
+      : await expireOrphanSubjectQuestions({
+          registry: opts.registry,
+          disabledExtensionIds: opts.disabledExtensionIds ?? [],
+          questions: opts.projection,
+          answers: opts.answers,
+          recordDiagnostic: opts.sinks.recordDiagnostic,
+          now: opts.now,
+        });
+  // Expiry answers bypass the `recordQuestion` sink the same way durable
+  // auto-answers do; raise the tick-scoped `questions.changed` flag so
+  // subscribers (e.g. the daily To-decide compiler) refresh this tick.
+  if (questionExpiry.expired > 0) opts.onQuestionsChanged?.();
+
   return Object.freeze({
     scheduler,
     outbox,
     questionAutoResolution,
+    questionExpiry,
     diagnostics: Object.freeze([
       ...scheduler.diagnostics,
       ...questionAutoResolution.diagnostics,
+      ...questionExpiry.diagnostics,
     ]),
   });
+}
+
+function emptyQuestionExpiry(): QuestionExpiryResult {
+  return Object.freeze({ expired: 0, diagnostics: Object.freeze([]) });
 }
 
 function emptyQuestionAutoResolution(): QuestionAutoResolutionResult {

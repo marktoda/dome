@@ -198,6 +198,12 @@ describe("CapabilitySchema (discriminated union, 17 kinds)", () => {
       "questions.read",
     );
   });
+
+  test("proposals.read", () => {
+    expect(CapabilitySchema.parse({ kind: "proposals.read" }).kind).toBe(
+      "proposals.read",
+    );
+  });
 });
 
 describe("ProcessorPhaseSchema + SignalSchema", () => {
@@ -209,9 +215,10 @@ describe("ProcessorPhaseSchema + SignalSchema", () => {
     expect(SignalSchema.parse("questions.changed")).toBe("questions.changed");
   });
 
-  test("SignalSchema parses the outbox.changed / quarantine.changed store signals", () => {
+  test("SignalSchema parses the outbox.changed / quarantine.changed / proposals.changed store signals", () => {
     expect(SignalSchema.parse("outbox.changed")).toBe("outbox.changed");
     expect(SignalSchema.parse("quarantine.changed")).toBe("quarantine.changed");
+    expect(SignalSchema.parse("proposals.changed")).toBe("proposals.changed");
   });
 
   test("SignalSchema rejects an unknown signal name", () => {

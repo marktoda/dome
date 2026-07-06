@@ -77,6 +77,20 @@ function isDiscourseMarkerKey(key: string): boolean {
   return DISCOURSE_MARKER_KEYS.has(normalizeClaimKey(key));
 }
 
+/**
+ * `**1. Tone feedback delivered (R4 head-on):** …` is a narrative enumeration
+ * header, not a durable Key: value attribute — never a claim. Matched against
+ * the RAW (pre-normalize, pre-trim) key text so a leading `1. ` or `3) ` list
+ * marker is caught before any whitespace collapsing; a year like `2025 Goal`
+ * is not `N. `/`N) `-shaped and still parses.
+ */
+const NUMBERED_KEY_RE = /^\d+[.)]\s/;
+
+/** True when a claim key is a numbered narrative header, not a claim key. */
+function isNumberedKey(key: string): boolean {
+  return NUMBERED_KEY_RE.test(key);
+}
+
 // The single dome generated block whose `**Key:**`-shaped digest lines must
 // never feed back into the claim index: the `## Current facts` block that
 // `dome.claims.render-facts` writes.
@@ -101,6 +115,7 @@ export function claimsFromMarkdown(
     const value = (match[3] ?? "").trim();
     if (key.length === 0 || value.length === 0) continue;
     if (isDiscourseMarkerKey(key)) continue;
+    if (isNumberedKey(key)) continue;
     claims.push(
       Object.freeze({
         line: i + 1,

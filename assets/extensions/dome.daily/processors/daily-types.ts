@@ -116,6 +116,12 @@ export const AGENDA_BLOCK = "agenda";
 export const INTEGRATED_BLOCK = "integrated";
 // internal — not public API; exported for use by other daily-* modules
 export const SOURCES_BLOCK = "sources";
+// The garden propose-mode review queue (product-review-4): pending
+// `proposals.db` rows rendered as a "To review" list, positioned between the
+// questions and integrated blocks. Normative at [[wiki/specs/daily-surface]]
+// §"Block ownership".
+// internal — not public API; exported for use by other daily-* modules
+export const PROPOSALS_BLOCK = "proposals";
 export const QUESTIONS_MARKERS = generatedBlockMarkers(
   DAILY_OWNER,
   QUESTIONS_BLOCK,
@@ -128,6 +134,10 @@ export const INTEGRATED_MARKERS = generatedBlockMarkers(
 export const SOURCES_MARKERS = generatedBlockMarkers(
   DAILY_OWNER,
   SOURCES_BLOCK,
+);
+export const PROPOSALS_MARKERS = generatedBlockMarkers(
+  DAILY_OWNER,
+  PROPOSALS_BLOCK,
 );
 
 /**
@@ -180,6 +190,7 @@ export const DAILY_GENERATED_BLOCKS: ReadonlyArray<{
   }),
   Object.freeze({ owner: DAILY_OWNER, block: CAPTURED_BLOCK }),
   Object.freeze({ owner: DAILY_OWNER, block: QUESTIONS_BLOCK }),
+  Object.freeze({ owner: DAILY_OWNER, block: PROPOSALS_BLOCK }),
   Object.freeze({ owner: DAILY_OWNER, block: AGENDA_BLOCK }),
   Object.freeze({ owner: DAILY_OWNER, block: INTEGRATED_BLOCK }),
   Object.freeze({ owner: DAILY_OWNER, block: SOURCES_BLOCK }),

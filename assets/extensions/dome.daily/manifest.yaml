@@ -186,13 +186,15 @@ processors:
     module: processors/close-scaffold.ts
 
   - id: dome.daily.compose-blocks
-    version: 0.1.0
+    version: 0.2.0
     phase: garden
     triggers:
       - kind: schedule
         cron: "25 5 * * *"
       - kind: signal
         name: questions.changed
+      - kind: signal
+        name: proposals.changed
       - kind: signal
         name: file.created
         pathPattern: "sources/calendar/*.md"
@@ -221,6 +223,7 @@ processors:
       - kind: patch.auto
         paths: ["wiki/dailies/*.md"]
       - kind: questions.read
+      - kind: proposals.read
     execution:
       class: deterministic
     module: processors/compose-blocks.ts

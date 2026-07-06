@@ -921,6 +921,7 @@ const OPERATIONAL_READ_KINDS: ReadonlySet<Capability["kind"]> = new Set([
   "quarantine.read",
   "run.read",
   "questions.read",
+  "proposals.read",
 ]);
 
 type UnmetNeed = { readonly need: string; readonly detail: string };
@@ -932,7 +933,7 @@ type UnmetNeed = { readonly need: string; readonly detail: string };
  *   1. A declared capability KIND with no granted capability of that kind — an
  *      empty effective grant intersection. The run-time complement of the
  *      config-time `capability.grant-missing` doctor probe.
- *   2. A declared operational read (`outbox/quarantine/run/questions.read`)
+ *   2. A declared operational read (`outbox/quarantine/run/questions/proposals.read`)
  *      whose effective `ctx.operational` accessor is absent — the kind may be
  *      granted while the status intersection is empty (e.g. `run.read`
  *      [running] declared, [succeeded] granted). This is the "declared context
@@ -984,6 +985,8 @@ function operationalAccessorEffective(
       return effectiveQuarantineRead(declared, granted);
     case "questions.read":
       return effectiveQuestionsRead(declared, granted);
+    case "proposals.read":
+      return effectiveProposalsRead(declared, granted);
     default:
       return true;
   }
@@ -1405,11 +1408,18 @@ function operationalContextField(
     frame.granted,
   );
   const canReadQuestions = effectiveQuestionsRead(frame.declared, frame.granted);
+  const canReadProposals = effectiveProposalsRead(frame.declared, frame.granted);
+  // `proposals` is captured into a local const (not read off `operational`
+  // inline) so its optional type (`OperationalQueryView.proposals?`) narrows
+  // to defined inside the closure below — see the type's doc comment for why
+  // this accessor degrades by key omission rather than by returning `[]`.
+  const rawProposals = operational.proposals;
   if (
     allowedStatuses === null &&
     !canReadQuarantine &&
     allowedRunStatuses === null &&
-    !canReadQuestions
+    !canReadQuestions &&
+    !(canReadProposals && rawProposals !== undefined)
   ) {
     return {};
   }
@@ -1452,6 +1462,13 @@ function operationalContextField(
       },
       questions: (filter) =>
         canReadQuestions ? operational.questions(filter) : Object.freeze([]),
+      ...(canReadProposals && rawProposals !== undefined
+        ? {
+            proposals: (filter?: {
+              readonly status?: "pending" | "applied" | "rejected";
+            }) => rawProposals(filter),
+          }
+        : {}),
     }),
   };
 }
@@ -1502,6 +1519,16 @@ function effectiveQuestionsRead(
   return (
     declared.some((cap) => cap.kind === "questions.read") &&
     granted.some((cap) => cap.kind === "questions.read")
+  );
+}
+
+function effectiveProposalsRead(
+  declared: ReadonlyArray<Capability>,
+  granted: ReadonlyArray<Capability>,
+): boolean {
+  return (
+    declared.some((cap) => cap.kind === "proposals.read") &&
+    granted.some((cap) => cap.kind === "proposals.read")
   );
 }
 

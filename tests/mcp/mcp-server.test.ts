@@ -25,7 +25,7 @@ import { getAdoptedRef, getCurrentBranch } from "../../src/adopted-ref";
 import { runInit } from "../../src/cli/commands/init";
 import { runSync } from "../../src/cli/commands/sync";
 import { resolveBundleRoots } from "../../src/cli/commands/sync-shared";
-import { questionEffect } from "../../src/core/effect";
+import { fileChange, questionEffect, type FileChange } from "../../src/core/effect";
 import { commitOid, sourceRef } from "../../src/core/source-ref";
 import { openVaultRuntime } from "../../src/engine/host/vault-runtime";
 import { add, commit, log, readBlob } from "../../src/git";
@@ -34,15 +34,20 @@ import {
   insertQuestion,
   queryQuestionRecords,
 } from "../../src/projections/questions";
+import { openProposalsDb } from "../../src/proposals/db";
+import { enqueuePendingProposal } from "../../src/proposals/pending-proposals";
 
 const REPO_ROOT = join(import.meta.dir, "..", "..");
 
 const EXPECTED_TOOLS = [
+  "apply_proposal",
   "brief",
   "capture",
   "check",
   "export_context",
+  "proposals",
   "query",
+  "reject_proposal",
   "report_miss",
   "resolve",
   "settle",
@@ -172,10 +177,49 @@ async function callTool(
   });
 }
 
+/**
+ * Enqueue a pending proposal row directly through the Task 1 store API
+ * (the engine sink is out of scope here) — mirrors
+ * tests/cli/commands/proposals.test.ts's `enqueueProposal` fixture.
+ */
+async function enqueueProposal(
+  vault: string,
+  overrides: {
+    readonly processorId?: string;
+    readonly reason?: string;
+    readonly changes: ReadonlyArray<FileChange>;
+    readonly baseContents: Readonly<Record<string, string | null>>;
+  },
+): Promise<number> {
+  const opened = await openProposalsDb({
+    path: join(vault, ".dome", "state", "proposals.db"),
+  });
+  expect(opened.ok).toBe(true);
+  if (!opened.ok) throw new Error("open failed");
+  try {
+    const result = enqueuePendingProposal(opened.value.db, {
+      processorId: overrides.processorId ?? "dome.test.garden",
+      extensionId: "test",
+      runId: "run_1",
+      reason: overrides.reason ?? "tidy up the note",
+      changes: overrides.changes,
+      sourceRefs: [sourceRef({ commit: commitOid("a".repeat(40)), path: "wiki/note.md" })],
+      baseCommit: "b".repeat(40),
+      baseContents: overrides.baseContents,
+      createdAt: "2026-07-06T00:00:00.000Z",
+    });
+    expect(result.inserted).toBe(true);
+    if (result.id === null) throw new Error("expected id");
+    return result.id;
+  } finally {
+    opened.value.db.close();
+  }
+}
+
 // ----- The in-memory MCP session ------------------------------------------------
 
 describe("dome mcp server (in-memory transport)", () => {
-  test("initialize + tools/list expose the ten wedge tools", async () => {
+  test("initialize + tools/list expose the thirteen wedge tools", async () => {
     const { client } = await fixture();
     const tools = await client.listTools();
     const names = tools.tools.map((tool) => tool.name).sort();
@@ -423,6 +467,132 @@ describe("dome mcp server (in-memory transport)", () => {
     expect(call.isError).toBe(true);
     expect(call.json.schema).toBe("dome.settle/v1");
     expect(call.json.status).toBe("not-found");
+  }, TEST_TIMEOUT_MS);
+
+  test("proposals lists a pending row as dome.proposals/v1", async () => {
+    const { client, vault } = await fixture();
+    await mkdir(join(vault, "wiki"), { recursive: true });
+    await writeFile(join(vault, "wiki/mcp-proposal.md"), "line1\n", "utf8");
+    await add(vault, "wiki/mcp-proposal.md");
+    await commit({ path: vault, message: "fixture: mcp-proposal note" });
+    const id = await enqueueProposal(vault, {
+      changes: [fileChange({ kind: "write", path: "wiki/mcp-proposal.md", content: "line1\nline2\n" })],
+      baseContents: { "wiki/mcp-proposal.md": "line1\n" },
+    });
+
+    const call = await callTool(client, "proposals");
+    expect(call.isError).toBe(false);
+    expect(call.json.schema).toBe("dome.proposals/v1");
+    const proposals = call.json.proposals as Array<Record<string, unknown>>;
+    expect(proposals.some((p) => p.id === id && p.status === "pending")).toBe(true);
+  }, TEST_TIMEOUT_MS);
+
+  test("proposals all=true includes decided rows; default is pending-only", async () => {
+    const { client, vault } = await fixture();
+    await mkdir(join(vault, "wiki"), { recursive: true });
+    await writeFile(join(vault, "wiki/mcp-proposal2.md"), "line1\n", "utf8");
+    await add(vault, "wiki/mcp-proposal2.md");
+    await commit({ path: vault, message: "fixture: mcp-proposal2 note" });
+    const id = await enqueueProposal(vault, {
+      changes: [fileChange({ kind: "write", path: "wiki/mcp-proposal2.md", content: "line1\nline2\n" })],
+      baseContents: { "wiki/mcp-proposal2.md": "line1\n" },
+    });
+    const rejected = await callTool(client, "reject_proposal", { id });
+    expect(rejected.isError).toBe(false);
+
+    const pendingOnly = await callTool(client, "proposals");
+    expect((pendingOnly.json.proposals as unknown[]).some((p) => (p as { id: number }).id === id)).toBe(false);
+
+    const all = await callTool(client, "proposals", { all: true });
+    const rows = all.json.proposals as Array<Record<string, unknown>>;
+    expect(rows.some((p) => p.id === id && p.status === "rejected")).toBe(true);
+  }, TEST_TIMEOUT_MS);
+
+  test("apply_proposal applies a pending proposal, writes the file, and commits", async () => {
+    const { client, vault } = await fixture();
+    await mkdir(join(vault, "wiki"), { recursive: true });
+    await writeFile(join(vault, "wiki/mcp-apply.md"), "line1\n", "utf8");
+    await add(vault, "wiki/mcp-apply.md");
+    await commit({ path: vault, message: "fixture: mcp-apply note" });
+    const id = await enqueueProposal(vault, {
+      changes: [fileChange({ kind: "write", path: "wiki/mcp-apply.md", content: "line1\nline2\n" })],
+      baseContents: { "wiki/mcp-apply.md": "line1\n" },
+    });
+
+    const call = await callTool(client, "apply_proposal", { id });
+    expect(call.isError).toBe(false);
+    expect(call.json.schema).toBe("dome.apply/v1");
+    expect(call.json.status).toBe("applied");
+    expect(call.json.id).toBe(id);
+
+    const entries = await log({ path: vault, depth: 1 });
+    expect(entries[0]?.commit.message).toContain(`apply(P${id}):`);
+  }, TEST_TIMEOUT_MS);
+
+  test("apply_proposal of an unknown id is a tool error with dome.apply/v1 not-found", async () => {
+    const { client } = await fixture();
+    const call = await callTool(client, "apply_proposal", { id: 999_999 });
+    expect(call.isError).toBe(true);
+    expect(call.json.schema).toBe("dome.apply/v1");
+    expect(call.json.status).toBe("not-found");
+  }, TEST_TIMEOUT_MS);
+
+  test("apply_proposal of a stale proposal is a tool error with dome.apply/v1 stale", async () => {
+    const { client, vault } = await fixture();
+    await mkdir(join(vault, "wiki"), { recursive: true });
+    await writeFile(join(vault, "wiki/mcp-apply-stale.md"), "line1\n", "utf8");
+    await add(vault, "wiki/mcp-apply-stale.md");
+    await commit({ path: vault, message: "fixture: mcp-apply-stale note" });
+    const id = await enqueueProposal(vault, {
+      changes: [fileChange({ kind: "write", path: "wiki/mcp-apply-stale.md", content: "line1\nline2\n" })],
+      baseContents: { "wiki/mcp-apply-stale.md": "line1\n" },
+    });
+    await writeFile(join(vault, "wiki/mcp-apply-stale.md"), "drifted\n", "utf8");
+
+    const call = await callTool(client, "apply_proposal", { id });
+    expect(call.isError).toBe(true);
+    expect(call.json.schema).toBe("dome.apply/v1");
+    expect(call.json.status).toBe("stale");
+  }, TEST_TIMEOUT_MS);
+
+  test("reject_proposal rejects a pending proposal and lands no commit", async () => {
+    const { client, vault } = await fixture();
+    await mkdir(join(vault, "wiki"), { recursive: true });
+    await writeFile(join(vault, "wiki/mcp-reject.md"), "line1\n", "utf8");
+    await add(vault, "wiki/mcp-reject.md");
+    await commit({ path: vault, message: "fixture: mcp-reject note" });
+    const id = await enqueueProposal(vault, {
+      changes: [fileChange({ kind: "write", path: "wiki/mcp-reject.md", content: "line1\nline2\n" })],
+      baseContents: { "wiki/mcp-reject.md": "line1\n" },
+    });
+    const before = await log({ path: vault, depth: 1 });
+
+    const call = await callTool(client, "reject_proposal", { id, note: "not needed" });
+    expect(call.isError).toBe(false);
+    expect(call.json.schema).toBe("dome.reject/v1");
+    expect(call.json.status).toBe("rejected");
+    expect(call.json.id).toBe(id);
+
+    const after = await log({ path: vault, depth: 1 });
+    expect(after[0]?.oid).toBe(before[0]?.oid);
+  }, TEST_TIMEOUT_MS);
+
+  test("reject_proposal twice on the same id is a tool error with dome.reject/v1 not-pending", async () => {
+    const { client, vault } = await fixture();
+    await mkdir(join(vault, "wiki"), { recursive: true });
+    await writeFile(join(vault, "wiki/mcp-double-reject.md"), "line1\n", "utf8");
+    await add(vault, "wiki/mcp-double-reject.md");
+    await commit({ path: vault, message: "fixture: mcp-double-reject note" });
+    const id = await enqueueProposal(vault, {
+      changes: [fileChange({ kind: "write", path: "wiki/mcp-double-reject.md", content: "line1\nline2\n" })],
+      baseContents: { "wiki/mcp-double-reject.md": "line1\n" },
+    });
+    expect((await callTool(client, "reject_proposal", { id })).isError).toBe(false);
+
+    const call = await callTool(client, "reject_proposal", { id });
+    expect(call.isError).toBe(true);
+    expect(call.json.schema).toBe("dome.reject/v1");
+    expect(call.json.status).toBe("not-pending");
   }, TEST_TIMEOUT_MS);
 
   test("report_miss appends a grammar-exact entry to meta/retrieval-misses.md and commits", async () => {

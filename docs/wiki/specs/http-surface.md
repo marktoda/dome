@@ -1,12 +1,12 @@
 ---
 type: spec
 created: 2026-06-10
-updated: 2026-07-02
+updated: 2026-07-06
 sources:
   - "[[wiki/specs/capture]]"
   - "[[wiki/specs/sdk-surface]]"
   - "[[wiki/specs/task-lifecycle]]"
-description: "dome http converged adapter: bearer-token JSON routes, POST /capture seam, POST /settle, GET /today cockpit, POST /agent converse loop, POST /transcribe, GET /recents, author capability"
+description: "dome http converged adapter: bearer-token JSON routes, POST /capture seam, POST /settle, GET /proposals + POST /apply + POST /reject, GET /today cockpit, POST /agent converse loop, POST /transcribe, GET /recents, author capability"
 ---
 
 # HTTP surface
@@ -81,6 +81,9 @@ One vault per process.
 | `GET /questions` | `vault.listQuestions` (open only) | `dome.http.questions/v1` |
 | `POST /resolve` `{id, value}` | `dome resolve` | `dome.answer/v1` |
 | `POST /settle` `{blockId, disposition, deferUntil?}` | `performSettle` (`resolve` capability — settling is a decision, same trust domain as resolve) | `dome.settle/v1` (`status: settled \| not-found \| invalid`) |
+| `GET /proposals?all=1` | `collectProposals` (`read` capability; defaults to pending rows only) | `dome.proposals/v1` |
+| `POST /apply` `{id}` | `performApply` (`resolve` capability — the settle pattern for garden-proposed edits) | `dome.apply/v1` (`status: applied \| stale \| not-found \| not-pending \| unsupported \| invalid`) |
+| `POST /reject` `{id, note?}` | `performReject` (`resolve` capability) | `dome.reject/v1` (`status: rejected \| not-found \| not-pending \| invalid`) |
 | `POST /agent` `{question}` | hosted agent loop over vault tools (`converse` capability) | `dome.ask/v1` |
 | `POST /agent/stream` `{question}` | same loop, SSE stream of events (`converse` capability) | `dome.ask/v1` event stream |
 | `POST /transcribe` audio body | STT step: shell command or OpenAI-compatible cloud endpoint (`capture` capability; 501 when unconfigured) | `dome.transcribe/v1` `{text}` |
@@ -89,7 +92,9 @@ One vault per process.
 The `/agent` and `/agent/stream` routes are backed by the interactive assistant (`src/assistant/`) — a consumer surface distinct from the `dome.agent` background processor bundle that runs inside the garden phase.
 
 Errors are JSON envelopes (`{status: "error", error, message}`) with honest
-HTTP codes: 400 usage, 401 auth, 404 missing, 409 unworkable git state,
+HTTP codes: 400 usage, 401 auth, 404 missing, 409 unworkable git state or a
+proposal-decision conflict (`POST /apply`/`POST /reject` on a proposal that
+is already decided, or `POST /apply` on one that has gone stale),
 413 oversized body, 503 adopted-ref churn, 500 the rest.
 
 ## The cockpit page (`GET /today`)
@@ -269,10 +274,11 @@ Tests: `tests/http/http-server.test.ts` §"request-body size cap".
 ## Boundary notes
 
 - **No engine control.** No sync/serve/init/rebuild routes; the daemon owns
-  compilation. The write-ish routes (`capture`, `resolve`, `settle`, and agent
-  writes under `author`) are the established non-engine channels (ordinary
-  commit; `answers.db`). Agent writes (`create_document` / `edit_document`)
-  require the `author` capability (`--allow-write`).
+  compilation. The write-ish routes (`capture`, `resolve`, `settle`, `apply`,
+  `reject`, and agent writes under `author`) are the established non-engine
+  channels (ordinary commit; `answers.db`; `proposals.db` CAS). Agent writes
+  (`create_document` / `edit_document`) require the `author` capability
+  (`--allow-write`).
 - **One runtime at a time.** A route mutex serializes vault-opening work;
   each request opens and closes its own `Vault`, like one CLI invocation.
 - **No new dependencies.** The handler is a plain `fetch` function for

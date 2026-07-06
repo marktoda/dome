@@ -5,7 +5,7 @@
 // that replaces `noopSinks()` from `src/engine/core/apply-effect.ts` once the
 // projection + outbox stores are open.
 //
-// Eight sinks are owned here (delegating to the per-table accessors):
+// Nine sinks are owned here (delegating to the per-table accessors):
 //
 //   - recordDiagnostic → src/projections/diagnostics.ts: insertDiagnostic
 //   - resolveFacts     → src/projections/facts.ts:       resolveStalePageFacts
@@ -15,6 +15,7 @@
 //   - resolveQuestions → src/projections/questions.ts:   resolveStaleQuestions
 //   - dispatchExternal → src/outbox/dispatch.ts:         dispatchExternalEffect
 //   - recoverOutbox    → src/outbox/dispatch.ts:         recoverFailedOutboxRow
+//   - enqueueProposal  → src/proposals/pending-proposals.ts: enqueuePendingProposal
 //
 // Four sinks are injected by the caller (engine layer):
 //
@@ -57,19 +58,26 @@
 //     the inserts are synchronous SQL calls (Bun's sqlite is sync) wrapped
 //     in an async function for structural compatibility with the
 //     `Promise<void>` return signature of `ApplyEffectSinks`.
-//   - No filesystem and no git. ExternalActionEffects delegate to the
-//     supplied outbox handlers, so network-capable behavior is injected at
-//     this boundary rather than hidden in processors.
+//   - No git. `enqueueProposal` is the one sink that reads the filesystem
+//     directly (a synchronous `readFileSync` per changed path, to capture
+//     `baseContents` at enqueue time) — every other sink here is pure SQL
+//     against the injected DB handles; ExternalActionEffects still delegate
+//     to the supplied outbox handlers rather than touching the network here.
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import type { ApplyEffectSinks } from "../engine/core/apply-effect";
 import type { CommitOid } from "../core/source-ref";
 import type { ProjectionDb } from "./db";
 import type { OutboxDb } from "../outbox/db";
+import type { ProposalsDb } from "../proposals/db";
 
 import { insertDiagnostic, resolveStaleDiagnostics } from "./diagnostics";
 import { insertFact, resolveStalePageFacts } from "./facts";
 import { applySearchDocumentEffect } from "./search";
 import { insertQuestion, resolveStaleQuestions } from "./questions";
+import { enqueuePendingProposal } from "../proposals/pending-proposals";
 import {
   dispatchExternalEffect,
   recoverFailedOutboxRow,
@@ -148,6 +156,32 @@ export type BuildSqliteSinksOpts = {
    * Omitted → no signal channel (tests, isolated sinks).
    */
   readonly onOutboxChanged?: () => void;
+  /**
+   * The open proposals.db handle. When present (together with `vaultPath`),
+   * the returned sinks object includes `enqueueProposal`: garden-phase
+   * propose-mode PatchEffects (plain, or an auto→propose downgrade rewrite)
+   * land in `pending_proposals` instead of being surfaced and dropped (see
+   * `apply-effect.ts`'s garden patch branch). Omitted → `enqueueProposal` is
+   * not included in the returned object, so `applyEffect` falls back to the
+   * legacy `garden.patch-propose-review-unavailable` drop.
+   */
+  readonly proposalsDb?: ProposalsDb;
+  /**
+   * Absolute filesystem path to the vault root. Used only by
+   * `enqueueProposal` to resolve each changed path against the working tree
+   * and read its CURRENT content into `baseContents` (the human-side
+   * `dome apply` staleness check compares against this later). Required
+   * alongside `proposalsDb` for `enqueueProposal` to be included.
+   */
+  readonly vaultPath?: string;
+  /**
+   * Fired whenever `enqueueProposal` actually inserted a new row (a dedupe-
+   * hit re-enqueue does not fire it). The host wires this to its tick-scoped
+   * `proposals.changed` flag; the tick epilogue dispatches subscribers once
+   * (processors.md §"Triggers and signals"). Omitted → no signal channel
+   * (tests, isolated sinks).
+   */
+  readonly onProposalsChanged?: () => void;
 };
 
 // ----- buildSqliteSinks -----------------------------------------------------
@@ -280,5 +314,63 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
 
     recoverQuarantine: opts.recoverQuarantine,
     recoverRun: opts.recoverRun,
+
+    ...(opts.proposalsDb !== undefined && opts.vaultPath !== undefined
+      ? {
+          enqueueProposal: async ({
+            effect,
+            processorId,
+            extensionId,
+            runId,
+            baseCommit,
+          }) => {
+            const proposalsDb = opts.proposalsDb!;
+            const vaultPath = opts.vaultPath!;
+            const baseContents: Record<string, string | null> = {};
+            for (const change of effect.changes) {
+              baseContents[change.path] = readWorkingFileOrNull(
+                join(vaultPath, change.path),
+              );
+            }
+            const result = enqueuePendingProposal(proposalsDb, {
+              processorId,
+              extensionId,
+              runId,
+              reason: effect.reason,
+              changes: effect.changes,
+              sourceRefs: effect.sourceRefs,
+              baseCommit,
+              baseContents: Object.freeze(baseContents),
+              createdAt: new Date().toISOString(),
+            });
+            if (result.inserted) opts.onProposalsChanged?.();
+            return result;
+          },
+        }
+      : {}),
   });
+}
+
+/**
+ * Read a working-tree file's full content for `enqueueProposal`'s
+ * `baseContents` capture. `null` when the file doesn't exist yet (a patch
+ * that creates a new path) — not an error condition. Any other read failure
+ * (permissions, I/O error) propagates per this file's no-try/catch contract.
+ */
+function readWorkingFileOrNull(absolutePath: string): string | null {
+  try {
+    return readFileSync(absolutePath, "utf8");
+  } catch (error) {
+    if (isMissingFileError(error)) return null;
+    throw error;
+  }
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { readonly code?: unknown }).code === "ENOENT"
+  );
 }

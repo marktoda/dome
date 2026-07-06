@@ -148,9 +148,10 @@ export type InspectionScope =
 /**
  * The closed set of engine-synthesized signals. The engine computes signals
  * once per Proposal from `compileRange(base, candidate)` and routes them to
- * subscribing processors — with three exceptions: `questions.changed`,
- * `outbox.changed`, and `quarantine.changed` are store-change-derived, never
- * minted by compileRange, and are dispatched on their own operational channel
+ * subscribing processors — with four exceptions: `questions.changed`,
+ * `outbox.changed`, `quarantine.changed`, and `proposals.changed` are
+ * store-change-derived, never minted by compileRange, and are dispatched on
+ * their own operational channel
  * (`src/engine/operational/questions-changed.ts` +
  * `src/engine/operational/store-changed.ts`) after a tick or resolve changes
  * the corresponding store. See processors.md §"Triggers and signals".
@@ -166,7 +167,8 @@ export type Signal =
   | "link.removed"
   | "questions.changed"
   | "outbox.changed"
-  | "quarantine.changed";
+  | "quarantine.changed"
+  | "proposals.changed";
 
 // ----- Trigger --------------------------------------------------------------
 
@@ -232,6 +234,7 @@ export type Trigger =
  *   - `quarantine.read` — read operational quarantine rows via `ctx.operational`.
  *   - `quarantine.recover` — emit QuarantineRecoveryEffect reset actions.
  *   - `questions.read` — read question rows via `ctx.operational`.
+ *   - `proposals.read` — read pending-proposal rows via `ctx.operational`.
  *   - `run.read`       — read stuck operational run rows via `ctx.operational`.
  *   - `run.recover`    — emit RunRecoveryEffect fail actions.
  */
@@ -291,6 +294,9 @@ export type QuarantineReadCapability = {
 export type QuestionsReadCapability = {
   readonly kind: "questions.read";
 };
+export type ProposalsReadCapability = {
+  readonly kind: "proposals.read";
+};
 export type QuarantineRecoverCapability = {
   readonly kind: "quarantine.recover";
   readonly actions: ReadonlyArray<QuarantineRecoveryEffect["action"]>;
@@ -326,6 +332,7 @@ export type Capability =
   | OutboxRecoverCapability
   | QuarantineReadCapability
   | QuestionsReadCapability
+  | ProposalsReadCapability
   | QuarantineRecoverCapability
   | RunReadCapability
   | RunRecoverCapability;
@@ -577,6 +584,26 @@ export type OperationalQuestionRow = QuestionEffect & {
   readonly state: "open" | "resolved";
 };
 
+/**
+ * A pending-proposal row surfaced through `ctx.operational.proposals`, gated
+ * by `proposals.read` (declared ∩ granted) — the garden-review counterpart to
+ * `OperationalQuestionRow`. `paths` is derived from the durable
+ * `PendingProposalRow.changes` (`changes.map(c => c.path)`); the raw
+ * `FileChange` payload (write content / delete) stays internal to
+ * `proposals.db` — this view exists so a compositor processor (e.g. the
+ * daily "To review" block) can name what a proposal touches without gaining
+ * general `proposals.db` access. See docs/wiki/specs/capabilities.md
+ * §"proposals.read".
+ */
+export type OperationalProposalRow = {
+  readonly id: number;
+  readonly processorId: string;
+  readonly reason: string;
+  readonly paths: ReadonlyArray<string>;
+  readonly createdAt: string;
+  readonly status: "pending" | "applied" | "rejected";
+};
+
 export type OperationalRunRow = {
   readonly id: string;
   readonly proposalId: string | null;
@@ -647,6 +674,19 @@ export type OperationalQueryView = {
     readonly resolved?: boolean;
     readonly resolvedSince?: string;
   }) => ReadonlyArray<OperationalQuestionRow>;
+  /**
+   * Read pending-proposal rows, gated by `proposals.read` (declared ∩
+   * granted) — see docs/wiki/specs/capabilities.md §"proposals.read". Unlike
+   * the other four accessors on this view, `proposals` degrades by KEY
+   * OMISSION (the field itself is `undefined`) rather than by returning `[]`
+   * when the effective grant is absent — mirrored by NEEDS_ARE_LOUD's
+   * `processor.need-unmet` warning, which fires the same way whether the
+   * declared capability's grant intersection is empty or its context field
+   * is absent at run time.
+   */
+  readonly proposals?: (filter?: {
+    readonly status?: "pending" | "applied" | "rejected";
+  }) => ReadonlyArray<OperationalProposalRow>;
 };
 
 // ----- ExtensionConfig ------------------------------------------------------
@@ -806,6 +846,7 @@ export const SignalSchema = z.enum([
   "questions.changed",
   "outbox.changed",
   "quarantine.changed",
+  "proposals.changed",
 ]);
 
 export const SignalTriggerSchema = z
@@ -950,6 +991,12 @@ export const QuestionsReadCapabilitySchema = z
   })
   .strict();
 
+export const ProposalsReadCapabilitySchema = z
+  .object({
+    kind: z.literal("proposals.read"),
+  })
+  .strict();
+
 export const QuarantineRecoverCapabilitySchema = z
   .object({
     kind: z.literal("quarantine.recover"),
@@ -995,6 +1042,7 @@ export const CapabilitySchema = z.discriminatedUnion("kind", [
   OutboxRecoverCapabilitySchema,
   QuarantineReadCapabilitySchema,
   QuestionsReadCapabilitySchema,
+  ProposalsReadCapabilitySchema,
   QuarantineRecoverCapabilitySchema,
   RunReadCapabilitySchema,
   RunRecoverCapabilitySchema,

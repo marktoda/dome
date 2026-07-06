@@ -159,8 +159,10 @@ export type { AdoptSubProposalFn };
  *      - Non-Patch effects route to their sink as usual.
  *      - Auto-mode Patch effects resolve to `queued-for-spawn`; the authorized
  *        patch is queued for sub-Proposal spawn.
- *      - Propose-mode Patch effects resolve to `blocked-for-review` and drop
- *        (v1.0; full lint-review wiring is a separate phase).
+ *      - Propose-mode Patch effects (plain, or an auto→propose downgrade)
+ *        resolve to `queued-for-review` and land in `proposals.db` when the
+ *        `enqueueProposal` sink is wired (product-review-4); without that
+ *        sink they resolve to `blocked-for-review` and drop instead.
  *   3. After the effects pass, processes the spawn queue: applies each
  *      queued patch to the adopted tree via `applyPatchToCandidate` to
  *      produce a new commit, constructs a garden-source Proposal, and
@@ -375,6 +377,7 @@ async function runGardenPhaseInner(opts: {
       const applied = await applyEffect({
         effect,
         processorId: result.processorId,
+        extensionId: extensionIdFor(result.processorId),
         runId: result.runId,
         proposalId: proposal.id,
         phase: "garden",

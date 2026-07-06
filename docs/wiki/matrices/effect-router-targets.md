@@ -9,14 +9,14 @@ description: Crosses Effect kind with processor phase to give each pair's engine
 
 # Effect router targets
 
-The canonical mapping from Effect kind × processor phase → engine routing destination. Every effect — garden PatchEffects included — crosses the sole applier `src/engine/core/apply-effect.ts`, where the broker is enforced. A garden auto-mode PatchEffect resolves there to the `queued-for-spawn` outcome (it is not written through an inline sink); the garden orchestrator (`garden.ts` / `garden-patch-dispatch.ts`) then reads the authorized patch off `appliedEffect` and constructs the sub-Proposal. This matrix enumerates the destinations per (kind, phase) pair, and what happens when the pair is incompatible.
+The canonical mapping from Effect kind × processor phase → engine routing destination. Every effect — garden PatchEffects included — crosses the sole applier `src/engine/core/apply-effect.ts`, where the broker is enforced. A garden auto-mode PatchEffect resolves there to the `queued-for-spawn` outcome (it is not written through an inline sink); the garden orchestrator (`garden.ts` / `garden-patch-dispatch.ts`) then reads the authorized patch off `appliedEffect` and constructs the sub-Proposal. A garden propose-mode PatchEffect (plain, or an auto→propose downgrade rewrite) resolves to `queued-for-review` when the optional `enqueueProposal` sink is wired — it lands in `proposals.db` for `dome apply`/`dome reject` instead of a sub-Proposal. This matrix enumerates the destinations per (kind, phase) pair, and what happens when the pair is incompatible.
 
 ## The matrix
 
 | Effect kind | Adoption phase | Garden phase | View phase |
 |---|---|---|---|
 | **PatchEffect (mode: "auto")** | Applied to candidate tree; loop re-iterates | Spawns new Proposal via [[wiki/specs/proposals]] §"Garden-emitted Proposals"; routed through adoption | Rejected: `phase-mismatch` diagnostic |
-| **PatchEffect (mode: "propose")** | Blocks adoption with diagnostic naming patch; review/apply surface is planned and not shipped as a dedicated CLI yet | v1.0: recorded as an allowed `patch.propose` capability use, diagnosed as `garden.patch-propose-review-unavailable`, and dropped until the garden review surface exists. v1.x: route to PR/review queue rather than apply inline. | Rejected: `phase-mismatch` diagnostic |
+| **PatchEffect (mode: "propose")** | Blocks adoption with diagnostic naming patch; review/apply surface is planned and not shipped as a dedicated CLI yet | Enqueues a durable row in `proposals.db` via the optional `enqueueProposal` sink — outcome `queued-for-review`, diagnosed with an info `garden.patch-proposed` naming the enqueued proposal id; `dome proposals` / `dome apply` / `dome reject` review it. Sink-less contexts (e.g. `dome run`'s view harness) fall back to the pre-product-review-4 behavior: recorded as an allowed `patch.propose` capability use, diagnosed as `garden.patch-propose-review-unavailable`, and dropped. | Rejected: `phase-mismatch` diagnostic |
 | **DiagnosticEffect (severity: "block")** | Blocks adoption; emits `engine.adoption.blocked` | Recorded in `projection.db.diagnostics` as severity `error` (garden can't block adoption — it ran *after*); surfaced via `dome check` and advanced `dome inspect diagnostics` | Rejected: `phase-mismatch` — view processors have no merge gate; block-severity from view phase is a programming error, surfaced as a diagnostic naming the offending processor. |
 | **DiagnosticEffect (severity: "error" \| "warning" \| "info")** | Recorded in `projection.db.diagnostics`; non-blocking | Same | Same |
 | **FactEffect** | Recorded in `projection.db.facts` (namespace-scoped per `graph.write` capability) | Same | Rejected: `phase-mismatch` diagnostic (view-phase processors don't extract facts) |
@@ -51,7 +51,7 @@ Every phase-compatible effect is then capability-checked before any sink write, 
 - **Denied:** discarded with a capability-deny diagnostic (recorded in `capability_uses` with `outcome: "denied"`).
 - **Downgraded:** routed under the downgraded shape (e.g., PatchEffect `auto → propose`).
 
-So an unauthorized auto-patch with complete `patch.propose` coverage goes to the propose route, not the deny route. In adoption, that route is `blocked-for-review` with a `patch.propose.requires-review` diagnostic; in garden v1.0 it is diagnosed and dropped because the review queue is not yet wired. See [[wiki/gotchas/capability-downgrade-surprise]].
+So an unauthorized auto-patch with complete `patch.propose` coverage goes to the propose route, not the deny route. In adoption, that route is `blocked-for-review` with a `patch.propose.requires-review` diagnostic; in garden it enqueues the rewritten propose-mode patch (`queued-for-review`) when `enqueueProposal` is wired, carrying both the `capability-downgrade-surprise` warning and the `garden.patch-proposed` info diagnostic — or, sink-less, is diagnosed and dropped as above. See [[wiki/gotchas/capability-downgrade-surprise]].
 
 ## Engine commit surface
 

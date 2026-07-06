@@ -354,6 +354,10 @@ const STRIPPED_SURFACE_BLOCKS: ReadonlyArray<{
   // calendar file / sweep ledger / open-questions projection — indexing them
   // would duplicate that source-of-truth content in search results.
   Object.freeze({ owner: "dome.daily", block: "questions" }),
+  // The garden propose-mode review queue (product-review-4): a projection of
+  // pending `proposals.db` rows — indexing it would duplicate that
+  // source-of-truth content in search results.
+  Object.freeze({ owner: "dome.daily", block: "proposals" }),
   Object.freeze({ owner: "dome.daily", block: "agenda" }),
   Object.freeze({ owner: "dome.daily", block: "integrated" }),
   Object.freeze({ owner: "dome.daily", block: "sources" }),
