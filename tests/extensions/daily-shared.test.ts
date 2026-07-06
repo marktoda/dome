@@ -19,6 +19,9 @@ import {
 } from "../../assets/extensions/dome.daily/processors/daily-scaffold";
 import {
   completedSourceBackedOpenLoopsFromMarkdown,
+  NEAR_DUPLICATE_JACCARD,
+  nearDuplicateOpenLoops,
+  normalizedOpenLoopTokens,
   openLoopAnchorFromStableId,
   openLoopFreshnessKey,
   openLoopIdentity,
@@ -1134,5 +1137,74 @@ describe("dome.daily shared date helpers", () => {
         content: section ?? "",
       }),
     ).toEqual([]);
+  });
+});
+
+// nearDuplicateOpenLoops — the July-5 double-render bug: the same
+// real-world task, worded differently across a synthesis page and an older
+// daily, must fold even though exact-key dedup (openLoopIdentity /
+// openLoopSurfaceKey) cannot see the match. The four bodies below are the
+// REAL production bullets (wiki/dailies/2026-07-05.md), copied verbatim.
+describe("nearDuplicateOpenLoops", () => {
+  // Pair 1: a synthesis-page phrasing vs. an anchored+dated daily phrasing.
+  const BODY_1 =
+    "Send Danny the exact text passages he asked for (blame-forward lines vs. the ownership-first counterfactual) — receipts compiled on [[wiki/entities/danny]] #task";
+  const BODY_2 =
+    "Send Danny the exact blame-forward passages vs. ownership-first counterfactual he asked for [[wiki/entities/danny]] #task 📅 2026-07-03";
+  // Pair 2: same shape, a different real task from the same daily.
+  const BODY_3 =
+    "Post Mark's system-level ownership message in the rollout thread (drafted 7/02) #task";
+  const BODY_4 =
+    "Post the system-level ownership message in the swapsteps rollout thread [[wiki/syntheses/per-hop-slippage-incident-2026-07]] #task 📅 2026-07-02";
+  // Negative control: two DISTINCT real tasks from the same daily — must
+  // never fold no matter how "task-shaped" they both are.
+  const BODY_5 =
+    "Confirm the fix-forward plan lands with a single named owner after Monday's session (Eric S booked it) #task";
+  const BODY_6 =
+    "Decide whether per-hop floors block or gate the Guidestar ramp checkpoints (Cody's plan says continue; Nezlobin wants care in reading experiment data) #task";
+
+  function jaccard(a: string, b: string): number {
+    const tokensA = normalizedOpenLoopTokens(a);
+    const tokensB = normalizedOpenLoopTokens(b);
+    let intersection = 0;
+    for (const token of tokensA) if (tokensB.has(token)) intersection += 1;
+    const union = tokensA.size + tokensB.size - intersection;
+    return union === 0 ? 0 : intersection / union;
+  }
+
+  // Calibration: the tokenizer must clear the threshold for both REAL
+  // positive pairs and stay well clear of it for the REAL negative pair —
+  // pinned so a future tokenizer tweak can't silently regress the fix.
+  test("calibration: token-set Jaccard on the real July-5 bullets", () => {
+    expect(jaccard(BODY_1, BODY_2)).toBeGreaterThanOrEqual(
+      NEAR_DUPLICATE_JACCARD,
+    );
+    expect(jaccard(BODY_3, BODY_4)).toBeGreaterThanOrEqual(
+      NEAR_DUPLICATE_JACCARD,
+    );
+    expect(jaccard(BODY_5, BODY_6)).toBeLessThan(NEAR_DUPLICATE_JACCARD - 0.3);
+  });
+
+  test("folds the Danny receipts pair (synthesis wording vs. anchored/dated daily wording)", () => {
+    expect(nearDuplicateOpenLoops(BODY_1, BODY_2)).toBe(true);
+    expect(nearDuplicateOpenLoops(BODY_2, BODY_1)).toBe(true);
+  });
+
+  test("folds the rollout-message pair (Mark's phrasing vs. the wikilinked/dated phrasing)", () => {
+    expect(nearDuplicateOpenLoops(BODY_3, BODY_4)).toBe(true);
+  });
+
+  test("does not fold two distinct real tasks from the same daily", () => {
+    expect(nearDuplicateOpenLoops(BODY_5, BODY_6)).toBe(false);
+  });
+
+  test("never folds bodies under 4 tokens, even near-identical ones", () => {
+    expect(normalizedOpenLoopTokens("Ping Sam").size).toBeLessThan(4);
+    expect(nearDuplicateOpenLoops("Ping Sam", "Ping Sam now")).toBe(false);
+    expect(nearDuplicateOpenLoops("Buy milk", "Buy milk")).toBe(false);
+  });
+
+  test("a body is never a near-duplicate of unrelated short text", () => {
+    expect(nearDuplicateOpenLoops(BODY_1, "Buy milk")).toBe(false);
   });
 });

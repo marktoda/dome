@@ -322,6 +322,85 @@ export function openLoopSurfaceKey(input: { readonly body: string }): string {
   return normalizeOpenLoopBody(input.body);
 }
 
+const NEAR_DUPLICATE_WIKILINK_RE = /\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]/g;
+const NEAR_DUPLICATE_FROM_SUFFIX_RE = /\(from \[\[[^\]]*\]\]\)\s*$/i;
+const NEAR_DUPLICATE_DUE_TOKEN_RE = /📅\s*\d{4}-\d{2}-\d{2}/g;
+// Looser date shapes ("7/02", "2026-07-02") that show up as inline asides
+// (e.g. "(drafted 7/02)") rather than the stamped 📅 due token above.
+const NEAR_DUPLICATE_LOOSE_DATE_RE = /\b\d{1,4}[/-]\d{1,2}(?:[/-]\d{1,4})?\b/g;
+const NEAR_DUPLICATE_TASK_TAG_RE = /#(?:task|follow-?up)\b/gi;
+const NEAR_DUPLICATE_POSSESSIVE_RE = /'s\b/g;
+const NEAR_DUPLICATE_TOKEN_SPLIT_RE = /[^a-z0-9]+/;
+// Bodies this short carry too little signal for token-overlap comparison to
+// be trustworthy — never treated as a near-duplicate of anything.
+const NEAR_DUPLICATE_MIN_TOKENS = 4;
+
+/**
+ * Lowercased alphanumeric tokens of an open-loop body, for near-duplicate
+ * comparison. Starts from {@link normalizeOpenLoopBody}'s output (leading
+ * `#task`/`#followup` already stripped, lowercased, whitespace collapsed),
+ * then additionally: drops a trailing `(from [[origin]])` attribution
+ * suffix, folds `[[wikilink]]` targets down to their basename (kept as one
+ * atomic token — splitting a page-identity reference into sub-words is
+ * noise, not signal), strips due-date tokens (both the stamped `📅
+ * YYYY-MM-DD` form and looser inline dates like `7/02`), strips `#task` /
+ * `#followup` tags wherever they sit, drops a trailing possessive `'s`, and
+ * finally splits on `/[^a-z0-9]+/`.
+ */
+export function normalizedOpenLoopTokens(body: string): ReadonlySet<string> {
+  let text = normalizeOpenLoopBody(body).replace(
+    NEAR_DUPLICATE_FROM_SUFFIX_RE,
+    "",
+  );
+
+  const wikiTokens: string[] = [];
+  text = text.replace(NEAR_DUPLICATE_WIKILINK_RE, (_match, target: string) => {
+    const base = target.split("/").pop() ?? target;
+    wikiTokens.push(base.replace(/\.md$/i, "").toLowerCase());
+    return " ";
+  });
+
+  text = text
+    .replace(NEAR_DUPLICATE_DUE_TOKEN_RE, " ")
+    .replace(NEAR_DUPLICATE_LOOSE_DATE_RE, " ")
+    .replace(NEAR_DUPLICATE_TASK_TAG_RE, " ")
+    .replace(NEAR_DUPLICATE_POSSESSIVE_RE, "");
+
+  const tokens = text
+    .split(NEAR_DUPLICATE_TOKEN_SPLIT_RE)
+    .filter((token) => token.length > 0);
+  return Object.freeze(new Set([...tokens, ...wikiTokens]));
+}
+
+/** Conservative near-duplicate threshold — see {@link nearDuplicateOpenLoops}. */
+export const NEAR_DUPLICATE_JACCARD = 0.6;
+
+/**
+ * True when two open-loop bodies are the same real-world task phrased
+ * differently: token-set Jaccard similarity (see
+ * {@link normalizedOpenLoopTokens}) at or above {@link NEAR_DUPLICATE_JACCARD}.
+ * Conservative: bodies under {@link NEAR_DUPLICATE_MIN_TOKENS} tokens never
+ * match — too little signal to distinguish "same task" from "coincidental
+ * overlap".
+ */
+export function nearDuplicateOpenLoops(a: string, b: string): boolean {
+  const tokensA = normalizedOpenLoopTokens(a);
+  const tokensB = normalizedOpenLoopTokens(b);
+  if (
+    tokensA.size < NEAR_DUPLICATE_MIN_TOKENS ||
+    tokensB.size < NEAR_DUPLICATE_MIN_TOKENS
+  ) {
+    return false;
+  }
+  let intersection = 0;
+  for (const token of tokensA) {
+    if (tokensB.has(token)) intersection += 1;
+  }
+  const union = tokensA.size + tokensB.size - intersection;
+  if (union === 0) return false;
+  return intersection / union >= NEAR_DUPLICATE_JACCARD;
+}
+
 /**
  * The canonical stable identity for an action item. When the line carries a
  * stamped `^block-anchor`, identity is the anchor — path-independent and
