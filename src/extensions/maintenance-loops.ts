@@ -538,26 +538,39 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
     freezeLoop({
       id: "dome.system.report-card",
       goal:
-        "Every running processor's weekly cost and output stays owner-visible; retire-or-keep decisions have evidence.",
+        "Every running processor's weekly cost and output stays owner-visible; retire-or-keep and autonomy decisions have evidence.",
       evidence: [
         { kind: "operational", name: "runs" },
         { kind: "operational", name: "questions" },
         { kind: "path", pattern: "meta/retrieval-misses.md" },
+        // The trust ladder's inputs/outputs: producer autonomy resolves from
+        // the vault grant surface, and a promotion IS a proposed config diff.
+        { kind: "path", pattern: ".dome/config.yaml" },
       ],
-      processors: ["dome.health.report-card"],
+      processors: [
+        "dome.health.report-card",
+        // The trust ladder (wiki/specs/proposals.md §"Trust ladder"): the
+        // Monday 05:24 actuator on the 05:22 card's evidence — promotions ride
+        // the proposal review loop (never self-granted), dormancy raises an
+        // owner-needed question. Same weekly prove-loop design unit, one rung
+        // up: the card shows the evidence, trust-review acts on it.
+        "dome.health.trust-review",
+      ],
       surfaces: [
         { kind: "path", pattern: "meta/report-card.md" },
         { kind: "path", pattern: "wiki/dailies/*.md" },
+        { kind: "path", pattern: ".dome/config.yaml" },
       ],
       settlement: {
         key: "trailing-7-day window per processor",
         noOpWhen:
-          "the rendered card and the daily's weekly-review block are byte-identical to the current window's aggregates",
+          "the rendered card and the daily's weekly-review block are byte-identical to the current window's aggregates, and no trust decision (promotion / dormancy flag) is newly warranted for the current windows",
         checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "A card nobody reads is silent accounting — the daily weekly-review block is the load-bearing surface; meta/report-card.md is the archive.",
         "Productive-outcome counts read succeeded runs with at least one emitted effect; a diagnostic-only run counts as productive.",
+        "Trust promotions must never bypass review: trust-review emits mode:\"propose\" patches and holds patch.propose on .dome/config.yaml only — the gardener cannot auto-apply its own autonomy change; a rejected promotion stays suppressed for 28 days.",
       ],
     }),
     freezeLoop({

@@ -6,7 +6,7 @@ sources:
   - "[[wiki/specs/capture]]"
   - "[[wiki/specs/sdk-surface]]"
   - "[[wiki/specs/task-lifecycle]]"
-description: "dome http converged adapter: bearer-token JSON routes, POST /capture seam, POST /settle, GET /proposals + POST /apply + POST /reject, GET /today cockpit, POST /agent converse loop, POST /transcribe, GET /recents, author capability"
+description: "dome http converged adapter: bearer-token JSON routes, POST /capture seam, POST /settle, GET /proposals + POST /apply + POST /reject, GET /today cockpit, POST /agent converse loop, POST /transcribe, GET /recents, author capability, assistant contract tools"
 ---
 
 # HTTP surface
@@ -47,7 +47,8 @@ The server gates every route on a named capability. The vocabulary is:
 `Dome-Agent` trailer — the same mechanism as `dome capture` — and the running
 daemon adopts it on its next tick. Default-off keeps the server read-only-safe:
 a phone on Tailscale can hit `/agent` for Q&A without ever being able to write
-the vault.
+the vault. The same granted set also drives which contract tools the Dome
+assistant is provisioned with (§"The assistant's tools").
 
 Per-credential token scopes (different callers holding differently-scoped
 bearers) are deferred to the `SECOND_USER_GATE` milestone.
@@ -89,7 +90,44 @@ One vault per process.
 | `POST /transcribe` audio body | STT step: shell command or OpenAI-compatible cloud endpoint (`capture` capability; 501 when unconfigured) | `dome.transcribe/v1` `{text}` |
 | `GET /recents` | recent vault changes (`read` capability) | `dome.recents/v1` `{count, entries}` |
 
-The `/agent` and `/agent/stream` routes are backed by the interactive assistant (`src/assistant/`) — a consumer surface distinct from the `dome.agent` background processor bundle that runs inside the garden phase.
+The `/agent` and `/agent/stream` routes are backed by **the Dome assistant** (`src/assistant/`) — the co-located chat agent that powers the PWA conversation, a consumer surface distinct from the `dome.agent` background processor bundle that runs inside the garden phase.
+
+### The assistant's tools
+
+The assistant speaks the same contract as the routes: beyond its three
+always-on read tools, its action tools are thin wrappers over the shared
+`src/surface/` collectors, provisioned per tool from the **same granted
+capability set the routes gate on** (the server passes the set into
+`runAgent`/`runAgentStream`; `buildAgentTools` in `src/assistant/tools.ts`
+applies the table below). Same collectors, same capability vocabulary — an
+operation the bearer could not reach as a route is not reachable through the
+assistant either.
+
+| Tool | Capability | Same path as | Result schema |
+|---|---|---|---|
+| `search_vault` | — (always on) | the `dome.search.query` view | ranked-matches summary |
+| `read_document` | — (always on) | `vault.readDocument` | page markdown |
+| `todays_brief` | — (always on) | the `dome.daily.today` view | brief summary |
+| `capture_note` | `capture` | `performCapture` with `source: "assistant"` | `dome.capture/v1` |
+| `settle_task` | `resolve` | `performSettle` | `dome.settle/v1` |
+| `resolve_question` | `resolve` | `vault.resolve` | `dome.answer/v1` |
+| `list_proposals` | `read` | `collectProposals` | `dome.proposals/v1` |
+| `apply_proposal` | `resolve` | `performApply` | `dome.apply/v1` |
+| `reject_proposal` | `resolve` | `performReject` | `dome.reject/v1` |
+| `create_document` | `author` | agent write path (`src/assistant/write.ts`) | change confirmation |
+| `edit_document` | `author` | agent write path (`src/assistant/write.ts`) | change confirmation |
+
+Mutating tools append one entry to the run's `changes` array — the same array
+the `/agent` response envelope, the SSE `done` event, and the agent log carry —
+so a settled task or an applied proposal surfaces in the PWA's change display
+exactly like an author write. Under the default grant (everything but
+`author`) the assistant can capture, settle, resolve, and review proposals,
+but cannot author pages; these are decisions and captures, not authoring
+([[wiki/concepts/client-model]] §"The authoring boundary").
+
+Tests: `tests/assistant/tools.test.ts` (§"contract-tool provisioning" pins the
+capability gates; §"contract tools (invocation)" exercises the collectors
+against real vault fixtures).
 
 Errors are JSON envelopes (`{status: "error", error, message}`) with honest
 HTTP codes: 400 usage, 401 auth, 404 missing, 409 unworkable git state or a

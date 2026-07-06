@@ -78,10 +78,12 @@ const SEEDED: ReadonlyArray<OperationalQuestionRow> = Object.freeze([
 const PENDING_PROPOSAL: OperationalProposalRow = Object.freeze({
   id: 12,
   processorId: "dome.agent.consolidate",
+  extensionId: "dome.agent",
   reason: "split oversized entity page into danny + danny-promo-2026",
   paths: Object.freeze(["wiki/entities/danny.md"]),
   createdAt: "2026-06-03T09:00:00.000Z",
   status: "pending",
+  decidedAt: null,
 });
 
 const BASE_DAILY = [

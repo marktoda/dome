@@ -8,7 +8,7 @@ sources:
   - "[[wedge]]"
   - "[[wiki/specs/task-lifecycle]]"
   - "[[memory]]"
-description: "dome mcp stdio adapter: thirteen typed tools mirroring CLI --json documents over shared collectors, including the proposals/apply_proposal/reject_proposal review loop; engine import graph stays MCP-free"
+description: "dome mcp stdio adapter: fourteen typed tools mirroring CLI --json documents over shared collectors, including the proposals/apply_proposal/reject_proposal review loop and the explain provenance chain; engine import graph stays MCP-free"
 ---
 
 # MCP surface
@@ -44,6 +44,7 @@ The adapter is deliberately thin and **consumes data-returning boundaries — it
 - `resolve` calls `vault.resolve` (durable answer + answer-handler dispatch — the same path as `dome resolve`) and renders `dome.answer/v1` via the shared `src/surface/answer.ts` mappers.
 - `settle` calls `performSettle` (the data core behind `dome settle`, `src/surface/settle.ts`) and renders the shared `dome.settle/v1` document via `settleResultJson` — resolve's sibling for tasks: a decision by `^block-anchor` (close / defer / keep), not a document edit.
 - `proposals` / `apply_proposal` / `reject_proposal` call `collectProposals` / `performApply` / `performReject` (the data core behind `dome proposals` / `dome apply` / `dome reject`, `src/surface/proposals.ts`) and render the shared `dome.proposals/v1` / `dome.apply/v1` / `dome.reject/v1` documents — the review-loop decision surface for garden `propose`-mode edits (§"Writes and lifecycle").
+- `explain` calls `buildExplain` (the data core behind `dome explain`, `src/surface/explain.ts`) and returns the shared `dome.explain/v1` document — the provenance chain claim → facts → runs → engine commits for a page or one anchored claim.
 - `brief` runs the today view to locate the daily note (config-aware path template), then reads its content at the adopted commit via the git read boundary.
 
 Nothing in a tool call prints, so stdout stays exclusively the MCP protocol channel — load-bearing for a stdio server. A tool mutex still serializes calls: each call opens and closes its own `Vault`/runtime exactly like one CLI invocation, so at most one set of SQLite handles is open against the vault at a time and none is held between calls.
@@ -71,6 +72,7 @@ MCP tool names are bare verbs — harness clients already namespace by server na
 | `proposals` | `dome proposals --json` | `dome.proposals/v1` | List pending garden-proposed edits awaiting owner review; `all` includes decided rows. |
 | `apply_proposal` | `dome apply --json` | `dome.apply/v1` | Apply a pending proposal's changes as one ordinary human commit. |
 | `reject_proposal` | `dome reject --json` | `dome.reject/v1` | Reject a pending proposal; CAS-decides the row only, touches no files. |
+| `explain` | `dome explain --json` | `dome.explain/v1` | Provenance chain for a page or one anchored claim: claim → facts → runs → engine commits. |
 | `tasks` | `dome run today --json` | `dome.daily.today/v1` | Source-backed open loops / followups / questions for a day. |
 | `brief` | today view + adopted-commit read | `dome.mcp.brief/v1` | Today's daily note content — the morning-brief read surface. |
 
@@ -90,6 +92,7 @@ settle:         { blockId: string (required), disposition: "close"|"defer"|"keep
 proposals:      { all?: bool }
 apply_proposal: { id: int>0 (required) }
 reject_proposal:{ id: int>0 (required), note?: string }
+explain:        { target: string (required) }   # "<path>" or "<path>#^<anchor>"
 tasks:          { date?: "YYYY-MM-DD", limit?: int>0 }
 brief:          { date?: "YYYY-MM-DD" }
 ```

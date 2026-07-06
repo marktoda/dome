@@ -40,6 +40,7 @@ describe("bin/dome process boundary", () => {
       "query",
       "today",
       "log",
+      "explain",
       "export-context",
       "prep",
       "agenda-with",

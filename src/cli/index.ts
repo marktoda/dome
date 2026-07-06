@@ -18,6 +18,7 @@ import { runCheck } from "./commands/check";
 import { runAnswer } from "./commands/answer";
 import { runAgendaWith } from "./commands/agenda-with";
 import { runApply } from "./commands/apply";
+import { runExplain } from "./commands/explain";
 import { runExportContext } from "./commands/export-context";
 import { runInit } from "./commands/init";
 import { runInstall, runRestart, runUninstall } from "./commands/install";
@@ -421,7 +422,9 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("answer", { hidden: true })
-    .description("Resolve an engine-raised question.")
+    .description(
+      "Resolve an engine-raised question. (deprecated alias — use dome resolve)",
+    )
     .argument("<question-id>", "Question row id from `dome inspect questions`.")
     .argument("[value...]", "Answer value. Omit to print the question.")
     .option("--json", "Emit JSON.")
@@ -569,6 +572,32 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           grep: options.grep,
           limit: options.limit,
           json: options.json,
+        }),
+      );
+    });
+
+  program
+    .command("explain")
+    .description(
+      // NB: help output is fence-tested against hidden command names as
+      // substrings (tests/cli/index.test.ts), so this line avoids the word
+      // "run(s)"; the full chain is claim → facts → runs → engine commits.
+      "Explain a page or claim's provenance: claim → facts → ledger evidence → engine commits.",
+    )
+    .argument(
+      "<target>",
+      '"<path>" or "<path>#^<anchor>" — a vault page, optionally one claim anchor.',
+    )
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (target: string, options: ExplainCliOptions) => {
+      setExitCode(
+        await runExplain({
+          target,
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
         }),
       );
     });
@@ -1112,6 +1141,12 @@ type LogCliOptions = {
   readonly limit?: number;
   readonly json?: boolean;
   readonly vault?: string;
+};
+
+type ExplainCliOptions = {
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
 };
 
 type ExportContextCliOptions = {

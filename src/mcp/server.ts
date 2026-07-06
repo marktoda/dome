@@ -17,6 +17,7 @@
 //   proposals      → collectProposals        (dome.proposals/v1)
 //   apply_proposal → performApply            (dome.apply/v1)
 //   reject_proposal→ performReject           (dome.reject/v1)
+//   explain        → buildExplain            (dome.explain/v1)
 //   tasks          → vault.runView("today")  (dome.daily.today/v1)
 //   brief          → today view + adopted-commit blob read
 //                                            (dome.mcp.brief/v1)
@@ -59,6 +60,7 @@ import {
   buildCheckReport,
   resolveScopes,
 } from "../surface/check";
+import { buildExplain, explainJson } from "../surface/explain";
 import { performSettle, settleResultJson } from "../surface/settle";
 import {
   applyResultJson,
@@ -115,6 +117,8 @@ Typical loop:
 - proposals / apply_proposal / reject_proposal: review pending garden-
   proposed edits before they land — list them, then apply or reject by id.
 - query / export_context: adopted-state recall with source refs.
+- explain: provenance for a page or one anchored claim — the claim value,
+  the facts asserting it, the runs that produced them, the engine commits.
 - report_miss: log a retrieval miss when a query/packet missed obvious
   context — feeds the weekly report card's dogfood evidence.
 - brief / tasks: today's daily note content and source-backed open loops.
@@ -616,6 +620,53 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
           ...jsonToolResult(rejectResultJson(outcome)),
           ...(outcome.status === "rejected" ? {} : { isError: true }),
         };
+      }),
+  );
+
+  // ----- explain ---------------------------------------------------------------------
+
+  server.registerTool(
+    "explain",
+    {
+      title: "Explain a page or claim's provenance",
+      description:
+        "Why do I believe X: for a vault path (optionally narrowed to one " +
+        "claim via \"<path>#^<anchor>\"), the adopted claim value, the " +
+        "projection facts asserting it with their producing processors, the " +
+        "run-ledger rows behind those facts (status + cost), and the recent " +
+        "engine commits touching the path with their Dome-* trailers. " +
+        "Read-only; a path with no claims or facts still explains its " +
+        "commits. Returns the dome.explain/v1 JSON payload.",
+      inputSchema: {
+        target: z.string().min(1).describe(
+          '"<path>" or "<path>#^<anchor>" — a vault page, optionally one claim anchor.',
+        ),
+      },
+    },
+    async ({ target }) =>
+      enqueue(async () => {
+        const outcome = await buildExplain({ vault, bundlesRoot, target });
+        if (outcome.kind === "runtime-open-failed") {
+          return commandErrorResult("explain", outcome.errorKind);
+        }
+        if (outcome.kind !== "ok") {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: formatJson({
+                  schema: COMMAND_ERROR_SCHEMA,
+                  status: "error",
+                  command: "explain",
+                  error: outcome.kind,
+                  message: outcome.message,
+                }),
+              },
+            ],
+            isError: true,
+          };
+        }
+        return jsonToolResult(explainJson(outcome.view));
       }),
   );
 

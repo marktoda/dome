@@ -405,8 +405,11 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
           vault,
           question,
           abortSignal: signal,
+          // The same granted set the routes gate on drives the assistant's
+          // contract-tool provisioning (capture/settle/resolve/proposals;
+          // `author` provisions the write tools).
+          capabilities: granted,
           ...(opts.model !== undefined ? { modelId: opts.model } : {}),
-          ...(has(granted, "author") ? { allowWrite: true } : {}),
         }),
     );
     if (outcome.kind === "open-failed") {
@@ -442,8 +445,9 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
           vault,
           question,
           abortSignal: signal,
+          // Same capability plumbing as defaultAgent above.
+          capabilities: granted,
           ...(opts.model !== undefined ? { modelId: opts.model } : {}),
-          ...(has(granted, "author") ? { allowWrite: true } : {}),
         });
         ready();
         // Hold the vault open until the route finishes draining the stream.

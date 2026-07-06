@@ -96,6 +96,7 @@ describe("claimFactValue", () => {
   test("encodes key, value, and asOf as canonical JSON", () => {
     const encoded = claimFactValue({
       line: 3,
+      endLine: 3,
       key: "Pod managed",
       value: "[[wiki/entities/protocol-growth-pod]] *(as of 2026-05-22)*",
       asOf: "2026-05-22",
@@ -111,6 +112,7 @@ describe("claimFactValue", () => {
   test("omits asOf when absent", () => {
     const encoded = claimFactValue({
       line: 1,
+      endLine: 1,
       key: "Level",
       value: "UNI-4",
       asOf: null,

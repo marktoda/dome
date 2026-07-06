@@ -44,6 +44,7 @@ const EXPECTED_TOOLS = [
   "brief",
   "capture",
   "check",
+  "explain",
   "export_context",
   "proposals",
   "query",
@@ -219,7 +220,7 @@ async function enqueueProposal(
 // ----- The in-memory MCP session ------------------------------------------------
 
 describe("dome mcp server (in-memory transport)", () => {
-  test("initialize + tools/list expose the thirteen wedge tools", async () => {
+  test("initialize + tools/list expose the fourteen shipped tools", async () => {
     const { client } = await fixture();
     const tools = await client.listTools();
     const names = tools.tools.map((tool) => tool.name).sort();
@@ -303,6 +304,36 @@ describe("dome mcp server (in-memory transport)", () => {
       content: true,
       decisions: true,
     });
+  }, TEST_TIMEOUT_MS);
+
+  test("explain returns the dome.explain/v1 provenance chain for an adopted page", async () => {
+    const { client } = await fixture();
+    const call = await callTool(client, "explain", {
+      target: "wiki/project-omega.md",
+    });
+    expect(call.isError).toBe(false);
+    expect(call.json.schema).toBe("dome.explain/v1");
+    expect(call.json.path).toBe("wiki/project-omega.md");
+    expect(call.json.anchor).toBeNull();
+    expect(call.json.claim).toBeNull();
+    // A page with no facts still explains (graceful degrade); the deep
+    // claim/fact/run assertions live in tests/cli/commands/explain.test.ts.
+    expect(Array.isArray(call.json.facts)).toBe(true);
+    expect(Array.isArray(call.json.runs)).toBe(true);
+    const commits = call.json.commits as Array<Record<string, unknown>>;
+    expect(commits.length).toBeGreaterThan(0);
+    expect(typeof commits[0]?.sha).toBe("string");
+  }, TEST_TIMEOUT_MS);
+
+  test("explain of a path absent from adopted state is a command error", async () => {
+    const { client } = await fixture();
+    const call = await callTool(client, "explain", {
+      target: "wiki/does-not-exist.md",
+    });
+    expect(call.isError).toBe(true);
+    expect(call.json.schema).toBe("dome.command-error/v1");
+    expect(call.json.command).toBe("explain");
+    expect(call.json.error).toBe("unknown-path");
   }, TEST_TIMEOUT_MS);
 
   test("tasks returns the dome.daily.today/v1 open-loop view", async () => {

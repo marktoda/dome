@@ -88,7 +88,7 @@ processors:
   # succeeded/failed/quarantine-skipped alike). See
   # [[wiki/specs/daily-surface]] §"Report card".
   - id: dome.health.report-card
-    version: 0.1.0
+    version: 0.2.0
     phase: garden
     triggers:
       - kind: schedule
@@ -99,13 +99,48 @@ processors:
           - "wiki/dailies/*.md"
           - "meta/report-card.md"
           - "meta/retrieval-misses.md"
+          # The trust-ladder section resolves each proposal producer's
+          # autonomy (auto vs propose) from the vault grant surface.
+          - ".dome/config.yaml"
       - kind: patch.auto
         paths: ["meta/report-card.md", "wiki/dailies/*.md"]
       - kind: run.read
       - kind: questions.read
+      # The trust-ladder section: per producing processor, decided/applied
+      # counts + accept rate over the card's window.
+      - kind: proposals.read
     execution:
       class: deterministic
     module: processors/report-card.ts
+
+  # The trust ladder (product review 5): the gardener proposes changes to its
+  # own autonomy through the proposal review loop. Monday 05:24 — after the
+  # 05:22 report card (whose trust section shows the same evidence), before
+  # the 05:30 brief. Deterministic: reads proposal rows (proposals.read) +
+  # run rows (run.read, all statuses) + .dome/config.yaml, and emits at most
+  # one propose-mode PatchEffect per promotion (a comment-preserving config
+  # diff granting patch.auto for the paths the producer currently proposes)
+  # plus owner-needed dormancy questions. patch.propose is scoped to
+  # .dome/config.yaml ONLY, and the effect is mode:"propose" — the engine can
+  # never auto-apply its own autonomy change. See [[wiki/specs/proposals]]
+  # §"Trust ladder".
+  - id: dome.health.trust-review
+    version: 0.1.0
+    phase: garden
+    triggers:
+      - kind: schedule
+        cron: "24 5 * * 1"
+    capabilities:
+      - kind: read
+        paths: [".dome/config.yaml"]
+      - kind: patch.propose
+        paths: [".dome/config.yaml"]
+      - kind: proposals.read
+      - kind: run.read
+      - kind: question.ask
+    execution:
+      class: deterministic
+    module: processors/trust-review.ts
 
 # Doctor contributions (wiki/specs/cli.md §"dome doctor"): grant-entry probes
 # evaluated generically by the health report. dome init --refresh-config never
@@ -127,3 +162,27 @@ doctor:
         dome.health.report-card per-processor grant.patch.auto in
         .dome/config.yaml (the report-card processor uses a replacement grant,
         narrower than the dome.health bundle grant).
+    - processorId: dome.health.report-card
+      entries:
+        - kind: read
+          target: .dome/config.yaml
+      why: >-
+        the weekly card's trust-ladder section cannot resolve producer
+        autonomy — every row renders "unknown"
+      recovery: >-
+        Add ".dome/config.yaml" to the dome.health.report-card per-processor
+        grant.read in .dome/config.yaml.
+    # trust-review's other capabilities (patch.propose, proposals.read,
+    # run.read, question.ask) are kind-level and covered by the general
+    # capability.grant-missing probe — ManifestGrantEntry's kind enum has no
+    # slots for them (the dome.agent.consolidate patch.propose precedent).
+    - processorId: dome.health.trust-review
+      entries:
+        - kind: read
+          target: .dome/config.yaml
+      why: >-
+        trust-review cannot read the vault grant surface, so every producer's
+        autonomy resolves "unknown" and promotions are silently never proposed
+      recovery: >-
+        Add ".dome/config.yaml" to the dome.health.trust-review per-processor
+        grant.read in .dome/config.yaml.

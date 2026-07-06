@@ -1,12 +1,15 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import git from "isomorphic-git";
 import fs from "node:fs";
-import { buildAgentTools, type AgentWriteContext } from "../../src/assistant/tools";
+import { buildAgentTools, type AgentActionContext } from "../../src/assistant/tools";
 import type { Citation, AgentChange } from "../../src/assistant/types";
+import { grantedCapabilities, type Capability } from "../../src/capabilities";
+import { runInit } from "../../src/cli/commands/init";
+import { commitSingleFileOnHead, readBlob, resolveRef } from "../../src/git";
 
 // Real VaultViewResult shape: {kind: "ok", structured: {name, schema, data}, views, brokerDiagnostics}
 // Real query structured.data shape (dome.search.query/v1):
@@ -137,15 +140,24 @@ function vaultAt(path: string) {
   return { path, runView: async () => ({ kind: "ok", structured: { data: { matches: [] } } }), readDocument: async () => null } as never;
 }
 
+/** Action-context helper: the same shape the HTTP server passes through runAgent. */
+function actionCtx(
+  vaultPath: string,
+  caps: readonly Capability[],
+  changes: AgentChange[] = [],
+): AgentActionContext {
+  return { vaultPath, modelId: "m", changes, capabilities: new Set<Capability>(caps) };
+}
+
 describe("buildAgentTools write provisioning", () => {
-  test("omits write tools when no write context is given", () => {
+  test("omits write tools when no action context is given", () => {
     const tools = buildAgentTools(vaultAt("/tmp/x"), []);
     expect(Object.keys(tools)).not.toContain("create_document");
     expect(Object.keys(tools)).not.toContain("edit_document");
   });
 
-  test("includes write tools when a write context is given", () => {
-    const tools = buildAgentTools(vaultAt("/tmp/x"), [], { vaultPath: "/tmp/x", modelId: "m", changes: [] });
+  test("includes write tools when the author capability is granted", () => {
+    const tools = buildAgentTools(vaultAt("/tmp/x"), [], actionCtx("/tmp/x", ["author"]));
     expect(Object.keys(tools)).toContain("create_document");
     expect(Object.keys(tools)).toContain("edit_document");
   });
@@ -153,8 +165,7 @@ describe("buildAgentTools write provisioning", () => {
   test("create_document writes, commits, and records the change", async () => {
     const vault = await tempVault();
     const changes: AgentChange[] = [];
-    const write: AgentWriteContext = { vaultPath: vault, modelId: "m", changes };
-    const tools = buildAgentTools(vaultAt(vault), [], write);
+    const tools = buildAgentTools(vaultAt(vault), [], actionCtx(vault, ["author"], changes));
     const out = await (tools["create_document"] as { execute: (i: unknown) => Promise<string> }).execute({ path: "wiki/n.md", content: "# N\n" });
     expect(out).toContain("created wiki/n.md");
     expect(changes).toEqual([{ path: "wiki/n.md", kind: "create" }]);
@@ -164,9 +175,225 @@ describe("buildAgentTools write provisioning", () => {
   test("create_document returns an error string (does not throw) on a bad path", async () => {
     const vault = await tempVault();
     const changes: AgentChange[] = [];
-    const tools = buildAgentTools(vaultAt(vault), [], { vaultPath: vault, modelId: "m", changes });
+    const tools = buildAgentTools(vaultAt(vault), [], actionCtx(vault, ["author"], changes));
     const out = await (tools["create_document"] as { execute: (i: unknown) => Promise<string> }).execute({ path: ".dome/x.md", content: "y" });
     expect(out).toStartWith("error:");
+    expect(changes).toHaveLength(0);
+  });
+});
+
+// ----- contract-tool provisioning (mirrors ROUTE_CAPABILITY in src/http/server.ts) -----
+
+const CONTRACT_MUTATION_TOOLS = [
+  "settle_task",
+  "resolve_question",
+  "apply_proposal",
+  "reject_proposal",
+] as const;
+
+describe("buildAgentTools contract-tool provisioning", () => {
+  test("default grants (read+capture+resolve+converse): contract tools present, author tools absent", () => {
+    const tools = buildAgentTools(
+      vaultAt("/tmp/x"),
+      [],
+      { vaultPath: "/tmp/x", modelId: "m", changes: [], capabilities: grantedCapabilities({}) },
+    );
+    const names = Object.keys(tools);
+    expect(names).toContain("capture_note");
+    expect(names).toContain("list_proposals");
+    for (const name of CONTRACT_MUTATION_TOOLS) expect(names).toContain(name);
+    expect(names).not.toContain("create_document");
+    expect(names).not.toContain("edit_document");
+  });
+
+  test("with resolve withheld: settle/resolve/apply/reject absent, capture + list_proposals remain", () => {
+    const tools = buildAgentTools(
+      vaultAt("/tmp/x"),
+      [],
+      actionCtx("/tmp/x", ["read", "capture", "converse"]),
+    );
+    const names = Object.keys(tools);
+    for (const name of CONTRACT_MUTATION_TOOLS) expect(names).not.toContain(name);
+    expect(names).toContain("capture_note");
+    expect(names).toContain("list_proposals"); // needs only `read`
+  });
+
+  test("with no action context, no contract tools are provisioned (read tools only)", () => {
+    const names = Object.keys(buildAgentTools(vaultAt("/tmp/x"), []));
+    expect(names.sort()).toEqual(["read_document", "search_vault", "todays_brief"]);
+  });
+
+  test("author alone provisions the write tools but no contract tools", () => {
+    const names = Object.keys(buildAgentTools(vaultAt("/tmp/x"), [], actionCtx("/tmp/x", ["author"])));
+    expect(names).toContain("create_document");
+    expect(names).not.toContain("capture_note");
+    expect(names).not.toContain("list_proposals");
+    for (const name of CONTRACT_MUTATION_TOOLS) expect(names).not.toContain(name);
+  });
+});
+
+// ----- contract-tool invocation against real vault fixtures ------------------
+//
+// Fixture pattern follows tests/surface/settle.test.ts: a real temp vault
+// scaffolded by runInit, seeded through real git commits, never mocks.
+
+let tempDirs: string[] = [];
+const origLog = console.log;
+const origErr = console.error;
+
+beforeEach(() => {
+  console.log = () => {};
+  console.error = () => {};
+});
+
+afterEach(async () => {
+  console.log = origLog;
+  console.error = origErr;
+  for (const dir of tempDirs) await rm(dir, { recursive: true, force: true });
+  tempDirs = [];
+});
+
+async function initVault(): Promise<string> {
+  const dir = mkdtempSync(join(tmpdir(), "dome-assistant-contract-"));
+  tempDirs.push(dir);
+  expect(await runInit({ path: dir })).toBe(0);
+  return dir;
+}
+
+async function commitFile(vault: string, relPath: string, content: string): Promise<void> {
+  await mkdir(dirname(join(vault, relPath)), { recursive: true });
+  await writeFile(join(vault, relPath), content, "utf8");
+  await commitSingleFileOnHead({
+    path: vault,
+    filepath: relPath,
+    content,
+    message: `fixture: ${relPath}`,
+    author: { name: "fixture", email: "fixture@local" },
+  });
+}
+
+async function readAtHead(vault: string, relPath: string): Promise<string> {
+  const head = await resolveRef({ path: vault, ref: "HEAD" });
+  const content = await readBlob({ path: vault, commit: head, filepath: relPath });
+  if (content === null) throw new Error(`no blob at ${relPath}`);
+  return content;
+}
+
+const exec = (tools: Record<string, unknown>, name: string, input: unknown): Promise<string> =>
+  (tools[name] as { execute: (i: unknown, o: unknown) => Promise<string> }).execute(input, callOpts);
+
+describe("assistant contract tools (invocation)", () => {
+  test("capture_note captures through performCapture and appends a change", async () => {
+    const vault = await initVault();
+    const changes: AgentChange[] = [];
+    const tools = buildAgentTools(vaultAt(vault), [], actionCtx(vault, ["capture"], changes));
+    const out = await exec(tools, "capture_note", { text: "remember the milk" });
+    const doc = JSON.parse(out) as { schema: string; status: string; path: string; source: string };
+    expect(doc.schema).toBe("dome.capture/v1");
+    expect(doc.status).toBe("captured");
+    expect(doc.path).toStartWith("inbox/raw/");
+    expect(doc.source).toBe("assistant");
+    expect(changes).toEqual([{ path: doc.path, kind: "capture" }]);
+    expect(await readAtHead(vault, doc.path)).toContain("remember the milk");
+  });
+
+  test("settle_task settles a seeded anchored task through performSettle", async () => {
+    const vault = await initVault();
+    const anchor = "tassistant0001";
+    const origin = "wiki/projects/alpha.md";
+    await commitFile(
+      vault,
+      origin,
+      ["# Alpha", "", `- [ ] #task ship the widget ^${anchor}`, ""].join("\n"),
+    );
+    const changes: AgentChange[] = [];
+    const tools = buildAgentTools(vaultAt(vault), [], actionCtx(vault, ["resolve"], changes));
+    const out = await exec(tools, "settle_task", { blockId: anchor, disposition: "close" });
+    const doc = JSON.parse(out) as { schema: string; status: string; commit: string | null };
+    expect(doc.schema).toBe("dome.settle/v1");
+    expect(doc.status).toBe("settled");
+    expect(doc.commit).not.toBeNull();
+    expect(await readAtHead(vault, origin)).toContain(`- [x] #task ship the widget ^${anchor}`);
+    expect(changes).toEqual([{ path: `^${anchor}`, kind: "settle" }]);
+  });
+
+  test("settle_task on an unknown anchor reports not-found and appends no change", async () => {
+    const vault = await initVault();
+    const changes: AgentChange[] = [];
+    const tools = buildAgentTools(vaultAt(vault), [], actionCtx(vault, ["resolve"], changes));
+    const out = await exec(tools, "settle_task", { blockId: "tmissing000000", disposition: "close" });
+    const doc = JSON.parse(out) as { status: string };
+    expect(doc.status).toBe("not-found");
+    expect(changes).toHaveLength(0);
+  });
+
+  test("list_proposals returns the dome.proposals/v1 document (empty on a fresh vault)", async () => {
+    const vault = await initVault();
+    const changes: AgentChange[] = [];
+    const tools = buildAgentTools(vaultAt(vault), [], actionCtx(vault, ["read"], changes));
+    const doc = JSON.parse(await exec(tools, "list_proposals", {})) as {
+      schema: string;
+      proposals: unknown[];
+    };
+    expect(doc.schema).toBe("dome.proposals/v1");
+    expect(doc.proposals).toEqual([]);
+    expect(changes).toHaveLength(0); // read tool: never a change entry
+  });
+
+  test("apply_proposal / reject_proposal on unknown ids report not-found, no change entries", async () => {
+    const vault = await initVault();
+    const changes: AgentChange[] = [];
+    const tools = buildAgentTools(vaultAt(vault), [], actionCtx(vault, ["resolve"], changes));
+    const applied = JSON.parse(await exec(tools, "apply_proposal", { id: 999 })) as { status: string };
+    expect(applied.status).toBe("not-found");
+    const rejected = JSON.parse(await exec(tools, "reject_proposal", { id: 999 })) as { status: string };
+    expect(rejected.status).toBe("not-found");
+    expect(changes).toHaveLength(0);
+  });
+
+  test("resolve_question resolves through vault.resolve and appends a change", async () => {
+    const record = {
+      id: 7,
+      effect: { question: "Which option?", options: ["a", "b"], idempotencyKey: "k", sourceRefs: [] },
+      processorId: "p",
+      runId: "r",
+      adoptedCommit: "c",
+      askedAt: "2026-07-06T00:00:00Z",
+      answeredAt: "2026-07-06T00:00:01Z",
+      answer: "a",
+      answeredBy: "human",
+    };
+    const resolveCalls: Array<{ id: number; value: string }> = [];
+    const vault = {
+      ...(vaultAt("/tmp/x") as Record<string, unknown>),
+      resolve: async (id: number, value: string) => {
+        resolveCalls.push({ id, value });
+        return { kind: "answered", record, handlers: null };
+      },
+    } as never;
+    const changes: AgentChange[] = [];
+    const tools = buildAgentTools(vault, [], actionCtx("/tmp/x", ["resolve"], changes));
+    const doc = JSON.parse(await exec(tools, "resolve_question", { id: 7, value: "a" })) as {
+      schema: string;
+      status: string;
+    };
+    expect(resolveCalls).toEqual([{ id: 7, value: "a" }]);
+    expect(doc.schema).toBe("dome.answer/v1");
+    expect(doc.status).toBe("answered");
+    expect(changes).toEqual([{ path: "question:7", kind: "resolve" }]);
+  });
+
+  test("resolve_question not-found appends no change", async () => {
+    const vault = {
+      ...(vaultAt("/tmp/x") as Record<string, unknown>),
+      resolve: async () => ({ kind: "not-found" }),
+    } as never;
+    const changes: AgentChange[] = [];
+    const tools = buildAgentTools(vault, [], actionCtx("/tmp/x", ["resolve"], changes));
+    const doc = JSON.parse(await exec(tools, "resolve_question", { id: 99, value: "x" })) as {
+      status: string;
+    };
+    expect(doc.status).toBe("error");
     expect(changes).toHaveLength(0);
   });
 });

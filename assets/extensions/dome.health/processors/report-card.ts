@@ -47,6 +47,13 @@ import {
 } from "../../dome.daily/processors/edition-blocks";
 
 import {
+  aggregateProposalActivity,
+  CONFIG_PATH,
+  grantedAutonomy,
+  policyFromConfigBody,
+} from "./trust-review-shared";
+
+import {
   aggregateQuestionStats,
   aggregateRunStats,
   countRetrievalMisses,
@@ -150,6 +157,47 @@ const reportCard = defineProcessorImplementation({
       );
     }
 
+    // Trust ladder (wiki/specs/proposals.md §"Trust ladder"): per proposal
+    // producer in the window, granted autonomy + decided/applied counts —
+    // the evidence surface for the 05:24 trust-review actuator. Missing view
+    // degrades to the empty fallback (LOUD warning), the compose-blocks
+    // posture; an unreadable config degrades each row's autonomy to
+    // "unknown" (grantedAutonomy without a policy), never a crash.
+    const proposalsView = ctx.operational?.proposals;
+    let trust: ReportCardData["trust"] = Object.freeze([]);
+    if (proposalsView === undefined) {
+      diagnostics.push(
+        diagnosticEffect({
+          severity: "warning",
+          code: "dome.health.report-card-proposals-view-missing",
+          message:
+            "dome.health.report-card declares proposals.read but received no proposals view; the trust-ladder section is empty",
+          sourceRefs: [ctx.sourceRef(REPORT_CARD_PATH)],
+        }),
+      );
+    } else {
+      const proposalRows = proposalsView();
+      const configBody = await ctx.snapshot.readFile(CONFIG_PATH);
+      const policy =
+        configBody === null ? null : policyFromConfigBody(configBody);
+      trust = Object.freeze(
+        aggregateProposalActivity(proposalRows, windowStartIso).map(
+          (activity) =>
+            Object.freeze({
+              processorId: activity.processorId,
+              autonomy: grantedAutonomy({
+                policy,
+                extensionId: activity.extensionId,
+                processorId: activity.processorId,
+                paths: activity.proposedPaths,
+              }),
+              decided: activity.decided,
+              applied: activity.applied,
+            }),
+        ),
+      );
+    }
+
     // The retrieval-miss row renders only when the log file exists (Task 12).
     const missesRaw = await ctx.snapshot.readFile(RETRIEVAL_MISSES_PATH);
     const missCount =
@@ -168,6 +216,7 @@ const reportCard = defineProcessorImplementation({
       missCount,
       idle: possiblyIdle(runStats),
       agingQuestions,
+      trust,
     });
 
     // The full card — rewritten in place.

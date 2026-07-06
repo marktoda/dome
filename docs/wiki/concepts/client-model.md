@@ -118,8 +118,10 @@ chrome, and only that client improves.
 The contract is strong at *read* and deliberately narrow at *write*. Across the
 CLI, the `dome mcp` tools, and the HTTP API, a client can mutate vault state in
 exactly two ways: **capture** (append a raw note to `inbox/raw/`) and
-**resolve** (answer a question the engine already raised). There is no operation
-to create or edit a vault *page*: [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]]
+**decisions** (resolve a question, settle a task, apply/reject a proposal —
+answering things the engine or the gardener already raised). There is no
+operation to create or edit a vault *page*:
+[[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]]
 means real authoring happens as an ordinary `git commit` the daemon adopts —
 there is no `submitProposal` API.
 
@@ -127,9 +129,11 @@ The consequence the taxonomy has to absorb: **authoring is bound to a co-located
 git checkout.** A filesystem-native harness (Claude Code on the desktop) has
 one, so it reads · searches · synthesizes · *writes* · captures. A client
 *without* a checkout — a phone app, a remote MCP client, the Claude iOS app —
-can only read · search · *capture*. So the full read/synthesize/write/capture
-loop in §"The primary client is an LLM agent" is the **desktop** story; off the
-desktop it is **read + ask + capture** until a checkout is reachable.
+can read · search · *capture* · *decide* (settle, resolve, apply/reject),
+because decisions and captures are contract operations; what it cannot do is
+*author* a page. So the full read/synthesize/write/capture loop in §"The
+primary client is an LLM agent" is the **desktop** story; off the desktop it
+is **read + ask + capture + decide** until a checkout is reachable.
 
 This is a real fork, not a bug:
 
@@ -143,18 +147,23 @@ This is a real fork, not a bug:
   deliberate exception to "no `submitProposal`," opened only if phone-side page
   authoring becomes a requirement.
 
-For v1 the phone client is **read + ask + capture** — a coherent, defensible
-scope. Phone-side authoring waits on one of the two forks above. And note that
-"ask" itself needs an agent *running somewhere*: the MCP surface hosts no model
-(it is a typed read/capture front-end for harnesses that already bring their own
-agent). The HTTP surface (`dome http`) **optionally co-locates a write-capable
-agent** via `POST /agent` and `POST /agent/stream` when launched with
-`--allow-write` — this is the always-on-host path: an agent running beside the
-vault that a phone can reach directly. Without `--allow-write` the HTTP surface
-is read+capture+converse (the default safe posture); synthesis still comes from
-a client's own agent if none is co-located. (This co-located agent is the
-interactive assistant implemented in `src/assistant/` — a consumer surface
-distinct from the `dome.agent` background processor bundle.)
+For v1 the phone client is **read + ask + capture + decide** — a coherent,
+defensible scope. Phone-side page authoring waits on one of the two forks
+above. And note that "ask" itself needs an agent *running somewhere*: the MCP
+surface hosts no model (it is a typed read/capture front-end for harnesses
+that already bring their own agent). The HTTP surface (`dome http`)
+**co-locates the Dome assistant** (`src/assistant/` — a consumer surface
+distinct from the `dome.agent` background processor bundle) behind
+`POST /agent` and `POST /agent/stream` — the always-on-host path: an agent
+running beside the vault that a phone can reach directly. The assistant
+speaks the contract: it holds the capture and decision tools
+(capture/settle/resolve/proposals) gated by the same capability set as the
+routes ([[wiki/specs/http-surface]] §"The assistant's tools"), so through it
+the phone can capture and decide conversationally — still decisions, not
+authoring. Only with `--allow-write` (the `author` capability) does the
+assistant additionally gain page-write tools; without it the surface keeps
+the default safe posture, and synthesis still comes from a client's own agent
+if none is co-located.
 
 ## What "ask" and "recall" mean under this model
 

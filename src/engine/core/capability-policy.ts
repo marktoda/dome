@@ -154,7 +154,22 @@ export async function loadCapabilityPolicy(
     }
     return err(`failed to read ${path}: ${messageFor(e)}`);
   }
+  return parseCapabilityPolicy(body, path);
+}
 
+/**
+ * Parse a `.dome/config.yaml` BODY into a `CapabilityPolicy` — the pure half
+ * of `loadCapabilityPolicy` (which owns the filesystem read). Exported so
+ * processors that read the config through their grant-scoped snapshot (e.g.
+ * `dome.health.trust-review`, which reasons about other processors' effective
+ * grants) resolve grants with the SAME preset/precedence semantics the engine
+ * loads — never a parallel grant parser (the divergence-bug rule in
+ * [[philosophy]]). `path` is used only for error messages.
+ */
+export function parseCapabilityPolicy(
+  body: string,
+  path = ".dome/config.yaml",
+): Result<CapabilityPolicy, string> {
   let parsed: unknown;
   try {
     parsed = parseYaml(body);

@@ -185,9 +185,11 @@ function toOperationalProposalRow(
   return Object.freeze({
     id: row.id,
     processorId: row.processorId,
+    extensionId: row.extensionId,
     reason: row.reason,
     paths: Object.freeze(row.changes.map((change) => change.path)),
     createdAt: row.createdAt,
     status: row.status,
+    decidedAt: row.decidedAt,
   });
 }

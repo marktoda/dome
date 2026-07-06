@@ -91,6 +91,37 @@ describe("dome.claims.render-facts", () => {
     expect(second).toHaveLength(0);
   });
 
+  test("a hard-wrapped claim renders its FULL joined value in the digest, verbatim", async () => {
+    // The verified real-world truncation: the hand-authored bullet hard-wraps
+    // and the old line-based grammar cut the value at the wrap, so the digest
+    // rendered the fragment ending "multi-hop test".
+    const path = "wiki/entities/retro.md";
+    const content = [
+      "# Retro",
+      "",
+      "- **Testing:** team needs to be better at testing — there was an obvious multi-hop test",
+      "  case that should have caught this (matches RCA root cause #3).",
+      "- **Owner:** [[Mark]]",
+      "- **Stage:** Build",
+      "",
+    ].join("\n");
+
+    const patch = expectPatch(await runRenderFacts([path], { [path]: content }), 0);
+    const change = patch.changes.find((c) => String(c.path) === path);
+    expect(change?.kind).toBe("write");
+    if (change?.kind !== "write") return;
+    const block = change.content.slice(
+      change.content.indexOf(START),
+      change.content.indexOf(END) + END.length,
+    );
+    expect(block).toContain(
+      "- **Testing** — team needs to be better at testing — there was an obvious multi-hop test case that should have caught this (matches RCA root cause #3).",
+    );
+    // The truncated fragment shape never renders: the fragment's next
+    // character was the backlink paren, i.e. "…multi-hop test (".
+    expect(block).not.toContain("multi-hop test (");
+  });
+
   test("below threshold (2 claims), no block: zero effects", async () => {
     const path = "wiki/notes/thin.md";
     const content = ["# Thin", "", "**Status:** Active", "**Owner:** [[Mark]]", ""].join("\n");
