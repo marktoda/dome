@@ -10,6 +10,24 @@
 //   vault.readDocument(path)               — full document content
 //   vault.runView("today", {date?})        — daily action surface
 //
+// Beyond recall, the assistant speaks the same contract operations as the
+// HTTP routes and MCP tools — thin wrappers over the shared src/surface/
+// collectors, gated by the same capability vocabulary ROUTE_CAPABILITY uses
+// (src/http/server.ts):
+//
+//   capture_note     capture  → performCapture     (dome.capture/v1)
+//   settle_task      resolve  → performSettle      (dome.settle/v1)
+//   resolve_question resolve  → vault.resolve      (dome.answer/v1)
+//   list_proposals   read     → collectProposals   (dome.proposals/v1)
+//   apply_proposal   resolve  → performApply       (dome.apply/v1)
+//   reject_proposal  resolve  → performReject      (dome.reject/v1)
+//   create_document  author   → createDocument     (agent write path)
+//   edit_document    author   → editDocument       (agent write path)
+//
+// Each tool returns the collector's JSON document as a string; mutating
+// tools additionally push one AgentChange into the shared `changes` array
+// (the PWA change display + agent-log contract).
+//
 // Real view-result shape (VaultViewResult kind "ok"):
 //   { kind: "ok", views, structured: { name, schema, data } | null, brokerDiagnostics }
 //
@@ -28,6 +46,22 @@ import type { Vault } from "../vault";
 import type { Citation, AgentChange } from "./types";
 import { todayPayloadSchema } from "../surface/today-view";
 import { createDocument, editDocument } from "./write";
+import { has, type Capability } from "../capabilities";
+import { captureJsonDocument, performCapture } from "../surface/capture";
+import { performSettle, settleResultJson } from "../surface/settle";
+import {
+  applyResultJson,
+  collectProposals,
+  performApply,
+  performReject,
+  proposalsJson,
+  rejectResultJson,
+} from "../surface/proposals";
+import {
+  ANSWER_SCHEMA,
+  answerHandlersJson,
+  questionRecordJson,
+} from "../surface/answer";
 
 // ----- helpers ----------------------------------------------------------------
 
@@ -182,14 +216,20 @@ async function runTodayView(
 // ----- public API -------------------------------------------------------------
 
 /**
- * Author context for the write tools. When passed to buildAgentTools, the
- * create_document / edit_document tools are provisioned (this presence IS the
- * `author` gate); the tools push each successful write into `changes`.
+ * Action context for the contract + write tools. `capabilities` is the same
+ * granted set the HTTP routes gate on (the server passes it through
+ * runAgent/runAgentStream): `capture` provisions capture_note, `resolve`
+ * provisions settle_task/resolve_question/apply_proposal/reject_proposal,
+ * `read` provisions list_proposals, and `author` provisions
+ * create_document/edit_document. Mutating tools push each successful
+ * operation into `changes`. When no context is given, only the three read
+ * tools are provisioned.
  */
-export type AgentWriteContext = {
+export type AgentActionContext = {
   readonly vaultPath: string;
   readonly modelId: string;
   readonly changes: AgentChange[];
+  readonly capabilities: ReadonlySet<Capability>;
 };
 
 /**
@@ -200,7 +240,7 @@ export type AgentWriteContext = {
 export function buildAgentTools(
   vault: Vault,
   citations: Citation[],
-  write?: AgentWriteContext | undefined,
+  action?: AgentActionContext | undefined,
 ): ToolSet {
   const tools: ToolSet = {
     search_vault: tool({
@@ -263,7 +303,187 @@ export function buildAgentTools(
     }),
   };
 
-  if (write !== undefined) {
+  if (action === undefined) return tools;
+
+  // Serialize a collector's JSON document as the tool result, recording a
+  // change entry when the operation actually landed. Mirrors the MCP tools:
+  // the doc itself carries the status; failures come back as documents, not
+  // throws (a failed operation must not crash the agent loop).
+  const jsonResult = (
+    doc: Record<string, unknown>,
+    change?: AgentChange | undefined,
+  ): string => {
+    if (change !== undefined) action.changes.push(change);
+    return JSON.stringify(doc, null, 2);
+  };
+
+  if (has(action.capabilities, "capture")) {
+    tools["capture_note"] = tool({
+      description:
+        "Capture a thought into the vault inbox: writes inbox/raw/<stamp>-<slug>.md and commits exactly that one file. Use when the owner wants to save a note, idea, or reminder. Returns the dome.capture/v1 JSON document with the created path.",
+      inputSchema: z.object({
+        text: z.string().describe("Capture body (markdown or plain text)."),
+        title: z
+          .string()
+          .optional()
+          .describe("Optional explicit title; drives the filename slug and commit message."),
+      }),
+      execute: async (input) => {
+        const outcome = await performCapture({
+          text: input.text,
+          ...(input.title !== undefined ? { title: input.title } : {}),
+          vault: action.vaultPath,
+          source: "assistant",
+        });
+        return jsonResult(
+          captureJsonDocument(outcome),
+          outcome.kind === "captured"
+            ? { path: outcome.result.path, kind: "capture" }
+            : undefined,
+        );
+      },
+    });
+  }
+
+  if (has(action.capabilities, "resolve")) {
+    tools["settle_task"] = tool({
+      description:
+        "Settle a task line located by its ^block-anchor id (as shown by todays_brief): close checks the box and records a Done-today bullet, defer rewrites the due date to deferUntil, keep settles without writing. Never invent an anchor — read it from todays_brief first. Returns the dome.settle/v1 JSON document.",
+      inputSchema: z.object({
+        blockId: z.string().describe("The task line's ^block-anchor id (without the caret)."),
+        disposition: z.enum(["close", "defer", "keep"]).describe("close | defer | keep."),
+        deferUntil: z
+          .string()
+          .optional()
+          .describe("YYYY-MM-DD; required iff disposition is defer."),
+      }),
+      execute: async (input) => {
+        const outcome = await performSettle(action.vaultPath, {
+          blockId: input.blockId,
+          disposition: input.disposition,
+          ...(input.deferUntil !== undefined ? { deferUntil: input.deferUntil } : {}),
+        });
+        return jsonResult(
+          settleResultJson(outcome),
+          outcome.status === "settled" && outcome.commit !== undefined
+            ? { path: `^${input.blockId}`, kind: "settle" }
+            : undefined,
+        );
+      },
+    });
+
+    tools["resolve_question"] = tool({
+      description:
+        "Answer a Dome-raised question by its numeric id (ids come from todays_brief). Never invent an id — look it up first. Returns the dome.answer/v1 JSON document.",
+      inputSchema: z.object({
+        id: z.number().int().positive().describe("Question id."),
+        value: z.string().describe("The decision value (one of the question's options, when listed)."),
+      }),
+      execute: async (input) => {
+        const value = input.value.trim();
+        if (value.length === 0) {
+          return jsonResult({
+            schema: ANSWER_SCHEMA,
+            status: "error",
+            error: "resolve-usage",
+            message: "resolve_question requires a non-empty `value`.",
+          });
+        }
+        const outcome = await vault.resolve(input.id, value);
+        switch (outcome.kind) {
+          case "not-found":
+            return jsonResult({
+              schema: ANSWER_SCHEMA,
+              status: "error",
+              error: "question-not-found",
+              message: `question ${input.id} was not found.`,
+            });
+          case "invalid-option":
+            return jsonResult({
+              schema: ANSWER_SCHEMA,
+              status: "invalid-option",
+              options: outcome.options,
+              question: questionRecordJson(outcome.record),
+            });
+          case "answered":
+          case "already-answered":
+            return jsonResult(
+              {
+                schema: ANSWER_SCHEMA,
+                status: outcome.kind,
+                question: questionRecordJson(outcome.record),
+                handlers:
+                  outcome.handlers === null
+                    ? null
+                    : answerHandlersJson(outcome.handlers),
+              },
+              outcome.kind === "answered"
+                ? { path: `question:${input.id}`, kind: "resolve" }
+                : undefined,
+            );
+        }
+      },
+    });
+
+    tools["apply_proposal"] = tool({
+      description:
+        "Apply a pending garden-proposed edit by id (ids come from list_proposals) as one ordinary commit. Fails if the proposal is not pending or has gone stale. Returns the dome.apply/v1 JSON document.",
+      inputSchema: z.object({
+        id: z.number().int().positive().describe("Proposal id from list_proposals."),
+      }),
+      execute: async (input) => {
+        const outcome = await performApply(action.vaultPath, input.id);
+        return jsonResult(
+          applyResultJson(outcome),
+          outcome.status === "applied"
+            ? { path: `proposal:${input.id}`, kind: "apply" }
+            : undefined,
+        );
+      },
+    });
+
+    tools["reject_proposal"] = tool({
+      description:
+        "Reject a pending garden-proposed edit by id (ids come from list_proposals); touches no files. Optional note records why. Returns the dome.reject/v1 JSON document.",
+      inputSchema: z.object({
+        id: z.number().int().positive().describe("Proposal id from list_proposals."),
+        note: z.string().optional().describe("Optional note recording why."),
+      }),
+      execute: async (input) => {
+        const outcome = await performReject(action.vaultPath, input.id, input.note);
+        return jsonResult(
+          rejectResultJson(outcome),
+          outcome.status === "rejected"
+            ? { path: `proposal:${input.id}`, kind: "reject" }
+            : undefined,
+        );
+      },
+    });
+  }
+
+  if (has(action.capabilities, "read")) {
+    tools["list_proposals"] = tool({
+      description:
+        "List garden-proposed edits awaiting owner review (pending by default; set all for decided rows too). Use before apply_proposal / reject_proposal to get real ids. Returns the dome.proposals/v1 JSON document.",
+      inputSchema: z.object({
+        all: z
+          .boolean()
+          .optional()
+          .describe("Include applied/rejected rows too (default: pending only)."),
+      }),
+      execute: async (input) =>
+        jsonResult(
+          proposalsJson(
+            await collectProposals(
+              action.vaultPath,
+              input.all !== undefined ? { all: input.all } : {},
+            ),
+          ),
+        ),
+    });
+  }
+
+  if (has(action.capabilities, "author")) {
     // Run a write op, record the change, and surface failures to the model as
     // an `error: …` string (never throw — a rejected write must not crash the loop).
     const runWrite = async (
@@ -272,7 +492,7 @@ export function buildAgentTools(
     ): Promise<string> => {
       try {
         const change = await op();
-        write.changes.push(change);
+        action.changes.push(change);
         return `${verb} ${change.path}`;
       } catch (e) {
         return `error: ${e instanceof Error ? e.message : String(e)}`;
@@ -287,7 +507,7 @@ export function buildAgentTools(
         content: z.string().describe("Full markdown content of the new page."),
       }),
       execute: (input) =>
-        runWrite(() => createDocument(write, { path: input.path, content: input.content }), "created"),
+        runWrite(() => createDocument(action, { path: input.path, content: input.content }), "created"),
     });
     tools["edit_document"] = tool({
       description:
@@ -300,7 +520,7 @@ export function buildAgentTools(
       execute: (input) =>
         runWrite(
           () =>
-            editDocument(write, {
+            editDocument(action, {
               path: input.path,
               old_string: input.old_string,
               new_string: input.new_string,

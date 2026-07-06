@@ -14,10 +14,25 @@ export type Citation = {
   readonly snippet?: string | undefined;
 };
 
-/** A vault write the agent made during a run (surfaced to the client as done.changes). */
+/**
+ * A vault mutation the agent made during a run (surfaced to the client as
+ * done.changes and recorded by the agent log). `create`/`edit` are the
+ * author-gated page writes; the rest are the contract operations the
+ * assistant shares with the HTTP routes and MCP tools. `path` names what
+ * changed: a vault-relative file path for writes and captures,
+ * `^<anchor>` for a settled task, `question:<id>` for a resolved
+ * question, `proposal:<id>` for an applied/rejected proposal.
+ */
 export type AgentChange = {
   readonly path: string;
-  readonly kind: "create" | "edit";
+  readonly kind:
+    | "create"
+    | "edit"
+    | "capture"
+    | "settle"
+    | "resolve"
+    | "apply"
+    | "reject";
 };
 
 /** The synthesized answer plus the evidence it cited and any writes it made. */

@@ -18,7 +18,8 @@ import {
 } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import type { Vault } from "../vault";
-import { buildAgentTools, type AgentWriteContext } from "./tools";
+import type { Capability } from "../capabilities";
+import { buildAgentTools, type AgentActionContext } from "./tools";
 import type { Citation, AgentResult, AgentChange } from "./types";
 
 /** Default interactive-ask model. Overridable via opts.modelId. */
@@ -30,6 +31,13 @@ const AGENT_CHARTER = [
   "Ground every claim in the vault. If the vault does not contain the answer, say so plainly — never invent.",
   "Be brief: lead with the direct answer in 1–3 sentences, then only essential detail. Prefer plain prose; use a short markdown list only when it genuinely helps.",
   "Format as clean markdown — blank lines between paragraphs and before any list. Never emit a heading marker (#) mid-sentence. The app displays your sources separately, so do not clutter the prose with file paths or [bracketed] citations.",
+].join(" ");
+
+const ACTION_CHARTER = [
+  "You can also ACT on the vault when asked: capture_note saves a thought to the inbox, settle_task closes/defers a task, resolve_question answers an open question, and list_proposals/apply_proposal/reject_proposal review pending garden edits.",
+  "These are decisions, not authoring — use them when the owner asks you to do something, not just to answer.",
+  "Never invent an id or anchor: look it up first (todays_brief for task anchors and question ids, list_proposals for proposal ids).",
+  "After acting, state plainly what you did (e.g. 'Closed the task', 'Applied proposal 3') in one short sentence.",
 ].join(" ");
 
 const WRITE_CHARTER = [
@@ -48,6 +56,15 @@ type AgentOptions = {
   readonly abortSignal?: AbortSignal | undefined;
   /** Grant the author capability: provisions create_document / edit_document. */
   readonly allowWrite?: boolean | undefined;
+  /**
+   * The granted capability set — the same vocabulary the HTTP routes gate on
+   * (`grantedCapabilities` in src/capabilities.ts). Drives which contract
+   * tools buildAgentTools provisions: `capture` → capture_note, `resolve` →
+   * settle/resolve/apply/reject, `read` → list_proposals, `author` → the
+   * write tools. `allowWrite: true` is the legacy author-only grant and is
+   * folded into this set.
+   */
+  readonly capabilities?: ReadonlySet<Capability> | undefined;
 };
 
 /**
@@ -68,15 +85,28 @@ function setupAgent(opts: AgentOptions): {
   const citations: Citation[] = [];
   const changes: AgentChange[] = [];
   const modelId = opts.modelId ?? DEFAULT_MODEL;
-  const write: AgentWriteContext | undefined =
-    opts.allowWrite === true
-      ? { vaultPath: opts.vault.path, modelId, changes }
+  // Fold the legacy author-only grant (`allowWrite`) into the capability set.
+  const capabilities = new Set<Capability>(opts.capabilities ?? []);
+  if (opts.allowWrite === true) capabilities.add("author");
+  const action: AgentActionContext | undefined =
+    capabilities.size > 0
+      ? { vaultPath: opts.vault.path, modelId, changes, capabilities }
       : undefined;
+  // The contract tools are provisioned when any of their gating capabilities
+  // is present; the charter teaches them only when they exist.
+  const hasActionTools = ["capture", "resolve", "read"].some((cap) =>
+    capabilities.has(cap as Capability),
+  );
+  const system = [
+    AGENT_CHARTER,
+    ...(hasActionTools ? [ACTION_CHARTER] : []),
+    ...(capabilities.has("author") ? [WRITE_CHARTER] : []),
+  ].join(" ");
   return {
     model: opts.model ?? anthropic(modelId),
-    system: write !== undefined ? `${AGENT_CHARTER} ${WRITE_CHARTER}` : AGENT_CHARTER,
+    system,
     prompt: opts.question,
-    tools: buildAgentTools(opts.vault, citations, write),
+    tools: buildAgentTools(opts.vault, citations, action),
     maxSteps: opts.maxSteps ?? 8,
     citations,
     changes,
