@@ -421,7 +421,9 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("answer", { hidden: true })
-    .description("Resolve an engine-raised question.")
+    .description(
+      "Resolve an engine-raised question. (deprecated alias — use dome resolve)",
+    )
     .argument("<question-id>", "Question row id from `dome inspect questions`.")
     .argument("[value...]", "Answer value. Omit to print the question.")
     .option("--json", "Emit JSON.")

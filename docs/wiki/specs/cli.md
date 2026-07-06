@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-07-04
+updated: 2026-07-06
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -119,7 +119,7 @@ The CLI is the user-facing primary surface in v1. The implemented commands above
 
 - **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, `dome resolve`, `dome settle`, `dome proposals`, `dome apply`, and `dome reject`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records an owner or agent answer to a Dome-raised decision and dispatches answer handlers; `settle` records an owner or agent decision on an open task by its `^block-anchor` (close / defer / keep) — resolve's sibling for tasks rather than questions (§"`dome settle`"). `dome proposals` / `dome apply` / `dome reject` are the review-loop siblings for garden propose-mode patches: a downgraded or explicitly-proposed `PatchEffect` lands as a durable row in `proposals.db` instead of being silently dropped, and `apply`/`reject` are the human-side decision verbs — the same settle pattern (staleness check → working-tree write → one ordinary commit) applied to garden-authored changes instead of task lines (§"`dome proposals` / `dome apply` / `dome reject`").
 - **Adopted-state recall surfaces:** `dome query` and `dome export-context` are the normal explicit read views when the user or a foreground agent asks for recall, planning, agenda context, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands. `dome log` is the activity-recall sibling with a CLI-native posture (the `dome status` stance — no runtime, no view boundary): it reads git history directly and joins the run ledger (§"`dome log`"). `dome prep`, `dome agenda-with`, `dome stale-claims`, and `dome orphan-pages` are deterministic sibling views over the same view-command boundary — source-backed daily planning/agenda filters and claims/link-graph consistency audits — for the debugging, scripting, and unambiguous-filter cases where a natural-language `query` / `export-context` request isn't the goal. All four were previously reachable only through the hidden `dome run <name>` dispatcher; a feature behind a debug verb is unreachable, so they now have first-class top-level bindings like their `query` / `export-context` / `today` siblings.
-- **Advanced/debug and compatibility surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer`, `dome run`, `dome rebuild`, and `dome reanchor` remain available for detailed state inspection, extension development, maintenance, and explicit recovery. They are hidden from top-level help and are not the normal Claude Code workflow.
+- **Advanced/debug and compatibility surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer` (deprecated alias — use `dome resolve`), `dome run`, `dome rebuild`, and `dome reanchor` remain available for detailed state inspection, extension development, maintenance, and explicit recovery. They are hidden from top-level help and are not the normal Claude Code workflow.
 
 `dome doctor` is read-only in V1. The `--repair` flag is a reserved surface for
 future answer-mediated mitigations and exits with usage status instead of
@@ -2219,11 +2219,13 @@ share the same eligibility predicate in `src/ledger/runs.ts`, so reach for
 this command only when an immediate prune or a one-off window different from
 the configured default is wanted.
 
-### `dome answer <question-id> [<value>]` *(advanced compatibility alias)*
+### `dome answer <question-id> [<value>]` *(deprecated alias)*
 
-The low-level compatibility alias for `dome resolve`. Existing scripts and
+The deprecated low-level alias for `dome resolve` — its command description
+says so: "(deprecated alias — use dome resolve)". Existing scripts and
 older docs may still call `dome answer`; the implementation is the same
-durable answer channel for QuestionEffects the engine has raised.
+durable answer channel for QuestionEffects the engine has raised. New
+callers use `dome resolve`.
 
 **Why a single answer surface (not per-substrate verbs).** The engine
 already has a primitive for "I need a durable decision" — `QuestionEffect`

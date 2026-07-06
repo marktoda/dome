@@ -152,8 +152,8 @@ file hunting:
 Treat these as read-first surfaces, not mandatory ceremony. If a packet misses
 obvious context or returns noisy results, report it with
 \`dome query "<text>" --miss "what was missing"\` (or the same \`--miss\` flag on
-\`dome export-context\`) instead of just telling the user — that log is V1
-dogfood evidence.
+\`dome export-context\`) instead of just telling the user — the retrieval-miss
+log is the evidence better retrieval (embeddings) is gated on.
 
 Advanced/debug commands:
 

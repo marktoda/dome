@@ -52,3 +52,4 @@ The WS6 input artifact promised by the v1 plan ([[cohesive/brainstorms/2026-06-1
 ## Resolved
 
 - ~~`dome install` was launchd-only~~ — Linux systemd --user backend shipped behind the same verbs (`src/cli/commands/install-systemd.ts`; chunk1).
+- ~~"AGENTS.md under-teaches authoring" was believed parked on an unmerged `client-model/build` branch~~ — investigated (product-review-5 Task 6): the branch was merged 2026-06-16 (merge 7b1faa8e, docs-only — [[wiki/concepts/client-model]] + the contract-surface audit; no template hunks to fold), and the teaching gap itself was separately burned down by the template's "Writing wiki pages" authoring section (895b1e1a) and `--miss` retrieval-miss teaching (153b16a6); nothing left behind.
