@@ -90,10 +90,11 @@ export type GardenRun = {
     readonly message: string;
   };
   /**
-   * The Date forwarded to dispatchOneProcessor (its run-ledger startedAt).
-   * Schedule fires pin one instant (the runner computed it once for cursor
-   * math + envelope.firedAt); answers omit it, leaving the dispatch layer's
-   * internal default.
+   * The Date forwarded to dispatchOneProcessor (its run-ledger startedAt and
+   * ctx.now). Schedule fires pin one instant (the runner computed it once
+   * for cursor math + envelope.firedAt); answer/store-signal dispatches omit
+   * it and fall back to the host's injected `deps.now()` (then, only when no
+   * host clock was injected, the dispatch layer's wall-clock default).
    */
   readonly now?: Date;
 };
@@ -137,7 +138,17 @@ export async function dispatchGardenRun(
     resolveGrants: deps.resolveGrants,
     extensionIdFor: deps.extensionIdFor,
     ledger: deps.ledger,
-    ...(run.now !== undefined ? { now: run.now } : {}),
+    // Processor-clock resolution: the run's explicit fire time (schedule
+    // math) wins, else the host's injected clock, else the dispatch layer's
+    // wall-clock default. Without the deps.now fallback, answer/store-signal
+    // runs read the wall clock even under an injected host clock — under the
+    // harness TestClock that had compose-blocks minting real-date dailies
+    // inside date-pinned scenarios.
+    ...(run.now !== undefined
+      ? { now: run.now }
+      : deps.now !== undefined
+      ? { now: deps.now() }
+      : {}),
     ...(deps.extensionConfigFor !== undefined
       ? { extensionConfigFor: deps.extensionConfigFor }
       : {}),

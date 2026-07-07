@@ -67,6 +67,13 @@
 //     memory file is missing it, preserving the old content below.
 //   - Initial scaffold commit: skip if HEAD already resolves.
 //
+// Refresh-only mode: when `--refresh-config` and/or `--refresh-instructions`
+// is set, init refreshes exactly what the flag names and scaffolds NOTHING —
+// no git init, no dirs, no .gitkeep/.gitignore, no core.md/signals.md, no
+// config creation (config is touched only by --refresh-config), no initial
+// commit. A vault that deliberately omits optional scaffold keeps its shape
+// across refreshes.
+//
 // Exit codes per spec:
 //   - 0 on success (including idempotent no-op re-runs).
 //   - 1 on unexpected I/O failure.
@@ -138,7 +145,8 @@ type StepOutcome =
   | "created"
   | "updated"
   | "skipped (already present)"
-  | "skipped (not requested)";
+  | "skipped (not requested)"
+  | "skipped (refresh-only)";
 
 type InitSummary = {
   readonly vaultPath: string;
@@ -205,18 +213,29 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
   const target = options.path ?? ".";
   const vaultPath = resolve(target);
 
+  // Refresh flags target an EXISTING vault: they refresh what they name and
+  // scaffold nothing. Without this mode-split, a refresh run on a vault that
+  // deliberately lacks optional scaffold (core.md, inbox/, preferences/)
+  // silently recreates it — the design-substrate dogfood vault is the
+  // canonical victim.
+  const refreshOnly = options.refreshConfig === true ||
+    options.refreshInstructions === true;
+
   try {
     // Ensure the target dir itself exists (a `dome init ~/vaults/new` on a
     // non-existent path should create it, not error).
     await mkdir(vaultPath, { recursive: true });
 
     // 2. git init (idempotent — initRepo is a no-op when `.git/` exists).
+    //    Refresh-only runs never create a repo: they refresh files in place.
     const gitAlreadyInit = await isGitRepo(vaultPath);
-    if (!gitAlreadyInit) {
+    if (!gitAlreadyInit && !refreshOnly) {
       await initRepo(vaultPath);
     }
     const gitInitOutcome: StepOutcome = gitAlreadyInit
       ? "skipped (already present)"
+      : refreshOnly
+      ? "skipped (refresh-only)"
       : "created";
 
     // 3. Scaffold dirs. No `.dome/extensions/` here — the shipped
@@ -230,29 +249,41 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
     const inboxProcessedDir = join(vaultPath, "inbox", "processed");
     const stateDir = join(vaultPath, ".dome", "state");
 
-    const wikiOutcome = await ensureDir(wikiDir);
-    const notesOutcome = await ensureDir(notesDir);
-    const inboxRawOutcome = await ensureDir(inboxRawDir);
-    const inboxProcessedOutcome = await ensureDir(inboxProcessedDir);
+    const REFRESH_SKIP: StepOutcome = "skipped (refresh-only)";
+    const wikiOutcome = refreshOnly ? REFRESH_SKIP : await ensureDir(wikiDir);
+    const notesOutcome = refreshOnly ? REFRESH_SKIP : await ensureDir(notesDir);
+    const inboxRawOutcome = refreshOnly
+      ? REFRESH_SKIP
+      : await ensureDir(inboxRawDir);
+    const inboxProcessedOutcome = refreshOnly
+      ? REFRESH_SKIP
+      : await ensureDir(inboxProcessedDir);
     // Keep the inbox drop-zone + archive tracked in git even when empty: the
     // ingest agent empties `inbox/raw/` after each capture, and git does not
     // track empty directories. `.gitkeep` is a dotfile, so it matches neither
     // `inbox/raw/*.md` (ingest trigger) nor `inbox/**/*.md` (stale-check).
-    await writeIfMissing(join(inboxRawDir, ".gitkeep"), "");
-    await writeIfMissing(join(inboxProcessedDir, ".gitkeep"), "");
-    const stateOutcome = await ensureDir(stateDir);
+    if (!refreshOnly) {
+      await writeIfMissing(join(inboxRawDir, ".gitkeep"), "");
+      await writeIfMissing(join(inboxProcessedDir, ".gitkeep"), "");
+    }
+    const stateOutcome = refreshOnly ? REFRESH_SKIP : await ensureDir(stateDir);
 
     // 4. Write `.dome/config.yaml` (first-write-only by default). Existing
     //    vaults may explicitly opt into reconciling missing first-party
     //    default bundle stanzas and grant keys with `--refresh-config`.
+    //    A refresh-only run without --refresh-config never touches (or
+    //    creates) the config.
     const configPath = join(vaultPath, ".dome", "config.yaml");
     const sourceKinds = [...new Set(options.withSource ?? [])];
-    const configResult = await ensureConfigYaml({
-      path: configPath,
-      refresh: options.refreshConfig === true,
-      modelProvider: options.modelProvider,
-      sources: sourceKinds,
-    });
+    const configResult =
+      refreshOnly && options.refreshConfig !== true
+        ? { outcome: REFRESH_SKIP, grantsAdded: Object.freeze([]) }
+        : await ensureConfigYaml({
+          path: configPath,
+          refresh: options.refreshConfig === true,
+          modelProvider: options.modelProvider,
+          sources: sourceKinds,
+        });
 
     const modelProviderOutcome = await ensureModelProvider({
       vaultPath,
@@ -272,13 +303,15 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
     //    responsible for this file. First-write-only — if the user
     //    authored their own .gitignore we leave it alone.
     const gitignorePath = join(vaultPath, ".gitignore");
-    const gitignoreOutcome = await writeIfMissing(gitignorePath, DEFAULT_GITIGNORE);
+    const gitignoreOutcome = refreshOnly
+      ? REFRESH_SKIP
+      : await writeIfMissing(gitignorePath, DEFAULT_GITIGNORE);
 
     // 5b. Write `core.md`, the always-loaded core memory page, as a
     //     commented skeleton. First-write-only with NO refresh path — the
     //     page is the user's core memory; init never overwrites it. Per
     //     vault-layout.md §"core.md — the core memory page".
-    const coreOutcome = await writeIfMissing(
+    const coreOutcome = refreshOnly ? REFRESH_SKIP : await writeIfMissing(
       join(vaultPath, "core.md"),
       CORE_MD_TEMPLATE,
     );
@@ -287,11 +320,14 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
     //     log, as a commented header explaining the signal grammar. Like
     //     core.md it is owner data: first-write-only, NO refresh path —
     //     accumulated signal lines must never be clobbered.
-    await ensureDir(join(vaultPath, "preferences"));
-    const signalsOutcome = await writeIfMissing(
-      join(vaultPath, "preferences", "signals.md"),
-      SIGNALS_MD_TEMPLATE,
-    );
+    let signalsOutcome: StepOutcome = REFRESH_SKIP;
+    if (!refreshOnly) {
+      await ensureDir(join(vaultPath, "preferences"));
+      signalsOutcome = await writeIfMissing(
+        join(vaultPath, "preferences", "signals.md"),
+        SIGNALS_MD_TEMPLATE,
+      );
+    }
 
     // 6. Write `AGENTS.md` (first-write-only by default; explicit refresh
     //    repairs old orientation files without dropping user prose).
@@ -312,10 +348,13 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
 
     // 8. Initial scaffold commit, if the repo has no commits yet. The
     //    adopted-ref substrate needs HEAD to resolve before `dome sync`
-    //    or `dome serve` can compute drift.
+    //    or `dome serve` can compute drift. Refresh-only runs leave the
+    //    refreshed instruction files for the owner to review and commit.
     const headExists = (await currentSha(vaultPath)) !== null;
     let initialCommitOutcome: StepOutcome;
-    if (headExists) {
+    if (refreshOnly) {
+      initialCommitOutcome = REFRESH_SKIP;
+    } else if (headExists) {
       initialCommitOutcome = "skipped (already present)";
     } else {
       // Stage `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `core.md`, and

@@ -84,7 +84,7 @@ scenario(
     };
     expect(textPayload.markdown).toContain("# Dome Agenda: Ada");
     expect(textPayload.markdown).toContain(
-      "[followup] Ask Ada about rollout risks (wiki/dailies/2026-01-05.md:23; source wiki/projects/launch.md:9)",
+      "[followup] Ask Ada about rollout risks (wiki/dailies/2026-01-05.md:28; source wiki/projects/launch.md:9)",
     );
     expect(textPayload.markdown).toContain(
       "[followup] Send Ada launch notes (wiki/dailies/2026-01-05.md:8)",
@@ -158,7 +158,7 @@ scenario(
       null,
     ]);
     expect(payload.agendaItems[1]?.evidenceLabel).toBe(
-      "wiki/dailies/2026-01-05.md:23; source wiki/projects/launch.md:9",
+      "wiki/dailies/2026-01-05.md:28; source wiki/projects/launch.md:9",
     );
     const questionItem = payload.agendaItems.find((item) =>
       item.kind === "question"
