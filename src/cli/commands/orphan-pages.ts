@@ -1,10 +1,10 @@
-// cli/commands/orphan-pages: first-class wrapper for the
-// dome.markdown.orphan-pages view.
+// cli/commands/orphan-pages: wrapper for the dome.markdown.orphan-pages view.
 //
-// `dome orphan-pages` lists every markdown page with zero incoming wikilinks
-// (and not implicitly linked from its root `index.md`). Previously reachable
-// only via the hidden `dome run orphan-pages` dispatcher. See
-// docs/wiki/specs/cli.md §"`dome orphan-pages`".
+// `dome audit orphan-pages` lists every markdown page with zero incoming
+// wikilinks (and not implicitly linked from its root `index.md`), filed under
+// the `dome audit` umbrella (cohesion review 2026-07-06; formerly the
+// top-level `dome orphan-pages`). See docs/wiki/specs/cli.md
+// §"`dome audit`".
 
 import { runNamedViewCommand } from "../named-view-command";
 import { bullets, headline, resolveCaps, section } from "../presenter";
@@ -31,7 +31,7 @@ export async function runOrphanPages(
   options: OrphanPagesCommandOptions = {},
 ): Promise<number> {
   return runNamedViewCommand({
-    commandLabel: "dome orphan-pages",
+    commandLabel: "dome audit orphan-pages",
     commandName: "orphan-pages",
     vault: options.vault,
     bundlesRoot: options.bundlesRoot,

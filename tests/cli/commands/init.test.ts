@@ -136,14 +136,15 @@ describe("runInit", () => {
       expect(agentsBody).toContain("dome export-context <topic> --json");
       expect(agentsBody).toContain("dome query <text> --json");
       expect(agentsBody).toContain("The daily note should already be");
-      expect(agentsBody).not.toContain("dome today");
-      // Task 14: prep / agenda-with / stale-claims / orphan-pages are
-      // first-class verbs now (no longer behind the hidden `dome run`
-      // dispatcher), so the template advertises them directly.
-      expect(agentsBody).toContain("dome prep [--date <yyyy-mm-dd>]");
-      expect(agentsBody).toContain("dome agenda-with <person-or-topic>");
-      expect(agentsBody).toContain("dome stale-claims");
-      expect(agentsBody).toContain("dome orphan-pages");
+      // Cohesion review 2026-07-06: the day surface's alternate framings are
+      // flags of `today` and the consistency audits live under `dome audit`.
+      // The interactive cockpit itself stays untaught — agents read the
+      // prepared daily-note markdown, not a --watch terminal view.
+      expect(agentsBody).toContain("dome today --prep [--date <yyyy-mm-dd>]");
+      expect(agentsBody).toContain("dome today --with <person-or-topic>");
+      expect(agentsBody).toContain("dome audit stale-claims");
+      expect(agentsBody).toContain("dome audit orphan-pages");
+      expect(agentsBody).not.toContain("--watch");
       expect(agentsBody).toContain("dome export-context <topic>");
       expect(agentsBody).toContain("Advanced/debug commands");
       expect(agentsBody).toContain("dome inspect <subject>");

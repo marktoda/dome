@@ -1,10 +1,17 @@
-// cli/commands/today: the cockpit — `dome today [--watch]`.
+// cli/commands/today: the cockpit — `dome today [--watch|--prep|--with <x>]`.
 //
 // A typed wrapper around the command-triggered view-phase processor named
 // `today` (dome.daily bundle), exactly the `dome query` posture: the
 // processor owns the action surface; this file owns CLI ergonomics and
 // rendering. `--watch` re-renders on an interval (v1 cockpit: dumb polling,
 // per the v1 plan's open-questions resolution).
+//
+// `--prep` and `--with <person-or-topic>` are the day surface's two other
+// framings — the same source-backed daily action state rendered as a
+// planning packet (dome.daily.prep) or filtered to a person/topic with
+// joined search context (dome.daily.agenda-with). Formerly the top-level
+// `dome prep` / `dome agenda-with` verbs (cohesion review 2026-07-06: one
+// view, one verb); the processors and their handlers are unchanged.
 
 import { basename } from "node:path";
 
@@ -56,6 +63,8 @@ import {
 import { compareStrings } from "../../core/compare";
 import { resolveVaultPath } from "../../surface/resolve-vault";
 import { EX_USAGE } from "../exit-codes";
+import { runPrep } from "./prep";
+import { runAgendaWith } from "./agenda-with";
 
 export type TodayCommandOptions = {
   readonly vault?: string | undefined;
@@ -68,6 +77,10 @@ export type TodayCommandOptions = {
   readonly interval?: number | undefined;
   /** Show full brief prose + source paths. */
   readonly verbose?: boolean | undefined;
+  /** Render the planning-packet framing (dome.daily.prep). */
+  readonly prep?: boolean | undefined;
+  /** Filter to a person or topic (dome.daily.agenda-with). */
+  readonly with?: string | undefined;
 };
 
 /** Injectable watch-loop boundaries (tests). */
@@ -84,6 +97,27 @@ export async function runToday(
   options: TodayCommandOptions = {},
   watchDeps: WatchDeps = {},
 ): Promise<number> {
+  // The two alternate framings delegate wholesale (Commander already
+  // enforces --prep/--with/--watch exclusivity at the option layer).
+  if (options.prep === true) {
+    return runPrep({
+      date: options.date,
+      limit: options.limit,
+      vault: options.vault,
+      bundlesRoot: options.bundlesRoot,
+      json: options.json,
+    });
+  }
+  if (options.with !== undefined) {
+    return runAgendaWith({
+      topic: options.with,
+      date: options.date,
+      limit: options.limit,
+      vault: options.vault,
+      bundlesRoot: options.bundlesRoot,
+      json: options.json,
+    });
+  }
   if (options.watch === true && options.json === true) {
     printViewCommandError({
       commandLabel: "dome today",

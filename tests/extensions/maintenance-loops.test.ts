@@ -22,7 +22,7 @@ const EXEMPT_FIRST_PARTY_PROCESSORS = new Set([
   // Read-only report surface; it explains diagnostics but does not maintain a
   // desired state itself.
   "dome.lint.report",
-  // Read-only `dome stale-claims` staleness audit over claim asOf dates; it
+  // Read-only `dome audit stale-claims` staleness audit over claim asOf dates; it
   // reports on the claim loop's coherence over time but maintains no desired
   // state of its own (the dome.claim.coherence loop owns the claim facts).
   "dome.claims.stale-claims",

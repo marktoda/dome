@@ -13,17 +13,22 @@
 //     "propose" AND this processor's grant is patch.propose-only on the
 //     config path, a structural double fence).
 //   - FLAG DORMANT: a processor with model spend > $0 and zero productive
-//     effects over the trailing 21 days raises ONE owner-needed question.
-//     Per-processor disable is NOT expressible in `.dome/config.yaml`
-//     (extensions.<bundle>.processors.<id> accepts only grant/grants —
-//     src/engine/core/capability-policy.ts PROCESSOR_KEYS), so this stays a
-//     question, not a config proposal.
+//     effects over the trailing 21 days raises ONE warning diagnostic. A
+//     diagnostic, not a question: neither "keep" nor "will disable" unlocks
+//     an engine action (per-processor disable is NOT expressible in
+//     `.dome/config.yaml` — extensions.<bundle>.processors.<id> accepts only
+//     grant/grants, src/engine/core/capability-policy.ts PROCESSOR_KEYS), so
+//     per questions-as-decisions this is a finding the owner edits (disable
+//     or narrow the bundle by hand), and it self-clears once the processor
+//     produces effects again or stops running.
 //
 // Idempotence: an open promotion proposal for the same target suppresses
 // re-emission; a rejected promotion is not re-proposed for 28 days (derived
 // from the rejected row's decidedAt — no new state); the pending-proposals
-// dedupe key covers byte-identical re-emission; dormancy questions carry a
-// per-processor idempotency key.
+// dedupe key covers byte-identical re-emission; dormancy diagnostics carry a
+// per-processor code suffix (code + sourceRefs is the diagnostic dedupe
+// identity) and are cleared by the stale-diagnostic resolution pass on the
+// first weekly run that stops re-emitting them.
 //
 // NEEDS_ARE_LOUD: a missing proposals view skips promotions with a warning; a
 // missing runs view skips dormancy with a warning; an unreadable/unparseable
@@ -34,7 +39,6 @@
 import {
   diagnosticEffect,
   patchEffect,
-  questionEffect,
   type Effect,
 } from "../../../../src/core/effect";
 import {
@@ -187,21 +191,20 @@ const trustReview = defineProcessorImplementation({
           }),
         );
       } else {
+        // A finding, not a decision: no answer to this could unlock an engine
+        // action, so it must not occupy the decision queue. The per-processor
+        // code suffix keeps two dormant processors as two findings (code +
+        // sourceRefs is the dedupe identity, and both point at the config).
         effects.push(
-          questionEffect({
-            question:
+          diagnosticEffect({
+            severity: "warning",
+            code: `dome.health.trust-review-dormant:${decision.processorId}`,
+            message:
               `${decision.evidence} (no succeeded run emitted an effect). ` +
-              "Per-processor disable is not expressible in .dome/config.yaml — " +
-              "keep it running, or disable/narrow its bundle by hand " +
-              "(extensions.<bundle>.enabled / grant)?",
-            options: ["keep", "will-disable-by-hand"],
-            idempotencyKey: `dome.health.trust-review:dormant:${decision.processorId}`,
-            metadata: {
-              automationPolicy: "owner-needed",
-              recommendedAnswer: "keep",
-              ownerNeededReason:
-                "disabling a processor is a config decision only the owner can make",
-            },
+              "Disable or narrow its bundle by hand " +
+              "(extensions.<bundle>.enabled / grant) — or leave it running; " +
+              "this finding clears once the processor produces effects again " +
+              "or stops running.",
             sourceRefs: [ctx.sourceRef(CONFIG_PATH)],
           }),
         );

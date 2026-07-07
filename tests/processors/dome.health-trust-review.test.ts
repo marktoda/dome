@@ -3,7 +3,8 @@
 // The gardener proposes changes to its own autonomy through the proposal
 // review loop: decide-core promotion/dormancy edges, the comment-preserving
 // `.dome/config.yaml` promotion edit, and the processor shell (propose-mode
-// PatchEffect + owner-needed dormancy question + NEEDS_ARE_LOUD warnings).
+// PatchEffect + self-clearing dormancy diagnostics + NEEDS_ARE_LOUD
+// warnings).
 
 import { describe, expect, test } from "bun:test";
 
@@ -549,7 +550,7 @@ describe("dome.health.trust-review (processor shell)", () => {
     expect(patches).toEqual([]);
   });
 
-  test("a dormant LLM processor raises ONE owner-needed question with a stable idempotency key", async () => {
+  test("a dormant LLM processor raises ONE warning diagnostic with a per-processor code (never a question)", async () => {
     const runs = [
       run({ processorId: "dome.agent.sweep", costUsd: 1.25, effectCount: 0 }),
       run({ processorId: "dome.agent.sweep", costUsd: 0.75, effectCount: 0 }),
@@ -558,17 +559,24 @@ describe("dome.health.trust-review (processor shell)", () => {
       // productive spender — fine
       run({ processorId: "dome.agent.brief", costUsd: 2.0, effectCount: 3 }),
     ];
-    const { questions } = await runTrustReview(
+    const { questions, diagnostics } = await runTrustReview(
       { [CONFIG_PATH]: SHELL_CONFIG },
       viewOf({ proposals: [], runs }),
     );
-    expect(questions).toHaveLength(1);
-    const question = questions[0]!;
-    expect(question.idempotencyKey).toBe(
-      "dome.health.trust-review:dormant:dome.agent.sweep",
+    // questions-as-decisions: no answer to "keep or disable by hand" could
+    // unlock an engine action, so dormancy is a finding, never a question.
+    expect(questions).toEqual([]);
+    const dormant = diagnostics.filter((d) =>
+      d.code.startsWith("dome.health.trust-review-dormant:"),
     );
-    expect(question.question).toContain("$2.00");
-    expect(question.metadata?.automationPolicy).toBe("owner-needed");
+    expect(dormant).toHaveLength(1);
+    const finding = dormant[0]!;
+    expect(finding.code).toBe(
+      "dome.health.trust-review-dormant:dome.agent.sweep",
+    );
+    expect(finding.severity).toBe("warning");
+    expect(finding.message).toContain("$2.00");
+    expect(finding.message).toContain("clears");
   });
 
   test("missing views are LOUD: proposals view absent → warning; run stats still flag dormancy", async () => {
@@ -579,10 +587,15 @@ describe("dome.health.trust-review (processor shell)", () => {
       }),
     );
     expect(patches).toEqual([]);
-    expect(questions).toHaveLength(1);
+    expect(questions).toEqual([]);
     expect(
       diagnostics.some(
         (d) => d.code === "dome.health.trust-review-proposals-view-missing",
+      ),
+    ).toBe(true);
+    expect(
+      diagnostics.some(
+        (d) => d.code === "dome.health.trust-review-dormant:dome.agent.sweep",
       ),
     ).toBe(true);
   });

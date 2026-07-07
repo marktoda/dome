@@ -444,15 +444,16 @@ scenario(
   },
 );
 
-// `dome prep` (Task 14) is the dedicated top-level verb over the same
-// `dome.daily.prep` view processor — previously reachable only via the
-// hidden `dome run prep` dispatcher. Unlike `dome run <name>` (which always
-// wraps output in a `{name, kind, schema, data}` envelope), the dedicated
-// verb renders human markdown by default and the bare structured payload
-// under `--json`, matching its `dome query` / `dome export-context` siblings.
+// `dome today --prep` is the dedicated binding over the same
+// `dome.daily.prep` view processor (a top-level `dome prep` verb until the
+// 2026-07-06 cohesion review folded it into `today`). Unlike
+// `dome run <name>` (which always wraps output in a `{name, kind, schema,
+// data}` envelope), the dedicated binding renders human markdown by default
+// and the bare structured payload under `--json`, matching its `dome query`
+// / `dome export-context` siblings.
 scenario(
   {
-    name: "cli-surface: dome prep (dedicated verb) dispatches to dome.daily.prep",
+    name: "cli-surface: dome today --prep dispatches to dome.daily.prep",
     tags: [
       { kind: "group", group: "cli-surface" },
       { kind: "effect", effect: "fact" },
@@ -488,8 +489,15 @@ scenario(
     const sync = await h.tick();
     expect(sync.adopted).toBe(true);
 
+    // The retired top-level spelling fails loudly with the replacement.
+    const retired = await h.runCli(["prep", "--date", "2026-01-05"]);
+    expect(retired.exitCode).toBe(64);
+    expect(retired.stderr).toContain(
+      "dome prep: retired. Use `dome today --prep` instead.",
+    );
+
     // Default text output is the rendered markdown packet, not a JSON blob.
-    const text = await h.runCli(["prep", "--date", "2026-01-05"]);
+    const text = await h.runCli(["today", "--prep", "--date", "2026-01-05"]);
     expect(text.exitCode).toBe(0);
     expect(text.stderr).toBe("");
     expect(text.stdout).toContain("# Dome Prep: 2026-01-05");
@@ -498,8 +506,14 @@ scenario(
 
     // `--json` emits the bare `dome.daily.prep/v1` payload — no
     // {name,kind,schema,data} wrapper (that's `dome run`'s shape, not this
-    // dedicated verb's).
-    const json = await h.runCli(["prep", "--date", "2026-01-05", "--json"]);
+    // dedicated binding's).
+    const json = await h.runCli([
+      "today",
+      "--prep",
+      "--date",
+      "2026-01-05",
+      "--json",
+    ]);
     expect(json.exitCode).toBe(0);
     expect(json.stderr).toBe("");
     const payload = JSON.parse(json.stdout) as {

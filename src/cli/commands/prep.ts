@@ -1,9 +1,9 @@
-// cli/commands/prep: first-class wrapper for the dome.daily.prep view.
+// cli/commands/prep: wrapper for the dome.daily.prep view.
 //
-// `dome prep` renders a portable source-backed planning packet for a day —
-// the same `dome.daily.prep` view processor previously reachable only via
-// the hidden `dome run prep` dispatcher. See docs/wiki/specs/cli.md
-// §"`dome prep`".
+// `dome today --prep` renders a portable source-backed planning packet for a
+// day — the day surface's planning framing, folded into the `today` verb
+// (cohesion review 2026-07-06; formerly the top-level `dome prep`). See
+// docs/wiki/specs/cli.md §"`dome today`".
 
 import { runNamedViewCommand } from "../named-view-command";
 
@@ -24,7 +24,7 @@ export async function runPrep(
   });
 
   return runNamedViewCommand({
-    commandLabel: "dome prep",
+    commandLabel: "dome today --prep",
     commandName: "prep",
     commandArgs,
     vault: options.vault,

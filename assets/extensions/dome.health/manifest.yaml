@@ -137,7 +137,6 @@ processors:
         paths: [".dome/config.yaml"]
       - kind: proposals.read
       - kind: run.read
-      - kind: question.ask
     execution:
       class: deterministic
     module: processors/trust-review.ts

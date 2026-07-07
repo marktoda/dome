@@ -1,11 +1,10 @@
-// cli/commands/agenda-with: first-class wrapper for the
-// dome.daily.agenda-with view.
+// cli/commands/agenda-with: wrapper for the dome.daily.agenda-with view.
 //
-// `dome agenda-with <person-or-topic>` filters the same source-backed daily
-// action state as `dome prep` / `dome today` down to items matching a person
-// or topic, and joins adopted-state search context. Previously reachable
-// only via the hidden `dome run agenda-with` dispatcher. See
-// docs/wiki/specs/cli.md §"`dome agenda-with`".
+// `dome today --with <person-or-topic>` filters the same source-backed daily
+// action state as `dome today` down to items matching a person or topic, and
+// joins adopted-state search context — the day surface's filtered framing,
+// folded into the `today` verb (cohesion review 2026-07-06; formerly the
+// top-level `dome agenda-with`). See docs/wiki/specs/cli.md §"`dome today`".
 
 import { runNamedViewCommand } from "../named-view-command";
 import { printViewCommandError } from "./view-shared";
@@ -25,11 +24,11 @@ export async function runAgendaWith(
   const topic = options.topic?.trim() ?? "";
   if (topic.length === 0) {
     printViewCommandError({
-      commandLabel: "dome agenda-with",
+      commandLabel: "dome today --with",
       json: options.json === true,
       error: "agenda-with-usage",
       messages: [
-        "dome agenda-with: missing person or topic. Usage: dome agenda-with <person-or-topic>",
+        "dome today --with: missing person or topic. Usage: dome today --with <person-or-topic>",
       ],
     });
     return 64;
@@ -42,7 +41,7 @@ export async function runAgendaWith(
   });
 
   return runNamedViewCommand({
-    commandLabel: "dome agenda-with",
+    commandLabel: "dome today --with",
     commandName: "agenda-with",
     commandArgs,
     vault: options.vault,

@@ -68,7 +68,13 @@ scenario(
       expect(agents).toContain("dome export-context <topic> --json");
       expect(agents).toContain("dome query <text> --json");
       expect(agents).toContain("The daily note should already be");
-      expect(agents).not.toContain("dome today");
+      // The day surface's alternate framings are flags of `today`; the
+      // interactive cockpit itself stays untaught (agents read the prepared
+      // daily-note markdown, not a --watch terminal view).
+      expect(agents).toContain("dome today --prep");
+      expect(agents).toContain("dome today --with <person-or-topic>");
+      expect(agents).toContain("dome audit stale-claims");
+      expect(agents).not.toContain("--watch");
       expect(agents).toContain("dome export-context <topic>");
       expect(agents).toContain("Advanced/debug commands");
       expect(agents).toContain("dome inspect <subject>");

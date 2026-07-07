@@ -137,16 +137,16 @@ scenario(
   },
 );
 
-// `dome stale-claims` (Task 14) is the dedicated top-level verb over the
-// same `dome.claims.stale-claims` view processor — previously reachable
-// only via the hidden `dome run stale-claims` dispatcher above. Unlike
-// `dome run <name>` (always the `{name,kind,schema,data}` envelope), the
-// dedicated verb renders a human summary by default and the bare
+// `dome audit stale-claims` is the dedicated binding over the same
+// `dome.claims.stale-claims` view processor (a top-level `dome stale-claims`
+// verb until the 2026-07-06 cohesion review filed it under `dome audit`).
+// Unlike `dome run <name>` (always the `{name,kind,schema,data}` envelope),
+// the dedicated binding renders a human summary by default and the bare
 // structured payload under `--json`.
 scenario(
   {
     name:
-      "effect-kinds: dome stale-claims (dedicated verb) dispatches to dome.claims.stale-claims",
+      "effect-kinds: dome audit stale-claims dispatches to dome.claims.stale-claims",
     tags: [
       { kind: "group", group: "effect-kinds" },
       { kind: "effect", effect: "view" },
@@ -182,13 +182,20 @@ scenario(
       .facts({ predicate: "dome.claims.claim" })
       .toHaveCount(1);
 
-    const text = await h.runCli(["stale-claims"]);
+    // The retired top-level spelling fails loudly with the replacement.
+    const retired = await h.runCli(["stale-claims"]);
+    expect(retired.exitCode).toBe(64);
+    expect(retired.stderr).toContain(
+      "dome stale-claims: retired. Use `dome audit stale-claims` instead.",
+    );
+
+    const text = await h.runCli(["audit", "stale-claims"]);
     expect(text.exitCode).toBe(0);
     expect(text.stderr).toBe("");
     expect(text.stdout).toContain("wiki/stale.md");
     expect(text.stdout).not.toMatch(/^\s*[{[]/); // not a JSON envelope
 
-    const json = await h.runCli(["stale-claims", "--json"]);
+    const json = await h.runCli(["audit", "stale-claims", "--json"]);
     expect(json.exitCode).toBe(0);
     expect(json.stderr).toBe("");
     const payload = JSON.parse(json.stdout) as {

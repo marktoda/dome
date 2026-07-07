@@ -1,4 +1,4 @@
-// `dome agenda-with` — usage-error unit tests. Full dispatch coverage lives
+// `dome today --with` — usage-error unit tests. Full dispatch coverage lives
 // in tests/harness/scenarios/cli-surface/agenda-view.scenario.test.ts.
 
 import { describe, expect, test } from "bun:test";
@@ -13,7 +13,7 @@ describe("runAgendaWith", () => {
   test("missing topic returns 64 before opening the runtime", async () => {
     expect(await runAgendaWith({})).toBe(64);
     expect(captured.err.join("\n")).toContain(
-      "dome agenda-with: missing person or topic",
+      "dome today --with: missing person or topic",
     );
   });
 
