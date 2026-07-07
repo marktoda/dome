@@ -161,7 +161,7 @@ export function nextActionsForStatus(
 }
 
 function pendingProposalsDescription(pendingProposals: number): string {
-  return `${pendingProposals} proposals awaiting review — dome proposals`;
+  return `${pendingProposals} proposals awaiting review — list with dome proposals, then decide each with dome apply <id> or dome reject <id>`;
 }
 
 function dirtyStatusDescription(input: {

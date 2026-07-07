@@ -71,6 +71,22 @@ describe("runCli", () => {
     ) {
       expect(out).not.toContain(hiddenCommand);
     }
+    // Visible commands render under grouped headings, not one flat
+    // "Commands:" wall — and the implicit help subcommand (which cannot join
+    // a group) is suppressed rather than left as a stray "Commands:" heading.
+    for (
+      const heading of [
+        "Getting started:",
+        "Daily loop:",
+        "Decisions:",
+        "Recall & views:",
+        "Service:",
+        "Adapters:",
+      ]
+    ) {
+      expect(out).toContain(heading);
+    }
+    expect(out).not.toContain("Commands:");
   });
 
   test("subcommand -h exits 0 and does not run the command action", async () => {

@@ -5,7 +5,7 @@ tags:
   - second-user
   - ws6
 created: 2026-06-12
-updated: 2026-07-04
+updated: 2026-07-06
 sources:
   - "[[cohesive/second-user-blockers]]"
   - "[[wiki/specs/cli]]"
@@ -263,6 +263,23 @@ engine health, content diagnostics, open decisions — and every open question
 comes with its `dome resolve <id> <value>` command. Questions marked
 `owner-needed` are yours; agent-safe ones a vault-aware session may answer
 from sources.
+
+Dome's gardeners don't only ask questions — some **propose edits**, and those
+behaviors ship on by default (the weekly attic sweep for dead-stub pages,
+page-split proposals from the nightly consolidate pass). So within the first
+week or two, `dome status` will start routing you to `dome proposals`: read
+each diff, then decide it with `dome apply <id>` (writes the change as one
+ordinary commit) or `dome reject <id>`. Autonomy is earned, not assumed —
+every mutating behavior starts at propose level, and the Monday trust review
+promotes a behavior to auto-apply only after its accept rate across your own
+decisions has earned it. That promotion arrives as just another proposal for
+you to apply or reject, with the evidence in the weekly report card your
+daily note links ([[wiki/specs/proposals]] §"Trust ladder").
+
+Tasks have their own disposition verb: `dome settle <block-anchor>
+close|defer|keep` (defer takes `--until YYYY-MM-DD`) settles a task line in
+one ordinary commit, and the stale-task warden raises questions pointing at
+tasks that have stopped moving.
 
 Sharp edges that are real and known: updating still means `git pull` +
 `dome restart` (§1); a handful of recovery situations (un-escalating a

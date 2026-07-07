@@ -119,6 +119,10 @@ Primary compiler commands:
 - \`dome resolve <id> <value>\` - resolve a Dome-raised decision from
   \`dome check\`; \`dome proposals\` lists garden-proposed edits awaiting
   review, decided with \`dome apply <id>\` or \`dome reject <id>\`.
+- \`dome settle <block-id> <close|defer|keep>\` - settle a task line by its
+  \`^block-anchor\` in one ordinary commit (\`defer\` requires
+  \`--until YYYY-MM-DD\`); the direct disposition verb for tasks surfaced by
+  the daily note or stale-task questions.
 
 Optional adopted-state views:
 
@@ -127,6 +131,8 @@ Optional adopted-state views:
 - \`dome query <text>\` - search adopted markdown and related extracted facts.
 - \`dome export-context <topic>\` - portable source-backed context packet for
   another Claude session or review.
+- \`dome explain <path[#^anchor]>\` - provenance for a page or one claim:
+  claim → facts → ledger evidence → engine commits.
 - \`dome prep [--date <yyyy-mm-dd>]\` - deterministic source-backed planning
   packet for a day.
 - \`dome agenda-with <person-or-topic>\` - deterministic open tasks, follow-ups,

@@ -100,6 +100,19 @@ export async function runCli(argv: ReadonlyArray<string>): Promise<number> {
 
 // ----- internals ------------------------------------------------------------
 
+// `dome --help` heading per visible command, so the surface reads as a few
+// small verb sets instead of one flat wall. Registration order is unchanged;
+// headings render in first-registered-command order (Getting started → Daily
+// loop → Decisions → Recall & views → Service → Adapters). NB: heading text is
+// fence-tested against hidden command names as substrings
+// (tests/cli/index.test.ts).
+const GROUP_START = "Getting started:";
+const GROUP_LOOP = "Daily loop:";
+const GROUP_DECISIONS = "Decisions:";
+const GROUP_RECALL = "Recall & views:";
+const GROUP_SERVICE = "Service:";
+const GROUP_ADAPTERS = "Adapters:";
+
 function buildProgram(setExitCode: (code: number) => void): Command {
   const program = new Command();
   program
@@ -107,6 +120,10 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .description("Dome vault compiler and operational CLI.")
     .showHelpAfterError()
     .showSuggestionAfterError()
+    // No implicit `help [command]` subcommand: it cannot join a help group,
+    // so it would render as a stray "Commands:" heading amid the grouped
+    // surface. `-h` / `--help` remain on every command.
+    .helpCommand(false)
     .exitOverride()
     .configureOutput({
       writeOut: (text) => writeConsole(console.log, text),
@@ -116,6 +133,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("init")
+    .helpGroup(GROUP_START)
     .description("Initialize a vault.")
     .argument("[path]", "Vault path (defaults to current directory).")
     .option(
@@ -154,6 +172,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("capture")
+    .helpGroup(GROUP_LOOP)
     .description("Capture text into inbox/raw/ and commit it on the current branch.")
     .argument("[text]", "Capture text (omit to read stdin or use --file).")
     .option("--file <path>", "Read the capture body from a file.")
@@ -182,6 +201,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("check")
+    .helpGroup(GROUP_LOOP)
     .description("Explain compiler attention.")
     .option("--engine", "Show engine health findings.")
     .option("--content", "Show full adopted-state diagnostics.")
@@ -320,6 +340,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("resolve")
+    .helpGroup(GROUP_DECISIONS)
     .description("Resolve an engine-raised decision.")
     .argument("<question-id>", "Question row id from `dome check`.")
     .argument("[value...]", "Decision value. Omit to print the question.")
@@ -344,6 +365,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("settle")
+    .helpGroup(GROUP_DECISIONS)
     .description("Settle a task line by its ^block-anchor: close, defer, or keep.")
     .argument("<block-id>", "The task's ^block-anchor id.")
     .argument("<disposition>", "close | defer | keep")
@@ -368,6 +390,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("proposals")
+    .helpGroup(GROUP_DECISIONS)
     .description("List pending garden propose-mode patches awaiting review.")
     .option("--all", "Include applied and rejected proposals, not just pending.")
     .option("--json", "Emit JSON.")
@@ -384,6 +407,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("apply")
+    .helpGroup(GROUP_DECISIONS)
     .description("Apply a pending proposal: write its changes and land one commit.")
     .argument("<id>", "Proposal row id from `dome proposals`.")
     .option("--json", "Emit JSON.")
@@ -400,6 +424,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("reject")
+    .helpGroup(GROUP_DECISIONS)
     .description("Reject a pending proposal. Records the decision; writes no files.")
     .argument("<id>", "Proposal row id from `dome proposals`.")
     .argument("[note...]", "Optional note explaining the rejection.")
@@ -495,6 +520,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("query")
+    .helpGroup(GROUP_RECALL)
     .description("Search adopted vault state.")
     .argument("<text...>", "Query text.")
     .option("--category <category>", "Filter by document category.")
@@ -524,6 +550,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("today")
+    .helpGroup(GROUP_RECALL)
     .description(
       "Render today's action surface (open tasks, follow-ups, questions).",
     )
@@ -556,6 +583,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("log")
+    .helpGroup(GROUP_RECALL)
     .description("Show vault activity: git history joined with the engine ledger.")
     .option("--since <date>", "Only show commits newer than this date.")
     .option("--processor <id>", "Only show engine entries from this processor.")
@@ -578,6 +606,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("explain")
+    .helpGroup(GROUP_RECALL)
     .description(
       // NB: help output is fence-tested against hidden command names as
       // substrings (tests/cli/index.test.ts), so this line avoids the word
@@ -604,6 +633,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("export-context")
+    .helpGroup(GROUP_RECALL)
     .description("Export a source-backed context packet for a topic.")
     .argument("<topic...>", "Topic to export.")
     .option("--limit <n>", "Maximum matches to include.", parsePositiveIntegerOption)
@@ -629,6 +659,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("prep")
+    .helpGroup(GROUP_RECALL)
     .description("Render a source-backed planning packet for a day.")
     .option("--date <yyyy-mm-dd>", "Render a specific day (default: today).")
     .option("--limit <n>", "Maximum rows per section.", parsePositiveIntegerOption)
@@ -649,6 +680,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("agenda-with")
+    .helpGroup(GROUP_RECALL)
     .description("Render source-backed open tasks, follow-ups, and context for a person or topic.")
     .argument("<person-or-topic...>", "Person or topic to filter by.")
     .option("--date <yyyy-mm-dd>", "Daily-note context date (default: today).")
@@ -671,6 +703,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("stale-claims")
+    .helpGroup(GROUP_RECALL)
     .description("List claims whose *(as of)* date is older than the staleness horizon.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
@@ -687,6 +720,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("orphan-pages")
+    .helpGroup(GROUP_RECALL)
     .description("List markdown pages with no incoming wikilinks.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
@@ -742,6 +776,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("serve")
+    .helpGroup(GROUP_SERVICE)
     .description("Run the local compiler host.")
     .option(
       "--poll-interval-ms <n>",
@@ -779,6 +814,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("install")
+    .helpGroup(GROUP_SERVICE)
     .description("Install dome serve as a background service (launchd on macOS, systemd --user on Linux).")
     .option("--status", "Report installed/loaded service state without changes.")
     .option(
@@ -807,6 +843,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("restart")
+    .helpGroup(GROUP_SERVICE)
     .description("Restart the vault's launchd service from the installed plist.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
@@ -821,6 +858,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("uninstall")
+    .helpGroup(GROUP_SERVICE)
     .description("Boot out and remove the vault's launchd service.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
@@ -835,6 +873,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("mcp")
+    .helpGroup(GROUP_ADAPTERS)
     .description("Run the stdio MCP server over this vault (read/capture protocol adapter).")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -853,6 +892,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("http")
+    .helpGroup(GROUP_ADAPTERS)
     .description("Run the Dome HTTP surface over this vault: read · capture · resolve · agent · transcribe · PWA (bearer-token auth; loopback by default).")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
@@ -894,6 +934,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("recipe <kind>")
+    .helpGroup(GROUP_START)
     .description(
       "Print a setup recipe (available: ios — voice capture via Shortcuts; capture-queue — the laptop-side iCloud queue drain; core-seed — owner interview for core.md).",
     )
@@ -907,6 +948,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("status")
+    .helpGroup(GROUP_LOOP)
     .description("Vault health + content dashboard.")
     .option("--loops", "Show maintenance-loop detail rows in text output.")
     .option(
@@ -932,6 +974,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("sync")
+    .helpGroup(GROUP_LOOP)
     .description("One-shot catch-up: adopt working-tree HEAD.")
     .option("--json", "Emit JSON.")
     .option("-v, --verbose", "Print adoption progress events.")

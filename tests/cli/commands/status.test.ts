@@ -351,7 +351,8 @@ describe("runStatus", () => {
         {
           reasons: ["pending_proposals"],
           command: "dome proposals",
-          description: "1 proposals awaiting review — dome proposals",
+          description:
+            "1 proposals awaiting review — list with dome proposals, then decide each with dome apply <id> or dome reject <id>",
         },
       ]),
     );
