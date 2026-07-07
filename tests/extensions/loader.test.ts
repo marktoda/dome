@@ -1217,8 +1217,8 @@ describe("loadBundles — manifest loops", () => {
     expect(loop.id).toBe("acme.todo.coherence");
     expect(loop.processors).toEqual(["acme.todo.scan"]);
     expect(loop.optionalProcessors).toEqual(["dome.agent.brief"]);
-    // Settlement checks default to the standard five.
-    expect(loop.settlement.checks.length).toBe(5);
+    expect(loop.settlement.key.length).toBeGreaterThan(0);
+    expect(loop.settlement.noOpWhen.length).toBeGreaterThan(0);
   });
 
   test("a loop requiring a processor outside its bundle fails the load", async () => {

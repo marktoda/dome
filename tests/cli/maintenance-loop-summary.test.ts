@@ -31,34 +31,6 @@ const REF = sourceRef({
   range: { startLine: 1, endLine: 1 },
 });
 
-const SETTLEMENT_CHECKS: MaintenanceLoop["settlement"]["checks"] = [
-  {
-    kind: "required-processors-active",
-    name: "required-processors-active",
-    description: "Required processors are active.",
-  },
-  {
-    kind: "no-attention-diagnostics",
-    name: "no-attention-diagnostics",
-    description: "No attention diagnostics remain.",
-  },
-  {
-    kind: "no-drift-diagnostics",
-    name: "no-drift-diagnostics",
-    description: "No drift diagnostics remain.",
-  },
-  {
-    kind: "no-open-questions",
-    name: "no-open-questions",
-    description: "No open questions remain.",
-  },
-  {
-    kind: "no-recent-problem-runs",
-    name: "no-recent-problem-runs",
-    description: "No recent problem runs remain.",
-  },
-];
-
 const LOOP: MaintenanceLoop = {
   id: "test.loop",
   goal: "Keep test work visible.",
@@ -68,7 +40,6 @@ const LOOP: MaintenanceLoop = {
   settlement: {
     key: "test key",
     noOpWhen: "test work is represented",
-    checks: SETTLEMENT_CHECKS,
   },
   risks: [],
 };

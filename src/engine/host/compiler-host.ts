@@ -206,62 +206,45 @@ export type QuestionsChangedFlag = {
   changed: boolean;
 };
 
-// Flag storage keyed by the long-lived runtime handle so the flag's lifetime
-// matches the host's, not a single tick's. WeakMap (not a VaultRuntime field)
-// keeps the mutable state owned by the compiler host — its only reader/writer.
-const questionsChangedFlags = new WeakMap<VaultRuntime, QuestionsChangedFlag>();
-
-function questionsChangedFlagFor(runtime: VaultRuntime): QuestionsChangedFlag {
-  let flag = questionsChangedFlags.get(runtime);
-  if (flag === undefined) {
-    flag = { changed: false };
-    questionsChangedFlags.set(runtime, flag);
-  }
-  return flag;
+/**
+ * One mechanism for the three host-scoped store-change accumulators below:
+ * flag storage keyed by the long-lived runtime handle so the flag's lifetime
+ * matches the host's, not a single tick's. WeakMap (not a VaultRuntime field)
+ * keeps the mutable state owned by the compiler host — its only
+ * reader/writer. (`quarantine.changed`'s flag lives on the runtime instead —
+ * its store outlives a tick; see VaultRuntime.quarantineChangedFlag.)
+ */
+function hostScopedFlag(): (runtime: VaultRuntime) => QuestionsChangedFlag {
+  const flags = new WeakMap<VaultRuntime, QuestionsChangedFlag>();
+  return (runtime) => {
+    let flag = flags.get(runtime);
+    if (flag === undefined) {
+      flag = { changed: false };
+      flags.set(runtime, flag);
+    }
+    return flag;
+  };
 }
+
+const questionsChangedFlagFor = hostScopedFlag();
+
+// `outbox.changed`: the outbox dispatcher's terminal-failure sites fire
+// `onOutboxChanged` through the per-tick sinks and the operational drain
+// (compiler-host injects the setter, same per-tick model as questions); the
+// tick epilogue snapshots+clears and dispatches `outbox.changed` subscribers
+// at most once per tick.
+const outboxChangedFlagFor = hostScopedFlag();
+
+// `proposals.changed`: fired by the `enqueueProposal` sink
+// (src/projections/sinks.ts) when a garden propose (or downgraded) patch is
+// newly inserted into `proposals.db`; a dedupe-hit re-enqueue does not set
+// it. Same tick-epilogue snapshot+clear recursion guard as the others.
+const proposalsChangedFlagFor = hostScopedFlag();
 
 /**
- * Host-scoped `outbox.changed` accumulator — the exact peer of
- * `QuestionsChangedFlag`. The outbox dispatcher's terminal-failure sites fire
- * `onOutboxChanged` through the per-tick sinks and the operational drain
- * (compiler-host injects the setter, same per-tick model as questions); the
- * tick epilogue snapshots+clears and dispatches `outbox.changed` subscribers at
- * most once per tick. (`quarantine.changed`'s flag lives on the runtime instead
- * — its store outlives a tick; see VaultRuntime.quarantineChangedFlag.)
+ * Exported so the enqueueProposal sink — which lives outside this module —
+ * can set the flag without reaching into the WeakMap directly.
  */
-const outboxChangedFlags = new WeakMap<VaultRuntime, QuestionsChangedFlag>();
-
-function outboxChangedFlagFor(runtime: VaultRuntime): QuestionsChangedFlag {
-  let flag = outboxChangedFlags.get(runtime);
-  if (flag === undefined) {
-    flag = { changed: false };
-    outboxChangedFlags.set(runtime, flag);
-  }
-  return flag;
-}
-
-/**
- * Host-scoped `proposals.changed` accumulator — the exact peer of
- * `QuestionsChangedFlag` / the `outbox.changed` flag. Fired by the
- * `enqueueProposal` sink (src/projections/sinks.ts) when a garden propose (or
- * downgraded) patch is newly inserted into `proposals.db`; a dedupe-hit
- * re-enqueue does not set it. The tick epilogue snapshots+clears and
- * dispatches `proposals.changed` subscribers at most once per tick, same
- * recursion guard as `outbox.changed`. `markProposalsChanged` is exported so
- * the sink — which lives outside this module — can set the flag without
- * reaching into the WeakMap directly.
- */
-const proposalsChangedFlags = new WeakMap<VaultRuntime, QuestionsChangedFlag>();
-
-function proposalsChangedFlagFor(runtime: VaultRuntime): QuestionsChangedFlag {
-  let flag = proposalsChangedFlags.get(runtime);
-  if (flag === undefined) {
-    flag = { changed: false };
-    proposalsChangedFlags.set(runtime, flag);
-  }
-  return flag;
-}
-
 export function markProposalsChanged(runtime: VaultRuntime): void {
   proposalsChangedFlagFor(runtime).changed = true;
 }

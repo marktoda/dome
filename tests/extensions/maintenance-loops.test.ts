@@ -50,11 +50,6 @@ describe("first-party maintenance loops", () => {
       expect(loop.surfaces.length).toBeGreaterThan(0);
       expect(loop.settlement.key.length).toBeGreaterThan(0);
       expect(loop.settlement.noOpWhen.length).toBeGreaterThan(0);
-      expect(loop.settlement.checks.length).toBeGreaterThan(0);
-      for (const check of loop.settlement.checks) {
-        expect(check.name.length).toBeGreaterThan(0);
-        expect(check.description.length).toBeGreaterThan(0);
-      }
       expect(loop.risks.length).toBeGreaterThan(0);
     }
   });
@@ -187,7 +182,6 @@ describe("first-party maintenance loops", () => {
           settlement: {
             key: "",
             noOpWhen: "",
-            checks: [],
           },
           risks: [],
         },
@@ -233,68 +227,7 @@ describe("first-party maintenance loops", () => {
     expect(errors).toContainEqual({
       kind: "empty-field",
       loopId: "bad loop id",
-      field: "settlement.checks",
-    });
-    expect(errors).toContainEqual({
-      kind: "empty-field",
-      loopId: "bad loop id",
       field: "risks",
-    });
-  });
-
-  test("validation catches malformed settlement checks", () => {
-    const [loop] = FIRST_PARTY_MAINTENANCE_LOOPS;
-    if (loop === undefined) throw new Error("expected first-party loop");
-
-    const errors = validateMaintenanceLoops({
-      loops: [
-        {
-          ...loop,
-          settlement: {
-            ...loop.settlement,
-            checks: [
-              {
-                kind: "unknown-settlement-check",
-                name: "",
-                description: "",
-              },
-              {
-                kind: "no-open-questions",
-                name: "duplicate",
-                description: "No questions remain.",
-              },
-              {
-                kind: "no-recent-problem-runs",
-                name: "duplicate",
-                description: "No problem runs remain.",
-              },
-            ] as unknown as typeof loop.settlement.checks,
-          },
-        },
-      ],
-      processorIds: new Set(loop.processors),
-      commandNames: commandNamesFor(loop),
-    });
-
-    expect(errors).toContainEqual({
-      kind: "invalid-settlement-check",
-      loopId: loop.id,
-      checkKind: "unknown-settlement-check",
-    });
-    expect(errors).toContainEqual({
-      kind: "empty-field",
-      loopId: loop.id,
-      field: "settlement.check.name",
-    });
-    expect(errors).toContainEqual({
-      kind: "empty-field",
-      loopId: loop.id,
-      field: "settlement.check.description",
-    });
-    expect(errors).toContainEqual({
-      kind: "duplicate-settlement-check",
-      loopId: loop.id,
-      checkName: "duplicate",
     });
   });
 
