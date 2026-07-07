@@ -137,7 +137,7 @@ Planned dedicated view aliases such as `dome stats` are not Commander bindings
 yet. Until they ship, their processors are invoked through `dome run
 <command-name>` when present.
 
-The `dome submit` command is **retired in v1.0** (Phase 11a demolition). It was the wrong shape: the canonical client-to-engine write path is plain `git commit`, observed by the local compiler host (`dome serve`). For a one-shot catch-up (the host isn't running and the user wants the current working tree adopted), use `dome sync`. The `dome reconcile` deprecated alias from v0.5+phase1+phase3 is **also retired in v1.** The cohesion review 2026-07-06 retired four more top-level spellings — `dome prep` → `dome today --prep`, `dome agenda-with` → `dome today --with <person-or-topic>`, `dome stale-claims` → `dome audit stale-claims`, `dome orphan-pages` → `dome audit orphan-pages`. Every retired spelling fails with exit 64 and a one-line pointer to its replacement.
+The `dome submit` command is **retired in v1.0** (Phase 11a demolition). It was the wrong shape: the canonical client-to-engine write path is plain `git commit`, observed by the local compiler host (`dome serve`). For a one-shot catch-up (the host isn't running and the user wants the current working tree adopted), use `dome sync`. The `dome reconcile` deprecated alias from v0.5+phase1+phase3 is **also retired in v1.** The cohesion review 2026-07-06 retired four more top-level spellings — `dome prep` → `dome today --prep`, `dome agenda-with` → `dome today --with <person-or-topic>`, `dome stale-claims` → `dome audit stale-claims`, `dome orphan-pages` → `dome audit orphan-pages`. Every retired spelling fails with exit 64 and a one-line pointer to its replacement (a `{status:"error", error:"retired-command"}` JSON envelope under `--json`).
 
 ## CLI implementation
 
@@ -186,7 +186,9 @@ only by `--refresh-config`), no initial commit. A vault that deliberately
 omits optional scaffold (the design-substrate dogfood vault omits `core.md`,
 `inbox/`, and `preferences/`) keeps its shape across refreshes; an old vault
 that wants newer scaffold runs plain `dome init`, whose idempotent
-fill-missing pass is the migration path.
+fill-missing pass is the migration path. The scaffold flags
+(`--with-model-provider`, `--with-source`) contradict refresh-only mode and
+are rejected with exit 64.
 
 The shipped initialization steps (plain `dome init`):
 

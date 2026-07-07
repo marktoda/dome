@@ -63,11 +63,33 @@ export async function runCli(argv: ReadonlyArray<string>): Promise<number> {
     console.error(program.helpInformation().trimEnd());
     return EX_USAGE;
   }
-  const retiredPointer = argv[0] === undefined
-    ? undefined
-    : RETIRED_COMMANDS[argv[0]];
+  // Object.hasOwn fences the lookup to the map's own keys — a plain object
+  // index would also match Object.prototype members, sending `dome toString`
+  // down the retired path instead of Commander's unknown-command suggestion.
+  const retiredPointer =
+    argv[0] !== undefined && Object.hasOwn(RETIRED_COMMANDS, argv[0])
+      ? RETIRED_COMMANDS[argv[0]]
+      : undefined;
   if (retiredPointer !== undefined) {
-    console.error(`dome ${argv[0]}: retired. ${retiredPointer}`);
+    const message = `dome ${argv[0]}: retired. ${retiredPointer}`;
+    // Honor the CLI's --json error contract: the four 2026-07-06 retirements
+    // were real --json-capable commands, so scripts piping them get a
+    // parseable envelope instead of bare stderr text.
+    if (argv.includes("--json")) {
+      console.log(
+        JSON.stringify(
+          {
+            status: "error",
+            error: "retired-command",
+            message,
+          },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.error(message);
+    }
     return EX_USAGE;
   }
 
@@ -580,13 +602,16 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       new Option(
         "--prep",
         "Render the day's planning packet instead of the action surface.",
-      ).conflicts(["with", "watch"]),
+        // --verbose is the action surface's flag; the prep/agenda framings
+        // have no verbose rendering, so reject the combo instead of
+        // silently ignoring it.
+      ).conflicts(["with", "watch", "verbose"]),
     )
     .addOption(
       new Option(
         "--with <person-or-topic...>",
         "Filter the day to a person or topic, with joined search context.",
-      ).conflicts("watch"),
+      ).conflicts(["watch", "verbose"]),
     )
     .option("-v, --verbose", "Show full brief prose and source paths.")
     .option("--json", "Emit JSON.")

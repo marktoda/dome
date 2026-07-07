@@ -289,6 +289,18 @@ describe("dome.health.report-card (processor run path)", () => {
     expect(patch).toBeDefined();
     expect(daily).toContain(`# ${TODAY_STR}`);
     expect(daily).toContain(BLOCK_START);
+    // Skeleton parity with the other creators: no yesterday daily in the
+    // snapshot → no yesterday wikilink (an unconditional link would render
+    // broken on fresh vaults and gap days).
+    expect(daily).not.toContain("2026-05-31");
+  });
+
+  test("skeleton links yesterday when that daily exists", async () => {
+    const { daily } = await runReportCard(
+      { "wiki/dailies/2026-05-31.md": "# 2026-05-31\n" },
+      { runs: [run({ processorId: "dome.x", status: "succeeded" })], questions: [] },
+    );
+    expect(daily).toContain("2026-05-31");
   });
 
   // ----- Aging decisions (Task 10) --------------------------------------------

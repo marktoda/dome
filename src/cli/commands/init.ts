@@ -72,7 +72,8 @@
 // no git init, no dirs, no .gitkeep/.gitignore, no core.md/signals.md, no
 // config creation (config is touched only by --refresh-config), no initial
 // commit. A vault that deliberately omits optional scaffold keeps its shape
-// across refreshes.
+// across refreshes. `--with-model-provider`/`--with-source` are scaffold
+// flags and are rejected (EX_USAGE) in refresh-only mode.
 //
 // Exit codes per spec:
 //   - 0 on success (including idempotent no-op re-runs).
@@ -104,6 +105,7 @@ import {
   type ManifestGrantEntryRequirement,
 } from "../../extensions/manifest-schema";
 import { formatJson } from "../../surface/format";
+import { EX_USAGE } from "../exit-codes";
 import {
   bullets,
   footer,
@@ -220,6 +222,31 @@ export async function runInit(options: RunInitOptions = {}): Promise<number> {
   // canonical victim.
   const refreshOnly = options.refreshConfig === true ||
     options.refreshInstructions === true;
+
+  // Scaffold flags contradict refresh-only mode: --with-model-provider /
+  // --with-source write new files and edit the config, which refresh-only
+  // promises never to do (and ensureModelProvider would crash on a vault
+  // whose config the refresh deliberately skipped creating). Reject the
+  // combo loudly instead of half-honoring it.
+  const wantsScaffoldFlags = options.modelProvider !== undefined ||
+    (options.withSource !== undefined && options.withSource.length > 0);
+  if (refreshOnly && wantsScaffoldFlags) {
+    const message =
+      "--with-model-provider/--with-source scaffold new files and cannot " +
+      "combine with --refresh-config/--refresh-instructions; run plain " +
+      "`dome init` for scaffolding.";
+    if (options.json === true) {
+      console.log(formatJson({
+        schema: "dome.init/v1",
+        status: "error",
+        vault: vaultPath,
+        error: message,
+      } satisfies InitJsonResult));
+    } else {
+      console.error(`dome init: ${message}`);
+    }
+    return EX_USAGE;
+  }
 
   try {
     // Ensure the target dir itself exists (a `dome init ~/vaults/new` on a
