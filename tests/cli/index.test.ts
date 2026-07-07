@@ -206,19 +206,50 @@ describe("runCli", () => {
     );
   });
 
-  test("today help exposes the prep and with framings; the flags conflict with watch", async () => {
+  test("retired commands honor --json with an error envelope", async () => {
+    expect(await runCli(["prep", "--date", "2026-01-05", "--json"])).toBe(64);
+    const payload = JSON.parse(captured.out.join("\n")) as {
+      readonly status: string;
+      readonly error: string;
+      readonly message: string;
+    };
+    expect(payload.status).toBe("error");
+    expect(payload.error).toBe("retired-command");
+    expect(payload.message).toContain("dome prep: retired.");
+    expect(captured.err).toEqual([]);
+  });
+
+  test("Object.prototype member names are unknown commands, not retired verbs", async () => {
+    for (const name of ["toString", "constructor", "valueOf", "hasOwnProperty"]) {
+      expect(await runCli([name])).toBe(64);
+    }
+    const err = captured.err.join("\n");
+    expect(err).toContain("unknown command");
+    expect(err).not.toContain("retired");
+    expect(err).not.toContain("[native code]");
+  });
+
+  test("today help exposes the prep and with framings; the flags conflict with watch and verbose", async () => {
     expect(await runCli(["today", "-h"])).toBe(0);
     const out = captured.out.join("\n");
     expect(out).toContain("--prep");
     expect(out).toContain("--with <person-or-topic...>");
     expect(await runCli(["today", "--prep", "--watch"])).toBe(64);
     expect(await runCli(["today", "--prep", "--with", "danny"])).toBe(64);
+    expect(await runCli(["today", "--prep", "--verbose"])).toBe(64);
+    expect(await runCli(["today", "--with", "danny", "-v"])).toBe(64);
     const err = captured.err.join("\n");
     expect(err).toContain(
       "option '--prep' cannot be used with option '--watch'",
     );
     expect(err).toContain(
       "option '--prep' cannot be used with option '--with <person-or-topic...>'",
+    );
+    expect(err).toContain(
+      "option '--prep' cannot be used with option '-v, --verbose'",
+    );
+    expect(err).toContain(
+      "option '--with <person-or-topic...>' cannot be used with option '-v, --verbose'",
     );
   });
 

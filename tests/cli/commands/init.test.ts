@@ -993,6 +993,33 @@ describe("runInit", () => {
     }
   });
 
+  test("refresh flags reject the scaffold flags (usage error, nothing written)", async () => {
+    const target = mkdtempSync(join(tmpdir(), "cli-init-refresh-scaffold-"));
+    try {
+      expect(
+        await runInit({
+          path: target,
+          refreshInstructions: true,
+          modelProvider: "anthropic",
+        }),
+      ).toBe(64);
+      expect(
+        await runInit({
+          path: target,
+          refreshConfig: true,
+          withSource: ["calendar"],
+        }),
+      ).toBe(64);
+      const err = captured.err.join("\n");
+      expect(err).toContain("cannot combine with");
+      // Nothing was scaffolded or touched by the rejected runs.
+      expect(existsSync(join(target, ".dome"))).toBe(false);
+      expect(existsSync(join(target, "AGENTS.md"))).toBe(false);
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
   test("--refresh-instructions repairs old orientation shims", async () => {
     const target = mkdtempSync(join(tmpdir(), "cli-init-instructions-"));
     try {

@@ -226,11 +226,20 @@ const reportCard = defineProcessorImplementation({
     // The daily block — spliced into TODAY's daily (skeleton created when
     // absent, so create-daily/compose-blocks later no-op, the shared pattern).
     const existingDaily = await ctx.snapshot.readFile(todayPath);
+    const yesterday = previousLocalDate(date);
     const dailyBase =
       existingDaily ??
       renderDailySkeleton({
         today: date,
-        yesterday: previousLocalDate(date),
+        // Skeleton parity with the other four creators (create-daily,
+        // compose-blocks, brief, ingest): link yesterday only when that
+        // daily exists — an unconditional link renders as a broken wikilink
+        // on fresh vaults and gap days. Read only on the skeleton branch.
+        yesterday:
+          (await ctx.snapshot.readFile(dailyPath(yesterday, settings))) !==
+              null
+            ? yesterday
+            : null,
         settings,
       });
     const newDaily = replaceEditionBlock({
