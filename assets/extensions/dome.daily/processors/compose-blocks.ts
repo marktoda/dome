@@ -89,11 +89,21 @@ const composeBlocks = defineProcessorImplementation({
     const agingDays = questionAgingDaysFromConfig(ctx.extensionConfig);
 
     const existing = await ctx.snapshot.readFile(todayPath);
+    const yesterday = previousLocalDate(date);
     const base =
       existing ??
       renderDailySkeleton({
         today: date,
-        yesterday: previousLocalDate(date),
+        // Skeleton parity with create-daily: link yesterday only when that
+        // daily exists — an unconditional link renders as a broken wikilink
+        // on any vault whose previous day has no note (fresh installs, gap
+        // days). The read only happens on the skeleton branch (?? short-
+        // circuits when today's note exists).
+        yesterday:
+          (await ctx.snapshot.readFile(dailyPath(yesterday, settings))) !==
+              null
+            ? yesterday
+            : null,
         settings,
       });
 

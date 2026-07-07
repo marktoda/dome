@@ -28,34 +28,39 @@ describe("bin/dome process boundary", () => {
     const help = await runDome(["--help"]);
     expect(help.exitCode).toBe(0);
     expect(help.stderr).toBe("");
+    // Grouped display order (cohesion review 2026-07-06): headings render in
+    // first-registered-command order; commands sit in registration order
+    // within their group. The implicit `help` subcommand is suppressed.
     expect(topLevelCommandNames(help.stdout)).toEqual([
+      // Getting started:
       "init",
+      "recipe",
+      // Daily loop:
       "capture",
       "check",
+      "status",
+      "sync",
+      // Decisions:
       "resolve",
       "settle",
       "proposals",
       "apply",
       "reject",
+      // Recall & views:
       "query",
       "today",
       "log",
       "explain",
       "export-context",
-      "prep",
-      "agenda-with",
-      "stale-claims",
-      "orphan-pages",
+      "audit",
+      // Service:
       "serve",
       "install",
       "restart",
       "uninstall",
+      // Adapters:
       "mcp",
       "http",
-      "recipe",
-      "status",
-      "sync",
-      "help",
     ]);
     expect(help.stdout).not.toContain("inspect");
     expect(help.stdout).not.toContain("doctor");
@@ -236,10 +241,11 @@ async function exitWithin(
 }
 
 function topLevelCommandNames(helpText: string): string[] {
-  const commandsStart = helpText.indexOf("\nCommands:\n");
-  if (commandsStart < 0) return [];
+  // Help renders grouped headings (no flat "Commands:" block): command rows
+  // are the two-space-indented lowercase names under any heading; group
+  // headings sit at column 0 and option rows start with `-`, so neither
+  // matches. Display order across groups is preserved.
   return helpText
-    .slice(commandsStart + "\nCommands:\n".length)
     .split(/\r?\n/)
     .map((line) => /^\s{2}([a-z][a-z-]*)(?:\s|$)/.exec(line)?.[1] ?? null)
     .filter((name): name is string => name !== null);

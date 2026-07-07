@@ -178,7 +178,17 @@ and an enabled `.dome/config.yaml` stanza. Per [[wiki/specs/vault-layout]]
 in `.dome/config.yaml`; shipped bundle code itself doesn't need to be copied
 into every vault.
 
-The shipped initialization steps:
+**Refresh-only mode.** When `--refresh-config` and/or `--refresh-instructions`
+is set, init refreshes exactly what the flag names and scaffolds nothing: no
+git init, no directory scaffold, no `.gitkeep`/`.gitignore`, no
+`core.md`/`preferences/signals.md`, no config creation (the config is touched
+only by `--refresh-config`), no initial commit. A vault that deliberately
+omits optional scaffold (the design-substrate dogfood vault omits `core.md`,
+`inbox/`, and `preferences/`) keeps its shape across refreshes; an old vault
+that wants newer scaffold runs plain `dome init`, whose idempotent
+fill-missing pass is the migration path.
+
+The shipped initialization steps (plain `dome init`):
 
 1. Initializes a git repository if one doesn't exist (`git init` is
    idempotent — a no-op when `.git/` already exists).

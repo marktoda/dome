@@ -1063,8 +1063,14 @@ describe("runInit", () => {
       // the user prose above survived untouched.
       expect(agents).toContain("## Preference signals");
       expect(agents).toContain("dome log");
-      // And the refresh run scaffolds the signal surface an old vault lacks.
-      expect(existsSync(join(target, "preferences", "signals.md"))).toBe(true);
+      // Refresh-only mode scaffolds NOTHING beyond the named instruction
+      // files: a vault that deliberately omits optional scaffold keeps its
+      // shape (the design-substrate dogfood vault is the canonical case).
+      // Old vaults wanting the newer scaffold run plain `dome init`, whose
+      // idempotent fill-missing pass is the migration path.
+      expect(existsSync(join(target, "preferences", "signals.md"))).toBe(false);
+      expect(existsSync(join(target, "core.md"))).toBe(false);
+      expect(existsSync(join(target, "inbox"))).toBe(false);
 
       const firstAgents = agents;
       expect(await runInit({ path: target, refreshInstructions: true })).toBe(0);

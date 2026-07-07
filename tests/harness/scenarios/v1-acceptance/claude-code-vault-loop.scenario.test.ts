@@ -252,6 +252,7 @@ extensions:
         - "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"
         - "raw/**"
       patch.auto: ["**/*.md"]
+      patch.propose: ["notes/**", "wiki/**", "attic/**"]
       graph.write: ["dome.page.*"]
       question.ask: true
   dome.graph:
@@ -278,6 +279,7 @@ extensions:
       graph.write: ["dome.daily.*"]
       question.ask: true
       questions.read: true
+      proposals.read: true
   dome.lint:
     enabled: true
     grant:
