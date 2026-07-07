@@ -265,13 +265,16 @@ itself.
 
 **Demotion / dormancy.** A processor that accrued model cost > $0 over the
 trailing **21 days** with zero productive effects (no `succeeded` run that
-emitted an effect) is flagged with an **owner-needed question** (stable
-idempotency key `dome.health.trust-review:dormant:<processorId>`). This is a
-question rather than a config diff because per-processor disable is not
+emitted an effect) is flagged with a **warning diagnostic** (per-processor
+code `dome.health.trust-review-dormant:<processorId>`). This is a diagnostic
+rather than a config diff or a question: per-processor disable is not
 expressible in `.dome/config.yaml` — `extensions.<bundle>.processors.<id>`
 accepts only `grant`/`grants` (`PROCESSOR_KEYS` in
-`src/engine/core/capability-policy.ts`); disabling means flipping the whole
-bundle's `enabled` or narrowing its grant, which stays an owner decision.
+`src/engine/core/capability-policy.ts`) — so no answer could unlock an engine
+action, and per the questions-as-decisions rule an answerless prompt is a
+finding, not a decision. The owner edits their way out (flip the bundle's
+`enabled`, narrow its grant, or leave it be); the finding self-clears on the
+first weekly run where the processor produced effects or stopped running.
 
 **Evidence surface.** The weekly report card ([[wiki/specs/daily-surface]]
 §"Report card") renders a trust-ladder section — per proposal-producing
@@ -281,8 +284,9 @@ ladder acts on.
 
 Idempotence: an open promotion proposal suppresses re-emission, the
 pending-proposals dedupe key absorbs byte-identical re-emission, rejected
-promotions stay suppressed for 28 days, and dormancy questions dedupe on
-their idempotency key. Re-running with unchanged inputs emits nothing new.
+promotions stay suppressed for 28 days, and dormancy diagnostics dedupe on
+their per-processor code (code + sourceRefs is the diagnostic identity).
+Re-running with unchanged inputs emits nothing new.
 
 ## Related
 

@@ -551,9 +551,10 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.health.report-card",
         // The trust ladder (wiki/specs/proposals.md §"Trust ladder"): the
         // Monday 05:24 actuator on the 05:22 card's evidence — promotions ride
-        // the proposal review loop (never self-granted), dormancy raises an
-        // owner-needed question. Same weekly prove-loop design unit, one rung
-        // up: the card shows the evidence, trust-review acts on it.
+        // the proposal review loop (never self-granted), dormancy raises a
+        // self-clearing warning diagnostic. Same weekly prove-loop design
+        // unit, one rung up: the card shows the evidence, trust-review acts
+        // on it.
         "dome.health.trust-review",
       ],
       surfaces: [

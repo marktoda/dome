@@ -58,18 +58,20 @@ dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]
                                 FTS + structured query against adopted state.
 dome export-context <topic> [--limit <n>] [--json]
                                 Portable source-backed context packet.
-dome today [--date <yyyy-mm-dd>] [--limit <n>] [--watch] [--interval <seconds>] [--json] [--verbose]
+dome today [--date <yyyy-mm-dd>] [--limit <n>] [--watch] [--interval <seconds>]
+           [--prep] [--with <person-or-topic>] [--json] [--verbose]
                                 Render today's action surface (open tasks,
                                 follow-ups, questions) — the terminal cockpit.
                                 --watch re-renders on an interval until ctrl-c.
-dome prep [--date <yyyy-mm-dd>] [--limit <n>] [--json]
-                                Deterministic source-backed planning packet for a day.
-dome agenda-with <person-or-topic> [--date <yyyy-mm-dd>] [--limit <n>] [--json]
-                                Deterministic open tasks, follow-ups, and context
-                                filtered to a person or topic.
-dome stale-claims [--json]     Claims whose *(as of)* date is older than the
-                                staleness horizon (default 120 days).
-dome orphan-pages [--json]     Markdown pages with no incoming wikilinks.
+                                --prep renders the day's deterministic planning
+                                packet instead; --with filters the day to a
+                                person or topic with joined search context.
+                                (--prep/--with/--watch are mutually exclusive.)
+dome audit <subject> [--json]  Vault-consistency audits. Subjects:
+                                stale-claims — claims whose *(as of)* date is
+                                older than the staleness horizon (default 120
+                                days); orphan-pages — markdown pages with no
+                                incoming wikilinks.
 dome log [--since <date>] [--processor <id>] [--grep <text>] [--limit <n>] [--json]
                                 Vault activity: git history joined with the
                                 run ledger. Engine commit bodies carry the
@@ -118,7 +120,7 @@ dome recipe <kind> [--url <base>]
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
 
 - **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, `dome resolve`, `dome settle`, `dome proposals`, `dome apply`, and `dome reject`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records an owner or agent answer to a Dome-raised decision and dispatches answer handlers; `settle` records an owner or agent decision on an open task by its `^block-anchor` (close / defer / keep) — resolve's sibling for tasks rather than questions (§"`dome settle`"). `dome proposals` / `dome apply` / `dome reject` are the review-loop siblings for garden propose-mode patches: a downgraded or explicitly-proposed `PatchEffect` lands as a durable row in `proposals.db` instead of being silently dropped, and `apply`/`reject` are the human-side decision verbs — the same settle pattern (staleness check → working-tree write → one ordinary commit) applied to garden-authored changes instead of task lines (§"`dome proposals` / `dome apply` / `dome reject`").
-- **Adopted-state recall surfaces:** `dome query` and `dome export-context` are the normal explicit read views when the user or a foreground agent asks for recall, planning, agenda context, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands. `dome log` is the activity-recall sibling with a CLI-native posture (the `dome status` stance — no runtime, no view boundary): it reads git history directly and joins the run ledger (§"`dome log`"). `dome explain` is the provenance debugger over the same adopted state: for a page or one anchored claim it renders the chain claim → facts → runs → engine commits (§"`dome explain`"). `dome prep`, `dome agenda-with`, `dome stale-claims`, and `dome orphan-pages` are deterministic sibling views over the same view-command boundary — source-backed daily planning/agenda filters and claims/link-graph consistency audits — for the debugging, scripting, and unambiguous-filter cases where a natural-language `query` / `export-context` request isn't the goal. All four were previously reachable only through the hidden `dome run <name>` dispatcher; a feature behind a debug verb is unreachable, so they now have first-class top-level bindings like their `query` / `export-context` / `today` siblings.
+- **Adopted-state recall surfaces:** `dome query` and `dome export-context` are the normal explicit read views when the user or a foreground agent asks for recall, planning, agenda context, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands. `dome log` is the activity-recall sibling with a CLI-native posture (the `dome status` stance — no runtime, no view boundary): it reads git history directly and joins the run ledger (§"`dome log`"). `dome explain` is the provenance debugger over the same adopted state: for a page or one anchored claim it renders the chain claim → facts → runs → engine commits (§"`dome explain`"). `dome today --prep`, `dome today --with <person-or-topic>`, `dome audit stale-claims`, and `dome audit orphan-pages` are deterministic sibling views over the same view-command boundary — source-backed daily planning/agenda framings and claims/link-graph consistency audits — for the debugging, scripting, and unambiguous-filter cases where a natural-language `query` / `export-context` request isn't the goal. All four were once reachable only through the hidden `dome run <name>` dispatcher, then briefly held top-level verbs of their own; the cohesion review 2026-07-06 folded them to where they belong — the two daily framings are flags of the one `today` day surface, and the two consistency audits are subjects of the one `dome audit` umbrella (a top-level noun per view was verb sprawl, not discoverability).
 - **Advanced/debug and compatibility surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer` (deprecated alias — use `dome resolve`), `dome run`, `dome rebuild`, and `dome reanchor` remain available for detailed state inspection, extension development, maintenance, and explicit recovery. They are hidden from top-level help and are not the normal Claude Code workflow.
 
 `dome doctor` is read-only in V1. The `--repair` flag is a reserved surface for
@@ -126,7 +128,7 @@ future answer-mediated mitigations and exits with usage status instead of
 mutating state. Operational recovery mutations ship through `dome.health`
 questions and `dome resolve`, so recovery still goes through normal Effect
 routing and capability checks.
-- **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, `dome today`, `dome prep`, `dome agenda-with`, `dome stale-claims`, and `dome orphan-pages` — command-triggered view-phase processors invoked through the shared view-command boundary. `dome run <name>` remains available as the generic escape hatch for extension-authored view processors that have not (yet) earned a dedicated top-level verb.
+- **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, `dome today` (whose `--prep`/`--with` flags dispatch the `prep`/`agenda-with` view processors), and `dome audit` (whose subjects dispatch `stale-claims`/`orphan-pages`) — command-triggered view-phase processors invoked through the shared view-command boundary. `dome run <name>` remains available as the generic escape hatch for extension-authored view processors that have not (yet) earned a dedicated binding.
 - **Capture ingress:** `dome capture` — the frictionless write-side entry point ([[wedge]] §"Phase 3 — Capture loop"). It writes a timestamped raw source into `inbox/raw/` and lands it as an ordinary human commit on the current branch; adoption and `dome.agent.ingest` handle everything after the commit boundary. See [[wiki/specs/capture]] for the capture-loop spec and the phone/voice ingress recipe.
 - **Lifecycle:** `dome init` — vault construction; `dome install` / `dome restart` / `dome uninstall` — ambient service lifecycle for the local compiler host (a launchd LaunchAgent on macOS, a systemd `--user` unit on Linux, both around `dome serve`, per [[wedge]] §"Phase 1 — Ambient daemon"). Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
 - **Protocol adapters:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"; [[wiki/specs/mcp-surface]]) — and `dome http` — the HTTP read+capture+converse surface and first shipped form of the remote-capture seam ([[wiki/specs/http-surface]]). Both are thin adapters over the public `openVault` wrapper plus the protocol-neutral `src/surface/` collectors. `dome recipe` prints client-side setup text (`ios`: the queue-first iOS Shortcut against `dome http`; `capture-queue`: the laptop-side iCloud queue drain; `core-seed`: the owner interview that seeds `core.md` — §"`dome recipe`").
@@ -135,7 +137,7 @@ Planned dedicated view aliases such as `dome stats` are not Commander bindings
 yet. Until they ship, their processors are invoked through `dome run
 <command-name>` when present.
 
-The `dome submit` command is **retired in v1.0** (Phase 11a demolition). It was the wrong shape: the canonical client-to-engine write path is plain `git commit`, observed by the local compiler host (`dome serve`). For a one-shot catch-up (the host isn't running and the user wants the current working tree adopted), use `dome sync`. The `dome reconcile` deprecated alias from v0.5+phase1+phase3 is **also retired in v1.** Callers see "unknown command" and a pointer to `dome sync`.
+The `dome submit` command is **retired in v1.0** (Phase 11a demolition). It was the wrong shape: the canonical client-to-engine write path is plain `git commit`, observed by the local compiler host (`dome serve`). For a one-shot catch-up (the host isn't running and the user wants the current working tree adopted), use `dome sync`. The `dome reconcile` deprecated alias from v0.5+phase1+phase3 is **also retired in v1.** The cohesion review 2026-07-06 retired four more top-level spellings — `dome prep` → `dome today --prep`, `dome agenda-with` → `dome today --with <person-or-topic>`, `dome stale-claims` → `dome audit stale-claims`, `dome orphan-pages` → `dome audit orphan-pages`. Every retired spelling fails with exit 64 and a one-line pointer to its replacement.
 
 ## CLI implementation
 
@@ -1662,14 +1664,18 @@ vault has no usable adopted ref; 1 on runtime or dispatch failure.
 
 ### Daily view processors — shared substrate
 
-`dome today`, `dome prep`, and `dome agenda-with` are three dedicated
-top-level verbs over the same source-backed daily action state — this
-section is the normative behavior shared across all three; each command's
-own `###` section above/below owns only its CLI-specific ergonomics
-(rendering, flags). `dome run today` additionally exercises the raw
+`dome today`, `dome today --prep`, and `dome today --with <person-or-topic>`
+are one verb's three framings over the same source-backed daily action state
+— this section is the normative behavior shared across all three; each
+framing's own `###` section above/below owns only its CLI-specific ergonomics
+(rendering, flags). The `--prep` and `--with` flags dispatch the
+`dome.daily.prep` / `dome.daily.agenda-with` view processors wholesale (the
+cohesion review 2026-07-06 folded the former `dome prep` / `dome agenda-with`
+top-level verbs into `today`; both retired spellings fail loudly with the
+replacement). `dome run today` additionally exercises the raw
 `dome.daily.today` view for deterministic debugging (always-JSON, no
-presenter); `dome prep` and `dome agenda-with` are themselves the dedicated
-verbs — there is no separate "run-only" flavor of those two left.
+presenter); `dome run prep` / `dome run agenda-with` remain the generic
+dispatcher's spellings of the other two framings.
 
 The target daily-note path comes from `dome.daily` extension config. Default is
 `wiki/dailies/{date}.md`; vaults that keep Obsidian daily notes at the root of
@@ -1777,7 +1783,7 @@ folded row's complete `sourceRefs`. `shown` and `omitted` mirror the bounded arr
 agents do not need to infer truncation from array lengths. `--date` is for
 reviewing another day and for deterministic tests; omitted means local today.
 
-`dome prep [--date <YYYY-MM-DD>] [--limit <n>] [--json]` wraps the
+`dome today --prep [--date <YYYY-MM-DD>] [--limit <n>] [--json]` wraps the
 `dome.daily.prep` view processor. It uses the same source-backed daily action
 state as `dome today`, then renders a portable planning packet for the
 target day. It is a deterministic filter over that state, not a substitute
@@ -1823,9 +1829,9 @@ compact `evidenceLabel` values, plus the markdown packet under `markdown`.
 `--date` is for prepping a chosen day and for deterministic tests; omitted
 means local today.
 
-`dome agenda-with <person-or-topic> [--date <YYYY-MM-DD>] [--limit <n>]
+`dome today --with <person-or-topic> [--date <YYYY-MM-DD>] [--limit <n>]
 [--json]` wraps the `dome.daily.agenda-with` view processor. It reuses the
-same source-backed daily action state as `dome today` / `dome prep`,
+same source-backed daily action state as the other two `today` framings,
 filters open tasks, followups, and unresolved daily questions by the supplied
 person or topic, and joins adopted-state search matches when `dome.search` has
 populated the projection. For V1 user/agent workflow, a natural-language
@@ -1852,9 +1858,15 @@ and JSON sets `hasMore.context: true`. `--json` emits the structured
 under `markdown`. `--date` provides daily-note context; omitted means local
 today.
 
-### `dome stale-claims [--json]`
+### `dome audit <subject> [--json]`
 
-Wraps the `dome.claims.stale-claims` view processor: lists every claim whose
+The vault-consistency audit umbrella (cohesion review 2026-07-06: the two
+audits below briefly held top-level verbs — `dome stale-claims` /
+`dome orphan-pages`, both retired spellings now fail loudly with the
+replacement — but they are lint-family instruments, not recall views, and
+audits share one verb). Unknown subjects exit 64 with the subject list.
+
+**`dome audit stale-claims`** wraps the `dome.claims.stale-claims` view processor: lists every claim whose
 inline `*(as of YYYY-MM-DD)*` marker is older than the configured horizon
 (`stale_claims_horizon_days` config key, default 120), computed at command
 time against the injected clock — never persisted, since staleness is
@@ -1866,9 +1878,7 @@ structured `dome.claims.stale-claims/v1` payload (`horizonDays` plus the full
 `staleClaims` array). Exit code is always 0 — staleness is a report, not a
 failure condition.
 
-### `dome orphan-pages [--json]`
-
-Wraps the `dome.markdown.orphan-pages` view processor: lists every markdown
+**`dome audit orphan-pages`** wraps the `dome.markdown.orphan-pages` view processor: lists every markdown
 page with zero incoming wikilinks that is not itself a root `index.md` and
 not implicitly linked from one (a root's `index.md` is treated as linking to
 every other file under that root even without an explicit `[[wikilink]]`).
@@ -2708,9 +2718,10 @@ bindings. The intended shape is:
 
 Until these two ship, their processors would be invoked via `dome run
 <command-name>` if they existed today. Every shipped first-party
-command-triggered view processor already has a dedicated top-level verb —
-`dome query`, `dome export-context`, `dome lint`, `dome today`, `dome prep`,
-`dome agenda-with`, `dome stale-claims`, and `dome orphan-pages` — so
+command-triggered view processor already has a dedicated binding —
+`dome query`, `dome export-context`, `dome lint`, `dome today` (whose
+`--prep`/`--with` flags dispatch `prep`/`agenda-with`), and `dome audit`
+(whose subjects dispatch `stale-claims`/`orphan-pages`) — so
 `dome run <name>` is reserved for extension-authored view processors under
 active development or debugging.
 

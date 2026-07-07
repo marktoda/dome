@@ -48,10 +48,7 @@ describe("runCli", () => {
         "log",
         "recipe",
         "export-context",
-        "prep",
-        "agenda-with",
-        "stale-claims",
-        "orphan-pages",
+        "audit",
         "serve",
         "install",
         "uninstall",
@@ -185,12 +182,52 @@ describe("runCli", () => {
     expect(err).toContain("Usage: dome");
   });
 
-  test("retired submit and reconcile commands point to sync", async () => {
+  test("retired commands fail loudly with their replacement", async () => {
     expect(await runCli(["submit"])).toBe(64);
     expect(await runCli(["reconcile"])).toBe(64);
+    expect(await runCli(["prep"])).toBe(64);
+    expect(await runCli(["agenda-with", "danny"])).toBe(64);
+    expect(await runCli(["stale-claims"])).toBe(64);
+    expect(await runCli(["orphan-pages"])).toBe(64);
     const err = captured.err.join("\n");
     expect(err).toContain("dome submit: retired. Use `dome sync` instead.");
     expect(err).toContain("dome reconcile: retired. Use `dome sync` instead.");
+    expect(err).toContain(
+      "dome prep: retired. Use `dome today --prep` instead.",
+    );
+    expect(err).toContain(
+      "dome agenda-with: retired. Use `dome today --with <person-or-topic>` instead.",
+    );
+    expect(err).toContain(
+      "dome stale-claims: retired. Use `dome audit stale-claims` instead.",
+    );
+    expect(err).toContain(
+      "dome orphan-pages: retired. Use `dome audit orphan-pages` instead.",
+    );
+  });
+
+  test("today help exposes the prep and with framings; the flags conflict with watch", async () => {
+    expect(await runCli(["today", "-h"])).toBe(0);
+    const out = captured.out.join("\n");
+    expect(out).toContain("--prep");
+    expect(out).toContain("--with <person-or-topic...>");
+    expect(await runCli(["today", "--prep", "--watch"])).toBe(64);
+    expect(await runCli(["today", "--prep", "--with", "danny"])).toBe(64);
+    const err = captured.err.join("\n");
+    expect(err).toContain(
+      "option '--prep' cannot be used with option '--watch'",
+    );
+    expect(err).toContain(
+      "option '--prep' cannot be used with option '--with <person-or-topic...>'",
+    );
+  });
+
+  test("audit rejects an unknown subject with the subject list", async () => {
+    expect(await runCli(["audit", "bogus"])).toBe(64);
+    const err = captured.err.join("\n");
+    expect(err).toContain(
+      "dome audit: unknown subject 'bogus'. Subjects: stale-claims, orphan-pages.",
+    );
   });
 
   test("unknown option exits 64 before invoking the command", async () => {

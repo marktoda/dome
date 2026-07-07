@@ -55,8 +55,11 @@ describe("CLI shell shape", () => {
         triggerNames.has(commandName),
         `DEDICATED_VIEW_COMMAND_ALIASES contains stale command '${commandName}'`,
       ).toBe(true);
+      // An alias is an invocation ("today --prep", "audit stale-claims");
+      // its first word must be a bound top-level command.
+      const boundCommand = alias.split(" ")[0]!;
       expect(
-        cliCommands.has(alias),
+        cliCommands.has(boundCommand),
         `dedicated alias '${alias}' for command '${commandName}' is not bound in src/cli/index.ts`,
       ).toBe(true);
       expect(

@@ -215,14 +215,15 @@ scenario(
   },
 );
 
-// `dome agenda-with` (Task 14) is the dedicated top-level verb over the same
-// `dome.daily.agenda-with` view processor — previously reachable only via
-// the hidden `dome run agenda-with` dispatcher. `--json` emits the bare
-// structured payload (no `{name,kind,schema,data}` envelope), matching its
-// `dome query` / `dome export-context` siblings.
+// `dome today --with <person-or-topic>` is the dedicated binding over the
+// same `dome.daily.agenda-with` view processor (a top-level
+// `dome agenda-with` verb until the 2026-07-06 cohesion review folded it
+// into `today`). `--json` emits the bare structured payload (no
+// `{name,kind,schema,data}` envelope), matching its `dome query` /
+// `dome export-context` siblings.
 scenario(
   {
-    name: "cli-surface: dome agenda-with (dedicated verb) dispatches to dome.daily.agenda-with",
+    name: "cli-surface: dome today --with dispatches to dome.daily.agenda-with",
     tags: [
       { kind: "group", group: "cli-surface" },
       { kind: "effect", effect: "fact" },
@@ -261,13 +262,25 @@ scenario(
     const sync = await h.tick();
     expect(sync.adopted).toBe(true);
 
-    // Missing person/topic is a usage error (64) before the vault opens.
-    const missing = await h.runCli(["agenda-with", "--date", "2026-01-05"]);
+    // The retired top-level spelling fails loudly with the replacement.
+    const retired = await h.runCli(["agenda-with", "Cy"]);
+    expect(retired.exitCode).toBe(64);
+    expect(retired.stderr).toContain(
+      "dome agenda-with: retired. Use `dome today --with <person-or-topic>` instead.",
+    );
+
+    // Missing person/topic is a usage error (64) before the vault opens:
+    // a trailing value-less --with is Commander's argument-missing error,
+    // and a whitespace-only topic is the handler's own usage check.
+    const missing = await h.runCli(["today", "--with"]);
     expect(missing.exitCode).toBe(64);
+    const blank = await h.runCli(["today", "--with", " "]);
+    expect(blank.exitCode).toBe(64);
 
     // Default text output is the rendered markdown packet.
     const text = await h.runCli([
-      "agenda-with",
+      "today",
+      "--with",
       "Cy",
       "--date",
       "2026-01-05",
@@ -280,7 +293,8 @@ scenario(
 
     // `--json` emits the bare `dome.daily.agenda-with/v1` payload.
     const json = await h.runCli([
-      "agenda-with",
+      "today",
+      "--with",
       "Cy",
       "--date",
       "2026-01-05",

@@ -52,13 +52,13 @@ Optional adopted-state views:
   another Claude session or review.
 - `dome explain <path[#^anchor]>` - provenance for a page or one claim:
   claim → facts → ledger evidence → engine commits.
-- `dome prep [--date <yyyy-mm-dd>]` - deterministic source-backed planning
-  packet for a day.
-- `dome agenda-with <person-or-topic>` - deterministic open tasks, follow-ups,
-  and context filtered to a person or topic.
-- `dome stale-claims` - claims whose `*(as of)*` date is older than the
-  staleness horizon (default 120 days).
-- `dome orphan-pages` - markdown pages with no incoming wikilinks.
+- `dome today --prep [--date <yyyy-mm-dd>]` - deterministic source-backed
+  planning packet for a day.
+- `dome today --with <person-or-topic>` - deterministic open tasks,
+  follow-ups, and context filtered to a person or topic.
+- `dome audit stale-claims` - claims whose `*(as of)*` date is older than
+  the staleness horizon (default 120 days).
+- `dome audit orphan-pages` - markdown pages with no incoming wikilinks.
 
 ## Read-first context
 

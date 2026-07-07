@@ -328,15 +328,15 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
         // The trust ladder (wiki/specs/proposals.md §"Trust ladder"): reads
         // proposal rows + run rows + the config, proposes comment-preserving
         // config diffs (patch.propose scoped to the config file ONLY — the
-        // gardener can never auto-apply its own autonomy change), and asks
-        // owner-needed dormancy questions. A replacement grant, narrower than
-        // the recovery-bundle grant it does not inherit.
+        // gardener can never auto-apply its own autonomy change), and raises
+        // self-clearing dormancy diagnostics (a finding, not a question — no
+        // answer could unlock an engine action). A replacement grant, narrower
+        // than the recovery-bundle grant it does not inherit.
         "dome.health.trust-review": Object.freeze({
           read: [".dome/config.yaml"],
           "patch.propose": [".dome/config.yaml"],
           "proposals.read": true,
           "run.read": true,
-          "question.ask": true,
         }),
       },
     ),

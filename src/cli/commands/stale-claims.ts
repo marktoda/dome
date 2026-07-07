@@ -1,12 +1,11 @@
-// cli/commands/stale-claims: first-class wrapper for the
-// dome.claims.stale-claims view.
+// cli/commands/stale-claims: wrapper for the dome.claims.stale-claims view.
 //
-// `dome stale-claims` lists every claim whose `*(as of)*` date is older than
-// the configured horizon (`stale_claims_horizon_days`, default 120) — the
-// claims loop's "coherence over time" instrument. Previously reachable only
-// via the hidden `dome run stale-claims` dispatcher. See
-// docs/wiki/specs/claims.md and docs/wiki/specs/cli.md
-// §"`dome stale-claims`".
+// `dome audit stale-claims` lists every claim whose `*(as of)*` date is older
+// than the configured horizon (`stale_claims_horizon_days`, default 120) —
+// the claims loop's "coherence over time" instrument, filed under the
+// `dome audit` umbrella (cohesion review 2026-07-06; formerly the top-level
+// `dome stale-claims`). See docs/wiki/specs/claims.md and
+// docs/wiki/specs/cli.md §"`dome audit`".
 
 import { runNamedViewCommand } from "../named-view-command";
 import { bullets, headline, resolveCaps, section } from "../presenter";
@@ -34,7 +33,7 @@ export async function runStaleClaims(
   options: StaleClaimsCommandOptions = {},
 ): Promise<number> {
   return runNamedViewCommand({
-    commandLabel: "dome stale-claims",
+    commandLabel: "dome audit stale-claims",
     commandName: "stale-claims",
     vault: options.vault,
     bundlesRoot: options.bundlesRoot,

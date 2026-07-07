@@ -16,8 +16,8 @@ import {
 import { runCapture } from "./commands/capture";
 import { runCheck } from "./commands/check";
 import { runAnswer } from "./commands/answer";
-import { runAgendaWith } from "./commands/agenda-with";
 import { runApply } from "./commands/apply";
+import { runAudit } from "./commands/audit";
 import { runExplain } from "./commands/explain";
 import { runExportContext } from "./commands/export-context";
 import { runInit } from "./commands/init";
@@ -26,8 +26,6 @@ import { runDoctor } from "./commands/doctor";
 import { runInspect } from "./commands/inspect";
 import { runLint, type LintFailOn } from "./commands/lint";
 import { runLog } from "./commands/log";
-import { runOrphanPages } from "./commands/orphan-pages";
-import { runPrep } from "./commands/prep";
 import { runProposals } from "./commands/proposals";
 import { runQuery } from "./commands/query";
 import { runReanchor } from "./commands/reanchor";
@@ -39,7 +37,6 @@ import { runResolve } from "./commands/resolve";
 import { runRun } from "./commands/run";
 import { runSettle } from "./commands/settle";
 import { runServe } from "./commands/serve";
-import { runStaleClaims } from "./commands/stale-claims";
 import { runStatus } from "./commands/status";
 import { runSync } from "./commands/sync";
 import { runToday } from "./commands/today";
@@ -66,8 +63,11 @@ export async function runCli(argv: ReadonlyArray<string>): Promise<number> {
     console.error(program.helpInformation().trimEnd());
     return EX_USAGE;
   }
-  if (argv[0] === "submit" || argv[0] === "reconcile") {
-    console.error(`dome ${argv[0]}: retired. Use \`dome sync\` instead.`);
+  const retiredPointer = argv[0] === undefined
+    ? undefined
+    : RETIRED_COMMANDS[argv[0]];
+  if (retiredPointer !== undefined) {
+    console.error(`dome ${argv[0]}: retired. ${retiredPointer}`);
     return EX_USAGE;
   }
 
@@ -99,6 +99,20 @@ export async function runCli(argv: ReadonlyArray<string>): Promise<number> {
 }
 
 // ----- internals ------------------------------------------------------------
+
+// Retired top-level verbs. Each fails loudly with its replacement instead of
+// Commander's generic unknown-command error, so scripts and habits built on a
+// retired verb learn the new spelling on first use.
+const RETIRED_COMMANDS: Readonly<Record<string, string>> = Object.freeze({
+  submit: "Use `dome sync` instead.",
+  reconcile: "Use `dome sync` instead.",
+  // Cohesion review 2026-07-06: one day surface, one verb.
+  prep: "Use `dome today --prep` instead.",
+  "agenda-with": "Use `dome today --with <person-or-topic>` instead.",
+  // Cohesion review 2026-07-06: consistency audits live under `dome audit`.
+  "stale-claims": "Use `dome audit stale-claims` instead.",
+  "orphan-pages": "Use `dome audit orphan-pages` instead.",
+});
 
 // `dome --help` heading per visible command, so the surface reads as a few
 // small verb sets instead of one flat wall. Registration order is unchanged;
@@ -562,6 +576,18 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       "Watch refresh interval (default 5).",
       parsePositiveIntegerOption,
     )
+    .addOption(
+      new Option(
+        "--prep",
+        "Render the day's planning packet instead of the action surface.",
+      ).conflicts(["with", "watch"]),
+    )
+    .addOption(
+      new Option(
+        "--with <person-or-topic...>",
+        "Filter the day to a person or topic, with joined search context.",
+      ).conflicts("watch"),
+    )
     .option("-v, --verbose", "Show full brief prose and source paths.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
@@ -577,6 +603,10 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           watch: options.watch,
           interval: options.interval,
           verbose: options.verbose,
+          prep: options.prep,
+          with: options.with === undefined
+            ? undefined
+            : options.with.join(" "),
         }),
       );
     });
@@ -658,76 +688,19 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
-    .command("prep")
+    .command("audit")
     .helpGroup(GROUP_RECALL)
-    .description("Render a source-backed planning packet for a day.")
-    .option("--date <yyyy-mm-dd>", "Render a specific day (default: today).")
-    .option("--limit <n>", "Maximum rows per section.", parsePositiveIntegerOption)
+    .description(
+      "Vault-consistency audits: stale-claims (old *(as of)* dates) or orphan-pages (no incoming wikilinks).",
+    )
+    .argument("<subject>", "stale-claims or orphan-pages.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
-    .action(async (options: PrepCliOptions) => {
+    .action(async (subject: string, options: AuditCliOptions) => {
       setExitCode(
-        await runPrep({
-          date: options.date,
-          limit: options.limit,
-          json: options.json,
-          vault: options.vault,
-          bundlesRoot: options.bundlesRoot,
-        }),
-      );
-    });
-
-  program
-    .command("agenda-with")
-    .helpGroup(GROUP_RECALL)
-    .description("Render source-backed open tasks, follow-ups, and context for a person or topic.")
-    .argument("<person-or-topic...>", "Person or topic to filter by.")
-    .option("--date <yyyy-mm-dd>", "Daily-note context date (default: today).")
-    .option("--limit <n>", "Maximum rows per section.", parsePositiveIntegerOption)
-    .option("--json", "Emit JSON.")
-    .option("--vault <path>", "Vault path (defaults to current directory).")
-    .option("--bundles-root <path>", "Extension bundles root.")
-    .action(async (topic: string[], options: AgendaWithCliOptions) => {
-      setExitCode(
-        await runAgendaWith({
-          topic: topic.join(" "),
-          date: options.date,
-          limit: options.limit,
-          json: options.json,
-          vault: options.vault,
-          bundlesRoot: options.bundlesRoot,
-        }),
-      );
-    });
-
-  program
-    .command("stale-claims")
-    .helpGroup(GROUP_RECALL)
-    .description("List claims whose *(as of)* date is older than the staleness horizon.")
-    .option("--json", "Emit JSON.")
-    .option("--vault <path>", "Vault path (defaults to current directory).")
-    .option("--bundles-root <path>", "Extension bundles root.")
-    .action(async (options: StaleClaimsCliOptions) => {
-      setExitCode(
-        await runStaleClaims({
-          json: options.json,
-          vault: options.vault,
-          bundlesRoot: options.bundlesRoot,
-        }),
-      );
-    });
-
-  program
-    .command("orphan-pages")
-    .helpGroup(GROUP_RECALL)
-    .description("List markdown pages with no incoming wikilinks.")
-    .option("--json", "Emit JSON.")
-    .option("--vault <path>", "Vault path (defaults to current directory).")
-    .option("--bundles-root <path>", "Extension bundles root.")
-    .action(async (options: OrphanPagesCliOptions) => {
-      setExitCode(
-        await runOrphanPages({
+        await runAudit({
+          subject,
           json: options.json,
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
@@ -1171,6 +1144,8 @@ type TodayCliOptions = {
   readonly limit?: number;
   readonly watch?: boolean;
   readonly interval?: number;
+  readonly prep?: boolean;
+  readonly with?: string[];
   readonly json?: boolean;
   readonly verbose?: boolean;
   readonly vault?: string;
@@ -1200,29 +1175,7 @@ type ExportContextCliOptions = {
   readonly bundlesRoot?: string;
 };
 
-type PrepCliOptions = {
-  readonly date?: string;
-  readonly limit?: number;
-  readonly json?: boolean;
-  readonly vault?: string;
-  readonly bundlesRoot?: string;
-};
-
-type AgendaWithCliOptions = {
-  readonly date?: string;
-  readonly limit?: number;
-  readonly json?: boolean;
-  readonly vault?: string;
-  readonly bundlesRoot?: string;
-};
-
-type StaleClaimsCliOptions = {
-  readonly json?: boolean;
-  readonly vault?: string;
-  readonly bundlesRoot?: string;
-};
-
-type OrphanPagesCliOptions = {
+type AuditCliOptions = {
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;

@@ -1,7 +1,9 @@
-// cli/named-view-command: the shared CLI scaffold for dedicated top-level
-// verbs that wrap a single known, first-party view-phase processor without
-// imposing a `FIRST_PARTY_VIEWS` zod schema (`dome prep`, `dome agenda-with`,
-// `dome stale-claims`, `dome orphan-pages`).
+// cli/named-view-command: the shared CLI scaffold for dedicated bindings
+// that wrap a single known, first-party view-phase processor without
+// imposing a `FIRST_PARTY_VIEWS` zod schema (`dome today --prep`,
+// `dome today --with`, `dome audit stale-claims`, `dome audit orphan-pages`
+// — flags/subjects of grouped verbs since the 2026-07-06 cohesion review,
+// not top-level nouns).
 //
 // This is the sibling of `structured-view-command.ts`'s `runCliStructuredView`
 // (which backs `dome query` / `dome lint` / `dome export-context` with a
@@ -25,7 +27,7 @@ import {
 } from "./commands/view-shared";
 
 export type NamedViewCommandOptions = {
-  /** Operator-facing command label, e.g. "dome prep". */
+  /** Operator-facing command label, e.g. "dome today --prep". */
   readonly commandLabel: string;
   /** The view-phase processor's command trigger name, e.g. "prep". */
   readonly commandName: string;
