@@ -5,7 +5,11 @@
 // Rendering (summary line, detail tree) lives in src/cli/maintenance-loop-summary.ts.
 
 import type { DiagnosticEffect } from "../core/effect";
-import type { MaintenanceLoop } from "../extensions/maintenance-loops";
+import {
+  STANDARD_SETTLEMENT_CHECKS,
+  type MaintenanceLoop,
+  type MaintenanceLoopSettlementCheck,
+} from "../extensions/maintenance-loops";
 import { isActiveProblemRun, type RunSummaryRow } from "../ledger/runs";
 import type { QuestionRecord } from "../projections/questions";
 import { countQuestionAutomationPolicies } from "../question-resolution";
@@ -58,7 +62,7 @@ export type MaintenanceLoopSummary = {
 
 export type MaintenanceLoopSettlementCheckSummary = {
   readonly name: string;
-  readonly kind: MaintenanceLoop["settlement"]["checks"][number]["kind"];
+  readonly kind: MaintenanceLoopSettlementCheck["kind"];
   readonly status: "pass" | "fail";
   readonly observed: number;
   readonly expected: string;
@@ -162,8 +166,10 @@ function summarizeLoop(
     0,
     diagnostics - attentionDiagnostics - noiseDiagnostics,
   );
+  // Every loop is evaluated against the one fixed check vocabulary — check
+  // composition never varied per loop, so loops no longer carry a checks
+  // field (cohesion review 2026-07-07).
   const settlementChecks = evaluateSettlementChecks({
-    checks: loop.settlement.checks,
     requiredProcessorCount: loop.processors.length,
     activeRequiredProcessors: activeRequiredProcessors.length,
     missingProcessors: missingProcessors.length,
@@ -219,7 +225,6 @@ function summarizeLoop(
 }
 
 function evaluateSettlementChecks(input: {
-  readonly checks: MaintenanceLoop["settlement"]["checks"];
   readonly requiredProcessorCount: number;
   readonly activeRequiredProcessors: number;
   readonly missingProcessors: number;
@@ -229,7 +234,7 @@ function evaluateSettlementChecks(input: {
   readonly recentProblemRuns: number;
 }): ReadonlyArray<MaintenanceLoopSettlementCheckSummary> {
   return Object.freeze(
-    input.checks.map((check) => {
+    STANDARD_SETTLEMENT_CHECKS.map((check) => {
       switch (check.kind) {
         case "required-processors-active":
           return settlementCheckSummary(check, {
@@ -269,7 +274,7 @@ function evaluateSettlementChecks(input: {
 }
 
 function settlementCheckSummary(
-  check: MaintenanceLoop["settlement"]["checks"][number],
+  check: MaintenanceLoopSettlementCheck,
   result: Pick<
     MaintenanceLoopSettlementCheckSummary,
     "status" | "observed" | "expected"

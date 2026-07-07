@@ -25,7 +25,13 @@ import {
   type FirstPartyExtensionDefault,
 } from "../../../../src/first-party-defaults";
 
-import { isMap, parseDocument, type Document, type YAMLMap } from "yaml";
+import { isMap, parseDocument, type YAMLMap } from "yaml";
+
+import {
+  ensureMapAt,
+  mapAt,
+  stringifyConfigDocument,
+} from "../../../../src/config-document";
 
 // ----- Identity + thresholds --------------------------------------------------
 
@@ -433,7 +439,7 @@ export function promoteProcessorGrantInConfig(opts: {
     doc.createNode({ grant: newGrant }),
   );
 
-  const content = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
+  const content = stringifyConfigDocument(doc);
 
   // Structural self-check: never emit a config the engine would refuse or
   // that fails to actually promote.
@@ -454,21 +460,6 @@ export function promoteProcessorGrantInConfig(opts: {
     };
   }
   return { ok: true, content };
-}
-
-// ----- yaml Document helpers (local mirrors of init.ts's private helpers) ------
-
-function mapAt(map: YAMLMap, key: string): YAMLMap | null {
-  const value = map.get(key);
-  return isMap(value) ? value : null;
-}
-
-function ensureMapAt(doc: Document, map: YAMLMap, key: string): YAMLMap {
-  const existing = map.get(key);
-  if (isMap(existing)) return existing;
-  const created = doc.createNode({});
-  map.set(doc.createNode(key), created);
-  return created;
 }
 
 /**

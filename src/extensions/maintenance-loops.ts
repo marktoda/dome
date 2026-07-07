@@ -56,7 +56,6 @@ export type MaintenanceLoopSurface =
 export type MaintenanceLoopSettlement = {
   readonly key: string;
   readonly noOpWhen: string;
-  readonly checks: ReadonlyArray<MaintenanceLoopSettlementCheck>;
 };
 
 export type MaintenanceLoopSettlementCheck = {
@@ -100,9 +99,9 @@ export type MaintenanceLoop = {
 
 /**
  * Build a `MaintenanceLoop` from a manifest loop declaration
- * ([[wiki/specs/processors]] §"Maintenance loops"). Declared loops always
- * carry the standard five settlement checks — check composition is not a
- * manifest surface.
+ * ([[wiki/specs/processors]] §"Maintenance loops"). Every loop is evaluated
+ * against the fixed `STANDARD_SETTLEMENT_CHECKS` — check composition is not
+ * a manifest surface.
  */
 export function declaredMaintenanceLoop(declaration: {
   readonly id: string;
@@ -130,7 +129,6 @@ export function declaredMaintenanceLoop(declaration: {
     settlement: {
       key: declaration.settlement.key,
       noOpWhen: declaration.settlement.noOpWhen,
-      checks: STANDARD_SETTLEMENT_CHECKS,
     },
     risks: declaration.risks,
   });
@@ -177,20 +175,7 @@ export type MaintenanceLoopValidationError =
         | "surfaces"
         | "settlement.key"
         | "settlement.noOpWhen"
-        | "settlement.checks"
-        | "settlement.check.name"
-        | "settlement.check.description"
         | "risks";
-    }
-  | {
-      readonly kind: "duplicate-settlement-check";
-      readonly loopId: string;
-      readonly checkName: string;
-    }
-  | {
-      readonly kind: "invalid-settlement-check";
-      readonly loopId: string;
-      readonly checkKind: string;
     }
   | {
       readonly kind: "duplicate-processor";
@@ -236,17 +221,13 @@ const FACT_NAMESPACE_PROJECTION_RE = /^facts:[a-z0-9]+(?:[.-][a-z0-9]+)*\.\*$/;
 
 const SUPPORTED_STATUS_SURFACES = new Set(["status", "check"]);
 
-const SUPPORTED_SETTLEMENT_CHECKS = new Set<
-  MaintenanceLoopSettlementCheck["kind"]
->([
-  "required-processors-active",
-  "no-attention-diagnostics",
-  "no-drift-diagnostics",
-  "no-open-questions",
-  "no-recent-problem-runs",
-]);
-
-const STANDARD_SETTLEMENT_CHECKS = Object.freeze([
+/**
+ * The fixed settlement-check vocabulary every loop is evaluated against
+ * (maintenance-loop-summary.ts owns the evaluation). One global set — check
+ * composition never varied per loop, so loops no longer carry a checks
+ * field at all (cohesion review 2026-07-07: a seam nothing varied across).
+ */
+export const STANDARD_SETTLEMENT_CHECKS = Object.freeze([
   freezeSettlementCheck({
     kind: "required-processors-active",
     name: "required-processors-active",
@@ -308,7 +289,6 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         key: "raw path + raw content hash",
         noOpWhen:
           "the raw capture has been integrated into the wiki and archived out of inbox/raw",
-        checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "LLM integration can produce noisy or incorrect pages; git history and consolidate's integrity review are the safety nets.",
@@ -363,7 +343,6 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         key: "source ref + normalized open-loop text + optional project/entity",
         noOpWhen:
           "the open loop is represented once from its source and the generated daily surface block matches the current source set",
-        checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "Repeated daily surfacing can duplicate tasks if generated daily blocks are treated as source facts.",
@@ -427,7 +406,6 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         key: "link occurrence, duplicate page-pair, or metadata path plus content hash",
         noOpWhen:
           "the link resolves, is intentionally unresolved, has exactly one open question, the managed metadata already matches git history, or every scanned page has been patrolled within the revisit window",
-        checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "Ambiguous broken links can create duplicate stub pages if confidence is not enforced.",
@@ -460,7 +438,6 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         key: "packet target + adopted source set + processor version",
         noOpWhen:
           "the packet or query result was produced from the same relevant source set",
-        checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "Packets that over-read become noisy and reduce foreground-agent precision.",
@@ -490,7 +467,6 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         key: "source path + normalized claim key + occurrence index",
         noOpWhen:
           "every claim line in the page set carries its stable anchor, the facts projection reflects the current claim values, and each claim-rich page's `## Current facts` digest is rendered current",
-        checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "Anchor ids are key/occurrence-derived (path + normalized key + occurrence index, never the value); inserting same-key claims above not-yet-stamped ones shifts occurrence indices across idempotency boundaries.",
@@ -528,7 +504,6 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         key: "question idempotency key + source refs",
         noOpWhen:
           "each uncertainty is answered, obsoleted, or represented exactly once as unresolved",
-        checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "Open questions can become user chores if safe agent-resolution metadata is missing.",
@@ -566,7 +541,6 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         key: "trailing-7-day window per processor",
         noOpWhen:
           "the rendered card and the daily's weekly-review block are byte-identical to the current window's aggregates, and no trust decision (promotion / dormancy flag) is newly warranted for the current windows",
-        checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "A card nobody reads is silent accounting — the daily weekly-review block is the load-bearing surface; meta/report-card.md is the archive.",
@@ -599,7 +573,6 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         key: "topic slug + candidate-rule hash",
         noOpWhen:
           "every candidate topic has exactly one open promotion question, every answered one is promoted into core.md's generated block or tombstoned in the signals page, and counter facts match the signals page",
-        checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "Auto-promotion would let agents rewrite their own standing instructions; only the answer handler writes core.md, and only after an owner-needed question.",
@@ -632,7 +605,6 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         key: "(material path, destination path) pair",
         noOpWhen:
           "every in-window (material, destination) pair is settled by a sources-link wikilink in the destination's frontmatter (authoritative) or by an advisory ledger no-op/questioned row (integrated rows are record-only and do not settle — the sources: link is authoritative for integrations)",
-        checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "Model-generated integrations are bounded to one page per queue item; a bad integration is isolated to that page and revertable via git history.",
@@ -699,7 +671,6 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         key: "daily date + generated-block owner set",
         noOpWhen:
           "today's daily note exists, every enabled edition block (the unified yesterday block — curated or mechanical fallback — plus meetings/questions/integrated and the open-loops surface) matches its current inputs, and the evening close block has been seeded (presence-gated) when today's daily existed at close time",
-        checks: STANDARD_SETTLEMENT_CHECKS,
       },
       risks: [
         "The calendar source is a committed external feed (sources/calendar/<date>.md) fetched by the opt-in dome.sources subscription or a vault-side fetcher; its absence degrades the meetings block to omission per the daily-surface degradation ladder — never an error. Subscription fetch failures surface through the ordinary outbox recovery path (dome check / dome.health questions), not through this loop.",
@@ -753,45 +724,6 @@ export function validateMaintenanceLoops(opts: {
         loopId: loop.id,
         field: "settlement.noOpWhen",
       });
-    }
-    if (loop.settlement.checks.length === 0) {
-      errors.push({
-        kind: "empty-field",
-        loopId: loop.id,
-        field: "settlement.checks",
-      });
-    }
-    const seenSettlementChecks = new Set<string>();
-    for (const check of loop.settlement.checks) {
-      if (!SUPPORTED_SETTLEMENT_CHECKS.has(check.kind)) {
-        errors.push({
-          kind: "invalid-settlement-check",
-          loopId: loop.id,
-          checkKind: check.kind,
-        });
-      }
-      if (check.name.trim().length === 0) {
-        errors.push({
-          kind: "empty-field",
-          loopId: loop.id,
-          field: "settlement.check.name",
-        });
-      }
-      if (check.description.trim().length === 0) {
-        errors.push({
-          kind: "empty-field",
-          loopId: loop.id,
-          field: "settlement.check.description",
-        });
-      }
-      if (seenSettlementChecks.has(check.name)) {
-        errors.push({
-          kind: "duplicate-settlement-check",
-          loopId: loop.id,
-          checkName: check.name,
-        });
-      }
-      seenSettlementChecks.add(check.name);
     }
     if (loop.risks.length === 0) {
       errors.push({ kind: "empty-field", loopId: loop.id, field: "risks" });
@@ -888,12 +820,7 @@ function freezeLoop(loop: MaintenanceLoop): MaintenanceLoop {
       ? { optionalProcessors: Object.freeze([...loop.optionalProcessors]) }
       : {}),
     surfaces: Object.freeze(loop.surfaces.map((item) => Object.freeze(item))),
-    settlement: Object.freeze({
-      ...loop.settlement,
-      checks: Object.freeze(
-        loop.settlement.checks.map((check) => freezeSettlementCheck(check)),
-      ),
-    }),
+    settlement: Object.freeze({ ...loop.settlement }),
     risks: Object.freeze([...loop.risks]),
   });
 }
