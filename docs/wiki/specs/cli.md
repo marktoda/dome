@@ -15,6 +15,13 @@ adapter over `Vault`, engine-control boundaries, and the shared
 `src/surface/` operations. There is no additional aggregate surface object;
 CLI-only mechanics remain argv, text rendering, and process exit codes.
 
+The human-facing navigation has four jobs, not four additional engine
+concepts: **Today** (capture and act), **Recall** (retrieve grounded context),
+**Decide** (settle explicit questions and proposals), and **Maintain** (compile
+commits and explain operational or content attention). `status` is the cheap
+router, `check` is the normal explanation surface, and hidden `doctor` runs
+fresh dependency and storage probes only while troubleshooting.
+
 ## The CLI surface
 
 ```text
@@ -30,10 +37,10 @@ dome capture [text] [--file <path>] [--title <t>] [--capture-id <id>] [--json]
 dome sync [--json] [-v|--verbose] [--filter-processor <glob>] [-q|--quiet]
                                 Catch-up: construct Proposal from working-tree HEAD; adopt.
 dome status [--loops] [--probe] [--json]
-                                Vault health + content dashboard.
+                                See whether Dome is current and what to do next.
 dome check [--engine] [--content] [--decisions] [--loops] [--attention] [--limit <n>] [--json]
-                                Explain compiler attention across health,
-                                diagnostics, and decisions.
+                                Explain the health, content, and decisions
+                                needing attention.
 dome resolve <question-id> [<value>]
                                 Resolve a Dome-raised decision from `check`.
 dome agent-work [<question-id> [<answer>]] [--revision <token>] [--reason <text>] [--evidence <path>...] [--json]

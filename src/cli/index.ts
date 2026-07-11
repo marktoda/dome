@@ -140,15 +140,15 @@ const RETIRED_COMMANDS: Readonly<Record<string, string>> = Object.freeze({
 
 // `dome --help` heading per visible command, so the surface reads as a few
 // small verb sets instead of one flat wall. Registration order is unchanged;
-// headings render in first-registered-command order (Getting started → Daily
-// loop → Decisions → Recall & views → Service → Adapters). NB: heading text is
+// headings render in first-registered-command order (Getting started → Today
+// → Maintain → Decide → Recall → Adapters). NB: heading text is
 // fence-tested against hidden command names as substrings
 // (tests/cli/index.test.ts).
 const GROUP_START = "Getting started:";
-const GROUP_LOOP = "Daily loop:";
-const GROUP_DECISIONS = "Decisions:";
-const GROUP_RECALL = "Recall & views:";
-const GROUP_SERVICE = "Service:";
+const GROUP_LOOP = "Today:";
+const GROUP_DECISIONS = "Decide:";
+const GROUP_RECALL = "Recall:";
+const GROUP_SERVICE = "Maintain:";
 const GROUP_ADAPTERS = "Adapters:";
 
 function buildProgram(setExitCode: (code: number) => void): Command {
@@ -239,8 +239,8 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("check")
-    .helpGroup(GROUP_LOOP)
-    .description("Explain compiler attention.")
+    .helpGroup(GROUP_SERVICE)
+    .description("Explain the health, content, and decisions needing attention.")
     .option("--engine", "Show engine health findings.")
     .option("--content", "Show full adopted-state diagnostics.")
     .option("--decisions", "Show open Dome questions.")
@@ -324,7 +324,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("doctor", { hidden: true })
-    .description("Run engine-substrate health checks.")
+    .description("Run fresh dependency and storage probes for troubleshooting.")
     .option("-v, --verbose", "Show the full breakdown.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
@@ -635,7 +635,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("today")
-    .helpGroup(GROUP_RECALL)
+    .helpGroup(GROUP_LOOP)
     .description(
       "Render today's action surface (open tasks, follow-ups, questions).",
     )
@@ -761,7 +761,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("audit")
-    .helpGroup(GROUP_RECALL)
+    .helpGroup(GROUP_SERVICE)
     .description(
       "Vault-consistency audits: stale-claims (old *(as of)* dates) or orphan-pages (no incoming wikilinks).",
     )
@@ -782,7 +782,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("garden")
-    .helpGroup(GROUP_RECALL)
+    .helpGroup(GROUP_SERVICE)
     .description("Inspect ranked semantic-gardening opportunities.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
@@ -1011,8 +1011,8 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("status")
-    .helpGroup(GROUP_LOOP)
-    .description("Vault health + content dashboard.")
+    .helpGroup(GROUP_SERVICE)
+    .description("See whether Dome is current and what to do next.")
     .option("--loops", "Show maintenance-loop detail rows in text output.")
     .option(
       "--probe",
@@ -1037,7 +1037,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
 
   program
     .command("sync")
-    .helpGroup(GROUP_LOOP)
+    .helpGroup(GROUP_SERVICE)
     .description("One-shot catch-up: adopt working-tree HEAD.")
     .option("--json", "Emit JSON.")
     .option("-v, --verbose", "Print adoption progress events.")

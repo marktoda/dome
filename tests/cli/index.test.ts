@@ -75,10 +75,10 @@ describe("runCli", () => {
     for (
       const heading of [
         "Getting started:",
-        "Daily loop:",
-        "Decisions:",
-        "Recall & views:",
-        "Service:",
+        "Today:",
+        "Decide:",
+        "Recall:",
+        "Maintain:",
         "Adapters:",
       ]
     ) {
