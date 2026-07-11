@@ -26,6 +26,7 @@ import type {
 } from "../../../processors/execution-state";
 import {
   DEFAULT_RECURRING_TIMEOUT_THRESHOLD,
+  DEFAULT_RECURRING_TIMEOUT_WINDOW_MS,
   SQLITE_BUSY_TIMEOUT_MS,
 } from "./types";
 import type { HealthFinding } from "./types";
@@ -33,14 +34,33 @@ import type { HealthFinding } from "./types";
 export function recurringTimeoutFindings(opts: {
   readonly recentTimedOutRuns: ReadonlyArray<RunSummaryRow>;
   readonly threshold?: number;
+  readonly now?: Date;
+  readonly windowMs?: number;
+  readonly currentProcessorVersions?: ReadonlyArray<{
+    readonly id: string;
+    readonly version: string;
+  }>;
 }): ReadonlyArray<HealthFinding> {
   const threshold = opts.threshold ?? DEFAULT_RECURRING_TIMEOUT_THRESHOLD;
+  const now = opts.now ?? new Date();
+  const windowMs = opts.windowMs ?? DEFAULT_RECURRING_TIMEOUT_WINDOW_MS;
+  const cutoff = now.getTime() - windowMs;
+  const currentVersions = opts.currentProcessorVersions === undefined ||
+      opts.currentProcessorVersions.length === 0
+    ? null
+    : new Map(opts.currentProcessorVersions.map((row) => [row.id, row.version]));
   const byProcessor = new Map<
     string,
     { count: number; lastTimedOutAt: string | null }
   >();
   for (const run of opts.recentTimedOutRuns) {
     if (run.status !== "timed_out") continue;
+    const currentVersion = currentVersions?.get(run.processorId);
+    if (currentVersions !== null && currentVersion !== run.processorVersion) {
+      continue;
+    }
+    const occurredAt = Date.parse(run.finishedAt ?? run.startedAt);
+    if (!Number.isFinite(occurredAt) || occurredAt < cutoff) continue;
     const entry = byProcessor.get(run.processorId) ?? {
       count: 0,
       lastTimedOutAt: null,
@@ -64,7 +84,8 @@ export function recurringTimeoutFindings(opts: {
         id: processorId,
         message:
           `Processor ${processorId} has timed out ${entry.count} time(s) ` +
-          "recently — its runs repeatedly exceed their execution timeout, " +
+          "within the current 24-hour health window — its runs repeatedly " +
+          "exceed their execution timeout, " +
           "which silently blocks the work they do (adoption-phase timeouts " +
           "block trusted-state advance).",
         recovery:
@@ -362,8 +383,8 @@ export function readOperationalSchemaHash(path: string, table: string): string |
 }
 
 /**
- * `runs.db` size (bytes) above which `dome doctor`/`dome check` warn that
- * unpruned run-ledger history is accumulating disk. 512 MB is comfortably
+ * `runs.db` size (bytes) above which `dome doctor`/`dome check` recommend
+ * storage maintenance. 512 MB is comfortably
  * past what a healthy pruned vault ever reaches, and roughly the order of
  * magnitude the work-vault reclaim found before `ledger.retention_days`
  * existed (wiki/specs/run-ledger.md §Retention).
@@ -371,7 +392,10 @@ export function readOperationalSchemaHash(path: string, table: string): string |
 export const LEDGER_SIZE_WARNING_BYTES = 512 * 1024 * 1024;
 
 /**
- * Warn when `runs.db` has grown past `LEDGER_SIZE_WARNING_BYTES`. The caller
+ * Report maintenance when `runs.db` has grown past
+ * `LEDGER_SIZE_WARNING_BYTES`. Disk usage alone does not mean the compiler is
+ * unhealthy, so this is informational; active failures retain their own
+ * error/warning findings. The caller
  * (the registry probe) does the `statSync` and passes the resulting size (or
  * null when the file is absent / unreadable) so this stays a pure function —
  * unit tests inject a size instead of creating a real 512MB file.
@@ -400,12 +424,12 @@ export function ledgerOversizedFinding(opts: {
   const retainedForensicsRows = opts.countRetainedForensicsRows?.() ?? null;
   return Object.freeze({
     code: "ledger.oversized" as const,
-    severity: "warning" as const,
+    severity: "info" as const,
     subject: "storage" as const,
     id: "ledger.size" as const,
     message:
-      `runs.db is ${sizeMb} MB, over the ${thresholdMb} MB doctor warning ` +
-      "threshold — unpruned run-ledger history is accumulating disk." +
+      `runs.db is ${sizeMb} MB, over the ${thresholdMb} MB maintenance ` +
+      "threshold — run-ledger history is consuming substantial disk." +
       (retainedForensicsRows !== null
         ? ` ${retainedForensicsRows} row(s) are failure forensics ` +
           "(failed / timed_out / cancelled / reason-bearing skipped), " +
@@ -418,7 +442,7 @@ export function ledgerOversizedFinding(opts: {
       "If the size does not drop after pruning, the ledger is dominated by " +
       "failure-forensics rows, which both paths deliberately preserve — " +
       "investigate and fix the failing processor " +
-      "(`dome inspect runs --status failed`) rather than tightening the " +
+      "(`dome inspect runs --limit 20 --json`) rather than tightening the " +
       "retention window.",
     storage: Object.freeze({
       path: opts.path,

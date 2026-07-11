@@ -2181,7 +2181,8 @@ still-affected paths (the owner's own `git commit`, custom vault-side
 scripts shelling plain `git commit`) with `git config --local
 commit.gpgsign false` as the opt-out if the owner wants unsigned human
 commits too — their call.
-When `runs.db` exceeds 512 MB on disk, doctor raises a `ledger.oversized`
+When `runs.db` exceeds 512 MB on disk, doctor raises an informational
+`ledger.oversized`
 **warning** finding naming the file size, the threshold, and the count of
 retained failure-forensics rows. The run ledger works fine at any size; the
 finding is a nudge toward setting `ledger.retention_days` in

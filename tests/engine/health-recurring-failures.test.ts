@@ -100,7 +100,10 @@ describe("questions.unreadable-backlog", () => {
   });
 });
 
-function timedOutRun(processorId: string): RunSummaryRow {
+function timedOutRun(
+  processorId: string,
+  over: Partial<RunSummaryRow> = {},
+): RunSummaryRow {
   return {
     id: `run-${Math.random()}`,
     processorId,
@@ -112,6 +115,7 @@ function timedOutRun(processorId: string): RunSummaryRow {
     triggerKind: "signal",
     startedAt: NOW.toISOString(),
     finishedAt: NOW.toISOString(),
+    ...over,
   } as RunSummaryRow;
 }
 
@@ -121,7 +125,7 @@ describe("run.recurring-timeout", () => {
       { length: DEFAULT_RECURRING_TIMEOUT_THRESHOLD },
       () => timedOutRun("dome.markdown.lint-supersession"),
     );
-    const findings = recurringTimeoutFindings({ recentTimedOutRuns: runs });
+    const findings = recurringTimeoutFindings({ recentTimedOutRuns: runs, now: NOW });
     expect(findings.length).toBe(1);
     expect(findings[0]?.code).toBe("run.recurring-timeout");
     expect(findings[0]?.severity).toBe("warning");
@@ -131,6 +135,7 @@ describe("run.recurring-timeout", () => {
   test("a single timeout does not fire (below threshold)", () => {
     const findings = recurringTimeoutFindings({
       recentTimedOutRuns: [timedOutRun("dome.markdown.lint-supersession")],
+      now: NOW,
     });
     expect(findings.length).toBe(0);
   });
@@ -144,8 +149,37 @@ describe("run.recurring-timeout", () => {
         timedOutRun("d.e.f"),
       ),
     ];
-    const findings = recurringTimeoutFindings({ recentTimedOutRuns: runs });
+    const findings = recurringTimeoutFindings({ recentTimedOutRuns: runs, now: NOW });
     expect(findings.length).toBe(2);
     expect(findings.map((f) => f.id).sort()).toEqual(["a.b.c", "d.e.f"]);
+  });
+
+  test("old timeout history remains inspectable without keeping health unhealthy", () => {
+    const old = new Date(NOW.getTime() - 25 * 60 * 60 * 1000).toISOString();
+    const runs = Array.from(
+      { length: DEFAULT_RECURRING_TIMEOUT_THRESHOLD },
+      () => timedOutRun("dome.markdown.lint-supersession", {
+        startedAt: old,
+        finishedAt: old,
+      }),
+    );
+    expect(recurringTimeoutFindings({ recentTimedOutRuns: runs, now: NOW })).toEqual([]);
+  });
+
+  test("a retired processor generation does not report as current health", () => {
+    const runs = Array.from(
+      { length: DEFAULT_RECURRING_TIMEOUT_THRESHOLD },
+      () => timedOutRun("dome.markdown.lint-supersession", {
+        processorVersion: "0.1.1",
+      }),
+    );
+    expect(recurringTimeoutFindings({
+      recentTimedOutRuns: runs,
+      now: NOW,
+      currentProcessorVersions: [{
+        id: "dome.markdown.lint-supersession",
+        version: "0.1.2",
+      }],
+    })).toEqual([]);
   });
 });

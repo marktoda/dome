@@ -157,7 +157,15 @@ dome repair run-ledger --older-than-days 365 --apply --vacuum
 
 The command never creates a missing ledger, defaults to dry-run, and prunes only the rows described above. `--vacuum` is separate and opt-in because SQLite compaction can be expensive; it is the only way to shrink the file on disk, since neither the manual command's non-vacuum runs nor the daemon's daily pass compact.
 
-`dome doctor`/`dome check` additionally warn when `runs.db` grows past 512 MB regardless of the retention setting (`ledger.oversized`), naming the actual size, both remedies (`ledger.retention_days` and `dome repair run-ledger --apply --vacuum`), and the retained-forensics row count — unpruned or slow-growing ledgers are visible before disk pressure forces the question, and a failure-dominated ledger is identified as such rather than leaving the operator to wonder why pruning did nothing.
+`dome doctor`/`dome check` additionally emit an informational maintenance
+finding when `runs.db` grows past 512 MB regardless of the retention setting
+(`ledger.oversized`), naming the actual size, both remedies
+(`ledger.retention_days` and `dome repair run-ledger --apply --vacuum`), and
+the retained-forensics row count. Disk usage alone does not make the compiler
+unhealthy; active failures and timeouts have separate error/warning findings.
+Unpruned or slow-growing ledgers remain visible before disk pressure forces
+the question, and a failure-dominated ledger is identified as such rather
+than leaving the operator to wonder why pruning did nothing.
 
 ## What the ledger cannot do
 

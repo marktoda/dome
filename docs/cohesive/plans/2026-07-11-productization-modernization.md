@@ -88,7 +88,16 @@ materially better human interface; generic callers should use `listViews` and
 
 ### P0 — make operational health tell the present truth
 
-The work vault currently reports:
+**Completed 2026-07-11.** The work vault's grants were refreshed, duplicated
+task identities were repaired to a convergent fixed point, 30-day retention
+pruned 2,367 succeeded runs and 61,515 capability-use rows, and the compiler
+service was restored. Recurring-timeout health now considers only the current
+processor generation inside a 24-hour window. Oversized ledgers remain an
+informational maintenance finding instead of making an otherwise functioning
+compiler unhealthy. The two-vault release smoke passes; content diagnostics
+remain visible as a separate garden-quality backlog.
+
+At the start of recovery, the work vault reported:
 
 - a 2 GB run ledger, including 1,127 retained forensic rows;
 - 11 duplicate task anchors;

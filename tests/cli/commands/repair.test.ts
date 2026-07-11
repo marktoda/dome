@@ -32,7 +32,7 @@ afterEach(async () => {
 });
 
 describe("dome repair task-anchors", () => {
-  test("plans removal from all but the first duplicate task-anchor occurrence", () => {
+  test("plans removal from every collided occurrence so restamping converges", () => {
     const plan = taskAnchorRepairPlan([
       {
         path: "wiki/projects/a.md",
@@ -49,6 +49,14 @@ describe("dome repair task-anchors", () => {
     ]);
     expect(plan.changes).toEqual([
       {
+        path: "wiki/projects/a.md",
+        line: 1,
+        anchor: "tdeadbeef",
+        action: "remove-duplicate-anchor",
+        before: "- [ ] first task ^tdeadbeef",
+        after: "- [ ] first task",
+      },
+      {
         path: "wiki/projects/b.md",
         line: 1,
         anchor: "tdeadbeef",
@@ -59,7 +67,7 @@ describe("dome repair task-anchors", () => {
     ]);
   });
 
-  test("--apply removes duplicate anchors and leaves the kept occurrence intact", async () => {
+  test("--apply clears every collided identity for deterministic restamping", async () => {
     const vault = mkdtempSync(join(tmpdir(), "dome-repair-task-anchors-"));
     tmpDirs.push(vault);
     await mkdir(join(vault, "wiki", "projects"), { recursive: true });
@@ -95,7 +103,7 @@ describe("dome repair task-anchors", () => {
     expect(logs.join("\n")).toContain('"status": "applied"');
     await expect(
       readFile(join(vault, "wiki", "projects", "a.md"), "utf8"),
-    ).resolves.toBe("- [ ] first task ^tdeadbeef\n");
+    ).resolves.toBe("- [ ] first task\n");
     await expect(
       readFile(join(vault, "wiki", "projects", "b.md"), "utf8"),
     ).resolves.toBe("- [ ] second task\n");

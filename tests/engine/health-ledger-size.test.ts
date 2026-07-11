@@ -18,7 +18,7 @@ import {
 const RUNS_DB_PATH = "/vault/.dome/state/runs.db";
 
 describe("ledgerOversizedFinding", () => {
-  test("size above threshold -> one warning finding naming the size (MB) and both remedies", () => {
+  test("size above threshold -> one maintenance finding naming the size and remedies", () => {
     const finding = ledgerOversizedFinding({
       path: RUNS_DB_PATH,
       fileSizeBytes: LEDGER_SIZE_WARNING_BYTES + 10 * 1024 * 1024,
@@ -26,7 +26,7 @@ describe("ledgerOversizedFinding", () => {
     expect(finding).not.toBeNull();
     if (finding === null) return;
     expect(finding.code).toBe("ledger.oversized");
-    expect(finding.severity).toBe("warning");
+    expect(finding.severity).toBe("info");
     expect(finding.subject).toBe("storage");
     expect(finding.message).toContain("522 MB");
     expect(finding.recovery).toContain("ledger.retention_days");
@@ -79,7 +79,7 @@ describe("ledgerOversizedFinding", () => {
     // Both remedies exempt forensics rows; the recovery names the failure
     // mode so a "prune did nothing" operator isn't left guessing.
     expect(finding.recovery).toContain("failure-forensics");
-    expect(finding.recovery).toContain("dome inspect runs --status failed");
+    expect(finding.recovery).toContain("dome inspect runs --limit 20 --json");
   });
 
   test("the forensics counter is lazy — never invoked under the threshold", () => {

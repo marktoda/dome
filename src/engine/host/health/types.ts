@@ -36,6 +36,12 @@ export const DEFAULT_RECURRING_OUTBOX_FAILURE_THRESHOLD_MS = 60 * 60 * 1000;
  */
 export const DEFAULT_RECURRING_TIMEOUT_THRESHOLD = 2;
 /**
+ * Recurring timeouts are a current-health signal, not a lifetime audit. Runs
+ * older than this window remain inspectable in runs.db but do not keep doctor
+ * unhealthy after a processor has recovered.
+ */
+export const DEFAULT_RECURRING_TIMEOUT_WINDOW_MS = 24 * 60 * 60 * 1000;
+/**
  * How many recent runs the recurring-timeout probe scans. Bounded so the
  * health tick stays cheap; large enough to catch a 5-minute-cadence loop.
  */
@@ -412,7 +418,7 @@ export type HealthFinding =
       // solve before the operator stumbles onto it (wiki/specs/run-ledger.md
       // §Retention).
       readonly code: "ledger.oversized";
-      readonly severity: "warning";
+      readonly severity: "info";
       readonly subject: "storage";
       readonly id: "ledger.size";
       readonly message: string;
