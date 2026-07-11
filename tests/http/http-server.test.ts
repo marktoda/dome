@@ -190,6 +190,10 @@ describe("auth", () => {
         (await post("/settle", { blockId: "x", disposition: "close" }, null)).status,
       ).toBe(401);
       expect((await get("/proposals", null)).status).toBe(401);
+      expect((await get("/attention", null)).status).toBe(401);
+      expect((await get("/agent-work", null)).status).toBe(401);
+      expect((await post("/agent-work/complete", {}, null)).status).toBe(401);
+      expect((await post("/agent-work/drain", {}, null)).status).toBe(401);
       expect((await post("/apply", { id: 1 }, null)).status).toBe(401);
       expect((await post("/reject", { id: 1 }, null)).status).toBe(401);
     },
@@ -443,6 +447,145 @@ describe("GET /proposals", () => {
   );
 });
 
+describe("GET /attention", () => {
+  test("returns the canonical owner-attention document", async () => {
+    const { status, json } = await get("/attention");
+    expect(status).toBe(200);
+    expect(json.schema).toBe("dome.attention/v1");
+    expect(Array.isArray(json.primary)).toBe(true);
+    expect(Array.isArray(json.backlog)).toBe(true);
+  }, TEST_TIMEOUT_MS);
+});
+
+describe("agent work", () => {
+  test("lists and completes a revisioned source-backed packet", async () => {
+    const f = await fixture();
+    const { getAdoptedRef, getCurrentBranch } = await import(
+      "../../src/adopted-ref"
+    );
+    const branch = await getCurrentBranch(f.vault);
+    const adopted = await getAdoptedRef(f.vault, branch ?? "main");
+    expect(adopted).not.toBeNull();
+    if (adopted === null) return;
+    const evidence = sourceRef({
+      commit: commitOid(adopted),
+      path: "wiki/project-omega.md",
+    });
+    const runtimeResult = await openVaultRuntime({
+      vaultPath: f.vault,
+      ...resolveBundleRoots({ vaultPath: f.vault }),
+    });
+    expect(runtimeResult.ok).toBe(true);
+    if (!runtimeResult.ok) return;
+    insertQuestion(runtimeResult.value.projectionDb, {
+      effect: questionEffect({
+        question: "Track the HTTP evidence-backed follow-up?",
+        options: ["track", "ignore"],
+        idempotencyKey: "test.http:agent-work",
+        sourceRefs: [evidence],
+        metadata: {
+          resolutionMode: "dispatch",
+          automationPolicy: "agent-safe",
+          risk: "low",
+        },
+      }),
+      processorId: "test.http.agent-work",
+      runId: "run-test-http-agent-work",
+      adoptedCommit: commitOid(adopted),
+    });
+    await runtimeResult.value.close();
+
+    const listed = await get("/agent-work");
+    expect(listed.status).toBe(200);
+    expect(listed.json.schema).toBe("dome.agent-work/v1");
+    const item = (listed.json.items as Array<Record<string, unknown>>).find(
+      (row) => row.question === "Track the HTTP evidence-backed follow-up?",
+    );
+    expect(item).toBeDefined();
+    if (item === undefined) return;
+
+    const completed = await post("/agent-work/complete", {
+      questionId: item.questionId,
+      expectedRevision: item.revision,
+      answer: "track",
+      reason: "The adopted project page contains the follow-up context.",
+      evidence: [evidence],
+    });
+    expect(completed.status).toBe(200);
+    expect(completed.json.status).toBe("completed");
+    expect(
+      (completed.json.question as Record<string, unknown>).answered_by,
+    ).toBe("agent");
+  }, TEST_TIMEOUT_MS);
+
+  test("drains ready work through a replaceable hosted-agent adapter", async () => {
+    const f = await fixture();
+    const { getAdoptedRef, getCurrentBranch } = await import(
+      "../../src/adopted-ref"
+    );
+    const branch = await getCurrentBranch(f.vault);
+    const adopted = await getAdoptedRef(f.vault, branch ?? "main");
+    expect(adopted).not.toBeNull();
+    if (adopted === null) return;
+    const evidence = sourceRef({
+      commit: commitOid(adopted),
+      path: "wiki/project-omega.md",
+    });
+    const runtimeResult = await openVaultRuntime({
+      vaultPath: f.vault,
+      ...resolveBundleRoots({ vaultPath: f.vault }),
+    });
+    expect(runtimeResult.ok).toBe(true);
+    if (!runtimeResult.ok) return;
+    insertQuestion(runtimeResult.value.projectionDb, {
+      effect: questionEffect({
+        question: "Drain the hosted agent-work fixture?",
+        options: ["yes", "no"],
+        idempotencyKey: "test.http:agent-work-drain",
+        sourceRefs: [evidence],
+        metadata: {
+          resolutionMode: "dispatch",
+          automationPolicy: "agent-safe",
+          risk: "low",
+        },
+      }),
+      processorId: "test.http.agent-work-drain",
+      runId: "run-test-http-agent-work-drain",
+      adoptedCommit: commitOid(adopted),
+    });
+    await runtimeResult.value.close();
+
+    const handler = createDomeHttpServer({
+      vaultPath: f.vault,
+      token: TOKEN,
+      agentWorkAgent: () => async (item) => ({
+        kind: "answer",
+        answer: "yes",
+        reason: "The injected hosted agent inspected the required source.",
+        evidence: item.sourceRefs,
+      }),
+    });
+    const response = await handler.fetch(new Request(
+      "http://dome.test/agent-work/drain",
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ limit: 1 }),
+      },
+    ));
+    expect(response.status).toBe(200);
+    const json = await jsonOf(response);
+    expect(json.schema).toBe("dome.agent-work-drain/v1");
+    expect(json.attempted).toBe(1);
+    expect(
+      (json.results as Array<Record<string, unknown>>)[0]?.kind,
+    ).toBe("completed");
+  }, TEST_TIMEOUT_MS);
+});
+
 describe("POST /apply", () => {
   test(
     "applies a pending proposal, writes the file, and lands one commit",
@@ -628,6 +771,47 @@ describe("read routes", () => {
     },
     TEST_TIMEOUT_MS,
   );
+
+  test(
+    "GET /views discovers installed plugin views",
+    async () => {
+      const res = await get("/views");
+      expect(res.status).toBe(200);
+      expect(res.json.schema).toBe("dome.views/v1");
+      const views = res.json.views as Array<Record<string, unknown>>;
+      expect(views.some((view) =>
+        view.command === "today" && view.processorId === "dome.daily.today"
+      )).toBe(true);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "POST /views/:command invokes an installed plugin view through the generic seam",
+    async () => {
+      const res = await post("/views/query", { text: "omega", limit: 3 });
+      expect(res.status).toBe(200);
+      expect(res.json.schema).toBe("dome.view-run/v1");
+      expect(res.json.status).toBe("ok");
+      expect(res.json.command).toBe("query");
+      expect((res.json.views as Array<Record<string, unknown>>)[0]).toMatchObject({
+        name: "dome.search.query",
+        kind: "structured",
+      });
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test("POST /views/:command returns a discoverable 404 for an absent view", async () => {
+    const res = await post("/views/not-installed", {});
+    expect(res.status).toBe(404);
+    expect(res.json).toMatchObject({
+      schema: "dome.view-run/v1",
+      status: "error",
+      error: "view-not-found",
+    });
+    expect(Array.isArray(res.json.installed)).toBe(true);
+  });
 
   test(
     "GET /query without text is a 400",

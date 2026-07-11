@@ -45,6 +45,7 @@ function questionForQuarantine(row: OperationalQuarantineRow): QuestionEffect {
     sourceRefs: [],
     idempotencyKey: quarantineRecoveryQuestionKey(row),
     metadata: {
+      resolutionMode: "dispatch",
       risk: "medium",
       confidence: 1,
       recommendedAnswer: "reset",
@@ -52,6 +53,11 @@ function questionForQuarantine(row: OperationalQuarantineRow): QuestionEffect {
       ownerNeededReason:
         "Resetting a quarantined processor can rerun work that previously failed.",
       subjectProcessorId: row.processorId,
+      attention: {
+        consequence: "high",
+        urgency: "now",
+        reason: "a quarantined processor cannot make progress",
+      },
     },
   });
 }

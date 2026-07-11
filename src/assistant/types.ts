@@ -4,8 +4,8 @@
 //
 // This backend is a COMPANION HTTP service reached only via dynamic import from
 // the CLI — it is NOT part of the @dome/sdk core static graph, so it is allowed
-// to depend on the Vercel AI SDK. The agent loop + tool-calling are provided by
-// `ai`'s generateText(); these types are just the citation carrier + result.
+// to depend on the Vercel AI SDK. These are provider-neutral citation, change,
+// and conversation carriers used across the runtime boundary.
 
 /** A source the answer rests on — surfaced by a read tool during the run. */
 export type Citation = {
@@ -35,12 +35,12 @@ export type AgentChange = {
     | "reject";
 };
 
-/** The synthesized answer plus the evidence it cited and any writes it made. */
-export type AgentResult = {
-  readonly answer: string;
-  readonly citations: ReadonlyArray<Citation>;
-  readonly steps: number;
-  readonly stopReason: "final" | "budget";
-  /** Vault writes made this run; empty for read-only turns. */
-  readonly changes: ReadonlyArray<AgentChange>;
+/**
+ * Provider-neutral conversation history owned by AgentRuntime. Tool calls and
+ * provider metadata deliberately do not cross this seam; adapters receive the
+ * prior user/assistant prose needed for a coherent next turn.
+ */
+export type AgentMessage = {
+  readonly role: "user" | "assistant";
+  readonly content: string;
 };

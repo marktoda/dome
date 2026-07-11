@@ -13,6 +13,7 @@ export const DEDICATED_VIEW_COMMAND_ALIASES: ReadonlyMap<string, string> =
     new Map<string, string>([
       ["agenda-with", "today --with"],
       ["export-context", "export-context"],
+      ["garden", "garden"],
       ["lint", "lint"],
       ["orphan-pages", "audit orphan-pages"],
       ["prep", "today --prep"],

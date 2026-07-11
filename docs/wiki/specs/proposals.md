@@ -235,6 +235,8 @@ auto-apply when ALL of the following hold over the trailing **28 days**:
   `decidedAt`);
 - its accept rate (`applied / decided`) is **≥ 0.75**;
 - no trust-review promotion proposal for it is still pending review;
+- the processor is not in the always-propose safety set (`dome.agent.garden`
+  stays owner-reviewed because it performs semantic rewrites);
 - no promotion for it was **rejected within the last 28 days** (derived from
   the rejected row's `decidedAt` — the store is the state, there is no
   separate cool-down ledger).
@@ -252,7 +254,7 @@ the preset). The edited body is structurally self-checked — it must re-parse
 through `parseCapabilityPolicy` and actually grant the promotion — before it
 is ever proposed. The owner reviews with `dome proposals` / `dome apply`
 like any other proposal; the `reason` carries the evidence (e.g.
-`trust-review: promote dome.agent.consolidate to auto-apply — 19/20
+`trust-review: promote dome.markdown.attic-sweep to auto-apply — 19/20
 proposals applied over 28d`).
 
 Two structural fences keep this honest: the effect is always `mode:

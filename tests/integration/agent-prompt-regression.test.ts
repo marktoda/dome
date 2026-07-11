@@ -10,10 +10,9 @@ import { describe, expect, test } from "bun:test";
 
 import { BRIEF_CHARTER } from "../../assets/extensions/dome.agent/lib/brief-charter";
 import { INGEST_CHARTER } from "../../assets/extensions/dome.agent/lib/ingest-charter";
-import { consolidateCharter } from "../../assets/extensions/dome.agent/lib/consolidate-charter";
+import { gardenCharter } from "../../assets/extensions/dome.agent/lib/garden-charter";
 import { BREVITY_FRAGMENT } from "../../assets/extensions/dome.agent/lib/charter-fragments";
-import { MAX_CHANGED_FILES } from "../../assets/extensions/dome.agent/processors/consolidate";
-import { sweepCharter } from "../../assets/extensions/dome.agent/lib/sweep-charter";
+import { MAX_GARDEN_CHANGED_FILES } from "../../assets/extensions/dome.agent/processors/garden";
 
 describe("agent prompt regression", () => {
   test("brief and ingest share one brevity fragment", () => {
@@ -33,24 +32,19 @@ describe("agent prompt regression", () => {
     expect(INGEST_CHARTER).toMatchSnapshot();
   });
 
-  test("dome.agent.consolidate charter (fixed inputs)", () => {
+  test("dome.agent.garden charter (fixed inputs)", () => {
     expect(
-      consolidateCharter({
-        ledgerPath: "wiki/meta/consolidation-ledger.md",
-        maxChangedFiles: MAX_CHANGED_FILES,
-        targets: ["wiki/"],
+      gardenCharter({
+        maxChangedFiles: MAX_GARDEN_CHANGED_FILES,
+        opportunity: {
+          id: "possible-duplicate:123456abcdef",
+          kind: "possible-duplicate",
+          priority: 780,
+          summary: "Two Acme pages may overlap",
+          paths: ["wiki/entities/acme.md", "wiki/entities/acme-company.md"],
+          evidence: ["title/description token similarity 0.82"],
+        },
       }),
     ).toMatchSnapshot();
   });
-
-  test("dome.agent.sweep charter (fixed inputs)", () => {
-    expect(
-      sweepCharter({
-        destination: "wiki/entities/acme.md",
-        material: "inbox/raw/2026-06-01-standup.md",
-        materialDate: "2026-06-01",
-      }),
-    ).toMatchSnapshot();
-  });
-
 });

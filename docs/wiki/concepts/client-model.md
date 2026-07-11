@@ -102,9 +102,11 @@ the **contract every client consumes**. Three faces of one boundary:
    good at this vault. The single highest-leverage artifact: its quality is a
    multiplier on *every* client.
 2. **The structured-ops surface** — CLI / MCP / HTTP are protocol adapters over
-   the same `src/surface/` collectors ([[wiki/matrices/protocol-adapter]]); the
-   engine never knows which client is calling. Adding a capability means adding
-   a collector available to all adapters, not a CLI-only verb.
+   the same `Vault` and `src/surface/` operations
+   ([[wiki/matrices/protocol-adapter]]); the engine never knows which client is
+   calling. Plugin read views are discovered and generically invoked across
+   adapters; other operations are extracted when a second real consumer earns
+   the shared seam.
 3. **The git-native write path + adoption loop** — clients write by producing
    commits (filesystem-native) or captures (remote); the engine adopts both
    identically. Authoring a *page*, though, needs a checkout — see §"The
@@ -154,8 +156,9 @@ surface hosts no model (it is a typed read/capture front-end for harnesses
 that already bring their own agent). The HTTP surface (`dome http`)
 **co-locates the Dome assistant** (`src/assistant/` — a consumer surface
 distinct from the `dome.agent` background processor bundle) behind
-`POST /agent` and `POST /agent/stream` — the always-on-host path: an agent
-running beside the vault that a phone can reach directly. The assistant
+`POST /sessions` plus `POST /sessions/:id/messages` — the always-on-host
+path: a replaceable, multi-turn agent runtime running beside the vault that a
+phone can reach directly. The built-in adapter
 speaks the contract: it holds the capture and decision tools
 (capture/settle/resolve/proposals) gated by the same capability set as the
 routes ([[wiki/specs/http-surface]] §"The assistant's tools"), so through it
@@ -184,8 +187,9 @@ a human runs.
 
 - **Treat the contract as the product.** `AGENTS.md`, the shared collector
   surface, and the write path are where "convincingly useful" is decided.
-- **New capabilities ship to every client.** Add a collector + adapter routes,
-  not a CLI-only command.
+- **Plugin views ship broadly by construction.** Register a command-triggered
+  view and generic clients discover it. Add named UI/routes only when their
+  ergonomics earn them.
 - **Don't over-polish the CLI for end users.** Its audiences are agents and the
   operator.
 - **The mobile unlock is a reachable agent over the API** (always-on host +

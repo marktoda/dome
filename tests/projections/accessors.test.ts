@@ -1099,7 +1099,7 @@ describe("questions accessor", () => {
       effect: questionEffect({
         question: "Integrate into wiki/entities/probe.md?",
         sourceRefs: [REF],
-        idempotencyKey: "dome.agent.sweep:uncertain:wiki/dailies/d.md->wiki/entities/probe.md",
+        idempotencyKey: "dome.acme.semantic:uncertain:wiki/dailies/d.md->wiki/entities/probe.md",
         options: ["integrate", "skip"],
         metadata: {
           automationPolicy: "owner-needed",
@@ -1108,12 +1108,12 @@ describe("questions accessor", () => {
           proposedSection: "## 2026-06-09 — probe\n\nA proposed integration.",
         },
       }),
-      processorId: "dome.agent.sweep",
+      processorId: "dome.acme.semantic",
       runId: "run-test-fixture",
       adoptedCommit: ADOPTED,
     });
     const record = queryQuestionRecords(db).find(
-      (r) => r.processorId === "dome.agent.sweep",
+      (r) => r.processorId === "dome.acme.semantic",
     );
     expect(record?.effect.metadata).toEqual({
       automationPolicy: "owner-needed",
@@ -1203,9 +1203,9 @@ describe("questions accessor", () => {
       );
 
     const skipped: Array<SkippedQuestionRow> = [];
-    // The operational tick reads with `{ resolved: false }`
-    // (question-auto-resolution.ts:83) — use the same filter so this is the
-    // faithful regression for the tick-abort the diagnostic found.
+    // Operational question lifecycle work reads with `{ resolved: false }`;
+    // use the same filter so this remains a faithful regression for one
+    // poison row aborting the entire lifecycle pass.
     const records = queryQuestionRecords(db, { resolved: false }, (s) =>
       skipped.push(s),
     );
@@ -1214,8 +1214,9 @@ describe("questions accessor", () => {
       "q-healthy-a",
       "q-healthy-b",
     ]);
-    // The healthy agent-safe row still carries the metadata auto-resolution
-    // needs — i.e. the tick proceeds for it instead of aborting on the poison.
+    // The healthy agent-safe row still carries the metadata agent-work
+    // compilation needs, so lifecycle work proceeds instead of aborting on
+    // the poison row.
     const healthyA = records.find(
       (r) => r.effect.idempotencyKey === "q-healthy-a",
     );

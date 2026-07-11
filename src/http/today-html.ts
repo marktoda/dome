@@ -35,7 +35,17 @@ const FONT_FACE = `
 export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
   const refresh = Math.max(1, Math.floor(opts.refreshSeconds));
   const vm = buildTodayViewModel(parseTodayView(data));
-  const { date, questions, brief, calendar, stillOpen, counts, totalOpen } = vm;
+  const {
+    date,
+    questions,
+    reviews,
+    attentionBacklog,
+    brief,
+    calendar,
+    stillOpen,
+    counts,
+    totalOpen,
+  } = vm;
   const isAllClear = totalOpen === 0;
   const hasOpenItems =
     stillOpen.overdue.length + stillOpen.dueToday.length + stillOpen.thisWeek.length +
@@ -178,9 +188,12 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
   const questionsHtml = questions.length > 0
     ? renderQuestionsHtml(questions)
     : "";
+  const reviewsHtml = reviews.length > 0 || attentionBacklog > 0
+    ? renderReviewsHtml(reviews, attentionBacklog)
+    : "";
 
-  const bandHtml = (calendarHtml.length > 0 || questionsHtml.length > 0)
-    ? `<div class="band">${calendarHtml}${questionsHtml}</div>`
+  const bandHtml = (calendarHtml.length > 0 || questionsHtml.length > 0 || reviewsHtml.length > 0)
+    ? `<div class="band">${calendarHtml}${questionsHtml}${reviewsHtml}</div>`
     : "";
 
   const stillOpenHtml = hasOpenItems
@@ -517,6 +530,30 @@ function renderQuestionsHtml(questions: ReadonlyArray<TodayQuestionRow>): string
   return `<div>
     <div class="section-label">Dome needs you</div>
     ${itemsHtml}
+  </div>`;
+}
+
+function renderReviewsHtml(
+  reviews: ReadonlyArray<import("../surface/today-view").TodayReviewRow>,
+  backlog: number,
+): string {
+  const items = reviews.map((review) => `
+    <div class="question-card">
+      <details>
+        <summary>
+          <span class="q-mark">◇</span>
+          <span class="q-text">${esc(review.reason)}</span>
+          <span class="q-caret">&#8250;</span>
+        </summary>
+        <div class="q-cmd">${esc(review.reviewCommand)}</div>
+      </details>
+    </div>`).join("");
+  const tail = backlog > 0
+    ? `<div class="q-cmd">+${backlog} in owner backlog · dome check --decisions</div>`
+    : "";
+  return `<div>
+    <div class="section-label">To review</div>
+    ${items}${tail}
   </div>`;
 }
 

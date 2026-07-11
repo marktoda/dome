@@ -10,7 +10,7 @@
 //       sink sets the host tick's questions-changed flag; the tick epilogue
 //       dispatches compose-blocks (a `questions.changed` subscriber), which
 //       composes today's daily. After the tick, the adopted daily contains
-//       the `dome.daily:questions` block — the `### To decide` heading and a
+//       the `dome.daily:questions` block — the `### Dome needs you` heading and a
 //       `dome resolve` line for the open question.
 //   (b) Resolving that question through the host resolve path (`dome resolve`
 //       → vault.resolve → runAnswerHandlersForQuestion, which dispatches
@@ -59,7 +59,7 @@ const QUESTION_TEXT = "test.compose-question: ship the pricing change?";
 
 scenario(
   {
-    name: "effect-routing: questions.changed compiles the To-decide block; resolve clears it",
+    name: "effect-routing: questions.changed compiles owner attention; resolve clears it",
     tags: [
       { kind: "group", group: "effect-kinds" },
       { kind: "effect", effect: "question" },
@@ -89,7 +89,6 @@ extensions:
         - "notes/*.md"
         - "sources/calendar/*.md"
         - "sources/slack/*.md"
-        - "meta/sweep-ledger.md"
       patch.auto: ["wiki/dailies/*.md", "notes/*.md"]
       graph.write: ["dome.daily.*"]
       question.ask: true
@@ -132,13 +131,13 @@ extensions:
       .expectLedger({ processorId: "dome.daily.compose-blocks" })
       .toHaveAtLeastOne();
 
-    // The adopted daily now carries the "To decide" block listing the open
+    // The adopted daily now carries the owner-attention block listing the open
     // question with its resolve command.
     const adopted = await h.refs.adopted();
     expect(adopted).not.toBeNull();
     if (adopted === null) return;
     await h.expectFile(TODAY_PATH, { atCommit: adopted }).toContain(QUESTIONS_START);
-    await h.expectFile(TODAY_PATH, { atCommit: adopted }).toContain("### To decide");
+    await h.expectFile(TODAY_PATH, { atCommit: adopted }).toContain("### Dome needs you");
     await h.expectFile(TODAY_PATH, { atCommit: adopted }).toContain(QUESTION_TEXT);
     await h
       .expectFile(TODAY_PATH, { atCommit: adopted })

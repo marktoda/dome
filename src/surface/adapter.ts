@@ -8,10 +8,9 @@
 // adapter keeps only its protocol-specific envelope mapping (HTTP status
 // codes, MCP tool results, CLI exit codes + stderr).
 //
-// This is `AbstractSurface` arriving bottom-up: the catalog + runner pair is
-// what [[wiki/specs/sdk-surface]] §"Consumer surfaces" calls
-// `surface.commands`, grown consumer-by-consumer instead of designed
-// speculatively.
+// This is shared operation plumbing, not another product-shaped surface
+// object. The second real protocol consumer earned each extraction; adapters
+// retain only transport concerns.
 
 import type { ZodType } from "zod";
 

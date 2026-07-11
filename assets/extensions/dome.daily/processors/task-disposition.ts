@@ -3,21 +3,14 @@
 // The mechanical half of "settle a task": locate a task line by its
 // move-stable `^block-anchor`, and rewrite its checkbox mark or `📅` due
 // token. These are PURE string transforms (no fs, no clock, no engine) so
-// BOTH consumers share one implementation:
-//
-//   - `dome.daily.settle-stale-answer` (a `patch.auto` garden processor) —
-//     applies the owner's disposition to a stale-task question, emitting a
-//     PatchEffect. Its "close" cancels (`[-]`); its "defer" pushes the date
-//     forward by DEFER_DAYS from `ctx.now()`.
-//   - `performSettle` (`src/surface/settle.ts`) — the commit-or-nothing settle
+// `performSettle` (`src/surface/settle.ts`) consumes this implementation as
+// the commit-or-nothing settle
 //     seam. Its "close" completes (`[x]`) and records a Done-today bullet; its
 //     "defer" sets an explicit `deferUntil` date.
 //
-// The disposition SEMANTICS differ per consumer (which mark, which date); the
-// LINE MECHANICS — find-by-anchor, flip-if-open, rewrite-or-insert-📅 while
+// The LINE MECHANICS — find-by-anchor, flip-if-open, rewrite-or-insert-📅 while
 // preserving the origin marker and trailing anchor — are identical and live
-// here. The processor keeps owning its clock (`addDays`) and its effect
-// emission; the surface keeps owning its fs/git. This module owns neither.
+// here. The surface owns fs/git. This module owns neither.
 //
 // Grammar dependencies are the shared task-line primitives: `parseBlockAnchor`
 // (the core `^id` grammar) and the origin-marker grammar (`([↗](target))`,

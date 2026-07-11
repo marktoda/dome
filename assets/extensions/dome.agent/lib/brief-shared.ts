@@ -352,7 +352,6 @@ export type BriefComposeRecord = {
   readonly inputs: {
     readonly calendar: string;
     readonly slack: string;
-    readonly ledger: string;
     readonly yesterday: string;
   };
 };
@@ -388,13 +387,12 @@ export function composeRecordSection(record: BriefComposeRecord): string {
     `_Composed ${record.count}× ${record.time}` +
     ` · calendar@${record.inputs.calendar}` +
     ` · slack@${record.inputs.slack}` +
-    ` · ledger@${record.inputs.ledger}` +
     ` · yesterday@${record.inputs.yesterday}_`;
   return [COMPOSE_RECORD_BLOCK.start, line, COMPOSE_RECORD_BLOCK.end].join("\n");
 }
 
 const COMPOSE_RECORD_RE =
-  /_Composed (\d+)× (\d{2}:\d{2}) · calendar@([0-9a-f]{8}|—) · slack@([0-9a-f]{8}|—) · ledger@([0-9a-f]{8}|—) · yesterday@([0-9a-f]{8}|—)_/;
+  /_Composed (\d+)× (\d{2}:\d{2}) · calendar@([0-9a-f]{8}|—) · slack@([0-9a-f]{8}|—) · yesterday@([0-9a-f]{8}|—)_/;
 
 /**
  * Parse the compose-record out of a daily note. `null` when the block is
@@ -417,8 +415,7 @@ export function parseBriefComposeRecord(
     inputs: Object.freeze({
       calendar: match[3] ?? "",
       slack: match[4] ?? "",
-      ledger: match[5] ?? "",
-      yesterday: match[6] ?? "",
+      yesterday: match[5] ?? "",
     }),
   });
 }

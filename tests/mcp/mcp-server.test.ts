@@ -40,10 +40,13 @@ import { enqueuePendingProposal } from "../../src/proposals/pending-proposals";
 const REPO_ROOT = join(import.meta.dir, "..", "..");
 
 const EXPECTED_TOOLS = [
+  "agent_work",
   "apply_proposal",
+  "attention",
   "brief",
   "capture",
   "check",
+  "complete_agent_work",
   "explain",
   "export_context",
   "proposals",
@@ -51,9 +54,11 @@ const EXPECTED_TOOLS = [
   "reject_proposal",
   "report_miss",
   "resolve",
+  "run_view",
   "settle",
   "status",
   "tasks",
+  "views",
 ];
 
 const TEST_TIMEOUT_MS = 120_000;
@@ -220,7 +225,7 @@ async function enqueueProposal(
 // ----- The in-memory MCP session ------------------------------------------------
 
 describe("dome mcp server (in-memory transport)", () => {
-  test("initialize + tools/list expose the fourteen shipped tools", async () => {
+  test("initialize + tools/list expose the shipped tools", async () => {
     const { client } = await fixture();
     const tools = await client.listTools();
     const names = tools.tools.map((tool) => tool.name).sort();
@@ -270,6 +275,39 @@ describe("dome mcp server (in-memory transport)", () => {
     expect(typeof sourceRefs[0]?.commit).toBe("string");
   }, TEST_TIMEOUT_MS);
 
+  test("views discovers plugins and run_view invokes one without a named adapter", async () => {
+    const { client } = await fixture();
+    const discovered = await callTool(client, "views");
+    expect(discovered.isError).toBe(false);
+    expect(discovered.json.schema).toBe("dome.views/v1");
+    expect(
+      (discovered.json.views as Array<Record<string, unknown>>)
+        .some((view) => view.command === "query"),
+    ).toBe(true);
+
+    const run = await callTool(client, "run_view", {
+      command: "query",
+      input: { text: "omega", limit: 3 },
+    });
+    expect(run.isError).toBe(false);
+    expect(run.json).toMatchObject({
+      schema: "dome.view-run/v1",
+      status: "ok",
+      command: "query",
+    });
+  }, TEST_TIMEOUT_MS);
+
+  test("run_view reports an absent plugin command as a tool error", async () => {
+    const { client } = await fixture();
+    const run = await callTool(client, "run_view", { command: "not-installed" });
+    expect(run.isError).toBe(true);
+    expect(run.json).toMatchObject({
+      schema: "dome.view-run/v1",
+      status: "error",
+      error: "view-not-found",
+    });
+  }, TEST_TIMEOUT_MS);
+
   test("export_context returns the dome.search.export-context/v1 packet", async () => {
     const { client } = await fixture();
     const call = await callTool(client, "export_context", { topic: "omega" });
@@ -289,6 +327,16 @@ describe("dome mcp server (in-memory transport)", () => {
     expect(Array.isArray(call.json.next_actions)).toBe(true);
     expect(call.json.serve_status).toBe("off");
     expect(typeof call.json.inbox_raw_pages).toBe("number");
+  }, TEST_TIMEOUT_MS);
+
+  test("attention returns the canonical derived owner queue", async () => {
+    const { client } = await fixture();
+    const call = await callTool(client, "attention");
+    expect(call.isError).toBe(false);
+    expect(call.json.schema).toBe("dome.attention/v1");
+    expect(Array.isArray(call.json.primary)).toBe(true);
+    expect(Array.isArray(call.json.backlog)).toBe(true);
+    expect(typeof call.json.agentWorkCount).toBe("number");
   }, TEST_TIMEOUT_MS);
 
   test("check returns the dome.check/v1 report", async () => {
@@ -430,6 +478,61 @@ describe("dome mcp server (in-memory transport)", () => {
     expect(answered.json.status).toBe("answered");
     const question = answered.json.question as Record<string, unknown>;
     expect(question.answer).toBe("yes");
+  }, TEST_TIMEOUT_MS);
+
+  test("agent_work compiles and completes a source-backed packet", async () => {
+    const { client, vault } = await fixture();
+    const branch = await getCurrentBranch(vault);
+    const adopted = branch === null ? null : await getAdoptedRef(vault, branch);
+    expect(adopted).not.toBeNull();
+    if (adopted === null) return;
+    const evidence = sourceRef({
+      commit: commitOid(adopted),
+      path: "wiki/project-omega.md",
+    });
+    const runtimeResult = await openVaultRuntime({
+      vaultPath: vault,
+      ...resolveBundleRoots({ vaultPath: vault }),
+    });
+    expect(runtimeResult.ok).toBe(true);
+    if (!runtimeResult.ok) return;
+    insertQuestion(runtimeResult.value.projectionDb, {
+      effect: questionEffect({
+        question: "Track the MCP evidence-backed follow-up?",
+        options: ["track", "ignore"],
+        sourceRefs: [evidence],
+        idempotencyKey: "test.mcp:agent-work",
+        metadata: {
+          resolutionMode: "dispatch",
+          automationPolicy: "agent-safe",
+          risk: "low",
+        },
+      }),
+      processorId: "test.mcp.agent-work",
+      runId: "run-test-mcp-agent-work",
+      adoptedCommit: commitOid(adopted),
+    });
+    await runtimeResult.value.close();
+
+    const listed = await callTool(client, "agent_work");
+    expect(listed.isError).toBe(false);
+    expect(listed.json.schema).toBe("dome.agent-work/v1");
+    const item = (listed.json.items as Array<Record<string, unknown>>).find(
+      (row) => row.question === "Track the MCP evidence-backed follow-up?",
+    );
+    expect(item).toBeDefined();
+    if (item === undefined) return;
+
+    const completed = await callTool(client, "complete_agent_work", {
+      questionId: item.questionId,
+      expectedRevision: item.revision,
+      answer: "track",
+      reason: "The adopted project page contains the relevant follow-up context.",
+      evidence: [evidence],
+    });
+    expect(completed.isError).toBe(false);
+    expect(completed.json.status).toBe("completed");
+    expect((completed.json.question as Record<string, unknown>).answered_by).toBe("agent");
   }, TEST_TIMEOUT_MS);
 
   test("tool errors surface the CLI's JSON error payload with isError", async () => {

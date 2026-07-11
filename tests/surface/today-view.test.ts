@@ -109,6 +109,33 @@ test("parses question options + resolveCommand", () => {
   expect(v.questions[0]!.id).toBe(7);
 });
 
+test("parses proposal reviews and the owner backlog", () => {
+  const v = parseTodayView({
+    date: "x",
+    openTasks: [],
+    followups: [],
+    questions: [],
+    reviews: [{
+      id: 9,
+      reason: "Promote the repair processor",
+      processorId: "dome.health.trust-review",
+      paths: [".dome/config.yaml"],
+      reviewCommand: "dome proposals",
+    }],
+    attentionBacklog: 2,
+    counts: { openTasks: 0, followups: 0, questions: 0, reviews: 1 },
+    brief: null,
+    calendar: null,
+    hero: null,
+  });
+  expect(v.reviews[0]).toEqual(expect.objectContaining({
+    id: 9,
+    reason: "Promote the repair processor",
+  }));
+  expect(v.attentionBacklog).toBe(2);
+  expect(buildTodayViewModel(v).totalOpen).toBe(1);
+});
+
 test("brief/calendar/hero null-safe + counts carried", () => {
   const v = parseTodayView({ date: "x", openTasks: [], followups: [], questions: [], counts: { openTasks: 3, followups: 1, questions: 2 }, brief: null, calendar: null, hero: null });
   expect(v.brief).toBeNull(); expect(v.calendar).toBeNull(); expect(v.hero).toBeNull();

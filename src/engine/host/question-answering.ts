@@ -1,8 +1,10 @@
 // engine/host/question-answering: durable answer orchestration.
 //
 // `dome resolve` / `dome answer` records a durable answer, then this module
-// dispatches matching garden-phase answer handlers. Background auto-resolution
-// uses the same answer-handler machinery through the operational pump.
+// dispatches matching garden-phase answer handlers.
+
+import type { DiagnosticEffect } from "../../core/effect";
+import type { RunnerExecutionStatus } from "../core/runner-contract";
 
 import {
   answerHandlersNeedDispatch,
@@ -17,7 +19,6 @@ import {
   runAnswerHandlersForQuestion,
   type AnswerHandlersForQuestionResult,
 } from "./compiler-host";
-import { answerHandlerFailure } from "../operational/question-auto-resolution";
 export {
   answerQuestionDurably,
   type AnswerQuestionDurablyOpts,
@@ -69,4 +70,28 @@ export async function dispatchAnswerHandlersIfNeeded(opts: {
     handledAt: now().toISOString(),
   });
   return result;
+}
+
+function answerHandlerFailure(result: {
+  readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
+  readonly runs: ReadonlyArray<{
+    readonly processorId: string;
+    readonly executionStatus: RunnerExecutionStatus;
+    readonly executionError?: { readonly message?: string };
+  }>;
+}): string | null {
+  const crash = result.diagnostics.find(
+    (diagnostic) => diagnostic.code === "answer.dispatch-crashed",
+  );
+  if (crash !== undefined) return crash.message;
+  const failedRun = result.runs.find(
+    (run) => run.executionStatus !== "succeeded",
+  );
+  if (failedRun !== undefined) {
+    return failedRun.executionError?.message ??
+      `answer handler ${failedRun.processorId} finished with ${failedRun.executionStatus}`;
+  }
+  return result.diagnostics.find(
+    (diagnostic) => diagnostic.severity === "error" || diagnostic.severity === "block",
+  )?.message ?? null;
 }

@@ -17,13 +17,12 @@
 //              absent). Commit-or-nothing: one commit carries both edits.
 //   - defer  → rewrite (or insert) the `📅 YYYY-MM-DD` due token to
 //              `deferUntil`; the task stays open, one commit.
-//   - keep   → touch nothing, record nothing, commit nothing. It exists so
-//              surfaces can offer the same tri-state as `settle-stale-answer`.
+//   - keep   → touch nothing, record nothing, commit nothing. It keeps the
+//              direct task-review surface tri-state and explicit.
 //
 // The line mechanics (find-by-anchor, flip-if-open, rewrite-📅) are the shared
-// pure transforms in `dome.daily`'s `task-disposition` module — the same code
-// the `settle-stale-answer` processor uses, so surface and processor can never
-// diverge. This file owns the fs/git half (via `commitFilesOnHead`, the
+// pure transforms in `dome.daily`'s `task-disposition` module. This file owns
+// the fs/git half (via `commitFilesOnHead`, the
 // machinery behind `performCapture`).
 //
 // Mutation-boundary note: like `src/surface/capture.ts`, this is the human-side

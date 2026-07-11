@@ -25,17 +25,15 @@ async function docsGrants(
 }
 
 describe("docs vault config (the dogfood vault's own grants)", () => {
-  test("dome.markdown bundle read grant does NOT cover core.md — design vault has no personal surfaces", async () => {
-    // core.md belongs to the personal-vault preference loop (gated core.md
-    // writers per wiki/specs/preferences.md) and never existed in the docs
-    // vault. The 2026-06-12 dogfood cleanup removed the grant alongside
-    // dome.daily for the same reason: this is a project/design vault. If
-    // core.md is ever introduced here, restore the read grant so the
-    // core-size lint fires (its effective read scope is empty without it).
+  test("dome.markdown core-size retains its declared read contract in the design vault", async () => {
+    // The docs vault still has no core.md and no personal-memory loop. The
+    // harmless read grant keeps the installed core-size processor's effective
+    // capability equal to its manifest contract, so doctor stays honest and
+    // the lint begins working automatically if the page is ever introduced.
     const granted = await docsGrants("dome.markdown.core-size");
     expect(
       pathCapabilityMatches("read", requireVaultPath("core.md"), granted),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   test("lint-supersession's read override covers root-level forward targets", async () => {

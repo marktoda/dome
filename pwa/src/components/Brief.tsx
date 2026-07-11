@@ -5,6 +5,7 @@ import {
   priorityMarkerChars,
   type TodayTaskRow,
   type TodayQuestionRow,
+  type TodayReviewRow,
 } from "../../../src/surface/today-view";
 import type { Today } from "../api/types";
 import { renderRich } from "../rich";
@@ -69,6 +70,24 @@ function QuestionCard({ q, onResolve }: { q: TodayQuestionRow; onResolve: (id: n
   );
 }
 
+function ReviewCard({
+  review,
+  onReview,
+}: {
+  review: TodayReviewRow;
+  onReview: (id: number, decision: "apply" | "reject") => void;
+}): React.ReactElement {
+  return (
+    <div className="qcard">
+      <div className="body">{renderRich(review.reason)}</div>
+      <div className="opts">
+        <button type="button" onClick={() => onReview(review.id, "apply")}>apply</button>
+        <button type="button" onClick={() => onReview(review.id, "reject")}>reject</button>
+      </div>
+    </div>
+  );
+}
+
 /** One urgency bucket (overdue / today / this week / later) — header + rows; nothing when empty. */
 function Bucket(
   { label, cls, items, settlingIds, onSettle }: {
@@ -100,6 +119,7 @@ function Bucket(
 type Props = {
   today: Today;
   onResolve: (id: number, value: string) => void;
+  onReview?: (id: number, decision: "apply" | "reject") => void;
   /** Settle a task closed by its ^block-anchor id; resolves to whether it
    * actually settled — the caller owns the API call, this component owns
    * only the optimistic strike-through + revert-on-failure UI state. */
@@ -110,7 +130,7 @@ type Props = {
 };
 
 export function Brief(
-  { today, onResolve, onSettle = async () => false, collapsed = false, hasMessages = false, onToggle = () => {} }: Props,
+  { today, onResolve, onReview = () => {}, onSettle = async () => false, collapsed = false, hasMessages = false, onToggle = () => {} }: Props,
 ): React.ReactElement | null {
   const [showAll, setShowAll] = useState(false);
   const [settlingIds, setSettlingIds] = useState<ReadonlySet<string>>(new Set());
@@ -132,7 +152,16 @@ export function Brief(
   // counts the CLI and HTTP cockpit render (src/surface/today-view.ts). The PWA
   // no longer re-derives "is this overdue" or carries a bespoke hero.
   const vm = buildTodayViewModel(parseTodayView(today));
-  const { brief, calendar, questions, stillOpen, counts, totalOpen } = vm;
+  const {
+    brief,
+    calendar,
+    questions,
+    reviews,
+    attentionBacklog,
+    stillOpen,
+    counts,
+    totalOpen,
+  } = vm;
 
   if (totalOpen === 0) {
     if (hasMessages) return null;
@@ -148,7 +177,7 @@ export function Brief(
   }
 
   const openCount = counts.openTasks + counts.followups;
-  const qCount = counts.questions;
+  const qCount = counts.questions + (counts.reviews ?? reviews.length);
   const summary =
     [openCount > 0 ? `${openCount} open` : null, qCount > 0 ? `${qCount} to decide` : null]
       .filter(Boolean).join(" · ") || "all clear";
@@ -217,6 +246,17 @@ export function Brief(
           <div className="label">To decide</div>
           <div className="rows">{questions.map((q) => <QuestionCard key={q.id} q={q} onResolve={onResolve} />)}</div>
         </div>
+      ) : null}
+      {reviews.length > 0 ? (
+        <div className="section">
+          <div className="label">To review</div>
+          <div className="rows">{reviews.map((review) => (
+            <ReviewCard key={review.id} review={review} onReview={onReview} />
+          ))}</div>
+        </div>
+      ) : null}
+      {attentionBacklog > 0 ? (
+        <div className="brief-more">+{attentionBacklog} in owner backlog</div>
       ) : null}
     </section>
   );

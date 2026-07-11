@@ -16,6 +16,7 @@ beforeEach(() => {
     const url = new URL(rawUrl, "http://x");
     if (url.pathname === "/tasks") return new Response(TODAY_BODY, { status: 200 });
     if (url.pathname === "/recents") return new Response(RECENTS_BODY, { status: 200 });
+    if (url.pathname === "/sessions") return new Response(JSON.stringify({ schema: "dome.agent-session/v1", status: "created", sessionId: "s1" }), { status: 201 });
     return new Response("{}", { status: 200 });
   }) as never;
 });
@@ -43,7 +44,10 @@ describe("App", () => {
       const url = new URL(rawUrl, "http://x");
       if (url.pathname === "/tasks") { taskCallCount++; return new Response(TODAY_BODY, { status: 200 }); }
       if (url.pathname === "/recents") { recentsCallCount++; return new Response(RECENTS_BODY, { status: 200 }); }
-      if (url.pathname === "/agent/stream") {
+      if (url.pathname === "/sessions") {
+        return new Response(JSON.stringify({ schema: "dome.agent-session/v1", status: "created", sessionId: "s1" }), { status: 201 });
+      }
+      if (url.pathname === "/sessions/s1/messages") {
         // Build a minimal Response-like object with a streaming body that
         // happy-dom can consume via getReader(). We can't easily patch a real
         // Response's body getter, so we craft a plain object matching the

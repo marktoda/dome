@@ -65,22 +65,26 @@ const today = defineProcessorImplementation({
     );
     const openTasks = selectDailyActionRows(actionState.openTasks, limit);
     const followups = selectDailyActionRows(actionState.followups, limit);
-    const questions = selectDailyActionRows(actionState.questions, limit);
+    const questions = actionState.questions.slice(0, limit);
+    const reviews = actionState.reviews.slice(0, limit);
     const shown = Object.freeze({
       openTasks: openTasks.length,
       followups: followups.length,
       questions: questions.length,
+      reviews: reviews.length,
     });
     const omitted = Object.freeze({
       openTasks: Math.max(0, actionState.counts.openTasks - shown.openTasks),
       followups: Math.max(0, actionState.counts.followups - shown.followups),
       questions: Math.max(0, actionState.counts.questions - shown.questions),
+      reviews: Math.max(0, actionState.counts.reviews - shown.reviews),
     });
     const scope = uniqueSourceRefs([
       ...actionState.daily.sourceRefs,
       ...openTasks.flatMap((task) => task.sourceRefs),
       ...followups.flatMap((task) => task.sourceRefs),
       ...questions.flatMap((question) => question.sourceRefs),
+      ...reviews.flatMap((review) => review.sourceRefs),
     ]);
     // Hero uses the full (non-display-limited) lists so it is not biased by the
     // per-source display cap.
@@ -113,6 +117,8 @@ const today = defineProcessorImplementation({
       openTasks,
       followups,
       questions,
+      reviews,
+      attentionBacklog: actionState.attentionBacklog,
       brief,
       calendar,
       hero,

@@ -85,11 +85,17 @@ const preferencePromotion = defineProcessorImplementation({
               }),
             ),
             metadata: {
+              resolutionMode: "dispatch",
               automationPolicy: "owner-needed",
               confidence: topic.confidence,
               recommendedAnswer: "promote",
               ownerNeededReason:
                 "Promoting a standing preference changes agent behavior on every future run; the owner decides.",
+              attention: {
+                consequence: "high",
+                urgency: "soon",
+                reason: "changes standing agent behavior",
+              },
             },
           }),
         );
@@ -127,11 +133,17 @@ const preferencePromotion = defineProcessorImplementation({
             ),
           ],
           metadata: {
+            resolutionMode: "dispatch",
             automationPolicy: "owner-needed",
             confidence: topic.confidence,
             recommendedAnswer: "demote",
             ownerNeededReason:
               "Demoting a standing preference changes agent behavior on every future run; the owner decides.",
+            attention: {
+              consequence: "high",
+              urgency: "soon",
+              reason: "changes standing agent behavior",
+            },
           },
         }),
       );

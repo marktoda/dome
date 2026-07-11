@@ -130,7 +130,7 @@ describe("runProposals", () => {
     const vault = await initVault();
     await commitFile(vault, "wiki/note.md", "line1\nline2\n");
     const id = await enqueueProposal(vault, {
-      processorId: "dome.agent.consolidate",
+      processorId: "dome.agent.garden",
       reason: "split oversized entity page",
       changes: [fileChange({ kind: "write", path: "wiki/note.md", content: "line1\nline2\nline3\n" })],
       baseContents: { "wiki/note.md": "line1\nline2\n" },
@@ -139,7 +139,7 @@ describe("runProposals", () => {
     const code = await runProposals({ vault });
     expect(code).toBe(0);
     const out = logs.join("\n");
-    expect(out).toContain(`P${id}  dome.agent.consolidate`);
+    expect(out).toContain(`P${id}  dome.agent.garden`);
     expect(out).toContain("wiki/note.md");
     expect(out).toContain("(+1 −0)");
     expect(out).toContain("split oversized entity page");

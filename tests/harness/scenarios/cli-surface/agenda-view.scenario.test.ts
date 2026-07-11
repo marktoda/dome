@@ -84,16 +84,13 @@ scenario(
     };
     expect(textPayload.markdown).toContain("# Dome Agenda: Ada");
     expect(textPayload.markdown).toContain(
-      "[followup] Ask Ada about rollout risks (wiki/dailies/2026-01-05.md:28; source wiki/projects/launch.md:9)",
+      "[followup] Ask Ada about rollout risks (wiki/dailies/2026-01-05.md:23; source wiki/projects/launch.md:9)",
     );
     expect(textPayload.markdown).toContain(
       "[followup] Send Ada launch notes (wiki/dailies/2026-01-05.md:8)",
     );
-    expect(textPayload.markdown).toContain(
-      "- ... 1 more agenda item (use --limit 5 to show all agenda items)",
-    );
-    expect(textPayload.markdown).toContain("resolve: dome resolve ");
-    expect(textPayload.markdown).toContain("<track|ignore>");
+    expect(textPayload.markdown).not.toContain("more agenda item");
+    expect(textPayload.markdown).not.toContain("resolve: dome resolve ");
     expect(textPayload.markdown).toContain("## SourceRefs");
 
     const json = await h.runCli([
@@ -140,16 +137,16 @@ scenario(
 
     expect(payload.topic).toBe("Ada");
     expect(payload.date).toBe("2026-01-05");
-    expect(payload.counts.agendaItems).toBe(5);
+    expect(payload.counts.agendaItems).toBe(4);
     expect(payload.counts.context).toBeGreaterThan(0);
     expect(payload.shown.agendaItems).toBe(4);
     expect(payload.shown.context).toBe(payload.context.length);
-    expect(payload.omitted.agendaItems).toBe(1);
+    expect(payload.omitted.agendaItems).toBe(0);
     expect(payload.agendaItems.map((item) => item.text)).toEqual([
       "Send Ada launch notes",
       "Ask Ada about rollout risks",
-      'Possible follow-up in wiki/projects/launch.md:10: "We should follow up with Ada about review timing.". Should Dome track this as a follow-up?',
       "Draft Ada staffing note",
+      "Share Ada launch checklist",
     ]);
     expect(payload.agendaItems.map((item) => item.priority)).toEqual([
       null,
@@ -158,15 +155,9 @@ scenario(
       null,
     ]);
     expect(payload.agendaItems[1]?.evidenceLabel).toBe(
-      "wiki/dailies/2026-01-05.md:28; source wiki/projects/launch.md:9",
+      "wiki/dailies/2026-01-05.md:23; source wiki/projects/launch.md:9",
     );
-    const questionItem = payload.agendaItems.find((item) =>
-      item.kind === "question"
-    );
-    expect(questionItem?.questionId).toBeGreaterThan(0);
-    expect(questionItem?.resolveCommand).toBe(
-      `dome resolve ${questionItem?.questionId} <track|ignore>`,
-    );
+    expect(payload.agendaItems.some((item) => item.kind === "question")).toBe(false);
     expect(payload.agendaItems.map((item) => item.text).join("\n")).not
       .toContain("Ben");
     expect(payload.agendaItems[0]?.sourceRefs[0]?.path).toBe(
@@ -178,11 +169,8 @@ scenario(
       "wiki/projects/launch.md",
     );
     expect(payload.markdown).toContain("# Dome Agenda: Ada");
-    expect(payload.markdown).toContain("resolve: dome resolve ");
-    expect(payload.markdown).toContain("<track|ignore>");
-    expect(payload.markdown).toContain(
-      "- ... 1 more agenda item (use --limit 5 to show all agenda items)",
-    );
+    expect(payload.markdown).not.toContain("resolve: dome resolve ");
+    expect(payload.markdown).not.toContain("more agenda item");
 
     const limitedContext = await h.runCli([
       "run",

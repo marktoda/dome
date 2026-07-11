@@ -66,6 +66,10 @@ export function nextActionsForStatus(
     readonly dirtyModifiedPaths?: ReadonlyArray<string>;
     readonly dirtyUntrackedPaths?: ReadonlyArray<string>;
     readonly pendingProposals?: number;
+    readonly firstOwnerAction?:
+      | { readonly kind: "decision"; readonly id: number; readonly options: ReadonlyArray<string> }
+      | { readonly kind: "review"; readonly id: number }
+      | null;
   },
 ): ReadonlyArray<CliNextAction> {
   const out: CliNextAction[] = [];
@@ -76,6 +80,7 @@ export function nextActionsForStatus(
     dirtyModifiedPaths = [],
     dirtyUntrackedPaths = [],
     pendingProposals = 0,
+    firstOwnerAction = null,
   } = input;
   pushAction(out, attention, DIRTY_REASONS, {
     command: "git status --short",
@@ -93,10 +98,27 @@ export function nextActionsForStatus(
       "or not model-ready; inspect dome.agent, enable it in " +
       ".dome/config.yaml when ready, commit, then run dome sync --json.",
   });
-  pushAction(out, attention, ["pending_proposals"], {
-    command: "dome proposals",
-    description: pendingProposalsDescription(pendingProposals),
-  });
+  if (firstOwnerAction?.kind === "review") {
+    appendAction(out, {
+      reasons: Object.freeze(["pending_proposals"]),
+      command: "dome proposals",
+      description: `Review proposal P${firstOwnerAction.id}; ${pendingProposalsDescription(pendingProposals)}`,
+    });
+  } else if (firstOwnerAction?.kind === "decision") {
+    appendAction(out, {
+      reasons: Object.freeze(["questions"]),
+      command: resolveQuestionCommand({
+        id: firstOwnerAction.id,
+        options: firstOwnerAction.options,
+      }),
+      description: questionResolutionDescription(firstOwnerAction.options),
+    });
+  } else {
+    pushAction(out, attention, ["pending_proposals"], {
+      command: "dome proposals",
+      description: pendingProposalsDescription(pendingProposals),
+    });
+  }
   pushAction(out, attention, ["adopted_ref_diverged"], {
     command: "dome reanchor",
     description:
@@ -140,7 +162,7 @@ export function nextActionsForStatus(
     attention.includes(reason),
   );
   const nonDiagnosticCheckReasons = checkReasons.filter(
-    (reason) => reason !== "diagnostics",
+    (reason) => reason !== "diagnostics" && !(reason === "questions" && firstOwnerAction !== null),
   );
   if (nonDiagnosticCheckReasons.length > 0) {
     appendAction(out, {
@@ -284,6 +306,10 @@ export function nextActionsForCheck(input: {
   readonly questions: number;
   readonly firstQuestionId: number | null;
   readonly firstQuestionOptions: ReadonlyArray<string> | null;
+  readonly firstOwnerAction?:
+    | { readonly kind: "decision"; readonly id: number; readonly options: ReadonlyArray<string> }
+    | { readonly kind: "review"; readonly id: number }
+    | null;
 }): ReadonlyArray<CliNextAction> {
   const out: CliNextAction[] = [];
   if (input.engineFindings > 0) {
@@ -319,7 +345,23 @@ export function nextActionsForCheck(input: {
       });
     }
   }
-  if (input.questions > 0) {
+  if (input.firstOwnerAction?.kind === "review") {
+    appendAction(out, {
+      reasons: Object.freeze(["pending_proposals"]),
+      command: `dome proposals --json`,
+      description:
+        `Review proposal P${input.firstOwnerAction.id}, then apply or reject it.`,
+    });
+  } else if (input.firstOwnerAction?.kind === "decision") {
+    appendAction(out, {
+      reasons: Object.freeze(["questions"]),
+      command: resolveQuestionCommand({
+        id: input.firstOwnerAction.id,
+        options: input.firstOwnerAction.options,
+      }),
+      description: questionResolutionDescription(input.firstOwnerAction.options),
+    });
+  } else if (input.questions > 0) {
     appendAction(out, {
       reasons: Object.freeze(["questions"]),
       command: resolveQuestionCommand({

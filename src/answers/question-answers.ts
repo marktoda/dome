@@ -5,7 +5,27 @@
 // projection state without giving processors direct write access.
 
 import { mapRows } from "../sqlite/rows";
+import { z } from "zod";
+import {
+  blobOid,
+  commitOid,
+  sourceRef,
+  SourceRefSchema,
+  type SourceRef,
+} from "../core/source-ref";
 import type { AnswersDb } from "./db";
+
+export type AgentAnswerContext = {
+  readonly kind: "agent";
+  readonly reason: string;
+  readonly evidence: ReadonlyArray<SourceRef>;
+};
+
+const AgentAnswerContextSchema = z.object({
+  kind: z.literal("agent"),
+  reason: z.string().min(1),
+  evidence: z.array(SourceRefSchema),
+}).strict();
 
 export type QuestionAnswerRecord = {
   readonly idempotencyKey: string;
@@ -16,6 +36,7 @@ export type QuestionAnswerRecord = {
   readonly processorId: string;
   readonly adoptedCommit: string;
   readonly answeredBy: QuestionAnsweredBy;
+  readonly answerContext: AgentAnswerContext | null;
   readonly handlerStatus: AnswerHandlerStatus;
   readonly handlerAttempts: number;
   readonly lastHandlerAttemptAt: string | null;
@@ -25,11 +46,10 @@ export type QuestionAnswerRecord = {
 
 export type AnswerHandlerStatus = "pending" | "handled" | "failed" | "skipped";
 
-/** Who supplied the durable answer: the vault owner (or an agent client
- * acting on their behalf), the background auto-resolution pump, or the
- * subject-liveness expiry pump forcing a terminal answer for a question
- * whose subject processor is retired. */
-export type QuestionAnsweredBy = "owner" | "auto" | "expired";
+/** Who supplied the durable answer. `auto` remains for rows written by the
+ * retired metadata-only pump; new autonomous decisions use `agent` plus an
+ * evidence context. */
+export type QuestionAnsweredBy = "owner" | "agent" | "auto" | "expired";
 
 export type RecordQuestionAnswerOpts = {
   readonly idempotencyKey: string;
@@ -40,26 +60,20 @@ export type RecordQuestionAnswerOpts = {
   readonly processorId: string;
   readonly adoptedCommit: string;
   readonly answeredBy: QuestionAnsweredBy;
+  readonly answerContext?: AgentAnswerContext;
 };
 
-const UPSERT_SQL = `
+const INSERT_ANSWER_SQL = `
 INSERT INTO question_answers (
   idempotency_key, answer, answered_at, question_id,
-  question, processor_id, adopted_commit, answered_by
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(idempotency_key) DO UPDATE SET
-  answer = excluded.answer,
-  answered_at = excluded.answered_at,
-  question_id = excluded.question_id,
-  question = excluded.question,
-  processor_id = excluded.processor_id,
-  adopted_commit = excluded.adopted_commit,
-  answered_by = excluded.answered_by
+  question, processor_id, adopted_commit, answered_by, answer_context_json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(idempotency_key) DO NOTHING
 `.trim();
 
 const QUERY_ALL_SQL = `
 SELECT idempotency_key, answer, answered_at, question_id,
-       question, processor_id, adopted_commit, answered_by,
+       question, processor_id, adopted_commit, answered_by, answer_context_json,
        handler_status, handler_attempts, last_handler_attempt_at,
        handled_at, last_handler_error
 FROM question_answers
@@ -68,7 +82,7 @@ ORDER BY answered_at, idempotency_key
 
 const QUERY_BY_KEY_SQL = `
 SELECT idempotency_key, answer, answered_at, question_id,
-       question, processor_id, adopted_commit, answered_by,
+       question, processor_id, adopted_commit, answered_by, answer_context_json,
        handler_status, handler_attempts, last_handler_attempt_at,
        handled_at, last_handler_error
 FROM question_answers
@@ -99,11 +113,19 @@ SET handler_status = ?,
 WHERE idempotency_key = ?
 `.trim();
 
+/**
+ * First-answer-wins durable write. Multiple harnesses
+ * may investigate the same derived packet concurrently; the durable answer
+ * row is the compare-and-set seam that prevents a later completion from
+ * overwriting the winner.
+ */
 export function recordQuestionAnswer(
   db: AnswersDb,
   opts: RecordQuestionAnswerOpts,
-): QuestionAnswerRecord {
-  db.raw.query(UPSERT_SQL).run(
+):
+  | { readonly kind: "recorded"; readonly record: QuestionAnswerRecord }
+  | { readonly kind: "existing"; readonly record: QuestionAnswerRecord } {
+  const result = db.raw.query(INSERT_ANSWER_SQL).run(
     opts.idempotencyKey,
     opts.answer,
     opts.answeredAt,
@@ -112,21 +134,15 @@ export function recordQuestionAnswer(
     opts.processorId,
     opts.adoptedCommit,
     opts.answeredBy,
+    opts.answerContext === undefined ? null : JSON.stringify(opts.answerContext),
   );
+  const record = getQuestionAnswer(db, opts.idempotencyKey);
+  if (record === null) {
+    throw new Error("question answer insert completed without a durable row");
+  }
   return Object.freeze({
-    idempotencyKey: opts.idempotencyKey,
-    answer: opts.answer,
-    answeredAt: opts.answeredAt,
-    questionId: opts.questionId,
-    question: opts.question,
-    processorId: opts.processorId,
-    adoptedCommit: opts.adoptedCommit,
-    answeredBy: opts.answeredBy,
-    handlerStatus: "pending",
-    handlerAttempts: 0,
-    lastHandlerAttemptAt: null,
-    handledAt: null,
-    lastHandlerError: null,
+    kind: result.changes === 1 ? "recorded" as const : "existing" as const,
+    record,
   });
 }
 
@@ -193,6 +209,7 @@ type QuestionAnswerRow = {
   readonly processor_id: string;
   readonly adopted_commit: string;
   readonly answered_by: string;
+  readonly answer_context_json: string | null;
   readonly handler_status: string;
   readonly handler_attempts: number;
   readonly last_handler_attempt_at: string | null;
@@ -210,6 +227,7 @@ function rowToRecord(row: QuestionAnswerRow): QuestionAnswerRecord {
     processorId: row.processor_id,
     adoptedCommit: row.adopted_commit,
     answeredBy: parseAnsweredBy(row.answered_by),
+    answerContext: parseAnswerContext(row.answer_context_json),
     handlerStatus: parseHandlerStatus(row.handler_status),
     handlerAttempts: row.handler_attempts,
     lastHandlerAttemptAt: row.last_handler_attempt_at,
@@ -219,8 +237,44 @@ function rowToRecord(row: QuestionAnswerRow): QuestionAnswerRecord {
 }
 
 function parseAnsweredBy(value: string): QuestionAnsweredBy {
-  if (value === "auto" || value === "expired") return value;
+  if (value === "agent" || value === "auto" || value === "expired") return value;
   return "owner";
+}
+
+function parseAnswerContext(value: string | null): AgentAnswerContext | null {
+  if (value === null) return null;
+  try {
+    const parsed = AgentAnswerContextSchema.safeParse(JSON.parse(value));
+    if (!parsed.success) return null;
+    const evidence = parsed.data.evidence.map((ref) => {
+      const range = ref.range === undefined
+        ? undefined
+        : Object.freeze({
+            startLine: ref.range.startLine,
+            endLine: ref.range.endLine,
+            ...(ref.range.startChar !== undefined
+              ? { startChar: ref.range.startChar }
+              : {}),
+            ...(ref.range.endChar !== undefined
+              ? { endChar: ref.range.endChar }
+              : {}),
+          });
+      return sourceRef({
+        path: ref.path,
+        commit: commitOid(ref.commit),
+        ...(ref.blob !== undefined ? { blob: blobOid(ref.blob) } : {}),
+        ...(range !== undefined ? { range } : {}),
+        ...(ref.stableId !== undefined ? { stableId: ref.stableId } : {}),
+      });
+    });
+    return Object.freeze({
+      kind: "agent" as const,
+      reason: parsed.data.reason,
+      evidence: Object.freeze(evidence),
+    });
+  } catch {
+    return null;
+  }
 }
 
 function parseHandlerStatus(value: string): AnswerHandlerStatus {

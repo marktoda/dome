@@ -42,17 +42,20 @@ describe("bin/dome process boundary", () => {
       "sync",
       // Decisions:
       "resolve",
+      "agent-work",
       "settle",
       "proposals",
       "apply",
       "reject",
       // Recall & views:
       "query",
+      "views",
       "today",
       "log",
       "explain",
       "export-context",
-      "audit",
+    "audit",
+    "garden",
       // Service:
       "serve",
       "install",

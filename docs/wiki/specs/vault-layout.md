@@ -204,7 +204,7 @@ Populating it follows the calendar pattern with one stance difference: Slack is 
 
 `core.md` is a top-level markdown page carrying the owner's **always-loaded
 core memory**: identity, active projects, and standing preferences. By the
-category table above it is `external` — like `meta/consolidation-ledger.md`, it is
+category table above it is `external` — like a retrieval miss log, it is
 a documented convention, not a new category. Every `dome.agent` run (ingest,
 consolidate, brief) reads it at run start and prepends it to the agent's task
 context as data (see [[wiki/specs/autonomous-agents]] §"Core-memory injection
@@ -362,15 +362,11 @@ by date each week; a missing file just omits that row, never an error.
 
 ## `meta/` — generated bookkeeping (convention)
 
-`meta/` holds machine-owned bookkeeping files: the per-category index shards
+`meta/` holds machine-owned rendered/support files: the per-category index shards
 (`meta/index-<category>.md`, `-N` suffix on overflow, rendered by
-`dome.markdown.render-index` — see §"`index.md`" below), the dome.agent
-cursor ledgers (`meta/consolidation-ledger.md`, `meta/sweep-ledger.md` —
-defaults; the `consolidation_ledger_path` / `sweep_ledger_path` config knobs
-still relocate them), and the dome.agent **patrol** pair
-(`meta/patrol-queue.md`, `meta/patrol-ledger.md` — the nightly staleness
-selector's transient review queue and its bounded 60-day visit ledger, both
-full rewrites; [[wiki/specs/autonomous-agents]] §"Patrol"). By the category
+`dome.markdown.render-index` — see §"`index.md`" below), retrieval misses,
+and the weekly report card. Semantic gardening owns no markdown queue or
+ledger; proposal decisions are its operational memory. By the category
 table above `meta/*` derives `external`
 — like `core.md`, this is a documented convention, not a new category, with
 one carve-out: unlike other external directories, `meta/` IS engine-written,
@@ -514,11 +510,6 @@ engine:
   auto_commit_workflows: true     # whether closure commits land automatically
   # external_handler_timeout_ms: 300000   # per-attempt outbox handler bound (default 30000);
   #                                       # raise when a subscription fetch runs a headless model
-  auto_resolve_questions:          # optional; defaults to disabled
-    enabled: false
-    policies: ["agent-safe"]
-    min_confidence: 0.6
-    max_per_tick: 20
 
 git:
   auto_commit_workflows: true     # mirror of engine.auto_commit_workflows
@@ -547,13 +538,10 @@ via `ledger.retention_days` ([[wiki/specs/run-ledger]] §"Retention");
 operational databases are otherwise preserved unless the user explicitly
 removes them.
 
-`engine.auto_resolve_questions`, when enabled, lets the operational pump answer
-low-risk unresolved `QuestionEffect` rows that carry an allowed automation
-policy, a confidence at or above `min_confidence`, SourceRefs that still exist
-at the adopted ref, and a `recommendedAnswer` valid for the question options.
-The answer is recorded in `answers.db`, mirrored onto the question row, and
-dispatched through normal garden answer handlers; it does not create a second
-state-editing path.
+The legacy `engine.auto_resolve_questions` key is accepted for configuration
+compatibility but ignored. Agent-safe decisions require a vault-aware
+agent to inspect the cited evidence and call the normal durable resolve
+operation; metadata and file existence alone never authorize an answer.
 
 ### `page-types.yaml`
 
@@ -619,7 +607,6 @@ The capability broker enforces ownership. Default rules:
 | `core.md` | propose-only — agents read it; the only auto-writers are the two gated block-scoped processors (`dome.agent.preference-promotion-answer` → promoted-preferences block; `dome.agent.active-projects` → active-projects block), each via a narrow per-processor grant ([[wiki/specs/preferences]] §"Two gated writers, block-scoped") |
 | `preferences/signals.md` | shared append surface — the three `dome.agent` charters, the promotion answer handler, foreground agents, and the owner all append signal lines (§"`preferences/signals.md`") |
 | `meta/retrieval-misses.md` | no agent grant — the only writer is `reportMiss` (`src/surface/report-miss.ts`) via `dome query --miss`, `dome export-context --miss`, or the MCP `report_miss` tool, an ordinary human commit outside the broker entirely (§"`meta/retrieval-misses.md`") |
-| `meta/patrol-queue.md`, `meta/patrol-ledger.md` | `dome.agent.patrol` (via a narrow per-processor `patch.auto` replacement grant) — the nightly staleness selector; full rewrites, the ledger bounded to 60 days ([[wiki/specs/autonomous-agents]] §"Patrol") |
 | `wiki/**/*.md` | open; `dome.daily.ambiguous-followup-answer` also has `patch.auto` for accepted follow-ups |
 | `wiki/**/*.md` | `dome.agent.ingest` (via `patch.auto`, within grant) |
 | `notes/**/*.md` | `dome.agent.ingest` (via `patch.auto`, within grant) — grant-as-boundary |

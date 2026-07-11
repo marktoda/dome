@@ -218,7 +218,7 @@ export type HealthFinding =
   | {
       readonly code: "operational.schema-mismatch";
       // "info" when the stored hash is a known-migratable prior hash for
-      // this store (see `operationalSchemaFinding`'s `knownPriorHash`) — it
+      // this store (see `operationalSchemaFinding`'s `knownPriorHashes`) — it
       // self-heals in place the next time the vault opens. "error" for any
       // other mismatch (unknown hash, or a store with no migrate policy).
       readonly severity: "error" | "info";

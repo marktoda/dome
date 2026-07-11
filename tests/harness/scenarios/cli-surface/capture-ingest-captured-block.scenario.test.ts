@@ -59,9 +59,7 @@ extensions:
         - "inbox/**/*.md"
         - "index.md"
         - "log.md"
-        - "meta/consolidation-ledger.md"
         - "sources/calendar/*.md"
-        - "meta/sweep-ledger.md"
         - "core.md"
         - "preferences/signals.md"
       patch.auto:
@@ -69,8 +67,6 @@ extensions:
         - "notes/**/*.md"
         - "index.md"
         - "log.md"
-        - "meta/consolidation-ledger.md"
-        - "meta/sweep-ledger.md"
         - "inbox/processed/*.md"
         - "inbox/raw/*.md"
         - "preferences/signals.md"

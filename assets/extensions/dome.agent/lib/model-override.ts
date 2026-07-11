@@ -2,8 +2,8 @@
 // `extensions.dome.agent.config.model_overrides` (a map of processor key →
 // model string) and inject the resolved model into every `step()` call.
 //
-// Same degrade-not-crash config idiom as `consolidate_targets` /
-// `sweep_targets`: a malformed value falls back to the default (here: no
+// Same degrade-not-crash config idiom as `garden_targets`: malformed input
+// falls back to the default (here: no
 // model field, i.e. the provider's default model) with a `problem` string the
 // processor surfaces as the `dome.agent.model-config-invalid` warning
 // diagnostic. Config must never crash a nightly run.
@@ -21,12 +21,11 @@
 
 import type { ModelStepFn } from "./agent-loop";
 
-/** The four routable agent processors, keyed by short name in config. */
+/** The routable agent processors, keyed by short name in config. */
 export const MODEL_OVERRIDE_KEYS = Object.freeze([
   "ingest",
-  "consolidate",
+  "garden",
   "brief",
-  "sweep",
 ] as const);
 
 export type ModelOverrideKey = (typeof MODEL_OVERRIDE_KEYS)[number];

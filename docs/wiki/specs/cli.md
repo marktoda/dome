@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-07-06
+updated: 2026-07-09
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -10,11 +10,10 @@ description: "Normative command-by-command CLI spec: capture, sync, status, chec
 
 # CLI
 
-This spec is normative for Dome's command-line interface. The CLI is the
-shipped v1 protocol adapter. It routes through the runtime directly today and
-should converge with the planned [[wiki/specs/sdk-surface]] §"AbstractSurface"
-for reads and view commands once that boundary lands, while keeping CLI-only
-engine-control verbs such as `sync`, `serve`, and `rebuild`.
+This spec is normative for Dome's command-line interface. The CLI is one thin
+adapter over `Vault`, engine-control boundaries, and the shared
+`src/surface/` operations. There is no additional aggregate surface object;
+CLI-only mechanics remain argv, text rendering, and process exit codes.
 
 ## The CLI surface
 
@@ -37,6 +36,8 @@ dome check [--engine] [--content] [--decisions] [--loops] [--attention] [--limit
                                 diagnostics, and decisions.
 dome resolve <question-id> [<value>]
                                 Resolve a Dome-raised decision from `check`.
+dome agent-work [<question-id> [<answer>]] [--revision <token>] [--reason <text>] [--evidence <path>...] [--json]
+                                List or complete evidence-backed agent work.
 dome settle <block-id> <close|defer|keep> [--until <yyyy-mm-dd>] [--json]
                                 Settle a task line by its ^block-anchor: close
                                 completes it (+ a Done-today bullet), defer
@@ -56,6 +57,8 @@ dome reject <id> [note...] [--json]
                                 decision only; writes no files.
 dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--json]
                                 FTS + structured query against adopted state.
+dome garden [--json]            Inspect ranked semantic-gardening opportunities
+                                from the installed dome.agent view.
 dome export-context <topic> [--limit <n>] [--json]
                                 Portable source-backed context packet.
 dome today [--date <yyyy-mm-dd>] [--limit <n>] [--watch] [--interval <seconds>]
@@ -90,7 +93,7 @@ dome restart [--vault <path>] [--json]
 dome uninstall [--vault <path>] [--json]
                                 Stop and remove the vault's ambient service.
 dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
-                                read/capture tools (capture, query, export_context,
+                                read/capture tools (capture, views, query, export_context,
                                 status, check, resolve, settle, tasks, brief) for
                                 MCP harnesses. The daemon still owns compilation.
 dome http [--vault <path>] [--port <port>] [--host <host>] [--token <token>]
@@ -99,9 +102,8 @@ dome http [--vault <path>] [--port <port>] [--host <host>] [--token <token>]
           [--transcribe-url <url>] [--transcribe-model <model>]
                                 Run the Dome HTTP surface (bearer-token auth;
                                 loopback by default): read/capture/resolve/settle
-                                routes, the GET /today HTML cockpit, POST /agent (the
-                                hosted agent loop; converse capability),
-                                POST /agent/stream (SSE variant), POST /transcribe
+                                routes, the GET /today HTML cockpit, session-oriented
+                                AgentRuntime conversation, POST /transcribe
                                 (voice STT; capture capability), and GET /recents.
                                 --allow-write grants the agent the `author` write
                                 capability (create_document / edit_document →
@@ -119,8 +121,8 @@ dome recipe <kind> [--url <base>]
 
 The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
 
-- **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, `dome resolve`, `dome settle`, `dome proposals`, `dome apply`, and `dome reject`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records an owner or agent answer to a Dome-raised decision and dispatches answer handlers; `settle` records an owner or agent decision on an open task by its `^block-anchor` (close / defer / keep) — resolve's sibling for tasks rather than questions (§"`dome settle`"). `dome proposals` / `dome apply` / `dome reject` are the review-loop siblings for garden propose-mode patches: a downgraded or explicitly-proposed `PatchEffect` lands as a durable row in `proposals.db` instead of being silently dropped, and `apply`/`reject` are the human-side decision verbs — the same settle pattern (staleness check → working-tree write → one ordinary commit) applied to garden-authored changes instead of task lines (§"`dome proposals` / `dome apply` / `dome reject`").
-- **Adopted-state recall surfaces:** `dome query` and `dome export-context` are the normal explicit read views when the user or a foreground agent asks for recall, planning, agenda context, or handoff material. They route through the shipped view-command boundary today and should map to `AbstractSurface.query` / command views once that planned boundary lands. `dome log` is the activity-recall sibling with a CLI-native posture (the `dome status` stance — no runtime, no view boundary): it reads git history directly and joins the run ledger (§"`dome log`"). `dome explain` is the provenance debugger over the same adopted state: for a page or one anchored claim it renders the chain claim → facts → runs → engine commits (§"`dome explain`"). `dome today --prep`, `dome today --with <person-or-topic>`, `dome audit stale-claims`, and `dome audit orphan-pages` are deterministic sibling views over the same view-command boundary — source-backed daily planning/agenda framings and claims/link-graph consistency audits — for the debugging, scripting, and unambiguous-filter cases where a natural-language `query` / `export-context` request isn't the goal. All four were once reachable only through the hidden `dome run <name>` dispatcher, then briefly held top-level verbs of their own; the cohesion review 2026-07-06 folded them to where they belong — the two daily framings are flags of the one `today` day surface, and the two consistency audits are subjects of the one `dome audit` umbrella (a top-level noun per view was verb sprawl, not discoverability).
+- **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, `dome resolve`, `dome agent-work`, `dome settle`, `dome proposals`, `dome apply`, and `dome reject`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records an owner-directed answer; `agent-work` lists or completes revisioned evidence-backed agent decisions; `settle` records an owner or agent decision on an open task by its `^block-anchor` (close / defer / keep) — resolve's sibling for tasks rather than questions (§"`dome settle`"). `dome proposals` / `dome apply` / `dome reject` are the review-loop siblings for garden propose-mode patches: a downgraded or explicitly-proposed `PatchEffect` lands as a durable row in `proposals.db` instead of being silently dropped, and `apply`/`reject` are the human-side decision verbs — the same settle pattern (staleness check → working-tree write → one ordinary commit) applied to garden-authored changes instead of task lines (§"`dome proposals` / `dome apply` / `dome reject`").
+- **Adopted-state recall surfaces:** `dome views --json` discovers every command-triggered view contributed by installed plugins; `dome run <command>` is the generic invocation seam. `dome query`, `dome export-context`, and `dome today` are ergonomic first-party wrappers, not hard-coded categories plugins must fit. `dome log` is the activity-recall sibling with a CLI-native posture (the `dome status` stance — no runtime, no view boundary): it reads git history directly and joins the run ledger (§"`dome log`"). `dome explain` is the provenance debugger over the same adopted state: for a page or one anchored claim it renders the chain claim → facts → runs → engine commits (§"`dome explain`").
 - **Advanced/debug and compatibility surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer` (deprecated alias — use `dome resolve`), `dome run`, `dome rebuild`, and `dome reanchor` remain available for detailed state inspection, extension development, maintenance, and explicit recovery. They are hidden from top-level help and are not the normal Claude Code workflow.
 
 `dome doctor` is read-only in V1. The `--repair` flag is a reserved surface for
@@ -336,9 +338,10 @@ The shipped initialization steps (plain `dome init`):
    path rather than polish. The generated instructions tell agents to inspect
    `serve_status` from `dome status --json` at session start, using
    `dome sync --json` after commits when no foreground `dome serve` host is
-   running and to use `query` / `export-context` as read-first context surfaces
-   for nontrivial vault work; the optional adopted-state views include
-   `dome log` (the activity view). The template also carries the foreground
+   running, use native Markdown reads for known scope, discover installed
+   compiled views with `dome views --json`, and use `query` /
+   `export-context` when unknown or cross-vault scope earns them. The optional
+   adopted-state views include `dome log` (the activity view). The template also carries the foreground
    "Preference signals" section — the standing instruction to append a
    well-formed signal line to `preferences/signals.md` when the owner
    explicitly expresses a durable preference or corrects agent behavior in
@@ -516,7 +519,7 @@ Composition (v1.0):
    - **detached HEAD** → exit 64 (EX_USAGE) with a clear stderr message.
    - **no commits** → exit 64 with a stderr message asking for an initial commit.
    - **diverged** → refuse before opening the adoption loop because the adopted ref is not an ancestor of HEAD; print recovery guidance and exit 1.
-   - **in-sync** → open the runtime, acquire the branch-level compiler-host lock, run one operational-work pump against the adopted commit (due schedule triggers, low-risk question auto-resolution when enabled, outbox rows already pending before the pump started, and subject-liveness question expiry — see [[wiki/specs/effects]] §"QuestionEffect"), print `dome sync: already in sync (<head> on <branch>)`, print durable attention / next-action lines when attention remains, exit 0.
+   - **in-sync** → open the runtime, acquire the branch-level compiler-host lock, run one operational-work pump against the adopted commit (due schedule triggers, outbox rows already pending before the pump started, and subject-liveness question expiry — see [[wiki/specs/effects]] §"QuestionEffect"), print `dome sync: already in sync (<head> on <branch>)`, print durable attention / next-action lines when attention remains, exit 0.
    - **drift** → open the runtime, acquire the branch-level compiler-host lock, run `runOneAdoption`, then after a successful adoption run the same operational-work pump against the new adopted commit; print the result block plus durable attention / next-action lines when attention remains (or the `--json` payload), exit 0 (adopted) or 1 (blocked).
    - **busy** → another Dome host already holds the branch-level compiler-host lock; print a retryable busy message, exit 75.
 4. Close the runtime on the way out.
@@ -530,10 +533,10 @@ Composition (v1.0):
 `status` is one of `"adopted" | "blocked" | "in-sync" | "busy" | "error"`. The `error` field is present on `"busy"` and error variants such as detached HEAD, no commits, runtime-open failure, or adopted-ref divergence.
 `garden` summarizes post-adoption garden PatchEffects that spawned
 sub-Proposals plus any garden-routing diagnostics. `operational` summarizes
-the scheduled/outbox/auto-resolution pump. `autoResolvedQuestions` counts
-low-risk `QuestionEffect` rows answered through the durable `dome resolve`
-machinery by opt-in runtime policy; their answer handlers still route patches
-through garden and adoption. `health` summarizes durable post-tick attention
+the scheduled/outbox operational pump. `autoResolvedQuestions` is retained in
+the v1 compatibility document and is always `0`; the metadata-only automatic
+resolver is retired. Agent-assigned decisions are resolved by a vault-aware
+agent through the normal durable resolve path. `health` summarizes durable post-tick attention
 state, including pending/failed runs, unresolved projection diagnostics,
 source-backed content diagnostics, source-less unlocated diagnostics, open
 questions, failed/pending outbox rows, and quarantines. `diagnostics`
@@ -786,6 +789,11 @@ readability option.
 rows, grouped by processor id. It is for status dashboards and agents that
 need to spot the processor currently causing churn; `dome inspect runs`
 remains the full audit surface.
+`owner_attention` is the embedded `dome.attention/v1` snapshot. Raw
+`questions` and `pending_proposals` counts remain for operational
+observability, but only owner-needed decisions and pending reviews contribute
+to the canonical owner queue; agent-safe questions do not route owner
+attention.
 `maintenance_loops` is a first-party V1 automation summary over the same
 processor substrate. Loops are metadata, not runtime dispatch units: each row
 names the desired-state objective, its implementing processor ids, command/path
@@ -976,7 +984,7 @@ Default scope includes:
   warning/error/block content diagnostics that require attention;
 - **decisions:** unresolved QuestionEffect rows with row ids, options,
   per-row `dome resolve` commands, SourceRefs, and optional automation
-  metadata that separates agent/model-safe work from owner-needed decisions,
+  metadata that separates agent-safe work from owner-needed decisions,
   plus a `proposals` array of pending garden propose-mode patches awaiting
   `dome apply` / `dome reject` (the same `dome.proposals/v1` proposal view
   `dome proposals` renders; §"`dome proposals` / `dome apply` / `dome
@@ -1062,7 +1070,7 @@ Abbreviated example:
     "shownItems": 1,
     "omittedItems": 0,
     "items": [{"id": 42, "question": "Retry failed outbox row?", "resolveCommand": "dome resolve 42 <retry|abandon>"}],
-    "proposals": [{"id": 12, "processorId": "dome.agent.consolidate", "reason": "...", "paths": ["wiki/entities/danny.md"], "createdAt": "2026-05-29T10:00:00.000Z", "status": "pending", "stale": false, "diffStat": [{"path": "wiki/entities/danny.md", "added": 41, "removed": 238}]}]
+    "proposals": [{"id": 12, "processorId": "dome.agent.garden", "reason": "...", "paths": ["wiki/entities/danny.md"], "createdAt": "2026-05-29T10:00:00.000Z", "status": "pending", "stale": false, "diffStat": [{"path": "wiki/entities/danny.md", "added": 41, "removed": 238}]}]
   },
   "maintenance_loops": [
     {
@@ -1096,11 +1104,11 @@ Every decision item includes its own `resolveCommand`. The
 question next-action mirrors the first unresolved decision; when that decision
 has explicit options, the command includes them as the placeholder, for example
 `dome resolve 42 <retry|abandon>`; free-form decisions use `<answer>`.
-For `agent-safe` and `model-safe` rows, a vault-aware agent may run
-`resolveCommand` when the answer is grounded in the row's SourceRefs, current
-adopted vault context, and allowed options. `recommended_answer` is only a
-hint. `owner-needed` rows, and rows missing metadata, should be surfaced to the
-owner instead of guessed.
+For `agent-safe` rows, autonomous harnesses use `dome agent-work` so revision,
+evidence coverage, and agent provenance are enforced. The legacy `model-safe`
+spelling normalizes to the same policy. `recommended_answer` is only a hint.
+`owner-needed` rows, and rows missing metadata, should be surfaced to the owner
+instead of guessed.
 When attention diagnostics are present and not already bounded, the diagnostic
 next action points to `dome check --content --attention --limit 50 --json` so
 an agent can safely fetch a larger bounded actionable detail list before
@@ -1119,11 +1127,10 @@ shown by `dome check`; `<value>` is one of the question's options when options
 are present, or free-form text otherwise. Without `<value>`, `dome resolve
 <question-id>` prints the question and options.
 
-`dome resolve` may be run by the owner or by a vault-aware foreground agent.
-Agent resolution is valid only for `agent-safe` / `model-safe` questions whose
-answer is grounded in the question SourceRefs and current adopted vault
-context. The command is intentionally still the only mutation path: agents must
-not edit `.dome/state/` directly, even for low-risk questions.
+`dome resolve` may be run by the owner or by a foreground agent carrying the
+owner's explicit decision. Autonomous resolution uses `dome agent-work`, which
+adds the source-evidence and provenance contract. Neither command permits
+agents to edit `.dome/state/` directly.
 
 `dome resolve` delegates to the same durable answer machinery as `dome answer`:
 it records the answer, marks the projection row resolved, and dispatches
@@ -1138,6 +1145,21 @@ answer, it prints the resolved answer and answer-handler summary.
 `--json` emits `dome.answer/v1` while preserving the root `status`,
 `question`, and `handlers` fields used by agent callers. Error cases emit
 `{ schema, status: "error", error, message }` to stdout.
+
+### `dome agent-work [<question-id> [<answer>]] [--revision <token>] [--reason <text>] [--evidence <path>...] [--json]`
+
+The direct-filesystem harness adapter for [[wiki/specs/agent-work]]. With no
+answer it lists the derived `dome.agent-work/v1` queue, including readiness,
+revision, allowed options, and required evidence paths. A question id filters
+the list to one packet.
+
+To complete a ready packet, pass its id and answer plus the exact revision, an
+audit reason, and one repeatable `--evidence` flag for every required path the
+harness actually read. Dome rejects stale revisions, missing sources,
+owner-needed questions, acknowledgements, and answers outside the allowed
+options. Success emits `dome.agent-work-completion/v1`, records
+`answered_by: "agent"` with evidence in `answers.db`, and dispatches the normal
+answer handler. The first durable answer wins if multiple harnesses race.
 
 ### `dome settle <block-id> <close|defer|keep> [--until <yyyy-mm-dd>] [--json]`
 
@@ -1186,7 +1208,7 @@ runtime and never talk to the engine, exactly like `dome capture` and
 and rejected rows. Text output renders one block per proposal:
 
 ```text
-P12  dome.agent.consolidate  2d  wiki/entities/danny.md (+41 −238)
+P12  dome.agent.garden  2d  wiki/entities/danny.md (+41 −238)
      split oversized entity page into danny + danny-promo-2026
      apply: dome apply 12   ·   reject: dome reject 12
 ```
@@ -1236,15 +1258,11 @@ id }` or `{ schema, status, message }`.
 Exit codes for both `apply` and `reject`: `0` on the success status
 (`applied` / `rejected`); `64` (`EX_USAGE`) on every other outcome.
 
-`dome status --json` carries a `pending_proposals` count and routes a
-`pending_proposals` attention reason (next action: `dome proposals`) when it
-is nonzero — the same treatment as open questions, so a garden review backlog
-does not silently sit outside the normal attention loop. `dome check --json`
-includes the same pending rows under `decisions.proposals` (an array of the
-`dome.proposals/v1` proposal view) alongside the existing question decisions,
-and a pending proposal flips check's `status` to `"attention"` exactly like an
-open question — both are decisions awaiting the owner, so the unified
-attention report surfaces and routes both decision kinds together.
+`dome status --json` carries a raw `pending_proposals` count plus the canonical
+`owner_attention` document and routes the first ranked action. `dome check
+--json` includes the same document under `decisions.attention` while retaining
+the raw question/proposal arrays for explanation. Both surfaces therefore use
+one eligibility rule, ordering, and budget; see [[wiki/specs/owner-attention]].
 
 ### `dome query <text> [--category <c>] [--type <t>] [--limit <n>] [--miss [note]] [--json]`
 
@@ -1254,6 +1272,12 @@ projections. The processor reads FTS rows and related facts through
 shared view-command boundary resolves the adopted commit and rebuilds
 `projection.db` if the stored adopted commit, extension-set hash, or
 processor-version hash is stale. Output (text mode):
+
+Natural-language analysis is owned by [[wiki/specs/recall]]: grammatical and
+answer-shape words do not become mandatory FTS terms when evidence-bearing
+terms remain. Focused one/two-term queries stay conjunctive; longer questions
+use a bounded minimum-match expression. Callers should ask the real question,
+not rewrite it into search-engine keywords.
 
 ```text
 dome query - docs                                              √ 4 matches
@@ -2334,6 +2358,11 @@ the question's originating `processorId` as well as its idempotency-key prefix;
 this prevents a third-party question emitter from invoking a first-party
 handler that holds recovery capabilities.
 
+Evidence-backed Agent Work adds `answered_by: "agent"` and
+`answer_context_json { kind, reason, evidence }` to that same durable row. It
+does not create another answer store. Inserts are first-answer-wins so
+concurrent agent and owner clients cannot overwrite one another.
+
 **Current behavior.** `dome resolve` / `dome answer` looks up the row id,
 prints the question when `<value>` is omitted, validates `<value>` against
 `options` when options are present, records the answer, and dispatches matching
@@ -2380,7 +2409,7 @@ Composition (v1.0):
 5. Adoption runs; effects route through `buildSqliteSinks` (projection + outbox writes) + the engine's candidate-tree `applyPatch` sink. View delivery remains a placeholder sink in v1.0.
 6. Every adoption or operational-work pump acquires the same branch-level compiler-host lock that `dome sync` uses. A second host does not race the first; it reports busy and retries on the next poll.
 7. After an adoption finishes, `serve` checks drift again before sleeping. If HEAD moved while adoption was active, the next adoption starts immediately rather than waiting for the full poll interval. This coalesces stacked commits without overlapping compiler work.
-8. The host also runs operational-work pumps while HEAD is already in sync, on a quiet internal cadence. This is how schedule triggers, opt-in low-risk question auto-resolution, subject-liveness question expiry, and outbox retries that become due solely because time passed make progress in a quiet vault. Default output stays silent; `--verbose` may print counts.
+8. The host also runs operational-work pumps while HEAD is already in sync, on a quiet internal cadence. This is how schedule triggers, subject-liveness question expiry, and outbox retries that become due solely because time passed make progress in a quiet vault. Default output stays silent; `--verbose` may print counts.
 9. The host refreshes `.dome/state/serve-heartbeat.json` so `dome status`
    can report whether the local compiler appears `running`, `stale`, or
    `off`. The heartbeat is observability only; the branch-level compiler-host
@@ -2654,9 +2683,9 @@ I/O failure.
 
 Runs the Dome MCP server over stdio for one vault — the shipped protocol
 adapter per [[wiki/specs/mcp-surface]] ([[wedge]] §"Phase 5 — MCP server").
-The server exposes fourteen typed tools (`capture`, `query`, `export_context`,
-`report_miss`, `status`, `check`, `resolve`, `settle`, `tasks`, `brief`,
-`proposals`, `apply_proposal`, `reject_proposal`, `explain`) whose results are
+The server exposes sixteen typed tools (`capture`, `views`, `run_view`, `query`,
+`export_context`, `report_miss`, `status`, `check`, `resolve`, `settle`,
+`tasks`, `brief`, `proposals`, `apply_proposal`, `reject_proposal`, `explain`) whose results are
 the same JSON documents the corresponding CLI verbs emit under `--json`; the
 adapter consumes the same data paths rather than re-implementing them.
 
@@ -2692,13 +2721,14 @@ The process serves until the client disconnects (stdin closes). Exit codes:
 Runs the Dome HTTP read+capture+converse surface for one vault — the shipped
 protocol adapter per [[wiki/specs/http-surface]] and the first shipped form of
 the remote-capture seam ([[wiki/specs/capture]] §"The remote-capture seam").
-Routes: `POST /capture`, `GET /status`, `GET /query`, `GET /tasks`,
+Routes: `POST /capture`, `GET /status`, `GET /query`, `GET /views`, `GET /tasks`,
 `GET /doc`, `GET /questions`, `POST /resolve` — the same JSON documents the
 corresponding CLI verbs emit under `--json` — plus `GET /today` (the
 self-refreshing HTML cockpit page; [[wiki/specs/http-surface]] §"The cockpit
-page (`GET /today`)"), `POST /agent` (the hosted agent loop; converse
-capability), `POST /agent/stream` (SSE variant), `POST /transcribe` (voice
-STT; capture capability), and `GET /recents`.
+page (`GET /today`)"), `POST /sessions`,
+`POST /sessions/:id/messages` (SSE AgentRuntime turn),
+`DELETE /sessions/:id`, `POST /transcribe` (voice STT; capture capability),
+and `GET /recents`.
 
 Boundary discipline:
 
@@ -2749,7 +2779,7 @@ A dedicated `dome <name>` Commander binding is a fourth edit when the command
 has user-facing ergonomics that justify first-class flags, help text, or text
 rendering.
 
-The CLI Commander layer is the thin protocol adapter; the work happens in the processor. Adding a command that does *not* need a dedicated `dome <name>` Commander binding is three edits — register the processor and invoke it via `dome run <command-name>`. A future `AbstractSurface` adapter should reuse the same shared dispatch boundary so dedicated view commands and generic command invocations inherit adopted-ref validation, projection freshness rebuilds, effect routing, and ledger recording consistently.
+The CLI Commander layer is the thin protocol adapter; the work happens in the processor. Adding a command that does *not* need a dedicated `dome <name>` Commander binding is three edits — register the processor and invoke it via `dome run <command-name>`. `Vault.listViews` plus `runInstalledView` expose that same command to other adapters without another named binding.
 
 The CLI shell-shape lockstep test enumerates command-triggered processors in
 `assets/extensions/dome.*/manifest.yaml` and asserts each has either a
@@ -2778,7 +2808,7 @@ The MCP server (`dome mcp`, per [[wiki/specs/mcp-surface]]) is the alternative f
 ## Related
 
 - [[wiki/specs/capture]] — the capture loop end-to-end + the phone/voice ingress recipe behind `dome capture`.
-- [[wiki/specs/sdk-surface]] §"Consumer surfaces" — the planned AbstractSurface this adapter should converge with.
+- [[wiki/specs/sdk-surface]] §"Consumer surfaces: operations, not an aggregate object".
 - [[wiki/specs/harnesses]] — when the CLI vs MCP earns its keep.
 - [[wiki/specs/adoption]] — what `dome sync` / `dome status` consult.
 - [[wiki/specs/processors]] — view-phase command processors.

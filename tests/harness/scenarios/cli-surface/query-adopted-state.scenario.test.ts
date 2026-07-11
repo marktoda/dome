@@ -83,7 +83,7 @@ scenario(
     expect(text.stdout).not.toContain("why:");
     expect(text.stdout).not.toContain("dome.graph.tagged");
     // No open questions in this vault (duplicate-detection retired — dedup is
-    // dome.agent.consolidate's job now), so the questions section is absent.
+    // dome.agent.garden's job now), so the questions section is absent.
     expect(text.stdout).not.toContain("questions:");
 
     const cli = await h.runCli(["query", "alpha launch", "--json"]);
@@ -146,7 +146,7 @@ scenario(
       ),
     ).toBe(true);
     // duplicate-detection retired: this match no longer carries a duplicate
-    // question (dedup is dome.agent.consolidate's job).
+    // question (dedup is dome.agent.garden's job).
     expect(match?.questions.length ?? 0).toBe(0);
 
     const limitedText = await h.runCli([

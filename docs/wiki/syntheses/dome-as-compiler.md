@@ -83,7 +83,13 @@ The most generative reframing: **Dome is a language server for prose.** Not a do
 - **Code actions (quick-fixes)** — `dome lint --apply <id>` is already a fix-it; an LSP surfaces it as an inline lightbulb.
 - **Rename refactoring** — rename an entity, atomically rewrite every wikilink/backlink (project-wide symbol rename).
 
-Why it is architecturally cheap: the protocol-adapter seam already exists. [[wiki/matrices/protocol-adapter]] describes `AbstractSurface` with `renderMcp` today and planned `renderHttp` / `renderVoice`. **LSP is just `renderLsp(buildAbstractSurface(vault))` — a third adapter beside CLI and MCP.** The backend (passes, diagnostics, symbol DB) is already built; LSP is a frontend protocol over it. This is the same realization the Roslyn / rust-analyzer teams had: the language server is the compiler exposing its query layer, not a separate tool.
+Why it is architecturally cheap: the protocol-adapter seam already exists. An
+LSP can consume `Vault` plus the relevant `src/surface/` operations just as
+CLI, MCP, and HTTP do. The backend (passes, diagnostics, symbol DB) is already
+built; LSP is a frontend protocol over it, not a reason to invent another
+aggregate object. This is the same realization the Roslyn / rust-analyzer
+teams had: the language server is the compiler exposing its query layer, not a
+separate tool.
 
 ### 2. A query-based incremental engine (rustc / salsa "red-green")
 
@@ -109,7 +115,7 @@ Compilers ship `rustc --explain E0502` and debuggers give stack traces. Dome has
 
 ## Where this leads
 
-Two ideas are concrete and architecturally *invited* by what already exists: the **LSP adapter** (cheapest, most visibly compiler-like, rides the `AbstractSurface` seam) and the **query-based incremental engine** (deepest — pays off speed and the determinism problem at once). The provenance debugger is the most on-brand. The rest are conversational.
+Two ideas are concrete and architecturally *invited* by what already exists: the **LSP adapter** (cheapest, most visibly compiler-like, rides the Vault + shared-operation seam) and the **query-based incremental engine** (deepest — pays off speed and the determinism problem at once). The provenance debugger is the most on-brand. The rest are conversational.
 
 If any of these graduates from idea to design, it should run through the substrate-first brainstorm flow so it lands against the existing specs and invariants rather than beside them.
 
@@ -120,6 +126,6 @@ If any of these graduates from idea to design, it should run through the substra
 - [[wiki/specs/adoption]] — the fixed-point loop and `compileRange`.
 - [[wiki/specs/harnesses]] — the compiler-boundary contract.
 - [[wiki/specs/cli]] — `dome serve` as the first compiler host; `dome lint` as the error-recovering checker.
-- [[wiki/matrices/protocol-adapter]] — the `AbstractSurface` seam an `renderLsp` would join.
+- [[wiki/matrices/protocol-adapter]] — the Vault + shared-operation seams an LSP adapter would join.
 - [[wiki/specs/projection-store]] — the semantic database an LSP / query engine serves from.
 - [[wiki/gotchas/processor-idempotency]], [[wiki/gotchas/agent-prompt-regression]] — the stochastic-optimizer scars.

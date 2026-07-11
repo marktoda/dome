@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import {
   ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY,
+  ANSWERS_SCHEMA_HASH_BEFORE_AGENT_CONTEXT,
   openAnswersDb,
   type AnswersDb,
 } from "../../src/answers/db";
@@ -28,6 +29,12 @@ const OLD_QUESTION_ANSWERS_DDL =
     + "handled_at TEXT,"
     + "last_handler_error TEXT"
     + ")";
+
+const PRE_AGENT_CONTEXT_DDL = OLD_QUESTION_ANSWERS_DDL.replace(
+  "handler_status TEXT NOT NULL DEFAULT 'pending',",
+  "answered_by TEXT NOT NULL DEFAULT 'owner'," +
+    "handler_status TEXT NOT NULL DEFAULT 'pending',",
+);
 
 describe("openAnswersDb", () => {
   let root: string;
@@ -132,6 +139,35 @@ describe("openAnswersDb", () => {
       )
       .get();
     expect(row?.answered_by).toBe("owner");
+  });
+
+  it("agent-context migration preserves current answers and adds nullable provenance", async () => {
+    mkdirSync(join(root, ".dome", "state"), { recursive: true });
+    const legacy = new Database(dbPath, { create: true });
+    legacy.run(PRE_AGENT_CONTEXT_DDL);
+    legacy.run(
+      "CREATE TABLE answers_meta (schema_hash TEXT NOT NULL PRIMARY KEY, built_at TEXT NOT NULL)",
+    );
+    legacy.run(
+      "INSERT INTO answers_meta (schema_hash, built_at) VALUES (?, ?)",
+      [ANSWERS_SCHEMA_HASH_BEFORE_AGENT_CONTEXT, "2026-07-08T00:00:00.000Z"],
+    );
+    legacy.run(
+      "INSERT INTO question_answers (idempotency_key, answer, answered_at, question_id, question, processor_id, adopted_commit, answered_by) VALUES ('k1','yes','2026-07-08T00:00:00.000Z',1,'q?','p','c','owner')",
+    );
+    legacy.close();
+
+    const result = await openAnswersDb({ path: dbPath });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("open failed");
+    handles.push(result.value.db);
+    expect(result.value.migration).toBe("migrated");
+    const row = result.value.db.raw
+      .query<{ answer: string; answer_context_json: string | null }, []>(
+        "SELECT answer, answer_context_json FROM question_answers WHERE idempotency_key = 'k1'",
+      )
+      .get();
+    expect(row).toEqual({ answer: "yes", answer_context_json: null });
   });
 
   it("answered_by migration: an unknown stored hash still refuses", async () => {

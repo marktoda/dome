@@ -176,6 +176,24 @@ describe("renderTodayHtml", () => {
     expect(html).toContain("dome resolve 7 yes");
   });
 
+  test("renders proposal reviews and the canonical backlog count", () => {
+    const html = renderTodayHtml({
+      ...base,
+      reviews: [{
+        id: 12,
+        reason: "Promote the repair processor",
+        processorId: "dome.health.trust-review",
+        paths: [".dome/config.yaml"],
+        reviewCommand: "dome proposals",
+      }],
+      attentionBacklog: 3,
+      counts: { ...base.counts, reviews: 1 },
+    }, { refreshSeconds: 15 });
+    expect(html).toContain("To review");
+    expect(html).toContain("Promote the repair processor");
+    expect(html).toContain("+3 in owner backlog");
+  });
+
   test("renders still-open task list", () => {
     const html = renderTodayHtml(base, { refreshSeconds: 15 });
     expect(html).toContain("Still open");

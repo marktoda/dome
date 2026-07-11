@@ -39,7 +39,7 @@ describe("first-party maintenance loops", () => {
       "dome.question.continuity",
       "dome.system.report-card",
       "dome.preference.promotion",
-      "dome.meaning.integration",
+      "dome.semantic.gardening",
       "dome.daily.edition",
     ]);
 

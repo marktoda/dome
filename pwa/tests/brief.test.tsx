@@ -53,6 +53,30 @@ describe("Brief", () => {
     expect(screen.getByText("09:00")).toBeDefined();
     expect(screen.getByText(/Standup/)).toBeDefined();
   });
+
+  test("renders proposal reviews in the owner queue and dispatches apply or reject", () => {
+    const onReview = mock(() => {});
+    const today: Today = {
+      ...base,
+      reviews: [{
+        id: 12,
+        reason: "Promote the link repair processor",
+        processorId: "dome.health.trust-review",
+        paths: [".dome/config.yaml"],
+        reviewCommand: "dome proposals",
+      }],
+      attentionBacklog: 2,
+      counts: { openTasks: 0, followups: 0, questions: 0, reviews: 1 },
+    };
+    render(<Brief today={today} onResolve={noop} onReview={onReview} />);
+    expect(screen.getByText("To review")).toBeDefined();
+    expect(screen.getByText("Promote the link repair processor")).toBeDefined();
+    expect(screen.getByText("+2 in owner backlog")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "apply" }));
+    fireEvent.click(screen.getByRole("button", { name: "reject" }));
+    expect(onReview).toHaveBeenNthCalledWith(1, 12, "apply");
+    expect(onReview).toHaveBeenNthCalledWith(2, 12, "reject");
+  });
 });
 
 // ----- checkbox settle (Task 9: PWA checkbox settles for real) --------------

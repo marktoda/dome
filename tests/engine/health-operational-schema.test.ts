@@ -18,7 +18,10 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY } from "../../src/answers/db";
+import {
+  ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY,
+  ANSWERS_SCHEMA_HASH_BEFORE_AGENT_CONTEXT,
+} from "../../src/answers/db";
 import { OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT } from "../../src/outbox/db";
 import {
   collectOperationalSchemaFindings,
@@ -56,7 +59,7 @@ describe("operationalSchemaFinding: known-migratable prior hashes are info, not 
         path,
         table: "answers_meta",
         expected: "current-answers-hash",
-        knownPriorHash: ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY,
+        knownPriorHashes: [ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY],
       });
       expect(finding).not.toBeNull();
       if (finding === null) return;
@@ -72,6 +75,22 @@ describe("operationalSchemaFinding: known-migratable prior hashes are info, not 
     });
   });
 
+  test("answers.db on the pre-agent-context hash is also migratable", () => {
+    withTempDb(ANSWERS_SCHEMA_HASH_BEFORE_AGENT_CONTEXT, "answers_meta", (path) => {
+      const finding = operationalSchemaFinding({
+        database: "answers",
+        path,
+        table: "answers_meta",
+        expected: "current-answers-hash",
+        knownPriorHashes: [
+          ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY,
+          ANSWERS_SCHEMA_HASH_BEFORE_AGENT_CONTEXT,
+        ],
+      });
+      expect(finding?.severity).toBe("info");
+    });
+  });
+
   test("outbox.db on the known pre-next_attempt_at hash -> info finding, mentions auto-migration on next open", () => {
     withTempDb(OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT, "outbox_meta", (path) => {
       const finding = operationalSchemaFinding({
@@ -79,7 +98,7 @@ describe("operationalSchemaFinding: known-migratable prior hashes are info, not 
         path,
         table: "outbox_meta",
         expected: "current-outbox-hash",
-        knownPriorHash: OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT,
+        knownPriorHashes: [OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT],
       });
       expect(finding).not.toBeNull();
       if (finding === null) return;
@@ -96,7 +115,7 @@ describe("operationalSchemaFinding: known-migratable prior hashes are info, not 
         path,
         table: "answers_meta",
         expected: "current-answers-hash",
-        knownPriorHash: ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY,
+        knownPriorHashes: [ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY],
       });
       expect(finding).not.toBeNull();
       if (finding === null) return;
@@ -127,7 +146,7 @@ describe("operationalSchemaFinding: known-migratable prior hashes are info, not 
         path,
         table: "answers_meta",
         expected: ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY,
-        knownPriorHash: ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY,
+        knownPriorHashes: [ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY],
       });
       expect(finding).toBeNull();
     });

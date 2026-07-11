@@ -53,6 +53,7 @@ import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import { compareStrings } from "../../core/compare";
+import { getQuestionAnswer } from "../../answers/question-answers";
 import type {
   DiagnosticEffect,
   FactEffect,
@@ -724,22 +725,29 @@ function collectRows(
     }
     case "questions": {
       const all = queryQuestionRecords(runtime.projectionDb);
-      return all.slice(0, limit).map((q) => ({
-        id: q.id,
-        status: q.answeredAt === null ? "open" : "answered",
-        question: q.effect.question,
-        options: q.effect.options ?? "-",
-        metadata: q.effect.metadata ?? "-",
-        processor: q.processorId,
-        run: q.runId,
-        adopted: q.adoptedCommit,
-        source_refs: formatSourceRefs(q.effect.sourceRefs),
-        answer: q.answer ?? "-",
-        asked_at: q.askedAt,
-        answered_at: q.answeredAt ?? "-",
-        answered_by: q.answeredBy ?? "-",
-        idempotency_key: q.effect.idempotencyKey,
-      }));
+      return all.slice(0, limit).map((q) => {
+        const durable = getQuestionAnswer(
+          runtime.answersDb,
+          q.effect.idempotencyKey,
+        );
+        return {
+          id: q.id,
+          status: q.answeredAt === null ? "open" : "answered",
+          question: q.effect.question,
+          options: q.effect.options ?? "-",
+          metadata: q.effect.metadata ?? "-",
+          processor: q.processorId,
+          run: q.runId,
+          adopted: q.adoptedCommit,
+          source_refs: formatSourceRefs(q.effect.sourceRefs),
+          answer: q.answer ?? "-",
+          answer_context: durable?.answerContext ?? "-",
+          asked_at: q.askedAt,
+          answered_at: q.answeredAt ?? "-",
+          answered_by: q.answeredBy ?? "-",
+          idempotency_key: q.effect.idempotencyKey,
+        };
+      });
     }
     case "outbox": {
       const all = queryOutbox(runtime.outboxDb);

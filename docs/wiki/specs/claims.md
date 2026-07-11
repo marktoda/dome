@@ -90,7 +90,7 @@ page body word-for-word, and template placeholders
   descending before capping; claims with no `asOf` sort last, ties keep
   document order. When the page carries more than 12 renderable claims, a
   `- +N more — \`dome query <subject>\`` tail line closes the list (the
-  same cap idiom as `dome.daily`'s "To decide" block; `<subject>` is the
+  same cap idiom as the bounded owner-attention surface; `<subject>` is the
   page's own name, since the claim's subject IS its host page).
 - **Placeholder filter: `[`…`]`-bracketed values never render.** A claim
   whose value — after stripping inline as-of markers and peeling trailing
@@ -166,9 +166,8 @@ extracts the facts from adopted pages, preserving
 
 ## Consumers
 
-The nightly sweeper (`dome.agent.sweep`, shipped — see [[wiki/specs/sweep]])
-supersedes claim values in place; `dome explain <page>#^c…` (planned) renders
-a claim's timeline from block git history.
+Semantic gardening may propose source-grounded claim updates in place;
+`dome explain <page>#^c…` renders a claim's timeline from block git history.
 
 **Same-page key-collision (self-consumer).** The `dome.claims.index`
 processor is its own first consumer: because it already parses every claim
@@ -183,9 +182,8 @@ the retired `dome.warden.integrity` pre-filter, whose garden-phase
 
 **Model-judgment integrity review** — the fuzzier classes (historical-as-ongoing,
 cross-page contradiction, self-corroboration, inference-as-fact) — rides the
-nightly `dome.agent.consolidate` agent's `flagIntegrity` tool (see
-[[wiki/specs/task-lifecycle]] §"Wardens" and [[wiki/specs/autonomous-agents]]
-§"`dome.agent.consolidate`"), which emits `DiagnosticEffect`s only, never a
+nightly `dome.agent.garden` processor's `flagIntegrity` tool (see
+[[wiki/specs/semantic-gardening]]), which emits `DiagnosticEffect`s only, never a
 fact, keeping [[wiki/invariants/MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS]] intact.
 
 ### Health

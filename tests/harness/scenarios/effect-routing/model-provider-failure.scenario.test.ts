@@ -15,7 +15,7 @@
 // this is a garden-phase processor, adoption still completes (only
 // adoption-phase failures block adoption).
 //
-// Note: the shipped model-class agents (e.g. dome.agent.consolidate)
+// Note: the shipped model-class agents (e.g. dome.agent.garden)
 // intentionally swallow model errors via try/catch (they degrade to a clean
 // no-op when the model is unavailable). That resilience is correct but means
 // they cannot demonstrate the "failed run" invariant. A fixture processor that

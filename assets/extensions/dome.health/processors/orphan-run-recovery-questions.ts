@@ -50,6 +50,7 @@ function questionForOrphanRun(row: OperationalRunRow): QuestionEffect {
       phase: row.phase,
     }),
     metadata: {
+      resolutionMode: "dispatch",
       risk: "low",
       confidence: 1,
       recommendedAnswer: "fail",

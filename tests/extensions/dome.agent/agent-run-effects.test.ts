@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  agentQuestionEffects,
+  agentEscalationEffects,
   agentTruncatedEffect,
   finishAgentRun,
 } from "../../../assets/extensions/dome.agent/lib/agent-run-effects";
@@ -29,7 +29,7 @@ function stateWith(opts: {
 }
 
 describe("finishAgentRun", () => {
-  test("maps accumulated edits to one auto PatchEffect plus question effects", () => {
+  test("maps accumulated edits to one auto PatchEffect plus escalation diagnostics", () => {
     const state = stateWith({
       writes: [["wiki/a.md", "A"]],
       deletes: ["wiki/b.md"],
@@ -59,8 +59,10 @@ describe("finishAgentRun", () => {
       { kind: "write", path: "wiki/a.md", content: "A" },
       { kind: "delete", path: "wiki/b.md" },
     ]);
-    const questions = effects.filter((e) => e.kind === "question");
-    expect(questions).toHaveLength(1);
+    const escalations = effects.filter(
+      (e) => e.kind === "diagnostic" && e.code === "dome.agent.owner-input-needed",
+    );
+    expect(escalations).toHaveLength(1);
   });
 
   test("a final model text rides the patch reason as the run narrative", () => {
@@ -122,7 +124,11 @@ describe("finishAgentRun", () => {
       truncatedMessage: "unused",
     });
     expect(effects.filter((e) => e.kind === "patch")).toHaveLength(0);
-    expect(effects.filter((e) => e.kind === "question")).toHaveLength(1);
+    expect(
+      effects.filter(
+        (e) => e.kind === "diagnostic" && e.code === "dome.agent.owner-input-needed",
+      ),
+    ).toHaveLength(1);
   });
 
   test("noOp option surfaces a zero-edit final run as an info diagnostic carrying the final text", () => {
@@ -205,7 +211,7 @@ describe("finishAgentRun", () => {
     expect(effects.filter((e) => e.kind === "patch")).toHaveLength(1);
   });
 
-  test("atomic cap overreach rolls back all edits but keeps questions", () => {
+  test("atomic cap overreach rolls back all edits but keeps escalation diagnostics", () => {
     const state = stateWith({
       writes: [
         ["wiki/a.md", "A"],
@@ -227,12 +233,18 @@ describe("finishAgentRun", () => {
       },
     });
     expect(effects.filter((e) => e.kind === "patch")).toHaveLength(0);
-    const diag = effects.find((e) => e.kind === "diagnostic");
+    const diag = effects.find(
+      (e) => e.kind === "diagnostic" && e.code === "dome.agent.test-overreach",
+    );
     expect(diag?.kind === "diagnostic" && diag.code).toBe("dome.agent.test-overreach");
     expect(diag?.kind === "diagnostic" && diag.message).toBe(
       "touched 3 files (cap 2); rolled back.",
     );
-    expect(effects.filter((e) => e.kind === "question")).toHaveLength(1);
+    expect(
+      effects.filter(
+        (e) => e.kind === "diagnostic" && e.code === "dome.agent.owner-input-needed",
+      ),
+    ).toHaveLength(1);
   });
 
   test("a run exactly at the cap still applies", () => {
@@ -259,17 +271,19 @@ describe("finishAgentRun", () => {
   });
 });
 
-describe("agentQuestionEffects / agentTruncatedEffect (composable pieces)", () => {
-  test("agentQuestionEffects carries question text, idempotency key, and sourceRefs", () => {
-    const effects = agentQuestionEffects(
+describe("agentEscalationEffects / agentTruncatedEffect (composable pieces)", () => {
+  test("agentEscalationEffects keeps inert askOwner output as a source-backed diagnostic", () => {
+    const effects = agentEscalationEffects(
       stateWith({ questions: ["is X canonical?"] }),
       refs,
     );
     expect(effects).toHaveLength(1);
-    const q = effects[0]!;
-    expect(q.kind === "question" && q.question).toBe("is X canonical?");
-    expect(q.kind === "question" && q.idempotencyKey).toBe("k:is X canonical?");
-    expect(q.kind === "question" && q.sourceRefs).toEqual(refs);
+    const diagnostic = effects[0]!;
+    expect(diagnostic.kind === "diagnostic" && diagnostic.message).toBe("is X canonical?");
+    expect(diagnostic.kind === "diagnostic" && diagnostic.code).toBe(
+      "dome.agent.owner-input-needed",
+    );
+    expect(diagnostic.kind === "diagnostic" && diagnostic.sourceRefs).toEqual(refs);
   });
 
   test("agentTruncatedEffect is null on a final stop and a warning on budget", () => {

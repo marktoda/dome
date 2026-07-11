@@ -1,10 +1,10 @@
 // dome.daily.compose-blocks — the deterministic compositor (daily-surface D6).
 //
 // At 05:25 (schedule) and on `questions.changed` + `proposals.changed` +
-// source-file + sweep-ledger signals, this processor composes the
+// source-file signals, this processor composes the
 // deterministic edition blocks into TODAY's daily: the "To decide" questions
 // list, the "To review" pending-proposals list, the agenda, the
-// integrated-overnight sweep digest, and the honest sources-seen record — each
+// honest sources-seen record — each
 // rendered from current inputs by the pure renderers in `edition-blocks.ts`.
 // It also performs the one-time migration that removes the retired
 // `dome.agent.brief:{questions,integrated,sources}` legacy blocks from today's
@@ -27,7 +27,10 @@ import {
   type Effect,
   type FileChangeInput,
 } from "../../../../src/core/effect";
-import { compareStrings } from "../../../../src/core/compare";
+import {
+  attentionProposal,
+  compileAttention,
+} from "../../../../src/attention/attention";
 import { generatedBlockAnomalyDiagnostics } from "../../../../src/core/generated-block-diagnostics";
 import {
   defineProcessorImplementation,
@@ -60,20 +63,17 @@ import {
 } from "./daily-types";
 import {
   agendaSection,
-  integratedSection,
-  proposalsSection,
+  attentionSection,
   questionAgingDaysFromConfig,
-  questionsSection,
   replaceEditionBlock,
   sourcesSection,
   toEditionQuestion,
+  toEditionAttention,
   type EditionProposal,
 } from "./edition-blocks";
-import { parseSweepLedger } from "./sweep-ledger";
 
 const START_HERE_HEADING = "## Start Here";
 const MEETINGS_HEADING = "## Meetings";
-const SWEEP_LEDGER_PATH = "meta/sweep-ledger.md";
 
 const composeBlocks = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
@@ -122,83 +122,90 @@ const composeBlocks = defineProcessorImplementation({
 
     let content = base;
 
-    // Questions — the "To decide" block. `questions.read` is declared; a
-    // missing operational view is LOUD (the block is omitted, never a silent
+    // Owner attention — one canonical budget across decisions and proposal
+    // reviews. The raw views remain distinct durable lifecycles; the attention
+    // compiler owns eligibility, ordering, aging, and the shared cap.
+    // A missing operational view is LOUD (the block is omitted, never a silent
     // empty render). NEEDS_ARE_LOUD applied locally.
     const questionsView = ctx.operational?.questions;
+    const proposalsView = ctx.operational?.proposals;
     if (questionsView === undefined) {
       diagnostics.push(
         diagnosticEffect({
           severity: "warning",
           code: "dome.daily.questions-view-missing",
           message:
-            "dome.daily.compose-blocks declares questions.read but received no questions view; the To-decide block is omitted",
+            "dome.daily.compose-blocks declares questions.read but received no questions view; decisions are omitted from owner attention",
           sourceRefs: [ctx.sourceRef(todayPath)],
         }),
       );
-    } else {
-      const questions = questionsView({ resolved: false }).map(toEditionQuestion);
-      content = replaceEditionBlock({
-        content,
-        owner: DAILY_OWNER,
-        block: QUESTIONS_BLOCK,
-        section: questionsSection(questions, {
-          agingDays,
-          nowIso: now.toISOString(),
-        }),
-        heading: START_HERE_HEADING,
-        afterBlock: EDITION_YESTERDAY_BLOCK,
-      });
     }
-
-    // Integrated-overnight — the sweep-ledger digest for TODAY's run.
-    const ledger = await ctx.snapshot.readFile(SWEEP_LEDGER_PATH);
-    const todayRun =
-      ledger === null
-        ? []
-        : parseSweepLedger(ledger).runs.find((run) => run.date === todayStr)
-            ?.rows ?? [];
-    content = replaceEditionBlock({
-      content,
-      owner: DAILY_OWNER,
-      block: INTEGRATED_BLOCK,
-      section: integratedSection(todayRun),
-      heading: START_HERE_HEADING,
-      afterBlock: { owner: DAILY_OWNER, block: QUESTIONS_BLOCK },
-    });
-
-    // Proposals — the "To review" block. `proposals.read` is declared; a
-    // missing operational view is LOUD (the block is omitted, never a silent
-    // empty render). NEEDS_ARE_LOUD applied locally, mirroring the questions
-    // view above. Anchored to the questions block (not integrated) so a
-    // first-time render lands the "To review" block between "To decide" and
-    // "Integrated Overnight" — this call runs after the integrated splice
-    // above, so its insert (right after the questions block's end) pushes
-    // the already-spliced integrated block down rather than the reverse.
-    const proposalsView = ctx.operational?.proposals;
     if (proposalsView === undefined) {
       diagnostics.push(
         diagnosticEffect({
           severity: "warning",
           code: "dome.daily.proposals-view-missing",
           message:
-            "dome.daily.compose-blocks declares proposals.read but received no proposals view; the To-review block is omitted",
+            "dome.daily.compose-blocks declares proposals.read but received no proposals view; reviews are omitted from owner attention",
           sourceRefs: [ctx.sourceRef(todayPath)],
         }),
       );
-    } else {
-      const proposals = [...proposalsView({ status: "pending" })]
-        .sort((a, b) => compareStrings(a.createdAt, b.createdAt))
-        .map(toEditionProposal);
+    }
+    {
+      const questionRows = questionsView?.({ resolved: false }) ?? [];
+      const proposalRows = proposalsView?.({ status: "pending" }) ?? [];
+      const questionsById = new Map(
+        questionRows.map((row) => [row.id, toEditionQuestion(row)]),
+      );
+      const proposalsById = new Map(
+        proposalRows.map((row) => [row.id, toEditionProposal(row)]),
+      );
+      const attention = compileAttention({
+        questions: questionRows.map((row) => ({
+          id: row.id,
+          question: row.question,
+          ...(row.options !== undefined ? { options: row.options } : {}),
+          sourceRefs: row.sourceRefs,
+          ...(row.metadata !== undefined ? { metadata: row.metadata } : {}),
+          processorId: row.processorId,
+          askedAt: row.askedAt,
+        })),
+        proposals: proposalRows.map((row) => attentionProposal(row)),
+        now,
+        agingDays,
+      });
+      const items = attention.primary.flatMap((item) => {
+        const edition = toEditionAttention(item, questionsById, proposalsById);
+        return edition === null ? [] : [edition];
+      });
       content = replaceEditionBlock({
         content,
         owner: DAILY_OWNER,
-        block: PROPOSALS_BLOCK,
-        section: proposalsSection(proposals),
+        block: QUESTIONS_BLOCK,
+        section: attentionSection(items, attention.backlog.length),
         heading: START_HERE_HEADING,
-        afterBlock: { owner: DAILY_OWNER, block: QUESTIONS_BLOCK },
+        afterBlock: EDITION_YESTERDAY_BLOCK,
       });
     }
+
+    // Hard-cut migration: remove any previously generated sweep digest.
+    content = replaceEditionBlock({
+      content,
+      owner: DAILY_OWNER,
+      block: INTEGRATED_BLOCK,
+      section: null,
+      heading: START_HERE_HEADING,
+    });
+
+    // Hard-cut migration: proposal reviews now live inside the canonical
+    // owner-attention block. Remove the retired independent-budget block.
+    content = replaceEditionBlock({
+      content,
+      owner: DAILY_OWNER,
+      block: PROPOSALS_BLOCK,
+      section: null,
+      heading: START_HERE_HEADING,
+    });
 
     // Sources-seen — one line per source kind whose day-file exists today.
     const calendar = await ctx.snapshot.readFile(
@@ -214,7 +221,7 @@ const composeBlocks = defineProcessorImplementation({
         slack: slack !== null,
       }),
       heading: START_HERE_HEADING,
-      afterBlock: { owner: DAILY_OWNER, block: INTEGRATED_BLOCK },
+      afterBlock: { owner: DAILY_OWNER, block: QUESTIONS_BLOCK },
     });
 
     // Agenda — time · title · attendees from today's calendar, at the top of

@@ -336,7 +336,7 @@ function formatDecisions(report: CheckDecisionReport | null): string {
   if (report === null) return "skipped";
   const agentReady = report.agent_safe_questions + report.model_safe_questions;
   if (report.questions === 0) return "0 open questions";
-  return `${plural(report.questions, "open question")} · ${agentReady} agent/model-safe · ${report.owner_needed_questions} owner-needed`;
+  return `${plural(report.questions, "open question")} · ${agentReady} agent-safe · ${report.owner_needed_questions} owner-needed`;
 }
 
 function formatLoops(

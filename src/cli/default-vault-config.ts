@@ -55,12 +55,6 @@ export function defaultConfigRecord(opts: {
     ),
     engine: {
       max_iterations: 100,
-      auto_resolve_questions: {
-        enabled: true,
-        policies: ["agent-safe"],
-        min_confidence: 0.6,
-        max_per_tick: 20,
-      },
       auto_commit_workflows: true,
     },
     git: {
@@ -273,18 +267,6 @@ const DEFAULT_CONFIG_FOOTER = `engine:
   # when a dome.sources subscription's fetch command runs a headless model:
   # external_handler_timeout_ms: 300000
   #
-  # Low-risk question auto-resolution. Dome answers unresolved questions that
-  # declare low risk, an allowed automation policy, sufficient confidence, and
-  # a recommended answer valid for the question options. Answer handlers still
-  # run through the normal garden / adoption path. Answers are stamped
-  # answered_by: auto in answers.db. Set enabled: false to opt out.
-  auto_resolve_questions:
-    enabled: true
-    policies:
-      - "agent-safe"
-    min_confidence: 0.6
-    max_per_tick: 20
-
   # Auto-commit closure commits when adoption-phase processors emit
   # patches that converge. When false, processors that emit PatchEffect
   # are dropped (with a diagnostic). Default true for normal vaults.

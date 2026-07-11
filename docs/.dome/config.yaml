@@ -18,11 +18,22 @@ extensions:
     grant:
       read:
         - "wiki/**/*.md"
+        - "core.md"
         - ".dome/page-types.yaml"
         - "**/*.{png,jpg,jpeg,gif,webp,svg,avif}"
         - "raw/**"
       patch.auto:
         - "wiki/**/*.md"
+        # render-index is disabled by index_categories: {}, but retaining its
+        # exact declared scope keeps the installed processor honest and ready
+        # if this vault opts back into generated indexes.
+        - "index.md"
+        - "index-*.md"
+        - "meta/index-*.md"
+      patch.propose:
+        - "notes/**"
+        - "wiki/**"
+        - "attic/**"
       graph.write:
         - "dome.page.*"
       question.ask: true
@@ -79,6 +90,28 @@ extensions:
       run.read:
         - running
       run.recover: true
+    processors:
+      dome.health.report-card:
+        grant:
+          read:
+            - "wiki/dailies/*.md"
+            - "meta/report-card.md"
+            - "meta/retrieval-misses.md"
+            - ".dome/config.yaml"
+          patch.auto:
+            - "meta/report-card.md"
+            - "wiki/dailies/*.md"
+          run.read: true
+          questions.read: true
+          proposals.read: true
+      dome.health.trust-review:
+        grant:
+          read:
+            - ".dome/config.yaml"
+          patch.propose:
+            - ".dome/config.yaml"
+          proposals.read: true
+          run.read: true
 
 engine:
   max_iterations: 100

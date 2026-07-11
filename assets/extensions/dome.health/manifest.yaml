@@ -174,7 +174,7 @@ doctor:
     # trust-review's other capabilities (patch.propose, proposals.read,
     # run.read, question.ask) are kind-level and covered by the general
     # capability.grant-missing probe — ManifestGrantEntry's kind enum has no
-    # slots for them (the dome.agent.consolidate patch.propose precedent).
+    # slots for them (the dome.agent.garden patch.propose precedent).
     - processorId: dome.health.trust-review
       entries:
         - kind: read

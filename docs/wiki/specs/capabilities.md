@@ -201,7 +201,8 @@ carries `id`, `processorId`, `extensionId` (the producer's bundle — lets a
 reviewer like the trust ladder resolve the producer's per-processor grant
 without guessing from the id prefix), `reason`, `paths` (derived from the
 underlying `FileChange[]` — `changes.map(c => c.path)`; the raw write content
-/ delete payload stays internal to `proposals.db`), `createdAt`, `status`
+/ delete payload stays internal to `proposals.db`), `sourceRefs` (the proposed
+effect's provenance, safe for owner-facing review views), `createdAt`, `status`
 (`"pending" | "applied" | "rejected"`), and `decidedAt` (ISO decision instant
 for decided rows, `null` while pending — windowed accept-rate reads such as
 the trust ladder bucket by the decision time, not enqueue time). `filter`

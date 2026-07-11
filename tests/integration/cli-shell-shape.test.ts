@@ -22,6 +22,7 @@ const SCENARIOS_ROOT = join(REPO_ROOT, "tests", "harness", "scenarios");
 const COMMAND_SCENARIO_FILES: ReadonlyMap<string, string> = new Map([
   ["agenda-with", "cli-surface/agenda-view.scenario.test.ts"],
   ["export-context", "cli-surface/export-context.scenario.test.ts"],
+  ["garden", "cli-surface/garden-view.scenario.test.ts"],
   ["lint", "cli-surface/lint-report.scenario.test.ts"],
   ["orphan-pages", "effect-kinds/view-effect-via-dome-run.scenario.test.ts"],
   ["prep", "cli-surface/prep-view.scenario.test.ts"],

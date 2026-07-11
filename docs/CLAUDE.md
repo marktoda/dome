@@ -11,6 +11,7 @@ an explicit source-backed vault view. For nontrivial vault work, read a
 
 The normal command path is `dome status --json` -> `next_actions` ->
 `dome sync --json`, the suggested `dome check ...` command (often
-`dome check --json`), or `dome resolve <id> <value>`. Resolve `agent-safe` /
-`model-safe` questions only when the answer is grounded in source refs; surface
-`owner-needed` questions instead of guessing.
+`dome check --json`), `dome agent-work --json`, or `dome resolve <id> <value>`.
+Complete `agent-safe` work only after reading every required source;
+`model-safe` is the legacy equivalent. Surface `owner-needed` questions
+instead of guessing.

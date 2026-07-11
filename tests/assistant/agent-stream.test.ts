@@ -4,8 +4,13 @@ import { runAgentStream } from "../../src/assistant/agent";
 
 function fakeVault() {
   return {
+    listViews: () => [
+      { command: "query", processorId: "dome.search.query", processorVersion: "1", extensionId: "dome.search" },
+    ],
     runView: async () => ({
       kind: "ok",
+      views: [],
+      brokerDiagnostics: [],
       structured: {
         data: {
           matches: [

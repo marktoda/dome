@@ -6,17 +6,13 @@ export type Citation = {
 
 export type AgentChange = {
   path: string;
-  kind: "create" | "edit";
+  kind: "create" | "edit" | "capture" | "settle" | "resolve" | "apply" | "reject";
 };
 
-export type AgentResult = {
-  schema: "dome.ask/v1";
-  status: "ok";
-  answer: string;
-  citations: Citation[];
-  steps: number;
-  stopReason: "final" | "budget";
-  changes?: AgentChange[];
+export type AgentSession = {
+  schema: "dome.agent-session/v1";
+  status: "created";
+  sessionId: string;
 };
 
 export type StreamEvent =
@@ -54,12 +50,22 @@ export type TodayQuestion = {
   options: string[];
 };
 
+export type TodayReview = {
+  id: number;
+  reason: string;
+  processorId: string;
+  paths: string[];
+  reviewCommand: string;
+};
+
 export type Today = {
   schema: "dome.daily.today/v1";
   date: string;
   openTasks: TodayItem[];
   followups: TodayItem[];
   questions: TodayQuestion[];
+  reviews?: TodayReview[];
+  attentionBacklog?: number;
   brief: { text: string; sourceRef: { path: string } } | null;
   calendar:
     | {
@@ -68,7 +74,22 @@ export type Today = {
       }
     | null;
   hero: { kind: "task" | "question"; item: TodayItem | TodayQuestion } | null;
-  counts: { openTasks: number; followups: number; questions: number };
+  counts: { openTasks: number; followups: number; questions: number; reviews?: number };
+};
+
+export type ApplyProposalResult = {
+  schema: "dome.apply/v1";
+  status: "applied" | "stale" | "not-found" | "not-pending" | "invalid";
+  id?: number;
+  commit?: string;
+  message?: string;
+};
+
+export type RejectProposalResult = {
+  schema: "dome.reject/v1";
+  status: "rejected" | "not-found" | "not-pending" | "invalid";
+  id?: number;
+  message?: string;
 };
 
 export type RecentEntry = {

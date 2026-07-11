@@ -6,12 +6,16 @@
 // `--json`. There is no parallel query/serialization logic here.
 //
 //   capture        → performCapture          (dome.capture/v1)
+//   views          → vault.listViews         (dome.views/v1)
+//   run_view       → vault.runView(command)  (dome.view-run/v1)
 //   query          → vault.runView("query")  (dome.search.query/v1)
 //   export_context → vault.runView("export-context")
 //                                            (dome.search.export-context/v1)
 //   report_miss    → reportMiss              (dome.report-miss/v1)
 //   status         → buildStatusSnapshot     (status snapshot, stable keys)
 //   check          → buildCheckReport        (dome.check/v1)
+//   agent_work     → vault.agentWork         (dome.agent-work/v1)
+//   complete_agent_work → vault.completeAgentWork
 //   resolve        → vault.resolve           (dome.answer/v1)
 //   settle         → performSettle           (dome.settle/v1)
 //   proposals      → collectProposals        (dome.proposals/v1)
@@ -46,6 +50,7 @@ import {
   McpServer,
 } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { SourceRefSchema, type SourceRef } from "../core/source-ref";
 
 import {
   ANSWER_SCHEMA,
@@ -72,6 +77,8 @@ import {
 } from "../surface/proposals";
 import { reportMiss, reportMissResultJson } from "../surface/report-miss";
 import { buildStatusSnapshot } from "../surface/status";
+import { collectViews } from "../surface/views";
+import { runInstalledView } from "../surface/run-view";
 import {
   catalogViewProblemMessage,
   dispatchView,
@@ -110,12 +117,17 @@ immediately and compile in the background.
 
 Typical loop:
 - capture: drop a thought into inbox/raw/ (committed immediately).
+- attention: the bounded, ranked queue of decisions and reviews that need the owner.
+- agent_work: source-backed questions assigned to agents, with revision and evidence requirements.
+- complete_agent_work: resolve one agent-safe packet after inspecting every required source.
 - status: vault pulse — attention codes and next_actions.
 - check: explain attention — engine health, diagnostics, open decisions.
 - resolve: answer a Dome-raised question by id (omit value to read it).
 - settle: close, defer, or keep a task line by its block anchor.
 - proposals / apply_proposal / reject_proposal: review pending garden-
   proposed edits before they land — list them, then apply or reject by id.
+- views / run_view: discover and invoke read-only views contributed by the
+  vault's installed plugins; inspect their source scopes for evidence.
 - query / export_context: adopted-state recall with source refs.
 - explain: provenance for a page or one anchored claim — the claim value,
   the facts asserting it, the runs that produced them, the engine commits.
@@ -284,6 +296,49 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
   // ----- query / export_context --------------------------------------------------
 
   server.registerTool(
+    "views",
+    {
+      title: "List installed plugin views",
+      description:
+        "Discover command-triggered views from the vault's installed plugins. " +
+        "Returns dome.views/v1; invoke any returned command with run_view.",
+      inputSchema: {},
+    },
+    async () =>
+      enqueue(() =>
+        withVault("views", async (opened) =>
+          jsonToolResult(collectViews(opened))
+        )
+      ),
+  );
+
+  server.registerTool(
+    "run_view",
+    {
+      title: "Run an installed plugin view",
+      description:
+        "Invoke any command returned by views against adopted vault state. " +
+        "Returns dome.view-run/v1 with rendered content and provenance scope.",
+      inputSchema: {
+        command: z.string().min(1).describe("Installed view command."),
+        input: z.record(z.string(), z.unknown()).optional().describe(
+          "Command-specific input object.",
+        ),
+      },
+    },
+    async ({ command, input }) =>
+      enqueue(() =>
+        withVault("run_view", async (opened) => {
+          const document = await runInstalledView(opened, command, input ?? {});
+          return {
+            ...jsonToolResult(document),
+            ...(document.status === "error" ? { isError: true } : {}),
+          };
+        })
+      ),
+  );
+
+  server.registerTool(
     "query",
     {
       title: "Query adopted vault state",
@@ -380,6 +435,110 @@ export function createDomeMcpServer(opts: DomeMcpServerOptions): McpServer {
   );
 
   // ----- status / check -----------------------------------------------------------
+
+  server.registerTool(
+    "attention",
+    {
+      title: "Owner attention",
+      description:
+        "Read the canonical ranked owner queue. Decisions and proposal " +
+        "reviews share one budget; diagnostics, tasks, and agent work are " +
+        "reported separately. Returns dome.attention/v1.",
+      inputSchema: {},
+    },
+    async () =>
+      enqueue(async () =>
+        withVault("attention", async (vault) =>
+          jsonToolResult(await vault.attention())
+        )
+      ),
+  );
+
+  server.registerTool(
+    "agent_work",
+    {
+      title: "Agent work queue",
+      description:
+        "Read the derived agent queue. Each packet is an open agent-safe " +
+        "question with a revision token, readiness, allowed options, and " +
+        "required evidence paths. Returns dome.agent-work/v1.",
+      inputSchema: {
+        limit: z.number().int().positive().max(100).optional(),
+        questionId: z.number().int().positive().optional(),
+      },
+    },
+    async ({ limit, questionId }) =>
+      enqueue(async () =>
+        withVault("agent_work", async (vault) =>
+          jsonToolResult(await vault.agentWork({
+            ...(limit !== undefined ? { limit } : {}),
+            ...(questionId !== undefined ? { questionId } : {}),
+          }))
+        )
+      ),
+  );
+
+  server.registerTool(
+    "complete_agent_work",
+    {
+      title: "Complete evidence-backed agent work",
+      description:
+        "Complete one ready agent-work packet. First read every " +
+        "requiredEvidencePath, choose an allowed answer, and explain why. " +
+        "The revision check prevents resolving a packet that changed while " +
+        "you investigated it.",
+      inputSchema: {
+        questionId: z.number().int().positive(),
+        expectedRevision: z.string().min(1),
+        answer: z.string().min(1),
+        reason: z.string().min(1),
+        evidence: z.array(SourceRefSchema).min(1).describe(
+          "SourceRefs actually inspected; must cover every required evidence path.",
+        ),
+      },
+    },
+    async ({ questionId, expectedRevision, answer, reason, evidence }) =>
+      enqueue(() =>
+        withVault("complete_agent_work", async (vault) => {
+          const outcome = await vault.completeAgentWork({
+            questionId,
+            expectedRevision,
+            answer,
+            reason,
+            evidence: evidence as unknown as ReadonlyArray<SourceRef>,
+          });
+          if (outcome.kind === "not-found") {
+            return {
+              ...jsonToolResult({
+                schema: "dome.agent-work-completion/v1",
+                status: "not-found",
+                questionId,
+              }),
+              isError: true,
+            };
+          }
+          if (outcome.kind === "rejected") {
+            return {
+              ...jsonToolResult({
+                schema: "dome.agent-work-completion/v1",
+                status: "rejected",
+                problem: outcome.problem,
+                message: outcome.message,
+              }),
+              isError: true,
+            };
+          }
+          return jsonToolResult({
+            schema: "dome.agent-work-completion/v1",
+            status: outcome.kind,
+            question: questionRecordJson(outcome.record),
+            handlers: outcome.handlers === null
+              ? null
+              : answerHandlersJson(outcome.handlers),
+          });
+        }),
+      ),
+  );
 
   server.registerTool(
     "status",

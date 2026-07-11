@@ -1,8 +1,8 @@
 // dome.daily.compose-blocks — the deterministic compositor (D6/compiled-daily).
 //
-// At 05:25 (and on `questions.changed` + source-file + sweep-ledger signals)
+// At 05:25 (and on `questions.changed` + source-file signals)
 // the processor composes the deterministic edition blocks — "To decide"
-// (questions), agenda, integrated-overnight, sources-seen — into TODAY's
+// (questions), agenda, sources-seen — into TODAY's
 // daily, and migrates the retired `dome.agent.brief:*` legacy blocks out in
 // the same patch. Byte-identical recomposition emits no patch; a missing
 // questions view is LOUD (a warning diagnostic), never a silent empty render.
@@ -46,11 +46,9 @@ const TODAY = localDateParts(new Date(FIRED_AT));
 const TODAY_STR = formatDate(TODAY);
 const TODAY_PATH = dailyPath(TODAY, SETTINGS);
 const CALENDAR_PATH = `sources/calendar/${TODAY_STR}.md`;
-const LEDGER_PATH = "meta/sweep-ledger.md";
 
 const QUESTIONS_START = "<!-- dome.daily:questions:start -->";
 const AGENDA_START = "<!-- dome.daily:agenda:start -->";
-const INTEGRATED_START = "<!-- dome.daily:integrated:start -->";
 const SOURCES_START = "<!-- dome.daily:sources:start -->";
 const PROPOSALS_START = "<!-- dome.daily:proposals:start -->";
 
@@ -77,7 +75,7 @@ const SEEDED: ReadonlyArray<OperationalQuestionRow> = Object.freeze([
 
 const PENDING_PROPOSAL: OperationalProposalRow = Object.freeze({
   id: 12,
-  processorId: "dome.agent.consolidate",
+  processorId: "dome.agent.garden",
   extensionId: "dome.agent",
   reason: "split oversized entity page into danny + danny-promo-2026",
   paths: Object.freeze(["wiki/entities/danny.md"]),
@@ -117,19 +115,18 @@ describe("dome.daily.compose-blocks (D6)", () => {
   test("renders the questions block: owner-needed first, resolve commands present", async () => {
     const { written } = await runCompose(
       { [TODAY_PATH]: BASE_DAILY },
-      { operational: viewOf(SEEDED) },
+      { operational: viewOf(SEEDED, []) },
     );
     expect(written).not.toBeNull();
     expect(written!).toContain(QUESTIONS_START);
-    expect(written!).toContain("### To decide");
-    // Owner-needed sorts before the older agent-safe question.
+    expect(written!).toContain("### Dome needs you");
+    // Agent work never spends the owner budget.
     const ownerAt = written!.indexOf("Ship the pricing change?");
     const agentAt = written!.indexOf("Rename the widget?");
     expect(ownerAt).toBeGreaterThanOrEqual(0);
-    expect(agentAt).toBeGreaterThan(ownerAt);
-    // Literal resolve commands render for each question.
+    expect(agentAt).toBe(-1);
+    // Literal resolve command renders for the owner decision.
     expect(written!).toContain("dome resolve 1 <yes|no>");
-    expect(written!).toContain("dome resolve 2 <answer>");
     // The questions block lands after the yesterday block inside ## Start Here.
     const yesterdayAt = written!.indexOf(
       "<!-- dome.agent.brief:yesterday:end -->",
@@ -163,7 +160,7 @@ describe("dome.daily.compose-blocks (D6)", () => {
     ].join("\n");
     const withCal = await runCompose(
       { [TODAY_PATH]: BASE_DAILY, [CALENDAR_PATH]: calendar },
-      { operational: viewOf([]) },
+      { operational: viewOf([], []) },
     );
     expect(withCal.written).not.toBeNull();
     expect(withCal.written!).toContain(AGENDA_START);
@@ -175,47 +172,15 @@ describe("dome.daily.compose-blocks (D6)", () => {
 
     const noCal = await runCompose(
       { [TODAY_PATH]: BASE_DAILY },
-      { operational: viewOf([]) },
+      { operational: viewOf([], []) },
     );
     expect(noCal.written ?? "").not.toContain(AGENDA_START);
-  });
-
-  test("integrated: renders today's sweep-run digest, omitted when absent", async () => {
-    const ledger = [
-      "# Sweep ledger",
-      "cursor:: 2026-06-05",
-      `## Run ${TODAY_STR}`,
-      "- [[inbox/raw/note-a]] -> [[wiki/projects/alpha]] :: integrated",
-      "- [[inbox/raw/note-b]] -> [[wiki/projects/beta]] :: questioned",
-      "- [[inbox/raw/note-c]] -> [[wiki/projects/gamma]] :: no-op",
-    ].join("\n");
-    const withLedger = await runCompose(
-      { [TODAY_PATH]: BASE_DAILY, [LEDGER_PATH]: ledger },
-      { operational: viewOf([]) },
-    );
-    expect(withLedger.written).not.toBeNull();
-    expect(withLedger.written!).toContain(INTEGRATED_START);
-    expect(withLedger.written!).toContain("### Integrated Overnight");
-    expect(withLedger.written!).toContain(
-      "- [[wiki/projects/alpha]] ← [[inbox/raw/note-a]]",
-    );
-    expect(withLedger.written!).toContain(
-      "- ⚠ pending your answer: [[wiki/projects/beta]] ← [[inbox/raw/note-b]]",
-    );
-    // no-op rows never surface.
-    expect(withLedger.written!).not.toContain("gamma");
-
-    const noLedger = await runCompose(
-      { [TODAY_PATH]: BASE_DAILY },
-      { operational: viewOf([]) },
-    );
-    expect(noLedger.written ?? "").not.toContain(INTEGRATED_START);
   });
 
   test("sources: only records source kinds whose day-file exists today", async () => {
     const withCal = await runCompose(
       { [TODAY_PATH]: BASE_DAILY, [CALENDAR_PATH]: "- Standup" },
-      { operational: viewOf([]) },
+      { operational: viewOf([], []) },
     );
     expect(withCal.written).not.toBeNull();
     expect(withCal.written!).toContain(SOURCES_START);
@@ -224,7 +189,7 @@ describe("dome.daily.compose-blocks (D6)", () => {
 
     const none = await runCompose(
       { [TODAY_PATH]: BASE_DAILY },
-      { operational: viewOf([]) },
+      { operational: viewOf([], []) },
     );
     expect(none.written ?? "").not.toContain(SOURCES_START);
   });
@@ -232,7 +197,7 @@ describe("dome.daily.compose-blocks (D6)", () => {
   test("skeleton creation: no daily present writes the full skeleton + blocks", async () => {
     const { patch, written } = await runCompose(
       { [CALENDAR_PATH]: "- 10:00 — Sync" },
-      { operational: viewOf(SEEDED) },
+      { operational: viewOf(SEEDED, []) },
     );
     expect(patch).toBeDefined();
     expect(written).not.toBeNull();
@@ -277,7 +242,7 @@ describe("dome.daily.compose-blocks (D6)", () => {
     const historicalPath = "wiki/dailies/2025-01-01.md";
     const { patch, written } = await runCompose(
       { [TODAY_PATH]: legacy, [historicalPath]: legacy },
-      { operational: viewOf(SEEDED) },
+      { operational: viewOf(SEEDED, []) },
     );
     expect(written).not.toBeNull();
     // Legacy brief blocks removed.
@@ -297,43 +262,30 @@ describe("dome.daily.compose-blocks (D6)", () => {
     const files = {
       [TODAY_PATH]: BASE_DAILY,
       [CALENDAR_PATH]: "- 09:00 — Standup",
-      [LEDGER_PATH]: [
-        `## Run ${TODAY_STR}`,
-        "- [[inbox/raw/a]] -> [[wiki/b]] :: integrated",
-      ].join("\n"),
     };
-    const first = await runCompose(files, { operational: viewOf(SEEDED) });
+    const first = await runCompose(files, { operational: viewOf(SEEDED, []) });
     expect(first.written).not.toBeNull();
     const second = await runCompose(
       { ...files, [TODAY_PATH]: first.written! },
-      { operational: viewOf(SEEDED) },
+      { operational: viewOf(SEEDED, []) },
     );
     expect(second.patch).toBeUndefined();
   });
 
-  test("proposals: renders the To-review block between questions and integrated", async () => {
-    const ledger = [
-      `## Run ${TODAY_STR}`,
-      "- [[inbox/raw/a]] -> [[wiki/b]] :: integrated",
-    ].join("\n");
+  test("proposals: shares the one owner-attention block and budget", async () => {
     const { written } = await runCompose(
-      { [TODAY_PATH]: BASE_DAILY, [LEDGER_PATH]: ledger },
+      { [TODAY_PATH]: BASE_DAILY },
       { operational: viewOf(SEEDED, [PENDING_PROPOSAL]) },
     );
     expect(written).not.toBeNull();
-    expect(written!).toContain(PROPOSALS_START);
-    expect(written!).toContain("### To review");
+    expect(written!).not.toContain(PROPOSALS_START);
+    expect(written!).toContain("### Dome needs you");
     expect(written!).toContain(
-      "- P12 (dome.agent.consolidate): split oversized entity page into danny + danny-promo-2026 — 1 file — apply: `dome apply 12`",
+      "- P12 (dome.agent.garden): split oversized entity page into danny + danny-promo-2026 — 1 file — apply: `dome apply 12`",
     );
-    const questionsAt = written!.indexOf(QUESTIONS_START);
-    const proposalsAt = written!.indexOf(PROPOSALS_START);
-    const integratedAt = written!.indexOf(INTEGRATED_START);
-    expect(proposalsAt).toBeGreaterThan(questionsAt);
-    expect(integratedAt).toBeGreaterThan(proposalsAt);
   });
 
-  test("proposals: sorted oldest-first before rendering", async () => {
+  test("proposals: fresher review wins the canonical tie-break", async () => {
     const older = Object.freeze({
       ...PENDING_PROPOSAL,
       id: 5,
@@ -354,7 +306,8 @@ describe("dome.daily.compose-blocks (D6)", () => {
     const olderAt = written!.indexOf("older proposal");
     const newerAt = written!.indexOf("newer proposal");
     expect(olderAt).toBeGreaterThanOrEqual(0);
-    expect(newerAt).toBeGreaterThan(olderAt);
+    expect(newerAt).toBeGreaterThanOrEqual(0);
+    expect(olderAt).toBeGreaterThan(newerAt);
   });
 
   test("proposals: declared but missing view is LOUD (warning), block omitted", async () => {
@@ -367,7 +320,7 @@ describe("dome.daily.compose-blocks (D6)", () => {
     );
     expect(missing).toBeDefined();
     expect(missing!.severity).toBe("warning");
-    expect(written ?? "").not.toContain(PROPOSALS_START);
+    expect(written ?? "").toContain(QUESTIONS_START);
   });
 
   test("proposals: empty-set removal — an existing block is dropped when none pending", async () => {
@@ -376,14 +329,14 @@ describe("dome.daily.compose-blocks (D6)", () => {
       { operational: viewOf([], [PENDING_PROPOSAL]) },
     );
     expect(seeded.written).not.toBeNull();
-    expect(seeded.written!).toContain(PROPOSALS_START);
+    expect(seeded.written!).toContain(QUESTIONS_START);
 
     const cleared = await runCompose(
       { [TODAY_PATH]: seeded.written! },
       { operational: viewOf([], []) },
     );
     expect(cleared.written).not.toBeNull();
-    expect(cleared.written!).not.toContain(PROPOSALS_START);
+    expect(cleared.written!).not.toContain(QUESTIONS_START);
   });
 
   test("proposals: idempotent recompose emits no patch", async () => {
@@ -402,14 +355,14 @@ describe("dome.daily.compose-blocks (D6)", () => {
   test("empty-set removal: an existing questions block is dropped when none open", async () => {
     const seeded = await runCompose(
       { [TODAY_PATH]: BASE_DAILY },
-      { operational: viewOf(SEEDED) },
+      { operational: viewOf(SEEDED, []) },
     );
     expect(seeded.written).not.toBeNull();
     expect(seeded.written!).toContain(QUESTIONS_START);
 
     const cleared = await runCompose(
       { [TODAY_PATH]: seeded.written! },
-      { operational: viewOf([]) },
+      { operational: viewOf([], []) },
     );
     expect(cleared.written).not.toBeNull();
     expect(cleared.written!).not.toContain(QUESTIONS_START);
@@ -426,12 +379,12 @@ describe("dome.daily.compose-blocks (D6)", () => {
     });
     const { written } = await runCompose(
       { [TODAY_PATH]: BASE_DAILY },
-      { operational: viewOf([oldQuestion]) },
+      { operational: viewOf([oldQuestion], []) },
     );
     expect(written).not.toBeNull();
     expect(written!).not.toContain("Rewrite the onboarding doc?");
     expect(written!).toContain(
-      "- 🕰 1 aging decision(s) — weekly review (`dome check --decisions`)",
+      "- +1 in owner backlog — `dome check --decisions`",
     );
   });
 
@@ -444,23 +397,23 @@ describe("dome.daily.compose-blocks (D6)", () => {
     });
     const strict = await runCompose(
       { [TODAY_PATH]: BASE_DAILY },
-      { operational: viewOf([fourDaysOld]) },
+      { operational: viewOf([fourDaysOld], []) },
       { question_aging_days: 3 },
     );
     expect(strict.written).not.toBeNull();
     expect(strict.written!).not.toContain("Deprecate the old widget?");
-    expect(strict.written!).toContain("- 🕰 1 aging decision(s)");
+    expect(strict.written!).toContain("- +1 in owner backlog");
 
     // An invalid config value degrades to the default (7 days) rather than
     // crashing — a 4-day-old question stays fresh under the default.
     const degraded = await runCompose(
       { [TODAY_PATH]: BASE_DAILY },
-      { operational: viewOf([fourDaysOld]) },
+      { operational: viewOf([fourDaysOld], []) },
       { question_aging_days: "not-a-number" },
     );
     expect(degraded.written).not.toBeNull();
     expect(degraded.written!).toContain("Deprecate the old widget?");
-    expect(degraded.written!).not.toContain("aging decision");
+    expect(degraded.written!).not.toContain("owner backlog");
   });
 });
 

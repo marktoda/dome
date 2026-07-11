@@ -97,7 +97,7 @@ scenario(
     expect(text.stdout).toContain("# Dome Context: alpha launch");
     expect(text.stdout).toContain("## Read First");
     expect(text.stdout).toContain("## Open Loops");
-    // duplicate-detection retired (dedup is dome.agent.consolidate's job): no
+    // duplicate detection is compiled by dome.agent.garden: no
     // open questions in this vault, so the Unresolved Questions section is absent.
     expect(text.stdout).not.toContain("## Unresolved Questions");
     expect(text.stdout).toContain("## Active Diagnostics");
@@ -257,7 +257,7 @@ scenario(
       (diagnostic) => diagnostic.code === "dome.markdown.broken-wikilink",
     )).toBe(true);
     // duplicate-detection retired: no duplicate question attached to this page
-    // (dedup is dome.agent.consolidate's job now).
+    // (dedup is dome.agent.garden's job now).
     expect(alpha?.questions.length ?? 0).toBe(0);
 
     const limitedText = await h.runCli([

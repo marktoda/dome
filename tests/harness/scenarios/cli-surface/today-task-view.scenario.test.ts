@@ -79,6 +79,7 @@ scenario(
         readonly openTasks: number;
         readonly followups: number;
         readonly questions: number;
+        readonly reviews: number;
       };
       readonly sourceCounts: {
         readonly daily: {
@@ -110,11 +111,13 @@ scenario(
         readonly openTasks: number;
         readonly followups: number;
         readonly questions: number;
+        readonly reviews: number;
       };
       readonly omitted: {
         readonly openTasks: number;
         readonly followups: number;
         readonly questions: number;
+        readonly reviews: number;
       };
       readonly openTasks: ReadonlyArray<{
         readonly text: string;
@@ -154,7 +157,7 @@ scenario(
     );
     expect(payload.counts.openTasks).toBe(4);
     expect(payload.counts.followups).toBe(2);
-    expect(payload.counts.questions).toBe(1);
+    expect(payload.counts.questions).toBe(0);
     expect(payload.sourceCounts.daily).toEqual({
       openTasks: 4,
       followups: 2,
@@ -163,7 +166,7 @@ scenario(
     expect(payload.sourceCounts.backlog).toEqual({
       openTasks: 0,
       followups: 0,
-      questions: 1,
+      questions: 0,
     });
     expect(payload.dueCounts.openTasks).toEqual({
       overdue: 0,
@@ -180,12 +183,14 @@ scenario(
     expect(payload.shown).toEqual({
       openTasks: 4,
       followups: 2,
-      questions: 1,
+      questions: 0,
+      reviews: 0,
     });
     expect(payload.omitted).toEqual({
       openTasks: 0,
       followups: 0,
       questions: 0,
+      reviews: 0,
     });
     expect(payload.openTasks.map((task) => task.text)).toEqual([
       "Ship weekly update",
@@ -227,18 +232,9 @@ scenario(
       "daily",
       "daily",
     ]);
-    expect(payload.questions[0]?.question).toContain(
-      "We should follow up with Cy about review timing",
-    );
-    expect(payload.questions[0]?.id).toBeGreaterThan(0);
-    expect(payload.questions[0]?.options).toEqual(["track", "ignore"]);
-    expect(payload.questions[0]?.resolveCommand).toBe(
-      `dome resolve ${payload.questions[0]?.id} <track|ignore>`,
-    );
-    expect(payload.questions[0]?.metadata?.automationPolicy).toBe("agent-safe");
-    expect(payload.questions[0]?.automationPolicy).toBe("agent-safe");
-    expect(payload.questions[0]?.path).toBe("wiki/captures/2026-01-05.md");
-    expect(payload.questions[0]?.source).toBe("backlog");
+    // The ambiguous follow-up question is agent-safe, so it stays in the
+    // agent-work lane and never spends the owner's Today budget.
+    expect(payload.questions).toEqual([]);
 
     h.projection.raw.run(
       "INSERT INTO facts (namespace, subject_kind, subject_id, predicate, "
@@ -285,16 +281,19 @@ scenario(
         readonly openTasks: number;
         readonly followups: number;
         readonly questions: number;
+        readonly reviews: number;
       };
       readonly shown: {
         readonly openTasks: number;
         readonly followups: number;
         readonly questions: number;
+        readonly reviews: number;
       };
       readonly omitted: {
         readonly openTasks: number;
         readonly followups: number;
         readonly questions: number;
+        readonly reviews: number;
       };
       readonly openTasks: ReadonlyArray<{ readonly text: string }>;
       readonly followups: ReadonlyArray<{ readonly text: string }>;
@@ -307,16 +306,18 @@ scenario(
     expect(limitedPayload.limit).toBe(2);
     expect(limitedPayload.counts.openTasks).toBe(4);
     expect(limitedPayload.counts.followups).toBe(2);
-    expect(limitedPayload.counts.questions).toBe(1);
+    expect(limitedPayload.counts.questions).toBe(0);
     expect(limitedPayload.shown).toEqual({
       openTasks: 2,
       followups: 2,
-      questions: 1,
+      questions: 0,
+      reviews: 0,
     });
     expect(limitedPayload.omitted).toEqual({
       openTasks: 2,
       followups: 0,
       questions: 0,
+      reviews: 0,
     });
     expect(limitedPayload.openTasks.map((task) => task.text)).toEqual(
       payload.openTasks.slice(0, 2).map((task) => task.text),
@@ -324,7 +325,7 @@ scenario(
     expect(limitedPayload.followups.map((task) => task.text)).toEqual(
       payload.followups.map((task) => task.text),
     );
-    expect(limitedPayload.questions).toHaveLength(1);
+    expect(limitedPayload.questions).toHaveLength(0);
   },
 );
 
@@ -404,6 +405,7 @@ scenario(
         readonly openTasks: number;
         readonly followups: number;
         readonly questions: number;
+        readonly reviews: number;
       };
       readonly sourceCounts: {
         readonly daily: {
@@ -452,6 +454,7 @@ scenario(
       openTasks: 3,
       followups: 1,
       questions: 0,
+      reviews: 0,
     });
     expect(payload.sourceCounts.daily).toEqual({
       openTasks: 3,
@@ -533,6 +536,7 @@ scenario(
         readonly openTasks: number;
         readonly followups: number;
         readonly questions: number;
+        readonly reviews: number;
       };
       readonly sourceCounts: typeof payload.sourceCounts;
     };

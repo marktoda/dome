@@ -1,8 +1,8 @@
 // src/http/server.ts
 //
 // The one Dome HTTP surface (`dome http`). A single capability-gated server
-// over one vault + one mutex: read (query/doc/questions/status/tasks/today/
-// recents), capture, resolve, the agent (`/agent` + `/agent/stream`),
+// over one vault + one mutex: read (query/doc/questions/status/plugin views/
+// tasks/today/recents), capture, resolve, session-oriented foreground agents,
 // transcribe, and static PWA serving. `author` (write) is gated by --allow-write
 // and provisioned in Phase 2.
 
@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { resolve, sep, join } from "node:path";
 
 import { z } from "zod";
+import { SourceRefSchema, type SourceRef } from "../core/source-ref";
 import {
   ANSWER_SCHEMA,
   answerHandlersJson,
@@ -45,21 +46,30 @@ import {
   type FirstPartyViewEntry,
 } from "../surface/view-catalog";
 import type { Vault } from "../vault";
-import type { TextStreamPart, ToolSet } from "ai";
-import { runAgent, runAgentStream, type AgentStream } from "../assistant/agent";
-import type { AgentResult } from "../assistant/types";
+import { runAgentStream, type AgentStream } from "../assistant/agent";
+import {
+  createAgentRuntime,
+  type AgentRun,
+  type AgentRuntime,
+  type AgentSession,
+} from "../assistant/runtime";
+import type { AgentMessage } from "../assistant/types";
 import { buildStatusSnapshot } from "../surface/status";
+import { collectViews } from "../surface/views";
+import { runInstalledView, viewRunStatus } from "../surface/run-view";
 import { renderTodayHtml } from "./today-html";
 import { BASEL_BOOK_WOFF2_B64, BASEL_MEDIUM_WOFF2_B64 } from "./today-fonts";
 import { grantedCapabilities, has, type Capability } from "../capabilities";
 import { makeAgentLogSink, type AgentLogSink } from "./agent-log";
+import { drainAgentWork, type AgentWorkAgent } from "../agent-work/attempt";
+import { createBuiltInAgentWorkAgent } from "../assistant/agent-work";
 
 // ----- Constants ------------------------------------------------------------
 
-const SCHEMA = "dome.ask/v1"; // stable wire schema for the agent answer + auth/usage error envelope; kept as "dome.ask/v1" (with the ask-* error codes) as the wire contract though the route was renamed /ask→/agent — renaming the wire id is a separate, client+docs-coordinated change.
 const SERVER_SCHEMA = "dome.http/v1";
 const DOCUMENT_SCHEMA = "dome.http.document/v1";
 const QUESTIONS_SCHEMA = "dome.http.questions/v1";
+const AGENT_SESSION_SCHEMA = "dome.agent-session/v1";
 
 /** Default request-body cap (1 MiB); `dome http` sets Bun's limit to 2× as a backstop. */
 export const DEFAULT_MAX_BODY_BYTES = 1_048_576;
@@ -71,12 +81,15 @@ const EXT_BY_TYPE: Record<string, string> = {
 
 /** The capability each route requires. Pings (GET / and /healthz) need none. */
 const ROUTE_CAPABILITY: Readonly<Record<string, Capability>> = {
-  "POST /agent": "converse",
-  "POST /agent/stream": "converse",
+  "POST /sessions": "converse",
   "POST /capture": "capture",
   "POST /resolve": "resolve",
   "POST /settle": "resolve",
   "GET /proposals": "read",
+  "GET /attention": "read",
+  "GET /agent-work": "read",
+  "POST /agent-work/complete": "resolve",
+  "POST /agent-work/drain": "converse",
   "POST /apply": "resolve",
   "POST /reject": "resolve",
   "GET /tasks": "read",
@@ -86,13 +99,10 @@ const ROUTE_CAPABILITY: Readonly<Record<string, Capability>> = {
   "GET /today": "read",
   "GET /doc": "read",
   "GET /questions": "read",
+  "GET /views": "read",
 };
 
 // ----- Public types ---------------------------------------------------------
-
-export type AgentImpl = (question: string, signal: AbortSignal) => Promise<AgentResult>;
-
-export type AgentStreamImpl = (question: string, signal: AbortSignal) => AgentStream;
 
 export type DomeHttpServerOptions = {
   readonly vaultPath: string;
@@ -111,21 +121,20 @@ export type DomeHttpServerOptions = {
    */
   readonly maxBodyBytes?: number | undefined;
   /**
-   * Milliseconds before a hung POST /agent is aborted and returns 504.
+   * Milliseconds before a hung agent session turn is aborted.
    * Defaults to 120_000 (2 minutes).
    */
   readonly timeoutMs?: number | undefined;
   /**
-   * Inject a custom ask implementation (used by tests to avoid opening a real
-   * vault). When omitted the default opens the vault and wires runAgent.
+   * Replace the foreground-agent implementation while preserving the HTTP
+   * session protocol. When omitted, the built-in AI SDK adapter is used.
    */
-  readonly agentImpl?: AgentImpl | undefined;
+  readonly agentRuntime?: AgentRuntime | undefined;
   /**
-   * Inject a custom streaming ask implementation (used by tests to avoid a
-   * model). When omitted the default opens the vault and wires runAgentStream.
-   * Parallel to agentImpl.
+   * Replace the model used by POST /agent-work/drain. The factory receives
+   * the call-scoped Vault handle; omitted uses the built-in AI SDK adapter.
    */
-  readonly agentStreamImpl?: AgentStreamImpl | undefined;
+  readonly agentWorkAgent?: ((vault: Vault) => AgentWorkAgent) | undefined;
   /**
    * Filesystem path to the built PWA static assets directory. When set,
    * unauthenticated GET requests for "/" (app shell) and "/assets/*" are
@@ -157,7 +166,7 @@ export type DomeHttpServerOptions = {
   readonly transcribeTimeoutMs?: number | undefined;
   /**
    * Filesystem path to the agent request log file. When set, one JSON line is
-   * appended per /agent (buffered) and /agent/stream request: granted
+   * appended per agent-session turn: granted
    * capabilities, authorEnabled, changes, stopReason, answer preview, duration,
    * and any error. When undefined (default), the sink is a no-op — zero cost.
    * Set via --agent-log or DOME_AGENT_LOG.
@@ -235,17 +244,8 @@ function jsonResponse(status: number, data: unknown): Response {
   });
 }
 
-function errorResponse(status: number, error: string, message: string): Response {
-  return jsonResponse(status, { schema: SCHEMA, status: "error", error, message });
-}
-
 /**
- * Error envelope for the data routes (POST /capture, GET /tasks, POST /resolve,
- * GET /recents, GET /query, etc.). Does NOT carry a `schema` field — unlike
- * `errorResponse` above, which keeps `schema: "dome.ask/v1"` as the frozen
- * wire id the PWA depends on for the /agent response envelope. Two helpers
- * exist because /agent has a stable wire schema the PWA hardcodes; all other
- * routes use the schema-less data envelope.
+ * Error envelope shared by session and deterministic data routes.
  */
 function dataErrorResponse(status: number, error: string, message: string): Response {
   return jsonResponse(status, { status: "error", error, message });
@@ -396,37 +396,16 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       : outcome.value;
   };
 
-  // Default agent: open the vault, run the AI SDK agent loop over its tools.
-  const defaultAgent: AgentImpl = async (question, signal) => {
-    const outcome = await withVaultShared(
-      { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
-      (vault) =>
-        runAgent({
-          vault,
-          question,
-          abortSignal: signal,
-          // The same granted set the routes gate on drives the assistant's
-          // contract-tool provisioning (capture/settle/resolve/proposals;
-          // `author` provisions the write tools).
-          capabilities: granted,
-          ...(opts.model !== undefined ? { modelId: opts.model } : {}),
-        }),
-    );
-    if (outcome.kind === "open-failed") {
-      throw new Error(`vault open failed: ${openVaultErrorKind(outcome.error)}`);
-    }
-    return outcome.value;
-  };
-
-  const agent = opts.agentImpl ?? defaultAgent;
-
   // Default streaming agent: open the vault and keep it open for the whole
   // stream. withVault closes the vault when its callback resolves, but the
   // agent tools run lazily as the stream drains — so we hold the callback open
   // with a deferred promise that only resolves once fullStream is fully
   // consumed (or errors). The wrapped generator triggers that resolution in
-  // its finally block, after which withVault closes the vault.
-  const defaultAgentStream: AgentStreamImpl = (question, signal) => {
+  const defaultAgentStreamTurn = (
+    question: string,
+    history: ReadonlyArray<AgentMessage>,
+    signal: AbortSignal,
+  ): AgentStream => {
     let stream: AgentStream | undefined;
     let openError: Error | undefined;
     let release!: () => void;
@@ -444,6 +423,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
         stream = runAgentStream({
           vault,
           question,
+          history,
           abortSignal: signal,
           // Same capability plumbing as defaultAgent above.
           capabilities: granted,
@@ -462,7 +442,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       }
     });
 
-    async function* drain(): AsyncIterable<TextStreamPart<ToolSet>> {
+    async function* drain() {
       await opened;
       if (openError !== undefined || stream === undefined) {
         release();
@@ -494,14 +474,34 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     };
   };
 
-  const agentStream = opts.agentStreamImpl ?? defaultAgentStream;
+  const agentRuntime = opts.agentRuntime ?? createAgentRuntime({
+    runTurn: ({ question, history, signal }): AgentRun => {
+      const stream = defaultAgentStreamTurn(
+        question,
+        history,
+        signal ?? new AbortController().signal,
+      );
+      return {
+        text: (async function* () {
+          for await (const part of stream.fullStream) {
+            if (part.type === "text-delta") yield part.text;
+          }
+        })(),
+        finished: stream.finished.then((finished) => ({
+          citations: stream.citations,
+          changes: stream.changes,
+          stopReason: finished.stopReason,
+        })),
+      };
+    },
+  });
 
   // ----- POST /transcribe (runs authenticated but outside the vault mutex) -----
   //
   // /transcribe is runtime-free: it touches no vault — it either shells out to
   // a host whisper command (local, private) or uploads the audio to an
   // OpenAI-compatible cloud STT endpoint. Running it inside enqueue() would hold
-  // the vault mutex for the call's duration — blocking /agent, /tasks, etc. — so
+  // the vault mutex for the call's duration — blocking sessions, /tasks, etc. — so
   // handle() dispatches it directly after auth, bypassing the mutex.
   const handleTranscribe = async (request: Request): Promise<Response> => {
     const cmd = opts.transcribeCommand;
@@ -593,11 +593,104 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     }
   };
 
+  /** Render one provider-neutral AgentRuntime turn as the stable SSE wire. */
+  const streamSessionTurn = (input: {
+    readonly session: AgentSession;
+    readonly question: string;
+  }): Response => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const startedAt = Date.now();
+    const turn = input.session.send(input.question, controller.signal);
+    const encoder = new TextEncoder();
+    const sse = (payload: unknown): Uint8Array =>
+      encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
+
+    let signalDrained!: () => void;
+    const drained = new Promise<void>((resolve) => {
+      signalDrained = resolve;
+    });
+    // routes() itself is running in one mutex turn. Reserving the next turn
+    // until the body drains prevents another request from opening the vault
+    // while this agent's lazy tools still hold it open.
+    void enqueue(() => drained);
+
+    const body = new ReadableStream<Uint8Array>({
+      async start(ctrl) {
+        let stopReason: string | null = null;
+        let error: string | null = null;
+        let answer = "";
+        let changes: ReadonlyArray<{ readonly path: string; readonly kind: string }> = [];
+        try {
+          for await (const event of turn.events) {
+            if (event.kind === "text") {
+              answer += event.text;
+              ctrl.enqueue(sse({ type: "text", text: event.text }));
+              continue;
+            }
+            if (event.kind === "error") {
+              const message = controller.signal.aborted
+                ? `ask exceeded ${timeoutMs}ms.`
+                : event.message;
+              error = message;
+              ctrl.enqueue(sse({ type: "error", message }));
+              continue;
+            }
+            stopReason = event.stopReason;
+            changes = event.changes;
+            ctrl.enqueue(sse({
+              type: "done",
+              citations: event.citations,
+              changes: event.changes,
+              stopReason: event.stopReason,
+            }));
+          }
+        } catch (cause) {
+          const message = controller.signal.aborted
+            ? `ask exceeded ${timeoutMs}ms.`
+            : cause instanceof Error
+              ? cause.message
+              : String(cause);
+          error = message;
+          ctrl.enqueue(sse({ type: "error", message }));
+        } finally {
+          agentLog({
+            ts: new Date().toISOString(),
+            route: "/sessions/:id/messages",
+            question: input.question,
+            capabilities: capabilityList,
+            authorEnabled,
+            changes,
+            stopReason,
+            answerPreview: answer.slice(0, 500),
+            durationMs: Date.now() - startedAt,
+            error,
+          });
+          clearTimeout(timer);
+          signalDrained();
+          ctrl.close();
+        }
+      },
+    });
+
+    return new Response(body, {
+      status: 200,
+      headers: {
+        "content-type": "text/event-stream",
+        "cache-control": "no-store",
+      },
+    });
+  };
+
   const routes = async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
     const route = `${request.method} ${url.pathname}`;
 
-    const need = ROUTE_CAPABILITY[route];
+    const sessionRoute = /^\/sessions\/([^/]+)(\/messages)?$/.exec(url.pathname);
+    const pluginViewRoute = /^\/views\/([^/]+)$/.exec(url.pathname);
+    const need = ROUTE_CAPABILITY[route] ??
+      (request.method === "POST" && pluginViewRoute !== null ? "read" : undefined) ??
+      (sessionRoute !== null ? "converse" : undefined);
     if (need !== undefined && !has(granted, need)) {
       return dataErrorResponse(403, "capability-denied", `route ${route} requires the '${need}' capability.`);
     }
@@ -606,210 +699,61 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       return jsonResponse(200, { schema: SERVER_SCHEMA, server: "dome", vault: opts.vaultPath, capabilities: [...granted].sort() });
     }
 
-    if (route === "POST /agent") {
-      // Body size gate: bounded stream read (+ content-length fast-path inside).
-      const read = await jsonBody(request, maxBodyBytes);
-      if (read.kind === "too-large") {
-        return errorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
-      }
-      if (read.body === null) {
-        return errorResponse(400, "invalid-json", "request body is not valid JSON.");
-      }
-
-      const body = read.body;
-      const question =
-        typeof body.question === "string" ? body.question.trim() : "";
-      if (question.length === 0) {
-        return errorResponse(
-          400,
-          "ask-usage",
-          "POST /agent requires a non-empty `question`.",
-        );
-      }
-
-      const controller = new AbortController();
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-          controller.abort();
-          reject(new Error("__ask-timeout__"));
-        }, timeoutMs);
+    if (route === "POST /sessions") {
+      const session = agentRuntime.createSession();
+      return jsonResponse(201, {
+        schema: AGENT_SESSION_SCHEMA,
+        status: "created",
+        sessionId: session.id,
       });
-      const startedAt = Date.now();
-      try {
-        const result = await Promise.race([agent(question, controller.signal), timeoutPromise]);
-        agentLog({
-          ts: new Date().toISOString(),
-          route: "/agent",
-          question,
-          capabilities: capabilityList,
-          authorEnabled,
-          changes: result.changes,
-          stopReason: result.stopReason,
-          answerPreview: result.answer.slice(0, 500),
-          durationMs: Date.now() - startedAt,
-          error: null,
-        });
-        return jsonResponse(200, {
-          schema: SCHEMA,
-          status: "ok",
-          answer: result.answer,
-          citations: result.citations,
-          steps: result.steps,
-          stopReason: result.stopReason,
-          changes: result.changes,
-        });
-      } catch (e) {
-        const errorMsg = e instanceof Error ? e.message : String(e);
-        agentLog({
-          ts: new Date().toISOString(),
-          route: "/agent",
-          question,
-          capabilities: capabilityList,
-          authorEnabled,
-          changes: [],
-          stopReason: null,
-          answerPreview: null,
-          durationMs: Date.now() - startedAt,
-          error: errorMsg,
-        });
-        if (controller.signal.aborted) {
-          return errorResponse(504, "ask-timeout", `ask exceeded ${timeoutMs}ms.`);
-        }
-        return errorResponse(
-          500,
-          "ask-failed",
-          errorMsg,
-        );
-      } finally {
-        clearTimeout(timer);
-      }
     }
 
-    if (route === "POST /agent/stream") {
+    if (
+      request.method === "DELETE" &&
+      sessionRoute !== null &&
+      sessionRoute[2] === undefined
+    ) {
+      const id = sessionRoute[1] ?? "";
+      const closed = agentRuntime.closeSession(id);
+      return closed
+        ? jsonResponse(200, {
+            schema: AGENT_SESSION_SCHEMA,
+            status: "closed",
+            sessionId: id,
+          })
+        : dataErrorResponse(404, "session-not-found", `agent session '${id}' was not found.`);
+    }
+
+    if (
+      request.method === "POST" &&
+      sessionRoute !== null &&
+      sessionRoute[2] === "/messages"
+    ) {
+      const id = sessionRoute[1] ?? "";
+      const session = agentRuntime.getSession(id);
+      if (session === null) {
+        return dataErrorResponse(404, "session-not-found", `agent session '${id}' was not found.`);
+      }
       const read = await jsonBody(request, maxBodyBytes);
       if (read.kind === "too-large") {
-        return errorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
+        return dataErrorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
       }
       if (read.body === null) {
-        return errorResponse(400, "invalid-json", "request body is not valid JSON.");
+        return dataErrorResponse(400, "invalid-json", "request body is not valid JSON.");
       }
-
-      const body = read.body;
-      const question =
-        typeof body.question === "string" ? body.question.trim() : "";
-      if (question.length === 0) {
-        return errorResponse(
+      const message = typeof read.body.message === "string"
+        ? read.body.message.trim()
+        : "";
+      if (message.length === 0) {
+        return dataErrorResponse(
           400,
-          "ask-usage",
-          "POST /agent/stream requires a non-empty `question`.",
+          "agent-message-usage",
+          "POST /sessions/:id/messages requires a non-empty `message`.",
         );
       }
-
-      // Headers are flushed as soon as we return the Response, so an error or
-      // timeout AFTER that point cannot change the status — it surfaces as an
-      // SSE `error` event then closes. The timeout's controller signal feeds
-      // the stream's abortSignal; on abort the underlying stream ends (or
-      // emits an error part), which we forward and then close.
-      //
-      // Mutex: routes() runs inside the vault mutex, but the SSE body drains
-      // AFTER we return the Response (and the route resolves). To keep the
-      // one-VaultRuntime-at-a-time posture, we hold the mutex slot until the
-      // drain finishes by acquiring a nested mutex turn that resolves only on
-      // `drained` — `handle` already serialized us in, and this nested turn
-      // keeps the NEXT request queued until this stream closes.
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      const streamStartedAt = Date.now();
-
-      const encoder = new TextEncoder();
-      const sse = (payload: unknown): Uint8Array =>
-        encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
-
-      const stream = agentStream(question, controller.signal);
-
-      let signalDrained!: () => void;
-      const drained = new Promise<void>((resolve) => {
-        signalDrained = resolve;
-      });
-      void enqueue(() => drained);
-
-      const sseBody = new ReadableStream<Uint8Array>({
-        async start(ctrl) {
-          let streamStopReason: string | null = null;
-          let streamError: string | null = null;
-          try {
-            let abortedInLoop = false;
-            for await (const part of stream.fullStream) {
-              if (part.type === "text-delta") {
-                ctrl.enqueue(sse({ type: "text", text: part.text }));
-              } else if (part.type === "error") {
-                const message =
-                  part.error instanceof Error
-                    ? part.error.message
-                    : String(part.error);
-                ctrl.enqueue(sse({ type: "error", message }));
-                streamError = message;
-              } else if (part.type === "abort") {
-                // AI SDK signals an abort via a stream part — emit error and stop.
-                const message = controller.signal.aborted
-                  ? `ask exceeded ${timeoutMs}ms.`
-                  : "aborted";
-                ctrl.enqueue(sse({ type: "error", message }));
-                streamError = message;
-                abortedInLoop = true;
-                break;
-              }
-            }
-            if (abortedInLoop || controller.signal.aborted) {
-              // Timed out or aborted after the loop: emit error, not done.
-              if (!abortedInLoop) {
-                const message = `ask exceeded ${timeoutMs}ms.`;
-                ctrl.enqueue(sse({ type: "error", message }));
-                streamError = message;
-              }
-            } else {
-              const { stopReason } = await stream.finished;
-              streamStopReason = stopReason;
-              ctrl.enqueue(
-                sse({ type: "done", citations: stream.citations, changes: stream.changes, stopReason }),
-              );
-            }
-          } catch (e) {
-            const message = controller.signal.aborted
-              ? `ask exceeded ${timeoutMs}ms.`
-              : e instanceof Error
-                ? e.message
-                : String(e);
-            ctrl.enqueue(sse({ type: "error", message }));
-            streamError = message;
-          } finally {
-            // Log the request outcome — the sink swallows errors so it cannot throw.
-            agentLog({
-              ts: new Date().toISOString(),
-              route: "/agent/stream",
-              question,
-              capabilities: capabilityList,
-              authorEnabled,
-              changes: stream.changes,
-              stopReason: streamStopReason,
-              answerPreview: null, // stream text is not buffered server-side
-              durationMs: Date.now() - streamStartedAt,
-              error: streamError,
-            });
-            clearTimeout(timer);
-            signalDrained();
-            ctrl.close();
-          }
-        },
-      });
-
-      return new Response(sseBody, {
-        status: 200,
-        headers: {
-          "content-type": "text/event-stream",
-          "cache-control": "no-store",
-        },
+      return streamSessionTurn({
+        session,
+        question: message,
       });
     }
 
@@ -937,6 +881,128 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       return jsonResponse(200, doc);
     }
 
+    if (route === "GET /attention") {
+      return withVault("GET /attention", async (vault) =>
+        jsonResponse(200, await vault.attention())
+      );
+    }
+
+    if (route === "GET /agent-work") {
+      const limit = positiveInt(url.searchParams.get("limit"));
+      const questionId = positiveInt(url.searchParams.get("questionId"));
+      return withVault("GET /agent-work", async (vault) =>
+        jsonResponse(200, await vault.agentWork({
+          ...(limit !== null ? { limit } : {}),
+          ...(questionId !== null ? { questionId } : {}),
+        }))
+      );
+    }
+
+    if (route === "POST /agent-work/complete") {
+      const read = await jsonBody(request, maxBodyBytes);
+      if (read.kind === "too-large") {
+        return dataErrorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
+      }
+      const body = read.body;
+      const questionId = typeof body?.questionId === "number" &&
+          Number.isInteger(body.questionId) && body.questionId > 0
+        ? body.questionId
+        : null;
+      const expectedRevision = typeof body?.expectedRevision === "string"
+        ? body.expectedRevision.trim()
+        : "";
+      const answer = typeof body?.answer === "string" ? body.answer.trim() : "";
+      const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+      const evidence = z.array(SourceRefSchema).safeParse(body?.evidence);
+      if (
+        questionId === null || expectedRevision.length === 0 ||
+        answer.length === 0 || reason.length === 0 || !evidence.success
+      ) {
+        return dataErrorResponse(
+          400,
+          "agent-work-completion-usage",
+          "POST /agent-work/complete requires questionId, expectedRevision, answer, reason, and valid evidence SourceRefs.",
+        );
+      }
+      return withVault("POST /agent-work/complete", async (vault) => {
+        const outcome = await vault.completeAgentWork({
+          questionId,
+          expectedRevision,
+          answer,
+          reason,
+          evidence: evidence.data as unknown as ReadonlyArray<SourceRef>,
+        });
+        if (outcome.kind === "not-found") {
+          return jsonResponse(404, {
+            schema: "dome.agent-work-completion/v1",
+            status: "not-found",
+            questionId,
+          });
+        }
+        if (outcome.kind === "rejected") {
+          return jsonResponse(409, {
+            schema: "dome.agent-work-completion/v1",
+            status: "rejected",
+            problem: outcome.problem,
+            message: outcome.message,
+          });
+        }
+        return jsonResponse(200, {
+          schema: "dome.agent-work-completion/v1",
+          status: outcome.kind,
+          question: questionRecordJson(outcome.record),
+          handlers: outcome.handlers === null
+            ? null
+            : answerHandlersJson(outcome.handlers),
+        });
+      });
+    }
+
+    if (route === "POST /agent-work/drain") {
+      if (!has(granted, "resolve")) {
+        return dataErrorResponse(
+          403,
+          "capability-denied",
+          "route POST /agent-work/drain requires the 'resolve' capability.",
+        );
+      }
+      const read = await jsonBody(request, maxBodyBytes);
+      if (read.kind === "too-large") {
+        return dataErrorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
+      }
+      const requested = read.body?.limit;
+      const limit = requested === undefined
+        ? 5
+        : typeof requested === "number" && Number.isInteger(requested) &&
+            requested > 0 && requested <= 10
+          ? requested
+          : null;
+      if (limit === null) {
+        return dataErrorResponse(
+          400,
+          "agent-work-drain-usage",
+          "POST /agent-work/drain accepts an optional integer limit from 1 to 10.",
+        );
+      }
+      return withVault("POST /agent-work/drain", async (vault) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const agent = opts.agentWorkAgent?.(vault) ??
+            createBuiltInAgentWorkAgent({
+              vault,
+              ...(opts.model !== undefined ? { modelId: opts.model } : {}),
+            });
+          return jsonResponse(200, await drainAgentWork(vault, agent, {
+            limit,
+            signal: controller.signal,
+          }));
+        } finally {
+          clearTimeout(timer);
+        }
+      });
+    }
+
     if (route === "POST /apply") {
       const read = await jsonBody(request, maxBodyBytes);
       if (read.kind === "too-large") {
@@ -1062,6 +1128,30 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       });
     }
 
+    if (route === "GET /views") {
+      return withVault("views", async (vault) =>
+        jsonResponse(200, collectViews(vault))
+      );
+    }
+
+    if (request.method === "POST" && pluginViewRoute !== null) {
+      const command = decodeURIComponent(pluginViewRoute[1] ?? "").trim();
+      if (command.length === 0) {
+        return dataErrorResponse(400, "view-usage", "POST /views/:command requires a non-empty command.");
+      }
+      const read = await jsonBody(request, maxBodyBytes);
+      if (read.kind === "too-large") {
+        return dataErrorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
+      }
+      if (read.body === null) {
+        return dataErrorResponse(400, "invalid-json", "request body is not valid JSON.");
+      }
+      return withVault(`views/${command}`, async (vault) => {
+        const document = await runInstalledView(vault, command, read.body);
+        return jsonResponse(viewRunStatus(document), document);
+      });
+    }
+
     return dataErrorResponse(404, "not-found", `no route for ${route}.`);
   };
 
@@ -1077,7 +1167,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     // Header bearer for every route; the `?token=` escape is for GET /today only.
     if (!authorized(request, tokenDigest) && !queryTokenAuthorized(request, url, tokenDigest)) {
       return jsonResponse(401, {
-        schema: SCHEMA,
+        schema: SERVER_SCHEMA,
         status: "error",
         error: "unauthorized",
         message: "missing or invalid bearer token.",
@@ -1085,7 +1175,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     }
     // /transcribe runs authenticated but outside the vault mutex — it touches
     // no vault and can hold a subprocess for many seconds; letting it run
-    // inside enqueue() would block /agent, /tasks, etc. for that entire time.
+    // inside enqueue() would block sessions, /tasks, etc. for that entire time.
     if (request.method === "POST" && url.pathname === "/transcribe") {
       if (!has(granted, "capture")) {
         return dataErrorResponse(403, "capability-denied", "route POST /transcribe requires the 'capture' capability.");
@@ -1096,7 +1186,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       return await enqueue(() => routes(request));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      return errorResponse(500, "internal", msg);
+      return dataErrorResponse(500, "internal", msg);
     }
   };
 

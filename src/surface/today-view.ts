@@ -71,6 +71,14 @@ export type TodayQuestionRow = {
   readonly options: ReadonlyArray<string>;
 };
 
+export type TodayReviewRow = {
+  readonly id: number;
+  readonly reason: string;
+  readonly processorId: string;
+  readonly paths: ReadonlyArray<string>;
+  readonly reviewCommand: string;
+};
+
 export type TodayCalendarEvent = {
   readonly time: string;
   readonly title: string;
@@ -95,6 +103,7 @@ export type TodayCounts = {
   readonly openTasks: number;
   readonly followups: number;
   readonly questions: number;
+  readonly reviews?: number;
 };
 
 export type TodayView = {
@@ -102,6 +111,8 @@ export type TodayView = {
   readonly openTasks: ReadonlyArray<TodayTaskRow>;
   readonly followups: ReadonlyArray<TodayTaskRow>;
   readonly questions: ReadonlyArray<TodayQuestionRow>;
+  readonly reviews: ReadonlyArray<TodayReviewRow>;
+  readonly attentionBacklog: number;
   readonly brief: TodayBriefField | null;
   readonly calendar: TodayCalendar | null;
   readonly hero: TodayHeroItem | null;
@@ -150,6 +161,14 @@ const questionRowWireSchema = z.object({
   sourceRefs: z.array(sourceRefWireSchema).readonly().optional(),
 });
 
+const reviewRowWireSchema = z.object({
+  id: z.number(),
+  reason: z.string(),
+  processorId: z.string(),
+  paths: z.array(z.string()).readonly(),
+  reviewCommand: z.string(),
+});
+
 const heroWireSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("task"), item: taskRowWireSchema }),
   z.object({ kind: z.literal("question"), item: questionRowWireSchema }),
@@ -161,10 +180,13 @@ const todayPayloadSchema = z.object({
     openTasks: z.number(),
     followups: z.number(),
     questions: z.number(),
+    reviews: z.number().optional().default(0),
   }),
   openTasks: z.array(taskRowWireSchema).readonly(),
   followups: z.array(taskRowWireSchema).readonly(),
   questions: z.array(questionRowWireSchema).readonly(),
+  reviews: z.array(reviewRowWireSchema).readonly().optional().default([]),
+  attentionBacklog: z.number().optional().default(0),
   brief: z
     .object({ text: z.string(), sourceRef: z.object({ path: z.string() }) })
     .nullable(),
@@ -206,16 +228,32 @@ export function parseTodayView(data: unknown): TodayView {
   const openTasks = parseTaskRows(record.openTasks);
   const followups = parseTaskRows(record.followups);
   const questions = parseQuestionRows(record.questions);
+  const reviews = parseReviewRows(record.reviews);
   const brief = parseBrief(record.brief);
   const calendar = parseCalendar(record.calendar);
   const hero = parseHero(record.hero);
   const rawCounts = isRecord(record.counts) ? record.counts : {};
+  const reviewsCount = numberOr(rawCounts.reviews, reviews.length);
   const counts: TodayCounts = {
     openTasks: numberOr(rawCounts.openTasks, openTasks.length),
     followups: numberOr(rawCounts.followups, followups.length),
     questions: numberOr(rawCounts.questions, questions.length),
+    ...(typeof rawCounts.reviews === "number" || reviews.length > 0
+      ? { reviews: reviewsCount }
+      : {}),
   };
-  return { date, openTasks, followups, questions, brief, calendar, hero, counts };
+  return {
+    date,
+    openTasks,
+    followups,
+    questions,
+    reviews,
+    attentionBacklog: numberOr(record.attentionBacklog, 0),
+    brief,
+    calendar,
+    hero,
+    counts,
+  };
 }
 
 // ── Private parsers ───────────────────────────────────────────────────────────
@@ -333,6 +371,26 @@ function parseQuestionRows(raw: unknown): ReadonlyArray<TodayQuestionRow> {
   });
 }
 
+function parseReviewRows(raw: unknown): ReadonlyArray<TodayReviewRow> {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((item) => {
+    if (!isRecord(item) || typeof item.id !== "number" || typeof item.reason !== "string") {
+      return [];
+    }
+    return [{
+      id: item.id,
+      reason: stripWikilinks(item.reason),
+      processorId: typeof item.processorId === "string" ? item.processorId : "",
+      paths: Array.isArray(item.paths)
+        ? item.paths.filter((path): path is string => typeof path === "string")
+        : [],
+      reviewCommand: typeof item.reviewCommand === "string"
+        ? item.reviewCommand
+        : "dome proposals",
+    }];
+  });
+}
+
 function parseBrief(raw: unknown): TodayBriefField | null {
   if (!isRecord(raw)) return null;
   const text = typeof raw.text === "string" ? raw.text : null;
@@ -429,6 +487,8 @@ export type TodayViewModel = {
   readonly brief: TodayBriefField | null;
   readonly calendar: TodayCalendar | null;
   readonly questions: ReadonlyArray<TodayQuestionRow>;
+  readonly reviews: ReadonlyArray<TodayReviewRow>;
+  readonly attentionBacklog: number;
 };
 
 /** Classify a task's due date relative to `today` (both "YYYY-MM-DD" or null). */
@@ -442,7 +502,17 @@ export function classifyUrgency(dueDate: string | null, today: string): TaskUrge
 
 /** Derive the today view-model from a parsed view. Pure; `today` is `view.date`. */
 export function buildTodayViewModel(view: TodayView): TodayViewModel {
-  const { date, openTasks, followups, questions, brief, calendar, counts } = view;
+  const {
+    date,
+    openTasks,
+    followups,
+    questions,
+    reviews,
+    attentionBacklog,
+    brief,
+    calendar,
+    counts,
+  } = view;
 
   const sections: {
     overdue: TodayTaskRow[];
@@ -464,7 +534,9 @@ export function buildTodayViewModel(view: TodayView): TodayViewModel {
   return {
     date,
     counts,
-    totalOpen: counts.openTasks + counts.followups + counts.questions,
+    totalOpen:
+      counts.openTasks + counts.followups + counts.questions +
+      (counts.reviews ?? reviews.length),
     stillOpen: {
       overdue: sections.overdue,
       dueToday: sections.dueToday,
@@ -475,6 +547,8 @@ export function buildTodayViewModel(view: TodayView): TodayViewModel {
     brief,
     calendar,
     questions,
+    reviews,
+    attentionBacklog,
   };
 }
 

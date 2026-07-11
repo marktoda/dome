@@ -14,7 +14,6 @@
 import { describe, expect, test } from "bun:test";
 
 import { coreMemoryPath } from "../../assets/extensions/dome.agent/lib/core-memory";
-import { consolidationLedgerPath } from "../../assets/extensions/dome.agent/processors/consolidate";
 import { dailyPathSettings } from "../../assets/extensions/dome.daily/processors/daily-paths";
 
 // ---------------------------------------------------------------------------
@@ -63,55 +62,6 @@ describe("coreMemoryPath problems", () => {
     const result = coreMemoryPath({ core_path: "notes/core.md" });
     expect(result.problem).toBeNull();
     expect(result.path).toBe("notes/core.md");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// consolidationLedgerPath
-// Default path: "meta/consolidation-ledger.md"
-// fallback(msg) => resolution(DEFAULT, `dome.agent config ${msg}; falling back to meta/consolidation-ledger.md`)
-// ---------------------------------------------------------------------------
-describe("consolidationLedgerPath problems", () => {
-  test("non-string config value", () => {
-    expect(consolidationLedgerPath({ consolidation_ledger_path: 42 }).problem).toBe(
-      "dome.agent config consolidation_ledger_path must be a string; falling back to meta/consolidation-ledger.md",
-    );
-  });
-
-  test("absolute path", () => {
-    expect(
-      consolidationLedgerPath({ consolidation_ledger_path: "/x.md" }).problem,
-    ).toBe(
-      "dome.agent config consolidation_ledger_path must be a relative vault markdown path; falling back to meta/consolidation-ledger.md",
-    );
-  });
-
-  test("non-.md path", () => {
-    expect(
-      consolidationLedgerPath({ consolidation_ledger_path: "ledger.txt" }).problem,
-    ).toBe(
-      "dome.agent config consolidation_ledger_path must be a non-empty .md path; falling back to meta/consolidation-ledger.md",
-    );
-  });
-
-  test(".. traversal", () => {
-    expect(
-      consolidationLedgerPath({ consolidation_ledger_path: "a/../ledger.md" }).problem,
-    ).toBe(
-      "dome.agent config consolidation_ledger_path must be a relative vault markdown path; falling back to meta/consolidation-ledger.md",
-    );
-  });
-
-  test("undefined config → default path, no problem", () => {
-    const result = consolidationLedgerPath(undefined);
-    expect(result.problem).toBeNull();
-    expect(result.path).toBe("meta/consolidation-ledger.md");
-  });
-
-  test("valid path → no problem, resolved path returned", () => {
-    const result = consolidationLedgerPath({ consolidation_ledger_path: "ledger/consolidation.md" });
-    expect(result.problem).toBeNull();
-    expect(result.path).toBe("ledger/consolidation.md");
   });
 });
 

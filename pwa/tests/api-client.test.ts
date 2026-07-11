@@ -9,6 +9,42 @@ function mockJson(status: number, body: unknown): void {
 }
 
 describe("DomeClient", () => {
+  test("agentStream creates one session and reuses it across turns", async () => {
+    const paths: string[] = [];
+    const bodies: unknown[] = [];
+    const encoder = new TextEncoder();
+    globalThis.fetch = mock(async (reqOrUrl: Request | string, init?: RequestInit) => {
+      const request = typeof reqOrUrl === "string"
+        ? new Request(`http://x${reqOrUrl}`, init)
+        : reqOrUrl;
+      const path = new URL(request.url).pathname;
+      paths.push(path);
+      if (path === "/sessions") {
+        return new Response(JSON.stringify({
+          schema: "dome.agent-session/v1",
+          status: "created",
+          sessionId: "s1",
+        }), { status: 201 });
+      }
+      bodies.push(await request.json());
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('data: {"type":"done","citations":[],"stopReason":"final"}\n\n'));
+          controller.close();
+        },
+      }), { status: 200 });
+    }) as never;
+    const client = new DomeClient("tok");
+    await client.agentStream("first", () => {});
+    await client.agentStream("second", () => {});
+    expect(paths).toEqual([
+      "/sessions",
+      "/sessions/s1/messages",
+      "/sessions/s1/messages",
+    ]);
+    expect(bodies).toEqual([{ message: "first" }, { message: "second" }]);
+  });
+
   test("recents() GETs /recents with the bearer token and parses the body", async () => {
     let seen: Request | undefined;
     globalThis.fetch = mock(async (req: Request) => {
@@ -43,6 +79,25 @@ describe("DomeClient", () => {
     const r = await c.resolve(3, "yes");
     expect(r.status).toBe("answered");
     expect(body).toEqual({ id: 3, value: "yes" });
+  });
+
+  test("proposal decisions POST the canonical id to apply and reject", async () => {
+    const requests: Array<{ path: string; body: unknown }> = [];
+    globalThis.fetch = mock(async (req: Request) => {
+      requests.push({ path: new URL(req.url).pathname, body: await req.json() });
+      const rejected = req.url.endsWith("/reject");
+      return new Response(JSON.stringify(rejected
+        ? { schema: "dome.reject/v1", status: "rejected", id: 8 }
+        : { schema: "dome.apply/v1", status: "applied", id: 7, commit: "abc" }),
+      { status: 200 });
+    }) as never;
+    const c = new DomeClient("tok");
+    expect((await c.applyProposal(7)).status).toBe("applied");
+    expect((await c.rejectProposal(8)).status).toBe("rejected");
+    expect(requests).toEqual([
+      { path: "/apply", body: { id: 7 } },
+      { path: "/reject", body: { id: 8 } },
+    ]);
   });
 
   test("settle() POSTs blockId+disposition to /settle", async () => {

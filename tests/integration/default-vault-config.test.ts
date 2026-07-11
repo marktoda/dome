@@ -130,9 +130,8 @@ describe("default vault config", () => {
 
   test("default config feeds compose-blocks: declared ∩ granted covers its signal paths", async () => {
     // Regression: the dome.daily bundle read grant predated compose-blocks'
-    // sources/ledger reads. Grant-scoped snapshot misses are silent (reads
-    // return null; the signal path-filter drops the event), so the agenda /
-    // integrated / sources blocks would silently never render — the exact
+    // source reads. Grant-scoped snapshot misses are silent, so the agenda /
+    // sources blocks would silently never render — the exact
     // silent-degradation mode the daily-surface design exists to eliminate.
     // Verify with the SAME declared-∩-granted matcher the runtime's
     // readableSignalsForProcessor / scoped snapshot use.
@@ -169,7 +168,6 @@ describe("default vault config", () => {
       for (const path of [
         "sources/calendar/2026-01-02.md",
         "sources/slack/2026-01-02.md",
-        "meta/sweep-ledger.md",
         "wiki/dailies/2026-01-02.md",
       ]) {
         expect(
@@ -278,12 +276,7 @@ describe("default vault config", () => {
     ]);
   });
 
-  test("shipped template enables agent-safe auto-resolution; engine built-in default stays off", async () => {
-    // Task 2: the vault template flips auto_resolve_questions on so new
-    // vaults get agent-safe question auto-resolution out of the box. The
-    // engine's own DEFAULT_RUNTIME_CONFIG (used when a vault has no config
-    // at all) must stay enabled: false — the template is what opts in, not
-    // the engine built-in.
+  test("shipped template omits retired metadata-only question auto-resolution", async () => {
     const root = mkdtempSync(join(tmpdir(), "dome-default-config-autoresolve-"));
     try {
       await mkdir(join(root, ".dome"), { recursive: true });
@@ -296,19 +289,13 @@ describe("default vault config", () => {
       expect(policy.ok).toBe(true);
       if (!policy.ok) throw new Error(policy.error);
 
-      expect(policy.value.runtime.engine.autoResolveQuestions).toEqual({
-        enabled: true,
-        policies: ["agent-safe"],
-        minConfidence: 0.6,
-        maxPerTick: 20,
-      });
+      expect(defaultConfigYaml()).not.toContain("auto_resolve_questions");
+      expect(policy.value.runtime.engine.autoResolveQuestions.enabled).toBe(false);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
 
-    expect(DEFAULT_RUNTIME_CONFIG.engine.autoResolveQuestions.enabled).toBe(
-      false,
-    );
+    expect(DEFAULT_RUNTIME_CONFIG.engine.autoResolveQuestions.enabled).toBe(false);
   });
 
   test("shipped template ships run-ledger retention on (30 days); engine built-in default stays forever", async () => {

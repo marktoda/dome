@@ -188,6 +188,7 @@ function toOperationalProposalRow(
     extensionId: row.extensionId,
     reason: row.reason,
     paths: Object.freeze(row.changes.map((change) => change.path)),
+    sourceRefs: Object.freeze([...row.sourceRefs]),
     createdAt: row.createdAt,
     status: row.status,
     decidedAt: row.decidedAt,

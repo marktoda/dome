@@ -350,7 +350,17 @@ export function formatTodayResult(
   opts: FormatTodayOptions = {},
 ): string {
   const vm = buildTodayViewModel(parseTodayView(data));
-  const { date, counts, totalOpen, stillOpen, brief, calendar, questions } = vm;
+  const {
+    date,
+    counts,
+    totalOpen,
+    stillOpen,
+    brief,
+    calendar,
+    questions,
+    reviews,
+    attentionBacklog,
+  } = vm;
   const overdueCount = stillOpen.overdue.length;
   const isAllClear = totalOpen === 0;
 
@@ -593,6 +603,20 @@ export function formatTodayResult(
       const questionLabel = shortenLabel(stripEmphasis(top.question), askWidth, caps.unicode);
       lines.push(
         `  ? ${paint("ask", "muted", caps)}   #${top.id} ${questionLabel}   ${paint(top.resolveCommand, "ident", caps)}${extraNote}`,
+      );
+    }
+    if (reviews.length > 0) {
+      const top = reviews[0]!;
+      const extra = reviews.length - 1;
+      const extraNote = extra > 0 ? `   ${paint(`+${extra}`, "muted", caps)}` : "";
+      const reviewLabel = shortenLabel(stripEmphasis(top.reason), Math.max(24, caps.width - 34), caps.unicode);
+      lines.push(
+        `  ◇ ${paint("review", "muted", caps)}   P${top.id} ${reviewLabel}   ${paint(top.reviewCommand, "ident", caps)}${extraNote}`,
+      );
+    }
+    if (attentionBacklog > 0) {
+      lines.push(
+        `  ${paint(`… ${attentionBacklog} more in owner backlog · dome check --decisions`, "muted", caps)}`,
       );
     }
 

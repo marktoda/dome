@@ -216,13 +216,23 @@ const QuestionOptionsSchema = z.array(z.string().min(1));
 const QuestionMetadataSchema = z
   .object({
     risk: z.enum(["low", "medium", "high"]).optional(),
+    resolutionMode: z.enum(["dispatch", "acknowledge"]).optional(),
     confidence: z.number().min(0).max(1).optional(),
     recommendedAnswer: z.string().min(1).optional(),
     automationPolicy: z
       .enum(["agent-safe", "model-safe", "owner-needed"])
       .optional(),
     ownerNeededReason: z.string().min(1).optional(),
-    // Answer-handler round-trip context (dome.agent.sweep) — must stay in
+    attention: z
+      .object({
+        consequence: z.enum(["low", "medium", "high"]),
+        urgency: z.enum(["none", "soon", "now"]),
+        reason: z.string().min(1).optional(),
+        dueAt: z.string().datetime().optional(),
+      })
+      .strict()
+      .optional(),
+    // Answer-handler round-trip context — must stay in
     // lockstep with QuestionMetadata in src/core/effect.ts, or stored rows
     // carrying these keys fail rehydration validation.
     destination: z.string().min(1).optional(),
@@ -520,7 +530,12 @@ function rowToQuestionRecord(row: QuestionRow): QuestionRecord {
 }
 
 function parseAnsweredByColumn(value: string | null): QuestionAnsweredBy | null {
-  if (value === "auto" || value === "owner" || value === "expired") {
+  if (
+    value === "agent" ||
+    value === "auto" ||
+    value === "owner" ||
+    value === "expired"
+  ) {
     return value;
   }
   return null;
@@ -559,11 +574,18 @@ function rowToQuestion(row: QuestionRow): QuestionEffect {
 }
 
 function questionMetadata(raw: {
+  readonly resolutionMode?: "dispatch" | "acknowledge" | undefined;
   readonly risk?: "low" | "medium" | "high" | undefined;
   readonly confidence?: number | undefined;
   readonly recommendedAnswer?: string | undefined;
   readonly automationPolicy?: "agent-safe" | "model-safe" | "owner-needed" | undefined;
   readonly ownerNeededReason?: string | undefined;
+  readonly attention?: {
+    readonly consequence: "low" | "medium" | "high";
+    readonly urgency: "none" | "soon" | "now";
+    readonly reason?: string | undefined;
+    readonly dueAt?: string | undefined;
+  } | undefined;
   readonly destination?: string | undefined;
   readonly material?: string | undefined;
   readonly proposedSection?: string | undefined;
@@ -572,6 +594,9 @@ function questionMetadata(raw: {
   const metadata: {
     -readonly [K in keyof QuestionMetadata]: QuestionMetadata[K];
   } = {};
+  if (raw.resolutionMode !== undefined) {
+    metadata.resolutionMode = raw.resolutionMode;
+  }
   if (raw.risk !== undefined) metadata.risk = raw.risk;
   if (raw.confidence !== undefined) metadata.confidence = raw.confidence;
   if (raw.recommendedAnswer !== undefined) {
@@ -582,6 +607,18 @@ function questionMetadata(raw: {
   }
   if (raw.ownerNeededReason !== undefined) {
     metadata.ownerNeededReason = raw.ownerNeededReason;
+  }
+  if (raw.attention !== undefined) {
+    metadata.attention = Object.freeze({
+      consequence: raw.attention.consequence,
+      urgency: raw.attention.urgency,
+      ...(raw.attention.reason !== undefined
+        ? { reason: raw.attention.reason }
+        : {}),
+      ...(raw.attention.dueAt !== undefined
+        ? { dueAt: raw.attention.dueAt }
+        : {}),
+    });
   }
   if (raw.destination !== undefined) metadata.destination = raw.destination;
   if (raw.material !== undefined) metadata.material = raw.material;

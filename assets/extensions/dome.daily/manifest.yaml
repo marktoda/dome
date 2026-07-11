@@ -113,6 +113,8 @@ processors:
     capabilities:
       - kind: read
         paths: ["wiki/**/*.md", "notes/*.md"]
+      - kind: questions.read
+      - kind: proposals.read
     module: processors/today.ts
 
   - id: dome.daily.prep
@@ -207,19 +209,12 @@ processors:
       - kind: signal
         name: document.changed
         pathPattern: "sources/slack/*.md"
-      - kind: signal
-        name: file.created
-        pathPattern: "meta/sweep-ledger.md"
-      - kind: signal
-        name: document.changed
-        pathPattern: "meta/sweep-ledger.md"
     capabilities:
       - kind: read
         paths:
           - "wiki/dailies/*.md"
           - "sources/calendar/*.md"
           - "sources/slack/*.md"
-          - "meta/sweep-ledger.md"
       - kind: patch.auto
         paths: ["wiki/dailies/*.md"]
       - kind: questions.read
@@ -253,45 +248,6 @@ processors:
       kind: all-readable-markdown
     module: processors/reconcile-tasks.ts
 
-  # Clock-aware warden: emits one settle-stale QuestionEffect per stale/overdue
-  # open-loop task. Stale = overdue ≥ 14 days, PERIOD (undated tasks are never
-  # settle-question candidates). Cron-only BY DESIGN: staleness is a daily
-  # property, not a per-commit fact; schedule matches create-daily so the
-  # owner sees fresh signals each morning. NOT registered as
-  # execution.class: deterministic because the output depends on ctx.now()
-  # for the overdue date comparison.
-  - id: dome.daily.stale-task-warden
-    version: 0.1.0
-    phase: garden
-    triggers:
-      - kind: schedule
-        cron: "0 6 * * *"
-    capabilities:
-      - kind: read
-        paths: ["wiki/**/*.md", "notes/*.md"]
-      - kind: question.ask
-    module: processors/stale-task-warden.ts
-
-  # Deterministic answer handler for dome.daily.stale-task-warden questions.
-  # Applies the owner's disposition (close / defer / keep) to the stale task
-  # identified by its ^anchor (metadata.material) in the source file
-  # (metadata.destination). close → `- [-]` (idempotent); defer → advances the
-  # 📅 date by DEFER_DAYS from today; keep → no effects.
-  # No model, no graph.write — patch.auto only.
-  - id: dome.daily.settle-stale-answer
-    version: 0.1.0
-    phase: garden
-    triggers:
-      - kind: answer
-        questionProcessorId: dome.daily.stale-task-warden
-        idempotencyKeyPrefix: "dome.daily.settle-stale:"
-    capabilities:
-      - kind: read
-        paths: ["wiki/**/*.md", "notes/*.md"]
-      - kind: patch.auto
-        paths: ["wiki/**/*.md", "notes/*.md"]
-    module: processors/settle-stale-answer.ts
-
 # Doctor contributions (wiki/specs/cli.md §"dome doctor"): grant-entry probes
 # evaluated generically by the health report. dome init --refresh-config never
 # merges new entries into existing grant keys, so these name the exact YAML a
@@ -304,12 +260,9 @@ doctor:
           target: sources/calendar/*.md
         - kind: read
           target: sources/slack/*.md
-        - kind: read
-          target: meta/sweep-ledger.md
       why: >-
-        the agenda and integrated-overnight blocks silently never render —
-        calendar/slack/ledger reads return null outside the grant
+        the agenda and source record silently never render because source
+        reads return null outside the grant
       recovery: >-
-        Add "sources/calendar/*.md", "sources/slack/*.md", and
-        "meta/sweep-ledger.md" to extensions.dome.daily.grant.read in
-        .dome/config.yaml.
+        Add "sources/calendar/*.md" and "sources/slack/*.md" to
+        extensions.dome.daily.grant.read in .dome/config.yaml.

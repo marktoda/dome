@@ -18,7 +18,8 @@ helpers, the bundle loader, first-party maintenance-loop metadata, pure
 commit-trailer helpers, and the public `openVault` wrapper (`src/vault.ts`).
 The shipped `Vault` handle carries the read + engine-control subset —
 `query`, `readDocument`, `runView`, `sync`, `rebuild`, `getAdoptionStatus`,
-`listQuestions`, `getQuestion`, `resolve`, `close` — over the internal
+`attention`, `agentWork`, `completeAgentWork`, `listQuestions`, `getQuestion`,
+`resolve`, `close` — over the internal
 `openVaultRuntime` boundary. Still target-shape, not shipped:
 `resolveWikilink`, `drainProcessors`, the closed-state guard, and the
 composable-construction helpers.
@@ -68,12 +69,20 @@ type Vault = {
   query(input: QueryInput): Promise<QueryResult>;
   readDocument(path: string): Promise<AdoptedDocument | null>;
   runView(name: string, args?: unknown): Promise<VaultViewResult>;
+  listViews(): ReadonlyArray<InstalledView>;
 
   // Engine control
   sync(opts?: VaultSyncOptions): Promise<CompilerHostTickResult>;
   rebuild(): Promise<RebuildOutcome>;
   getAdoptionStatus(): Promise<AdoptionStatus>;
   operationalSummary(): Promise<OperationalSummary>;
+
+  // One derived owner queue over decisions and proposal reviews
+  attention(): Promise<AttentionSnapshot>;
+
+  // Derived agent queue + evidence-backed durable completion
+  agentWork(opts?: AgentWorkOptions): Promise<AgentWorkSnapshot>;
+  completeAgentWork(input: CompleteAgentWorkInput): Promise<CompleteAgentWorkOutcome>;
 
   // Decisions — durable questions and answers
   listQuestions(filter?: ListQuestionsFilter): Promise<ReadonlyArray<QuestionRecord>>;
@@ -98,6 +107,9 @@ Method semantics:
   the views plus a convenience `structured` projection when the run produced
   exactly one structured view. This is the generic surface behind `dome
   query` / `dome run <name>` / the MCP view tools.
+- `listViews` derives installed command-triggered views from the live
+  processor registry. It is plugin-neutral: installing a bundle changes the
+  result without editing `Vault` or a first-party catalog.
 - `sync` runs one compiler-host tick (`runCompilerHostTick`) — the same
   semantic boundary `dome sync` and `dome serve` share. `VaultSyncOptions`
   carries optional progress callbacks (`onEvent` for adoption events,
@@ -107,6 +119,9 @@ Method semantics:
   operational stores (runs, diagnostics, questions, outbox, quarantine) —
   the runtime-side sibling of `getAdoptionStatus`'s git cursor, and what a
   polling surface reads to answer "does anything need me?".
+- `attention` compiles `dome.attention/v1` from open owner-needed questions
+  and pending proposals. It persists no new state and is the canonical input
+  for owner-facing clients; see [[wiki/specs/owner-attention]].
 - `rebuild` wipes and rebuilds `projection.db` from the adopted commit
   (`rebuildProjection` under the projection write lock) — the same path as
   `dome rebuild`.
@@ -363,7 +378,7 @@ The SDK ships the current v1 `dome.*` bundles under `assets/extensions/`. Some p
 | `dome.daily` | adoption: task-index; garden: create-daily (cron), carry-forward; view: today, prep | Creates daily notes in the V1 work-surface shape, seeds and refreshes a source-backed `## Start Here` context block from yesterday's daily note, seeds and refreshes a filtered source-backed open-loop surface in today's daily note, targets scheduled/current daily surfaces rather than changed historical daily notes, ranks daily-note source loops by the configured daily date instead of the file's maintenance commit timestamp, folds repeated and near-duplicate open-loop rows in rendered daily surfaces while retaining representative source refs, renders compact evidence labels that show both daily surface rows and backing source locations, preserves settled generated rows as resolved (`[x]`) or dismissed (`[-]`) daily evidence so source-backed loops stop resurfacing without hidden state, indexes user-authored task/followup facts while ignoring Dome-generated daily blocks, frontmatter metadata, and blockquoted evidence, gives extracted open loops stable SourceRef identities across line moves, marks ambiguous follow-up questions as agent-safe, and renders daily action/planning surfaces. The daily path defaults to `wiki/dailies/{date}.md` and can be configured per vault with `extensions.dome.daily.config.daily_path`. |
 | `dome.lint` | view: report | Adopted-state lint report over diagnostics and deterministic checks; future apply flow remains planned. |
 | `dome.agent` | garden: ingest, inbox-stale-check | Runs autonomous-agent processors via a tool-use loop backed by `ctx.modelInvoke.step`; `dome.agent.ingest` handles `inbox/raw/*.md` — integrates raw captures into wiki (source page + entity/concept pages + bidirectional wikilinks + index/log updates + task routing + archive), all as one `PatchEffect` within the capability grant boundary; `dome.agent.inbox-stale-check` emits `inbox.stale` warnings for captures lingering past 168 hours. See [[wiki/specs/autonomous-agents]]. |
-| `dome.search` | adoption: index-text; view: query, export-context | Maintains FTS5 adopted-state search; answers `dome query` and source-backed `dome export-context` requests with read-first packet overviews that surface topic-relevant open loops, decisions, questions, diagnostics, source refs, and projection recall signals for topic-matched memory that FTS alone would miss. Daily-intent packets also recall date-named daily surfaces from the adopted snapshot and parse their current hand-authored and generated source-backed open-loop rows into the packet overview, keeping daily surface refs and generated-row backing refs intact. Embeddings remain future work. |
+| `dome.search` | adoption: index-text; view: query, export-context | Maintains FTS5 adopted-state search behind the natural-language [[wiki/specs/recall]] seam; answers `dome query` and source-backed `dome export-context` requests with packet overviews that surface topic-relevant open loops, decisions, questions, diagnostics, source refs, and projection recall signals that FTS alone would miss. Daily-intent packets also recall date-named daily surfaces from the adopted snapshot. Embeddings remain a measured future candidate channel. |
 
 The full shipped/planned map is at [[wiki/matrices/built-in-extensions-x-phase]] and [[wiki/matrices/extension-bundle-shape]].
 
@@ -553,7 +568,7 @@ are *sequential* — step N+1's messages contain step N's tool results, so the
 steps of one run cannot be batched, and an up-to-24-hour async turnaround
 cannot sit inside a loop. Every shipped model call now rides a sequential
 agent loop — the retired `dome.warden.integrity` one-shot folded into
-`dome.agent.consolidate`'s tool loop ([[wiki/specs/task-lifecycle]]
+`dome.agent.garden`'s tool loop ([[wiki/specs/task-lifecycle]]
 §"Wardens") — so there is no batchable one-shot workload left to bridge
 through the command-provider protocol. Revisit if a batchable one-shot
 processor is ever added. This supersedes the v1 plan's WS2
@@ -612,6 +627,8 @@ both the CLI's `--json` mode and the MCP tools emit. The layer's contract:
 | `src/surface/check.ts` | `buildCheckReport`, `resolveScopes` + the `CheckReport` types (`dome.check/v1`) |
 | `src/surface/answer.ts` | `ANSWER_SCHEMA`, `questionRecordJson`, `answerHandlersJson` (`dome.answer/v1` mappers) |
 | `src/surface/view.ts` | The shared view-command runners (`runSharedViewCommand`, `runStructuredViewCommand`) and `firstPartyViewNotFoundMessage` |
+| `src/surface/views.ts` | Installed plugin-view discovery (`dome.views/v1`) |
+| `src/surface/run-view.ts` | Arbitrary installed-view invocation and JSON-safe rendering (`dome.view-run/v1`) |
 | `src/surface/format.ts` | `formatJson` — the canonical JSON serialization for surface documents |
 | `src/surface/command-error.ts` | `COMMAND_ERROR_SCHEMA` (`dome.command-error/v1`) |
 | `src/surface/resolve-vault.ts` | `resolveVaultPath` — git-style upward vault-root discovery |
@@ -621,57 +638,31 @@ both the CLI's `--json` mode and the MCP tools emit. The layer's contract:
 | `src/surface/maintenance-loop-summary.ts` | `collectMaintenanceLoopSummaries` + the loop-summary types (rendering stays in `src/cli/maintenance-loop-summary.ts`) |
 | `src/surface/vault-analytics.ts` | `collectVaultAnalytics` — page/link/raw-file counts for the status document |
 
-## Future direction (non-normative): `AbstractSurface`
+## Consumer surfaces: operations, not an aggregate object
 
-The eventual aggregation adds **`AbstractSurface`** (protocol-agnostic
-interface) over the surface layer, with **per-protocol renderers** (one render
-function per consumer protocol). A new protocol adapter then ships as one
-render function, not as a parallel aggregation. Until it lands, new surfaces
-wrap the `src/surface/` collectors directly as `src/mcp/server.ts` does.
+There is no additional `AbstractSurface` product object. It duplicated the
+shape of `Vault`, encouraged speculative URI/instruction APIs, and did not
+remove meaningful work from adapters.
 
-### `AbstractSurface` (planned; arriving bottom-up)
+The shipped seams are deliberately smaller:
 
-The first slice already exists in code: `src/surface/view-catalog.ts` (one
-declaration per first-party view, consumed by CLI + MCP + HTTP and pinned
-to the shipped bundle set by a lockstep test) plus `src/surface/adapter.ts`
-(the shared vault mutex, per-request open-use-close, vault-open failure
-mapping, and catalog-view runner with expected-name/schema validation).
-That pair is `surface.commands` in all but name; the remaining
-`AbstractSurface` work is aggregation (`query`/`read`/`instructions`/
-`readResource`) rather than invention.
+1. `Vault` is the protocol-neutral compiler handle for adopted reads, plugin
+   view discovery/invocation, decisions, and engine control.
+2. `src/surface/*` contains protocol-neutral **operations and documents** for
+   behavior shared by two or more adapters: capture, status, proposals,
+   installed views, arbitrary view runs, and so on.
+3. CLI, MCP, and HTTP are thin transport adapters over `Vault` plus those
+   operations. Protocol-only concerns—argv, HTTP status, auth, SSE, MCP tool
+   registration—stay in the adapter.
+4. Conversational clients use the separate `AgentRuntime` seam described in
+   [[wiki/specs/agent-host]]. The agent receives a `Vault`; the engine does not
+   know or care which agent provider is running.
 
-```ts
-interface AbstractSurface {
-  readonly query: (input: QueryInput) => Promise<QueryResult>;
-  readonly read: (path: string) => Promise<Result<Document, ToolError>>;
-  readonly commands: ReadonlyArray<CommandDescriptor>;  // view-phase command processors
-  readonly instructions: string;
-  readonly readResource: (uri: string) => Promise<string | null>;
-}
-
-function buildAbstractSurface(vault: Vault): Promise<AbstractSurface>;
-```
-
-`commands` is a list of `CommandDescriptor` records — each carries a name (`"lint"`, `"stats"`, `"query"`), an optional description, a Zod-validated input schema, and a callback that invokes the corresponding view-phase processor.
-
-`readResource(uri)` exposes individual vault contents (pages, log, index, the projection-store search) under URI schemes like `dome://page/<path>`, `dome://log`, `dome://index`, `dome://search?q=...`. Protocol renderers (MCP, future HTTP) map their resource conventions onto this.
-
-### Per-protocol renderers
-
-Each future consumer protocol adapts `AbstractSurface` to its wire format:
-
-| Adapter | Entry point | Wire format |
-|---|---|---|
-| MCP (shipped; consumes `openVault` + `src/surface/` today) | `createDomeMcpServer(opts)` in `src/mcp/server.ts` (`@dome/sdk/mcp`), hosted by `dome mcp`; future `renderMcp(surface)` | MCP protocol — typed capture/read/query tools per [[wiki/specs/mcp-surface]] |
-| CLI (shipped; consumes `openVault` + `src/surface/` + engine control today) | `runCli(argv)` in `@dome/sdk/cli` | argv → engine control or command processor invocation |
-| HTTP (shipped; consumes `openVault` + `src/surface/` today) | `createDomeHttpServer(opts)` in `src/http/server.ts`, hosted by `dome http`; future `renderHttp(surface)` | Bearer-token JSON routes — capture/status/query/tasks/doc/questions/resolve per [[wiki/specs/http-surface]] |
-| Voice (v2) | `renderVoice(surface): VoiceHandler` in `@dome/sdk/voice` | Speech-to-text → command processor |
-
-The protocol renderers should consume `AbstractSurface`, never `Vault`
-directly. This is the intended structure behind
-[[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]]: `@dome/sdk` core
-stays free of MCP / LLM transitive dependencies, while planned
-protocol/provider packages lift the core surface into their own wire formats.
+The extraction rule is empirical: one adapter may keep local code; the second
+real consumer promotes the behavior into `src/surface/`. Plugins do not need
+adapter edits for read views: `Vault.listViews()` discovers them and
+`runInstalledView()` exposes the common `dome.view-run/v1` operation across
+the built-in agent, MCP, and HTTP.
 
 ## Outputs the SDK does not have
 

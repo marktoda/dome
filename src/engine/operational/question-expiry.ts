@@ -19,8 +19,8 @@
 // permanently undisposable. Only the emitter itself (always active while
 // dome.health is installed) is checked for that question's subject.
 //
-// Deliberately NOT a mirror of `question-auto-resolution.ts`'s handler
-// dispatch: there is no handler to run for a retired subject, so expiry
+// Deliberately NOT a normal owner/agent resolution: there is no handler to
+// run for a retired subject, so expiry
 // writes the durable answer row directly (`answer: "expired"`,
 // `answered_by: "expired"`) and marks it `handler_status: "handled"` without
 // ever calling `runAnswerHandlers`. It also does not honor a question's
@@ -69,7 +69,7 @@ export type QuestionExpiryDeps = {
    * fully authoritative.
    */
   readonly disabledExtensionIds: ReadonlyArray<string>;
-  /** The questions store accessor, same handle `question-auto-resolution.ts` reads. */
+  /** The projected questions store whose open rows are eligible for expiry. */
   readonly questions: ProjectionDb;
   readonly answers: AnswersDb;
   readonly recordDiagnostic: ApplyEffectSinks["recordDiagnostic"];
@@ -181,7 +181,7 @@ function isRetired(
  */
 function expireQuestion(question: QuestionRecord, deps: QuestionExpiryDeps): void {
   const answeredAt = deps.now().toISOString();
-  recordQuestionAnswer(deps.answers, {
+  const durable = recordQuestionAnswer(deps.answers, {
     idempotencyKey: question.effect.idempotencyKey,
     answer: "expired",
     answeredAt,
@@ -191,6 +191,15 @@ function expireQuestion(question: QuestionRecord, deps: QuestionExpiryDeps): voi
     adoptedCommit: question.adoptedCommit,
     answeredBy: "expired",
   });
+  if (durable.kind === "existing") {
+    applyQuestionAnswer(deps.questions, {
+      idempotencyKey: question.effect.idempotencyKey,
+      answer: durable.record.answer,
+      answeredAt: durable.record.answeredAt,
+      answeredBy: durable.record.answeredBy,
+    });
+    return;
+  }
   applyQuestionAnswer(deps.questions, {
     idempotencyKey: question.effect.idempotencyKey,
     answer: "expired",

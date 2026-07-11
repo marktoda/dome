@@ -329,7 +329,7 @@ describe("dome.agent.brief", () => {
     expect(content).toContain("dome.agent.brief:yesterday");
   });
 
-  test("an ungrounded bullet becomes a QuestionEffect, not brief text", async () => {
+  test("an ungrounded bullet becomes a diagnostic, not brief text", async () => {
     const modelDoc = [
       "<!-- dome.agent.brief:yesterday:start -->",
       "### Yesterday",
@@ -352,9 +352,11 @@ describe("dome.agent.brief", () => {
     const content = writtenDaily(effects);
     expect(content).toContain("- Grounded claim (from [[wiki/dailies/2026-06-08]])");
     expect(content).not.toContain("You probably promised Bob a demo");
-    const q = effects.find((e) => e.kind === "question") as QuestionEffect;
-    expect(q.question).toContain("ungrounded");
-    expect(q.question).toContain("You probably promised Bob a demo");
+    const diagnostic = effects.find(
+      (e) => e.kind === "diagnostic" && e.code === "dome.agent.brief-ungrounded-item",
+    ) as DiagnosticEffect;
+    expect(diagnostic.message).toContain("ungrounded");
+    expect(diagnostic.message).toContain("You probably promised Bob a demo");
   });
 
   test("in-grant edits beyond today's note are dropped with an out-of-scope diagnostic", async () => {
@@ -804,8 +806,10 @@ describe("dome.agent.brief", () => {
     const effects = await brief.run(ctx);
     const content = writtenDaily(effects);
     expect(content).not.toContain("Looks grounded but is not");
-    const q = effects.find((e) => e.kind === "question") as QuestionEffect;
-    expect(q.question).toContain("ungrounded");
+    const diagnostic = effects.find(
+      (e) => e.kind === "diagnostic" && e.code === "dome.agent.brief-ungrounded-item",
+    ) as DiagnosticEffect;
+    expect(diagnostic.message).toContain("ungrounded");
   });
 
   test("model leaves the block untouched → the mechanical fallback lands, never stripped as ungrounded", async () => {
@@ -1469,7 +1473,7 @@ describe("dome.agent.brief:today narrative block", () => {
     expect(todayIdx).toBeGreaterThan(startHereIdx);
   });
 
-  test("ungrounded sentences in the today block are stripped and become QuestionEffects", async () => {
+  test("ungrounded sentences in the today block are stripped and become diagnostics", async () => {
     const modelDoc = [
       "<!-- dome.agent.brief:today:start -->",
       "- Grounded: focus on [[wiki/projects/cockpit]] today.",
@@ -1494,14 +1498,14 @@ describe("dome.agent.brief:today narrative block", () => {
     expect(content).toContain("Grounded: focus on [[wiki/projects/cockpit]] today.");
     // Ungrounded bullet is stripped from the today block body
     expect(content).not.toContain("Ungrounded sentence with no wiki link at all.");
-    // And becomes a QuestionEffect
-    const q = effects.find(
-      (e): e is QuestionEffect =>
-        e.kind === "question" &&
-        (e as QuestionEffect).question.includes("ungrounded"),
+    // And becomes a source-backed diagnostic.
+    const diagnostic = effects.find(
+      (e): e is DiagnosticEffect =>
+        e.kind === "diagnostic" &&
+        e.code === "dome.agent.brief-ungrounded-item",
     );
-    expect(q).toBeDefined();
-    expect(q!.question).toContain("Ungrounded sentence with no wiki link at all.");
+    expect(diagnostic).toBeDefined();
+    expect(diagnostic!.message).toContain("Ungrounded sentence with no wiki link at all.");
   });
 
   test("when the model is unavailable (no model), the today block is omitted entirely (degradation: omission)", async () => {
@@ -1578,7 +1582,6 @@ describe("composeRecordSection / parseBriefComposeRecord (round-trip)", () => {
       inputs: {
         calendar: "a3f29b01",
         slack: "0badf00d",
-        ledger: "9b1c00ff",
         yesterday: "77e01234",
       },
     };
@@ -1589,7 +1592,7 @@ describe("composeRecordSection / parseBriefComposeRecord (round-trip)", () => {
     const record: BriefComposeRecord = {
       count: 1,
       time: "05:30",
-      inputs: { calendar: "a3f29b01", slack: "—", ledger: "—", yesterday: "77e01234" },
+      inputs: { calendar: "a3f29b01", slack: "—", yesterday: "77e01234" },
     };
     expect(parseBriefComposeRecord(composeRecordSection(record))).toEqual(record);
   });
@@ -1598,7 +1601,7 @@ describe("composeRecordSection / parseBriefComposeRecord (round-trip)", () => {
     const record: BriefComposeRecord = {
       count: 10,
       time: "23:59",
-      inputs: { calendar: "—", slack: "—", ledger: "—", yesterday: "—" },
+      inputs: { calendar: "—", slack: "—", yesterday: "—" },
     };
     const parsed = parseBriefComposeRecord(composeRecordSection(record));
     expect(parsed?.count).toBe(10);
@@ -1610,7 +1613,7 @@ describe("composeRecordSection / parseBriefComposeRecord (round-trip)", () => {
       composeRecordSection({
         count: 3,
         time: "05:30",
-        inputs: { calendar: "—", slack: "—", ledger: "—", yesterday: "—" },
+        inputs: { calendar: "—", slack: "—", yesterday: "—" },
       }),
     ).toContain("Composed 3×");
   });
@@ -1685,7 +1688,6 @@ function currentInputs(opts: {
   return {
     calendar: inputFingerprint(opts.calendar ?? null),
     slack: inputFingerprint(opts.slack ?? null),
-    ledger: "—",
     yesterday: inputFingerprint(opts.yesterday ?? null),
   };
 }
@@ -1762,7 +1764,7 @@ describe("dome.agent.brief — compose-record gate", () => {
     const stale: BriefComposeRecord = {
       count: 1,
       time: "05:30",
-      inputs: { calendar: STALE, slack: "—", ledger: "—", yesterday: inputFingerprint(YESTERDAY_DAILY) },
+      inputs: { calendar: STALE, slack: "—", yesterday: inputFingerprint(YESTERDAY_DAILY) },
     };
     const ctx = makeCtx({
       files: {
@@ -1783,7 +1785,7 @@ describe("dome.agent.brief — compose-record gate", () => {
     const stale: BriefComposeRecord = {
       count: MAX_DAILY_COMPOSES,
       time: "05:30",
-      inputs: { calendar: STALE, slack: "—", ledger: "—", yesterday: inputFingerprint(YESTERDAY_DAILY) },
+      inputs: { calendar: STALE, slack: "—", yesterday: inputFingerprint(YESTERDAY_DAILY) },
     };
     const ctx = makeCtx({
       files: {
@@ -1813,7 +1815,7 @@ describe("dome.agent.brief — compose-record gate", () => {
     const staleAt = (count: number): BriefComposeRecord => ({
       count,
       time: "05:30",
-      inputs: { calendar: STALE, slack: "—", ledger: "—", yesterday: inputFingerprint(YESTERDAY_DAILY) },
+      inputs: { calendar: STALE, slack: "—", yesterday: inputFingerprint(YESTERDAY_DAILY) },
     });
     const thirdCtx = makeCtx({
       files: {
@@ -1848,20 +1850,11 @@ describe("dome.agent.brief — compose-record gate", () => {
   });
 
   test("a successful compose writes NO questions/integrated/sources blocks; the compose-record renders last in Start Here", async () => {
-    const ledger = [
-      "# Sweep ledger",
-      "",
-      "## Run 2026-06-09",
-      "",
-      "- [[wiki/dailies/2026-06-08]] -> [[wiki/entities/alice]] :: integrated",
-      "",
-    ].join("\n");
     const ctx = makeCtx({
       files: {
         [YESTERDAY_PATH]: YESTERDAY_DAILY,
         [CALENDAR_PATH]: CALENDAR_FILE,
         [SLACK_PATH]: SLACK_FILE,
-        "meta/sweep-ledger.md": ledger,
       },
       steps: [{ text: "done" }],
       // The brief no longer reads projection questions — passing some proves it.
@@ -1900,7 +1893,7 @@ describe("dome.agent.brief — compose-record gate", () => {
     const adopted = composedDaily({
       count: 1,
       time: "05:30",
-      inputs: { calendar: STALE, slack: "—", ledger: "—", yesterday: inputFingerprint(YESTERDAY_DAILY) },
+      inputs: { calendar: STALE, slack: "—", yesterday: inputFingerprint(YESTERDAY_DAILY) },
     });
     const ctx = makeCtx({
       files: {

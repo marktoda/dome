@@ -4,57 +4,25 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDomeHttpServer } from "../../src/http/server";
-import type { AgentStream } from "../../src/assistant/agent";
-import type { TextStreamPart, ToolSet } from "ai";
+import { createAgentRuntime, type AgentDone, type AgentRun } from "../../src/assistant/runtime";
+import type { AgentMessage } from "../../src/assistant/types";
 
 const TOKEN = "test-token";
 
-/** Build an AgentStream from a fixed list of text deltas (no model needed). */
+/** Build a provider-neutral agent run from fixed text deltas (no model needed). */
 function fakeStream(
   deltas: string[],
   stopReason: "final" | "budget" = "final",
-): AgentStream {
+  changes: AgentDone["changes"] = [],
+): AgentRun {
   const citations = [{ path: "wiki/x.md", commit: "c1" }];
-  async function* gen(): AsyncIterable<TextStreamPart<ToolSet>> {
-    yield { type: "start" } as TextStreamPart<ToolSet>;
-    for (const delta of deltas) {
-      yield { type: "text-delta", id: "t1", text: delta } as TextStreamPart<ToolSet>;
-    }
-    yield {
-      type: "finish",
-      finishReason: stopReason === "final" ? "stop" : "tool-calls",
-      rawFinishReason: undefined,
-      totalUsage: {},
-    } as unknown as TextStreamPart<ToolSet>;
+  async function* gen(): AsyncIterable<string> {
+    yield* deltas;
   }
   return {
-    fullStream: gen(),
-    citations,
-    changes: [],
-    finished: Promise.resolve({ stopReason }),
+    text: gen(),
+    finished: Promise.resolve({ citations, changes, stopReason }),
   };
-}
-
-function server() {
-  return createDomeHttpServer({
-    vaultPath: "/tmp/unused",
-    token: TOKEN,
-    agentImpl: async (question: string, _signal: AbortSignal) => ({
-      answer: `answer to: ${question}`,
-      citations: [{ path: "wiki/x.md", commit: "c1" }],
-      steps: 2,
-      stopReason: "final" as const,
-      changes: [],
-    }),
-  });
-}
-
-function post(body: unknown, token = TOKEN): Request {
-  return new Request("http://localhost/agent", {
-    method: "POST",
-    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
 }
 
 async function makeStaticDir(): Promise<string> {
@@ -66,11 +34,11 @@ async function makeStaticDir(): Promise<string> {
 }
 
 test("GET / exposes granted capabilities (author only with allowWrite)", async () => {
-  const ro = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, agentImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final", changes: [] }) });
+  const ro = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN });
   const roBody = (await (await ro.fetch(new Request("http://localhost/", { headers: { authorization: `Bearer ${TOKEN}` } }))).json()) as { capabilities: string[] };
   expect(roBody.capabilities).toContain("read");
   expect(roBody.capabilities).not.toContain("author");
-  const rw = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, allowWrite: true, agentImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final", changes: [] }) });
+  const rw = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, allowWrite: true });
   const rwBody = (await (await rw.fetch(new Request("http://localhost/", { headers: { authorization: `Bearer ${TOKEN}` } }))).json()) as { capabilities: string[] };
   expect(rwBody.capabilities).toContain("author");
 });
@@ -78,7 +46,7 @@ test("GET / exposes granted capabilities (author only with allowWrite)", async (
 describe("createDomeHttpServer static serving", () => {
   test("GET / serves the app shell unauthenticated when staticDir is set", async () => {
     const staticDir = await makeStaticDir();
-    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, staticDir, agentImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final", changes: [] }) });
+    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, staticDir });
     const res = await server.fetch(new Request("http://localhost/")); // NO auth header
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type") ?? "").toContain("text/html");
@@ -87,7 +55,7 @@ describe("createDomeHttpServer static serving", () => {
 
   test("GET /assets/* serves the asset unauthenticated", async () => {
     const staticDir = await makeStaticDir();
-    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, staticDir, agentImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final", changes: [] }) });
+    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, staticDir });
     const res = await server.fetch(new Request("http://localhost/assets/app.js"));
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("dome");
@@ -95,7 +63,7 @@ describe("createDomeHttpServer static serving", () => {
 
   test("a traversal path under /assets is rejected", async () => {
     const staticDir = await makeStaticDir();
-    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, staticDir, agentImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final", changes: [] }) });
+    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, staticDir });
     const res = await server.fetch(new Request("http://localhost/assets/../index.html"));
     // URL normalization resolves assets/../ to / before our code sees it, so the
     // traversal attempt produces /index.html which is neither "/" nor "/assets/*"
@@ -105,7 +73,7 @@ describe("createDomeHttpServer static serving", () => {
   });
 
   test("GET /healthz returns the ping (bearer-gated)", async () => {
-    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, agentImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final", changes: [] }) });
+    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN });
     expect((await server.fetch(new Request("http://localhost/healthz"))).status).toBe(401); // no token
     const ok = await server.fetch(new Request("http://localhost/healthz", { headers: { authorization: `Bearer ${TOKEN}` } }));
     expect(ok.status).toBe(200);
@@ -113,226 +81,233 @@ describe("createDomeHttpServer static serving", () => {
   });
 
   test("with no staticDir, GET / still returns the ping (back-compat)", async () => {
-    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, agentImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final", changes: [] }) });
+    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN });
     const res = await server.fetch(new Request("http://localhost/", { headers: { authorization: `Bearer ${TOKEN}` } }));
     expect(res.status).toBe(200);
     expect((await res.json() as { server: string }).server).toBe("dome");
   });
 });
 
-describe("createDomeHttpServer", () => {
-  test("POST /agent returns a synthesized answer + citations", async () => {
-    const res = await server().fetch(post({ question: "what's open?" }));
-    expect(res.status).toBe(200);
-    const json = (await res.json()) as { answer: string; citations: unknown[] };
-    expect(json.answer).toContain("what's open?");
-    expect(json.citations).toHaveLength(1);
-  });
-  test("401 without a valid bearer token", async () => {
-    const res = await server().fetch(post({ question: "x" }, "wrong"));
-    expect(res.status).toBe(401);
-  });
-  test("400 on empty question", async () => {
-    const res = await server().fetch(post({ question: "  " }));
-    expect(res.status).toBe(400);
-  });
-  test("404 on an unknown route", async () => {
-    const res = await server().fetch(new Request("http://localhost/nope", { headers: { authorization: `Bearer ${TOKEN}` } }));
-    expect(res.status).toBe(404);
-  });
-  test("413 when body exceeds maxBodyBytes (stream read, not content-length)", async () => {
-    const s = createDomeHttpServer({
-      vaultPath: "/tmp/unused",
-      token: TOKEN,
-      maxBodyBytes: 50,
-      agentImpl: async (question: string, _signal: AbortSignal) => ({
-        answer: `answer to: ${question}`,
-        citations: [],
-        steps: 1,
-        stopReason: "final" as const,
-        changes: [],
-      }),
-    });
-    // Build a body whose JSON is definitely > 50 bytes; omit content-length so
-    // the stream-read path is what enforces the cap.
-    const longQuestion = "x".repeat(200);
-    const bodyBytes = new TextEncoder().encode(JSON.stringify({ question: longQuestion }));
-    const req = new Request("http://localhost/agent", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${TOKEN}`,
-        "content-type": "application/json",
-        // Deliberately omit content-length — Bun may still set one, but the
-        // assertion covers the stream-cap path regardless.
+describe("createDomeHttpServer agent sessions", () => {
+  test("creates a session and preserves history across streamed turns", async () => {
+    const histories: Array<ReadonlyArray<AgentMessage>> = [];
+    const runtime = createAgentRuntime({
+      createId: () => "session-1",
+      runTurn: ({ question, history }) => {
+        histories.push(history);
+        return fakeStream([`answer:${question}`]);
       },
-      body: bodyBytes,
     });
-    const res = await s.fetch(req);
-    expect(res.status).toBe(413);
-  });
-  test("504 when ask exceeds timeoutMs", async () => {
-    const s = createDomeHttpServer({
-      vaultPath: "/tmp/unused",
-      token: TOKEN,
-      timeoutMs: 30,
-      agentImpl: (_question: string, _signal: AbortSignal) => new Promise(() => {}),
-    });
-    const res = await s.fetch(post({ question: "will this hang?" }));
-    expect(res.status).toBe(504);
-    const json = (await res.json()) as { error: string };
-    expect(json.error).toBe("ask-timeout");
-  });
-  test("POST /agent includes a changes array in the JSON", async () => {
     const srv = createDomeHttpServer({
       vaultPath: "/tmp/unused",
       token: TOKEN,
-      agentImpl: async (q: string) => ({
-        answer: `a:${q}`,
-        citations: [],
-        steps: 1,
-        stopReason: "final" as const,
-        changes: [{ path: "wiki/made.md", kind: "create" as const }],
-      }),
+      agentRuntime: runtime,
     });
-    const res = await srv.fetch(post({ question: "make it" }));
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { changes: { path: string; kind: string }[] };
-    expect(body.changes).toEqual([{ path: "wiki/made.md", kind: "create" }]);
+
+    const created = await srv.fetch(new Request("http://localhost/sessions", {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}` },
+    }));
+    expect(created.status).toBe(201);
+    expect(await created.json()).toEqual({
+      schema: "dome.agent-session/v1",
+      status: "created",
+      sessionId: "session-1",
+    });
+
+    const send = (message: string) => srv.fetch(new Request(
+      "http://localhost/sessions/session-1/messages",
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ message }),
+      },
+    ));
+    expect(await (await send("first")).text()).toContain("answer:first");
+    expect(await (await send("second")).text()).toContain("answer:second");
+    expect(histories[0]).toEqual([]);
+    expect(histories[1]).toEqual([
+      { role: "user", content: "first" },
+      { role: "assistant", content: "answer:first" },
+    ]);
   });
-});
 
-// ----- POST /agent/stream -----------------------------------------------------
+  test("returns 404 for a missing session and can close an existing one", async () => {
+    const runtime = createAgentRuntime({
+      createId: () => "session-1",
+      runTurn: () => fakeStream(["unused"]),
+    });
+    const srv = createDomeHttpServer({
+      vaultPath: "/tmp/unused",
+      token: TOKEN,
+      agentRuntime: runtime,
+    });
+    const headers = {
+      authorization: `Bearer ${TOKEN}`,
+      "content-type": "application/json",
+    };
+    const missing = await srv.fetch(new Request(
+      "http://localhost/sessions/nope/messages",
+      { method: "POST", headers, body: JSON.stringify({ message: "hi" }) },
+    ));
+    expect(missing.status).toBe(404);
 
-function streamServer(deltas: string[], stopReason: "final" | "budget" = "final") {
-  return createDomeHttpServer({
-    vaultPath: "/tmp/unused",
-    token: TOKEN,
-    agentStreamImpl: (_question: string, _signal: AbortSignal) =>
-      fakeStream(deltas, stopReason),
+    await srv.fetch(new Request("http://localhost/sessions", {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}` },
+    }));
+    const closed = await srv.fetch(new Request(
+      "http://localhost/sessions/session-1",
+      { method: "DELETE", headers: { authorization: `Bearer ${TOKEN}` } },
+    ));
+    expect(closed.status).toBe(200);
+    expect(runtime.getSession("session-1")).toBeNull();
   });
-}
 
-function postStream(body: unknown, token = TOKEN): Request {
-  return new Request("http://localhost/agent/stream", {
-    method: "POST",
-    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify(body),
+  test("session routes require the converse bearer", async () => {
+    const runtime = createAgentRuntime({
+      createId: () => "session-1",
+      runTurn: () => fakeStream(["unused"]),
+    });
+    const srv = createDomeHttpServer({
+      vaultPath: "/tmp/unused",
+      token: TOKEN,
+      agentRuntime: runtime,
+    });
+    const res = await srv.fetch(new Request("http://localhost/sessions", {
+      method: "POST",
+    }));
+    expect(res.status).toBe(401);
   });
-}
 
-describe("createDomeHttpServer POST /agent/stream", () => {
-  test("streams SSE text events then a final done event with citations", async () => {
-    const res = await streamServer(["Hello ", "world"]).fetch(
-      postStream({ question: "say hi" }),
-    );
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toBe("text/event-stream");
-
-    const body = await res.text();
-    // Each text delta is its own SSE event.
-    expect(body).toContain(`data: ${JSON.stringify({ type: "text", text: "Hello " })}`);
-    expect(body).toContain(`data: ${JSON.stringify({ type: "text", text: "world" })}`);
-    // The final done event carries citations + stopReason.
+  test("streams citations, change receipts, and completion through Dome events", async () => {
+    const runtime = createAgentRuntime({
+      createId: () => "s1",
+      runTurn: () => fakeStream(
+        ["Hello ", "world"],
+        "final",
+        [{ path: "wiki/changed.md", kind: "edit" }],
+      ),
+    });
+    const server = createDomeHttpServer({
+      vaultPath: "/tmp/unused",
+      token: TOKEN,
+      agentRuntime: runtime,
+    });
+    await server.fetch(new Request("http://localhost/sessions", {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}` },
+    }));
+    const response = await server.fetch(new Request(
+      "http://localhost/sessions/s1/messages",
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ message: "hi" }),
+      },
+    ));
+    const body = await response.text();
+    expect(response.headers.get("content-type")).toBe("text/event-stream");
+    expect(body).toContain('"type":"text","text":"Hello "');
     expect(body).toContain('"type":"done"');
-    expect(body).toContain('"stopReason":"final"');
     expect(body).toContain('"path":"wiki/x.md"');
-    // SSE framing: events terminated by a blank line.
+    expect(body).toContain('"path":"wiki/changed.md"');
     expect(body.endsWith("\n\n")).toBe(true);
   });
 
-  test("carries stopReason=budget in the done event", async () => {
-    const res = await streamServer(["partial"], "budget").fetch(
-      postStream({ question: "incomplete" }),
-    );
-    const body = await res.text();
-    expect(body).toContain('"stopReason":"budget"');
-  });
-
-  test("401 without a valid bearer token", async () => {
-    const res = await streamServer(["x"]).fetch(postStream({ question: "x" }, "wrong"));
-    expect(res.status).toBe(401);
-  });
-
-  test("400 on empty question", async () => {
-    const res = await streamServer(["x"]).fetch(postStream({ question: "  " }));
-    expect(res.status).toBe(400);
-  });
-
-  test("emits error event on timeout, not a done event, and completes in time", async () => {
-    const TIMEOUT_MS = 30;
-    // The fake stream yields one text delta then stalls until the abort signal
-    // fires.  This exercises the timeout path without hanging indefinitely.
-    const s = createDomeHttpServer({
+  test("rejects empty and oversized messages before starting a turn", async () => {
+    const runtime = createAgentRuntime({
+      createId: () => "s1",
+      runTurn: () => fakeStream(["unused"]),
+    });
+    const server = createDomeHttpServer({
       vaultPath: "/tmp/unused",
       token: TOKEN,
-      timeoutMs: TIMEOUT_MS,
-      agentStreamImpl: (_question: string, signal: AbortSignal): AgentStream => {
-        async function* gen(): AsyncIterable<TextStreamPart<ToolSet>> {
-          yield { type: "text-delta", id: "t1", text: "partial" } as TextStreamPart<ToolSet>;
-          // Stall until the AbortController fires (timeout).
+      maxBodyBytes: 50,
+      agentRuntime: runtime,
+    });
+    await server.fetch(new Request("http://localhost/sessions", {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}` },
+    }));
+    const headers = {
+      authorization: `Bearer ${TOKEN}`,
+      "content-type": "application/json",
+    };
+    const empty = await server.fetch(new Request(
+      "http://localhost/sessions/s1/messages",
+      { method: "POST", headers, body: JSON.stringify({ message: " " }) },
+    ));
+    expect(empty.status).toBe(400);
+    const oversized = await server.fetch(new Request(
+      "http://localhost/sessions/s1/messages",
+      { method: "POST", headers, body: JSON.stringify({ message: "x".repeat(200) }) },
+    ));
+    expect(oversized.status).toBe(413);
+  });
+
+  test("emits a timeout error event and no completion", async () => {
+    const timeoutMs = 30;
+    const runtime = createAgentRuntime({
+      createId: () => "s1",
+      runTurn: ({ signal }) => ({
+        text: (async function* (): AsyncIterable<string> {
+          yield "partial";
           await new Promise<void>((resolve) => {
-            if (signal.aborted) {
-              resolve();
-            } else {
-              signal.addEventListener("abort", () => resolve(), { once: true });
-            }
+            if (signal?.aborted === true) resolve();
+            else signal?.addEventListener("abort", () => resolve(), { once: true });
           });
-          // Generator ends naturally after the abort — the route sees the loop
-          // finish with controller.signal.aborted === true.
-        }
-        return {
-          fullStream: gen(),
+        })(),
+        finished: Promise.resolve({
           citations: [],
           changes: [],
-          finished: new Promise<{ stopReason: "budget" }>((resolve) => {
-            signal.addEventListener("abort", () => resolve({ stopReason: "budget" }), { once: true });
-          }),
-        };
-      },
-    });
-
-    const start = Date.now();
-    const res = await s.fetch(postStream({ question: "will this stall?" }));
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toBe("text/event-stream");
-
-    const body = await res.text();
-    const elapsed = Date.now() - start;
-
-    // Must have gotten the partial text event before the timeout fired.
-    expect(body).toContain('"type":"text"');
-    expect(body).toContain('"partial"');
-    // Must have an error event mentioning the timeout — NOT a done event.
-    expect(body).toContain('"type":"error"');
-    expect(body).toContain(`${TIMEOUT_MS}ms`);
-    expect(body).not.toContain('"type":"done"');
-    // Should complete well within a couple of seconds.
-    expect(elapsed).toBeLessThan(3000);
-  });
-
-  test("the streaming done event carries changes", async () => {
-    const srv = createDomeHttpServer({
-      vaultPath: "/tmp/unused",
-      token: TOKEN,
-      agentStreamImpl: (): AgentStream => ({
-        fullStream: (async function* () {
-          yield { type: "text-delta", id: "t", text: "ok" } as TextStreamPart<ToolSet>;
-          yield { type: "finish", finishReason: "stop" } as unknown as TextStreamPart<ToolSet>;
-        })(),
-        citations: [],
-        changes: [{ path: "wiki/seed.md", kind: "edit" }],
-        finished: Promise.resolve({ stopReason: "final" as const }),
+          stopReason: "budget" as const,
+        }),
       }),
     });
-    const res = await srv.fetch(new Request("http://localhost/agent/stream", {
+    const server = createDomeHttpServer({
+      vaultPath: "/tmp/unused",
+      token: TOKEN,
+      timeoutMs,
+      agentRuntime: runtime,
+    });
+    await server.fetch(new Request("http://localhost/sessions", {
       method: "POST",
-      headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" },
-      body: JSON.stringify({ question: "check it off" }),
+      headers: { authorization: `Bearer ${TOKEN}` },
     }));
-    const text = await res.text();
-    const doneLine = text.split("\n\n").map((b) => b.split("\n").find((l) => l.startsWith("data:"))).filter(Boolean).map((l) => JSON.parse(l!.slice(5).trim())).find((e) => e.type === "done");
-    expect(doneLine).toBeDefined();
-    expect(doneLine.changes).toEqual([{ path: "wiki/seed.md", kind: "edit" }]);
+    const response = await server.fetch(new Request(
+      "http://localhost/sessions/s1/messages",
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ message: "hang" }),
+      },
+    ));
+    const body = await response.text();
+    expect(body).toContain('"type":"text"');
+    expect(body).toContain('"type":"error"');
+    expect(body).toContain(`${timeoutMs}ms`);
+    expect(body).not.toContain('"type":"done"');
+  });
+
+  test("legacy single-turn agent routes are removed", async () => {
+    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN });
+    for (const path of ["/agent", "/agent/stream"]) {
+      const response = await server.fetch(new Request(`http://localhost${path}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${TOKEN}` },
+      }));
+      expect(response.status).toBe(404);
+    }
   });
 });
 
@@ -345,7 +320,7 @@ describe("POST /transcribe", () => {
     return new Request("http://localhost/transcribe", { method: "POST", headers: token ? { authorization: `Bearer ${token}`, "content-type": "audio/m4a" } : { "content-type": "audio/m4a" }, body });
   }
   test("transcribes audio via the configured command", async () => {
-    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeCommand: FAKE_WHISPER, agentImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final", changes: [] }) });
+    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeCommand: FAKE_WHISPER });
     const res = await server.fetch(post(new Uint8Array([1, 2, 3, 4])));
     expect(res.status).toBe(200);
     const json = await res.json() as { schema: string; text: string };
@@ -353,15 +328,15 @@ describe("POST /transcribe", () => {
     expect(json.text).toBe("hello from whisper");
   });
   test("501 when transcribe is not configured", async () => {
-    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, agentImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final", changes: [] }) });
+    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN });
     expect((await server.fetch(post(new Uint8Array([1, 2, 3])))).status).toBe(501);
   });
   test("400 on empty body", async () => {
-    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeCommand: FAKE_WHISPER, agentImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final", changes: [] }) });
+    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeCommand: FAKE_WHISPER });
     expect((await server.fetch(post(new Uint8Array([])))).status).toBe(400);
   });
   test("401 without a token", async () => {
-    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeCommand: FAKE_WHISPER, agentImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final", changes: [] }) });
+    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeCommand: FAKE_WHISPER });
     expect((await server.fetch(post(new Uint8Array([1, 2, 3]), ""))).status).toBe(401);
   });
   test("500 transcribe-timeout when the subprocess hangs past transcribeTimeoutMs", async () => {
@@ -371,7 +346,6 @@ describe("POST /transcribe", () => {
       token: TOKEN,
       transcribeCommand: HANG_CMD,
       transcribeTimeoutMs: 50, // very short — should fire in <<1s
-      agentImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final", changes: [] }),
     });
     const start = Date.now();
     const res = await server.fetch(post(new Uint8Array([1, 2, 3, 4])));
@@ -399,7 +373,7 @@ describe("POST /transcribe (cloud)", () => {
       auth = new Headers(init?.headers).get("authorization") ?? "";
       return new Response(JSON.stringify({ text: "hello cloud" }), { status: 200, headers: { "content-type": "application/json" } });
     }) as unknown as typeof fetch;
-    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeApiKey: "sk-test", transcribeBaseUrl: "https://api.example.com/v1", transcribeModel: "whisper-1", agentImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final", changes: [] }) });
+    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeApiKey: "sk-test", transcribeBaseUrl: "https://api.example.com/v1", transcribeModel: "whisper-1" });
     const res = await server.fetch(post(new Uint8Array([1, 2, 3, 4])));
     expect(res.status).toBe(200);
     expect((await res.json() as { text: string }).text).toBe("hello cloud");
@@ -408,7 +382,7 @@ describe("POST /transcribe (cloud)", () => {
   });
   test("502 transcribe-failed when the STT API rejects", async () => {
     globalThis.fetch = mock(async () => new Response("bad key", { status: 401 })) as unknown as typeof fetch;
-    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeApiKey: "sk-bad", agentImpl: async () => ({ answer: "", citations: [], steps: 0, stopReason: "final", changes: [] }) });
+    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, transcribeApiKey: "sk-bad" });
     const res = await server.fetch(post(new Uint8Array([1, 2, 3, 4])));
     expect(res.status).toBe(502);
     expect((await res.json() as { error: string }).error).toBe("transcribe-failed");

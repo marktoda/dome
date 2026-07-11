@@ -60,6 +60,18 @@ function Screen({ token }: { token: string }): React.ReactElement {
     void client.resolve(id, value).then(refresh).catch(() => {});
   };
 
+  const review = (id: number, decision: "apply" | "reject"): void => {
+    setToday((prev) => prev === null
+      ? prev
+      : { ...prev, reviews: (prev.reviews ?? []).filter((review) => review.id !== id) });
+    setAck(decision === "apply" ? "Proposal applied" : "Proposal rejected");
+    setTimeout(() => setAck(null), 2200);
+    const request = decision === "apply"
+      ? client.applyProposal(id)
+      : client.rejectProposal(id);
+    void request.then(refresh).catch(refresh);
+  };
+
   // Glance-and-settle: tap the checkbox -> settle 'close' via /settle. Brief
   // owns the optimistic strike-through + revert; this just makes the call and
   // reports success/failure, then refetches on success so the settled task
@@ -82,7 +94,7 @@ function Screen({ token }: { token: string }): React.ReactElement {
       </header>
       <div className="scroll">
         {today !== null ? (
-          <Brief today={today} onResolve={resolve} onSettle={settle} collapsed={briefCollapsed} hasMessages={hasMessages} onToggle={() => setBriefCollapsed((c) => !c)} />
+          <Brief today={today} onResolve={resolve} onReview={review} onSettle={settle} collapsed={briefCollapsed} hasMessages={hasMessages} onToggle={() => setBriefCollapsed((c) => !c)} />
         ) : null}
         {recents !== null ? (
           <details className="recents-wrap">

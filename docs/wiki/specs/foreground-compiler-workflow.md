@@ -1,10 +1,10 @@
 ---
 type: spec
 created: 2026-05-29
-updated: 2026-06-12
+updated: 2026-07-09
 sources:
   - "[[v1]]"
-description: "Day-to-day operating guide for running dome serve beside an agent session: commit-boundary loop, read-first context habit, host-off catch-up"
+description: "Day-to-day operating guide for running dome serve beside an agent session: commit-boundary loop, source-first reading, host-off catch-up"
 ---
 
 # Foreground compiler workflow
@@ -82,24 +82,15 @@ boundary. The useful moments to call Dome explicitly are:
 - Hidden compatibility/debug commands such as `dome lint` when explicitly
   debugging the substrate.
 
-## Read-first context
+## Source-first reading
 
-For nontrivial vault work, the foreground agent should use Dome's adopted-state
-views before broad manual file hunting:
-
-- use `dome export-context <topic> --json` for handoffs, review prep,
-  planning passes, and multi-file edits;
-- use `dome query <text> --json` for focused recall or when a packet is too
-  broad;
-- for daily planning, meeting prep, or person/topic follow-up, use a natural
-  language `export-context`/`query` topic and inspect the prepared daily note
-  rather than a separate deterministic daily CLI view.
-
-This is a read-first habit, not per-edit ceremony. Agents should still use
-normal file search when needed, but a useful V1 should make the first read set
-come from Dome more often than from ad hoc grep. If a packet misses obvious
-context or returns noisy results, record that as dogfood evidence; those misses
-are search/context-loop bugs to fix.
+Use native file reads/search for known pages, directories, and bounded edits.
+Run `dome views --json` to discover plugin-contributed compiled views. Use
+`query` for unknown or cross-vault recall and `export-context` when a
+source-backed multi-page packet materially helps. Open cited markdown before
+important claims or edits. If a packet misses obvious context or returns noisy
+results, record that as dogfood evidence; those misses are search/context-loop
+bugs to fix.
 
 ## Host-off catch-up
 
@@ -144,7 +135,7 @@ When something looks wrong, use the recovery surfaces in this order:
    `risk`, `confidence`, `recommended_answer`, and `owner_needed_reason`
    fields.
 
-   - `agent-safe` and `model-safe` questions may be resolved by a vault-aware
+   - `agent-safe` questions may be completed through `dome agent-work` by a vault-aware
      foreground agent when the answer is grounded in the listed SourceRefs,
      current adopted vault context, and one of the question's allowed options.
      `recommended_answer` is a hint, not authority.

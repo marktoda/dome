@@ -115,6 +115,12 @@
 //     a compact dashboard intended for humans and agent transcripts.
 
 import { commitOid } from "../core/source-ref";
+import {
+  attentionProposal,
+  attentionQuestion,
+  compileAttention,
+  type AttentionSnapshot,
+} from "../attention/attention";
 import type { StatusReason } from "./attention-reasons";
 import { currentSha } from "../git";
 import { getAdoptedRef, getCurrentBranch } from "../adopted-ref";
@@ -260,6 +266,8 @@ export type StatusSnapshot = {
   readonly diagnostic_disposition_summary: DiagnosticDispositionSummary;
   readonly attention_diagnostic_disposition_summary: DiagnosticDispositionSummary;
   readonly questions: number;
+  /** Ranked owner decisions/reviews. System diagnostics remain separate. */
+  readonly owner_attention: AttentionSnapshot;
   readonly outbox_pending: number;
   readonly outbox_failed: number;
   readonly quarantined: number;
@@ -440,7 +448,13 @@ export async function buildStatusSnapshot(
     // Best-effort: an uninitialized (or schema-refused) proposals store
     // yields an empty list rather than throwing — see collectProposals's
     // header. Status is a cheap pulse, not a write path.
-    const pending_proposals = (await collectProposals(vaultPath)).proposals.length;
+    const proposalViews = (await collectProposals(vaultPath)).proposals;
+    const pending_proposals = proposalViews.length;
+    const owner_attention = compileAttention({
+      questions: unresolvedQuestions.map(attentionQuestion),
+      proposals: proposalViews.map(attentionProposal),
+      now: new Date(),
+    });
     const activeProcessorIds = new Set(
       runtime.registry.all().map((processor) => processor.id),
     );
@@ -473,12 +487,12 @@ export async function buildStatusSnapshot(
       serviceNotLoaded: service.notLoaded,
       modelProviderUnreachable: modelProbe.unreachable,
       diagnostics: attentionDiagnostics,
-      questions,
+      questions: owner_attention.counts.decisions,
       outboxPending: outbox_pending,
       outboxFailed: outbox_failed,
       quarantined,
       captureLoopInactive,
-      pendingProposals: pending_proposals,
+      pendingProposals: owner_attention.counts.reviews,
     });
 
     const snapshot: StatusSnapshot = {
@@ -500,6 +514,9 @@ export async function buildStatusSnapshot(
         dirtyModifiedPaths: analytics.dirty_modified_paths,
         dirtyUntrackedPaths: analytics.dirty_untracked_paths,
         pendingProposals: pending_proposals,
+        firstOwnerAction: attentionAction(
+          owner_attention.primary[0] ?? owner_attention.backlog[0] ?? null,
+        ),
       }),
       dirty_modified: analytics.dirty_modified,
       dirty_untracked: analytics.dirty_untracked,
@@ -539,6 +556,7 @@ export async function buildStatusSnapshot(
       diagnostic_disposition_summary,
       attention_diagnostic_disposition_summary,
       questions,
+      owner_attention,
       outbox_pending,
       outbox_failed,
       quarantined,
@@ -666,6 +684,25 @@ function statusAttention(input: {
   if (input.captureLoopInactive) out.push("capture_loop_inactive");
   if (input.pendingProposals > 0) out.push("pending_proposals");
   return Object.freeze(out);
+}
+
+function attentionAction(
+  item: import("../attention/attention").OwnerAttentionItem | null,
+):
+  | { readonly kind: "decision"; readonly id: number; readonly options: ReadonlyArray<string> }
+  | { readonly kind: "review"; readonly id: number }
+  | null {
+  if (item === null) return null;
+  return item.kind === "decision"
+    ? Object.freeze({
+        kind: "decision" as const,
+        id: item.action.questionId,
+        options: item.action.options,
+      })
+    : Object.freeze({
+        kind: "review" as const,
+        id: item.action.proposalId,
+      });
 }
 
 function captureLoopNeedsAttention(input: {

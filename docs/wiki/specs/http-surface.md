@@ -6,7 +6,7 @@ sources:
   - "[[wiki/specs/capture]]"
   - "[[wiki/specs/sdk-surface]]"
   - "[[wiki/specs/task-lifecycle]]"
-description: "dome http converged adapter: bearer-token JSON routes, POST /capture seam, POST /settle, GET /proposals + POST /apply + POST /reject, GET /today cockpit, POST /agent converse loop, POST /transcribe, GET /recents, author capability, assistant contract tools"
+description: "dome http converged adapter: bearer-token data routes, session-oriented AgentRuntime conversation, capture, deterministic plugin views, decisions, transcription, and the PWA."
 ---
 
 # HTTP surface
@@ -46,7 +46,7 @@ The server gates every route on a named capability. The vocabulary is:
 `edit_document`). A write lands as an ordinary git commit carrying a
 `Dome-Agent` trailer — the same mechanism as `dome capture` — and the running
 daemon adopts it on its next tick. Default-off keeps the server read-only-safe:
-a phone on Tailscale can hit `/agent` for Q&A without ever being able to write
+a phone on Tailscale can open an agent session for Q&A without being able to write
 the vault. The same granted set also drives which contract tools the Dome
 assistant is provisioned with (§"The assistant's tools").
 
@@ -54,7 +54,7 @@ Per-credential token scopes (different callers holding differently-scoped
 bearers) are deferred to the `SECOND_USER_GATE` milestone.
 
 `--agent-log <path>` (or `DOME_AGENT_LOG=<path>`) enables a structured
-per-request log for the `/agent` and `/agent/stream` routes: one JSON line per
+per-turn log for `POST /sessions/:id/messages`: one JSON line per
 request recording the granted capabilities, `authorEnabled`, `changes`,
 `stopReason`, a 500-char `answerPreview`, `durationMs`, and any `error`. When
 unconfigured the sink is a no-op with zero cost. Write errors are caught and
@@ -73,7 +73,13 @@ One vault per process.
 | `GET /` | — | `dome.http/v1` identity document; includes `capabilities: string[]` — the sorted list of granted capabilities (e.g. `["capture","converse","read","resolve"]`; `"author"` only when `--allow-write` is set) |
 | `POST /capture` `{text, title?, captureId?}` | `performCapture` with `source: "http"` | `dome.capture/v1` (`status: captured \| duplicate`) |
 | `GET /status` | `dome status --json` | status snapshot (stable keys) |
+| `GET /attention` | `vault.attention()` | `dome.attention/v1` canonical owner queue |
+| `GET /agent-work?limit=…&questionId=…` | `vault.agentWork()` | `dome.agent-work/v1` derived queue |
+| `POST /agent-work/complete` `{questionId, expectedRevision, answer, reason, evidence}` | `vault.completeAgentWork()` | `dome.agent-work-completion/v1` |
+| `POST /agent-work/drain` `{limit?}` | `drainAgentWork` through built-in or injected `AgentWorkAgent` | `dome.agent-work-drain/v1` |
 | `GET /query?text=…` | `dome query --json` | `dome.search.query/v1` |
+| `GET /views` | `vault.listViews()` | `dome.views/v1` |
+| `POST /views/:command` JSON input | `runInstalledView` → `vault.runView(command)` | `dome.view-run/v1` |
 | `GET /tasks?date=…` | `dome run today` | `dome.daily.today/v1` |
 | `GET /today?refresh=…` | the `dome.daily.today` view → `renderTodayHtml` | `text/html` cockpit page (`cache-control: no-store`) |
 | `GET /today/fonts/basel-book.woff2` | static Basel asset (cacheable) | `font/woff2` (immutable; **unauthenticated**) |
@@ -85,32 +91,38 @@ One vault per process.
 | `GET /proposals?all=1` | `collectProposals` (`read` capability; defaults to pending rows only) | `dome.proposals/v1` |
 | `POST /apply` `{id}` | `performApply` (`resolve` capability — the settle pattern for garden-proposed edits) | `dome.apply/v1` (`status: applied \| stale \| not-found \| not-pending \| invalid`) |
 | `POST /reject` `{id, note?}` | `performReject` (`resolve` capability) | `dome.reject/v1` (`status: rejected \| not-found \| not-pending \| invalid`) |
-| `POST /agent` `{question}` | hosted agent loop over vault tools (`converse` capability) | `dome.ask/v1` |
-| `POST /agent/stream` `{question}` | same loop, SSE stream of events (`converse` capability) | `dome.ask/v1` event stream |
+| `POST /sessions` | create an in-memory foreground-agent session (`converse` capability) | `dome.agent-session/v1` |
+| `POST /sessions/:id/messages` `{message}` | multi-turn `AgentRuntime` turn | SSE `text \| done \| error` events |
+| `DELETE /sessions/:id` | close an agent session | `dome.agent-session/v1` |
 | `POST /transcribe` audio body | STT step: shell command or OpenAI-compatible cloud endpoint (`capture` capability; 501 when unconfigured) | `dome.transcribe/v1` `{text}` |
 | `GET /recents` | recent vault changes (`read` capability) | `dome.recents/v1` `{count, entries}` |
 
-The `/agent` and `/agent/stream` routes are backed by **the Dome assistant** (`src/assistant/`) — the co-located chat agent that powers the PWA conversation, a consumer surface distinct from the `dome.agent` background processor bundle that runs inside the garden phase.
+The session routes are backed by **AgentRuntime** (`src/assistant/runtime.ts`).
+The shipped adapter uses the co-located AI SDK loop in `src/assistant/`; a
+different runtime can replace it without changing HTTP, the PWA, plugins, or
+the engine. This foreground runtime is distinct from the `dome.agent`
+background processor bundle that runs inside the garden phase.
 
 ### The assistant's tools
 
-The assistant speaks the same contract as the routes: beyond its three
+The assistant speaks the same contract as the routes: beyond its two
 always-on read tools, its action tools are thin wrappers over the shared
 `src/surface/` collectors, provisioned per tool from the **same granted
 capability set the routes gate on** (the server passes the set into
-`runAgent`/`runAgentStream`; `buildAgentTools` in `src/assistant/tools.ts`
+`runAgentStream`; `buildAgentTools` in `src/assistant/tools.ts`
 applies the table below). Same collectors, same capability vocabulary — an
 operation the bearer could not reach as a route is not reachable through the
 assistant either.
 
 | Tool | Capability | Same path as | Result schema |
 |---|---|---|---|
-| `search_vault` | — (always on) | the `dome.search.query` view | ranked-matches summary |
+| `run_view` | — (always on) | `runInstalledView` for any installed plugin view | `dome.view-run/v1` |
 | `read_document` | — (always on) | `vault.readDocument` | page markdown |
-| `todays_brief` | — (always on) | the `dome.daily.today` view | brief summary |
 | `capture_note` | `capture` | `performCapture` with `source: "assistant"` | `dome.capture/v1` |
 | `settle_task` | `resolve` | `performSettle` | `dome.settle/v1` |
 | `resolve_question` | `resolve` | `vault.resolve` | `dome.answer/v1` |
+| `list_agent_work` | `read` | `vault.agentWork` | `dome.agent-work/v1` |
+| `complete_agent_work` | `resolve` | `vault.completeAgentWork` using citations actually gathered this turn | `dome.agent-work-completion/v1` |
 | `list_proposals` | `read` | `collectProposals` | `dome.proposals/v1` |
 | `apply_proposal` | `resolve` | `performApply` | `dome.apply/v1` |
 | `reject_proposal` | `resolve` | `performReject` | `dome.reject/v1` |
@@ -118,7 +130,7 @@ assistant either.
 | `edit_document` | `author` | agent write path (`src/assistant/write.ts`) | change confirmation |
 
 Mutating tools append one entry to the run's `changes` array — the same array
-the `/agent` response envelope, the SSE `done` event, and the agent log carry —
+the SSE `done` event and the agent log carry —
 so a settled task or an applied proposal surfaces in the PWA's change display
 exactly like an author write. Under the default grant (everything but
 `author`) the assistant can capture, settle, resolve, and review proposals,
@@ -322,10 +334,9 @@ Tests: `tests/http/http-server.test.ts` §"request-body size cap".
 - **No new dependencies.** The handler is a plain `fetch` function for
   `Bun.serve`; nothing here is reachable from the static import graph of
   `src/index.ts`.
-- The planned `AbstractSurface` + `renderHttp(surface)` split
-  ([[wiki/specs/sdk-surface]] §"Consumer surfaces") remains the target
-  internal shape; this adapter swaps internals without changing routes when
-  it lands.
+- **Shared operations, thin transport.** Behavior used across protocols lives
+  in `src/surface/`; HTTP owns only auth, status codes, request parsing, SSE,
+  and static delivery. There is no additional aggregate surface object.
 
 ## Related
 

@@ -44,6 +44,7 @@ describe("runCli", () => {
         "check",
         "resolve",
         "query",
+        "views",
         "today",
         "log",
         "recipe",
@@ -233,7 +234,7 @@ describe("runCli", () => {
     expect(await runCli(["today", "-h"])).toBe(0);
     const out = captured.out.join("\n");
     expect(out).toContain("--prep");
-    expect(out).toContain("--with <person-or-topic...>");
+    expect(out).toContain("--with <person-or-topic>");
     expect(await runCli(["today", "--prep", "--watch"])).toBe(64);
     expect(await runCli(["today", "--prep", "--with", "danny"])).toBe(64);
     expect(await runCli(["today", "--prep", "--verbose"])).toBe(64);
@@ -243,13 +244,13 @@ describe("runCli", () => {
       "option '--prep' cannot be used with option '--watch'",
     );
     expect(err).toContain(
-      "option '--prep' cannot be used with option '--with <person-or-topic...>'",
+      "option '--prep' cannot be used with option '--with <person-or-topic>'",
     );
     expect(err).toContain(
       "option '--prep' cannot be used with option '-v, --verbose'",
     );
     expect(err).toContain(
-      "option '--with <person-or-topic...>' cannot be used with option '-v, --verbose'",
+      "option '--with <person-or-topic>' cannot be used with option '-v, --verbose'",
     );
   });
 

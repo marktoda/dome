@@ -29,6 +29,19 @@ const EXPECTED_RUNTIME_EXPORTS = new Set<string>([
   "runRecoveryEffect",
   "searchDocumentEffect",
 
+  // Canonical derived owner-attention compiler.
+  "ATTENTION_SCHEMA",
+  "DEFAULT_ATTENTION_AGING_DAYS",
+  "DEFAULT_PRIMARY_ATTENTION_LIMIT",
+  "compileAttention",
+  "attentionQuestion",
+  "attentionProposal",
+
+  // Evidence-backed agent-work runner over the public Vault seam.
+  "AGENT_WORK_SCHEMA",
+  "attemptAgentWork",
+  "drainAgentWork",
+
   // Processor types + helpers.
   "defineProcessor",
   "defineProcessorImplementation",

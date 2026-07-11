@@ -6,6 +6,7 @@ import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import {
   ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY,
+  ANSWERS_SCHEMA_HASH_BEFORE_AGENT_CONTEXT,
   computeAnswersSchemaHash,
 } from "../../../answers/db";
 import { computeLedgerSchemaHash } from "../../../ledger/db";
@@ -263,14 +264,17 @@ export function collectOperationalSchemaFindings(
         path: join(statePath, "answers.db"),
         table: "answers_meta",
         expected: computeAnswersSchemaHash(),
-        knownPriorHash: ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY,
+        knownPriorHashes: [
+          ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY,
+          ANSWERS_SCHEMA_HASH_BEFORE_AGENT_CONTEXT,
+        ],
       }),
       operationalSchemaFinding({
         database: "outbox",
         path: join(statePath, "outbox.db"),
         table: "outbox_meta",
         expected: computeOutboxSchemaHash(),
-        knownPriorHash: OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT,
+        knownPriorHashes: [OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT],
       }),
       operationalSchemaFinding({
         database: "ledger",
@@ -288,20 +292,21 @@ export function operationalSchemaFinding(opts: {
   readonly table: string;
   readonly expected: string;
   /**
-   * The one prior schema hash this store's `{kind:"migrate"}` open policy
-   * upgrades in place (see `ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY` /
+   * Prior schema hashes this store's `{kind:"migrate"}` open policy
+   * upgrades in place (see the `ANSWERS_SCHEMA_HASH_BEFORE_*` /
    * `OUTBOX_SCHEMA_HASH_BEFORE_NEXT_ATTEMPT_AT`). This probe runs BEFORE
    * `openVaultRuntime`, so a store sitting on exactly this hash is not
    * broken — it self-heals the moment any runtime command opens the vault.
    * Undefined for stores with no migratable prior hash (ledger refuses on
    * any mismatch), in which case every mismatch is a hard error.
    */
-  readonly knownPriorHash?: string;
+  readonly knownPriorHashes?: ReadonlyArray<string>;
 }): HealthFinding | null {
   if (!existsSync(opts.path)) return null;
   const stored = readOperationalSchemaHash(opts.path, opts.table);
   if (stored === opts.expected) return null;
-  const migratable = stored !== null && stored === opts.knownPriorHash;
+  const migratable = stored !== null &&
+    opts.knownPriorHashes?.includes(stored) === true;
   return Object.freeze({
     code: "operational.schema-mismatch" as const,
     severity: migratable ? ("info" as const) : ("error" as const),

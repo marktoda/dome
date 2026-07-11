@@ -605,6 +605,8 @@ export type OperationalProposalRow = {
   readonly extensionId: string;
   readonly reason: string;
   readonly paths: ReadonlyArray<string>;
+  /** Provenance carried by the proposed effect, safe for owner-facing views. */
+  readonly sourceRefs?: ReadonlyArray<SourceRef>;
   readonly createdAt: string;
   readonly status: "pending" | "applied" | "rejected";
   /** ISO decision instant for `applied`/`rejected` rows; `null` while

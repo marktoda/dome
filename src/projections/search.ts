@@ -7,6 +7,7 @@
 import type { SearchDocumentEffect } from "../core/effect";
 import { type CommitOid } from "../core/source-ref";
 import type { SearchDocumentResult } from "../core/processor";
+import { analyzeRecallQuery } from "../recall/query-analysis";
 import { parseSourceRefsColumn } from "../sqlite/row-json";
 import type { ProjectionDb } from "./db";
 
@@ -85,7 +86,7 @@ export function searchDocuments(
     readonly limit?: number;
   },
 ): ReadonlyArray<SearchDocumentResult> {
-  const query = toFtsQuery(filter.query);
+  const query = analyzeRecallQuery(filter.query).fts;
   if (query === null) return Object.freeze([]);
 
   const clauses = ["fts_documents MATCH ?"];
@@ -210,16 +211,6 @@ function stripBreadcrumbPrefix(body: string, breadcrumb: string | null): string 
   if (breadcrumb === null) return body;
   if (!body.startsWith(breadcrumb)) return body;
   return body.slice(breadcrumb.length).replace(/^\s+/, "");
-}
-
-function toFtsQuery(raw: string): string | null {
-  const terms = raw
-    .trim()
-    .split(/\s+/)
-    .map((term) => term.replace(/"/g, '""'))
-    .filter((term) => term.length > 0);
-  if (terms.length === 0) return null;
-  return terms.map((term) => `"${term}"`).join(" ");
 }
 
 function clampLimit(raw: number | undefined): number {

@@ -1,5 +1,5 @@
 // Cadence + capability inventory for the dome.agent manifest. The wedge
-// phase-4 contract: consolidate is NIGHTLY (recent-drift janitor), the brief
+// phase-4 contract: semantic garden is NIGHTLY and proposal-only, the brief
 // fires before dome.daily.create-daily's 06:00 tick, and the brief's write
 // grant is bounded to the daily-note targets.
 
@@ -40,32 +40,25 @@ async function loadManifest(): Promise<Manifest> {
 }
 
 describe("dome.agent manifest cadence + grants", () => {
-  test("consolidate runs nightly at 02:00 (schedule trigger only)", async () => {
+  test("semantic garden runs nightly at 02:00 (schedule trigger only)", async () => {
     const manifest = await loadManifest();
-    const consolidate = manifest.processors.find(
-      (p) => p.id === "dome.agent.consolidate",
+    const garden = manifest.processors.find(
+      (p) => p.id === "dome.agent.garden",
     );
-    expect(consolidate).toBeDefined();
-    expect(consolidate?.triggers).toEqual([
+    expect(garden).toBeDefined();
+    expect(garden?.triggers).toEqual([
       { kind: "schedule", cron: "0 2 * * *" },
     ]);
   });
 
-  test("consolidate declares the default ledger path in read + patch.auto", async () => {
+  test("semantic garden is proposal-only and reads proposal decisions", async () => {
     const manifest = await loadManifest();
-    const consolidate = manifest.processors.find(
-      (p) => p.id === "dome.agent.consolidate",
+    const garden = manifest.processors.find(
+      (p) => p.id === "dome.agent.garden",
     );
-    const read = consolidate?.capabilities.find((c) => c.kind === "read");
-    const patch = consolidate?.capabilities.find(
-      (c) => c.kind === "patch.auto",
-    );
-    expect(read?.kind === "read" ? read.paths : []).toContain(
-      "meta/consolidation-ledger.md",
-    );
-    expect(patch?.kind === "patch.auto" ? patch.paths : []).toContain(
-      "meta/consolidation-ledger.md",
-    );
+    const kinds = (garden?.capabilities ?? []).map((c) => c.kind).sort();
+    expect(kinds).toEqual(["model.invoke", "patch.propose", "proposals.read", "read"]);
+    expect(kinds).not.toContain("patch.auto");
   });
 
   test("brief runs daily at 05:30 and re-composes on late source day-files", async () => {
@@ -117,7 +110,7 @@ describe("dome.agent manifest cadence + grants", () => {
 
   test("core.md is readable by every agent processor and auto-writable ONLY by the two gated block writers", async () => {
     const manifest = await loadManifest();
-    const agents = ["dome.agent.ingest", "dome.agent.consolidate", "dome.agent.brief"];
+    const agents = ["dome.agent.ingest", "dome.agent.garden", "dome.agent.brief"];
     for (const id of agents) {
       const processor = manifest.processors.find((p) => p.id === id);
       const read = processor?.capabilities.find((c) => c.kind === "read");
@@ -171,37 +164,17 @@ describe("dome.agent manifest cadence + grants", () => {
     ]);
   });
 
-  test("patrol is deterministic, scheduled at 01:45 (before consolidate), and scoped to its scan dirs + meta files", async () => {
+  test("garden view exposes the same module through an arbitrary plugin command", async () => {
     const manifest = await loadManifest();
     const processor = manifest.processors.find(
-      (p) => p.id === "dome.agent.patrol",
+      (p) => p.id === "dome.agent.garden-view",
     );
     expect(processor).toBeDefined();
-    expect(processor?.phase).toBe("garden");
-    expect(processor?.execution?.class).toBe("deterministic");
-    expect(processor?.module).toBe("processors/patrol.ts");
-    expect(processor?.inspection).toEqual({ kind: "all-readable-markdown" });
-    expect(processor?.triggers).toEqual([
-      { kind: "schedule", cron: "45 1 * * *" },
-    ]);
+    expect(processor?.phase).toBe("view");
+    expect(processor?.module).toBe("processors/garden-view.ts");
+    expect(processor?.triggers).toEqual([{ kind: "command", name: "garden" }]);
     const kinds = (processor?.capabilities ?? []).map((c) => c.kind).sort();
-    expect(kinds).toEqual(["patch.auto", "read"]);
-    const read = processor?.capabilities.find((c) => c.kind === "read");
-    expect(read?.kind === "read" ? [...read.paths].sort() : []).toEqual([
-      "meta/patrol-ledger.md",
-      "meta/patrol-queue.md",
-      "wiki/concepts/**/*.md",
-      "wiki/entities/**/*.md",
-      "wiki/syntheses/**/*.md",
-    ]);
-    const patch = processor?.capabilities.find((c) => c.kind === "patch.auto");
-    expect(patch?.kind === "patch.auto" ? [...patch.paths].sort() : []).toEqual([
-      "meta/patrol-ledger.md",
-      "meta/patrol-queue.md",
-    ]);
-    // Deterministic selector — never core.md, never graph.write, never a model.
-    expect(kinds).not.toContain("model.invoke");
-    expect(kinds).not.toContain("graph.write");
+    expect(kinds).toEqual(["proposals.read", "read"]);
   });
 
   test("the promotion answer handler is narrow: exactly the core + signals pages", async () => {
@@ -258,9 +231,9 @@ describe("dome.agent manifest cadence + grants", () => {
     ).toBe(true);
   });
 
-  test("every agent declares the preference-signals page in read + patch.auto", async () => {
+  test("agents that learn preference signals declare the page in read + patch.auto", async () => {
     const manifest = await loadManifest();
-    const agents = ["dome.agent.ingest", "dome.agent.consolidate", "dome.agent.brief"];
+    const agents = ["dome.agent.ingest", "dome.agent.brief"];
     for (const id of agents) {
       const processor = manifest.processors.find((p) => p.id === id);
       for (const kind of ["read", "patch.auto"] as const) {
@@ -289,11 +262,8 @@ describe("dome.agent manifest cadence + grants", () => {
     const readPaths = read?.kind === "read" ? read.paths : [];
     expect(readPaths).toContain("sources/calendar/*.md");
     expect(readPaths).toContain("sources/slack/*.md");
-    // The questions batch is scope-filtered by this grant: ingest's askOwner
-    // questions ref inbox/raw/*.md and consolidate's ref the ledger, so both
-    // must be readable or the brief silently drops agent-raised questions.
+    // Inbox remains readable for source-backed agent context.
     expect(readPaths).toContain("inbox/**/*.md");
-    expect(readPaths).toContain("meta/consolidation-ledger.md");
     const patch = brief?.capabilities.find((c) => c.kind === "patch.auto");
     expect(patch?.kind === "patch.auto" ? [...patch.paths].sort() : []).toEqual(
       // The signals page rides along for validated signal-line appends only

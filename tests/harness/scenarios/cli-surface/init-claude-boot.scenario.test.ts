@@ -64,10 +64,11 @@ scenario(
       expect(agents).toContain("agent-safe");
       expect(agents).toContain("owner-needed");
       expect(agents).toContain("recommended_answer");
-      expect(agents).toContain("## Read-first context");
+      expect(agents).toContain("## Source-first reading");
       expect(agents).toContain("dome export-context <topic> --json");
       expect(agents).toContain("dome query <text> --json");
-      expect(agents).toContain("The daily note should already be");
+      expect(agents).toContain("dome views --json");
+      expect(agents).toContain("read and search the\n  markdown directly");
       // The day surface's alternate framings are flags of `today`; the
       // interactive cockpit itself stays untaught (agents read the prepared
       // daily-note markdown, not a --watch terminal view).
@@ -225,7 +226,7 @@ scenario(
 
       const agents = await readFile(join(target, "AGENTS.md"), "utf8");
       expect(agents.startsWith("# This is a Dome vault.")).toBe(true);
-      expect(agents).toContain("## Read-first context");
+      expect(agents).toContain("## Source-first reading");
       expect(agents).toContain("## Previous vault-specific instructions");
       expect(agents).toContain("# Old AGENTS");
       expect(agents).toContain("Vault-specific instructions.");

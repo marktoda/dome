@@ -41,7 +41,10 @@ Why this is shipped-default rather than opt-in: the cost of an absent `AGENTS.md
 - `AGENTS.md` is per-vault, not per-codebase. Two vaults on the same machine have independent `AGENTS.md` files reflecting their independent configurations and bundle sets.
 - The file is vault-owned (committed to git, edited by the user); the SDK never clobbers the user-prose section. The user-prose delimiter comments identify the section reserved for local notes.
 - Extension-bundle preamble fragments are planned templated content, not user prose. Bundle authors should treat `preamble.md` as reserved until loader/merge support lands.
-- The planned MCP server's `instructions` payload should mirror AGENTS.md as the secondary delivery channel for harnesses that mount MCP. That mirror depends on the future `AbstractSurface.instructions` implementation.
+- The MCP server's `instructions` payload is a concise secondary orientation
+  channel for harnesses that mount MCP. `AGENTS.md` remains the fuller,
+  committed vault contract; the two are maintained explicitly rather than
+  hidden behind another aggregate surface object.
 - The `CLAUDE.md` shim exists because Claude Code's auto-load convention currently prefers `CLAUDE.md`; removable once `AGENTS.md` auto-load is universal across harnesses.
 
 **Related:**

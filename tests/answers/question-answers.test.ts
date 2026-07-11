@@ -12,6 +12,7 @@ import {
   recordQuestionAnswer,
   type RecordQuestionAnswerOpts,
 } from "../../src/answers/question-answers";
+import { commitOid, sourceRef } from "../../src/core/source-ref";
 
 describe("recordQuestionAnswer / getQuestionAnswer", () => {
   let root: string;
@@ -48,7 +49,7 @@ describe("recordQuestionAnswer / getQuestionAnswer", () => {
 
   it("stores answered_by 'owner' and query round-trips it", () => {
     const rec = recordQuestionAnswer(db, baseOpts);
-    expect(rec.answeredBy).toBe("owner");
+    expect(rec.record.answeredBy).toBe("owner");
     expect(getQuestionAnswer(db, baseOpts.idempotencyKey)?.answeredBy).toBe(
       "owner",
     );
@@ -56,9 +57,36 @@ describe("recordQuestionAnswer / getQuestionAnswer", () => {
 
   it("stores answered_by 'auto' and query round-trips it", () => {
     const rec = recordQuestionAnswer(db, { ...baseOpts, answeredBy: "auto" });
-    expect(rec.answeredBy).toBe("auto");
+    expect(rec.record.answeredBy).toBe("auto");
     expect(getQuestionAnswer(db, baseOpts.idempotencyKey)?.answeredBy).toBe(
       "auto",
     );
+  });
+
+  it("round-trips agent evidence and keeps the first concurrent answer", () => {
+    const evidence = sourceRef({ path: "wiki/x.md", commit: commitOid("c1") });
+    const first = recordQuestionAnswer(db, {
+      ...baseOpts,
+      answeredBy: "agent",
+      answerContext: {
+        kind: "agent",
+        reason: "The source says yes.",
+        evidence: [evidence],
+      },
+    });
+    const second = recordQuestionAnswer(db, {
+      ...baseOpts,
+      answer: "no",
+      answeredBy: "owner",
+    });
+
+    expect(first.kind).toBe("recorded");
+    expect(second.kind).toBe("existing");
+    expect(second.record.answer).toBe("yes");
+    expect(second.record.answerContext).toEqual({
+      kind: "agent",
+      reason: "The source says yes.",
+      evidence: [evidence],
+    });
   });
 });

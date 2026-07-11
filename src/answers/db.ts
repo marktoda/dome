@@ -7,10 +7,9 @@
 //
 // Open policy: MIGRATE, not REFUSE. Durable answer rows are unrebuildable, so
 // an unknown schema-hash mismatch still refuses — but the one known prior
-// hash (pre-`answered_by`, see ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY) is
-// upgraded in place by an idempotent additive migration that defaults every
-// pre-existing row to `answered_by = 'owner'` (all rows written before the
-// auto-resolution pump existed were human decisions).
+// hashes are upgraded in place by additive migrations. Pre-existing answers
+// remain intact; rows without actor/evidence provenance conservatively retain
+// `answered_by = 'owner'` and a null context.
 
 import { Database } from "bun:sqlite";
 
@@ -24,6 +23,10 @@ import { openSimpleStore, type StoreOpenError } from "../sqlite/open-store";
  * still refuses (durable answers are unrebuildable). */
 export const ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY =
   "10b34ad0686bda70ca5325c3c9e71d6e32ea5ecef691f886952cfbcb648823b1";
+
+/** Schema immediately before evidence-backed agent resolution. */
+export const ANSWERS_SCHEMA_HASH_BEFORE_AGENT_CONTEXT =
+  "8462c1eca18d2ebc8a0bbc1c6ff1ae29d1b713093ae0f10a0f0b8cfd1aafcd7b";
 
 const DDL: ReadonlyArray<string> = Object.freeze([
   "CREATE TABLE IF NOT EXISTS answers_meta ("
@@ -39,6 +42,7 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + "processor_id TEXT NOT NULL,"
     + "adopted_commit TEXT NOT NULL,"
     + "answered_by TEXT NOT NULL DEFAULT 'owner',"
+    + "answer_context_json TEXT,"
     + "handler_status TEXT NOT NULL DEFAULT 'pending',"
     + "handler_attempts INTEGER NOT NULL DEFAULT 0,"
     + "last_handler_attempt_at TEXT,"
@@ -67,6 +71,7 @@ const REQUIRED_TABLE_SHAPES: ReadonlyArray<SqliteTableShape> = Object.freeze([
       "processor_id",
       "adopted_commit",
       "answered_by",
+      "answer_context_json",
       "handler_status",
       "handler_attempts",
       "last_handler_attempt_at",
@@ -109,8 +114,11 @@ export async function openAnswersDb(
     policy: {
       kind: "migrate",
       tryMigrate: (db, storedHash) => {
-        if (storedHash !== ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY) return false;
-        applyAnsweredByMigration(db);
+        if (
+          storedHash !== ANSWERS_SCHEMA_HASH_BEFORE_ANSWERED_BY &&
+          storedHash !== ANSWERS_SCHEMA_HASH_BEFORE_AGENT_CONTEXT
+        ) return false;
+        applyAnswerProvenanceMigration(db);
         return true;
       },
     },
@@ -133,7 +141,7 @@ export function computeAnswersSchemaHash(): string {
 
 // ----- internals ------------------------------------------------------------
 
-function applyAnsweredByMigration(db: Database): void {
+function applyAnswerProvenanceMigration(db: Database): void {
   db.run("BEGIN");
   try {
     const cols = db
@@ -142,6 +150,11 @@ function applyAnsweredByMigration(db: Database): void {
     if (!cols.some((c) => c.name === "answered_by")) {
       db.run(
         "ALTER TABLE question_answers ADD COLUMN answered_by TEXT NOT NULL DEFAULT 'owner'",
+      );
+    }
+    if (!cols.some((c) => c.name === "answer_context_json")) {
+      db.run(
+        "ALTER TABLE question_answers ADD COLUMN answer_context_json TEXT",
       );
     }
     db.run("COMMIT");

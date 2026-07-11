@@ -21,6 +21,10 @@ import {
 } from "./open-loop-surface";
 
 import { compareStrings } from "../../../../src/core/compare";
+import {
+  attentionProposal,
+  compileAttention,
+} from "../../../../src/attention/attention";
 // Fact values are clean semantic bodies. Origin is carried by a parallel
 // dome.daily.task_origin fact, correlated by the task's stableId.
 export const OPEN_TASK_PREDICATE = "dome.daily.open_task";
@@ -38,12 +42,15 @@ export type DailyActionState = {
     readonly openTasks: number;
     readonly followups: number;
     readonly questions: number;
+    readonly reviews: number;
   };
   readonly sourceCounts: DailyActionSourceCounts;
   readonly dueCounts: DailyActionDueCounts;
   readonly openTasks: ReadonlyArray<DailyTaskItem>;
   readonly followups: ReadonlyArray<DailyTaskItem>;
   readonly questions: ReadonlyArray<DailyQuestionItem>;
+  readonly reviews: ReadonlyArray<DailyReviewItem>;
+  readonly attentionBacklog: number;
   readonly scope: ReadonlyArray<SourceRef>;
 };
 
@@ -113,6 +120,15 @@ export type DailyQuestionItem = {
   readonly source: DailyActionSource;
   readonly lastChangedAt: string | null;
   readonly evidenceLabel: string;
+  readonly sourceRefs: ReadonlyArray<SourceRef>;
+};
+
+export type DailyReviewItem = {
+  readonly id: number;
+  readonly reason: string;
+  readonly processorId: string;
+  readonly paths: ReadonlyArray<string>;
+  readonly reviewCommand: string;
   readonly sourceRefs: ReadonlyArray<SourceRef>;
 };
 
@@ -203,9 +219,21 @@ export async function collectDailyActionState(
     const url = f.object.kind === "string" ? f.object.value : undefined;
     if (sid !== undefined && url !== undefined) originByStableId.set(sid, url);
   }
-  const questionEffects = ctx.projection
-    .questions({ resolved: false })
-    .filter((question) => question.idempotencyKey.startsWith("dome.daily."));
+  const questionEffects = ctx.operational?.questions({ resolved: false }) ?? [];
+  const proposalRows = ctx.operational?.proposals?.({ status: "pending" }) ?? [];
+  const attention = compileAttention({
+    questions: questionEffects.map((question) => ({
+      id: question.id,
+      question: question.question,
+      ...(question.options !== undefined ? { options: question.options } : {}),
+      sourceRefs: question.sourceRefs,
+      ...(question.metadata !== undefined ? { metadata: question.metadata } : {}),
+      processorId: question.processorId,
+      askedAt: question.askedAt,
+    })),
+    proposals: proposalRows.map((proposal) => attentionProposal(proposal)),
+    now: ctx.now(),
+  });
   const sourceLastChangedAt = await sourceLastChangedAtIndex(ctx, [
     ...(dailyContent === null ? [] : [path]),
     ...openFacts.map(factSourcePath),
@@ -247,15 +275,28 @@ export async function collectDailyActionState(
   ].sort(compareTaskItemsForDaily(path, settings));
   const dedupedOpenTasks = dedupeDailyTaskItems(openTasks);
   const dedupedFollowups = dedupeDailyTaskItems(followups);
-  const questions = questionEffects
-    .map((question) =>
-      questionItemFromEffect({
-        question,
-        dailyPath: path,
-        sourceLastChangedAt,
-      })
-    )
-    .sort(compareQuestionItemsForDaily(path));
+  const questionById = new Map(questionEffects.map((question) => [question.id, question]));
+  const proposalById = new Map(proposalRows.map((proposal) => [proposal.id, proposal]));
+  const questions = attention.primary.flatMap((item) => {
+    if (item.kind !== "decision") return [];
+    const question = questionById.get(item.action.questionId);
+    return question === undefined
+      ? []
+      : [questionItemFromEffect({ question, dailyPath: path, sourceLastChangedAt })];
+  });
+  const reviews = attention.primary.flatMap((item): ReadonlyArray<DailyReviewItem> => {
+    if (item.kind !== "review") return [];
+    const proposal = proposalById.get(item.action.proposalId);
+    if (proposal === undefined) return [];
+    return [Object.freeze({
+      id: proposal.id,
+      reason: proposal.reason,
+      processorId: proposal.processorId,
+      paths: Object.freeze([...proposal.paths]),
+      reviewCommand: `dome proposals`,
+      sourceRefs: Object.freeze([...item.sourceRefs]),
+    })];
+  });
   const sourceCounts = countDailyActionSources({
     openTasks: dedupedOpenTasks,
     followups: dedupedFollowups,
@@ -272,6 +313,7 @@ export async function collectDailyActionState(
     ...dedupedOpenTasks.flatMap((task) => task.sourceRefs),
     ...dedupedFollowups.flatMap((task) => task.sourceRefs),
     ...questions.flatMap((question) => question.sourceRefs),
+    ...reviews.flatMap((review) => review.sourceRefs),
   ]);
 
   return Object.freeze({
@@ -285,12 +327,15 @@ export async function collectDailyActionState(
       openTasks: dedupedOpenTasks.length,
       followups: dedupedFollowups.length,
       questions: questions.length,
+      reviews: reviews.length,
     }),
     sourceCounts,
     dueCounts,
     openTasks: dedupedOpenTasks,
     followups: dedupedFollowups,
     questions: Object.freeze(questions),
+    reviews: Object.freeze(reviews),
+    attentionBacklog: attention.backlog.length,
     scope,
   });
 }
@@ -820,32 +865,6 @@ function compareTaskItemsForDaily(
     }
     const actionCmp = compareTaskActionPriority(a, b, date);
     return actionCmp === 0 ? compareTaskItems(a, b) : actionCmp;
-  };
-}
-
-function compareQuestionItems(
-  a: DailyQuestionItem,
-  b: DailyQuestionItem,
-): number {
-  return comparePathLineText(
-    a.path,
-    a.line,
-    a.question,
-    b.path,
-    b.line,
-    b.question,
-  );
-}
-
-function compareQuestionItemsForDaily(
-  dailyPath: string,
-): (a: DailyQuestionItem, b: DailyQuestionItem) => number {
-  return (a, b) => {
-    const sourceCmp = pathDailyPriority(a.path, dailyPath) -
-      pathDailyPriority(b.path, dailyPath);
-    if (sourceCmp !== 0) return sourceCmp;
-    const changedCmp = compareOptionalDateDesc(a.lastChangedAt, b.lastChangedAt);
-    return changedCmp === 0 ? compareQuestionItems(a, b) : changedCmp;
   };
 }
 

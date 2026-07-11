@@ -1,41 +1,9 @@
 // Shared topic-relevance helpers for query-time search surfaces.
 
-import { normalizedTokens } from "./search-input";
-
-const TOPIC_STOPWORDS: ReadonlySet<string> = new Set([
-  "a",
-  "an",
-  "and",
-  "are",
-  "at",
-  "about",
-  "do",
-  "does",
-  "did",
-  "for",
-  "from",
-  "how",
-  "i",
-  "in",
-  "is",
-  "me",
-  "my",
-  "of",
-  "on",
-  "or",
-  "that",
-  "the",
-  "this",
-  "to",
-  "was",
-  "were",
-  "what",
-  "when",
-  "where",
-  "who",
-  "why",
-  "with",
-]);
+import {
+  normalizedTokens,
+  significantRecallTerms,
+} from "../../../../src/recall/query-analysis";
 
 export function topicRelevantItems<T>(
   items: ReadonlyArray<T>,
@@ -100,11 +68,7 @@ export function boundedTopicRows<T>(input: {
   );
 }
 
-function significantTopicTokens(topic: string): ReadonlyArray<string> {
-  return Object.freeze(
-    normalizedTokens(topic).filter((token) => !TOPIC_STOPWORDS.has(token)),
-  );
-}
+const significantTopicTokens = significantRecallTerms;
 
 function topicRelevanceScore(
   topicTokens: ReadonlyArray<string>,

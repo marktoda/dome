@@ -49,12 +49,18 @@ function questionForFailedRow(row: OperationalOutboxRow): QuestionEffect {
       `${OUTBOX_RECOVERY_QUESTION_PREFIX}${row.idempotencyKey}` +
       `${OUTBOX_RECOVERY_FAILURE_SEPARATOR}${failureToken(row)}`,
     metadata: {
+      resolutionMode: "dispatch",
       risk: "medium",
       confidence: 1,
       recommendedAnswer: "retry",
       automationPolicy: "owner-needed",
       ownerNeededReason:
         "Retrying or abandoning a failed external action can affect external state.",
+      attention: {
+        consequence: "high",
+        urgency: "now",
+        reason: "a failed external action needs an explicit disposition",
+      },
     },
   });
 }

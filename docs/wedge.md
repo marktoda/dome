@@ -6,8 +6,8 @@ tags:
   - product
   - surfaces
 created: 2026-06-09
-updated: 2026-06-09
-status: plan-of-record
+updated: 2026-07-11
+status: superseded
 sources:
   - "[[v1]]"
   - "[[VISION]]"
@@ -17,9 +17,15 @@ sources:
 
 # Dome wedge plan — from engine to second brain
 
-This is the product wedge plan of record as of 2026-06-09. It does not replace
-[[v1]]; it re-sequences the remaining work **surface-in instead of engine-out**
-and adds the missing product layer on top of the shipped compiler.
+> [!NOTE]
+> This was the product wedge plan of record on 2026-06-09. Its five phases
+> shipped, but several named implementations were subsequently simplified.
+> [[cohesive/plans/2026-07-11-productization-modernization]] is the current
+> continuation plan. The material below is retained as decision history.
+
+This plan did not replace [[v1]]; it re-sequenced the remaining work
+**surface-in instead of engine-out** and added the missing product layer on
+top of the shipped compiler.
 
 ## Diagnosis
 

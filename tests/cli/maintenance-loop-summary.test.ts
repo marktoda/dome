@@ -148,8 +148,8 @@ describe("collectMaintenanceLoopSummaries", () => {
     expect(summary?.attention_diagnostics).toBe(1);
     expect(summary?.drift_diagnostics).toBe(0);
     expect(summary?.questions).toBe(3);
-    expect(summary?.agent_safe_questions).toBe(1);
-    expect(summary?.model_safe_questions).toBe(1);
+    expect(summary?.agent_safe_questions).toBe(2);
+    expect(summary?.model_safe_questions).toBe(0);
     expect(summary?.owner_needed_questions).toBe(1);
     expect(summary?.settlement.settled).toBe(false);
     expect(summary?.settlement.failed_checks).toEqual([

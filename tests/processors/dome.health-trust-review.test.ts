@@ -76,6 +76,19 @@ function decide(
 }
 
 describe("decideTrustReview (pure)", () => {
+  test("semantic garden remains proposal-only at any acceptance rate", () => {
+    expect(
+      decide([
+        stats({
+          processorId: "dome.agent.garden",
+          extensionId: "dome.agent",
+          decided: 20,
+          applied: 20,
+        }),
+      ]),
+    ).toEqual([]);
+  });
+
   test("7 decided → no promotion; 8 decided → promotion", () => {
     expect(decide([stats({ decided: 7, applied: 7 })])).toEqual([]);
     const decisions = decide([stats({ decided: 8, applied: 8 })]);
@@ -126,12 +139,12 @@ describe("decideTrustReview (pure)", () => {
   test("dormant LLM processor (cost > $0, zero productive) → flagged", () => {
     const decisions = decide(
       [],
-      [{ processorId: "dome.agent.sweep", costUsd: 2.4, productive: 0 }],
+      [{ processorId: "dome.acme.summarize", costUsd: 2.4, productive: 0 }],
     );
     expect(decisions).toHaveLength(1);
     expect(decisions[0]).toMatchObject({
       kind: "flag-dormant",
-      processorId: "dome.agent.sweep",
+      processorId: "dome.acme.summarize",
     });
     expect((decisions[0] as { evidence: string }).evidence).toContain("$2.40");
   });
@@ -321,7 +334,7 @@ describe("promoteProcessorGrantInConfig (yaml Document edit)", () => {
     const result = promoteProcessorGrantInConfig({
       configBody: body,
       extensionId: "dome.agent",
-      processorId: "dome.agent.consolidate",
+      processorId: "dome.agent.ingest",
       // core.md is deliberately propose-only in the shipped defaults — the
       // promotion mechanics are what is under test here.
       autoPaths: ["core.md"],
@@ -338,13 +351,13 @@ describe("promoteProcessorGrantInConfig (yaml Document edit)", () => {
       grantedAutonomy({
         policy,
         extensionId: "dome.agent",
-        processorId: "dome.agent.consolidate",
+        processorId: "dome.agent.ingest",
         paths: ["core.md"],
       }),
     ).toBe("auto");
     // ...its other bundle-grant capabilities were carried into the
     // replacement grant...
-    const promoted = policy.grantsForProcessor("dome.agent", "dome.agent.consolidate");
+    const promoted = policy.grantsForProcessor("dome.agent", "dome.agent.ingest");
     expect(promoted.some((c) => c.kind === "model.invoke")).toBe(true);
     // ...the materialized per-processor preset defaults survive (the opt-out
     // would otherwise strip the deterministic indexers' replacement grants)...
@@ -552,8 +565,8 @@ describe("dome.health.trust-review (processor shell)", () => {
 
   test("a dormant LLM processor raises ONE warning diagnostic with a per-processor code (never a question)", async () => {
     const runs = [
-      run({ processorId: "dome.agent.sweep", costUsd: 1.25, effectCount: 0 }),
-      run({ processorId: "dome.agent.sweep", costUsd: 0.75, effectCount: 0 }),
+      run({ processorId: "dome.acme.summarize", costUsd: 1.25, effectCount: 0 }),
+      run({ processorId: "dome.acme.summarize", costUsd: 0.75, effectCount: 0 }),
       // deterministic zero-cost idler — the report card's concern, not ours
       run({ processorId: "dome.graph.links", costUsd: null, effectCount: 0 }),
       // productive spender — fine
@@ -572,7 +585,7 @@ describe("dome.health.trust-review (processor shell)", () => {
     expect(dormant).toHaveLength(1);
     const finding = dormant[0]!;
     expect(finding.code).toBe(
-      "dome.health.trust-review-dormant:dome.agent.sweep",
+      "dome.health.trust-review-dormant:dome.acme.summarize",
     );
     expect(finding.severity).toBe("warning");
     expect(finding.message).toContain("$2.00");
@@ -583,7 +596,7 @@ describe("dome.health.trust-review (processor shell)", () => {
     const { patches, questions, diagnostics } = await runTrustReview(
       { [CONFIG_PATH]: SHELL_CONFIG },
       viewOf({
-        runs: [run({ processorId: "dome.agent.sweep", costUsd: 1.0, effectCount: 0 })],
+        runs: [run({ processorId: "dome.acme.summarize", costUsd: 1.0, effectCount: 0 })],
       }),
     );
     expect(patches).toEqual([]);
@@ -595,7 +608,7 @@ describe("dome.health.trust-review (processor shell)", () => {
     ).toBe(true);
     expect(
       diagnostics.some(
-        (d) => d.code === "dome.health.trust-review-dormant:dome.agent.sweep",
+        (d) => d.code === "dome.health.trust-review-dormant:dome.acme.summarize",
       ),
     ).toBe(true);
   });

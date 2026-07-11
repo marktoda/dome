@@ -30,6 +30,7 @@ export type MaintenanceLoopEvidence =
       readonly name:
         | "diagnostics"
         | "questions"
+        | "proposals"
         | "runs"
         | "outbox"
         | "quarantines";
@@ -359,12 +360,6 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         { kind: "projection", name: "facts:dome.page.*" },
         { kind: "operational", name: "diagnostics" },
         { kind: "operational", name: "questions" },
-        // The patrol's nightly review queue + its bounded visit ledger: the
-        // coverage arm that keeps the whole concept graph re-groomed on a
-        // rotation, not just what changed (wiki/specs/autonomous-agents.md
-        // §"Patrol").
-        { kind: "path", pattern: "meta/patrol-queue.md" },
-        { kind: "path", pattern: "meta/patrol-ledger.md" },
       ],
       processors: [
         "dome.markdown.validate-wikilinks",
@@ -388,30 +383,22 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.markdown.attic-sweep",
         "dome.graph.links",
         "dome.graph.tag-index",
-        "dome.agent.consolidate",
-        // The deterministic staleness patrol: queues the stalest
-        // entity/concept/synthesis pages nightly so consolidate reviews the
-        // frozen tail on a cycle (the signal-triggered garden alone never
-        // revisits a page that stopped changing). Also nudges oversized pages
-        // toward a split.
-        "dome.agent.patrol",
+        "dome.agent.garden",
       ],
       surfaces: [
         { kind: "path", pattern: "**/*.md" },
-        { kind: "path", pattern: "meta/patrol-queue.md" },
         { kind: "projection", name: "diagnostics" },
         { kind: "status", name: "check" },
       ],
       settlement: {
         key: "link occurrence, duplicate page-pair, or metadata path plus content hash",
         noOpWhen:
-          "the link resolves, is intentionally unresolved, has exactly one open question, the managed metadata already matches git history, or every scanned page has been patrolled within the revisit window",
+          "the link resolves, is intentionally unresolved, has exactly one open question, or the managed metadata already matches git history",
       },
       risks: [
         "Ambiguous broken links can create duplicate stub pages if confidence is not enforced.",
         "Duplicate consolidation must preserve source material: absorbed pages are superseded (status flip + forward link), not deleted.",
         "Supersession flips without a resolvable forward link strand readers in history; the lint warning is the guardrail.",
-        "Coverage patrol must stay bounded: the queue is a full rewrite and the ledger prunes to 60 days, so the tail is revisited on a rotation without accreting bookkeeping.",
         "The attic-sweep janitor only proposes — it never deletes vault content on its own initiative; a missed `dome apply` leaves the archive-move pending in proposals.db indefinitely, not silently lost.",
       ],
     }),
@@ -580,35 +567,34 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       ],
     }),
     freezeLoop({
-      id: "dome.meaning.integration",
+      id: "dome.semantic.gardening",
       goal:
-        "Every daily and processed capture is integrated into the wiki pages it concerns — no capture left behind.",
+        "Semantic drift is compiled into bounded, evidence-backed proposals until adopted or rejected.",
       evidence: [
         { kind: "path", pattern: "wiki/dailies/*.md" },
         { kind: "path", pattern: "inbox/processed/*.md" },
-        { kind: "path", pattern: "meta/sweep-ledger.md" },
-        { kind: "operational", name: "questions" },
+        { kind: "path", pattern: "wiki/entities/*.md" },
+        { kind: "path", pattern: "wiki/concepts/*.md" },
+        { kind: "path", pattern: "wiki/syntheses/*.md" },
+        { kind: "operational", name: "proposals" },
         { kind: "operational", name: "diagnostics" },
         { kind: "operational", name: "runs" },
       ],
-      processors: [
-        "dome.agent.sweep",
-        "dome.agent.sweep-answer",
-      ],
+      processors: ["dome.agent.garden", "dome.agent.garden-view"],
       surfaces: [
         { kind: "path", pattern: "wiki/entities/*.md" },
         { kind: "path", pattern: "wiki/concepts/*.md" },
-        { kind: "path", pattern: "meta/sweep-ledger.md" },
+        { kind: "command", name: "garden" },
         { kind: "status", name: "check" },
       ],
       settlement: {
-        key: "(material path, destination path) pair",
+        key: "opportunity kind + source paths + current evidence hash",
         noOpWhen:
-          "every in-window (material, destination) pair is settled by a sources-link wikilink in the destination's frontmatter (authoritative) or by an advisory ledger no-op/questioned row (integrated rows are record-only and do not settle — the sources: link is authoritative for integrations)",
+          "the current evidence has no unresolved opportunity or its exact proposal is pending, applied, or rejected",
       },
       risks: [
-        "Model-generated integrations are bounded to one page per queue item; a bad integration is isolated to that page and revertable via git history.",
-        "Advisory ledger loss (e.g., a failed ledger patch) only costs re-judging already-settled pairs on the next run; settlement-by-sources in destination frontmatter is authoritative.",
+        "Model judgment can merge distinct knowledge; every semantic edit is proposed and owner-reviewed.",
+        "Stateless rotation must remain bounded so quiet vault tails are revisited without creating maintenance registries.",
       ],
     }),
     freezeLoop({
@@ -628,9 +614,6 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         // fetcher, landing as an ordinary non-engine commit before the
         // 05:30 brief — the engine never writes it.
         { kind: "path", pattern: "sources/calendar/*.md" },
-        // The 03:00 sweep's advisory ledger — the edition's deterministic
-        // "Integrated overnight" digest renders today's run section from it.
-        { kind: "path", pattern: "meta/sweep-ledger.md" },
         { kind: "operational", name: "runs" },
         { kind: "operational", name: "diagnostics" },
       ],
@@ -639,20 +622,11 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
         "dome.daily.create-daily",
         "dome.daily.carry-forward",
         // The deterministic compositor: composes the edition's generated
-        // blocks — the "To decide" questions list, agenda, integrated-overnight
-        // digest, and sources-seen record — into today's daily at 05:25 and on
-        // questions.changed + source-file + sweep-ledger signals (daily-surface
+        // blocks — the owner-attention list, agenda, and sources-seen record —
+        // into today's daily at 05:25 and on questions/proposals/source signals (daily-surface
         // §"Block ownership").
         "dome.daily.compose-blocks",
         "dome.daily.close-scaffold",
-        // The morning attention warden: surfaces stale/overdue open-loop tasks as
-        // settle-stale questions, one per task, so the owner can close, defer, or
-        // keep. Fires at 06:00 alongside create-daily (shared cron tick).
-        "dome.daily.stale-task-warden",
-        // Answer handler for the warden's settle-stale questions. Deterministic;
-        // applies close (→ [-]), defer (advances the 📅 date by 7 days), or keep
-        // (no-op) based on the owner's answer. Locates the task by ^anchor.
-        "dome.daily.settle-stale-answer",
       ],
       // dome.sources.fetch joins the edition rather than owning a tenth
       // loop: in the default experience its sole purpose is feeding the
@@ -670,7 +644,7 @@ export const FIRST_PARTY_MAINTENANCE_LOOPS: ReadonlyArray<MaintenanceLoop> =
       settlement: {
         key: "daily date + generated-block owner set",
         noOpWhen:
-          "today's daily note exists, every enabled edition block (the unified yesterday block — curated or mechanical fallback — plus meetings/questions/integrated and the open-loops surface) matches its current inputs, and the evening close block has been seeded (presence-gated) when today's daily existed at close time",
+          "today's daily note exists, every enabled edition block (the unified yesterday block — curated or mechanical fallback — plus meetings/owner-attention and the open-loops surface) matches its current inputs, and the evening close block has been seeded (presence-gated) when today's daily existed at close time",
       },
       risks: [
         "The calendar source is a committed external feed (sources/calendar/<date>.md) fetched by the opt-in dome.sources subscription or a vault-side fetcher; its absence degrades the meetings block to omission per the daily-surface degradation ladder — never an error. Subscription fetch failures surface through the ordinary outbox recovery path (dome check / dome.health questions), not through this loop.",

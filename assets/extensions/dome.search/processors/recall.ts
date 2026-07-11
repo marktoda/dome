@@ -24,7 +24,10 @@ import {
 } from "./ranking";
 
 import { compareStrings } from "../../../../src/core/compare";
-import { normalizedTokens } from "./search-input";
+import {
+  matchesRecallText,
+  normalizedTokens,
+} from "../../../../src/recall/query-analysis";
 
 export type SearchRecallSignal = SearchRankingRecallSignal & {
   readonly path: string;
@@ -250,12 +253,8 @@ function recallSignalWeight(
 }
 
 function topicMatcher(topic: string): ((text: string) => boolean) | null {
-  const terms = normalizedTokens(topic);
-  if (terms.length === 0) return null;
-  return (text: string) => {
-    const tokens = new Set(normalizedTokens(text));
-    return terms.every((term) => tokens.has(term));
-  };
+  if (normalizedTokens(topic).length === 0) return null;
+  return (text: string) => matchesRecallText(topic, text);
 }
 
 type DailyRecallDate = {

@@ -34,6 +34,7 @@ import { add, commit } from "../../src/git";
 import { insertQuestion } from "../../src/projections/questions";
 import { openVault, type Vault } from "../../src/vault";
 import { openVault as openVaultFromIndex } from "../../src/index";
+import { getQuestionAnswer } from "../../src/answers/question-answers";
 
 const TEST_TIMEOUT_MS = 120_000;
 
@@ -169,6 +170,34 @@ describe("openVault", () => {
   test("is exported from the package root", () => {
     expect(openVaultFromIndex).toBe(openVault);
   });
+
+  test(
+    "discovers command-triggered views from the installed processor registry",
+    async () => {
+      const { vault } = await fixture();
+      const views = vault.listViews();
+      expect(views.length).toBeGreaterThan(0);
+      expect(views).toContainEqual({
+        command: "today",
+        processorId: "dome.daily.today",
+        processorVersion: expect.any(String),
+        extensionId: "dome.daily",
+      });
+      expect(views.map((view) => view.command)).toContain("query");
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+describe("attention", () => {
+  test("exposes the canonical derived owner queue", async () => {
+    const { vault } = await fixture();
+    const attention = await vault.attention();
+    expect(attention.schema).toBe("dome.attention/v1");
+    expect(attention.counts.owner).toBe(
+      attention.primary.length + attention.backlog.length,
+    );
+  }, TEST_TIMEOUT_MS);
 });
 
 // ----- Engine control: status + sync ---------------------------------------------
@@ -389,6 +418,90 @@ describe("decisions", () => {
 
       const again = await vault.resolve(seeded.id, "keep");
       expect(again.kind).toBe("already-answered");
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "derives agent work and records evidence-backed agent provenance",
+    async () => {
+      const { vault, vaultPath } = await fixture();
+      const adopted = (await vault.getAdoptionStatus()).adopted;
+      expect(adopted).not.toBeNull();
+      const runtimeResult = await openVaultRuntime({
+        vaultPath,
+        ...resolveBundleRoots({ vaultPath }),
+      });
+      expect(runtimeResult.ok).toBe(true);
+      if (!runtimeResult.ok || adopted === null) return;
+      const evidence = sourceRef({
+        path: "wiki/project-omega.md",
+        commit: commitOid(adopted),
+      });
+      insertQuestion(runtimeResult.value.projectionDb, {
+        effect: questionEffect({
+          question: "Does Project Omega need a follow-up?",
+          options: ["track", "ignore"],
+          idempotencyKey: "vault-api-agent-work-question",
+          sourceRefs: [evidence],
+          metadata: {
+            resolutionMode: "dispatch",
+            automationPolicy: "agent-safe",
+            risk: "low",
+            confidence: 0.9,
+          },
+        }),
+        processorId: "dome.test.agent-work",
+        runId: "run-vault-agent-work",
+        adoptedCommit: commitOid(adopted),
+      });
+      await runtimeResult.value.close();
+
+      const packet = (await vault.agentWork()).items.find((item) =>
+        item.question === "Does Project Omega need a follow-up?"
+      );
+      expect(packet?.readiness).toBe("ready");
+      if (packet === undefined) return;
+
+      const stale = await vault.completeAgentWork({
+        questionId: packet.questionId,
+        expectedRevision: "stale",
+        answer: "track",
+        reason: "The source contains an open commitment.",
+        evidence: [evidence],
+      });
+      expect(stale).toMatchObject({ kind: "rejected", problem: "stale-revision" });
+
+      const completed = await vault.completeAgentWork({
+        questionId: packet.questionId,
+        expectedRevision: packet.revision,
+        answer: "track",
+        reason: "The source contains an open commitment.",
+        evidence: [evidence],
+      });
+      expect(completed.kind).toBe("completed");
+      if (completed.kind === "completed") {
+        expect(completed.record.answeredBy).toBe("agent");
+      }
+      expect((await vault.agentWork({ questionId: packet.questionId })).items).toHaveLength(0);
+
+      const inspectRuntime = await openVaultRuntime({
+        vaultPath,
+        ...resolveBundleRoots({ vaultPath }),
+      });
+      expect(inspectRuntime.ok).toBe(true);
+      if (!inspectRuntime.ok) return;
+      const durable = getQuestionAnswer(
+        inspectRuntime.value.answersDb,
+        "vault-api-agent-work-question",
+      );
+      expect(durable?.answeredBy).toBe("agent");
+      expect(durable?.answerContext).toEqual({
+        kind: "agent",
+        reason: "The source contains an open commitment.",
+        evidence: [evidence],
+      });
+      await inspectRuntime.value.close();
     },
     TEST_TIMEOUT_MS,
   );

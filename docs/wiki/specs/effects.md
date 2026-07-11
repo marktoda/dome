@@ -62,7 +62,7 @@ PatchEffect `sourceRefs` are not globally non-empty because some deterministic p
 - **Adoption phase, `mode: "auto"`:** the engine overlays the changes onto the candidate tree and writes one new commit per PatchEffect (with the four `Dome-*` trailers), then re-runs the loop. If `patch.auto` capability is not granted for any touched path, the effect is downgraded to `mode: "propose"` and emits a `capability-downgrade-surprise` diagnostic; the proposed patch then follows the blocking review path below.
 - **Adoption phase, `mode: "propose"`:** the engine blocks adoption with `patch.propose.requires-review`, naming the proposed changes. The review/apply surface is planned; no shipped v1 CLI command applies the proposed patch directly yet.
 - **Garden phase, `mode: "auto"`:** the engine constructs a new Proposal from the changes and routes it through the adoption loop (per [[wiki/specs/proposals]] §"Garden-emitted Proposals").
-- **Garden phase, `mode: "propose"`:** records the allowed `patch.propose` capability use (or, for an auto→propose downgrade, `patch.auto` with `outcome: "downgraded"`) and enqueues a durable row in `proposals.db` via the optional `enqueueProposal` sink — outcome `queued-for-review`, diagnosed with an info `garden.patch-proposed` naming the enqueued proposal id (`dome proposals` / `dome apply` review it). Sink-less contexts (e.g. the `dome run` view harness) keep the pre-product-review-4 behavior: diagnosed as `garden.patch-propose-review-unavailable` and dropped. Two first-party producers ship on this path (stock-gardening phase 1): `dome.agent.consolidate`'s `proposeSplit` tool, which proposes lossless page splits ([[wiki/specs/autonomous-agents]] §"Splitting oversized pages"), and `dome.markdown.attic-sweep`, which proposes archive-moves of dead-stub pages ([[wiki/specs/vault-layout]] §"`attic/`").
+- **Garden phase, `mode: "propose"`:** records the allowed `patch.propose` capability use and enqueues a durable row in `proposals.db`; `dome proposals` / `dome apply` / `dome reject` own review. Semantic garden uses this for every judgment-heavy edit, including validated lossless splits; `dome.markdown.attic-sweep` uses it for archive moves. Sink-less contexts diagnose and drop the patch.
 - **View phase:** rejected — view processors cannot emit patches.
 
 **Idempotency requirement:** a processor that re-runs against the same input must produce the same change list (byte-equivalent `content` for writes, same `path` for deletes). If applying the changes a second time would produce no tree-level diff (because the contents already match), the processor returns no effect. This is what makes the fixed-point loop converge.
@@ -193,7 +193,7 @@ interface QuestionEffect {
     readonly risk?: "low" | "medium" | "high";
     readonly confidence?: number;            // 0..1 confidence in the question framing
     readonly recommendedAnswer?: string;     // optional source-preserving default
-    readonly automationPolicy?: "agent-safe" | "model-safe" | "owner-needed";
+    readonly automationPolicy?: "agent-safe" | "model-safe" | "owner-needed"; // model-safe is a legacy alias
     readonly ownerNeededReason?: string;     // why this should reach the owner
     readonly destination?: string;           // answer-handler round-trip: the page the question is about
     readonly material?: string;              // answer-handler round-trip: the document that prompted it
@@ -222,7 +222,7 @@ moves without stale provenance. Answered rows are not overwritten.
 
 `metadata` is advisory but source-controlled through the effect row. It lets
 `dome check`, `dome query`, `dome export-context`, and hidden compatibility
-daily views separate agent/model-safe resolution work from owner-needed
+daily views separate agent-safe resolution work from owner-needed
 decisions. Missing metadata is treated as `owner-needed` by surfaces so older
 questions stay conservative.
 
@@ -230,9 +230,10 @@ Automation policy means:
 
 - `agent-safe`: a vault-aware foreground agent may answer when the response is
   grounded in the question SourceRefs, adopted vault context, and allowed
-  options.
-- `model-safe`: a model-backed loop or harness may answer under the same
-  grounding rule, with provenance retained in the answer handler trail.
+  options. Hosted and background models use the same policy and the
+  evidence-backed [[wiki/specs/agent-work]] completion contract.
+- `model-safe`: accepted only as a legacy stored spelling and normalized to
+  `agent-safe`. Model choice does not create a second authority tier.
 - `owner-needed`: the question needs owner context, preference, or authority;
   agents should surface it instead of guessing.
 
@@ -248,8 +249,8 @@ different processor (the health-recovery shape — e.g.
 processor). If a bundle is uninstalled, its questions — and any
 question whose declared subject was that bundle's processor — can never be
 answered through the normal handler flow again. An operational pump
-(`src/engine/operational/question-expiry.ts`, run once per tick after
-question auto-resolution) releases them: an OPEN question expires when
+(`src/engine/operational/question-expiry.ts`, run once per operational tick)
+releases them: an OPEN question expires when
 either its emitting processor or its `subjectProcessorId` is *retired* —
 absent from the active `ProcessorRegistry` AND not covered by a
 configured-but-disabled extension's id prefix. The disabled-bundle exemption

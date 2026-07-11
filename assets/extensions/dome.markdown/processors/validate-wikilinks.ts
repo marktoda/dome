@@ -229,6 +229,7 @@ function ambiguousWikilinkQuestion(opts: {
         candidateOptions.join("|"),
       ].join("\0"), 64)}`,
     metadata: {
+      resolutionMode: "dispatch",
       risk: "medium",
       confidence: 0.72,
       automationPolicy: "agent-safe",
@@ -251,4 +252,3 @@ function stubPatchEffect(
     sourceRefs: ordered.flatMap((request) => request.sourceRefs),
   });
 }
-

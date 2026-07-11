@@ -3,7 +3,7 @@
 // `extensions.dome.agent.config.model_overrides` maps processor key →
 // model string; the resolved model rides the existing provider-neutral
 // `step({ model })` field. Same degrade-not-crash idiom as
-// consolidate_targets/sweep_targets: malformed values fall back to the
+// garden_targets: malformed values fall back to the
 // provider default with a `problem` the processor surfaces as the
 // `dome.agent.model-config-invalid` warning. The engine's allowlist
 // machinery still gates the value (tests/engine/model-step.test.ts pins
@@ -29,7 +29,7 @@ describe("resolveModelOverride", () => {
     });
     expect(
       resolveModelOverride(
-        { model_overrides: { consolidate: "claude-sonnet-4-6" } },
+        { model_overrides: { garden: "claude-sonnet-4-6" } },
         "ingest",
       ),
     ).toEqual({ model: undefined, problem: null });
@@ -39,13 +39,13 @@ describe("resolveModelOverride", () => {
     const config = {
       model_overrides: {
         ingest: " claude-haiku-4-5 ",
-        sweep: "claude-haiku-4-5",
+        garden: "claude-haiku-4-5",
       },
     };
     expect(resolveModelOverride(config, "ingest").model).toBe(
       "claude-haiku-4-5",
     );
-    expect(resolveModelOverride(config, "sweep").problem).toBeNull();
+    expect(resolveModelOverride(config, "garden").problem).toBeNull();
     expect(resolveModelOverride(config, "brief").model).toBeUndefined();
   });
 
@@ -60,11 +60,11 @@ describe("resolveModelOverride", () => {
   test("malformed entry → default + problem naming the key", () => {
     for (const bad of [42, "", "   ", { id: "x" }]) {
       const res = resolveModelOverride(
-        { model_overrides: { consolidate: bad } },
-        "consolidate",
+        { model_overrides: { garden: bad } },
+        "garden",
       );
       expect(res.model).toBeUndefined();
-      expect(res.problem).toContain("model_overrides.consolidate");
+      expect(res.problem).toContain("model_overrides.garden");
     }
   });
 });

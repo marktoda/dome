@@ -237,28 +237,22 @@ scenario(
       "Daily note scope: 4 open tasks, 2 followups, 0 questions",
     );
     expect(textPayload.markdown).toContain(
-      "Backlog scope: 0 open tasks, 0 followups, 1 questions",
+      "Backlog scope: 0 open tasks, 0 followups, 0 questions",
     );
     expect(textPayload.markdown).toContain(
       "Due: open tasks 0 overdue, 0 today, 1 upcoming, 3 undated; followups 0 overdue, 0 today, 0 upcoming, 2 undated",
     );
     expect(textPayload.markdown).toContain(
-      "[followup] Ask Ben about hiring budget (wiki/dailies/2026-01-05.md:28; source wiki/captures/launch.md:9)",
+      "[followup] Ask Ben about hiring budget (wiki/dailies/2026-01-05.md:23; source wiki/captures/launch.md:9)",
     );
     expect(textPayload.markdown).toContain(
       "- 2 followups already listed in Start Here",
     );
     expect(textPayload.markdown).toContain(
-      "- 1 open task already listed in Start Here",
+      "- 2 open tasks already listed in Start Here",
     );
-    expect(textPayload.markdown).toContain(
-      "- 1 question already listed in Start Here",
-    );
-    expect(textPayload.markdown).toContain("resolve: dome resolve ");
-    expect(textPayload.markdown).toContain(
-      "policy: agent-safe; risk low; confidence 0.65",
-    );
-    expect(textPayload.markdown).toContain("<track|ignore>");
+    expect(textPayload.markdown).not.toContain("question already listed");
+    expect(textPayload.markdown).not.toContain("resolve: dome resolve ");
     expect(textPayload.markdown).toContain(
       "- ... 1 more open task (use --limit 4 to show all open tasks)",
     );
@@ -348,7 +342,7 @@ scenario(
     expect(payload.daily.exists).toBe(true);
     expect(payload.counts.openTasks).toBe(4);
     expect(payload.counts.followups).toBe(2);
-    expect(payload.counts.questions).toBe(1);
+    expect(payload.counts.questions).toBe(0);
     expect(payload.sourceCounts.daily).toEqual({
       openTasks: 4,
       followups: 2,
@@ -357,7 +351,7 @@ scenario(
     expect(payload.sourceCounts.backlog).toEqual({
       openTasks: 0,
       followups: 0,
-      questions: 1,
+      questions: 0,
     });
     expect(payload.dueCounts.openTasks).toEqual({
       overdue: 0,
@@ -375,10 +369,10 @@ scenario(
       planningItems: 2,
       followups: 2,
       openTasks: 2,
-      questions: 1,
+      questions: 0,
     });
     expect(payload.omitted).toEqual({
-      planningItems: 3,
+      planningItems: 2,
       followups: 0,
       openTasks: 2,
       questions: 0,
@@ -401,7 +395,7 @@ scenario(
     ]);
     expect(payload.planningItems.map((item) => item.evidenceLabel)).toEqual([
       "wiki/dailies/2026-01-05.md:9",
-      "wiki/dailies/2026-01-05.md:28; source wiki/captures/launch.md:9",
+      "wiki/dailies/2026-01-05.md:23; source wiki/captures/launch.md:9",
     ]);
     expect(
       payload.planningItems.every((item) =>
@@ -416,16 +410,12 @@ scenario(
       "Daily note scope: 4 open tasks, 2 followups, 0 questions",
     );
     expect(payload.markdown).toContain(
-      "Backlog scope: 0 open tasks, 0 followups, 1 questions",
+      "Backlog scope: 0 open tasks, 0 followups, 0 questions",
     );
     expect(payload.markdown).toContain(
       "Due: open tasks 0 overdue, 0 today, 1 upcoming, 3 undated; followups 0 overdue, 0 today, 0 upcoming, 2 undated",
     );
-    expect(payload.markdown).toContain("resolve: dome resolve ");
-    expect(payload.markdown).toContain(
-      "policy: agent-safe; risk low; confidence 0.65",
-    );
-    expect(payload.markdown).toContain("<track|ignore>");
+    expect(payload.markdown).not.toContain("resolve: dome resolve ");
     expect(payload.markdown).toContain(
       "- 2 followups already listed in Start Here",
     );
@@ -436,11 +426,10 @@ scenario(
       "- ... 2 more open tasks (use --limit 4 to show all open tasks)",
     );
     expect(payload.markdown).toContain("wiki/captures/launch.md:9-9 @");
-    expect(payload.markdown).toContain("wiki/captures/launch.md:10-10 @");
     expect(payload.markdown).toContain("wiki/dailies/2026-01-05.md @");
     expect(payload.markdown).toContain("wiki/dailies/2026-01-05.md:8-8 @");
     expect(payload.markdown).toContain("wiki/dailies/2026-01-05.md:9-9 @");
-    expect(payload.markdown).toContain("wiki/dailies/2026-01-05.md:28-28 @");
+    expect(payload.markdown).toContain("wiki/dailies/2026-01-05.md:23-23 @");
   },
 );
 

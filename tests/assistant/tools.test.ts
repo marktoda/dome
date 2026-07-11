@@ -18,11 +18,26 @@ import { commitSingleFileOnHead, readBlob, resolveRef } from "../../src/git";
 
 function fakeVault(over: Partial<{ runView: unknown; readDocument: unknown }> = {}) {
   return {
+    listViews: () => [
+      { command: "query", processorId: "dome.search.query", processorVersion: "1", extensionId: "dome.search" },
+      { command: "today", processorId: "dome.daily.today", processorVersion: "1", extensionId: "dome.daily" },
+    ],
     runView:
       over.runView ??
       (async (_cmd: string, _args: unknown) => ({
         kind: "ok",
-        views: [],
+        views: [
+          {
+            kind: "view",
+            name: "dome.search.query",
+            content: {
+              kind: "structured",
+              schema: "dome.search.query/v1",
+              data: { matches: [{ path: "wiki/entities/robinhood-chain.md" }] },
+            },
+            scope: [{ path: "wiki/entities/robinhood-chain.md", commit: "abc123" }],
+          },
+        ],
         brokerDiagnostics: [],
         structured: {
           name: "dome.search.query",
@@ -62,10 +77,13 @@ function fakeVault(over: Partial<{ runView: unknown; readDocument: unknown }> = 
 const callOpts = {} as never;
 
 describe("buildAgentTools", () => {
-  test("search_vault returns matches and records citations", async () => {
+  test("run_view invokes an installed plugin view and records its scope", async () => {
     const citations: Citation[] = [];
     const tools = buildAgentTools(fakeVault(), citations);
-    const out = await tools.search_vault!.execute!({ text: "robinhood" }, callOpts);
+    const out = await tools.run_view!.execute!(
+      { command: "query", input: { text: "robinhood" } },
+      callOpts,
+    );
     expect(out).toContain("wiki/entities/robinhood-chain.md");
     expect(citations).toHaveLength(1);
     expect(citations[0]?.path).toBe("wiki/entities/robinhood-chain.md");
@@ -79,7 +97,7 @@ describe("buildAgentTools", () => {
     expect(citations.map((c) => c.path)).toContain("wiki/x.md");
   });
 
-  test("todays_brief returns task text and records citation", async () => {
+  test("run_view rejects commands not contributed by installed plugins", async () => {
     const todayVault = fakeVault({
       runView: async (_cmd: string, _args: unknown) => ({
         kind: "ok",
@@ -111,9 +129,10 @@ describe("buildAgentTools", () => {
     });
     const citations: Citation[] = [];
     const tools = buildAgentTools(todayVault, citations);
-    const out = await tools.todays_brief!.execute!({}, callOpts);
-    expect(out).toContain("Reply to vendor");
-    expect(citations.map((c) => c.path)).toContain("inbox/raw/x.md");
+    const out = await tools.run_view!.execute!({ command: "missing" }, callOpts);
+    expect(out).toContain("view-not-found");
+    expect(out).toContain("query");
+    expect(citations).toHaveLength(0);
   });
 
   test("read_document on a missing path returns a not-found message, no citation", async () => {
@@ -137,10 +156,10 @@ async function tempVault(): Promise<string> {
 
 // Minimal Vault stub: tools only need `.path` for writes here.
 function vaultAt(path: string) {
-  return { path, runView: async () => ({ kind: "ok", structured: { data: { matches: [] } } }), readDocument: async () => null } as never;
+  return { path, listViews: () => [], runView: async () => ({ kind: "ok", views: [], brokerDiagnostics: [], structured: null }), readDocument: async () => null } as never;
 }
 
-/** Action-context helper: the same shape the HTTP server passes through runAgent. */
+/** Action-context helper: the same shape AgentRuntime passes to the built-in tools. */
 function actionCtx(
   vaultPath: string,
   caps: readonly Capability[],
@@ -187,6 +206,7 @@ describe("buildAgentTools write provisioning", () => {
 const CONTRACT_MUTATION_TOOLS = [
   "settle_task",
   "resolve_question",
+  "complete_agent_work",
   "apply_proposal",
   "reject_proposal",
 ] as const;
@@ -201,6 +221,7 @@ describe("buildAgentTools contract-tool provisioning", () => {
     const names = Object.keys(tools);
     expect(names).toContain("capture_note");
     expect(names).toContain("list_proposals");
+    expect(names).toContain("list_agent_work");
     for (const name of CONTRACT_MUTATION_TOOLS) expect(names).toContain(name);
     expect(names).not.toContain("create_document");
     expect(names).not.toContain("edit_document");
@@ -216,11 +237,12 @@ describe("buildAgentTools contract-tool provisioning", () => {
     for (const name of CONTRACT_MUTATION_TOOLS) expect(names).not.toContain(name);
     expect(names).toContain("capture_note");
     expect(names).toContain("list_proposals"); // needs only `read`
+    expect(names).toContain("list_agent_work");
   });
 
   test("with no action context, no contract tools are provisioned (read tools only)", () => {
     const names = Object.keys(buildAgentTools(vaultAt("/tmp/x"), []));
-    expect(names.sort()).toEqual(["read_document", "search_vault", "todays_brief"]);
+    expect(names.sort()).toEqual(["read_document", "run_view"]);
   });
 
   test("author alone provisions the write tools but no contract tools", () => {
@@ -228,6 +250,7 @@ describe("buildAgentTools contract-tool provisioning", () => {
     expect(names).toContain("create_document");
     expect(names).not.toContain("capture_note");
     expect(names).not.toContain("list_proposals");
+    expect(names).not.toContain("list_agent_work");
     for (const name of CONTRACT_MUTATION_TOOLS) expect(names).not.toContain(name);
   });
 });
@@ -338,6 +361,44 @@ describe("assistant contract tools (invocation)", () => {
     expect(doc.schema).toBe("dome.proposals/v1");
     expect(doc.proposals).toEqual([]);
     expect(changes).toHaveLength(0); // read tool: never a change entry
+  });
+
+  test("complete_agent_work submits only evidence actually read during the turn", async () => {
+    const record = {
+      id: 7,
+      effect: { question: "Track it?", options: ["track", "ignore"], idempotencyKey: "k", sourceRefs: [] },
+      processorId: "p",
+      runId: "r",
+      adoptedCommit: "c1",
+      askedAt: "2026-07-06T00:00:00Z",
+      answeredAt: "2026-07-06T00:00:01Z",
+      answer: "track",
+      answeredBy: "agent",
+    };
+    const completions: Array<{ evidence: ReadonlyArray<{ path: string; commit: string }> }> = [];
+    const vault = {
+      ...(fakeVault() as Record<string, unknown>),
+      path: "/tmp/x",
+      completeAgentWork: async (input: { evidence: ReadonlyArray<{ path: string; commit: string }> }) => {
+        completions.push(input);
+        return { kind: "completed", record, handlers: null };
+      },
+    } as never;
+    const changes: AgentChange[] = [];
+    const citations: Citation[] = [];
+    const tools = buildAgentTools(vault, citations, actionCtx("/tmp/x", ["resolve"], changes));
+    await exec(tools, "read_document", { path: "wiki/x.md" });
+    const doc = JSON.parse(await exec(tools, "complete_agent_work", {
+      questionId: 7,
+      expectedRevision: "c1:r",
+      answer: "track",
+      reason: "The inspected page supports it.",
+    })) as { status: string };
+    expect(doc.status).toBe("completed");
+    expect(completions[0]?.evidence).toEqual([
+      expect.objectContaining({ path: "wiki/x.md", commit: "abc123" }),
+    ]);
+    expect(changes).toEqual([{ path: "question:7", kind: "resolve" }]);
   });
 
   test("apply_proposal / reject_proposal on unknown ids report not-found, no change entries", async () => {

@@ -9,6 +9,7 @@
 import type { AnswersDb } from "../../answers/db";
 import {
   recordQuestionAnswer,
+  type AgentAnswerContext,
   type QuestionAnsweredBy,
 } from "../../answers/question-answers";
 import type { ProjectionDb } from "../../projections/db";
@@ -24,6 +25,7 @@ export type AnswerQuestionDurablyOpts = {
   readonly id: number;
   readonly answer: string;
   readonly answeredBy: QuestionAnsweredBy;
+  readonly answerContext?: AgentAnswerContext;
   readonly now?: () => Date;
 };
 
@@ -46,7 +48,7 @@ export function answerQuestionDurably(
   }
 
   const answeredAt = (opts.now ?? ((): Date => new Date()))().toISOString();
-  recordQuestionAnswer(opts.answers, {
+  const durable = recordQuestionAnswer(opts.answers, {
     idempotencyKey: record.effect.idempotencyKey,
     answer: opts.answer,
     answeredAt,
@@ -55,7 +57,22 @@ export function answerQuestionDurably(
     processorId: record.processorId,
     adoptedCommit: record.adoptedCommit,
     answeredBy: opts.answeredBy,
+    ...(opts.answerContext !== undefined
+      ? { answerContext: opts.answerContext }
+      : {}),
   });
+  if (durable.kind === "existing") {
+    applyQuestionAnswer(opts.projection, {
+      idempotencyKey: record.effect.idempotencyKey,
+      answer: durable.record.answer,
+      answeredAt: durable.record.answeredAt,
+      answeredBy: durable.record.answeredBy,
+    });
+    const existing = getQuestionRecord(opts.projection, opts.id);
+    return existing === null
+      ? { kind: "not-found" }
+      : Object.freeze({ kind: "already-answered" as const, record: existing });
+  }
   applyQuestionAnswer(opts.projection, {
     idempotencyKey: record.effect.idempotencyKey,
     answer: opts.answer,

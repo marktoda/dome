@@ -58,15 +58,9 @@ Daily open-loop recency ranking must reflect *human* edit recency, not engine ch
 
 ## Staleness
 
-Staleness is **overdue ≥ 14 days, period.** A task is stale iff it carries a `📅 YYYY-MM-DD` due date that is at least `STALE_OVERDUE_DAYS` (14) days before today. There is no other staleness rule: an **undated task is never a settle-question candidate**, no matter how many dailies have carried it forward. Instead, an undated task ranks purely by recency in open-loop surfaces (carry-forward, `today`, `prep`, `agenda-with`) until it is dated or settled — see "Open-loop ranking" below.
+Task staleness is a view concern, not a second durable decision lifecycle. An overdue or old task remains a markdown task and may rank prominently in carry-forward, `today`, `prep`, or `agenda-with`; Dome does not duplicate it into a `QuestionEffect`. The owner settles it directly by block anchor through the settle operation below.
 
 The system previously derived an implicit dismissal signal from repeated same-item impressions across dailies (the "attention-discount" layer, memory-quality M4) and used it both to demote undated items in ranking and as an alternate staleness trigger. It quarantined in production for 13+ days with zero felt loss and was retired in full: the processor, its fact namespace, and both consumption sites (ranking, staleness). Design and rationale: [[cohesive/brainstorms/2026-07-02-pruning-pass-design]] §2.
-
-### `dome.daily.stale-task-warden`
-
-A schedule-driven (cron `0 6 * * *`, same as `create-daily`) garden processor, granted `read` + `question.ask`. For every open-loop item carrying a stamped `^block-anchor` and a `📅` due date at least 14 days overdue, it emits ONE owner question — idempotency key `dome.daily.settle-stale:<stableId>`, options close / defer / keep — capped at the 8 worst per run (most-overdue first; already-resolved questions never re-emit because the projection dedupes on idempotency key). It is **not** registered `execution.class: deterministic`: the overdue comparison reads `ctx.now()`, so output is a function of (snapshot, wall clock), not of the adopted tree alone. Unanchored tasks are skipped — the answer handler needs the anchor to locate the origin line; they become eligible once `stamp-block-id` anchors them.
-
-The deterministic `dome.daily.settle-stale-answer` handler applies the owner's disposition: **close** marks the origin line `[-]` (reconcile propagates), **defer** advances the `📅` due date forward by `DEFER_DAYS`, **keep** is a no-op (the resolved question suppresses recurrence — it will not re-emit for the same task). No model, no `graph.write` — `patch.auto` only. Design: [[cohesive/brainstorms/2026-06-15-daily-phase2]].
 
 ## The settle operation
 
@@ -74,13 +68,13 @@ Settling a task is a **decision**, not authoring — the same shape as resolving
 
 **Addressing.** The task is named by its `^block-anchor` (§"Block-anchor identity") — move-stable, so the same id settles the task wherever it currently lives. `performSettle` scans the vault's markdown for the line carrying the anchor; an anchor no line carries answers `{ status: "not-found" }` and lands no commit. A caller needs the anchor before it can settle a task: the `dome.daily.today/v1` payload's task rows carry it as the optional `blockId` field ([[wiki/concepts/surface-view-model]] §"Compatible widening") when the line is already anchored, and omit it otherwise — the PWA Brief panel's checkbox is live only on rows that carry one, so a not-yet-anchored task (one garden cascade behind `stamp-block-id`) stays decorative rather than firing a settle that would 404.
 
-**Dispositions** — the tri-state `settle-stale-answer` offers, generalized to a surface op:
+**Dispositions:**
 
 - **close** — set the origin line to `- [x]` (done) and, in the SAME commit, append `- <task text> ([[<source page>#^<block>|from]])` under today's daily `### Done today` section (created under `## Done` when absent — `## Done` is shared scaffold + human bullets, [[wiki/specs/daily-surface]] §"Block ownership"). Commit-or-nothing: one commit carries both edits, or none. Idempotent — an already-settled line is a no-op.
 - **defer** — rewrite (or insert) the `📅 YYYY-MM-DD` due token to `deferUntil` (required, `YYYY-MM-DD`; a defer without it answers `{ status: "invalid" }`). The task stays open; the origin marker and trailing `^anchor` are preserved.
-- **keep** — touch nothing, record nothing, **commit nothing**: `{ status: "settled" }` with no commit. It exists so surfaces can offer the same tri-state as the stale-settle question without a spurious write.
+- **keep** — touch nothing, record nothing, **commit nothing**: `{ status: "settled" }` with no commit.
 
-**Shared line mechanics, per-consumer semantics.** The find-by-anchor / flip-if-open / rewrite-`📅` transforms are pure and live once in `dome.daily`'s `task-disposition` module, imported by BOTH `performSettle` and the `dome.daily.settle-stale-answer` processor — so the surface and the processor can never diverge. The disposition **semantics** differ by consumer and stay with each: the processor's close CANCELS (`[-]`, reconcile propagates) an overdue task the owner disowned, whereas the surface's close COMPLETES (`[x]`) a task the owner finished and records it in Done-today. The processor keeps emitting `PatchEffect`s through the adoption loop; `performSettle` does the fs/git. The commit subject is `settle(<disposition>): <first 50 chars of task text>`.
+**Shared line mechanics.** The find-by-anchor / flip-if-open / rewrite-`📅` transforms are pure and live once in `dome.daily`'s `task-disposition` module. `performSettle` owns the remote operation and does the filesystem/git work. The commit subject is `settle(<disposition>): <first 50 chars of task text>`.
 
 ### Open-loop ranking
 
@@ -88,11 +82,11 @@ Carry-forward, `today`, `prep`, and `agenda-with` all rank open-loop items by **
 
 ## Wardens
 
-A **warden** is an LLM-backed garden processor (`execution.class: llm`, `phase: garden`, granted `model.invoke`). It is not a new primitive — it is the model-gated shape of the existing Processor concept. `dome.daily.stale-task-warden` (§"Staleness" above) is one; knowledge-integrity review is the other, and it rides the nightly `dome.agent.consolidate` agent rather than a standalone bundle.
+A **warden** is an LLM-backed garden processor (`execution.class: llm`, `phase: garden`, granted `model.invoke`). It is not a new primitive. Knowledge-integrity review rides the nightly `dome.agent.garden` processor rather than a standalone bundle.
 
-### Knowledge-integrity review folds into `dome.agent.consolidate`
+### Knowledge-integrity review folds into `dome.agent.garden`
 
-Knowledge-integrity review is a charter section of the nightly `dome.agent.consolidate` agent (the retired `dome.warden.integrity` bundle folded in here — one nightly tool-loop run rides consolidate's budget instead of a per-change structured warden). While consolidating, the agent judges each page for the four finding kinds — **historical-as-ongoing**, **contradiction**, **self-corroborating**, **inference-as-fact** — and emits each through its `flagIntegrity` tool, which deterministically produces a **`DiagnosticEffect`** (never a fact, never a knowledge patch). Severity is risk-mapped: high-risk findings → `warning`, everything else → `info`; each carries a stable `code` (`dome.agent.integrity.<kind>`) and a per-finding `stableId` so two findings on one page both survive dedup. The two noisiest classes (self-corroborating / inference-as-fact) are suppressed unless a same-page contradiction backs them, and low-confidence findings are skipped. It is the questions-as-decisions contract: findings you fix by editing, self-clearing via `resolveStaleDiagnostics` when the page is reconciled.
+Knowledge-integrity review is part of the selected semantic-gardening opportunity. The agent may emit **historical-as-ongoing**, **contradiction**, **self-corroborating**, or **inference-as-fact** through `flagIntegrity`, producing a transient `DiagnosticEffect`, never a fact. High-risk findings are warnings; lower-risk findings are info. Stable ids preserve multiple findings per page, and reconciliation clears stale findings.
 
 This holds [[wiki/invariants/MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS]]: a garden `model.invoke` processor is **not** re-run during projection rebuild (model calls are excluded from rebuild), so its judgment must stay transient — surfaced as `DiagnosticEffect`s, never a `FactEffect`.
 

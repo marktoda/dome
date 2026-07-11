@@ -121,6 +121,7 @@ const STATUS_JSON_KEYS = Object.freeze([
   "diagnostic_disposition_summary",
   "attention_diagnostic_disposition_summary",
   "questions",
+  "owner_attention",
   "outbox_pending",
   "outbox_failed",
   "quarantined",
@@ -352,7 +353,7 @@ describe("runStatus", () => {
           reasons: ["pending_proposals"],
           command: "dome proposals",
           description:
-            "1 proposals awaiting review — list with dome proposals, then decide each with dome apply <id> or dome reject <id>",
+            "Review proposal P1; 1 proposals awaiting review — list with dome proposals, then decide each with dome apply <id> or dome reject <id>",
         },
       ]),
     );
@@ -1639,7 +1640,6 @@ describe("runStatus", () => {
       "sync_needed",
       "pending_runs",
       "diagnostics",
-      "questions",
       "outbox_pending",
       "outbox_failed",
       "quarantined",
@@ -1655,7 +1655,6 @@ describe("runStatus", () => {
         reasons: [
           "pending_runs",
           "diagnostics",
-          "questions",
           "outbox_failed",
           "quarantined",
         ],

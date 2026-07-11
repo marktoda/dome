@@ -4,7 +4,7 @@ import type {
   ProcessorContext,
   ModelStepResult,
 } from "../../../src/core/processor";
-import type { PatchEffect, QuestionEffect, DiagnosticEffect } from "../../../src/core/effect";
+import type { PatchEffect, DiagnosticEffect } from "../../../src/core/effect";
 import { formatDate, localDateParts } from "../../../assets/extensions/dome.daily/processors/daily-paths";
 
 function makeCtx(opts: {
@@ -121,7 +121,7 @@ describe("dome.agent.ingest", () => {
     expect(patch.sourceRefs.length).toBeGreaterThan(0);
   });
 
-  test("emits a QuestionEffect when the agent asks the owner", async () => {
+  test("emits a source-backed diagnostic when the agent asks without a continuation", async () => {
     const ctx = makeCtx({
       files: { "inbox/raw/x.md": "Unclear claim." },
       changedPaths: ["inbox/raw/x.md"],
@@ -131,8 +131,10 @@ describe("dome.agent.ingest", () => {
       ],
     });
     const effects = await ingest.run(ctx);
-    const q = effects.find((e) => e.kind === "question") as QuestionEffect;
-    expect(q.question).toBe("true?");
+    const diagnostic = effects.find(
+      (e) => e.kind === "diagnostic" && e.code === "dome.agent.owner-input-needed",
+    ) as DiagnosticEffect;
+    expect(diagnostic.message).toBe("true?");
   });
 
   test("emits a truncation diagnostic when the loop hits its step budget", async () => {
@@ -335,7 +337,7 @@ describe("dome.agent.ingest", () => {
     );
   });
 
-  test("an oversize capture escalates to the owner instead of running the model", async () => {
+  test("an oversize capture emits an actionable diagnostic instead of an inert decision", async () => {
     const big = "x".repeat(100_001);
     const ctx = makeCtx({
       files: { "inbox/raw/big.md": big },
@@ -345,13 +347,11 @@ describe("dome.agent.ingest", () => {
       },
     });
     const effects = await ingest.run(ctx);
-    const q = effects.find((e) => e.kind === "question") as QuestionEffect;
-    expect(q).toBeDefined();
-    expect(q.idempotencyKey).toBe(
-      "dome.agent.ingest:oversize:inbox/raw/big.md",
-    );
-    expect(q.options).toEqual(["skip"]);
-    expect(q.metadata?.automationPolicy).toBe("owner-needed");
+    const diagnostic = effects.find(
+      (e) => e.kind === "diagnostic" && e.code === "dome.agent.ingest-source-too-large",
+    ) as DiagnosticEffect;
+    expect(diagnostic).toBeDefined();
+    expect(diagnostic.message).toContain("inbox/raw/big.md");
     expect(effects.some((e) => e.kind === "patch")).toBe(false);
   });
 

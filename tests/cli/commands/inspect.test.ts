@@ -83,11 +83,11 @@ describe("runInspect", () => {
     const agentBundle = bundles.find((row) => row.bundle === "dome.agent");
     expect(agentBundle).toEqual(
       expect.objectContaining({
-        processors: 13,
+        processors: 11,
         adoption: 2,
-        garden: 11,
-        view: 0,
-        model_processors: 4,
+        garden: 8,
+        view: 1,
+        model_processors: 3,
         model: "granted-no-provider",
       }),
     );
@@ -202,12 +202,11 @@ describe("runInspect", () => {
       readonly processor: string;
       readonly model: string;
     }>;
-    expect(modelProcessors.length).toBe(4);
+    expect(modelProcessors.length).toBe(3);
     expect(modelProcessors.map((row) => row.processor).sort()).toEqual([
       "dome.agent.brief",
-      "dome.agent.consolidate",
+      "dome.agent.garden",
       "dome.agent.ingest",
-      "dome.agent.sweep",
     ]);
     expect(modelProcessors.every((row) => row.model !== "none")).toBe(true);
   });
@@ -457,10 +456,11 @@ describe("runInspect", () => {
         loaded: false,
         inventory: "manifest",
         version: "0.5.0",
-        processors: 13,
+        processors: 11,
         adoption: 2,
-        garden: 11,
-        model_processors: 4,
+        garden: 8,
+        view: 1,
+        model_processors: 3,
         model: "disabled-no-provider",
       }),
     );
@@ -520,7 +520,7 @@ describe("runInspect", () => {
         bundle: "dome.agent",
         status: "disabled",
         loaded: false,
-        model_processors: 4,
+        model_processors: 3,
         model: "disabled-no-provider",
       }),
     ]);
@@ -559,7 +559,7 @@ describe("runInspect", () => {
       expect.objectContaining({
         status: "enabled",
         loaded: true,
-        model_processors: 4,
+        model_processors: 3,
         model: "granted-no-provider",
       }),
     );
@@ -1527,4 +1527,3 @@ describe("effectHashCount", () => {
     expect(effectHashCount(["a", "b", "…+x more effect hashes"])).toBe(3);
   });
 });
-

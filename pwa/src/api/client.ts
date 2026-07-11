@@ -1,4 +1,4 @@
-import type { AgentResult, CaptureResult, Recents, ResolveResult, SettleDisposition, SettleResult, StreamEvent, Today, Transcript } from "./types";
+import type { AgentSession, ApplyProposalResult, CaptureResult, Recents, RejectProposalResult, ResolveResult, SettleDisposition, SettleResult, StreamEvent, Today, Transcript } from "./types";
 
 // Parse a buffer of SSE text into complete events + the leftover partial frame.
 export function parseSseChunk(buffer: string): { events: StreamEvent[]; rest: string } {
@@ -20,6 +20,8 @@ export function parseSseChunk(buffer: string): { events: StreamEvent[]; rest: st
 }
 
 export class DomeClient {
+  private sessionPromise: Promise<string> | null = null;
+
   constructor(private readonly token: string, private readonly baseUrl: string = "") {}
 
   private authHeaders(json: boolean): Record<string, string> {
@@ -57,6 +59,22 @@ export class DomeClient {
     return this.parse<ResolveResult>(await fetch(new Request(`${this.baseUrl}/resolve`, { method: "POST", headers: this.authHeaders(true), body: JSON.stringify({ id, value }) })));
   }
 
+  async applyProposal(id: number): Promise<ApplyProposalResult> {
+    return this.parse<ApplyProposalResult>(await fetch(new Request(`${this.baseUrl}/apply`, {
+      method: "POST",
+      headers: this.authHeaders(true),
+      body: JSON.stringify({ id }),
+    })));
+  }
+
+  async rejectProposal(id: number): Promise<RejectProposalResult> {
+    return this.parse<RejectProposalResult>(await fetch(new Request(`${this.baseUrl}/reject`, {
+      method: "POST",
+      headers: this.authHeaders(true),
+      body: JSON.stringify({ id }),
+    })));
+  }
+
   async settle(blockId: string, disposition: SettleDisposition, deferUntil?: string): Promise<SettleResult> {
     const body = { blockId, disposition, ...(deferUntil !== undefined ? { deferUntil } : {}) };
     return this.parse<SettleResult>(await fetch(new Request(`${this.baseUrl}/settle`, { method: "POST", headers: this.authHeaders(true), body: JSON.stringify(body) })));
@@ -66,15 +84,12 @@ export class DomeClient {
     return this.parse<Transcript>(await fetch(new Request(`${this.baseUrl}/transcribe`, { method: "POST", headers: { ...this.authHeaders(false), "content-type": audio.type || "audio/webm" }, body: audio })));
   }
 
-  async agent(question: string): Promise<AgentResult> {
-    return this.parse<AgentResult>(await fetch(new Request(`${this.baseUrl}/agent`, { method: "POST", headers: this.authHeaders(true), body: JSON.stringify({ question }) })));
-  }
-
   async agentStream(question: string, onEvent: (e: StreamEvent) => void, signal?: AbortSignal): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/agent/stream`, {
+    const sessionId = await this.sessionId();
+    const res = await fetch(`${this.baseUrl}/sessions/${encodeURIComponent(sessionId)}/messages`, {
       method: "POST",
       headers: { ...this.authHeaders(true), accept: "text/event-stream" },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ message: question }),
       ...(signal !== undefined ? { signal } : {}),
     });
     if (!res.ok || res.body === null) {
@@ -92,5 +107,21 @@ export class DomeClient {
       buffer = rest;
       for (const e of events) onEvent(e);
     }
+  }
+
+  private sessionId(): Promise<string> {
+    if (this.sessionPromise === null) {
+      this.sessionPromise = fetch(`${this.baseUrl}/sessions`, {
+        method: "POST",
+        headers: this.authHeaders(false),
+      })
+        .then((res) => this.parse<AgentSession>(res))
+        .then((session) => session.sessionId)
+        .catch((error) => {
+          this.sessionPromise = null;
+          throw error;
+        });
+    }
+    return this.sessionPromise;
   }
 }

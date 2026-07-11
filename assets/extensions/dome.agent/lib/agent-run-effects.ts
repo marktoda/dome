@@ -1,7 +1,8 @@
 // Shared run-state → effects epilogue for dome.agent's agent-loop processors.
 //
 // Every agent processor ends the same way: map the AgentRunState accumulator
-// into one cumulative PatchEffect, surface the agent's questions, and warn
+// into one cumulative PatchEffect, surface unresolved agent judgment as
+// self-clearing diagnostics, and warn
 // when the step budget truncated the run. The processors differ only in
 // *policy* — ingest applies partial work, consolidate is atomic with a
 // per-run changed-file cap, brief composes a custom patch and reuses only
@@ -12,7 +13,6 @@
 import {
   diagnosticEffect,
   patchEffect,
-  questionEffect,
   type Effect,
   type FileChangeInput,
 } from "../../../../src/core/effect";
@@ -37,15 +37,21 @@ export function agentChanges(
   );
 }
 
-/** One QuestionEffect per accumulated askOwner question. */
-export function agentQuestionEffects(
+/**
+ * `askOwner` has no resumable answer-handler continuation in the generic
+ * agent loop. Persisting it as a QuestionEffect therefore created inert owner
+ * chores whose answers affected nothing. Keep the uncertainty visible as a
+ * source-backed diagnostic until a processor provides a real continuation.
+ */
+export function agentEscalationEffects(
   state: AgentRunState,
   sourceRefs: ReadonlyArray<SourceRef>,
 ): ReadonlyArray<Effect> {
   return state.questions.map((q) =>
-    questionEffect({
-      question: q.question,
-      idempotencyKey: q.idempotencyKey,
+    diagnosticEffect({
+      severity: "warning",
+      code: "dome.agent.owner-input-needed",
+      message: q.question,
       sourceRefs,
     }),
   );
@@ -122,13 +128,13 @@ function splitProposalChanges(
 
 export type AgentRunCap = {
   readonly maxChangedFiles: number;
-  /** Diagnostic code for an overreaching run (e.g. `dome.agent.consolidate-overreach`). */
+  /** Diagnostic code for an overreaching run. */
   readonly code: string;
   readonly message: (changedFiles: number) => string;
 };
 
 export type AgentRunNoOp = {
-  /** Diagnostic code (e.g. `dome.agent.consolidate-no-op`). */
+  /** Diagnostic code for a no-op run. */
   readonly code: string;
   /** Receives the (truncated) final text excerpt — the only evidence of what the model decided. */
   readonly message: (finalTextExcerpt: string) => string;
@@ -181,6 +187,13 @@ export function finishAgentRun(opts: {
   readonly stopReason: AgentRunResult["stopReason"];
   readonly sourceRefs: ReadonlyArray<SourceRef>;
   readonly patchReason: string;
+  /**
+   * How ordinary accumulated edits leave the agent module. Most agent loops
+   * are mechanical and retain the historical auto default. Semantic
+   * gardening passes `propose`: judgment-heavy vault rewrites then enter the
+   * same owner-review lifecycle as every other proposed patch.
+   */
+  readonly patchMode?: "auto" | "propose";
   /**
    * The model's final message, when the run produced one. It becomes the
    * patch narrative: the PatchEffect's `reason` rides the engine commit body
@@ -246,7 +259,7 @@ export function finishAgentRun(opts: {
   } else if (changes.length > 0) {
     effects.push(
       patchEffect({
-        mode: "auto",
+        mode: opts.patchMode ?? "auto",
         changes,
         reason: patchNarrative(opts.patchReason, opts.finalText),
         sourceRefs: opts.sourceRefs,
@@ -271,7 +284,7 @@ export function finishAgentRun(opts: {
     );
   }
 
-  effects.push(...agentQuestionEffects(opts.state, opts.sourceRefs));
+  effects.push(...agentEscalationEffects(opts.state, opts.sourceRefs));
   const truncated = agentTruncatedEffect({
     stopReason: opts.stopReason,
     message: opts.truncatedMessage,

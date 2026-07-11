@@ -242,20 +242,36 @@ export type QuestionAutomationPolicy =
   | "model-safe"
   | "owner-needed";
 
+/**
+ * Ranking hints for a question that genuinely requires owner attention.
+ * These describe the consequence of delaying the decision, not the safety of
+ * automating its answer (`risk`) and not the producer's confidence in its
+ * framing (`confidence`). Owner-attention consumers use the hints as an
+ * explainable lexicographic rank; they never treat them as an opaque score.
+ */
+export type QuestionAttention = {
+  readonly consequence: "low" | "medium" | "high";
+  readonly urgency: "none" | "soon" | "now";
+  readonly reason?: string;
+  readonly dueAt?: string;
+};
+
 export type QuestionMetadata = {
+  /** Whether an answer dispatches a processor transition or is terminal acknowledgment. */
+  readonly resolutionMode?: "dispatch" | "acknowledge";
   readonly risk?: QuestionRisk;
   readonly confidence?: number;
   readonly recommendedAnswer?: string;
   readonly automationPolicy?: QuestionAutomationPolicy;
   readonly ownerNeededReason?: string;
+  readonly attention?: QuestionAttention;
   /**
    * Round-trip context for answer handlers (question → answer-triggered
    * processor): the destination page the question is about, the material
    * document that prompted it, and the emitting processor's proposed content
    * (caller-capped). Advisory for surfaces; load-bearing only for the
-   * emitting bundle's own answer handler (e.g. dome.agent.sweep →
-   * dome.agent.sweep-answer reads `proposedSection` to land an owner-approved
-   * integration deterministically).
+   * emitting bundle's own answer handler, which may read `proposedSection`
+   * to land owner-approved content deterministically.
    */
   readonly destination?: string;
   readonly material?: string;
@@ -612,12 +628,22 @@ export const QuestionEffectSchema = z
     metadata: z
       .object({
         risk: z.enum(["low", "medium", "high"]).optional(),
+        resolutionMode: z.enum(["dispatch", "acknowledge"]).optional(),
         confidence: z.number().min(0).max(1).optional(),
         recommendedAnswer: z.string().min(1).optional(),
         automationPolicy: z
           .enum(["agent-safe", "model-safe", "owner-needed"])
           .optional(),
         ownerNeededReason: z.string().min(1).optional(),
+        attention: z
+          .object({
+            consequence: z.enum(["low", "medium", "high"]),
+            urgency: z.enum(["none", "soon", "now"]),
+            reason: z.string().min(1).optional(),
+            dueAt: z.string().datetime().optional(),
+          })
+          .strict()
+          .optional(),
         destination: z.string().min(1).optional(),
         material: z.string().min(1).optional(),
         proposedSection: z.string().min(1).max(4000).optional(),

@@ -805,7 +805,6 @@ async function runOperationalWorkForAdoptedUnlocked(opts: {
             opts.runtime.config.engine.externalHandlerTimeoutMs,
         }
       : {}),
-    questionAutoResolve: opts.runtime.config.engine.autoResolveQuestions,
     // Subject-liveness expiry exempts configured-but-disabled bundles'
     // processors (the quarantine-GC posture: registry is authoritative only
     // for enabled bundles).

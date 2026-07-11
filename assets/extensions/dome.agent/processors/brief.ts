@@ -46,7 +46,6 @@ import { dailyPath, dailyPathSettings, formatDate, localDateParts, previousLocal
 import {
   AGENDA_BLOCK as DAILY_AGENDA_BLOCK,
   DAILY_OWNER,
-  INTEGRATED_BLOCK as DAILY_INTEGRATED_BLOCK,
   QUESTIONS_BLOCK as DAILY_QUESTIONS_BLOCK,
   SOURCES_BLOCK as DAILY_SOURCES_BLOCK,
 } from "../../dome.daily/processors/daily-types";
@@ -59,7 +58,7 @@ import {
 
 import { runAgentLoop, type AgentRunState } from "../lib/agent-loop";
 import {
-  agentQuestionEffects,
+  agentEscalationEffects,
   agentTruncatedEffect,
 } from "../lib/agent-run-effects";
 import { BRIEF_CHARTER } from "../lib/brief-charter";
@@ -87,8 +86,6 @@ import {
   type CalendarMeeting,
   type SlackDigest,
 } from "../lib/brief-shared";
-import { parseSweepLedger, type SweepRun } from "../../dome.daily/processors/sweep-ledger";
-import { sweepLedgerPath } from "./sweep";
 import { makeBriefTools } from "../lib/brief-tools";
 import {
   appendCapturedTaskLines,
@@ -146,26 +143,7 @@ const brief = defineProcessorImplementation({
     const slack =
       slackContent === null ? null : parseSlackDigest(slackContent);
 
-    // Sweep ledger: read the advisory ledger for the compose-record's `ledger`
-    // fingerprint input — today's run section is a material input to the brief
-    // (its rows feed compose-blocks' integrated digest, so a late sweep-ledger
-    // section landing should re-trigger the brief). The ledger path is resolved
-    // via the same resolver as the sweep processor (no duplication). The brief
-    // fires at 05:30 the morning AFTER the 03:00 sweep; both run on the same
-    // calendar date (today), so the brief looks for a run section dated `today`.
-    const ledgerPath = sweepLedgerPath(ctx.extensionConfig).path;
-    const ledgerContent = await ctx.snapshot.readFile(ledgerPath);
-    const sweepLedger =
-      ledgerContent === null ? null : parseSweepLedger(ledgerContent);
     const todayDateStr = formatDate(today);
-    // Merge ALL today-dated run sections (a same-day re-sweep appends a second
-    // ## Run <today> section). The canonical today-section slice is the fresh
-    // parse of every today-dated run's rows, serialized deterministically —
-    // hashing the parsed rows (not the raw byte slice) makes the fingerprint
-    // robust against whitespace/ordering-of-runs drift while still changing
-    // when a row's material/destination/disposition changes. `null` (→ "—")
-    // when there is no today-dated run section at all.
-    const todayLedgerSlice = todayLedgerSectionText(sweepLedger?.runs ?? [], todayDateStr);
 
     const sourceRefs = briefSourceRefs({
       ctx,
@@ -196,7 +174,6 @@ const brief = defineProcessorImplementation({
     const current: BriefComposeRecord["inputs"] = {
       calendar: inputFingerprint(calendarContent),
       slack: inputFingerprint(slackContent),
-      ledger: inputFingerprint(todayLedgerSlice),
       yesterday: inputFingerprint(yesterdayContent),
     };
     const composeRecord =
@@ -386,6 +363,7 @@ const brief = defineProcessorImplementation({
           options: ["retried", "skip-today"],
           idempotencyKey: `dome.agent.brief-failed:${todayDate}`,
           metadata: {
+            resolutionMode: "acknowledge",
             automationPolicy: "agent-safe",
             recommendedAnswer: "retried",
           },
@@ -578,12 +556,13 @@ const brief = defineProcessorImplementation({
       );
     }
 
-    effects.push(...agentQuestionEffects(state, sourceRefs));
+    effects.push(...agentEscalationEffects(state, sourceRefs));
     for (const line of ungrounded) {
       effects.push(
-        questionEffect({
-          question: `Morning brief dropped an ungrounded item: "${line}". Add a source for it or settle it by hand.`,
-          idempotencyKey: `dome.agent.brief:ungrounded:${formatDate(today)}:${line}`,
+        diagnosticEffect({
+          severity: "warning",
+          code: "dome.agent.brief-ungrounded-item",
+          message: `Morning brief dropped an ungrounded item: "${line}". Add a source for it or settle it by hand.`,
           sourceRefs,
         }),
       );
@@ -768,31 +747,7 @@ function taskTurn(input: {
   return lines.join("\n");
 }
 
-/**
- * Canonical text of today's sweep-ledger section for the compose-record's
- * `ledger` fingerprint. Serializes every today-dated run's settlement rows
- * (a same-day re-sweep appends a second `## Run <today>` section) as one
- * deterministic string per row. Returns `null` — fingerprinted as "—" — when
- * there is no today-dated run section at all. Hashing the parsed rows rather
- * than a raw byte slice keeps the fingerprint stable under whitespace drift
- * while still changing when a row's material/destination/disposition changes.
- */
-function todayLedgerSectionText(
-  runs: ReadonlyArray<SweepRun>,
-  todayDateStr: string,
-): string | null {
-  const todayRuns = runs.filter((r) => r.date === todayDateStr);
-  if (todayRuns.length === 0) return null;
-  return todayRuns
-    .flatMap((r) =>
-      r.rows.map(
-        (row) => `${row.material} -> ${row.destination} :: ${row.disposition}`,
-      ),
-    )
-    .join("\n");
-}
-
-/** All four per-input fingerprints equal → the daily already reflects current inputs. */
+/** All per-input fingerprints equal → the daily already reflects current inputs. */
 function composeInputsMatch(
   a: BriefComposeRecord["inputs"],
   b: BriefComposeRecord["inputs"],
@@ -800,14 +755,13 @@ function composeInputsMatch(
   return (
     a.calendar === b.calendar &&
     a.slack === b.slack &&
-    a.ledger === b.ledger &&
     a.yesterday === b.yesterday
   );
 }
 
 /**
  * The anchor for the compose-record block: the FIRST PRESENT of compose-blocks'
- * Start-Here blocks (sources → integrated → questions) then the brief's own
+ * Start-Here blocks (sources → questions) then the brief's own
  * yesterday block, so the record renders BELOW whichever is last on the page
  * ("rendered last" — [[wiki/specs/autonomous-agents]] §"The brief blocks").
  * `undefined` (none present) falls the splice back to a heading-insert under
@@ -819,7 +773,6 @@ function composeRecordAnchor(
 ): { readonly owner: string; readonly block: string } | undefined {
   const candidates: ReadonlyArray<{ readonly owner: string; readonly block: string }> = [
     { owner: DAILY_OWNER, block: DAILY_SOURCES_BLOCK },
-    { owner: DAILY_OWNER, block: DAILY_INTEGRATED_BLOCK },
     { owner: DAILY_OWNER, block: DAILY_QUESTIONS_BLOCK },
     { owner: YESTERDAY_BLOCK.owner, block: YESTERDAY_BLOCK.block },
   ];

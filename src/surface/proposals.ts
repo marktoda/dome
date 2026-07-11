@@ -66,6 +66,7 @@ export type ProposalView = {
   readonly paths: ReadonlyArray<string>;
   readonly createdAt: string;
   readonly status: ProposalStatus;
+  readonly sourceRefs: ReadonlyArray<import("../core/source-ref").SourceRef>;
   /**
    * true when any change's path in the working tree no longer matches the
    * `baseContents` recorded at enqueue time. A delete whose working file is
@@ -434,6 +435,7 @@ function toProposalView(vaultPath: string, row: PendingProposalRow): ProposalVie
     paths: Object.freeze(row.changes.map((c) => c.path)),
     createdAt: row.createdAt,
     status: row.status,
+    sourceRefs: Object.freeze([...row.sourceRefs]),
     stale,
     diffStat: Object.freeze(diffStat),
   });

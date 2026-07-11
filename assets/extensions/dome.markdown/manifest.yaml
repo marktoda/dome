@@ -210,7 +210,7 @@ processors:
         paths: ["**/*.md"]
       # The archive-move never applies inline — it lands in proposals.db for
       # `dome apply` (stock-gardening phase 1, Task 7), same posture as
-      # dome.agent.consolidate's proposeSplit patch: a SEPARATE capability
+      # dome.agent.garden's semantic proposals: a SEPARATE capability
       # from patch.auto, and ManifestGrantEntry's kind enum ("read" |
       # "patch.auto" | "graph.write") has no patch.propose slot, so this
       # relies on the general kind-level `capability.grant-missing` doctor

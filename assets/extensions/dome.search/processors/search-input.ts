@@ -10,6 +10,7 @@
 // same `question`/`options`/`metadata` fields, so the body is structural.
 
 import type { QuestionMetadata } from "../../../../src/core/effect";
+export { normalizedTokens } from "../../../../src/recall/query-analysis";
 
 /**
  * Unwrap the command-input envelope to the args record. The CLI passes either
@@ -78,19 +79,4 @@ export function questionSearchText(question: QuestionSearchRow): string {
     question.metadata?.recommendedAnswer ?? "",
     question.metadata?.ownerNeededReason ?? "",
   ].join(" ");
-}
-
-/**
- * Tokenize free text for topic matching: lowercase, split on non-alphanumeric
- * runs, trim, drop empties, and freeze. Shared by the topic-relevance and
- * recall surfaces so both project text into the same token vocabulary.
- */
-export function normalizedTokens(value: string): ReadonlyArray<string> {
-  return Object.freeze(
-    value
-      .toLowerCase()
-      .split(/[^a-z0-9]+/g)
-      .map((token) => token.trim())
-      .filter((token) => token.length > 0),
-  );
 }

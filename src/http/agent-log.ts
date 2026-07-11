@@ -1,6 +1,6 @@
 // src/http/agent-log.ts
 //
-// Structured per-/agent request log. One JSON line per request, appended to a
+// Structured per-agent-turn log. One JSON line per request, appended to a
 // configurable file. When no path is configured the sink is a no-op and has
 // zero runtime cost. The sink MUST NEVER throw into the request path — any
 // write error is caught and logged to stderr, not propagated.
@@ -15,7 +15,7 @@ import { appendFileSync } from "node:fs";
 
 export type AgentLogEntry = {
   readonly ts: string;
-  readonly route: "/agent" | "/agent/stream";
+  readonly route: "/sessions/:id/messages";
   readonly question: string;
   readonly capabilities: ReadonlyArray<string>;
   readonly authorEnabled: boolean;

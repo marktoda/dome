@@ -60,7 +60,6 @@ Cycles are permitted *within* a layer (e.g. `apply-effect` ↔ `diagnostics` in 
 | `proposal-expiry` | `operational` | Subject-liveness expiry — auto-rejects PENDING garden proposals whose owning processor is retired |
 | `quarantine-store` | `operational` | Processor quarantine state store |
 | `question-answer-recording` | `operational` | Durable QuestionEffect answer writes |
-| `question-auto-resolution` | `operational` | Opt-in background resolution for low-risk questions |
 | `question-expiry` | `operational` | Subject-liveness expiry — releases OPEN questions whose subject processor is retired |
 | `questions-changed` | `operational` | Dispatch garden-phase `questions.changed` subscribers after the open-question set changes |
 | `store-changed` | `operational` | Dispatch garden-phase `outbox.changed` / `quarantine.changed` subscribers after a store's failure set changes |

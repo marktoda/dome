@@ -87,7 +87,7 @@ scenario(
         [PROJECT_PATH]: projectPage(),
         // An ambiguous wikilink raises dome.markdown.ambiguous-wikilink's
         // question — the raise+resolve beat this acceptance loop exercises
-        // (duplicate-detection retired; dedup is dome.agent.consolidate's job).
+        // (duplicate detection is compiled by dome.agent.garden).
         "wiki/page.md":
           "# Page\n\nWorking with [[wiki/entities/grae-danco#Notes|Grace]].\n",
         "wiki/entities/grace-danco.md": "# Grace Danco\n",
@@ -274,7 +274,6 @@ extensions:
         - "notes/*.md"
         - "sources/calendar/*.md"
         - "sources/slack/*.md"
-        - "meta/sweep-ledger.md"
       patch.auto: ["wiki/**/*.md", "notes/*.md"]
       graph.write: ["dome.daily.*"]
       question.ask: true

@@ -87,6 +87,7 @@ const taskIndex = defineProcessorImplementation({
               text: ambiguous.text,
             }),
             metadata: {
+              resolutionMode: "dispatch",
               risk: "low",
               confidence: 0.65,
               recommendedAnswer: "track",

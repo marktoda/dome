@@ -1,12 +1,11 @@
 // assets/extensions/dome.daily/processors/edition-blocks.ts
 //
 // The compiled-daily blocks (D6/compiled-daily): deterministic renderers for
-// the "To decide" / agenda / integrated / sources blocks that
+// the "To decide" / agenda / sources blocks that
 // `dome.daily.compose-blocks` writes at 05:25 (and on `questions.changed` +
-// source-file + sweep-ledger signals), plus the generic replace-or-insert
+// source-file signals), plus the generic replace-or-insert
 // splice they all share. Normative at [[wiki/specs/daily-surface]] §"Block
-// ownership" (the `dome.daily:questions` / `:agenda` / `:integrated` /
-// `:sources` rows).
+// ownership" (the `dome.daily:questions` / `:agenda` / `:sources` rows).
 //
 // Every renderer here is pure string/data work — plain `-` bullets only,
 // never `- [ ]` checkboxes (the task extractors would re-ingest them as new
@@ -14,7 +13,6 @@
 // `src/core/generated-block` — the only sanctioned marker implementation
 // (see [[wiki/linters/generated-block-splice-guard]]).
 
-import { compareStrings } from "../../../../src/core/compare";
 import {
   findGeneratedBlock,
   replaceGeneratedBlock,
@@ -31,12 +29,10 @@ import type { CalendarMeeting } from "./calendar-day";
 import { escapeRegExp } from "./daily-paths";
 import {
   AGENDA_MARKERS,
-  INTEGRATED_MARKERS,
-  PROPOSALS_MARKERS,
   QUESTIONS_MARKERS,
   SOURCES_MARKERS,
 } from "./daily-types";
-import type { SweepSettlement } from "./sweep-ledger";
+import type { OwnerAttentionItem } from "../../../../src/attention/attention";
 
 /**
  * A question ready to render into the "To decide" block. Callers (the
@@ -54,9 +50,6 @@ export type EditionQuestion = {
   readonly recommendedAnswer: string | null;
   readonly askedAt: string;
 };
-
-/** Top N open questions rendered before the `+N more` tail. */
-export const MAX_EDITION_QUESTIONS = 3;
 
 /**
  * Map a durable operational question row to the plain `EditionQuestion` shape
@@ -167,60 +160,6 @@ export function questionBullet(q: EditionQuestion): string {
 }
 
 /**
- * Render the "To decide" generated block: owner-needed questions first, then
- * oldest `askedAt` (within and across the two groups), capped at
- * `MAX_EDITION_QUESTIONS` with a `+N more — \`dome check\`` tail. Plain `-`
- * bullets — never `- [ ]` checkboxes. `null` when there are no open
- * questions (resolving the last question cleans the page — the block is
- * removed entirely, not rendered empty).
- *
- * `opts` is the aging-escalation seam (Task 10): when both `nowIso` and
- * (optionally) `agingDays` are given, questions asked `agingDays` or more
- * ago (`partitionQuestionsByAge`, default `DEFAULT_QUESTION_AGING_DAYS`) are
- * excluded from the fresh list — and from its cap/tail count — and folded
- * into one summary line appended before the end marker instead:
- * `- 🕰 N aging decision(s) — weekly review (\`dome check --decisions\`)`.
- * When `opts` is absent (or `nowIso` is absent — this renderer is pure and
- * has no clock of its own to fall back to), every question is treated as
- * fresh: exactly today's behavior, so existing callers/tests are unaffected.
- */
-export function questionsSection(
-  questions: ReadonlyArray<EditionQuestion>,
-  opts?: { readonly agingDays?: number; readonly nowIso?: string },
-): string | null {
-  if (questions.length === 0) return null;
-  const { fresh, aging } =
-    opts?.nowIso === undefined
-      ? { fresh: questions, aging: [] as ReadonlyArray<EditionQuestion> }
-      : partitionQuestionsByAge(questions, {
-          agingDays: opts.agingDays ?? DEFAULT_QUESTION_AGING_DAYS,
-          nowIso: opts.nowIso,
-        });
-  const sorted = [...fresh].sort((a, b) => {
-    const aOwnerNeeded = a.automationPolicy === "owner-needed" ? 0 : 1;
-    const bOwnerNeeded = b.automationPolicy === "owner-needed" ? 0 : 1;
-    if (aOwnerNeeded !== bOwnerNeeded) return aOwnerNeeded - bOwnerNeeded;
-    return compareStrings(a.askedAt, b.askedAt);
-  });
-  const shown = sorted.slice(0, MAX_EDITION_QUESTIONS);
-  const lines = [
-    QUESTIONS_MARKERS.start,
-    "### To decide",
-    ...shown.map(questionBullet),
-  ];
-  if (sorted.length > shown.length) {
-    lines.push(`- +${sorted.length - shown.length} more — \`dome check\``);
-  }
-  if (aging.length > 0) {
-    lines.push(
-      `- 🕰 ${aging.length} aging decision(s) — weekly review (\`dome check --decisions\`)`,
-    );
-  }
-  lines.push(QUESTIONS_MARKERS.end);
-  return lines.join("\n");
-}
-
-/**
  * A pending garden proposal ready to render into the "To review" block.
  * Callers (the compose-blocks processor) derive `pathCount` from the durable
  * `OperationalProposalRow.paths` (`paths.length`) — this module takes the
@@ -234,37 +173,55 @@ export type EditionProposal = {
   readonly pathCount: number;
 };
 
-/** Top N pending proposals rendered before the `+N more` tail. */
-export const MAX_EDITION_PROPOSALS = 3;
-
-function proposalBullet(p: EditionProposal): string {
+export function proposalBullet(p: EditionProposal): string {
   const fileWord = p.pathCount === 1 ? "file" : "files";
   return `- P${p.id} (${p.processorId}): ${neutralizeWikilinks(p.reason)} — ${p.pathCount} ${fileWord} — apply: \`dome apply ${p.id}\``;
 }
 
+export type EditionAttentionItem =
+  | { readonly kind: "decision"; readonly item: EditionQuestion }
+  | { readonly kind: "review"; readonly item: EditionProposal };
+
 /**
- * Render the "To review" generated block: pending garden proposals, oldest
- * first (callers pre-sort by `createdAt` ascending — this renderer trusts
- * the given order), capped at `MAX_EDITION_PROPOSALS` with a
- * `+N more — \`dome proposals\`` tail. Plain `-` bullets — never `- [ ]`
- * checkboxes. `null` when there are no pending proposals (the block is
- * removed entirely, not rendered empty).
+ * The single compiled owner budget. Questions and proposal reviews compete in
+ * the canonical attention order before rendering; plugin/domain categories do
+ * not receive independent caps. `backlogCount` is the quiet tail outside the
+ * immediate budget, including aging requests.
  */
-export function proposalsSection(
-  proposals: ReadonlyArray<EditionProposal>,
+export function attentionSection(
+  items: ReadonlyArray<EditionAttentionItem>,
+  backlogCount: number,
 ): string | null {
-  if (proposals.length === 0) return null;
-  const shown = proposals.slice(0, MAX_EDITION_PROPOSALS);
-  const lines = [
-    PROPOSALS_MARKERS.start,
-    "### To review",
-    ...shown.map(proposalBullet),
-  ];
-  if (proposals.length > shown.length) {
-    lines.push(`- +${proposals.length - shown.length} more — \`dome proposals\``);
+  if (items.length === 0 && backlogCount === 0) return null;
+  const lines = [QUESTIONS_MARKERS.start, "### Dome needs you"];
+  for (const item of items) {
+    lines.push(
+      item.kind === "decision"
+        ? questionBullet(item.item)
+        : proposalBullet(item.item),
+    );
   }
-  lines.push(PROPOSALS_MARKERS.end);
+  if (backlogCount > 0) {
+    lines.push(
+      `- +${backlogCount} in owner backlog — \`dome check --decisions\``,
+    );
+  }
+  lines.push(QUESTIONS_MARKERS.end);
   return lines.join("\n");
+}
+
+/** Map a canonical attention item to the daily renderer's plain wire shape. */
+export function toEditionAttention(
+  item: OwnerAttentionItem,
+  questionsById: ReadonlyMap<number, EditionQuestion>,
+  proposalsById: ReadonlyMap<number, EditionProposal>,
+): EditionAttentionItem | null {
+  if (item.kind === "decision") {
+    const question = questionsById.get(item.action.questionId);
+    return question === undefined ? null : Object.freeze({ kind: "decision", item: question });
+  }
+  const proposal = proposalsById.get(item.action.proposalId);
+  return proposal === undefined ? null : Object.freeze({ kind: "review", item: proposal });
 }
 
 function agendaBullet(meeting: CalendarMeeting): string {
@@ -289,44 +246,6 @@ export function agendaSection(
     AGENDA_MARKERS.start,
     ...meetings.map(agendaBullet),
     AGENDA_MARKERS.end,
-  ];
-  return lines.join("\n");
-}
-
-/**
- * Render the "Integrated Overnight" generated block from the sweep ledger
- * rows for today's run. Moved+adapted verbatim from the brief's
- * `integratedBriefSection` ([[wiki/specs/sweep]] §"Brief digest block") —
- * same bullet shapes, wrapped in the `dome.daily` markers instead of
- * `dome.agent.brief`'s. Rows rendered:
- *   - `integrated` → `- [[<destination>]] ← [[<material>]]`
- *   - `questioned` → `- ⚠ pending your answer: [[<destination>]] ← [[<material>]]`
- *   - `no-op` / `failed` → omitted (signal, not log)
- *   - `escalated` → omitted (its finding already renders as a diagnostic;
- *     a second bullet would double-surface)
- *
- * `null` when rows is empty or nothing is renderable.
- */
-export function integratedSection(
-  rows: ReadonlyArray<SweepSettlement>,
-): string | null {
-  const bullets: string[] = [];
-  for (const row of rows) {
-    if (row.disposition === "integrated") {
-      bullets.push(`- [[${row.destination}]] ← [[${row.material}]]`);
-    } else if (row.disposition === "questioned") {
-      bullets.push(
-        `- ⚠ pending your answer: [[${row.destination}]] ← [[${row.material}]]`,
-      );
-    }
-    // no-op, failed, escalated: omitted (see docstring above).
-  }
-  if (bullets.length === 0) return null;
-  const lines = [
-    INTEGRATED_MARKERS.start,
-    "### Integrated Overnight",
-    ...bullets,
-    INTEGRATED_MARKERS.end,
   ];
   return lines.join("\n");
 }

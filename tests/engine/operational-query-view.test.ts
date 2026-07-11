@@ -345,6 +345,9 @@ describe("buildOperationalQueryView — proposals", () => {
       // `paths` is derived from `changes.map(c => c.path)` — the raw
       // FileChange payload (content/kind) stays internal to proposals.db.
       expect(pending[0]?.paths).toEqual(["notes/a.md", "notes/b.md"]);
+      expect(pending[0]?.sourceRefs?.map((ref) => String(ref.path))).toEqual([
+        "notes/a.md",
+      ]);
       expect(pending[0]?.status).toBe("pending");
       expect(typeof pending[0]?.id).toBe("number");
       expect(pending[0]?.createdAt).toBe("2026-07-06T00:00:00.000Z");

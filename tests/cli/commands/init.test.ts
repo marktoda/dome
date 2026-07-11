@@ -132,10 +132,11 @@ describe("runInit", () => {
       expect(agentsBody).toContain("agent-safe");
       expect(agentsBody).toContain("owner-needed");
       expect(agentsBody).toContain("recommended_answer");
-      expect(agentsBody).toContain("## Read-first context");
+      expect(agentsBody).toContain("## Source-first reading");
       expect(agentsBody).toContain("dome export-context <topic> --json");
       expect(agentsBody).toContain("dome query <text> --json");
-      expect(agentsBody).toContain("The daily note should already be");
+      expect(agentsBody).toContain("dome views --json");
+      expect(agentsBody).toContain("read and search the\n  markdown directly");
       // Cohesion review 2026-07-06: the day surface's alternate framings are
       // flags of `today` and the consistency audits live under `dome audit`.
       // The interactive cockpit itself stays untaught — agents read the
@@ -609,7 +610,6 @@ describe("runInit", () => {
         "wiki/**/*.md",
         "sources/calendar/*.md",
         "sources/slack/*.md",
-        "meta/sweep-ledger.md",
       ]);
       expect(record(record(extensions["dome.daily"]).grant)["patch.auto"])
         .toEqual(["wiki/**/*.md", "notes/*.md"]);
@@ -813,14 +813,12 @@ describe("runInit", () => {
       expect(refreshed.extensions["dome.health"]?.grant).toBeUndefined();
       // dome.agent was absent, so refresh adds the whole stanza from the
       // shipped default — enabled: true (Task 17) with its bundle grant AND its
-      // per-processor replacement grants (e.g. dome.agent.patrol).
+      // per-processor replacement grants (e.g. dome.agent.garden).
       expect(refreshed.extensions["dome.agent"]?.enabled).toBe(true);
       expect(refreshed.extensions["dome.agent"]?.grant?.["model.invoke"])
         .toEqual({ maxDailyCostUsd: 2 });
-      expect(
-        refreshed.extensions["dome.agent"]?.processors?.["dome.agent.patrol"]
-          ?.grant?.["patch.auto"],
-      ).toEqual(["meta/patrol-queue.md", "meta/patrol-ledger.md"]);
+      expect(refreshed.extensions["dome.agent"]?.grant?.["proposals.read"])
+        .toBe(true);
       // Third-party bundles are never touched.
       expect(refreshed.extensions["custom.local"]?.grant).toBeUndefined();
       expect(refreshed.engine.max_iterations).toBe(25);
@@ -982,7 +980,6 @@ describe("runInit", () => {
         "wiki/**/*.md",
         "sources/calendar/*.md",
         "sources/slack/*.md",
-        "meta/sweep-ledger.md",
       ]);
       // And the summary printed nothing for the withheld kinds.
       const printed = captured.out.join("\n");
@@ -1040,7 +1037,7 @@ describe("runInit", () => {
       const claude = await readFile(join(target, "CLAUDE.md"), "utf8");
       expect(agents).toContain("# Old instructions");
       expect(agents).toContain("Keep this vault-specific guidance.");
-      expect(agents).toContain("## Read-first context");
+      expect(agents).toContain("## Source-first reading");
       expect(agents).toContain("<!-- BEGIN user-prose -->");
       expect(agents).toContain("<!-- END user-prose -->");
       expect(claude.startsWith("@AGENTS.md\n\n# Work Knowledge Base")).toBe(true);
@@ -1081,7 +1078,7 @@ describe("runInit", () => {
 
       const agents = await readFile(join(target, "AGENTS.md"), "utf8");
       expect(agents.startsWith("# This is a Dome vault.")).toBe(true);
-      expect(agents).toContain("## Read-first context");
+      expect(agents).toContain("## Source-first reading");
       expect(agents).toContain("dome export-context <topic> --json");
       expect(agents).toContain("My private vault notes.");
       expect(agents).not.toContain("# Old managed heading");
@@ -1471,4 +1468,3 @@ async function writeLocalExternalHandlerBundle(target: string): Promise<void> {
     "utf8",
   );
 }
-

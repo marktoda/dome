@@ -17,6 +17,7 @@ import { runCapture } from "./commands/capture";
 import { runCheck } from "./commands/check";
 import { runAnswer } from "./commands/answer";
 import { runApply } from "./commands/apply";
+import { runAgentWork } from "./commands/agent-work";
 import { runAudit } from "./commands/audit";
 import { runExplain } from "./commands/explain";
 import { runExportContext } from "./commands/export-context";
@@ -40,6 +41,7 @@ import { runServe } from "./commands/serve";
 import { runStatus } from "./commands/status";
 import { runSync } from "./commands/sync";
 import { runToday } from "./commands/today";
+import { runViews } from "./commands/views";
 import {
   parseNonNegativeIntegerOption,
   parsePositiveIntegerOption,
@@ -400,6 +402,42 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("agent-work")
+    .helpGroup(GROUP_DECISIONS)
+    .description("List or complete evidence-backed work assigned to agents.")
+    .argument("[question-id]", "Question id from this command's queue.")
+    .argument("[value...]", "Allowed decision value when completing a packet.")
+    .option("--revision <revision>", "Exact packet revision from the list output.")
+    .option("--reason <reason>", "Why the inspected evidence supports the answer.")
+    .option(
+      "--evidence <path>",
+      "Required evidence path actually inspected (repeatable).",
+      (value: string, previous: string[]) => [...previous, value],
+      [] as string[],
+    )
+    .option("--limit <n>", "Maximum packets to list.", parsePositiveIntegerOption)
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (
+      id: string | undefined,
+      value: string[] | undefined,
+      options: AgentWorkCliOptions,
+    ) => {
+      setExitCode(await runAgentWork({
+        id,
+        answer: value?.join(" "),
+        revision: options.revision,
+        reason: options.reason,
+        evidence: options.evidence,
+        limit: options.limit,
+        json: options.json,
+        vault: options.vault,
+        bundlesRoot: options.bundlesRoot,
+      }));
+    });
+
+  program
     .command("settle")
     .helpGroup(GROUP_DECISIONS)
     .description("Settle a task line by its ^block-anchor: close, defer, or keep.")
@@ -585,6 +623,17 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("views")
+    .helpGroup(GROUP_RECALL)
+    .description("List command-triggered views from installed plugins.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (options: { json?: boolean; vault?: string; bundlesRoot?: string }) => {
+      setExitCode(await runViews(options));
+    });
+
+  program
     .command("today")
     .helpGroup(GROUP_RECALL)
     .description(
@@ -609,7 +658,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     )
     .addOption(
       new Option(
-        "--with <person-or-topic...>",
+        "--with <person-or-topic>",
         "Filter the day to a person or topic, with joined search context.",
       ).conflicts(["watch", "verbose"]),
     )
@@ -629,9 +678,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           interval: options.interval,
           verbose: options.verbose,
           prep: options.prep,
-          with: options.with === undefined
-            ? undefined
-            : options.with.join(" "),
+          with: options.with,
         }),
       );
     });
@@ -726,6 +773,24 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       setExitCode(
         await runAudit({
           subject,
+          json: options.json,
+          vault: options.vault,
+          bundlesRoot: options.bundlesRoot,
+        }),
+      );
+    });
+
+  program
+    .command("garden")
+    .helpGroup(GROUP_RECALL)
+    .description("Inspect ranked semantic-gardening opportunities.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (options: RunCliOptions) => {
+      setExitCode(
+        await runRun({
+          name: "garden",
           json: options.json,
           vault: options.vault,
           bundlesRoot: options.bundlesRoot,
@@ -904,10 +969,10 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .option("--transcribe-key <key>", "API key for cloud transcription (or set DOME_TRANSCRIBE_KEY, falling back to OPENAI_API_KEY).")
     .option("--transcribe-url <url>", "Base URL for cloud transcription (or set DOME_TRANSCRIBE_URL; default https://api.openai.com/v1).")
     .option("--transcribe-model <model>", "Cloud transcription model (or set DOME_TRANSCRIBE_MODEL; default whisper-1).")
-    .option("--agent-log <path>", "Append one JSON line per /agent request to <path> (or set DOME_AGENT_LOG).")
+    .option("--agent-log <path>", "Append one JSON line per agent-session turn to <path> (or set DOME_AGENT_LOG).")
     .action(async (options: HttpCliOptions) => {
       // Dynamic import keeps the listener entrypoint (and the AI SDK it pulls
-      // for /agent) out of the CLI's static graph, matching the `dome mcp`
+      // for AgentRuntime) out of the CLI's static graph, matching the `dome mcp`
       // companion-entrypoint pattern. ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY.
       const { runHttp } = await import("./commands/http");
       setExitCode(
@@ -1117,6 +1182,16 @@ type AnswerCliOptions = {
 
 type ResolveCliOptions = AnswerCliOptions;
 
+type AgentWorkCliOptions = {
+  readonly revision?: string;
+  readonly reason?: string;
+  readonly evidence?: string[];
+  readonly limit?: number;
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
 type SettleCliOptions = {
   readonly until?: string;
   readonly json?: boolean;
@@ -1170,7 +1245,7 @@ type TodayCliOptions = {
   readonly watch?: boolean;
   readonly interval?: number;
   readonly prep?: boolean;
-  readonly with?: string[];
+  readonly with?: string;
   readonly json?: boolean;
   readonly verbose?: boolean;
   readonly vault?: string;

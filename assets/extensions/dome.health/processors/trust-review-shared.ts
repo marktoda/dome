@@ -37,6 +37,10 @@ import {
 
 export const TRUST_REVIEW_PROCESSOR_ID = "dome.health.trust-review";
 export const CONFIG_PATH = ".dome/config.yaml";
+/** Semantic rewrites remain owner-reviewed regardless of historical accept rate. */
+export const ALWAYS_PROPOSE_PROCESSOR_IDS: ReadonlySet<string> = new Set([
+  "dome.agent.garden",
+]);
 
 /** Trailing window (days) for decided-proposal stats + rejection cool-down. */
 export const TRUST_WINDOW_DAYS = 28;
@@ -115,7 +119,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  *     (derived from the rejected row's decidedAt — no new state),
  *   - the proposed paths do NOT include `.dome/config.yaml` (a processor
  *     proposing config edits must never be auto-granted them — that would be
- *     an unreviewed privilege escalation), and it is not trust-review itself.
+ *     an unreviewed privilege escalation), it is not trust-review itself, and
+ *     it is not an always-propose semantic processor.
  *
  * Flag dormant (per processor) when model cost > $0 accrued over the trailing
  * 21 days with ZERO productive effects (a deterministic zero-cost idler is the
@@ -134,6 +139,7 @@ export function decideTrustReview(
     .filter(
       (s) =>
         s.processorId !== TRUST_REVIEW_PROCESSOR_ID &&
+        !ALWAYS_PROPOSE_PROCESSOR_IDS.has(s.processorId) &&
         s.autonomy === "propose" &&
         s.decided >= PROMOTE_MIN_DECIDED &&
         s.applied / s.decided >= PROMOTE_MIN_ACCEPT_RATE &&
@@ -175,7 +181,7 @@ export function decideTrustReview(
 /**
  * The promotion proposal's `reason` — structured so suppression can re-derive
  * the target from durable proposal rows alone (`parsePromotionTarget`).
- * Example: `trust-review: promote dome.agent.consolidate to auto-apply —
+ * Example: `trust-review: promote dome.markdown.attic-sweep to auto-apply —
  * 19/20 proposals applied over 28d`.
  */
 export function promotionReason(

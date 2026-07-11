@@ -69,7 +69,7 @@ const ALLOWED_FILES = new Set([
   "src/eval/cases/brief.ts",
   // Process-scoped operational append-only log; not a vault write — same
   // class as the server's POST /transcribe temp-write. Appends one JSON line
-  // per /agent request to a configurable path for post-hoc diagnostics.
+  // per agent-session turn to a configurable path for post-hoc diagnostics.
   "src/http/agent-log.ts",
   // The shared store-opener seam: prepareStore + openSimpleStore. The single
   // meta-row write (DELETE+INSERT in a tx) is the same operational write the

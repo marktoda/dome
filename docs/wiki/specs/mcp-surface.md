@@ -1,14 +1,14 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-07-06
+updated: 2026-07-09
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
   - "[[wedge]]"
   - "[[wiki/specs/task-lifecycle]]"
   - "[[memory]]"
-description: "dome mcp stdio adapter: fourteen typed tools mirroring CLI --json documents over shared collectors, including the proposals/apply_proposal/reject_proposal review loop and the explain provenance chain; engine import graph stays MCP-free"
+description: "dome mcp stdio adapter: typed tools over shared operations, including plugin-view discovery/invocation; engine import graph stays MCP-free"
 ---
 
 # MCP surface
@@ -38,6 +38,10 @@ dome mcp   (stdio transport; one vault per process)
 The adapter is deliberately thin and **consumes data-returning boundaries — it does not duplicate logic and it never captures console output**:
 
 - `capture` calls `performCapture` (the data core behind `dome capture`) and renders the shared `dome.capture/v1` document via `captureJsonDocument`.
+- `views` / `run_view` discover and invoke any command-triggered view
+  contributed by an installed plugin through `Vault.listViews()` and
+  `runInstalledView()`; the latter returns `dome.view-run/v1` with provenance
+  scopes intact.
 - `query` / `export_context` / `tasks` dispatch their view processors through the public `vault.runView` surface (`openVault` → `src/engine/host/view-command.ts`), with the same expected-view/schema validation the CLI wrappers enforce.
 - `report_miss` calls `reportMiss` (the data core behind `dome query --miss` / `dome export-context --miss`, `src/surface/report-miss.ts`) and renders the shared `dome.report-miss/v1` document via `reportMissResultJson` — the mechanical retrieval-miss-log channel [[memory]] §"M6" gates banked embeddings on.
 - `status` / `check` call `buildStatusSnapshot` / `buildCheckReport` (the data collectors behind `dome status --json` / `dome check --json`) and return the identical documents.
@@ -49,7 +53,11 @@ The adapter is deliberately thin and **consumes data-returning boundaries — it
 
 Nothing in a tool call prints, so stdout stays exclusively the MCP protocol channel — load-bearing for a stdio server. A tool mutex still serializes calls: each call opens and closes its own `Vault`/runtime exactly like one CLI invocation, so at most one set of SQLite handles is open against the vault at a time and none is held between calls.
 
-The planned `AbstractSurface` + `renderMcp(surface)` split ([[wiki/specs/sdk-surface]] §"Consumer surfaces") remains the target internal shape. The shipped adapter consumes `openVault` plus the protocol-neutral collectors in `src/surface/` — the home of the v1 surface contract (the `dome.<verb>/v1` schemas); it imports nothing from `src/cli/` per [[wiki/linters/surface-adapters-dont-import-adapters]]. When `AbstractSurface` lands, the adapter swaps its internals without changing the tool contract.
+The adapter consumes `openVault` plus the protocol-neutral operations in
+`src/surface/` — the home of shared `dome.<verb>/v1` documents; it imports
+nothing from `src/cli/` per
+[[wiki/linters/surface-adapters-dont-import-adapters]]. There is no parallel
+aggregate surface object.
 
 ### Dependency fence
 
@@ -62,11 +70,16 @@ MCP tool names are bare verbs — harness clients already namespace by server na
 | MCP tool | Same path as | Result schema | Purpose |
 |---|---|---|---|
 | `capture` | `dome capture --json` | `dome.capture/v1` | Write a thought into `inbox/raw/` and commit it on the current branch. |
+| `views` | `dome views --json` | `dome.views/v1` | Discover command-triggered views contributed by installed plugins. |
+| `run_view` | `dome run <command> --json` | `dome.view-run/v1` | Invoke any installed plugin view and preserve its rendered content + source scope. |
 | `query` | `dome query --json` | `dome.search.query/v1` | FTS + structured query against adopted state, with SourceRefs. |
 | `export_context` | `dome export-context --json` | `dome.search.export-context/v1` | Portable source-backed context packet for a topic. |
 | `report_miss` | `dome query --miss` / `dome export-context --miss` | `dome.report-miss/v1` | Log a retrieval miss to `meta/retrieval-misses.md` — the weekly report card's dogfood evidence. |
 | `status` | `dome status --json` | status snapshot (stable keys) | Vault pulse: attention codes, `next_actions`, serve state, counts. |
 | `check` | `dome check --json` | `dome.check/v1` | Explain attention: engine health, content diagnostics, open decisions. |
+| `attention` | `Vault.attention()` | `dome.attention/v1` | The bounded, ranked owner queue across decisions and proposal reviews. |
+| `agent_work` | `Vault.agentWork()` | `dome.agent-work/v1` | List revisioned agent-safe packets and their required evidence paths. |
+| `complete_agent_work` | `Vault.completeAgentWork()` | `dome.agent-work-completion/v1` | Complete one current packet with an allowed answer, audit reason, and inspected SourceRefs. |
 | `resolve` | `dome resolve --json` | `dome.answer/v1` | Answer a Dome-raised question by id; omit `value` to read the question. |
 | `settle` | `dome settle --json` | `dome.settle/v1` | Close, defer, or keep a task line by its `^block-anchor`. |
 | `proposals` | `dome proposals --json` | `dome.proposals/v1` | List pending garden-proposed edits awaiting owner review; `all` includes decided rows. |
@@ -82,6 +95,8 @@ Zod raw shapes, summarized:
 
 ```yaml
 capture:        { text: string (required), title?: string }
+views:          {}
+run_view:       { command: string (required), input?: object }
 query:          { text: string (required), limit?: int>0, category?: string, type?: string }
 export_context: { topic: string (required), limit?: int>0 }
 report_miss:    { query: string (required), note?: string }
@@ -118,7 +133,7 @@ counts: { openTasks, followups, questions }  # from dome.daily.today
 
 ## Writes and lifecycle
 
-The MCP server is a **read/capture/decision surface over an existing vault** (no hosted model — the MCP surface brings typed tools for harnesses that already carry their own agent; the HTTP surface's `POST /agent` is the co-located agent path). It runs no adoption loop, no scheduler, and no garden processors — the daemon (`dome serve`, kept alive by `dome install`, per [[wedge]] §"Phase 1") owns compilation. The six write-shaped tools reuse existing non-engine write channels unchanged:
+The MCP server is a **read/capture/decision surface over an existing vault** (no hosted model — the MCP surface brings typed tools for harnesses that already carry their own agent; the HTTP session protocol is the co-located `AgentRuntime` path). It runs no adoption loop, no scheduler, and no garden processors — the daemon (`dome serve`, kept alive by `dome install`, per [[wedge]] §"Phase 1") owns compilation. The six write-shaped tools reuse existing non-engine write channels unchanged:
 
 - **`capture`** lands an ordinary human commit via the same single-file commit path as `dome capture` (no `Dome-*` trailers; the daemon constructs the Proposal from branch drift, per [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]]). The payload's `compile_pending` / `serve_status` fields tell the caller whether a daemon will pick it up.
 - **`resolve`** records an answer durably in `answers.db` and dispatches answer handlers via the identical `answerQuestionDurably` path `dome resolve` uses.
@@ -163,14 +178,15 @@ To keep the surface minimal:
 - **No privileged operations.** No way to advance the adopted ref, bypass capability checks, or write the projection store.
 - **No engine-internal queries.** No run-ledger access (use `dome inspect runs` when needed).
 - **No multi-vault routing.** One vault per server process.
-- **No MCP resources or prompts in v1.** The `dome://page/<path>` / `dome://search?q=` resource URI map from the earlier draft remains target work for the `AbstractSurface.readResource` era; tools cover the wedge surface.
+- **No MCP resources or prompts in v1.** Tools cover the shipped use cases;
+  add resources only when a concrete client flow earns them.
 - **No remote transport, and no per-device tokens.** v1 `dome mcp` is stdio-only: the server is launched locally by the vault owner and inherits the owner's trust domain (above), so it carries no network auth of its own. The remote MCP transport (streamable-HTTP / `mcp-remote` bridge over a bearer token) is deferred per [[cohesive/brainstorms/2026-06-11-dome-v1-plan]] §WS3, and so is per-device token issuance/rotation — single shared bearer is the v1 contract for the network surfaces, recorded normatively at [[wiki/specs/http-surface]] §"One shared bearer token (the v1 contract)". Issuance/rotation lands with or before remote MCP, the multi-device driver.
 
 ## Related
 
 - [[wedge]] §"Phase 5 — MCP server" — why this shipped and the acceptance bar.
 - [[wiki/specs/cli]] §"dome mcp" — the CLI verb that hosts the server.
-- [[wiki/specs/sdk-surface]] §"Consumer surfaces" — the planned AbstractSurface this adapter will converge with.
+- [[wiki/specs/sdk-surface]] §"Consumer surfaces: operations, not an aggregate object".
 - [[wiki/specs/harnesses]] — when MCP earns its keep vs the CLI path.
 - [[wiki/specs/capture]] — the capture loop the `capture` tool feeds.
 - [[wiki/specs/task-lifecycle]] §"The settle operation" — the contract the `settle` tool implements.

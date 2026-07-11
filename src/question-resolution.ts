@@ -7,9 +7,12 @@ import type {
 
 export type QuestionAutomationPolicyCounts = {
   readonly agentSafe: number;
+  /** Deprecated compatibility field; legacy model-safe rows count as agent-safe. */
   readonly modelSafe: number;
   readonly ownerNeeded: number;
 };
+
+export type QuestionResolutionPolicy = "agent-safe" | "owner-needed";
 
 export function resolveQuestionCommand(input: {
   readonly id: number | string | null | undefined;
@@ -41,15 +44,17 @@ export function questionResolutionDescription(
 
 export function questionAutomationPolicy(
   metadata: QuestionMetadata | null | undefined,
-): QuestionAutomationPolicy {
-  return metadata?.automationPolicy ?? "owner-needed";
+): QuestionResolutionPolicy {
+  const stored: QuestionAutomationPolicy =
+    metadata?.automationPolicy ?? "owner-needed";
+  return stored === "model-safe" ? "agent-safe" : stored;
 }
 
 export function isQuestionAgentResolvable(
   metadata: QuestionMetadata | null | undefined,
 ): boolean {
   const policy = questionAutomationPolicy(metadata);
-  return policy === "agent-safe" || policy === "model-safe";
+  return policy === "agent-safe";
 }
 
 export function countQuestionAutomationPolicies(
@@ -62,8 +67,6 @@ export function countQuestionAutomationPolicies(
     const policy = questionAutomationPolicy(metadata);
     if (policy === "agent-safe") {
       agentSafe += 1;
-    } else if (policy === "model-safe") {
-      modelSafe += 1;
     } else {
       ownerNeeded += 1;
     }

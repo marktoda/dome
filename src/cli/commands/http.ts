@@ -40,7 +40,7 @@ export type RunHttpOptions = {
   readonly transcribeKey?: string | undefined;
   readonly transcribeUrl?: string | undefined;
   readonly transcribeModel?: string | undefined;
-  /** Path to write one JSON line per /agent request (or env DOME_AGENT_LOG). */
+  /** Path to write one JSON line per agent-session turn (or env DOME_AGENT_LOG). */
   readonly agentLog?: string | undefined;
   /**
    * Test-only seam: aborting this signal stops the listener and resolves

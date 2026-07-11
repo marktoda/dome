@@ -45,7 +45,7 @@ processors:
       - kind: model.invoke
         # Bounds ingest's OWN daily spend (a few articles' worth); the
         # extension-wide pool is the vault grant's job. Do not size this
-        # for sweep/consolidate's burn — per-processor declared caps no
+        # for semantic gardening's burn — per-processor declared caps no
         # longer compete with the pool (capabilities.md §model.invoke).
         maxDailyCostUsd: 5
       - kind: question.ask
@@ -78,60 +78,45 @@ processors:
         paths: ["inbox/**/*.md"]
     module: processors/inbox-stale-check.ts
 
-  - id: dome.agent.consolidate
-    version: 0.2.2
+  - id: dome.agent.garden
+    version: 1.0.0
     phase: garden
     triggers:
-      # Nightly (was weekly 0 4 * * 1): the charter bounds each run to recent
-      # drift since the ledger's last run + a hard per-run patch cap.
       - kind: schedule
         cron: "0 2 * * *"
     capabilities:
       - kind: read
         paths:
           - "wiki/**/*.md"
+          - "inbox/processed/*.md"
           - "index.md"
-          - "log.md"
-          - "meta/consolidation-ledger.md"
-          # The nightly staleness patrol writes tonight's frozen-tail review
-          # queue here (dome.agent.patrol, 01:45); consolidate READS it at
-          # 02:00 to force those pages into scope. Patrol owns the write grant;
-          # consolidate only needs read (wiki/specs/autonomous-agents.md
-          # §"Patrol").
-          - "meta/patrol-queue.md"
-          # Owner core memory — read-only by design (propose-only page).
           - "core.md"
-          - "preferences/signals.md"
-      # index.md and log.md are read-only above (the core.md grant shape):
-      # the index regenerates from description: frontmatter, log.md is
-      # frozen history. The grant-aware tools deny them at tool time so a
-      # stray write cannot poison the all-or-nothing PatchEffect verdict.
-      - kind: patch.auto
-        paths:
-          - "wiki/**/*.md"
-          - "meta/consolidation-ledger.md"
-          - "preferences/signals.md"
-      # Operation 4 (stock-gardening phase 1, Task 6): proposeSplit's hub +
-      # sub-page changes never apply directly — they land as a SEPARATE
-      # mode:"propose" PatchEffect the owner reviews with `dome apply`. This
-      # is intentionally a distinct capability from patch.auto above (the
-      # broker checks per-PatchEffect, and this patch is never in the
-      # auto-applied set); ManifestGrantEntry's kind enum ("read" |
-      # "patch.auto" | "graph.write") has no slot for patch.propose, so this
-      # capability relies on the general kind-level `capability.grant-missing`
-      # doctor probe (same posture as questions.read/proposals.read) rather
-      # than a doctor.grantEntries row.
       - kind: patch.propose
-        paths:
-          - "wiki/**/*.md"
+        paths: ["wiki/**/*.md"]
       - kind: model.invoke
         maxDailyCostUsd: 10
-      - kind: question.ask
+      - kind: proposals.read
     execution:
       class: llm
       timeoutMs: 1800000
       modelCallTimeoutMs: 180000
-    module: processors/consolidate.ts
+    module: processors/garden.ts
+
+  - id: dome.agent.garden-view
+    version: 1.0.0
+    phase: view
+    triggers:
+      - kind: command
+        name: garden
+    capabilities:
+      - kind: read
+        paths:
+          - "wiki/**/*.md"
+          - "inbox/processed/*.md"
+          - "index.md"
+          - "core.md"
+      - kind: proposals.read
+    module: processors/garden-view.ts
 
   - id: dome.agent.brief
     version: 0.3.0
@@ -165,24 +150,13 @@ processors:
           - "log.md"
           - "sources/calendar/*.md"
           - "sources/slack/*.md"
-          # The questions batch is scope-filtered by this read grant: a
-          # question whose sourceRefs include an unreadable path is dropped
-          # from ctx.projection.questions. Ingest's askOwner questions ref
-          # inbox/raw/*.md and consolidate's ref the consolidation ledger, so
-          # both must be readable here. A custom consolidation_ledger_path
-          # needs a matching grant (same rule as consolidate's own grant).
+          # Ingest escalation diagnostics may reference inbox captures.
           - "inbox/**/*.md"
-          - "meta/consolidation-ledger.md"
           # Owner core memory — read-only by design (propose-only page).
           - "core.md"
           # Preference-promotion questions ref signal lines, so the brief's
           # scoped questions batch needs this readable too.
           - "preferences/signals.md"
-          # Sweep ledger: the brief reads today's run section for the
-          # "Integrated overnight" digest block (deterministic, never model-
-          # written). Default path is meta/sweep-ledger.md; a custom sweep_ledger_path
-          # additionally needs a matching vault read grant in .dome/config.yaml.
-          - "meta/sweep-ledger.md"
       # Deliberately narrower than ingest: the brief writes ONLY the daily
       # note (wiki/dailies default template or a notes/ daily_path override)
       # plus validated signal-line appends (the splice guard drops any
@@ -200,59 +174,6 @@ processors:
       timeoutMs: 1800000
       modelCallTimeoutMs: 180000
     module: processors/brief.ts
-
-  - id: dome.agent.sweep
-    version: 0.1.0
-    phase: garden
-    triggers:
-      # 03:00 — between consolidate (02:00) and the brief (05:30), so the
-      # brief's "Integrated overnight" digest renders tonight's run.
-      - kind: schedule
-        cron: "0 3 * * *"
-    capabilities:
-      - kind: read
-        paths:
-          - "wiki/**/*.md"
-          - "inbox/processed/*.md"
-          - "index.md"
-          - "core.md"
-          - "meta/sweep-ledger.md"
-      # Deliberately NARROWER than the read grant and matching the default
-      # sweep_targets globs — the broker enforces what the charter promises
-      # (each per-item agent run is narrower still: exactly one destination).
-      # sweep-tools.ts SWEEP_WRITABLE_PATHS mirrors this list, pinned by the
-      # grant-aware-tools manifest-sync test.
-      - kind: patch.auto
-        paths:
-          - "wiki/entities/**/*.md"
-          - "wiki/concepts/**/*.md"
-          - "meta/sweep-ledger.md"
-      - kind: model.invoke
-        maxDailyCostUsd: 10
-      - kind: question.ask
-    execution:
-      class: llm
-      timeoutMs: 1800000
-      modelCallTimeoutMs: 180000
-    module: processors/sweep.ts
-
-  - id: dome.agent.sweep-answer
-    version: 0.1.0
-    phase: garden
-    triggers:
-      - kind: answer
-        questionProcessorId: dome.agent.sweep
-        idempotencyKeyPrefix: "dome.agent.sweep:"
-    capabilities:
-      - kind: read
-        paths:
-          - "wiki/**/*.md"
-          - "meta/sweep-ledger.md"
-      - kind: patch.auto
-        paths:
-          - "wiki/entities/**/*.md"
-          - "wiki/concepts/**/*.md"
-    module: processors/sweep-answer.ts
 
   # ----- Preference promotion (memory-quality M5) ----------------------------
   # docs/wiki/specs/preferences.md. Three deterministic processors — no model.
@@ -428,38 +349,6 @@ processors:
       class: deterministic
     module: processors/active-projects.ts
 
-  - id: dome.agent.patrol
-    version: 0.1.0
-    phase: garden
-    triggers:
-      # 01:45 — nightly, before consolidate's 02:00 tick, so tonight's queue is
-      # already written when the consolidate agent wakes to review it.
-      - kind: schedule
-        cron: "45 1 * * *"
-    capabilities:
-      # Deterministic staleness selector (no model). Reads the three page
-      # families it grooms + its own two meta files (the ledger for the revisit
-      # window, the queue to diff-before-emit); rewrites ONLY the two meta files.
-      - kind: read
-        paths:
-          - "wiki/entities/**/*.md"
-          - "wiki/concepts/**/*.md"
-          - "wiki/syntheses/**/*.md"
-          - "meta/patrol-queue.md"
-          - "meta/patrol-ledger.md"
-      - kind: patch.auto
-        paths:
-          - "meta/patrol-queue.md"
-          - "meta/patrol-ledger.md"
-    execution:
-      class: deterministic
-    # all-readable-markdown so a page dropping below the oversized threshold
-    # (still readable, no longer re-emitted) resolves its stale page.oversized
-    # diagnostic — the self-clearing shape shared with the lint diagnostics.
-    inspection:
-      kind: all-readable-markdown
-    module: processors/patrol.ts
-
 # Doctor contributions: grant-entry probes (see dome.daily/manifest.yaml).
 doctor:
   grantEntries:
@@ -505,18 +394,16 @@ doctor:
       recovery: >-
         Add "sources/slack/*.md" to extensions.dome.agent.grant.read in
         .dome/config.yaml.
-    - processorId: dome.agent.consolidate
+    - processorId: dome.agent.garden
       entries:
         - kind: read
-          target: meta/patrol-queue.md
+          target: wiki/entities/example.md
       why: >-
-        the nightly patrol queue is grant-scoped out of consolidate's
-        snapshot, so the frozen-tail rotation stalls — consolidate only ever
-        reviews pages that recently drifted and never the stale tail patrol
-        queues
+        semantic gardening cannot inspect knowledge, propose a bounded fix,
+        or remember opportunities whose proposal was already decided
       recovery: >-
-        Add "meta/patrol-queue.md" to extensions.dome.agent.grant.read in
-        .dome/config.yaml.
+        Grant dome.agent read and patch.propose over wiki/**/*.md plus
+        proposals.read in .dome/config.yaml.
     - processorId: dome.agent.preference-signals
       entries:
         - kind: graph.write
@@ -561,22 +448,3 @@ doctor:
         extensions.dome.agent.processors."dome.agent.active-projects".grant
         with read: ["core.md", "wiki/dailies/*.md"] and patch.auto:
         ["core.md"].
-    - processorId: dome.agent.patrol
-      entries:
-        - kind: read
-          target: wiki/entities/example.md
-        - kind: patch.auto
-          target: meta/patrol-queue.md
-        - kind: patch.auto
-          target: meta/patrol-ledger.md
-      why: >-
-        the nightly staleness patrol cannot read the entity pages or rewrite
-        its queue/ledger, so the stalest tail is never re-groomed and the
-        consolidate review queue stays empty
-      recovery: >-
-        Add the per-processor replacement grant stanza in .dome/config.yaml:
-        extensions.dome.agent.processors."dome.agent.patrol".grant with read:
-        ["wiki/entities/**/*.md", "wiki/concepts/**/*.md",
-        "wiki/syntheses/**/*.md", "meta/patrol-queue.md",
-        "meta/patrol-ledger.md"] and patch.auto: ["meta/patrol-queue.md",
-        "meta/patrol-ledger.md"].

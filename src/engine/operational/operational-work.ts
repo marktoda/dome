@@ -34,16 +34,10 @@ import type { ProcessorRegistry } from "../../processors/registry";
 import type { ModelProvider, ModelStepProvider } from "../core/model-invoke";
 import type { ApplyEffectSinks } from "../core/apply-effect";
 import type { ApplyPatchInput } from "../core/apply-patch";
-import { resolveCurrentAdopted } from "../core/adoption-status";
-import type { RuntimeQuestionAutoResolveConfig } from "../core/capability-policy";
 import {
   expireOrphanProposals,
   type ProposalExpiryResult,
 } from "./proposal-expiry";
-import {
-  runQuestionAutoResolution,
-  type QuestionAutoResolutionResult,
-} from "./question-auto-resolution";
 import {
   expireOrphanSubjectQuestions,
   type QuestionExpiryResult,
@@ -54,7 +48,8 @@ import type { EngineVault } from "../core/vault-shape";
 export type OperationalWorkResult = {
   readonly scheduler: SchedulerResult;
   readonly outbox: ReadonlyArray<ExternalDispatchResult>;
-  readonly questionAutoResolution: QuestionAutoResolutionResult;
+  /** Compatibility counter. Generic metadata-driven auto-resolution is retired. */
+  readonly questionAutoResolution: RetiredQuestionAutoResolutionResult;
   /** Subject-liveness expiry: OPEN questions released this tick + their
    * diagnostics (also folded into `diagnostics` below). */
   readonly questionExpiry: QuestionExpiryResult;
@@ -86,13 +81,10 @@ export async function runOperationalWork(opts: {
    * 30s default.
    */
   readonly externalHandlerTimeoutMs?: number;
-  readonly questionAutoResolve?: RuntimeQuestionAutoResolveConfig;
   /**
-   * Forwarded to question auto-resolution (fired once per durable
-   * auto-answer) and fired once after the subject-liveness expiry pump when
-   * it expired anything — both change the open-question set while bypassing
-   * the `recordQuestion` sink, so the host's tick-scoped `questions.changed`
-   * flag must be set here explicitly.
+   * Fired once after subject-liveness expiry when it expired anything. The
+   * expiry transition bypasses `recordQuestion`, so the host's tick-scoped
+   * `questions.changed` flag must be set here explicitly.
    */
   readonly onQuestionsChanged?: () => void;
   /**
@@ -195,54 +187,7 @@ export async function runOperationalWork(opts: {
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
   });
 
-  const questionAutoResolution =
-    opts.answers === undefined || opts.questionAutoResolve === undefined
-      ? emptyQuestionAutoResolution()
-      : await runQuestionAutoResolution({
-          config: opts.questionAutoResolve,
-          vault: opts.vault,
-          adopted: resolveCurrentAdopted(opts.currentAdopted, opts.adopted),
-          registry: opts.registry,
-          projection: opts.projection,
-          answers: opts.answers,
-          sinks: opts.sinks,
-          resolveTree: opts.resolveTree,
-          now: opts.now,
-          resolveGrants: opts.resolveGrants,
-          extensionIdFor: opts.extensionIdFor,
-          ...(opts.onQuestionsChanged !== undefined
-            ? { onQuestionsChanged: opts.onQuestionsChanged }
-            : {}),
-          ...(opts.operational !== undefined
-            ? { operational: opts.operational }
-            : {}),
-          ledger: opts.ledger,
-          ...(opts.executionState !== undefined
-            ? { executionState: opts.executionState }
-            : {}),
-          ...(opts.needUnmetSeen !== undefined
-            ? { needUnmetSeen: opts.needUnmetSeen }
-            : {}),
-          ...(opts.executionCap !== undefined
-            ? { executionCap: opts.executionCap }
-            : {}),
-          ...(opts.modelProvider !== undefined
-            ? { modelProvider: opts.modelProvider }
-            : {}),
-          ...(opts.modelStepProvider !== undefined
-            ? { modelStepProvider: opts.modelStepProvider }
-            : {}),
-          ...(opts.adoptSubProposal !== undefined
-            ? { adoptSubProposal: opts.adoptSubProposal }
-            : {}),
-          ...(opts.currentAdopted !== undefined
-            ? { currentAdopted: opts.currentAdopted }
-            : {}),
-          ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-          ...(opts.applyGardenPatchToCandidate !== undefined
-            ? { applyGardenPatchToCandidate: opts.applyGardenPatchToCandidate }
-            : {}),
-        });
+  const questionAutoResolution = emptyQuestionAutoResolution();
 
   const questionExpiry =
     opts.answers === undefined
@@ -298,7 +243,16 @@ function emptyProposalExpiry(): ProposalExpiryResult {
   return Object.freeze({ expired: 0, diagnostics: Object.freeze([]) });
 }
 
-function emptyQuestionAutoResolution(): QuestionAutoResolutionResult {
+type RetiredQuestionAutoResolutionResult = {
+  readonly enabled: false;
+  readonly considered: 0;
+  readonly answered: 0;
+  readonly skipped: 0;
+  readonly handlerFailed: 0;
+  readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
+};
+
+function emptyQuestionAutoResolution(): RetiredQuestionAutoResolutionResult {
   return Object.freeze({
     enabled: false,
     considered: 0,

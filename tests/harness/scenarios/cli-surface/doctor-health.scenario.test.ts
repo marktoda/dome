@@ -295,18 +295,15 @@ scenario(
           "        - \"inbox/**/*.md\"",
           "        - \"index.md\"",
           "        - \"log.md\"",
-          "        - \"meta/consolidation-ledger.md\"",
           "        - \"sources/calendar/*.md\"",
           "      patch.auto:",
           "        - \"wiki/**/*.md\"",
           "        - \"notes/**/*.md\"",
           "        - \"index.md\"",
           "        - \"log.md\"",
-          "        - \"meta/consolidation-ledger.md\"",
           "        - \"inbox/processed/*.md\"",
           "        - \"inbox/raw/*.md\"",
-          // Operation 4 (stock-gardening phase 1, Task 6): proposeSplit's
-          // patch.propose kind must be granted here too, or the kind-level
+          // Semantic gardening declares patch.propose. Grant it here too, or the kind-level
           // capability.grant-missing probe would fire and this scenario is
           // specifically about the ENTRY-level gaps, not kind-level ones.
           "      patch.propose:",
@@ -315,6 +312,7 @@ scenario(
           "      model.invoke:",
           "        maxDailyCostUsd: 5",
           "      question.ask: true",
+          "      proposals.read: true",
           "  dome.markdown:",
           "    enabled: true",
           "    grant:",
@@ -363,7 +361,7 @@ scenario(
     expect(report.status).toBe("unhealthy");
     // Every capability kind is granted — the kind-level probe stays quiet.
     expect(report.summary.capabilityGrantGaps).toBe(0);
-    expect(report.summary.capabilityGrantEntryGaps).toBe(12);
+    expect(report.summary.capabilityGrantEntryGaps).toBe(10);
 
     const entryGaps = report.findings.filter(
       (finding) => finding.code === "capability.grant-entry-missing",
@@ -375,14 +373,6 @@ scenario(
       "dome.agent.brief",
       "dome.agent.brief",
       "dome.agent.brief",
-      // The patrol queue that consolidate reads (Task 16): a pre-rollout
-      // dome.agent read grant never gained meta/patrol-queue.md, so the
-      // frozen-tail rotation stalls until the owner adds it.
-      "dome.agent.consolidate",
-      // The staleness patrol's own meta files (Task 15): a pre-rollout vault
-      // lacks the per-processor replacement grant, so its queue/ledger writes
-      // are ungranted.
-      "dome.agent.patrol",
       "dome.agent.preference-promotion-answer",
       "dome.agent.preference-signals",
       "dome.daily.compose-blocks",
@@ -395,9 +385,8 @@ scenario(
     );
 
     // The compiled-daily rollout (D6): a pre-existing vault whose dome.daily
-    // read grant never gained the sources/ledger entries gets a doctor
-    // finding instead of silently never rendering the agenda / integrated /
-    // sources blocks (compose-blocks' reads return null outside the grant).
+    // read grant never gained the source entries gets a doctor finding
+    // instead of silently never rendering the agenda / sources blocks.
     const composeBlocks = entryGaps.find(
       (finding) =>
         finding.capability?.processorId === "dome.daily.compose-blocks",
@@ -408,7 +397,6 @@ scenario(
     expect(composeBlocks?.capability?.missingEntries).toEqual([
       { kind: "read", target: "sources/calendar/*.md" },
       { kind: "read", target: "sources/slack/*.md" },
-      { kind: "read", target: "meta/sweep-ledger.md" },
     ]);
 
     const answer = entryGaps.find(
@@ -491,6 +479,7 @@ scenario(
           "      patch.auto: [\"wiki/**/*.md\", \"notes/*.md\"]",
           "      graph.write: [\"dome.daily.*\"]",
           "      question.ask: true",
+          "      proposals.read: true",
           "  dome.agent:",
           "    enabled: true",
           "    grant:",
@@ -500,14 +489,12 @@ scenario(
           "        - \"inbox/**/*.md\"",
           "        - \"index.md\"",
           "        - \"log.md\"",
-          "        - \"meta/consolidation-ledger.md\"",
           "        - \"sources/calendar/*.md\"",
           "      patch.auto:",
           "        - \"wiki/**/*.md\"",
           "        - \"notes/**/*.md\"",
           "        - \"index.md\"",
           "        - \"log.md\"",
-          "        - \"meta/consolidation-ledger.md\"",
           "        - \"inbox/processed/*.md\"",
           "        - \"inbox/raw/*.md\"",
           "      model.invoke:",
@@ -681,17 +668,6 @@ scenario(
           // finding is the only one.
           "        - \"sources/calendar/*.md\"",
           "        - \"sources/slack/*.md\"",
-          // The agent ledgers (manifest-declared under meta/ since the
-          // generated-surface convention): granting both keeps this
-          // scenario's general grant-starvation probe
-          // (capability.grant-starved) quiet so the model-provider finding
-          // is the only one.
-          "        - \"meta/consolidation-ledger.md\"",
-          "        - \"meta/sweep-ledger.md\"",
-          // The patrol queue consolidate reads (Task 16): grant the read so
-          // consolidate's grant-entry probe stays quiet and the model-provider
-          // finding is the only one.
-          "        - \"meta/patrol-queue.md\"",
           "      patch.auto:",
           "        - \"wiki/**/*.md\"",
           "        - \"notes/**/*.md\"",
@@ -700,10 +676,7 @@ scenario(
           "        - \"inbox/processed/*.md\"",
           "        - \"inbox/raw/*.md\"",
           "        - \"preferences/signals.md\"",
-          "        - \"meta/consolidation-ledger.md\"",
-          "        - \"meta/sweep-ledger.md\"",
-          // Operation 4 (stock-gardening phase 1, Task 6): consolidate's
-          // proposeSplit declares patch.propose — grant it here too, or the
+          // Semantic gardening declares patch.propose — grant it here too, or the
           // kind-level capability.grant-missing probe fires and the
           // model-provider finding is no longer the only one.
           "      patch.propose:",
@@ -717,6 +690,7 @@ scenario(
           "      model.invoke:",
           "        maxDailyCostUsd: 5",
           "      question.ask: true",
+          "      proposals.read: true",
           // The two gated-writer replacement grants: without them the
           // writers' effective patch.auto misses core.md and the
           // capability.grant-entry-missing probe would (correctly) fire.
@@ -736,21 +710,6 @@ scenario(
           "            - \"wiki/dailies/*.md\"",
           "          patch.auto:",
           "            - \"core.md\"",
-          // The staleness patrol's replacement grant (Task 15): its own
-          // meta/patrol-* files sit outside the bundle grant, so without this
-          // stanza the grant-entry + starvation probes fire and the
-          // model-provider finding would not be the only one.
-          "      dome.agent.patrol:",
-          "        grant:",
-          "          read:",
-          "            - \"wiki/entities/**/*.md\"",
-          "            - \"wiki/concepts/**/*.md\"",
-          "            - \"wiki/syntheses/**/*.md\"",
-          "            - \"meta/patrol-queue.md\"",
-          "            - \"meta/patrol-ledger.md\"",
-          "          patch.auto:",
-          "            - \"meta/patrol-queue.md\"",
-          "            - \"meta/patrol-ledger.md\"",
         ].join("\n"),
         "AGENTS.md":
           "# This is a Dome vault.\n\n" +
@@ -789,9 +748,8 @@ scenario(
         model: {
           processorIds: [
             "dome.agent.brief",
-            "dome.agent.consolidate",
+            "dome.agent.garden",
             "dome.agent.ingest",
-            "dome.agent.sweep",
           ],
         },
       }),

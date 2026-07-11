@@ -115,8 +115,8 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
         "raw/**",
       ],
       "patch.auto": ["**/*.md"],
-      // Stock-gardening phase 1, Task 7: the weekly attic-sweep janitor's
-      // archive-move (write attic/<path> + delete <path>) never applies
+      // The deterministic attic-sweep janitor's archive move
+      // (write attic/<path> + delete <path>) never applies
       // inline — a SEPARATE capability from patch.auto above, routed to
       // proposals.db for `dome apply`.
       "patch.propose": ["notes/**", "wiki/**", "attic/**"],
@@ -128,8 +128,8 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
       "graph.write": ["dome.graph.*"],
     }),
     extension("dome.daily", true, {
-      // sources/* + the sweep ledger feed dome.daily.compose-blocks (the
-      // deterministic agenda / integrated-overnight / sources blocks);
+      // Source files feed dome.daily.compose-blocks' deterministic agenda and
+      // honest source record.
       // without them the reads return null and the blocks silently never
       // render (grant-scoped snapshot misses are silent).
       read: [
@@ -137,7 +137,6 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
         "notes/*.md",
         "sources/calendar/*.md",
         "sources/slack/*.md",
-        "meta/sweep-ledger.md",
       ],
       "patch.auto": ["wiki/**/*.md", "notes/*.md"],
       "graph.write": ["dome.daily.*"],
@@ -172,13 +171,6 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
           "inbox/**/*.md",
           "index.md",
           "log.md",
-          "meta/consolidation-ledger.md",
-          "meta/sweep-ledger.md",
-          // The staleness patrol's nightly review queue: dome.agent.patrol
-          // writes it (its own replacement grant), dome.agent.consolidate READS
-          // it under this bundle grant to pull the frozen tail into scope
-          // (wiki/specs/autonomous-agents.md §"Patrol").
-          "meta/patrol-queue.md",
           "sources/calendar/*.md",
           "sources/slack/*.md",
           "core.md",
@@ -191,17 +183,15 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
         "patch.auto": [
           "wiki/**/*.md",
           "notes/**/*.md",
-          "meta/consolidation-ledger.md",
-          "meta/sweep-ledger.md",
           "inbox/processed/*.md",
           "inbox/raw/*.md",
           "preferences/signals.md",
         ],
-        // Operation 4 (stock-gardening phase 1, Task 6): consolidate's
-        // proposeSplit tool emits a SEPARATE mode:"propose" PatchEffect for
-        // the owner to review with `dome apply` — never auto-applied, so it
-        // is its own capability rather than folded into patch.auto above.
+        // Semantic gardening is judgment-heavy: every change is proposed.
         "patch.propose": ["wiki/**/*.md"],
+        // Proposal decisions are the garden's durable memory; exact rejected
+        // or pending opportunities are not regenerated.
+        "proposals.read": true,
         // dome.preference.* carries the deterministic preference counter
         // facts (wiki/specs/preferences.md) emitted by
         // dome.agent.preference-signals; the model processors declare no
@@ -211,7 +201,7 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
         // (product-review-3 Task 17 — "the brain ships on"): a modest
         // extension-wide daily pool, not a disabled bundle, protects model
         // dollars. Per-processor declared caps in manifest.yaml (ingest/brief
-        // $5, consolidate/sweep $10) are unchanged and now sit above this
+        // $5, garden $10) sit above this
         // pool, so $2/day is the binding limit across the whole bundle until
         // an owner deliberately raises this grant.
         "model.invoke": Object.freeze({ maxDailyCostUsd: 2 }),
@@ -233,23 +223,6 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
         "dome.agent.active-projects": Object.freeze({
           read: ["core.md", "wiki/dailies/*.md"],
           "patch.auto": ["core.md"],
-        }),
-        // The deterministic staleness patrol (product-review-3 Task 15;
-        // wiki/specs/autonomous-agents.md §"Patrol"): a per-processor
-        // replacement grant, because it needs its own meta/patrol-* files
-        // that the bundle-wide grant does not cover. Reads the three page
-        // families it grooms (staleness + oversize scan) + its two meta files;
-        // writes ONLY the two meta files (queue + bounded ledger). No model,
-        // no facts.
-        "dome.agent.patrol": Object.freeze({
-          read: [
-            "wiki/entities/**/*.md",
-            "wiki/concepts/**/*.md",
-            "wiki/syntheses/**/*.md",
-            "meta/patrol-queue.md",
-            "meta/patrol-ledger.md",
-          ],
-          "patch.auto": ["meta/patrol-queue.md", "meta/patrol-ledger.md"],
         }),
         // The DETERMINISTIC index extractors (not model processors) publish the
         // cross-bundle facts the cockpit's today view reads: brief-index emits

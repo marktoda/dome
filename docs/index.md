@@ -12,20 +12,26 @@ Working in the codebase? [[philosophy]] is the house style — pure-decide + thi
 
 ## Current Product Planning
 
+- [[cohesive/plans/2026-07-11-productization-modernization]] — current plan of record: recover operational truth, remove measured whole-vault work, prove one first-run loop, simplify product language, and gate new intelligence on evaluation.
 - [[v1]] — V1 design and plan: source-preserving convergent maintenance loops for Mark's work vault; processors remain the execution primitive, loops are the automation design unit.
-- [[wedge]] — Product wedge plan (2026-06-09): surface-in re-sequencing of remaining work; five phases (ambient daemon, shipped model provider, capture loop, nightly consolidation + morning brief, MCP server); evolve-don't-rebuild decision of record.
+- [[wedge]] — superseded product wedge plan (2026-06-09), retained as decision history for the five shipped phases.
 - [[memory]] — Memory-quality plan (2026-06-09): five mechanisms (BM25++ retrieval, page supersession, core.md, dismissal discounting, preference promotion) as conventions + deterministic rebuildable facts; embeddings banked as a recomputable-cache spec, miss-log gated.
 - [[daily]] — Daily-surface plan (2026-06-10): the daily as a three-act console (morning edition / live surface / close); section contract, one yesterday-block, owned capture block, close scaffold, edition health loop.
 
 ## Specs
 
-- [[wiki/specs/sdk-surface]] — The four-concept core (Vault, Proposal, Processor, Effect); Recall + engine-control surfaces; extension bundles; tiered feature model; consumer surfaces via the `src/surface/` collector layer (`AbstractSurface` future); dependency list.
+- [[wiki/specs/owner-attention]] — one ranked owner queue derived from real decisions and proposal reviews
+- [[wiki/specs/agent-work]] — derived, revision-safe work packets for evidence-backed agent resolution
+- [[wiki/specs/semantic-gardening]] — one proposal-only semantic-maintenance module: deterministic opportunities, stateless coverage, proposal decisions as memory, and the shared `garden` view
+
+- [[wiki/specs/sdk-surface]] — The four-concept core (Vault, Proposal, Processor, Effect); Recall + engine-control surfaces; extension bundles; shared operation seams; dependency list.
 - [[wiki/specs/proposals]] — The Proposal type; the only write path; local-eventual and hosted-protected construction.
 - [[wiki/specs/processors]] — The Processor type; three phases (adoption / garden / view); triggers; capabilities; first-party `dome.*` processors; idempotency.
 - [[wiki/specs/processor-execution]] — Processor invocation state machine; timeouts; output validation; model structured-output failures; retries; quarantine; drain/shutdown.
 - [[wiki/specs/effects]] — The ten-kind Effect taxonomy (Patch / Diagnostic / Fact / SearchDocument / Question / ExternalAction / OutboxRecovery / QuarantineRecovery / RunRecovery / View); SourceRef shape; exhaustive routing.
 - [[wiki/specs/adoption]] — The fixed-point adoption loop; `refs/dome/adopted/<branch>`; Dome-* trailer convention; `dome sync` / `dome status`.
 - [[wiki/specs/projection-store]] — Bun.sqlite-backed projection (facts, fts5, diagnostics, questions, schedule cursors); rebuild path; outbox is adjacent operational state.
+- [[wiki/specs/recall]] — Natural-language lexical recall: shared query analysis, bounded minimum-match candidates, projection-memory coherence, and outcome canaries.
 - [[wiki/specs/embeddings]] — Banked dense-retrieval design (not implemented): `dome.model-provider.embed/v1` envelope; `model.embed` capability; `embeddings.db` as the recomputable-cache store class; brute-force-cosine third RRF channel; gated on the `retrieval-misses.md` log.
 - [[wiki/specs/capabilities]] — Seventeen capability tiers; manifest declarations; vault grants; broker enforcement at one chokepoint.
 - [[wiki/specs/run-ledger]] — RunRecord per processor invocation; CapabilityUse; dual provenance with engine commit trailers.
@@ -35,11 +41,11 @@ Working in the codebase? [[philosophy]] is the house style — pure-decide + thi
 - [[wiki/specs/mcp-surface]] — MCP server: the shipped `dome mcp` stdio adapter (wedge Phase 5) — typed capture/query/export_context/report_miss/status/check/resolve/settle/tasks/brief/proposals/apply_proposal/reject_proposal tools over the same handlers the CLI uses.
 - [[wiki/specs/http-surface]] — HTTP surface: the shipped `dome http` read+capture adapter (bearer-token; loopback/Tailscale) — POST /capture implements the remote-capture seam; status/query/tasks/doc/questions/resolve read routes.
 - [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, OpenCode, Codex, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + compiler host + git-native writes).
+- [[wiki/specs/agent-host]] — The replaceable foreground-agent host: session protocol, agent workspace, and the seam between agents and the background compiler.
 - [[wiki/specs/task-lifecycle]] — `^block-anchor` line identity (move-stable, not body-hash); the three deterministic `dome.daily` task processors (stamp / reconcile / normalize) and why garden-phase; the `lastHumanChangedAt` freshness rule; the warden pattern (questions-only integrity + answer-handler; no-op without a model).
 - [[wiki/specs/daily-surface]] — The daily note as a product surface: the three acts (morning edition / live surface / close), the 24-hour choreography, the normative section contract and block-ownership tables, the edition's degradation ladder, the `dome.daily.edition` maintenance loop, and the `daily.*` doctor findings.
 - [[wiki/specs/claims]] — The vault-general claim-line grammar (`**Key:** value *(as of date)* ^c…`); `dome.claims.stamp` (garden anchor stamper) and `dome.claims.index` (adoption fact emitter); the `dome.claim.coherence` maintenance loop; bi-temporal supersession model; anticipated consumers (nightly sweeper, `dome explain`, warden pre-filter).
-- [[wiki/specs/sweep]] — The nightly meaning-integration sweep (`dome.agent.sweep` + `dome.agent.sweep-answer`): queue rules, settlement-by-sources, ledger grammar, write vocabulary, dispositions, three engine-forced deltas, config keys.
-- [[wiki/specs/autonomous-agents]] — Autonomous-agent capability: agent-as-processor model (no new primitive); `ctx.modelInvoke.step` provider-neutral tool-calling seam; `AgentDefinition` loop harness; `dome.agent.ingest` (inbox-triggered full ingest workflow, single PatchEffect + questions); the consolidate (`consolidate_targets` scope, plus `proposeSplit` — the proposal-review loop's first producer) and brief (deterministic failure contract) agents; the deterministic `dome.agent.active-projects` core-memory renderer; grant-as-boundary + two hard floors.
+- [[wiki/specs/autonomous-agents]] — Autonomous-agent capability: agent-as-processor model (no new primitive); `ctx.modelInvoke.step` provider-neutral tool-calling seam; ingest, semantic garden, and brief agents; the deterministic `dome.agent.active-projects` core-memory renderer; capability grants + two hard floors.
 - [[wiki/specs/preferences]] — Preference promotion (memory-quality M5): the `preferences/signals.md` append-only signal convention; deterministic counter facts (`dome.preference.*`, rebuildable); Wilson 95% lower bound × 90-day freshness confidence; owner-needed promotion questions; the two-gated-writers contract for `core.md` (promotion-answer owns promoted-preferences, active-projects owns active-projects; every writer owns a distinct block, fence-pinned cross-bundle); OSB applied/violated lifecycle banked as follow-up.
 - [[wiki/specs/sources]] — External-feed subscriptions (`dome.sources`): the per-subscription consent surface in vault config, the 15-minute stateless fetch scheduler, the generic `sources.fetch` outbox handler running vault-authored fetch commands (calendar shipped default-off; Slack supported, never shipped on), and the launchd-timer machinery it replaces.
 - [[wiki/specs/page-schema]] — Frontmatter contract per page type; four defaults + extension protocol.
@@ -51,6 +57,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 
 - [[wiki/invariants/ADOPTED_REF_IS_SEMANTIC_CURSOR]] — *(axiom)* `refs/dome/adopted/<branch>` points to the latest fully-adopted commit; advanced only after a clean fixed-point sync. Fast-forward-only.
 - [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]] — *(shipped default)* Vault root carries AGENTS.md as the canonical agent-orientation surface; richer templated-section refresh remains planned.
+- [[wiki/invariants/AGENT_WORK_IS_DERIVED]] — *(shipped default)* agent work is compiled from open questions and owns no queue, claim, retry, or job store.
 - [[wiki/invariants/ALL_MUTATION_GOES_THROUGH_ADOPTION]] — *(axiom)* Every vault state change — agent native write, vim save, garden-emitted patch, scheduled job — eventually flows through the engine's adoption loop.
 - [[wiki/invariants/EMBEDDINGS_ARE_A_RECOMPUTABLE_CACHE]] — *(deferred)* Vectors in `embeddings.db` never hold truth, only acceleration; the cache may be deleted at any time with no correctness impact; no processor may read embeddings as facts.
 - [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]] — *(axiom)* Every engine-produced commit carries `Dome-Run`, `Dome-Extension`, `Dome-Base`, `Dome-Source-Head` trailers in the message body; user out-of-band commits do not.
@@ -82,7 +89,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/matrices/intent-prompt-processors]] — User intent × prompt source × processor that handles them × effects emitted.
 - [[wiki/matrices/processor-phase-x-trigger]] — Phase × trigger compatibility; what's allowed where.
 - [[wiki/matrices/projection-table-x-owner]] — Per-projection-table writer authority; namespace scoping.
-- [[wiki/matrices/protocol-adapter]] — CLI / MCP / future HTTP / Voice mapped to AbstractSurface operations.
+- [[wiki/matrices/protocol-adapter]] — CLI / MCP / HTTP / AgentRuntime mapped to the shared Vault and operation seams.
 
 ## Gotchas
 

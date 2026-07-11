@@ -2,7 +2,6 @@
 
 import {
   diagnosticEffect,
-  questionEffect,
   type Effect,
 } from "../../../../src/core/effect";
 import {
@@ -152,14 +151,10 @@ const ingest = defineProcessorImplementation({
         // source with its tail never seen) or blow provider context on
         // every step and fail forever.
         effects.push(
-          questionEffect({
-            question: `Ingest cannot safely process ${sourcePath}: the capture is ${source.length} chars, beyond the ${MAX_SOURCE_CHARS}-char source window. Split it into smaller captures or integrate it manually, then archive the original.`,
-            options: ["skip"],
-            idempotencyKey: `dome.agent.ingest:oversize:${sourcePath}`,
-            metadata: {
-              material: sourcePath,
-              automationPolicy: "owner-needed",
-            },
+          diagnosticEffect({
+            severity: "warning",
+            code: "dome.agent.ingest-source-too-large",
+            message: `Ingest cannot safely process ${sourcePath}: the capture is ${source.length} chars, beyond the ${MAX_SOURCE_CHARS}-char source window. Split it into smaller captures or integrate it manually, then archive the original.`,
             sourceRefs: [ctx.sourceRef(sourcePath)],
           }),
         );

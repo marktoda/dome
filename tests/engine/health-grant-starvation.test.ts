@@ -186,10 +186,10 @@ describe("capabilityGrantStarvationFindings", () => {
     expect(
       findingsFor({
         declared: {
-          "dome.agent.consolidate": [read("wiki/**/*.md")],
+          "dome.acme.semantic": [read("wiki/**/*.md")],
         },
         grants: {
-          "dome.agent.consolidate": [
+          "dome.acme.semantic": [
             read(
               "wiki/entities/**/*.md",
               "wiki/concepts/**/*.md",

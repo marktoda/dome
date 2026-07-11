@@ -37,7 +37,7 @@ export const ATTIC_PREFIX = "attic/";
  * The sweep scans `**\/*.md` (minus `attic_exclude_prefixes`), which is
  * broader than the propose grant. The broker's propose verdict is
  * all-or-nothing per PatchEffect (same posture CONSOLIDATE_WRITABLE_PATHS
- * documents for dome.agent.consolidate's patch.auto grant, assets/
+ * documents for dome.agent.garden's patch.propose grant, assets/
  * extensions/dome.agent/lib/consolidate-tools.ts): one candidate outside
  * the grant — a dead stub under `sources/` or the vault root — would deny
  * the whole weekly batch. Filtering candidates to this scope keeps a

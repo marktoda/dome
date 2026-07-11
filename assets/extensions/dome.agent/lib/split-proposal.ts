@@ -1,6 +1,5 @@
-// dome.agent — proposeSplit validation: pure, deterministic checking for the
-// consolidate agent's page-split proposals (stock-gardening phase 1, Task 5).
-// The tool (consolidate-tools.ts) wraps this with the injected VaultReader
+// dome.agent — pure, deterministic validation for semantic-garden page splits.
+// The garden tool adapter wraps this with the injected VaultReader
 // for existence checks (hub must exist, sub-pages must not); this module
 // stays a pure function of its two string/struct inputs — no fs/sqlite
 // imports, no reader — per the processor-purity fence.

@@ -8,6 +8,12 @@
 // rendering lives in src/cli/commands/check.ts.
 
 import { getAdoptedRef, getCurrentBranch } from "../adopted-ref";
+import {
+  attentionProposal,
+  attentionQuestion,
+  compileAttention,
+  type AttentionSnapshot,
+} from "../attention/attention";
 import type { SourceRef } from "../core/source-ref";
 import { commitOid } from "../core/source-ref";
 import type { QuestionMetadata } from "../core/effect";
@@ -134,6 +140,8 @@ export type CheckDiagnosticItem = {
 };
 
 export type CheckDecisionReport = {
+  /** Canonical ranked owner queue; legacy question/proposal fields below are compatibility views. */
+  readonly attention: AttentionSnapshot;
   readonly questions: number;
   readonly agent_safe_questions: number;
   readonly model_safe_questions: number;
@@ -362,8 +370,24 @@ function collectDecisionReport(opts: {
   readonly proposals: ReadonlyArray<ProposalView>;
   readonly limit: number;
 }): CheckDecisionReport {
+  const attention = compileAttention({
+    questions: opts.questions.map(attentionQuestion),
+    proposals: opts.proposals.map(attentionProposal),
+    now: new Date(),
+  });
+  const orderedDecisionIds = [...attention.primary, ...attention.backlog]
+    .filter((item) => item.kind === "decision")
+    .map((item) => item.action.questionId);
+  const questionById = new Map(opts.questions.map((question) => [question.id, question]));
+  const orderedQuestions = [
+    ...orderedDecisionIds.flatMap((id) => {
+      const question = questionById.get(id);
+      return question === undefined ? [] : [question];
+    }),
+    ...opts.questions.filter((question) => !orderedDecisionIds.includes(question.id)),
+  ];
   const items = Object.freeze(
-    opts.questions.slice(0, opts.limit).map((question) => {
+    orderedQuestions.slice(0, opts.limit).map((question) => {
       const options = question.effect.options ?? null;
       const metadata = question.effect.metadata ?? null;
       return Object.freeze({
@@ -393,6 +417,7 @@ function collectDecisionReport(opts: {
     opts.questions.map((question) => question.effect.metadata),
   );
   return Object.freeze({
+    attention,
     questions: opts.questions.length,
     agent_safe_questions: policyCounts.agentSafe,
     model_safe_questions: policyCounts.modelSafe,
@@ -427,6 +452,11 @@ function buildReport(input: {
   // proposals array is pending-only by construction (collectProposals's
   // default filter), so its length is the pending count.
   const pendingProposals = input.decisions?.proposals.length ?? 0;
+  const firstOwnerItem = input.decisions === null
+    ? null
+    : input.decisions.attention.primary[0] ??
+      input.decisions.attention.backlog[0] ??
+      null;
   return Object.freeze({
     schema: SCHEMA,
     status:
@@ -453,6 +483,18 @@ function buildReport(input: {
       questions,
       firstQuestionId: input.decisions?.items[0]?.id ?? null,
       firstQuestionOptions: input.decisions?.items[0]?.options ?? null,
+      firstOwnerAction: firstOwnerItem === null
+        ? null
+        : firstOwnerItem.kind === "decision"
+          ? Object.freeze({
+              kind: "decision" as const,
+              id: firstOwnerItem.action.questionId,
+              options: firstOwnerItem.action.options,
+            })
+          : Object.freeze({
+              kind: "review" as const,
+              id: firstOwnerItem.action.proposalId,
+            }),
     }),
   });
 }

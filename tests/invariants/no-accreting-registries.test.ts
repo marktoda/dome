@@ -38,15 +38,10 @@ import { parse as parseYaml } from "yaml";
 import {
   BRIEF_WRITABLE_PATHS,
 } from "../../assets/extensions/dome.agent/lib/brief-tools";
-import {
-  CONSOLIDATE_WRITABLE_PATHS,
-} from "../../assets/extensions/dome.agent/lib/consolidate-tools";
+import { GARDEN_WRITABLE_PATHS } from "../../assets/extensions/dome.agent/lib/garden-tools";
 import {
   INGEST_WRITABLE_PATHS,
 } from "../../assets/extensions/dome.agent/lib/ingest-tools";
-import {
-  SWEEP_WRITABLE_PATHS,
-} from "../../assets/extensions/dome.agent/lib/sweep-tools";
 import { FIRST_PARTY_EXTENSION_DEFAULTS } from "../../src/cli/default-vault-config";
 import { globMatch } from "../../src/engine/core/glob-cache";
 import { parseManifest } from "../../src/extensions/manifest-schema";
@@ -232,18 +227,18 @@ describe("NO_ACCRETING_REGISTRIES", () => {
     // rewrite cannot quietly drop the contract along with the old chore.
     const ingest = readFileSync(join(AGENT_LIB_DIR, "ingest-charter.ts"), "utf8");
     expect(ingest).toMatch(/never edit index files/i);
-    const consolidate = readFileSync(
-      join(AGENT_LIB_DIR, "consolidate-charter.ts"),
+    const garden = readFileSync(
+      join(AGENT_LIB_DIR, "garden-charter.ts"),
       "utf8",
     );
-    expect(consolidate).toMatch(/log\.md.*frozen/is);
+    expect(garden).toMatch(/every semantic edit is proposed/i);
   });
 
   test("no model.invoke processor in any first-party manifest holds patch.auto over log.md or index files", () => {
     const processors = loadFirstPartyProcessors();
     const modelProcessors = processors.filter((p) => p.hasModelInvoke);
-    // ingest, consolidate, brief, sweep.
-    expect(modelProcessors.length).toBeGreaterThanOrEqual(4);
+    // ingest, garden, brief.
+    expect(modelProcessors.length).toBeGreaterThanOrEqual(3);
 
     for (const processor of modelProcessors) {
       expectNoRegistryCoverage(
@@ -342,8 +337,8 @@ describe("NO_ACCRETING_REGISTRIES", () => {
         expectNoRegistryCoverage(paths ?? [], `${processor.id} manifest grant`);
       }
     }
-    // ingest, consolidate, brief, sweep, sweep-answer, promotion-answer.
-    expect(patchAutoGrants).toBeGreaterThanOrEqual(5);
+    // ingest, brief, promotion-answer, and the two deterministic block writers.
+    expect(patchAutoGrants).toBeGreaterThanOrEqual(4);
   });
 
   test("shipped-default vault config excludes log.md and index files from dome.agent patch.auto", () => {
@@ -382,9 +377,7 @@ describe("NO_ACCRETING_REGISTRIES", () => {
     // Both gated core.md patch writers must actually appear in the shipped
     // replacement grants — if one vanishes, the exact-pin above silently stops
     // checking. This is a SUBSET check, not exact equality: deterministic
-    // processors carry non-core.md patch.auto replacement grants too (e.g.
-    // dome.agent.patrol over meta/patrol-*), and those are registry-checked by
-    // the expectNoRegistryCoverage pass above.
+    // processors may carry other narrow patch.auto replacement grants too.
     const patchAutoProcessorIds = Object.entries(agent.processors ?? {})
       .filter(([, grant]) => Array.isArray(grant["patch.auto"]))
       .map(([processorId]) => processorId);
@@ -396,9 +389,8 @@ describe("NO_ACCRETING_REGISTRIES", () => {
   test("grant-aware tool writable-path mirrors exclude log.md and index files", () => {
     const mirrors: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
       ["INGEST_WRITABLE_PATHS", INGEST_WRITABLE_PATHS],
-      ["CONSOLIDATE_WRITABLE_PATHS", CONSOLIDATE_WRITABLE_PATHS],
+      ["GARDEN_WRITABLE_PATHS", GARDEN_WRITABLE_PATHS],
       ["BRIEF_WRITABLE_PATHS", BRIEF_WRITABLE_PATHS],
-      ["SWEEP_WRITABLE_PATHS", SWEEP_WRITABLE_PATHS],
     ];
     for (const [name, paths] of mirrors) {
       expectNoRegistryCoverage(paths, name);

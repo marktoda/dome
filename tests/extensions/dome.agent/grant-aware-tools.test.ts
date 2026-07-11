@@ -17,14 +17,13 @@ import {
   makeIngestTools,
 } from "../../../assets/extensions/dome.agent/lib/ingest-tools";
 import {
-  CONSOLIDATE_WRITABLE_PATHS,
-  makeConsolidatorTools,
-} from "../../../assets/extensions/dome.agent/lib/consolidate-tools";
+  GARDEN_WRITABLE_PATHS,
+  makeGardenTools,
+} from "../../../assets/extensions/dome.agent/lib/garden-tools";
 import {
   BRIEF_WRITABLE_PATHS,
   makeBriefTools,
 } from "../../../assets/extensions/dome.agent/lib/brief-tools";
-import { SWEEP_WRITABLE_PATHS } from "../../../assets/extensions/dome.agent/lib/sweep-tools";
 
 function freshState(): AgentRunState {
   return { edits: new Map(), questions: [], integrityFlags: [] };
@@ -125,12 +124,9 @@ describe("ingest tools enforce the patch.auto grant at tool time", () => {
   });
 });
 
-describe("consolidator tools enforce the patch.auto grant at tool time", () => {
-  test("writePage rejects notes/ (outside the consolidate grant)", async () => {
-    const tools = makeConsolidatorTools({
-      reader: reader({}),
-      ledgerPath: "meta/consolidation-ledger.md",
-    });
+describe("garden tools enforce the patch.propose grant at tool time", () => {
+  test("writePage rejects notes/ (outside the semantic garden grant)", async () => {
+    const tools = makeGardenTools(reader({}));
     const state = freshState();
     const out = await tool(tools, "writePage").execute(
       { path: "notes/2026-06-09.md", content: "x" },
@@ -141,10 +137,7 @@ describe("consolidator tools enforce the patch.auto grant at tool time", () => {
   });
 
   test("deletePage rejects an out-of-grant path", async () => {
-    const tools = makeConsolidatorTools({
-      reader: reader({}),
-      ledgerPath: "meta/consolidation-ledger.md",
-    });
+    const tools = makeGardenTools(reader({}));
     const state = freshState();
     const out = await tool(tools, "deletePage").execute(
       { path: "inbox/raw/x.md" },
@@ -154,15 +147,8 @@ describe("consolidator tools enforce the patch.auto grant at tool time", () => {
     expect(state.edits.size).toBe(0);
   });
 
-  // Same tool-time fence as ingest: index.md/log.md are read-only for the
-  // consolidator (the index regenerates itself; log.md is frozen history),
-  // and the all-or-nothing PatchEffect verdict means the denial must land
-  // at the tool, where the model can self-correct.
   test("writePage rejects log.md and index.md without recording an edit", async () => {
-    const tools = makeConsolidatorTools({
-      reader: reader({}),
-      ledgerPath: "meta/consolidation-ledger.md",
-    });
+    const tools = makeGardenTools(reader({}));
     const state = freshState();
     for (const path of ["log.md", "index.md"]) {
       const out = await tool(tools, "writePage").execute(
@@ -176,10 +162,7 @@ describe("consolidator tools enforce the patch.auto grant at tool time", () => {
   });
 
   test("deletePage rejects log.md and index.md without recording an edit", async () => {
-    const tools = makeConsolidatorTools({
-      reader: reader({ "log.md": "history", "index.md": "catalog" }),
-      ledgerPath: "meta/consolidation-ledger.md",
-    });
+    const tools = makeGardenTools(reader({ "log.md": "history", "index.md": "catalog" }));
     const state = freshState();
     for (const path of ["log.md", "index.md"]) {
       const out = await tool(tools, "deletePage").execute({ path }, state);
@@ -189,17 +172,14 @@ describe("consolidator tools enforce the patch.auto grant at tool time", () => {
     expect(state.edits.size).toBe(0);
   });
 
-  test("a custom ledger path is writable when threaded into the factory", async () => {
-    const tools = makeConsolidatorTools({
-      reader: reader({}),
-      ledgerPath: "meta/ledger.md",
-    });
+  test("a wiki page is writable inside the staged proposal", async () => {
+    const tools = makeGardenTools(reader({}));
     const state = freshState();
     const out = await tool(tools, "writePage").execute(
-      { path: "meta/ledger.md", content: "ran tonight" },
+      { path: "wiki/entities/a.md", content: "# A" },
       state,
     );
-    expect(out).toBe("wrote meta/ledger.md");
+    expect(out).toBe("wrote wiki/entities/a.md");
   });
 });
 
@@ -353,17 +333,7 @@ describe("writable-glob constants mirror manifest.yaml patch.auto grants", () =>
     );
   });
 
-  test("consolidate", async () => {
-    expect([...CONSOLIDATE_WRITABLE_PATHS].sort()).toEqual(
-      [...(await manifestPatchAutoPaths("dome.agent.consolidate"))].sort(),
-    );
-  });
-
-  // The propose grant (operation 4, proposeSplit) is a SEPARATE capability
-  // from patch.auto above — the split patch never auto-applies, so it is
-  // never in CONSOLIDATE_WRITABLE_PATHS's tool-time boundary. Pinned here
-  // directly against manifest.yaml so the two paths cannot silently drift.
-  test("consolidate's patch.propose grant covers wiki/**/*.md (operation 4)", async () => {
+  test("garden's tool scope mirrors its patch.propose grant", async () => {
     const raw = await readFile(
       join(
         import.meta.dir,
@@ -378,11 +348,11 @@ describe("writable-glob constants mirror manifest.yaml patch.auto grants", () =>
       }>;
     };
     const processor = manifest.processors.find(
-      (p) => p.id === "dome.agent.consolidate",
+      (p) => p.id === "dome.agent.garden",
     );
-    if (processor === undefined) throw new Error("no processor dome.agent.consolidate");
+    if (processor === undefined) throw new Error("no processor dome.agent.garden");
     const cap = processor.capabilities.find((c) => c.kind === "patch.propose");
-    expect(cap?.paths).toEqual(["wiki/**/*.md"]);
+    expect(cap?.paths).toEqual(GARDEN_WRITABLE_PATHS);
   });
 
   test("brief", async () => {
@@ -391,9 +361,4 @@ describe("writable-glob constants mirror manifest.yaml patch.auto grants", () =>
     );
   });
 
-  test("sweep", async () => {
-    expect([...SWEEP_WRITABLE_PATHS].sort()).toEqual(
-      [...(await manifestPatchAutoPaths("dome.agent.sweep"))].sort(),
-    );
-  });
 });

@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-06-12
+updated: 2026-07-09
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
@@ -155,6 +155,14 @@ range. The section columns landed as a schema change; per §"Schema
 migrations", the schema-hash bump wipes and rebuilds the projection — the
 rebuild *is* the migration.
 
+Reads do not translate every whitespace token into an implicit FTS `AND`.
+Per [[wiki/specs/recall]], the shared query analyzer removes grammatical and
+answer-shape terms when evidence terms remain, then compiles a bounded
+minimum-match FTS5 expression. Focused one/two-term queries remain
+conjunctive; longer natural questions tolerate non-evidence wording. The same
+analysis governs projection-memory recall signals so the lexical channels do
+not disagree.
+
 ### `diagnostics`
 
 Stores `DiagnosticEffect` rows. Both processor-emitted diagnostics and engine-created diagnostics land here; engine-created rows use synthetic `processor_id` producer ids such as `engine.adoption`, `engine.scheduler`, and `engine.garden`.
@@ -249,9 +257,15 @@ answer for inspect/query ergonomics; the durable source of truth is
 `answers.db.question_answers`, keyed by `QuestionEffect.idempotencyKey`.
 Projection rebuild resets and replays `QuestionEffect` rows, then reapplies
 matching durable answers from `answers.db`. The same durable row carries
-answer-handler dispatch state (`pending`, `handled`, `failed`, `skipped`) so a
+the answer actor plus optional evidence-backed agent context (`reason` and
+inspected SourceRefs), and answer-handler dispatch state (`pending`, `handled`,
+`failed`, `skipped`) so a
 crash after recording the answer but before completing handler dispatch can be
 retried by re-running `dome resolve <id> <value>`.
+
+Public and agent resolution insert first-answer-wins by idempotency key. Two
+harnesses may investigate concurrently, but a later completion cannot
+overwrite the durable winner; its projection view is repaired from that row.
 
 Incremental adoption resolves stale derived questions after a successful
 processor re-inspects a bounded path set. A prior row from the same processor

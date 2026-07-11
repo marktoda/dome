@@ -42,7 +42,7 @@ const SLOW_ANSWER_HANDLER_BUNDLE_ROOT = join(
 
 scenario(
   {
-    name: "cli-surface: opt-in auto-resolution answers agent-safe questions through handlers",
+    name: "cli-surface: legacy auto-resolution config leaves agent work for a vault-aware agent",
     tags: [
       { kind: "group", group: "cli-surface" },
       { kind: "effect", effect: "question" },
@@ -106,8 +106,8 @@ extensions:
       readonly metadata: { readonly automationPolicy?: string } | "-";
     }>;
     expect(rows.length).toBe(1);
-    expect(rows[0]?.status).toBe("answered");
-    expect(rows[0]?.answer).toBe("track");
+    expect(rows[0]?.status).toBe("open");
+    expect(rows[0]?.answer).toBe("-");
     expect(rows[0]?.metadata).toEqual(
       expect.objectContaining({ automationPolicy: "agent-safe" }),
     );
@@ -121,22 +121,20 @@ extensions:
         "SELECT answer, handler_status, handler_attempts FROM question_answers",
       )
       .get();
-    expect(durableAnswer?.answer).toBe("track");
-    expect(durableAnswer?.handler_status).toBe("handled");
-    expect(durableAnswer?.handler_attempts).toBe(1);
+    expect(durableAnswer).toBeNull();
 
     const handlerRun = h.ledger.raw
       .query<{ trigger_kind: string }, []>(
         "SELECT trigger_kind FROM runs WHERE processor_id = 'dome.daily.ambiguous-followup-answer'",
       )
       .get();
-    expect(handlerRun?.trigger_kind).toBe("answer");
+    expect(handlerRun).toBeNull();
 
     const adopted = await h.refs.adopted();
     expect(adopted).not.toBeNull();
     if (adopted === null) return;
     await h.expectFile("wiki/project.md", { atCommit: adopted })
-      .toContain("- [ ] #followup Follow up with Riley");
+      .toNotContain("- [ ] #followup Follow up with Riley");
   },
 );
 

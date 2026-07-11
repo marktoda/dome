@@ -134,7 +134,7 @@ generated_from: "inbox/processed/example.md"  # optional; generated synthesis pr
 input_hash: "sha256..."                         # optional; generated-input settlement hash
 name: "Org health synthesis"                  # optional
 metadata: { ... }                             # optional
-processor: dome.agent.sweep                     # optional; generating processor id
+processor: dome.agent.garden                    # optional; generating processor id
 ---
 ```
 

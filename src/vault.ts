@@ -42,6 +42,20 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { getAdoptedRef, getCurrentBranch } from "./adopted-ref";
+import {
+  agentWorkQuestion,
+  compileAgentWork,
+  validateAgentWorkCompletion,
+  type AgentWorkCompletionProblem,
+  type AgentWorkSnapshot,
+  type CompleteAgentWorkInput,
+} from "./agent-work/agent-work";
+import {
+  compileAttention,
+  attentionProposal,
+  attentionQuestion,
+  type AttentionSnapshot,
+} from "./attention/attention";
 import type {
   DiagnosticEffect,
   FactEffect,
@@ -80,6 +94,7 @@ import {
   orphanRuns as ledgerOrphanRuns,
 } from "./ledger/runs";
 import { queryOutbox } from "./outbox/dispatch";
+import { listProposals } from "./proposals/pending-proposals";
 import { resolveBundleRoots } from "./extensions/bundle-roots";
 import { findGitRoot, readBlob } from "./git";
 import { queryDiagnostics } from "./projections/diagnostics";
@@ -146,6 +161,14 @@ export type StructuredView = {
   readonly data: unknown;
 };
 
+/** A command-triggered view contributed by one installed extension bundle. */
+export type InstalledView = {
+  readonly command: string;
+  readonly processorId: string;
+  readonly processorVersion: string;
+  readonly extensionId: string;
+};
+
 export type VaultViewResult =
   | {
       readonly kind: "ok";
@@ -182,6 +205,24 @@ export type ResolveOutcome =
 export type ListQuestionsFilter = {
   readonly resolved?: boolean | undefined;
 };
+
+export type AgentWorkOptions = {
+  readonly limit?: number | undefined;
+  readonly questionId?: number | undefined;
+};
+
+export type CompleteAgentWorkOutcome =
+  | {
+      readonly kind: "completed" | "already-completed";
+      readonly record: QuestionRecord;
+      readonly handlers: AnswerHandlerDispatchResult;
+    }
+  | {
+      readonly kind: "rejected";
+      readonly problem: AgentWorkCompletionProblem;
+      readonly message: string;
+    }
+  | { readonly kind: "not-found" };
 
 export type VaultSyncOptions = {
   readonly signal?: AbortSignal | undefined;
@@ -243,12 +284,22 @@ export type Vault = {
     name: string,
     args?: unknown,
   ) => Promise<VaultViewResult>;
+  /** Discover installed plugin views without a static first-party catalog. */
+  readonly listViews: () => ReadonlyArray<InstalledView>;
 
   // Engine control
   readonly sync: (opts?: VaultSyncOptions) => Promise<CompilerHostTickResult>;
   readonly rebuild: () => Promise<RebuildOutcome>;
   readonly getAdoptionStatus: () => Promise<AdoptionStatus>;
   readonly operationalSummary: () => Promise<OperationalSummary>;
+  /** One canonical, ranked owner-attention read model. */
+  readonly attention: () => Promise<AttentionSnapshot>;
+
+  // Agent work — a derived queue plus evidence-backed durable completion
+  readonly agentWork: (opts?: AgentWorkOptions) => Promise<AgentWorkSnapshot>;
+  readonly completeAgentWork: (
+    input: CompleteAgentWorkInput,
+  ) => Promise<CompleteAgentWorkOutcome>;
 
   // Decisions — durable questions and answers
   readonly listQuestions: (
@@ -321,6 +372,7 @@ function bindVault(runtime: VaultRuntime): Vault {
     readDocument: (path: string) => readAdoptedDocument(runtime.path, path),
     runView: (name: string, args?: unknown) =>
       runVaultView(runtime, name, args),
+    listViews: () => listInstalledViews(runtime),
 
     sync: (opts?: VaultSyncOptions) =>
       runCompilerHostTick({
@@ -333,6 +385,11 @@ function bindVault(runtime: VaultRuntime): Vault {
       }),
     rebuild: () => rebuildVaultProjection(runtime),
     operationalSummary: async () => collectOperationalSummary(runtime),
+    attention: async () => collectVaultAttention(runtime),
+    agentWork: async (opts?: AgentWorkOptions) =>
+      collectVaultAgentWork(runtime, opts),
+    completeAgentWork: (input: CompleteAgentWorkInput) =>
+      completeVaultAgentWork(runtime, input),
     getAdoptionStatus: () => collectAdoptionStatus(runtime.path),
 
     listQuestions: async (filter?: ListQuestionsFilter) =>
@@ -348,6 +405,23 @@ function bindVault(runtime: VaultRuntime): Vault {
 
     close: () => runtime.close(),
   });
+}
+
+function listInstalledViews(runtime: VaultRuntime): ReadonlyArray<InstalledView> {
+  return Object.freeze(
+    runtime.registry.byPhase("view").flatMap((processor) =>
+      processor.triggers.flatMap((trigger) =>
+        trigger.kind === "command"
+          ? [Object.freeze({
+              command: trigger.name,
+              processorId: processor.id,
+              processorVersion: processor.version,
+              extensionId: runtime.extensionIdFor(processor.id),
+            })]
+          : [],
+      ),
+    ),
+  );
 }
 
 async function queryAdoptedState(
@@ -496,6 +570,39 @@ function collectOperationalSummary(runtime: VaultRuntime): OperationalSummary {
   });
 }
 
+function collectVaultAttention(runtime: VaultRuntime): AttentionSnapshot {
+  const questions = queryQuestionRecords(runtime.projectionDb, {
+    resolved: false,
+  }).map(attentionQuestion);
+  const proposals = listProposals(runtime.proposalsDb, { status: "pending" })
+    .map((row) => attentionProposal({
+      id: row.id,
+      processorId: row.processorId,
+      reason: row.reason,
+      paths: row.changes.map((change) => change.path),
+      sourceRefs: row.sourceRefs,
+      createdAt: row.createdAt,
+    }));
+  return compileAttention({ questions, proposals, now: new Date() });
+}
+
+function collectVaultAgentWork(
+  runtime: VaultRuntime,
+  opts?: AgentWorkOptions,
+): AgentWorkSnapshot {
+  const questions = queryQuestionRecords(runtime.projectionDb, {
+    resolved: false,
+  }).map(agentWorkQuestion);
+  return compileAgentWork({
+    questions,
+    now: new Date(),
+    ...(opts?.limit !== undefined ? { limit: opts.limit } : {}),
+    ...(opts?.questionId !== undefined
+      ? { questionId: opts.questionId }
+      : {}),
+  });
+}
+
 async function rebuildVaultProjection(
   runtime: VaultRuntime,
 ): Promise<RebuildOutcome> {
@@ -558,6 +665,77 @@ async function resolveQuestion(
       });
     }
   }
+}
+
+async function completeVaultAgentWork(
+  runtime: VaultRuntime,
+  input: CompleteAgentWorkInput,
+): Promise<CompleteAgentWorkOutcome> {
+  const question = getQuestionRecord(runtime.projectionDb, input.questionId);
+  if (question === null) return Object.freeze({ kind: "not-found" as const });
+  if (question.answeredAt !== null) {
+    const handlers = await dispatchAnswerHandlersIfNeeded({ runtime, question });
+    return Object.freeze({
+      kind: "already-completed" as const,
+      record: question,
+      handlers,
+    });
+  }
+
+  const snapshot = collectVaultAgentWork(runtime, {
+    questionId: input.questionId,
+    limit: 1,
+  });
+  const item = snapshot.items[0];
+  if (item === undefined) {
+    return Object.freeze({
+      kind: "rejected" as const,
+      problem: "not-ready" as const,
+      message: "this question requires owner authority and is not agent work",
+    });
+  }
+  const validation = validateAgentWorkCompletion(item, input);
+  if (!validation.ok) {
+    return Object.freeze({
+      kind: "rejected" as const,
+      problem: validation.problem,
+      message: validation.message,
+    });
+  }
+
+  const result = answerQuestionDurably({
+    projection: runtime.projectionDb,
+    answers: runtime.answersDb,
+    id: input.questionId,
+    answer: validation.answer,
+    answeredBy: "agent",
+    answerContext: Object.freeze({
+      kind: "agent" as const,
+      reason: validation.reason,
+      evidence: validation.evidence,
+    }),
+  });
+  if (result.kind === "not-found") {
+    return Object.freeze({ kind: "not-found" as const });
+  }
+  if (result.kind === "invalid-option") {
+    return Object.freeze({
+      kind: "rejected" as const,
+      problem: "invalid-option" as const,
+      message: `answer must be one of: ${result.options.join(", ")}`,
+    });
+  }
+  const handlers = await dispatchAnswerHandlersIfNeeded({
+    runtime,
+    question: result.record,
+  });
+  return Object.freeze({
+    kind: result.kind === "answered"
+      ? "completed" as const
+      : "already-completed" as const,
+    record: result.record,
+    handlers,
+  });
 }
 
 // ----- Re-exports for consumers ----------------------------------------------
