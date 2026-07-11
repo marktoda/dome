@@ -284,31 +284,33 @@ export async function seedRecurringTimeouts(f: Fixture): Promise<void> {
     throw new Error(`ledger open failed: ${ledger.error.kind}`);
   }
   try {
+    const now = Date.now();
     for (let i = 0; i < DEFAULT_RECURRING_TIMEOUT_THRESHOLD; i++) {
-      const runId = newRunId(new Date(i + 1), () => `timeout-seed-${i}`);
+      const startedAt = new Date(now - (i + 1) * 1_000);
+      const runId = newRunId(startedAt, () => `timeout-seed-${i}`);
       insertQueued(ledger.value.db, {
         id: runId,
         proposalId: null,
-        processorId: "test.recurring-timeout-processor",
-        processorVersion: "0.0.1",
-        phase: "garden",
+        processorId: "dome.markdown.lint-supersession",
+        processorVersion: "0.1.2",
+        phase: "adoption",
         inputCommit: adoptedCommit,
         triggerKind: "schedule",
         triggerPayload: { test: true },
-        startedAt: new Date(i + 1),
+        startedAt,
       });
-      markRunning(ledger.value.db, runId, new Date(i + 2));
+      markRunning(ledger.value.db, runId, startedAt);
       markTimedOut(ledger.value.db, {
         id: runId,
         error: {
           code: "processor.timeout",
           message: "Processor exceeded timeout of 30000ms.",
           retryable: false,
-          phase: "garden",
-          processorId: "test.recurring-timeout-processor",
+          phase: "adoption",
+          processorId: "dome.markdown.lint-supersession",
         },
         durationMs: 30_000,
-        finishedAt: new Date(i + 3),
+        finishedAt: new Date(startedAt.getTime() + 100),
       });
     }
   } finally {

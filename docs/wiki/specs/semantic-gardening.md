@@ -87,3 +87,13 @@ useful proposal should remove or change its evidence; rejecting it settles
 that exact evidence. The run ledger supplies cost and outcome history, while
 the proposal store supplies accept/reject history. No score is persisted into
 markdown or projection state.
+
+`bun run eval:product --vault <path>` compiles the retained
+`dome.agent.garden` proposal rows into an observational quality report. It
+includes pending attention load, owner applies and rejects, expired rows,
+decision latency, line/file edit size, per-opportunity-kind outcomes, and
+changed-evidence recurrence. Owner apply rate is a usefulness proxy, not
+ground-truth opportunity precision. It is `null` when there are no human
+decisions, and no release threshold is set until the vault has at least 20
+human-decided semantic-garden proposals. The report reads the existing
+proposal lifecycle; it does not add a queue or evaluation ledger.

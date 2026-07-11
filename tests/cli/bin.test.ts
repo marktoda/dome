@@ -35,32 +35,32 @@ describe("bin/dome process boundary", () => {
       // Getting started:
       "init",
       "recipe",
-      // Daily loop:
+      // Today:
       "capture",
+      "today",
+      // Maintain:
       "check",
+      "audit",
+      "garden",
+      "serve",
+      "install",
+      "restart",
+      "uninstall",
       "status",
       "sync",
-      // Decisions:
+      // Decide:
       "resolve",
       "agent-work",
       "settle",
       "proposals",
       "apply",
       "reject",
-      // Recall & views:
+      // Recall:
       "query",
       "views",
-      "today",
       "log",
       "explain",
       "export-context",
-    "audit",
-    "garden",
-      // Service:
-      "serve",
-      "install",
-      "restart",
-      "uninstall",
       // Adapters:
       "mcp",
       "http",

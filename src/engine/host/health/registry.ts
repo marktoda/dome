@@ -17,6 +17,7 @@ import { projectionCacheKeysChanged } from "../../../projections/db";
 import {
   DEFAULT_ORPHAN_RUN_THRESHOLD_MS,
   DEFAULT_PENDING_OUTBOX_THRESHOLD_MS,
+  DEFAULT_RECURRING_TIMEOUT_WINDOW_MS,
   RECURRING_TIMEOUT_SCAN_LIMIT,
   type HealthFinding,
   type HealthInputs,
@@ -245,8 +246,13 @@ const HEALTH_PROBES: ReadonlyArray<HealthProbe> = [
     recurringTimeoutFindings({
       recentTimedOutRuns: queryRunSummaries(c.ledger, {
         status: "timed_out",
+        sinceIso: new Date(
+          c.now.getTime() - DEFAULT_RECURRING_TIMEOUT_WINDOW_MS,
+        ).toISOString(),
         limit: RECURRING_TIMEOUT_SCAN_LIMIT,
       }),
+      now: c.now,
+      currentProcessorVersions: c.processorVersions,
       ...(c.recurringTimeoutThreshold !== undefined
         ? { threshold: c.recurringTimeoutThreshold }
         : {}),
@@ -295,4 +301,3 @@ export function collectOperationalSchemaReport(opts: {
     opts.now ?? new Date(),
   );
 }
-

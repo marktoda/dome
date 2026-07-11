@@ -51,6 +51,7 @@ import {
   type PendingProposalRow,
   type ProposalStatus,
 } from "../proposals/pending-proposals";
+import { lineDiffStat } from "../proposals/diff-stat";
 import { resolveVaultPath } from "./resolve-vault";
 
 // ----- Public types ----------------------------------------------------------
@@ -439,34 +440,4 @@ function toProposalView(vaultPath: string, row: PendingProposalRow): ProposalVie
     stale,
     diffStat: Object.freeze(diffStat),
   });
-}
-
-/**
- * A simple, set-free line diff: trim the common prefix and suffix of `base`
- * and `proposed`'s lines, then count what's left on each side. Exactness is
- * not load-bearing (see Task 5's brief) — this is display-only.
- */
-function lineDiffStat(
-  base: string | null,
-  proposed: string | null,
-): { added: number; removed: number } {
-  const baseLines = base === null ? [] : base.split("\n");
-  const propLines = proposed === null ? [] : proposed.split("\n");
-
-  let start = 0;
-  const maxCommon = Math.min(baseLines.length, propLines.length);
-  while (start < maxCommon && baseLines[start] === propLines[start]) start += 1;
-
-  let endBase = baseLines.length;
-  let endProp = propLines.length;
-  while (
-    endBase > start &&
-    endProp > start &&
-    baseLines[endBase - 1] === propLines[endProp - 1]
-  ) {
-    endBase -= 1;
-    endProp -= 1;
-  }
-
-  return { removed: endBase - start, added: endProp - start };
 }

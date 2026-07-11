@@ -2,9 +2,11 @@
 //
 // `dome repair task-anchors` is intentionally narrower than `dome doctor
 // --repair`: doctor remains probe-only, while this command names one concrete
-// content repair and defaults to dry-run. The apply path removes duplicated
-// task anchors from all but the first origin line; the next dome.daily
-// stamp-block-id run assigns fresh deterministic identities.
+// content repair and defaults to dry-run. The apply path removes every
+// occurrence of a collided task anchor; the next dome.daily stamp-block-id
+// run assigns each source line its own deterministic identity. Keeping an
+// arbitrary first occurrence is not convergent when another line is the one
+// whose path/body deterministically hashes to the collided id.
 
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
@@ -233,7 +235,7 @@ export function taskAnchorRepairPlan(
   const byPath = new Map(files.map((file) => [file.path, file.content]));
   const changes: TaskAnchorRepairChange[] = [];
   for (const collision of collisions) {
-    for (const occurrence of collision.occurrences.slice(1)) {
+    for (const occurrence of collision.occurrences) {
       const content = byPath.get(occurrence.path);
       if (content === undefined) continue;
       const line = content.split(/\r?\n/)[occurrence.line - 1];
@@ -305,10 +307,10 @@ function printTaskAnchorRepairText(input: {
       `${input.apply ? "changed" : "would change"}`,
   );
   for (const collision of plan.collisions) {
-    const [kept, ...removed] = collision.occurrences;
     console.log(
-      `- ^${collision.anchor}: keep ${kept?.path}:${kept?.line}; ` +
-        `remove from ${removed.map((o) => `${o.path}:${o.line}`).join(", ")}`,
+      `- ^${collision.anchor}: remove from ` +
+        collision.occurrences.map((o) => `${o.path}:${o.line}`).join(", ") +
+        "; the next sync assigns distinct deterministic anchors",
     );
   }
   if (!input.apply) {

@@ -20,6 +20,21 @@ fresh scratch vault before it was written down; where something is rough, the
 guide says so instead of smoothing it over. Depth lives in the specs — this
 page links out rather than restating.
 
+## The product loop
+
+Dome has four user-facing jobs, all backed by the same adopted vault state:
+
+- **Today** — capture new material and render the day's action surface.
+- **Recall** — find source-backed context and explain where it came from.
+- **Decide** — settle tasks, answer explicit questions, and review proposed
+  garden changes.
+- **Maintain** — compile commits, surface attention, and keep projections and
+  background loops healthy.
+
+These are navigation labels, not new engine primitives. The core remains
+Vault, Proposal, Processor, and Effect; `dome --help` groups the existing
+commands around the four jobs.
+
 ## 1. Prerequisites
 
 - **macOS or Linux.** The daemon installs as a launchd LaunchAgent (macOS) or
@@ -120,11 +135,21 @@ installed plist/unit and its `--env` values are reused as-is).
 ## 4. Verify
 
 ```sh
-dome doctor
 dome status
 ```
 
-`dome doctor` is the read-only probe set. On a fresh vault expect:
+`dome status` is the cheap pulse you (and any agent session) run at
+boundaries. Read the `NEXT` block — `next_actions` is the canonical "what
+now". If the daemon hasn't caught up yet, status says `sync needed`; let its
+next tick handle it (it polls sub-second) or run `dome sync` yourself. While
+the daemon is running, a manual `dome sync` may answer `branch main is already
+being processed by another Dome host` — that's the daemon holding the lock,
+not an error.
+
+If status points to attention, run `dome check`; it explains the health,
+content, and decisions that need action. `dome doctor` is the hidden,
+troubleshooting-only probe set for dependencies and operational storage. On a
+fresh vault its detailed report may include:
 
 - `model.provider-key-missing` *(warning)* — until the key is present in the
   environment doctor runs in. The daemon has its own environment (step 3);
@@ -134,14 +159,6 @@ dome status
   `git commit` in the vault will try to sign; the finding shows the opt-out.
 - `capability.grant-starved` *(info)* — a processor whose config grant gives
   it nothing to act on. Zero on a fresh vault.
-
-`dome status` is the cheap pulse you (and any agent session) run at
-boundaries. Read the `NEXT` block — `next_actions` is the canonical "what
-now". If the daemon hasn't caught up yet, status says `sync needed`; let its
-next tick handle it (it polls sub-second) or run `dome sync` yourself. While
-the daemon is running, a manual
-`dome sync` may answer `branch main is already being processed by another
-Dome host` — that's the daemon holding the lock, not an error.
 
 ## 5. First loop: capture
 

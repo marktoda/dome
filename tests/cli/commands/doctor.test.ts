@@ -111,7 +111,7 @@ describe("runDoctor", () => {
     ).toBe(false);
   });
 
-  test("runs.db over the 512MB threshold raises the ledger.oversized warning", async () => {
+  test("runs.db over the threshold raises informational storage maintenance", async () => {
     const f = await makeFixture();
     fixtures.push(f);
     await writeDoctorConfig(f);
@@ -144,7 +144,7 @@ describe("runDoctor", () => {
     expect(parsed.summary.ledgerOversized).toBe(1);
     const finding = parsed.findings.find((row) => row.code === "ledger.oversized");
     expect(finding).toBeDefined();
-    expect(finding?.severity).toBe("warning");
+    expect(finding?.severity).toBe("info");
     expect(finding?.message).toContain("512 MB");
     expect(finding?.recovery).toContain("ledger.retention_days");
     // The recovery must name the failure mode retention can't fix (both

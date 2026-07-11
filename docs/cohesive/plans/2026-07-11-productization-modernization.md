@@ -1,7 +1,7 @@
 # Productization, modernization, and simplification
 
 **Date:** 2026-07-11
-**Status:** proposed continuation plan
+**Status:** P0–P4 completed; continuation sequence defined
 **Inputs:** [[cohesive/reviews/2026-07-09-first-principles-product-review]],
 [[cohesive/reviews/2026-07-10-incremental-document-compiler-pressure-test]]
 **Supersedes as plan of record:** [[wedge]]
@@ -88,7 +88,16 @@ materially better human interface; generic callers should use `listViews` and
 
 ### P0 — make operational health tell the present truth
 
-The work vault currently reports:
+**Completed 2026-07-11.** The work vault's grants were refreshed, duplicated
+task identities were repaired to a convergent fixed point, 30-day retention
+pruned 2,367 succeeded runs and 61,515 capability-use rows, and the compiler
+service was restored. Recurring-timeout health now considers only the current
+processor generation inside a 24-hour window. Oversized ledgers remain an
+informational maintenance finding instead of making an otherwise functioning
+compiler unhealthy. The two-vault release smoke passes; content diagnostics
+remain visible as a separate garden-quality backlog.
+
+At the start of recovery, the work vault reported:
 
 - a 2 GB run ledger, including 1,127 retained forensic rows;
 - 11 duplicate task anchors;
@@ -121,6 +130,15 @@ Acceptance:
 - old timeout forensics remain available through inspection.
 
 ### P1 — measure and remove repeated whole-vault work
+
+**Completed 2026-07-11.** One internal `RevisionSource` now supplies revisions
+and diffs to compile-range, processor Snapshot construction, and projection
+rebuild. It hides bounded process-lifetime revision/tree/blob caches,
+in-flight read deduplication, deterministic path ordering, and counters behind
+two entry points. It adds no dependency, database, Effect kind, processor
+contract, or persistence. Existing 1,000-file lint characterization remains
+well below the former timeout boundary, and interface tests prove manifest
+and blob reuse plus lazy content I/O.
 
 Do not implement the large Document Compiler plan. Start with the internal
 `RevisionSource` proposed by the pressure test:
@@ -158,6 +176,14 @@ Acceptance:
 
 ### P2 — make the first-run product one coherent loop
 
+**Completed 2026-07-11.** `bun run product:journey` executes one hermetic
+second-user acceptance path through the real compiler host and shipped
+bundles: capture, model-backed ingestion, Today resurfacing, natural-language
+recall, owner resolution, semantic-garden inspection, and clean doctor. The
+fixture uses a scripted command provider and requires no network or secret.
+The underlying Vault operations remain separately contract-tested through MCP
+and HTTP, while this journey owns the product-level sequence and vocabulary.
+
 The SDK has many surfaces, but public usefulness depends on one successful
 journey. Create a release fixture and a second-user script that proves:
 
@@ -181,6 +207,14 @@ Acceptance:
 
 ### P3 — consolidate product language and navigation
 
+**Completed 2026-07-11.** Primary CLI help and onboarding now organize the
+existing product around Today, Recall, Decide, and Maintain without adding a
+fifth engine concept. `status` is the cheap router, `check` explains health,
+content, and decisions requiring attention, and hidden `doctor` runs fresh
+dependency/storage probes for troubleshooting. Stale README claims about MCP
+and HTTP being merely planned were removed; wire schemas and command names did
+not change.
+
 The engine vocabulary is coherent; the product vocabulary still exposes too
 many partially overlapping entry points. Review CLI and protocol surfaces
 around four user intents:
@@ -203,6 +237,16 @@ Acceptance:
 - CLI, MCP, HTTP, PWA, AGENTS.md, and getting-started use the same nouns.
 
 ### P4 — earn the next intelligence layer with evaluation
+
+**Completed 2026-07-11.** A checked-in 30-query corpus now gates lexical
+recall across five real work shapes and preserves exact misses as the failure
+corpus. The initial baseline is 97.2% relevant recall@5 and 96.7% all-target
+success@5; the sole miss is a cross-page synthesis target, while forbidden
+noise remains zero. A pure garden outcome compiler reports owner apply/reject
+rate, pending load, decision latency, edit size, kind breakdown, and
+changed-evidence recurrence directly from durable proposal rows. The work
+vault currently has no `dome.agent.garden` decisions, so its owner apply rate
+honestly reports `null` and no acceptance threshold has been invented.
 
 Expand the three lexical recall canaries into a 30–50 query benchmark drawn
 from real work-vault jobs: people lookup, decision provenance, meeting prep,
@@ -232,6 +276,39 @@ Do not add these during P0–P2:
 - a new workflow/job/attention primitive;
 - embeddings, an LLM reranker, or semantic vector database;
 - another protocol-specific behavior layer.
+
+## Continued productization sequence
+
+The next work should harden distribution and the existing seams rather than
+add intelligence speculatively:
+
+1. **Git linked-worktree Adapter.** `isomorphic-git` does not implement Git's
+   `commondir` model: linked-worktree HEAD/index state and common refs/objects
+   cannot be represented by one `gitdir`. Replace the single `src/git.ts`
+   boundary with a complete native-git Adapter for linked contexts (reads and
+   writes together), or reject that layout explicitly until parity exists.
+   The acceptance fixture must create a real linked worktree, capture and
+   adopt on its branch, and prove the main branch/index are unchanged. Do not
+   ship a partial fallback or add a subprocess-wrapper dependency.
+2. **Release artifact and migration rehearsal.** Produce an installable
+   versioned artifact, test clean install plus upgrade from the current work
+   vault schema, and make service restart/rollback explicit. The hermetic
+   product journey, product-quality gate, full suite, and two-vault smoke are
+   the release checklist.
+3. **Collect garden decisions before tuning.** Run the semantic garden long
+   enough to retain at least 20 human decisions, then review apply rate,
+   pending load, latency, edit size, and recurrence by opportunity kind.
+   Thresholds should follow evidence; no new labeling queue is needed.
+4. **Improve cross-page recall only from recorded misses.** The first corpus
+   miss is multi-page synthesis. Add cases from real retrieval-miss records,
+   then compare lexical changes with a recomputable semantic candidate layer.
+   Embeddings or reranking graduate only if they improve the versioned score
+   without adding forbidden-result noise or a new source of truth.
+5. **Close real-vault content debt as gardening input.** The work vault is
+   operationally healthy but still reports bounded content attention and
+   informational diagnostics. Treat those rows as a prioritized quality
+   backlog, measure which classes recur, and deepen the owning processor or
+   repair command instead of adding another general maintenance mechanism.
 
 Each would enlarge the interface before a proven caller earns the leverage.
 

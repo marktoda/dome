@@ -20,12 +20,10 @@
 //     a future refinement.
 //   - Tree-OID resolution is injected at `buildRuntime` time via the
 //     `resolveTree` callback (kept injected for testability + symmetry with
-//     the per-iteration resolve site). Phase 11d adds direct `../git`
-//     imports (`readBlob` / `readTree`) wired through the Snapshot's read
-//     closures — adoption-phase processors need to read blob content +
-//     enumerate the candidate tree to do their work, and the runtime is
-//     where that boundary is constructed. The git imports are only
-//     exercised lazily via the closure call sites.
+//     the per-iteration resolve site). Snapshot construction delegates to the
+//     internal RevisionSource, which shares immutable tree manifests and blob
+//     text with compile-range and projection rebuild. Content I/O remains
+//     lazy until a processor calls a Snapshot read closure.
 //   - `model.invoke` is never wired on adoption-phase contexts (per
 //     processors.md §"Adoption phase — bounded, deterministic,
 //     merge-blocking" — adoption-phase processors never receive a model
@@ -58,14 +56,10 @@
 //     `./triggers` (matchTriggers + TriggerMatch), `./context`
 //     (makeProcessorContext + ProcessorContextInput), `./executor`
 //     (executeProcessor), `./execution-policy` (resolveExecutionPolicy).
-//     The `../git` import
-//     surfaces `readBlob` / `readTree` / `fileInfoAtCommit` for the Snapshot's read closures
-//     (`readFile`, `listMarkdownFiles`, `getFileInfo`); the closures are lazy — invoked
-//     only when an adoption-phase processor reads from `ctx.snapshot` —
-//     so runtimes whose processors don't touch the snapshot incur no git
-//     I/O. The ledger handle's SQLite I/O is owned by `src/ledger/`.
-
-import { posix } from "node:path";
+//     RevisionSource owns Git reads behind the Snapshot interface; the
+//     closures are lazy, so runtimes whose processors do not inspect content
+//     incur no manifest or blob I/O. The ledger handle's SQLite I/O is owned
+//     by `src/ledger/`.
 
 import { diagnosticEffect, type Effect } from "../core/effect";
 import type {
@@ -79,13 +73,12 @@ import type {
   ProcessorContext,
   ProjectionQueryView,
   Snapshot,
-  SnapshotFileInfo,
   TreeOid,
 } from "../core/processor";
 import type { Proposal } from "../core/proposal";
-import { commitOid, type CommitOid } from "../core/source-ref";
+import type { CommitOid } from "../core/source-ref";
 import type { PageTypeRegistry } from "../page-types";
-import { fileInfoAtCommit, readBlobByOid, readTree } from "../git";
+import { revisionSourceFor } from "../revisions/revision-source";
 import type {
   AdoptionPhaseRunner,
   GardenPhaseRunner,
@@ -726,61 +719,7 @@ export async function makeSnapshot(
   commit: CommitOid,
   resolveTree: (commit: CommitOid) => Promise<TreeOid>,
 ): Promise<Snapshot> {
-  const tree = await resolveTree(commit);
-  const readFileCache = new Map<string, Promise<string | null>>();
-  const fileInfoCache = new Map<string, Promise<SnapshotFileInfo | null>>();
-  // Lazily-built `path → blob-OID` index over the whole commit tree, shared
-  // by readFile (direct object read) and listMarkdownFiles (the .md subset).
-  let blobOidIndex: Promise<ReadonlyMap<string, string>> | null = null;
-  const treeIndex = (): Promise<ReadonlyMap<string, string>> => {
-    blobOidIndex ??= buildBlobOidIndex(vaultPath, commit);
-    return blobOidIndex;
-  };
-
-  return Object.freeze({
-    commit,
-    tree,
-    readFile: (path: string) => {
-      let cached = readFileCache.get(path);
-      if (cached === undefined) {
-        cached = treeIndex().then((index) => {
-          const oid = index.get(path);
-          // Not a blob in the tree (missing path, directory) → null, matching
-          // the prior readBlob(commit, filepath) contract.
-          if (oid === undefined) return null;
-          return readBlobByOid({ path: vaultPath, oid });
-        });
-        readFileCache.set(path, cached);
-      }
-      return cached;
-    },
-    listMarkdownFiles: async () => {
-      const index = await treeIndex();
-      const paths: string[] = [];
-      for (const path of index.keys()) {
-        if (path.endsWith(".md")) paths.push(path);
-      }
-      paths.sort();
-      return Object.freeze(paths);
-    },
-    getFileInfo: async (path: string) => {
-      let cached = fileInfoCache.get(path);
-      if (cached === undefined) {
-        cached = fileInfoAtCommit({ path: vaultPath, commit, filepath: path })
-          .then((info) =>
-            info === null
-              ? null
-              : {
-                  lastChangedCommit: commitOid(info.lastChangedCommit),
-                  lastChangedAt: info.lastChangedAt,
-                  lastHumanChangedAt: info.lastHumanChangedAt,
-                }
-          );
-        fileInfoCache.set(path, cached);
-      }
-      return cached;
-    },
-  });
+  return (await revisionSourceFor(vaultPath).revision(commit, resolveTree)).snapshot;
 }
 
 /**
@@ -1840,44 +1779,4 @@ function triggerPayloadOf(
       ],
     };
   });
-}
-
-/**
- * Walk the tree at `commit` once and return a `path → blob-OID` map for every
- * blob in the tree. Backs both `Snapshot.readFile` (direct read by OID) and
- * `Snapshot.listMarkdownFiles` (the `.md` subset). Materializing the OID index
- * up front is what lets `readFile` skip the per-call commit→tree→path-segment
- * walk that dominated adoption-lint cost on large vaults.
- *
- * Path strings are POSIX-joined (matches the convention in
- * `src/engine/core/compile-range.ts`'s walker). Non-blob entries (subtrees) are
- * recursed into; the recursion is bounded by the tree's natural depth. Symlink
- * entries surface as blobs (git tree `type: "blob"`), so `readFile` returns the
- * link's target-path blob content — identical to the prior
- * `readBlob(commit, filepath)` behavior, which also did not follow links.
- */
-async function buildBlobOidIndex(
-  vaultPath: string,
-  commit: CommitOid,
-): Promise<ReadonlyMap<string, string>> {
-  const index = new Map<string, string>();
-  await walkTreeForBlobOids(vaultPath, commit, "", index);
-  return index;
-}
-
-async function walkTreeForBlobOids(
-  vaultPath: string,
-  oid: string,
-  prefix: string,
-  out: Map<string, string>,
-): Promise<void> {
-  const tree = await readTree({ path: vaultPath, oid });
-  for (const entry of tree.tree) {
-    const path = prefix === "" ? entry.path : posix.join(prefix, entry.path);
-    if (entry.type === "tree") {
-      await walkTreeForBlobOids(vaultPath, entry.oid, path, out);
-    } else if (entry.type === "blob") {
-      out.set(path, entry.oid);
-    }
-  }
 }

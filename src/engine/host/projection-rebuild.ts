@@ -8,13 +8,11 @@
 // deliberately does not apply PatchEffects, dispatch external work, read
 // operational recovery state, or make model calls.
 
-import { posix } from "node:path";
-
 import { isProjectionEffect } from "../../core/effect-classify";
 import type { Capability, Processor } from "../../core/processor";
 import { makeManualProposal } from "../../core/proposal";
 import type { CommitOid } from "../../core/source-ref";
-import { readTree } from "../../git";
+import { revisionSourceFor } from "../../revisions/revision-source";
 import {
   markProjectionBuilt,
   resetProjectionDb,
@@ -29,7 +27,6 @@ import { recordEffectCapabilityUse } from "../core/effect-capability-use";
 import { readablePath } from "../core/path-capabilities";
 import {
   dispatchOneProcessor,
-  makeSnapshot,
 } from "../../processors/runtime";
 import { matchTriggers } from "../../processors/triggers";
 import type { RunnerResult } from "../core/runner-contract";
@@ -70,7 +67,11 @@ async function rebuildProjectionUnlocked(
   opts: ProjectionRebuildOpts,
 ): Promise<ProjectionRebuildResult> {
   const now = opts.now ?? ((): Date => new Date());
-  const files = await listFilesAtCommit(opts.runtime.path, opts.adopted);
+  const revision = await revisionSourceFor(opts.runtime.path).revision(
+    opts.adopted,
+    makeResolveTree(opts.runtime.path),
+  );
+  const files = await revision.paths();
   const signals = signalsForRebuild(files);
   const proposal = makeManualProposal({
     base: opts.adopted,
@@ -180,11 +181,12 @@ async function runDeterministicGardenProjectionProcessors(opts: {
     .filter(isRebuildEligibleGardenProcessor);
   if (processors.length === 0) return Object.freeze([]);
 
-  const snapshot = await makeSnapshot(
-    opts.runtime.path,
-    opts.adopted,
-    makeResolveTree(opts.runtime.path),
-  );
+  const snapshot = (
+    await revisionSourceFor(opts.runtime.path).revision(
+      opts.adopted,
+      makeResolveTree(opts.runtime.path),
+    )
+  ).snapshot;
   const results: RunnerResult[] = [];
 
   for (const processor of processors) {
@@ -248,33 +250,6 @@ function restoreDurableQuestionAnswers(runtime: VaultRuntime): void {
       answeredAt: answer.answeredAt,
       answeredBy: answer.answeredBy,
     });
-  }
-}
-
-async function listFilesAtCommit(
-  vaultPath: string,
-  commit: CommitOid,
-): Promise<ReadonlyArray<string>> {
-  const out: string[] = [];
-  await walkTree(vaultPath, commit, "", out);
-  out.sort();
-  return Object.freeze(out);
-}
-
-async function walkTree(
-  vaultPath: string,
-  oid: string,
-  prefix: string,
-  out: string[],
-): Promise<void> {
-  const tree = await readTree({ path: vaultPath, oid });
-  for (const entry of tree.tree) {
-    const path = prefix === "" ? entry.path : posix.join(prefix, entry.path);
-    if (entry.type === "tree") {
-      await walkTree(vaultPath, entry.oid, path, out);
-    } else {
-      out.push(path);
-    }
   }
 }
 
