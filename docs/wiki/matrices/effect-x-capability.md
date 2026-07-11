@@ -1,7 +1,7 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-07-03
+updated: 2026-07-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 description: Maps each Effect kind to the broker-required capability, its resource scope, and the denial or downgrade outcome when the grant is missing.

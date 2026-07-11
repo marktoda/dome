@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-28
-updated: 2026-07-04
+updated: 2026-07-11
 sources:
   - "[[wiki/specs/processors]]"
   - "[[wiki/specs/run-ledger]]"

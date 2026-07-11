@@ -4,7 +4,7 @@ tags:
   - infrastructure
   - version-control
 created: 2026-05-25
-updated: 2026-07-03
+updated: 2026-07-11
 sources:
   - "[[cohesive/brainstorms/2026-05-25-dome-vision]]"
 description: "Version control underpinning Dome's durability: change detection via adopted refs, undo, audit trail, temporal queries, future sync."

@@ -1,7 +1,7 @@
 ---
 type: invariant
 created: 2026-05-27
-updated: 2026-07-03
+updated: 2026-07-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 description: All vault mutation runs through engine routing (apply-effect.ts, garden patch dispatch); no other module reaches fs/git/SQLite write primitives
