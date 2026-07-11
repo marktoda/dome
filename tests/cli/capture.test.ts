@@ -24,7 +24,7 @@ import {
   type CaptureStdin,
 } from "../../src/surface/capture";
 import { runInit } from "../../src/cli/commands/init";
-import { add, log, readBlob, resolveRef, statusMatrix } from "../../src/git";
+import { add, commitFilesOnHead, log, readBlob, resolveRef, statusMatrix } from "../../src/git";
 
 // ----- Console capture ------------------------------------------------------
 
@@ -512,6 +512,9 @@ describe("performCapture seam extensions", () => {
     expect(outcome.kind).toBe("captured");
     if (outcome.kind !== "captured") return;
     expect(outcome.result.path).toBe(`inbox/raw/${STAMP}-phone-871f3.md`);
+    expect(
+      await readFile(join(vault, outcome.result.path), "utf8"),
+    ).toContain('capture_id: "phone-871f3"');
   });
 
   test("a retry with the same captureId answers duplicate without a new file or commit", async () => {
@@ -594,6 +597,45 @@ describe("performCapture seam extensions", () => {
     expect(b.kind).toBe("captured");
     if (a.kind !== "captured" || b.kind !== "captured") return;
     expect(a.result.path).not.toBe(b.result.path);
+  });
+
+  test("capture identity survives rename and slug collisions do not alias", async () => {
+    const vault = await initVault();
+    const first = await performCapture(
+      { text: "first", vault, captureId: "phone:a" },
+      clock,
+    );
+    expect(first.kind).toBe("captured");
+    if (first.kind !== "captured") return;
+
+    const renamed = "inbox/processed/renamed-capture.md";
+    const firstContent = await readFile(join(vault, first.result.path), "utf8");
+    await mkdir(join(vault, "inbox", "processed"), { recursive: true });
+    await rename(join(vault, first.result.path), join(vault, renamed));
+    await commitFilesOnHead({
+      path: vault,
+      files: [
+        { filepath: first.result.path, content: null },
+        { filepath: renamed, content: firstContent },
+      ],
+      message: "archive capture",
+    });
+
+    const duplicate = await performCapture(
+      { text: "first retry", vault, captureId: "phone:a" },
+      clock,
+    );
+    expect(duplicate).toMatchObject({
+      kind: "duplicate",
+      path: renamed,
+      captureId: "phone:a",
+    });
+
+    const collidingSlug = await performCapture(
+      { text: "different logical capture", vault, captureId: "phone.a" },
+      clock,
+    );
+    expect(collidingSlug.kind).toBe("captured");
   });
 });
 

@@ -20,14 +20,7 @@ export type StreamEvent =
   | { type: "done"; citations: Citation[]; stopReason: "final" | "budget"; changes?: AgentChange[] }
   | { type: "error"; message: string };
 
-export type CaptureResult = {
-  schema: "dome.capture/v1";
-  status: "captured" | "duplicate" | "error";
-  path?: string;
-  commit?: string;
-  title?: string;
-  error?: string;
-};
+export type { CaptureReceipt as CaptureResult } from "../../../contracts/capture";
 
 export type TodayItem = {
   text: string;

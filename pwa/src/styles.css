@@ -255,9 +255,19 @@ input.box:checked { background: var(--amber); border-color: var(--amber); }
 .mic .glyph .base { width: 13px; height: 6px; border: 1.5px solid var(--sage-ink); border-top: none; border-radius: 0 0 7px 7px; }
 .composer input { flex: 1; min-width: 0; font-size: 16px; padding: 0 4px; } /* >=16px: stops iOS focus-zoom */
 .composer input::placeholder { color: var(--text-faint); }
+.capture-text { width: 32px; height: 32px; flex: none; border-radius: 50%; border: 1px solid var(--border); color: var(--text-dim); font-size: 20px; }
+.capture-text:disabled { opacity: .35; }
 .send { width: 36px; height: 36px; flex: none; border-radius: 50%; background: #262624; display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-size: 17px; margin-right: 2px; transition: background .15s, color .15s; }
 .send.active { background: var(--peri); color: #14162a; }
 .composer .err { position: absolute; top: -22px; left: var(--pad); font: 500 11px var(--mono); color: var(--coral); }
+
+.capture-outbox { margin: 0 var(--pad) 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); font-size: 12px; }
+.capture-outbox-head, .capture-outbox-item { display: flex; align-items: center; gap: 8px; }
+.capture-outbox-head span, .capture-outbox-item small { color: var(--text-dim); }
+.capture-outbox-head button, .capture-outbox-item button { margin-left: auto; color: var(--peri); }
+.capture-outbox-head button + button { margin-left: 0; }
+.capture-outbox-item { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-soft); }
+.capture-outbox-item > span { flex: 1; overflow-wrap: anywhere; }
 
 /* ── Capture overlays (fixed, full-screen) ── */
 .overlay {

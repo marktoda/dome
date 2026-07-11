@@ -1,4 +1,8 @@
 import type { AgentSession, ApplyProposalResult, CaptureResult, Recents, RejectProposalResult, ResolveResult, SettleDisposition, SettleResult, StreamEvent, Today, Transcript } from "./types";
+import {
+  parseCaptureReceipt,
+  type CaptureRequest,
+} from "../../../contracts/capture";
 
 // Parse a buffer of SSE text into complete events + the leftover partial frame.
 export function parseSseChunk(buffer: string): { events: StreamEvent[]; rest: string } {
@@ -30,6 +34,15 @@ export class DomeClient {
     return h;
   }
 
+  private url(path: string): string {
+    const origin =
+      typeof location !== "undefined" && location.origin !== "null"
+        ? location.origin
+        : "http://dome.local";
+    const base = this.baseUrl.replace(/\/+$/, "");
+    return new URL(`${base}${path}`, origin).toString();
+  }
+
   private async parse<T>(res: Response): Promise<T> {
     const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
     if (!res.ok) {
@@ -43,24 +56,25 @@ export class DomeClient {
 
   async tasks(date?: string): Promise<Today> {
     const q = date !== undefined ? `?date=${encodeURIComponent(date)}` : "";
-    return this.parse<Today>(await fetch(new Request(`${this.baseUrl}/tasks${q}`, { headers: this.authHeaders(false) })));
+    return this.parse<Today>(await fetch(new Request(this.url(`/tasks${q}`), { headers: this.authHeaders(false) })));
   }
 
   async recents(limit?: number): Promise<Recents> {
     const q = limit !== undefined ? `?limit=${limit}` : "";
-    return this.parse<Recents>(await fetch(new Request(`${this.baseUrl}/recents${q}`, { headers: this.authHeaders(false) })));
+    return this.parse<Recents>(await fetch(new Request(this.url(`/recents${q}`), { headers: this.authHeaders(false) })));
   }
 
-  async capture(input: { text: string; title?: string; captureId?: string }): Promise<CaptureResult> {
-    return this.parse<CaptureResult>(await fetch(new Request(`${this.baseUrl}/capture`, { method: "POST", headers: this.authHeaders(true), body: JSON.stringify(input) })));
+  async capture(input: CaptureRequest): Promise<CaptureResult> {
+    const value = await this.parse<unknown>(await fetch(new Request(this.url("/capture"), { method: "POST", headers: this.authHeaders(true), body: JSON.stringify(input) })));
+    return parseCaptureReceipt(value);
   }
 
   async resolve(id: number, value: string): Promise<ResolveResult> {
-    return this.parse<ResolveResult>(await fetch(new Request(`${this.baseUrl}/resolve`, { method: "POST", headers: this.authHeaders(true), body: JSON.stringify({ id, value }) })));
+    return this.parse<ResolveResult>(await fetch(new Request(this.url("/resolve"), { method: "POST", headers: this.authHeaders(true), body: JSON.stringify({ id, value }) })));
   }
 
   async applyProposal(id: number): Promise<ApplyProposalResult> {
-    return this.parse<ApplyProposalResult>(await fetch(new Request(`${this.baseUrl}/apply`, {
+    return this.parse<ApplyProposalResult>(await fetch(new Request(this.url("/apply"), {
       method: "POST",
       headers: this.authHeaders(true),
       body: JSON.stringify({ id }),
@@ -68,7 +82,7 @@ export class DomeClient {
   }
 
   async rejectProposal(id: number): Promise<RejectProposalResult> {
-    return this.parse<RejectProposalResult>(await fetch(new Request(`${this.baseUrl}/reject`, {
+    return this.parse<RejectProposalResult>(await fetch(new Request(this.url("/reject"), {
       method: "POST",
       headers: this.authHeaders(true),
       body: JSON.stringify({ id }),
@@ -77,11 +91,11 @@ export class DomeClient {
 
   async settle(blockId: string, disposition: SettleDisposition, deferUntil?: string): Promise<SettleResult> {
     const body = { blockId, disposition, ...(deferUntil !== undefined ? { deferUntil } : {}) };
-    return this.parse<SettleResult>(await fetch(new Request(`${this.baseUrl}/settle`, { method: "POST", headers: this.authHeaders(true), body: JSON.stringify(body) })));
+    return this.parse<SettleResult>(await fetch(new Request(this.url("/settle"), { method: "POST", headers: this.authHeaders(true), body: JSON.stringify(body) })));
   }
 
   async transcribe(audio: Blob): Promise<Transcript> {
-    return this.parse<Transcript>(await fetch(new Request(`${this.baseUrl}/transcribe`, { method: "POST", headers: { ...this.authHeaders(false), "content-type": audio.type || "audio/webm" }, body: audio })));
+    return this.parse<Transcript>(await fetch(new Request(this.url("/transcribe"), { method: "POST", headers: { ...this.authHeaders(false), "content-type": audio.type || "audio/webm" }, body: audio })));
   }
 
   async agentStream(question: string, onEvent: (e: StreamEvent) => void, signal?: AbortSignal): Promise<void> {

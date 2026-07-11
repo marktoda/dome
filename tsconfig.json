@@ -21,6 +21,6 @@
     "allowSyntheticDefaultImports": true,
     "verbatimModuleSyntax": false
   },
-  "include": ["src/**/*", "tests/**/*"],
+  "include": ["src/**/*", "contracts/**/*", "tests/**/*"],
   "exclude": ["node_modules", "docs", "assets"]
 }
