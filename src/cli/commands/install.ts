@@ -5,10 +5,10 @@
 // §"dome restart", this makes the local compiler host ambient on macOS:
 // `dome install` generates a launchd LaunchAgent that runs `dome serve` for
 // the vault (RunAtLoad + KeepAlive, logs to `.dome/state/serve.log`) and
-// loads it via `launchctl bootstrap gui/<uid>`; `dome uninstall` boots it
-// out and removes the plist; `dome restart` boots it out and bootstraps
-// again from the existing plist on disk (never re-rendered — that would
-// drop user `--env` entries).
+// loads and starts it via `launchctl bootstrap gui/<uid>` followed by
+// `launchctl kickstart -k`; `dome uninstall` boots it out and removes the
+// plist; `dome restart` boots it out and activates it again from the existing
+// plist on disk (never re-rendered — that would drop user `--env` entries).
 //
 // Design constraints carried from the spec:
 //
@@ -211,8 +211,8 @@ export async function vaultPreconditionError(
  * code: 0 on success (including idempotent re-install and clean status
  * reads); 64 (EX_USAGE) when the target is not an initialized Dome vault or
  * an `--env`/`--env-file` entry is malformed; 1 on non-macOS platform,
- * undeterminable uid, launchctl bootstrap failure, or unexpected I/O
- * failure.
+ * undeterminable uid, launchctl bootstrap/kickstart failure, or unexpected
+ * I/O failure.
  */
 export async function runInstall(
   options: RunInstallOptions = {},
@@ -289,12 +289,13 @@ export async function runInstall(
       "utf8",
     );
 
-    const bootstrap = await d.launchctl(["bootstrap", `gui/${uid}`, plistPath]);
-    if (bootstrap.exitCode !== 0) {
-      const detail = bootstrap.stderr.trim() || bootstrap.stdout.trim() ||
-        `exit ${bootstrap.exitCode}`;
-      const message =
-        `launchctl bootstrap gui/${uid} failed: ${detail} (plist left at ${plistPath})`;
+    const activationError = await activateLaunchAgent(
+      d.launchctl,
+      uid,
+      label,
+      plistPath,
+    );
+    if (activationError !== null) {
       if (json) {
         console.log(formatJson({
           schema: "dome.install/v1",
@@ -302,10 +303,10 @@ export async function runInstall(
           vault: vaultPath,
           label,
           plist: plistPath,
-          error: message,
+          error: activationError,
         }));
       } else {
-        console.error(`dome install: ${message}`);
+        console.error(`dome install: ${activationError}`);
       }
       return 1;
     }
@@ -416,15 +417,16 @@ async function waitForServiceDrain(
 // ----- runRestart -----------------------------------------------------------
 
 /**
- * Execute `dome restart`: bootout + bootstrap from the **existing plist on
- * disk**. The plist is deliberately NOT rebuilt — re-rendering would drop the
- * user's `--env` / `--env-file` EnvironmentVariables entries, which are only
- * remembered inside the plist itself (see `resolveServiceEnvironment`).
- * `dome install` remains the path that rewrites the plist.
+ * Execute `dome restart`: bootout + bootstrap + kickstart from the **existing
+ * plist on disk**. The plist is deliberately NOT rebuilt — re-rendering would
+ * drop the user's `--env` / `--env-file` EnvironmentVariables entries, which
+ * are only remembered inside the plist itself (see
+ * `resolveServiceEnvironment`). `dome install` remains the path that rewrites
+ * the plist.
  *
  * Returns the exit code: 0 on a successful restart; 64 (EX_USAGE) when no
  * plist is installed for the vault; 1 on non-macOS platform, undeterminable
- * uid, or `launchctl bootstrap` failure.
+ * uid, or `launchctl bootstrap` / `kickstart` failure.
  */
 export async function runRestart(
   options: RunRestartOptions = {},
@@ -470,12 +472,13 @@ export async function runRestart(
     await d.launchctl(["bootout", `gui/${uid}/${label}`]);
     await waitForServiceDrain(d, uid, label);
 
-    const bootstrap = await d.launchctl(["bootstrap", `gui/${uid}`, plistPath]);
-    if (bootstrap.exitCode !== 0) {
-      const detail = bootstrap.stderr.trim() || bootstrap.stdout.trim() ||
-        `exit ${bootstrap.exitCode}`;
-      const message =
-        `launchctl bootstrap gui/${uid} failed: ${detail} (plist left at ${plistPath})`;
+    const activationError = await activateLaunchAgent(
+      d.launchctl,
+      uid,
+      label,
+      plistPath,
+    );
+    if (activationError !== null) {
       if (json) {
         console.log(formatJson({
           schema: "dome.restart/v1",
@@ -483,10 +486,10 @@ export async function runRestart(
           vault: vaultPath,
           label,
           plist: plistPath,
-          error: message,
+          error: activationError,
         }));
       } else {
-        console.error(`dome restart: ${message}`);
+        console.error(`dome restart: ${activationError}`);
       }
       return 1;
     }
@@ -509,6 +512,42 @@ export async function runRestart(
 }
 
 // ----- internals ------------------------------------------------------------
+
+/**
+ * Register and explicitly start a launchd service. `bootstrap` alone can
+ * leave a newly registered KeepAlive agent pended without launching its
+ * process; `kickstart -k` makes the command's success contract observable.
+ * Returns a user-facing launchctl error, or null once both steps succeed.
+ */
+async function activateLaunchAgent(
+  launchctl: LaunchctlRunner,
+  uid: number,
+  label: string,
+  plistPath: string,
+): Promise<string | null> {
+  const bootstrap = await launchctl(["bootstrap", `gui/${uid}`, plistPath]);
+  if (bootstrap.exitCode !== 0) {
+    const detail = launchctlDetail(bootstrap);
+    return `launchctl bootstrap gui/${uid} failed: ${detail} (plist left at ${plistPath})`;
+  }
+
+  const target = `gui/${uid}/${label}`;
+  const kickstart = await launchctl(["kickstart", "-k", target]);
+  if (kickstart.exitCode !== 0) {
+    const detail = launchctlDetail(kickstart);
+    return `launchctl kickstart -k ${target} failed: ${detail} (plist left at ${plistPath})`;
+  }
+  return null;
+}
+
+function launchctlDetail(result: {
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+}): string {
+  return result.stderr.trim() || result.stdout.trim() ||
+    `exit ${result.exitCode}`;
+}
 
 /**
  * Resolve the extra EnvironmentVariables entries from `--env-file` then

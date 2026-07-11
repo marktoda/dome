@@ -2519,13 +2519,16 @@ Composition (macOS launchd):
    - `StandardOutPath` / `StandardErrorPath` — `<vault>/.dome/state/serve.log`.
 6. `launchctl bootout gui/<uid>/<label>` first (failure ignored when the
    service is not currently loaded), then `launchctl bootstrap gui/<uid>
-   <plist>`. The bootout-first shape makes re-runs replace the loaded service
-   definition cleanly: re-running `dome install` after moving the SDK or
-   changing the bun runtime is the supported upgrade path.
+   <plist>`, then `launchctl kickstart -k gui/<uid>/<label>`. Bootstrap
+   registers the LaunchAgent but does not reliably launch a newly registered
+   process immediately; the explicit kickstart is therefore part of the
+   install success contract. The bootout-first shape makes re-runs replace the
+   loaded service definition cleanly: re-running `dome install` after moving
+   the SDK or changing the bun runtime is the supported upgrade path.
 
 Idempotency: re-running `dome install` rewrites the plist and replaces the
-loaded service; it exits 0. A failed `bootstrap` leaves the plist in place for
-inspection, prints launchctl's stderr, and exits 1.
+loaded service; it exits 0. A failed `bootstrap` or `kickstart` leaves the
+plist in place for inspection, prints launchctl's stderr, and exits 1.
 
 **Linux backend (systemd `--user`).** The same verbs, dispatched to the
 systemd user manager (`systemctl --user`), mirroring the launchd contract
@@ -2644,7 +2647,9 @@ service is exactly why an operator restarts), a **drain wait** (poll
 `launchctl print gui/<uid>/<label>` until the label leaves launchd, bounded
 at 15 s — `bootout` returns before a serve mid-agent-run actually exits, and
 bootstrapping during the drain fails with `Bootstrap failed: 5`), then
-`launchctl bootstrap gui/<uid> <plist>` **from the existing plist on disk**.
+`launchctl bootstrap gui/<uid> <plist>` **from the existing plist on disk**,
+then `launchctl kickstart -k gui/<uid>/<label>` to ensure the registered
+service actually starts.
 `dome install` re-runs share the same drain wait between their bootout and
 bootstrap. On drain timeout the bootstrap proceeds and its error surfaces
 honestly.
@@ -2668,9 +2673,9 @@ the plist or unit.
 Refusals are clean and mutate nothing: when no plist/unit is installed for
 the vault, exit 64 (EX_USAGE) with a pointer to `dome install`; unsupported
 platforms and uid-less macOS environments get the same exit-1 refusal shape
-as `dome install` / `dome uninstall`. A failed `bootstrap` / `restart` leaves
-the service definition in place, prints the service manager's stderr, and
-exits 1.
+as `dome install` / `dome uninstall`. A failed `bootstrap`, `kickstart`, or
+systemd `restart` leaves the service definition in place, prints the service
+manager's stderr, and exits 1.
 
 `--json` emits `dome.restart/v1`: `{ schema, status: "restarted" | "error",
 vault, label, plist, error? }`.
@@ -2678,14 +2683,14 @@ vault, label, plist, error? }`.
 Testability matches install: `runRestart` accepts the same injected
 `ServiceDeps` (platform, uid, LaunchAgents dir, launchctl runner, plus the
 systemd dir and systemctl runner on Linux), so tests drive the
-bootout/bootstrap and restart sequences against recording fakes without
+bootout/bootstrap/kickstart and restart sequences against recording fakes without
 touching a real service manager (`tests/cli/install.test.ts`,
 `tests/cli/install-systemd.test.ts`).
 
 Exit codes: 0 on a successful restart; 64 (EX_USAGE) when no plist/unit is
 installed for the vault; 1 on an unsupported platform, undeterminable uid
-(macOS), `launchctl bootstrap` / `systemctl restart` failure, or unexpected
-I/O failure.
+(macOS), `launchctl bootstrap` / `kickstart` / `systemctl restart` failure, or
+unexpected I/O failure.
 
 ### `dome mcp [--vault <path>] [--bundles-root <path>]`
 
