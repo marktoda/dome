@@ -18,6 +18,13 @@ describe("V1 package scripts", () => {
     expect(scripts["v1:check"]).toContain("git diff --check");
     expect(scripts["v1:check"]).toContain("bun test");
     expect(scripts["v1:check"]).toContain("bun run v1:smoke");
+    expect(scripts["release:package-rehearsal"]).toBe(
+      "bun scripts/release-package.ts",
+    );
+    expect(scripts["v1:implementation-check"]).toContain("bun run v1:check");
+    expect(scripts["v1:implementation-check"]).toContain(
+      "bun run release:package-rehearsal",
+    );
     expect(scripts["v1:release-check"]).toBe("bun scripts/v1-release-check.ts");
   });
 });

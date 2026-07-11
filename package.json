@@ -5,6 +5,14 @@
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "files": [
+    "src/",
+    "assets/extensions/",
+    "assets/model-providers/",
+    "assets/source-handlers/",
+    "bin/dome",
+    "README.md"
+  ],
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -33,6 +41,8 @@
     "v1:dogfood-preflight": "bun scripts/v1-dogfood-preflight.ts",
     "eval": "bun scripts/eval.ts",
     "eval:product": "bun scripts/product-quality.ts",
+    "release:package-rehearsal": "bun scripts/release-package.ts",
+    "v1:implementation-check": "bun run v1:check && bun run release:package-rehearsal",
     "v1:check": "bun run typecheck && git diff --check && bun test ./tests && bun run v1:smoke",
     "v1:release-check": "bun scripts/v1-release-check.ts",
     "product:journey": "bun test tests/harness/scenarios/cli-surface/capture-ingest-captured-block.scenario.test.ts"
