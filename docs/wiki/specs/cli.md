@@ -2612,8 +2612,8 @@ Exit codes: 0 on success (including idempotent re-install and clean
 `--status` reads); 64 (EX_USAGE) on an uninitialized vault (missing git repo
 or `.dome/config.yaml`), a malformed `--env`/`--env-file` entry, or a
 newline-bearing environment value on Linux; 1 on an unsupported platform,
-undeterminable uid (macOS), `launchctl bootstrap` / `systemctl` failure, or
-unexpected I/O failure.
+undeterminable uid (macOS), `launchctl bootstrap` / `kickstart` / `systemctl`
+failure, or unexpected I/O failure.
 
 ### `dome uninstall [--vault <path>] [--json]`
 

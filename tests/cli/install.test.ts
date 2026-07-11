@@ -373,6 +373,20 @@ describe("runInstall", () => {
     expect(
       existsSync(join(agents, `${serviceLabelForVault(vault)}.plist`)),
     ).toBe(true);
+
+    logs = [];
+    errors = [];
+    expect(
+      await runInstall(
+        { vault, json: true },
+        depsFor(agents, launchctl.runner),
+      ),
+    ).toBe(1);
+    const payload = JSON.parse(logs.join("\n")) as Record<string, unknown>;
+    expect(payload["schema"]).toBe("dome.install/v1");
+    expect(payload["status"]).toBe("error");
+    expect(String(payload["error"])).toContain("launchctl kickstart -k");
+    expect(errors).toEqual([]);
   });
 
   test("--json emits the dome.install/v1 payload", async () => {
@@ -686,6 +700,20 @@ describe("runRestart", () => {
       "-k",
       `gui/501/${serviceLabelForVault(vault)}`,
     ]);
+
+    logs = [];
+    errors = [];
+    expect(
+      await runRestart(
+        { vault, json: true },
+        depsFor(agents, failing.runner),
+      ),
+    ).toBe(1);
+    const payload = JSON.parse(logs.join("\n")) as Record<string, unknown>;
+    expect(payload["schema"]).toBe("dome.restart/v1");
+    expect(payload["status"]).toBe("error");
+    expect(String(payload["error"])).toContain("launchctl kickstart -k");
+    expect(errors).toEqual([]);
   });
 
   test("--json emits the dome.restart/v1 payload on success and refusal", async () => {
