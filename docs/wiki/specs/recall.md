@@ -85,6 +85,14 @@ Recall changes must be tested at the interface in two layers:
 Cases should describe user questions and expected target pages. Tests should
 not assert the generated FTS string except in the query-analysis unit tests.
 
+The versioned product gate lives in `src/eval/corpora/recall-v1.ts`. Its 30
+sanitized, work-shaped questions cover people lookup, decision provenance,
+meeting preparation, project state, and cross-page synthesis. `bun run
+eval:product` reports relevant recall@5, all-target success@5, reciprocal rank,
+explicit forbidden-result noise, per-job scores, and the exact failure corpus.
+Checked-in floors prevent regression without pretending known lexical misses
+do not exist; improvements should ratchet the floors upward.
+
 ## Related
 
 - [[wiki/specs/projection-store]] §"fts_documents (FTS5)"

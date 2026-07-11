@@ -230,6 +230,16 @@ Acceptance:
 
 ### P4 — earn the next intelligence layer with evaluation
 
+**Completed 2026-07-11.** A checked-in 30-query corpus now gates lexical
+recall across five real work shapes and preserves exact misses as the failure
+corpus. The initial baseline is 97.2% relevant recall@5 and 96.7% all-target
+success@5; the sole miss is a cross-page synthesis target, while forbidden
+noise remains zero. A pure garden outcome compiler reports owner apply/reject
+rate, pending load, decision latency, edit size, kind breakdown, and
+changed-evidence recurrence directly from durable proposal rows. The work
+vault currently has no `dome.agent.garden` decisions, so its owner apply rate
+honestly reports `null` and no acceptance threshold has been invented.
+
 Expand the three lexical recall canaries into a 30–50 query benchmark drawn
 from real work-vault jobs: people lookup, decision provenance, meeting prep,
 project state, and cross-page synthesis. Record retrieval misses before
