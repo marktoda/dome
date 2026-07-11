@@ -86,8 +86,9 @@ type FakeLaunchctl = {
 
 /**
  * Recording launchctl fake. By default `bootout` fails like the real tool
- * does when the service isn't loaded, `bootstrap` succeeds, and `print`
- * fails (service not loaded). Per-subcommand exit codes are overridable.
+ * does when the service isn't loaded, `bootstrap` and `kickstart` succeed,
+ * and `print` fails (service not loaded). Per-subcommand exit codes are
+ * overridable.
  */
 function fakeLaunchctl(
   overrides: Partial<Record<string, LaunchctlResult>> = {},
@@ -96,6 +97,7 @@ function fakeLaunchctl(
   const defaults: Record<string, LaunchctlResult> = {
     bootout: { exitCode: 3, stdout: "", stderr: "Boot-out failed: 3: No such process" },
     bootstrap: { exitCode: 0, stdout: "", stderr: "" },
+    kickstart: { exitCode: 0, stdout: "", stderr: "" },
     print: { exitCode: 113, stdout: "", stderr: "Could not find service" },
   };
   const runner: LaunchctlRunner = async (args) => {
@@ -148,7 +150,7 @@ describe("service label derivation", () => {
 // ----- runInstall -------------------------------------------------------------
 
 describe("runInstall", () => {
-  test("fresh install writes the plist, boots out first, then bootstraps", async () => {
+  test("fresh install writes the plist, bootstraps, then starts the service", async () => {
     const vault = await vaultDir();
     const agents = join(tempDir("dome-install-agents-"), "LaunchAgents");
     const launchctl = fakeLaunchctl();
@@ -185,6 +187,7 @@ describe("runInstall", () => {
       ["bootout", `gui/501/${label}`],
       ["print", `gui/501/${label}`],
       ["bootstrap", "gui/501", plistPath],
+      ["kickstart", "-k", `gui/501/${label}`],
     ]);
   });
 
@@ -317,9 +320,11 @@ describe("runInstall", () => {
       "bootout",
       "print", // drain probe: default fake reports the service gone
       "bootstrap",
+      "kickstart",
       "bootout",
       "print",
       "bootstrap",
+      "kickstart",
     ]);
     expect(existsSync(plistPath)).toBe(true);
     expect(logs.join("\n")).toContain("service replaced");
@@ -344,6 +349,44 @@ describe("runInstall", () => {
     expect(errors.join("\n")).toContain("Bootstrap failed: 5");
     const plistPath = join(agents, `${serviceLabelForVault(vault)}.plist`);
     expect(existsSync(plistPath)).toBe(true);
+  });
+
+  test("kickstart failure exits 1 and does not report the install as successful", async () => {
+    const vault = await vaultDir();
+    const agents = tempDir("dome-install-agents-");
+    const launchctl = fakeLaunchctl({
+      kickstart: {
+        exitCode: 5,
+        stdout: "",
+        stderr: "Kickstart failed: 5: Input/output error",
+      },
+    });
+
+    const code = await runInstall(
+      { vault },
+      depsFor(agents, launchctl.runner),
+    );
+    expect(code).toBe(1);
+    expect(errors.join("\n")).toContain("launchctl kickstart -k");
+    expect(errors.join("\n")).toContain("Kickstart failed: 5");
+    expect(logs.join("\n")).not.toContain("service installed");
+    expect(
+      existsSync(join(agents, `${serviceLabelForVault(vault)}.plist`)),
+    ).toBe(true);
+
+    logs = [];
+    errors = [];
+    expect(
+      await runInstall(
+        { vault, json: true },
+        depsFor(agents, launchctl.runner),
+      ),
+    ).toBe(1);
+    const payload = JSON.parse(logs.join("\n")) as Record<string, unknown>;
+    expect(payload["schema"]).toBe("dome.install/v1");
+    expect(payload["status"]).toBe("error");
+    expect(String(payload["error"])).toContain("launchctl kickstart -k");
+    expect(errors).toEqual([]);
   });
 
   test("--json emits the dome.install/v1 payload", async () => {
@@ -487,7 +530,7 @@ describe("runUninstall", () => {
 // ----- runRestart ---------------------------------------------------------------
 
 describe("runRestart", () => {
-  test("boots out then bootstraps from the existing plist, preserving --env entries", async () => {
+  test("boots out, bootstraps, and starts from the existing plist, preserving --env entries", async () => {
     const vault = await vaultDir();
     const agents = tempDir("dome-install-agents-");
     const installCtl = fakeLaunchctl();
@@ -511,11 +554,12 @@ describe("runRestart", () => {
     ).toBe(0);
 
     // Exact restart sequence: bootout (failure tolerated), drain probe,
-    // then bootstrap pointing at the on-disk plist.
+    // then bootstrap pointing at the on-disk plist and explicitly start it.
     expect(restartCtl.calls).toEqual([
       ["bootout", `gui/501/${label}`],
       ["print", `gui/501/${label}`],
       ["bootstrap", "gui/501", plistPath],
+      ["kickstart", "-k", `gui/501/${label}`],
     ]);
     // The plist is byte-identical — restart never rewrites it.
     expect(await readFile(plistPath, "utf8")).toBe(installedPlist);
@@ -623,6 +667,53 @@ describe("runRestart", () => {
     expect(
       existsSync(join(agents, `${serviceLabelForVault(vault)}.plist`)),
     ).toBe(true);
+  });
+
+  test("kickstart failure exits 1 and does not report the restart as successful", async () => {
+    const vault = await vaultDir();
+    const agents = tempDir("dome-install-agents-");
+    expect(
+      await runInstall(
+        { vault },
+        depsFor(agents, fakeLaunchctl().runner),
+      ),
+    ).toBe(0);
+
+    logs = [];
+    const failing = fakeLaunchctl({
+      kickstart: {
+        exitCode: 5,
+        stdout: "",
+        stderr: "Kickstart failed: 5: Input/output error",
+      },
+    });
+    const code = await runRestart(
+      { vault },
+      depsFor(agents, failing.runner),
+    );
+    expect(code).toBe(1);
+    expect(errors.join("\n")).toContain("launchctl kickstart -k");
+    expect(errors.join("\n")).toContain("Kickstart failed: 5");
+    expect(logs.join("\n")).not.toContain("service restarted");
+    expect(failing.calls.at(-1)).toEqual([
+      "kickstart",
+      "-k",
+      `gui/501/${serviceLabelForVault(vault)}`,
+    ]);
+
+    logs = [];
+    errors = [];
+    expect(
+      await runRestart(
+        { vault, json: true },
+        depsFor(agents, failing.runner),
+      ),
+    ).toBe(1);
+    const payload = JSON.parse(logs.join("\n")) as Record<string, unknown>;
+    expect(payload["schema"]).toBe("dome.restart/v1");
+    expect(payload["status"]).toBe("error");
+    expect(String(payload["error"])).toContain("launchctl kickstart -k");
+    expect(errors).toEqual([]);
   });
 
   test("--json emits the dome.restart/v1 payload on success and refusal", async () => {
