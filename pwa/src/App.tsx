@@ -7,6 +7,7 @@ import { Recents } from "./components/Recents";
 import { ChatTranscript } from "./components/ChatTranscript";
 import { Composer } from "./components/Composer";
 import { chatReducer } from "./chat/streamReducer";
+import { CaptureQueue, type QueuedCapture } from "./capture/captureQueue";
 
 function todayLabel(): string {
   try {
@@ -18,11 +19,14 @@ function todayLabel(): string {
 
 function Screen({ token }: { token: string }): React.ReactElement {
   const client = useMemo(() => new DomeClient(token), [token]);
+  const captureQueue = useMemo(() => new CaptureQueue(), []);
   const [today, setToday] = useState<Today | null>(null);
   const [recents, setRecents] = useState<RecentsT | null>(null);
   const [chat, dispatch] = useReducer(chatReducer, { messages: [] });
   const [briefCollapsed, setBriefCollapsed] = useState(false);
   const [ack, setAck] = useState<string | null>(null);
+  const [pendingCaptures, setPendingCaptures] = useState<QueuedCapture[]>([]);
+  const [storageStatus, setStorageStatus] = useState<"persistent" | "best-effort" | "unknown">("unknown");
   const hasMessages = chat.messages.length > 0;
 
   const refresh = useCallback(() => {
@@ -30,12 +34,55 @@ function Screen({ token }: { token: string }): React.ReactElement {
     client.recents().then(setRecents).catch(() => {});
   }, [client]);
 
+  const refreshPending = useCallback(async (): Promise<void> => {
+    setPendingCaptures(await captureQueue.all());
+  }, [captureQueue]);
+
+  const drainCaptures = useCallback(async (): Promise<void> => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    const completed = await captureQueue.drain((request) => client.capture(request));
+    await refreshPending();
+    if (completed.length > 0) refresh();
+  }, [captureQueue, client, refresh, refreshPending]);
+
   useEffect(() => {
     refresh();
     const onVis = (): void => { if (document.visibilityState === "visible") refresh(); };
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [refresh]);
+
+  useEffect(() => {
+    void refreshPending().then(drainCaptures);
+    const onOnline = (): void => { void drainCaptures(); };
+    window.addEventListener("online", onOnline);
+    const storage = navigator.storage;
+    if (storage?.persist !== undefined) {
+      void storage.persist().then((persistent) => {
+        setStorageStatus(persistent ? "persistent" : "best-effort");
+      }).catch(() => setStorageStatus("best-effort"));
+    } else {
+      setStorageStatus("best-effort");
+    }
+    return () => window.removeEventListener("online", onOnline);
+  }, [drainCaptures, refreshPending]);
+
+  const captureText = async (text: string): Promise<string> => {
+    await captureQueue.save({ text });
+    await refreshPending();
+    void drainCaptures();
+    return "Saved locally · pending";
+  };
+
+  const exportPending = async (): Promise<void> => {
+    const blob = new Blob([await captureQueue.exportJson()], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "dome-pending-captures.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const onAsk = (q: string): void => {
     dispatch({ kind: "user", text: q });
@@ -92,6 +139,25 @@ function Screen({ token }: { token: string }): React.ReactElement {
         <span className="brand">Dome</span>
         <span className="meta">{todayLabel()}<span className="pulse" aria-hidden="true" /></span>
       </header>
+      {pendingCaptures.length > 0 ? (
+        <section className="capture-outbox" aria-label="pending captures">
+          <div className="capture-outbox-head">
+            <strong>{pendingCaptures.length} saved locally</strong>
+            <span>offline storage: {storageStatus}</span>
+            <button type="button" onClick={() => { void drainCaptures(); }}>Retry</button>
+            <button type="button" onClick={() => { void exportPending(); }}>Export</button>
+          </div>
+          {pendingCaptures.map((item) => (
+            <div className="capture-outbox-item" key={item.id}>
+              <span>{item.text}</span>
+              <small>{item.state}{item.lastError !== undefined ? ` · ${item.lastError}` : ""}</small>
+              <button type="button" aria-label={`delete pending capture ${item.id}`} onClick={() => {
+                void captureQueue.remove(item.id).then(refreshPending);
+              }}>Delete</button>
+            </div>
+          ))}
+        </section>
+      ) : null}
       <div className="scroll">
         {today !== null ? (
           <Brief today={today} onResolve={resolve} onReview={review} onSettle={settle} collapsed={briefCollapsed} hasMessages={hasMessages} onToggle={() => setBriefCollapsed((c) => !c)} />
@@ -107,8 +173,9 @@ function Screen({ token }: { token: string }): React.ReactElement {
       {ack !== null ? <div className="ack-wrap"><div className="ack">{ack}</div></div> : null}
       <Composer
         onAsk={onAsk}
+        onCapture={captureText}
         onTranscribe={(blob) => client.transcribe(blob).then((t) => t.text)}
-        onFile={(text) => client.capture({ text }).then((r) => r.path)}
+        onFile={captureText}
       />
     </main>
   );

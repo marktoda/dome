@@ -3,6 +3,7 @@ import { captureReducer, INITIAL } from "../capture/captureMachine";
 
 type Props = {
   onAsk: (q: string) => void;
+  onCapture: (text: string) => Promise<string | void>;
   onTranscribe: (audio: Blob) => Promise<string>;
   onFile: (text: string) => Promise<string | void>;
 };
@@ -18,7 +19,7 @@ function fmtTime(s: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-export function Composer({ onAsk, onTranscribe, onFile }: Props): React.ReactElement {
+export function Composer({ onAsk, onCapture, onTranscribe, onFile }: Props): React.ReactElement {
   const [text, setText] = useState("");
   const [cap, dispatch] = useReducer(captureReducer, INITIAL);
   const [secs, setSecs] = useState(0);
@@ -131,6 +132,16 @@ export function Composer({ onAsk, onTranscribe, onFile }: Props): React.ReactEle
           <span className="glyph"><span className="stem" /><span className="base" /></span>
         </button>
         <input placeholder="ask your brain…" value={text} onChange={(e) => setText(e.target.value)} />
+        <button
+          type="button"
+          className="capture-text"
+          aria-label="capture thought"
+          disabled={text.trim().length === 0}
+          onClick={() => {
+            const draft = text.trim();
+            if (draft.length > 0) void onCapture(draft).then(() => setText(""));
+          }}
+        >+</button>
         <button type="submit" className={`send${text.trim().length > 0 ? " active" : ""}`} aria-label="send">↑</button>
       </div>
       {cap.error !== null ? <span className="err">{cap.error}</span> : null}

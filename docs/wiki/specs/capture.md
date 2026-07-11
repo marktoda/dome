@@ -74,6 +74,7 @@ sync script, hand-authored drop) should write — is:
 captured: 2026-06-10T06:11:00.000Z
 source: cli
 title: call the landlord
+capture_id: "018f4f19-7f69-7c20-9f0b-8fc715a2742d"
 ---
 
 call the landlord about the radiator before friday
@@ -84,8 +85,13 @@ call the landlord about the radiator before friday
   human's evening, not UTC's next morning.
 - `source:` — the ingress channel. `dome capture` writes `cli`; other
   ingresses should write an honest channel name (`shortcut`, `voice`,
-  `email`, …). Free-form; nothing dispatches on it yet.
+  `email`, …). It is a conservative 1–32 character token; nothing dispatches
+  on it yet.
 - `title:` — optional; present when the capturer supplied one explicitly.
+- `capture_id:` — optional for manual/CLI capture, required for retrying
+  product clients. This is the durable logical identity: it survives rename
+  and archive and is compared exactly, while the sanitized filename slug is
+  only a human-readable hint.
 - **No `type:` field.** `inbox/` roots may omit frontmatter typing per
   [[wiki/specs/page-schema]]; the file is ephemeral and ingest archives it.
   Archived captures under `inbox/processed/` stay untyped too — no shipped
@@ -281,17 +287,18 @@ capture; and a compromised relay can at worst write commits into
 `inbox/raw/` — visible in history, processed as untrusted input by ingest,
 revertible like any commit.
 
-**Trust domain.** The first shipped form runs in the owner's trust domain:
+**Trust domain.** The compatibility form runs in the owner's trust domain:
 a process running as the vault owner on the vault host, reachable over a
 private network (Tailscale-class), authenticating callers with a bearer
-token. Same posture as `dome mcp` — locally launched, owner-trusted. A
-hosted multi-tenant capture service is hosted-protected (v1.5) territory,
-out of scope here.
+token. Same posture as `dome mcp` — locally launched, owner-trusted. Dome
+Home replaces this browser posture with paired device authority before
+remote exposure; see [[wiki/specs/product-host]].
 
 **Retry semantics.** Mobile callers retry on flaky networks, and a naive
 relay would file the same thought twice. The seam accepts an optional
-client-supplied `captureId`; it drives the filename slug, and an existing
-file for the same id — in `inbox/raw/` or archived to `inbox/processed/` —
+client-supplied `captureId`; it is embedded as `capture_id` and also drives
+the filename slug. An existing file for the exact same id — in `inbox/raw/`
+or archived to `inbox/processed/` —
 answers `status: "duplicate"` with the original path — nothing written,
 nothing committed. Clients without an id accept duplicate
 risk; ingest tolerates duplicates either way. Implemented in
@@ -300,6 +307,13 @@ key as `dome capture --capture-id <id>` ([[wiki/specs/cli]]
 §"`dome capture`") — the queue drain's idempotency seam — and a `duplicate`
 answer is success (exit 0), so the drain deletes its queue copy on either
 outcome and a crash between capture and delete never double-files.
+
+The shared `contracts/capture.ts` boundary validates product receipts. A
+new capture explicitly reports `commit_status: "committed"` and
+`adoption_status: "pending"`; a duplicate reports
+`commit_status: "already-committed"` and does not pretend its adoption state
+is known. The PWA outbox saves text to IndexedDB before transport, retains a
+failed item with its stable id, and exposes retry, export, and delete.
 
 **Shipped form.** Form 2 below shipped first (2026-06-10): `dome http`
 carries `POST /capture` alongside the read routes — see

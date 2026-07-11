@@ -32,7 +32,7 @@
 // `tests/integration/no-direct-mutation-outside-boundaries.test.ts`
 // `ALLOWED_FILES`, matching init.ts / install.ts.
 
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
@@ -47,6 +47,10 @@ import {
   findGitRoot,
 } from "../git";
 import { resolveVaultPath } from "./resolve-vault";
+import {
+  CAPTURE_SCHEMA,
+  type CaptureReceipt,
+} from "../../contracts/capture";
 
 // ----- Constants ------------------------------------------------------------
 
@@ -110,6 +114,7 @@ export type CaptureSuccess = {
   readonly serveStatus: "running" | "stale" | "off";
   readonly adoptedInitialized: boolean;
   readonly compilePending: boolean;
+  readonly captureId?: string;
 };
 
 /**
@@ -138,10 +143,10 @@ export type CaptureOutcome =
  */
 export function captureJsonDocument(
   outcome: CaptureOutcome,
-): Record<string, unknown> {
+): CaptureReceipt {
   if (outcome.kind === "error") {
     return {
-      schema: "dome.capture/v1",
+      schema: CAPTURE_SCHEMA,
       status: "error",
       vault: outcome.vault,
       error: outcome.error,
@@ -149,16 +154,18 @@ export function captureJsonDocument(
   }
   if (outcome.kind === "duplicate") {
     return {
-      schema: "dome.capture/v1",
+      schema: CAPTURE_SCHEMA,
       status: "duplicate",
       vault: outcome.vault,
       path: outcome.path,
       capture_id: outcome.captureId,
+      commit_status: "already-committed",
+      adoption_status: "unknown",
     };
   }
   const r = outcome.result;
   return {
-    schema: "dome.capture/v1",
+    schema: CAPTURE_SCHEMA,
     status: "captured",
     vault: r.vault,
     path: r.path,
@@ -170,6 +177,9 @@ export function captureJsonDocument(
     serve_status: r.serveStatus,
     adopted_initialized: r.adoptedInitialized,
     compile_pending: r.compilePending,
+    ...(r.captureId !== undefined ? { capture_id: r.captureId } : {}),
+    commit_status: "committed",
+    adoption_status: "pending",
   };
 }
 
@@ -271,6 +281,7 @@ export function renderCaptureDocument(input: {
   readonly title?: string | undefined;
   readonly body: string;
   readonly source?: string | undefined;
+  readonly captureId?: string | undefined;
 }): string {
   const lines = [
     "---",
@@ -279,6 +290,9 @@ export function renderCaptureDocument(input: {
   ];
   if (input.title !== undefined) {
     lines.push(`title: ${JSON.stringify(input.title)}`);
+  }
+  if (input.captureId !== undefined) {
+    lines.push(`capture_id: ${JSON.stringify(input.captureId)}`);
   }
   lines.push("---", "", input.body.trim(), "");
   return lines.join("\n");
@@ -380,12 +394,21 @@ export async function performCapture(
     // an existing file for the same id answers `duplicate` — nothing is
     // written or committed ([[wiki/specs/capture]] §"Retry semantics").
     const captureId = options.captureId;
+    if (
+      captureId !== undefined &&
+      !/^[a-z0-9][a-z0-9._:-]{0,127}$/i.test(captureId)
+    ) {
+      return failWith(
+        EX_USAGE,
+        "invalid capture id: expected 1-128 chars of [a-z0-9._:-]",
+      );
+    }
     const slug =
       captureId !== undefined
         ? captureSlug(captureId)
         : captureSlug(explicitTitle ?? derivedTitle);
     if (captureId !== undefined) {
-      const existing = findCaptureBySlug(vaultPath, slug);
+      const existing = findCaptureById(vaultPath, captureId, slug);
       if (existing !== null) {
         return Object.freeze({
           kind: "duplicate" as const,
@@ -407,6 +430,7 @@ export async function performCapture(
       ...(explicitTitle !== null ? { title: explicitTitle } : {}),
       body,
       source,
+      ...(captureId !== undefined ? { captureId } : {}),
     });
 
     await mkdir(join(vaultPath, RAW_INBOX_DIR), { recursive: true });
@@ -443,6 +467,7 @@ export async function performCapture(
         serveStatus: heartbeat.status,
         adoptedInitialized,
         compilePending,
+        ...(captureId !== undefined ? { captureId } : {}),
       }),
     });
   } catch (e) {
@@ -461,9 +486,9 @@ function realStdin(): CaptureStdin {
 }
 
 /**
- * Find an existing capture whose filename slug matches — the
- * captureId-idempotency lookup. Filenames are `<YYYY-MM-DD-HHmm>-<slug>.md`,
- * so the stamp prefix is matched structurally and the slug exactly.
+ * Find an existing logical capture by its durable frontmatter identity.
+ * The filename lookup remains only as a compatibility fallback for captures
+ * written before `capture_id` was embedded in the artifact.
  *
  * Scans BOTH `inbox/raw/` and `inbox/processed/`: ingestion archives a
  * consumed capture to processed with its basename preserved, so a raw-only
@@ -471,18 +496,39 @@ function realStdin(): CaptureStdin {
  * Either directory may be absent (a vault that has never archived, or a
  * bare vault before the first capture) — a missing dir is simply skipped.
  */
-function findCaptureBySlug(vaultPath: string, slug: string): string | null {
+function findCaptureById(
+  vaultPath: string,
+  captureId: string,
+  legacySlug: string,
+): string | null {
   const pattern = new RegExp(
-    `^\\d{4}-\\d{2}-\\d{2}-\\d{4}-${escapeRegExp(slug)}\\.md$`,
+    `^\\d{4}-\\d{2}-\\d{2}-\\d{4}-${escapeRegExp(legacySlug)}\\.md$`,
   );
+  let legacyMatch: string | null = null;
+  const identityLine = `capture_id: ${JSON.stringify(captureId)}`;
   for (const dirRel of [RAW_INBOX_DIR, PROCESSED_INBOX_DIR]) {
     const dir = join(vaultPath, dirRel);
     if (!existsSync(dir)) continue;
     for (const name of readdirSync(dir)) {
-      if (pattern.test(name)) return `${dirRel}/${name}`;
+      if (!name.endsWith(".md")) continue;
+      const relPath = `${dirRel}/${name}`;
+      try {
+        const content = readFileSync(join(vaultPath, relPath), "utf8");
+        const lines = content.split(/\r?\n/);
+        if (lines.includes(identityLine)) return relPath;
+        if (
+          legacyMatch === null &&
+          !lines.some((line) => line.startsWith("capture_id:")) &&
+          pattern.test(name)
+        ) {
+          legacyMatch = relPath;
+        }
+      } catch {
+        // A concurrent archive/remove can make a directory entry disappear.
+      }
     }
   }
-  return null;
+  return legacyMatch;
 }
 
 function escapeRegExp(raw: string): string {

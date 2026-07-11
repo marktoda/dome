@@ -59,10 +59,26 @@ describe("DomeClient", () => {
   });
 
   test("capture() POSTs JSON and returns the doc", async () => {
-    mockJson(200, { schema: "dome.capture/v1", status: "captured", path: "inbox/raw/x.md", commit: "abc" });
+    mockJson(200, {
+      schema: "dome.capture/v1",
+      status: "captured",
+      vault: "/vault",
+      path: "inbox/raw/x.md",
+      commit: "abc",
+      title: "hi",
+      captured_at: "2026-07-11T12:00:00.000Z",
+      source: "pwa",
+      branch: "main",
+      serve_status: "running",
+      adopted_initialized: true,
+      compile_pending: false,
+      commit_status: "committed",
+      adoption_status: "pending",
+    });
     const c = new DomeClient("tok");
     const res = await c.capture({ text: "hi" });
     expect(res.status).toBe("captured");
+    if (res.status !== "captured") throw new Error("expected captured receipt");
     expect(res.path).toBe("inbox/raw/x.md");
   });
 
