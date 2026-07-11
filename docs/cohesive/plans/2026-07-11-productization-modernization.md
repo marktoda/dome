@@ -304,10 +304,11 @@ add intelligence speculatively:
    runtime asset families, `bin/dome`, and `README.md`; the rehearsal installs
    that tarball into a fresh consumer with `bun add --offline`, runs its binary
    and every declared export, scaffolds an external vault from shipped assets,
-   and runs local sync/status. It proves a current-schema reopen is idempotent.
-   It does **not** claim a prior-version upgrade: no retained prior release
-   artifact exists yet. Publishing, version changes, registry access, and the
-   license file remain explicit owner decisions.
+   and runs local sync/status. It proves two current-schema opens succeed with
+   stable HEAD/adopted semantic refs; it does not claim SQLite row preservation
+   or migration idempotence. It also does **not** claim a prior-version upgrade:
+   no retained prior release artifact exists yet. Publishing, version changes,
+   registry access, and the license file remain explicit owner decisions.
 3. **Collect garden decisions before tuning.** Run the semantic garden long
    enough to retain at least 20 human decisions, then review apply rate,
    pending load, latency, edit size, and recurrence by opportunity kind.

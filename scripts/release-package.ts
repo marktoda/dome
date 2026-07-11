@@ -56,7 +56,8 @@ export type ReleasePackageReport = {
   };
   readonly currentSchemaReopen: {
     readonly attempts: 2;
-    readonly idempotent: true;
+    readonly succeeded: true;
+    readonly semanticRefsStable: true;
     readonly priorVersionUpgradeClaimed: false;
   };
 };
@@ -109,6 +110,28 @@ export function validatePackResult(result: PackResult): void {
       throw new Error(`release artifact is missing runtime path: ${required}`);
     }
   }
+}
+
+export function currentSchemaReopenEvidence(
+  first: { readonly head: string | null; readonly adopted: string | null },
+  second: { readonly head: string | null; readonly adopted: string | null },
+): ReleasePackageReport["currentSchemaReopen"] {
+  if (
+    first.head !== second.head ||
+    first.adopted !== second.adopted ||
+    first.head === null ||
+    first.adopted === null
+  ) {
+    throw new Error(
+      "installed package current-schema reopen failed or changed semantic refs",
+    );
+  }
+  return Object.freeze({
+    attempts: 2 as const,
+    succeeded: true as const,
+    semanticRefsStable: true as const,
+    priorVersionUpgradeClaimed: false as const,
+  });
 }
 
 function isAllowedPackagePath(path: string): boolean {
@@ -213,14 +236,7 @@ export async function rehearseReleasePackage(): Promise<ReleasePackageReport> {
     const secondStatus = parseStatus(await run([
       domeBin, "status", "--vault", vault, "--json",
     ], consumer, offlineEnv));
-    if (
-      firstStatus.head !== secondStatus.head ||
-      firstStatus.adopted !== secondStatus.adopted ||
-      firstStatus.head === null ||
-      firstStatus.adopted === null
-    ) {
-      throw new Error("installed package current-schema reopen was not idempotent");
-    }
+    const reopenEvidence = currentSchemaReopenEvidence(firstStatus, secondStatus);
 
     return Object.freeze({
       schema: "dome.release-package/v1" as const,
@@ -238,11 +254,7 @@ export async function rehearseReleasePackage(): Promise<ReleasePackageReport> {
         source: "slack" as const,
         bundlesResolved: true as const,
       }),
-      currentSchemaReopen: Object.freeze({
-        attempts: 2 as const,
-        idempotent: true as const,
-        priorVersionUpgradeClaimed: false as const,
-      }),
+      currentSchemaReopen: reopenEvidence,
     });
   } finally {
     await rm(temporary, { recursive: true, force: true });

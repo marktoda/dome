@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import {
+  currentSchemaReopenEvidence,
   RELEASE_PACKAGE_CAPS,
   validatePackResult,
 } from "../../scripts/release-package";
@@ -57,5 +58,23 @@ describe("release package rehearsal", () => {
       ...base,
       size: RELEASE_PACKAGE_CAPS.packedBytes + 1,
     })).toThrow("packed bytes");
+  });
+
+  test("current-schema evidence claims only successful opens and stable semantic refs", () => {
+    const status = { head: "head-1", adopted: "adopted-1" };
+    expect(currentSchemaReopenEvidence(status, status)).toEqual({
+      attempts: 2,
+      succeeded: true,
+      semanticRefsStable: true,
+      priorVersionUpgradeClaimed: false,
+    });
+    expect(() => currentSchemaReopenEvidence(
+      status,
+      { head: "head-2", adopted: "adopted-1" },
+    )).toThrow("changed semantic refs");
+    expect(() => currentSchemaReopenEvidence(
+      { head: null, adopted: null },
+      { head: null, adopted: null },
+    )).toThrow("failed");
   });
 });
