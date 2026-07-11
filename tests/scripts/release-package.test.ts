@@ -32,6 +32,27 @@ describe("release package rehearsal", () => {
     expect(pkg.exports).not.toHaveProperty("./http");
   });
 
+  test("every relative link in the shipped README resolves inside the artifact", async () => {
+    const [readme, packageBody] = await Promise.all([
+      readFile(join(REPO_ROOT, "README.md"), "utf8"),
+      readFile(join(REPO_ROOT, "package.json"), "utf8"),
+    ]);
+    const files = (JSON.parse(packageBody) as { readonly files: ReadonlyArray<string> }).files;
+    const relativeTargets = [...readme.matchAll(/\]\(([^)]+)\)/g)]
+      .map((match) => match[1] ?? "")
+      .filter((target) =>
+        target !== "" &&
+        !target.startsWith("#") &&
+        !/^[a-z][a-z0-9+.-]*:/i.test(target)
+      )
+      .map((target) => target.split(/[?#]/, 1)[0] ?? target);
+    const excluded = relativeTargets.filter((target) =>
+      target !== "package.json" &&
+      !files.some((entry) => entry.endsWith("/") ? target.startsWith(entry) : target === entry)
+    );
+    expect(excluded).toEqual([]);
+  });
+
   test("artifact validation rejects development paths and oversized packs", () => {
     const requiredFiles = [
       { path: "README.md", size: 1, mode: 0o644 },
