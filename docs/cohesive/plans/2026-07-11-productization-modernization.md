@@ -282,14 +282,19 @@ Do not add these during P0–P2:
 The next work should harden distribution and the existing seams rather than
 add intelligence speculatively:
 
-1. **Git linked-worktree Adapter.** `isomorphic-git` does not implement Git's
+1. **Git linked-worktree Adapter — completed 2026-07-11.** `isomorphic-git` does not implement Git's
    `commondir` model: linked-worktree HEAD/index state and common refs/objects
    cannot be represented by one `gitdir`. Replace the single `src/git.ts`
    boundary with a complete native-git Adapter for linked contexts (reads and
    writes together), or reject that layout explicitly until parity exists.
    The acceptance fixture must create a real linked worktree, capture and
    adopt on its branch, and prove the main branch/index are unchanged. Do not
-   ship a partial fallback or add a subprocess-wrapper dependency.
+   ship a partial fallback or add a subprocess-wrapper dependency. Implemented
+   as complete layout routing behind the existing `src/git.ts` Interface:
+   valid gitfile contexts use native Git for reads and writes together. A real
+   `git worktree add` acceptance fixture proves capture through adoption plus
+   branch, worktree, and byte-for-byte index isolation; ordinary `.git/`
+   repositories retain the existing Adapter.
 2. **Release artifact and migration rehearsal.** Produce an installable
    versioned artifact, test clean install plus upgrade from the current work
    vault schema, and make service restart/rollback explicit. The hermetic
