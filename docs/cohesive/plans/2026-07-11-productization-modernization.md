@@ -131,6 +131,15 @@ Acceptance:
 
 ### P1 — measure and remove repeated whole-vault work
 
+**Completed 2026-07-11.** One internal `RevisionSource` now supplies revisions
+and diffs to compile-range, processor Snapshot construction, and projection
+rebuild. It hides bounded process-lifetime revision/tree/blob caches,
+in-flight read deduplication, deterministic path ordering, and counters behind
+two entry points. It adds no dependency, database, Effect kind, processor
+contract, or persistence. Existing 1,000-file lint characterization remains
+well below the former timeout boundary, and interface tests prove manifest
+and blob reuse plus lazy content I/O.
+
 Do not implement the large Document Compiler plan. Start with the internal
 `RevisionSource` proposed by the pressure test:
 

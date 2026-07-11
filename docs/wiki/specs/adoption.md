@@ -106,6 +106,15 @@ The default cap of 100 is generous — legitimate fan-out across an entity-rich 
 
 `compileRange(base, head)` is the engine's primitive for "what changed in this Proposal." It produces:
 
+The primitive delegates immutable Git reads to the process-lifetime
+`RevisionSource` module. `RevisionSource.revision(commit)` supplies the shared
+Snapshot and ordered path inventory; `RevisionSource.diff(base, head)` reuses
+the same bounded tree-manifest and blob caches. Processor dispatch and
+projection rebuild cross this same seam, so a candidate tree is not walked by
+three independent implementations. Cache state is disposable acceleration;
+Git commits remain authoritative and clean rebuild equivalence remains the
+correctness boundary.
+
 ```ts
 interface CompileRangeResult {
   readonly changedPaths: ReadonlyArray<string>;
