@@ -17,7 +17,7 @@
 
 import { generatedBlockMarkers } from "../../../../src/core/generated-block";
 import {
-  MISS_ENTRY_PATTERN,
+  parseMissEntry,
   RETRIEVAL_MISSES_PATH,
 } from "../../../../src/surface/report-miss";
 import {
@@ -233,9 +233,9 @@ export function possiblyIdle(
 /**
  * Count retrieval-miss log entries whose date falls in the trailing window.
  * Task 12's entry grammar is `- YYYY-MM-DD — "<query>" — <note>`
- * (`src/surface/report-miss.ts`'s `MISS_ENTRY_PATTERN` — the single source,
- * imported rather than re-derived here); this counts the date-prefixed
- * bullets whose date is one of `windowDates`.
+ * (`src/surface/report-miss.ts`'s `parseMissEntry` — the single source,
+ * imported rather than re-derived here); date-prefixed partial lines are not
+ * evidence.
  */
 export function countRetrievalMisses(
   content: string,
@@ -243,9 +243,8 @@ export function countRetrievalMisses(
 ): number {
   let count = 0;
   for (const line of content.split("\n")) {
-    const match = MISS_ENTRY_PATTERN.exec(line);
-    const date = match?.[1];
-    if (date !== undefined && windowDates.has(date)) count += 1;
+    const entry = parseMissEntry(line);
+    if (entry !== null && windowDates.has(entry.date)) count += 1;
   }
   return count;
 }

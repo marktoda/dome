@@ -5,7 +5,10 @@ import garden, {
 } from "../../../assets/extensions/dome.agent/processors/garden";
 import { commitOid } from "../../../src/core/source-ref";
 import { treeOid, type ProcessorContext } from "../../../src/core/processor";
-import { compileGardeningPlan } from "../../../assets/extensions/dome.agent/lib/gardening";
+import {
+  compileGardeningPlan,
+  selectGardeningOpportunity,
+} from "../../../assets/extensions/dome.agent/lib/gardening";
 
 const LONELY = "---\ndescription: Lonely\nstatus: active\n---\n# Lonely\n";
 
@@ -168,14 +171,18 @@ describe("dome.agent.garden", () => {
   });
 
   test("a durable proposal decision suppresses the exact evidence before model invocation", async () => {
-    const selected = compileGardeningPlan({
+    const plan = compileGardeningPlan({
       documents: [{
         path: "wiki/entities/lonely.md",
         content: LONELY,
       }],
       today: "2026-07-09",
-      limit: 1,
-    }).opportunities[0]!;
+      limit: Number.MAX_SAFE_INTEGER,
+    });
+    const selected = selectGardeningOpportunity(plan.opportunities, {
+      today: "2026-07-09",
+      strategy: "daily-rotation",
+    })!;
     let calls = 0;
     const effects = await garden.run(context({
       files: { "wiki/entities/lonely.md": LONELY },
@@ -190,6 +197,23 @@ describe("dome.agent.garden", () => {
     }));
     expect(effects).toEqual([]);
     expect(calls).toBe(0);
+  });
+
+  test("a nightly run selects one candidate from the full set", async () => {
+    let calls = 0;
+    const effects = await garden.run(context({
+      files: {
+        "wiki/entities/alpha.md": "---\ndescription: Alpha\nstatus: active\n---\n# Alpha\n",
+        "wiki/entities/beta.md": "---\ndescription: Beta\nstatus: active\n---\n# Beta\n",
+        "wiki/entities/gamma.md": "---\ndescription: Gamma\nstatus: active\n---\n# Gamma\n",
+      },
+      step: async () => {
+        calls += 1;
+        return { toolCalls: [], text: "No change required for the selected candidate." };
+      },
+    }));
+    expect(calls).toBe(1);
+    expect(effects.filter((effect) => effect.kind === "diagnostic")).toHaveLength(1);
   });
 
   test("proposal reasons recover settled opportunity ids", () => {

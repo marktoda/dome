@@ -313,6 +313,14 @@ add intelligence speculatively:
    enough to retain at least 20 human decisions, then review apply rate,
    pending load, latency, edit size, and recurrence by opportunity kind.
    Thresholds should follow evidence; no new labeling queue is needed.
+   The v2 evidence funnel landed 2026-07-11 without adding persistence or a
+   threshold. Verified work-vault retained-history baseline: 59 current
+   opportunities; 3 exact `dome.agent.garden` runs (2 succeeded, 1 failed);
+   71 `model.invoke` uses; $3.13552980 total recorded cost; 2 effectful runs,
+   both without linked proposals; 0 proposals and 0 decisions. Separately,
+   the latest successful Jul-11 run observed 23 model invokes,
+   $1.36733235 cost, and one retained effect. Adopted retrieval-miss evidence
+   was absent (`recordedMisses: null`). These are observations, not targets.
 4. **Improve cross-page recall only from recorded misses.** The first corpus
    miss is multi-page synthesis. Add cases from real retrieval-miss records,
    then compare lexical changes with a recomputable semantic candidate layer.
@@ -343,10 +351,21 @@ module is probably not earning its interface.
 
 ## Recommended next work package
 
-Start with **P0 operational truth**, not `RevisionSource`.
+Collect evidence before another intelligence or storage change:
 
-It closes the failed release gate, protects the work vault, and produces the
-clean measurement substrate needed for performance work. Once both dogfood
-vaults are green, implement only Stage 0 instrumentation from the compiler
-pressure test; let that evidence choose the first `RevisionSource` caller and
-the first broad processor to narrow.
+1. Let the nightly daily-rotation selector accumulate real garden outcomes;
+   review the v2 funnel after at least 20 human-decided opportunity proposals.
+   Do not set an apply-rate, linkage, cost, or opportunity-count threshold in
+   advance.
+2. Record retrieval misses through the existing collector. The adopted work
+   vault currently has no miss file, so semantic retrieval work has no new
+   evidence base yet; add corpus cases only when real misses exist.
+3. Use the existing work-vault attention diagnostics as the content-debt
+   backlog and deepen the processor that owns any recurring class.
+
+Explicit owner decisions remain outside implementation: choose the license,
+release version, and registry/public-access policy before publishing; retain
+that first release artifact before claiming or rehearsing a prior-version
+upgrade. Until those decisions and the evidence samples exist, the next work
+is observation and dogfooding, not another primitive, queue, database, model
+layer, or hidden threshold.

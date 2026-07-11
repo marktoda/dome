@@ -93,6 +93,15 @@ explicit forbidden-result noise, per-job scores, and the exact failure corpus.
 Checked-in floors prevent regression without pretending known lexical misses
 do not exist; improvements should ratchet the floors upward.
 
+With `--vault`, the v2 product report also reads the adopted
+`meta/retrieval-misses.md` through the public Vault interface and summarizes it
+with the collector-owned full-entry parser. An absent document reports
+`state: absent` and `recordedMisses: null`; a present header-only document
+reports zero; grammar-exact entries contribute a count and latest date;
+malformed bullet lines are counted separately and never treated as misses.
+Neither absent nor present is a pass/fail signal, and evaluation never creates
+the file.
+
 ## Related
 
 - [[wiki/specs/projection-store]] §"fts_documents (FTS5)"

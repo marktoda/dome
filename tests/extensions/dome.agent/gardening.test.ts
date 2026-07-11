@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   compileGardeningPlan,
+  selectGardeningOpportunity,
   type GardenDocument,
+  type GardeningOpportunity,
 } from "../../../assets/extensions/dome.agent/lib/gardening";
 
 function doc(path: string, content: string): GardenDocument {
@@ -113,5 +115,62 @@ describe("compileGardeningPlan", () => {
     expect(plan.totalSemanticPages).toBe(2);
     expect(plan.opportunities.some((item) => item.kind === "rotation-review")).toBe(true);
     expect(plan.opportunities.flatMap((item) => item.paths)).not.toContain("wiki/entities/old.md");
+  });
+});
+
+describe("selectGardeningOpportunity", () => {
+  const candidates: ReadonlyArray<GardeningOpportunity> = Object.freeze(
+    [900, 800, 700, 600].map((priority, index) => ({
+      id: `orphan-page:${String(index).padStart(12, "0")}`,
+      kind: "orphan-page" as const,
+      priority,
+      summary: `candidate ${index}`,
+      paths: [`wiki/entities/${index}.md`],
+      evidence: [],
+    })),
+  );
+
+  test("is deterministic within a day and covers a fixed list over one rotation", () => {
+    const select = (today: string) => selectGardeningOpportunity(candidates, {
+      today,
+      strategy: "daily-rotation",
+    });
+    expect(select("2026-07-09")).toBe(select("2026-07-09"));
+    const selected = Array.from({ length: candidates.length }, (_, offset) =>
+      select(`2026-07-${String(9 + offset).padStart(2, "0")}`)?.id
+    );
+    expect(new Set(selected)).toEqual(new Set(candidates.map((candidate) => candidate.id)));
+  });
+
+  test("handles empty and singleton lists", () => {
+    expect(selectGardeningOpportunity([], {
+      today: "2026-07-09",
+      strategy: "daily-rotation",
+    })).toBeNull();
+    expect(selectGardeningOpportunity([candidates[0]!], {
+      today: "2026-07-09",
+      strategy: "daily-rotation",
+    })).toBe(candidates[0]!);
+  });
+
+  test("settled opportunities are filtered before rotation selection", () => {
+    const documents = [doc("wiki/entities/lonely.md", fm("Lonely", "# Lonely"))];
+    const open = compileGardeningPlan({
+      today: "2026-07-09",
+      documents,
+      limit: Number.MAX_SAFE_INTEGER,
+    });
+    const settledId = open.opportunities[0]!.id;
+    const filtered = compileGardeningPlan({
+      today: "2026-07-09",
+      documents,
+      limit: Number.MAX_SAFE_INTEGER,
+      settledOpportunityIds: new Set([settledId]),
+    });
+    expect(filtered.opportunities.map((item) => item.id)).not.toContain(settledId);
+    expect(selectGardeningOpportunity(filtered.opportunities, {
+      today: "2026-07-09",
+      strategy: "daily-rotation",
+    })?.id).not.toBe(settledId);
   });
 });

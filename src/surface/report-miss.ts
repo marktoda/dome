@@ -39,14 +39,67 @@ import { resolveVaultPath } from "./resolve-vault";
 export const RETRIEVAL_MISSES_PATH = "meta/retrieval-misses.md";
 
 /**
- * Matches one grammar-exact miss entry line, capturing the `YYYY-MM-DD` date.
+ * Matches one full grammar-exact miss entry line, capturing date, query, note.
  * Grammar: `- YYYY-MM-DD — "<query>" — <note>` (em-dash separators). Task
  * 11's report card counts window-matched entries with this exact pattern
  * (`assets/extensions/dome.health/processors/report-card-render.ts`
  * `countRetrievalMisses`) — it imports this constant rather than hardcoding
  * its own copy.
  */
-export const MISS_ENTRY_PATTERN = /^- (\d{4}-\d{2}-\d{2}) —/;
+export const MISS_ENTRY_PATTERN = /^- (\d{4}-\d{2}-\d{2}) — "(.+)" — (.+)$/;
+
+export type ParsedMissEntry = {
+  readonly date: string;
+  readonly query: string;
+  readonly note: string;
+};
+
+/** Parse one complete collector-owned miss entry; partial prefixes are invalid. */
+export function parseMissEntry(line: string): ParsedMissEntry | null {
+  const match = MISS_ENTRY_PATTERN.exec(line);
+  if (match?.[1] === undefined || match[2] === undefined || match[3] === undefined) {
+    return null;
+  }
+  return Object.freeze({ date: match[1], query: match[2], note: match[3] });
+}
+
+export type RetrievalMissEvidence =
+  | {
+      readonly state: "absent";
+      readonly recordedMisses: null;
+    }
+  | {
+      readonly state: "present";
+      readonly recordedMisses: number;
+      readonly latestDate: string | null;
+      readonly malformedEntryLines: number;
+    };
+
+/** Summarize adopted miss-log content without creating or repairing the file. */
+export function summarizeRetrievalMissEvidence(
+  content: string | null,
+): RetrievalMissEvidence {
+  if (content === null) {
+    return Object.freeze({ state: "absent" as const, recordedMisses: null });
+  }
+  const dates: string[] = [];
+  let malformedEntryLines = 0;
+  for (const line of content.split(/\r?\n/)) {
+    const entry = parseMissEntry(line);
+    if (entry !== null) {
+      dates.push(entry.date);
+    } else if (/^-\s/.test(line)) {
+      malformedEntryLines += 1;
+    }
+  }
+  dates.sort();
+  return Object.freeze({
+    state: "present" as const,
+    recordedMisses: dates.length,
+    latestDate: dates.at(-1) ?? null,
+    malformedEntryLines,
+  });
+}
 
 const HEADER = [
   "# Retrieval misses",
