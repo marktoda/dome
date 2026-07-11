@@ -285,11 +285,17 @@ describe("git boundary in a linked worktree", () => {
       await nativeGit(work, "config", "user.name", "Fixture");
       await nativeGit(work, "config", "user.email", "fixture@example.com");
       await writeFile(join(work, "file.md"), "gitfile\n");
-      await nativeGit(work, "add", ".");
-      await nativeGit(work, "commit", "-qm", "gitfile");
       expect(await isGitRepo(work)).toBeTrue();
       expect(await currentBranch(work)).toBe("main");
-      expect(await currentSha(work)).toBe(await nativeGit(work, "rev-parse", "HEAD"));
+      expect(await currentSha(work)).toBeNull();
+      const initial = await commit({
+        path: work,
+        message: "initial gitfile commit\n",
+        files: ["file.md"],
+      });
+      expect(await currentSha(work)).toBe(initial);
+      expect((await log({ path: work, depth: 1 }))[0]?.commit.message).toBe("initial gitfile commit\n");
+      expect((await readTree({ path: work, oid: initial })).tree.map((entry) => entry.path)).toEqual(["file.md"]);
       await expect(initRepo(work, "other")).rejects.toThrow("cannot initialize");
     } finally {
       await rm(fixture, { recursive: true, force: true });

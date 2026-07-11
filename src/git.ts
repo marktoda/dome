@@ -339,10 +339,24 @@ export async function commit(opts: {
       await runNativeGit(["-C", root, "add", "-A", "--", ...fullpaths.map(literalPathspec)]);
     }
     const branch = (await runNativeGit(["-C", root, "symbolic-ref", "--quiet", "HEAD"])).trim();
-    const head = (await runNativeGit(["-C", root, "rev-parse", "HEAD"])).trim();
+    const headResult = await runNativeGitResult(["-C", root, "rev-parse", "--verify", "HEAD"]);
+    let head: string | null;
+    if (headResult.exitCode === 0) {
+      head = headResult.stdout.trim();
+    } else {
+      const branchResult = await runNativeGitResult([
+        "-C", root, "show-ref", "--verify", "--quiet", branch,
+      ]);
+      if (branchResult.exitCode !== 1) {
+        throw new Error(
+          `git HEAD did not resolve and ${branch} is not genuinely unborn: ${headResult.stderr.trim()}`,
+        );
+      }
+      head = null;
+    }
     const tree = (await runNativeGit(["-C", root, "write-tree"])).trim();
     const candidate = (await runNativeGit(
-      ["-C", root, "commit-tree", tree, "-p", head],
+      ["-C", root, "commit-tree", tree, ...(head === null ? [] : ["-p", head])],
       { stdin: message, env: nativeIdentityEnv(author, opts.committer ?? author) },
     )).trim();
     await writeRef({ path, ref: branch, value: candidate, expectedOld: head });
