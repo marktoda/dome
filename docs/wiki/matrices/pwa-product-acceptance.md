@@ -2,13 +2,13 @@
 type: matrix
 created: 2026-07-11
 updated: 2026-07-11
-status: planned
-description: "Versioned second-user and adversarial acceptance matrix for the PWA-first Dome Home product."
 sources:
   - "[[cohesive/plans/2026-07-11-pwa-first-product]]"
   - "[[wiki/specs/product-host]]"
   - "[[wiki/specs/http-surface]]"
   - "[[wiki/concepts/client-model]]"
+description: Versioned second-user and adversarial acceptance matrix for the PWA-first Dome Home product.
+status: planned
 ---
 
 # PWA product acceptance

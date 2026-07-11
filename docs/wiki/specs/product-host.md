@@ -2,8 +2,6 @@
 type: spec
 created: 2026-07-11
 updated: 2026-07-11
-status: planned
-description: "Dome Home product-host contract: one owner, one vault, many paired clients; trust, readiness, operation classes, lifecycle, and recovery."
 sources:
   - "[[cohesive/plans/2026-07-11-pwa-first-product]]"
   - "[[wiki/concepts/client-model]]"
@@ -11,6 +9,8 @@ sources:
   - "[[wiki/specs/agent-host]]"
   - "[[wiki/specs/vault-layout]]"
   - "[[wiki/matrices/pwa-product-acceptance]]"
+description: "Dome Home product-host contract: one owner, one vault, many paired clients; trust, readiness, operation classes, lifecycle, and recovery."
+status: planned
 ---
 
 # Product host
