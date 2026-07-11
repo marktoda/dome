@@ -7,10 +7,9 @@
 
 import git from "isomorphic-git";
 import fs from "node:fs";
-import { join, posix, relative, resolve } from "node:path";
-import { existsSync, lstatSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { dirname, isAbsolute, join, posix, relative, resolve } from "node:path";
+import { existsSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { walkUpForAncestor } from "./path-walk";
 
 /**
  * True iff `path` sits inside a git working tree. Walks up from `path` looking
@@ -25,22 +24,56 @@ import { walkUpForAncestor } from "./path-walk";
  * it contains `HEAD` (the minimal ref a freshly-init'd repo has). A partial
  * `.git/` left behind by a crashed git operation — `objects/` and `index`
  * but no HEAD — would otherwise short-circuit the walk-up and surface as
- * an isomorphic-git null deref deep inside the helpers. A `.git` *file*
- * (linked-worktree gitlink) is accepted and routed through the native-git
- * Adapter below. isomorphic-git cannot model the split per-worktree
- * HEAD/index and common refs/objects in that layout.
+ * an isomorphic-git null deref deep inside the helpers. A valid `.git` *file*
+ * is parsed and routed through the native-gitfile Adapter below. Linked
+ * worktrees are the motivating case: isomorphic-git cannot model their split
+ * per-worktree HEAD/index and common refs/objects.
  */
 export async function findGitRoot(path: string): Promise<string | null> {
-  return walkUpForAncestor(path, (dir) => isValidGitEntry(join(dir, ".git")));
+  let current = resolve(path);
+  for (;;) {
+    const gitPath = join(current, ".git");
+    if (existsSync(gitPath)) {
+      const stat = statSync(gitPath);
+      if (stat.isFile()) return resolveGitFileEntry(gitPath) === null ? null : current;
+      if (isValidGitEntry(gitPath)) return current;
+    }
+    const parent = dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
 }
 
 function isValidGitEntry(gitPath: string): boolean {
   if (!existsSync(gitPath)) return false;
-  // .git as a file = linked-worktree gitlink. Native git validates its target
-  // when an operation runs. .git as a directory must contain HEAD to be real.
+  // A gitfile must name a real gitdir; a .git directory must contain HEAD.
   const stat = statSync(gitPath);
-  if (stat.isFile()) return true;
+  if (stat.isFile()) return resolveGitFileEntry(gitPath) !== null;
   return existsSync(join(gitPath, "HEAD"));
+}
+
+type GitFileEntry = {
+  readonly gitdir: string;
+  readonly kind: "linked-worktree" | "gitfile";
+};
+
+function resolveGitFileEntry(gitPath: string): GitFileEntry | null {
+  try {
+    const match = /^gitdir:\s*(.+?)\s*$/m.exec(readFileSync(gitPath, "utf8"));
+    const raw = match?.[1];
+    if (raw === undefined || raw.length === 0) return null;
+    const gitdir = resolve(dirname(gitPath), raw);
+    if (!statSync(gitdir).isDirectory() || !existsSync(join(gitdir, "HEAD"))) return null;
+    const commonFile = join(gitdir, "commondir");
+    if (existsSync(commonFile)) {
+      const common = resolve(gitdir, readFileSync(commonFile, "utf8").trim());
+      if (!statSync(common).isDirectory() || !existsSync(join(common, "objects"))) return null;
+      return { gitdir, kind: "linked-worktree" };
+    }
+    return { gitdir, kind: "gitfile" };
+  } catch {
+    return null;
+  }
 }
 
 export async function isGitRepo(path: string): Promise<boolean> {
@@ -65,7 +98,7 @@ export async function isGitRepo(path: string): Promise<boolean> {
 type GitContext = {
   readonly root: string;
   readonly prefix: string;
-  readonly adapter: "isomorphic" | "native-linked-worktree";
+  readonly adapter: "isomorphic" | "native-gitfile";
 };
 
 async function resolveGitContext(path: string): Promise<GitContext> {
@@ -75,24 +108,53 @@ async function resolveGitContext(path: string): Promise<GitContext> {
   }
   const absPath = resolve(path);
   const rel = relative(root, absPath).split(/[\\/]/).filter((s) => s.length > 0).join("/");
+  const gitEntry = join(root, ".git");
+  const gitFile = statSync(gitEntry).isFile() ? resolveGitFileEntry(gitEntry) : null;
+  if (statSync(gitEntry).isFile() && gitFile === null) {
+    throw new Error(`git operation invoked against malformed gitfile: ${gitEntry}`);
+  }
   return {
     root,
     prefix: rel,
-    adapter: statSync(join(root, ".git")).isFile()
-      ? "native-linked-worktree"
+    adapter: gitFile !== null
+      ? "native-gitfile"
       : "isomorphic",
   };
 }
 
-function isNativeLinkedWorktree(context: GitContext): boolean {
-  return context.adapter === "native-linked-worktree";
+function isNativeGitFile(context: GitContext): boolean {
+  return context.adapter === "native-gitfile";
+}
+
+function validateVaultRelativePath(filepath: string): string {
+  if (
+    filepath.length === 0 ||
+    isAbsolute(filepath) ||
+    /^[A-Za-z]:[\\/]/.test(filepath) ||
+    filepath.includes("\\")
+  ) {
+    throw new Error(`git filepath must be a non-empty POSIX vault-relative path: ${filepath}`);
+  }
+  const segments = filepath.split("/");
+  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    throw new Error(`git filepath escapes or does not name a vault-relative file: ${filepath}`);
+  }
+  return filepath;
+}
+
+function fullVaultPath(prefix: string, filepath: string): string {
+  const safe = validateVaultRelativePath(filepath);
+  return prefix === "" ? safe : posix.join(prefix, safe);
+}
+
+function literalPathspec(path: string): string {
+  return `:(literal)${path}`;
 }
 
 export async function initRepo(path: string, branch = "main"): Promise<void> {
   const root = await findGitRoot(path);
-  if (root !== null && statSync(join(root, ".git")).isFile()) {
-    await runNativeGit(["-C", root, "init"]);
-    return;
+  if (root !== null && resolveGitFileEntry(join(root, ".git")) !== null) {
+    throw new Error("initRepo cannot initialize an existing gitfile or linked worktree");
   }
   await git.init({ fs, dir: path, defaultBranch: branch });
 }
@@ -108,8 +170,8 @@ export async function statusMatrix(
 ): Promise<Awaited<ReturnType<typeof git.statusMatrix>>> {
   const context = await resolveGitContext(path);
   const { root, prefix } = context;
-  if (isNativeLinkedWorktree(context)) {
-    return nativeStatusMatrix(context);
+  if (isNativeGitFile(context)) {
+    return nativeGitFileStatusMatrix(context);
   }
   const matrix = await git.statusMatrix({
     fs,
@@ -234,7 +296,7 @@ export async function currentSha(path: string): Promise<string | null> {
   try {
     const context = await resolveGitContext(path);
     const { root } = context;
-    if (isNativeLinkedWorktree(context)) {
+    if (isNativeGitFile(context)) {
       return (await runNativeGit(["-C", root, "rev-parse", "--verify", "HEAD"])).trim();
     }
     return await git.resolveRef({ fs, dir: root, ref: "HEAD" });
@@ -246,9 +308,9 @@ export async function currentSha(path: string): Promise<string | null> {
 export async function add(path: string, filepath: string): Promise<void> {
   const context = await resolveGitContext(path);
   const { root, prefix } = context;
-  const fullpath = prefix === "" ? filepath : posix.join(prefix, filepath);
-  if (isNativeLinkedWorktree(context)) {
-    await runNativeGit(["-C", root, "add", "--", fullpath]);
+  const fullpath = fullVaultPath(prefix, filepath);
+  if (isNativeGitFile(context)) {
+    await runNativeGit(["-C", root, "add", "--", literalPathspec(fullpath)]);
     return;
   }
   await git.add({ fs, dir: root, filepath: fullpath });
@@ -271,20 +333,24 @@ export async function commit(opts: {
   const context = await resolveGitContext(path);
   const { root, prefix } = context;
   const author = opts.author ?? { name: "Dome", email: "dome@local" };
-  if (isNativeLinkedWorktree(context)) {
+  if (isNativeGitFile(context)) {
     if (files !== undefined && files.length > 0) {
-      const fullpaths = files.map((f) => prefix === "" ? f : posix.join(prefix, f));
-      await runNativeGit(["-C", root, "add", "-A", "--", ...fullpaths]);
+      const fullpaths = files.map((f) => fullVaultPath(prefix, f));
+      await runNativeGit(["-C", root, "add", "-A", "--", ...fullpaths.map(literalPathspec)]);
     }
-    await runNativeGit(
-      ["-C", root, "commit", "--no-gpg-sign", "--no-verify", "--allow-empty", "-m", message],
-      { env: nativeIdentityEnv(author, opts.committer ?? author) },
-    );
-    return (await runNativeGit(["-C", root, "rev-parse", "HEAD"])).trim();
+    const branch = (await runNativeGit(["-C", root, "symbolic-ref", "--quiet", "HEAD"])).trim();
+    const head = (await runNativeGit(["-C", root, "rev-parse", "HEAD"])).trim();
+    const tree = (await runNativeGit(["-C", root, "write-tree"])).trim();
+    const candidate = (await runNativeGit(
+      ["-C", root, "commit-tree", tree, "-p", head],
+      { stdin: message, env: nativeIdentityEnv(author, opts.committer ?? author) },
+    )).trim();
+    await writeRef({ path, ref: branch, value: candidate, expectedOld: head });
+    return candidate;
   }
   if (files !== undefined) {
     for (const f of files) {
-      const fullpath = prefix === "" ? f : posix.join(prefix, f);
+      const fullpath = fullVaultPath(prefix, f);
       try {
         await git.add({ fs, dir: root, filepath: fullpath });
       } catch {
@@ -404,11 +470,11 @@ export async function commitFilesOnHead(opts: {
   const context = await resolveGitContext(opts.path);
   const { root, prefix } = context;
   const fulls = opts.files.map((f) => ({
-    full: prefix === "" ? f.filepath : posix.join(prefix, f.filepath),
+    full: fullVaultPath(prefix, f.filepath),
     content: f.content,
   }));
-  if (isNativeLinkedWorktree(context)) {
-    return nativeCommitFilesOnHead({ ...opts, root, fulls });
+  if (isNativeGitFile(context)) {
+    return nativeGitFileCommitFilesOnHead({ ...opts, root, fulls });
   }
   const branch = await git.currentBranch({ fs, dir: root, fullname: true });
   if (branch === undefined) {
@@ -585,8 +651,8 @@ async function spliceRemoveFromTree(opts: {
 export async function readTree(opts: { path: string; oid: string }): Promise<Awaited<ReturnType<typeof git.readTree>>> {
   const context = await resolveGitContext(opts.path);
   const { root, prefix } = context;
-  if (isNativeLinkedWorktree(context)) {
-    return nativeReadTree({ root, prefix, oid: opts.oid });
+  if (isNativeGitFile(context)) {
+    return nativeGitFileReadTree({ root, prefix, oid: opts.oid });
   }
   const commitTree = await treeOidIfCommit(root, opts.oid);
   if (commitTree === null) {
@@ -619,8 +685,8 @@ export async function readBlob(opts: {
 }): Promise<string | null> {
   const context = await resolveGitContext(opts.path);
   const { root, prefix } = context;
-  const fullpath = prefix === "" ? opts.filepath : posix.join(prefix, opts.filepath);
-  if (isNativeLinkedWorktree(context)) {
+  const fullpath = fullVaultPath(prefix, opts.filepath);
+  if (isNativeGitFile(context)) {
     try {
       return await runNativeGit(["-C", root, "show", `${opts.commit}:${fullpath}`]);
     } catch (e) {
@@ -669,7 +735,7 @@ export async function readBlobByOid(opts: {
 }): Promise<string | null> {
   const context = await resolveGitContext(opts.path);
   const { root } = context;
-  if (isNativeLinkedWorktree(context)) {
+  if (isNativeGitFile(context)) {
     try {
       return await runNativeGit(["-C", root, "cat-file", "blob", opts.oid]);
     } catch (e) {
@@ -739,7 +805,7 @@ async function readPrefixedTree(opts: {
 export async function resolveRef(opts: { path: string; ref?: string }): Promise<string> {
   const context = await resolveGitContext(opts.path);
   const { root } = context;
-  if (isNativeLinkedWorktree(context)) {
+  if (isNativeGitFile(context)) {
     return (await runNativeGit(["-C", root, "rev-parse", "--verify", opts.ref ?? "HEAD"])).trim();
   }
   return git.resolveRef({ fs, dir: root, ref: opts.ref ?? "HEAD" });
@@ -752,8 +818,8 @@ export async function log(opts: {
 }): Promise<Awaited<ReturnType<typeof git.log>>> {
   const context = await resolveGitContext(opts.path);
   const { root } = context;
-  if (isNativeLinkedWorktree(context)) {
-    return nativeLog({
+  if (isNativeGitFile(context)) {
+    return nativeGitFileLog({
       root,
       ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
       ...(opts.ref !== undefined ? { ref: opts.ref } : {}),
@@ -805,7 +871,7 @@ export async function fileInfoAtCommit(opts: {
   filepath: string;
 }): Promise<FileInfoAtCommit | null> {
   const { root, prefix } = await resolveGitContext(opts.path);
-  const fullpath = prefix === "" ? opts.filepath : posix.join(prefix, opts.filepath);
+  const fullpath = fullVaultPath(prefix, opts.filepath);
   const cache = await fileInfoCacheForCommit({ root, prefix, commit: opts.commit });
   if (!cache.trackedPaths.has(fullpath)) return null;
   return cache.infoByPath.get(fullpath) ?? null;
@@ -890,7 +956,7 @@ async function trackedPathsAtCommit(opts: {
     opts.commit,
   ];
   if (opts.prefix !== "") {
-    args.push("--", opts.prefix);
+    args.push("--", literalPathspec(opts.prefix));
   }
   const output = await runNativeGit(args);
   return Object.freeze(
@@ -919,7 +985,7 @@ async function latestFileInfoByPath(opts: {
     opts.commit,
   ];
   if (opts.prefix !== "") {
-    args.push("--", opts.prefix);
+    args.push("--", literalPathspec(opts.prefix));
   }
   const output = await runNativeGit(args);
   // Per path we record the first (most recent) commit as lastChanged*, and
@@ -1023,7 +1089,7 @@ export async function logWithTrailers(opts: {
   }
   args.push("HEAD");
   if (prefix !== "") {
-    args.push("--", prefix);
+    args.push("--", literalPathspec(prefix));
   }
 
   let output: string;
@@ -1101,6 +1167,7 @@ export async function changedPathsForCommit(opts: {
     args.push(`--relative=${prefix}`);
   }
   args.push(opts.sha);
+  if (prefix !== "") args.push("--", literalPathspec(prefix));
   const out = await runNativeGit(args);
   return Object.freeze(
     out
@@ -1129,7 +1196,14 @@ type NativeGitOptions = {
 function nativeGitEnv(overrides: Readonly<Record<string, string>> = {}): Record<string, string> {
   const env = Object.fromEntries(
     Object.entries(process.env).filter(
-      ([key, value]) => value !== undefined && !["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"].includes(key),
+      ([key, value]) => value !== undefined && ![
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_COMMON_DIR",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+      ].includes(key),
     ),
   ) as Record<string, string>;
   return { ...env, ...overrides };
@@ -1195,28 +1269,33 @@ function splitNul(output: string): ReadonlyArray<string> {
   return output.split("\0").filter((part) => part.length > 0);
 }
 
-async function nativeStatusMatrix(
+async function nativeGitFileStatusMatrix(
   context: GitContext,
 ): Promise<Awaited<ReturnType<typeof git.statusMatrix>>> {
-  const pathspec = context.prefix === "" ? [] : ["--", context.prefix];
-  const headEntries = new Map<string, string>();
+  const pathspec = context.prefix === "" ? [] : ["--", literalPathspec(context.prefix)];
+  type IndexEntry = { readonly oid: string; readonly mode: string };
+  const headEntries = new Map<string, IndexEntry>();
   const head = await runNativeGitResult([
     "-C", context.root, "ls-tree", "-rz", "-r", "HEAD", ...pathspec,
   ]);
   if (head.exitCode === 0) {
     for (const record of splitNul(head.stdout)) {
-      const match = /^\d+\s+\w+\s+([0-9a-f]+)\t(.+)$/.exec(record);
-      if (match?.[1] !== undefined && match[2] !== undefined) headEntries.set(match[2], match[1]);
+      const match = /^(\d+)\s+\w+\s+([0-9a-f]+)\t(.+)$/.exec(record);
+      if (match?.[1] !== undefined && match[2] !== undefined && match[3] !== undefined) {
+        headEntries.set(match[3], { mode: match[1], oid: match[2] });
+      }
     }
   }
 
-  const indexEntries = new Map<string, string>();
+  const indexEntries = new Map<string, IndexEntry>();
   const index = await runNativeGit(["-C", context.root, "ls-files", "-sz", ...pathspec]);
   for (const record of splitNul(index)) {
-    const match = /^\d+\s+([0-9a-f]+)\s+(\d)\t(.+)$/.exec(record);
-    if (match?.[1] !== undefined && match[2] === "0" && match[3] !== undefined) {
-      indexEntries.set(match[3], match[1]);
+    const match = /^(\d+)\s+([0-9a-f]+)\s+(\d)\t(.+)$/.exec(record);
+    if (match?.[1] === undefined || match[2] === undefined || match[3] === undefined || match[4] === undefined) continue;
+    if (match[3] !== "0") {
+      throw new Error(`native-gitfile status does not support an unmerged index: ${match[4]}`);
     }
+    indexEntries.set(match[4], { mode: match[1], oid: match[2] });
   }
   const untracked = splitNul(await runNativeGit([
     "-C", context.root, "ls-files", "--others", "--exclude-standard", "-z", ...pathspec,
@@ -1226,26 +1305,21 @@ async function nativeStatusMatrix(
   const prefixSlash = `${context.prefix}/`;
   for (const fullpath of [...paths].sort()) {
     if (isDomeStatePath(fullpath, context.prefix)) continue;
-    const diskPath = join(context.root, ...fullpath.split("/"));
-    let workOid: string | null = null;
-    try {
-      if (!lstatSync(diskPath).isDirectory()) {
-        workOid = (await runNativeGit([
-          "-C", context.root, "hash-object", `--path=${fullpath}`, "--", fullpath,
-        ])).trim();
-      }
-    } catch {
-      workOid = null;
+    const headEntry = headEntries.get(fullpath) ?? null;
+    const indexEntry = indexEntries.get(fullpath) ?? null;
+    if (headEntry?.mode === "160000" || indexEntry?.mode === "160000") {
+      throw new Error(`native-gitfile status does not support gitlink entry: ${fullpath}`);
     }
-    const headOid = headEntries.get(fullpath) ?? null;
-    const indexOid = indexEntries.get(fullpath) ?? null;
-    const headCode = headOid === null ? 0 : 1;
-    const workCode = workOid === null ? 0 : workOid === headOid ? 1 : 2;
-    const stageCode = indexOid === null
+    const workEntry = await nativeWorktreeEntry(context.root, fullpath);
+    const headCode = headEntry === null ? 0 : 1;
+    const workCode = workEntry === null
       ? 0
-      : indexOid === headOid
+      : workEntry.oid === headEntry?.oid && workEntry.mode === headEntry.mode ? 1 : 2;
+    const stageCode = indexEntry === null
+      ? 0
+      : indexEntry.oid === headEntry?.oid && indexEntry.mode === headEntry.mode
         ? 1
-        : indexOid === workOid
+        : indexEntry.oid === workEntry?.oid && indexEntry.mode === workEntry.mode
           ? 2
           : 3;
     const filepath = context.prefix === ""
@@ -1258,7 +1332,36 @@ async function nativeStatusMatrix(
   return rows;
 }
 
-async function nativeCommitFilesOnHead(opts: {
+async function nativeWorktreeEntry(
+  root: string,
+  fullpath: string,
+): Promise<{ readonly oid: string; readonly mode: string } | null> {
+  const diskPath = join(root, ...fullpath.split("/"));
+  let stat: ReturnType<typeof lstatSync>;
+  try {
+    stat = lstatSync(diskPath);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  }
+  if (stat.isDirectory()) {
+    throw new Error(`native-gitfile status does not support directory gitlink entry: ${fullpath}`);
+  }
+  if (stat.isSymbolicLink()) {
+    const target = readlinkSync(diskPath);
+    const oid = (await runNativeGit(
+      ["-C", root, "hash-object", "--stdin"],
+      { stdin: target },
+    )).trim();
+    return { oid, mode: "120000" };
+  }
+  const oid = (await runNativeGit([
+    "-C", root, "hash-object", `--path=${fullpath}`, "--", fullpath,
+  ])).trim();
+  return { oid, mode: (stat.mode & 0o111) === 0 ? "100644" : "100755" };
+}
+
+async function nativeGitFileCommitFilesOnHead(opts: {
   readonly path: string;
   readonly files: ReadonlyArray<{ readonly filepath: string; readonly content: string | null }>;
   readonly message: string;
@@ -1319,7 +1422,7 @@ async function nativeCommitFilesOnHead(opts: {
         if (content === null) {
           await runNativeGit(["-C", opts.root, "update-index", "--force-remove", "--", fullpath]);
         } else {
-          await runNativeGit(["-C", opts.root, "add", "--", fullpath]);
+          await runNativeGit(["-C", opts.root, "add", "--", literalPathspec(fullpath)]);
         }
       }
       return candidate;
@@ -1332,7 +1435,7 @@ async function nativeCommitFilesOnHead(opts: {
   );
 }
 
-async function nativeReadTree(opts: {
+async function nativeGitFileReadTree(opts: {
   readonly root: string;
   readonly prefix: string;
   readonly oid: string;
@@ -1357,7 +1460,7 @@ function isNativeMissingObjectError(error: unknown): boolean {
   return error instanceof Error && /does not exist|exists on disk, but not in|bad object|not a valid object|unknown revision|path .* not in/i.test(error.message);
 }
 
-async function nativeLog(opts: {
+async function nativeGitFileLog(opts: {
   readonly root: string;
   readonly depth?: number;
   readonly ref?: string;
@@ -1371,6 +1474,9 @@ async function nativeLog(opts: {
     const payload = await runNativeGit(["-C", opts.root, "cat-file", "commit", oid]);
     const separator = payload.indexOf("\n\n");
     const headers = payload.slice(0, separator).split("\n");
+    if (headers.some((line) => line.startsWith("gpgsig "))) {
+      throw new Error(`native-gitfile log does not support signed commit ${oid}`);
+    }
     const message = payload.slice(separator + 2);
     const tree = headers.find((line) => line.startsWith("tree "))?.slice(5) ?? "";
     const parent = headers.filter((line) => line.startsWith("parent ")).map((line) => line.slice(7));
@@ -1417,7 +1523,7 @@ export async function readRefResult(opts: {
   try {
     const context = await resolveGitContext(opts.path);
     const { root } = context;
-    if (isNativeLinkedWorktree(context)) {
+    if (isNativeGitFile(context)) {
       return Object.freeze({
         kind: "found" as const,
         value: (await runNativeGit(["-C", root, "rev-parse", "--verify", opts.ref])).trim(),
@@ -1533,7 +1639,7 @@ export async function writeRef(opts: {
     }
     return;
   }
-  if (isNativeLinkedWorktree(context)) {
+  if (isNativeGitFile(context)) {
     await runNativeGit(["-C", root, "update-ref", opts.ref, opts.value]);
     return;
   }
@@ -1574,20 +1680,17 @@ export async function checkoutPathsAtRef(opts: {
   if (opts.filepaths.length === 0) return;
   const context = await resolveGitContext(opts.path);
   const { root, prefix } = context;
-  const fullpaths = opts.filepaths.map((filepath) =>
-    prefix === "" ? filepath : posix.join(prefix, filepath),
-  );
-  if (isNativeLinkedWorktree(context)) {
+  const fullpaths = opts.filepaths.map((filepath) => fullVaultPath(prefix, filepath));
+  if (isNativeGitFile(context)) {
+    if (opts.dryRun === true || opts.force !== true) {
+      await nativeCheckoutPreflight({ root, ref: opts.ref, fullpaths });
+    }
     if (opts.dryRun === true) {
-      for (const filepath of fullpaths) {
-        await runNativeGit(["-C", root, "cat-file", "-e", `${opts.ref}:${filepath}`]);
-      }
       return;
     }
     await runNativeGit([
-      "-C", root, "checkout",
-      ...(opts.force === true ? ["--force"] : []),
-      opts.ref, "--", ...fullpaths,
+      "-C", root, "restore", `--source=${opts.ref}`, "--staged", "--worktree",
+      "--", ...fullpaths.map(literalPathspec),
     ]);
     return;
   }
@@ -1600,6 +1703,68 @@ export async function checkoutPathsAtRef(opts: {
     force: opts.force ?? false,
     dryRun: opts.dryRun ?? false,
   });
+}
+
+type NativePathEntry = { readonly oid: string; readonly mode: string };
+
+async function nativeCheckoutPreflight(opts: {
+  readonly root: string;
+  readonly ref: string;
+  readonly fullpaths: ReadonlyArray<string>;
+}): Promise<void> {
+  for (const fullpath of opts.fullpaths) {
+    const [head, target, index, work] = await Promise.all([
+      nativeTreePathEntry(opts.root, "HEAD", fullpath),
+      nativeTreePathEntry(opts.root, opts.ref, fullpath),
+      nativeIndexPathEntry(opts.root, fullpath),
+      nativeWorktreeEntry(opts.root, fullpath),
+    ]);
+    const localIndex = !nativeEntriesEqual(index, head);
+    const localWork = !nativeEntriesEqual(work, index);
+    const wouldOverwrite =
+      (localIndex && !nativeEntriesEqual(target, index)) ||
+      (localWork && !nativeEntriesEqual(target, work));
+    if (wouldOverwrite) {
+      throw new Error(`checkout of ${fullpath} would overwrite local index or working-tree edits`);
+    }
+  }
+}
+
+async function nativeTreePathEntry(
+  root: string,
+  ref: string,
+  fullpath: string,
+): Promise<NativePathEntry | null> {
+  const result = await runNativeGitResult([
+    "-C", root, "ls-tree", "-z", ref, "--", literalPathspec(fullpath),
+  ]);
+  if (result.exitCode !== 0) throw new Error(`git ls-tree ${ref} failed: ${result.stderr.trim()}`);
+  const record = splitNul(result.stdout)[0];
+  if (record === undefined) return null;
+  const match = /^(\d+)\s+\w+\s+([0-9a-f]+)\t/.exec(record);
+  if (match?.[1] === undefined || match[2] === undefined) {
+    throw new Error(`could not parse git ls-tree record: ${record}`);
+  }
+  if (match[1] === "160000") throw new Error(`checkout does not support gitlink entry: ${fullpath}`);
+  return { mode: match[1], oid: match[2] };
+}
+
+async function nativeIndexPathEntry(root: string, fullpath: string): Promise<NativePathEntry | null> {
+  const output = await runNativeGit([
+    "-C", root, "ls-files", "-sz", "--", literalPathspec(fullpath),
+  ]);
+  let found: NativePathEntry | null = null;
+  for (const record of splitNul(output)) {
+    const match = /^(\d+)\s+([0-9a-f]+)\s+(\d)\t/.exec(record);
+    if (match?.[1] === undefined || match[2] === undefined || match[3] === undefined) continue;
+    if (match[3] !== "0") throw new Error(`checkout does not support an unmerged index: ${fullpath}`);
+    found = { mode: match[1], oid: match[2] };
+  }
+  return found;
+}
+
+function nativeEntriesEqual(left: NativePathEntry | null, right: NativePathEntry | null): boolean {
+  return left?.oid === right?.oid && left?.mode === right?.mode;
 }
 
 /**
@@ -1617,7 +1782,7 @@ export async function isAncestor(opts: {
   try {
     const context = await resolveGitContext(opts.path);
     const { root } = context;
-    if (isNativeLinkedWorktree(context)) {
+    if (isNativeGitFile(context)) {
       const result = await runNativeGitResult([
         "-C", root, "merge-base", "--is-ancestor", opts.ancestor, opts.descendant,
       ]);
@@ -1645,7 +1810,7 @@ export async function countCommitsSince(opts: {
   try {
     const context = await resolveGitContext(opts.path);
     const { root } = context;
-    if (isNativeLinkedWorktree(context)) {
+    if (isNativeGitFile(context)) {
       const args = ["-C", root, "rev-list"];
       if (opts.maxDepth !== undefined) args.push(`--max-count=${opts.maxDepth + 1}`);
       args.push(opts.descendant);
@@ -1712,7 +1877,7 @@ export async function currentBranch(path: string): Promise<string | null> {
   try {
     const context = await resolveGitContext(path);
     const { root } = context;
-    if (isNativeLinkedWorktree(context)) {
+    if (isNativeGitFile(context)) {
       const result = await runNativeGitResult(["-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"]);
       return result.exitCode === 0 ? result.stdout.trim() : null;
     }

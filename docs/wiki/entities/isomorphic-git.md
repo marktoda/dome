@@ -19,11 +19,13 @@ Pure-JavaScript implementation of git that reads and writes the same `.git/`
 format as the git CLI. It is Dome's Adapter for ordinary repositories behind
 the single `src/git.ts` seam.
 
-Linked worktrees are the deliberate exception. Their `.git` file points to a
+Gitfile repositories are the deliberate exception. Linked worktrees' `.git`
+file points to a
 per-worktree gitdir whose `commondir` holds common refs and objects;
 isomorphic-git cannot represent that split with one `gitdir`. Dome therefore
 routes the complete existing Git Interface through native Git whenever it
-discovers a linked layout. See [[wiki/gotchas/linked-worktree-gitdir-split]].
+discovers a valid `.git` file (linked or otherwise). See
+[[wiki/gotchas/linked-worktree-gitdir-split]].
 
 ## Why this over alternatives
 

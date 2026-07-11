@@ -40,7 +40,10 @@ The Dome SDK exposes one Git Interface from `src/git.ts`. Ordinary repositories
 use [[wiki/entities/isomorphic-git]], while linked worktrees use native Git so
 their per-worktree HEAD/index and common refs/objects stay coherent. This means:
 
-- The user does NOT need git installed. The SDK speaks the protocol natively in Bun.
+- Ordinary `.git/` repositories do not require a native Git executable; the
+  SDK speaks that format through isomorphic-git in Bun. `.git`-file layouts
+  (linked worktrees and separate gitdirs) require Git 2.23 or newer on `PATH`;
+  the native Adapter uses `git restore` to preserve checkout/deletion safety.
 - Existing git repos created by the CLI work without modification.
 - A user can `git pull` from the command line one moment and have `dome serve` or `dome sync` see the committed changes the next.
 

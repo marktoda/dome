@@ -291,9 +291,10 @@ add intelligence speculatively:
    adopt on its branch, and prove the main branch/index are unchanged. Do not
    ship a partial fallback or add a subprocess-wrapper dependency. Implemented
    as complete layout routing behind the existing `src/git.ts` Interface:
-   linked contexts use native Git for reads and writes together. A real
-   `git worktree add` acceptance fixture proves capture, branch, worktree, and
-   index isolation; ordinary repositories retain the existing Adapter.
+   valid gitfile contexts use native Git for reads and writes together. A real
+   `git worktree add` acceptance fixture proves capture through adoption plus
+   branch, worktree, and byte-for-byte index isolation; ordinary `.git/`
+   repositories retain the existing Adapter.
 2. **Release artifact and migration rehearsal.** Produce an installable
    versioned artifact, test clean install plus upgrade from the current work
    vault schema, and make service restart/rollback explicit. The hermetic
