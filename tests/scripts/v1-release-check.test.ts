@@ -12,7 +12,7 @@ describe("v1 release-check script", () => {
     expect(result.stderr).toBe("");
     expect(result.stdout).toContain("Runs the final V1 release gates");
     expect(result.stdout).toContain("All gates run from the repository root.");
-    expect(result.stdout).toContain("bun run v1:check");
+    expect(result.stdout).toContain("bun run v1:implementation-check");
     expect(result.stdout).toContain(
       "bun run v1:dogfood-preflight -- --require-ready",
     );
@@ -28,7 +28,7 @@ describe("v1 release-check script", () => {
     expect(result.stdout).toContain("V1 release check plan:");
     expect(result.stdout).toContain(`Working directory: ${REPO_ROOT}`);
     expect(result.stdout).toContain(
-      "- Implementation gates: bun run v1:check",
+      "- Implementation gates: bun run v1:implementation-check",
     );
     expect(result.stdout).toContain(
       "- Current dogfood collection readiness: " +
@@ -65,7 +65,7 @@ describe("v1 release-check script", () => {
       REPO_ROOT,
     ]);
     expect(report.gates.map((gate) => gate.command)).toEqual([
-      ["bun", "run", "v1:check"],
+      ["bun", "run", "v1:implementation-check"],
       [
         "bun",
         "run",

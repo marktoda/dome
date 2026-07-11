@@ -48,9 +48,11 @@ commands around the four jobs.
   one; step 4 shows exactly how Dome behaves keyless, so you can try it
   before paying.
 
-Honest note up front: **there is no release artifact yet.** Installing Dome
-means cloning the repo; updating means `git pull` + `dome restart` — and new
-code reaches a running daemon only after that restart.
+Honest note up front: Dome now has a hermetically rehearsed npm tarball, but it
+is **not published**. Installing Dome still means cloning the repo; updating
+means `git pull` + `dome restart` — and new code reaches a running daemon only
+after that restart. Publication waits on explicit owner choices for licensing,
+versioning, and registry policy.
 
 ```sh
 git clone <dome-repo> ~/dome

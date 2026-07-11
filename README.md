@@ -24,8 +24,10 @@ Run `dome --help` to see commands grouped by those jobs.
 Want to run Dome yourself — clone → vault → daemon → first morning brief?
 [`docs/getting-started.md`](docs/getting-started.md) is the walkthrough,
 written for someone with no Dome context and verified command-by-command
-against a scratch vault. Honest caveat up front: there is no release artifact
-yet; install is clone + `bun install`.
+against a scratch vault. The repository now rehearses a minimal installable
+tarball with `bun run release:package-rehearsal`, but no registry release has
+been published; install remains clone + `bun install` until the owner chooses
+the license, version, and publication policy.
 
 ## For contributors and agents
 
@@ -41,4 +43,5 @@ The canonical substrate map is [`docs/index.md`](docs/index.md). Every spec, nam
 
 ## License
 
-See `LICENSE` (TBD at npm publish).
+No license file has been selected yet. The rehearsed package intentionally
+does not claim or ship one; that owner decision is required before publishing.

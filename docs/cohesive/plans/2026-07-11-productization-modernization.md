@@ -295,11 +295,19 @@ add intelligence speculatively:
    `git worktree add` acceptance fixture proves capture through adoption plus
    branch, worktree, and byte-for-byte index isolation; ordinary `.git/`
    repositories retain the existing Adapter.
-2. **Release artifact and migration rehearsal.** Produce an installable
-   versioned artifact, test clean install plus upgrade from the current work
-   vault schema, and make service restart/rollback explicit. The hermetic
+2. **Release artifact and migration rehearsal — mechanical rehearsal completed
+   2026-07-11.** Produce an installable versioned artifact, test clean install,
+   and make service restart/rollback explicit. Rehearse a prior-version upgrade
+   only after retaining a real prior artifact and frozen schema fixture. The hermetic
    product journey, product-quality gate, full suite, and two-vault smoke are
-   the release checklist.
+   the release checklist. The repository now packs only `src/`, the three
+   runtime asset families, `bin/dome`, and `README.md`; the rehearsal installs
+   that tarball into a fresh consumer with `bun add --offline`, runs its binary
+   and every declared export, scaffolds an external vault from shipped assets,
+   and runs local sync/status. It proves a current-schema reopen is idempotent.
+   It does **not** claim a prior-version upgrade: no retained prior release
+   artifact exists yet. Publishing, version changes, registry access, and the
+   license file remain explicit owner decisions.
 3. **Collect garden decisions before tuning.** Run the semantic garden long
    enough to retain at least 20 human decisions, then review apply rate,
    pending load, latency, edit size, and recurrence by opportunity kind.

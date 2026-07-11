@@ -111,7 +111,7 @@ function releaseCheckPlan(): ReadonlyArray<Gate> {
       id: "implementation" as const,
       label: "Implementation gates",
       cwd: repoRoot,
-      command: Object.freeze([process.execPath, "run", "v1:check"]),
+      command: Object.freeze([process.execPath, "run", "v1:implementation-check"]),
     },
     {
       id: "collection-readiness" as const,
@@ -297,7 +297,7 @@ function printHelp(): void {
     "All gates run from the repository root.",
     "",
     "Gates:",
-    "  1. bun run v1:check",
+    "  1. bun run v1:implementation-check",
     "  2. bun run v1:dogfood-preflight -- --require-ready",
     "  3. bun run v1:dogfood-report -- --require-ready",
     "",
