@@ -63,7 +63,8 @@ creating a second maintenance registry beside it.
   a date and best-effort fair across a fixed list, without a patrol ledger.
   Changing evidence changes the list/order, so a full rotation is not a
   guarantee; allowing lower-priority candidates a turn also deliberately
-  dilutes strict priority. There is still only one expensive model run/night.
+  dilutes strict priority. Each nightly processor run selects one opportunity
+  and starts one agent loop; that loop may record multiple `model.invoke` uses.
 - Semantic changes always use `patch.propose`; garden never auto-applies them.
 - A succeeded run with zero retained effect hashes is reported literally as
   `succeededZeroEffects`; the evaluation surface does not infer “clean” or

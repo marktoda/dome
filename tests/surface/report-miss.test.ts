@@ -11,7 +11,7 @@
 // Task 11's report card counts entries via
 // `assets/extensions/dome.health/processors/report-card-render.ts`'s
 // `countRetrievalMisses`, which matches the grammar
-// `^- (\d{4}-\d{2}-\d{2}) —`. This file's grammar-exactness tests import that
+// `- YYYY-MM-DD — "<query>" — <note>`. This file's grammar-exactness tests import that
 // counter directly so a drift between collector and counter fails here, not
 // silently in production.
 //
@@ -94,12 +94,13 @@ describe("retrieval miss evidence summary", () => {
       "# Retrieval misses",
       "- 2026-06-14 — \"one\" — missed",
       "- malformed owner note",
+      "- 2026-06-30 — date-prefixed but malformed",
       "- 2026-07-01 — \"two\" — missed",
     ].join("\n"))).toEqual({
       state: "present",
       recordedMisses: 2,
       latestDate: "2026-07-01",
-      malformedEntryLines: 1,
+      malformedEntryLines: 2,
     });
   });
 });

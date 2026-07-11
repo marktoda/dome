@@ -122,7 +122,7 @@ describe("report-card renderers (pure)", () => {
     ]);
   });
 
-  test("countRetrievalMisses: only date-prefixed bullets within the window", () => {
+  test("countRetrievalMisses: only full grammar entries within the window", () => {
     const content = [
       "# Retrieval misses",
       '- 2026-06-01 — "where is the alpha spec" — no hit',
@@ -130,6 +130,7 @@ describe("report-card renderers (pure)", () => {
       '- 2026-05-20 — "gamma" — outside the window',
       'not a bullet 2026-06-01',
       '- freeform note without a date',
+      '- 2026-06-01 — date-prefixed but missing the quoted query and note',
     ].join("\n");
     const window = new Set(["2026-06-01", "2026-05-28", "2026-05-27"]);
     expect(countRetrievalMisses(content, window)).toBe(2);

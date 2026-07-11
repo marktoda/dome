@@ -95,7 +95,7 @@ do not exist; improvements should ratchet the floors upward.
 
 With `--vault`, the v2 product report also reads the adopted
 `meta/retrieval-misses.md` through the public Vault interface and summarizes it
-with the collector-owned `MISS_ENTRY_PATTERN`. An absent document reports
+with the collector-owned full-entry parser. An absent document reports
 `state: absent` and `recordedMisses: null`; a present header-only document
 reports zero; grammar-exact entries contribute a count and latest date;
 malformed bullet lines are counted separately and never treated as misses.

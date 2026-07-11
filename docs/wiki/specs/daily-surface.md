@@ -257,7 +257,7 @@ Decisions and Story compression are unaffected in every row — the close does n
 - **Window semantics** (two, deliberately): runs and questions use an exact 168-hour ISO-instant bound derived from the schedule's `firedAt`; retrieval misses use the trailing 7 vault-local calendar dates (Task 12's entries carry only a `YYYY-MM-DD`). Both derive from the same `firedAt`, so re-renders stay byte-identical.
 - **Failures** = the terminal problem statuses (`failed`, `timed_out`, `cancelled`).
 - **Quarantines** = `skipped` runs whose error carries the `processor.quarantined` marker (the runtime records a quarantine-gated skip that way) — derived from `run.read` alone, no `quarantine.read` needed.
-- **Retrieval-miss count** = date-prefixed bullets in `meta/retrieval-misses.md` (Task 12's grammar `- YYYY-MM-DD — "<query>" — <note>`) whose date falls in the trailing 7 days. The card's misses line and the daily block's misses line render **only when the file exists**.
+- **Retrieval-miss count** = full grammar-exact entries in `meta/retrieval-misses.md` (`- YYYY-MM-DD — "<query>" — <note>`) whose date falls in the trailing 7 days. Date-prefixed partial lines are malformed evidence and do not count. The card's misses line and the daily block's misses line render **only when the file exists**.
 
 **A missing run view is LOUD** (`run.read` declared but ungranted): a `dome.health.report-card-runs-view-missing` warning fires and NO patch is emitted — the existing good card is never overwritten with an empty one (the degradation ladder). A missing questions view degrades to an omitted questions section with its own warning; the card still renders from run data.
 

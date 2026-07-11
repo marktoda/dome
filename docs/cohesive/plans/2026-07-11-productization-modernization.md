@@ -351,10 +351,21 @@ module is probably not earning its interface.
 
 ## Recommended next work package
 
-Start with **P0 operational truth**, not `RevisionSource`.
+Collect evidence before another intelligence or storage change:
 
-It closes the failed release gate, protects the work vault, and produces the
-clean measurement substrate needed for performance work. Once both dogfood
-vaults are green, implement only Stage 0 instrumentation from the compiler
-pressure test; let that evidence choose the first `RevisionSource` caller and
-the first broad processor to narrow.
+1. Let the nightly daily-rotation selector accumulate real garden outcomes;
+   review the v2 funnel after at least 20 human-decided opportunity proposals.
+   Do not set an apply-rate, linkage, cost, or opportunity-count threshold in
+   advance.
+2. Record retrieval misses through the existing collector. The adopted work
+   vault currently has no miss file, so semantic retrieval work has no new
+   evidence base yet; add corpus cases only when real misses exist.
+3. Use the existing work-vault attention diagnostics as the content-debt
+   backlog and deepen the processor that owns any recurring class.
+
+Explicit owner decisions remain outside implementation: choose the license,
+release version, and registry/public-access policy before publishing; retain
+that first release artifact before claiming or rehearsing a prior-version
+upgrade. Until those decisions and the evidence samples exist, the next work
+is observation and dogfooding, not another primitive, queue, database, model
+layer, or hidden threshold.

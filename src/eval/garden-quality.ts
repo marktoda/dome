@@ -46,7 +46,7 @@ export type GardenQualityReport = {
     readonly runsWithLinkedProposal: number;
     readonly effectfulWithoutLinkedProposal: number;
     readonly linkedRate: number | null;
-    readonly unlinkedLegacyProposals: number;
+    readonly proposalsWithoutRetainedRun: number;
     /** Null when retained capability evidence cannot support a count. */
     readonly patchProposeAttempts: number | null;
   };
@@ -90,8 +90,8 @@ export function compileGardenQuality(input: CompileGardenQualityInput): GardenQu
   });
   const runIds = new Set(runs.map((run) => String(run.id)));
   const linkedRunIds = new Set(
-    gardenProposals.flatMap((proposal) =>
-      proposal.runId !== null && runIds.has(proposal.runId) ? [proposal.runId] : []
+    parsed.flatMap(({ row }) =>
+      row.runId !== null && runIds.has(row.runId) ? [row.runId] : []
     ),
   );
   const effectfulRuns = runs.filter((run) => effectHashCount(run.effectHashes) > 0);
@@ -185,8 +185,8 @@ export function compileGardenQuality(input: CompileGardenQualityInput): GardenQu
         (run) => !linkedRunIds.has(String(run.id)),
       ).length,
       linkedRate: nullableRatio(linkedEffectfulRuns.length, effectfulRuns.length),
-      unlinkedLegacyProposals: gardenProposals.filter(
-        (proposal) => proposal.runId === null || !runIds.has(proposal.runId),
+      proposalsWithoutRetainedRun: parsed.filter(
+        ({ row }) => row.runId === null || !runIds.has(row.runId),
       ).length,
       patchProposeAttempts: hasCapabilityEvidence
         ? allUses.filter((use) => use.capability === "patch.propose").length

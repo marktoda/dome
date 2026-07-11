@@ -111,7 +111,7 @@ describe("garden outcome compiler", () => {
         runsWithLinkedProposal: 1,
         effectfulWithoutLinkedProposal: 1,
         linkedRate: 0.5,
-        unlinkedLegacyProposals: 3,
+        proposalsWithoutRetainedRun: 3,
         patchProposeAttempts: 1,
       },
       proposals: {
@@ -160,13 +160,15 @@ describe("garden outcome compiler", () => {
     });
   });
 
-  test("does not count malformed proposal reasons as opportunity proposals", () => {
+  test("a malformed proposal reason cannot create proposal linkage", () => {
     const report = compileGardenQuality({
-      proposals: [proposal({ id: 1, reason: "manual cleanup" })],
-      runs: [],
+      proposals: [proposal({ id: 1, reason: "manual cleanup", runId: "run-effectful" })],
+      runs: [run("run-effectful", { effectHashes: ["effect"] })],
       capabilityUsesByRun: [],
     });
     expect(report.proposals.proposed).toBe(0);
-    expect(report.linkage.unlinkedLegacyProposals).toBe(1);
+    expect(report.linkage.runsWithLinkedProposal).toBe(0);
+    expect(report.linkage.effectfulWithoutLinkedProposal).toBe(1);
+    expect(report.linkage.proposalsWithoutRetainedRun).toBe(0);
   });
 });
