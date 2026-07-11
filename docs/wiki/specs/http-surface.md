@@ -11,6 +11,14 @@ description: "dome http converged adapter: bearer-token data routes, session-ori
 
 # HTTP surface
 
+> **Product posture:** this document specifies the shipped prototype/compatibility
+> Adapter. The PWA-first product target is [[wiki/specs/product-host]]. P1/P2
+> product journeys are loopback-only; remote/Tailscale exposure remains
+> disabled until P3 replaces the shared bearer with paired, scoped device
+> credentials, exact-origin/CSRF enforcement, bounded sessions, and truthful
+> readiness. `dome http` remains useful during that migration but is not the
+> final product lifecycle.
+
 This spec is normative for `dome http` — the HTTP read+capture+converse
 protocol adapter (`src/http/server.ts`, hosted by the `dome http` verb). It is
 the same surface class as the MCP adapter ([[wiki/specs/mcp-surface]]), lifted
@@ -50,8 +58,10 @@ a phone on Tailscale can open an agent session for Q&A without being able to wri
 the vault. The same granted set also drives which contract tools the Dome
 assistant is provisioned with (§"The assistant's tools").
 
-Per-credential token scopes (different callers holding differently-scoped
-bearers) are deferred to the `SECOND_USER_GATE` milestone.
+Per-device scoped credentials, pairing, revoke/rotation, and browser cookie
+auth are planned in [[wiki/specs/product-host]]. Until that contract lands,
+the single bearer is acceptable only for loopback/private owner-operated
+prototype use and is not a public product security posture.
 
 `--agent-log <path>` (or `DOME_AGENT_LOG=<path>`) enables a structured
 per-turn log for `POST /sessions/:id/messages`: one JSON line per
@@ -271,8 +281,10 @@ against the vault machine over Tailscale — no SSH, no Mac-side shell.
 Binds `127.0.0.1` by default; `--host` points it at a private
 (Tailscale-class) interface. The token comes from `--token` or
 `DOME_HTTP_TOKEN`; the server refuses to start without one. This is an
-owner-trust-domain surface like `dome mcp` — a hosted multi-tenant variant
-is hosted-protected (v1.5) territory and out of scope.
+owner-trust-domain surface like `dome mcp` — a hosted multi-tenant variant is
+broader-deployment territory and out of scope. Dome Home's remote posture is
+instead one owner, paired device identities, and a configured private HTTPS
+transport; see [[wiki/specs/product-host]].
 
 ### One shared bearer token (the v1 contract)
 

@@ -185,6 +185,11 @@ The existing HTTP capability vocabulary governs the first domain. Write
 scope and harness tools govern the second. Manifest grants plus the
 capability broker govern the third.
 
+For the PWA-first product, [[wiki/specs/product-host]] resolves client
+authorization to an actor, device, request id, and scoped grant before a
+request reaches AgentRuntime. Agent session ownership and bounds remain in this
+first domain; they do not widen workspace policy or processor capabilities.
+
 ## Invariants
 
 - The engine has no LLM- or agent-runtime dependency.
