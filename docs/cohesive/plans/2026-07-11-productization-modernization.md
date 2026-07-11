@@ -1,7 +1,7 @@
 # Productization, modernization, and simplification
 
 **Date:** 2026-07-11
-**Status:** proposed continuation plan
+**Status:** P0–P4 completed; continuation sequence defined
 **Inputs:** [[cohesive/reviews/2026-07-09-first-principles-product-review]],
 [[cohesive/reviews/2026-07-10-incremental-document-compiler-pressure-test]]
 **Supersedes as plan of record:** [[wedge]]
@@ -207,6 +207,14 @@ Acceptance:
 
 ### P3 — consolidate product language and navigation
 
+**Completed 2026-07-11.** Primary CLI help and onboarding now organize the
+existing product around Today, Recall, Decide, and Maintain without adding a
+fifth engine concept. `status` is the cheap router, `check` explains health,
+content, and decisions requiring attention, and hidden `doctor` runs fresh
+dependency/storage probes for troubleshooting. Stale README claims about MCP
+and HTTP being merely planned were removed; wire schemas and command names did
+not change.
+
 The engine vocabulary is coherent; the product vocabulary still exposes too
 many partially overlapping entry points. Review CLI and protocol surfaces
 around four user intents:
@@ -268,6 +276,39 @@ Do not add these during P0–P2:
 - a new workflow/job/attention primitive;
 - embeddings, an LLM reranker, or semantic vector database;
 - another protocol-specific behavior layer.
+
+## Continued productization sequence
+
+The next work should harden distribution and the existing seams rather than
+add intelligence speculatively:
+
+1. **Git linked-worktree Adapter.** `isomorphic-git` does not implement Git's
+   `commondir` model: linked-worktree HEAD/index state and common refs/objects
+   cannot be represented by one `gitdir`. Replace the single `src/git.ts`
+   boundary with a complete native-git Adapter for linked contexts (reads and
+   writes together), or reject that layout explicitly until parity exists.
+   The acceptance fixture must create a real linked worktree, capture and
+   adopt on its branch, and prove the main branch/index are unchanged. Do not
+   ship a partial fallback or add a subprocess-wrapper dependency.
+2. **Release artifact and migration rehearsal.** Produce an installable
+   versioned artifact, test clean install plus upgrade from the current work
+   vault schema, and make service restart/rollback explicit. The hermetic
+   product journey, product-quality gate, full suite, and two-vault smoke are
+   the release checklist.
+3. **Collect garden decisions before tuning.** Run the semantic garden long
+   enough to retain at least 20 human decisions, then review apply rate,
+   pending load, latency, edit size, and recurrence by opportunity kind.
+   Thresholds should follow evidence; no new labeling queue is needed.
+4. **Improve cross-page recall only from recorded misses.** The first corpus
+   miss is multi-page synthesis. Add cases from real retrieval-miss records,
+   then compare lexical changes with a recomputable semantic candidate layer.
+   Embeddings or reranking graduate only if they improve the versioned score
+   without adding forbidden-result noise or a new source of truth.
+5. **Close real-vault content debt as gardening input.** The work vault is
+   operationally healthy but still reports bounded content attention and
+   informational diagnostics. Treat those rows as a prioritized quality
+   backlog, measure which classes recur, and deepen the owning processor or
+   repair command instead of adding another general maintenance mechanism.
 
 Each would enlarge the interface before a proven caller earns the leverage.
 
