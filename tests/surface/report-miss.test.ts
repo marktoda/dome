@@ -30,6 +30,7 @@ import {
   RETRIEVAL_MISSES_PATH,
   reportMiss,
   reportMissFromCliFlag,
+  summarizeRetrievalMissEvidence,
 } from "../../src/surface/report-miss";
 
 // ----- Fixtures -------------------------------------------------------------
@@ -76,6 +77,32 @@ async function readAt(vault: string, relPath: string): Promise<string | null> {
 
 const NOW = new Date(2026, 5, 15, 9, 0, 0); // local 2026-06-15
 const clock = { now: () => NOW };
+
+describe("retrieval miss evidence summary", () => {
+  test("distinguishes absent, header-only, valid, and malformed entry lines", () => {
+    expect(summarizeRetrievalMissEvidence(null)).toEqual({
+      state: "absent",
+      recordedMisses: null,
+    });
+    expect(summarizeRetrievalMissEvidence("# Retrieval misses\n\nGrammar: ...\n")).toEqual({
+      state: "present",
+      recordedMisses: 0,
+      latestDate: null,
+      malformedEntryLines: 0,
+    });
+    expect(summarizeRetrievalMissEvidence([
+      "# Retrieval misses",
+      "- 2026-06-14 — \"one\" — missed",
+      "- malformed owner note",
+      "- 2026-07-01 — \"two\" — missed",
+    ].join("\n"))).toEqual({
+      state: "present",
+      recordedMisses: 2,
+      latestDate: "2026-07-01",
+      malformedEntryLines: 1,
+    });
+  });
+});
 
 // ----- first miss -------------------------------------------------------------
 

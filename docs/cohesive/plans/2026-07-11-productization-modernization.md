@@ -313,6 +313,14 @@ add intelligence speculatively:
    enough to retain at least 20 human decisions, then review apply rate,
    pending load, latency, edit size, and recurrence by opportunity kind.
    Thresholds should follow evidence; no new labeling queue is needed.
+   The v2 evidence funnel landed 2026-07-11 without adding persistence or a
+   threshold. Verified work-vault retained-history baseline: 59 current
+   opportunities; 3 exact `dome.agent.garden` runs (2 succeeded, 1 failed);
+   71 `model.invoke` uses; $3.13552980 total recorded cost; 2 effectful runs,
+   both without linked proposals; 0 proposals and 0 decisions. Separately,
+   the latest successful Jul-11 run observed 23 model invokes,
+   $1.36733235 cost, and one retained effect. Adopted retrieval-miss evidence
+   was absent (`recordedMisses: null`). These are observations, not targets.
 4. **Improve cross-page recall only from recorded misses.** The first corpus
    miss is multi-page synthesis. Add cases from real retrieval-miss records,
    then compare lexical changes with a recomputable semantic candidate layer.

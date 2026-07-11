@@ -19,6 +19,7 @@ import {
   compileGardeningPlan,
   DEFAULT_GARDEN_TARGETS,
   GARDEN_REASON_PREFIX,
+  selectGardeningOpportunity,
   settledGardeningOpportunityIds,
 } from "../lib/gardening";
 import { resolveModelOverride, withStepModel } from "../lib/model-override";
@@ -43,11 +44,16 @@ const garden = defineProcessorImplementation({
       documents,
       today,
       targets: targets.value,
-      limit: 1,
+      // One expensive model run per night, selected from the complete current
+      // candidate set by a stateless daily rotation.
+      limit: Number.MAX_SAFE_INTEGER,
       settledOpportunityIds,
     });
-    const selected = plan.opportunities[0];
-    if (selected === undefined) return Object.freeze([]);
+    const selected = selectGardeningOpportunity(plan.opportunities, {
+      today,
+      strategy: "daily-rotation",
+    });
+    if (selected === null) return Object.freeze([]);
 
     const sourceRefs = selected.paths.map((path) => ctx.sourceRef(path));
     const modelOverride = resolveModelOverride(ctx.extensionConfig, "garden");

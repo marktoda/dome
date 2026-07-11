@@ -57,10 +57,17 @@ creating a second maintenance registry beside it.
 ## Safety posture
 
 - Selection is deterministic and model-free.
-- A nightly run investigates exactly one opportunity and may touch at most 30
-  files.
+- A nightly run compiles the complete current candidate set, then investigates
+  exactly one opportunity and may touch at most 30 files. Selection is an
+  epoch-day modulo rotation over the priority-ordered list: deterministic for
+  a date and best-effort fair across a fixed list, without a patrol ledger.
+  Changing evidence changes the list/order, so a full rotation is not a
+  guarantee; allowing lower-priority candidates a turn also deliberately
+  dilutes strict priority. There is still only one expensive model run/night.
 - Semantic changes always use `patch.propose`; garden never auto-applies them.
-- A clean bill is a successful zero-patch run.
+- A succeeded run with zero retained effect hashes is reported literally as
+  `succeededZeroEffects`; the evaluation surface does not infer “clean” or
+  “no-op” from that storage shape.
 - Direct markdown tools remain the agent interface. The compiler narrows what
   deserves attention; it does not replace flexible vault access.
 - Deterministic syntax repair remains in the bundles that own those
@@ -88,12 +95,17 @@ that exact evidence. The run ledger supplies cost and outcome history, while
 the proposal store supplies accept/reject history. No score is persisted into
 markdown or projection state.
 
-`bun run eval:product --vault <path>` compiles the retained
-`dome.agent.garden` proposal rows into an observational quality report. It
-includes pending attention load, owner applies and rejects, expired rows,
-decision latency, line/file edit size, per-opportunity-kind outcomes, and
-changed-evidence recurrence. Owner apply rate is a usefulness proxy, not
-ground-truth opportunity precision. It is `null` when there are no human
-decisions, and no release threshold is set until the vault has at least 20
-human-decided semantic-garden proposals. The report reads the existing
-proposal lifecycle; it does not add a queue or evaluation ledger.
+`bun run eval:product --vault <path>` emits `dome.eval.garden/v2`, an
+observational funnel compiled from the existing run ledger, capability-use
+rows, proposal lifecycle, and the config-correct `garden` view. It reports the
+current opportunity count; retained runs by status; cost/duration samples;
+literal `model.invoke` and `patch.propose` capability-use counts; succeeded
+zero-effect rows; effectful runs with and without a linked proposal; and the
+existing proposal/decision, latency, edit-size, kind, and recurrence metrics.
+Missing denominators produce `null`. The view invocation is audit evidence
+under `dome.agent.garden-view` and is excluded from exact-processor nightly run
+counts. Owner apply rate is a usefulness proxy, not ground-truth opportunity
+precision; neither an unlinked run nor a zero-effect row is labeled clean,
+useful, or precise. No release threshold is set until the vault has at least
+20 human-decided semantic-garden proposals. The report adds no queue,
+persistence, or label mechanism.

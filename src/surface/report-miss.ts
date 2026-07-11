@@ -48,6 +48,44 @@ export const RETRIEVAL_MISSES_PATH = "meta/retrieval-misses.md";
  */
 export const MISS_ENTRY_PATTERN = /^- (\d{4}-\d{2}-\d{2}) —/;
 
+export type RetrievalMissEvidence =
+  | {
+      readonly state: "absent";
+      readonly recordedMisses: null;
+    }
+  | {
+      readonly state: "present";
+      readonly recordedMisses: number;
+      readonly latestDate: string | null;
+      readonly malformedEntryLines: number;
+    };
+
+/** Summarize adopted miss-log content without creating or repairing the file. */
+export function summarizeRetrievalMissEvidence(
+  content: string | null,
+): RetrievalMissEvidence {
+  if (content === null) {
+    return Object.freeze({ state: "absent" as const, recordedMisses: null });
+  }
+  const dates: string[] = [];
+  let malformedEntryLines = 0;
+  for (const line of content.split(/\r?\n/)) {
+    const match = MISS_ENTRY_PATTERN.exec(line);
+    if (match?.[1] !== undefined) {
+      dates.push(match[1]);
+    } else if (/^-\s/.test(line)) {
+      malformedEntryLines += 1;
+    }
+  }
+  dates.sort();
+  return Object.freeze({
+    state: "present" as const,
+    recordedMisses: dates.length,
+    latestDate: dates.at(-1) ?? null,
+    malformedEntryLines,
+  });
+}
+
 const HEADER = [
   "# Retrieval misses",
   "",

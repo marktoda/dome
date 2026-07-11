@@ -56,6 +56,33 @@ export type GardeningProposalSummary = {
   readonly reason: string;
 };
 
+export type GardeningSelectionOptions = {
+  readonly today: string;
+  readonly strategy: "daily-rotation";
+};
+
+/**
+ * Select one nightly candidate from the full priority-ordered opportunity
+ * list. The epoch-day modulo makes selection deterministic for a date and
+ * gives every fixed candidate one turn per full rotation without persistence.
+ * This is best-effort fairness: changing evidence changes N/order, and lower
+ * priority candidates deliberately dilute strict priority across the cycle.
+ */
+export function selectGardeningOpportunity(
+  opportunities: ReadonlyArray<GardeningOpportunity>,
+  opts: GardeningSelectionOptions,
+): GardeningOpportunity | null {
+  if (opportunities.length === 0) return null;
+  if (opportunities.length === 1) return opportunities[0]!;
+  const epochMs = Date.parse(`${opts.today}T00:00:00.000Z`);
+  if (!Number.isFinite(epochMs)) {
+    throw new Error(`invalid gardening selection date: ${opts.today}`);
+  }
+  const epochDay = Math.floor(epochMs / 86_400_000);
+  const index = ((epochDay % opportunities.length) + opportunities.length) % opportunities.length;
+  return opportunities[index]!;
+}
+
 /** Recover exact opportunity identities from durable garden proposal rows. */
 export function settledGardeningOpportunityIds(
   proposals: ReadonlyArray<GardeningProposalSummary>,

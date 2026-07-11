@@ -79,7 +79,7 @@ processors:
     module: processors/inbox-stale-check.ts
 
   - id: dome.agent.garden
-    version: 1.0.0
+    version: 1.1.0
     phase: garden
     triggers:
       - kind: schedule

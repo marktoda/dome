@@ -1,48 +1,112 @@
+import { compareStrings } from "../core/compare";
+import type { CapabilityUseRow } from "../ledger/capability-uses";
+import type { RunRow, RunStatus } from "../ledger/runs";
+import { effectHashCount } from "../processors/executor";
 import { lineDiffStat } from "../proposals/diff-stat";
 import type { PendingProposalRow } from "../proposals/pending-proposals";
-import { compareStrings } from "../core/compare";
 
 const REASON = /dome\.agent\.garden opportunity ([a-z-]+):([a-f0-9]{12})/;
+const GARDEN_PROCESSOR = "dome.agent.garden";
+const RUN_STATUSES: ReadonlyArray<RunStatus> = Object.freeze([
+  "queued", "running", "succeeded", "failed", "skipped", "timed_out", "cancelled",
+]);
 
-export type GardenQualityReport = {
-  readonly schema: "dome.eval.garden/v1";
-  readonly proposed: number;
-  readonly pending: number;
-  readonly humanDecided: number;
-  readonly applied: number;
-  readonly ownerRejected: number;
-  readonly expired: number;
-  /** Usefulness proxy from explicit owner decisions; not ground-truth precision. */
-  readonly ownerApplyRate: number | null;
-  readonly medianDecisionHours: number | null;
-  readonly editSize: {
-    readonly meanFiles: number | null;
-    readonly meanAddedLines: number | null;
-    readonly meanRemovedLines: number | null;
-  };
-  readonly changedEvidenceRecurrence: {
-    readonly subjects: number;
-    readonly recurringSubjects: number;
-    readonly rate: number | null;
-  };
-  readonly byKind: Readonly<Record<string, {
-    readonly proposed: number;
-    readonly applied: number;
-    readonly ownerRejected: number;
-    readonly pending: number;
-  }>>;
+export type GardenCapabilityUsesByRun = {
+  readonly runId: string;
+  readonly uses: ReadonlyArray<CapabilityUseRow>;
 };
 
-/** Compile retained semantic-garden proposal decisions into an observational report. */
-export function compileGardenQuality(
-  rows: ReadonlyArray<PendingProposalRow>,
-): GardenQualityReport {
-  const parsed = rows.flatMap((row) => {
-    if (row.processorId !== "dome.agent.garden") return [];
+export type CompileGardenQualityInput = {
+  readonly proposals: ReadonlyArray<PendingProposalRow>;
+  readonly runs: ReadonlyArray<RunRow>;
+  readonly capabilityUsesByRun: ReadonlyArray<GardenCapabilityUsesByRun>;
+  readonly currentOpportunityCount?: number | null;
+};
+
+export type GardenQualityReport = {
+  readonly schema: "dome.eval.garden/v2";
+  readonly opportunities: {
+    readonly current: number | null;
+  };
+  readonly runs: {
+    readonly total: number;
+    readonly byStatus: Readonly<Record<RunStatus, number>>;
+    readonly costed: number;
+    readonly totalCostUsd: number | null;
+    readonly meanCostUsd: number | null;
+    readonly timed: number;
+    readonly totalDurationMs: number | null;
+    readonly meanDurationMs: number | null;
+    readonly modelInvokeCount: number;
+    /** Literal ledger shape; never interpreted as a clean/no-op judgment. */
+    readonly succeededZeroEffects: number;
+    readonly effectful: number;
+  };
+  readonly linkage: {
+    readonly runsWithLinkedProposal: number;
+    readonly effectfulWithoutLinkedProposal: number;
+    readonly linkedRate: number | null;
+    readonly unlinkedLegacyProposals: number;
+    /** Null when retained capability evidence cannot support a count. */
+    readonly patchProposeAttempts: number | null;
+  };
+  readonly proposals: {
+    readonly proposed: number;
+    readonly pending: number;
+    readonly humanDecided: number;
+    readonly applied: number;
+    readonly ownerRejected: number;
+    readonly expired: number;
+    /** Usefulness proxy from explicit owner decisions; not opportunity precision. */
+    readonly ownerApplyRate: number | null;
+    readonly medianDecisionHours: number | null;
+    readonly editSize: {
+      readonly meanFiles: number | null;
+      readonly meanAddedLines: number | null;
+      readonly meanRemovedLines: number | null;
+    };
+    readonly changedEvidenceRecurrence: {
+      readonly subjects: number;
+      readonly recurringSubjects: number;
+      readonly rate: number | null;
+    };
+    readonly byKind: Readonly<Record<string, {
+      readonly proposed: number;
+      readonly applied: number;
+      readonly ownerRejected: number;
+      readonly pending: number;
+    }>>;
+  };
+};
+
+/** Compile retained garden execution and decision evidence; never score it. */
+export function compileGardenQuality(input: CompileGardenQualityInput): GardenQualityReport {
+  const runs = input.runs.filter((row) => row.processorId === GARDEN_PROCESSOR);
+  const gardenProposals = input.proposals.filter((row) => row.processorId === GARDEN_PROCESSOR);
+  const parsed = gardenProposals.flatMap((row) => {
     const match = REASON.exec(row.reason);
     if (match === null) return [];
     return [{ row, kind: match[1]!, opportunityId: `${match[1]}:${match[2]}` }];
   });
+  const runIds = new Set(runs.map((run) => String(run.id)));
+  const linkedRunIds = new Set(
+    gardenProposals.flatMap((proposal) =>
+      proposal.runId !== null && runIds.has(proposal.runId) ? [proposal.runId] : []
+    ),
+  );
+  const effectfulRuns = runs.filter((run) => effectHashCount(run.effectHashes) > 0);
+  const linkedEffectfulRuns = effectfulRuns.filter((run) => linkedRunIds.has(String(run.id)));
+  const allUses = input.capabilityUsesByRun
+    .filter((entry) => runIds.has(entry.runId))
+    .flatMap((entry) => entry.uses);
+  const hasCapabilityEvidence = allUses.length > 0;
+  const costs = runs.flatMap((run) => run.costUsd === null ? [] : [run.costUsd]);
+  const durations = runs.flatMap((run) => run.durationMs === null ? [] : [run.durationMs]);
+  const byStatus = Object.fromEntries(RUN_STATUSES.map((status) => [
+    status,
+    runs.filter((run) => run.status === status).length,
+  ])) as Record<RunStatus, number>;
+
   let pending = 0;
   let applied = 0;
   let ownerRejected = 0;
@@ -87,7 +151,8 @@ export function compileGardenQuality(
     kinds.set(kind, bucket);
 
     const sourcePaths = row.sourceRefs.map((ref) => String(ref.path));
-    const paths = (sourcePaths.length > 0 ? sourcePaths : row.changes.map((change) => change.path)).sort();
+    const paths = (sourcePaths.length > 0 ? sourcePaths : row.changes.map((change) => change.path))
+      .sort(compareStrings);
     const subject = `${kind}|${paths.join("|")}`;
     const ids = subjects.get(subject) ?? new Set<string>();
     ids.add(opportunityId);
@@ -97,30 +162,61 @@ export function compileGardenQuality(
   const humanDecided = applied + ownerRejected;
   const recurringSubjects = [...subjects.values()].filter((ids) => ids.size > 1).length;
   return Object.freeze({
-    schema: "dome.eval.garden/v1",
-    proposed: parsed.length,
-    pending,
-    humanDecided,
-    applied,
-    ownerRejected,
-    expired,
-    ownerApplyRate: nullableRatio(applied, humanDecided),
-    medianDecisionHours: median(decisionHours),
-    editSize: Object.freeze({
-      meanFiles: mean(fileCounts),
-      meanAddedLines: mean(addedLines),
-      meanRemovedLines: mean(removedLines),
+    schema: "dome.eval.garden/v2" as const,
+    opportunities: Object.freeze({ current: input.currentOpportunityCount ?? null }),
+    runs: Object.freeze({
+      total: runs.length,
+      byStatus: Object.freeze(byStatus),
+      costed: costs.length,
+      totalCostUsd: sumOrNull(costs),
+      meanCostUsd: mean(costs),
+      timed: durations.length,
+      totalDurationMs: sumOrNull(durations),
+      meanDurationMs: mean(durations),
+      modelInvokeCount: allUses.filter((use) => use.capability === "model.invoke").length,
+      succeededZeroEffects: runs.filter(
+        (run) => run.status === "succeeded" && effectHashCount(run.effectHashes) === 0,
+      ).length,
+      effectful: effectfulRuns.length,
     }),
-    changedEvidenceRecurrence: Object.freeze({
-      subjects: subjects.size,
-      recurringSubjects,
-      rate: nullableRatio(recurringSubjects, subjects.size),
+    linkage: Object.freeze({
+      runsWithLinkedProposal: linkedRunIds.size,
+      effectfulWithoutLinkedProposal: effectfulRuns.filter(
+        (run) => !linkedRunIds.has(String(run.id)),
+      ).length,
+      linkedRate: nullableRatio(linkedEffectfulRuns.length, effectfulRuns.length),
+      unlinkedLegacyProposals: gardenProposals.filter(
+        (proposal) => proposal.runId === null || !runIds.has(proposal.runId),
+      ).length,
+      patchProposeAttempts: hasCapabilityEvidence
+        ? allUses.filter((use) => use.capability === "patch.propose").length
+        : null,
     }),
-    byKind: Object.freeze(Object.fromEntries(
-      [...kinds.entries()]
-        .sort(([a], [b]) => compareStrings(a, b))
-        .map(([kind, value]) => [kind, Object.freeze(value)]),
-    )),
+    proposals: Object.freeze({
+      proposed: parsed.length,
+      pending,
+      humanDecided,
+      applied,
+      ownerRejected,
+      expired,
+      ownerApplyRate: nullableRatio(applied, humanDecided),
+      medianDecisionHours: median(decisionHours),
+      editSize: Object.freeze({
+        meanFiles: mean(fileCounts),
+        meanAddedLines: mean(addedLines),
+        meanRemovedLines: mean(removedLines),
+      }),
+      changedEvidenceRecurrence: Object.freeze({
+        subjects: subjects.size,
+        recurringSubjects,
+        rate: nullableRatio(recurringSubjects, subjects.size),
+      }),
+      byKind: Object.freeze(Object.fromEntries(
+        [...kinds.entries()]
+          .sort(([a], [b]) => compareStrings(a, b))
+          .map(([kind, value]) => [kind, Object.freeze(value)]),
+      )),
+    }),
   });
 }
 
@@ -132,6 +228,10 @@ function elapsedHours(createdAt: string, decidedAt: string | null): number | nul
 
 function nullableRatio(numerator: number, denominator: number): number | null {
   return denominator === 0 ? null : numerator / denominator;
+}
+
+function sumOrNull(values: ReadonlyArray<number>): number | null {
+  return values.length === 0 ? null : values.reduce((sum, value) => sum + value, 0);
 }
 
 function mean(values: ReadonlyArray<number>): number | null {
