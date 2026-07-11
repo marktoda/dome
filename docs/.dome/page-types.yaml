@@ -45,3 +45,6 @@ extensions:
       enforced_at_status: shipped | implemented | partial | deferred
       first_observed: <date>
       severity: low | medium | high
+  - name: daily  # sparse operational notes created by cross-cutting health views
+    frontmatter_extras:
+      recurrence: <date>
