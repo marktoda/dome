@@ -10,12 +10,20 @@ updated: 2026-06-12
 sources:
   - "[[cohesive/brainstorms/2026-05-25-dome-vision]]"
   - "[[wiki/sources/isomorphic-git-library]]"
-description: Pure-JS git implementation the Dome SDK uses to speak the .git format from Bun without requiring a git binary.
+description: Pure-JS Adapter behind Dome's Git seam for ordinary repositories; linked worktrees use native Git because their gitdir state is split.
 ---
 
 # isomorphic-git
 
-Pure-JavaScript implementation of git that reads and writes the same `.git/` format as the git CLI. Dome's mechanism for talking to git from Bun without requiring the git binary to be installed.
+Pure-JavaScript implementation of git that reads and writes the same `.git/`
+format as the git CLI. It is Dome's Adapter for ordinary repositories behind
+the single `src/git.ts` seam.
+
+Linked worktrees are the deliberate exception. Their `.git` file points to a
+per-worktree gitdir whose `commondir` holds common refs and objects;
+isomorphic-git cannot represent that split with one `gitdir`. Dome therefore
+routes the complete existing Git Interface through native Git whenever it
+discovers a linked layout. See [[wiki/gotchas/linked-worktree-gitdir-split]].
 
 ## Why this over alternatives
 
@@ -23,7 +31,10 @@ Pure-JavaScript implementation of git that reads and writes the same `.git/` for
 - **`nodegit`** uses native C++ bindings. Native deps don't fit Bun's distribution model cleanly.
 - **`isomorphic-git`** is pure JS. Zero binary dependency. Works on Bun, Node, browser, and (someday) embedded mobile contexts.
 
-Trade-off: isomorphic-git is slower than the native git CLI for some operations (deep object walks, big repos). For Dome's use cases — `git status --porcelain`, `git diff --name-only <sha> HEAD`, occasional `git log` — the difference is milliseconds. Worth the portability.
+Trade-off: ordinary repositories retain the portability of the pure-JS
+Adapter. Linked worktrees already require native Git to create and manage
+their split state, so Dome uses that installed binary consistently for the
+whole Interface rather than offering a partial fallback.
 
 ## What Dome uses
 
@@ -45,5 +56,6 @@ Dome pins to `isomorphic-git ^1.x`. Major version bumps are reviewed for breakin
 
 - [[wiki/entities/git]] — what we use it for
 - [[wiki/invariants/VAULT_IS_GIT_REPO]] — the axiom this implements
+- [[wiki/gotchas/linked-worktree-gitdir-split]] — why linked layouts use a different Adapter
 - [[wiki/sources/isomorphic-git-library]] — the library's own docs and project page
 - [[wiki/specs/sdk-surface]] §"Runtime" — the dependency list

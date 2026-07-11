@@ -105,6 +105,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/gotchas/dirty-git-state-at-reconcile]] — `dome sync` refuses to run during mid-merge / mid-rebase.
 - [[wiki/gotchas/extension-bundle-load-order]] — Two bundles declare the same page-type / processor / capability handler; `openVault` rejects with `bundle-load-failure`.
 - [[wiki/gotchas/garden-cascade-cap]] — Garden-emitted PatchEffects can recursively spawn sub-Proposals; depth cap (default 10) emits `garden.cascade-cap` diagnostic on hit.
+- [[wiki/gotchas/linked-worktree-gitdir-split]] — Linked worktrees split HEAD/index from common refs/objects; the complete `src/git.ts` Interface routes through native Git in that layout.
 - [[wiki/gotchas/multi-page-partial-write]] — Multi-page Proposals that adopt only some pages on block — atomic adoption mitigates.
 - [[wiki/gotchas/out-of-band-vault-edits]] — Native writes from consumer shells (canonical path); the compiler host catches committed branch movement and constructs Proposals.
 - [[wiki/gotchas/operator-surfaces-enumerate-first-party]] — Third-party bundles are first-class at the effect/capability layer but second-class on operator surfaces; converted (loops, shared config) vs remaining (doctor findings, diagnostic rendering hints) shadow contribution kinds, with conversion paths.

@@ -36,7 +36,9 @@ Git also has decades of operational maturity: handles weird filesystems, corrupt
 
 ## Implementation
 
-The Dome SDK uses [[wiki/entities/isomorphic-git]] — a pure-JavaScript implementation of the git protocol that reads/writes the same `.git/` format as the git CLI. This means:
+The Dome SDK exposes one Git Interface from `src/git.ts`. Ordinary repositories
+use [[wiki/entities/isomorphic-git]], while linked worktrees use native Git so
+their per-worktree HEAD/index and common refs/objects stay coherent. This means:
 
 - The user does NOT need git installed. The SDK speaks the protocol natively in Bun.
 - Existing git repos created by the CLI work without modification.
@@ -54,3 +56,4 @@ The Dome SDK uses [[wiki/entities/isomorphic-git]] — a pure-JavaScript impleme
 - [[wiki/entities/isomorphic-git]] — the implementation
 - [[wiki/gotchas/dirty-git-state-at-reconcile]] — handling mid-merge/rebase
 - [[wiki/gotchas/multi-page-partial-write]] — git rollback as the recovery
+- [[wiki/gotchas/linked-worktree-gitdir-split]] — Adapter selection for linked worktrees

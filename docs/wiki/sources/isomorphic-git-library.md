@@ -34,7 +34,9 @@ The Dome SDK depends on isomorphic-git for git operations (per [[wiki/invariants
 ## Limitations Dome accepts
 
 - Slower than the native git CLI for large operations. Acceptable for Dome's small-to-medium reconciliation workloads.
-- A few esoteric git features aren't implemented (submodules, sparse-checkout extensions). None are relevant to Dome.
+- Linked-worktree `commondir` layouts are not represented by a single
+  isomorphic-git `gitdir`. Dome handles this relevant exception with a
+  complete native-git Adapter behind the same `src/git.ts` seam.
 
 ## See also
 
