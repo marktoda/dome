@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-11
 sources:
   - "[[wiki/specs/harnesses]]"
   - "[[wiki/specs/http-surface]]"

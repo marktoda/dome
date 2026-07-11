@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-10
-updated: 2026-06-12
+updated: 2026-07-02
 sources:
   - "[[daily]]"
   - "[[wiki/specs/daily-surface]]"

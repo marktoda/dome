@@ -5,7 +5,7 @@ tags:
   - architecture
   - positioning
 created: 2026-05-28
-updated: 2026-06-12
+updated: 2026-07-11
 sources:
   - "[[VISION]]"
   - "[[wiki/specs/adoption]]"

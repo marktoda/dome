@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-10
-updated: 2026-06-15
+updated: 2026-07-11
 sources:
   - "[[daily]]"
   - "[[wiki/specs/task-lifecycle]]"

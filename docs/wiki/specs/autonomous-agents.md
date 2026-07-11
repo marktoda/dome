@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-09
-updated: 2026-07-09
+updated: 2026-07-11
 description: Agent-as-processor model, provider-neutral tool loop, and the ingest, semantic garden, and morning brief agents
 ---
 

@@ -1,7 +1,7 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-07-06
+updated: 2026-07-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 description: Which contributions (page types, processors, handlers, grants) each shipped bundle provides; lockstep-tested against the assets.

@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-11
 description: One proposal-only semantic-gardening module that compiles vault evidence into bounded opportunities without queues or maintenance ledgers
 ---
 

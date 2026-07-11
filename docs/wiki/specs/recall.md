@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-11
 sources:
   - "[[cohesive/reviews/2026-07-09-first-principles-product-review]]"
   - "[[wiki/specs/projection-store]]"

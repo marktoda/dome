@@ -1,7 +1,7 @@
 ---
 type: invariant
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-11
 description: Owner attention is compiled from current decisions and proposal reviews; it is never independently persisted
 enforced_by:
   - tests/attention/attention.test.ts

@@ -1,13 +1,13 @@
 ---
 type: spec
-created: 2026-07-09
-updated: 2026-07-09
-status: shipped
 tags:
   - agents
   - questions
   - evidence
-description: "Derived, evidence-backed agent work over open questions, with revision-safe completion through the durable answer path."
+created: 2026-07-09
+updated: 2026-07-11
+description: Derived, evidence-backed agent work over open questions, with revision-safe completion through the durable answer path.
+status: shipped
 ---
 
 # Agent work

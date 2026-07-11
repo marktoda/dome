@@ -1,7 +1,7 @@
 ---
 type: invariant
 created: 2026-05-27
-updated: 2026-06-12
+updated: 2026-07-03
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 description: Every vault mutation passes through a Proposal and adopt() in the engine; the SDK exports no direct-write API or privileged escape hatch

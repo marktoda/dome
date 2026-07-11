@@ -1,7 +1,7 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-06-12
+updated: 2026-07-03
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 description: Maps each projection.db, runs.db, and outbox.db table to its authorized writers and the capability that gates writes.

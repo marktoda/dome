@@ -1,7 +1,7 @@
 ---
 type: invariant
 created: 2026-06-03
-updated: 2026-06-26
+updated: 2026-07-11
 sources:
   - "[[wiki/specs/task-lifecycle]]"
 description: Garden processors with model.invoke cannot declare graph.write; model judgment surfaces as questions or patches, never rebuild-lost FactEffects

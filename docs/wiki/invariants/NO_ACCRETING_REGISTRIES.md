@@ -1,7 +1,7 @@
 ---
 type: invariant
 created: 2026-06-11
-updated: 2026-06-12
+updated: 2026-07-11
 sources:
   - "[[cohesive/brainstorms/2026-06-11-dome-v1-plan]]"
 description: "No vault file's contract is append-forever: indexes render from description: frontmatter, activity is git history; grants fence log.md/indexes"

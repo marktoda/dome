@@ -1,7 +1,7 @@
 ---
 type: matrix
 created: 2026-05-27
-updated: 2026-06-11
+updated: 2026-07-07
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 description: Maps user intents (capture, maintain, recall, schedule) to the handling processor, its phase, prompt source, and effects emitted.

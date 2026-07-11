@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-09
-updated: 2026-07-02
+updated: 2026-07-11
 sources:
   - "[[cohesive/brainstorms/2026-06-09-meaning-consolidation-claims-and-sweeper]]"
   - "[[cohesive/brainstorms/2026-07-02-pruning-pass-design]]"

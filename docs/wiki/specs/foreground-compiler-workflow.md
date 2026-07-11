@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-05-29
-updated: 2026-07-09
+updated: 2026-07-11
 sources:
   - "[[v1]]"
 description: "Day-to-day operating guide for running dome serve beside an agent session: commit-boundary loop, source-first reading, host-off catch-up"

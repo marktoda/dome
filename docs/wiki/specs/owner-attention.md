@@ -1,12 +1,12 @@
 ---
 type: spec
-created: 2026-07-09
-updated: 2026-07-09
-status: shipped
 tags:
   - attention
   - decisions
   - proposals
+created: 2026-07-09
+updated: 2026-07-11
+status: shipped
 ---
 
 # Owner attention

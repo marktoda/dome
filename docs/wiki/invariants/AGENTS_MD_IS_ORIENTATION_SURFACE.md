@@ -1,7 +1,7 @@
 ---
 type: invariant
 created: 2026-05-27
-updated: 2026-06-11
+updated: 2026-07-11
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
 description: dome init scaffolds AGENTS.md (plus CLAUDE.md shim) as the agent orientation surface; refresh preserves the delimited user-prose block
