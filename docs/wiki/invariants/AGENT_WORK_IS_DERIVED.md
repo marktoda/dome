@@ -6,7 +6,6 @@ description: Agent work is compiled from open questions and never owns a queue, 
 enforced_by:
   - tests/agent-work/agent-work.test.ts
   - tests/invariants/agent-work-is-derived.test.ts
-status: shipped
 tier: shipped-default
 ---
 

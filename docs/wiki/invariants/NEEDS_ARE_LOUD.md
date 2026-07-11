@@ -20,7 +20,7 @@ tier: shipped-default
 
 **Why:** Dome's failure mode is *silent* degradation on a declared need — a processor keeps running but does nothing, and nothing says so. The owner debugs the silent no-op; a stranger concludes Dome doesn't work. This invariant generalizes a pattern with four documented incidents:
 
-1. **The brief's questions block never rendered in 44 dailies.** `dome.agent.brief` declared it read the open-question batch, but `ctx.projection?.` optional-chained to empty in the garden phase — the block silently rendered nothing. (See [[cohesive/reviews/product-review-2026-07-01]].)
+1. **The brief's questions block never rendered in 44 dailies.** `dome.agent.brief` declared it read the open-question batch, but `ctx.projection?.` optional-chained to empty in the garden phase — the block silently rendered nothing. (See [[cohesive/brainstorms/2026-07-01-product-review-daily-ritual]].)
 2. **Grant-starved `dome.claims` processors silently skipped `notes/`.** The manifest declared `read notes/**`, the vault grant did not cover it, so the grant-scoped snapshot omitted the files and the processor never acted on them — no diagnostic.
 3. **The historical model-provider silent no-op.** A model-capable processor with no configured provider produced nothing. Task 17 shipped the agent-specific host-start warning; this invariant is the general **run-time** complement.
 4. **`dome init --refresh-config` never merged grants.** A vault that predated a bundle's newer behavior kept its old grant lists and silently lost that behavior — the kind was granted but the specific entry was not.

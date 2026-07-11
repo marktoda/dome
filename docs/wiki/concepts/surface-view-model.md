@@ -91,7 +91,7 @@ inline passthrough `{ markdown }`). The three hand-rolled `parse(unknown)`
 coercers that predated this — `parseQueryResult`, `parseLintData`, and
 `export-context`'s `markdownFromData` — are deleted; their validation is the
 schema, their projection is zod's default key-stripping. This is the sqlite
-[[row-codec]] move one layer up: N hand-rolled mappers collapse to one declared
+row-codec move one layer up: N hand-rolled mappers collapse to one declared
 contract per view.
 
 Realized design notes (the shape the build settled into):
