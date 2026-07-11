@@ -176,6 +176,14 @@ Acceptance:
 
 ### P2 — make the first-run product one coherent loop
 
+**Completed 2026-07-11.** `bun run product:journey` executes one hermetic
+second-user acceptance path through the real compiler host and shipped
+bundles: capture, model-backed ingestion, Today resurfacing, natural-language
+recall, owner resolution, semantic-garden inspection, and clean doctor. The
+fixture uses a scripted command provider and requires no network or secret.
+The underlying Vault operations remain separately contract-tested through MCP
+and HTTP, while this journey owns the product-level sequence and vocabulary.
+
 The SDK has many surfaces, but public usefulness depends on one successful
 journey. Create a release fixture and a second-user script that proves:
 

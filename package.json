@@ -33,7 +33,8 @@
     "v1:dogfood-preflight": "bun scripts/v1-dogfood-preflight.ts",
     "eval": "bun scripts/eval.ts",
     "v1:check": "bun run typecheck && git diff --check && bun test ./tests && bun run v1:smoke",
-    "v1:release-check": "bun scripts/v1-release-check.ts"
+    "v1:release-check": "bun scripts/v1-release-check.ts",
+    "product:journey": "bun test tests/harness/scenarios/cli-surface/capture-ingest-captured-block.scenario.test.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.84",
