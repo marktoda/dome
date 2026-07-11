@@ -1,5 +1,6 @@
 import { lineDiffStat } from "../proposals/diff-stat";
 import type { PendingProposalRow } from "../proposals/pending-proposals";
+import { compareStrings } from "../core/compare";
 
 const REASON = /dome\.agent\.garden opportunity ([a-z-]+):([a-f0-9]{12})/;
 
@@ -117,7 +118,7 @@ export function compileGardenQuality(
     }),
     byKind: Object.freeze(Object.fromEntries(
       [...kinds.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
+        .sort(([a], [b]) => compareStrings(a, b))
         .map(([kind, value]) => [kind, Object.freeze(value)]),
     )),
   });
