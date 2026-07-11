@@ -1,7 +1,7 @@
 ---
 type: source
 created: 2026-05-25
-updated: 2026-06-12
+updated: 2026-07-11
 sources: []
 author: William Hilton et al.
 description: "Project page for the pure-JS git library Dome depends on; takeaway: standard .git format, no binary needed, fast enough for Dome's use."

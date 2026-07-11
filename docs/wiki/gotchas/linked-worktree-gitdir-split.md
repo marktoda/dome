@@ -1,8 +1,8 @@
 ---
 type: gotcha
-coverage: matrix
 created: 2026-07-11
 updated: 2026-07-11
+coverage: matrix
 description: Linked Git worktrees split per-worktree HEAD/index state from common refs/objects; one isomorphic-git gitdir cannot represent both.
 ---
 

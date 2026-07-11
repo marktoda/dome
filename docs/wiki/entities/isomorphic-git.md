@@ -6,7 +6,7 @@ tags:
   - library
   - dependency
 created: 2026-05-25
-updated: 2026-06-12
+updated: 2026-07-11
 sources:
   - "[[cohesive/brainstorms/2026-05-25-dome-vision]]"
   - "[[wiki/sources/isomorphic-git-library]]"
