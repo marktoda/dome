@@ -12,7 +12,8 @@ Working in the codebase? [[philosophy]] is the house style — pure-decide + thi
 
 ## Current Product Planning
 
-- [[cohesive/plans/2026-07-11-productization-modernization]] — current plan of record: recover operational truth, remove measured whole-vault work, prove one first-run loop, simplify product language, and gate new intelligence on evaluation.
+- [[cohesive/plans/2026-07-11-productization-modernization]] — completed recovery/productization baseline: operational truth, performance, first-run loop, language, distribution rehearsal, and evidence gates.
+- [[cohesive/plans/2026-07-11-pwa-first-product]] — current product plan: one owner, one vault, one supervised host, many authenticated clients; safe mediated mutation and vertical PWA slices toward an owner-appliance beta.
 - [[v1]] — V1 design and plan: source-preserving convergent maintenance loops for Mark's work vault; processors remain the execution primitive, loops are the automation design unit.
 - [[wedge]] — superseded product wedge plan (2026-06-09), retained as decision history for the five shipped phases.
 - [[memory]] — Memory-quality plan (2026-06-09): five mechanisms (BM25++ retrieval, page supersession, core.md, dismissal discounting, preference promotion) as conventions + deterministic rebuildable facts; embeddings banked as a recomputable-cache spec, miss-log gated.
