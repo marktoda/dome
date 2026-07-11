@@ -41,6 +41,7 @@ Working in the codebase? [[philosophy]] is the house style — pure-decide + thi
 - [[wiki/specs/foreground-compiler-workflow]] — Day-to-day Claude Code workflow with `dome serve`, commit-boundary compilation, host-off catch-up, and the recovery loop.
 - [[wiki/specs/mcp-surface]] — MCP server: the shipped `dome mcp` stdio adapter (wedge Phase 5) — typed capture/query/export_context/report_miss/status/check/resolve/settle/tasks/brief/proposals/apply_proposal/reject_proposal tools over the same handlers the CLI uses.
 - [[wiki/specs/http-surface]] — HTTP surface: the shipped `dome http` read+capture adapter (bearer-token; loopback/Tailscale) — POST /capture implements the remote-capture seam; status/query/tasks/doc/questions/resolve read routes.
+- [[wiki/specs/product-host]] — planned Dome Home host contract: one owner/one vault/many paired clients; authority, readiness, operation classes, lifecycle, backup, and recovery.
 - [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, OpenCode, Codex, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + compiler host + git-native writes).
 - [[wiki/specs/agent-host]] — The replaceable foreground-agent host: session protocol, agent workspace, and the seam between agents and the background compiler.
 - [[wiki/specs/task-lifecycle]] — `^block-anchor` line identity (move-stable, not body-hash); the three deterministic `dome.daily` task processors (stamp / reconcile / normalize) and why garden-phase; the `lastHumanChangedAt` freshness rule; the warden pattern (questions-only integrity + answer-handler; no-op without a model).
@@ -91,6 +92,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/matrices/processor-phase-x-trigger]] — Phase × trigger compatibility; what's allowed where.
 - [[wiki/matrices/projection-table-x-owner]] — Per-projection-table writer authority; namespace scoping.
 - [[wiki/matrices/protocol-adapter]] — CLI / MCP / HTTP / AgentRuntime mapped to the shared Vault and operation seams.
+- [[wiki/matrices/pwa-product-acceptance]] — versioned installed-product journey and adversarial release matrix for the PWA-first owner appliance.
 
 ## Gotchas
 

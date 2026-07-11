@@ -114,9 +114,20 @@ But the constraint that makes Dome work for them — *the compiler does the stru
 
 Notably, this repo's own `docs/` directory is itself a Dome vault — proof that the pattern generalizes beyond personal notes to systems-thinking substrate. Specs, invariants, behavior matrices, gotchas, syntheses about the project all live as Dome pages, maintained the same way a personal vault is.
 
-**v1.5 — Hosted multi-client.** The adoption-loop design accommodates a hosted-protected mode: PRs against `main` become Proposals, the engine runs adoption in CI, engine commits land on the PR, the PR auto-merges or routes to review based on capability policy. The local-eventual and hosted-protected modes are conceptually the same loop with different cursors.
+**v1.5 — Dome Home, the PWA-first product.** One owner, one Markdown/Git
+vault, one supervised host, and many paired devices/clients. The shipped PWA
+keeps Ask/voice at the center, framed by Today and Activity with globally
+available capture. Product work deepens controlled mutation, one long-lived
+host, validated contracts, device authority, backup/upgrade, and installed
+PWA distribution without changing the four engine concepts. See
+[[cohesive/plans/2026-07-11-pwa-first-product]] and
+[[wiki/specs/product-host]].
 
-**v2 — Product.** Native mobile app: voice-first capture, structured browse, prep mode, inbox review. Native desktop. Voice client. Web app. Onboarding that meets each user where they are — a new vault, an existing Obsidian vault, a pile of Apple Notes, a stack of Google Docs. Same SDK underneath. Different surfaces above. The opinionated-flow patterns for native surfaces solidify here; the compiler boundary for agentic harnesses remains the contract.
+**v2 — Earn broader deployment.** Evidence from the owner-appliance beta
+chooses the next client or deployment need. Multiple vaults, an optional relay,
+native wrappers, hosted-protected Git flows, and human collaboration are
+separate design decisions, not implied next steps and never reasons to make
+Vault, Proposal, Processor, or Effect tenant-aware.
 
 **Long term.** Dome is what people use the way they use their phones: ambient, always there, low-friction. You think out loud; Dome remembers. You ask; Dome answers from your own thinking. The garden grows over years, and grows beautifully, because the gardening is automatic. The cognitive surface of an individual — what they pay attention to, what they decide, what they change their mind about — becomes a durable, exportable, queryable asset that compounds for a lifetime.
 

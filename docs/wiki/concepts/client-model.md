@@ -5,6 +5,7 @@ tags:
   - architecture
   - clients
 created: 2026-06-16
+updated: 2026-07-11
 sources:
   - "[[wiki/concepts/brain-companion]]"
   - "[[wiki/specs/harnesses]]"
@@ -31,6 +32,12 @@ contract clients consume. **Clients are what the user actually touches.** This
 page names the client taxonomy and the load-bearing claim that follows from it:
 the product is the contract, not any one client — and least of all the CLI.
 
+The first shipped product instantiation of this model is **Dome Home**: one
+owner, one vault, one supervised host, and many paired clients. Its PWA keeps
+the agent conversation at the center, with Today and Activity as the fixed
+frame and Capture globally available. Conversation is the primary interaction;
+the vault remains durable truth. See [[wiki/specs/product-host]].
+
 ## The primary client is an LLM agent
 
 The way the owner uses Dome today is: open Claude Code and talk to it. It
@@ -39,11 +46,11 @@ commits — using whatever tools it has (filesystem, `Bash`, the Dome CLI, MCP).
 The human surface is *the conversation*; the agent orchestrates everything
 underneath.
 
-This is the model, not an accident of the dogfood phase. The future phone
-surface is the same shape: an app that pings the HTTP API to **search with an
-agent or capture a thought** — not a form to fill. **Voice capture is the
-near-term bet** for the agent's primary input on the phone (an agent in your ear
-over MCP/HTTP), not a deferred someday. One brain, many agents, every device.
+This is the model, not an accident of the dogfood phase. The Dome Home phone
+surface has the same shape: a PWA that can **search with an agent or capture a
+thought** — not a form to fill. **Voice capture is the near-term bet** for the
+agent's primary input on the phone (an agent in your ear over the Product Host),
+not a deferred someday. One brain, many agents, every device.
 
 So Dome's job is not to *be* the intelligence. It's to make **any** agent
 excellent at *your* vault — oriented to your conventions, given grounded
@@ -143,7 +150,8 @@ This is a real fork, not a bug:
   Claude-Code-class agent runs on an always-on host beside the vault and the
   daemon, reachable from the phone. Authoring stays filesystem + git; the phone
   is a thin client to that agent. No new write contract — the work is the
-  always-on host, remote reach, and per-device tokens (all deferred today).
+  Product Host, remote reach, and paired device authority described in
+  [[wiki/specs/product-host]].
 - **Add a remote authoring operation** (a `propose-patch` verb over HTTP/MCP
   that constructs a Proposal from a client-supplied patch). This is the
   deliberate exception to "no `submitProposal`," opened only if phone-side page
@@ -192,8 +200,9 @@ a human runs.
   ergonomics earn them.
 - **Don't over-polish the CLI for end users.** Its audiences are agents and the
   operator.
-- **The mobile unlock is a reachable agent over the API** (always-on host +
-  per-device tokens), with voice as the primary capture input. The brief
+- **The mobile unlock is a reachable agent over the product host** (always-on
+  single-vault host + paired device credentials), with voice as the primary
+  online capture input and durable text capture as the V1 offline boundary. The brief
   cockpit (`/today`) and a recents history are the static glance panels that
   frame it — components of the app, not the primary element and not the whole
   app.
