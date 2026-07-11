@@ -8,7 +8,6 @@ sources:
   - "[[wiki/specs/http-surface]]"
   - "[[wiki/concepts/client-model]]"
 description: Versioned second-user and adversarial acceptance matrix for the PWA-first Dome Home product.
-status: planned
 ---
 
 # PWA product acceptance
@@ -88,4 +87,3 @@ and runs the installed-artifact journey available at that phase.
 - A successful HTTP ping is not vault readiness.
 - Network request uniqueness is not logical-capture idempotency.
 - A green unit suite is not an installed-product journey.
-
