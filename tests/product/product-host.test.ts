@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import { createAgentRuntime, type AgentRun } from "../../src/assistant/runtime";
 import { runInit } from "../../src/cli/commands/init";
+import { openDeviceAuthority } from "../../src/device-authority/device-authority";
 import { add, commit } from "../../src/git";
 import { startProductHost, type ProductHost } from "../../src/product-host/product-host";
 
@@ -21,21 +22,26 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-describe("P2 Product Host", () => {
+describe("P3 Product Host", () => {
   test("owns one vault, reports readiness, releases ownership, and restarts", async () => {
     const vault = await initializedVault();
+    const pairingCode = await mintPairingCode(vault, "Product test phone", [
+      "capture", "converse", "read", "resolve",
+    ]);
     const first = await startProductHost({
       vaultPath: vault,
-      pairCode: "local-code-123",
       port: 0,
       pollIntervalMs: 25,
+      externalOrigin: "http://localhost:5173",
     });
     expect(first.ok).toBe(true);
     if (!first.ok) return;
     hosts.push(first.value);
 
-    const cookie = await pair(first.value.url);
-    const ready = await fetch(`${first.value.url}/readyz`, { headers: { cookie } });
+    const auth = await pair(first.value.url, pairingCode);
+    const externalPairing = await mintPairingCode(vault, "External origin phone", ["read"]);
+    await pair(first.value.url, externalPairing, "http://localhost:5173");
+    const ready = await fetch(`${first.value.url}/readyz`, { headers: { cookie: auth.cookie } });
     expect(ready.status).toBe(200);
     const readyDocument = await ready.json() as { readonly vault: { readonly id: string } };
     expect(readyDocument).toMatchObject({
@@ -43,12 +49,15 @@ describe("P2 Product Host", () => {
       host: { state: "ready" },
       adoption: { state: "current" },
       vault: { name: vault.split("/").at(-1) },
+      device: {
+        name: "Product test phone",
+        capabilities: ["capture", "converse", "read", "resolve"],
+      },
     });
-    expect((await fetch(`${first.value.url}/status`, { headers: { cookie } })).status).toBe(410);
+    expect((await fetch(`${first.value.url}/status`, { headers: { cookie: auth.cookie } })).status).toBe(410);
 
     const second = await startProductHost({
       vaultPath: vault,
-      pairCode: "second-code-123",
       port: 0,
     });
     expect(second).toMatchObject({ ok: false, error: { kind: "busy" } });
@@ -57,18 +66,24 @@ describe("P2 Product Host", () => {
     hosts.splice(hosts.indexOf(first.value), 1);
     const restarted = await startProductHost({
       vaultPath: vault,
-      pairCode: "restart-code-123",
       port: 0,
+      externalOrigin: "https://dome.tail.example",
     });
     expect(restarted.ok).toBe(true);
     if (restarted.ok) {
       hosts.push(restarted.value);
       expect((await restarted.value.readiness()).vault.id).toBe(readyDocument.vault.id);
+      expect((await fetch(`${restarted.value.url}/readyz`, {
+        headers: { cookie: auth.cookie },
+      })).status).toBe(200);
     }
   }, 30_000);
 
   test("a slow model turn does not block readiness, adopted reads, or capture", async () => {
     const vault = await initializedVault();
+    const pairingCode = await mintPairingCode(vault, "Concurrent phone", [
+      "capture", "converse", "read", "resolve",
+    ]);
     let release!: () => void;
     const blocked = new Promise<void>((resolve) => { release = resolve; });
     const runtime = createAgentRuntime({
@@ -84,7 +99,6 @@ describe("P2 Product Host", () => {
     });
     const started = await startProductHost({
       vaultPath: vault,
-      pairCode: "local-code-123",
       port: 0,
       pollIntervalMs: 25,
       agentRuntime: runtime,
@@ -92,28 +106,34 @@ describe("P2 Product Host", () => {
     expect(started.ok).toBe(true);
     if (!started.ok) return;
     hosts.push(started.value);
-    const cookie = await pair(started.value.url);
+    const auth = await pair(started.value.url, pairingCode);
 
     const created = await fetch(`${started.value.url}/sessions`, {
       method: "POST",
-      headers: { cookie },
+      headers: mutationHeaders(started.value.url, auth),
     });
     expect(created.status).toBe(201);
     const turn = await fetch(`${started.value.url}/sessions/slow-session/messages`, {
       method: "POST",
-      headers: { cookie, "content-type": "application/json" },
+      headers: {
+        ...mutationHeaders(started.value.url, auth),
+        "content-type": "application/json",
+      },
       body: JSON.stringify({ message: "wait" }),
     });
     expect(turn.status).toBe(200);
 
     try {
       const [ready, today, doc, capture] = await within(Promise.all([
-        fetch(`${started.value.url}/readyz`, { headers: { cookie } }),
-        fetch(`${started.value.url}/tasks`, { headers: { cookie } }),
-        fetch(`${started.value.url}/doc?path=wiki/host.md`, { headers: { cookie } }),
+        fetch(`${started.value.url}/readyz`, { headers: { cookie: auth.cookie } }),
+        fetch(`${started.value.url}/tasks`, { headers: { cookie: auth.cookie } }),
+        fetch(`${started.value.url}/doc?path=wiki/host.md`, { headers: { cookie: auth.cookie } }),
         fetch(`${started.value.url}/capture`, {
           method: "POST",
-          headers: { cookie, "content-type": "application/json" },
+          headers: {
+            ...mutationHeaders(started.value.url, auth),
+            "content-type": "application/json",
+          },
           body: JSON.stringify({ text: "Concurrent owner capture", captureId: "p2-concurrent" }),
         }),
       ]), 2_000);
@@ -150,14 +170,46 @@ async function initializedVault(): Promise<string> {
   return vault;
 }
 
-async function pair(baseUrl: string): Promise<string> {
+type BrowserAuth = { readonly cookie: string; readonly csrf: string };
+
+async function pair(
+  baseUrl: string,
+  code: string,
+  origin: string = baseUrl,
+): Promise<BrowserAuth> {
   const response = await fetch(`${baseUrl}/pair`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ code: "local-code-123" }),
+    headers: { "content-type": "application/json", origin },
+    body: JSON.stringify({ code }),
   });
   expect(response.status).toBe(200);
-  return (response.headers.get("set-cookie") ?? "").split(";", 1)[0] ?? "";
+  const cookies = response.headers.getSetCookie().map((value) => value.split(";", 1)[0] ?? "");
+  const csrfCookie = cookies.find((value) => value.startsWith("dome_csrf="));
+  return {
+    cookie: cookies.join("; "),
+    csrf: decodeURIComponent(csrfCookie?.slice("dome_csrf=".length) ?? ""),
+  };
+}
+
+function mutationHeaders(baseUrl: string, auth: BrowserAuth): Record<string, string> {
+  return { cookie: auth.cookie, origin: baseUrl, "x-dome-csrf": auth.csrf };
+}
+
+async function mintPairingCode(
+  vault: string,
+  deviceName: string,
+  capabilities: Array<"capture" | "converse" | "read" | "resolve">,
+): Promise<string> {
+  const opened = await openDeviceAuthority({
+    path: join(vault, ".dome", "state", "device-authority.db"),
+  });
+  expect(opened.ok).toBe(true);
+  if (!opened.ok) throw new Error("device authority did not open");
+  const minted = opened.value.authority.mintPairingGrant({ deviceName, capabilities });
+  opened.value.authority.close();
+  expect(minted.kind).toBe("minted");
+  if (minted.kind !== "minted") throw new Error("pairing code did not mint");
+  return minted.pairingCode;
 }
 
 async function within<T>(promise: Promise<T>, milliseconds: number): Promise<T> {

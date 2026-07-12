@@ -966,7 +966,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .option("--bundles-root <path>", "Extension bundles root.")
     .option("--port <port>", "Port to listen on (default 3663).")
     .option("--host <host>", "Loopback interface to bind (default 127.0.0.1).")
-    .option("--pair-code <code>", "Local browser pairing code (generated when omitted).")
+    .option("--external-origin <origin>", "Private HTTPS origin, or HTTP loopback origin for local Vite development.")
     .option("--static-dir <path>", "Built PWA directory (defaults to the bundled pwa/dist).")
     .action(async (options: HomeCliOptions) => {
       const { runHome } = await import("./commands/home");
@@ -1155,7 +1155,7 @@ type HomeCliOptions = {
   readonly bundlesRoot?: string;
   readonly port?: string;
   readonly host?: string;
-  readonly pairCode?: string;
+  readonly externalOrigin?: string;
   readonly staticDir?: string;
 };
 

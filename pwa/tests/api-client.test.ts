@@ -9,6 +9,48 @@ function mockJson(status: number, body: unknown): void {
 }
 
 describe("DomeClient", () => {
+  test("restores CSRF from a cookie without a network rotation", () => {
+    const client = new DomeClient();
+    expect(client.restoreCsrfFromCookie("other=x; dome_csrf=restored%20secret")).toBe(true);
+    expect(client.restoreCsrfFromCookie("other=x")).toBe(false);
+  });
+
+  test("durable pairing keeps CSRF in memory and attaches it to mutations", async () => {
+    const seen: Request[] = [];
+    globalThis.fetch = mock(async (request: Request) => {
+      seen.push(request);
+      const path = new URL(request.url).pathname;
+      if (path === "/pair") {
+        return new Response(JSON.stringify({
+          schema: "dome.device.pairing/v1",
+          status: "paired",
+          csrfToken: "csrf-secret",
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        schema: "dome.capture/v1",
+        status: "captured",
+        vault: "/vault",
+        path: "inbox/raw/x.md",
+        commit: "abc",
+        title: "hi",
+        captured_at: "2026-07-11T12:00:00.000Z",
+        source: "pwa",
+        branch: "main",
+        serve_status: "running",
+        adopted_initialized: true,
+        compile_pending: false,
+        commit_status: "committed",
+        adoption_status: "pending",
+      }), { status: 200 });
+    }) as never;
+    const client = new DomeClient();
+    await client.pair("grant");
+    await client.capture({ text: "hi" });
+    expect(seen[0]!.headers.get("x-dome-csrf")).toBeNull();
+    expect(seen[1]!.headers.get("x-dome-csrf")).toBe("csrf-secret");
+  });
+
   test("agentStream creates one session and reuses it across turns", async () => {
     const paths: string[] = [];
     const bodies: unknown[] = [];

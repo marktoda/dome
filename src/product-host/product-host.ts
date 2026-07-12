@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { basename, join, resolve } from "node:path";
 
 import {
@@ -7,9 +6,14 @@ import {
 } from "../../contracts/product-readiness";
 import { getCurrentBranch } from "../adopted-ref";
 import type { AgentRuntime } from "../assistant/runtime";
+import {
+  openDeviceAuthority,
+  type DeviceAuthority,
+} from "../device-authority/device-authority";
 import { withExclusiveFileLock } from "../engine/host/file-lock";
 import { isWorkingTreeDirty } from "../git";
 import { createDomeHttpServer } from "../http/server";
+import type { DeviceRequestContext } from "../http/device-request-auth";
 import { recoverControlledMutation } from "../mutation/controlled-mutation";
 import { openVault, type Vault } from "../vault";
 import { ProductOperationScheduler } from "./operation-scheduler";
@@ -37,7 +41,7 @@ export type ProductHostOptions = {
   readonly bundlesRoot?: string;
   readonly hostname?: string;
   readonly port?: number;
-  readonly pairCode: string;
+  readonly externalOrigin?: string;
   readonly staticDir?: string;
   readonly pollIntervalMs?: number;
   readonly assetVersion?: string;
@@ -62,11 +66,13 @@ export async function startProductHost(
   const vaultPath = resolve(options.vaultPath);
   const hostname = options.hostname ?? DEFAULT_HOST;
   if (!isLoopbackHost(hostname)) {
-    return failure("startup-failed", "P2 Product Host is loopback-only");
+    return failure(
+      "startup-failed",
+      "Product Host binds loopback; configure externalOrigin for a private HTTPS proxy",
+    );
   }
-  if (options.pairCode.trim().length < 8) {
-    return failure("startup-failed", "pairing code must contain at least 8 characters");
-  }
+  const externalOrigin = validateExternalOrigin(options.externalOrigin);
+  if (!externalOrigin.ok) return failure("startup-failed", externalOrigin.message);
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_MS;
   if (!Number.isInteger(pollIntervalMs) || pollIntervalMs <= 0) {
     return failure("startup-failed", "poll interval must be a positive integer");
@@ -95,6 +101,7 @@ export async function startProductHost(
       let vault: Vault | null = null;
       let listener: ReturnType<typeof Bun.serve> | null = null;
       let http: ReturnType<typeof createDomeHttpServer> | null = null;
+      let deviceAuthority: DeviceAuthority | null = null;
       const controller = new AbortController();
       const scheduler = new ProductOperationScheduler();
       let poll: Promise<void> = Promise.resolve();
@@ -124,6 +131,17 @@ export async function startProductHost(
           return;
         }
         vault = opened.value;
+        const openedAuthority = await openDeviceAuthority({
+          path: join(vaultPath, ".dome", "state", "device-authority.db"),
+        });
+        if (!openedAuthority.ok) {
+          settleStarted(failure(
+            "startup-failed",
+            `device authority could not open: ${openedAuthority.error.kind}`,
+          ));
+          return;
+        }
+        deviceAuthority = openedAuthority.value.authority;
         const state: HostState = {
           since: new Date().toISOString(),
           vaultId: await ensureVaultId(vaultPath),
@@ -133,13 +151,16 @@ export async function startProductHost(
         };
         await scheduler.run("engine-tick", ({ signal }) => tick(vault!, state, signal));
 
-        const readiness = (): Promise<ProductReadiness> =>
-          buildReadiness(vault!, state, options);
+        const readiness = (client?: DeviceRequestContext): Promise<ProductReadiness> =>
+          buildReadiness(vault!, state, options, deviceAuthority!, client);
+        let allowedOrigins: ReadonlyArray<string> = Object.freeze([]);
         http = createDomeHttpServer({
           vaultPath,
           vault,
-          token: `product-host-internal-${randomUUID()}`,
-          loopbackPairing: { code: options.pairCode.trim() },
+          deviceAuth: {
+            authority: deviceAuthority,
+            allowedOrigins: () => allowedOrigins,
+          },
           readiness,
           operationScheduler: scheduler,
           ...(options.staticDir !== undefined ? { staticDir: options.staticDir } : {}),
@@ -150,10 +171,20 @@ export async function startProductHost(
           port: options.port ?? DEFAULT_PORT,
           fetch: http.fetch,
         });
+        if (listener.port === undefined) {
+          throw new Error("Product Host listener did not report its bound port");
+        }
+        const localOrigin = listenerOrigin(listener.hostname ?? hostname, listener.port);
+        allowedOrigins = Object.freeze([
+          localOrigin,
+          ...(externalOrigin.value === null || externalOrigin.value === localOrigin
+            ? []
+            : [externalOrigin.value]),
+        ]);
         poll = pollVault(vault, state, scheduler, pollIntervalMs, controller.signal);
         const host: ProductHost = Object.freeze({
-          url: `http://${listener.hostname}:${listener.port}`,
-          readiness,
+          url: localOrigin,
+          readiness: () => readiness(),
           close: async () => {
             requestClose();
             await closed;
@@ -173,6 +204,7 @@ export async function startProductHost(
         if (http !== null) await http.close();
         await poll.catch(() => {});
         await scheduler.whenIdle();
+        deviceAuthority?.close();
         if (vault !== null) await vault.close();
       }
     },
@@ -235,6 +267,8 @@ async function buildReadiness(
   vault: Vault,
   state: HostState,
   options: ProductHostOptions,
+  authority: DeviceAuthority,
+  client?: DeviceRequestContext,
 ): Promise<ProductReadiness> {
   const adoption = await vault.getAdoptionStatus();
   const adoptionState = adoption.diverged
@@ -261,7 +295,7 @@ async function buildReadiness(
     contractVersions: Object.freeze([
       "dome.product.readiness/v1",
       "dome.capture/v1",
-      "dome.pairing/v1",
+      "dome.device.pairing/v1",
       "dome.daily.today/v1",
     ]),
     assetVersion: options.assetVersion ?? "development",
@@ -269,11 +303,7 @@ async function buildReadiness(
       id: state.vaultId,
       name: basename(vault.path),
     }),
-    device: Object.freeze({
-      id: "loopback-browser",
-      name: "Loopback browser",
-      capabilities: Object.freeze(["capture", "converse", "read", "resolve"]),
-    }),
+    device: readinessDevice(authority, client),
     host: Object.freeze({ state: hostState, since: state.since }),
     adoption: Object.freeze({
       state: blocked && !adoption.diverged ? "blocked" : adoptionState,
@@ -297,6 +327,66 @@ function failure(
 function isLoopbackHost(host: string): boolean {
   const value = host.toLowerCase();
   return value === "127.0.0.1" || value === "localhost" || value === "::1" || value === "[::1]";
+}
+
+function validateExternalOrigin(value: string | undefined):
+  | { readonly ok: true; readonly value: string | null }
+  | { readonly ok: false; readonly message: string } {
+  if (value === undefined) return { ok: true, value: null };
+  try {
+    const parsed = new URL(value);
+    const secure = parsed.protocol === "https:";
+    const loopbackDevelopment = parsed.protocol === "http:" &&
+      isLoopbackOriginHostname(parsed.hostname);
+    if (
+      (!secure && !loopbackDevelopment) ||
+      parsed.username !== "" ||
+      parsed.password !== "" ||
+      parsed.pathname !== "/" ||
+      parsed.search !== "" ||
+      parsed.hash !== ""
+    ) {
+      return {
+        ok: false,
+        message: "externalOrigin must be HTTPS, or HTTP on loopback for local development, without path, query, or credentials",
+      };
+    }
+    return { ok: true, value: parsed.origin };
+  } catch {
+    return { ok: false, message: "externalOrigin must be a valid origin" };
+  }
+}
+
+function isLoopbackOriginHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === "localhost" || host.endsWith(".localhost") ||
+    host === "127.0.0.1" || host === "[::1]";
+}
+
+function listenerOrigin(hostname: string, port: number): string {
+  const host = hostname.includes(":") && !hostname.startsWith("[")
+    ? `[${hostname}]`
+    : hostname;
+  return `http://${host}:${port}`;
+}
+
+function readinessDevice(
+  authority: DeviceAuthority,
+  client: DeviceRequestContext | undefined,
+): ProductReadiness["device"] {
+  if (client === undefined) {
+    return Object.freeze({
+      id: "local-console",
+      name: "Local console",
+      capabilities: Object.freeze([]),
+    });
+  }
+  const device = authority.listDevices().find((candidate) => candidate.id === client.deviceId);
+  return Object.freeze({
+    id: client.deviceId,
+    name: device?.name ?? client.deviceName,
+    capabilities: Object.freeze([...client.capabilities].sort()),
+  });
 }
 
 function wait(ms: number, signal: AbortSignal): Promise<void> {
