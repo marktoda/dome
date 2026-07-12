@@ -80,6 +80,11 @@ export type RequestReceiptLease = Readonly<{
   finish: (input: FinishRequestReceiptInput) => FinishRequestReceiptResult;
 }>;
 
+/** Host-bound recorder seam consumed by authenticated HTTP mutation routes. */
+export type HttpRequestReceiptRecorder = Readonly<{
+  admit: (input: Omit<AdmitRequestReceiptInput, "hostInstanceId" | "executor">) => RequestReceiptLease;
+}>;
+
 export type RequestReceipts = Readonly<{
   admit: (input: AdmitRequestReceiptInput) => RequestReceiptLease;
   list: (input?: {
@@ -99,6 +104,15 @@ export type RequestReceipts = Readonly<{
   }) => number;
   close: () => void;
 }>;
+
+export function bindHttpRequestReceiptRecorder(
+  receipts: Pick<RequestReceipts, "admit">,
+  hostInstanceId: string,
+): HttpRequestReceiptRecorder {
+  return Object.freeze({
+    admit: (input) => receipts.admit({ ...input, hostInstanceId, executor: "http" }),
+  });
+}
 
 type ReceiptRow = {
   operation_id: string;

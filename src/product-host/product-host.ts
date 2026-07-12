@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { basename, join, resolve } from "node:path";
 
 import {
@@ -15,6 +16,12 @@ import { isWorkingTreeDirty } from "../git";
 import { createDomeHttpServer } from "../http/server";
 import type { DeviceRequestContext } from "../http/device-request-auth";
 import { recoverControlledMutation } from "../mutation/controlled-mutation";
+import { openRequestReceiptsDb } from "../request-receipts/db";
+import {
+  bindHttpRequestReceiptRecorder,
+  createRequestReceipts,
+  type RequestReceipts,
+} from "../request-receipts/request-receipts";
 import { openVault, type Vault } from "../vault";
 import { ProductOperationScheduler } from "./operation-scheduler";
 import { ensureVaultId } from "./vault-id";
@@ -102,6 +109,7 @@ export async function startProductHost(
       let listener: ReturnType<typeof Bun.serve> | null = null;
       let http: ReturnType<typeof createDomeHttpServer> | null = null;
       let deviceAuthority: DeviceAuthority | null = null;
+      let requestReceipts: RequestReceipts | null = null;
       const controller = new AbortController();
       const scheduler = new ProductOperationScheduler();
       let poll: Promise<void> = Promise.resolve();
@@ -122,6 +130,19 @@ export async function startProductHost(
             recoveryIssue = recovered.reason;
           }
         }
+        const hostInstanceId = randomUUID();
+        const openedReceipts = await openRequestReceiptsDb({
+          path: join(vaultPath, ".dome", "state", "request-receipts.db"),
+        });
+        if (!openedReceipts.ok) {
+          settleStarted(failure(
+            "startup-failed",
+            `request receipts could not open: ${openedReceipts.error.kind}`,
+          ));
+          return;
+        }
+        requestReceipts = createRequestReceipts(openedReceipts.value.db);
+        requestReceipts.interruptAdmitted({ exceptHostInstanceId: hostInstanceId });
         const opened = await openVault({
           path: vaultPath,
           ...(options.bundlesRoot !== undefined ? { bundlesRoot: options.bundlesRoot } : {}),
@@ -163,6 +184,7 @@ export async function startProductHost(
           },
           readiness,
           operationScheduler: scheduler,
+          requestReceiptRecorder: bindHttpRequestReceiptRecorder(requestReceipts, hostInstanceId),
           ...(options.staticDir !== undefined ? { staticDir: options.staticDir } : {}),
           ...(options.agentRuntime !== undefined ? { agentRuntime: options.agentRuntime } : {}),
         });
@@ -204,6 +226,7 @@ export async function startProductHost(
         if (http !== null) await http.close();
         await poll.catch(() => {});
         await scheduler.whenIdle();
+        requestReceipts?.close();
         deviceAuthority?.close();
         if (vault !== null) await vault.close();
       }

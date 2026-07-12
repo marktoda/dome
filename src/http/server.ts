@@ -90,6 +90,12 @@ import {
   type ProductOperationScheduler,
 } from "../product-host/operation-scheduler";
 import { readSourceDocument } from "../source-document/source-document";
+import type {
+  FinishRequestReceiptInput,
+  HttpRequestReceiptRecorder,
+  RequestReceiptOperation,
+  RequestReceiptOperationClass,
+} from "../request-receipts/request-receipts";
 
 // ----- Constants ------------------------------------------------------------
 
@@ -156,6 +162,8 @@ export type DomeHttpServerOptions = {
   readonly readiness?: ((client?: DeviceRequestContext) => Promise<unknown>) | undefined;
   /** Product Host admission. Compatibility servers retain their legacy mutex. */
   readonly operationScheduler?: Pick<ProductOperationScheduler, "run"> | undefined;
+  /** Durable Product Host mutation audit; absent in compatibility mode. */
+  readonly requestReceiptRecorder?: HttpRequestReceiptRecorder | undefined;
   readonly model?: string | undefined;
   /**
    * Grant the `author` capability (agent write tools). Default off
@@ -299,6 +307,21 @@ function jsonResponse(status: number, data: unknown): Response {
  */
 function dataErrorResponse(status: number, error: string, message: string): Response {
   return jsonResponse(status, { status: "error", error, message });
+}
+
+function withReceiptId(response: Response, operationId: string): Response {
+  const headers = new Headers(response.headers);
+  headers.set("x-dome-receipt-id", operationId);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+function mutationOutcomeUnknownResponse(requestId: string): Response {
+  return jsonResponse(500, {
+    status: "error",
+    error: "mutation-outcome-unknown",
+    message: `The mutation outcome is unknown and must not be replayed. Reference request ${requestId}.`,
+    retryable: false,
+  });
 }
 
 function sourceDocumentHttpStatus(result: SourceDocumentResult): number {
@@ -602,6 +625,66 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     readonly controller: AbortController;
     readonly drained: Promise<void>;
   }>();
+
+  type RecordedMutation = Readonly<{
+    response: Response;
+    terminal: FinishRequestReceiptInput;
+  }>;
+  const recordMutation = async (
+    client: DeviceRequestContext | undefined,
+    operation: RequestReceiptOperation,
+    operationClass: RequestReceiptOperationClass,
+    mutate: () => Promise<RecordedMutation>,
+  ): Promise<Response> => {
+    if (client === undefined || opts.requestReceiptRecorder === undefined) {
+      return (await mutate()).response;
+    }
+    let lease;
+    try {
+      lease = opts.requestReceiptRecorder.admit({
+        requestId: client.requestId,
+        actorId: client.actorId,
+        deviceId: client.deviceId,
+        credentialId: client.credentialId,
+        transport: client.transport,
+        operation,
+        operationClass,
+      });
+    } catch {
+      return dataErrorResponse(
+        503,
+        "mutation-admission-failed",
+        `The Product Host could not durably admit this mutation. Reference request ${client.requestId}.`,
+      );
+    }
+    const unknown = (): Response => withReceiptId(
+      mutationOutcomeUnknownResponse(client.requestId),
+      lease.operationId,
+    );
+    let completed: RecordedMutation;
+    try {
+      completed = await mutate();
+    } catch {
+      try {
+        lease.finish({
+          state: "interrupted",
+          resultCode: "mutation-outcome-unknown",
+          adoptionState: "unknown",
+          recoveryRequired: true,
+        });
+      } catch {
+        // The admitted row intentionally remains recoverable on restart.
+      }
+      return unknown();
+    }
+    try {
+      const finished = lease.finish(completed.terminal);
+      if (finished.kind === "terminal-conflict") return unknown();
+    } catch {
+      return unknown();
+    }
+    return withReceiptId(completed.response, lease.operationId);
+  };
 
   // ----- POST /transcribe (runs authenticated but outside the vault mutex) -----
   //
@@ -956,20 +1039,33 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       if (body === null || typeof body.text !== "string" || body.text.trim().length === 0) {
         return dataErrorResponse(400, "capture-usage", "POST /capture requires a JSON body with non-empty `text` (optional `title`, `captureId`).");
       }
+      const captureText = body.text;
       // performCapture is runtime-free (writes a raw file + a human commit) —
       // no enqueue/withVault needed, same as the http server.
-      const outcome = await performCapture({
-        text: body.text,
-        ...(typeof body.title === "string" ? { title: body.title } : {}),
-        ...(typeof body.captureId === "string" ? { captureId: body.captureId } : {}),
-        vault: opts.vaultPath,
-        source: "http",
+      return recordMutation(client, "capture", "workspace-mutation", async () => {
+        const outcome = await performCapture({
+          text: captureText,
+          ...(typeof body.title === "string" ? { title: body.title } : {}),
+          ...(typeof body.captureId === "string" ? { captureId: body.captureId } : {}),
+          vault: opts.vaultPath,
+          source: "http",
+        });
+        const doc = captureJsonDocument(outcome);
+        if (outcome.kind === "error") return {
+          response: outcome.exitCode === 64 || client === undefined
+            ? jsonResponse(outcome.exitCode === 64 ? 400 : 500, doc)
+            : mutationOutcomeUnknownResponse(client.requestId),
+          terminal: outcome.exitCode === 64
+            ? { state: "rejected", resultCode: "capture-invalid" }
+            : { state: "interrupted", resultCode: "mutation-outcome-unknown", adoptionState: "unknown", recoveryRequired: true },
+        };
+        return {
+          response: jsonResponse(200, doc),
+          terminal: outcome.kind === "captured"
+            ? { state: "succeeded", resultCode: "captured", commitOid: outcome.result.commit }
+            : { state: "succeeded", resultCode: "duplicate" },
+        };
       });
-      const doc = captureJsonDocument(outcome);
-      if (outcome.kind === "error") {
-        return jsonResponse(outcome.exitCode === 64 ? 400 : 500, doc);
-      }
-      return jsonResponse(200, doc);
     }
 
     if (route === "GET /tasks") {
@@ -1004,9 +1100,14 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       if (id === null || value.length === 0) {
         return dataErrorResponse(400, "resolve-usage", "POST /resolve requires a JSON body with a positive integer `id` and a non-empty `value`.");
       }
-      return withVault("POST /resolve", async (v) => {
-        const outcome = await v.resolve(id, value);
-        switch (outcome.kind) {
+      return recordMutation(client, "resolve", "operational-transaction", async () => {
+        let terminal!: FinishRequestReceiptInput;
+        const response = await withVault("POST /resolve", async (v) => {
+          const outcome = await v.resolve(id, value);
+          terminal = outcome.kind === "answered" || outcome.kind === "already-answered"
+            ? { state: "succeeded", resultCode: outcome.kind }
+            : { state: "rejected", resultCode: outcome.kind };
+          switch (outcome.kind) {
           case "not-found":
             return jsonResponse(404, {
               schema: ANSWER_SCHEMA,
@@ -1032,7 +1133,14 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
                   ? null
                   : answerHandlersJson(outcome.handlers),
             });
-        }
+          }
+        });
+        return terminal === undefined
+          ? {
+              response: client === undefined ? response : mutationOutcomeUnknownResponse(client.requestId),
+              terminal: { state: "interrupted", resultCode: "mutation-outcome-unknown", adoptionState: "unknown", recoveryRequired: true },
+            }
+          : { response, terminal };
       });
     }
 
@@ -1044,20 +1152,38 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       const body = read.body;
       const blockId = typeof body?.blockId === "string" ? body.blockId.trim() : "";
       const disposition = typeof body?.disposition === "string" ? body.disposition : "";
-      if (blockId.length === 0 || disposition.length === 0) {
+      const deferUntil = typeof body?.deferUntil === "string" ? body.deferUntil : undefined;
+      if (
+        blockId.length === 0 ||
+        !["close", "defer", "keep"].includes(disposition) ||
+        (disposition === "defer" && (deferUntil === undefined || !/^\d{4}-\d{2}-\d{2}$/.test(deferUntil)))
+      ) {
         return dataErrorResponse(400, "settle-usage", "POST /settle requires a JSON body with non-empty `blockId` and `disposition` (optional `deferUntil`).");
       }
       // performSettle is runtime-free (locates the line + a human commit) —
       // no enqueue/withVault needed, same as POST /capture.
-      const outcome = await performSettle(opts.vaultPath, {
-        blockId,
-        disposition: disposition as "close" | "defer" | "keep",
-        ...(typeof body?.deferUntil === "string" ? { deferUntil: body.deferUntil } : {}),
+      return recordMutation(client, "settle", "workspace-mutation", async () => {
+        const outcome = await performSettle(opts.vaultPath, {
+          blockId,
+          disposition: disposition as "close" | "defer" | "keep",
+          ...(deferUntil !== undefined ? { deferUntil } : {}),
+        });
+        const doc = settleResultJson(outcome);
+        if (outcome.status === "settled") return {
+          response: jsonResponse(200, doc),
+          terminal: { state: "succeeded", resultCode: outcome.commit === undefined ? "settled-noop" : "settled", ...(outcome.commit !== undefined ? { commitOid: outcome.commit } : {}) },
+        };
+        if (outcome.status === "not-found") return {
+          response: jsonResponse(404, doc),
+          terminal: { state: "rejected", resultCode: "not-found" },
+        };
+        return {
+          response: client === undefined
+            ? jsonResponse(400, doc)
+            : mutationOutcomeUnknownResponse(client.requestId),
+          terminal: { state: "interrupted", resultCode: "mutation-outcome-unknown", adoptionState: "unknown", recoveryRequired: true },
+        };
       });
-      const doc = settleResultJson(outcome);
-      if (outcome.status === "not-found") return jsonResponse(404, doc);
-      if (outcome.status === "invalid") return jsonResponse(400, doc);
-      return jsonResponse(200, doc);
     }
 
     if (route === "GET /proposals") {
@@ -1111,15 +1237,20 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
           "POST /agent-work/complete requires questionId, expectedRevision, answer, reason, and valid evidence SourceRefs.",
         );
       }
-      return withVault("POST /agent-work/complete", async (vault) => {
-        const outcome = await vault.completeAgentWork({
+      return recordMutation(client, "agent-work-complete", "operational-transaction", async () => {
+        let terminal!: FinishRequestReceiptInput;
+        const response = await withVault("POST /agent-work/complete", async (vault) => {
+          const outcome = await vault.completeAgentWork({
           questionId,
           expectedRevision,
           answer,
           reason,
           evidence: evidence.data as unknown as ReadonlyArray<SourceRef>,
         });
-        if (outcome.kind === "not-found") {
+          terminal = outcome.kind === "completed" || outcome.kind === "already-completed"
+            ? { state: "succeeded", resultCode: outcome.kind }
+            : { state: "rejected", resultCode: outcome.kind };
+          if (outcome.kind === "not-found") {
           return jsonResponse(404, {
             schema: "dome.agent-work-completion/v1",
             status: "not-found",
@@ -1134,14 +1265,21 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
             message: outcome.message,
           });
         }
-        return jsonResponse(200, {
+          return jsonResponse(200, {
           schema: "dome.agent-work-completion/v1",
           status: outcome.kind,
           question: questionRecordJson(outcome.record),
           handlers: outcome.handlers === null
             ? null
             : answerHandlersJson(outcome.handlers),
+          });
         });
+        return terminal === undefined
+          ? {
+              response: client === undefined ? response : mutationOutcomeUnknownResponse(client.requestId),
+              terminal: { state: "interrupted", resultCode: "mutation-outcome-unknown", adoptionState: "unknown", recoveryRequired: true },
+            }
+          : { response, terminal };
       });
     }
 
@@ -1171,22 +1309,33 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
           "POST /agent-work/drain accepts an optional integer limit from 1 to 10.",
         );
       }
-      return withVault("POST /agent-work/drain", async (vault) => {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
-        try {
-          const agent = opts.agentWorkAgent?.(vault) ??
-            createBuiltInAgentWorkAgent({
-              vault,
-              ...(opts.model !== undefined ? { modelId: opts.model } : {}),
+      return recordMutation(client, "agent-work-drain", "operational-transaction", async () => {
+        let terminal: FinishRequestReceiptInput | undefined;
+        const response = await withVault("POST /agent-work/drain", async (vault) => {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), timeoutMs);
+          try {
+            const agent = opts.agentWorkAgent?.(vault) ??
+              createBuiltInAgentWorkAgent({
+                vault,
+                ...(opts.model !== undefined ? { modelId: opts.model } : {}),
+              });
+            const drained = await drainAgentWork(vault, agent, {
+              limit,
+              signal: controller.signal,
             });
-          return jsonResponse(200, await drainAgentWork(vault, agent, {
-            limit,
-            signal: controller.signal,
-          }));
-        } finally {
-          clearTimeout(timer);
-        }
+            terminal = { state: "succeeded", resultCode: "agent-work-drained" };
+            return jsonResponse(200, drained);
+          } finally {
+            clearTimeout(timer);
+          }
+        });
+        return terminal === undefined
+          ? {
+              response: client === undefined ? response : mutationOutcomeUnknownResponse(client.requestId),
+              terminal: { state: "interrupted", resultCode: "mutation-outcome-unknown", adoptionState: "unknown", recoveryRequired: true },
+            }
+          : { response, terminal };
       });
     }
 
@@ -1204,12 +1353,21 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       }
       // performApply is runtime-free (locates the proposal + a human commit) —
       // no enqueue/withVault needed, same as POST /settle.
-      const outcome = await performApply(opts.vaultPath, id);
-      const doc = applyResultJson(outcome);
-      if (outcome.status === "not-found") return jsonResponse(404, doc);
-      if (outcome.status === "not-pending" || outcome.status === "stale") return jsonResponse(409, doc);
-      if (outcome.status === "invalid") return jsonResponse(400, doc);
-      return jsonResponse(200, doc);
+      return recordMutation(client, "apply-proposal", "workspace-mutation", async () => {
+        const outcome = await performApply(opts.vaultPath, id);
+        const doc = applyResultJson(outcome);
+        const status = outcome.status === "not-found" ? 404 : outcome.status === "not-pending" || outcome.status === "stale" ? 409 : outcome.status === "invalid" ? 400 : 200;
+        return {
+          response: outcome.status === "invalid" && client !== undefined
+            ? mutationOutcomeUnknownResponse(client.requestId)
+            : jsonResponse(status, doc),
+          terminal: outcome.status === "applied"
+            ? { state: "succeeded", resultCode: outcome.commit === undefined ? "applied-noop" : "applied", ...(outcome.commit !== undefined ? { commitOid: outcome.commit } : {}), ...(outcome.recoveryRequired === true ? { recoveryRequired: true } : {}) }
+            : outcome.status === "invalid" && client !== undefined
+              ? { state: "interrupted", resultCode: "mutation-outcome-unknown", adoptionState: "unknown", recoveryRequired: true }
+              : { state: "rejected", resultCode: outcome.status },
+        };
+      });
     }
 
     if (route === "POST /reject") {
@@ -1227,12 +1385,17 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       const note = typeof body?.note === "string" ? body.note : undefined;
       // performReject is runtime-free (CAS-decides the row only) — no
       // enqueue/withVault needed, same as POST /apply.
-      const outcome = await performReject(opts.vaultPath, id, note);
-      const doc = rejectResultJson(outcome);
-      if (outcome.status === "not-found") return jsonResponse(404, doc);
-      if (outcome.status === "not-pending") return jsonResponse(409, doc);
-      if (outcome.status === "invalid") return jsonResponse(400, doc);
-      return jsonResponse(200, doc);
+      return recordMutation(client, "reject-proposal", "operational-transaction", async () => {
+        const outcome = await performReject(opts.vaultPath, id, note);
+        const doc = rejectResultJson(outcome);
+        const status = outcome.status === "not-found" ? 404 : outcome.status === "not-pending" ? 409 : outcome.status === "invalid" ? 400 : 200;
+        return {
+          response: jsonResponse(status, doc),
+          terminal: outcome.status === "rejected"
+            ? { state: "succeeded", resultCode: "proposal-rejected" }
+            : { state: "rejected", resultCode: outcome.status },
+        };
+      });
     }
 
     if (route === "GET /recents") {
