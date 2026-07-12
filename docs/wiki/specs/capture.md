@@ -314,6 +314,8 @@ new capture explicitly reports `commit_status: "committed"` and
 `commit_status: "already-committed"` and does not pretend its adoption state
 is known. The PWA outbox saves text to IndexedDB before transport, retains a
 failed item with its stable id, and exposes retry, export, and delete.
+Capture commits now enter through [[wiki/specs/controlled-mutation]]; the
+surface itself no longer writes workspace files before commit or owns rollback.
 
 **Shipped form.** Form 2 below shipped first (2026-06-10): `dome http`
 carries `POST /capture` alongside the read routes — see

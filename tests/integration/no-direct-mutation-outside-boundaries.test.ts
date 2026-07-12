@@ -9,6 +9,10 @@ const ALLOWED_DIRS = [
   "src/projections/",
   "src/ledger/",
   "src/outbox/",
+  // Deep, recovery-journaled boundary for every Dome-mediated workspace
+  // write. Surfaces supply expected/desired bytes; this Module alone
+  // coordinates host locking, branch CAS, and conservative materialization.
+  "src/mutation/",
 ];
 
 const ALLOWED_FILES = new Set([
@@ -20,11 +24,6 @@ const ALLOWED_FILES = new Set([
   // init.ts.
   "src/cli/commands/install.ts",
   "src/cli/commands/install-systemd.ts",
-  // The human-side write path: `dome capture` writes one raw capture file
-  // and lands it as an ordinary (trailer-less) commit, exactly like a text
-  // editor + `git commit`. Not an engine write path — the daemon constructs
-  // the Proposal from the resulting branch drift.
-  "src/surface/capture.ts",
   // The settle seam: `performSettle` flips a task checkbox / rewrites its 📅
   // date and records a Done-today bullet, landing them as one ordinary human
   // commit via commitFilesOnHead — exactly like `dome capture`. Same boundary
