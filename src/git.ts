@@ -316,6 +316,17 @@ export async function add(path: string, filepath: string): Promise<void> {
   await git.add({ fs, dir: root, filepath: fullpath });
 }
 
+export async function remove(path: string, filepath: string): Promise<void> {
+  const context = await resolveGitContext(path);
+  const { root, prefix } = context;
+  const fullpath = fullVaultPath(prefix, filepath);
+  if (isNativeGitFile(context)) {
+    await runNativeGit(["-C", root, "update-index", "--force-remove", "--", fullpath]);
+    return;
+  }
+  await git.remove({ fs, dir: root, filepath: fullpath });
+}
+
 export type CommitIdentity = {
   readonly name: string;
   readonly email: string;
@@ -436,6 +447,13 @@ export async function commitSingleFileOnHead(opts: {
    * branch concurrently to exercise the retry path deterministically.
    */
   beforeRefAdvance?: (attempt: number) => Promise<void>;
+  onCandidate?: (candidate: {
+    readonly attempt: number;
+    readonly branch: string;
+    readonly head: string;
+    readonly commit: string;
+  }) => Promise<void>;
+  afterRefAdvance?: (commit: string) => Promise<void>;
 }): Promise<string> {
   return commitFilesOnHead({
     path: opts.path,
@@ -444,6 +462,10 @@ export async function commitSingleFileOnHead(opts: {
     ...(opts.author !== undefined ? { author: opts.author } : {}),
     ...(opts.beforeRefAdvance !== undefined
       ? { beforeRefAdvance: opts.beforeRefAdvance }
+      : {}),
+    ...(opts.onCandidate !== undefined ? { onCandidate: opts.onCandidate } : {}),
+    ...(opts.afterRefAdvance !== undefined
+      ? { afterRefAdvance: opts.afterRefAdvance }
       : {}),
   });
 }
@@ -477,6 +499,13 @@ export async function commitFilesOnHead(opts: {
   message: string;
   author?: CommitIdentity;
   beforeRefAdvance?: (attempt: number) => Promise<void>;
+  onCandidate?: (candidate: {
+    readonly attempt: number;
+    readonly branch: string;
+    readonly head: string;
+    readonly commit: string;
+  }) => Promise<void>;
+  afterRefAdvance?: (commit: string) => Promise<void>;
 }): Promise<string> {
   if (opts.files.length === 0) {
     throw new Error("commitFilesOnHead: no files to commit");
@@ -529,6 +558,9 @@ export async function commitFilesOnHead(opts: {
       parent: [head],
       noUpdateBranch: true,
     });
+    if (opts.onCandidate !== undefined) {
+      await opts.onCandidate({ attempt, branch, head, commit: commitOid });
+    }
     if (opts.beforeRefAdvance !== undefined) {
       await opts.beforeRefAdvance(attempt);
     }
@@ -543,6 +575,9 @@ export async function commitFilesOnHead(opts: {
       if (current === head) throw e;
       head = current;
       continue;
+    }
+    if (opts.afterRefAdvance !== undefined) {
+      await opts.afterRefAdvance(commitOid);
     }
     // Keep the index in sync for the touched paths so the working tree reads
     // clean after the commit. Writes: the caller already wrote `content` to
@@ -1381,6 +1416,13 @@ async function nativeGitFileCommitFilesOnHead(opts: {
   readonly message: string;
   readonly author?: CommitIdentity;
   readonly beforeRefAdvance?: (attempt: number) => Promise<void>;
+  readonly onCandidate?: (candidate: {
+    readonly attempt: number;
+    readonly branch: string;
+    readonly head: string;
+    readonly commit: string;
+  }) => Promise<void>;
+  readonly afterRefAdvance?: (commit: string) => Promise<void>;
   readonly root: string;
   readonly fulls: ReadonlyArray<{ readonly full: string; readonly content: string | null }>;
 }): Promise<string> {
@@ -1423,6 +1465,9 @@ async function nativeGitFileCommitFilesOnHead(opts: {
         ["-C", opts.root, "commit-tree", tree, "-p", head],
         { stdin: opts.message, env: nativeIdentityEnv(author, author) },
       )).trim();
+      if (opts.onCandidate !== undefined) {
+        await opts.onCandidate({ attempt, branch, head, commit: candidate });
+      }
       if (opts.beforeRefAdvance !== undefined) await opts.beforeRefAdvance(attempt);
       try {
         await writeRef({ path: opts.path, ref: branch, value: candidate, expectedOld: head });
@@ -1431,6 +1476,9 @@ async function nativeGitFileCommitFilesOnHead(opts: {
         if (current === head) throw error;
         head = current;
         continue;
+      }
+      if (opts.afterRefAdvance !== undefined) {
+        await opts.afterRefAdvance(candidate);
       }
       for (const [fullpath, content] of deduped) {
         if (content === null) {

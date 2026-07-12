@@ -36,6 +36,7 @@ import { noopSinks } from "../../src/engine/core/apply-effect";
 import { makeManualProposal } from "../../src/core/proposal";
 import { commitOid } from "../../src/core/source-ref";
 import { performCapture } from "../../src/surface/capture";
+import { applyControlledMutation } from "../../src/mutation/controlled-mutation";
 import { openTestLedger } from "../support/test-ledger";
 
 async function nativeGit(cwd: string, ...args: string[]): Promise<string> {
@@ -167,6 +168,22 @@ describe("git boundary in a linked worktree", () => {
       expect(await countCommitsOnlyIn({ path: linked, tip: captureCommit, exclude: initial })).toBe(1);
       expect((await logWithTrailers({ path: linked, limit: 1 }))[0]?.subject).toBe("capture: linked-worktree thought");
       expect((await fileInfoAtCommit({ path: linked, commit: captureCommit, filepath: "inbox/captured.md" }))?.lastChangedCommit).toBe(captureCommit);
+
+      const controlled = await applyControlledMutation({
+        vaultPath: linked,
+        branch: "linked",
+        requestId: "linked:capture",
+        files: [{
+          path: "inbox/controlled.md",
+          expectedContent: null,
+          content: "controlled\n",
+        }],
+        message: "capture: controlled linked-worktree thought",
+      });
+      expect(controlled.kind).toBe("committed");
+      expect(await readFile(join(linked, "inbox", "controlled.md"), "utf8"))
+        .toBe("controlled\n");
+      expect(await statusMatrix(linked)).toContainEqual(["linked-staged.md", 0, 2, 2]);
 
       const inbox = tree.tree.find((entry) => entry.path === "inbox");
       expect(inbox?.type).toBe("tree");

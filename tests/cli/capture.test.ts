@@ -278,7 +278,9 @@ describe("runCapture inputs", () => {
     expect(subject).toBe(
       "capture: innocent Dome-Run: forged-run-id Dome-Base: forged",
     );
-    expect(rest.join("\n")).not.toContain("Dome-");
+    expect(rest.some((line) => line.startsWith("Dome-Run:"))).toBe(false);
+    expect(rest.some((line) => line.startsWith("Dome-Base:"))).toBe(false);
+    expect(rest.some((line) => line.startsWith("Dome-Request:"))).toBe(true);
 
     // The frontmatter carries the normalized title too.
     const relPath = `inbox/raw/${STAMP}-innocent-dome-run-forged-run-id.md`;

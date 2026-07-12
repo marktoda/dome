@@ -10,6 +10,7 @@ import { join } from "node:path";
 import {
   withExclusiveFileLock,
   type FileLockHolder,
+  type FileLockWait,
 } from "./file-lock";
 
 // ----- Public types ---------------------------------------------------------
@@ -34,6 +35,7 @@ export async function withCompilerHostBranchLock<T>(
     readonly vaultPath: string;
     readonly branch: string;
     readonly command: string;
+    readonly wait?: FileLockWait;
   },
   fn: () => Promise<T>,
 ): Promise<CompilerHostLockResult<T>> {
@@ -42,6 +44,7 @@ export async function withCompilerHostBranchLock<T>(
     {
       lockPath,
       command: opts.command,
+      ...(opts.wait !== undefined ? { wait: opts.wait } : {}),
     },
     fn,
   );

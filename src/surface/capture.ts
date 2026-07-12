@@ -12,9 +12,10 @@
 //
 // Design constraints carried from the spec:
 //
-//   - The commit is a HUMAN write: ordinary message `capture: <title>`, no
-//     Dome-* trailers. The daemon constructs the Proposal from branch drift
-//     like any other human commit (PROPOSALS_ARE_THE_ONLY_WRITE_PATH).
+//   - The commit is a HUMAN write: ordinary message `capture: <title>` plus
+//     `Dome-Request` attribution, never the engine's Dome-Run/Base trailer
+//     family. The daemon constructs the Proposal from branch drift like any
+//     other human commit (PROPOSALS_ARE_THE_ONLY_WRITE_PATH).
 //   - Exactly one path changes in the commit. A dirty working tree —
 //     including already-staged-but-uncommitted changes — must not be swept
 //     in, so the commit is built via `commitSingleFileOnHead` (HEAD tree +
@@ -26,14 +27,13 @@
 //   - The next-step hint is status-aware using only cheap reads: the serve
 //     heartbeat file and `refs/dome/adopted/<branch>`. No runtime is opened.
 //
-// Mutation-boundary note: like `src/cli/commands/init.ts`, this is the
-// human-side write path at the compiler boundary — a text editor + `git
-// commit` in one verb — not an engine write path. The file is whitelisted in
-// `tests/integration/no-direct-mutation-outside-boundaries.test.ts`
-// `ALLOWED_FILES`, matching init.ts / install.ts.
+// Mutation-boundary note: this surface plans capture bytes, then delegates all
+// filesystem/ref/index work to `src/mutation/controlled-mutation.ts`. The
+// resulting ordinary commit is still a human-side compiler-boundary write,
+// not an engine-applied Effect.
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { getAdoptedRef } from "../adopted-ref";
@@ -41,11 +41,11 @@ import {
   readServeHeartbeatStatus,
 } from "../engine/host/compiler-host-heartbeat";
 import {
-  commitSingleFileOnHead,
   currentBranch,
   currentSha,
   findGitRoot,
 } from "../git";
+import { applyControlledMutation } from "../mutation/controlled-mutation";
 import { resolveVaultPath } from "./resolve-vault";
 import {
   CAPTURE_SCHEMA,
@@ -433,19 +433,26 @@ export async function performCapture(
       ...(captureId !== undefined ? { captureId } : {}),
     });
 
-    await mkdir(join(vaultPath, RAW_INBOX_DIR), { recursive: true });
-    await writeFile(join(vaultPath, relPath), document, "utf8");
-
     // Ordinary human commit: `capture: <title>`, no Dome-* trailers. Built
     // against the HEAD tree plus this one blob so nothing else — staged or
     // dirty — rides along.
-    const commitOid = await commitSingleFileOnHead({
-      path: vaultPath,
-      filepath: relPath,
-      content: document,
+    const mutation = await applyControlledMutation({
+      vaultPath,
+      branch,
+      requestId: captureId ?? `capture:${capturedAt}:${relPath}`,
+      files: [{ path: relPath, expectedContent: null, content: document }],
       message: `capture: ${title}`,
       author: { name: "dome capture", email: "dome-capture@local" },
     });
+    if (mutation.kind !== "committed") {
+      const detail = mutation.kind === "diverged"
+        ? `checkout diverged at ${mutation.paths.join(", ")}; recovery journal: ${mutation.journalPath}`
+        : mutation.kind === "busy"
+          ? `mutation lane busy at ${mutation.lockPath}`
+          : `working tree changed at ${mutation.paths.join(", ") || relPath}`;
+      return failWith(1, `failed: ${detail}`);
+    }
+    const commitOid = mutation.commit;
 
     // Cheap status reads only (heartbeat file + adopted ref) — capture must
     // return immediately and never open the runtime.
