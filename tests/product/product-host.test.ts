@@ -9,6 +9,8 @@ import { runInit } from "../../src/cli/commands/init";
 import { openDeviceAuthority } from "../../src/device-authority/device-authority";
 import { add, commit } from "../../src/git";
 import { startProductHost, type ProductHost } from "../../src/product-host/product-host";
+import { openRequestReceiptsDb } from "../../src/request-receipts/db";
+import { createRequestReceipts } from "../../src/request-receipts/request-receipts";
 
 const roots: string[] = [];
 const hosts: ProductHost[] = [];
@@ -141,10 +143,33 @@ describe("P3 Product Host", () => {
       expect(today.status).toBe(200);
       expect(doc.status).toBe(200);
       expect(capture.status).toBe(200);
-      expect(await capture.json()).toMatchObject({
+      const captureDocument = await capture.json() as { status: string; commit: string };
+      expect(captureDocument).toMatchObject({
         status: "captured",
         adoption_status: "pending",
       });
+      const receiptId = capture.headers.get("x-dome-receipt-id");
+      const requestId = capture.headers.get("x-dome-request-id");
+      expect(receiptId).not.toBeNull();
+      expect(requestId).not.toBeNull();
+      const receiptDb = await openRequestReceiptsDb({ path: join(vault, ".dome", "state", "request-receipts.db") });
+      expect(receiptDb.ok).toBe(true);
+      if (receiptDb.ok) {
+        const receipts = createRequestReceipts(receiptDb.value.db);
+        expect(receipts.list({ requestId: requestId! })).toEqual([
+          expect.objectContaining({
+            operationId: receiptId,
+            requestId,
+            operation: "capture",
+            operationClass: "workspace-mutation",
+            state: "succeeded",
+            resultCode: "captured",
+            commitOid: captureDocument.commit,
+            transport: "cookie",
+          }),
+        ]);
+        receipts.close();
+      }
       await eventually(async () => {
         const readiness = await started.value.readiness();
         return readiness.adoption.state === "current" &&
@@ -154,6 +179,58 @@ describe("P3 Product Host", () => {
       release();
       await turn.text();
     }
+  }, 30_000);
+
+  test("restart persists and interrupts a prior host's admitted mutation", async () => {
+    const vault = await initializedVault();
+    const path = join(vault, ".dome", "state", "request-receipts.db");
+    const opened = await openRequestReceiptsDb({ path });
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) return;
+    const seeded = createRequestReceipts(opened.value.db, { createId: () => "prior-operation" });
+    seeded.admit({
+      requestId: "prior-request",
+      actorId: "owner",
+      deviceId: "prior-device",
+      credentialId: "prior-credential",
+      transport: "bearer",
+      hostInstanceId: "prior-host",
+      executor: "http",
+      operation: "capture",
+      operationClass: "workspace-mutation",
+    });
+    seeded.close();
+
+    const started = await startProductHost({ vaultPath: vault, port: 0 });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    await started.value.close();
+
+    const reopened = await openRequestReceiptsDb({ path });
+    expect(reopened.ok).toBe(true);
+    if (!reopened.ok) return;
+    const receipts = createRequestReceipts(reopened.value.db);
+    expect(receipts.list({ requestId: "prior-request" })).toEqual([
+      expect.objectContaining({
+        operationId: "prior-operation",
+        state: "interrupted",
+        resultCode: "host-restarted",
+        adoptionState: "unknown",
+        recoveryRequired: true,
+      }),
+    ]);
+    receipts.close();
+  }, 30_000);
+
+  test("refuses startup when durable request receipts cannot open", async () => {
+    const vault = await initializedVault();
+    await writeFile(join(vault, ".dome", "state", "request-receipts.db"), "not sqlite", "utf8");
+    const started = await startProductHost({ vaultPath: vault, port: 0 });
+    expect(started).toMatchObject({
+      ok: false,
+      error: { kind: "startup-failed" },
+    });
+    if (!started.ok) expect(started.error.message).toContain("request receipts could not open");
   }, 30_000);
 });
 

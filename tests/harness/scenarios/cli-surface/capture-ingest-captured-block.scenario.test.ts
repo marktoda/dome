@@ -299,9 +299,22 @@ scenario(
     const doctorPayload = JSON.parse(doctor.stdout) as {
       readonly status: string;
       readonly summary: { readonly errorCount: number; readonly warningCount: number };
+      readonly findings: ReadonlyArray<{
+        readonly code: string;
+        readonly severity: string;
+      }>;
     };
-    expect(doctorPayload.status).toBe("ok");
     expect(doctorPayload.summary.errorCount).toBe(0);
-    expect(doctorPayload.summary.warningCount).toBe(0);
+    // The scenario engine is intentionally pinned to July 11, while the CLI
+    // doctor probes real wall time. After real midnight, doctor correctly
+    // warns that the pinned prior-day brief has not compiled "today". Keep
+    // that production warning intact and reject every unrelated warning.
+    const warnings = doctorPayload.findings.filter(
+      (finding) => finding.severity === "warning",
+    );
+    expect(doctorPayload.summary.warningCount).toBe(warnings.length);
+    expect(warnings.every(
+      (finding) => finding.code === "daily.edition-not-compiled",
+    )).toBe(true);
   },
 );
