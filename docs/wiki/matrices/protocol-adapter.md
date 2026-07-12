@@ -30,7 +30,7 @@ in the adapter.
 | Invoke any plugin view | `runInstalledView` → `Vault.runView` | `dome run <command>` | `run_view` | `POST /views/:command` | `run_view` |
 | Query adopted state | `dome.search` view | `dome query` | `query` | `GET /query` | generic `run_view` |
 | Export context | `dome.search` view | `dome export-context` | `export_context` | — | generic `run_view` |
-| Read an adopted document | `Vault.readDocument` | native file read (or future `cat`) | daily `brief` only | `GET /doc` | `read_document` |
+| Read an adopted document | `Vault.readDocument` / exact adopted-source reader | native file read (or future `cat`) | daily `brief` only | `GET /doc`; exact citation `GET /source?path&commit` | `read_document` |
 | Status / attention | `Vault.attention` + status/check collectors | `dome status` / `dome check` | `attention` / `status` / `check` | `GET /attention`, `GET /status` | action tools as needed |
 | Resolve a question | `Vault.resolve` | `dome resolve` | `resolve` | `POST /resolve` | `resolve_question` |
 | Investigate agent work | `Vault.agentWork/completeAgentWork` + `attemptAgentWork` | `dome agent-work` | `agent_work` / `complete_agent_work` | `GET /agent-work`, `POST /agent-work/complete`, `POST /agent-work/drain` | `list_agent_work` / `complete_agent_work` |

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Citation } from "../api/types";
 import type { ChatState } from "../chat/streamReducer";
 import { renderMarkdown, renderRich } from "../rich";
+import { SourceViewer } from "./SourceViewer";
 
 /** Shorten long paths to "head/…/file.md" so chips stay one line. */
 function shortPath(p: string): string {
@@ -10,19 +11,34 @@ function shortPath(p: string): string {
   return `${parts[0] ?? ""}/…/${parts[parts.length - 1] ?? p}`;
 }
 
-function Chip({ path }: { path: string }): React.ReactElement {
-  return <span className="chip"><span className="doc" aria-hidden="true" />{shortPath(path)}</span>;
+function Chip({ citation, onOpen }: {
+  citation: Citation;
+  onOpen: (element: HTMLButtonElement) => void;
+}): React.ReactElement {
+  return (
+    <button type="button" className="chip" title={citation.path} onClick={(event) => onOpen(event.currentTarget)}>
+      <span className="doc" aria-hidden="true" />{shortPath(citation.path)}
+    </button>
+  );
 }
 
 function Cites({ citations }: { citations: Citation[] }): React.ReactElement {
   const [expanded, setExpanded] = useState(false);
+  const [opened, setOpened] = useState<{ citation: Citation; trigger: HTMLButtonElement } | null>(null);
   const MAX = 4;
   const visible = expanded ? citations : citations.slice(0, MAX);
   const hidden = citations.length - visible.length;
   return (
     <div className="cites">
-      {visible.map((c, i) => <Chip key={i} path={c.path} />)}
+      {visible.map((c, i) => <Chip key={i} citation={c} onOpen={(trigger) => setOpened({ citation: c, trigger })} />)}
       {hidden > 0 ? <button type="button" className="chip more" onClick={() => setExpanded(true)}>+{hidden} more</button> : null}
+      {opened !== null ? (
+        <SourceViewer
+          citation={opened.citation}
+          returnFocus={opened.trigger}
+          onClose={() => setOpened(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -45,6 +61,7 @@ export function ChatTranscript({ state }: { state: ChatState }): React.ReactElem
               ))}
             </div>
           ) : null}
+          {m.notice !== undefined ? <p className="turn-notice" role={m.noticeTone === "error" ? "alert" : "status"}>{m.notice}</p> : null}
         </div>
       ))}
     </div>

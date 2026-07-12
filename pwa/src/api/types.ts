@@ -30,6 +30,19 @@ export type PairingResult = {
 
 export type StreamEvent = AgentStreamEvent;
 
+export type AgentStreamOutcome =
+  | { kind: "done" }
+  | { kind: "cancelled"; source: "local-abort" | "server" }
+  | { kind: "failed"; code: string; message: string; retryable: boolean; retryAfterSeconds?: number }
+  | { kind: "session-missing" }
+  | { kind: "session-expired" };
+
+export type AgentStopOutcome =
+  | { kind: "cancelled" | "idle" }
+  | { kind: "failed"; code: string; message: string; retryable: boolean; retryAfterSeconds?: number }
+  | { kind: "session-missing" }
+  | { kind: "session-expired" };
+
 export type { CaptureReceipt as CaptureResult } from "../../../contracts/capture";
 
 export type TodayItem = {

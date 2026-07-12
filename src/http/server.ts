@@ -18,6 +18,7 @@ import {
   AGENT_STREAM_SCHEMA,
   encodeAgentStreamEvent,
 } from "../../contracts/agent-stream";
+import type { SourceDocumentResult } from "../../contracts/source-document";
 import { SourceRefSchema, type SourceRef } from "../core/source-ref";
 import {
   ANSWER_SCHEMA,
@@ -88,6 +89,7 @@ import {
   type ProductOperationClass,
   type ProductOperationScheduler,
 } from "../product-host/operation-scheduler";
+import { readSourceDocument } from "../source-document/source-document";
 
 // ----- Constants ------------------------------------------------------------
 
@@ -123,6 +125,7 @@ const ROUTE_CAPABILITY: Readonly<Record<string, Capability>> = {
   "GET /query": "read",
   "GET /today": "read",
   "GET /doc": "read",
+  "GET /source": "read",
   "GET /questions": "read",
   "GET /views": "read",
 };
@@ -296,6 +299,18 @@ function jsonResponse(status: number, data: unknown): Response {
  */
 function dataErrorResponse(status: number, error: string, message: string): Response {
   return jsonResponse(status, { status: "error", error, message });
+}
+
+function sourceDocumentHttpStatus(result: SourceDocumentResult): number {
+  switch (result.status) {
+    case "ok": return 200;
+    case "invalid-path":
+    case "invalid-commit": return 400;
+    case "not-adopted":
+    case "not-found": return 404;
+    case "too-large": return 413;
+    case "unavailable": return 503;
+  }
 }
 
 /** The vault-open failure envelope — same shape as the http server's. */
@@ -1298,6 +1313,17 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       });
     }
 
+    if (route === "GET /source") {
+      const path = url.searchParams.get("path") ?? "";
+      const commit = url.searchParams.get("commit") ?? "";
+      const source = await readSourceDocument({
+        vaultPath: opts.vaultPath,
+        path,
+        commit,
+      });
+      return jsonResponse(sourceDocumentHttpStatus(source), source);
+    }
+
     if (route === "GET /questions") {
       return withVault("GET /questions", async (v) => {
         const rows = await v.listQuestions({ resolved: false });
@@ -1606,7 +1632,7 @@ function operationClassFor(request: Request): ProductOperationClass {
   }
   if (
     request.method === "GET" &&
-    ["/doc", "/recents"].includes(pathname)
+    ["/doc", "/source", "/recents"].includes(pathname)
   ) {
     return "immutable-adopted-read";
   }

@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-10
-updated: 2026-07-11
+updated: 2026-07-12
 sources:
   - "[[wiki/specs/capture]]"
   - "[[wiki/specs/sdk-surface]]"
@@ -95,6 +95,7 @@ One vault per process.
 | `GET /today/fonts/basel-book.woff2` | static Basel asset (cacheable) | `font/woff2` (immutable; **unauthenticated**) |
 | `GET /today/fonts/basel-medium.woff2` | static Basel asset (cacheable) | `font/woff2` (immutable; **unauthenticated**) |
 | `GET /doc?path=…` | `vault.readDocument` (adopted ref) | `dome.http.document/v1` |
+| `GET /source?path=…&commit=…` | exact adopted-source reader | `dome.source-document/v1` with explicit `status` |
 | `GET /questions` | `vault.listQuestions` (open only) | `dome.http.questions/v1` |
 | `POST /resolve` `{id, value}` | `dome resolve` | `dome.answer/v1` |
 | `POST /settle` `{blockId, disposition, deferUntil?}` | `performSettle` (`resolve` capability — settling is a decision, same trust domain as resolve) | `dome.settle/v1` (`status: settled \| not-found \| invalid`) |
@@ -107,6 +108,19 @@ One vault per process.
 | `DELETE /sessions/:id` | close an agent session | `dome.agent-session/v1` |
 | `POST /transcribe` audio body | STT step: shell command or OpenAI-compatible cloud endpoint (`capture` capability; 501 when unconfigured) | `dome.transcribe/v1` `{text}` |
 | `GET /recents` | recent vault changes (`read` capability) | `dome.recents/v1` `{count, entries}` |
+
+`GET /source` is the citation-resolution route. Both `path` and a full commit
+OID are required. The path must already be canonical and vault-relative, must
+name a Markdown file, and cannot enter `.dome/` or `.git/`. This deliberately
+keeps product citation reads on user-owned knowledge rather than making engine
+configuration or credential-shaped metadata remotely readable. The commit
+must be the current adopted commit or one of its ancestors; an
+arbitrary object present in the Git database is not readable through this
+route. Responses are capped at 512 KiB; the Git Adapter probes uncompressed
+blob size before reading or UTF-8 decoding the object. The closed
+`dome.source-document/v1` contract reports `ok`, `invalid-path`,
+`invalid-commit`, `not-adopted`, `not-found`, `too-large`, or `unavailable`.
+The PWA renders successful content as inert plain text.
 
 The session routes are backed by **AgentRuntime** (`src/assistant/runtime.ts`).
 The shipped adapter uses the co-located AI SDK loop in `src/assistant/`; a
