@@ -34,6 +34,7 @@ import { buildRecents } from "../surface/recents";
 import {
   catalogViewProblemMessage,
   dispatchView,
+  dispatchViewOnVault,
   makeVaultMutex,
   openVaultErrorKind,
   runtimeOpenFailureMessage,
@@ -68,6 +69,13 @@ import {
   createLoopbackPairing,
   type LoopbackPairing,
 } from "./loopback-pairing";
+import {
+  ProductOperationCancelledError,
+  ProductOperationQueueFullError,
+  ProductOperationSchedulerClosedError,
+  type ProductOperationClass,
+  type ProductOperationScheduler,
+} from "../product-host/operation-scheduler";
 
 // ----- Constants ------------------------------------------------------------
 
@@ -111,6 +119,8 @@ const ROUTE_CAPABILITY: Readonly<Record<string, Capability>> = {
 
 export type DomeHttpServerOptions = {
   readonly vaultPath: string;
+  /** Long-lived Product Host handle. When present, routes never reopen it. */
+  readonly vault?: Vault | undefined;
   readonly bundlesRoot?: string | undefined;
   /** Bearer token every request must present. Must be non-empty. */
   readonly token: string;
@@ -122,6 +132,10 @@ export type DomeHttpServerOptions = {
     readonly code: string;
     readonly sessionTtlMs?: number;
   } | undefined;
+  /** Authenticated Product Host readiness document. */
+  readonly readiness?: (() => Promise<unknown>) | undefined;
+  /** Product Host admission. Compatibility servers retain their legacy mutex. */
+  readonly operationScheduler?: Pick<ProductOperationScheduler, "run"> | undefined;
   readonly model?: string | undefined;
   /**
    * Grant the `author` capability (agent write tools). Default off
@@ -187,7 +201,10 @@ export type DomeHttpServerOptions = {
   readonly agentLogPath?: string | undefined;
 };
 
-export type DomeHttpServer = { readonly fetch: (request: Request) => Promise<Response> };
+export type DomeHttpServer = {
+  readonly fetch: (request: Request) => Promise<Response>;
+  readonly close: () => void;
+};
 
 // ----- Helpers (private) ----------------------------------------------------
 
@@ -403,6 +420,13 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     command: string,
     fn: (v: Vault) => Promise<Response>,
   ): Promise<Response> => {
+    if (opts.vault !== undefined) {
+      try {
+        return await fn(opts.vault);
+      } catch {
+        return commandErrorResponse(command, "runtime-operation-failed");
+      }
+    }
     const outcome = await withVaultShared(
       { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
       fn,
@@ -411,6 +435,19 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       ? commandErrorResponse(command, openVaultErrorKind(outcome.error))
       : outcome.value;
   };
+
+  const dispatchHttpView = async <TPayload>(
+    entry: FirstPartyViewEntry<TPayload>,
+    args: unknown,
+    renderer: ViewRenderer<Response>,
+  ) => opts.vault === undefined
+    ? dispatchView(
+        { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
+        entry,
+        args,
+        renderer,
+      )
+    : dispatchViewOnVault(opts.vault, entry, args, renderer);
 
   // Default streaming agent: open the vault and keep it open for the whole
   // stream. withVault closes the vault when its callback resolves, but the
@@ -422,6 +459,16 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     history: ReadonlyArray<AgentMessage>,
     signal: AbortSignal,
   ): AgentStream => {
+    if (opts.vault !== undefined) {
+      return runAgentStream({
+        vault: opts.vault,
+        question,
+        history,
+        abortSignal: signal,
+        capabilities: granted,
+        ...(opts.model !== undefined ? { modelId: opts.model } : {}),
+      });
+    }
     let stream: AgentStream | undefined;
     let openError: Error | undefined;
     let release!: () => void;
@@ -626,10 +673,10 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     const drained = new Promise<void>((resolve) => {
       signalDrained = resolve;
     });
-    // routes() itself is running in one mutex turn. Reserving the next turn
-    // until the body drains prevents another request from opening the vault
-    // while this agent's lazy tools still hold it open.
-    void enqueue(() => drained);
+    // Compatibility mode opens a Vault per request, so its lazy agent tools
+    // retain the historical mutex reservation. Product Host mode owns one
+    // long-lived Vault and generation holds no global lease.
+    if (opts.operationScheduler === undefined) void enqueue(() => drained);
 
     const body = new ReadableStream<Uint8Array>({
       async start(ctrl) {
@@ -811,8 +858,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       // slightly-off payload, so it overrides the strict contract here and
       // enriches via `parseTodayView` downstream.
       const lenientToday = { ...FIRST_PARTY_VIEWS.today, payload: z.unknown() };
-      const run = await dispatchView(
-        { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
+      const run = await dispatchHttpView(
         lenientToday,
         args,
         httpViewRenderer("GET /tasks", lenientToday),
@@ -1096,8 +1142,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
         ...(type !== undefined ? { type } : {}),
         ...(limit !== null ? { limit } : {}),
       });
-      const run = await dispatchView(
-        { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
+      const run = await dispatchHttpView(
         FIRST_PARTY_VIEWS.query,
         args,
         httpViewRenderer("GET /query", FIRST_PARTY_VIEWS.query),
@@ -1110,8 +1155,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       // Lenient degrade (see GET /tasks): override the strict contract and
       // enrich via `parseTodayView` so the HTML surface always renders.
       const lenientToday = { ...FIRST_PARTY_VIEWS.today, payload: z.unknown() };
-      const run = await dispatchView(
-        { path: opts.vaultPath, bundlesRoot: opts.bundlesRoot },
+      const run = await dispatchHttpView(
         lenientToday,
         Object.freeze({}),
         httpViewRenderer("GET /today", lenientToday),
@@ -1252,6 +1296,12 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     ) {
       return dataErrorResponse(403, "origin-denied", "paired browser mutations require the listener origin.");
     }
+    if (request.method === "GET" && url.pathname === "/readyz") {
+      if (opts.readiness === undefined) {
+        return dataErrorResponse(404, "readiness-unavailable", "product readiness is not configured.");
+      }
+      return jsonResponse(200, await opts.readiness());
+    }
     // /transcribe runs authenticated but outside the vault mutex — it touches
     // no vault and can hold a subprocess for many seconds; letting it run
     // inside enqueue() would block sessions, /tasks, etc. for that entire time.
@@ -1262,14 +1312,65 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       return handleTranscribe(request);
     }
     try {
-      return await enqueue(() => routes(request));
+      if (opts.operationScheduler === undefined) {
+        return await enqueue(() => routes(request));
+      }
+      return await opts.operationScheduler.run(
+        operationClassFor(request),
+        () => routes(request),
+      );
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return dataErrorResponse(500, "internal", msg);
+      if (e instanceof ProductOperationQueueFullError) {
+        return new Response(JSON.stringify({
+          schema: SERVER_SCHEMA,
+          status: "error",
+          error: e.code,
+          message: "the Product Host is busy; retry shortly.",
+        }), {
+          status: 429,
+          headers: {
+            "content-type": "application/json; charset=utf-8",
+            "retry-after": String(Math.max(1, Math.ceil(e.retryAfterMs / 1_000))),
+          },
+        });
+      }
+      if (
+        e instanceof ProductOperationCancelledError ||
+        e instanceof ProductOperationSchedulerClosedError
+      ) {
+        return dataErrorResponse(503, e.code, "the Product Host is stopping or the operation was cancelled.");
+      }
+      return dataErrorResponse(500, "internal", "the Product Host could not complete the operation.");
     }
   };
 
-  return Object.freeze({ fetch: handle });
+  return Object.freeze({ fetch: handle, close: () => agentRuntime.close() });
+}
+
+function operationClassFor(request: Request): ProductOperationClass {
+  const { pathname } = new URL(request.url);
+  if (pathname === "/sessions" || pathname.startsWith("/sessions/")) {
+    return "model-generation";
+  }
+  if (
+    (request.method === "GET" && ["/tasks", "/today", "/query", "/status"].includes(pathname)) ||
+    (request.method === "POST" && pathname.startsWith("/views/"))
+  ) {
+    return "view-execution";
+  }
+  if (
+    request.method === "POST" &&
+    ["/capture", "/settle", "/apply"].includes(pathname)
+  ) {
+    return "workspace-mutation";
+  }
+  if (
+    request.method === "GET" &&
+    ["/doc", "/recents"].includes(pathname)
+  ) {
+    return "immutable-adopted-read";
+  }
+  return "operational-transaction";
 }
 
 function sameLoopbackOriginOrNonBrowser(request: Request, url: URL): boolean {
