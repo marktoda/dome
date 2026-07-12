@@ -10,7 +10,7 @@ sources:
   - "[[wiki/specs/vault-layout]]"
   - "[[wiki/matrices/pwa-product-acceptance]]"
 description: "Dome Home product-host contract: one owner, one vault, many paired clients; trust, readiness, operation classes, lifecycle, and recovery."
-status: planned
+status: implementing
 ---
 
 # Product host
@@ -280,6 +280,23 @@ Shutdown stops admission, aborts/drains sessions, drains or journals active
 mutations, closes HTTP, then closes the Vault/runtime. V1 restarts/reopens on
 config, model-provider, or extension changes; speculative hot reload is not a
 release requirement.
+
+## P2 implementation status
+
+The first Product Host checkpoint implements the small lifecycle Interface
+(`start`, authenticated readiness, `close`), exclusive single-vault ownership,
+recovery before the long-lived Vault opens, a stable opaque local vault id,
+loopback pairing, and characterized operation admission. Model generation and
+immutable adopted reads hold no global lease; view work, workspace mutations,
+and compiler ticks share one conservative bounded FIFO lane until safe
+long-lived-runtime concurrency is proven. The HTTP Adapter can
+consume the owned Vault and scheduler while standalone compatibility mode
+retains open-per-request serialization.
+
+P2 remains open until Dome-mediated settle, proposal apply, and assistant
+authoring all use controlled mutation, the PWA frame is served by the product
+command, and compatibility lifecycle commands delegate without a second
+Product Host implementation.
 
 ## P0 decisions and deferrals
 

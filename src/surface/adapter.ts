@@ -348,7 +348,23 @@ export async function dispatchView<TPayload, TEnvelope>(
   if (outcome.kind === "open-failed") {
     return { kind: "rendered", envelope: renderer.openFailed(outcome.error) };
   }
-  const run = outcome.value;
+  return dispatchCompletedView(outcome.value, renderer);
+}
+
+/** Run a catalog view through an already-owned Product Host Vault. */
+export async function dispatchViewOnVault<TPayload, TEnvelope>(
+  vault: Vault,
+  entry: FirstPartyViewEntry<TPayload>,
+  args: unknown,
+  renderer: ViewRenderer<TEnvelope>,
+): Promise<ViewDispatch<TPayload, TEnvelope>> {
+  return dispatchCompletedView(await runCatalogView(vault, entry, args), renderer);
+}
+
+function dispatchCompletedView<TPayload, TEnvelope>(
+  run: CatalogViewOutcome<TPayload>,
+  renderer: ViewRenderer<TEnvelope>,
+): ViewDispatch<TPayload, TEnvelope> {
   if (run.kind === "problem") {
     return { kind: "rendered", envelope: renderer.problem(run.problem) };
   }

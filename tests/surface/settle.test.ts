@@ -4,7 +4,8 @@
 // Settling is a DECISION, not authoring: `performSettle` locates a task line
 // by its move-stable `^block-anchor` across adopted markdown and applies a
 // close / defer / keep disposition as one ordinary HUMAN commit (no Dome-*
-// trailers) — exactly the trust posture of `performCapture`. The five
+// engine trailers) — it carries only a stable `Dome-Request` attribution,
+// exactly the trust posture of `performCapture`. The five
 // behaviors pinned here:
 //
 //   - close  → sets `- [x]` on the origin line AND appends a Done-today
@@ -27,6 +28,8 @@ import {
   CLOSE_START,
 } from "../../assets/extensions/dome.daily/processors/daily-types";
 import { runInit } from "../../src/cli/commands/init";
+import { compilerHostLockPath } from "../../src/engine/host/compiler-host-lock";
+import { withExclusiveFileLock } from "../../src/engine/host/file-lock";
 import { commitSingleFileOnHead, log, readBlob, resolveRef } from "../../src/git";
 import { performSettle } from "../../src/surface/settle";
 
@@ -202,6 +205,9 @@ describe("performSettle — close", () => {
     const commits = await log({ path: vault, depth: 2 });
     expect(commits[0]!.oid).toBe(result.commit!);
     expect(commits[0]!.commit.parent[0]!).toBe(before);
+    expect(commits[0]!.commit.message).toMatch(
+      /Dome-Request: settle:close:[0-9a-f]{32}/,
+    );
   });
 
   test("never writes inside an already-rendered dome.daily:close block", async () => {
@@ -245,6 +251,43 @@ describe("performSettle — close", () => {
     expect(again.status).toBe("settled");
     expect(await headSha(vault)).toBe(afterFirst);
     expect((await readAt(vault, TODAY_DAILY)).split(bullet).length - 1).toBe(1);
+  });
+
+  test("expected-byte CAS preserves an owner edit made while settle waits for the host lane", async () => {
+    const vault = await initVault();
+    const original = originFile(OPEN_TASK_LINE);
+    await commitFile(vault, ORIGIN_PATH, original);
+    const before = await headSha(vault);
+    let release!: () => void;
+    let acquired!: () => void;
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const lockAcquired = new Promise<void>((resolve) => { acquired = resolve; });
+    const holder = withExclusiveFileLock({
+      lockPath: compilerHostLockPath(vault, "main"),
+      command: "settle-cas-test-holder",
+    }, async () => {
+      acquired();
+      await released;
+    });
+    await lockAcquired;
+
+    const settling = performSettle(
+      vault,
+      { blockId: ANCHOR, disposition: "close" },
+      clock,
+    );
+    await Bun.sleep(75);
+    const ownerEdit = original.replace("Some prose.", "Owner edited while settle waited.");
+    await writeFile(join(vault, ORIGIN_PATH), ownerEdit, "utf8");
+    release();
+    await holder;
+
+    const result = await settling;
+    expect(result).toMatchObject({ status: "invalid" });
+    if (result.status !== "invalid") throw new Error("unreachable");
+    expect(result.message).toContain("working tree changed before commit");
+    expect(await headSha(vault)).toBe(before);
+    expect(await Bun.file(join(vault, ORIGIN_PATH)).text()).toBe(ownerEdit);
   });
 });
 

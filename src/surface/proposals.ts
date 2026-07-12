@@ -8,22 +8,22 @@
 // durable row in `proposals.db` by the engine sink (Task 3); this file never
 // touches that sink or the engine. It only reads the durable store and, on
 // `performApply`, writes the working tree and lands ONE ordinary human commit
-// via `commitFilesOnHead` — exactly the settle pattern. The daemon constructs
-// the Proposal from the resulting branch drift like any other terminal
+// through the controlled mutation Module — exactly the settle pattern. The
+// daemon constructs the Proposal from the resulting branch drift like any other terminal
 // capture (PROPOSALS_ARE_THE_ONLY_WRITE_PATH); this seam never calls the
 // engine, never writes projections, never opens the runtime.
 //
 //   - collectProposals → read-only list view (`ProposalView[]`), computing
-//     `stale` (any change's path drifted from its recorded `baseContents`
-//     since enqueue) and a lightweight `diffStat` for display.
+//     `stale` (a path drifted from its base and does not already equal the
+//     proposed result) and a lightweight `diffStat` for display.
 //   - performApply     → staleness check (working tree vs `baseContents`) →
-//     write/delete every eligible change → ONE commit → CAS the row to
+//     expected-byte CAS every eligible change → ONE commit → CAS the row to
 //     `applied`. Delete-changes remove the path from the working tree and
 //     pass a `content: null` entry to `commitFilesOnHead` (tree removal). A
-//     delete whose working file is already absent is treated as already
-//     satisfied — skipped, not stale — so a proposal that is entirely
-//     already-satisfied deletes applies with no commit (mirrors
-//     `performSettle`'s `keep`).
+//     write whose proposed bytes are present, or a delete whose file is
+//     absent, is already satisfied — skipped, not stale. This lets retry
+//     after commit-before-row-CAS converge without a second commit. A fully
+//     satisfied proposal applies with no commit.
 //   - performReject    → CAS the row to `rejected`. Touches no files.
 //
 // Mutation-boundary note: like `src/surface/capture.ts` and
@@ -38,11 +38,15 @@
 // a `finally` so it never lingers across the write.
 
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import type { FileChange } from "../core/effect";
-import { commitFilesOnHead, currentBranch, currentSha, findGitRoot } from "../git";
+import { currentBranch, currentSha, findGitRoot } from "../git";
+import {
+  applyControlledMutation,
+  type ControlledMutationDeps,
+  type ControlledMutationResult,
+} from "../mutation/controlled-mutation";
 import { openProposalsDb } from "../proposals/db";
 import {
   decideProposal,
@@ -69,9 +73,9 @@ export type ProposalView = {
   readonly status: ProposalStatus;
   readonly sourceRefs: ReadonlyArray<import("../core/source-ref").SourceRef>;
   /**
-   * true when any change's path in the working tree no longer matches the
-   * `baseContents` recorded at enqueue time. A delete whose working file is
-   * already absent is treated as already-satisfied, not stale.
+   * true when a path no longer matches its recorded base and does not already
+   * equal the proposed result. Proposed write bytes already present and
+   * deletes already absent are satisfied, not stale.
    */
   readonly stale: boolean;
   readonly diffStat: ReadonlyArray<{
@@ -86,11 +90,12 @@ export type ApplyResult =
       readonly status: "applied";
       readonly id: number;
       /**
-       * Absent when the proposal was entirely already-satisfied deletes —
-       * nothing was left to write or remove, so no commit landed (mirrors
-       * `performSettle`'s `keep`).
+       * Absent when the proposal was entirely already satisfied — nothing was
+       * left to write or remove, so no commit landed.
        */
       readonly commit?: string;
+      /** The commit landed but owner bytes prevented checkout reconciliation. */
+      readonly recoveryRequired?: true;
     }
   | {
       readonly status: "stale";
@@ -147,10 +152,18 @@ export async function collectProposals(
  * decided elsewhere), the already-landed commit is still reported as
  * `applied`.
  */
-export async function performApply(vault: string, id: number): Promise<ApplyResult> {
+export async function performApply(
+  vault: string,
+  id: number,
+  deps: ControlledMutationDeps = {},
+): Promise<ApplyResult> {
   const vaultPath = resolveVaultPath(vault);
   const precondition = await checkVaultPreconditions(vaultPath, "applying");
   if (precondition !== null) return invalid(precondition);
+  const branch = await currentBranch(vaultPath);
+  if (branch === null) {
+    return invalid("detached HEAD: applying needs a branch; check out a branch first");
+  }
 
   const opened = await openProposalsDb({ path: proposalsDbPath(vaultPath) });
   if (!opened.ok) {
@@ -173,9 +186,10 @@ export async function performApply(vault: string, id: number): Promise<ApplyResu
     }
     // Per-change staleness classification: every change is `eligible`
     // (working content matches the recorded base — safe to apply),
-    // `satisfied` (a delete whose working file is already absent — the
-    // change already happened, idempotent no-op), or `stale` (working
-    // content drifted from base). Any stale change aborts before any write.
+    // `satisfied` (the desired write bytes are already present, or a delete
+    // is already absent — including commit-before-row-CAS recovery), or
+    // `stale` (working content drifted from both base and desired result).
+    // Any stale change aborts before any write.
     const classified = row.changes.map((change) => ({
       change,
       status: classifyChangeStatus(vaultPath, row, change),
@@ -193,42 +207,33 @@ export async function performApply(vault: string, id: number): Promise<ApplyResu
     }
 
     const eligible = classified.filter((c) => c.status === "eligible").map((c) => c.change);
-    const writes = eligible.filter(
-      (change): change is Extract<FileChange, { kind: "write" }> => change.kind === "write",
-    );
-    const deletes = eligible.filter(
-      (change): change is Extract<FileChange, { kind: "delete" }> => change.kind === "delete",
-    );
-
-    for (const change of writes) {
-      await mkdir(dirname(join(vaultPath, change.path)), { recursive: true });
-      await writeFile(join(vaultPath, change.path), change.content, "utf8");
-    }
-    for (const change of deletes) {
-      try {
-        await unlink(join(vaultPath, change.path));
-      } catch (e) {
-        if (!isEnoent(e)) throw e;
+    // All changes were already satisfied: nothing to write or remove, so
+    // there is nothing to commit. This is also the retry path after a commit
+    // landed but the proposal-row CAS did not run before process death.
+    let commit: string | undefined;
+    let recoveryRequired = false;
+    if (eligible.length > 0) {
+      const mutation = await applyControlledMutation({
+        vaultPath,
+        branch,
+        requestId: `apply:proposal:${id}`,
+        files: eligible.map((change) => ({
+          path: change.path,
+          expectedContent: baseContentFor(row, change),
+          content: change.kind === "write" ? change.content : null,
+        })),
+        message: `apply(P${id}): ${row.reason.slice(0, 60)}`,
+        author: { name: "dome apply", email: "dome-apply@local" },
+      }, deps);
+      if (mutation.kind === "diverged" && mutation.commit !== null) {
+        commit = mutation.commit;
+        recoveryRequired = true;
+      } else if (mutation.kind !== "committed") {
+        return applyMutationFailure(id, mutation);
+      } else {
+        commit = mutation.commit;
       }
     }
-
-    const files = [
-      ...writes.map((change) => ({ filepath: change.path, content: change.content as string | null })),
-      ...deletes.map((change) => ({ filepath: change.path, content: null as string | null })),
-    ];
-
-    // All changes were already-satisfied deletes: nothing to write or
-    // remove, so there is nothing to commit — mirrors performSettle's
-    // `keep` (applied, no commit).
-    const commit =
-      files.length > 0
-        ? await commitFilesOnHead({
-            path: vaultPath,
-            files,
-            message: `apply(P${id}): ${row.reason.slice(0, 60)}`,
-            author: { name: "dome apply", email: "dome-apply@local" },
-          })
-        : undefined;
 
     // Commit is truth: report `applied` with the landed commit regardless of
     // whether the CAS below wins the race (see module header).
@@ -240,7 +245,12 @@ export async function performApply(vault: string, id: number): Promise<ApplyResu
       decidedAt: new Date().toISOString(),
     });
 
-    return Object.freeze({ status: "applied" as const, id, ...(commit !== undefined ? { commit } : {}) });
+    return Object.freeze({
+      status: "applied" as const,
+      id,
+      ...(commit !== undefined ? { commit } : {}),
+      ...(recoveryRequired ? { recoveryRequired: true as const } : {}),
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return invalid(`apply failed: ${msg}`);
@@ -311,7 +321,13 @@ export function proposalsJson(
 /** Render an `ApplyResult` as its `dome.apply/v1` document body — mirrors `settleResultJson`. */
 export function applyResultJson(r: ApplyResult): Record<string, unknown> {
   if (r.status === "applied") {
-    return { schema: APPLY_SCHEMA, status: "applied", id: r.id, commit: r.commit ?? null };
+    return {
+      schema: APPLY_SCHEMA,
+      status: "applied",
+      id: r.id,
+      commit: r.commit ?? null,
+      recovery_required: r.recoveryRequired === true,
+    };
   }
   if (r.status === "stale") {
     return {
@@ -341,6 +357,34 @@ function proposalsDbPath(vaultPath: string): string {
 
 function invalid(message: string): ApplyResult {
   return Object.freeze({ status: "invalid" as const, message });
+}
+
+function applyMutationFailure(
+  id: number,
+  mutation: Exclude<ControlledMutationResult, { readonly kind: "committed" }>,
+): ApplyResult {
+  switch (mutation.kind) {
+    case "busy":
+      return invalid("apply failed: mutation lane is busy; retry later");
+    case "diverged":
+      return invalid(
+        `apply failed: ${mutation.commit === null ? "candidate" : `commit ${mutation.commit}`} landed with checkout divergence at ${mutation.paths.join(", ") || "unknown paths"}; recovery required`,
+      );
+    case "no-commit":
+      switch (mutation.reason) {
+        case "working-tree-conflict":
+          return Object.freeze({
+            status: "stale" as const,
+            id,
+            changedPaths: Object.freeze([...mutation.paths]),
+            message: `proposal P${id} is stale: ${mutation.paths.join(", ") || "target files"} changed before commit`,
+          });
+        case "branch-mismatch":
+          return invalid("apply failed: branch changed before commit");
+        case "candidate-not-landed":
+          return invalid("apply failed: candidate commit did not land");
+      }
+  }
 }
 
 /**
@@ -405,9 +449,9 @@ type ChangeApplyStatus = "eligible" | "satisfied" | "stale";
  * base content:
  *   - `eligible`  — working content matches `baseContents[path]`; safe to
  *     apply (write the proposed content, or delete the path).
- *   - `satisfied` — a delete whose working file is already absent: the
- *     change already happened outside this proposal (idempotent no-op),
- *     not stale.
+ *   - `satisfied` — the proposed write bytes are already present, or a delete
+ *     is already absent. This includes commit-before-row-CAS recovery and is
+ *     an idempotent no-op, not stale.
  *   - `stale`     — working content has drifted from the recorded base.
  */
 function classifyChangeStatus(
@@ -418,6 +462,7 @@ function classifyChangeStatus(
   const base = baseContentFor(row, change);
   const working = readWorkingFile(vaultPath, change.path);
   if (change.kind === "delete" && working === null) return "satisfied";
+  if (change.kind === "write" && working === change.content) return "satisfied";
   return working === base ? "eligible" : "stale";
 }
 

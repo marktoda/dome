@@ -3,7 +3,18 @@ import react from "@vitejs/plugin-react";
 
 const API = "http://127.0.0.1:3663";
 const proxy = Object.fromEntries(
-  ["/sessions", "/capture", "/tasks", "/recents", "/resolve", "/transcribe", "/healthz"].map(
+  [
+    "/sessions",
+    "/capture",
+    "/tasks",
+    "/recents",
+    "/resolve",
+    "/transcribe",
+    "/healthz",
+    "/readyz",
+    "/pair",
+    "/doc",
+  ].map(
     (p) => [p, { target: API, changeOrigin: true }],
   ),
 );

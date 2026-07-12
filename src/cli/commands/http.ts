@@ -174,6 +174,7 @@ export async function runHttp(options: RunHttpOptions = {}): Promise<number> {
       }
     });
     server.stop(true);
+    await handler.close();
     return 0;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

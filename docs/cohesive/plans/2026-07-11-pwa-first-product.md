@@ -441,6 +441,16 @@ or a second device's capture; killing and restarting leaves no stale ownership
 or half-applied host mutation. The second client is in-process or loopback;
 Tailscale/remote access is still disabled.
 
+**Implemented 2026-07-11.** `dome home` now owns one long-lived Vault, exclusive
+host lifecycle, authenticated readiness, built-PWA serving, loopback pairing,
+and a bounded operation scheduler. Views, workspace mutations, and compiler
+ticks share one conservative FIFO lease; adopted reads and generation remain
+unleased. The real listener journey stalls a fake model while Today, an adopted
+source read, capture, and subsequent adoption complete. Settle, proposal apply,
+and hosted assistant authoring now converge through controlled mutation with
+expected-byte CAS, request attribution, restart recovery, and explicit landed-
+commit divergence handling. Remote authority remains disabled for P3.
+
 ### P3 — Bounded Ask and hardened device auth
 
 Deliver complete device grants/revoke/rotate/auth epoch, origin/CSRF/security

@@ -1,17 +1,21 @@
 // src/assistant/write.ts
 //
-// The hosted agent's vault write path. Mirrors `dome capture` (src/surface/capture.ts):
-// write one markdown file into the working tree and land it as an ordinary human
-// commit via commitSingleFileOnHead — the running daemon adopts the resulting
-// branch drift, so PROPOSALS_ARE_THE_ONLY_WRITE_PATH holds. The only difference
-// from capture is the `author:` verb and a single `Dome-Agent: <model>` trailer
-// for attribution (deliberately NOT in DOME_TRAILER_KEYS, so the commit stays
-// classified human, not engine).
+// The hosted agent's vault write path. Mirrors `dome capture`
+// (src/surface/capture.ts): one expected-byte controlled mutation lands an
+// ordinary human commit; the running daemon adopts the resulting branch drift,
+// so PROPOSALS_ARE_THE_ONLY_WRITE_PATH holds. `Dome-Agent: <model>` and the
+// mutation Module's `Dome-Request` trailer provide attribution (neither
+// classifies the commit as engine-authored).
 
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, normalize } from "node:path";
-import { commitSingleFileOnHead } from "../git";
+import { readFile } from "node:fs/promises";
+import { isAbsolute, join, normalize } from "node:path";
+import { currentBranch } from "../git";
+import {
+  applyControlledMutation,
+  type ControlledMutationResult,
+} from "../mutation/controlled-mutation";
 import { DEFAULT_AGENT_WRITE_SCOPE, writeScopeDenial, type WriteScope } from "../write-scope";
 import type { AgentChange } from "./types";
 
@@ -55,6 +59,20 @@ function commitMessage(verb: "create" | "edit", rel: string, modelId: string): s
   return `author: ${verb} ${rel}\n\n${AGENT_TRAILER_KEY}: ${modelId}`;
 }
 
+function mutationRequestId(input: {
+  readonly verb: "create" | "edit";
+  readonly rel: string;
+  readonly modelId: string;
+  readonly expectedContent: string | null;
+  readonly content: string;
+}): string {
+  const digest = createHash("sha256")
+    .update(JSON.stringify(input))
+    .digest("hex")
+    .slice(0, 32);
+  return `agent-write:${input.verb}:${digest}`;
+}
+
 export type AgentWriteCtx = { readonly vaultPath: string; readonly modelId: string; readonly scope?: WriteScope };
 
 export async function createDocument(
@@ -69,15 +87,22 @@ export async function createDocument(
   if (typeof input.content !== "string" || input.content.length === 0) {
     throw new AgentWriteError("content is required");
   }
-  await mkdir(dirname(abs), { recursive: true });
-  await writeFile(abs, input.content, "utf8");
-  await commitSingleFileOnHead({
-    path: ctx.vaultPath,
-    filepath: rel,
-    content: input.content,
+  const branch = await requireBranch(ctx.vaultPath);
+  const mutation = await applyControlledMutation({
+    vaultPath: ctx.vaultPath,
+    branch,
+    requestId: mutationRequestId({
+      verb: "create",
+      rel,
+      modelId: ctx.modelId,
+      expectedContent: null,
+      content: input.content,
+    }),
+    files: [{ path: rel, expectedContent: null, content: input.content }],
     message: commitMessage("create", rel, ctx.modelId),
     author: AGENT_COMMIT_AUTHOR,
   });
+  requireCommittedMutation(rel, mutation);
   return { path: rel, kind: "create" };
 }
 
@@ -107,13 +132,58 @@ export async function editDocument(
   }
   const next =
     current.slice(0, first) + input.new_string + current.slice(first + input.old_string.length);
-  await writeFile(abs, next, "utf8");
-  await commitSingleFileOnHead({
-    path: ctx.vaultPath,
-    filepath: rel,
-    content: next,
+  const branch = await requireBranch(ctx.vaultPath);
+  const mutation = await applyControlledMutation({
+    vaultPath: ctx.vaultPath,
+    branch,
+    requestId: mutationRequestId({
+      verb: "edit",
+      rel,
+      modelId: ctx.modelId,
+      expectedContent: current,
+      content: next,
+    }),
+    files: [{ path: rel, expectedContent: current, content: next }],
     message: commitMessage("edit", rel, ctx.modelId),
     author: AGENT_COMMIT_AUTHOR,
   });
+  requireCommittedMutation(rel, mutation);
   return { path: rel, kind: "edit" };
+}
+
+async function requireBranch(vaultPath: string): Promise<string> {
+  const branch = await currentBranch(vaultPath);
+  if (branch === null) {
+    throw new AgentWriteError(
+      "detached HEAD: assistant authoring needs a branch; check out a branch first",
+    );
+  }
+  return branch;
+}
+
+function requireCommittedMutation(
+  rel: string,
+  mutation: ControlledMutationResult,
+): void {
+  switch (mutation.kind) {
+    case "committed":
+      return;
+    case "busy":
+      throw new AgentWriteError("vault mutation lane is busy; retry later");
+    case "diverged":
+      throw new AgentWriteError(
+        `authoring requires recovery: ${mutation.commit === null ? "candidate" : `commit ${mutation.commit}`} has checkout divergence at ${mutation.paths.join(", ") || rel}`,
+      );
+    case "no-commit":
+      switch (mutation.reason) {
+        case "working-tree-conflict":
+          throw new AgentWriteError(
+            `document changed before commit: ${mutation.paths.join(", ") || rel}; read it again before editing`,
+          );
+        case "branch-mismatch":
+          throw new AgentWriteError("branch changed before the authoring commit");
+        case "candidate-not-landed":
+          throw new AgentWriteError("authoring candidate commit did not land");
+      }
+  }
 }

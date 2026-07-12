@@ -137,6 +137,42 @@ describe("createDomeHttpServer loopback pairing", () => {
 });
 
 describe("createDomeHttpServer agent sessions", () => {
+  test("close aborts and drains an active streamed turn", async () => {
+    let observedAbort = false;
+    const runtime = createAgentRuntime({
+      createId: () => "closing-session",
+      runTurn: ({ signal }): AgentRun => {
+        const aborted = new Promise<void>((resolve) => {
+          signal?.addEventListener("abort", () => {
+            observedAbort = true;
+            resolve();
+          }, { once: true });
+        });
+        return {
+          text: (async function* () {
+            yield "started";
+            await aborted;
+          })(),
+          finished: aborted.then(() => ({ citations: [], changes: [], stopReason: "final" as const })),
+        };
+      },
+    });
+    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, agentRuntime: runtime });
+    await server.fetch(new Request("http://localhost/sessions", {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}` },
+    }));
+    const response = await server.fetch(new Request("http://localhost/sessions/closing-session/messages", {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" },
+      body: JSON.stringify({ message: "wait" }),
+    }));
+
+    await server.close();
+    await response.text();
+    expect(observedAbort).toBe(true);
+  });
+
   test("creates a session and preserves history across streamed turns", async () => {
     const histories: Array<ReadonlyArray<AgentMessage>> = [];
     const runtime = createAgentRuntime({

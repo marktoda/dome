@@ -935,6 +935,21 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("home")
+    .helpGroup(GROUP_START)
+    .description("Run the self-contained loopback Dome Home Product Host and PWA.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .option("--port <port>", "Port to listen on (default 3663).")
+    .option("--host <host>", "Loopback interface to bind (default 127.0.0.1).")
+    .option("--pair-code <code>", "Local browser pairing code (generated when omitted).")
+    .option("--static-dir <path>", "Built PWA directory (defaults to the bundled pwa/dist).")
+    .action(async (options: HomeCliOptions) => {
+      const { runHome } = await import("./commands/home");
+      setExitCode(await runHome(options));
+    });
+
+  program
     .command("mcp")
     .helpGroup(GROUP_ADAPTERS)
     .description("Run the stdio MCP server over this vault (read/capture protocol adapter).")
@@ -1109,6 +1124,15 @@ type RestartCliOptions = {
 type McpCliOptions = {
   readonly vault?: string;
   readonly bundlesRoot?: string;
+};
+
+type HomeCliOptions = {
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+  readonly port?: string;
+  readonly host?: string;
+  readonly pairCode?: string;
+  readonly staticDir?: string;
 };
 
 type HttpCliOptions = {

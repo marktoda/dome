@@ -4,7 +4,7 @@
 
 `@dome/sdk` is the TypeScript SDK for Dome — a markdown-vault-shaped substrate that quietly keeps itself coherent over time. See [`docs/VISION.md`](https://github.com/marktoda/dome/blob/main/docs/VISION.md) for the product framing.
 
-The repository currently ships three consumer surfaces:
+The repository currently ships four consumer surfaces:
 
 - `@dome/sdk` — core SDK surface for the four-concept model: Vault,
   Proposal, Processor, Effect. No LLM or MCP dependencies.
@@ -12,6 +12,8 @@ The repository currently ships three consumer surfaces:
 - `dome mcp` and `dome http` — companion protocol adapters over the same
   capture, recall, decision, and status operations. They intentionally remain
   outside the core SDK import graph.
+- `dome home` — the loopback PWA Product Host: one long-lived vault, compiler
+  scheduler, authenticated readiness, API, and built browser app.
 
 The day-to-day product has four jobs: **Today** presents the current action
 surface and accepts captures; **Recall** retrieves source-backed context;

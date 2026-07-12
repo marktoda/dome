@@ -6,6 +6,8 @@ import { join } from "node:path";
 import git from "isomorphic-git";
 import fs from "node:fs";
 import { createDocument, editDocument, AgentWriteError } from "../../src/assistant/write";
+import { compilerHostLockPath } from "../../src/engine/host/compiler-host-lock";
+import { withExclusiveFileLock } from "../../src/engine/host/file-lock";
 
 async function tempVault(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), "dome-agent-write-"));
@@ -31,7 +33,41 @@ describe("createDocument", () => {
     const { commit } = await git.readCommit({ fs, dir: vault, oid: head });
     expect(commit.message).toContain("author: create wiki/new.md");
     expect(commit.message).toContain("Dome-Agent: claude-sonnet-4-5");
+    expect(commit.message).toMatch(
+      /Dome-Request: agent-write:create:[0-9a-f]{32}/,
+    );
     expect(commit.author.name).toBe("dome agent");
+  });
+
+  test("expected-byte create preserves a page created while admission waits", async () => {
+    const before = await git.resolveRef({ fs, dir: vault, ref: "HEAD" });
+    let release!: () => void;
+    let acquired!: () => void;
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const lockAcquired = new Promise<void>((resolve) => { acquired = resolve; });
+    const holder = withExclusiveFileLock({
+      lockPath: compilerHostLockPath(vault, "main"),
+      command: "assistant-create-cas-test-holder",
+    }, async () => {
+      acquired();
+      await released;
+    });
+    await lockAcquired;
+
+    const creating = createDocument(CTX(vault), {
+      path: "wiki/race.md",
+      content: "# Agent version\n",
+    });
+    await Bun.sleep(75);
+    await writeFile(join(vault, "wiki/race.md"), "# Owner version\n", "utf8");
+    release();
+    await holder;
+
+    await expect(creating).rejects.toThrow("document changed before commit");
+    expect(await readFile(join(vault, "wiki/race.md"), "utf8")).toBe(
+      "# Owner version\n",
+    );
+    expect(await git.resolveRef({ fs, dir: vault, ref: "HEAD" })).toBe(before);
   });
 
   test("rejects an existing path", async () => {
@@ -65,6 +101,43 @@ describe("editDocument", () => {
     const change = await editDocument(CTX(vault), { path: "wiki/seed.md", old_string: "- [ ] do the thing", new_string: "- [x] do the thing" });
     expect(change).toEqual({ path: "wiki/seed.md", kind: "edit" });
     expect(await readFile(join(vault, "wiki/seed.md"), "utf8")).toBe("- [x] do the thing\n");
+    const head = await git.resolveRef({ fs, dir: vault, ref: "HEAD" });
+    const { commit } = await git.readCommit({ fs, dir: vault, oid: head });
+    expect(commit.message).toMatch(
+      /Dome-Request: agent-write:edit:[0-9a-f]{32}/,
+    );
+  });
+
+  test("expected-byte edit preserves owner bytes changed while admission waits", async () => {
+    const before = await git.resolveRef({ fs, dir: vault, ref: "HEAD" });
+    let release!: () => void;
+    let acquired!: () => void;
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const lockAcquired = new Promise<void>((resolve) => { acquired = resolve; });
+    const holder = withExclusiveFileLock({
+      lockPath: compilerHostLockPath(vault, "main"),
+      command: "assistant-edit-cas-test-holder",
+    }, async () => {
+      acquired();
+      await released;
+    });
+    await lockAcquired;
+
+    const editing = editDocument(CTX(vault), {
+      path: "wiki/seed.md",
+      old_string: "# Seed",
+      new_string: "# Agent edit",
+    });
+    await Bun.sleep(75);
+    await writeFile(join(vault, "wiki/seed.md"), "# Owner edit\n", "utf8");
+    release();
+    await holder;
+
+    await expect(editing).rejects.toThrow("document changed before commit");
+    expect(await git.resolveRef({ fs, dir: vault, ref: "HEAD" })).toBe(before);
+    expect(await readFile(join(vault, "wiki/seed.md"), "utf8")).toBe(
+      "# Owner edit\n",
+    );
   });
 
   test("errors when old_string is missing", async () => {
