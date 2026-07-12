@@ -6,6 +6,7 @@
 // Claude/Codex/local-model adapters can supply independent implementations.
 
 import { randomUUID } from "node:crypto";
+import type { Capability } from "../capabilities";
 
 import type {
   AgentChange,
@@ -36,11 +37,17 @@ export type AgentRun = {
 
 export type AgentSession = {
   readonly id: string;
+  readonly ownerDeviceId: string | null;
   send(message: string, signal?: AbortSignal): AgentTurn;
 };
 
+export type AgentSessionContext = {
+  readonly deviceId: string;
+  readonly capabilities: ReadonlySet<Capability>;
+};
+
 export type AgentRuntime = {
-  createSession(): AgentSession;
+  createSession(context?: AgentSessionContext): AgentSession;
   getSession(id: string): AgentSession | null;
   closeSession(id: string): boolean;
   close(): void;
@@ -49,12 +56,14 @@ export type AgentRuntime = {
 export type AgentTurnRunner = (input: {
   readonly question: string;
   readonly history: ReadonlyArray<AgentMessage>;
+  readonly sessionContext?: AgentSessionContext | undefined;
   readonly signal?: AbortSignal | undefined;
 }) => AgentRun;
 
 type SessionState = {
   readonly id: string;
   readonly messages: AgentMessage[];
+  readonly context: AgentSessionContext | null;
   busy: boolean;
   closed: boolean;
 };
@@ -74,6 +83,7 @@ export function createAgentRuntime(opts: {
 
   const bind = (state: SessionState): AgentSession => Object.freeze({
     id: state.id,
+    ownerDeviceId: state.context?.deviceId ?? null,
     send(message: string, signal?: AbortSignal): AgentTurn {
       const question = message.trim();
       if (question.length === 0) {
@@ -95,6 +105,7 @@ export function createAgentRuntime(opts: {
           const run = opts.runTurn({
             question,
             history,
+            ...(state.context !== null ? { sessionContext: state.context } : {}),
             ...(signal !== undefined ? { signal } : {}),
           });
           for await (const text of run.text) {
@@ -131,13 +142,19 @@ export function createAgentRuntime(opts: {
   });
 
   return Object.freeze({
-    createSession(): AgentSession {
+    createSession(context?: AgentSessionContext): AgentSession {
       if (runtimeClosed) throw new Error("agent runtime is closed");
       let id = createId();
       while (sessions.has(id)) id = createId();
       const state: SessionState = {
         id,
         messages: [],
+        context: context === undefined
+          ? null
+          : Object.freeze({
+              deviceId: context.deviceId,
+              capabilities: new Set(context.capabilities),
+            }),
         busy: false,
         closed: false,
       };

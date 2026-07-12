@@ -12,8 +12,10 @@ The repository currently ships four consumer surfaces:
 - `dome mcp` and `dome http` — companion protocol adapters over the same
   capture, recall, decision, and status operations. They intentionally remain
   outside the core SDK import graph.
-- `dome home` — the loopback PWA Product Host: one long-lived vault, compiler
-  scheduler, authenticated readiness, API, and built browser app.
+- `dome home` — the loopback-bound PWA Product Host: one long-lived vault,
+  durable paired-device authority, compiler scheduler, authenticated API and
+  readiness, and built browser app. An exact private HTTPS proxy origin is
+  optional.
 
 The day-to-day product has four jobs: **Today** presents the current action
 surface and accepts captures; **Recall** retrieves source-backed context;

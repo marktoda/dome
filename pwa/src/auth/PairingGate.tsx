@@ -18,9 +18,13 @@ export function PairingGate({
     // retains the shared/root bearer once this shell loads.
     try { localStorage.removeItem("dome.token"); } catch { /* storage may be unavailable */ }
     void client.pairingStatus()
-      .then((status) => setState(
-        status.paired ? "paired" : status.available ? "unpaired" : "unavailable",
-      ))
+      .then((status) => {
+        const csrfReady = status.schema !== "dome.device.pairing/v1" ||
+          client.restoreCsrfFromCookie(document.cookie);
+        setState(status.paired && csrfReady
+          ? "paired"
+          : status.available ? "unpaired" : "unavailable");
+      })
       .catch(() => setState("unpaired"));
   }, [client]);
 

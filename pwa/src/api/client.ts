@@ -25,6 +25,7 @@ export function parseSseChunk(buffer: string): { events: StreamEvent[]; rest: st
 
 export class DomeClient {
   private sessionPromise: Promise<string> | null = null;
+  private csrfToken: string | null = null;
 
   constructor(private readonly token: string = "", private readonly baseUrl: string = "") {}
 
@@ -36,7 +37,12 @@ export class DomeClient {
   }
 
   private request(path: string, init: RequestInit = {}): Request {
-    return new Request(this.url(path), { ...init, credentials: "same-origin" });
+    const headers = new Headers(init.headers);
+    const method = (init.method ?? "GET").toUpperCase();
+    if (this.csrfToken !== null && method !== "GET" && method !== "HEAD") {
+      headers.set("x-dome-csrf", this.csrfToken);
+    }
+    return new Request(this.url(path), { ...init, headers, credentials: "same-origin" });
   }
 
   private url(path: string): string {
@@ -108,22 +114,37 @@ export class DomeClient {
   }
 
   async pair(code: string): Promise<PairingResult> {
-    return this.parse<PairingResult>(await fetch(this.request("/pair", {
+    const paired = await this.parse<PairingResult>(await fetch(this.request("/pair", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ code }),
     })));
+    if (paired.csrfToken !== undefined) this.csrfToken = paired.csrfToken;
+    return paired;
+  }
+
+  restoreCsrfFromCookie(cookieHeader: string): boolean {
+    const csrf = cookieHeader.split(";").map((part) => part.trim())
+      .find((part) => part.startsWith("dome_csrf="));
+    if (csrf === undefined) return false;
+    try {
+      const value = decodeURIComponent(csrf.slice("dome_csrf=".length));
+      if (value.length === 0) return false;
+      this.csrfToken = value;
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async agentStream(question: string, onEvent: (e: StreamEvent) => void, signal?: AbortSignal): Promise<void> {
     const sessionId = await this.sessionId();
-    const res = await fetch(`${this.baseUrl}/sessions/${encodeURIComponent(sessionId)}/messages`, {
+    const res = await fetch(this.request(`/sessions/${encodeURIComponent(sessionId)}/messages`, {
       method: "POST",
       headers: { ...this.authHeaders(true), accept: "text/event-stream" },
       body: JSON.stringify({ message: question }),
-      credentials: "same-origin",
       ...(signal !== undefined ? { signal } : {}),
-    });
+    }));
     if (!res.ok || res.body === null) {
       onEvent({ type: "error", message: `stream failed (${res.status})` });
       return;
@@ -143,11 +164,10 @@ export class DomeClient {
 
   private sessionId(): Promise<string> {
     if (this.sessionPromise === null) {
-      this.sessionPromise = fetch(`${this.baseUrl}/sessions`, {
+      this.sessionPromise = fetch(this.request("/sessions", {
         method: "POST",
         headers: this.authHeaders(false),
-        credentials: "same-origin",
-      })
+      }))
         .then((res) => this.parse<AgentSession>(res))
         .then((session) => session.sessionId)
         .catch((error) => {

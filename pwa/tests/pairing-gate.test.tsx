@@ -7,6 +7,7 @@ const originalFetch = globalThis.fetch;
 afterEach(() => {
   cleanup();
   globalThis.fetch = originalFetch;
+  document.cookie = "dome_csrf=; Max-Age=0; Path=/";
 });
 
 describe("PairingGate", () => {
@@ -20,6 +21,21 @@ describe("PairingGate", () => {
     render(<PairingGate>{() => <div>connected</div>}</PairingGate>);
     await waitFor(() => expect(screen.getByText("connected")).toBeDefined());
     expect(localStorage.getItem("dome.token")).toBeNull();
+  });
+
+  test("restores an in-memory CSRF token from the readable cookie", async () => {
+    const paths: string[] = [];
+    document.cookie = "dome_csrf=restored; Path=/";
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      paths.push(path);
+      return new Response(JSON.stringify({
+        schema: "dome.device.pairing/v1", available: true, paired: true,
+      }), { status: 200 });
+    }) as never;
+    render(<PairingGate>{() => <div>connected</div>}</PairingGate>);
+    await waitFor(() => expect(screen.getByText("connected")).toBeDefined());
+    expect(paths).toEqual(["/pair/status"]);
   });
 
   test("exchanges a code without writing browser storage", async () => {

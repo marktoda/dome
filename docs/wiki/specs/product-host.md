@@ -281,7 +281,7 @@ mutations, closes HTTP, then closes the Vault/runtime. V1 restarts/reopens on
 config, model-provider, or extension changes; speculative hot reload is not a
 release requirement.
 
-## P2 implementation status
+## P2/P3 implementation status
 
 The first Product Host checkpoint implements the small lifecycle Interface
 (`start`, authenticated readiness, `close`), exclusive single-vault ownership,
@@ -299,7 +299,7 @@ lifecycle delegation finishes with the P4 distribution/service cutover.
 
 ### P3 device-authority foundation
 
-`src/device-authority/` now owns durable single-owner device authority behind
+`src/device-authority/` owns durable single-owner device authority behind
 one deep Interface. Pairing grants bind the device name, immutable capability
 set, auth epoch, expiry, attempt budget, and credential lifetime before the
 code leaves the local console. Device identity and append-only credential
@@ -309,9 +309,22 @@ revoke, and epoch invalidation are serialized transactions, so two host handles
 cannot both win a one-time exchange or leave multiple active credentials.
 
 `dome devices` is the local Adapter for pair/list/rotate/revoke/invalidate-all.
-Product Host HTTP still uses the P1 loopback Adapter until the next P3
-checkpoint replaces it with per-request authenticated device context,
-exact-Origin/CSRF enforcement, and request attribution.
+The Product Host owns this store for its complete lifecycle. Its HTTP Adapter
+exchanges one-time grants, authenticates each request into a device id and
+scoped capability set, enforces exact Origin plus double-submit CSRF for cookie
+mutations, and binds assistant sessions to their creating device. On reload the
+PWA copies the non-authorizing, JavaScript-readable CSRF cookie into memory; it
+does not rotate shared state or persist secrets in localStorage. Revocation,
+rotation, expiry, and auth-epoch invalidation take effect on the next request.
+
+The listener remains loopback-only. An optional canonical HTTPS
+`externalOrigin` adds exactly one trusted reverse-proxy origin; an HTTP origin
+is accepted only for explicit loopback Vite development. HTTPS cookies are
+always `Secure`; loopback-development cookies explicitly omit it so real
+browsers can use the HTTP listener. Request Host and forwarding headers never
+expand authority. Static assets and pairing boot are the only unauthenticated
+routes. Standalone `dome http` remains a separate compatibility Adapter with
+its bearer and process-local loopback pairing.
 
 ## P0 decisions and deferrals
 

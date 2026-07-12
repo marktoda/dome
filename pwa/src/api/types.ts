@@ -16,15 +16,17 @@ export type AgentSession = {
 };
 
 export type PairingStatus = {
-  schema: "dome.pairing/v1";
+  schema: "dome.pairing/v1" | "dome.device.pairing/v1";
   available: boolean;
   paired: boolean;
 };
 
 export type PairingResult = {
-  schema: "dome.pairing/v1";
+  schema: "dome.pairing/v1" | "dome.device.pairing/v1";
   status: "paired";
-  expires_at: string;
+  expires_at?: string;
+  credentialExpiresAt?: string;
+  csrfToken?: string;
 };
 
 export type StreamEvent =

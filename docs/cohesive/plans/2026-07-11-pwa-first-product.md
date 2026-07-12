@@ -472,6 +472,22 @@ restart. Every transition is serialized and adversarial two-handle tests pin
 exchange, rotate, revoke, authenticate, and invalidate races. `dome devices`
 provides the local owner Adapter. HTTP adoption of this Interface remains P3.2.
 
+**Checkpoint P3.2 implemented 2026-07-12.** Dome Home now opens the durable
+Device Authority and resolves every non-static HTTP request to an immutable
+device context before routing. Exact configured origins, double-submit CSRF,
+secure host-only cookies, response hardening, per-device route/assistant
+grants, and device-owned sessions replace the Product Host's temporary shared
+authority. The PWA restores the non-authorizing double-submit CSRF cookie into
+memory on reload; no rotating bootstrap endpoint or localStorage secret is
+needed. Pairing, revocation, credential
+rotation, auth-epoch invalidation, and cookies survive host restart; an
+optional exact HTTPS external origin enables a private reverse proxy, while an
+explicit HTTP loopback origin supports Vite development and the host itself
+remains loopback-bound. Standalone `dome http` retains its
+compatibility bearer and P1 loopback Adapter. Bounded session resources,
+Stop/Retry, shared SSE validation, and persistent device-attributed mutation
+receipts remain P3.3.
+
 ### P4 — Self-contained distribution, backup, and upgrade
 
 Deliver the signed macOS product artifact with pinned runtime and PWA; one

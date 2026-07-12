@@ -104,7 +104,7 @@ dome devices <pair|list|revoke|rotate|invalidate-all> [device-id]
                                 Manage durable Dome Home device authority from
                                 the local owner console.
 dome home [--vault <path>] [--port <port>] [--host <host>]
-          [--pair-code <code>] [--static-dir <path>]
+          [--external-origin <origin>] [--static-dir <path>]
                                 Run the loopback Product Host: one long-lived
                                 vault, compiler scheduler, HTTP API, and built PWA.
 dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
@@ -2753,13 +2753,19 @@ comma-separated subset. Raw pairing, credential, and CSRF secrets are never
 stored. This command is intentionally local-console-only and has no remote
 HTTP equivalent for mint/revoke/invalidate authority.
 
-### `dome home [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--pair-code <code>] [--static-dir <path>]`
+### `dome home [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--external-origin <origin>] [--static-dir <path>]`
 
 The PWA-first product command. It starts the Product Host Module, which owns
 exclusive lifecycle for one vault, one long-lived public `Vault`, compiler
 ticks, operation admission, the loopback HTTP listener, and built PWA assets.
-It prints a generated local pairing code when one is not supplied. P2 refuses
-non-loopback binds; remote exposure waits for P3 device authority.
+It opens the vault's durable Device Authority. Pairing grants are minted from
+the local console with `dome devices pair`; the browser exchanges one at
+`POST /pair` for a secure, host-only device cookie and ephemeral CSRF token.
+The host remains loopback-bound. `--external-origin` (or
+`DOME_EXTERNAL_ORIGIN`) accepts one exact HTTPS reverse-proxy origin for
+private remote access, or an exact HTTP loopback origin such as
+`http://localhost:5173` for Vite development. Paths, queries, credentials,
+fragments, and insecure non-loopback origins are rejected.
 
 The default asset directory is `pwa/dist`. A source checkout must run
 `bun run --cwd pwa build` first; P4's distribution artifact will populate the

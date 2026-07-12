@@ -7,7 +7,7 @@
 // P1 browsers may exchange a loopback pairing code for an HttpOnly cookie.
 // `author` (write) is gated by --allow-write and provisioned in Phase 2.
 
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -69,6 +69,13 @@ import {
   createLoopbackPairing,
   type LoopbackPairing,
 } from "./loopback-pairing";
+import type { DeviceAuthority } from "../device-authority/device-authority";
+import {
+  authenticateDeviceRequest,
+  exchangeDevicePairing,
+  hardenDeviceResponse,
+  type DeviceRequestContext,
+} from "./device-request-auth";
 import {
   ProductOperationCancelledError,
   ProductOperationQueueFullError,
@@ -122,8 +129,13 @@ export type DomeHttpServerOptions = {
   /** Long-lived Product Host handle. When present, routes never reopen it. */
   readonly vault?: Vault | undefined;
   readonly bundlesRoot?: string | undefined;
-  /** Bearer token every request must present. Must be non-empty. */
-  readonly token: string;
+  /** Compatibility bearer. Omitted only when durable device auth is supplied. */
+  readonly token?: string | undefined;
+  /** Durable Product Host auth. When present, compatibility auth is disabled. */
+  readonly deviceAuth?: {
+    readonly authority: DeviceAuthority;
+    readonly allowedOrigins: () => ReadonlyArray<string>;
+  } | undefined;
   /**
    * Optional P1 loopback-only browser pairing. The CLI refuses this option on
    * non-loopback binds. Sessions are process-local; P3 owns durable devices.
@@ -133,7 +145,7 @@ export type DomeHttpServerOptions = {
     readonly sessionTtlMs?: number;
   } | undefined;
   /** Authenticated Product Host readiness document. */
-  readonly readiness?: (() => Promise<unknown>) | undefined;
+  readonly readiness?: ((client?: DeviceRequestContext) => Promise<unknown>) | undefined;
   /** Product Host admission. Compatibility servers retain their legacy mutex. */
   readonly operationScheduler?: Pick<ProductOperationScheduler, "run"> | undefined;
   readonly model?: string | undefined;
@@ -395,11 +407,18 @@ async function serveStatic(staticDir: string, pathname: string): Promise<Respons
  * `dome http` runs `Bun.serve({ fetch })`; tests call `.fetch()` directly.
  */
 export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServer {
-  if (opts.token.trim().length === 0) {
+  const deviceMode = opts.deviceAuth !== undefined;
+  if (!deviceMode && (opts.token ?? "").trim().length === 0) {
     throw new Error("createDomeHttpServer: token must be non-empty");
   }
-  const tokenDigest = sha256(opts.token);
-  const pairing: LoopbackPairing | null = opts.loopbackPairing === undefined
+  if (deviceMode && opts.loopbackPairing !== undefined) {
+    throw new Error("createDomeHttpServer: durable device auth cannot use loopback pairing");
+  }
+  if (deviceMode && opts.token !== undefined) {
+    throw new Error("createDomeHttpServer: durable device auth cannot use a compatibility token");
+  }
+  const tokenDigest = deviceMode ? null : sha256(opts.token!);
+  const pairing: LoopbackPairing | null = deviceMode || opts.loopbackPairing === undefined
     ? null
     : createLoopbackPairing(opts.loopbackPairing);
   const granted = grantedCapabilities({ allowWrite: opts.allowWrite });
@@ -410,8 +429,6 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
   const transcribeTimeoutMs = opts.transcribeTimeoutMs ?? 120_000;
 
   const agentLog: AgentLogSink = makeAgentLogSink(opts.agentLogPath);
-  const authorEnabled = has(granted, "author");
-  const capabilityList: string[] = [...granted].sort();
 
   // Vault-open wrapper for the data routes: runs `fn` against an open
   // VaultRuntime under the vault mutex, mapping an open failure to the
@@ -458,6 +475,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     question: string,
     history: ReadonlyArray<AgentMessage>,
     signal: AbortSignal,
+    turnCapabilities: ReadonlySet<Capability>,
   ): AgentStream => {
     if (opts.vault !== undefined) {
       return runAgentStream({
@@ -465,7 +483,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
         question,
         history,
         abortSignal: signal,
-        capabilities: granted,
+        capabilities: turnCapabilities,
         ...(opts.model !== undefined ? { modelId: opts.model } : {}),
       });
     }
@@ -489,7 +507,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
           history,
           abortSignal: signal,
           // Same capability plumbing as defaultAgent above.
-          capabilities: granted,
+          capabilities: turnCapabilities,
           ...(opts.model !== undefined ? { modelId: opts.model } : {}),
         });
         ready();
@@ -538,11 +556,13 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
   };
 
   const agentRuntime = opts.agentRuntime ?? createAgentRuntime({
-    runTurn: ({ question, history, signal }): AgentRun => {
+    runTurn: ({ question, history, signal, sessionContext }): AgentRun => {
+      const turnCapabilities = sessionContext?.capabilities ?? granted;
       const stream = defaultAgentStreamTurn(
         question,
         history,
         signal ?? new AbortController().signal,
+        turnCapabilities,
       );
       return {
         text: (async function* () {
@@ -664,6 +684,8 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
   const streamSessionTurn = (input: {
     readonly session: AgentSession;
     readonly question: string;
+    readonly capabilities: ReadonlySet<Capability>;
+    readonly requestId?: string | undefined;
   }): Response => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -698,11 +720,14 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
               continue;
             }
             if (event.kind === "error") {
-              const message = controller.signal.aborted
+              const detail = controller.signal.aborted
                 ? `ask exceeded ${timeoutMs}ms.`
                 : event.message;
-              error = message;
-              ctrl.enqueue(sse({ type: "error", message }));
+              error = detail;
+              ctrl.enqueue(sse({
+                type: "error",
+                message: publicAgentError(detail, controller.signal.aborted, input.requestId),
+              }));
               continue;
             }
             stopReason = event.stopReason;
@@ -715,20 +740,23 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
             }));
           }
         } catch (cause) {
-          const message = controller.signal.aborted
+          const detail = controller.signal.aborted
             ? `ask exceeded ${timeoutMs}ms.`
             : cause instanceof Error
               ? cause.message
               : String(cause);
-          error = message;
-          ctrl.enqueue(sse({ type: "error", message }));
+          error = detail;
+          ctrl.enqueue(sse({
+            type: "error",
+            message: publicAgentError(detail, controller.signal.aborted, input.requestId),
+          }));
         } finally {
           agentLog({
             ts: new Date().toISOString(),
             route: "/sessions/:id/messages",
             question: input.question,
-            capabilities: capabilityList,
-            authorEnabled,
+            capabilities: [...input.capabilities].sort(),
+            authorEnabled: has(input.capabilities, "author"),
             changes,
             stopReason,
             answerPreview: answer.slice(0, 500),
@@ -752,16 +780,20 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     });
   };
 
-  const routes = async (request: Request): Promise<Response> => {
+  const routes = async (
+    request: Request,
+    client?: DeviceRequestContext,
+  ): Promise<Response> => {
     const url = new URL(request.url);
     const route = `${request.method} ${url.pathname}`;
+    const requestGranted = client?.capabilities ?? granted;
 
     const sessionRoute = /^\/sessions\/([^/]+)(\/messages)?$/.exec(url.pathname);
     const pluginViewRoute = /^\/views\/([^/]+)$/.exec(url.pathname);
     const need = ROUTE_CAPABILITY[route] ??
       (request.method === "POST" && pluginViewRoute !== null ? "read" : undefined) ??
       (sessionRoute !== null ? "converse" : undefined);
-    if (need !== undefined && !has(granted, need)) {
+    if (need !== undefined && !has(requestGranted, need)) {
       return dataErrorResponse(403, "capability-denied", `route ${route} requires the '${need}' capability.`);
     }
 
@@ -770,12 +802,14 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
         schema: SERVER_SCHEMA,
         server: "dome",
         ...(opts.readiness === undefined ? { vault: opts.vaultPath } : {}),
-        capabilities: [...granted].sort(),
+        capabilities: [...requestGranted].sort(),
       });
     }
 
     if (route === "POST /sessions") {
-      const session = agentRuntime.createSession();
+      const session = agentRuntime.createSession(client === undefined
+        ? undefined
+        : { deviceId: client.deviceId, capabilities: client.capabilities });
       return jsonResponse(201, {
         schema: AGENT_SESSION_SCHEMA,
         status: "created",
@@ -789,7 +823,9 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       sessionRoute[2] === undefined
     ) {
       const id = sessionRoute[1] ?? "";
-      const closed = agentRuntime.closeSession(id);
+      const existing = agentRuntime.getSession(id);
+      const closed = existing !== null && sessionOwnedBy(existing, client) &&
+        agentRuntime.closeSession(id);
       return closed
         ? jsonResponse(200, {
             schema: AGENT_SESSION_SCHEMA,
@@ -806,7 +842,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     ) {
       const id = sessionRoute[1] ?? "";
       const session = agentRuntime.getSession(id);
-      if (session === null) {
+      if (session === null || !sessionOwnedBy(session, client)) {
         return dataErrorResponse(404, "session-not-found", `agent session '${id}' was not found.`);
       }
       const read = await jsonBody(request, maxBodyBytes);
@@ -829,6 +865,8 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       return streamSessionTurn({
         session,
         question: message,
+        capabilities: requestGranted,
+        ...(client !== undefined ? { requestId: client.requestId } : {}),
       });
     }
 
@@ -1033,7 +1071,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     }
 
     if (route === "POST /agent-work/drain") {
-      if (!has(granted, "resolve")) {
+      if (!has(requestGranted, "resolve")) {
         return dataErrorResponse(
           403,
           "capability-denied",
@@ -1234,12 +1272,120 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     return dataErrorResponse(404, "not-found", `no route for ${route}.`);
   };
 
-  const handle = async (request: Request): Promise<Response> => {
+  const handleDevice = async (request: Request): Promise<Response> => {
+    const deviceAuth = opts.deviceAuth!;
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/pair/status") {
+      const auth = authenticateDeviceRequest(deviceAuth.authority, request, {
+        allowedOrigins: deviceAuth.allowedOrigins(),
+      });
+      if (!auth.ok) {
+        return hardenDeviceResponse(jsonResponse(200, {
+          schema: "dome.device.pairing/v1",
+          available: true,
+          paired: false,
+        }), { requestId: auth.failure.requestId });
+      }
+      return hardenDeviceResponse(jsonResponse(200, {
+        schema: "dome.device.pairing/v1",
+        available: true,
+        paired: true,
+        device: {
+          id: auth.context.deviceId,
+          name: auth.context.deviceName,
+          capabilities: [...auth.context.capabilities].sort(),
+        },
+      }), { requestId: auth.context.requestId });
+    }
+    if (request.method === "POST" && url.pathname === "/pair") {
+      const requestId = randomUUID();
+      if (!requestOriginAllowed(request, deviceAuth.allowedOrigins())) {
+        return hardenDeviceResponse(
+          dataErrorResponse(403, "origin-forbidden", "The request origin is not allowed."),
+          { requestId },
+        );
+      }
+      const read = await jsonBody(request, Math.min(maxBodyBytes, 4_096));
+      if (read.kind === "too-large") {
+        return hardenDeviceResponse(
+          dataErrorResponse(413, "payload-too-large", "pairing request is too large."),
+          { requestId },
+        );
+      }
+      const code = typeof read.body?.code === "string" ? read.body.code : "";
+      const exchanged = exchangeDevicePairing(deviceAuth.authority, {
+        pairingCode: code,
+        requestOrigin: request.headers.get("origin") ?? "",
+        requestId,
+      });
+      if (!exchanged.ok) {
+        return hardenDeviceResponse(dataErrorResponse(
+          exchanged.failure.status,
+          exchanged.failure.code,
+          exchanged.failure.message,
+        ), { requestId });
+      }
+      const headers = new Headers({ "content-type": "application/json; charset=utf-8" });
+      for (const cookie of exchanged.setCookies) headers.append("set-cookie", cookie);
+      return hardenDeviceResponse(new Response(JSON.stringify({
+        schema: "dome.device.pairing/v1",
+        status: "paired",
+        device: {
+          id: exchanged.deviceId,
+          name: exchanged.deviceName,
+          capabilities: [...exchanged.capabilities].sort(),
+        },
+        credentialExpiresAt: exchanged.credentialExpiresAt,
+        csrfToken: exchanged.csrfToken,
+      }), { status: 200, headers }), { requestId });
+    }
+    const requestId = randomUUID();
+    const font = fontResponse(request);
+    if (font !== null) return hardenDeviceResponse(font, { requestId });
+    if (request.method === "GET" && opts.staticDir !== undefined) {
+      const served = await serveStatic(opts.staticDir, url.pathname);
+      if (served !== null) return hardenDeviceResponse(served, { requestId });
+    }
+    const authenticated = authenticateDeviceRequest(deviceAuth.authority, request, {
+      allowedOrigins: deviceAuth.allowedOrigins(),
+      requestId,
+    });
+    if (!authenticated.ok) {
+      return hardenDeviceResponse(dataErrorResponse(
+        authenticated.failure.status,
+        authenticated.failure.code,
+        authenticated.failure.message,
+      ), { requestId });
+    }
+    const client = authenticated.context;
+    if (request.method === "GET" && url.pathname === "/readyz") {
+      const response = opts.readiness === undefined
+        ? dataErrorResponse(404, "readiness-unavailable", "product readiness is not configured.")
+        : jsonResponse(200, await opts.readiness(client));
+      return hardenDeviceResponse(response, { requestId });
+    }
+    if (request.method === "POST" && url.pathname === "/transcribe") {
+      const response = !has(client.capabilities, "capture")
+        ? dataErrorResponse(403, "capability-denied", "route POST /transcribe requires the 'capture' capability.")
+        : await handleTranscribe(request);
+      return hardenDeviceResponse(await redactDeviceOperationalFailure(response), { requestId });
+    }
+    try {
+      const response = opts.operationScheduler === undefined
+        ? await enqueue(() => routes(request, client))
+        : await opts.operationScheduler.run(operationClassFor(request), () => routes(request, client));
+      return hardenDeviceResponse(response, { requestId });
+    } catch (error) {
+      return hardenDeviceResponse(operationFailureResponse(error), { requestId });
+    }
+  };
+
+  const handleCompatibility = async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
     const cookieAuthorized = pairing?.authorized(request) === true;
     if (request.method === "GET" && url.pathname === "/pair/status") {
       const paired =
-        pairing?.authorized(request) === true || authorized(request, tokenDigest);
+        pairing?.authorized(request) === true || authorized(request, tokenDigest!);
       return jsonResponse(200, {
         schema: "dome.pairing/v1",
         available: pairing !== null,
@@ -1296,8 +1442,8 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     }
     // Compatibility bearer/query token or the P1 loopback browser cookie.
     if (
-      !authorized(request, tokenDigest) &&
-      !queryTokenAuthorized(request, url, tokenDigest) &&
+      !authorized(request, tokenDigest!) &&
+      !queryTokenAuthorized(request, url, tokenDigest!) &&
       !cookieAuthorized
     ) {
       return jsonResponse(401, {
@@ -1363,6 +1509,8 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     }
   };
 
+  const handle = deviceMode ? handleDevice : handleCompatibility;
+
   return Object.freeze({
     fetch: handle,
     close: async () => {
@@ -1398,6 +1546,93 @@ function operationClassFor(request: Request): ProductOperationClass {
     return "immutable-adopted-read";
   }
   return "operational-transaction";
+}
+
+function sessionOwnedBy(
+  session: AgentSession,
+  client: DeviceRequestContext | undefined,
+): boolean {
+  return client === undefined
+    ? session.ownerDeviceId === null
+    : session.ownerDeviceId === client.deviceId;
+}
+
+function requestOriginAllowed(
+  request: Request,
+  allowedOrigins: ReadonlyArray<string>,
+): boolean {
+  const raw = request.headers.get("origin");
+  if (raw === null) return false;
+  try {
+    const origin = new URL(raw);
+    if (
+      origin.username !== "" ||
+      origin.password !== "" ||
+      origin.pathname !== "/" ||
+      origin.search !== "" ||
+      origin.hash !== ""
+    ) return false;
+    return allowedOrigins.some((allowed) => {
+      try {
+        return new URL(allowed).origin === origin.origin;
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+
+function operationFailureResponse(error: unknown): Response {
+  if (error instanceof ProductOperationQueueFullError) {
+    return new Response(JSON.stringify({
+      schema: SERVER_SCHEMA,
+      status: "error",
+      error: error.code,
+      message: "the Product Host is busy; retry shortly.",
+    }), {
+      status: 429,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "retry-after": String(Math.max(1, Math.ceil(error.retryAfterMs / 1_000))),
+      },
+    });
+  }
+  if (
+    error instanceof ProductOperationCancelledError ||
+    error instanceof ProductOperationSchedulerClosedError
+  ) {
+    return dataErrorResponse(503, error.code, "the Product Host is stopping or the operation was cancelled.");
+  }
+  return dataErrorResponse(500, "internal", "the Product Host could not complete the operation.");
+}
+
+function publicAgentError(
+  detail: string,
+  aborted: boolean,
+  requestId: string | undefined,
+): string {
+  if (requestId === undefined || aborted) return detail;
+  return `The assistant turn failed. Reference request ${requestId}.`;
+}
+
+async function redactDeviceOperationalFailure(response: Response): Promise<Response> {
+  if (response.status < 500) return response;
+  let code = "internal";
+  try {
+    const body = await response.clone().json() as { readonly error?: unknown };
+    if (typeof body.error === "string" && /^[a-z0-9-]+$/.test(body.error)) code = body.error;
+  } catch {
+    // The public device envelope remains stable even for a malformed provider response.
+  }
+  return dataErrorResponse(
+    response.status,
+    code,
+    code.startsWith("transcribe-")
+      ? "Transcription could not be completed."
+      : "The Product Host could not complete the request.",
+  );
 }
 
 function sameLoopbackOriginOrNonBrowser(request: Request, url: URL): boolean {

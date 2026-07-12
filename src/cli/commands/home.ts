@@ -1,6 +1,5 @@
 // cli/commands/home: the PWA-first Product Host lifecycle Adapter.
 
-import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,22 +13,15 @@ export type RunHomeOptions = {
   readonly bundlesRoot?: string | undefined;
   readonly port?: string | number | undefined;
   readonly host?: string | undefined;
-  readonly pairCode?: string | undefined;
+  readonly externalOrigin?: string | undefined;
   readonly staticDir?: string | undefined;
   readonly signal?: AbortSignal | undefined;
-  readonly onReady?: ((host: ProductHost, pairCode: string) => void) | undefined;
+  readonly onReady?: ((host: ProductHost) => void) | undefined;
 };
 
 /** Start Dome Home and own its complete listener/compiler lifecycle. */
 export async function runHome(options: RunHomeOptions = {}): Promise<number> {
   const vaultPath = resolveVaultPath(options.vault);
-  const pairCode = (
-    options.pairCode ?? process.env["DOME_PAIR_CODE"] ?? randomBytes(8).toString("hex")
-  ).trim();
-  if (pairCode.length < 8) {
-    console.error("dome home: --pair-code must contain at least 8 characters.");
-    return EX_USAGE;
-  }
   const port = options.port === undefined ? 3663 : Number(options.port);
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     console.error("dome home: --port must be an integer in [0, 65535].");
@@ -39,6 +31,7 @@ export async function runHome(options: RunHomeOptions = {}): Promise<number> {
     options.staticDir ?? process.env["DOME_PWA_DIR"] ??
       fileURLToPath(new URL("../../../pwa/dist", import.meta.url)),
   );
+  const externalOrigin = options.externalOrigin ?? process.env["DOME_EXTERNAL_ORIGIN"];
   if (!existsSync(staticDir)) {
     console.error(
       `dome home: built PWA assets were not found at ${staticDir}; run \`bun run --cwd pwa build\` or pass --static-dir.`,
@@ -48,9 +41,11 @@ export async function runHome(options: RunHomeOptions = {}): Promise<number> {
 
   const started = await startProductHost({
     vaultPath,
-    pairCode,
     port,
     staticDir,
+    ...(externalOrigin !== undefined
+      ? { externalOrigin }
+      : {}),
     ...(options.host !== undefined ? { hostname: options.host } : {}),
     ...(options.bundlesRoot !== undefined ? { bundlesRoot: options.bundlesRoot } : {}),
   });
@@ -61,8 +56,8 @@ export async function runHome(options: RunHomeOptions = {}): Promise<number> {
 
   const host = started.value;
   console.error(`dome home: serving ${host.url}`);
-  console.error(`dome home: local pairing code ${pairCode}`);
-  options.onReady?.(host, pairCode);
+  console.error("dome home: mint pairing codes locally with `dome devices pair --name <device>`.");
+  options.onReady?.(host);
   try {
     await untilStopped(options.signal);
   } finally {

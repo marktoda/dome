@@ -307,6 +307,29 @@ and non-loopback binds are refused. Remote exposure remains disabled until P3
 ships persistent device identity, exact-origin/CSRF enforcement, auth epochs,
 and local-console recovery.
 
+### Dome Home durable device authentication
+
+The Product Host uses the same route implementation in a distinct auth mode;
+it never falls back to the compatibility bearer, query token, or process-local
+pairing cookie. `POST /pair` exchanges a `dome devices pair` grant for a
+host-only `HttpOnly; SameSite=Strict` device cookie and a double-submit CSRF
+cookie. HTTPS origins always receive `Secure`; an explicitly configured HTTP
+loopback development origin omits it, and insecure non-loopback pairing is
+refused before the grant is consumed.
+`GET /pair/status` reports the authenticated device and exact grants.
+Cookie-authenticated mutations require an exact configured `Origin`, the CSRF
+cookie, and matching `X-Dome-CSRF`. On reload the PWA copies that readable,
+non-authorizing cookie into memory; no bootstrap mutation races multiple tabs.
+Bearer device
+credentials do not require CSRF, but any supplied Origin must still be exact.
+
+All authenticated routes receive a frozen device context. Route capabilities,
+readiness, transcription, agent tools, and session ownership derive from that
+context. Persistent per-request mutation audit receipts remain a P3.3
+deliverable. Credential lifecycle failures share one public 401;
+responses are no-store and carry CSP, frame, content-type, referrer,
+permissions, and request-id hardening headers.
+
 ### One shared bearer token (the v1 compatibility contract)
 
 The token is a **single static shared bearer** for the whole surface: one
