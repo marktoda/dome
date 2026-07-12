@@ -464,6 +464,14 @@ turns, open evidence, revoke one device without affecting the other, restart,
 and recover conversation explicitly. Deterministic features remain useful with
 model and transcription disabled.
 
+**Checkpoint P3.1 implemented 2026-07-12.** Durable Device Authority stores
+device identity separately from append-only credential history; one-time local
+pairing grants pre-bind name and scoped capabilities; credentials and CSRF
+secrets are hashed at rest; rotation/revocation/auth epoch and expiry survive
+restart. Every transition is serialized and adversarial two-handle tests pin
+exchange, rotate, revoke, authenticate, and invalidate races. `dome devices`
+provides the local owner Adapter. HTTP adoption of this Interface remains P3.2.
+
 ### P4 — Self-contained distribution, backup, and upgrade
 
 Deliver the signed macOS product artifact with pinned runtime and PWA; one
