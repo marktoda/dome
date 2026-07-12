@@ -2,13 +2,13 @@
 type: spec
 created: 2026-07-11
 updated: 2026-07-11
-status: active
-description: "Controlled mutation module: expected-byte admission, host-coordinated commit, crash journal, and conservative checkout repair."
 sources:
   - "[[wiki/specs/product-host]]"
   - "[[wiki/specs/capture]]"
   - "[[wiki/specs/adoption]]"
   - "[[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]]"
+description: "Controlled mutation module: expected-byte admission, host-coordinated commit, crash journal, and conservative checkout repair."
+status: active
 ---
 
 # Controlled mutation
