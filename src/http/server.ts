@@ -1,7 +1,7 @@
 // src/http/server.ts
 //
 // The one Dome HTTP surface (`dome http`). A single capability-gated server
-// over one vault + one mutex: read (query/doc/questions/status/plugin views/
+// over one vault + injected Product Host admission (or one compatibility mutex): read (query/doc/questions/status/plugin views/
 // tasks/today/recents), capture, resolve, session-oriented foreground agents,
 // transcribe, and static PWA serving. Compatibility callers use a bearer;
 // P1 browsers may exchange a loopback pairing code for an HttpOnly cookie.
@@ -203,7 +203,7 @@ export type DomeHttpServerOptions = {
 
 export type DomeHttpServer = {
   readonly fetch: (request: Request) => Promise<Response>;
-  readonly close: () => void;
+  readonly close: () => Promise<void>;
 };
 
 // ----- Helpers (private) ----------------------------------------------------
@@ -558,6 +558,10 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       };
     },
   });
+  const activeTurns = new Set<{
+    readonly controller: AbortController;
+    readonly drained: Promise<void>;
+  }>();
 
   // ----- POST /transcribe (runs authenticated but outside the vault mutex) -----
   //
@@ -673,6 +677,8 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     const drained = new Promise<void>((resolve) => {
       signalDrained = resolve;
     });
+    const activeTurn = { controller, drained };
+    activeTurns.add(activeTurn);
     // Compatibility mode opens a Vault per request, so its lazy agent tools
     // retain the historical mutex reservation. Product Host mode owns one
     // long-lived Vault and generation holds no global lease.
@@ -731,6 +737,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
           });
           clearTimeout(timer);
           signalDrained();
+          activeTurns.delete(activeTurn);
           ctrl.close();
         }
       },
@@ -759,7 +766,12 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     }
 
     if (route === "GET /" || route === "GET /healthz") {
-      return jsonResponse(200, { schema: SERVER_SCHEMA, server: "dome", vault: opts.vaultPath, capabilities: [...granted].sort() });
+      return jsonResponse(200, {
+        schema: SERVER_SCHEMA,
+        server: "dome",
+        ...(opts.readiness === undefined ? { vault: opts.vaultPath } : {}),
+        capabilities: [...granted].sort(),
+      });
     }
 
     if (route === "POST /sessions") {
@@ -1122,6 +1134,13 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     // ----- read-only views (from the former `dome http`) ---------------------
 
     if (route === "GET /status") {
+      if (opts.readiness !== undefined) {
+        return dataErrorResponse(
+          410,
+          "use-product-readiness",
+          "Product Host clients use GET /readyz; the operator status document is compatibility-only.",
+        );
+      }
       const result = await buildStatusSnapshot({ vault: opts.vaultPath, bundlesRoot: opts.bundlesRoot });
       return result.kind === "runtime-open-failed"
         ? commandErrorResponse("status", result.errorKind)
@@ -1344,7 +1363,15 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     }
   };
 
-  return Object.freeze({ fetch: handle, close: () => agentRuntime.close() });
+  return Object.freeze({
+    fetch: handle,
+    close: async () => {
+      agentRuntime.close();
+      const turns = [...activeTurns];
+      for (const turn of turns) turn.controller.abort("http-server-closing");
+      await Promise.all(turns.map((turn) => turn.drained));
+    },
+  });
 }
 
 function operationClassFor(request: Request): ProductOperationClass {

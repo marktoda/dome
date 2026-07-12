@@ -24,27 +24,14 @@ const ALLOWED_FILES = new Set([
   // init.ts.
   "src/cli/commands/install.ts",
   "src/cli/commands/install-systemd.ts",
-  // The settle seam: `performSettle` flips a task checkbox / rewrites its 📅
-  // date and records a Done-today bullet, landing them as one ordinary human
-  // commit via commitFilesOnHead — exactly like `dome capture`. Same boundary
-  // class as capture.ts; the daemon constructs the Proposal from branch drift.
-  "src/surface/settle.ts",
-  // The proposal review decision surface: `performApply` writes a pending
-  // proposal's changes to the working tree and lands them as one ordinary
-  // human commit via `commitFilesOnHead`, exactly like `dome settle`. Same
-  // boundary class; the daemon constructs the Proposal from branch drift.
-  // `performReject` touches no files (CAS-decides the row only).
-  "src/surface/proposals.ts",
+  // Stable opaque Product Host identity in gitignored operational state. The
+  // exclusive create is not a Markdown/Git write path.
+  "src/product-host/vault-id.ts",
   // The retrieval-miss log: appends one dated bullet to
   // meta/retrieval-misses.md and lands it as one ordinary human commit via
   // commitSingleFileOnHead — exactly like `dome capture`/`dome settle`. Same
   // boundary class; the daemon constructs the Proposal from branch drift.
   "src/surface/report-miss.ts",
-  // The hosted agent's write path: create_document / edit_document write one
-  // markdown file and land it as an ordinary human commit via
-  // commitSingleFileOnHead — exactly like `dome capture`. Same boundary class
-  // as capture.ts; the daemon constructs the Proposal from the branch drift.
-  "src/assistant/write.ts",
   // The explicit adopted-ref divergence recovery chokepoint: moves
   // refs/dome/adopted/<branch> (with a refs/dome/backup/ copy first) via the
   // src/git ref helpers after the user confirms a history rewrite. The only

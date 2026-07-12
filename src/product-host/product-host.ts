@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 import {
   PRODUCT_READINESS_SCHEMA,
@@ -14,6 +13,7 @@ import { createDomeHttpServer } from "../http/server";
 import { recoverControlledMutation } from "../mutation/controlled-mutation";
 import { openVault, type Vault } from "../vault";
 import { ProductOperationScheduler } from "./operation-scheduler";
+import { ensureVaultId } from "./vault-id";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3663;
@@ -169,10 +169,10 @@ export async function startProductHost(
       } finally {
         controller.abort();
         scheduler.close();
-        http?.close();
         listener?.stop(true);
+        if (http !== null) await http.close();
         await poll.catch(() => {});
-        await waitForLeasedWork(scheduler, 5_000);
+        await scheduler.whenIdle();
         if (vault !== null) await vault.close();
       }
     },
@@ -208,18 +208,6 @@ async function pollVault(
     } catch {
       if (!signal.aborted) state.lastError = "engine-tick-cancelled";
     }
-  }
-}
-
-async function waitForLeasedWork(
-  scheduler: ProductOperationScheduler,
-  timeoutMs: number,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const snapshot = scheduler.snapshot();
-    if (snapshot.views.active === 0 && snapshot.mutations.active === 0) return;
-    await wait(10, new AbortController().signal);
   }
 }
 
@@ -297,33 +285,6 @@ async function buildReadiness(
     transcription: Object.freeze({ state: options.transcriptionState ?? "unconfigured" }),
     nextActions: Object.freeze(nextActions),
   });
-}
-
-async function ensureVaultId(vaultPath: string): Promise<string> {
-  const path = join(vaultPath, ".dome", "state", "product-host-id");
-  try {
-    const current = (await readFile(path, "utf8")).trim();
-    if (current.length > 0) return current;
-  } catch (error) {
-    if (!isNotFound(error)) throw error;
-  }
-  await mkdir(dirname(path), { recursive: true });
-  const created = randomUUID();
-  try {
-    await writeFile(path, `${created}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
-    return created;
-  } catch (error) {
-    if (!isAlreadyExists(error)) throw error;
-    return (await readFile(path, "utf8")).trim();
-  }
-}
-
-function isNotFound(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
-}
-
-function isAlreadyExists(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "EEXIST";
 }
 
 function failure(

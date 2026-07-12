@@ -37,12 +37,14 @@ describe("P2 Product Host", () => {
     const cookie = await pair(first.value.url);
     const ready = await fetch(`${first.value.url}/readyz`, { headers: { cookie } });
     expect(ready.status).toBe(200);
-    expect(await ready.json()).toMatchObject({
+    const readyDocument = await ready.json() as { readonly vault: { readonly id: string } };
+    expect(readyDocument).toMatchObject({
       schema: "dome.product.readiness/v1",
       host: { state: "ready" },
       adoption: { state: "current" },
       vault: { name: vault.split("/").at(-1) },
     });
+    expect((await fetch(`${first.value.url}/status`, { headers: { cookie } })).status).toBe(410);
 
     const second = await startProductHost({
       vaultPath: vault,
@@ -59,7 +61,10 @@ describe("P2 Product Host", () => {
       port: 0,
     });
     expect(restarted.ok).toBe(true);
-    if (restarted.ok) hosts.push(restarted.value);
+    if (restarted.ok) {
+      hosts.push(restarted.value);
+      expect((await restarted.value.readiness()).vault.id).toBe(readyDocument.vault.id);
+    }
   }, 30_000);
 
   test("a slow model turn does not block readiness, adopted reads, or capture", async () => {
@@ -102,8 +107,9 @@ describe("P2 Product Host", () => {
     expect(turn.status).toBe(200);
 
     try {
-      const [ready, doc, capture] = await within(Promise.all([
+      const [ready, today, doc, capture] = await within(Promise.all([
         fetch(`${started.value.url}/readyz`, { headers: { cookie } }),
+        fetch(`${started.value.url}/tasks`, { headers: { cookie } }),
         fetch(`${started.value.url}/doc?path=wiki/host.md`, { headers: { cookie } }),
         fetch(`${started.value.url}/capture`, {
           method: "POST",
@@ -112,8 +118,18 @@ describe("P2 Product Host", () => {
         }),
       ]), 2_000);
       expect(ready.status).toBe(200);
+      expect(today.status).toBe(200);
       expect(doc.status).toBe(200);
       expect(capture.status).toBe(200);
+      expect(await capture.json()).toMatchObject({
+        status: "captured",
+        adoption_status: "pending",
+      });
+      await eventually(async () => {
+        const readiness = await started.value.readiness();
+        return readiness.adoption.state === "current" &&
+          readiness.adoption.head === readiness.adoption.adopted;
+      }, 3_000);
     } finally {
       release();
       await turn.text();
@@ -156,4 +172,13 @@ async function within<T>(promise: Promise<T>, milliseconds: number): Promise<T> 
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function eventually(check: () => Promise<boolean>, milliseconds: number): Promise<void> {
+  const deadline = Date.now() + milliseconds;
+  while (Date.now() < deadline) {
+    if (await check()) return;
+    await Bun.sleep(25);
+  }
+  throw new Error(`condition was not met within ${milliseconds}ms`);
 }

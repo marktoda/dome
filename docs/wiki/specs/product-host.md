@@ -287,8 +287,9 @@ The first Product Host checkpoint implements the small lifecycle Interface
 (`start`, authenticated readiness, `close`), exclusive single-vault ownership,
 recovery before the long-lived Vault opens, a stable opaque local vault id,
 loopback pairing, and characterized operation admission. Model generation and
-immutable adopted reads hold no global lease; view work is bounded; workspace
-mutations and compiler ticks share one bounded FIFO lane. The HTTP Adapter can
+immutable adopted reads hold no global lease; view work, workspace mutations,
+and compiler ticks share one conservative bounded FIFO lane until safe
+long-lived-runtime concurrency is proven. The HTTP Adapter can
 consume the owned Vault and scheduler while standalone compatibility mode
 retains open-per-request serialization.
 

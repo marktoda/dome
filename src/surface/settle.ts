@@ -6,7 +6,8 @@
 // Settling is a DECISION, not authoring — like `resolve`, not like editing.
 // `performSettle` locates a task line by its move-stable `^block-anchor`
 // across the vault's markdown and applies a close / defer / keep disposition
-// as one ordinary HUMAN commit (no Dome-* trailers). The daemon constructs a
+// as one ordinary HUMAN commit carrying only the mutation Module's
+// `Dome-Request` attribution trailer. The daemon constructs a
 // Proposal from the branch drift exactly like a terminal capture
 // (PROPOSALS_ARE_THE_ONLY_WRITE_PATH); this seam never calls the engine, never
 // writes projections, never opens the runtime.
@@ -21,9 +22,9 @@
 //              direct task-review surface tri-state and explicit.
 //
 // The line mechanics (find-by-anchor, flip-if-open, rewrite-📅) are the shared
-// pure transforms in `dome.daily`'s `task-disposition` module. This file owns
-// the fs/git half (via `commitFilesOnHead`, the
-// machinery behind `performCapture`).
+// pure transforms in `dome.daily`'s `task-disposition` module. The controlled
+// mutation Module owns expected-byte CAS, commit, checkout repair, and
+// recovery for the resulting file set.
 //
 // Mutation-boundary note: like `src/surface/capture.ts`, this is the human-side
 // write path at the compiler boundary — an edit + `git commit` in one verb, not
@@ -31,8 +32,8 @@
 // `tests/integration/no-direct-mutation-outside-boundaries.test.ts`.
 
 import { existsSync, readdirSync, readFileSync, type Dirent } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
+import { join } from "node:path";
 
 import {
   dailyPath,
@@ -48,7 +49,11 @@ import {
   setDueDate,
   taskLineBody,
 } from "../../assets/extensions/dome.daily/processors/task-disposition";
-import { commitFilesOnHead, currentBranch, currentSha, findGitRoot } from "../git";
+import { currentBranch, currentSha, findGitRoot } from "../git";
+import {
+  applyControlledMutation,
+  type ControlledMutationResult,
+} from "../mutation/controlled-mutation";
 import { resolveVaultPath } from "./resolve-vault";
 
 // ----- Public types ---------------------------------------------------------
@@ -180,19 +185,26 @@ export async function performSettle(
       return Object.freeze({ status: "settled" as const, blockId, disposition });
     }
 
-    for (const change of changes) {
-      await mkdir(dirname(join(vaultPath, change.filepath)), { recursive: true });
-      await writeFile(join(vaultPath, change.filepath), change.content, "utf8");
-    }
-
-    const commit = await commitFilesOnHead({
-      path: vaultPath,
-      files: changes,
+    const mutation = await applyControlledMutation({
+      vaultPath,
+      branch,
+      requestId: settleRequestId(req),
+      files: changes.map((change) => ({
+        path: change.filepath,
+        expectedContent: change.expectedContent,
+        content: change.content,
+      })),
       message: `settle(${disposition}): ${taskText.slice(0, 50)}`,
       author: { name: "dome settle", email: "dome-settle@local" },
     });
+    if (mutation.kind !== "committed") return settleMutationFailure(mutation);
 
-    return Object.freeze({ status: "settled" as const, blockId, disposition, commit });
+    return Object.freeze({
+      status: "settled" as const,
+      blockId,
+      disposition,
+      commit: mutation.commit,
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return invalid(`settle failed: ${msg}`);
@@ -201,7 +213,11 @@ export async function performSettle(
 
 // ----- disposition → file changes --------------------------------------------
 
-type FileWrite = { readonly filepath: string; readonly content: string };
+type FileWrite = {
+  readonly filepath: string;
+  readonly expectedContent: string | null;
+  readonly content: string;
+};
 
 function closeChanges(input: {
   vaultPath: string;
@@ -213,6 +229,7 @@ function closeChanges(input: {
   deps: SettleDeps;
 }): FileWrite[] {
   const originalLine = input.lines[input.lineIdx]!;
+  const originalContent = input.lines.join("\n");
   const closed = setCheckboxMark(originalLine, "x");
   // Already non-open (settled) — idempotent no-op; nothing recorded twice.
   if (closed === null) return [];
@@ -228,7 +245,11 @@ function closeChanges(input: {
   // When the task lives in today's daily, the checkbox flip and the Done-today
   // append are two edits to ONE file — apply both, commit once.
   if (input.relPath === todayDaily) {
-    return [{ filepath: input.relPath, content: appendDoneTodayBullet(originContent, bullet) }];
+    return [{
+      filepath: input.relPath,
+      expectedContent: originalContent,
+      content: appendDoneTodayBullet(originContent, bullet),
+    }];
   }
 
   const existingDaily = readIfExists(join(input.vaultPath, todayDaily));
@@ -239,8 +260,16 @@ function closeChanges(input: {
       yesterday: previousLocalDate(localDateParts(now)),
     });
   return [
-    { filepath: input.relPath, content: originContent },
-    { filepath: todayDaily, content: appendDoneTodayBullet(dailyBase, bullet) },
+    {
+      filepath: input.relPath,
+      expectedContent: originalContent,
+      content: originContent,
+    },
+    {
+      filepath: todayDaily,
+      expectedContent: existingDaily,
+      content: appendDoneTodayBullet(dailyBase, bullet),
+    },
   ];
 }
 
@@ -255,13 +284,54 @@ function deferChanges(input: {
   if (deferred === originalLine) return [];
   const nextLines = [...input.lines];
   nextLines[input.lineIdx] = deferred;
-  return [{ filepath: input.relPath, content: nextLines.join("\n") }];
+  return [{
+    filepath: input.relPath,
+    expectedContent: input.lines.join("\n"),
+    content: nextLines.join("\n"),
+  }];
 }
 
 // ----- internals -------------------------------------------------------------
 
 function invalid(message: string): SettleResult {
   return Object.freeze({ status: "invalid" as const, message });
+}
+
+function settleRequestId(req: SettleRequest): string {
+  const digest = createHash("sha256")
+    .update(JSON.stringify({
+      blockId: req.blockId,
+      disposition: req.disposition,
+      deferUntil: req.deferUntil ?? null,
+    }))
+    .digest("hex")
+    .slice(0, 32);
+  return `settle:${req.disposition}:${digest}`;
+}
+
+function settleMutationFailure(mutation: Exclude<
+  ControlledMutationResult,
+  { readonly kind: "committed" }
+>): SettleResult {
+  switch (mutation.kind) {
+    case "busy":
+      return invalid("settle failed: mutation lane is busy; retry later");
+    case "diverged":
+      return invalid(
+        `settle failed: ${mutation.commit === null ? "candidate" : `commit ${mutation.commit}`} landed with checkout divergence at ${mutation.paths.join(", ") || "unknown paths"}; recovery required`,
+      );
+    case "no-commit":
+      switch (mutation.reason) {
+        case "working-tree-conflict":
+          return invalid(
+            `settle failed: working tree changed before commit at ${mutation.paths.join(", ") || "the target files"}`,
+          );
+        case "branch-mismatch":
+          return invalid("settle failed: branch changed before commit");
+        case "candidate-not-landed":
+          return invalid("settle failed: candidate commit did not land");
+      }
+  }
 }
 
 function stripMd(path: string): string {

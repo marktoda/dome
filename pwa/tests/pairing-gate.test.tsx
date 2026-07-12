@@ -2,7 +2,12 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { PairingGate } from "../src/auth/PairingGate";
 
-afterEach(cleanup);
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  cleanup();
+  globalThis.fetch = originalFetch;
+});
 
 describe("PairingGate", () => {
   test("renders children immediately for an existing paired cookie", async () => {

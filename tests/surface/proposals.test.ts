@@ -17,6 +17,8 @@
 //   - An already-satisfied delete (file already absent) is skipped as
 //     idempotent, not stale; a proposal that is all-satisfied-deletes with no
 //     writes lands no commit.
+//   - An already-satisfied write is likewise skipped, so retry after commit
+//     but before proposal CAS converges without another commit.
 //   - performReject CAS-decides the row to `rejected` and lands no commit.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -28,6 +30,8 @@ import { dirname, join } from "node:path";
 import { fileChange, type FileChange } from "../../src/core/effect";
 import { commitOid, sourceRef, type SourceRef } from "../../src/core/source-ref";
 import { runInit } from "../../src/cli/commands/init";
+import { compilerHostLockPath } from "../../src/engine/host/compiler-host-lock";
+import { withExclusiveFileLock } from "../../src/engine/host/file-lock";
 import { commitSingleFileOnHead, log, resolveRef } from "../../src/git";
 import { openProposalsDb } from "../../src/proposals/db";
 import { enqueuePendingProposal, getProposal } from "../../src/proposals/pending-proposals";
@@ -233,6 +237,9 @@ describe("performApply", () => {
     expect(commits[0]!.oid).toBe(result.commit ?? "");
     expect(commits[0]!.commit.parent[0]!).toBe(before);
     expect(commits[0]!.commit.message.startsWith(`apply(P${id}):`)).toBe(true);
+    expect(commits[0]!.commit.message).toContain(
+      `Dome-Request: apply:proposal:${id}`,
+    );
 
     // Working file carries the proposed content.
     const written = await Bun.file(join(vault, "wiki/note.md")).text();
@@ -261,6 +268,29 @@ describe("performApply", () => {
     expect(second.status).toBe("not-pending");
   });
 
+  test("a landed commit remains applied when owner bytes force checkout recovery", async () => {
+    const vault = await initVault();
+    await commitFile(vault, "wiki/note.md", "base\n");
+    const id = await enqueueProposal(vault, {
+      changes: [fileChange({ kind: "write", path: "wiki/note.md", content: "proposed\n" })],
+      baseContents: { "wiki/note.md": "base\n" },
+    });
+    const result = await performApply(vault, id, {
+      afterRefAdvance: async () => {
+        await writeFile(join(vault, "wiki/note.md"), "owner edit\n", "utf8");
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: "applied",
+      commit: expect.any(String),
+      recoveryRequired: true,
+    });
+    expect(await proposalStatus(vault, id)).toBe("applied");
+    expect(await Bun.file(join(vault, "wiki/note.md")).text()).toBe("owner edit\n");
+    expect(applyResultJson(result)["recovery_required"]).toBe(true);
+  });
+
   test("a working-tree mutation since enqueue makes apply stale and leaves the file untouched", async () => {
     const vault = await initVault();
     await commitFile(vault, "wiki/note.md", "line1\n");
@@ -285,6 +315,50 @@ describe("performApply", () => {
     expect(onDisk).toBe("someone edited this already\n");
 
     // The row is still pending — nothing was decided.
+    expect(await proposalStatus(vault, id)).toBe("pending");
+  });
+
+  test("expected-byte CAS catches drift after classification while waiting for the host lane", async () => {
+    const vault = await initVault();
+    await commitFile(vault, "wiki/note.md", "line1\n");
+    const id = await enqueueProposal(vault, {
+      changes: [fileChange({
+        kind: "write",
+        path: "wiki/note.md",
+        content: "line1\nline2\n",
+      })],
+      baseContents: { "wiki/note.md": "line1\n" },
+    });
+    const before = await headSha(vault);
+    let release!: () => void;
+    let acquired!: () => void;
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const lockAcquired = new Promise<void>((resolve) => { acquired = resolve; });
+    const holder = withExclusiveFileLock({
+      lockPath: compilerHostLockPath(vault, "main"),
+      command: "apply-cas-test-holder",
+    }, async () => {
+      acquired();
+      await released;
+    });
+    await lockAcquired;
+
+    const applying = performApply(vault, id);
+    await Bun.sleep(75);
+    await mutateWorkingFile(vault, "wiki/note.md", "owner edit during admission\n");
+    release();
+    await holder;
+
+    const result = await applying;
+    expect(result).toMatchObject({
+      status: "stale",
+      id,
+      changedPaths: ["wiki/note.md"],
+    });
+    expect(await headSha(vault)).toBe(before);
+    expect(await Bun.file(join(vault, "wiki/note.md")).text()).toBe(
+      "owner edit during admission\n",
+    );
     expect(await proposalStatus(vault, id)).toBe("pending");
   });
 
@@ -338,6 +412,56 @@ describe("performApply", () => {
     const onDisk = await Bun.file(join(vault, "wiki/new-page.md")).text();
     expect(onDisk).toBe("owner wrote this first\n");
     expect(await proposalStatus(vault, id)).toBe("pending");
+  });
+
+  test("an all-satisfied write retry marks the row applied without a second commit", async () => {
+    const vault = await initVault();
+    await commitFile(vault, "wiki/note.md", "base\n");
+    const id = await enqueueProposal(vault, {
+      changes: [fileChange({
+        kind: "write",
+        path: "wiki/note.md",
+        content: "proposed\n",
+      })],
+      baseContents: { "wiki/note.md": "base\n" },
+    });
+
+    // State after the controlled commit landed but before pending -> applied.
+    await commitFile(vault, "wiki/note.md", "proposed\n");
+    const landed = await headSha(vault);
+
+    const result = await performApply(vault, id);
+    expect(result).toEqual({ status: "applied", id });
+    expect(await headSha(vault)).toBe(landed);
+    expect(await proposalStatus(vault, id)).toBe("applied");
+  });
+
+  test("a mixed satisfied and eligible retry commits only the remaining change", async () => {
+    const vault = await initVault();
+    await commitFile(vault, "wiki/one.md", "one base\n");
+    await commitFile(vault, "wiki/two.md", "two base\n");
+    const id = await enqueueProposal(vault, {
+      changes: [
+        fileChange({ kind: "write", path: "wiki/one.md", content: "one proposed\n" }),
+        fileChange({ kind: "write", path: "wiki/two.md", content: "two proposed\n" }),
+      ],
+      baseContents: {
+        "wiki/one.md": "one base\n",
+        "wiki/two.md": "two base\n",
+      },
+    });
+    await commitFile(vault, "wiki/one.md", "one proposed\n");
+    const beforeApply = await headSha(vault);
+
+    const result = await performApply(vault, id);
+    expect(result.status).toBe("applied");
+    if (result.status !== "applied") throw new Error("unreachable");
+    expect(result.commit).not.toBe(beforeApply);
+    const commits = await log({ path: vault, depth: 2 });
+    expect(commits[0]!.commit.parent[0]).toBe(beforeApply);
+    expect(await Bun.file(join(vault, "wiki/one.md")).text()).toBe("one proposed\n");
+    expect(await Bun.file(join(vault, "wiki/two.md")).text()).toBe("two proposed\n");
+    expect(await proposalStatus(vault, id)).toBe("applied");
   });
 
   test("a delete-change proposal applies: file removed, one commit, row applied", async () => {

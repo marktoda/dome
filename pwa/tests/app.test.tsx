@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, test, mock } from "bun:test";
 import { cleanup, render, screen, waitFor, fireEvent } from "@testing-library/react";
 import App from "../src/App";
 
-afterEach(cleanup);
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  cleanup();
+  globalThis.fetch = originalFetch;
+});
 
 const TODAY_BODY = JSON.stringify({ schema: "dome.daily.today/v1", date: "2026-06-17", openTasks: [], followups: [], questions: [], brief: null, calendar: null, hero: null, counts: { openTasks: 0, followups: 0, questions: 0 } });
 const RECENTS_BODY = JSON.stringify({ schema: "dome.recents/v1", count: 0, entries: [] });

@@ -99,6 +99,10 @@ dome restart [--vault <path>] [--json]
                                 existing plist/unit (never re-rendered; --env preserved).
 dome uninstall [--vault <path>] [--json]
                                 Stop and remove the vault's ambient service.
+dome home [--vault <path>] [--port <port>] [--host <host>]
+          [--pair-code <code>] [--static-dir <path>]
+                                Run the loopback Product Host: one long-lived
+                                vault, compiler scheduler, HTTP API, and built PWA.
 dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
                                 read/capture tools (capture, views, query, export_context,
                                 status, check, resolve, settle, tasks, brief) for
@@ -140,7 +144,7 @@ questions and `dome resolve`, so recovery still goes through normal Effect
 routing and capability checks.
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, `dome today` (whose `--prep`/`--with` flags dispatch the `prep`/`agenda-with` view processors), and `dome audit` (whose subjects dispatch `stale-claims`/`orphan-pages`) — command-triggered view-phase processors invoked through the shared view-command boundary. `dome run <name>` remains available as the generic escape hatch for extension-authored view processors that have not (yet) earned a dedicated binding.
 - **Capture ingress:** `dome capture` — the frictionless write-side entry point ([[wedge]] §"Phase 3 — Capture loop"). It writes a timestamped raw source into `inbox/raw/` and lands it as an ordinary human commit on the current branch; adoption and `dome.agent.ingest` handle everything after the commit boundary. See [[wiki/specs/capture]] for the capture-loop spec and the phone/voice ingress recipe.
-- **Lifecycle:** `dome init` — vault construction; `dome install` / `dome restart` / `dome uninstall` — ambient service lifecycle for the local compiler host (a launchd LaunchAgent on macOS, a systemd `--user` unit on Linux, both around `dome serve`, per [[wedge]] §"Phase 1 — Ambient daemon"). Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
+- **Lifecycle:** `dome init` — vault construction; `dome home` — the PWA-first loopback Product Host owning one long-lived vault, compiler scheduler, and HTTP listener; `dome install` / `dome restart` / `dome uninstall` — the existing ambient compiler lifecycle pending Product Host delegation. Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
 - **Protocol adapters:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"; [[wiki/specs/mcp-surface]]) — and `dome http` — the HTTP read+capture+converse surface and first shipped form of the remote-capture seam ([[wiki/specs/http-surface]]). Both are thin adapters over the public `openVault` wrapper plus the protocol-neutral `src/surface/` collectors. `dome recipe` prints client-side setup text (`ios`: the queue-first iOS Shortcut against `dome http`; `capture-queue`: the laptop-side iCloud queue drain; `core-seed`: the owner interview that seeds `core.md` — §"`dome recipe`").
 
 Planned dedicated view aliases such as `dome stats` are not Commander bindings
@@ -2729,6 +2733,20 @@ claude mcp add dome -- dome mcp --vault /path/to/vault
 The process serves until the client disconnects (stdin closes). Exit codes:
 0 on clean shutdown; 64 when the target is not an initialized Dome vault
 (missing git repo or `.dome/config.yaml`); 1 on transport failure.
+
+### `dome home [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--pair-code <code>] [--static-dir <path>]`
+
+The PWA-first product command. It starts the Product Host Module, which owns
+exclusive lifecycle for one vault, one long-lived public `Vault`, compiler
+ticks, operation admission, the loopback HTTP listener, and built PWA assets.
+It prints a generated local pairing code when one is not supplied. P2 refuses
+non-loopback binds; remote exposure waits for P3 device authority.
+
+The default asset directory is `pwa/dist`. A source checkout must run
+`bun run --cwd pwa build` first; P4's distribution artifact will populate the
+same runtime path. Missing assets fail before host admission
+instead of silently starting an API-only product. SIGINT/SIGTERM stops
+admission and closes the complete Product Host lifecycle.
 
 ### `dome http [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--token <token>] [--pair-code <code>] [--model <id>] [--static-dir <path>] [--allow-write] [--transcribe-cmd <cmd>] [--transcribe-key <key>] [--transcribe-url <url>] [--transcribe-model <model>]`
 
