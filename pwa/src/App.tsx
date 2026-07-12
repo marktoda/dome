@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { DomeClient } from "./api/client";
 import type { Recents as RecentsT, Today } from "./api/types";
-import { TokenGate } from "./auth/TokenGate";
+import { PairingGate } from "./auth/PairingGate";
 import { Brief } from "./components/Brief";
 import { Recents } from "./components/Recents";
 import { ChatTranscript } from "./components/ChatTranscript";
@@ -17,8 +17,7 @@ function todayLabel(): string {
   }
 }
 
-function Screen({ token }: { token: string }): React.ReactElement {
-  const client = useMemo(() => new DomeClient(token), [token]);
+function Screen({ client }: { client: DomeClient }): React.ReactElement {
   const captureQueue = useMemo(() => new CaptureQueue(), []);
   const [today, setToday] = useState<Today | null>(null);
   const [recents, setRecents] = useState<RecentsT | null>(null);
@@ -182,5 +181,5 @@ function Screen({ token }: { token: string }): React.ReactElement {
 }
 
 export default function App(): React.ReactElement {
-  return <TokenGate>{(token) => <Screen token={token} />}</TokenGate>;
+  return <PairingGate>{(client) => <Screen client={client} />}</PairingGate>;
 }

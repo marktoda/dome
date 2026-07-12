@@ -104,10 +104,11 @@ dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
                                 status, check, resolve, settle, tasks, brief) for
                                 MCP harnesses. The daemon still owns compilation.
 dome http [--vault <path>] [--port <port>] [--host <host>] [--token <token>]
+          [--pair-code <code>]
           [--model <id>] [--static-dir <path>] [--allow-write]
           [--transcribe-cmd <cmd>] [--transcribe-key <key>]
           [--transcribe-url <url>] [--transcribe-model <model>]
-                                Run the Dome HTTP surface (bearer-token auth;
+                                Run the Dome HTTP surface (bearer or loopback pairing;
                                 loopback by default): read/capture/resolve/settle
                                 routes, the GET /today HTML cockpit, session-oriented
                                 AgentRuntime conversation, POST /transcribe
@@ -2729,7 +2730,7 @@ The process serves until the client disconnects (stdin closes). Exit codes:
 0 on clean shutdown; 64 when the target is not an initialized Dome vault
 (missing git repo or `.dome/config.yaml`); 1 on transport failure.
 
-### `dome http [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--token <token>] [--model <id>] [--static-dir <path>] [--allow-write] [--transcribe-cmd <cmd>] [--transcribe-key <key>] [--transcribe-url <url>] [--transcribe-model <model>]`
+### `dome http [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--token <token>] [--pair-code <code>] [--model <id>] [--static-dir <path>] [--allow-write] [--transcribe-cmd <cmd>] [--transcribe-key <key>] [--transcribe-url <url>] [--transcribe-model <model>]`
 
 Runs the Dome HTTP read+capture+converse surface for one vault — the shipped
 protocol adapter per [[wiki/specs/http-surface]] and the first shipped form of
@@ -2745,9 +2746,12 @@ and `GET /recents`.
 
 Boundary discipline:
 
-- **Bearer token required.** `--token <value>` or `DOME_HTTP_TOKEN`; the
-  verb refuses to start without one (exit 64). Requests without the token
-  get 401.
+- **Authentication required.** Compatibility scripts use `--token <value>` or
+  `DOME_HTTP_TOKEN`. The P1 browser path instead uses `--pair-code <code>` or
+  `DOME_PAIR_CODE`, exchanged at `/pair` for an HttpOnly process-local cookie.
+  At least one must be configured.
+- **Pairing is loopback-only.** Pairing refuses non-loopback `--host` values;
+  remote browser exposure waits for P3 hardened device authority.
 - **Loopback by default.** Binds `127.0.0.1:3663`; `--host` points it at a
   private (Tailscale-class) interface for phone access. Owner trust domain
   only — hosted multi-tenant is v1.5 territory.
@@ -2758,7 +2762,7 @@ Boundary discipline:
   `edit_document` → git commit → daemon adopts); default off,
   read-only-safe.
 
-Exit codes: 0 on clean shutdown (SIGINT/SIGTERM); 64 on missing token,
+Exit codes: 0 on clean shutdown (SIGINT/SIGTERM); 64 on missing authentication,
 malformed port, or uninitialized vault; 1 on listener failure.
 
 ### Planned dedicated view aliases

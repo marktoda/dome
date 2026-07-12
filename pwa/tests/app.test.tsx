@@ -9,11 +9,11 @@ const RECENTS_BODY = JSON.stringify({ schema: "dome.recents/v1", count: 0, entri
 
 beforeEach(() => {
   localStorage.clear();
-  localStorage.setItem("dome.token", "tok");
   // agentStream calls fetch(string, opts); tasks/recents call fetch(new Request(...))
   globalThis.fetch = mock(async (reqOrUrl: Request | string) => {
     const rawUrl = typeof reqOrUrl === "string" ? reqOrUrl : reqOrUrl.url;
     const url = new URL(rawUrl, "http://x");
+    if (url.pathname === "/pair/status") return new Response(JSON.stringify({ schema: "dome.pairing/v1", available: true, paired: true }), { status: 200 });
     if (url.pathname === "/tasks") return new Response(TODAY_BODY, { status: 200 });
     if (url.pathname === "/recents") return new Response(RECENTS_BODY, { status: 200 });
     if (url.pathname === "/sessions") return new Response(JSON.stringify({ schema: "dome.agent-session/v1", status: "created", sessionId: "s1" }), { status: 201 });
@@ -22,7 +22,7 @@ beforeEach(() => {
 });
 
 describe("App", () => {
-  test("renders the brief (all-clear), recents, and composer when tokened", async () => {
+  test("renders the brief (all-clear), recents, and composer when paired", async () => {
     render(<App />);
     await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
     expect(screen.getByPlaceholderText(/ask/i)).toBeDefined();
@@ -42,6 +42,7 @@ describe("App", () => {
       // agentStream calls fetch(string, opts); tasks/recents call fetch(new Request(...))
       const rawUrl = typeof reqOrUrl === "string" ? reqOrUrl : reqOrUrl.url;
       const url = new URL(rawUrl, "http://x");
+      if (url.pathname === "/pair/status") return new Response(JSON.stringify({ schema: "dome.pairing/v1", available: true, paired: true }), { status: 200 });
       if (url.pathname === "/tasks") { taskCallCount++; return new Response(TODAY_BODY, { status: 200 }); }
       if (url.pathname === "/recents") { recentsCallCount++; return new Response(RECENTS_BODY, { status: 200 }); }
       if (url.pathname === "/sessions") {

@@ -88,6 +88,54 @@ describe("createDomeHttpServer static serving", () => {
   });
 });
 
+describe("createDomeHttpServer loopback pairing", () => {
+  test("pairs into an HttpOnly cookie that authorizes normal routes", async () => {
+    const server = createDomeHttpServer({
+      vaultPath: "/tmp/unused",
+      token: TOKEN,
+      loopbackPairing: { code: "local-code-123" },
+    });
+    const before = await server.fetch(new Request("http://localhost/pair/status"));
+    expect(await before.json()).toEqual({
+      schema: "dome.pairing/v1",
+      available: true,
+      paired: false,
+    });
+    const invalid = await server.fetch(new Request("http://localhost/pair", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code: "wrong-code" }),
+    }));
+    expect(invalid.status).toBe(401);
+    const crossOrigin = await server.fetch(new Request("http://localhost/pair", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://attacker.example" },
+      body: JSON.stringify({ code: "local-code-123" }),
+    }));
+    expect(crossOrigin.status).toBe(403);
+
+    const paired = await server.fetch(new Request("http://localhost/pair", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "http://localhost:5173" },
+      body: JSON.stringify({ code: "local-code-123" }),
+    }));
+    expect(paired.status).toBe(200);
+    const setCookie = paired.headers.get("set-cookie") ?? "";
+    expect(setCookie).toContain("HttpOnly");
+    expect(setCookie).toContain("SameSite=Strict");
+    const cookie = setCookie.split(";", 1)[0]!;
+    const health = await server.fetch(new Request("http://localhost/healthz", {
+      headers: { cookie },
+    }));
+    expect(health.status).toBe(200);
+    const deniedMutation = await server.fetch(new Request("http://localhost/sessions", {
+      method: "POST",
+      headers: { cookie, origin: "https://attacker.example" },
+    }));
+    expect(deniedMutation.status).toBe(403);
+  });
+});
+
 describe("createDomeHttpServer agent sessions", () => {
   test("creates a session and preserves history across streamed turns", async () => {
     const histories: Array<ReadonlyArray<AgentMessage>> = [];

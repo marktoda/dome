@@ -30,15 +30,20 @@ installFixtureCleanup();
 
 // runHttp reads DOME_HTTP_TOKEN; isolate every test from the real env.
 let savedEnvToken: string | undefined;
+let savedPairCode: string | undefined;
 
 beforeEach(() => {
   savedEnvToken = process.env["DOME_HTTP_TOKEN"];
+  savedPairCode = process.env["DOME_PAIR_CODE"];
   delete process.env["DOME_HTTP_TOKEN"];
+  delete process.env["DOME_PAIR_CODE"];
 });
 
 afterEach(() => {
   if (savedEnvToken === undefined) delete process.env["DOME_HTTP_TOKEN"];
   else process.env["DOME_HTTP_TOKEN"] = savedEnvToken;
+  if (savedPairCode === undefined) delete process.env["DOME_PAIR_CODE"];
+  else process.env["DOME_PAIR_CODE"] = savedPairCode;
 });
 
 /** A fixture vault that passes runHttp's vault preconditions. */
@@ -77,13 +82,24 @@ describe("runHttp token resolution", () => {
     const f = await makeHttpVault();
     expect(await runHttp({ vault: f.vaultPath })).toBe(EX_USAGE);
     expect(captured.err.join("\n")).toContain(
-      "a bearer token is required — pass --token <value> or set DOME_HTTP_TOKEN",
+      "a bearer token or loopback pairing code is required",
     );
   });
 
   test("a whitespace-only token is EX_USAGE", async () => {
     const f = await makeHttpVault();
     expect(await runHttp({ vault: f.vaultPath, token: "   " })).toBe(EX_USAGE);
+  });
+
+  test("pairing codes are loopback-only and have a minimum length", async () => {
+    const f = await makeHttpVault();
+    expect(await runHttp({ vault: f.vaultPath, pairCode: "short" })).toBe(EX_USAGE);
+    expect(await runHttp({
+      vault: f.vaultPath,
+      pairCode: "local-code-123",
+      host: "0.0.0.0",
+    })).toBe(EX_USAGE);
+    expect(captured.err.join("\n")).toContain("remote exposure waits for hardened device auth");
   });
 });
 
@@ -113,6 +129,34 @@ describe("runHttp port validation", () => {
 // ----- The listen path ----------------------------------------------------------------
 
 describe("runHttp listen path", () => {
+  test("loopback pairing can host the browser without a bearer token", async () => {
+    const f = await makeHttpVault();
+    const controller = new AbortController();
+    let baseUrl = "";
+    let readyResolve: () => void = () => {};
+    const ready = new Promise<void>((resolve) => { readyResolve = resolve; });
+    const exitCode = runHttp({
+      vault: f.vaultPath,
+      pairCode: "local-code-123",
+      port: 0,
+      signal: controller.signal,
+      onReady: (server) => {
+        baseUrl = `http://${server.hostname}:${server.port}`;
+        readyResolve();
+      },
+    });
+    await ready;
+    const paired = await fetch(`${baseUrl}/pair`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code: "local-code-123" }),
+    });
+    expect(paired.status).toBe(200);
+    expect(paired.headers.get("set-cookie")).toContain("HttpOnly");
+    controller.abort();
+    expect(await exitCode).toBe(0);
+  });
+
   test("serves over real HTTP, flag token beats env, stops cleanly on abort", async () => {
     const f = await makeHttpVault();
     process.env["DOME_HTTP_TOKEN"] = "env-token";

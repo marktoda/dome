@@ -15,6 +15,18 @@ export type AgentSession = {
   sessionId: string;
 };
 
+export type PairingStatus = {
+  schema: "dome.pairing/v1";
+  available: boolean;
+  paired: boolean;
+};
+
+export type PairingResult = {
+  schema: "dome.pairing/v1";
+  status: "paired";
+  expires_at: string;
+};
+
 export type StreamEvent =
   | { type: "text"; text: string }
   | { type: "done"; citations: Citation[]; stopReason: "final" | "budget"; changes?: AgentChange[] }
