@@ -102,7 +102,7 @@ describe("DomeClient", () => {
       return new Response("data: not-json\n\n", { status: 200 });
     }) as never;
 
-    await new DomeClient().agentStream("question", (event) => events.push(event));
+    const outcome = await new DomeClient().agentStream("question", (event) => events.push(event));
 
     expect(events).toEqual([{
       schema: AGENT_STREAM_SCHEMA,
@@ -111,6 +111,198 @@ describe("DomeClient", () => {
       message: "The response stream was interrupted or invalid.",
       retryable: true,
     }]);
+    expect(outcome).toEqual({
+      kind: "failed",
+      code: "protocol-invalid-json",
+      message: "The response stream was interrupted or invalid.",
+      retryable: true,
+    });
+  });
+
+  test("premature EOF is a visible retryable outcome and is never replayed", async () => {
+    const events: StreamEvent[] = [];
+    let messageRequests = 0;
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/sessions") return new Response(JSON.stringify({ schema: "dome.agent-session/v1", status: "created", sessionId: "s1" }), { status: 201 });
+      messageRequests++;
+      return new Response("data: {\"schema\":\"dome.agent.stream/v1\",\"type\":\"text\",\"text\":\"partial\"}\n\n", { status: 200 });
+    }) as never;
+
+    const outcome = await new DomeClient().agentStream("question", (event) => events.push(event));
+    expect(outcome).toMatchObject({ kind: "failed", code: "protocol-premature-eof", retryable: true });
+    expect(events.at(-1)).toMatchObject({ type: "error", code: "protocol-premature-eof", retryable: true });
+    expect(messageRequests).toBe(1);
+  });
+
+  test("a successful response without a stream is also a retryable premature EOF", async () => {
+    globalThis.fetch = mock(async (request: Request) => {
+      if (new URL(request.url).pathname === "/sessions") return new Response(JSON.stringify({ schema: "dome.agent-session/v1", status: "created", sessionId: "s1" }), { status: 201 });
+      return new Response(null, { status: 200 });
+    }) as never;
+    expect(await new DomeClient().agentStream("question", () => {})).toMatchObject({
+      kind: "failed",
+      code: "protocol-premature-eof",
+      retryable: true,
+    });
+  });
+
+  test("a turn handle aborts its fetch and cancels that exact server session", async () => {
+    const paths: string[] = [];
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      paths.push(path);
+      if (path === "/sessions") return new Response(JSON.stringify({ schema: "dome.agent-session/v1", status: "created", sessionId: "owned" }), { status: 201 });
+      if (path.endsWith("/cancel")) return new Response(JSON.stringify({ schema: "dome.agent-session/v1", status: "cancelled", sessionId: "owned" }), { status: 200 });
+      if (request.signal.aborted) throw new DOMException("aborted", "AbortError");
+      return await new Promise<Response>((_resolve, reject) => {
+        request.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+      });
+    }) as never;
+
+    const turn = new DomeClient().startAgentTurn("question", () => {});
+    const stop = await turn.stop();
+    expect(stop).toEqual({ kind: "cancelled" });
+    expect(await turn.result).toEqual({ kind: "cancelled", source: "local-abort" });
+    expect(paths).toEqual(["/sessions", "/sessions/owned/messages", "/sessions/owned/cancel"]);
+  });
+
+  test("a settled turn handle and removed abort listener cannot cancel a newer turn", async () => {
+    let messages = 0;
+    let cancels = 0;
+    const encoder = new TextEncoder();
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/sessions") return new Response(JSON.stringify({ schema: "dome.agent-session/v1", status: "created", sessionId: "shared" }), { status: 201 });
+      if (path.endsWith("/cancel")) {
+        cancels++;
+        return new Response(JSON.stringify({ schema: "dome.agent-session/v1", status: "cancelled", sessionId: "shared" }), { status: 200 });
+      }
+      messages++;
+      if (messages % 2 === 1) {
+        return new Response(new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(`data: {"schema":"${AGENT_STREAM_SCHEMA}","type":"done","citations":[],"stopReason":"final"}\n\n`));
+            controller.close();
+          },
+        }), { status: 200 });
+      }
+      if (request.signal.aborted) throw new DOMException("aborted", "AbortError");
+      return await new Promise<Response>((_resolve, reject) => {
+        request.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+      });
+    }) as never;
+
+    const client = new DomeClient();
+    const oldSignal = new AbortController();
+    expect(await client.agentStream("first", () => {}, oldSignal.signal)).toEqual({ kind: "done" });
+    const currentAfterSignal = client.startAgentTurn("second", () => {});
+    oldSignal.abort();
+    await Promise.resolve();
+    expect(cancels).toBe(0);
+    await currentAfterSignal.stop();
+    await currentAfterSignal.result;
+    expect(cancels).toBe(1);
+
+    const completedClient = new DomeClient();
+    const completed = completedClient.startAgentTurn("first", () => {});
+    await completed.result;
+    const current = completedClient.startAgentTurn("second", () => {});
+    expect(await completed.stop()).toEqual({ kind: "idle" });
+    await Promise.resolve();
+    expect(cancels).toBe(1);
+    expect(messages).toBe(4);
+    expect(await current.stop()).toEqual({ kind: "cancelled" });
+    expect(await current.result).toEqual({ kind: "cancelled", source: "local-abort" });
+    expect(cancels).toBe(2);
+  });
+
+  test("completion between local abort and cancel receipt is reported as stop-unconfirmed", async () => {
+    let resolveCancel: ((response: Response) => void) | undefined;
+    let markMessageStarted: (() => void) | undefined;
+    let markCancelStarted: (() => void) | undefined;
+    const messageStarted = new Promise<void>((resolve) => { markMessageStarted = resolve; });
+    const cancelStarted = new Promise<void>((resolve) => { markCancelStarted = resolve; });
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/sessions") return new Response(JSON.stringify({ schema: "dome.agent-session/v1", status: "created", sessionId: "shared" }), { status: 201 });
+      if (path.endsWith("/cancel")) {
+        markCancelStarted?.();
+        return await new Promise<Response>((resolve) => { resolveCancel = resolve; });
+      }
+      markMessageStarted?.();
+      if (request.signal.aborted) throw new DOMException("aborted", "AbortError");
+      return await new Promise<Response>((_resolve, reject) => {
+        request.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+      });
+    }) as never;
+
+    const controller = new AbortController();
+    let returned = false;
+    const result = new DomeClient().agentStream("first", () => {}, controller.signal).then((outcome) => {
+      returned = true;
+      return outcome;
+    });
+    await messageStarted;
+    controller.abort();
+    await cancelStarted;
+    expect(resolveCancel).toBeDefined();
+    expect(returned).toBe(false);
+    resolveCancel!(new Response(JSON.stringify({ schema: "dome.agent-session/v1", status: "idle", sessionId: "shared" }), { status: 200 }));
+    expect(await result).toMatchObject({ kind: "failed", code: "stop-unconfirmed", retryable: true });
+  });
+
+  test("malformed successful cancel receipts are typed protocol failures", async () => {
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/sessions") return new Response(JSON.stringify({ schema: "dome.agent-session/v1", status: "created", sessionId: "owned" }), { status: 201 });
+      if (path.endsWith("/cancel")) return new Response(JSON.stringify({ status: "cancelled", sessionId: "wrong" }), { status: 200 });
+      if (request.signal.aborted) throw new DOMException("aborted", "AbortError");
+      return await new Promise<Response>((_resolve, reject) => request.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true }));
+    }) as never;
+    const turn = new DomeClient().startAgentTurn("question", () => {});
+    expect(await turn.stop()).toEqual({
+      kind: "failed",
+      code: "protocol-invalid-cancel-receipt",
+      message: "The server returned an invalid cancellation receipt.",
+      retryable: true,
+    });
+  });
+
+  test("an expired session is evicted and only an explicit next ask creates another", async () => {
+    let sessions = 0;
+    let messages = 0;
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/sessions") {
+        sessions++;
+        return new Response(JSON.stringify({ schema: "dome.agent-session/v1", status: "created", sessionId: `s${sessions}` }), { status: 201 });
+      }
+      messages++;
+      if (messages === 1) return new Response(JSON.stringify({ error: "session-expired", message: "expired" }), { status: 410 });
+      return new Response(`data: {"schema":"${AGENT_STREAM_SCHEMA}","type":"done","citations":[],"stopReason":"final"}\n\n`, { status: 200 });
+    }) as never;
+    const client = new DomeClient();
+    expect(await client.agentStream("first", () => {})).toEqual({ kind: "session-expired" });
+    expect(sessions).toBe(1);
+    expect(messages).toBe(1);
+    expect(await client.agentStream("explicit retry", () => {})).toEqual({ kind: "done" });
+    expect(sessions).toBe(2);
+    expect(messages).toBe(2);
+  });
+
+  test("retryable HTTP outcomes retain Retry-After guidance", async () => {
+    globalThis.fetch = mock(async (request: Request) => {
+      if (new URL(request.url).pathname === "/sessions") return new Response(JSON.stringify({ schema: "dome.agent-session/v1", status: "created", sessionId: "s1" }), { status: 201 });
+      return new Response(JSON.stringify({ error: "busy", message: "try later" }), { status: 429, headers: { "retry-after": "7" } });
+    }) as never;
+    expect(await new DomeClient().agentStream("question", () => {})).toEqual({
+      kind: "failed",
+      code: "busy",
+      message: "try later",
+      retryable: true,
+      retryAfterSeconds: 7,
+    });
   });
 
   test("recents() GETs /recents with the bearer token and parses the body", async () => {

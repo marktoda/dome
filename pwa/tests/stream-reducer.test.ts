@@ -17,12 +17,33 @@ describe("chatReducer", () => {
     expect(a.streaming).toBe(false);
     expect(a.citations[0]!.path).toBe("wiki/x.md");
   });
-  test("error event ends streaming with an inline note", () => {
+  test("error event ends streaming with a structured notice", () => {
     let s: ChatState = { messages: [] };
     s = chatReducer(s, { kind: "assistant-start" });
     s = chatReducer(s, { kind: "event", event: { schema: AGENT_STREAM_SCHEMA, type: "error", code: "timeout", message: "timeout", retryable: true } });
     expect(s.messages[0]!.streaming).toBe(false);
-    expect(s.messages[0]!.text).toContain("timeout");
+    expect(s.messages[0]!.notice).toBe("timeout");
+  });
+  test("turn ids keep late events on their originating assistant message", () => {
+    let s: ChatState = { messages: [] };
+    s = chatReducer(s, { kind: "turn-start", turnId: "one", question: "first" });
+    s = chatReducer(s, { kind: "turn-start", turnId: "two", question: "second" });
+    s = chatReducer(s, { kind: "event", turnId: "one", event: { schema: AGENT_STREAM_SCHEMA, type: "text", text: "first answer" } });
+    expect(s.messages[1]!.text).toBe("first answer");
+    expect(s.messages[3]!.text).toBe("");
+  });
+  test("terminal turns ignore late stream events", () => {
+    let s: ChatState = { messages: [] };
+    s = chatReducer(s, { kind: "turn-start", turnId: "one", question: "first" });
+    s = chatReducer(s, { kind: "event", turnId: "one", event: { schema: AGENT_STREAM_SCHEMA, type: "done", citations: [], stopReason: "final" } });
+    const terminal = s;
+    s = chatReducer(s, { kind: "event", turnId: "one", event: { schema: AGENT_STREAM_SCHEMA, type: "text", text: "late" } });
+    expect(s).toBe(terminal);
+  });
+  test("explicit conversation actions append visible transcript boundaries", () => {
+    let s: ChatState = { messages: [] };
+    s = chatReducer(s, { kind: "boundary", text: "Retrying may repeat actions." });
+    expect(s.messages[0]).toMatchObject({ role: "system", text: "Retrying may repeat actions." });
   });
   test("done with changes stores them on the assistant message", () => {
     let s: ChatState = { messages: [] };

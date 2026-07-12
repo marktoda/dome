@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
-import { DomeClient } from "./api/client";
-import type { Recents as RecentsT, Today } from "./api/types";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { DomeClient, type AgentTurnHandle } from "./api/client";
+import type { AgentStopOutcome, AgentStreamOutcome, Recents as RecentsT, Today } from "./api/types";
 import { PairingGate } from "./auth/PairingGate";
 import { Brief } from "./components/Brief";
 import { Recents } from "./components/Recents";
@@ -17,6 +17,18 @@ function todayLabel(): string {
   }
 }
 
+export function reconcileStoppedTurn(stream: AgentStreamOutcome, stop: AgentStopOutcome): AgentStreamOutcome {
+  if (stream.kind !== "cancelled" || stream.source === "server") return stream;
+  if (stop.kind === "session-missing" || stop.kind === "session-expired" || stop.kind === "failed") return stop;
+  if (stop.kind === "cancelled") return { kind: "cancelled", source: "server" };
+  return {
+    kind: "failed",
+    code: "stop-unconfirmed",
+    message: "The response ended while stopping, but the server reported no active turn. Its final effects are unknown.",
+    retryable: true,
+  };
+}
+
 function Screen({ client }: { client: DomeClient }): React.ReactElement {
   const captureQueue = useMemo(() => new CaptureQueue(), []);
   const [today, setToday] = useState<Today | null>(null);
@@ -26,6 +38,9 @@ function Screen({ client }: { client: DomeClient }): React.ReactElement {
   const [ack, setAck] = useState<string | null>(null);
   const [pendingCaptures, setPendingCaptures] = useState<QueuedCapture[]>([]);
   const [storageStatus, setStorageStatus] = useState<"persistent" | "best-effort" | "unknown">("unknown");
+  const [turnPhase, setTurnPhase] = useState<"idle" | "streaming" | "stopping" | "retryable" | "session-ended">("idle");
+  const activeTurn = useRef<{ handle: AgentTurnHandle; question: string; stopping: boolean } | null>(null);
+  const retryQuestion = useRef<string | null>(null);
   const hasMessages = chat.messages.length > 0;
 
   const refresh = useCallback(() => {
@@ -66,6 +81,12 @@ function Screen({ client }: { client: DomeClient }): React.ReactElement {
     return () => window.removeEventListener("online", onOnline);
   }, [drainCaptures, refreshPending]);
 
+  useEffect(() => () => {
+    const active = activeTurn.current;
+    activeTurn.current = null;
+    if (active !== null) void active.handle.stop();
+  }, []);
+
   const captureText = async (text: string): Promise<string> => {
     await captureQueue.save({ text });
     await refreshPending();
@@ -83,15 +104,67 @@ function Screen({ client }: { client: DomeClient }): React.ReactElement {
     URL.revokeObjectURL(url);
   };
 
-  const onAsk = (q: string): void => {
-    dispatch({ kind: "user", text: q });
-    dispatch({ kind: "assistant-start" });
-    setBriefCollapsed(true);
-    void client.agentStream(q, (e) => {
-      dispatch({ kind: "event", event: e });
+  const finishTurn = useCallback((turnId: string, question: string, outcome: AgentStreamOutcome): void => {
+    dispatch({ kind: "outcome", turnId, outcome });
+    retryQuestion.current = outcome.kind === "done" ? null : question;
+    if (outcome.kind === "session-missing" || outcome.kind === "session-expired") setTurnPhase("session-ended");
+    else if (outcome.kind === "cancelled" || (outcome.kind === "failed" && outcome.retryable)) setTurnPhase("retryable");
+    else setTurnPhase("idle");
+  }, []);
+
+  const startAsk = useCallback((q: string): void => {
+    if (activeTurn.current !== null) return;
+    let turnId = "";
+    const handle = client.startAgentTurn(q, (e) => {
+      dispatch({ kind: "event", turnId, event: e });
       if (e.type === "done" && (e.changes?.length ?? 0) > 0) refresh();
     });
-  };
+    turnId = handle.turnId;
+    activeTurn.current = { handle, question: q, stopping: false };
+    retryQuestion.current = null;
+    dispatch({ kind: "turn-start", turnId, question: q });
+    setTurnPhase("streaming");
+    setBriefCollapsed(true);
+    void handle.result.then((outcome) => {
+      const active = activeTurn.current;
+      if (active?.handle !== handle || active.stopping) return;
+      activeTurn.current = null;
+      finishTurn(handle.turnId, q, outcome);
+    });
+  }, [client, finishTurn, refresh]);
+
+  const onAsk = useCallback((q: string): void => {
+    if (turnPhase === "session-ended") return;
+    startAsk(q);
+  }, [startAsk, turnPhase]);
+
+  const stopTurn = useCallback((): void => {
+    const active = activeTurn.current;
+    if (active === null || active.stopping) return;
+    active.stopping = true;
+    setTurnPhase("stopping");
+    void Promise.all([active.handle.result, active.handle.stop()]).then(([stream, stop]) => {
+      if (activeTurn.current?.handle !== active.handle) return;
+      activeTurn.current = null;
+      finishTurn(active.handle.turnId, active.question, reconcileStoppedTurn(stream, stop));
+    });
+  }, [finishTurn]);
+
+  const retryTurn = useCallback((): void => {
+    const question = retryQuestion.current;
+    if (question === null || activeTurn.current !== null) return;
+    client.startNewConversation();
+    dispatch({ kind: "boundary", text: "Retrying may repeat actions from the previous response." });
+    startAsk(question);
+  }, [client, startAsk]);
+
+  const newConversation = useCallback((): void => {
+    if (activeTurn.current !== null) return;
+    retryQuestion.current = null;
+    setTurnPhase("idle");
+    client.startNewConversation();
+    dispatch({ kind: "boundary", text: "New conversation started." });
+  }, [client]);
 
   // Optimistic: drop the answered question immediately, toast the answer, then
   // resolve against the API and refetch to confirm.
@@ -172,6 +245,10 @@ function Screen({ client }: { client: DomeClient }): React.ReactElement {
       {ack !== null ? <div className="ack-wrap"><div className="ack">{ack}</div></div> : null}
       <Composer
         onAsk={onAsk}
+        turnPhase={turnPhase}
+        onStop={stopTurn}
+        onRetry={retryTurn}
+        onNewConversation={newConversation}
         onCapture={captureText}
         onTranscribe={(blob) => client.transcribe(blob).then((t) => t.text)}
         onFile={captureText}

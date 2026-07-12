@@ -766,6 +766,38 @@ export async function readBlob(opts: {
 }
 
 /**
+ * Return a blob's uncompressed byte size without reading or decoding it.
+ *
+ * This native-git metadata probe is the bounded-resource companion to
+ * {@link readBlob}: callers with a response budget can reject a large object
+ * before allocating its contents. `null` means the path is absent or is not a
+ * blob at the requested commit; repository/process failures propagate.
+ */
+export async function blobSizeAtCommit(opts: {
+  path: string;
+  commit: string;
+  filepath: string;
+}): Promise<number | null> {
+  const { root, prefix } = await resolveGitContext(opts.path);
+  const fullpath = fullVaultPath(prefix, opts.filepath);
+  const object = `${opts.commit}:${fullpath}`;
+  const type = await runNativeGitResult(["-C", root, "cat-file", "-t", object]);
+  if (type.exitCode !== 0) {
+    if (/does not exist|not a valid object name|not exist in|path .* exists on disk/i.test(type.stderr)) {
+      return null;
+    }
+    throw new Error(`git cat-file type failed: ${type.stderr.trim() || `exit ${type.exitCode}`}`);
+  }
+  if (type.stdout.trim() !== "blob") return null;
+  const size = await runNativeGit(["-C", root, "cat-file", "-s", object]);
+  const parsed = Number(size.trim());
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new Error(`git returned an invalid blob size for ${opts.filepath}`);
+  }
+  return parsed;
+}
+
+/**
  * Read a blob's content as a UTF-8 string given the blob's own object OID
  * (not a commit + filepath). Skips the commit→tree→per-path-segment walk that
  * {@link readBlob} performs on every call: a caller that already knows a
@@ -1841,6 +1873,26 @@ export async function isAncestor(opts: {
   ancestor: string;
   descendant: string;
 }): Promise<boolean> {
+  return (await probeAncestry(opts)).kind === "ancestor";
+}
+
+export type AncestryProbe =
+  | { readonly kind: "ancestor" }
+  | { readonly kind: "not-ancestor" }
+  | { readonly kind: "unavailable" };
+
+/**
+ * Distinguish graph truth from repository/process failure.
+ *
+ * `isAncestor` deliberately collapses `unavailable` to false for legacy
+ * ref-safety callers. Read surfaces that expose explicit status use this
+ * probe so an I/O failure is never misreported as an unadopted citation.
+ */
+export async function probeAncestry(opts: {
+  path: string;
+  ancestor: string;
+  descendant: string;
+}): Promise<AncestryProbe> {
   try {
     const context = await resolveGitContext(opts.path);
     const { root } = context;
@@ -1848,11 +1900,19 @@ export async function isAncestor(opts: {
       const result = await runNativeGitResult([
         "-C", root, "merge-base", "--is-ancestor", opts.ancestor, opts.descendant,
       ]);
-      return result.exitCode === 0;
+      if (result.exitCode === 0) return Object.freeze({ kind: "ancestor" as const });
+      if (result.exitCode === 1) return Object.freeze({ kind: "not-ancestor" as const });
+      return Object.freeze({ kind: "unavailable" as const });
     }
-    return await git.isDescendent({ fs, dir: root, oid: opts.descendant, ancestor: opts.ancestor });
+    const ancestor = await git.isDescendent({
+      fs,
+      dir: root,
+      oid: opts.descendant,
+      ancestor: opts.ancestor,
+    });
+    return Object.freeze({ kind: ancestor ? "ancestor" as const : "not-ancestor" as const });
   } catch {
-    return false;
+    return Object.freeze({ kind: "unavailable" as const });
   }
 }
 

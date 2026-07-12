@@ -17,6 +17,7 @@ const proxy = Object.fromEntries(
     "/readyz",
     "/pair",
     "/doc",
+    "/source",
   ].map(
     (p) => [p, { target: API, changeOrigin: true }],
   ),

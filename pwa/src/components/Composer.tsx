@@ -3,6 +3,10 @@ import { captureReducer, INITIAL } from "../capture/captureMachine";
 
 type Props = {
   onAsk: (q: string) => void;
+  turnPhase?: "idle" | "streaming" | "stopping" | "retryable" | "session-ended";
+  onStop?: () => void;
+  onRetry?: () => void;
+  onNewConversation?: () => void;
   onCapture: (text: string) => Promise<string | void>;
   onTranscribe: (audio: Blob) => Promise<string>;
   onFile: (text: string) => Promise<string | void>;
@@ -19,7 +23,7 @@ function fmtTime(s: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-export function Composer({ onAsk, onCapture, onTranscribe, onFile }: Props): React.ReactElement {
+export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConversation, onCapture, onTranscribe, onFile }: Props): React.ReactElement {
   const [text, setText] = useState("");
   const [cap, dispatch] = useReducer(captureReducer, INITIAL);
   const [secs, setSecs] = useState(0);
@@ -125,24 +129,41 @@ export function Composer({ onAsk, onCapture, onTranscribe, onFile }: Props): Rea
   }
 
   // idle
+  const activeTurn = turnPhase === "streaming" || turnPhase === "stopping";
+  const askBlocked = activeTurn || turnPhase === "session-ended";
   return (
-    <form className="composer" onSubmit={(e) => { e.preventDefault(); const q = text.trim(); if (q.length > 0) { onAsk(q); setText(""); } }}>
+    <form className="composer" onSubmit={(e) => { e.preventDefault(); const q = text.trim(); if (!askBlocked && q.length > 0) { onAsk(q); setText(""); } }}>
+      {activeTurn ? (
+        <div className="turn-control" role="status" aria-live="polite">
+          <span>{turnPhase === "stopping" ? "Stopping…" : "Thinking…"}</span>
+          <button type="button" onClick={onStop} disabled={turnPhase === "stopping"} aria-label="stop response">
+            {turnPhase === "stopping" ? "Stopping" : "Stop"}
+          </button>
+        </div>
+      ) : null}
+      {turnPhase === "retryable" || turnPhase === "session-ended" ? (
+        <div className="turn-control" role="status" aria-live="polite">
+          <span>{turnPhase === "session-ended" ? "Conversation ended. Retry may repeat actions." : "Response interrupted; outcome may be uncertain. Retry may repeat actions."}</span>
+          <button type="button" onClick={onRetry}>Retry question</button>
+          <button type="button" onClick={onNewConversation}>New conversation</button>
+        </div>
+      ) : null}
       <div className="pill">
-        <button type="button" className="mic" aria-label="record" disabled={!canRecord} onClick={() => { void startRecording(); }}>
+        <button type="button" className="mic" aria-label="record" disabled={!canRecord || askBlocked} onClick={() => { void startRecording(); }}>
           <span className="glyph"><span className="stem" /><span className="base" /></span>
         </button>
-        <input placeholder="ask your brain…" value={text} onChange={(e) => setText(e.target.value)} />
+        <input aria-label="ask your brain" placeholder="ask your brain…" value={text} disabled={askBlocked} onChange={(e) => setText(e.target.value)} />
         <button
           type="button"
           className="capture-text"
           aria-label="capture thought"
-          disabled={text.trim().length === 0}
+          disabled={askBlocked || text.trim().length === 0}
           onClick={() => {
             const draft = text.trim();
             if (draft.length > 0) void onCapture(draft).then(() => setText(""));
           }}
         >+</button>
-        <button type="submit" className={`send${text.trim().length > 0 ? " active" : ""}`} aria-label="send">↑</button>
+        <button type="submit" disabled={askBlocked || text.trim().length === 0} className={`send${text.trim().length > 0 ? " active" : ""}`} aria-label="send">↑</button>
       </div>
       {cap.error !== null ? <span className="err">{cap.error}</span> : null}
     </form>

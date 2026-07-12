@@ -84,6 +84,7 @@ describe("durable device HTTP mode", () => {
     });
     const first = await pair(store, server, "phone");
     const second = await pair(store, server, "laptop", ["read", "converse", "capture"]);
+    const converseOnly = await pair(store, server, "watch", ["converse"]);
     expect((await server.fetch(new Request(`${ORIGIN}/?token=legacy-root-token`))).status).toBe(401);
 
     const status = await server.fetch(new Request(`${ORIGIN}/pair/status`, {
@@ -96,6 +97,15 @@ describe("durable device HTTP mode", () => {
     expect(await ready.json()).toEqual({ deviceId: second.deviceId });
     const identity = await server.fetch(new Request(`${ORIGIN}/`, { headers: { cookie: second.cookie } }));
     expect(await identity.json()).toMatchObject({ capabilities: ["capture", "converse", "read"] });
+    const readableSource = await server.fetch(new Request(`${ORIGIN}/source`, {
+      headers: { cookie: second.cookie },
+    }));
+    expect(readableSource.status).toBe(400); // authenticated reader reaches exact-input validation
+    expect(await readableSource.json()).toMatchObject({ schema: "dome.source-document/v1", status: "invalid-path" });
+    const deniedSource = await server.fetch(new Request(`${ORIGIN}/source`, {
+      headers: { cookie: converseOnly.cookie },
+    }));
+    expect(deniedSource.status).toBe(403);
 
     const wrongOrigin = await server.fetch(new Request(`${ORIGIN}/sessions`, {
       method: "POST",

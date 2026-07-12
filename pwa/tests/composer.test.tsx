@@ -19,4 +19,29 @@ describe("Composer", () => {
     render(<Composer onAsk={() => {}} onCapture={async () => {}} onTranscribe={async () => ""} onFile={async () => {}} />);
     expect(screen.getByRole("button", { name: /record|mic|🎤/i })).toBeDefined();
   });
+
+  test("an active turn disables asks and exposes an accessible stop control", () => {
+    const onAsk = mock(() => {});
+    const onStop = mock(() => {});
+    render(<Composer turnPhase="streaming" onAsk={onAsk} onStop={onStop} onCapture={async () => {}} onTranscribe={async () => ""} onFile={async () => {}} />);
+    expect((screen.getByLabelText("ask your brain") as HTMLInputElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "stop response" }));
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  test("stopping remains visible and cannot issue a second stop", () => {
+    render(<Composer turnPhase="stopping" onAsk={() => {}} onStop={() => {}} onCapture={async () => {}} onTranscribe={async () => ""} onFile={async () => {}} />);
+    expect(screen.getByText("Stopping…")).toBeDefined();
+    expect((screen.getByRole("button", { name: "stop response" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test("retry and new conversation are explicit controls", () => {
+    const onRetry = mock(() => {});
+    const onNewConversation = mock(() => {});
+    render(<Composer turnPhase="session-ended" onAsk={() => {}} onRetry={onRetry} onNewConversation={onNewConversation} onCapture={async () => {}} onTranscribe={async () => ""} onFile={async () => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Retry question" }));
+    fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(onNewConversation).toHaveBeenCalledTimes(1);
+  });
 });

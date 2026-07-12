@@ -498,6 +498,22 @@ become visible retryable errors. Stop/Retry presentation and explicit restart
 recovery remain P3.3b; exact source reading and durable receipts follow as
 P3.3c/P3.3d.
 
+**Checkpoints P3.3b and P3.3c implemented 2026-07-12.** Ask now owns one
+explicit client turn handle at a time. Stop aborts that exact stream, waits for
+the owner-bound server cancellation result, and reconciles late terminal
+events without opening a second turn. Retry starts a fresh conversation only
+after an explicit warning that external actions may repeat; missing and
+expired sessions are visible states and are never replayed automatically.
+Conversation boundaries, terminal errors, and recovery remain in the visible
+transcript. Citations now open through a shared, strictly validated
+`dome.source-document/v1` Interface that reads only canonical user Markdown at
+the cited commit when it is the current adopted commit or retained adopted
+history. The reader checks Git blob metadata before allocation, caps responses
+at 512 KiB, excludes engine metadata, and maps repository failures to typed
+unavailability. The PWA binds every successful response back to the requested
+path and commit and presents it as inert plain text in a keyboard-contained
+dialog. Persistent device-attributed mutation receipts remain P3.3d.
+
 ### P4 — Self-contained distribution, backup, and upgrade
 
 Deliver the signed macOS product artifact with pinned runtime and PWA; one
