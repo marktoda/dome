@@ -99,6 +99,10 @@ dome restart [--vault <path>] [--json]
                                 existing plist/unit (never re-rendered; --env preserved).
 dome uninstall [--vault <path>] [--json]
                                 Stop and remove the vault's ambient service.
+dome devices <pair|list|revoke|rotate|invalidate-all> [device-id]
+          [--name <name>] [--grant <capabilities>] [--json]
+                                Manage durable Dome Home device authority from
+                                the local owner console.
 dome home [--vault <path>] [--port <port>] [--host <host>]
           [--pair-code <code>] [--static-dir <path>]
                                 Run the loopback Product Host: one long-lived
@@ -2733,6 +2737,21 @@ claude mcp add dome -- dome mcp --vault /path/to/vault
 The process serves until the client disconnects (stdin closes). Exit codes:
 0 on clean shutdown; 64 when the target is not an initialized Dome vault
 (missing git repo or `.dome/config.yaml`); 1 on transport failure.
+
+### `dome devices <action> [device-id] [--name <name>] [--grant <capabilities>] [--json] [--vault <path>]`
+
+The local-console authority surface for Dome Home devices. `pair` mints a
+one-time, ten-minute pairing grant whose device name and exact capability set
+are fixed before the code reaches a browser. `list` shows durable device audit
+metadata; `revoke` invalidates one device; `rotate` replaces one credential and
+prints the new credential/CSRF values exactly once; `invalidate-all` increments
+the vault auth epoch so every older credential and unused pairing grant fails.
+
+The default pair grant is the complete owner capability set
+(`read,capture,resolve,converse,author`); `--grant` accepts an explicit
+comma-separated subset. Raw pairing, credential, and CSRF secrets are never
+stored. This command is intentionally local-console-only and has no remote
+HTTP equivalent for mint/revoke/invalidate authority.
 
 ### `dome home [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--pair-code <code>] [--static-dir <path>]`
 

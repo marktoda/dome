@@ -34,6 +34,7 @@ describe("bin/dome process boundary", () => {
     expect(topLevelCommandNames(help.stdout)).toEqual([
       // Getting started:
       "init",
+      "devices",
       "home",
       "recipe",
       // Today:

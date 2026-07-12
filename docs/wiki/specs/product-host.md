@@ -293,10 +293,25 @@ long-lived-runtime concurrency is proven. The HTTP Adapter can
 consume the owned Vault and scheduler while standalone compatibility mode
 retains open-per-request serialization.
 
-P2 remains open until Dome-mediated settle, proposal apply, and assistant
-authoring all use controlled mutation, the PWA frame is served by the product
-command, and compatibility lifecycle commands delegate without a second
-Product Host implementation.
+P2 completed the controlled-mutation migration for settle, proposal apply, and
+assistant authoring plus the Product Host/PWA lifecycle. Compatibility
+lifecycle delegation finishes with the P4 distribution/service cutover.
+
+### P3 device-authority foundation
+
+`src/device-authority/` now owns durable single-owner device authority behind
+one deep Interface. Pairing grants bind the device name, immutable capability
+set, auth epoch, expiry, attempt budget, and credential lifetime before the
+code leaves the local console. Device identity and append-only credential
+history are separate SQLite records; only public opaque ids, fixed-width secret
+hashes, and lifecycle metadata persist. Mint, exchange, authenticate, rotate,
+revoke, and epoch invalidation are serialized transactions, so two host handles
+cannot both win a one-time exchange or leave multiple active credentials.
+
+`dome devices` is the local Adapter for pair/list/rotate/revoke/invalidate-all.
+Product Host HTTP still uses the P1 loopback Adapter until the next P3
+checkpoint replaces it with per-request authenticated device context,
+exact-Origin/CSRF enforcement, and request attribution.
 
 ## P0 decisions and deferrals
 

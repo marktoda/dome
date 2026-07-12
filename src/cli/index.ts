@@ -935,6 +935,30 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
+    .command("devices <action> [device-id]")
+    .helpGroup(GROUP_START)
+    .description("Pair, list, rotate, revoke, or invalidate Dome Home devices from the local console.")
+    .option("--name <name>", "Device name for the pair action.")
+    .option("--grant <capabilities>", "Comma-separated device grant (default all owner capabilities).")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .action(async (
+      action: string,
+      deviceId: string | undefined,
+      options: DevicesCliOptions,
+    ) => {
+      const { runDevices } = await import("./commands/devices");
+      setExitCode(await runDevices({
+        action,
+        deviceId,
+        name: options.name,
+        grant: options.grant,
+        json: options.json,
+        vault: options.vault,
+      }));
+    });
+
+  program
     .command("home")
     .helpGroup(GROUP_START)
     .description("Run the self-contained loopback Dome Home Product Host and PWA.")
@@ -1133,6 +1157,13 @@ type HomeCliOptions = {
   readonly host?: string;
   readonly pairCode?: string;
   readonly staticDir?: string;
+};
+
+type DevicesCliOptions = {
+  readonly name?: string;
+  readonly grant?: string;
+  readonly json?: boolean;
+  readonly vault?: string;
 };
 
 type HttpCliOptions = {
