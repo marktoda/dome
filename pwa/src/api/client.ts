@@ -3,25 +3,11 @@ import {
   parseCaptureReceipt,
   type CaptureRequest,
 } from "../../../contracts/capture";
-
-// Parse a buffer of SSE text into complete events + the leftover partial frame.
-export function parseSseChunk(buffer: string): { events: StreamEvent[]; rest: string } {
-  const events: StreamEvent[] = [];
-  const parts = buffer.split("\n\n");
-  const rest = parts.pop() ?? ""; // last element is the (possibly empty) partial
-  for (const part of parts) {
-    const line = part.split("\n").find((l) => l.startsWith("data:"));
-    if (line === undefined) continue;
-    const json = line.slice("data:".length).trim();
-    if (json.length === 0) continue;
-    try {
-      events.push(JSON.parse(json) as StreamEvent);
-    } catch {
-      // malformed frame — skip
-    }
-  }
-  return { events, rest };
-}
+import {
+  AGENT_STREAM_SCHEMA,
+  AgentStreamProtocolError,
+  createAgentStreamDecoder,
+} from "../../../contracts/agent-stream";
 
 export class DomeClient {
   private sessionPromise: Promise<string> | null = null;
@@ -146,19 +132,34 @@ export class DomeClient {
       ...(signal !== undefined ? { signal } : {}),
     }));
     if (!res.ok || res.body === null) {
-      onEvent({ type: "error", message: `stream failed (${res.status})` });
+      onEvent({
+        schema: AGENT_STREAM_SCHEMA,
+        type: "error",
+        code: "http-error",
+        message: `stream failed (${res.status})`,
+        retryable: res.status === 408 || res.status === 429 || res.status >= 500,
+      });
       return;
     }
     const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const { events, rest } = parseSseChunk(buffer);
-      buffer = rest;
-      for (const e of events) onEvent(e);
+    const decoder = createAgentStreamDecoder();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        for (const event of decoder.push(value)) onEvent(event);
+      }
+      decoder.finish();
+    } catch (error) {
+      if (!(error instanceof AgentStreamProtocolError)) throw error;
+      void reader.cancel(error).catch(() => {});
+      onEvent({
+        schema: AGENT_STREAM_SCHEMA,
+        type: "error",
+        code: `protocol-${error.code}`,
+        message: "The response stream was interrupted or invalid.",
+        retryable: true,
+      });
     }
   }
 

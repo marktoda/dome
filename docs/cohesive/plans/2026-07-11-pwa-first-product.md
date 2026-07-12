@@ -488,6 +488,16 @@ compatibility bearer and P1 loopback Adapter. Bounded session resources,
 Stop/Retry, shared SSE validation, and persistent device-attributed mutation
 receipts remain P3.3.
 
+**Checkpoint P3.3a implemented 2026-07-12.** AgentRuntime now owns bounded
+session/turn admission, deterministic expiry, bounded retained context,
+cooperative cancellation, and turn timeouts. Cancellation retains capacity
+until the provider exits. The HTTP Adapter exposes an owner-bound idempotent
+cancel route and typed retry/expiry responses. Server and PWA share one strict,
+bounded `dome.agent.stream/v1` decoder; malformed or prematurely ended streams
+become visible retryable errors. Stop/Retry presentation and explicit restart
+recovery remain P3.3b; exact source reading and durable receipts follow as
+P3.3c/P3.3d.
+
 ### P4 — Self-contained distribution, backup, and upgrade
 
 Deliver the signed macOS product artifact with pinned runtime and PWA; one

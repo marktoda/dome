@@ -14,6 +14,10 @@ import { tmpdir } from "node:os";
 import { resolve, sep, join } from "node:path";
 
 import { z } from "zod";
+import {
+  AGENT_STREAM_SCHEMA,
+  encodeAgentStreamEvent,
+} from "../../contracts/agent-stream";
 import { SourceRefSchema, type SourceRef } from "../core/source-ref";
 import {
   ANSWER_SCHEMA,
@@ -53,6 +57,7 @@ import {
   createAgentRuntime,
   type AgentRun,
   type AgentRuntime,
+  type AgentRuntimeFailure,
   type AgentSession,
 } from "../assistant/runtime";
 import type { AgentMessage } from "../assistant/types";
@@ -691,9 +696,10 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     const startedAt = Date.now();
     const turn = input.session.send(input.question, controller.signal);
-    const encoder = new TextEncoder();
-    const sse = (payload: unknown): Uint8Array =>
-      encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
+    if (turn.failure !== undefined) {
+      clearTimeout(timer);
+      return agentRuntimeFailureResponse(turn.failure);
+    }
 
     let signalDrained!: () => void;
     const drained = new Promise<void>((resolve) => {
@@ -711,12 +717,17 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
         let stopReason: string | null = null;
         let error: string | null = null;
         let answer = "";
+        let terminalEmitted = false;
         let changes: ReadonlyArray<{ readonly path: string; readonly kind: string }> = [];
         try {
           for await (const event of turn.events) {
             if (event.kind === "text") {
               answer += event.text;
-              ctrl.enqueue(sse({ type: "text", text: event.text }));
+              ctrl.enqueue(encodeAgentStreamEvent({
+                schema: AGENT_STREAM_SCHEMA,
+                type: "text",
+                text: event.text,
+              }));
               continue;
             }
             if (event.kind === "error") {
@@ -724,20 +735,30 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
                 ? `ask exceeded ${timeoutMs}ms.`
                 : event.message;
               error = detail;
-              ctrl.enqueue(sse({
+              ctrl.enqueue(encodeAgentStreamEvent({
+                schema: AGENT_STREAM_SCHEMA,
                 type: "error",
+                code: controller.signal.aborted ? "turn-timeout" : event.code ?? "agent-failed",
                 message: publicAgentError(detail, controller.signal.aborted, input.requestId),
+                retryable: event.code !== "turn-limit" && event.code !== "message-too-large",
               }));
-              continue;
+              terminalEmitted = true;
+              break;
             }
             stopReason = event.stopReason;
             changes = event.changes;
-            ctrl.enqueue(sse({
+            ctrl.enqueue(encodeAgentStreamEvent({
+              schema: AGENT_STREAM_SCHEMA,
               type: "done",
-              citations: event.citations,
-              changes: event.changes,
+              citations: event.citations.map((citation) => ({
+                path: citation.path,
+                ...(citation.commit !== undefined ? { commit: citation.commit } : {}),
+                ...(citation.snippet !== undefined ? { snippet: citation.snippet } : {}),
+              })),
+              changes: [...event.changes],
               stopReason: event.stopReason,
             }));
+            terminalEmitted = true;
           }
         } catch (cause) {
           const detail = controller.signal.aborted
@@ -746,10 +767,16 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
               ? cause.message
               : String(cause);
           error = detail;
-          ctrl.enqueue(sse({
-            type: "error",
-            message: publicAgentError(detail, controller.signal.aborted, input.requestId),
-          }));
+          if (!terminalEmitted) {
+            ctrl.enqueue(encodeAgentStreamEvent({
+              schema: AGENT_STREAM_SCHEMA,
+              type: "error",
+              code: controller.signal.aborted ? "turn-timeout" : "agent-failed",
+              message: publicAgentError(detail, controller.signal.aborted, input.requestId),
+              retryable: true,
+            }));
+            terminalEmitted = true;
+          }
         } finally {
           agentLog({
             ts: new Date().toISOString(),
@@ -788,7 +815,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     const route = `${request.method} ${url.pathname}`;
     const requestGranted = client?.capabilities ?? granted;
 
-    const sessionRoute = /^\/sessions\/([^/]+)(\/messages)?$/.exec(url.pathname);
+    const sessionRoute = /^\/sessions\/([^/]+)(\/(?:messages|cancel))?$/.exec(url.pathname);
     const pluginViewRoute = /^\/views\/([^/]+)$/.exec(url.pathname);
     const need = ROUTE_CAPABILITY[route] ??
       (request.method === "POST" && pluginViewRoute !== null ? "read" : undefined) ??
@@ -807,9 +834,11 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     }
 
     if (route === "POST /sessions") {
-      const session = agentRuntime.createSession(client === undefined
+      const created = agentRuntime.tryCreateSession(client === undefined
         ? undefined
         : { deviceId: client.deviceId, capabilities: client.capabilities });
+      if (!created.ok) return agentRuntimeFailureResponse(created.failure);
+      const session = created.session;
       return jsonResponse(201, {
         schema: AGENT_SESSION_SCHEMA,
         status: "created",
@@ -838,13 +867,44 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     if (
       request.method === "POST" &&
       sessionRoute !== null &&
+      sessionRoute[2] === "/cancel"
+    ) {
+      const id = sessionRoute[1] ?? "";
+      const lookup = agentRuntime.lookupSession(id);
+      if (lookup.kind !== "active" || !sessionOwnedBy(lookup.session, client)) {
+        const ownedExpiry = lookup.kind === "expired" &&
+          lookup.ownerDeviceId === (client?.deviceId ?? null);
+        return dataErrorResponse(
+          ownedExpiry ? 410 : 404,
+          ownedExpiry ? "session-expired" : "session-not-found",
+          ownedExpiry ? "The agent session expired." : `agent session '${id}' was not found.`,
+        );
+      }
+      const result = lookup.session.cancel();
+      return jsonResponse(200, {
+        schema: AGENT_SESSION_SCHEMA,
+        status: result.kind,
+        sessionId: id,
+      });
+    }
+
+    if (
+      request.method === "POST" &&
+      sessionRoute !== null &&
       sessionRoute[2] === "/messages"
     ) {
       const id = sessionRoute[1] ?? "";
-      const session = agentRuntime.getSession(id);
-      if (session === null || !sessionOwnedBy(session, client)) {
-        return dataErrorResponse(404, "session-not-found", `agent session '${id}' was not found.`);
+      const lookup = agentRuntime.lookupSession(id);
+      if (lookup.kind !== "active" || !sessionOwnedBy(lookup.session, client)) {
+        const ownedExpiry = lookup.kind === "expired" &&
+          lookup.ownerDeviceId === (client?.deviceId ?? null);
+        return dataErrorResponse(
+          ownedExpiry ? 410 : 404,
+          ownedExpiry ? "session-expired" : "session-not-found",
+          ownedExpiry ? "The agent session expired." : `agent session '${id}' was not found.`,
+        );
       }
+      const session = lookup.session;
       const read = await jsonBody(request, maxBodyBytes);
       if (read.kind === "too-large") {
         return dataErrorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
@@ -1476,6 +1536,11 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       }
       return handleTranscribe(request);
     }
+    // Cancellation must bypass the compatibility vault mutex held by the
+    // active stream it is stopping.
+    if (request.method === "POST" && /^\/sessions\/[^/]+\/cancel$/.test(url.pathname)) {
+      return routes(request);
+    }
     try {
       if (opts.operationScheduler === undefined) {
         return await enqueue(() => routes(request));
@@ -1606,6 +1671,17 @@ function operationFailureResponse(error: unknown): Response {
     return dataErrorResponse(503, error.code, "the Product Host is stopping or the operation was cancelled.");
   }
   return dataErrorResponse(500, "internal", "the Product Host could not complete the operation.");
+}
+
+function agentRuntimeFailureResponse(failure: AgentRuntimeFailure): Response {
+  const status = failure.code === "message-empty" || failure.code === "message-too-large"
+    ? 400
+    : failure.code === "session-expired" || failure.code === "session-closed" || failure.code === "turn-limit"
+      ? 410
+      : 429;
+  const response = dataErrorResponse(status, failure.code, failure.message);
+  if (status === 429) response.headers.set("retry-after", "1");
+  return response;
 }
 
 function publicAgentError(

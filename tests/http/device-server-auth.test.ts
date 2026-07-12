@@ -57,6 +57,7 @@ describe("durable device HTTP mode", () => {
 
   test("isolates devices and sessions, revokes immediately, and reuses CSRF after reload", async () => {
     const store = await authority();
+    let runtimeNow = 0;
     const turnContexts: Array<{ deviceId: string; capabilities: string[] }> = [];
     const runtime = createAgentRuntime({
       createId: (() => { let n = 0; return () => `session-${++n}`; })(),
@@ -71,6 +72,8 @@ describe("durable device HTTP mode", () => {
         finished: Promise.resolve({ citations: [], changes: [], stopReason: "final" }),
         });
       },
+      now: () => runtimeNow,
+      limits: { idleTtlMs: 10 },
     });
     const server = createDomeHttpServer({
       vaultPath: "/tmp/unused",
@@ -175,6 +178,18 @@ describe("durable device HTTP mode", () => {
     } finally {
       globalThis.fetch = realFetch;
     }
+
+    runtimeNow = 10;
+    const hiddenExpiry = await server.fetch(new Request(`${ORIGIN}/sessions/session-1/cancel`, {
+      method: "POST",
+      headers: { cookie: second.cookie, origin: ORIGIN, "x-dome-csrf": second.csrf },
+    }));
+    expect(hiddenExpiry.status).toBe(404);
+    const ownedExpiry = await server.fetch(new Request(`${ORIGIN}/sessions/session-1/cancel`, {
+      method: "POST",
+      headers: { cookie: first.cookie, origin: ORIGIN, "x-dome-csrf": first.csrf },
+    }));
+    expect(ownedExpiry.status).toBe(410);
 
     expect(store.revokeDevice({ deviceId: first.deviceId }).kind).toBe("revoked");
     const revoked = await server.fetch(new Request(`${ORIGIN}/`, { headers: { cookie: first.cookie } }));

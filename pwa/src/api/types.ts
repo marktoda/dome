@@ -1,13 +1,12 @@
-export type Citation = {
-  path: string;
-  commit?: string;
-  snippet?: string;
-};
+import type {
+  AgentStreamChange,
+  AgentStreamCitation,
+  AgentStreamEvent,
+} from "../../../contracts/agent-stream";
 
-export type AgentChange = {
-  path: string;
-  kind: "create" | "edit" | "capture" | "settle" | "resolve" | "apply" | "reject";
-};
+export type Citation = AgentStreamCitation;
+
+export type AgentChange = AgentStreamChange;
 
 export type AgentSession = {
   schema: "dome.agent-session/v1";
@@ -29,10 +28,7 @@ export type PairingResult = {
   csrfToken?: string;
 };
 
-export type StreamEvent =
-  | { type: "text"; text: string }
-  | { type: "done"; citations: Citation[]; stopReason: "final" | "budget"; changes?: AgentChange[] }
-  | { type: "error"; message: string };
+export type StreamEvent = AgentStreamEvent;
 
 export type { CaptureReceipt as CaptureResult } from "../../../contracts/capture";
 
