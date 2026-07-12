@@ -102,7 +102,8 @@ One vault per process.
 | `POST /apply` `{id}` | `performApply` (`resolve` capability — the settle pattern for garden-proposed edits) | `dome.apply/v1` (`status: applied \| stale \| not-found \| not-pending \| invalid`) |
 | `POST /reject` `{id, note?}` | `performReject` (`resolve` capability) | `dome.reject/v1` (`status: rejected \| not-found \| not-pending \| invalid`) |
 | `POST /sessions` | create an in-memory foreground-agent session (`converse` capability) | `dome.agent-session/v1` |
-| `POST /sessions/:id/messages` `{message}` | multi-turn `AgentRuntime` turn | SSE `text \| done \| error` events |
+| `POST /sessions/:id/messages` `{message}` | multi-turn `AgentRuntime` turn | strict `dome.agent.stream/v1` SSE events |
+| `POST /sessions/:id/cancel` | idempotently abort the active owned turn | `dome.agent-session/v1` |
 | `DELETE /sessions/:id` | close an agent session | `dome.agent-session/v1` |
 | `POST /transcribe` audio body | STT step: shell command or OpenAI-compatible cloud endpoint (`capture` capability; 501 when unconfigured) | `dome.transcribe/v1` `{text}` |
 | `GET /recents` | recent vault changes (`read` capability) | `dome.recents/v1` `{count, entries}` |
@@ -112,6 +113,19 @@ The shipped adapter uses the co-located AI SDK loop in `src/assistant/`; a
 different runtime can replace it without changing HTTP, the PWA, plugins, or
 the engine. This foreground runtime is distinct from the `dome.agent`
 background processor bundle that runs inside the garden phase.
+
+AgentRuntime owns total/per-device session and active-turn admission, one turn
+per session, idle/absolute/turn timeouts, completed-turn and context bounds,
+and cooperative cancellation. A cancelled provider retains its active slot
+until it actually exits. Admission failures are typed and map to bounded HTTP
+errors with retry timing; expired sessions use 410 rather than being silently
+recreated.
+
+`contracts/agent-stream.ts` is the shared server/browser wire boundary. Every
+event carries `schema: dome.agent.stream/v1`; `done` and `error` are terminal.
+The decoder rejects malformed JSON/schema, invalid UTF-8, oversized frames or
+text, multiple/post-terminal events, partial frames, and EOF without a terminal
+event. Protocol failure is visible and retryable—never silently skipped.
 
 ### The assistant's tools
 

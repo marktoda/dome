@@ -36,7 +36,7 @@ describe("App", () => {
   test("refetches the brief after the agent reports a write", async () => {
     // Build an SSE ReadableStream that emits a done event with changes.
     // We construct it directly so happy-dom's getReader() can consume it.
-    const doneEvent = JSON.stringify({ type: "done", citations: [], stopReason: "final", changes: [{ path: "wiki/todo.md", kind: "edit" }] });
+    const doneEvent = JSON.stringify({ schema: "dome.agent.stream/v1", type: "done", citations: [], stopReason: "final", changes: [{ path: "wiki/todo.md", kind: "edit" }] });
     const ssePayload = `data: ${doneEvent}\n\n`;
     const encoder = new TextEncoder();
     const encoded = encoder.encode(ssePayload);

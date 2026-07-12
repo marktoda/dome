@@ -137,6 +137,42 @@ describe("createDomeHttpServer loopback pairing", () => {
 });
 
 describe("createDomeHttpServer agent sessions", () => {
+  test("cancels an active owned turn idempotently through the stable SSE contract", async () => {
+    const runtime = createAgentRuntime({
+      createId: () => "cancel-session",
+      runTurn: ({ signal }) => {
+        const aborted = new Promise<void>((resolve) =>
+          signal?.addEventListener("abort", () => resolve(), { once: true }));
+        return {
+          text: (async function* () { yield "started"; await aborted; })(),
+          finished: aborted.then(() => ({ citations: [], changes: [], stopReason: "final" as const })),
+        };
+      },
+    });
+    const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, agentRuntime: runtime });
+    const auth = { authorization: `Bearer ${TOKEN}` };
+    await server.fetch(new Request("http://localhost/sessions", { method: "POST", headers: auth }));
+    const stream = await server.fetch(new Request("http://localhost/sessions/cancel-session/messages", {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ message: "wait" }),
+    }));
+    const cancelled = await server.fetch(new Request("http://localhost/sessions/cancel-session/cancel", {
+      method: "POST",
+      headers: auth,
+    }));
+    expect(await cancelled.json()).toMatchObject({ status: "cancelled", sessionId: "cancel-session" });
+    const body = await stream.text();
+    expect(body).toContain('"schema":"dome.agent.stream/v1"');
+    expect(body).toContain('"code":"turn-cancelled"');
+    const again = await server.fetch(new Request("http://localhost/sessions/cancel-session/cancel", {
+      method: "POST",
+      headers: auth,
+    }));
+    expect(await again.json()).toMatchObject({ status: "idle" });
+    await server.close();
+  });
+
   test("close aborts and drains an active streamed turn", async () => {
     let observedAbort = false;
     const runtime = createAgentRuntime({
@@ -379,6 +415,7 @@ describe("createDomeHttpServer agent sessions", () => {
     const body = await response.text();
     expect(body).toContain('"type":"text"');
     expect(body).toContain('"type":"error"');
+    expect(body).toContain('"code":"turn-timeout"');
     expect(body).toContain(`${timeoutMs}ms`);
     expect(body).not.toContain('"type":"done"');
   });

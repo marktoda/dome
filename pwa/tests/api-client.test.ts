@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test, mock } from "bun:test";
 import { DomeClient } from "../src/api/client";
+import type { StreamEvent } from "../src/api/types";
+import { AGENT_STREAM_SCHEMA } from "../../contracts/agent-stream";
 
 const realFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = realFetch; });
@@ -71,7 +73,7 @@ describe("DomeClient", () => {
       bodies.push(await request.json());
       return new Response(new ReadableStream({
         start(controller) {
-          controller.enqueue(encoder.encode('data: {"type":"done","citations":[],"stopReason":"final"}\n\n'));
+          controller.enqueue(encoder.encode(`data: {"schema":"${AGENT_STREAM_SCHEMA}","type":"done","citations":[],"stopReason":"final"}\n\n`));
           controller.close();
         },
       }), { status: 200 });
@@ -85,6 +87,30 @@ describe("DomeClient", () => {
       "/sessions/s1/messages",
     ]);
     expect(bodies).toEqual([{ message: "first" }, { message: "second" }]);
+  });
+
+  test("agentStream turns a fatal wire violation into one visible retryable error", async () => {
+    const events: StreamEvent[] = [];
+    globalThis.fetch = mock(async (request: Request) => {
+      if (new URL(request.url).pathname === "/sessions") {
+        return new Response(JSON.stringify({
+          schema: "dome.agent-session/v1",
+          status: "created",
+          sessionId: "s1",
+        }), { status: 201 });
+      }
+      return new Response("data: not-json\n\n", { status: 200 });
+    }) as never;
+
+    await new DomeClient().agentStream("question", (event) => events.push(event));
+
+    expect(events).toEqual([{
+      schema: AGENT_STREAM_SCHEMA,
+      type: "error",
+      code: "protocol-invalid-json",
+      message: "The response stream was interrupted or invalid.",
+      retryable: true,
+    }]);
   });
 
   test("recents() GETs /recents with the bearer token and parses the body", async () => {
