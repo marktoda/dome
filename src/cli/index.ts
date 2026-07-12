@@ -956,12 +956,13 @@ function buildProgram(setExitCode: (code: number) => void): Command {
   program
     .command("http")
     .helpGroup(GROUP_ADAPTERS)
-    .description("Run the Dome HTTP surface over this vault: read · capture · resolve · agent · transcribe · PWA (bearer-token auth; loopback by default).")
+    .description("Run the Dome HTTP surface over this vault: read · capture · resolve · agent · transcribe · PWA (bearer or loopback pairing).")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")
     .option("--port <port>", "Port to listen on (default 3663).")
     .option("--host <host>", "Interface to bind (default 127.0.0.1).")
     .option("--token <token>", "Bearer token (or set DOME_HTTP_TOKEN).")
+    .option("--pair-code <code>", "Loopback-only browser pairing code (or set DOME_PAIR_CODE; minimum 8 characters).")
     .option("--model <model>", "Agent model id override (else the provider default).")
     .option("--static-dir <path>", "Serve a built PWA from this directory (or set DOME_PWA_DIR).")
     .option("--allow-write", "Grant the agent the `author` (write) capability (or set DOME_ALLOW_WRITE).")
@@ -982,6 +983,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           port: options.port,
           host: options.host,
           token: options.token,
+          pairCode: options.pairCode,
           model: options.model,
           staticDir: options.staticDir,
           allowWrite: options.allowWrite,
@@ -1115,6 +1117,7 @@ type HttpCliOptions = {
   readonly port?: string;
   readonly host?: string;
   readonly token?: string;
+  readonly pairCode?: string;
   readonly model?: string;
   readonly staticDir?: string;
   readonly allowWrite?: boolean;

@@ -80,6 +80,12 @@ infrastructure and not an engine dependency. P1 and P2 implementation journeys
 remain loopback/in-process only. Remote pairing and Tailscale exposure stay
 disabled until P3's hardened-auth gate passes.
 
+P1 uses the explicitly temporary process-local pairing Adapter documented in
+[[wiki/specs/http-surface]]. It removes the browser master token and proves the
+loopback journey, but does not satisfy the durable device-authority contract
+below. P3 replaces its implementation rather than layering remote authority on
+top of it.
+
 ## Authority model
 
 Do not conflate the three authorization domains in
@@ -285,4 +291,3 @@ Deferred: shared human collaboration, tenant-aware engine state, multi-vault
 host, peer sync/CRDT, generic remote Markdown editing, offline voice/chat,
 public accounts/OAuth/billing, durable server chat history, and blind PWA
 proposal application.
-

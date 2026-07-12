@@ -286,7 +286,28 @@ broader-deployment territory and out of scope. Dome Home's remote posture is
 instead one owner, paired device identities, and a configured private HTTPS
 transport; see [[wiki/specs/product-host]].
 
-### One shared bearer token (the v1 contract)
+### Loopback browser pairing (P1 development Adapter)
+
+`dome http --pair-code <code>` (or `DOME_PAIR_CODE`) enables `POST /pair`
+and `GET /pair/status` only when the listener binds loopback. A successful
+exchange returns an opaque, process-local `HttpOnly; SameSite=Strict` cookie;
+the console code and compatibility bearer never enter browser storage.
+Sessions expire after 12 hours and five failed exchanges in one minute are
+temporarily limited. Pairing can start the loopback listener without a
+separately configured bearer; the process creates an unexposed compatibility
+token for its internal server contract. Browser pairing and cookie-authorized
+mutations reject non-loopback `Origin` values; a second loopback port is
+accepted for the Vite development proxy. Non-browser callers without an
+`Origin` still use the compatibility bearer Interface.
+
+This Adapter proves the P1 installed-browser journey. It is intentionally not
+the P3 device-authority Interface: sessions do not survive restart, the code is
+reusable for local recovery, devices have no independent grants/revocation,
+and non-loopback binds are refused. Remote exposure remains disabled until P3
+ships persistent device identity, exact-origin/CSRF enforcement, auth epochs,
+and local-console recovery.
+
+### One shared bearer token (the v1 compatibility contract)
 
 The token is a **single static shared bearer** for the whole surface: one
 secret, configured once on the host, presented by every caller (header on

@@ -3,8 +3,9 @@
 // The one Dome HTTP surface (`dome http`). A single capability-gated server
 // over one vault + one mutex: read (query/doc/questions/status/plugin views/
 // tasks/today/recents), capture, resolve, session-oriented foreground agents,
-// transcribe, and static PWA serving. `author` (write) is gated by --allow-write
-// and provisioned in Phase 2.
+// transcribe, and static PWA serving. Compatibility callers use a bearer;
+// P1 browsers may exchange a loopback pairing code for an HttpOnly cookie.
+// `author` (write) is gated by --allow-write and provisioned in Phase 2.
 
 import { createHash, timingSafeEqual } from "node:crypto";
 import { mkdtempSync } from "node:fs";
@@ -63,6 +64,10 @@ import { grantedCapabilities, has, type Capability } from "../capabilities";
 import { makeAgentLogSink, type AgentLogSink } from "./agent-log";
 import { drainAgentWork, type AgentWorkAgent } from "../agent-work/attempt";
 import { createBuiltInAgentWorkAgent } from "../assistant/agent-work";
+import {
+  createLoopbackPairing,
+  type LoopbackPairing,
+} from "./loopback-pairing";
 
 // ----- Constants ------------------------------------------------------------
 
@@ -109,6 +114,14 @@ export type DomeHttpServerOptions = {
   readonly bundlesRoot?: string | undefined;
   /** Bearer token every request must present. Must be non-empty. */
   readonly token: string;
+  /**
+   * Optional P1 loopback-only browser pairing. The CLI refuses this option on
+   * non-loopback binds. Sessions are process-local; P3 owns durable devices.
+   */
+  readonly loopbackPairing?: {
+    readonly code: string;
+    readonly sessionTtlMs?: number;
+  } | undefined;
   readonly model?: string | undefined;
   /**
    * Grant the `author` capability (agent write tools). Default off
@@ -369,6 +382,9 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     throw new Error("createDomeHttpServer: token must be non-empty");
   }
   const tokenDigest = sha256(opts.token);
+  const pairing: LoopbackPairing | null = opts.loopbackPairing === undefined
+    ? null
+    : createLoopbackPairing(opts.loopbackPairing);
   const granted = grantedCapabilities({ allowWrite: opts.allowWrite });
   const maxBodyBytes = opts.maxBodyBytes ?? 1_048_576;
   const enqueue = makeVaultMutex();
@@ -1157,6 +1173,57 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
 
   const handle = async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
+    const cookieAuthorized = pairing?.authorized(request) === true;
+    if (request.method === "GET" && url.pathname === "/pair/status") {
+      const paired =
+        pairing?.authorized(request) === true || authorized(request, tokenDigest);
+      return jsonResponse(200, {
+        schema: "dome.pairing/v1",
+        available: pairing !== null,
+        paired,
+      });
+    }
+    if (request.method === "POST" && url.pathname === "/pair") {
+      if (pairing === null) {
+        return dataErrorResponse(404, "pairing-unavailable", "loopback pairing is not enabled.");
+      }
+      if (!sameLoopbackOriginOrNonBrowser(request, url)) {
+        return dataErrorResponse(403, "origin-denied", "pairing requires the listener origin.");
+      }
+      const read = await jsonBody(request, Math.min(maxBodyBytes, 4_096));
+      if (read.kind === "too-large") {
+        return dataErrorResponse(413, "payload-too-large", "pairing request is too large.");
+      }
+      const code = typeof read.body?.code === "string" ? read.body.code : "";
+      const exchanged = pairing.exchange(code);
+      if (exchanged.kind === "limited") {
+        return new Response(JSON.stringify({
+          schema: "dome.pairing/v1",
+          status: "limited",
+          retry_after_seconds: exchanged.retryAfterSeconds,
+        }), {
+          status: 429,
+          headers: {
+            "content-type": "application/json",
+            "retry-after": String(exchanged.retryAfterSeconds),
+          },
+        });
+      }
+      if (exchanged.kind === "invalid") {
+        return dataErrorResponse(401, "pairing-invalid", "invalid pairing code.");
+      }
+      return new Response(`${JSON.stringify({
+        schema: "dome.pairing/v1",
+        status: "paired",
+        expires_at: exchanged.expiresAt,
+      }, null, 2)}\n`, {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "set-cookie": exchanged.cookie,
+        },
+      });
+    }
     // Unauthenticated subresources: cockpit fonts, and (when configured) the PWA shell/assets.
     const font = fontResponse(request);
     if (font !== null) return font;
@@ -1164,14 +1231,26 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       const served = await serveStatic(opts.staticDir, url.pathname);
       if (served !== null) return served; // unauthenticated, no mutex
     }
-    // Header bearer for every route; the `?token=` escape is for GET /today only.
-    if (!authorized(request, tokenDigest) && !queryTokenAuthorized(request, url, tokenDigest)) {
+    // Compatibility bearer/query token or the P1 loopback browser cookie.
+    if (
+      !authorized(request, tokenDigest) &&
+      !queryTokenAuthorized(request, url, tokenDigest) &&
+      !cookieAuthorized
+    ) {
       return jsonResponse(401, {
         schema: SERVER_SCHEMA,
         status: "error",
         error: "unauthorized",
-        message: "missing or invalid bearer token.",
+        message: "missing or invalid authentication.",
       });
+    }
+    if (
+      cookieAuthorized &&
+      request.method !== "GET" &&
+      request.method !== "HEAD" &&
+      !sameLoopbackOriginOrNonBrowser(request, url)
+    ) {
+      return dataErrorResponse(403, "origin-denied", "paired browser mutations require the listener origin.");
     }
     // /transcribe runs authenticated but outside the vault mutex — it touches
     // no vault and can hold a subprocess for many seconds; letting it run
@@ -1191,4 +1270,20 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
   };
 
   return Object.freeze({ fetch: handle });
+}
+
+function sameLoopbackOriginOrNonBrowser(request: Request, url: URL): boolean {
+  const origin = request.headers.get("origin");
+  if (origin === null || origin === url.origin) return true;
+  try {
+    const originUrl = new URL(origin);
+    return isLoopbackHostname(originUrl.hostname) && isLoopbackHostname(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1";
 }

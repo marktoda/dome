@@ -5,8 +5,8 @@
 // surface in the owner's trust domain — it runs no adoption loop and no
 // scheduler (the daemon owns compilation). Binds loopback by default; point
 // `--host` at a private (Tailscale-class) interface to reach it from a
-// phone. Every request requires the bearer token (`--token` or
-// `DOME_HTTP_TOKEN`).
+// phone. Compatibility callers use a bearer; the P1 PWA can instead use
+// loopback-only process-local pairing.
 //
 // House-style notes (matches src/cli/commands/mcp.ts):
 //   - `type X = { ... }` aliases, every field `readonly`.
@@ -14,6 +14,7 @@
 //     when the listener stops (SIGINT/SIGTERM).
 
 import { existsSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
 import { findGitRoot } from "../../git";
@@ -31,6 +32,7 @@ export type RunHttpOptions = {
   readonly port?: string | number | undefined;
   readonly host?: string | undefined;
   readonly token?: string | undefined;
+  readonly pairCode?: string | undefined;
   readonly model?: string | undefined;
   /** Serve a built PWA from this directory (or env DOME_PWA_DIR). */
   readonly staticDir?: string | undefined;
@@ -60,7 +62,7 @@ export type RunHttpOptions = {
 /**
  * Execute `dome http`. Serves the HTTP surface until the process receives
  * SIGINT/SIGTERM. Returns the exit code: 0 on clean shutdown; 64 (EX_USAGE)
- * on a missing token, malformed port, or uninitialized vault; 1 on listener
+ * on missing authentication, malformed port, or an uninitialized vault; 1 on listener
  * failure.
  */
 export async function runHttp(options: RunHttpOptions = {}): Promise<number> {
@@ -76,13 +78,28 @@ export async function runHttp(options: RunHttpOptions = {}): Promise<number> {
     return EX_USAGE;
   }
 
-  const token = options.token ?? process.env["DOME_HTTP_TOKEN"] ?? "";
-  if (token.trim().length === 0) {
+  const pairCode = (options.pairCode ?? process.env["DOME_PAIR_CODE"])?.trim();
+  const host = options.host ?? DEFAULT_HOST;
+  if (pairCode !== undefined && pairCode.length < 8) {
+    console.error("dome http: --pair-code must contain at least 8 characters.");
+    return EX_USAGE;
+  }
+  if (pairCode !== undefined && !isLoopbackHost(host)) {
     console.error(
-      "dome http: a bearer token is required — pass --token <value> or set DOME_HTTP_TOKEN.",
+      "dome http: loopback pairing refuses a non-loopback --host; remote exposure waits for hardened device auth.",
     );
     return EX_USAGE;
   }
+  const configuredToken = options.token ?? process.env["DOME_HTTP_TOKEN"];
+  if ((configuredToken ?? "").trim().length === 0 && pairCode === undefined) {
+    console.error(
+      "dome http: a bearer token or loopback pairing code is required — pass --token <value>, --pair-code <value>, or set DOME_HTTP_TOKEN/DOME_PAIR_CODE.",
+    );
+    return EX_USAGE;
+  }
+  const token = configuredToken !== undefined && configuredToken.trim().length > 0
+    ? configuredToken.trim()
+    : `process-local-${randomUUID()}`;
 
   const port = options.port === undefined ? DEFAULT_PORT : Number(options.port);
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
@@ -111,6 +128,7 @@ export async function runHttp(options: RunHttpOptions = {}): Promise<number> {
         ? { bundlesRoot: options.bundlesRoot }
         : {}),
       ...(options.model !== undefined ? { model: options.model } : {}),
+      ...(pairCode !== undefined ? { loopbackPairing: { code: pairCode } } : {}),
       ...(staticDir !== undefined ? { staticDir } : {}),
       ...(allowWrite ? { allowWrite: true } : {}),
       ...(transcribeCommand !== undefined && transcribeCommand.length > 0 ? { transcribeCommand } : {}),
@@ -120,7 +138,7 @@ export async function runHttp(options: RunHttpOptions = {}): Promise<number> {
       ...(agentLogPath !== undefined ? { agentLogPath } : {}),
     });
     const server = Bun.serve({
-      hostname: options.host ?? DEFAULT_HOST,
+      hostname: host,
       port,
       // Defense-in-depth backstop above the handler's own 1 MiB cap: the
       // handler answers 413 with the JSON error envelope (and is the only
@@ -132,7 +150,7 @@ export async function runHttp(options: RunHttpOptions = {}): Promise<number> {
       fetch: handler.fetch,
     });
     console.error(
-      `dome http: serving vault ${vaultPath} on http://${server.hostname}:${server.port} (bearer-token auth)`,
+      `dome http: serving vault ${vaultPath} on http://${server.hostname}:${server.port} (${pairCode === undefined ? "bearer-token" : "loopback-pairing"} auth)`,
     );
     options.onReady?.({ hostname: server.hostname ?? "", port: server.port ?? 0 });
 
@@ -162,4 +180,10 @@ export async function runHttp(options: RunHttpOptions = {}): Promise<number> {
     console.error(`dome http: failed: ${msg}`);
     return 1;
   }
+}
+
+function isLoopbackHost(host: string): boolean {
+  const normalized = host.toLowerCase();
+  return normalized === "127.0.0.1" || normalized === "localhost" ||
+    normalized === "::1" || normalized === "[::1]";
 }

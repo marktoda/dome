@@ -417,6 +417,15 @@ reach committed then adopted. Fault injection yields untouched owner bytes,
 repaired checkout, or explicit divergence. P1 is loopback/in-process only;
 remote exposure remains disabled until P3's hardened-auth gate passes.
 
+**Implemented 2026-07-11.** `contracts/capture.ts` and the PWA IndexedDB
+outbox provide the typed durable queue; `src/mutation/controlled-mutation.ts`
+provides expected-byte admission and crash reconciliation; capture carries a
+stable artifact identity; and the temporary loopback pairing Adapter removes
+the browser bearer. `tests/product/pwa-loopback-capture.test.ts` proves the
+real listener's pair → committed → duplicate retry → adopted sequence. PWA
+tests separately prove offline persistence/export and mutation fault tests pin
+all three recovery outcomes. Remote pairing remains refused.
+
 ### P2 — Long-lived host and Today frame
 
 Extract the compiler lifecycle into the cohesive Product Host, inject the
