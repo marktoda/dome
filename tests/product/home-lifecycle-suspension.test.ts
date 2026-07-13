@@ -393,6 +393,114 @@ describe("supervised Home lifecycle suspension", () => {
     }
   });
 
+  test("immutable establishment evidence prevents whole-root state loss", async () => {
+    for (const active of [false, true]) {
+      const f = await fixture(true);
+      if (active) {
+        f.readiness = async () => false;
+        expect((await suspend(f, "whole-root-active", async () => "held")).kind).toBe("failed");
+      } else {
+        expect((await withHomeLifecycleMutation(f.vault, async () => "initialized")).kind).toBe("owned");
+      }
+      const root = dirname(homeLifecycleCoordinatorPath(f.vault));
+      await rm(root, { recursive: true });
+
+      expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("invalid");
+      let mutated = false;
+      await expect(withHomeLifecycleMutation(f.vault, async () => { mutated = true; })).rejects.toThrow(
+        "established Home lifecycle coordinator root is missing",
+      );
+      expect(mutated).toBeFalse();
+      expect(await pathExists(root)).toBeFalse();
+    }
+  });
+
+  test("only an exact empty root may finish the establishment crash gap", async () => {
+    const empty = await fixture(false);
+    await withHomeLifecycleMutation(empty.vault, async () => "initialized");
+    const emptyRoot = dirname(homeLifecycleCoordinatorPath(empty.vault));
+    const emptySentinel = join(dirname(emptyRoot), "home-lifecycle-suspension.established");
+    await rm(emptySentinel, { recursive: true });
+    expect((await inspectHomeLifecycleSuspension(empty.vault)).kind).toBe("unavailable");
+    expect((await withHomeLifecycleMutation(empty.vault, async () => "recovered")).kind).toBe("owned");
+    expect(await pathExists(emptySentinel)).toBeTrue();
+
+    const active = await fixture(true);
+    active.readiness = async () => false;
+    expect((await suspend(active, "missing-sentinel-active", async () => "held")).kind).toBe("failed");
+    const activeRoot = dirname(homeLifecycleCoordinatorPath(active.vault));
+    const activeSentinel = join(dirname(activeRoot), "home-lifecycle-suspension.established");
+    await rm(activeSentinel, { recursive: true });
+    expect((await inspectHomeLifecycleSuspension(active.vault)).kind).toBe("invalid");
+    let mutated = false;
+    await expect(withHomeLifecycleMutation(active.vault, async () => { mutated = true; })).rejects.toThrow(
+      "active Home lifecycle coordinator is missing immutable establishment evidence",
+    );
+    expect(mutated).toBeFalse();
+
+    const substituted = await fixture(false);
+    await withHomeLifecycleMutation(substituted.vault, async () => "initialized");
+    const substitutedRoot = dirname(homeLifecycleCoordinatorPath(substituted.vault));
+    const substitutedMarker = join(dirname(substitutedRoot), "home-lifecycle-suspension.established", "layout.json");
+    await writeFile(substitutedMarker, `${JSON.stringify({
+      schema: "dome.home-lifecycle-suspension-establishment/v1",
+      layoutId: "f".repeat(32),
+    })}\n`, { mode: 0o600 });
+    expect((await inspectHomeLifecycleSuspension(substituted.vault)).kind).toBe("invalid");
+    await expect(withHomeLifecycleMutation(substituted.vault, async () => "never")).rejects.toThrow("layout id does not match");
+  });
+
+  test("concurrent establishment converges when an active row appears during validation", async () => {
+    const f = await fixture(true);
+    await withHomeLifecycleMutation(f.vault, async () => "initialized");
+    const root = dirname(homeLifecycleCoordinatorPath(f.vault));
+    const sentinel = join(dirname(root), "home-lifecycle-suspension.established");
+    await rm(sentinel, { recursive: true });
+
+    let validationEntered!: () => void;
+    const validating = new Promise<void>((resolve) => { validationEntered = resolve; });
+    let releaseValidation!: () => void;
+    const validationGate = new Promise<void>((resolve) => { releaseValidation = resolve; });
+    const concurrentMutation = withHomeLifecycleMutation(f.vault, async () => "must-not-run", {
+      beforeEstablishmentJournalRead: async () => {
+        validationEntered();
+        await validationGate;
+      },
+    });
+    await validating;
+
+    let intentCommitted!: () => void;
+    const committed = new Promise<void>((resolve) => { intentCommitted = resolve; });
+    let releaseHolder!: () => void;
+    const holderGate = new Promise<void>((resolve) => { releaseHolder = resolve; });
+    const holder = withSupervisedHomeSuspended({
+      mode: "new",
+      vaultPath: f.vault,
+      purpose: "backup",
+      operationId: "establishment-race",
+    }, async () => "snapshot", {
+      platform: "darwin",
+      uid: 501,
+      launchAgentsDir: f.agents,
+      launchctl: (...args) => f.launchd.runner(...args),
+      drainTimeoutMs: 20,
+      readinessTimeoutMs: 1,
+      readiness: () => f.readiness(),
+      applicationSupportDir: f.support,
+      checkpoint: async (name) => {
+        if (name !== "intent-committed") return;
+        intentCommitted();
+        await holderGate;
+      },
+    });
+    await committed;
+    releaseValidation();
+    expect((await concurrentMutation).kind).toBe("suspended");
+    releaseHolder();
+    expect((await holder).kind).toBe("ready");
+    expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("inactive");
+  });
+
   test("prepublication crash debris never becomes a partial public layout", async () => {
     const f = await fixture(false);
     const journal = homeLifecycleCoordinatorPath(f.vault);

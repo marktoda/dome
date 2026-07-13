@@ -40,10 +40,13 @@ const OWNERSHIP_NAME = "home-lifecycle-suspension-ownership.db";
 const STORAGE_NAME = "home-lifecycle-suspension";
 const LAYOUT_NAME = "layout.json";
 const LAYOUT_SCHEMA = "dome.home-lifecycle-suspension-layout/v1" as const;
+const ESTABLISHMENT_NAME = "home-lifecycle-suspension.established";
+const ESTABLISHMENT_SCHEMA = "dome.home-lifecycle-suspension-establishment/v1" as const;
 const BUSY_SLICE_MS = 25;
 const OWNERSHIP_WAIT_MS = 30_000;
 const OPERATION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
+const LAYOUT_ID = /^[a-f0-9]{32}$/;
 
 const OWNERSHIP_DDL = `CREATE TABLE ${OWNERSHIP_TABLE} (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -112,6 +115,11 @@ export type HomeLifecycleSuspensionInspection =
 export type HomeLifecycleMutationResult<T> =
   | { readonly kind: "owned"; readonly value: T }
   | { readonly kind: "suspended"; readonly suspension: HomeLifecycleSuspension };
+
+export type HomeLifecycleMutationDeps = {
+  /** Test/diagnostic seam for the incomplete-establishment validation race. */
+  readonly beforeEstablishmentJournalRead?: (() => Promise<void>) | undefined;
+};
 
 type SuspensionResultBase<T> = {
   readonly operationId: string;
@@ -223,15 +231,43 @@ export async function inspectHomeLifecycleSuspension(
   try { vault = await realpath(resolve(vaultPath)); }
   catch (error) { return Object.freeze({ kind: "invalid", error: message(error) }); }
   const paths = coordinatorPaths(vault);
-  if (!existsSync(paths.root)) return Object.freeze({ kind: "inactive" });
+  const rootPresent = pathPresent(paths.root);
+  const establishmentPresent = pathPresent(paths.establishmentRoot);
+  if (!rootPresent && !establishmentPresent) return Object.freeze({ kind: "inactive" });
+  if (!rootPresent) {
+    return Object.freeze({ kind: "invalid", error: "established Home lifecycle coordinator root is missing" });
+  }
+  let layout: LayoutMarker;
   try {
     validateDirectPrivateDirectory(paths.root);
-    readLayoutMarker(paths.layout);
+    layout = readLayoutMarker(paths.layout);
   } catch (error) {
     return Object.freeze({ kind: "invalid", error: message(error) });
   }
-  const journalExists = existsSync(paths.journal);
-  const ownershipExists = existsSync(paths.ownership);
+  if (!establishmentPresent) {
+    try {
+      const rootState = await validateUnestablishedRoot(paths, vault);
+      if (!pathPresent(paths.establishmentRoot) && rootState === "active") {
+        return Object.freeze({ kind: "invalid", error: "active Home lifecycle coordinator is missing immutable establishment evidence" });
+      }
+      if (!pathPresent(paths.establishmentRoot)) {
+        return Object.freeze({ kind: "unavailable", error: "Home lifecycle coordinator establishment is incomplete" });
+      }
+    } catch (error) {
+      if (isBusy(error)) return Object.freeze({ kind: "unavailable", error: "Home lifecycle coordinator is busy" });
+      return Object.freeze({ kind: "invalid", error: message(error) });
+    }
+  }
+  try {
+    const establishment = readEstablishmentMarker(paths);
+    if (establishment.layoutId !== layout.layoutId) {
+      return Object.freeze({ kind: "invalid", error: "Home lifecycle coordinator establishment layout id does not match its root" });
+    }
+  } catch (error) {
+    return Object.freeze({ kind: "invalid", error: message(error) });
+  }
+  const journalExists = pathPresent(paths.journal);
+  const ownershipExists = pathPresent(paths.ownership);
   if (!journalExists && !ownershipExists) {
     return Object.freeze({ kind: "invalid", error: "Home lifecycle coordinator databases are missing from a ready layout" });
   }
@@ -270,9 +306,10 @@ export async function inspectHomeLifecycleSuspension(
 export async function withHomeLifecycleMutation<T>(
   vaultPath: string,
   operation: () => Promise<T>,
+  deps: HomeLifecycleMutationDeps = {},
 ): Promise<HomeLifecycleMutationResult<T>> {
   const vault = await realpath(resolve(vaultPath));
-  const pair = await openCoordinatorPair(vault);
+  const pair = await openCoordinatorPair(vault, deps.beforeEstablishmentJournalRead);
   try {
     // Fast denial avoids waiting behind a suspension's long Tx2. The second
     // read under ownership closes the race with a concurrently publishing Tx1.
@@ -608,13 +645,28 @@ function resultFailure<T>(result: SupervisedHomeSuspensionResult<T>): string {
 }
 
 type CoordinatorPair = { readonly ownership: Database; readonly journal: Database };
+type CoordinatorPaths = {
+  readonly locks: string;
+  readonly root: string;
+  readonly layout: string;
+  readonly journal: string;
+  readonly ownership: string;
+  readonly establishmentRoot: string;
+  readonly establishmentMarker: string;
+};
+type LayoutMarker = { readonly schema: typeof LAYOUT_SCHEMA; readonly state: "ready"; readonly layoutId: string };
+type EstablishmentMarker = { readonly schema: typeof ESTABLISHMENT_SCHEMA; readonly layoutId: string };
 
-async function openCoordinatorPair(vault: string): Promise<CoordinatorPair> {
+async function openCoordinatorPair(vault: string, beforeEstablishmentJournalRead?: () => Promise<void>): Promise<CoordinatorPair> {
   const paths = coordinatorPaths(vault);
-  await ensureCoordinatorLayout(vault);
-  readLayoutMarker(paths.layout);
-  const ownershipPresent = existsSync(paths.ownership);
-  const journalPresent = existsSync(paths.journal);
+  await ensureCoordinatorLayout(vault, beforeEstablishmentJournalRead);
+  const layout = readLayoutMarker(paths.layout);
+  const establishment = readEstablishmentMarker(paths);
+  if (layout.layoutId !== establishment.layoutId) {
+    throw new Error("Home lifecycle coordinator establishment layout id does not match its root");
+  }
+  const ownershipPresent = pathPresent(paths.ownership);
+  const journalPresent = pathPresent(paths.journal);
   if (!ownershipPresent || !journalPresent) {
     throw new Error("Home lifecycle coordinator database is missing from a ready layout");
   }
@@ -638,13 +690,22 @@ function closePair(pair: CoordinatorPair): void {
   pair.ownership.close();
 }
 
-function coordinatorPaths(vault: string): { readonly root: string; readonly layout: string; readonly journal: string; readonly ownership: string } {
+function coordinatorPaths(vault: string): CoordinatorPaths {
   const locks = join(vault, ".dome", "state", "locks");
   const root = join(locks, STORAGE_NAME);
-  return Object.freeze({ root, layout: join(root, LAYOUT_NAME), journal: join(root, JOURNAL_NAME), ownership: join(root, OWNERSHIP_NAME) });
+  const establishmentRoot = join(locks, ESTABLISHMENT_NAME);
+  return Object.freeze({
+    locks,
+    root,
+    layout: join(root, LAYOUT_NAME),
+    journal: join(root, JOURNAL_NAME),
+    ownership: join(root, OWNERSHIP_NAME),
+    establishmentRoot,
+    establishmentMarker: join(establishmentRoot, LAYOUT_NAME),
+  });
 }
 
-async function ensureCoordinatorLayout(vault: string): Promise<void> {
+async function ensureCoordinatorLayout(vault: string, beforeEstablishmentJournalRead?: () => Promise<void>): Promise<void> {
   const dome = join(vault, ".dome");
   const state = join(dome, "state");
   const locks = join(state, "locks");
@@ -652,18 +713,39 @@ async function ensureCoordinatorLayout(vault: string): Promise<void> {
   ensureDirectDirectory(state, false);
   ensureDirectDirectory(locks, true);
   const paths = coordinatorPaths(vault);
-  if (!existsSync(paths.root)) await publishCompleteStorageRoot(paths.root, locks);
+  const rootPresent = pathPresent(paths.root);
+  const establishmentPresent = pathPresent(paths.establishmentRoot);
+  if (!rootPresent && establishmentPresent) {
+    throw new Error("established Home lifecycle coordinator root is missing");
+  }
+  if (!rootPresent) {
+    await publishCompleteStorageRoot(paths.root, locks, randomUUID().replaceAll("-", ""));
+  }
   validateDirectPrivateDirectory(paths.root);
-  if (!existsSync(paths.layout)) {
+  if (!pathPresent(paths.layout)) {
     throw new Error("Home lifecycle suspension layout marker is missing from an established directory");
+  }
+  const layout = readLayoutMarker(paths.layout);
+  if (!pathPresent(paths.establishmentRoot)) {
+    const rootState = await validateUnestablishedRoot(paths, vault, beforeEstablishmentJournalRead);
+    if (rootState === "empty") {
+      await publishEstablishmentRoot(paths.establishmentRoot, locks, layout.layoutId);
+    } else if (!pathPresent(paths.establishmentRoot)) {
+      throw new Error("active Home lifecycle coordinator is missing immutable establishment evidence");
+    }
+  }
+  const establishment = readEstablishmentMarker(paths);
+  if (establishment.layoutId !== layout.layoutId) {
+    throw new Error("Home lifecycle coordinator establishment layout id does not match its root");
   }
 }
 
-async function publishCompleteStorageRoot(root: string, parent: string): Promise<void> {
+async function publishCompleteStorageRoot(root: string, parent: string, layoutId: string): Promise<void> {
+  if (!LAYOUT_ID.test(layoutId)) throw new Error("Home lifecycle coordinator layout id is invalid");
   const staging = join(parent, `.${STORAGE_NAME}.init-${process.pid}-${randomUUID()}`);
   mkdirSync(staging, { mode: 0o700 });
   try {
-    publishLayoutMarker(join(staging, LAYOUT_NAME));
+    publishLayoutMarker(join(staging, LAYOUT_NAME), layoutId);
     const ownership = await openOrInitialize(join(staging, OWNERSHIP_NAME), OWNERSHIP_DDL, (db) => {
       db.query(`INSERT INTO ${OWNERSHIP_TABLE} (singleton, schema, layout_state) VALUES (1, ?, 'ready')`).run(OWNERSHIP_SCHEMA);
     }, validateOwnershipRow);
@@ -680,6 +762,45 @@ async function publishCompleteStorageRoot(root: string, parent: string): Promise
   } finally {
     rmSync(staging, { recursive: true, force: true });
   }
+}
+
+async function publishEstablishmentRoot(root: string, parent: string, layoutId: string): Promise<void> {
+  const staging = join(parent, `.${ESTABLISHMENT_NAME}.init-${process.pid}-${randomUUID()}`);
+  mkdirSync(staging, { mode: 0o700 });
+  try {
+    publishEstablishmentMarker(join(staging, LAYOUT_NAME), layoutId);
+    fsyncPath(staging);
+    try {
+      renameSync(staging, root);
+      fsyncPath(parent);
+    } catch (error) {
+      if (!hasCode(error, "EEXIST") && !hasCode(error, "ENOTEMPTY")) throw error;
+      const existing = readEstablishmentMarker({ establishmentRoot: root, establishmentMarker: join(root, LAYOUT_NAME) });
+      if (existing.layoutId !== layoutId) {
+        throw new Error("concurrent Home lifecycle establishment selected a different layout id");
+      }
+    }
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+}
+
+async function validateUnestablishedRoot(
+  paths: CoordinatorPaths,
+  vault: string,
+  beforeJournalRead?: () => Promise<void>,
+): Promise<"empty" | "active"> {
+  if (!pathPresent(paths.ownership) || !pathPresent(paths.journal)) {
+    throw new Error("Home lifecycle coordinator database is missing before establishment");
+  }
+  const ownership = await openEstablishedForInspection(paths.ownership, OWNERSHIP_DDL, validateOwnershipRow);
+  try {
+    const journal = await openEstablishedForInspection(paths.journal, JOURNAL_DDL, () => {});
+    try {
+      await beforeJournalRead?.();
+      return readActive(journal, vault) === null ? "empty" : "active";
+    } finally { journal.close(); }
+  } finally { ownership.close(); }
 }
 
 function ensureDirectDirectory(path: string, privateDirectory: boolean): boolean {
@@ -708,22 +829,50 @@ function validateDirectPrivateDirectory(path: string): void {
   }
 }
 
-function readLayoutMarker(path: string): { readonly schema: typeof LAYOUT_SCHEMA; readonly state: "ready" } {
+function readLayoutMarker(path: string): LayoutMarker {
   validateExistingCoordinatorFile(path, "layout marker");
   let value: unknown;
   try { value = JSON.parse(readFileSync(path, "utf8")); }
   catch { throw new Error("Home lifecycle suspension layout marker is invalid"); }
   if (typeof value !== "object" || value === null || Array.isArray(value) ||
-    JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(["schema", "state"]) ||
+    JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(["layoutId", "schema", "state"]) ||
     (value as { schema?: unknown }).schema !== LAYOUT_SCHEMA ||
-    (value as { state?: unknown }).state !== "ready") {
+    (value as { state?: unknown }).state !== "ready" ||
+    typeof (value as { layoutId?: unknown }).layoutId !== "string" ||
+    !LAYOUT_ID.test((value as { layoutId: string }).layoutId)) {
     throw new Error("Home lifecycle suspension layout marker has unknown or invalid fields");
   }
-  return Object.freeze(value as { schema: typeof LAYOUT_SCHEMA; state: "ready" });
+  return Object.freeze(value as LayoutMarker);
 }
 
-function publishLayoutMarker(path: string): void {
-  const bytes = `${JSON.stringify({ schema: LAYOUT_SCHEMA, state: "ready" })}\n`;
+function publishLayoutMarker(path: string, layoutId: string): void {
+  publishMarker(path, { schema: LAYOUT_SCHEMA, state: "ready", layoutId });
+}
+
+function readEstablishmentMarker(
+  paths: Pick<CoordinatorPaths, "establishmentRoot" | "establishmentMarker">,
+): EstablishmentMarker {
+  validateDirectPrivateDirectory(paths.establishmentRoot);
+  validateExistingCoordinatorFile(paths.establishmentMarker, "establishment marker");
+  let value: unknown;
+  try { value = JSON.parse(readFileSync(paths.establishmentMarker, "utf8")); }
+  catch { throw new Error("Home lifecycle establishment marker is invalid"); }
+  if (typeof value !== "object" || value === null || Array.isArray(value) ||
+    JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(["layoutId", "schema"]) ||
+    (value as { schema?: unknown }).schema !== ESTABLISHMENT_SCHEMA ||
+    typeof (value as { layoutId?: unknown }).layoutId !== "string" ||
+    !LAYOUT_ID.test((value as { layoutId: string }).layoutId)) {
+    throw new Error("Home lifecycle establishment marker has unknown or invalid fields");
+  }
+  return Object.freeze(value as EstablishmentMarker);
+}
+
+function publishEstablishmentMarker(path: string, layoutId: string): void {
+  publishMarker(path, { schema: ESTABLISHMENT_SCHEMA, layoutId });
+}
+
+function publishMarker(path: string, value: Readonly<Record<string, string>>): void {
+  const bytes = `${JSON.stringify(value)}\n`;
   const flags = constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | noFollowFlag();
   const fd = openSync(path, flags, 0o600);
   try {
@@ -1215,6 +1364,7 @@ function launchctlDetail(result: { readonly exitCode: number; readonly stdout: s
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 function assertOperationId(value: string): void { if (!OPERATION_ID.test(value)) throw new Error("Home suspension operation id is invalid"); }
 function hasCode(error: unknown, code: string): boolean { return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === code; }
+function pathPresent(path: string): boolean { try { lstatSync(path); return true; } catch (error) { if (hasCode(error, "ENOENT")) return false; throw error; } }
 function isBusy(error: unknown): boolean { return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "SQLITE_BUSY"; }
 function noFollowFlag(): number { return "O_NOFOLLOW" in constants ? constants.O_NOFOLLOW : 0; }
 function fsyncPath(path: string): void { const fd = openSync(path, constants.O_RDONLY | noFollowFlag()); try { fsyncSync(fd); } finally { closeSync(fd); } }
