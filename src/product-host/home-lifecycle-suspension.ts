@@ -28,7 +28,11 @@ import {
   type OperationalWriterAdmissionError,
   type OperationalWriterLease,
 } from "../operational-state/writer-barrier";
-import { activateLaunchAgent } from "../platform/launchd";
+import {
+  activateLaunchAgent,
+  probeLaunchAgentLoadedStrict,
+  waitForLaunchAgentDrainStrict,
+} from "../platform/launchd";
 import { resolveServiceDeps, serviceLabelForVault, vaultServiceSlug, type ServiceDeps } from "../surface/service-probe";
 import { readServeHeartbeatStatus } from "../engine/host/compiler-host-heartbeat";
 import {
@@ -561,7 +565,7 @@ export async function withSupervisedHomeSuspended<T>(
     const existing = readActive(pair.journal, vault);
     if (existing === null) {
       const evidence = await captureEvidence(vault, service.launchAgentsDir, deps);
-      const priorLoaded = await isLoaded(service.launchctl, target);
+      const priorLoaded = await probeLaunchAgentLoadedStrict({ launchctl: service.launchctl, target });
       await assertNoCompetingHost(vault, priorLoaded, service, deps);
       const now = exactTimestamp((deps.now ?? (() => new Date()))());
       active = Object.freeze({
@@ -601,7 +605,7 @@ export async function withSupervisedHomeSuspended<T>(
         }
       }
       if (recoveredActive.phase !== "resuming") {
-        const currentlyLoaded = await isLoaded(service.launchctl, target);
+        const currentlyLoaded = await probeLaunchAgentLoadedStrict({ launchctl: service.launchctl, target });
         await assertNoCompetingHost(vault, currentlyLoaded, service, deps);
       }
       active = recoveredActive;
@@ -662,7 +666,7 @@ async function runOwnedSuspension<T>(input: {
   let operationError: unknown | null = null;
 
   if (active.phase !== "resuming") {
-    if (await isLoaded(input.service.launchctl, input.target)) {
+    if (await probeLaunchAgentLoadedStrict({ launchctl: input.service.launchctl, target: input.target })) {
       const bootout = await input.service.launchctl(["bootout", input.target]);
       if (bootout.exitCode !== 0) {
         const error = `launchctl bootout failed: ${launchctlDetail(bootout)}`;
@@ -670,7 +674,11 @@ async function runOwnedSuspension<T>(input: {
         return { result: failed(active, input.recovered, false, error), operationError };
       }
     }
-    const drained = await waitForStrictLaunchAgentDrain(input.service.launchctl, input.target, input.service.drainTimeoutMs);
+    const drained = await waitForLaunchAgentDrainStrict({
+      launchctl: input.service.launchctl,
+      target: input.target,
+      timeoutMs: input.service.drainTimeoutMs,
+    });
     if (!drained) {
       const error = "Dome Home did not stop before the launchd drain timeout";
       persistError(input.pair.journal, active.operationId, error);
@@ -802,7 +810,7 @@ async function resumeOwned<T>(input: {
     return Object.freeze({ ...base, kind: "failed" as const, error });
   }
 
-  if (!await isLoaded(input.service.launchctl, input.target)) {
+  if (!await probeLaunchAgentLoadedStrict({ launchctl: input.service.launchctl, target: input.target })) {
     const activation = await activateLaunchAgent({
       launchctl: input.service.launchctl,
       uid: input.service.uid!,
@@ -1529,26 +1537,6 @@ function authorizeResumeEvidence(db: Database, row: HomeLifecycleSuspension, evi
   return Object.freeze({ ...row, ...resumeEvidenceFields(evidence) });
 }
 
-async function isLoaded(launchctl: ReturnType<typeof resolveServiceDeps>["launchctl"], target: string): Promise<boolean> {
-  const result = await launchctl(["print", target]);
-  if (result.exitCode === 0) return true;
-  if (result.exitCode === 113) return false;
-  throw new Error(`launchctl print ${target} failed: ${launchctlDetail(result)}`);
-}
-
-async function waitForStrictLaunchAgentDrain(
-  launchctl: ReturnType<typeof resolveServiceDeps>["launchctl"],
-  target: string,
-  timeoutMs: number,
-): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    if (!await isLoaded(launchctl, target)) return true;
-    if (Date.now() >= deadline) return false;
-    await Bun.sleep(200);
-  }
-}
-
 async function assertNoCompetingHost(
   vault: string,
   homeLoaded: boolean,
@@ -1559,7 +1547,10 @@ async function assertNoCompetingHost(
   const legacyPlist = join(service.launchAgentsDir, `${legacyLabel}.plist`);
   const injectedLegacy = deps.legacyServeRunning === undefined ? null : await deps.legacyServeRunning();
   const heartbeat = injectedLegacy === null ? await readServeHeartbeatStatus({ vaultPath: vault }) : null;
-  const legacyLoaded = await isLoaded(service.launchctl, `gui/${service.uid!}/${legacyLabel}`);
+  const legacyLoaded = await probeLaunchAgentLoadedStrict({
+    launchctl: service.launchctl,
+    target: `gui/${service.uid!}/${legacyLabel}`,
+  });
   if (existsSync(legacyPlist) || injectedLegacy === true || heartbeat?.status === "running" || legacyLoaded) {
     throw new Error("legacy dome serve is installed or running; stop it before suspending Dome Home");
   }

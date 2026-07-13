@@ -89,7 +89,7 @@ export async function ensureManagedRelease(input: {
   if (await pathPresent(target)) {
     try {
       const installed = await verify(target);
-      if (installed.artifact.id !== input.manifest.artifact.id) throw new Error("managed release identity mismatch");
+      assertSameArtifact(installed, input.manifest, "managed release identity mismatch");
       return Object.freeze({ root: target, published: false });
     } catch (error) {
       throw new Error(`immutable managed release is corrupt at ${target}: ${error instanceof Error ? error.message : String(error)}`);
@@ -108,15 +108,26 @@ export async function ensureManagedRelease(input: {
       force: false,
     });
     const staged = await verify(staging);
-    if (staged.artifact.id !== input.manifest.artifact.id) throw new Error("staged release identity changed during copy");
+    assertSameArtifact(staged, input.manifest, "staged release identity changed during copy");
     await (deps.syncRelease ?? fsyncTree)(staging);
     await (deps.publishRelease ?? (async (source, destination) => publishDirectoryExclusive({ source, target: destination, platform: input.platform })))(staging, target);
     await fsyncDirectory(input.paths.releases);
     const published = await verify(target);
-    if (published.artifact.id !== input.manifest.artifact.id) throw new Error("published release identity changed");
+    assertSameArtifact(published, input.manifest, "published release identity changed");
     return Object.freeze({ root: target, published: true });
   } finally {
     await rm(staging, { recursive: true, force: true });
+  }
+}
+
+function assertSameArtifact(
+  actual: HomeArtifactManifest,
+  expected: HomeArtifactManifest,
+  error: string,
+): void {
+  if (actual.artifact.id !== expected.artifact.id ||
+    actual.product.version !== expected.product.version) {
+    throw new Error(error);
   }
 }
 

@@ -2793,9 +2793,16 @@ fsyncs and re-verifies the complete staging tree, and publishes it with atomic
 no-replace semantics. One closed per-vault
 `installations/<vault-slug>/installation.json` is the sole artifact selector;
 there is deliberately no mutable `current` symlink. Home uses the selected
-pinned artifact runtime/program,
-fixed loopback `127.0.0.1:3663`, bundled PWA, `RunAtLoad`, `KeepAlive`, and
-`<vault>/.dome/state/home.log`. Status includes artifact ID and product version
+pinned artifact runtime/program, fixed loopback `127.0.0.1:3663`, bundled PWA,
+`RunAtLoad`, `KeepAlive`, and `<vault>/.dome/state/home.log`.
+Every mutating verb takes Home lifecycle ownership before operational
+writer admission and re-reading mutable evidence. `status` is the read-only
+exception: it takes no lifecycle, operational, or Product Host lock and never
+creates the lifecycle coordinator. JSON status always includes the closed
+`lifecycle` document; human output prints the same state and exact recovery
+operation. When admission prevents evidence reads, `installed`, `loaded`, and
+`ready` print as `unknown`/`n/a` rather than `no`.
+Status includes artifact ID and product version
 and distinguishes absent, installed/stopped, ready, loaded/unreachable,
 missing/corrupt selected release, invalid record, orphaned service, and plist
 mismatch states. Start/restart never render a new plist and resolve paths only

@@ -382,6 +382,42 @@ recovery clears the retained row.
 The live-parent integration test pins both completion within the readiness
 window and exactly one full artifact-verifier invocation.
 
+The operator lifecycle uses the same coordinator for every mutation. After
+canonical-path, macOS, uid, and exact vault-root preflight, `install`, `start`,
+`restart`, and `uninstall` take lifecycle ownership first, acquire an
+operational SHARED lease inside it, and only then re-read installation,
+release, plist, launchd, readiness, and legacy-service evidence. No selector,
+plist, release, or launchd conclusion survives a wait for lifecycle ownership.
+An active `suspending`, `suspended`, or `resuming` row denies without probing or
+mutating launchd and returns its exact phase, purpose, operation id, and last
+error. When operational admission is closed before evidence can be read,
+`installed`, `loaded`, and `ready` are `null`, never fabricated negative truth.
+
+Install/start/restart activation has one deliberate two-phase handoff.
+Recomputation, bootout, strict drain, selector/plist/release publication, and
+launchd `bootstrap`/`kickstart` run under both owners. The lifecycle transaction
+then commits before the parent waits for HTTP readiness, so the launched child
+can acquire normal startup admission without waiting on a parent that is
+waiting on it. The operational SHARED lease remains held through that readiness
+observation and closes only after the result settles. Lifecycle commit/close
+and lease-close failures retain the provisional selected artifact and
+publication truth while returning a structured error.
+
+Home treats only launchctl exit `0` as loaded and exact exit `113` as absent.
+Any other `print` result, thrown probe, or nonzero `bootout` is ambiguous and
+fails before further mutation; strict drain repeats that same proof. This
+strict helper is shared with supervised suspension without changing the legacy
+Serve lifecycle's compatibility semantics.
+
+`status` branches before lifecycle ownership and every writer/host lock. It
+never initializes or repairs the coordinator. Its additive closed `lifecycle`
+document reports `inactive`; `active` with phase, purpose, operation id, and
+last error; or `unavailable`/`invalid` with the diagnostic. Active, unavailable,
+and invalid lifecycle truth is nonzero while still preserving independently
+observed installation, loaded, readiness, and artifact fields. A fresh status,
+unsupported platform, and invalid or uninitialized vault do not scaffold
+lifecycle state.
+
 ### P4 encrypted backup checkpoint
 
 The public recovery surface supports encrypted creation, closed verification,
@@ -546,11 +582,11 @@ Product Host durable stores. Probation remains write-closed and bypasses
 lifecycle admission entirely.
 Runtime, proposals, activity, inspect/repair, devices, and the durable-state
 section of live backup are covered by an exact reviewed-callsite drift test.
-Home lifecycle install, start, restart, and uninstall also hold an ordinary
-lease before plist, selector, release, or launchctl mutation; status stays
-read-only for recovery diagnosis. This inventory is a review alarm, not
-semantic proof. Behavioral denial tests pin the runtime, proposals, and Home
-lifecycle seams. HTTP and MCP
+Home lifecycle install, start, restart, and uninstall first own lifecycle and
+then hold an ordinary lease before plist, selector, release, or launchctl
+mutation; status stays lock-free and read-only for recovery diagnosis. This
+inventory is a review alarm, not semantic proof. Behavioral denial tests pin
+the runtime, proposals, and Home lifecycle seams. HTTP and MCP
 inherit runtime or proposal admission. Absent-target restore and the exclusive
 upgrade owner are the narrow exceptions.
 

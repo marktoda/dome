@@ -36,19 +36,31 @@ export async function runHomeLifecycle(
     ...(environment === undefined ? {} : { environment }),
   }, deps);
   if (options.json === true) console.log(formatJson(result));
-  else if (result.error !== undefined) console.error(`dome home ${action}: ${result.error}`);
+  else if (result.error !== undefined) {
+    console.error(`dome home ${action}: ${result.error}`);
+    if (result.lifecycle !== undefined) console.error(`  lifecycle: ${formatLifecycle(result.lifecycle)}`);
+  }
   else {
     console.log(
       `dome home ${action}: ${result.status}\n` +
       `  service: ${result.label}\n  plist: ${result.plist}\n  log: ${result.log}\n` +
       `  installation: ${result.installation}\n` +
       `  artifact: ${result.artifactId ?? "none"}${result.productVersion === null ? "" : ` (${result.productVersion})`}\n` +
-      `  release: ${result.release ?? "none"}\n  program: ${result.program || "none"}\n  installed: ${result.installed ? "yes" : "no"}\n` +
+      `  release: ${result.release ?? "none"}\n  program: ${result.program || "none"}\n  installed: ${result.installed === null ? "unknown" : result.installed ? "yes" : "no"}\n` +
       `  loaded: ${result.loaded === null ? "unknown" : result.loaded ? "yes" : "no"}\n` +
-      `  ready: ${result.ready === null ? "n/a" : result.ready ? "yes" : "no"}`,
+      `  ready: ${result.ready === null ? "n/a" : result.ready ? "yes" : "no"}` +
+      (result.lifecycle === undefined ? "" : `\n  lifecycle: ${formatLifecycle(result.lifecycle)}`),
     );
   }
   return result.exitCode;
+}
+
+function formatLifecycle(lifecycle: NonNullable<Awaited<ReturnType<typeof manageHome>>["lifecycle"]>): string {
+  if (lifecycle.state === "inactive") return "inactive";
+  if (lifecycle.state === "active") {
+    return `${lifecycle.phase} (${lifecycle.purpose}, operation ${lifecycle.operationId}, last error: ${lifecycle.lastError ?? "none"})`;
+  }
+  return `${lifecycle.state} (${lifecycle.error})`;
 }
 
 /** Undefined means preserve the selected installation record's environment. */
