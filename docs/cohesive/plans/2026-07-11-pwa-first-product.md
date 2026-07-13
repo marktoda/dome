@@ -586,6 +586,34 @@ boolean escape hatch in this checkpoint. Durable transaction journaling,
 snapshots, migrations, commit-before-admission, pre-commit rollback, frozen
 N-1 fixtures, signing/notarization, and guided provider setup remain P4 work.
 
+The following P4 checkpoint adds the external pre-commit upgrade transaction,
+without pretending the complete upgrader exists. A closed, private, fsynced
+`active/` journal under the per-vault Home installation directory binds one
+transaction to canonical old/candidate release and selector evidence. Prepare
+uses a shared source-unopened, privately staged `quick_check` + `VACUUM INTO`
+primitive to snapshot the six durable SQLite stores plus optional
+quarantine/host identity. Projection is
+explicitly omitted as rebuildable, and Git/Markdown are outside rollback.
+
+Prepare/restore have no boolean quiescence escape hatch: the future lifecycle
+orchestrator must supply the internal `runUnderDurableUpgradeBarrier`
+capability. Its provider establishes or validates the all-writer barrier before
+the operation; callback return never releases it, and successful prepare must
+leave it engaged across crashes until terminal restore or future
+commit/recovery. Both host locks are held inside the operation. No production
+provider exists yet. Current normal Home rejects active invalid or pre-commit
+evidence before any mutable opener. Restore refuses selector drift, preserves
+N-1 Device Authority active/revoked credentials, grants, epoch, and audit,
+replaces and fsyncs each
+state entry idempotently while prepared, and removes WAL/SHM only after
+replacement. A missing or corrupt failed-candidate payload is never a rollback
+prerequisite. `restored` is terminal and never replays the snapshot over later
+N-1 writes. Cross-surface writer admission/barrier orchestration is required
+before the public path; migrations, candidate launch, plist/selection
+switching, commit-before-admission, journal retirement, frozen N-1 migration
+fixtures, signing/notarization, and a public upgrade command remain later P4
+checkpoints.
+
 Exit journey: a clean Mac needs no source checkout or manual PWA build; it
 pairs an iPhone, upgrades an N-1 fixture after backup, handles a forced failed
 upgrade without admitting writes, and restores onto a blank host with all

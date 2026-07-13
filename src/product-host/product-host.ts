@@ -29,6 +29,10 @@ import { ensureVaultId } from "./vault-id";
 import { withProductHostOwnership } from "./host-ownership";
 import { startProbationHost } from "./probation-host";
 import {
+  inspectHomeUpgradeAdmission,
+  type HomeUpgradeTransactionDeps,
+} from "./home-upgrade-transaction";
+import {
   resolveProductHostWriteAdmission,
   type ProductHostLaunch,
   type ProductHostWriteAdmission,
@@ -71,6 +75,11 @@ export type ProductHostOptions = {
   readonly launch?: ProductHostLaunch;
 };
 
+type ProductHostRuntimeDeps = {
+  /** Internal path dependency used by isolated lifecycle/startup tests. */
+  readonly upgradeTransaction?: HomeUpgradeTransactionDeps | undefined;
+};
+
 type HostState = {
   readonly since: string;
   readonly vaultId: string;
@@ -82,6 +91,7 @@ type HostState = {
 /** Start one loopback Product Host and hold exclusive ownership until close. */
 export async function startProductHost(
   options: ProductHostOptions,
+  runtimeDeps: ProductHostRuntimeDeps = {},
 ): Promise<StartProductHostResult> {
   let vaultPath: string;
   try {
@@ -154,6 +164,14 @@ export async function startProductHost(
       const scheduler = new ProductOperationScheduler();
       let poll: Promise<void> = Promise.resolve();
       try {
+        const upgradeAdmission = await inspectHomeUpgradeAdmission(vaultPath, runtimeDeps.upgradeTransaction);
+        if (!upgradeAdmission.admitted) {
+          settleStarted(failure(
+            "startup-failed",
+            `Dome Home write admission is closed: ${upgradeAdmission.reason}`,
+          ));
+          return;
+        }
         const branch = await getCurrentBranch(vaultPath);
         let recoveryIssue: HostState["recoveryIssue"] = null;
         if (branch !== null) {

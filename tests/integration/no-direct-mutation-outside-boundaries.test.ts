@@ -35,6 +35,10 @@ const ALLOWED_FILES = new Set([
   // Host-level immutable Home releases and the closed per-vault selector.
   // This boundary never writes vault knowledge or operational state.
   "src/product-host/home-installation.ts",
+  // Durable operational rollback boundary for Home upgrades. It writes only
+  // the external per-installation journal/snapshot and exact gitignored state
+  // restoration targets; it never writes Git or Markdown knowledge.
+  "src/product-host/home-upgrade-transaction.ts",
   "src/cli/commands/install-systemd.ts",
   // Stable opaque Product Host identity in gitignored operational state. The
   // exclusive create is not a Markdown/Git write path.
@@ -75,6 +79,10 @@ const ALLOWED_FILES = new Set([
   // ALLOWED_DIRS) each did inline before — hoisted to one place. Same boundary
   // class as those store dirs; not a vault write path.
   "src/sqlite/open-store.ts",
+  // SQLite snapshot mechanic writes only private caller-owned staging and the
+  // caller-owned destination. It copies DB/WAL bytes first, then opens that
+  // private copy; it never opens or mutates the live source database.
+  "src/sqlite/snapshot.ts",
 ]);
 
 const FORBIDDEN_PATTERNS: ReadonlyArray<{
