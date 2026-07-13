@@ -4,6 +4,8 @@
 // callers either receive exact, stopped-candidate evidence or an error.  No
 // listening candidate can escape through a successful return.
 
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { PRODUCT_READINESS_SCHEMA, type ProductReadiness } from "../../contracts/product-readiness";
@@ -11,6 +13,7 @@ import type {
   HomeUpgradeArtifactEvidence,
   HomeUpgradeProbationProof,
 } from "./home-upgrade-transaction";
+import { verifyHomeArtifact } from "./home-artifact";
 
 type CandidateChild = {
   readonly exited: Promise<number>;
@@ -25,6 +28,8 @@ export type HomeUpgradeCandidateDeps = {
   readonly now?: (() => Date) | undefined;
   readonly spawn?: ((command: ReadonlyArray<string>) => CandidateChild) | undefined;
   readonly fetch?: ((url: string, init?: RequestInit) => Promise<Response>) | undefined;
+  /** Test seam; production performs complete artifact verification + manifest binding. */
+  readonly verifyCandidate?: ((candidate: HomeUpgradeArtifactEvidence) => Promise<void>) | undefined;
 };
 
 /** Launch the exact candidate in probation, prove identity, then prove drain. */
@@ -46,6 +51,7 @@ export async function proveHomeUpgradeCandidate(input: {
     throw new Error("upgrade candidate probation input is invalid");
   }
   const origin = `http://${hostname === "::1" ? "[::1]" : hostname}:${port}`;
+  await (deps.verifyCandidate ?? assertCandidateArtifact)(input.candidate);
   const command = candidateCommand(input.vault, input.candidate, hostname, port);
   const child = (deps.spawn ?? spawnCandidate)(command);
   let childExited = false;
@@ -55,6 +61,8 @@ export async function proveHomeUpgradeCandidate(input: {
     childExitCode = code;
   });
   const request = deps.fetch ?? fetch;
+  let proof: HomeUpgradeProbationProof | null = null;
+  let primaryError: unknown | null = null;
   try {
     const readiness = await waitForExactReadiness({
       url: `${origin}/readyz`,
@@ -64,7 +72,7 @@ export async function proveHomeUpgradeCandidate(input: {
       expected: input,
     });
     if (childExited) throw new Error(`upgrade candidate exited during probation (${childExitCode ?? "unknown"})`);
-    return Object.freeze({
+    proof = Object.freeze({
       schema: "dome.home-upgrade-probation-proof/v1" as const,
       readinessSchema: PRODUCT_READINESS_SCHEMA,
       hostState: "probation" as const,
@@ -74,7 +82,11 @@ export async function proveHomeUpgradeCandidate(input: {
       writesAdmitted: false as const,
       provenAt: (deps.now?.() ?? new Date()).toISOString(),
     });
-  } finally {
+  } catch (error) {
+    primaryError = error;
+  }
+  let cleanupError: unknown | null = null;
+  try {
     if (!childExited) child.kill("SIGTERM");
     const exited = await settleChild(child, deps.drainTimeoutMs ?? 5_000);
     if (!exited) {
@@ -84,6 +96,28 @@ export async function proveHomeUpgradeCandidate(input: {
       }
     }
     await provePortDrained(`${origin}/healthz`, request, deps.drainTimeoutMs ?? 5_000);
+  } catch (error) {
+    cleanupError = error;
+  }
+  if (primaryError !== null && cleanupError !== null) {
+    throw new AggregateError([primaryError, cleanupError], "candidate probation and cleanup both failed");
+  }
+  if (primaryError !== null) throw primaryError;
+  if (cleanupError !== null) throw cleanupError;
+  if (proof === null) throw new Error("upgrade candidate probation completed without proof");
+  return proof;
+}
+
+async function assertCandidateArtifact(candidate: HomeUpgradeArtifactEvidence): Promise<void> {
+  const manifestPath = join(candidate.releasePath, "manifest.json");
+  const manifestBytes = await readFile(manifestPath);
+  const manifestHash = createHash("sha256").update(manifestBytes).digest("hex");
+  if (manifestHash !== candidate.manifestSha256) {
+    throw new Error("upgrade candidate manifest changed before probation launch");
+  }
+  const verified = await verifyHomeArtifact(candidate.releasePath);
+  if (verified.artifact.id !== candidate.artifactId || verified.product.version !== candidate.version) {
+    throw new Error("upgrade candidate identity changed before probation launch");
   }
 }
 
