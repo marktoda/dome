@@ -29,8 +29,9 @@ import {
 import { verifyHomeArtifact, type HomeArtifactVerifier } from "./home-artifact";
 import {
   HOME_DURABLE_STATE_PROTOCOL,
+  HOME_STORE_MIGRATIONS,
   migratePreparedHomeStores,
-  preflightHomeStoreMigrations,
+  preflightHomeStoreSnapshots,
   type HomeStoreMigrationEntry,
 } from "./home-store-migrations";
 import {
@@ -249,13 +250,14 @@ async function prepareHomeUpgradeWhileQuiesced(
       throw new Error("Dome Home upgrade candidate must differ from the selected release");
     }
 
-    // Exact N-1 compatibility is proved for all six stores while both host
-    // ownership layers are held and before any snapshot or journal publication.
-    await preflightHomeStoreMigrations({
-      stateRoot: join(vault, ".dome", "state"),
+    // Copy live SQLite state without opening it. Exact N-1 compatibility is
+    // then proved from the private standalone rollback snapshots before the
+    // journal is published.
+    const inventory = await snapshotDurableState(vault, snapshotRoot);
+    await preflightHomeStoreSnapshots({
+      snapshotRoot,
       phase: "prepare",
     });
-    const inventory = await snapshotDurableState(vault, snapshotRoot);
     await assertCandidateDurableCompatibility(candidate, inventory, verify);
     const preparedAt = (deps.now?.() ?? new Date()).toISOString();
     assertTimestamp(preparedAt, "prepared timestamp");
@@ -312,10 +314,22 @@ export async function migratePreparedHomeUpgrade(
         }
         const verify = deps.verifyArtifact ?? verifyHomeArtifact;
         await assertCandidateDurableCompatibility(journal.candidate, journal.snapshot.inventory, verify);
-        await migratePreparedHomeStores({
-          stateRoot: join(vault, ".dome", "state"),
-          ...(deps.afterStoreMigration === undefined ? {} : { afterStore: deps.afterStoreMigration }),
-        });
+        const paths = homeInstallationPaths(vault, deps);
+        const preflightRoot = join(
+          paths.installations,
+          "upgrade",
+          `.migration-preflight-${journal.transactionId}`,
+        );
+        await createOwnedMigrationPreflight(preflightRoot);
+        try {
+          await migratePreparedHomeStores({
+            stateRoot: join(vault, ".dome", "state"),
+            preflightRoot,
+            ...(deps.afterStoreMigration === undefined ? {} : { afterStore: deps.afterStoreMigration }),
+          });
+        } finally {
+          await clearOwnedMigrationPreflight(preflightRoot);
+        }
         // The migration Module completed its WAL-aware quick_check/target-hash
         // proof after every changed handle committed and closed.
         return await readRequiredHomeUpgrade(vault, deps);
@@ -676,6 +690,15 @@ async function assertCandidateDurableCompatibility(
   if (manifest.writerBarrier?.protocol !== 1 || manifest.durableState?.protocol !== HOME_DURABLE_STATE_PROTOCOL) {
     throw new Error("upgrade candidate lacks required writer-barrier or durable-state protocol");
   }
+  if (manifest.durableState.stores.length !== HOME_STORE_MIGRATIONS.length ||
+    !HOME_STORE_MIGRATIONS.every((expected, index) => {
+      const actual = manifest.durableState?.stores[index];
+      return actual?.name === expected.name && actual.metaTable === expected.metaTable &&
+        actual.currentSchemaHash === expected.currentSchemaHash &&
+        JSON.stringify(actual.migratesFrom) === JSON.stringify(expected.migratesFrom);
+    })) {
+    throw new Error("upgrade candidate durable-state inventory differs from this build");
+  }
   for (const database of DATABASES) {
     const snapshot = inventory.find((entry) => entry.name === database.name);
     const route = manifest.durableState.stores.find((entry) => entry.name === database.name);
@@ -968,6 +991,18 @@ async function writePrivateJson(path: string, value: unknown, exclusive: boolean
 async function clearOwnedStaging(path: string): Promise<void> {
   if (!await present(path)) return;
   await assertDirectDirectory(path, "upgrade staging directory");
+  await rm(path, { recursive: true });
+}
+
+async function createOwnedMigrationPreflight(path: string): Promise<void> {
+  await clearOwnedMigrationPreflight(path);
+  await mkdir(path, { mode: 0o700 });
+  await chmod(path, 0o700);
+}
+
+async function clearOwnedMigrationPreflight(path: string): Promise<void> {
+  if (!await present(path)) return;
+  await assertDirectDirectory(path, "upgrade migration preflight directory");
   await rm(path, { recursive: true });
 }
 

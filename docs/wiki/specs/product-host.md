@@ -642,10 +642,13 @@ table/index validation, and single meta-row replacement commit in one
 `BEGIN IMMEDIATE` transaction. Callback refusal or failure rolls everything
 back.
 
-Prepare proves all six live stores are exact N-1 while operational EXCLUSIVE
-and both Product Host locks are held, before snapshot/journal publication. It
-also proves the candidate manifest's optional `durableState` protocol has an
-exact closed/sorted six-store inventory compatible with every snapshot hash.
+Prepare copies all six live stores without opening them while operational
+EXCLUSIVE and both Product Host locks are held, then proves exact N-1 from the
+private standalone rollback snapshots before journal publication. It also
+proves the candidate manifest's optional `durableState` protocol has the exact
+compiled six-store inventory compatible with every snapshot hash. General
+artifact verification accepts a structurally valid historical protocol-1
+inventory on the old side; it does not reinterpret old hashes as current.
 Legacy omission remains runnable and is allowed on the old side, but makes a
 candidate ineligible. Writer-barrier protocol 1 remains required on both
 sides. The artifact builder always emits both protocols;
@@ -654,8 +657,10 @@ sides. The artifact builder always emits both protocols;
 `migratePreparedHomeUpgrade` is private and has no CLI. It revalidates the
 prepared marker, journal, selectors, candidate product version, manifest hash,
 and six-store compatibility under the same EXCLUSIVE/external/local lock
-order. A retry accepts only each exact predecessor or target hash, preflights
-all six before the first live-store mutation, migrates remaining predecessors
+order. A retry copies all six stores into a deterministic private scratch root
+outside `active/`, accepts only each exact predecessor or target hash there,
+and removes that scratch root after final proof. It preflights all six before
+the first live-store mutation, migrates remaining predecessors
 transactionally, and finishes with WAL-aware `quick_check` and target-hash
 proofs. The journal deliberately remains `prepared` and both barriers remain
 engaged. A crash after one store commits therefore retries forward or restores

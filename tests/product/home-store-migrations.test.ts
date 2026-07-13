@@ -1,8 +1,8 @@
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, link, lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import {
   HOME_STORE_MIGRATIONS,
@@ -34,7 +34,7 @@ describe("Home durable-store migrations", () => {
       answers.run("UPDATE answers_meta SET schema_hash=?", ["d".repeat(64)]);
       answers.run("PRAGMA wal_checkpoint(TRUNCATE)");
       answers.close();
-      await expect(migratePreparedHomeStores({ stateRoot: root })).rejects.toThrow("no durable-state route for answers.db");
+      await expect(migrate(root)).rejects.toThrow("no durable-state route for answers.db");
       expect(schemaHash(join(root, "request-receipts.db"), "request_receipts_meta"))
         .toBe(REQUEST_RECEIPTS_N1_SCHEMA_HASH);
     } finally { await rm(root, { recursive: true, force: true }); }
@@ -43,21 +43,61 @@ describe("Home durable-store migrations", () => {
   test("initial prepare refuses an unjournaled mixed vault with receipts already current", async () => {
     const root = await materialized();
     try {
-      await migratePreparedHomeStores({ stateRoot: root });
-      await expect(preflightHomeStoreMigrations({ stateRoot: root, phase: "prepare" }))
+      await migrate(root);
+      await expect(preflight(root, "prepare"))
         .rejects.toThrow("requires exact N-1 schema: request-receipts.db");
-      expect((await preflightHomeStoreMigrations({ stateRoot: root, phase: "prepared-retry" }))
+      expect((await preflight(root, "prepared-retry"))
         .every((entry) => entry.state === "current")).toBeTrue();
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
-  for (const corruption of ["missing", "symlink", "directory", "fifo", "corrupt", "quick-check"] as const) {
+  test("safe live preflight refuses redirected, non-private, or stale snapshot roots", async () => {
+    const root = await materialized();
+    const snapshotRoot = scratch(root, "unsafe-preflight");
+    try {
+      await symlink(root, snapshotRoot);
+      await expect(preflightHomeStoreMigrations({ stateRoot: root, snapshotRoot, phase: "prepare" }))
+        .rejects.toThrow("direct private directory");
+      await rm(snapshotRoot);
+      await mkdir(snapshotRoot, { mode: 0o700 });
+      await chmod(snapshotRoot, 0o755);
+      await expect(preflightHomeStoreMigrations({ stateRoot: root, snapshotRoot, phase: "prepare" }))
+        .rejects.toThrow("direct private directory");
+      await chmod(snapshotRoot, 0o700);
+      await writeFile(join(snapshotRoot, "stale.db"), "stale");
+      await expect(preflightHomeStoreMigrations({ stateRoot: root, snapshotRoot, phase: "prepare" }))
+        .rejects.toThrow("not empty");
+      expect(schemaHash(join(root, "request-receipts.db"), "request_receipts_meta"))
+        .toBe(REQUEST_RECEIPTS_N1_SCHEMA_HASH);
+    } finally {
+      await rm(snapshotRoot, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  for (const corruption of ["missing", "symlink", "hard-link", "directory", "fifo", "corrupt", "quick-check"] as const) {
     test(`refuses a ${corruption} durable store before migration`, async () => {
       const root = await materialized();
+      let outsideRoot: string | null = null;
+      let externalEvidence: { readonly path: string; readonly ino: number; readonly base64: string } | null = null;
       try {
         const target = join(root, "answers.db");
         if (corruption !== "quick-check") await rm(target);
         if (corruption === "symlink") await symlink(join(root, "proposals.db"), target);
+        if (corruption === "hard-link") {
+          outsideRoot = await mkdtemp(join(tmpdir(), "dome-home-hard-link-"));
+          const external = join(outsideRoot, "answers.db");
+          const frozen = join(FIXTURE, "answers.sql");
+          const restored = new Database(external, { create: true });
+          restored.exec(await readFile(frozen, "utf8"));
+          restored.close();
+          await link(external, target);
+          externalEvidence = {
+            path: external,
+            ino: (await lstat(external)).ino,
+            base64: await readFile(external, "base64"),
+          };
+        }
         if (corruption === "directory") await mkdir(target);
         if (corruption === "fifo") {
           const child = Bun.spawn(["mkfifo", target], { stdout: "ignore", stderr: "pipe" });
@@ -77,18 +117,49 @@ describe("Home durable-store migrations", () => {
           bytes[(rootPage - 1) * pageSize] = 0xff; // invalid b-tree page type; quick_check must reject it
           await writeFile(target, bytes);
         }
-        await expect(preflightHomeStoreMigrations({ stateRoot: root, phase: "prepared-retry" })).rejects.toThrow();
+        await expect(preflight(root, "prepared-retry")).rejects.toThrow();
+        if (externalEvidence !== null) {
+          expect((await lstat(externalEvidence.path)).ino).toBe(externalEvidence.ino);
+          expect(await readFile(externalEvidence.path, "base64")).toBe(externalEvidence.base64);
+          expect((await lstat(externalEvidence.path)).nlink).toBe(2);
+        }
         expect(schemaHash(join(root, "request-receipts.db"), "request_receipts_meta"))
           .toBe(REQUEST_RECEIPTS_N1_SCHEMA_HASH);
-      } finally { await rm(root, { recursive: true, force: true }); }
+      } finally {
+        await rm(root, { recursive: true, force: true });
+        if (outsideRoot !== null) await rm(outsideRoot, { recursive: true, force: true });
+      }
     });
   }
 });
 
 async function materialized(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "dome-home-store-migrations-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "dome-home-store-migrations-")));
   await materializeFrozenN1Fixture({ fixtureRoot: FIXTURE, destination: root });
   return root;
+}
+
+async function preflight(
+  stateRoot: string,
+  phase: "prepare" | "prepared-retry",
+): ReturnType<typeof preflightHomeStoreMigrations> {
+  const snapshotRoot = scratch(stateRoot, `preflight-${phase}`);
+  await rm(snapshotRoot, { recursive: true, force: true });
+  await mkdir(snapshotRoot, { mode: 0o700 });
+  try { return await preflightHomeStoreMigrations({ stateRoot, snapshotRoot, phase }); }
+  finally { await rm(snapshotRoot, { recursive: true, force: true }); }
+}
+
+async function migrate(stateRoot: string): ReturnType<typeof migratePreparedHomeStores> {
+  const preflightRoot = scratch(stateRoot, "migration");
+  await rm(preflightRoot, { recursive: true, force: true });
+  await mkdir(preflightRoot, { mode: 0o700 });
+  try { return await migratePreparedHomeStores({ stateRoot, preflightRoot }); }
+  finally { await rm(preflightRoot, { recursive: true, force: true }); }
+}
+
+function scratch(stateRoot: string, purpose: string): string {
+  return join(dirname(stateRoot), `.${basename(stateRoot)}-${purpose}`);
 }
 
 function schemaHash(path: string, table: string): string | undefined {

@@ -227,8 +227,8 @@ export function parseHomeArtifactManifest(value: unknown): HomeArtifactManifest 
   });
   if (new Set(tools.map((tool) => tool.name)).size !== 2) throw new Error("artifact tool names must be unique");
   if (durableState !== null) {
-    // Parsing already proved exact compiled compatibility. This assignment
-    // preserves the validated frozen shape in the returned manifest.
+    // Parsing proves the protocol shape, not compatibility with this build.
+    // Historical artifacts must remain verifiable by their successors.
     root["durableState"] = durableState;
   }
   return root as unknown as HomeArtifactManifest;
@@ -246,16 +246,17 @@ function parseDurableState(value: unknown): NonNullable<HomeArtifactManifest["du
     ]);
     const expected = HOME_STORE_MIGRATIONS[index];
     if (expected === undefined || store["name"] !== expected.name || store["metaTable"] !== expected.metaTable ||
-      store["currentSchemaHash"] !== expected.currentSchemaHash || !Array.isArray(store["migratesFrom"]) ||
+      !sha(store["currentSchemaHash"]) || !Array.isArray(store["migratesFrom"]) ||
       store["migratesFrom"].some((hash) => !sha(hash)) ||
-      JSON.stringify(store["migratesFrom"]) !== JSON.stringify(expected.migratesFrom)) {
-      throw new Error("artifact durable-state store inventory differs from this build");
+      store["migratesFrom"].some((hash, routeIndex, routes) =>
+        routeIndex > 0 && compareStrings(routes[routeIndex - 1] as string, hash as string) >= 0)) {
+      throw new Error("artifact durable-state store inventory is invalid");
     }
     return Object.freeze({
       name: expected.name,
       metaTable: expected.metaTable,
-      currentSchemaHash: expected.currentSchemaHash,
-      migratesFrom: Object.freeze([...expected.migratesFrom]),
+      currentSchemaHash: store["currentSchemaHash"] as string,
+      migratesFrom: Object.freeze([...(store["migratesFrom"] as string[])]),
     });
   });
   return Object.freeze({ protocol: HOME_DURABLE_STATE_PROTOCOL, stores: Object.freeze(stores) });

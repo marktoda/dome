@@ -132,11 +132,18 @@ describe("Product Host pre-commit upgrade transaction", () => {
   test("post-commit migration failure remains prepared and closed, then retry converges", async () => {
     const f = await fixture();
     try {
-      await prepareHomeUpgrade({ vaultPath: f.vault, transactionId: randomUUID(), candidateArtifactId: CANDIDATE_ID }, f.deps);
+      const transactionId = randomUUID();
+      await prepareHomeUpgrade({ vaultPath: f.vault, transactionId, candidateArtifactId: CANDIDATE_ID }, f.deps);
+      const preflightRoot = join(
+        homeInstallationPaths(f.vault, f.deps).installations,
+        "upgrade",
+        `.migration-preflight-${transactionId}`,
+      );
       await expect(migratePreparedHomeUpgrade(f.vault, {
         ...f.deps,
         afterStoreMigration: async (name) => { throw new Error(`injected after ${name}`); },
       })).rejects.toThrow("injected after request-receipts.db");
+      expect(await exists(preflightRoot)).toBeFalse();
       expect((await readHomeUpgrade(f.vault, f.deps))?.phase).toBe("prepared");
       expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeTrue();
       expect((await inspectHomeUpgradeAdmission(f.vault, f.deps)).admitted).toBeFalse();
@@ -144,6 +151,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
       expect(current.ok).toBeTrue();
       if (current.ok) current.value.db.close();
       expect((await migratePreparedHomeUpgrade(f.vault, f.deps)).phase).toBe("prepared");
+      expect(await exists(preflightRoot)).toBeFalse();
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });
 
@@ -192,7 +200,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
           vaultPath: f.vault,
           transactionId: randomUUID(),
           candidateArtifactId: CANDIDATE_ID,
-        }, f.deps)).rejects.toThrow(candidateFault === "missing" ? "lacks required" : "incompatible with durable snapshot");
+        }, f.deps)).rejects.toThrow(candidateFault === "missing" ? "lacks required" : "differs from this build");
         expect(await readHomeUpgrade(f.vault, f.deps)).toBeNull();
         expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
         expect(await logicalState(f.vault)).toEqual(before);
@@ -432,16 +440,23 @@ describe("Product Host pre-commit upgrade transaction", () => {
       walDb.run("PRAGMA journal_mode = WAL");
       walDb.run("PRAGMA wal_autocheckpoint = 0");
       walDb.run("UPDATE outbox SET last_error = 'committed WAL evidence'");
-      await writeFile(join(f.vault, ".dome", "state", "device-authority.db"), "corrupt", { flag: "w" });
+      const later = new Database(join(f.vault, ".dome", "state", "runs.db"));
+      later.run("UPDATE ledger_meta SET schema_hash = ?", ["d".repeat(64)]);
+      later.close();
       const protectedPaths = [
         join(f.vault, "note.md"),
         join(f.vault, ".dome", "state", "outbox.db"),
         join(f.vault, ".dome", "state", "outbox.db-wal"),
-        join(f.vault, ".dome", "state", "device-authority.db"),
+        join(f.vault, ".dome", "state", "outbox.db-shm"),
+        join(f.vault, ".dome", "state", "runs.db"),
       ];
-      const corruptBefore = await fileHashes(protectedPaths);
-      await expect(prepareHomeUpgrade({ vaultPath: f.vault, transactionId: randomUUID(), candidateArtifactId: CANDIDATE_ID }, f.deps)).rejects.toThrow();
-      expect(await fileHashes(protectedPaths)).toEqual(corruptBefore);
+      const sourceBefore = await fileHashes(protectedPaths);
+      await expect(prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId: randomUUID(),
+        candidateArtifactId: CANDIDATE_ID,
+      }, f.deps)).rejects.toThrow("requires exact N-1 schema: runs.db");
+      expect(await fileHashes(protectedPaths)).toEqual(sourceBefore);
       expect(await readHomeUpgrade(f.vault, f.deps)).toBeNull();
       expect(await gitEvidence(f.vault)).toEqual(gitBefore);
     } finally {
@@ -534,6 +549,37 @@ describe("Product Host pre-commit upgrade transaction", () => {
       }, f.deps)).phase).toBe("prepared");
     } finally {
       await rm(f.root, { recursive: true, force: true });
+    }
+  });
+
+  test("historical durable-state drift is old-side eligible but candidate-side incompatible", async () => {
+    for (const artifactId of [OLD_ID, CANDIDATE_ID]) {
+      const f = await fixture();
+      try {
+        const paths = homeInstallationPaths(f.vault, f.deps);
+        const manifestPath = join(releaseRoot(paths, artifactId), "manifest.json");
+        const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>;
+        const historical = structuredClone({
+          protocol: HOME_DURABLE_STATE_PROTOCOL,
+          stores: HOME_STORE_MIGRATIONS,
+        }) as unknown as {
+          protocol: number;
+          stores: Array<{ currentSchemaHash: string; migratesFrom: string[] }>;
+        };
+        historical.stores[0]!.currentSchemaHash = "e".repeat(64);
+        historical.stores[0]!.migratesFrom = ["f".repeat(64)];
+        manifest["durableState"] = historical;
+        await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, { mode: 0o600 });
+        const prepare = prepareHomeUpgrade({
+          vaultPath: f.vault,
+          transactionId: randomUUID(),
+          candidateArtifactId: CANDIDATE_ID,
+        }, f.deps);
+        if (artifactId === OLD_ID) expect((await prepare).phase).toBe("prepared");
+        else await expect(prepare).rejects.toThrow("differs from this build");
+      } finally {
+        await rm(f.root, { recursive: true, force: true });
+      }
     }
   });
 

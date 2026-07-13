@@ -20,7 +20,7 @@ export async function snapshotSqliteReadonly(input: {
   readonly destination: string;
 }): Promise<void> {
   const sourceInfo = await lstat(input.source);
-  if (!sourceInfo.isFile() || sourceInfo.isSymbolicLink()) {
+  if (!sourceInfo.isFile() || sourceInfo.isSymbolicLink() || sourceInfo.nlink !== 1) {
     throw new Error(`SQLite snapshot source is not a regular file: ${input.source}`);
   }
   const scratch = join(dirname(input.destination), `.sqlite-snapshot-${randomUUID()}`);

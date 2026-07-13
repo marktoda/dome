@@ -627,8 +627,10 @@ a lifetime lease.
 The next bounded checkpoint freezes the exact predecessor before changing
 production schema: six readable canonical SQL dumps plus a closed provenance,
 schema, and logical-canary manifest. A private closed six-store migration
-Module then proves exact N-1 compatibility during prepare and candidate
-manifest compatibility before journal publication. The artifact builder emits
+Module then proves exact N-1 compatibility from copy-first private rollback
+snapshots during prepare and candidate manifest compatibility before journal
+publication. Prepared retries use a deterministic, cleaned private scratch
+root outside the closed active journal inventory. The artifact builder emits
 optional protocol-1 `durableState` evidence; legacy omission remains runnable
 and old-side eligible but cannot be a candidate. Only request receipts change,
 adding the partial prune index through one exact old-hash route. Ordinary opens
