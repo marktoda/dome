@@ -549,6 +549,26 @@ export async function readHomeUpgrade(
 }
 
 /**
+ * Read rollback truth without requiring the candidate payload to exist.
+ * Only recovery orchestration and restore use this narrower evidence view.
+ */
+export async function readHomeUpgradeForRecovery(
+  vaultPath: string,
+  deps: HomeUpgradeTransactionDeps = {},
+): Promise<HomeUpgradeTransaction | null> {
+  const vault = await canonicalVault(vaultPath);
+  const paths = homeInstallationPaths(vault, deps);
+  const upgrade = await inspectUpgradeAncestors(paths);
+  if (upgrade === null) return null;
+  const active = join(upgrade, "active");
+  if (!await present(active)) return null;
+  const journal = await readBoundedJournal(active, vault);
+  await validateRestoreJournalReferences(journal, paths, deps);
+  await validateSnapshotInventory(active, journal.snapshot.inventory);
+  return journal;
+}
+
+/**
  * Restore only a transaction still before installation selection. Every
  * durable store/file is replaced from the retained snapshot; Git and Markdown
  * are never inspected or written. Recovery evidence remains in `active`.
@@ -1667,14 +1687,8 @@ async function readRequiredRestoreHomeUpgrade(
   vault: string,
   deps: HomeUpgradeTransactionDeps,
 ): Promise<HomeUpgradeTransaction> {
-  const paths = homeInstallationPaths(vault, deps);
-  const upgrade = await inspectUpgradeAncestors(paths);
-  if (upgrade === null) throw new Error("no prepared Dome Home upgrade transaction exists");
-  const active = join(upgrade, "active");
-  if (!await present(active)) throw new Error("no prepared Dome Home upgrade transaction exists");
-  const journal = await readBoundedJournal(active, vault);
-  await validateRestoreJournalReferences(journal, paths, deps);
-  await validateSnapshotInventory(active, journal.snapshot.inventory);
+  const journal = await readHomeUpgradeForRecovery(vault, deps);
+  if (journal === null) throw new Error("no prepared Dome Home upgrade transaction exists");
   return journal;
 }
 

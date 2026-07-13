@@ -29,6 +29,7 @@ import {
   migratePreparedHomeUpgrade,
   prepareHomeUpgrade,
   readHomeUpgrade,
+  readHomeUpgradeForRecovery,
   releaseCommittedHomeUpgrade,
   restoreHomeUpgrade,
   type HomeUpgradeTransactionDeps,
@@ -528,6 +529,31 @@ describe("Product Host pre-commit upgrade transaction", () => {
       expect(await restoreHomeUpgrade(f.vault, f.deps)).toEqual(restored);
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });
+
+  for (const candidateFault of ["missing", "corrupt"] as const) {
+    test(`switching rollback ignores ${candidateFault} candidate payload`, async () => {
+      const f = await fixture();
+      try {
+        const transactionId = randomUUID();
+        const before = await logicalState(f.vault);
+        await prepareHomeUpgrade({ vaultPath: f.vault, transactionId, candidateArtifactId: CANDIDATE_ID }, f.deps);
+        await migratePreparedHomeUpgrade(f.vault, f.deps);
+        await expect(commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof(transactionId) }, {
+          ...f.deps,
+          selectionCheckpoint: async (name) => {
+            if (name === "candidate-plist-published") throw new Error("switching crash");
+          },
+        })).rejects.toThrow("switching crash");
+        const candidate = releaseRoot(homeInstallationPaths(f.vault, f.deps), CANDIDATE_ID);
+        if (candidateFault === "missing") await rm(candidate, { recursive: true });
+        else await writeFile(join(candidate, "manifest.json"), "corrupt candidate\n", { mode: 0o600 });
+        await expect(readHomeUpgrade(f.vault, f.deps)).rejects.toThrow();
+        expect((await readHomeUpgradeForRecovery(f.vault, f.deps))?.phase).toBe("switching");
+        expect((await restoreHomeUpgrade(f.vault, f.deps)).phase).toBe("restored");
+        expect(await logicalState(f.vault)).toEqual(before);
+      } finally { await rm(f.root, { recursive: true, force: true }); }
+    });
+  }
 
   test("partial restore retries, absent files are restored as absent, and corrupt evidence fails closed", async () => {
     const f = await fixture({ durableFiles: false });

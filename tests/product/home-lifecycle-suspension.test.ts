@@ -40,6 +40,17 @@ type FakeLaunchd = {
 };
 
 describe("supervised Home lifecycle suspension", () => {
+  test("a recovery caller never recreates a suspension another caller already cleared", async () => {
+    const f = await fixture(true);
+    await expect(suspend(
+      f,
+      "already-cleared",
+      async () => "must not run",
+      "backup",
+      "resume-only",
+    )).rejects.toThrow("is no longer active");
+  });
+
   test("publishes durable suspending intent before bootout", async () => {
     const f = await fixture(true);
     const observed: HomeLifecycleSuspensionInspection[] = [];

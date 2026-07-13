@@ -583,6 +583,9 @@ export async function withSupervisedHomeSuspended<T>(
     validateOwnershipRow(pair.ownership);
     const existing = readActive(pair.journal, vault);
     if (existing === null) {
+      if (input.mode === "recover") {
+        throw new Error(`Home lifecycle suspension ${requestedOperationId} is no longer active`);
+      }
       const evidence = await captureEvidence(vault, service.launchAgentsDir, deps);
       const priorLoaded = await probeLaunchAgentLoadedStrict({ launchctl: service.launchctl, target });
       await assertNoCompetingHost(vault, priorLoaded, service, deps);
