@@ -329,6 +329,28 @@ export async function rehearseHomeArtifact(archivePath: string): Promise<void> {
     if (!help.stdout.includes("Dome vault compiler")) throw new Error("artifact dome --help failed");
     const vault = join(temporary, "vault");
     await run([dome, "init", vault], temporary, offlineEnvironment());
+    const fakeBin = join(temporary, "fake service manager");
+    await mkdir(fakeBin, { recursive: true });
+    const fakeLaunchctl = join(fakeBin, "launchctl");
+    await writeFile(fakeLaunchctl, "#!/bin/sh\nexit 113\n", { mode: 0o755 });
+    await chmod(fakeLaunchctl, 0o755);
+    const lifecycleEnvironment = {
+      ...offlineEnvironment(),
+      PATH: `${fakeBin}:${process.env["PATH"] ?? "/usr/bin:/bin"}`,
+    };
+    const lifecycleHelp = await run([dome, "home", "status", "--help"], temporary, lifecycleEnvironment);
+    if (!lifecycleHelp.stdout.includes("Usage: dome home status")) {
+      throw new Error("artifact nested Home lifecycle help failed");
+    }
+    const lifecycle = await run(
+      [dome, "home", "status", "--vault", vault, "--json"],
+      temporary,
+      lifecycleEnvironment,
+    );
+    const lifecycleStatus = JSON.parse(lifecycle.stdout) as { readonly schema?: unknown; readonly status?: unknown };
+    if (lifecycleStatus.schema !== "dome.home.lifecycle/v1" || lifecycleStatus.status !== "not-installed") {
+      throw new Error("artifact Home lifecycle status did not report not-installed");
+    }
     await rehearseHomeServer(dome, vault, temporary);
     await rehearseHomeServer(dome, vault, temporary);
   } finally {

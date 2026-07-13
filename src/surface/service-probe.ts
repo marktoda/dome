@@ -13,27 +13,23 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import type {
+  LaunchctlResult,
+  LaunchctlRunner,
+} from "../platform/launchd";
+
+export type { LaunchctlResult, LaunchctlRunner } from "../platform/launchd";
 
 const SERVICE_LABEL_PREFIX = "com.dome.serve.";
 
 /** Same SDK-entry resolution as `dome serve --daemon` (see serve.ts). */
 const DOME_BIN = resolve(import.meta.dir, "../../bin/dome");
 
-export type LaunchctlResult = {
-  readonly exitCode: number;
-  readonly stdout: string;
-  readonly stderr: string;
-};
-
 /**
  * Runs `launchctl <args>` and reports the outcome. The default is a real
  * `Bun.spawn`; tests inject a recording fake so no real service manager is
  * ever touched from the suite.
  */
-export type LaunchctlRunner = (
-  args: ReadonlyArray<string>,
-) => Promise<LaunchctlResult>;
-
 /**
  * Injectable host boundaries for the service verbs and probes. Every field
  * defaults to the real environment; tests override `platform`, `uid`,

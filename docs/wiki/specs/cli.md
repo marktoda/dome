@@ -2768,10 +2768,22 @@ private remote access, or an exact HTTP loopback origin such as
 fragments, and insecure non-loopback origins are rejected.
 
 The default asset directory is `pwa/dist`. A source checkout must run
-`bun run --cwd pwa build` first; P4's distribution artifact will populate the
+`bun run --cwd pwa build` first; the P4 distribution artifact populates the
 same runtime path. Missing assets fail before host admission
 instead of silently starting an API-only product. SIGINT/SIGTERM stops
 admission and closes the complete Product Host lifecycle.
+
+The macOS artifact also provides `dome home install|start|restart|status|
+uninstall`. These nested verbs manage `com.dome.home.<vault-slug>` through
+launchd without changing the legacy top-level `dome install|restart|uninstall`
+contract for `dome serve`. Home uses the pinned artifact runtime/program,
+fixed loopback `127.0.0.1:3663`, bundled PWA, `RunAtLoad`, `KeepAlive`, and
+`<vault>/.dome/state/home.log`. Status distinguishes absent, installed/stopped,
+ready, loaded/unreachable, loaded-without-plist, and broken-program states.
+Start/restart never render a new plist. Uninstall removes only the plist and
+preserves the artifact, vault, Git data, state, logs, and backups. A legacy
+Serve plist, loaded service, or live heartbeat must be removed with the legacy
+top-level uninstall before Home can be installed.
 
 ### `dome http [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--token <token>] [--pair-code <code>] [--model <id>] [--static-dir <path>] [--allow-write] [--transcribe-cmd <cmd>] [--transcribe-key <key>] [--transcribe-url <url>] [--transcribe-model <model>]`
 

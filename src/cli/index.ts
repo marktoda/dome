@@ -958,7 +958,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       }));
     });
 
-  program
+  const homeCommand = program
     .command("home")
     .helpGroup(GROUP_START)
     .description("Run the self-contained loopback Dome Home Product Host and PWA.")
@@ -972,6 +972,28 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       const { runHome } = await import("./commands/home");
       setExitCode(await runHome(options));
     });
+
+  const homeLifecycle = async (
+    action: "install" | "start" | "restart" | "status" | "uninstall",
+    options: HomeLifecycleCliOptions,
+  ): Promise<void> => {
+    const { runHomeLifecycle } = await import("./commands/home-lifecycle");
+    setExitCode(await runHomeLifecycle(action, options));
+  };
+  homeCommand.command("install")
+    .description("Install and start Dome Home as a macOS LaunchAgent.")
+    .option("--env <KEY=VALUE>", "Add a service environment entry.", (value: string, previous: string[]) => [...previous, value], [] as string[])
+    .option("--env-file <path>", "Read service environment entries from a file.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .action((options: HomeLifecycleCliOptions) => homeLifecycle("install", options));
+  for (const action of ["start", "restart", "status", "uninstall"] as const) {
+    homeCommand.command(action)
+      .description(`${action[0]?.toUpperCase()}${action.slice(1)} the supervised Dome Home service.`)
+      .option("--json", "Emit JSON.")
+      .option("--vault <path>", "Vault path (defaults to current directory).")
+      .action((options: HomeLifecycleCliOptions) => homeLifecycle(action, options));
+  }
 
   program
     .command("mcp")
@@ -1157,6 +1179,13 @@ type HomeCliOptions = {
   readonly host?: string;
   readonly externalOrigin?: string;
   readonly staticDir?: string;
+};
+
+type HomeLifecycleCliOptions = {
+  readonly vault?: string;
+  readonly env?: string[];
+  readonly envFile?: string;
+  readonly json?: boolean;
 };
 
 type DevicesCliOptions = {

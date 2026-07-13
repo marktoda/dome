@@ -23,6 +23,8 @@ const ALLOWED_FILES = new Set([
   // gitignored log dir), not an engine write path — same boundary class as
   // init.ts.
   "src/cli/commands/install.ts",
+  "src/platform/launchd.ts",
+  "src/product-host/home-lifecycle.ts",
   "src/cli/commands/install-systemd.ts",
   // Stable opaque Product Host identity in gitignored operational state. The
   // exclusive create is not a Markdown/Git write path.
