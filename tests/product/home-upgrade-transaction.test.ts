@@ -141,6 +141,63 @@ describe("Product Host pre-commit upgrade transaction", () => {
     });
   }
 
+  test("rejects corrupted persisted probation bindings while rollback remains vault-identity tolerant", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      await prepareHomeUpgrade({ vaultPath: f.vault, transactionId, candidateArtifactId: CANDIDATE_ID }, f.deps);
+      await migratePreparedHomeUpgrade(f.vault, f.deps);
+      await expect(commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof(transactionId) }, {
+        ...f.deps,
+        selectionCheckpoint: async (name) => {
+          if (name === "candidate-plist-published") throw new Error("retain switching journal");
+        },
+      })).rejects.toThrow("retain switching journal");
+
+      const journalPath = join(
+        homeInstallationPaths(f.vault, f.deps).installations,
+        "upgrade", "active", "journal.json",
+      );
+      const original = JSON.parse(await readFile(journalPath, "utf8")) as Record<string, unknown>;
+      const writeMutation = async (mutate: (journal: Record<string, unknown>) => void) => {
+        const journal = structuredClone(original);
+        mutate(journal);
+        await writeFile(journalPath, `${JSON.stringify(journal)}\n`, { mode: 0o600 });
+      };
+
+      await writeMutation((journal) => {
+        (journal["probation"] as Record<string, unknown>)["transactionId"] = randomUUID();
+      });
+      await expect(readHomeUpgradeForRecovery(f.vault, f.deps)).rejects.toThrow("probation proof is invalid");
+
+      await writeMutation((journal) => {
+        (journal["probation"] as Record<string, unknown>)["provenAt"] = "2026-07-13T00:59:59.000Z";
+      });
+      await expect(readHomeUpgradeForRecovery(f.vault, f.deps)).rejects.toThrow("precedes preparation");
+
+      await writeMutation((journal) => {
+        (journal["probation"] as Record<string, unknown>)["provenAt"] = "2026-07-13T01:00:01.000Z";
+      });
+      await expect(readHomeUpgradeForRecovery(f.vault, f.deps)).rejects.toThrow("follows selector switching");
+
+      await writeMutation((journal) => {
+        (journal["probation"] as Record<string, unknown>)["vaultId"] = "corrupt-live-vault-binding";
+      });
+      await expect(readHomeUpgrade(f.vault, f.deps)).rejects.toThrow("live vault");
+      expect((await readHomeUpgradeForRecovery(f.vault, f.deps))?.phase).toBe("switching");
+      const restored = await restoreHomeUpgrade(f.vault, f.deps);
+      expect(restored.phase).toBe("restored");
+
+      await writeMutation((journal) => {
+        journal["phase"] = "restored";
+        (journal["timestamps"] as Record<string, unknown>)["switchingAt"] = null;
+        (journal["timestamps"] as Record<string, unknown>)["restoredAt"] = "2026-07-13T01:00:00.000Z";
+        (journal["probation"] as Record<string, unknown>)["provenAt"] = "2026-07-13T01:00:01.000Z";
+      });
+      await expect(readHomeUpgradeForRecovery(f.vault, f.deps)).rejects.toThrow("follows restoration");
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
   test("refuses selector commit before every live store is current or when proof names another vault", async () => {
     const f = await fixture();
     try {

@@ -545,6 +545,9 @@ export async function readHomeUpgrade(
   const journal = await readBoundedJournal(active, vault);
   await validateJournalReferences(journal, paths, deps);
   await validateSnapshotInventory(active, journal.snapshot.inventory);
+  if (journal.probation !== null && journal.probation.vaultId !== await readVaultId(vault)) {
+    throw new Error("upgrade probation proof vault identity does not match the live vault");
+  }
   return journal;
 }
 
@@ -1369,7 +1372,9 @@ function parseJournal(value: unknown, expectedVault: string): HomeUpgradeTransac
     plist: parseFileEvidence(selectorsValue["plist"], "plist selector"),
   });
   const selection = isV2 ? parseSelectionEvidence(root["selection"], selectors) : null;
-  const probation = isV2 ? parseProbationProof(root["probation"], candidate) : null;
+  const probation = isV2
+    ? parseProbationProof(root["probation"], root["transactionId"] as string, candidate)
+    : null;
   if ((phase === "switching" || phase === "committed") && probation === null) {
     throw new Error("upgrade phase requires exact candidate probation proof");
   }
@@ -1396,6 +1401,11 @@ function parseJournal(value: unknown, expectedVault: string): HomeUpgradeTransac
   })) {
     throw new Error("upgrade journal phase evidence is inconsistent");
   }
+  validatePersistedProbationOrder(phase as UpgradePhase, probation, {
+    preparedAt: timestamps["preparedAt"] as string,
+    switchingAt: isV2 ? timestamps["switchingAt"] as string | null : null,
+    restoredAt: timestamps["restoredAt"] as string | null,
+  });
   return Object.freeze({
     schema: schema as HomeUpgradeTransaction["schema"],
     vault: expectedVault,
@@ -1489,6 +1499,7 @@ function parseStoredSelectionDocument(
 
 function parseProbationProof(
   value: unknown,
+  transactionId: string,
   candidate: HomeUpgradeArtifactEvidence,
 ): HomeUpgradeProbationProof | null {
   if (value === null) return null;
@@ -1498,6 +1509,7 @@ function parseProbationProof(
   ]);
   if (proof["schema"] !== "dome.home-upgrade-probation-proof/v1" ||
     proof["readinessSchema"] !== "dome.product.readiness/v1" || proof["hostState"] !== "probation" ||
+    proof["transactionId"] !== transactionId ||
     proof["artifactId"] !== candidate.artifactId || proof["productVersion"] !== candidate.version ||
     typeof proof["vaultId"] !== "string" || proof["vaultId"].length === 0 || proof["vaultId"].length > 128 ||
     proof["writesAdmitted"] !== false) {
@@ -1506,6 +1518,30 @@ function parseProbationProof(
   assertTransactionId(proof["transactionId"]);
   assertTimestamp(proof["provenAt"], "probation proof timestamp");
   return Object.freeze(proof as unknown as HomeUpgradeProbationProof);
+}
+
+function validatePersistedProbationOrder(
+  phase: UpgradePhase,
+  proof: HomeUpgradeProbationProof | null,
+  timestamps: {
+    readonly preparedAt: string;
+    readonly switchingAt: string | null;
+    readonly restoredAt: string | null;
+  },
+): void {
+  if (proof === null) return;
+  const provenAt = Date.parse(proof.provenAt);
+  if (provenAt < Date.parse(timestamps.preparedAt)) {
+    throw new Error("upgrade probation proof precedes preparation");
+  }
+  if ((phase === "switching" || phase === "committed") &&
+    (timestamps.switchingAt === null || provenAt > Date.parse(timestamps.switchingAt))) {
+    throw new Error("upgrade probation proof follows selector switching");
+  }
+  if (phase === "restored" &&
+    (timestamps.restoredAt === null || provenAt > Date.parse(timestamps.restoredAt))) {
+    throw new Error("upgrade probation proof follows restoration");
+  }
 }
 
 function validPhaseTimestamps(
