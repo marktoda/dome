@@ -55,6 +55,10 @@ import {
 import { inspectOperationalWriterBarrier } from "../operational-state/writer-barrier";
 import { withProductHostOwnership } from "./host-ownership";
 import { homeServiceLabelForVault } from "./home-lifecycle";
+import {
+  inspectHomeLifecycleSuspension,
+  type HomeLifecycleSuspensionInspection,
+} from "./home-lifecycle-suspension";
 
 const HOME_UPGRADE_TRANSACTION_SCHEMA_V1 = "dome.home-upgrade-transaction/v1" as const;
 export const HOME_UPGRADE_TRANSACTION_SCHEMA = "dome.home-upgrade-transaction/v2" as const;
@@ -118,6 +122,7 @@ export type HomeUpgradeSelectionEvidence = {
 
 export type HomeUpgradeProbationProof = {
   readonly schema: "dome.home-upgrade-probation-proof/v1";
+  readonly transactionId: string;
   readonly readinessSchema: "dome.product.readiness/v1";
   readonly hostState: "probation";
   readonly artifactId: string;
@@ -166,6 +171,8 @@ export type HomeUpgradeTransactionDeps = HomeInstallationDeps & {
     "candidate-installation-published" | "committed-recorded" |
     "old-installation-restored" | "old-plist-restored"
   ) => Promise<void>) | undefined;
+  /** Internal lifecycle evidence seam used by isolated transaction tests. */
+  readonly inspectLifecycleSuspension?: ((vaultPath: string) => Promise<HomeLifecycleSuspensionInspection>) | undefined;
 };
 
 /**
@@ -435,7 +442,7 @@ export async function commitPreparedHomeUpgrade(input: {
     throw new Error("legacy Dome Home upgrade transactions are restore-only");
   }
   if (initial.phase === "restored") throw new Error("a restored Dome Home upgrade cannot commit");
-  await validateCommitProof(vault, initial, input.proof);
+  await validateCommitProof(vault, initial, input.proof, deps.now?.() ?? new Date());
   if (initial.phase === "committed") return initial;
   await engageForTransaction(vault, initial.transactionId, deps);
 
@@ -451,7 +458,7 @@ export async function commitPreparedHomeUpgrade(input: {
           journal.transactionId !== initial.transactionId || journal.phase === "restored") {
           throw new Error("Dome Home upgrade evidence changed before selector commit");
         }
-        await validateCommitProof(vault, journal, input.proof);
+        await validateCommitProof(vault, journal, input.proof, deps.now?.() ?? new Date());
         if (journal.phase === "committed") return journal;
         await assertCandidateDurableCompatibility(
           journal.candidate,
@@ -583,6 +590,7 @@ export async function releaseCommittedHomeUpgrade(
     (marker !== null && (marker.transactionId !== committed.transactionId || marker.engagedAt !== inspection.blockedAt))) {
     throw new Error("committed upgrade writer evidence does not match");
   }
+  await assertCandidateLifecycleAuthorization(committed, deps);
   const ownership = await withHomeUpgradeBarrierOwnership({
     vaultPath: vault,
     transactionId: committed.transactionId,
@@ -1234,15 +1242,37 @@ async function validateCommitProof(
   vault: string,
   journal: HomeUpgradeTransaction,
   proof: HomeUpgradeProbationProof,
+  commitClock: Date,
 ): Promise<void> {
   if (proof.schema !== "dome.home-upgrade-probation-proof/v1" ||
     proof.readinessSchema !== "dome.product.readiness/v1" || proof.hostState !== "probation" ||
+    proof.transactionId !== journal.transactionId ||
     proof.artifactId !== journal.candidate.artifactId ||
     proof.productVersion !== journal.candidate.version || proof.writesAdmitted !== false ||
     proof.vaultId !== await readVaultId(vault)) {
     throw new Error("candidate probation proof does not match the upgrade transaction and vault");
   }
   assertTimestamp(proof.provenAt, "candidate probation proof timestamp");
+  if (Date.parse(proof.provenAt) < Date.parse(journal.timestamps.preparedAt) ||
+    Date.parse(proof.provenAt) > commitClock.getTime()) {
+    throw new Error("candidate probation proof is outside the prepared-to-commit interval");
+  }
+}
+
+async function assertCandidateLifecycleAuthorization(
+  journal: HomeUpgradeTransaction,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<void> {
+  if (journal.selection === null) throw new Error("committed upgrade lacks candidate selection evidence");
+  const inspected = await (deps.inspectLifecycleSuspension ?? inspectHomeLifecycleSuspension)(journal.vault);
+  if (inspected.kind !== "active" || inspected.suspension.purpose !== "upgrade" ||
+    inspected.suspension.operationId !== journal.transactionId ||
+    inspected.suspension.resumeArtifactId !== journal.candidate.artifactId ||
+    inspected.suspension.resumeArtifactVersion !== journal.candidate.version ||
+    inspected.suspension.resumeInstallationSha256 !== journal.selection.candidate.installation.sha256 ||
+    inspected.suspension.resumePlistSha256 !== journal.selection.candidate.plist.sha256) {
+    throw new Error("committed upgrade lacks exact candidate lifecycle resume authorization");
+  }
 }
 
 async function assertAllHomeStoresCurrent(
@@ -1443,7 +1473,7 @@ function parseProbationProof(
 ): HomeUpgradeProbationProof | null {
   if (value === null) return null;
   const proof = exactRecord(value, "upgrade probation proof", [
-    "schema", "readinessSchema", "hostState", "artifactId", "productVersion", "vaultId",
+    "schema", "transactionId", "readinessSchema", "hostState", "artifactId", "productVersion", "vaultId",
     "writesAdmitted", "provenAt",
   ]);
   if (proof["schema"] !== "dome.home-upgrade-probation-proof/v1" ||
@@ -1453,6 +1483,7 @@ function parseProbationProof(
     proof["writesAdmitted"] !== false) {
     throw new Error("upgrade probation proof is invalid");
   }
+  assertTransactionId(proof["transactionId"]);
   assertTimestamp(proof["provenAt"], "probation proof timestamp");
   return Object.freeze(proof as unknown as HomeUpgradeProbationProof);
 }

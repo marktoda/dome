@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { proveHomeUpgradeCandidate } from "../../src/product-host/home-upgrade-candidate";
 
 const roots: string[] = [];
+const TRANSACTION_ID = "11111111-1111-4111-8111-111111111111";
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
 describe("managed Home upgrade candidate", () => {
@@ -15,10 +16,12 @@ describe("managed Home upgrade candidate", () => {
     const proof = await proveHomeUpgradeCandidate({
       vault: fixture.vault,
       vaultId: "vault-proof-id",
+      transactionId: TRANSACTION_ID,
       candidate: fixture.candidate,
     }, { port, readinessTimeoutMs: 5_000, drainTimeoutMs: 2_000, verifyCandidate: async () => {} });
     expect(proof).toMatchObject({
       schema: "dome.home-upgrade-probation-proof/v1",
+      transactionId: TRANSACTION_ID,
       readinessSchema: "dome.product.readiness/v1",
       hostState: "probation",
       artifactId: "c".repeat(64),
@@ -35,6 +38,7 @@ describe("managed Home upgrade candidate", () => {
     await expect(proveHomeUpgradeCandidate({
       vault: fixture.vault,
       vaultId: "vault-proof-id",
+      transactionId: TRANSACTION_ID,
       candidate: fixture.candidate,
     }, { port, readinessTimeoutMs: 2_000, drainTimeoutMs: 2_000, verifyCandidate: async () => {} })).rejects.toThrow(
       "does not match exact probation identity",
@@ -50,6 +54,7 @@ describe("managed Home upgrade candidate", () => {
     const proof = await proveHomeUpgradeCandidate({
       vault: fixture.vault,
       vaultId: "vault-proof-id",
+      transactionId: TRANSACTION_ID,
       candidate: fixture.candidate,
     }, {
       port: 45678,
@@ -78,6 +83,7 @@ describe("managed Home upgrade candidate", () => {
     await expect(proveHomeUpgradeCandidate({
       vault: fixture.vault,
       vaultId: "vault-proof-id",
+      transactionId: TRANSACTION_ID,
       candidate: fixture.candidate,
     }, {
       port: 45679,
@@ -92,6 +98,7 @@ describe("managed Home upgrade candidate", () => {
     await expect(proveHomeUpgradeCandidate({
       vault: fixture.vault,
       vaultId: "vault-proof-id",
+      transactionId: TRANSACTION_ID,
       candidate: fixture.candidate,
     }, {
       port: 45680,
@@ -110,6 +117,7 @@ describe("managed Home upgrade candidate", () => {
     await proveHomeUpgradeCandidate({
       vault: fixture.vault,
       vaultId: "vault-proof-id",
+      transactionId: TRANSACTION_ID,
       candidate: fixture.candidate,
     }, {
       port: 45681,
@@ -132,6 +140,7 @@ describe("managed Home upgrade candidate", () => {
       await proveHomeUpgradeCandidate({
         vault: fixture.vault,
         vaultId: "vault-proof-id",
+        transactionId: TRANSACTION_ID,
         candidate: fixture.candidate,
       }, {
         port: 45682,
@@ -155,8 +164,15 @@ function readiness() {
     productVersion: "2.0.0",
     artifactId: "c".repeat(64),
     writesAdmitted: false,
+    contractVersions: ["dome.product.readiness/v1"],
+    assetVersion: "c".repeat(64),
     vault: { id: "vault-proof-id", name: "vault" },
+    device: { id: "local-upgrade-probe", name: "Local upgrade probe", capabilities: [] },
     host: { state: "probation", since: new Date().toISOString() },
+    adoption: { state: "current", head: null, adopted: null, lastSuccessAt: null },
+    model: { state: "unconfigured" },
+    transcription: { state: "unconfigured" },
+    nextActions: [{ code: "upgrade-probation", label: "Await commit" }],
   };
 }
 
@@ -184,8 +200,15 @@ const server = Bun.serve({
       productVersion: "2.0.0",
       artifactId: "${"c".repeat(64)}",
       writesAdmitted: ${overrides.writesAdmitted ?? false},
+      contractVersions: ["dome.product.readiness/v1"],
+      assetVersion: "${"c".repeat(64)}",
       vault: { id: "vault-proof-id", name: "vault" },
+      device: { id: "local-upgrade-probe", name: "Local upgrade probe", capabilities: [] },
       host: { state: "probation", since: new Date().toISOString() },
+      adoption: { state: "current", head: null, adopted: null, lastSuccessAt: null },
+      model: { state: "unconfigured" },
+      transcription: { state: "unconfigured" },
+      nextActions: [{ code: "upgrade-probation", label: "Await commit" }],
     });
     return Response.json({ ok: true });
   },

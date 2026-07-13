@@ -48,16 +48,17 @@ const DATABASES = [
   "answers.db", "proposals.db", "outbox.db", "runs.db", "request-receipts.db", "device-authority.db",
 ] as const;
 
-function probationProof() {
+function probationProof(transactionId: string) {
   return {
     schema: "dome.home-upgrade-probation-proof/v1" as const,
+    transactionId,
     readinessSchema: "dome.product.readiness/v1" as const,
     hostState: "probation" as const,
     artifactId: CANDIDATE_ID,
     productVersion: "2.0.0",
     vaultId: "stable-vault-id",
     writesAdmitted: false as const,
-    provenAt: "2026-07-13T00:10:00.000Z",
+    provenAt: "2026-07-13T01:00:00.000Z",
   };
 }
 
@@ -65,15 +66,16 @@ describe("Product Host pre-commit upgrade transaction", () => {
   test("commits candidate selection only after exact probation and makes rollback irreversible", async () => {
     const f = await fixture();
     try {
+      const transactionId = randomUUID();
       await prepareHomeUpgrade({
         vaultPath: f.vault,
-        transactionId: randomUUID(),
+        transactionId,
         candidateArtifactId: CANDIDATE_ID,
       }, f.deps);
       await migratePreparedHomeUpgrade(f.vault, f.deps);
       const committed = await commitPreparedHomeUpgrade({
         vaultPath: f.vault,
-        proof: probationProof(),
+        proof: probationProof(transactionId),
       }, f.deps);
       expect(committed).toMatchObject({
         phase: "committed",
@@ -92,8 +94,12 @@ describe("Product Host pre-commit upgrade transaction", () => {
         version: "2.0.0",
       })).admitted).toBeTrue();
       await expect(restoreHomeUpgrade(f.vault, f.deps)).rejects.toThrow("irreversible");
-      expect((await commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof() }, f.deps)).phase).toBe("committed");
-      expect((await releaseCommittedHomeUpgrade(f.vault, f.deps)).phase).toBe("committed");
+      expect((await commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof(transactionId) }, f.deps)).phase).toBe("committed");
+      await expect(releaseCommittedHomeUpgrade(f.vault, f.deps)).rejects.toThrow("lifecycle resume authorization");
+      expect((await releaseCommittedHomeUpgrade(f.vault, {
+        ...f.deps,
+        inspectLifecycleSuspension: async () => authorizedLifecycle(committed),
+      })).phase).toBe("committed");
       expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
       expect(await readHomeUpgradeBarrier(f.vault, f.deps)).toBeNull();
       expect((await releaseCommittedHomeUpgrade(f.vault, f.deps)).phase).toBe("committed");
@@ -105,12 +111,13 @@ describe("Product Host pre-commit upgrade transaction", () => {
       const f = await fixture();
       try {
         const before = await logicalState(f.vault);
+        const transactionId = randomUUID();
         const oldInstallation = await readFile(homeInstallationPaths(f.vault, f.deps).record);
         const plist = join(f.deps.launchAgentsDir!, `${homeServiceLabelForVault(f.vault)}.plist`);
         const oldPlist = await readFile(plist);
-        await prepareHomeUpgrade({ vaultPath: f.vault, transactionId: randomUUID(), candidateArtifactId: CANDIDATE_ID }, f.deps);
+        await prepareHomeUpgrade({ vaultPath: f.vault, transactionId, candidateArtifactId: CANDIDATE_ID }, f.deps);
         await migratePreparedHomeUpgrade(f.vault, f.deps);
-        await expect(commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof() }, {
+        await expect(commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof(transactionId) }, {
           ...f.deps,
           selectionCheckpoint: async (name) => { if (name === crashAt) throw new Error(`crash at ${name}`); },
         })).rejects.toThrow(`crash at ${crashAt}`);
@@ -136,14 +143,21 @@ describe("Product Host pre-commit upgrade transaction", () => {
   test("refuses selector commit before every live store is current or when proof names another vault", async () => {
     const f = await fixture();
     try {
-      await prepareHomeUpgrade({ vaultPath: f.vault, transactionId: randomUUID(), candidateArtifactId: CANDIDATE_ID }, f.deps);
-      await expect(commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof() }, f.deps))
+      const transactionId = randomUUID();
+      await prepareHomeUpgrade({ vaultPath: f.vault, transactionId, candidateArtifactId: CANDIDATE_ID }, f.deps);
+      await expect(commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof(transactionId) }, f.deps))
         .rejects.toThrow("not current");
       expect((await readHomeUpgrade(f.vault, f.deps))?.phase).toBe("prepared");
       await migratePreparedHomeUpgrade(f.vault, f.deps);
+      for (const provenAt of ["2026-07-13T00:59:59.000Z", "2026-07-13T01:00:01.000Z"]) {
+        await expect(commitPreparedHomeUpgrade({
+          vaultPath: f.vault,
+          proof: { ...probationProof(transactionId), provenAt },
+        }, f.deps)).rejects.toThrow("prepared-to-commit interval");
+      }
       await expect(commitPreparedHomeUpgrade({
         vaultPath: f.vault,
-        proof: { ...probationProof(), vaultId: "another-vault" },
+        proof: { ...probationProof(transactionId), vaultId: "another-vault" },
       }, f.deps)).rejects.toThrow("does not match");
       expect((await readHomeUpgrade(f.vault, f.deps))?.phase).toBe("prepared");
     } finally { await rm(f.root, { recursive: true, force: true }); }
@@ -152,14 +166,15 @@ describe("Product Host pre-commit upgrade transaction", () => {
   test("a crash after durable commit recovers forward and can never restore", async () => {
     const f = await fixture();
     try {
-      await prepareHomeUpgrade({ vaultPath: f.vault, transactionId: randomUUID(), candidateArtifactId: CANDIDATE_ID }, f.deps);
+      const transactionId = randomUUID();
+      await prepareHomeUpgrade({ vaultPath: f.vault, transactionId, candidateArtifactId: CANDIDATE_ID }, f.deps);
       await migratePreparedHomeUpgrade(f.vault, f.deps);
-      await expect(commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof() }, {
+      await expect(commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof(transactionId) }, {
         ...f.deps,
         selectionCheckpoint: async (name) => { if (name === "committed-recorded") throw new Error("crash after commit"); },
       })).rejects.toThrow("crash after commit");
       expect((await readHomeUpgrade(f.vault, f.deps))?.phase).toBe("committed");
-      expect((await commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof() }, f.deps)).phase).toBe("committed");
+      expect((await commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof(transactionId) }, f.deps)).phase).toBe("committed");
       await expect(restoreHomeUpgrade(f.vault, f.deps)).rejects.toThrow("irreversible");
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });
@@ -830,6 +845,36 @@ async function fixture(options: { durableFiles?: boolean } = {}) {
   await publishHomeInstallation(paths.record, createHomeInstallation(vault, oldManifest, new Map()), deps);
   await writeFile(join(launchAgentsDir, `${homeServiceLabelForVault(vault)}.plist`), `<plist>${OLD_ID}</plist>\n`, { mode: 0o600 });
   return { root, vault, deps, credential, csrfSecret, revokedCredential, unusedPairingCode, authEpoch };
+}
+
+function authorizedLifecycle(journal: Awaited<ReturnType<typeof commitPreparedHomeUpgrade>>) {
+  const selection = journal.selection!;
+  return {
+    kind: "active" as const,
+    suspension: {
+      schema: "dome.home-lifecycle-suspension/v1" as const,
+      phase: "suspended" as const,
+      purpose: "upgrade" as const,
+      operationId: journal.transactionId,
+      vault: journal.vault,
+      priorLoaded: true,
+      installationPath: journal.selectors.installation.path,
+      installationSha256: journal.selectors.installation.sha256,
+      artifactId: journal.old.artifactId,
+      artifactVersion: journal.old.version,
+      plistPath: journal.selectors.plist.path,
+      plistSha256: journal.selectors.plist.sha256,
+      resumeInstallationPath: selection.candidate.installation.path,
+      resumeInstallationSha256: selection.candidate.installation.sha256,
+      resumeArtifactId: journal.candidate.artifactId,
+      resumeArtifactVersion: journal.candidate.version,
+      resumePlistPath: selection.candidate.plist.path,
+      resumePlistSha256: selection.candidate.plist.sha256,
+      requestedAt: journal.timestamps.preparedAt,
+      phaseChangedAt: journal.timestamps.preparedAt,
+      lastError: null,
+    },
+  };
 }
 
 async function seedStores(vault: string) {
