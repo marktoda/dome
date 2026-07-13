@@ -1246,6 +1246,52 @@ describe("Product Host terminal upgrade history", () => {
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });
 
+  test("production service inspection accepts ready/stopped and rejects loaded-unreachable without deadlock", async () => {
+    for (const state of ["ready", "stopped", "loaded-unreachable"] as const) {
+      const f = await fixture();
+      try {
+        const transactionId = randomUUID();
+        await committedTerminal(f, transactionId);
+        const loaded = state !== "stopped";
+        const attempt = retireHomeUpgrade({ vaultPath: f.vault, transactionId }, {
+          ...f.deps,
+          uid: 501,
+          publishHistory: rename,
+          launchctl: async (args) => ({
+            exitCode: args[0] === "print" ? loaded ? 0 : 113 : 0,
+            stdout: "",
+            stderr: "",
+          }),
+          readiness: async () => state === "ready",
+        });
+        if (state === "loaded-unreachable") {
+          await expect(attempt).rejects.toThrow("neither ready nor stopped");
+          expect((await readHomeUpgrade(f.vault, f.deps))?.phase).toBe("committed");
+        } else {
+          expect((await attempt).transaction.phase).toBe("committed");
+          expect(await readHomeUpgrade(f.vault, f.deps)).toBeNull();
+        }
+      } finally { await rm(f.root, { recursive: true, force: true }); }
+    }
+  });
+
+  test("a redirected history-root race is rejected without chmodding its target", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      const terminal = await restoredTerminal(f, transactionId);
+      const upgrade = join(homeInstallationPaths(f.vault, f.deps).installations, "upgrade");
+      const target = join(f.root, "unowned-history-target");
+      await mkdir(target, { mode: 0o755 });
+      await symlink(target, join(upgrade, "history"), "dir");
+      await expect(retireHomeUpgrade(
+        { vaultPath: f.vault, transactionId },
+        historyDeps(f, terminal),
+      )).rejects.toThrow("direct owned directory");
+      expect((await stat(target)).mode & 0o777).toBe(0o755);
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
   test("fails closed for non-terminal, wrong-service, and duplicate destination evidence", async () => {
     const f = await fixture();
     try {
@@ -1375,6 +1421,7 @@ async function fixture(options: { durableFiles?: boolean } = {}) {
   const launchAgentsDir = join(root, "LaunchAgents");
   await initRepo(vault);
   await mkdir(join(vault, ".dome", "state"), { recursive: true });
+  await writeFile(join(vault, ".dome", "config.yaml"), "extensions: {}\n");
   await writeFile(join(vault, "note.md"), "# N-1\n");
   await add(vault, "note.md");
   await commit({ path: vault, message: "N-1 fixture" });

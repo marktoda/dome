@@ -2,11 +2,9 @@
 // The transaction Module owns evidence interpretation. This Module owns the
 // lifecycle/operational serialization and the one active -> history rename.
 
-import { createHash } from "node:crypto";
-import { chmod, lstat, mkdir, open, opendir, realpath } from "node:fs/promises";
+import { lstat, mkdir, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { compareStrings } from "../core/compare";
 import {
   acquireOperationalWriterLease,
   inspectOperationalWriterBarrier,
@@ -33,8 +31,6 @@ import {
   type HomeUpgradeTransaction,
   type HomeUpgradeTransactionDeps,
 } from "./home-upgrade-transaction";
-
-const MAX_FINGERPRINT_ENTRIES = 64;
 
 export type HomeUpgradeTerminalService = {
   readonly state: "ready" | "stopped";
@@ -133,13 +129,11 @@ async function retireWhileOwned(
 
   const terminal = await readTerminalActive(vault, transactionId, deps);
   await assertTerminalState(vault, terminal, deps);
-  const sourceFingerprint = await fingerprintClosedTree(active);
+  const sourceIdentity = transactionIdentity(terminal);
 
   const existing = await readHomeUpgradeHistory(vault, transactionId, deps);
   if (existing !== null) {
-    const destinationFingerprint = await fingerprintClosedTree(destination);
-    if (destinationFingerprint !== sourceFingerprint ||
-      JSON.stringify(existing) !== JSON.stringify(terminal)) {
+    if (transactionIdentity(existing) !== sourceIdentity) {
       throw new Error("Dome Home upgrade history destination conflicts with active evidence");
     }
     throw new Error("Dome Home upgrade evidence exists in both active and immutable history");
@@ -150,8 +144,7 @@ async function retireWhileOwned(
   // terminal qualification window.
   const finalTerminal = await readTerminalActive(vault, transactionId, deps);
   await assertTerminalState(vault, finalTerminal, deps);
-  if (JSON.stringify(finalTerminal) !== JSON.stringify(terminal) ||
-    await fingerprintClosedTree(active) !== sourceFingerprint) {
+  if (transactionIdentity(finalTerminal) !== sourceIdentity) {
     throw new Error("Dome Home terminal upgrade evidence changed before retirement");
   }
 
@@ -168,8 +161,7 @@ async function retireWhileOwned(
   } catch (error) {
     if (await present(active)) throw error;
     const concurrent = await readHomeUpgradeHistory(vault, transactionId, deps);
-    if (concurrent === null || await fingerprintClosedTree(destination) !== sourceFingerprint ||
-      JSON.stringify(concurrent) !== JSON.stringify(terminal)) {
+    if (concurrent === null || transactionIdentity(concurrent) !== sourceIdentity) {
       throw new Error("Dome Home upgrade retirement lost its active transaction without exact history");
     }
     retired = false;
@@ -177,8 +169,7 @@ async function retireWhileOwned(
   await deps.retirementCheckpoint?.("after-rename");
 
   const archived = await readHomeUpgradeHistory(vault, transactionId, deps);
-  if (archived === null || JSON.stringify(archived) !== JSON.stringify(terminal) ||
-    await fingerprintClosedTree(destination) !== sourceFingerprint) {
+  if (archived === null || transactionIdentity(archived) !== sourceIdentity) {
     throw new Error("retired Dome Home upgrade history differs from active evidence");
   }
   await syncRetirementParents(history, upgrade, deps);
@@ -254,14 +245,26 @@ async function ensureHistoryRoot(
   deps: HomeUpgradeHistoryDeps,
 ): Promise<void> {
   if (!await present(history)) {
-    try { await mkdir(history, { mode: 0o700 }); }
+    let created = false;
+    try {
+      await mkdir(history, { mode: 0o700 });
+      created = true;
+    }
     catch (error) {
       if (!hasCode(error, "EEXIST")) throw error;
     }
-    await chmod(history, 0o700);
-    const sync = deps.syncHistoryDirectory ?? syncDirectory;
-    await sync(history);
-    await sync(upgrade);
+    if (!await present(history)) throw new Error("upgrade history creation did not publish a directory");
+    // Never chmod an EEXIST path: a raced symlink must be rejected below
+    // without changing its target. mkdir applies the final mode atomically.
+    await assertDirectDirectory(history, "upgrade history root");
+    if (((await lstat(history)).mode & 0o777) !== 0o700) {
+      throw new Error("upgrade history root is not private");
+    }
+    if (created) {
+      const sync = deps.syncHistoryDirectory ?? syncDirectory;
+      await sync(history);
+      await sync(upgrade);
+    }
   }
   await assertDirectDirectory(history, "upgrade history root");
   const historyInfo = await lstat(history);
@@ -283,56 +286,11 @@ async function syncRetirementParents(
   await deps.retirementCheckpoint?.("upgrade-synced");
 }
 
-async function fingerprintClosedTree(root: string): Promise<string> {
-  await assertDirectDirectory(root, "upgrade transaction root");
-  const entries: string[] = [];
-  async function visit(path: string, relative: string): Promise<void> {
-    const names: string[] = [];
-    const directory = await opendir(path);
-    for await (const entry of directory) {
-      names.push(entry.name);
-      if (entries.length + names.length > MAX_FINGERPRINT_ENTRIES) {
-        throw new Error("Dome Home upgrade transaction exceeds its closed-tree entry budget");
-      }
-    }
-    names.sort(compareStrings);
-    for (const name of names) {
-      entries.push(relative.length === 0 ? name : `${relative}/${name}`);
-      if (entries.length > MAX_FINGERPRINT_ENTRIES) {
-        throw new Error("Dome Home upgrade transaction exceeds its closed-tree entry budget");
-      }
-      const child = join(path, name);
-      const info = await lstat(child);
-      const childRelative = relative.length === 0 ? name : `${relative}/${name}`;
-      if (info.isSymbolicLink()) throw new Error("Dome Home upgrade history contains a redirected entry");
-      if (info.isDirectory()) {
-        entries.push(`directory:${childRelative}:${info.mode & 0o777}`);
-        await visit(child, childRelative);
-      } else if (info.isFile()) {
-        entries.push(`file:${childRelative}:${info.mode & 0o777}:${info.size}:${await hashFile(child)}`);
-      } else {
-        throw new Error("Dome Home upgrade history contains a special entry");
-      }
-    }
-  }
-  await visit(root, "");
-  return createHash("sha256").update(entries.join("\n")).digest("hex");
-}
-
-async function hashFile(path: string): Promise<string> {
-  const handle = await open(path, "r");
-  const hash = createHash("sha256");
-  try {
-    const buffer = Buffer.allocUnsafe(1024 * 1024);
-    let offset = 0;
-    for (;;) {
-      const read = await handle.read(buffer, 0, buffer.length, offset);
-      if (read.bytesRead === 0) break;
-      hash.update(buffer.subarray(0, read.bytesRead));
-      offset += read.bytesRead;
-    }
-  } finally { await handle.close(); }
-  return hash.digest("hex");
+function transactionIdentity(transaction: HomeUpgradeTransaction): string {
+  // Strict parsing has already proven the bounded private journal, stored
+  // selector bytes, and every snapshot file against the evidence below.
+  // Reuse that closed identity instead of performing a weaker second walk.
+  return JSON.stringify(transaction);
 }
 
 async function assertDirectDirectory(path: string, label: string): Promise<void> {
