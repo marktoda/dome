@@ -4,7 +4,11 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { runHome } from "../../../src/cli/commands/home";
+import {
+  resolveInvokingHomeLaunch,
+  runHome,
+} from "../../../src/cli/commands/home";
+import type { HomeArtifactManifest } from "../../../src/product-host/home-artifact";
 import { runInit } from "../../../src/cli/commands/init";
 import { openDeviceAuthority } from "../../../src/device-authority/device-authority";
 
@@ -97,4 +101,33 @@ test("dome home rejects an insecure non-loopback external origin", async () => {
     externalOrigin: "http://dome.tail.example",
     signal: AbortSignal.abort(),
   })).toBe(1);
+});
+
+test("managed and probation launches derive identity from the strict artifact verifier", async () => {
+  const artifact = mkdtempSync(join(tmpdir(), "dome-home-invoking-artifact-"));
+  roots.push(artifact);
+  await writeFile(join(artifact, "manifest.json"), "{}\n", "utf8");
+  let verified = 0;
+  const verifyArtifact = async (): Promise<HomeArtifactManifest> => {
+    verified += 1;
+    return {
+      artifact: { id: "c".repeat(64) },
+      product: { name: "Dome Home", version: "0.2.0" },
+    } as HomeArtifactManifest;
+  };
+  expect(await resolveInvokingHomeLaunch(
+    { upgradeProbation: false },
+    { artifactRoot: artifact, verifyArtifact },
+  )).toEqual({
+    kind: "normal",
+    artifact: { id: "c".repeat(64), version: "0.2.0" },
+  });
+  expect(await resolveInvokingHomeLaunch(
+    { upgradeProbation: true },
+    { artifactRoot: artifact, verifyArtifact },
+  )).toEqual({
+    kind: "upgrade-probation",
+    artifact: { id: "c".repeat(64), version: "0.2.0" },
+  });
+  expect(verified).toBe(2);
 });

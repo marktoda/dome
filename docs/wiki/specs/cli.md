@@ -105,6 +105,7 @@ dome devices <pair|list|revoke|rotate|invalidate-all> [device-id]
                                 the local owner console.
 dome home [--vault <path>] [--port <port>] [--host <host>]
           [--external-origin <origin>] [--static-dir <path>]
+          [--upgrade-probation]
                                 Run the loopback Product Host: one long-lived
                                 vault, compiler scheduler, HTTP API, and built PWA.
 dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
@@ -2753,7 +2754,7 @@ comma-separated subset. Raw pairing, credential, and CSRF secrets are never
 stored. This command is intentionally local-console-only and has no remote
 HTTP equivalent for mint/revoke/invalidate authority.
 
-### `dome home [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--external-origin <origin>] [--static-dir <path>]`
+### `dome home [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--external-origin <origin>] [--static-dir <path>] [--upgrade-probation]`
 
 The PWA-first product command. It starts the Product Host Module, which owns
 exclusive lifecycle for one vault, one long-lived public `Vault`, compiler
@@ -2772,6 +2773,15 @@ The default asset directory is `pwa/dist`. A source checkout must run
 same runtime path. Missing assets fail before host admission
 instead of silently starting an API-only product. SIGINT/SIGTERM stops
 admission and closes the complete Product Host lifecycle.
+
+`--upgrade-probation` is the write-disabled candidate-validation path, not a
+way to complete an upgrade. It is accepted only from a self-contained invoking
+artifact whose existing strict manifest verifier supplies the exact artifact
+id and version. It bypasses every write-capable Vault/store/recovery opener and
+serves only loopback liveness, readiness, and closed pairing status. Readiness
+reports `host.state: probation` and `writesAdmitted: false`; all other routes
+return `503 write-admission-closed`. No environment or CLI boolean can open
+writes, and this checkpoint has no committed-upgrade launch mode.
 
 The macOS artifact also provides `dome home install|start|restart|status|
 uninstall`. These nested verbs manage `com.dome.home.<vault-slug>` through

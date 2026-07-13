@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync } from "node:fs";
-import { rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { hostname, tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
-import { withExclusiveFileLock } from "../../src/engine/host/file-lock";
+import {
+  inspectExclusiveFileLock,
+  withExclusiveFileLock,
+} from "../../src/engine/host/file-lock";
 
 const tempDirs: string[] = [];
 
@@ -97,6 +101,42 @@ describe("withExclusiveFileLock", () => {
       value: "second",
     });
     expect(order).toEqual(["first-enter", "first-exit", "second-enter"]);
+  });
+});
+
+describe("inspectExclusiveFileLock", () => {
+  test("only proves a well-formed same-host dead PID stale", async () => {
+    const lockPath = tempLockPath();
+    expect(await inspectExclusiveFileLock(lockPath)).toEqual({ kind: "absent" });
+    await mkdir(dirname(lockPath), { recursive: true });
+
+    await writeFile(lockPath, "{}\n", "utf8");
+    expect((await inspectExclusiveFileLock(lockPath)).kind).toBe("possibly-live");
+
+    const holder = {
+      token: randomUUID(),
+      pid: 0x7fffffff,
+      hostname: "some-other-host.invalid",
+      command: "remote-host",
+      acquiredAt: new Date().toISOString(),
+    };
+    await writeFile(lockPath, `${JSON.stringify(holder)}\n`, "utf8");
+    expect((await inspectExclusiveFileLock(lockPath)).kind).toBe("possibly-live");
+
+    await writeFile(lockPath, `${JSON.stringify({
+      ...holder,
+      hostname: hostname(),
+      command: "dead-local-host",
+    })}\n`, "utf8");
+    expect((await inspectExclusiveFileLock(lockPath)).kind).toBe("definitely-stale");
+
+    await writeFile(lockPath, `${JSON.stringify({
+      ...holder,
+      pid: process.pid,
+      hostname: hostname(),
+      command: "live-local-host",
+    })}\n`, "utf8");
+    expect((await inspectExclusiveFileLock(lockPath)).kind).toBe("possibly-live");
   });
 });
 

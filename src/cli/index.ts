@@ -968,6 +968,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .option("--host <host>", "Loopback interface to bind (default 127.0.0.1).")
     .option("--external-origin <origin>", "Private HTTPS origin, or HTTP loopback origin for local Vite development.")
     .option("--static-dir <path>", "Built PWA directory (defaults to the bundled pwa/dist).")
+    .option("--upgrade-probation", "Boot an invoking verified artifact with writes closed for upgrade validation.")
     .action(async (options: HomeCliOptions) => {
       const { runHome } = await import("./commands/home");
       setExitCode(await runHome(options));
@@ -1219,6 +1220,7 @@ type HomeCliOptions = {
   readonly host?: string;
   readonly externalOrigin?: string;
   readonly staticDir?: string;
+  readonly upgradeProbation?: boolean;
 };
 
 type HomeLifecycleCliOptions = {

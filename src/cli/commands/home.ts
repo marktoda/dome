@@ -5,6 +5,11 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { startProductHost, type ProductHost } from "../../product-host/product-host";
+import {
+  verifyHomeArtifact,
+  type HomeArtifactVerifier,
+} from "../../product-host/home-artifact";
+import type { ProductHostLaunch } from "../../product-host/write-admission";
 import { resolveVaultPath } from "../../surface/resolve-vault";
 import { EX_USAGE } from "../exit-codes";
 
@@ -15,6 +20,7 @@ export type RunHomeOptions = {
   readonly host?: string | undefined;
   readonly externalOrigin?: string | undefined;
   readonly staticDir?: string | undefined;
+  readonly upgradeProbation?: boolean | undefined;
   readonly signal?: AbortSignal | undefined;
   readonly onReady?: ((host: ProductHost) => void) | undefined;
 };
@@ -38,6 +44,15 @@ export async function runHome(options: RunHomeOptions = {}): Promise<number> {
     );
     return EX_USAGE;
   }
+  let launch: ProductHostLaunch | undefined;
+  try {
+    launch = await resolveInvokingHomeLaunch({
+      upgradeProbation: options.upgradeProbation === true,
+    });
+  } catch (error) {
+    console.error(`dome home: ${error instanceof Error ? error.message : String(error)}`);
+    return EX_USAGE;
+  }
 
   const started = await startProductHost({
     vaultPath,
@@ -48,6 +63,11 @@ export async function runHome(options: RunHomeOptions = {}): Promise<number> {
       : {}),
     ...(options.host !== undefined ? { hostname: options.host } : {}),
     ...(options.bundlesRoot !== undefined ? { bundlesRoot: options.bundlesRoot } : {}),
+    ...(launch !== undefined ? { launch } : {}),
+    ...(launch?.artifact !== undefined ? {
+      productVersion: launch.artifact.version,
+      assetVersion: launch.artifact.id,
+    } : {}),
   });
   if (!started.ok) {
     console.error(`dome home: ${started.error.message}`);
@@ -56,7 +76,13 @@ export async function runHome(options: RunHomeOptions = {}): Promise<number> {
 
   const host = started.value;
   console.error(`dome home: serving ${host.url}`);
-  console.error("dome home: mint pairing codes locally with `dome devices pair --name <device>`.");
+  if (launch?.kind === "upgrade-probation") {
+    console.error(
+      `dome home: validating artifact ${launch.artifact.id} with writes disabled.`,
+    );
+  } else {
+    console.error("dome home: mint pairing codes locally with `dome devices pair --name <device>`.");
+  }
   options.onReady?.(host);
   try {
     await untilStopped(options.signal);
@@ -64,6 +90,32 @@ export async function runHome(options: RunHomeOptions = {}): Promise<number> {
     await host.close();
   }
   return 0;
+}
+
+export async function resolveInvokingHomeLaunch(
+  input: { readonly upgradeProbation: boolean },
+  deps: {
+    readonly artifactRoot?: string | undefined;
+    readonly verifyArtifact?: HomeArtifactVerifier | undefined;
+  } = {},
+): Promise<ProductHostLaunch | undefined> {
+  // Source checkout: src/cli/commands. Shipped artifact: app/src/cli/commands.
+  const artifactRoot = resolve(deps.artifactRoot ?? resolve(import.meta.dir, "../../../.."));
+  const hasManifest = existsSync(resolve(artifactRoot, "manifest.json"));
+  if (!hasManifest) {
+    if (input.upgradeProbation) {
+      throw new Error("upgrade probation requires an invoking self-contained Home artifact");
+    }
+    return undefined;
+  }
+  const manifest = await (deps.verifyArtifact ?? verifyHomeArtifact)(artifactRoot);
+  const artifact = Object.freeze({
+    id: manifest.artifact.id,
+    version: manifest.product.version,
+  });
+  return input.upgradeProbation
+    ? Object.freeze({ kind: "upgrade-probation" as const, artifact })
+    : Object.freeze({ kind: "normal" as const, artifact });
 }
 
 async function untilStopped(signal?: AbortSignal): Promise<void> {

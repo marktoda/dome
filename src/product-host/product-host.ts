@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { realpath } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 
 import {
@@ -11,7 +12,6 @@ import {
   openDeviceAuthority,
   type DeviceAuthority,
 } from "../device-authority/device-authority";
-import { withExclusiveFileLock } from "../engine/host/file-lock";
 import { isWorkingTreeDirty } from "../git";
 import { createDomeHttpServer } from "../http/server";
 import type { DeviceRequestContext } from "../http/device-request-auth";
@@ -26,6 +26,13 @@ import { createAssistantMutationExecutor } from "../request-receipts/assistant-m
 import { openVault, type Vault } from "../vault";
 import { ProductOperationScheduler } from "./operation-scheduler";
 import { ensureVaultId } from "./vault-id";
+import { withProductHostOwnership } from "./host-ownership";
+import { startProbationHost } from "./probation-host";
+import {
+  resolveProductHostWriteAdmission,
+  type ProductHostLaunch,
+  type ProductHostWriteAdmission,
+} from "./write-admission";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3663;
@@ -57,6 +64,11 @@ export type ProductHostOptions = {
   readonly agentRuntime?: AgentRuntime;
   readonly modelState?: "ready" | "unconfigured" | "unreachable";
   readonly transcriptionState?: "ready" | "unconfigured" | "unreachable";
+  /**
+   * Upgrade probation is a distinct, permanently write-closed launch mode.
+   * This checkpoint deliberately has no committed-upgrade launch mode.
+   */
+  readonly launch?: ProductHostLaunch;
 };
 
 type HostState = {
@@ -71,7 +83,14 @@ type HostState = {
 export async function startProductHost(
   options: ProductHostOptions,
 ): Promise<StartProductHostResult> {
-  const vaultPath = resolve(options.vaultPath);
+  let vaultPath: string;
+  try {
+    // One canonical vault identity feeds admission, both ownership locks, the
+    // normal runtime, and probation. Aliases must never acquire distinct locks.
+    vaultPath = await realpath(resolve(options.vaultPath));
+  } catch {
+    return failure("open-failed", "vault path does not exist or cannot be canonicalized");
+  }
   const hostname = options.hostname ?? DEFAULT_HOST;
   if (!isLoopbackHost(hostname)) {
     return failure(
@@ -84,6 +103,29 @@ export async function startProductHost(
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_MS;
   if (!Number.isInteger(pollIntervalMs) || pollIntervalMs <= 0) {
     return failure("startup-failed", "poll interval must be a positive integer");
+  }
+  let admission: ProductHostWriteAdmission;
+  try {
+    admission = resolveProductHostWriteAdmission({
+      launch: options.launch,
+      developmentVersion: options.productVersion ?? "0.1.0-dev",
+      developmentArtifactId: options.assetVersion ?? "development",
+    });
+  } catch (error) {
+    return failure("startup-failed", error instanceof Error ? error.message : String(error));
+  }
+  if (admission.mode === "upgrade-probation") {
+    return startProbationHost({
+      vaultPath,
+      hostname,
+      port: options.port ?? DEFAULT_PORT,
+      admission,
+      ...(options.assetVersion !== undefined ? { assetVersion: options.assetVersion } : {}),
+      ...(options.modelState !== undefined ? { modelState: options.modelState } : {}),
+      ...(options.transcriptionState !== undefined
+        ? { transcriptionState: options.transcriptionState }
+        : {}),
+    });
   }
 
   let settleStarted!: (result: StartProductHostResult) => void;
@@ -100,11 +142,8 @@ export async function startProductHost(
   let settleClosed!: () => void;
   const closed = new Promise<void>((resolveClosed) => { settleClosed = resolveClosed; });
 
-  const ownership = withExclusiveFileLock(
-    {
-      lockPath: join(vaultPath, ".dome", "state", "locks", "product-host.lock"),
-      command: "dome-product-host",
-    },
+  const ownership = withProductHostOwnership(
+    vaultPath,
     async () => {
       let vault: Vault | null = null;
       let listener: ReturnType<typeof Bun.serve> | null = null;
@@ -174,7 +213,7 @@ export async function startProductHost(
         await scheduler.run("engine-tick", ({ signal }) => tick(vault!, state, signal));
 
         const readiness = (client?: DeviceRequestContext): Promise<ProductReadiness> =>
-          buildReadiness(vault!, state, options, deviceAuthority!, client);
+          buildReadiness(vault!, state, options, admission, deviceAuthority!, client);
         let allowedOrigins: ReadonlyArray<string> = Object.freeze([]);
         http = createDomeHttpServer({
           vaultPath,
@@ -296,6 +335,7 @@ async function buildReadiness(
   vault: Vault,
   state: HostState,
   options: ProductHostOptions,
+  admission: ProductHostWriteAdmission,
   authority: DeviceAuthority,
   client?: DeviceRequestContext,
 ): Promise<ProductReadiness> {
@@ -320,7 +360,9 @@ async function buildReadiness(
   if (adoption.syncNeeded && !adoption.diverged) nextActions.push({ code: "adoption-pending", label: "Wait for the host to adopt pending commits" });
   return Object.freeze({
     schema: PRODUCT_READINESS_SCHEMA,
-    productVersion: options.productVersion ?? "0.1.0-dev",
+    productVersion: admission.artifact.version,
+    artifactId: admission.artifact.id,
+    writesAdmitted: admission.writesAdmitted,
     contractVersions: Object.freeze([
       "dome.product.readiness/v1",
       "dome.capture/v1",
