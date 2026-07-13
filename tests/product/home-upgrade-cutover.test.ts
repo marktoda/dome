@@ -20,7 +20,7 @@ describe("private Home upgrade cutover", () => {
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
     }, deps);
-    expect(result.outcome.kind).toBe("committed");
+    expect(result).toMatchObject({ status: "ready", transactionOutcome: { kind: "committed" }, handoffError: null });
     expect(calls).toEqual([
       "inspect", "read-recovery", "suspend:new", "read-recovery", "prepare", "migrate", "vault-id",
       "prove", "commit", "authorize", "release",
@@ -38,7 +38,11 @@ describe("private Home upgrade cutover", () => {
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
     }, deps);
-    expect(result.outcome).toMatchObject({ kind: "rolled-back", error: "dishonest candidate" });
+    expect(result).toMatchObject({
+      status: "ready",
+      transactionOutcome: { kind: "rolled-back", error: "dishonest candidate" },
+      handoffError: null,
+    });
     expect(calls).toContain("restore");
     expect(calls).not.toContain("authorize");
     expect(calls).not.toContain("release");
@@ -54,7 +58,7 @@ describe("private Home upgrade cutover", () => {
         transactionId: TX,
         candidateArtifactId: CANDIDATE,
       }, deps);
-      expect(result.outcome.kind).toBe("rolled-back");
+      expect(result.transactionOutcome.kind).toBe("rolled-back");
       expect(calls).toEqual(["inspect", "read-recovery", "restore", "suspend:resume-only"]);
     }
   });
@@ -68,7 +72,7 @@ describe("private Home upgrade cutover", () => {
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
     }, deps);
-    expect(result.outcome.kind).toBe("committed");
+    expect(result).toMatchObject({ status: "ready", transactionOutcome: { kind: "committed" }, handoffError: null });
     expect(calls).toEqual([
       "inspect", "read-recovery", "read", "suspend:authorized-upgrade-continuation", "external-authorize",
       "read-recovery", "read", "authorize", "release",
@@ -84,7 +88,8 @@ describe("private Home upgrade cutover", () => {
       candidateArtifactId: CANDIDATE,
     }, fakeDeps(committedCalls, () => committed, (next) => { committed = next; }));
     expect(committedResult).toMatchObject({
-      outcome: { kind: "committed" },
+      status: "ready",
+      transactionOutcome: { kind: "committed" },
       lifecycle: { kind: "not-required", operationRan: false },
     });
     expect(committedCalls).toEqual(["inspect", "read-recovery", "read", "release"]);
@@ -98,7 +103,7 @@ describe("private Home upgrade cutover", () => {
     }, fakeDeps(restoredCalls, () => restored, (next) => { restored = next; }, {
       read: async () => { throw new Error("candidate payload is gone"); },
     }));
-    expect(restoredResult.outcome.kind).toBe("rolled-back");
+    expect(restoredResult.transactionOutcome.kind).toBe("rolled-back");
     expect(restoredCalls).toEqual(["inspect", "read-recovery"]);
 
     const failureCalls: string[] = [];
@@ -111,6 +116,84 @@ describe("private Home upgrade cutover", () => {
       prepare: async () => { failureCalls.push("prepare"); throw new Error("prepare failed before publication"); },
     }))).rejects.toThrow("prepare failed before publication");
     expect(failureCalls).not.toContain("restore");
+  });
+
+  test("models committed candidate loss as forward-only recovery-required state", async () => {
+    for (const fault of ["missing", "corrupt"] as const) {
+      const calls: string[] = [];
+      let current: HomeUpgradeTransaction | null = transaction("committed");
+      const result = await runHomeUpgradeCutover({
+        vaultPath: "/vault",
+        transactionId: TX,
+        candidateArtifactId: CANDIDATE,
+      }, fakeDeps(calls, () => current, (next) => { current = next; }, {
+        read: async () => { calls.push("read"); throw new Error(`${fault} candidate payload`); },
+      }, activeSuspension()));
+      expect(result).toMatchObject({
+        status: "recovery-required",
+        transactionOutcome: { kind: "committed", transaction: { phase: "committed" } },
+        handoffError: `${fault} candidate payload`,
+        lifecycle: { kind: "failed", operationRan: false },
+      });
+      expect(calls).toEqual(["inspect", "read-recovery", "read"]);
+      expect(calls).not.toContain("restore");
+    }
+  });
+
+  test("keeps durable disposition separate from handoff and lifecycle readiness", async () => {
+    const handoffCalls: string[] = [];
+    let handoffCurrent: HomeUpgradeTransaction | null = null;
+    const handoffResult = await runHomeUpgradeCutover({
+      vaultPath: "/vault",
+      transactionId: TX,
+      candidateArtifactId: CANDIDATE,
+    }, fakeDeps(handoffCalls, () => handoffCurrent, (next) => { handoffCurrent = next; }, {
+      release: async () => { handoffCalls.push("release"); throw new Error("barrier release failed"); },
+    }));
+    expect(handoffResult).toMatchObject({
+      status: "recovery-required",
+      transactionOutcome: { kind: "committed" },
+      handoffError: "barrier release failed",
+      lifecycle: { kind: "ready" },
+    });
+
+    const lifecycleCalls: string[] = [];
+    let lifecycleCurrent: HomeUpgradeTransaction | null = null;
+    const lifecycleBase = fakeDeps(
+      lifecycleCalls,
+      () => lifecycleCurrent,
+      (next) => { lifecycleCurrent = next; },
+    );
+    const lifecycleDeps: HomeUpgradeCutoverDeps = {
+      ...lifecycleBase,
+      suspendHome: (async (_invocation, operation) => {
+        lifecycleCalls.push("suspend:new");
+        const value = await operation({
+          operationId: TX,
+          purpose: "upgrade",
+          authorizeCurrentHomeForResume: async () => { lifecycleCalls.push("authorize"); },
+        });
+        return {
+          kind: "failed",
+          operationId: TX,
+          recovered: false,
+          operationRan: true,
+          value,
+          error: "candidate readiness failed",
+        };
+      }) as NonNullable<HomeUpgradeCutoverDeps["suspendHome"]>,
+    };
+    const lifecycleResult = await runHomeUpgradeCutover({
+      vaultPath: "/vault",
+      transactionId: TX,
+      candidateArtifactId: CANDIDATE,
+    }, lifecycleDeps);
+    expect(lifecycleResult).toMatchObject({
+      status: "recovery-required",
+      transactionOutcome: { kind: "committed" },
+      handoffError: null,
+      lifecycle: { kind: "failed", error: "candidate readiness failed" },
+    });
   });
 });
 
