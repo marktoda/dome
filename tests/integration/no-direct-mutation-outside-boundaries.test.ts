@@ -42,6 +42,10 @@ const ALLOWED_FILES = new Set([
   // the external per-installation journal/snapshot and exact gitignored state
   // restoration targets; it never writes Git or Markdown knowledge.
   "src/product-host/home-upgrade-transaction.ts",
+  // Closed journal-guarded durable operational-store migration boundary. It
+  // creates only caller-owned deterministic private preflight subdirectories
+  // and migrates approved SQLite stores; it never writes Git or Markdown.
+  "src/product-host/home-store-migrations.ts",
   // External private/fsynced evidence paired with the operational writer
   // coordinator during a Home upgrade transaction.
   "src/product-host/home-upgrade-barrier.ts",
