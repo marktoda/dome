@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -24,6 +24,11 @@ import { homeServiceLabelForVault } from "../../src/product-host/home-lifecycle"
 import { startProductHost } from "../../src/product-host/product-host";
 import { readHomeUpgradeBarrier } from "../../src/product-host/home-upgrade-barrier";
 import {
+  retireHomeUpgrade,
+  type HomeUpgradeHistoryDeps,
+  type HomeUpgradeRetirementCheckpoint,
+} from "../../src/product-host/home-upgrade-history";
+import {
   runHomeUpgradeCutover,
   type HomeUpgradeCutoverDeps,
 } from "../../src/product-host/home-upgrade-cutover";
@@ -34,6 +39,7 @@ import {
   prepareHomeUpgrade,
   readHomeUpgrade,
   readHomeUpgradeForRecovery,
+  readHomeUpgradeHistory,
   releaseCommittedHomeUpgrade,
   restoreHomeUpgrade,
   type HomeUpgradeTransactionDeps,
@@ -1153,6 +1159,214 @@ describe("Product Host pre-commit upgrade transaction", () => {
     }
   });
 });
+
+describe("Product Host terminal upgrade history", () => {
+  test("retires exact committed and restored outcomes without keeping history live-coupled", async () => {
+    for (const outcome of ["committed", "restored"] as const) {
+      const f = await fixture();
+      try {
+        const transactionId = randomUUID();
+        const terminal = outcome === "committed"
+          ? await committedTerminal(f, transactionId)
+          : await restoredTerminal(f, transactionId);
+        const retired = await retireHomeUpgrade(
+          { vaultPath: f.vault, transactionId },
+          historyDeps(f, terminal, outcome === "committed" ? "ready" : "stopped"),
+        );
+        expect(retired).toMatchObject({ retired: true, transaction: { transactionId, phase: outcome } });
+        expect(await readHomeUpgrade(f.vault, f.deps)).toBeNull();
+        expect((await readHomeUpgradeHistory(f.vault, transactionId, f.deps))?.phase).toBe(outcome);
+
+        // Historical truth is intrinsic. A future selection or release GC
+        // must not make last-attempt evidence unreadable.
+        const paths = homeInstallationPaths(f.vault, f.deps);
+        await rm(releaseRoot(paths, outcome === "committed" ? CANDIDATE_ID : OLD_ID), {
+          recursive: true,
+          force: true,
+        });
+        expect((await readHomeUpgradeHistory(f.vault, transactionId, f.deps))?.phase).toBe(outcome);
+      } finally { await rm(f.root, { recursive: true, force: true }); }
+    }
+  });
+
+  test("every retirement crash window retries to one immutable row", async () => {
+    for (const checkpoint of [
+      "before-rename",
+      "after-rename",
+      "history-synced",
+      "upgrade-synced",
+    ] as const satisfies readonly HomeUpgradeRetirementCheckpoint[]) {
+      const f = await fixture();
+      try {
+        const transactionId = randomUUID();
+        const terminal = await committedTerminal(f, transactionId);
+        let injected = false;
+        await expect(retireHomeUpgrade({ vaultPath: f.vault, transactionId }, {
+          ...historyDeps(f, terminal),
+          retirementCheckpoint: async (name) => {
+            if (!injected && name === checkpoint) {
+              injected = true;
+              throw new Error(`crash at ${checkpoint}`);
+            }
+          },
+        })).rejects.toThrow(`crash at ${checkpoint}`);
+
+        const retry = await retireHomeUpgrade(
+          { vaultPath: f.vault, transactionId },
+          historyDeps(f, terminal),
+        );
+        expect(retry.transaction.transactionId).toBe(transactionId);
+        const upgrade = join(homeInstallationPaths(f.vault, f.deps).installations, "upgrade");
+        expect(await readdir(join(upgrade, "history"))).toEqual([transactionId]);
+        await expect(stat(join(upgrade, "active"))).rejects.toThrow();
+        expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
+        expect(await readHomeUpgradeBarrier(f.vault, f.deps)).toBeNull();
+      } finally { await rm(f.root, { recursive: true, force: true }); }
+    }
+  });
+
+  test("concurrent retirees converge and preserve history-before-upgrade fsync order", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      const terminal = await committedTerminal(f, transactionId);
+      const synced: string[] = [];
+      const deps = {
+        ...historyDeps(f, terminal),
+        syncHistoryDirectory: async (path: string) => { synced.push(path); },
+      };
+      const [first, second] = await Promise.all([
+        retireHomeUpgrade({ vaultPath: f.vault, transactionId }, deps),
+        retireHomeUpgrade({ vaultPath: f.vault, transactionId }, deps),
+      ]);
+      expect([first.retired, second.retired].sort()).toEqual([false, true]);
+      const upgrade = join(homeInstallationPaths(f.vault, f.deps).installations, "upgrade");
+      expect(await readdir(join(upgrade, "history"))).toEqual([transactionId]);
+      expect(synced.slice(-2)).toEqual([join(upgrade, "history"), upgrade]);
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("fails closed for non-terminal, wrong-service, and duplicate destination evidence", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      await prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId,
+        candidateArtifactId: CANDIDATE_ID,
+      }, f.deps);
+      await expect(retireHomeUpgrade({ vaultPath: f.vault, transactionId }, {
+        ...f.deps,
+        publishHistory: rename,
+        inspectTerminalService: async () => ({
+          state: "stopped",
+          artifactId: OLD_ID,
+          productVersion: "1.0.0",
+        }),
+      })).rejects.toThrow("write admission");
+
+      const terminal = await restoreHomeUpgrade(f.vault, f.deps);
+      await expect(retireHomeUpgrade({ vaultPath: f.vault, transactionId }, {
+        ...historyDeps(f, terminal),
+        inspectTerminalService: async () => ({
+          state: "stopped",
+          artifactId: CANDIDATE_ID,
+          productVersion: "2.0.0",
+        }),
+      })).rejects.toThrow("does not select");
+
+      const upgrade = join(homeInstallationPaths(f.vault, f.deps).installations, "upgrade");
+      const history = join(upgrade, "history");
+      await mkdir(history, { recursive: true });
+      await mkdir(join(history, transactionId));
+      await writeFile(join(history, transactionId, "unknown"), "ambiguous\n");
+      await expect(retireHomeUpgrade(
+        { vaultPath: f.vault, transactionId },
+        historyDeps(f, terminal),
+      )).rejects.toThrow();
+      expect((await readHomeUpgradeForRecovery(f.vault, f.deps))?.phase).toBe("restored");
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("rejects exact duplicates, redirected destinations, and wrong history identity", async () => {
+    for (const corruption of ["duplicate", "redirect", "wrong-identity"] as const) {
+      const f = await fixture();
+      try {
+        const transactionId = randomUUID();
+        const terminal = await restoredTerminal(f, transactionId);
+        const upgrade = join(homeInstallationPaths(f.vault, f.deps).installations, "upgrade");
+        const active = join(upgrade, "active");
+        const history = join(upgrade, "history");
+        const destination = join(history, transactionId);
+        await mkdir(history, { mode: 0o700 });
+        if (corruption === "redirect") {
+          await symlink(active, destination, "dir");
+        } else {
+          await cp(active, destination, { recursive: true, preserveTimestamps: true });
+          if (corruption === "wrong-identity") {
+            const journalPath = join(destination, "journal.json");
+            const journal = JSON.parse(await readFile(journalPath, "utf8"));
+            journal.transactionId = randomUUID();
+            await writeFile(journalPath, `${JSON.stringify(journal, null, 2)}\n`, { mode: 0o600 });
+          }
+        }
+        const failure = retireHomeUpgrade(
+          { vaultPath: f.vault, transactionId },
+          historyDeps(f, terminal),
+        );
+        if (corruption === "duplicate") await expect(failure).rejects.toThrow("both active");
+        else await expect(failure).rejects.toThrow();
+        expect((await readHomeUpgradeForRecovery(f.vault, f.deps))?.phase).toBe("restored");
+      } finally { await rm(f.root, { recursive: true, force: true }); }
+    }
+  });
+});
+
+type UpgradeFixture = Awaited<ReturnType<typeof fixture>>;
+
+async function committedTerminal(f: UpgradeFixture, transactionId: string) {
+  await prepareHomeUpgrade({
+    vaultPath: f.vault,
+    transactionId,
+    candidateArtifactId: CANDIDATE_ID,
+  }, f.deps);
+  await migratePreparedHomeUpgrade(f.vault, f.deps);
+  const committed = await commitPreparedHomeUpgrade({
+    vaultPath: f.vault,
+    proof: probationProof(transactionId),
+  }, f.deps);
+  await releaseCommittedHomeUpgrade(f.vault, {
+    ...f.deps,
+    inspectLifecycleSuspension: async () => authorizedLifecycle(committed),
+  });
+  return committed;
+}
+
+async function restoredTerminal(f: UpgradeFixture, transactionId: string) {
+  await prepareHomeUpgrade({
+    vaultPath: f.vault,
+    transactionId,
+    candidateArtifactId: CANDIDATE_ID,
+  }, f.deps);
+  return restoreHomeUpgrade(f.vault, f.deps);
+}
+
+function historyDeps(
+  f: UpgradeFixture,
+  terminal: Awaited<ReturnType<typeof committedTerminal>>,
+  state: "ready" | "stopped" = "stopped",
+): HomeUpgradeHistoryDeps {
+  const selected = terminal.phase === "committed" ? terminal.candidate : terminal.old;
+  return {
+    ...f.deps,
+    publishHistory: rename,
+    inspectTerminalService: async () => Object.freeze({
+      state,
+      artifactId: selected.artifactId,
+      productVersion: selected.version,
+    }),
+  };
+}
 
 async function fixture(options: { durableFiles?: boolean } = {}) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "dome-home-upgrade-")));

@@ -6,7 +6,7 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import {
-  chmod, copyFile, lstat, mkdir, open, readFile, readdir, realpath, rename, rm,
+  chmod, copyFile, lstat, mkdir, open, opendir, readFile, readdir, realpath, rename, rm,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -543,7 +543,7 @@ export async function readHomeUpgrade(
   const active = join(upgrade, "active");
   if (!await present(active)) return null;
   const journal = await readBoundedJournal(active, vault);
-  await validateJournalReferences(journal, paths, deps);
+  await validateJournalReferences(journal, active, paths, deps);
   await validateSnapshotInventory(active, journal.snapshot.inventory);
   if (journal.probation !== null && journal.probation.vaultId !== await readVaultId(vault)) {
     throw new Error("upgrade probation proof vault identity does not match the live vault");
@@ -566,8 +566,43 @@ export async function readHomeUpgradeForRecovery(
   const active = join(upgrade, "active");
   if (!await present(active)) return null;
   const journal = await readBoundedJournal(active, vault);
-  await validateRestoreJournalReferences(journal, paths, deps);
+  await validateRestoreJournalReferences(journal, active, paths, deps);
   await validateSnapshotInventory(active, journal.snapshot.inventory);
+  return journal;
+}
+
+/**
+ * Strictly read one immutable terminal transaction. History is keyed by the
+ * operation identity, never by mutable selection state. History validation is
+ * intrinsic: later selections and release collection must not make an older
+ * closed record unreadable.
+ */
+export async function readHomeUpgradeHistory(
+  vaultPath: string,
+  transactionId: string,
+  deps: HomeUpgradeTransactionDeps = {},
+): Promise<HomeUpgradeTransaction | null> {
+  assertTransactionId(transactionId);
+  const vault = await canonicalVault(vaultPath);
+  const paths = homeInstallationPaths(vault, deps);
+  const upgrade = await inspectUpgradeAncestors(paths);
+  if (upgrade === null) return null;
+  const history = join(upgrade, "history");
+  if (!await present(history)) return null;
+  await assertDirectDirectory(history, "upgrade history root");
+  const transactionRoot = join(history, transactionId);
+  if (!await present(transactionRoot)) return null;
+  const journal = await readBoundedJournal(transactionRoot, vault);
+  if (journal.transactionId !== transactionId) {
+    throw new Error("Dome Home upgrade history directory disagrees with its transaction identity");
+  }
+  if (journal.phase !== "committed" && journal.phase !== "restored") {
+    throw new Error("Dome Home upgrade history contains a non-terminal transaction");
+  }
+  validateCanonicalArtifactPath(journal.old, paths);
+  validateCanonicalArtifactPath(journal.candidate, paths);
+  validateArchivedSelectorPaths(journal, paths, deps);
+  await validateSnapshotInventory(transactionRoot, journal.snapshot.inventory);
   return journal;
 }
 
@@ -863,7 +898,7 @@ export async function inspectHomeUpgradeAdmission(
         return Object.freeze({ admitted: false as const, reason: "committed upgrade selector is not the candidate" });
       }
       await validateArtifactReference(journal.candidate, paths);
-      await validateSelectorReferences(journal, paths, deps);
+      await validateSelectorReferences(journal, active, paths, deps);
       return Object.freeze({ admitted: true as const });
     }
     const installation = await readHomeInstallation(vault, deps);
@@ -888,21 +923,22 @@ export async function inspectHomeUpgradeAdmission(
 }
 
 async function readBoundedJournal(active: string, vault: string): Promise<HomeUpgradeTransaction> {
-  await assertDirectDirectory(active, "upgrade transaction root");
-  await assertDirectDirectory(join(active, "snapshot"), "upgrade snapshot root");
+  await assertPrivateDirectory(active, "upgrade transaction root");
+  await assertPrivateDirectory(join(active, "snapshot"), "upgrade snapshot root");
   const journalPath = join(active, "journal.json");
   const info = await lstat(journalPath);
-  if (!info.isFile() || info.isSymbolicLink() || info.size > 1024 * 1024) {
+  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 ||
+    (info.mode & 0o777) !== 0o600 || info.size > 1024 * 1024) {
     throw new Error("Dome Home upgrade journal is not a bounded regular file");
   }
   let value: unknown;
   try { value = JSON.parse(await readFile(journalPath, "utf8")); }
   catch { throw new Error("Dome Home upgrade journal is corrupt"); }
   const journal = parseJournal(value, vault);
-  const rootNames = (await readdir(active)).sort(compareStrings);
   const expected = journal.schema === HOME_UPGRADE_TRANSACTION_SCHEMA
     ? ["journal.json", "selectors", "snapshot"]
     : ["journal.json", "snapshot"];
+  const rootNames = await readBoundedNames(active, expected.length);
   if (JSON.stringify(rootNames) !== JSON.stringify(expected)) {
     throw new Error("Dome Home upgrade transaction has an unknown or missing root entry");
   }
@@ -998,23 +1034,25 @@ async function assertCandidateDurableCompatibility(
 
 async function validateJournalReferences(
   journal: HomeUpgradeTransaction,
+  transactionRoot: string,
   paths: HomeInstallationPaths,
   deps: HomeUpgradeTransactionDeps,
 ): Promise<void> {
   for (const artifact of [journal.old, journal.candidate]) {
     await validateArtifactReference(artifact, paths);
   }
-  await validateSelectorReferences(journal, paths, deps);
+  await validateSelectorReferences(journal, transactionRoot, paths, deps);
 }
 
 async function validateRestoreJournalReferences(
   journal: HomeUpgradeTransaction,
+  transactionRoot: string,
   paths: HomeInstallationPaths,
   deps: HomeUpgradeTransactionDeps,
 ): Promise<void> {
   await validateArtifactReference(journal.old, paths);
   validateCanonicalArtifactPath(journal.candidate, paths);
-  await validateSelectorReferences(journal, paths, deps);
+  await validateSelectorReferences(journal, transactionRoot, paths, deps);
 }
 
 async function validateArtifactReference(
@@ -1039,6 +1077,7 @@ function validateCanonicalArtifactPath(
 
 async function validateSelectorReferences(
   journal: HomeUpgradeTransaction,
+  transactionRoot: string,
   paths: HomeInstallationPaths,
   deps: HomeUpgradeTransactionDeps,
 ): Promise<void> {
@@ -1048,7 +1087,7 @@ async function validateSelectorReferences(
     return;
   }
   const stored = await loadStoredSelection(
-    join(paths.installations, "upgrade", "active"),
+    transactionRoot,
     journal.selection,
   );
   const state = await classifyHomeSelection(stored);
@@ -1056,6 +1095,19 @@ async function validateSelectorReferences(
     ((journal.phase === "prepared" || journal.phase === "restored") && state !== "old") ||
     (journal.phase === "committed" && state !== "candidate")) {
     throw new Error(`Dome Home selector state ${state} is inconsistent with upgrade phase ${journal.phase}`);
+  }
+}
+
+function validateArchivedSelectorPaths(
+  journal: HomeUpgradeTransaction,
+  paths: HomeInstallationPaths,
+  deps: HomeUpgradeTransactionDeps,
+): void {
+  if (journal.selectors.installation.path !== paths.record) {
+    throw new Error("archived installation selector path is not canonical");
+  }
+  if (journal.selectors.plist.path !== homePlistPath(journal.vault, deps)) {
+    throw new Error("archived Dome Home plist path is not canonical");
   }
 }
 
@@ -1113,15 +1165,16 @@ async function snapshotDurableState(vault: string, snapshotRoot: string): Promis
 
 async function validateSnapshotInventory(active: string, inventory: ReadonlyArray<HomeUpgradeSnapshotEntry>): Promise<void> {
   const snapshot = join(active, "snapshot");
-  await assertDirectDirectory(snapshot, "upgrade snapshot root");
-  const names = (await readdir(snapshot)).sort(compareStrings);
+  await assertPrivateDirectory(snapshot, "upgrade snapshot root");
   const expected = inventory.filter((entry) => entry.present).map((entry) => entry.name).sort(compareStrings);
+  const names = await readBoundedNames(snapshot, expected.length);
   if (JSON.stringify(names) !== JSON.stringify(expected)) throw new Error("upgrade snapshot inventory is not closed");
   for (const entry of inventory) {
     if (!entry.present) continue;
     const path = join(snapshot, entry.name);
     const info = await assertRegular(path, `snapshot ${entry.name}`);
-    if ((info.mode & 0o777) !== 0o600 || info.size !== entry.size || await hashFile(path) !== entry.sha256) {
+    if ((await lstat(path)).nlink !== 1 || (info.mode & 0o777) !== 0o600 ||
+      info.size !== entry.size || await hashFile(path) !== entry.sha256) {
       throw new Error(`upgrade snapshot evidence changed: ${entry.name}`);
     }
     if (entry.kind === "sqlite") {
@@ -1178,17 +1231,17 @@ async function validateStoredSelection(
   selection: HomeUpgradeSelectionEvidence,
 ): Promise<void> {
   const root = join(active, "selectors");
-  await assertDirectDirectory(root, "upgrade stored selectors");
+  await assertPrivateDirectory(root, "upgrade stored selectors");
   const expected = [
     "candidate-installation.json", "candidate.plist", "old-installation.json", "old.plist",
   ];
-  if (JSON.stringify((await readdir(root)).sort(compareStrings)) !== JSON.stringify(expected)) {
+  if (JSON.stringify(await readBoundedNames(root, expected.length)) !== JSON.stringify(expected)) {
     throw new Error("upgrade stored selector inventory is not closed");
   }
   for (const document of storedSelectionDocuments(selection)) {
     const path = join(active, document.stored);
     const info = await assertRegular(path, `stored ${document.stored}`);
-    if ((info.mode & 0o777) !== 0o600 || info.size !== document.size ||
+    if ((await lstat(path)).nlink !== 1 || (info.mode & 0o777) !== 0o600 || info.size !== document.size ||
       await hashFile(path) !== document.sha256) {
       throw new Error(`upgrade stored selector evidence changed: ${document.stored}`);
     }
@@ -1757,6 +1810,31 @@ async function assertDirectDirectory(path: string, label: string): Promise<void>
   }
 }
 
+async function assertPrivateDirectory(path: string, label: string): Promise<void> {
+  await assertDirectDirectory(path, label);
+  if (((await lstat(path)).mode & 0o777) !== 0o700) {
+    throw new Error(`${label} is not private: ${path}`);
+  }
+}
+
+async function readBoundedNames(path: string, maximum: number): Promise<ReadonlyArray<string>> {
+  const names: string[] = [];
+  const directory = await opendir(path);
+  try {
+    for await (const entry of directory) {
+      names.push(entry.name);
+      if (names.length > maximum) {
+        throw new Error(`Dome Home upgrade directory is not closed; inventory budget exceeded: ${path}`);
+      }
+    }
+  } finally {
+    try { await directory.close(); } catch (error) {
+      if (!hasCode(error, "ERR_DIR_CLOSED")) throw error;
+    }
+  }
+  return names.sort(compareStrings);
+}
+
 async function assertRegular(path: string, label: string): Promise<{ readonly mode: number; readonly size: number }> {
   const info = await lstat(path);
   if (!info.isFile() || info.isSymbolicLink()) throw new Error(`${label} is not a regular file: ${path}`);
@@ -1840,4 +1918,8 @@ async function present(path: string): Promise<boolean> {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
     throw error;
   }
+}
+
+function hasCode(error: unknown, code: string): boolean {
+  return error instanceof Error && "code" in error && error.code === code;
 }
