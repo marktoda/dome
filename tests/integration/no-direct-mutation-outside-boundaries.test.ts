@@ -47,6 +47,11 @@ const ALLOWED_FILES = new Set([
   // the external per-installation journal/snapshot and exact gitignored state
   // restoration targets; it never writes Git or Markdown knowledge.
   "src/product-host/home-upgrade-transaction.ts",
+  // Terminal upgrade-retirement boundary. It creates the private immutable
+  // history root and owns the one no-replace active -> history transaction
+  // rename after lifecycle, writer-barrier, selector, and service proof. It
+  // never edits vault knowledge or operational-store contents.
+  "src/product-host/home-upgrade-history.ts",
   // Closed journal-guarded durable operational-store migration boundary. It
   // creates only caller-owned deterministic private preflight subdirectories
   // and migrates approved SQLite stores; it never writes Git or Markdown.
