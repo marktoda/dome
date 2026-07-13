@@ -2,9 +2,10 @@
 // The transaction Module owns evidence interpretation. This Module owns the
 // lifecycle/operational serialization and the one active -> history rename.
 
-import { lstat, mkdir, realpath } from "node:fs/promises";
+import { lstat, mkdir, opendir, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
+import { compareStrings } from "../core/compare";
 import {
   acquireOperationalWriterLease,
   inspectOperationalWriterBarrier,
@@ -31,6 +32,8 @@ import {
   type HomeUpgradeTransaction,
   type HomeUpgradeTransactionDeps,
 } from "./home-upgrade-transaction";
+
+const MAX_HISTORY_ENTRIES = 1024;
 
 export type HomeUpgradeTerminalService = {
   readonly state: "ready" | "stopped";
@@ -59,6 +62,48 @@ export type HomeUpgradeRetirement = {
   /** False means a prior process completed the atomic move. */
   readonly retired: boolean;
 };
+
+/** Bounded intrinsic history for intent/status consumers; newest terminal first. */
+export async function listHomeUpgradeHistory(
+  vaultPath: string,
+  deps: HomeUpgradeHistoryDeps = {},
+): Promise<ReadonlyArray<HomeUpgradeTransaction>> {
+  const vault = await realpath(resolve(vaultPath));
+  const paths = homeInstallationPaths(vault, deps);
+  const history = join(paths.installations, "upgrade", "history");
+  if (!await present(history)) return Object.freeze([]);
+  await assertDirectDirectory(history, "upgrade history root");
+  if (((await lstat(history)).mode & 0o777) !== 0o700) {
+    throw new Error("Dome Home upgrade history root is not private");
+  }
+  const names: string[] = [];
+  const directory = await opendir(history);
+  for await (const entry of directory) {
+    names.push(entry.name);
+    if (names.length > MAX_HISTORY_ENTRIES) {
+      throw new Error("Dome Home upgrade history exceeds its bounded inventory");
+    }
+  }
+  names.sort(compareStrings);
+  const transactions: HomeUpgradeTransaction[] = [];
+  for (const transactionId of names) {
+    const transaction = await readHomeUpgradeHistory(vault, transactionId, deps);
+    if (transaction === null) throw new Error("Dome Home upgrade history changed during bounded inspection");
+    transactions.push(transaction);
+  }
+  return Object.freeze(transactions.sort((left, right) => {
+    const time = terminalTimestamp(right).localeCompare(terminalTimestamp(left));
+    return time === 0 ? compareStrings(right.transactionId, left.transactionId) : time;
+  }));
+}
+
+function terminalTimestamp(transaction: HomeUpgradeTransaction): string {
+  const value = transaction.phase === "committed"
+    ? transaction.timestamps.committedAt
+    : transaction.timestamps.restoredAt;
+  if (value === null) throw new Error("terminal Dome Home upgrade history lacks its terminal timestamp");
+  return value;
+}
 
 /**
  * Move one exact terminal operation from `active/` to immutable history.

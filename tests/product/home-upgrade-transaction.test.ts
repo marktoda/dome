@@ -24,6 +24,7 @@ import { homeServiceLabelForVault } from "../../src/product-host/home-lifecycle"
 import { startProductHost } from "../../src/product-host/product-host";
 import { readHomeUpgradeBarrier } from "../../src/product-host/home-upgrade-barrier";
 import {
+  listHomeUpgradeHistory,
   retireHomeUpgrade,
   type HomeUpgradeHistoryDeps,
   type HomeUpgradeRetirementCheckpoint,
@@ -165,6 +166,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
         vaultPath: f.vault,
         transactionId,
         candidateArtifactId: CANDIDATE_ID,
+        expectedCurrentArtifactId: OLD_ID,
       }, deps);
       expect(cutover).toMatchObject({
         status: "ready",
@@ -232,6 +234,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
         vaultPath: f.vault,
         transactionId,
         candidateArtifactId: CANDIDATE_ID,
+        expectedCurrentArtifactId: OLD_ID,
       }, deps);
       expect(first).toMatchObject({
         status: "recovery-required",
@@ -245,6 +248,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
         vaultPath: f.vault,
         transactionId,
         candidateArtifactId: CANDIDATE_ID,
+        expectedCurrentArtifactId: OLD_ID,
       }, deps);
       expect(recovered).toMatchObject({
         status: "recovery-required",
@@ -300,6 +304,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
         vaultPath: f.vault,
         transactionId,
         candidateArtifactId: CANDIDATE_ID,
+        expectedCurrentArtifactId: OLD_ID,
       }, deps)));
       expect(inspected).toBe(2);
       expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1);
@@ -361,6 +366,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
           vaultPath: f.vault,
           transactionId,
           candidateArtifactId: CANDIDATE_ID,
+          expectedCurrentArtifactId: OLD_ID,
         }, deps);
         expect(first).toMatchObject({
           status: "ready",
@@ -382,6 +388,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
           vaultPath: f.vault,
           transactionId,
           candidateArtifactId: CANDIDATE_ID,
+          expectedCurrentArtifactId: OLD_ID,
         }, deps);
         expect(retried).toMatchObject({
           status: "ready",
@@ -1176,10 +1183,17 @@ describe("Product Host terminal upgrade history", () => {
         expect(retired).toMatchObject({ retired: true, transaction: { transactionId, phase: outcome } });
         expect(await readHomeUpgrade(f.vault, f.deps)).toBeNull();
         expect((await readHomeUpgradeHistory(f.vault, transactionId, f.deps))?.phase).toBe(outcome);
+        expect((await listHomeUpgradeHistory(f.vault, f.deps)).map((entry) => entry.transactionId)).toEqual([
+          transactionId,
+        ]);
+        const paths = homeInstallationPaths(f.vault, f.deps);
+        const historyRoot = join(paths.installations, "upgrade", "history");
+        await mkdir(join(historyRoot, "unknown-entry"));
+        await expect(listHomeUpgradeHistory(f.vault, f.deps)).rejects.toThrow("transaction id");
+        await rm(join(historyRoot, "unknown-entry"), { recursive: true });
 
         // Historical truth is intrinsic. A future selection or release GC
         // must not make last-attempt evidence unreadable.
-        const paths = homeInstallationPaths(f.vault, f.deps);
         await rm(releaseRoot(paths, outcome === "committed" ? CANDIDATE_ID : OLD_ID), {
           recursive: true,
           force: true,

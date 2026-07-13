@@ -110,11 +110,30 @@ export async function ensureManagedRelease(input: {
     const staged = await verify(staging);
     assertSameArtifact(staged, input.manifest, "staged release identity changed during copy");
     await (deps.syncRelease ?? fsyncTree)(staging);
-    await (deps.publishRelease ?? (async (source, destination) => publishDirectoryExclusive({ source, target: destination, platform: input.platform })))(staging, target);
+    let didPublish = true;
+    try {
+      await (deps.publishRelease ?? (async (source, destination) => publishDirectoryExclusive({
+        source,
+        target: destination,
+        platform: input.platform,
+      })))(staging, target);
+    } catch (publishError) {
+      if (!await pathPresent(target)) throw publishError;
+      try {
+        const concurrent = await verify(target);
+        assertSameArtifact(concurrent, input.manifest, "concurrently published release identity mismatch");
+        didPublish = false;
+      } catch (verifyError) {
+        throw new AggregateError(
+          [publishError, verifyError],
+          `managed release publication conflicted at ${target}`,
+        );
+      }
+    }
     await fsyncDirectory(input.paths.releases);
     const published = await verify(target);
     assertSameArtifact(published, input.manifest, "published release identity changed");
-    return Object.freeze({ root: target, published: true });
+    return Object.freeze({ root: target, published: didPublish });
   } finally {
     await rm(staging, { recursive: true, force: true });
   }

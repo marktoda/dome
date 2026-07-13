@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  HomeUpgradeSelectionChangedError,
   runHomeUpgradeCutover,
   type HomeUpgradeCutoverDeps,
 } from "../../src/product-host/home-upgrade-cutover";
@@ -19,12 +20,35 @@ describe("private Home upgrade cutover", () => {
       vaultPath: "/vault",
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
+      expectedCurrentArtifactId: OLD,
     }, deps);
     expect(result).toMatchObject({ status: "ready", transactionOutcome: { kind: "committed" }, handoffError: null });
     expect(calls).toEqual([
-      "inspect", "read-recovery", "suspend:new", "read-recovery", "prepare", "migrate", "vault-id",
+      "inspect", "read-recovery", "suspend:new", "read-recovery", "read-installation", "prepare", "migrate", "vault-id",
       "prove", "commit", "authorize", "release",
     ]);
+  });
+
+  test("revalidates the preflight installation under lifecycle ownership", async () => {
+    const calls: string[] = [];
+    let current: HomeUpgradeTransaction | null = null;
+    const selectedCandidate = {
+      schema: "dome.home.installation/v1" as const,
+      vault: "/vault",
+      artifact: { id: CANDIDATE, version: "2.0.0" },
+      environment: [],
+    };
+    const attempt = runHomeUpgradeCutover({
+      vaultPath: "/vault",
+      transactionId: TX,
+      candidateArtifactId: CANDIDATE,
+      expectedCurrentArtifactId: OLD,
+    }, fakeDeps(calls, () => current, (next) => { current = next; }, {
+      readInstallation: async () => { calls.push("read-installation"); return selectedCandidate; },
+    }));
+    await expect(attempt).rejects.toBeInstanceOf(HomeUpgradeSelectionChangedError);
+    expect(calls).not.toContain("prepare");
+    expect(calls).not.toContain("restore");
   });
 
   test("automatically restores any pre-commit failure before resuming N-1", async () => {
@@ -37,6 +61,7 @@ describe("private Home upgrade cutover", () => {
       vaultPath: "/vault",
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
+      expectedCurrentArtifactId: OLD,
     }, deps);
     expect(result).toMatchObject({
       status: "ready",
@@ -57,6 +82,7 @@ describe("private Home upgrade cutover", () => {
         vaultPath: "/vault",
         transactionId: TX,
         candidateArtifactId: CANDIDATE,
+        expectedCurrentArtifactId: OLD,
       }, deps);
       expect(result.transactionOutcome.kind).toBe("rolled-back");
       expect(calls).toEqual(["inspect", "read-recovery", "restore", "suspend:resume-only"]);
@@ -71,6 +97,7 @@ describe("private Home upgrade cutover", () => {
       vaultPath: "/vault",
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
+      expectedCurrentArtifactId: OLD,
     }, deps);
     expect(result).toMatchObject({ status: "ready", transactionOutcome: { kind: "committed" }, handoffError: null });
     expect(calls).toEqual([
@@ -86,6 +113,7 @@ describe("private Home upgrade cutover", () => {
       vaultPath: "/vault",
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
+      expectedCurrentArtifactId: OLD,
     }, fakeDeps(committedCalls, () => committed, (next) => { committed = next; }));
     expect(committedResult).toMatchObject({
       status: "ready",
@@ -100,6 +128,7 @@ describe("private Home upgrade cutover", () => {
       vaultPath: "/vault",
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
+      expectedCurrentArtifactId: OLD,
     }, fakeDeps(restoredCalls, () => restored, (next) => { restored = next; }, {
       read: async () => { throw new Error("candidate payload is gone"); },
     }));
@@ -112,6 +141,7 @@ describe("private Home upgrade cutover", () => {
       vaultPath: "/vault",
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
+      expectedCurrentArtifactId: OLD,
     }, fakeDeps(failureCalls, () => absent, (next) => { absent = next; }, {
       prepare: async () => { failureCalls.push("prepare"); throw new Error("prepare failed before publication"); },
     }))).rejects.toThrow("prepare failed before publication");
@@ -126,6 +156,7 @@ describe("private Home upgrade cutover", () => {
         vaultPath: "/vault",
         transactionId: TX,
         candidateArtifactId: CANDIDATE,
+        expectedCurrentArtifactId: OLD,
       }, fakeDeps(calls, () => current, (next) => { current = next; }, {
         read: async () => { calls.push("read"); throw new Error(`${fault} candidate payload`); },
       }, activeSuspension()));
@@ -179,6 +210,7 @@ describe("private Home upgrade cutover", () => {
       vaultPath: "/vault",
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
+      expectedCurrentArtifactId: OLD,
     }, deps);
     expect(result).toMatchObject({
       status: "recovery-required",
@@ -196,6 +228,7 @@ describe("private Home upgrade cutover", () => {
       vaultPath: "/vault",
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
+      expectedCurrentArtifactId: OLD,
     }, fakeDeps(handoffCalls, () => handoffCurrent, (next) => { handoffCurrent = next; }, {
       release: async () => { handoffCalls.push("release"); throw new Error("barrier release failed"); },
     }));
@@ -236,6 +269,7 @@ describe("private Home upgrade cutover", () => {
       vaultPath: "/vault",
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
+      expectedCurrentArtifactId: OLD,
     }, lifecycleDeps);
     expect(lifecycleResult).toMatchObject({
       status: "recovery-required",
@@ -254,6 +288,15 @@ function fakeDeps(
   suspension: Awaited<ReturnType<NonNullable<HomeUpgradeCutoverDeps["inspectLifecycleSuspension"]>>> = { kind: "inactive" },
 ): HomeUpgradeCutoverDeps {
   const operations: NonNullable<HomeUpgradeCutoverDeps["operations"]> = {
+    readInstallation: async () => {
+      calls.push("read-installation");
+      return {
+        schema: "dome.home.installation/v1",
+        vault: "/vault",
+        artifact: { id: OLD, version: "1.0.0" },
+        environment: [],
+      };
+    },
     read: async () => { calls.push("read"); return read(); },
     readRecovery: async () => { calls.push("read-recovery"); return read(); },
     prepare: async () => { calls.push("prepare"); const value = transaction("prepared"); set(value); return value; },

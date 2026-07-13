@@ -27,6 +27,9 @@ import {
   type HomeUpgradeCandidateDeps,
 } from "./home-upgrade-candidate";
 import { readVaultId } from "./vault-id";
+import {
+  readHomeInstallation,
+} from "./home-installation";
 
 export type HomeUpgradeTransactionOutcome =
   | { readonly kind: "committed"; readonly transaction: HomeUpgradeTransaction }
@@ -45,6 +48,7 @@ export type HomeUpgradeCutoverResult = {
 };
 
 type UpgradeOperations = {
+  readonly readInstallation: typeof readHomeInstallation;
   readonly read: typeof readHomeUpgrade;
   readonly readRecovery: typeof readHomeUpgradeForRecovery;
   readonly prepare: typeof prepareHomeUpgrade;
@@ -55,6 +59,27 @@ type UpgradeOperations = {
   readonly release: typeof releaseCommittedHomeUpgrade;
   readonly readVaultId: typeof readVaultId;
 };
+
+/** Stable signal for an intent adapter to classify concurrent selection. */
+export class HomeUpgradeSelectionChangedError extends Error {
+  readonly expectedArtifactId: string;
+  readonly selectedArtifact: {
+    readonly artifactId: string;
+    readonly productVersion: string;
+  } | null;
+
+  constructor(expectedArtifactId: string, selected: Awaited<ReturnType<typeof readHomeInstallation>>) {
+    super("Dome Home installation selection changed before upgrade ownership");
+    this.name = "HomeUpgradeSelectionChangedError";
+    this.expectedArtifactId = expectedArtifactId;
+    this.selectedArtifact = selected === null
+      ? null
+      : Object.freeze({
+        artifactId: selected.artifact.id,
+        productVersion: selected.artifact.version,
+      });
+  }
+}
 
 export type HomeUpgradeCutoverDeps = HomeUpgradeTransactionDeps &
   HomeLifecycleSuspensionDeps & HomeUpgradeCandidateDeps & {
@@ -68,6 +93,8 @@ export async function runHomeUpgradeCutover(input: {
   readonly vaultPath: string;
   readonly transactionId: string;
   readonly candidateArtifactId: string;
+  /** Installation selection captured by the intent preflight. */
+  readonly expectedCurrentArtifactId: string;
 }, deps: HomeUpgradeCutoverDeps = {}): Promise<HomeUpgradeCutoverResult> {
   const operations = resolveOperations(deps.operations);
   const suspension = await (deps.inspectLifecycleSuspension ?? inspectHomeLifecycleSuspension)(input.vaultPath);
@@ -192,6 +219,12 @@ export async function runHomeUpgradeCutover(input: {
 
       let journal: HomeUpgradeTransaction | null = current;
       try {
+        if (journal === null) {
+          const selected = await operations.readInstallation(input.vaultPath, deps);
+          if (selected?.artifact.id !== input.expectedCurrentArtifactId) {
+            throw new HomeUpgradeSelectionChangedError(input.expectedCurrentArtifactId, selected);
+          }
+        }
         journal = await operations.prepare({
           vaultPath: input.vaultPath,
           transactionId: input.transactionId,
@@ -260,6 +293,7 @@ function candidateResumeAuthorization(journal: HomeUpgradeTransaction): HomeResu
 
 function resolveOperations(overrides: Partial<UpgradeOperations> | undefined): UpgradeOperations {
   return Object.freeze({
+    readInstallation: overrides?.readInstallation ?? readHomeInstallation,
     read: overrides?.read ?? readHomeUpgrade,
     readRecovery: overrides?.readRecovery ?? readHomeUpgradeForRecovery,
     prepare: overrides?.prepare ?? prepareHomeUpgrade,
