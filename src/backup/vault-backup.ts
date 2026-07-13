@@ -153,6 +153,7 @@ export type BackupDeps = ServiceDeps & Pick<
   readonly ageKeygenPath?: string;
   readonly now?: () => Date;
   readonly beforeSourceRecheck?: (() => Promise<void>) | undefined;
+  readonly syncBackupParent?: ((parent: string) => Promise<void>) | undefined;
   readonly readiness?: (() => Promise<boolean>) | undefined;
   readonly readinessTimeoutMs?: number;
   readonly publishRestoredVault?: ((source: string, target: string) => Promise<void>) | undefined;
@@ -460,6 +461,8 @@ async function createWhileFenced(vault: string, output: string, recipient: strin
   const stagedVault = join(root, "vault");
   const tarPath = join(temporary, "payload.tar");
   const encrypted = join(dirname(output), `.${basename(output)}.tmp-${process.pid}-${randomUUID()}`);
+  let published: BackupResult | undefined;
+  let result: BackupResult;
   try {
     const sourceBefore = await inspectSource(vault);
     await assertSourceAdmissible(vault, sourceBefore.manifest);
@@ -491,18 +494,44 @@ async function createWhileFenced(vault: string, output: string, recipient: strin
     await run([deps.agePath ?? "age", "-r", recipient, "-o", encrypted, tarPath]);
     await chmod(encrypted, 0o600);
     await fsyncPath(encrypted);
-    await publishPathExclusive({ source: encrypted, target: output });
-    await fsyncDirectory(dirname(output));
-    return Object.freeze({
-      schema: BACKUP_SCHEMA, operation: "create", status: "created", exitCode: 0,
-      archive: output, backupId: manifest.backupId, sha256: await hashFile(output),
+    const created: BackupResult = Object.freeze({
+      schema: BACKUP_SCHEMA,
+      operation: "create",
+      status: "created",
+      exitCode: 0,
+      archive: output,
+      backupId: manifest.backupId,
+      sha256: await hashFile(encrypted),
     });
+    await publishPathExclusive({ source: encrypted, target: output });
+    published = created;
+    await (deps.syncBackupParent ?? fsyncDirectory)(dirname(output));
+    result = created;
   } catch (error) {
-    await rm(encrypted, { force: true });
-    return failure("create", message(error));
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
+    let detail = message(error);
+    try { await rm(encrypted, { force: true }); }
+    catch (cleanupError) { detail = `${detail}; encrypted staging cleanup also failed: ${message(cleanupError)}`; }
+    if (published !== undefined) {
+      result = Object.freeze({
+        ...published,
+        exitCode: 1,
+        error: `backup archive was published but parent-directory durability is uncertain: ${detail}`,
+      });
+    } else {
+      result = failure("create", detail);
+    }
   }
+  try { await rm(temporary, { recursive: true, force: true }); }
+  catch (cleanupError) {
+    result = Object.freeze({
+      ...result,
+      exitCode: 1,
+      error: result.error === undefined
+        ? `backup staging cleanup failed: ${message(cleanupError)}`
+        : `${result.error}; backup staging cleanup also failed: ${message(cleanupError)}`,
+    });
+  }
+  return result;
 }
 
 async function inspectSource(vault: string): Promise<InspectedSource> {

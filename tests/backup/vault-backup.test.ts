@@ -322,6 +322,33 @@ describe("encrypted vault backup checkpoint", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  test("retains exact archive truth when parent durability fails after publication", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-backup-parent-sync-"));
+    try {
+      const tools = await fakeAgeTools(root);
+      const vault = await basicVault(root);
+      const home = await installedHome(vault, root, false);
+      const archive = join(await realpath(root), "backup.age");
+      const result = await createVaultBackup({ vaultPath: vault, output: archive, recipient: "age1fixture" }, {
+        ...tools,
+        ...home.deps,
+        syncBackupParent: async () => { throw new Error("injected backup parent fsync failure"); },
+      });
+      expect(result).toMatchObject({
+        status: "created",
+        exitCode: 1,
+        restart: "not-running",
+        archive,
+      });
+      expect(result.backupId).toBeDefined();
+      expect(result.sha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(result.error).toContain("published but parent-directory durability is uncertain");
+      expect(result.error).toContain("injected backup parent fsync failure");
+      if (result.sha256 === undefined) throw new Error("created backup result omitted its checksum");
+      expect(fileHash(await readFile(archive))).toBe(result.sha256);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   test("reports barrier closure before backup and during resume without false success", async () => {
     const root = await mkdtemp(join(tmpdir(), "dome-backup-barrier-"));
     try {

@@ -391,6 +391,9 @@ when launchd reports that Home was previously stopped. Archive creation and
 restart are separate results: a published
 archive retains its id, checksum, and path even when resume is deferred or
 fails, while the command remains nonzero with explicit restart failure. The
+same rule applies when no-replace publication succeeds but the parent-directory
+durability sync fails: created archive metadata remains visible with a nonzero
+uncertain-durability error. The
 retained suspension operation id is recovery evidence; no public recovery
 command is claimed by this checkpoint.
 
