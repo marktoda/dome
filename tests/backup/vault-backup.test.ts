@@ -9,6 +9,12 @@ import { createVaultBackup, generateBackupIdentity, restoreVaultBackup, verifyVa
 import { add, commit, initRepo } from "../../src/git";
 import { extractTarFile, inspectTar, writeTarTree } from "../../src/backup/tar";
 import { openDeviceAuthority } from "../../src/device-authority/device-authority";
+import { homeInstallationPaths } from "../../src/product-host/home-installation";
+import { externalProductHostLockPath } from "../../src/product-host/host-ownership";
+import { inspectHomeLifecycleSuspension } from "../../src/product-host/home-lifecycle-suspension";
+import { withExclusiveFileLock } from "../../src/engine/host/file-lock";
+import { engageOperationalWriterBarrier, releaseOperationalWriterBarrier } from "../../src/operational-state/writer-barrier";
+import { vaultServiceSlug } from "../../src/surface/service-probe";
 
 describe("encrypted vault backup checkpoint", () => {
   test("keygen, create, verify, and internal blank-target rehearsal need no native git", async () => {
@@ -53,9 +59,10 @@ describe("encrypted vault backup checkpoint", () => {
       expect((await stat(identity)).mode & 0o777).toBe(0o600);
 
       const archive = join(root, "backup.dome.age");
+      const home = await installedHome(vault, root, false);
       const priorPath = process.env.PATH;
       process.env.PATH = "/path-without-git";
-      const created = await createVaultBackup({ vaultPath: vault, output: archive, recipient: key.recipient! }, lifecycle(tools));
+      const created = await createVaultBackup({ vaultPath: vault, output: archive, recipient: key.recipient! }, { ...tools, ...home.deps });
       process.env.PATH = priorPath;
       walDb?.close();
       expect(created.status).toBe("created");
@@ -201,57 +208,42 @@ describe("encrypted vault backup checkpoint", () => {
       await add(vault, ".dome/config.yaml");
       await commit({ path: vault, message: "fixture" });
       await writeFile(join(vault, ".dome", "state", "future.db"), "unknown");
-      const launchAgentsDir = join(root, "LaunchAgents");
-      await mkdir(launchAgentsDir);
-      const { homeServiceLabelForVault } = await import("../../src/product-host/home-lifecycle");
-      const label = homeServiceLabelForVault(vault);
-      await writeFile(join(launchAgentsDir, `${label}.plist`), "plist");
-      let loaded = true;
-      const calls: string[] = [];
+      const home = await installedHome(vault, root, true);
       const result = await createVaultBackup({ vaultPath: vault, output: join(root, "backup.age"), recipient: "age1fixture" }, {
-        ...tools, platform: "darwin", uid: 501, launchAgentsDir, drainTimeoutMs: 10,
-        readiness: async () => loaded,
-        launchctl: async (args) => {
-          calls.push(args.join(" "));
-          if (args[0] === "print") return { exitCode: args.at(-1)?.endsWith(label) === true && loaded ? 0 : 1, stdout: "", stderr: "" };
-          if (args[0] === "bootout") loaded = false;
-          if (args[0] === "bootstrap") loaded = true;
-          return { exitCode: 0, stdout: "", stderr: "" };
-        },
+        ...tools, ...home.deps,
       });
       expect(result.status).toBe("error");
       expect(result.error).toContain("future.db");
       expect(result.restart).toBe("restarted");
-      expect(calls.some((call) => call.startsWith("bootout"))).toBeTrue();
-      expect(calls.some((call) => call.startsWith("bootstrap"))).toBeTrue();
+      expect(home.calls.some((call) => call[0] === "bootout")).toBeTrue();
+      expect(home.calls.some((call) => call[0] === "bootstrap")).toBeTrue();
 
       await rm(join(vault, ".dome", "state", "future.db"));
       await mkdir(join(vault, ".git", "objects", "info"), { recursive: true });
       await writeFile(join(vault, ".git", "objects", "info", "alternates"), "/external/objects\n");
       const alternates = await createVaultBackup({ vaultPath: vault, output: join(root, "alternates.age"), recipient: "age1fixture" }, {
-        ...tools, platform: "darwin", uid: 501, launchAgentsDir, readiness: async () => loaded,
-        launchctl: async (args) => {
-          if (args[0] === "print") return { exitCode: args.at(-1)?.endsWith(label) === true && loaded ? 0 : 1, stdout: "", stderr: "" };
-          if (args[0] === "bootout") loaded = false;
-          if (args[0] === "bootstrap") loaded = true;
-          return { exitCode: 0, stdout: "", stderr: "" };
-        },
+        ...tools, ...home.deps,
       });
       expect(alternates.error).toContain("external Git object dependency");
       await rm(join(vault, ".git", "objects", "info", "alternates"));
 
       const drifted = await createVaultBackup({ vaultPath: vault, output: join(root, "drift.age"), recipient: "age1fixture" }, {
-        ...tools, platform: "darwin", uid: 501, launchAgentsDir, readiness: async () => loaded,
+        ...tools, ...home.deps,
         beforeSourceRecheck: async () => { await writeFile(join(vault, ".dome", "config.yaml"), "version: 2\n"); },
-        launchctl: async (args) => {
-          if (args[0] === "print") return { exitCode: args.at(-1)?.endsWith(label) === true && loaded ? 0 : 1, stdout: "", stderr: "" };
-          if (args[0] === "bootout") loaded = false;
-          if (args[0] === "bootstrap") loaded = true;
-          return { exitCode: 0, stdout: "", stderr: "" };
-        },
       });
       expect(drifted.status).toBe("error");
       expect(drifted.restart).toBe("restarted");
+
+      await writeFile(join(vault, ".dome", "config.yaml"), "version: 1\n");
+      const stateDrift = await createVaultBackup({ vaultPath: vault, output: join(root, "state-drift.age"), recipient: "age1fixture" }, {
+        ...tools, ...home.deps,
+        beforeSourceRecheck: async () => {
+          await writeFile(join(vault, ".dome", "state", "quarantined.json"), "{}\n");
+        },
+      });
+      expect(stateDrift.status).toBe("error");
+      expect(stateDrift.error).toContain("operational state changed");
+      expect(stateDrift.restart).toBe("restarted");
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
@@ -265,29 +257,324 @@ describe("encrypted vault backup checkpoint", () => {
       await writeFile(join(vault, ".dome", "config.yaml"), "version: 1\n");
       await add(vault, ".dome/config.yaml");
       await commit({ path: vault, message: "fixture" });
-      const launchAgentsDir = join(root, "LaunchAgents");
-      await mkdir(launchAgentsDir);
-      const { homeServiceLabelForVault } = await import("../../src/product-host/home-lifecycle");
-      const label = homeServiceLabelForVault(vault);
-      await writeFile(join(launchAgentsDir, `${label}.plist`), "plist");
-      const result = await createVaultBackup({ vaultPath: vault, output: join(root, "backup.age"), recipient: "age1fixture" }, {
-        ...tools, platform: "darwin", uid: 501, launchAgentsDir, drainTimeoutMs: 0, readinessTimeoutMs: 0,
-        readiness: async () => false,
-        launchctl: async (args) => ({
-          exitCode: args[0] === "print" && args.at(-1)?.endsWith(label) !== true ? 1 : 0,
-          stdout: "", stderr: "",
-        }),
+      const home = await installedHome(vault, root, true);
+      const drainFailure = await createVaultBackup({ vaultPath: vault, output: join(root, "drain.age"), recipient: "age1fixture" }, {
+        ...tools,
+        ...home.deps,
+        drainTimeoutMs: 0,
+        launchctl: async (args) => args[0] === "bootout"
+          ? outcome(0)
+          : args[0] === "print" && args.at(-1) === home.target ? outcome(0) : outcome(113),
       });
-      expect(result.status).toBe("error");
-      expect(result.restart).toBe("failed");
-      expect(result.exitCode).toBe(1);
+      expect(drainFailure.status).toBe("error");
+      expect(drainFailure.error).toContain("drain timeout");
+      expect(drainFailure.restart).toBe("failed");
+      expect(drainFailure.exitCode).toBe(1);
+
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("retains a created archive when Home restart fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-backup-restart-failure-"));
+    try {
+      const tools = await fakeAgeTools(root);
+      const vault = await basicVault(root);
+      const home = await installedHome(vault, root, true);
+      const archive = join(await realpath(root), "backup.age");
+      const result = await createVaultBackup({ vaultPath: vault, output: archive, recipient: "age1fixture" }, {
+        ...tools,
+        ...home.deps,
+        launchctl: async (args) => {
+          if (args[0] === "bootstrap") return outcome(5, "injected bootstrap failure");
+          return home.launchctl(args);
+        },
+      });
+      expect(result).toMatchObject({ status: "created", exitCode: 1, restart: "failed", archive });
+      expect(result.backupId).toBeDefined();
+      expect(result.sha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(result.restartError).toContain("injected bootstrap failure");
+      expect(await pathPresent(archive)).toBeTrue();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("retains a created archive when suspension infrastructure fails after callback", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-backup-post-callback-"));
+    try {
+      const tools = await fakeAgeTools(root);
+      const vault = await basicVault(root);
+      const home = await installedHome(vault, root, true);
+      const archive = join(await realpath(root), "backup.age");
+      const result = await createVaultBackup({ vaultPath: vault, output: archive, recipient: "age1fixture" }, {
+        ...tools,
+        ...home.deps,
+        checkpoint: async (name) => {
+          if (name === "callback-returned") throw new Error("injected lifecycle persistence failure");
+        },
+      });
+      expect(result).toMatchObject({ status: "created", exitCode: 1, restart: "failed", archive });
+      expect(result.backupId).toBeDefined();
+      expect(result.sha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(result.restartError).toContain("injected lifecycle persistence failure");
+      expect(await pathPresent(archive)).toBeTrue();
+      const active = await inspectHomeLifecycleSuspension(vault);
+      expect(active.kind).toBe("active");
+      if (active.kind === "active") expect(result.restartError).toContain(active.suspension.operationId);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("retains exact archive truth when parent durability fails after publication", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-backup-parent-sync-"));
+    try {
+      const tools = await fakeAgeTools(root);
+      const vault = await basicVault(root);
+      const home = await installedHome(vault, root, false);
+      const archive = join(await realpath(root), "backup.age");
+      const result = await createVaultBackup({ vaultPath: vault, output: archive, recipient: "age1fixture" }, {
+        ...tools,
+        ...home.deps,
+        syncBackupParent: async () => { throw new Error("injected backup parent fsync failure"); },
+      });
+      expect(result).toMatchObject({
+        status: "created",
+        exitCode: 1,
+        restart: "not-running",
+        archive,
+      });
+      expect(result.backupId).toBeDefined();
+      expect(result.sha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(result.error).toContain("published but parent-directory durability is uncertain");
+      expect(result.error).toContain("injected backup parent fsync failure");
+      if (result.sha256 === undefined) throw new Error("created backup result omitted its checksum");
+      expect(fileHash(await readFile(archive))).toBe(result.sha256);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("reports barrier closure before backup and during resume without false success", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-backup-barrier-"));
+    try {
+      const tools = await fakeAgeTools(root);
+      const vault = await basicVault(root);
+      const home = await installedHome(vault, root, false);
+      const beforeId = "backup-blocked-before";
+      expect((await engageOperationalWriterBarrier({ vaultPath: vault, transactionId: beforeId })).ok).toBeTrue();
+      const blocked = await createVaultBackup({ vaultPath: vault, output: join(root, "blocked.age"), recipient: "age1fixture" }, {
+        ...tools, ...home.deps,
+      });
+      expect(blocked).toMatchObject({ status: "error", exitCode: 1, restart: "failed" });
+      expect(blocked.error).toContain("write-admission-closed");
+      expect(blocked.restartError).toContain(beforeId);
+      expect(await pathPresent(join(root, "blocked.age"))).toBeFalse();
+      await releaseOperationalWriterBarrier({ vaultPath: vault, transactionId: beforeId, validateAndRemoveExternalEvidence: async () => {} });
+
+      const secondRoot = join(root, "resume");
+      const secondVault = await basicVault(secondRoot);
+      const secondHome = await installedHome(secondVault, secondRoot, true);
+      const resumeId = "backup-blocked-resume";
+      const archive = join(await realpath(secondRoot), "created.age");
+      const deferred = await createVaultBackup({ vaultPath: secondVault, output: archive, recipient: "age1fixture" }, {
+        ...tools,
+        ...secondHome.deps,
+        checkpoint: async (name) => {
+          if (name !== "callback-returned") return;
+          const engaged = await engageOperationalWriterBarrier({ vaultPath: secondVault, transactionId: resumeId });
+          if (!engaged.ok) throw new Error(`fixture barrier failed: ${engaged.error.kind}`);
+        },
+      });
+      expect(deferred).toMatchObject({ status: "created", exitCode: 1, restart: "failed", archive });
+      expect(deferred.backupId).toBeDefined();
+      expect(deferred.sha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(deferred.restartError).toContain(resumeId);
+      expect(await pathPresent(archive)).toBeTrue();
+      await releaseOperationalWriterBarrier({ vaultPath: secondVault, transactionId: resumeId, validateAndRemoveExternalEvidence: async () => {} });
+      const takeoverOutput = join(await realpath(secondRoot), "takeover.age");
+      const takeover = await createVaultBackup({ vaultPath: secondVault, output: takeoverOutput, recipient: "age1fixture" }, {
+        ...tools, ...secondHome.deps,
+      });
+      expect(takeover.status).toBe("error");
+      expect(takeover.error).toContain("Home lifecycle is suspended by backup:");
+      expect(await pathPresent(takeoverOutput)).toBeFalse();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("takes canonical external and vault-local Product Host ownership", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-backup-host-locks-"));
+    try {
+      const tools = await fakeAgeTools(root);
+      const vault = await basicVault(root);
+      const alias = join(root, "vault-alias");
+      await symlink(vault, alias);
+      const home = await installedHome(vault, root, false);
+      const external = await withExclusiveFileLock({
+        lockPath: externalProductHostLockPath(await realpath(vault)), command: "test-external-holder",
+      }, async () => createVaultBackup({ vaultPath: alias, output: join(root, "external.age"), recipient: "age1fixture" }, {
+        ...tools, ...home.deps,
+      }));
+      if (external.kind !== "acquired") throw new Error("fixture failed to own external lock");
+      expect(external.value).toMatchObject({ status: "error", restart: "not-running" });
+      expect(external.value.error).toContain("owns the vault");
+
+      const localPath = join(await realpath(vault), ".dome", "state", "locks", "product-host.lock");
+      await mkdir(dirname(localPath), { recursive: true });
+      const local = await withExclusiveFileLock({ lockPath: localPath, command: "test-local-holder" }, async () =>
+        createVaultBackup({ vaultPath: vault, output: join(root, "local.age"), recipient: "age1fixture" }, {
+          ...tools, ...home.deps,
+        }));
+      if (local.kind !== "acquired") throw new Error("fixture failed to own local lock");
+      expect(local.value).toMatchObject({ status: "error", restart: "not-running" });
+      expect(local.value.error).toContain("owns the vault");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("fails closed on ambiguous launchctl and Home evidence drift", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-backup-evidence-"));
+    try {
+      const tools = await fakeAgeTools(root);
+      const vault = await basicVault(root);
+      const ambiguousHome = await installedHome(vault, root, false);
+      const ambiguous = await createVaultBackup({ vaultPath: vault, output: join(root, "ambiguous.age"), recipient: "age1fixture" }, {
+        ...tools,
+        ...ambiguousHome.deps,
+        launchctl: async (args) => args[0] === "print" && args.at(-1) === ambiguousHome.target
+          ? outcome(1, "ambiguous launchctl failure")
+          : ambiguousHome.launchctl(args),
+      });
+      expect(ambiguous.status).toBe("error");
+      expect(ambiguous.error).toContain("ambiguous launchctl failure");
+
+      const legacy = await createVaultBackup({ vaultPath: vault, output: join(root, "legacy.age"), recipient: "age1fixture" }, {
+        ...tools, ...ambiguousHome.deps, legacyServeRunning: async () => true,
+      });
+      expect(legacy.status).toBe("error");
+      expect(legacy.error).toContain("legacy dome serve");
+
+      const foreground = await createVaultBackup({ vaultPath: vault, output: join(root, "foreground.age"), recipient: "age1fixture" }, {
+        ...tools, ...ambiguousHome.deps, readiness: async () => true,
+      });
+      expect(foreground.status).toBe("error");
+      expect(foreground.error).toContain("foreground Dome Home");
+
+      const driftRoot = join(root, "drift");
+      const driftVault = await basicVault(driftRoot);
+      const driftHome = await installedHome(driftVault, driftRoot, true);
+      const driftArchive = join(await realpath(driftRoot), "drift.age");
+      const drifted = await createVaultBackup({ vaultPath: driftVault, output: driftArchive, recipient: "age1fixture" }, {
+        ...tools,
+        ...driftHome.deps,
+        checkpoint: async (name) => {
+          if (name === "callback-returned") {
+            await writeFile(driftHome.plist, "drifted plist bytes\n", { mode: 0o600 });
+          }
+        },
+      });
+      expect(drifted).toMatchObject({ status: "created", exitCode: 1, restart: "failed", archive: driftArchive });
+      expect(drifted.backupId).toBeDefined();
+      expect(drifted.sha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(drifted.restartError).toContain("not the authorized resume target");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("serializes same-output backups and never replaces an external winner", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-backup-publication-"));
+    try {
+      const tools = await fakeAgeTools(root);
+      const vault = await basicVault(root);
+      const home = await installedHome(vault, root, false);
+      const output = join(await realpath(root), "same.age");
+      let entered!: () => void;
+      let release!: () => void;
+      const paused = new Promise<void>((resolve) => { entered = resolve; });
+      const resumed = new Promise<void>((resolve) => { release = resolve; });
+      const first = createVaultBackup({ vaultPath: vault, output, recipient: "age1fixture" }, {
+        ...tools, ...home.deps,
+        beforeSourceRecheck: async () => { entered(); await resumed; },
+      });
+      await paused;
+      const second = createVaultBackup({ vaultPath: vault, output, recipient: "age1fixture" }, { ...tools, ...home.deps });
+      await Bun.sleep(10); // let the second caller pass its outer absence check and queue on lifecycle ownership
+      release();
+      const firstResult = await first;
+      const firstHash = fileHash(await readFile(output));
+      const secondResult = await second;
+      expect(firstResult).toMatchObject({ status: "created", restart: "not-running" });
+      expect(secondResult).toMatchObject({ status: "error", exitCode: 64, restart: "not-running" });
+      expect(secondResult.error).toContain("already exists");
+      expect(fileHash(await readFile(output))).toBe(firstHash);
+
+      const racedOutput = join(await realpath(root), "external.age");
+      const raced = await createVaultBackup({ vaultPath: vault, output: racedOutput, recipient: "age1fixture" }, {
+        ...tools, ...home.deps,
+        beforeSourceRecheck: async () => { await writeFile(racedOutput, "external winner\n"); },
+      });
+      expect(raced).toMatchObject({ status: "error", restart: "not-running" });
+      expect(raced.error).toContain("target may already exist");
+      expect(await readFile(racedOutput, "utf8")).toBe("external winner\n");
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
 
-function lifecycle<T extends Record<string, unknown>>(tools: T): T & { platform: "darwin"; uid: number; launchAgentsDir: string; launchctl: (args: ReadonlyArray<string>) => Promise<{ exitCode: number; stdout: string; stderr: string }> } {
-  return { ...tools, platform: "darwin", uid: 501, launchAgentsDir: "/nonexistent-launch-agents", launchctl: async () => ({ exitCode: 1, stdout: "", stderr: "" }) };
+async function basicVault(root: string): Promise<string> {
+  const vault = join(root, "vault");
+  await mkdir(join(vault, ".dome", "state"), { recursive: true });
+  await initRepo(vault);
+  await writeFile(join(vault, ".dome", "config.yaml"), "version: 1\n");
+  await add(vault, ".dome/config.yaml");
+  await commit({ path: vault, message: "fixture" });
+  return vault;
 }
+
+async function installedHome(vaultPath: string, root: string, loaded: boolean) {
+  const vault = await realpath(vaultPath);
+  await mkdir(root, { recursive: true });
+  const fixtureRoot = await realpath(root);
+  const applicationSupportDir = join(fixtureRoot, "Application Support", "Dome", "Home");
+  const launchAgentsDir = join(fixtureRoot, "LaunchAgents");
+  const installation = homeInstallationPaths(vault, { applicationSupportDir });
+  await mkdir(installation.installations, { recursive: true });
+  await mkdir(launchAgentsDir, { recursive: true });
+  await writeFile(installation.record, `${JSON.stringify({
+    schema: "dome.home.installation/v1",
+    vault,
+    artifact: { id: "a".repeat(64), version: "1.0.0" },
+    environment: [],
+  })}\n`, { mode: 0o600 });
+  const label = `com.dome.home.${vaultServiceSlug(vault)}`;
+  const target = `gui/501/${label}`;
+  const plist = join(launchAgentsDir, `${label}.plist`);
+  await writeFile(plist, "strict plist bytes\n", { mode: 0o600 });
+  const loadedTargets = new Set<string>(loaded ? [target] : []);
+  const calls: string[][] = [];
+  const launchctl = async (args: ReadonlyArray<string>) => {
+    calls.push([...args]);
+    const candidate = args.at(-1) ?? "";
+    if (args[0] === "print") return outcome(loadedTargets.has(candidate) ? 0 : 113);
+    if (args[0] === "bootout") { loadedTargets.delete(candidate); return outcome(0); }
+    if (args[0] === "bootstrap") {
+      const bootLabel = (args[2] ?? "").split("/").at(-1)?.replace(/\.plist$/, "") ?? "";
+      loadedTargets.add(`${args[1]}/${bootLabel}`);
+      return outcome(0);
+    }
+    if (args[0] === "kickstart") { loadedTargets.add(candidate); return outcome(0); }
+    return outcome(0);
+  };
+  return {
+    target,
+    plist,
+    calls,
+    launchctl,
+    deps: {
+      platform: "darwin" as const,
+      uid: 501,
+      applicationSupportDir,
+      launchAgentsDir,
+      launchctl,
+      drainTimeoutMs: 20,
+      readinessTimeoutMs: 1,
+      readiness: async () => loadedTargets.has(target),
+    },
+  };
+}
+
+function outcome(exitCode: number, stderr = "") { return { exitCode, stdout: "", stderr }; }
 
 function fileHash(bytes: Uint8Array): string { return createHash("sha256").update(bytes).digest("hex"); }
 

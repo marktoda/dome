@@ -5,13 +5,13 @@ import { dlopen, FFIType } from "bun:ffi";
 
 const RENAME_EXCL = 0x4;
 
-export async function publishDirectoryExclusive(input: {
+export async function publishPathExclusive(input: {
   readonly source: string;
   readonly target: string;
   readonly platform?: NodeJS.Platform;
 }): Promise<void> {
   if ((input.platform ?? process.platform) !== "darwin") {
-    throw new Error("blank-host restore publication is currently supported only on macOS");
+    throw new Error("exclusive path publication is currently supported only on macOS");
   }
 
   const library = dlopen("/usr/lib/libSystem.B.dylib", {
@@ -25,9 +25,12 @@ export async function publishDirectoryExclusive(input: {
     const target = Buffer.from(`${input.target}\0`);
     const result = library.symbols.renamex_np(source, target, RENAME_EXCL);
     if (result !== 0) {
-      throw new Error(`exclusive restore publication failed; target may already exist: ${input.target}`);
+      throw new Error(`exclusive publication failed; target may already exist: ${input.target}`);
     }
   } finally {
     library.close();
   }
 }
+
+/** Compatibility name for existing directory publishers. */
+export const publishDirectoryExclusive = publishPathExclusive;

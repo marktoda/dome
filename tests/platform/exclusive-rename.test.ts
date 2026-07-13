@@ -3,9 +3,9 @@ import { lstat, mkdtemp, mkdir, readFile, readlink, rm, symlink, writeFile } fro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { publishDirectoryExclusive } from "../../src/platform/exclusive-rename";
+import { publishDirectoryExclusive, publishPathExclusive } from "../../src/platform/exclusive-rename";
 
-describe("exclusive directory publication", () => {
+describe("exclusive path publication", () => {
   test("publishes atomically without replacing an existing target", async () => {
     const root = await mkdtemp(join(tmpdir(), "dome-exclusive-rename-"));
     try {
@@ -38,6 +38,23 @@ describe("exclusive directory publication", () => {
       await expect(publishDirectoryExclusive({ source: danglingLoser, target: danglingTarget })).rejects.toThrow("target may already exist");
       expect(await readlink(danglingTarget)).toBe(join(root, "missing"));
       expect((await lstat(danglingLoser)).isDirectory()).toBeTrue();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("publishes a file without replacing another file", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-exclusive-file-"));
+    try {
+      const source = join(root, "source");
+      const target = join(root, "target");
+      await writeFile(source, "winner\n");
+      await publishPathExclusive({ source, target });
+      expect(await readFile(target, "utf8")).toBe("winner\n");
+
+      const loser = join(root, "loser");
+      await writeFile(loser, "loser\n");
+      await expect(publishPathExclusive({ source: loser, target })).rejects.toThrow("target may already exist");
+      expect(await readFile(target, "utf8")).toBe("winner\n");
+      expect(await readFile(loser, "utf8")).toBe("loser\n");
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
