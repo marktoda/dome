@@ -1,0 +1,13 @@
+PRAGMA foreign_keys = OFF;
+BEGIN IMMEDIATE;
+CREATE TABLE capability_uses (id INTEGER PRIMARY KEY AUTOINCREMENT,run_id TEXT NOT NULL REFERENCES runs(id),capability TEXT NOT NULL,resource TEXT,outcome TEXT NOT NULL,recorded_at TEXT NOT NULL);
+CREATE TABLE ledger_meta (schema_hash TEXT NOT NULL PRIMARY KEY,built_at TEXT NOT NULL);
+CREATE TABLE runs (id TEXT PRIMARY KEY,proposal_id TEXT,processor_id TEXT NOT NULL,processor_version TEXT NOT NULL,phase TEXT NOT NULL,input_commit TEXT NOT NULL,output_commit TEXT,status TEXT NOT NULL,effect_hashes_json TEXT NOT NULL,cost_usd REAL,duration_ms INTEGER,error TEXT,trigger_kind TEXT NOT NULL,trigger_payload_json TEXT NOT NULL,started_at TEXT NOT NULL,finished_at TEXT);
+INSERT INTO "capability_uses" ("id", "run_id", "capability", "resource", "outcome", "recorded_at") VALUES (1, 'run_fixture', 'vault.read', 'wiki/fixture.md', 'allowed', '2026-07-13T12:11:00.500Z');
+INSERT INTO "ledger_meta" ("schema_hash", "built_at") VALUES ('ae374b71e876fec8aa01ad0bb5b83d9931c6e8d0f1d90615571182dec6cde243', '2026-07-13T12:00:00.000Z');
+INSERT INTO "runs" ("id", "proposal_id", "processor_id", "processor_version", "phase", "input_commit", "output_commit", "status", "effect_hashes_json", "cost_usd", "duration_ms", "error", "trigger_kind", "trigger_payload_json", "started_at", "finished_at") VALUES ('run_fixture', 'proposal-pending', 'dome.fixture', '1', 'garden', '5555555555555555555555555555555555555555', '6666666666666666666666666666666666666666', 'succeeded', '["effect-fixture"]', 0.125, 17, NULL, 'signal', '{"name":"fixture"}', '2026-07-13T12:11:00.000Z', '2026-07-13T12:11:01.000Z');
+CREATE INDEX capability_uses_by_run ON capability_uses(run_id);
+CREATE INDEX runs_by_processor ON runs(processor_id, started_at);
+CREATE INDEX runs_by_proposal ON runs(proposal_id, started_at);
+CREATE INDEX runs_by_status ON runs(status, started_at);
+COMMIT;

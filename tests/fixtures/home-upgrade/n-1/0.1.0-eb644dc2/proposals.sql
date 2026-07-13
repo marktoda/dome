@@ -1,0 +1,9 @@
+PRAGMA foreign_keys = OFF;
+BEGIN IMMEDIATE;
+CREATE TABLE pending_proposals (id INTEGER PRIMARY KEY AUTOINCREMENT,dedupe_key TEXT NOT NULL UNIQUE,processor_id TEXT NOT NULL,extension_id TEXT NOT NULL,run_id TEXT,reason TEXT NOT NULL,changes_json TEXT NOT NULL,source_refs_json TEXT NOT NULL,base_commit TEXT NOT NULL,base_contents_json TEXT NOT NULL,created_at TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',decided_at TEXT, decided_by TEXT, applied_commit TEXT, note TEXT);
+CREATE TABLE proposals_meta (schema_hash TEXT NOT NULL PRIMARY KEY,built_at TEXT NOT NULL);
+INSERT INTO "pending_proposals" ("id", "dedupe_key", "processor_id", "extension_id", "run_id", "reason", "changes_json", "source_refs_json", "base_commit", "base_contents_json", "created_at", "status", "decided_at", "decided_by", "applied_commit", "note") VALUES (1, 'proposal-pending', 'dome.fixture', 'dome.fixture', 'run_fixture', 'pending fixture', '[]', '[]', '3333333333333333333333333333333333333333', '{}', '2026-07-13T12:05:00.000Z', 'pending', NULL, NULL, NULL, NULL);
+INSERT INTO "pending_proposals" ("id", "dedupe_key", "processor_id", "extension_id", "run_id", "reason", "changes_json", "source_refs_json", "base_commit", "base_contents_json", "created_at", "status", "decided_at", "decided_by", "applied_commit", "note") VALUES (2, 'proposal-decided', 'dome.fixture', 'dome.fixture', NULL, 'decided fixture', '[]', '[]', '4444444444444444444444444444444444444444', '{}', '2026-07-13T12:06:00.000Z', 'rejected', '2026-07-13T12:07:00.000Z', 'owner', NULL, 'not now');
+INSERT INTO "proposals_meta" ("schema_hash", "built_at") VALUES ('fb6a917d7b417aaa5a8d0cee444408feb42c73b407b24844cc94f3d570fdb795', '2026-07-13T12:00:00.000Z');
+CREATE INDEX pending_proposals_by_status ON pending_proposals(status, created_at);
+COMMIT;

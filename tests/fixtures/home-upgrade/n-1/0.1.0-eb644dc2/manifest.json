@@ -1,0 +1,102 @@
+{
+  "schema": "dome.home-upgrade-n1-fixture/v1",
+  "releaseId": "0.1.0-eb644dc2",
+  "sourceCommit": "eb644dc29b37cbc0c964f8cffc5329a95cad49ba",
+  "productVersion": "0.1.0",
+  "runtime": {
+    "bun": "1.2.13",
+    "sqlite": "3.51.0"
+  },
+  "sourceFiles": [
+    {
+      "path": "src/answers/db.ts",
+      "sha256": "25c4bf6ba34200dc52f6009e81e4a33ce92fae60c251b14e12722521823e548f"
+    },
+    {
+      "path": "src/proposals/db.ts",
+      "sha256": "feae08a13feaa353079e17a3af955109b7ce759fb5063c306b6a72e1440750b8"
+    },
+    {
+      "path": "src/outbox/db.ts",
+      "sha256": "b6ffd047947efc0707e829b479ab3e72eed1c589b608272bf80f6fa8c13065a8"
+    },
+    {
+      "path": "src/ledger/db.ts",
+      "sha256": "4c7a7b8a63a0000124b2c240b754abd1f80afdcb482d53bb3015bb7e130ca662"
+    },
+    {
+      "path": "src/request-receipts/db.ts",
+      "sha256": "21a076dbc8daaf47cfee12f5fe7a928b9048737efbe3d5adf1d190fd970f4cc6"
+    },
+    {
+      "path": "src/device-authority/device-authority.ts",
+      "sha256": "a9e5b47c87690bc21ee7925d902506622c817b75c00fa82201455dcf0ac14c89"
+    }
+  ],
+  "stores": [
+    {
+      "name": "answers",
+      "sql": "answers.sql",
+      "sqlSha256": "d14e583c6c9779e30b17708cdad8ea73d2ae995fd987411ee35a1cbb67a6b10e",
+      "metaTable": "answers_meta",
+      "schemaHash": "0f7cdd246ffd6808d0b11ee32a5e9db4bd43b0993e649da9e470bf668249f846",
+      "schemaInventorySha256": "2f26f30360f58570e602df3e44b438212f7703078fbe93120211ab916f91eb50",
+      "canarySha256": "93d716f028301a8758279c25ce1707bb0771b627c9e84422258c4c226c6f718b"
+    },
+    {
+      "name": "proposals",
+      "sql": "proposals.sql",
+      "sqlSha256": "99e62624ebdd9a276a3196aadef064d5c2f941f9a37001ba33efbd5df2b41e12",
+      "metaTable": "proposals_meta",
+      "schemaHash": "fb6a917d7b417aaa5a8d0cee444408feb42c73b407b24844cc94f3d570fdb795",
+      "schemaInventorySha256": "7c4f56a269f53f2e57a4e0a85e00efd9466ed83b9b7afe51e290908c006c413b",
+      "canarySha256": "5c15c5448b91b5670569d4c9ac73b31d495a3f850231701861d4506009fc5837"
+    },
+    {
+      "name": "outbox",
+      "sql": "outbox.sql",
+      "sqlSha256": "a89355f7830715892ba24d3ff7880ad97506cb45a7551be2805c26d04d7c55fc",
+      "metaTable": "outbox_meta",
+      "schemaHash": "124240475db9210aefeff676c93fe17ac38476bcc4824ca4f42b65f473e682ca",
+      "schemaInventorySha256": "996b0e4ef69408baf0bad11057e356d607fc27916f3bbb6bb4bae0bacda928bb",
+      "canarySha256": "e5b4c2c049f21b057fb11359fe54f62f09b02c467eea579c304d49394d725116"
+    },
+    {
+      "name": "runs",
+      "sql": "runs.sql",
+      "sqlSha256": "40bbec0f6a6130f14e25ea5cd2685d4d30e486b4a2df57f70d339522cd07045c",
+      "metaTable": "ledger_meta",
+      "schemaHash": "ae374b71e876fec8aa01ad0bb5b83d9931c6e8d0f1d90615571182dec6cde243",
+      "schemaInventorySha256": "55f6b7aa0bf1f3430f43baedd78ef914dc718f78b72764d2b9d70e900e321d0d",
+      "canarySha256": "51bc62cde44790b6fbc924269143d2e36041162216d02a1de5ea1d7c335e6242"
+    },
+    {
+      "name": "request-receipts",
+      "sql": "request-receipts.sql",
+      "sqlSha256": "13759b3bbf88337987e51977c85195640b9b720a2cd833bf56085d08a3b3ad63",
+      "metaTable": "request_receipts_meta",
+      "schemaHash": "286a2bebc2214df1c383b952dcc2b3f12699a5874c169952c16a074c56c55a9d",
+      "schemaInventorySha256": "f5ece8ac2e52ec17526b3466cc011aac12341f81c23555885cfb70b658a9e4cb",
+      "canarySha256": "a45a47a0a03c8eb97ee052f21cbaa070466efef6803d4e3f5313230b20f29016"
+    },
+    {
+      "name": "device-authority",
+      "sql": "device-authority.sql",
+      "sqlSha256": "b04127392d8a82891e0ee4db107e004f4f094077830d881a40e6d3ba641354e6",
+      "metaTable": "device_authority_meta",
+      "schemaHash": "1df75738feaf4dfdb74e36c2158018fdbeedff17305f17f6b5fe97f4c0855523",
+      "schemaInventorySha256": "918394da58bf78cee5c1f90c9db4aa4b38641c7d941c367d1fae03f576c944d5",
+      "canarySha256": "a833bb1b2a2a6804978faa97029e2df1ce1728badc549a44bad7bff681aa8182"
+    }
+  ],
+  "closedSchemaInventorySha256": "5f89e13422b8ca8f3691b9a37f6750028a91e6f3cf62acd7a65aee9e095a5ce9",
+  "canaryDigest": "b68c4c3979049fa7b72c4566b6bb19c5011f6cce7f7649102e64b668470b9e67",
+  "authorityCanary": {
+    "activeDeviceId": "dev_7-zTlnWl-PbX7_6ZQ3X_UA",
+    "activeCredential": "dome_cred.CTl4LDmCa7J6AvU4nnVtZQ.LJXJLpi2Hwpu0rMflghz6c10uRWJGKPSEu7W5J4y9N8",
+    "activeCsrf": "dome_csrf.mUc9houYvJlhJBTZqI5tweTbcJFEucu_QUQTmKSqTZw",
+    "revokedDeviceId": "dev_D9ZYNVtc0AakU8zCMFidtQ",
+    "revokedCredential": "dome_cred.taHByNoEBm7GPXbfozieMA.6ksHaeV-5IWMV_hbQpOlVPJB-_W_zlTsjR6R4odDuaQ",
+    "revokedCsrf": "dome_csrf.erXAOHA8xUocCzdBjeebDn-uptO9_I6CL5dG1ygsf6U"
+  }
+}
