@@ -32,6 +32,9 @@ import {
   type HomeInstallationDeps,
   type HomeInstallationRecord,
 } from "./home-installation";
+import { isHomePairingReadiness } from "./home-readiness";
+
+export { isHomePairingReadiness } from "./home-readiness";
 
 export const HOME_LIFECYCLE_SCHEMA = "dome.home.lifecycle/v1" as const;
 const HOME_HOST = "127.0.0.1";
@@ -349,13 +352,6 @@ async function waitForHomeReadiness(deps: HomeLifecycleDeps): Promise<boolean> {
 async function probeHomeReadiness(deps: HomeLifecycleDeps): Promise<boolean> {
   if (deps.readiness !== undefined) return deps.readiness();
   try { return await isHomePairingReadiness(await fetch(`http://${HOME_HOST}:${HOME_PORT}/pair/status`)); } catch { return false; }
-}
-export async function isHomePairingReadiness(response: Response): Promise<boolean> {
-  if (response.status !== 200) return false;
-  try {
-    const payload = await response.json() as { readonly schema?: unknown; readonly available?: unknown; readonly paired?: unknown };
-    return payload.schema === "dome.device.pairing/v1" && payload.available === true && typeof payload.paired === "boolean";
-  } catch { return false; }
 }
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 async function pathPresent(path: string): Promise<boolean> {
