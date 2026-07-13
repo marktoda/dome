@@ -313,8 +313,14 @@ preserving bare `dome home` as the foreground Product Host:
 dome home install | start | restart | status | uninstall
 ```
 
-The service is the per-vault LaunchAgent `com.dome.home.<vault-slug>`. It runs
-the artifact's pinned `runtime/bun` and `app/bin/dome` directly with `home`,
+The service is the per-vault LaunchAgent `com.dome.home.<vault-slug>`. Install
+strictly verifies the invoking artifact and publishes a fully copied,
+re-verified, fsynced tree at the immutable content-addressed path
+`~/Library/Application Support/Dome/Home/releases/<artifact-id>`. A closed
+per-vault `installations/<vault-slug>/installation.json` is the sole selector;
+no `current` symlink or ambient invoking path participates after installation.
+The LaunchAgent runs the selected release's pinned `runtime/bun` and
+`app/bin/dome` directly with `home`,
 loopback `127.0.0.1:3663`, and the bundled PWA path. `RunAtLoad` and
 `KeepAlive` supervise it; stdout and stderr append to
 `<vault>/.dome/state/home.log`. Install/start/restart succeed only after the
@@ -322,12 +328,28 @@ public `/pair/status` document returns exactly `dome.device.pairing/v1` with
 `available: true` and a boolean `paired`; the compatibility pairing document
 is not Product Host readiness.
 
-Lifecycle ownership is intentionally narrow. Uninstall boots out and removes
-only the Home plist. It preserves the artifact, vault, Git history, all
-`.dome/state` databases and files, logs, and backups. Restart uses the existing
-plist byte-for-byte. A legacy `dome serve` plist, loaded service, or live serve
+Lifecycle ownership is intentionally narrow. Start, restart, and status derive
+their paths only from the record and re-verify its release. Status reports the
+artifact ID/version and explicit missing-release, corrupt-release,
+plist-mismatch, invalid-record, and orphaned-service truth. Same-artifact
+install is idempotent; an existing content-addressed release must verify and
+is never replaced. A different artifact is reserved for `dome home upgrade`.
+An older direct-artifact Home plist or loaded service with no installation
+record is never adopted implicitly: the operator must run `dome home
+uninstall` and then `dome home install` for the one-time cutover.
+Uninstall boots out and removes only the Home plist, then fsyncs its parent. It
+preserves the installation record, all managed releases, vault, Git history,
+all `.dome/state` databases and files, logs, and backups. Restart uses the
+existing plist byte-for-byte. A legacy `dome serve` plist, loaded service, or live serve
 heartbeat blocks Home installation with an explicit migration instruction so
 two long-lived hosts never compete for one vault.
+
+An install with no environment flags preserves the selected record's existing
+environment. Rendering publishes the plist through an exclusive private
+temporary file and does not activate launchd until the file and its parent
+directory are fsynced. After uninstall, record-plus-release with no plist and
+no loaded service is truthfully `not-installed`; if launchd remains loaded
+without the plist, status is nonzero `orphaned-service` instead.
 
 ### P4 encrypted backup checkpoint
 

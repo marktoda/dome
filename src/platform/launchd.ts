@@ -2,7 +2,8 @@
 // lifecycle commands and the Dome Home product lifecycle.
 
 import { randomUUID } from "node:crypto";
-import { rename, rm, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import { open, rename, rm, type FileHandle } from "node:fs/promises";
 
 export type LaunchctlResult = {
   readonly exitCode: number;
@@ -58,18 +59,46 @@ ${envXml}
 `;
 }
 
-/** Publish a complete plist atomically so launchd never observes partial XML. */
+export type PlistPublicationDeps = {
+  readonly openTemporary?: ((path: string) => Promise<Pick<FileHandle, "writeFile" | "sync" | "close">>) | undefined;
+  readonly renamePath?: ((source: string, target: string) => Promise<void>) | undefined;
+  readonly syncParent?: ((path: string) => Promise<void>) | undefined;
+  readonly removeTemporary?: ((path: string) => Promise<void>) | undefined;
+};
+
+/** Publish complete, durable private plist bytes before launchd can see them. */
 export async function publishLaunchAgentPlist(
   plistPath: string,
   contents: string,
+  deps: PlistPublicationDeps = {},
 ): Promise<void> {
   const temporary = `${plistPath}.tmp-${process.pid}-${randomUUID()}`;
+  let handle: Pick<FileHandle, "writeFile" | "sync" | "close"> | null = null;
   try {
-    await writeFile(temporary, contents, "utf8");
-    await rename(temporary, plistPath);
+    handle = await (deps.openTemporary ?? openPrivateTemporary)(temporary);
+    await handle.writeFile(contents, "utf8");
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    await (deps.renamePath ?? rename)(temporary, plistPath);
+    await (deps.syncParent ?? syncDirectory)(dirname(plistPath));
   } finally {
-    await rm(temporary, { force: true });
+    if (handle !== null) await handle.close().catch(() => {});
+    await (deps.removeTemporary ?? removeTemporary)(temporary);
   }
+}
+
+async function openPrivateTemporary(path: string): Promise<FileHandle> {
+  return open(path, "wx", 0o600);
+}
+
+async function syncDirectory(path: string): Promise<void> {
+  const directory = await open(path, "r");
+  try { await directory.sync(); } finally { await directory.close(); }
+}
+
+async function removeTemporary(path: string): Promise<void> {
+  await rm(path, { force: true });
 }
 
 export async function activateLaunchAgent(input: {

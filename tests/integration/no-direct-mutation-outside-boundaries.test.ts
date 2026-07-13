@@ -32,6 +32,9 @@ const ALLOWED_FILES = new Set([
   // restores. This is a host filesystem boundary, not a vault content writer.
   "src/platform/exclusive-rename.ts",
   "src/product-host/home-lifecycle.ts",
+  // Host-level immutable Home releases and the closed per-vault selector.
+  // This boundary never writes vault knowledge or operational state.
+  "src/product-host/home-installation.ts",
   "src/cli/commands/install-systemd.ts",
   // Stable opaque Product Host identity in gitignored operational state. The
   // exclusive create is not a Markdown/Git write path.

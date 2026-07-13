@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync } from "node:fs";
-import { chmod, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { existsSync, mkdtempSync, realpathSync } from "node:fs";
+import { chmod, lstat, mkdir, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import {
   homeServiceLabelForVault,
@@ -12,6 +12,7 @@ import {
 } from "../../src/product-host/home-lifecycle";
 import { serviceLabelForVault, type LaunchctlRunner } from "../../src/surface/service-probe";
 import { initRepo } from "../../src/git";
+import type { HomeArtifactManifest } from "../../src/product-host/home-artifact";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -56,11 +57,12 @@ async function fixture(): Promise<{
   readonly vault: string;
   readonly artifact: string;
   readonly agents: string;
+  readonly support: string;
   readonly runtime: string;
   readonly program: string;
   readonly pwa: string;
 }> {
-  const root = mkdtempSync(join(tmpdir(), "dome-home-lifecycle-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "dome-home-lifecycle-")));
   roots.push(root);
   const vault = join(root, "Owner Vault");
   await initRepo(vault);
@@ -78,7 +80,20 @@ async function fixture(): Promise<{
   await chmod(runtime, 0o755);
   await chmod(program, 0o755);
   await writeFile(join(pwa, "index.html"), "Dome Home");
-  return { vault, artifact, agents: join(root, "Launch Agents"), runtime, program, pwa };
+  return { vault, artifact, agents: join(root, "Launch Agents"), support: join(root, "Application Support", "Dome", "Home"), runtime, program, pwa };
+}
+
+const ARTIFACT_ID = "a".repeat(64);
+async function verifyFixtureArtifact(root: string): Promise<HomeArtifactManifest> {
+  for (const path of [join(root, "runtime", "bun"), join(root, "app", "bin", "dome"), join(root, "app", "pwa", "dist", "index.html")]) {
+    try { if (!(await lstat(path)).isFile()) throw new Error(); }
+    catch { throw new Error(`Dome artifact payload is missing at ${path}`); }
+  }
+  if (await readFile(join(root, "runtime", "bun"), "utf8") !== "runtime bytes" ||
+    await readFile(join(root, "app", "bin", "dome"), "utf8") !== "program bytes") {
+    throw new Error("Dome artifact payload checksum mismatch");
+  }
+  return { artifact: { id: ARTIFACT_ID }, product: { name: "Dome Home", version: "1.0.0" } } as HomeArtifactManifest;
 }
 
 function deps(f: Awaited<ReturnType<typeof fixture>>, fake: Fake, extra: Partial<HomeLifecycleDeps> = {}): HomeLifecycleDeps {
@@ -87,9 +102,11 @@ function deps(f: Awaited<ReturnType<typeof fixture>>, fake: Fake, extra: Partial
     uid: 501,
     launchAgentsDir: f.agents,
     launchctl: fake.runner,
-    runtimePath: f.runtime,
-    programPath: f.program,
-    pwaDir: f.pwa,
+    artifactRoot: f.artifact,
+    applicationSupportDir: f.support,
+    verifyArtifact: verifyFixtureArtifact,
+    publishRelease: rename,
+    syncRelease: async () => {},
     readiness: async () => fake.loaded.has(`gui/501/${homeServiceLabelForVault(f.vault)}`),
     readinessTimeoutMs: 20,
     drainTimeoutMs: 20,
@@ -127,13 +144,13 @@ describe("manageHome macOS lifecycle", () => {
     expect(result.label).toBe(homeServiceLabelForVault(f.vault));
     const plist = await readFile(result.plist, "utf8");
     for (const value of [
-      f.runtime, f.program, "home", "--vault", f.vault, "--host", "127.0.0.1",
-      "--port", "3663", "--static-dir", f.pwa,
+      join(result.release!, "runtime", "bun"), result.program, "home", "--vault", f.vault, "--host", "127.0.0.1",
+      "--port", "3663", "--static-dir", join(result.release!, "app", "pwa", "dist"),
     ]) expect(plist).toContain(`<string>${value}</string>`);
     expect(plist).toContain("a&amp;&lt;b&gt;");
     expect(plist).toContain("two words");
     expect(plist).not.toContain("<string>/evil</string>");
-    expect(plist).toContain(`<string>${join(f.artifact, "runtime")}:/usr/local/bin:`);
+    expect(plist).toContain(`<string>${join(result.release!, "runtime")}:/usr/local/bin:`);
     expect(plist).toContain(join(f.vault, ".dome", "state", "home.log"));
     expect(fake.calls.some((call) => call[0] === "bootstrap")).toBe(true);
     expect(fake.calls.some((call) => call[0] === "kickstart")).toBe(true);
@@ -152,6 +169,132 @@ describe("manageHome macOS lifecycle", () => {
     expect(await readFile(second.plist, "utf8")).toBe(before);
   });
 
+  test("publishes a closed record selecting one immutable content-addressed release", async () => {
+    const f = await fixture();
+    const fake = fakeLaunchctl();
+    const installed = await manageHome({ action: "install", vaultPath: f.vault }, deps(f, fake));
+    expect(installed.release).toBe(join(f.support, "releases", ARTIFACT_ID));
+    expect(installed.program).toBe(join(installed.release!, "app", "bin", "dome"));
+    expect(installed.releasePublished).toBe(true);
+    const record = JSON.parse(await readFile(installed.installation, "utf8")) as Record<string, unknown>;
+    expect(Object.keys(record).sort()).toEqual(["artifact", "environment", "schema", "vault"]);
+    expect(record).toEqual({
+      schema: "dome.home.installation/v1",
+      vault: f.vault,
+      artifact: { id: ARTIFACT_ID, version: "1.0.0" },
+      environment: [],
+    });
+    const second = await manageHome({ action: "install", vaultPath: f.vault }, deps(f, fake));
+    expect(second.releasePublished).toBe(false);
+  });
+
+  test("canonical vault aliases share one selector and service identity", async () => {
+    const f = await fixture();
+    const fake = fakeLaunchctl();
+    const alias = join(dirname(f.vault), "Vault Alias");
+    await symlink(f.vault, alias);
+    const installed = await manageHome({ action: "install", vaultPath: alias }, deps(f, fake));
+    expect(installed.vault).toBe(f.vault);
+    const status = await manageHome({ action: "status", vaultPath: f.vault }, deps(f, fake));
+    expect(status.installation).toBe(installed.installation);
+    expect(status.label).toBe(installed.label);
+    expect(status.status).toBe("ready");
+  });
+
+  test("refuses a symlinked managed Home root before release publication", async () => {
+    const f = await fixture();
+    const attacker = join(dirname(f.support), "attacker-owned");
+    await mkdir(dirname(f.support), { recursive: true });
+    await mkdir(attacker);
+    await symlink(attacker, f.support);
+    const result = await manageHome({ action: "install", vaultPath: f.vault }, deps(f, fakeLaunchctl()));
+    expect(result.status).toBe("error");
+    expect(result.error).toContain("not a direct owned directory");
+    expect(existsSync(join(attacker, "releases"))).toBe(false);
+  });
+
+  test("refuses artifact changes outside upgrade and never replaces a corrupt immutable release", async () => {
+    const f = await fixture();
+    const fake = fakeLaunchctl();
+    const d = deps(f, fake);
+    const installed = await manageHome({ action: "install", vaultPath: f.vault }, d);
+    const different = await manageHome({ action: "install", vaultPath: f.vault }, {
+      ...d,
+      verifyArtifact: async () => ({ artifact: { id: "b".repeat(64) }, product: { name: "Dome Home", version: "2.0.0" } } as HomeArtifactManifest),
+    });
+    expect(different.status).toBe("error");
+    expect(different.exitCode).toBe(64);
+    expect(different.error).toContain("dome home upgrade");
+    await writeFile(installed.program, "corrupt immutable bytes");
+    const corrupt = await manageHome({ action: "install", vaultPath: f.vault }, d);
+    expect(corrupt.status).toBe("error");
+    expect(corrupt.error).toContain("immutable managed release is corrupt");
+    expect(await readFile(installed.program, "utf8")).toBe("corrupt immutable bytes");
+  });
+
+  test("refuses one-time adoption of an unmanaged pre-record Home service", async () => {
+    const f = await fixture();
+    const fake = fakeLaunchctl();
+    await mkdir(f.agents, { recursive: true });
+    const plist = join(f.agents, `${homeServiceLabelForVault(f.vault)}.plist`);
+    await writeFile(plist, "legacy direct-artifact Home plist\n");
+    const result = await manageHome({ action: "install", vaultPath: f.vault }, deps(f, fake));
+    expect(result.status).toBe("orphaned-service");
+    expect(result.exitCode).toBe(64);
+    expect(result.error).toContain("dome home uninstall");
+    expect(await readFile(plist, "utf8")).toBe("legacy direct-artifact Home plist\n");
+    expect(fake.calls.some((call) => call[0] === "bootstrap")).toBe(false);
+  });
+
+  test("status distinguishes missing release and plist mismatch from stopped", async () => {
+    const f = await fixture();
+    const fake = fakeLaunchctl();
+    const d = deps(f, fake);
+    const installed = await manageHome({ action: "install", vaultPath: f.vault }, d);
+    await writeFile(installed.plist, "wrong artifact\n");
+    const mismatch = await manageHome({ action: "status", vaultPath: f.vault }, d);
+    expect(mismatch.status).toBe("plist-mismatch");
+    expect(mismatch.artifactId).toBe(ARTIFACT_ID);
+    await rm(installed.release!, { recursive: true, force: true });
+    const missing = await manageHome({ action: "status", vaultPath: f.vault }, d);
+    expect(missing.status).toBe("missing-release");
+    expect(missing.release).toBe(installed.release);
+  });
+
+  test("status rejects an installation record with unknown selector fields", async () => {
+    const f = await fixture();
+    const fake = fakeLaunchctl();
+    const d = deps(f, fake);
+    const installed = await manageHome({ action: "install", vaultPath: f.vault }, d);
+    const record = JSON.parse(await readFile(installed.installation, "utf8")) as Record<string, unknown>;
+    record["current"] = "mutable";
+    await writeFile(installed.installation, `${JSON.stringify(record)}\n`);
+    const status = await manageHome({ action: "status", vaultPath: f.vault }, d);
+    expect(status.status).toBe("invalid-installation");
+    expect(status.error).toContain("unknown or missing fields");
+    expect(status.installed).toBe(true);
+  });
+
+  test("same-artifact repair preserves stored environment and uninstall preserves selector and release", async () => {
+    const f = await fixture();
+    const fake = fakeLaunchctl();
+    const d = deps(f, fake);
+    const installed = await manageHome({ action: "install", vaultPath: f.vault, environment: new Map([["DOME_SECRET", "kept"]]) }, d);
+    const repaired = await manageHome({ action: "install", vaultPath: f.vault }, d);
+    expect(await readFile(repaired.plist, "utf8")).toContain("DOME_SECRET");
+    expect(await readFile(repaired.plist, "utf8")).toContain("kept");
+    const recordBefore = await readFile(repaired.installation, "utf8");
+    const programBefore = await readFile(repaired.program, "utf8");
+    expect((await manageHome({ action: "uninstall", vaultPath: f.vault }, d)).status).toBe("uninstalled");
+    expect(await readFile(repaired.installation, "utf8")).toBe(recordBefore);
+    expect(await readFile(repaired.program, "utf8")).toBe(programBefore);
+    const status = await manageHome({ action: "status", vaultPath: f.vault }, d);
+    expect(status.status).toBe("not-installed");
+    expect(status.installed).toBe(false);
+    expect(status.artifactId).toBe(ARTIFACT_ID);
+    expect(installed.release).toBe(repaired.release);
+  });
+
   test("status reports deleted-plist loaded edge and uninstall preserves every owned byte", async () => {
     const f = await fixture();
     const fake = fakeLaunchctl();
@@ -165,7 +308,10 @@ describe("manageHome macOS lifecycle", () => {
     await writeFile(log, "log\n");
     await unlink(installed.plist);
     const status = await manageHome({ action: "status", vaultPath: f.vault }, d);
-    expect(status.status).toBe("loaded-without-plist");
+    expect(status.status).toBe("orphaned-service");
+    expect(status.loaded).toBe(true);
+    expect(status.exitCode).toBe(1);
+    expect(status.artifactId).toBe(ARTIFACT_ID);
     expect((await manageHome({ action: "uninstall", vaultPath: f.vault }, d)).status).toBe("uninstalled");
     expect(await readFile(markdown, "utf8")).toBe("knowledge\n");
     expect(await readFile(state, "utf8")).toBe("state\n");
@@ -188,10 +334,10 @@ describe("manageHome macOS lifecycle", () => {
 
   test("preflight and activation/readiness failures are truthful", async () => {
     const f = await fixture();
-    const missing = join(f.artifact, "missing-program");
-    let result = await manageHome({ action: "install", vaultPath: f.vault }, deps(f, fakeLaunchctl(), { programPath: missing }));
+    const missing = join(f.artifact, "missing-artifact");
+    let result = await manageHome({ action: "install", vaultPath: f.vault }, deps(f, fakeLaunchctl(), { artifactRoot: missing }));
     expect(result.status).toBe("error");
-    expect(result.error).toContain("Dome program is missing");
+    expect(result.error).toContain("artifact failed verification");
 
     const bootstrap = fakeLaunchctl("bootstrap");
     result = await manageHome({ action: "install", vaultPath: f.vault }, deps(f, bootstrap));
@@ -222,7 +368,7 @@ describe("manageHome macOS lifecycle", () => {
     const missing = join(f.artifact, "gone");
     const failed = await manageHome(
       { action: "install", vaultPath: f.vault },
-      deps(f, missingFake, { programPath: missing }),
+      deps(f, missingFake, { artifactRoot: missing }),
     );
     expect(failed.status).toBe("error");
     expect(missingFake.calls).toEqual([]);
@@ -230,14 +376,14 @@ describe("manageHome macOS lifecycle", () => {
     const absentFake = fakeLaunchctl();
     const absent = await manageHome(
       { action: "start", vaultPath: f.vault },
-      deps(f, absentFake, { programPath: missing }),
+      deps(f, absentFake, { artifactRoot: missing }),
     );
     expect(absent.status).toBe("error");
     expect(absent.exitCode).toBe(64);
     expect(absent.error).toContain("dome home install");
   });
 
-  test("status distinguishes loaded-unreachable and reports broken installed program", async () => {
+  test("status distinguishes loaded-unreachable and reports a corrupt selected release", async () => {
     const f = await fixture();
     const fake = fakeLaunchctl();
     const d = deps(f, fake);
@@ -262,12 +408,12 @@ describe("manageHome macOS lifecycle", () => {
     expect(compatibility.status).toBe("loaded-unreachable");
     expect(compatibility.ready).toBe(false);
 
-    await unlink(f.program);
+    await unlink(installed.program);
     const broken = await manageHome({ action: "status", vaultPath: f.vault }, d);
-    expect(broken.status).toBe("broken-program");
+    expect(broken.status).toBe("corrupt-release");
     expect(broken.installed).toBe(true);
     expect(broken.loaded).toBe(true);
-    expect(broken.program).toBe(f.program);
+    expect(broken.program).toBe(installed.program);
     expect(existsSync(installed.plist)).toBe(true);
   });
 
@@ -334,6 +480,7 @@ describe("manageHome macOS lifecycle", () => {
     expect(publish.error).toContain("publish exploded");
     expect(publish.loaded).toBe(false);
     expect(existsSync(publish.plist)).toBe(false);
+    expect(publishFake.calls.some((call) => call[0] === "bootstrap")).toBe(false);
 
     const readinessFake = fakeLaunchctl();
     let readinessProbes = 0;
