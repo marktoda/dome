@@ -18,7 +18,7 @@ const INVENTORY: ReadonlyArray<{
 
 const PROTECTED_CHOKEPOINTS: Readonly<Record<string, number>> = {
   "src/engine/host/vault-runtime.ts": 1,
-  "src/product-host/product-host.ts": 1,
+  "src/product-host/home-lifecycle-suspension.ts": 3,
   "src/product-host/home-lifecycle.ts": 1,
   "src/surface/proposals.ts": 3,
   "src/surface/activity.ts": 1,

@@ -7,6 +7,10 @@ import { basename, join } from "node:path";
 import { resolveHomeLifecycleEnvironment, runHomeLifecycle } from "../../src/cli/commands/home-lifecycle";
 import type { HomeLifecycleDeps } from "../../src/product-host/home-lifecycle";
 import { homeServiceLabelForVault } from "../../src/product-host/home-lifecycle";
+import {
+  homeLifecycleCoordinatorPath,
+  withHomeLifecycleMutation,
+} from "../../src/product-host/home-lifecycle-suspension";
 import type { HomeArtifactManifest } from "../../src/product-host/home-artifact";
 import { initRepo } from "../../src/git";
 
@@ -45,18 +49,43 @@ function deps(): HomeLifecycleDeps {
 
 test("lifecycle CLI JSON preserves schema and absent start maps to usage", async () => {
   const d = deps();
-  expect(await runHomeLifecycle("status", { vault: "/tmp/source-vault", json: true }, d)).toBe(0);
+  const vault = await initializedVault();
+  expect(await runHomeLifecycle("status", { vault, json: true }, d)).toBe(0);
   const status = JSON.parse(logs.at(-1) ?? "{}") as Record<string, unknown>;
   expect(status["schema"]).toBe("dome.home.lifecycle/v1");
   expect(status["status"]).toBe("not-installed");
   expect(status["program"]).toBeString();
+  expect(status["lifecycle"]).toEqual({ state: "inactive" });
 
   logs = [];
-  expect(await runHomeLifecycle("start", { vault: "/tmp/source-vault", json: true }, d)).toBe(64);
+  expect(await runHomeLifecycle("status", { vault }, d)).toBe(0);
+  expect(logs.join("\n")).toContain("lifecycle: inactive");
+
+  logs = [];
+  expect(await runHomeLifecycle("start", { vault, json: true }, d)).toBe(64);
   const start = JSON.parse(logs.at(-1) ?? "{}") as Record<string, unknown>;
   expect(start["status"]).toBe("error");
   expect(start["exitCode"]).toBe(64);
 });
+
+test("lifecycle CLI error output prints structured recovery detail", async () => {
+  const d = deps();
+  const vault = await initializedVault();
+  expect((await withHomeLifecycleMutation(vault, async () => {})).kind).toBe("owned");
+  await writeFile(homeLifecycleCoordinatorPath(vault), "corrupt lifecycle\n");
+  expect(await runHomeLifecycle("status", { vault }, d)).toBe(1);
+  expect(errors.join("\n")).toContain("lifecycle: invalid");
+});
+
+async function initializedVault(): Promise<string> {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "dome-home-command-vault-")));
+  roots.push(root);
+  const vault = join(root, "vault");
+  await initRepo(vault);
+  await mkdir(join(vault, ".dome"), { recursive: true });
+  await writeFile(join(vault, ".dome", "config.yaml"), "extensions: {}\n");
+  return vault;
+}
 
 test("lifecycle CLI rejects malformed install env before launchd", async () => {
   let calls = 0;

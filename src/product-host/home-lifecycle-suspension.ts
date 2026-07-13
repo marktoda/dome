@@ -23,11 +23,25 @@ import {
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
-import { acquireOperationalWriterLease } from "../operational-state/writer-barrier";
-import { activateLaunchAgent } from "../platform/launchd";
+import {
+  acquireOperationalWriterLease,
+  type OperationalWriterAdmissionError,
+  type OperationalWriterLease,
+} from "../operational-state/writer-barrier";
+import {
+  activateLaunchAgent,
+  probeLaunchAgentLoadedStrict,
+  waitForLaunchAgentDrainStrict,
+} from "../platform/launchd";
 import { resolveServiceDeps, serviceLabelForVault, vaultServiceSlug, type ServiceDeps } from "../surface/service-probe";
 import { readServeHeartbeatStatus } from "../engine/host/compiler-host-heartbeat";
-import { homeInstallationPaths, readHomeInstallation, type HomeInstallationDeps } from "./home-installation";
+import {
+  homeInstallationPaths,
+  readHomeInstallation,
+  releaseRoot,
+  type HomeInstallationDeps,
+} from "./home-installation";
+import { verifyHomeArtifact } from "./home-artifact";
 import { isHomePairingReadiness } from "./home-readiness";
 
 export const HOME_LIFECYCLE_SUSPENSION_SCHEMA =
@@ -119,6 +133,29 @@ export type HomeLifecycleMutationResult<T> =
 export type HomeLifecycleMutationDeps = {
   /** Test/diagnostic seam for the incomplete-establishment validation race. */
   readonly beforeEstablishmentJournalRead?: (() => Promise<void>) | undefined;
+};
+
+export type HomeStartupAdmission =
+  | { readonly ok: true; readonly lease: OperationalWriterLease }
+  | {
+      readonly ok: false;
+      readonly error: {
+        readonly kind: "lifecycle-closed" | "resume-evidence-invalid" | "operational-admission-closed" | "coordination-failed";
+        readonly message: string;
+        readonly operationId?: string | undefined;
+      };
+    };
+
+export type HomeStartupAdmissionDeps = Pick<
+  HomeInstallationDeps,
+  "applicationSupportDir" | "verifyArtifact"
+> & Pick<ServiceDeps, "launchAgentsDir"> & {
+  /** Internal provenance inputs; production uses the actual Bun/script paths. */
+  readonly invokingRuntimePath?: string | undefined;
+  readonly invokingEntrypointPath?: string | undefined;
+  /** Test-only race seams inside this Module. */
+  readonly beforeInactiveOperationalLease?: (() => Promise<void>) | undefined;
+  readonly afterResumingOperationalLease?: (() => Promise<void>) | undefined;
 };
 
 type SuspensionResultBase<T> = {
@@ -227,10 +264,29 @@ export function homeLifecycleCoordinatorPath(vaultPath: string): string {
 export async function inspectHomeLifecycleSuspension(
   vaultPath: string,
 ): Promise<HomeLifecycleSuspensionInspection> {
+  try {
+    return await inspectHomeLifecycleSuspensionUnsafe(vaultPath);
+  } catch (error) {
+    if (isBusy(error)) {
+      return Object.freeze({ kind: "unavailable", error: "Home lifecycle coordinator is busy" });
+    }
+    return Object.freeze({ kind: "invalid", error: message(error) });
+  }
+}
+
+async function inspectHomeLifecycleSuspensionUnsafe(
+  vaultPath: string,
+): Promise<HomeLifecycleSuspensionInspection> {
   let vault: string;
   try { vault = await realpath(resolve(vaultPath)); }
   catch (error) { return Object.freeze({ kind: "invalid", error: message(error) }); }
   const paths = coordinatorPaths(vault);
+  if (!pathPresent(paths.dome)) return Object.freeze({ kind: "inactive" });
+  validateDirectDirectory(paths.dome);
+  if (!pathPresent(paths.state)) return Object.freeze({ kind: "inactive" });
+  validateDirectDirectory(paths.state);
+  if (!pathPresent(paths.locks)) return Object.freeze({ kind: "inactive" });
+  validateDirectPrivateDirectory(paths.locks);
   const rootPresent = pathPresent(paths.root);
   const establishmentPresent = pathPresent(paths.establishmentRoot);
   if (!rootPresent && !establishmentPresent) return Object.freeze({ kind: "inactive" });
@@ -336,6 +392,165 @@ export async function withHomeLifecycleMutation<T>(
 }
 
 /**
+ * Atomically admit a normal Product Host startup. The returned operational
+ * lease belongs to the caller for the host's complete lifetime.
+ */
+export async function acquireHomeStartupAdmission(input: {
+  readonly vaultPath: string;
+  readonly launchArtifact: { readonly id: string; readonly version: string };
+}, deps: HomeStartupAdmissionDeps = {}): Promise<HomeStartupAdmission> {
+  let vault: string;
+  try { vault = await realpath(resolve(input.vaultPath)); }
+  catch (error) { return startupDenied("coordination-failed", message(error)); }
+
+  let pair: CoordinatorPair;
+  try { pair = await openCoordinatorPair(vault); }
+  catch (error) { return startupDenied("coordination-failed", message(error)); }
+  let result: HomeStartupAdmission;
+  try {
+    result = await decideHomeStartupAdmission(vault, input.launchArtifact, pair, deps);
+  } catch (error) {
+    result = startupDenied("coordination-failed", message(error));
+  }
+  try { closePair(pair); }
+  catch (error) {
+    if (result.ok) result.lease.close();
+    return startupDenied("coordination-failed", `Home lifecycle coordinator close failed: ${message(error)}`);
+  }
+  return result;
+}
+
+async function decideHomeStartupAdmission(
+  vault: string,
+  launchArtifact: { readonly id: string; readonly version: string },
+  pair: CoordinatorPair,
+  deps: HomeStartupAdmissionDeps,
+): Promise<HomeStartupAdmission> {
+  // A supervisor holds Tx2 while a resuming child proves readiness. Reading
+  // the durable row first avoids waiting on the very parent awaiting us.
+  const published = readActive(pair.journal, vault);
+  if (published !== null) {
+    if (published.phase === "resuming") {
+      return admitResumingStartup(vault, published, launchArtifact, pair, deps);
+    }
+    return startupDenied(
+      "lifecycle-closed",
+      `Home lifecycle is ${published.phase} for a ${published.purpose} operation`,
+      published.operationId,
+    );
+  }
+
+  let lease: OperationalWriterLease | null = null;
+  try {
+    await beginImmediate(pair.ownership);
+    validateOwnershipRow(pair.ownership);
+    const active = readActive(pair.journal, vault);
+    if (active !== null) {
+      pair.ownership.run("ROLLBACK");
+      return startupDenied(
+        "lifecycle-closed",
+        `Home lifecycle is ${active.phase} for a ${active.purpose} operation`,
+        active.operationId,
+      );
+    }
+    await deps.beforeInactiveOperationalLease?.();
+    const operational = await acquireOperationalWriterLease({
+      vaultPath: vault,
+      command: "dome-product-host",
+    });
+    if (!operational.ok) {
+      pair.ownership.run("ROLLBACK");
+      return startupDenied(
+        "operational-admission-closed",
+        operationalAdmissionMessage(operational.error),
+      );
+    }
+    lease = operational.lease;
+    pair.ownership.run("COMMIT");
+    return Object.freeze({ ok: true as const, lease });
+  } catch (error) {
+    lease?.close();
+    rollback(pair.ownership);
+    return startupDenied("coordination-failed", message(error));
+  }
+}
+
+async function admitResumingStartup(
+  vault: string,
+  active: HomeLifecycleSuspension,
+  launchArtifact: { readonly id: string; readonly version: string },
+  pair: CoordinatorPair,
+  deps: HomeStartupAdmissionDeps,
+): Promise<HomeStartupAdmission> {
+  if (!active.priorLoaded) {
+    return startupDenied(
+      "resume-evidence-invalid",
+      "a prior-stopped Home suspension cannot admit a resuming child",
+      active.operationId,
+    );
+  }
+  if (!SHA256.test(launchArtifact.id) ||
+    launchArtifact.id !== active.resumeArtifactId ||
+    launchArtifact.version !== active.resumeArtifactVersion) {
+    return startupDenied(
+      "resume-evidence-invalid",
+      "normal launch artifact does not match the authorized Home resume target",
+      active.operationId,
+    );
+  }
+
+  let before: Evidence;
+  try {
+    before = await captureStartupEvidence(vault, deps);
+    if (!sameResumeEvidence(active, before)) {
+      throw new Error("current Home installation or plist does not match the authorized resume target");
+    }
+  } catch (error) {
+    return startupDenied("resume-evidence-invalid", message(error), active.operationId);
+  }
+
+  const operational = await acquireOperationalWriterLease({
+    vaultPath: vault,
+    command: "dome-product-host-resuming",
+  });
+  if (!operational.ok) {
+    return startupDenied(
+      "operational-admission-closed",
+      operationalAdmissionMessage(operational.error),
+      active.operationId,
+    );
+  }
+  try {
+    await deps.afterResumingOperationalLease?.();
+    const current = readActive(pair.journal, vault);
+    if (current === null || !sameActive(current, active)) {
+      throw new Error("Home lifecycle resume evidence changed during startup admission");
+    }
+    const after = await captureStartupEvidence(vault, deps);
+    if (!sameEvidence(before, after) || !sameResumeEvidence(current, after)) {
+      throw new Error("Home installation or plist evidence changed during startup admission");
+    }
+    await verifyStartupProvenance(vault, launchArtifact, deps);
+    const finalActive = readActive(pair.journal, vault);
+    if (finalActive === null || !sameActive(finalActive, active)) {
+      throw new Error("Home lifecycle resume evidence changed while verifying startup provenance");
+    }
+    const finalEvidence = await captureStartupEvidence(vault, deps);
+    if (!sameEvidence(after, finalEvidence) || !sameResumeEvidence(finalActive, finalEvidence)) {
+      throw new Error("Home installation or plist evidence changed while verifying startup provenance");
+    }
+    const settledActive = readActive(pair.journal, vault);
+    if (settledActive === null || !sameActive(settledActive, active)) {
+      throw new Error("Home lifecycle resume evidence changed before startup lease publication");
+    }
+    return Object.freeze({ ok: true as const, lease: operational.lease });
+  } catch (error) {
+    operational.lease.close();
+    return startupDenied("resume-evidence-invalid", message(error), active.operationId);
+  }
+}
+
+/**
  * Bracket a quiesced operation. Durable phase transitions use the journal
  * connection while Tx2 holds the ownership database's kernel writer lock.
  */
@@ -369,7 +584,7 @@ export async function withSupervisedHomeSuspended<T>(
     const existing = readActive(pair.journal, vault);
     if (existing === null) {
       const evidence = await captureEvidence(vault, service.launchAgentsDir, deps);
-      const priorLoaded = await isLoaded(service.launchctl, target);
+      const priorLoaded = await probeLaunchAgentLoadedStrict({ launchctl: service.launchctl, target });
       await assertNoCompetingHost(vault, priorLoaded, service, deps);
       const now = exactTimestamp((deps.now ?? (() => new Date()))());
       active = Object.freeze({
@@ -409,7 +624,7 @@ export async function withSupervisedHomeSuspended<T>(
         }
       }
       if (recoveredActive.phase !== "resuming") {
-        const currentlyLoaded = await isLoaded(service.launchctl, target);
+        const currentlyLoaded = await probeLaunchAgentLoadedStrict({ launchctl: service.launchctl, target });
         await assertNoCompetingHost(vault, currentlyLoaded, service, deps);
       }
       active = recoveredActive;
@@ -470,7 +685,7 @@ async function runOwnedSuspension<T>(input: {
   let operationError: unknown | null = null;
 
   if (active.phase !== "resuming") {
-    if (await isLoaded(input.service.launchctl, input.target)) {
+    if (await probeLaunchAgentLoadedStrict({ launchctl: input.service.launchctl, target: input.target })) {
       const bootout = await input.service.launchctl(["bootout", input.target]);
       if (bootout.exitCode !== 0) {
         const error = `launchctl bootout failed: ${launchctlDetail(bootout)}`;
@@ -478,7 +693,11 @@ async function runOwnedSuspension<T>(input: {
         return { result: failed(active, input.recovered, false, error), operationError };
       }
     }
-    const drained = await waitForStrictLaunchAgentDrain(input.service.launchctl, input.target, input.service.drainTimeoutMs);
+    const drained = await waitForLaunchAgentDrainStrict({
+      launchctl: input.service.launchctl,
+      target: input.target,
+      timeoutMs: input.service.drainTimeoutMs,
+    });
     if (!drained) {
       const error = "Dome Home did not stop before the launchd drain timeout";
       persistError(input.pair.journal, active.operationId, error);
@@ -610,7 +829,7 @@ async function resumeOwned<T>(input: {
     return Object.freeze({ ...base, kind: "failed" as const, error });
   }
 
-  if (!await isLoaded(input.service.launchctl, input.target)) {
+  if (!await probeLaunchAgentLoadedStrict({ launchctl: input.service.launchctl, target: input.target })) {
     const activation = await activateLaunchAgent({
       launchctl: input.service.launchctl,
       uid: input.service.uid!,
@@ -653,6 +872,8 @@ function resultFailure<T>(result: SupervisedHomeSuspensionResult<T>): string {
 
 type CoordinatorPair = { readonly ownership: Database; readonly journal: Database };
 type CoordinatorPaths = {
+  readonly dome: string;
+  readonly state: string;
   readonly locks: string;
   readonly root: string;
   readonly layout: string;
@@ -698,10 +919,14 @@ function closePair(pair: CoordinatorPair): void {
 }
 
 function coordinatorPaths(vault: string): CoordinatorPaths {
-  const locks = join(vault, ".dome", "state", "locks");
+  const dome = join(vault, ".dome");
+  const state = join(dome, "state");
+  const locks = join(state, "locks");
   const root = join(locks, STORAGE_NAME);
   const establishmentRoot = join(locks, ESTABLISHMENT_NAME);
   return Object.freeze({
+    dome,
+    state,
     locks,
     root,
     layout: join(root, LAYOUT_NAME),
@@ -833,6 +1058,13 @@ function validateDirectPrivateDirectory(path: string): void {
   const info = lstatSync(path);
   if (!info.isDirectory() || info.isSymbolicLink() || realpathSync(path) !== resolve(path) || (info.mode & 0o077) !== 0) {
     throw new Error(`Home lifecycle suspension directory is not direct and private: ${path}`);
+  }
+}
+
+function validateDirectDirectory(path: string): void {
+  const info = lstatSync(path);
+  if (!info.isDirectory() || info.isSymbolicLink() || realpathSync(path) !== resolve(path)) {
+    throw new Error(`Home lifecycle suspension path is not a direct directory: ${path}`);
   }
 }
 
@@ -1200,6 +1432,60 @@ async function captureEvidence(vault: string, launchAgentsDir: string, deps: Hom
   });
 }
 
+async function captureStartupEvidence(vault: string, deps: HomeStartupAdmissionDeps): Promise<Evidence> {
+  const launchAgentsDir = resolveServiceDeps(deps).launchAgentsDir;
+  return captureEvidence(vault, launchAgentsDir, deps);
+}
+
+async function verifyStartupProvenance(
+  vault: string,
+  launchArtifact: { readonly id: string; readonly version: string },
+  deps: HomeStartupAdmissionDeps,
+): Promise<void> {
+  const installation = await readHomeInstallation(vault, deps);
+  if (installation === null) throw new Error("Dome Home must be installed for exact resume startup");
+  const evidence = {
+    artifactId: installation.artifact.id,
+    artifactVersion: installation.artifact.version,
+  };
+  if (evidence.artifactId !== launchArtifact.id || evidence.artifactVersion !== launchArtifact.version) {
+    throw new Error("installed Home artifact does not match the normal launch artifact");
+  }
+  const paths = homeInstallationPaths(vault, deps);
+  const release = releaseRoot(paths, evidence.artifactId);
+  const manifest = await (deps.verifyArtifact ?? verifyHomeArtifact)(release);
+  if (manifest.artifact.id !== evidence.artifactId || manifest.product.version !== evidence.artifactVersion) {
+    throw new Error("verified managed release does not match the authorized Home resume artifact");
+  }
+  await assertExactInvokingFile(
+    deps.invokingRuntimePath ?? process.execPath,
+    join(release, "runtime", "bun"),
+    "runtime",
+  );
+  await assertExactInvokingFile(
+    deps.invokingEntrypointPath ?? process.argv[1] ?? "",
+    join(release, "app", "bin", "dome"),
+    "entrypoint",
+  );
+}
+
+async function assertExactInvokingFile(actualInput: string, expectedInput: string, label: string): Promise<void> {
+  if (actualInput.length === 0) throw new Error(`invoking Home ${label} path is unavailable`);
+  const actual = resolve(actualInput);
+  const expected = resolve(expectedInput);
+  const [actualInfo, expectedInfo, actualReal, expectedReal] = await Promise.all([
+    lstat(actual),
+    lstat(expected),
+    realpath(actual),
+    realpath(expected),
+  ]);
+  if (!actualInfo.isFile() || actualInfo.isSymbolicLink() || actualInfo.nlink !== 1 ||
+    !expectedInfo.isFile() || expectedInfo.isSymbolicLink() || expectedInfo.nlink !== 1 ||
+    actual !== actualReal || expected !== expectedReal || actualReal !== expectedReal) {
+    throw new Error(`invoking Home ${label} is not the exact direct managed-release file`);
+  }
+}
+
 async function readStrictEvidence(path: string, label: string): Promise<Uint8Array> {
   const info = await lstat(path);
   if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.size > 1024 * 1024 || realpathSync(path) !== resolve(path)) {
@@ -1215,6 +1501,22 @@ function sameEvidence(left: Evidence, right: Evidence): boolean {
     left.artifactVersion === right.artifactVersion &&
     left.plistPath === right.plistPath &&
     left.plistSha256 === right.plistSha256;
+}
+
+function sameActive(left: HomeLifecycleSuspension, right: HomeLifecycleSuspension): boolean {
+  return left.schema === right.schema && left.phase === right.phase &&
+    left.purpose === right.purpose && left.operationId === right.operationId &&
+    left.vault === right.vault && left.priorLoaded === right.priorLoaded &&
+    left.installationPath === right.installationPath && left.installationSha256 === right.installationSha256 &&
+    left.artifactId === right.artifactId && left.artifactVersion === right.artifactVersion &&
+    left.plistPath === right.plistPath && left.plistSha256 === right.plistSha256 &&
+    left.resumeInstallationPath === right.resumeInstallationPath &&
+    left.resumeInstallationSha256 === right.resumeInstallationSha256 &&
+    left.resumeArtifactId === right.resumeArtifactId &&
+    left.resumeArtifactVersion === right.resumeArtifactVersion &&
+    left.resumePlistPath === right.resumePlistPath && left.resumePlistSha256 === right.resumePlistSha256 &&
+    left.requestedAt === right.requestedAt && left.phaseChangedAt === right.phaseChangedAt &&
+    left.lastError === right.lastError;
 }
 
 function resumeEvidenceFields(evidence: Evidence): Pick<HomeLifecycleSuspension,
@@ -1267,26 +1569,6 @@ function authorizeResumeEvidence(db: Database, row: HomeLifecycleSuspension, evi
   return Object.freeze({ ...row, ...resumeEvidenceFields(evidence) });
 }
 
-async function isLoaded(launchctl: ReturnType<typeof resolveServiceDeps>["launchctl"], target: string): Promise<boolean> {
-  const result = await launchctl(["print", target]);
-  if (result.exitCode === 0) return true;
-  if (result.exitCode === 113) return false;
-  throw new Error(`launchctl print ${target} failed: ${launchctlDetail(result)}`);
-}
-
-async function waitForStrictLaunchAgentDrain(
-  launchctl: ReturnType<typeof resolveServiceDeps>["launchctl"],
-  target: string,
-  timeoutMs: number,
-): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    if (!await isLoaded(launchctl, target)) return true;
-    if (Date.now() >= deadline) return false;
-    await Bun.sleep(200);
-  }
-}
-
 async function assertNoCompetingHost(
   vault: string,
   homeLoaded: boolean,
@@ -1297,7 +1579,10 @@ async function assertNoCompetingHost(
   const legacyPlist = join(service.launchAgentsDir, `${legacyLabel}.plist`);
   const injectedLegacy = deps.legacyServeRunning === undefined ? null : await deps.legacyServeRunning();
   const heartbeat = injectedLegacy === null ? await readServeHeartbeatStatus({ vaultPath: vault }) : null;
-  const legacyLoaded = await isLoaded(service.launchctl, `gui/${service.uid!}/${legacyLabel}`);
+  const legacyLoaded = await probeLaunchAgentLoadedStrict({
+    launchctl: service.launchctl,
+    target: `gui/${service.uid!}/${legacyLabel}`,
+  });
   if (existsSync(legacyPlist) || injectedLegacy === true || heartbeat?.status === "running" || legacyLoaded) {
     throw new Error("legacy dome serve is installed or running; stop it before suspending Dome Home");
   }
@@ -1369,6 +1654,21 @@ function compactSql(value: string): string { return value.replace(/\s+/g, " ").t
 function boundedError(value: string | null): string | null { return value === null ? null : value.slice(0, 4096) || "unknown failure"; }
 function launchctlDetail(result: { readonly exitCode: number; readonly stdout: string; readonly stderr: string }): string { return result.stderr.trim() || result.stdout.trim() || `exit ${result.exitCode}`; }
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+function operationalAdmissionMessage(error: OperationalWriterAdmissionError): string {
+  return error.kind === "write-admission-closed"
+    ? `Dome operational write admission is closed by ${error.transactionId}`
+    : `Dome operational writer coordination failed: ${error.cause}`;
+}
+function startupDenied(
+  kind: Extract<HomeStartupAdmission, { ok: false }>["error"]["kind"],
+  detail: string,
+  operationId?: string,
+): HomeStartupAdmission {
+  return Object.freeze({
+    ok: false as const,
+    error: Object.freeze({ kind, message: detail, ...(operationId === undefined ? {} : { operationId }) }),
+  });
+}
 function assertOperationId(value: string): void { if (!OPERATION_ID.test(value)) throw new Error("Home suspension operation id is invalid"); }
 function hasCode(error: unknown, code: string): boolean { return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === code; }
 function pathPresent(path: string): boolean { try { lstatSync(path); return true; } catch (error) { if (hasCode(error, "ENOENT")) return false; throw error; } }

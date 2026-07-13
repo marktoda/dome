@@ -141,6 +141,31 @@ export async function waitForLaunchAgentDrain(input: {
   }
 }
 
+/** Home-only strict probe: launchd's exact absent result is 113. */
+export async function probeLaunchAgentLoadedStrict(input: {
+  readonly launchctl: LaunchctlRunner;
+  readonly target: string;
+}): Promise<boolean> {
+  const probe = await input.launchctl(["print", input.target]);
+  if (probe.exitCode === 0) return true;
+  if (probe.exitCode === 113) return false;
+  throw new Error(`launchctl print ${input.target} failed: ${launchctlDetail(probe)}`);
+}
+
+/** Home-only drain that never interprets an ambiguous launchd failure as stopped. */
+export async function waitForLaunchAgentDrainStrict(input: {
+  readonly launchctl: LaunchctlRunner;
+  readonly target: string;
+  readonly timeoutMs: number;
+}): Promise<boolean> {
+  const deadline = Date.now() + input.timeoutMs;
+  for (;;) {
+    if (!await probeLaunchAgentLoadedStrict(input)) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+}
+
 function launchctlDetail(result: LaunchctlResult): string {
   return result.stderr.trim() || result.stdout.trim() || `exit ${result.exitCode}`;
 }
