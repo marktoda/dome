@@ -7,6 +7,11 @@ import { existsSync } from "node:fs";
 import { lstat, readFile, readlink, readdir } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { compareStrings } from "../core/compare";
+import {
+  HOME_DURABLE_STATE_PROTOCOL,
+  HOME_STORE_MIGRATIONS,
+  type HomeStoreMigrationEntry,
+} from "./home-store-migrations";
 
 export const HOME_ARTIFACT_SCHEMA = "dome.home-artifact/v1" as const;
 export const HOME_WRITER_BARRIER_PROTOCOL = 1 as const;
@@ -51,6 +56,11 @@ export type HomeArtifactManifest = {
   readonly pwa: "app/pwa/dist";
   /** Absent on intact legacy v1 artifacts, which remain runnable but not upgradeable. */
   readonly writerBarrier?: { readonly protocol: typeof HOME_WRITER_BARRIER_PROTOCOL };
+  /** Absent on runnable legacy v1 artifacts; required for upgrade candidacy. */
+  readonly durableState?: {
+    readonly protocol: typeof HOME_DURABLE_STATE_PROTOCOL;
+    readonly stores: ReadonlyArray<HomeStoreMigrationEntry>;
+  };
   readonly distribution: {
     readonly signed: false;
     readonly notarized: false;
@@ -168,9 +178,12 @@ export function parseHomeArtifactManifest(value: unknown): HomeArtifactManifest 
   const candidate = value as Record<string, unknown>;
   const hasWriterBarrier = typeof candidate === "object" && candidate !== null &&
     Object.hasOwn(candidate, "writerBarrier");
+  const hasDurableState = typeof candidate === "object" && candidate !== null &&
+    Object.hasOwn(candidate, "durableState");
   const root = record(value, "artifact manifest", [
     "schema", "product", "target", "build", "artifact", "runtime", "tools",
     "entrypoint", "pwa", ...(hasWriterBarrier ? ["writerBarrier"] : []),
+    ...(hasDurableState ? ["durableState"] : []),
     "distribution", "entries",
   ]);
   if (root["schema"] !== HOME_ARTIFACT_SCHEMA) throw new Error(`unsupported artifact schema: ${String(root["schema"])}`);
@@ -182,6 +195,9 @@ export function parseHomeArtifactManifest(value: unknown): HomeArtifactManifest 
   const distribution = record(root["distribution"], "artifact distribution", ["signed", "notarized", "upgradeSupported"]);
   const writerBarrier = hasWriterBarrier
     ? record(root["writerBarrier"], "artifact writer barrier", ["protocol"])
+    : null;
+  const durableState = hasDurableState
+    ? parseDurableState(root["durableState"])
     : null;
   if (product["name"] !== "Dome Home" || !nonempty(product["version"]) ||
     target["os"] !== HOME_ARTIFACT_TARGET.os || target["arch"] !== HOME_ARTIFACT_TARGET.arch ||
@@ -210,7 +226,39 @@ export function parseHomeArtifactManifest(value: unknown): HomeArtifactManifest 
     return tool as HomeArtifactManifest["tools"][number];
   });
   if (new Set(tools.map((tool) => tool.name)).size !== 2) throw new Error("artifact tool names must be unique");
+  if (durableState !== null) {
+    // Parsing already proved exact compiled compatibility. This assignment
+    // preserves the validated frozen shape in the returned manifest.
+    root["durableState"] = durableState;
+  }
   return root as unknown as HomeArtifactManifest;
+}
+
+function parseDurableState(value: unknown): NonNullable<HomeArtifactManifest["durableState"]> {
+  const durable = record(value, "artifact durable state", ["protocol", "stores"]);
+  if (durable["protocol"] !== HOME_DURABLE_STATE_PROTOCOL || !Array.isArray(durable["stores"]) ||
+    durable["stores"].length !== HOME_STORE_MIGRATIONS.length) {
+    throw new Error("artifact durable-state protocol or store inventory is invalid");
+  }
+  const stores = durable["stores"].map((candidate, index) => {
+    const store = record(candidate, "artifact durable-state store", [
+      "name", "metaTable", "currentSchemaHash", "migratesFrom",
+    ]);
+    const expected = HOME_STORE_MIGRATIONS[index];
+    if (expected === undefined || store["name"] !== expected.name || store["metaTable"] !== expected.metaTable ||
+      store["currentSchemaHash"] !== expected.currentSchemaHash || !Array.isArray(store["migratesFrom"]) ||
+      store["migratesFrom"].some((hash) => !sha(hash)) ||
+      JSON.stringify(store["migratesFrom"]) !== JSON.stringify(expected.migratesFrom)) {
+      throw new Error("artifact durable-state store inventory differs from this build");
+    }
+    return Object.freeze({
+      name: expected.name,
+      metaTable: expected.metaTable,
+      currentSchemaHash: expected.currentSchemaHash,
+      migratesFrom: Object.freeze([...expected.migratesFrom]),
+    });
+  });
+  return Object.freeze({ protocol: HOME_DURABLE_STATE_PROTOCOL, stores: Object.freeze(stores) });
 }
 
 function parseEntry(value: unknown): HomeArtifactEntry {

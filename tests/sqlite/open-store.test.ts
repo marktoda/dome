@@ -220,5 +220,81 @@ describe("store-opener seam", () => {
       if (declined.ok) return;
       expect(declined.error.kind).toBe("schema-mismatch");
     });
+
+    for (const failure of ["false", "throw"] as const) {
+      it(`rolls back callback mutation when migration returns ${failure}`, () => {
+        const first = openSimpleStore(simpleSpec(dbPath, { withIndex: false, policy: { kind: "refuse" } }));
+        expect(first.ok).toBe(true);
+        if (!first.ok) return;
+        first.value.raw.query("INSERT INTO x (id,v) VALUES (1,'before')").run();
+        first.value.raw.close();
+
+        const failed = openSimpleStore(simpleSpec(dbPath, {
+          withIndex: true,
+          policy: { kind: "migrate", tryMigrate: (db) => {
+            db.query("UPDATE x SET v='mutated' WHERE id=1").run();
+            db.run("CREATE TABLE migration_sentinel (id INTEGER)");
+            if (failure === "throw") throw new Error("injected migration failure");
+            return false;
+          } },
+        }));
+        expect(failed.ok).toBe(false);
+
+        const old = openSimpleStore(simpleSpec(dbPath, { withIndex: false, policy: { kind: "refuse" } }));
+        expect(old.ok).toBe(true);
+        if (!old.ok) return;
+        expect(old.value.raw.query<{ v: string }, []>("SELECT v FROM x WHERE id=1").get()?.v).toBe("before");
+        expect(old.value.raw.query("SELECT name FROM sqlite_schema WHERE name='migration_sentinel'").all()).toEqual([]);
+        old.value.raw.close();
+
+        const retry = openSimpleStore(simpleSpec(dbPath, {
+          withIndex: true,
+          policy: { kind: "migrate", tryMigrate: (db) => {
+            db.query("UPDATE x SET v='after' WHERE id=1").run();
+            return true;
+          } },
+        }));
+        expect(retry.ok).toBe(true);
+        if (!retry.ok) return;
+        open.push(retry.value.raw);
+        expect(retry.value.migration).toBe("migrated");
+        expect(retry.value.raw.query<{ v: string }, []>("SELECT v FROM x WHERE id=1").get()?.v).toBe("after");
+      });
+    }
+
+    for (const stage of ["ddl", "shape", "meta"] as const) {
+      it(`rolls back a handled migration when the later ${stage} stage fails`, () => {
+        const first = openSimpleStore(simpleSpec(dbPath, { withIndex: false, policy: { kind: "refuse" } }));
+        expect(first.ok).toBe(true);
+        if (!first.ok) return;
+        first.value.raw.query("INSERT INTO x (id,v) VALUES (1,'before')").run();
+        first.value.raw.close();
+
+        const base = simpleSpec(dbPath, {
+          withIndex: true,
+          policy: { kind: "migrate", tryMigrate: (db) => {
+            db.query("UPDATE x SET v='mutated' WHERE id=1").run();
+            if (stage === "meta") {
+              db.run("CREATE TRIGGER fail_meta BEFORE INSERT ON x_meta BEGIN SELECT RAISE(ABORT,'meta fault'); END");
+            }
+            return true;
+          } },
+        });
+        const failed = openSimpleStore({
+          ...base,
+          ...(stage === "ddl" ? { ddl: [...base.ddl, "THIS IS NOT SQL"] } : {}),
+          ...(stage === "shape" ? { shapes: [...SHAPES, { table: "x", columns: ["id", "v", "missing"] }] } : {}),
+        });
+        expect(failed.ok).toBe(false);
+        expect(failed.ok ? "" : failed.error.kind).toBe("schema-init-failed");
+
+        const old = openSimpleStore(simpleSpec(dbPath, { withIndex: false, policy: { kind: "refuse" } }));
+        expect(old.ok).toBe(true);
+        if (!old.ok) return;
+        open.push(old.value.raw);
+        expect(old.value.raw.query<{ v: string }, []>("SELECT v FROM x WHERE id=1").get()?.v).toBe("before");
+        expect(old.value.raw.query("SELECT name FROM sqlite_schema WHERE name IN ('x_by_v','fail_meta')").all()).toEqual([]);
+      });
+    }
   });
 });

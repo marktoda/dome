@@ -624,9 +624,24 @@ runnable but are ineligible on either side of an upgrade. Cross-surface
 exclusion is complete; backup consumes supervised lifecycle suspension, while
 the upgrade orchestrator must consume the same seam because current Home holds
 a lifetime lease.
-Migrations, candidate launch, plist/selection switching, commit-before-
-admission, journal retirement, frozen N-1 migration fixtures,
-signing/notarization, and a public upgrade command remain later P4 checkpoints.
+The next bounded checkpoint freezes the exact predecessor before changing
+production schema: six readable canonical SQL dumps plus a closed provenance,
+schema, and logical-canary manifest. A private closed six-store migration
+Module then proves exact N-1 compatibility during prepare and candidate
+manifest compatibility before journal publication. The artifact builder emits
+optional protocol-1 `durableState` evidence; legacy omission remains runnable
+and old-side eligible but cannot be a candidate. Only request receipts change,
+adding the partial prune index through one exact old-hash route. Ordinary opens
+still refuse N-1. `migratePreparedHomeUpgrade` runs only against an already
+published `prepared` transaction under operational EXCLUSIVE and both Product
+Host locks, preflights all six before mutation, supports predecessor/current
+idempotent retry, and leaves journal and barriers prepared/closed. Fault tests
+prove rollback of store transactions, retry after a committed-store crash, and
+exact N-1 restore including credential truth.
+
+Candidate launch, plist/selection switching, commit-before-admission, journal
+retirement, signing/notarization, and a public upgrade command remain later P4
+checkpoints.
 
 Exit journey: a clean Mac needs no source checkout or manual PWA build; it
 pairs an iPhone, upgrades an N-1 fixture after backup, handles a forced failed

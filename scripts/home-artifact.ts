@@ -38,6 +38,7 @@ import {
   type HomeArtifactEntry,
   type HomeArtifactManifest,
 } from "../src/product-host/home-artifact";
+import { HOME_DURABLE_STATE_PROTOCOL, HOME_STORE_MIGRATIONS } from "../src/product-host/home-store-migrations";
 
 export {
   HOME_ARTIFACT_SCHEMA,
@@ -211,6 +212,13 @@ export async function writeArtifactMetadata(
     entrypoint: "bin/dome",
     pwa: "app/pwa/dist",
     writerBarrier: Object.freeze({ protocol: HOME_WRITER_BARRIER_PROTOCOL }),
+    durableState: Object.freeze({
+      protocol: HOME_DURABLE_STATE_PROTOCOL,
+      stores: Object.freeze(HOME_STORE_MIGRATIONS.map((store) => Object.freeze({
+        ...store,
+        migratesFrom: Object.freeze([...store.migratesFrom]),
+      }))),
+    }),
     distribution: Object.freeze({ signed: false, notarized: false, upgradeSupported: false }),
     entries: Object.freeze(entries.map((entry) => Object.freeze(entry))),
   });

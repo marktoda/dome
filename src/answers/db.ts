@@ -142,24 +142,17 @@ export function computeAnswersSchemaHash(): string {
 // ----- internals ------------------------------------------------------------
 
 function applyAnswerProvenanceMigration(db: Database): void {
-  db.run("BEGIN");
-  try {
-    const cols = db
-      .query<{ name: string }, []>("PRAGMA table_info(question_answers)")
-      .all();
-    if (!cols.some((c) => c.name === "answered_by")) {
-      db.run(
-        "ALTER TABLE question_answers ADD COLUMN answered_by TEXT NOT NULL DEFAULT 'owner'",
-      );
-    }
-    if (!cols.some((c) => c.name === "answer_context_json")) {
-      db.run(
-        "ALTER TABLE question_answers ADD COLUMN answer_context_json TEXT",
-      );
-    }
-    db.run("COMMIT");
-  } catch (e) {
-    db.run("ROLLBACK");
-    throw e;
+  const cols = db
+    .query<{ name: string }, []>("PRAGMA table_info(question_answers)")
+    .all();
+  if (!cols.some((c) => c.name === "answered_by")) {
+    db.run(
+      "ALTER TABLE question_answers ADD COLUMN answered_by TEXT NOT NULL DEFAULT 'owner'",
+    );
+  }
+  if (!cols.some((c) => c.name === "answer_context_json")) {
+    db.run(
+      "ALTER TABLE question_answers ADD COLUMN answer_context_json TEXT",
+    );
   }
 }

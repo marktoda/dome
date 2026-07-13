@@ -142,6 +142,12 @@ const OID = /^[0-9a-f]{40}$/;
 const MAX_LIST = 100;
 const MAX_PRUNE = 10_000;
 
+/** Exact production subquery matched by the partial prune index. */
+export const REQUEST_RECEIPT_PRUNE_CANDIDATES_SQL =
+  "SELECT operation_id FROM request_receipts "
+    + "WHERE state IN ('succeeded','rejected') AND finished_at < ? "
+    + "ORDER BY finished_at ASC, operation_id ASC LIMIT ?";
+
 export function createRequestReceipts(
   db: RequestReceiptsDb,
   dependencies: {
@@ -268,9 +274,7 @@ export function createRequestReceipts(
       const limit = boundedLimit(input.limit, 1_000, MAX_PRUNE, "prune limit");
       const result = db.raw.query(
         "DELETE FROM request_receipts WHERE operation_id IN ("
-          + "SELECT operation_id FROM request_receipts "
-          + "WHERE state IN ('succeeded','rejected') AND finished_at < ? "
-          + "ORDER BY finished_at ASC, operation_id ASC LIMIT ?"
+          + REQUEST_RECEIPT_PRUNE_CANDIDATES_SQL
           + ")",
       ).run(before, limit);
       return result.changes;

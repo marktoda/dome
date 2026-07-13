@@ -7,20 +7,13 @@ import { dirname, join } from "node:path";
 
 import { openAnswersDb } from "../../src/answers/db";
 import { recordQuestionAnswer } from "../../src/answers/question-answers";
-import { commitOid, sourceRef } from "../../src/core/source-ref";
-import { externalActionEffect, fileChange } from "../../src/core/effect";
+import { commitOid } from "../../src/core/source-ref";
 import { openDeviceAuthority } from "../../src/device-authority/device-authority";
 import { add, commit, initRepo, resolveRef } from "../../src/git";
-import { openLedgerDb } from "../../src/ledger/db";
-import { insertQueued, markRunning, markSucceeded, newRunId } from "../../src/ledger/runs";
-import { openOutboxDb } from "../../src/outbox/db";
-import { insertPending } from "../../src/outbox/dispatch";
 import {
   acquireOperationalWriterLease,
   inspectOperationalWriterBarrier,
 } from "../../src/operational-state/writer-barrier";
-import { openProposalsDb } from "../../src/proposals/db";
-import { enqueuePendingProposal } from "../../src/proposals/pending-proposals";
 import {
   createHomeInstallation,
   homeInstallationPaths,
@@ -32,14 +25,19 @@ import { startProductHost } from "../../src/product-host/product-host";
 import { readHomeUpgradeBarrier } from "../../src/product-host/home-upgrade-barrier";
 import {
   inspectHomeUpgradeAdmission,
+  migratePreparedHomeUpgrade,
   prepareHomeUpgrade,
   readHomeUpgrade,
   restoreHomeUpgrade,
   type HomeUpgradeTransactionDeps,
 } from "../../src/product-host/home-upgrade-transaction";
-import { openRequestReceiptsDb } from "../../src/request-receipts/db";
-import { createRequestReceipts } from "../../src/request-receipts/request-receipts";
+import { computeRequestReceiptsSchemaHash, openRequestReceiptsDb, REQUEST_RECEIPTS_N1_SCHEMA_HASH } from "../../src/request-receipts/db";
 import type { HomeArtifactManifest } from "../../src/product-host/home-artifact";
+import { HOME_DURABLE_STATE_PROTOCOL, HOME_STORE_MIGRATIONS } from "../../src/product-host/home-store-migrations";
+import {
+  FROZEN_N1_RELEASE,
+  materializeFrozenN1Fixture,
+} from "../fixtures/home-upgrade/n-1/freeze-n1";
 
 const OLD_ID = "a".repeat(64);
 const CANDIDATE_ID = "b".repeat(64);
@@ -49,6 +47,178 @@ const DATABASES = [
 ] as const;
 
 describe("Product Host pre-commit upgrade transaction", () => {
+  test("migrates a prepared N-1 receipt store, preserves all canaries, stays closed, retries, and restores exactly", async () => {
+    const f = await fixture();
+    try {
+      const before = await logicalState(f.vault);
+      const transactionId = randomUUID();
+      const prepared = await prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId,
+        candidateArtifactId: CANDIDATE_ID,
+      }, f.deps);
+      expect(prepared.snapshot.inventory.find((entry) => entry.name === "request-receipts.db")?.schemaHash)
+        .toBe(REQUEST_RECEIPTS_N1_SCHEMA_HASH);
+
+      const migrated = await migratePreparedHomeUpgrade(f.vault, f.deps);
+      expect(migrated.phase).toBe("prepared");
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeTrue();
+      expect(await readHomeUpgradeBarrier(f.vault, f.deps)).not.toBeNull();
+      expect((await inspectHomeUpgradeAdmission(f.vault, f.deps)).admitted).toBeFalse();
+
+      const afterMigration = await logicalState(f.vault);
+      for (const name of DATABASES.filter((name) => name !== "request-receipts.db")) {
+        expect(afterMigration[name]).toEqual(before[name]);
+      }
+
+      const receiptPath = join(f.vault, ".dome", "state", "request-receipts.db");
+      const receipts = await openRequestReceiptsDb({ path: receiptPath });
+      if (!receipts.ok) throw new Error(JSON.stringify(receipts.error));
+      try {
+        expect(receipts.value.db.schemaHash).toBe(computeRequestReceiptsSchemaHash());
+        expect(receipts.value.db.raw.query<{ operation_id: string; state: string }, []>(
+          "SELECT operation_id,state FROM request_receipts ORDER BY operation_id",
+        ).all()).toEqual([
+          { operation_id: "receipt-admitted", state: "admitted" },
+          { operation_id: "receipt-interrupted", state: "interrupted" },
+          { operation_id: "receipt-succeeded", state: "succeeded" },
+        ]);
+        expect(receipts.value.db.raw.query<{ name: string }, []>(
+          "SELECT name FROM sqlite_schema WHERE name='request_receipts_prunable'",
+        ).get()?.name).toBe("request_receipts_prunable");
+      } finally { receipts.value.db.close(); }
+      const authorityBeforeRestore = await openDeviceAuthority({ path: join(f.vault, ".dome", "state", "device-authority.db") });
+      if (!authorityBeforeRestore.ok) throw new Error(JSON.stringify(authorityBeforeRestore.error));
+      try {
+        expect(authorityBeforeRestore.value.authority.authenticate({
+          credential: f.credential,
+          csrfSecret: f.csrfSecret,
+          requireCsrf: true,
+          now: new Date("2026-07-13T00:05:00.000Z"),
+        }).kind).toBe("authenticated");
+        expect(authorityBeforeRestore.value.authority.authenticate({
+          credential: f.revokedCredential,
+          now: new Date("2026-07-13T00:05:00.000Z"),
+        }).kind).toBe("revoked");
+      } finally { authorityBeforeRestore.value.authority.close(); }
+
+      expect((await migratePreparedHomeUpgrade(f.vault, f.deps)).phase).toBe("prepared");
+      const restored = await restoreHomeUpgrade(f.vault, f.deps);
+      expect(restored.phase).toBe("restored");
+      expect(await logicalState(f.vault)).toEqual(before);
+      const oldReceipts = new Database(receiptPath, { readonly: true, create: false });
+      try {
+        expect(oldReceipts.query<{ schema_hash: string }, []>("SELECT schema_hash FROM request_receipts_meta").get()?.schema_hash)
+          .toBe(REQUEST_RECEIPTS_N1_SCHEMA_HASH);
+        expect(oldReceipts.query("SELECT name FROM sqlite_schema WHERE name='request_receipts_prunable'").all()).toEqual([]);
+      } finally { oldReceipts.close(); }
+      const authority = await openDeviceAuthority({ path: join(f.vault, ".dome", "state", "device-authority.db") });
+      if (!authority.ok) throw new Error(JSON.stringify(authority.error));
+      try {
+        expect(authority.value.authority.authenticate({
+          credential: f.credential,
+          csrfSecret: f.csrfSecret,
+          requireCsrf: true,
+          now: new Date("2026-07-13T00:05:00.000Z"),
+        }).kind).toBe("authenticated");
+        expect(authority.value.authority.authenticate({
+          credential: f.revokedCredential,
+          now: new Date("2026-07-13T00:05:00.000Z"),
+        }).kind).toBe("revoked");
+      } finally { authority.value.authority.close(); }
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("post-commit migration failure remains prepared and closed, then retry converges", async () => {
+    const f = await fixture();
+    try {
+      await prepareHomeUpgrade({ vaultPath: f.vault, transactionId: randomUUID(), candidateArtifactId: CANDIDATE_ID }, f.deps);
+      await expect(migratePreparedHomeUpgrade(f.vault, {
+        ...f.deps,
+        afterStoreMigration: async (name) => { throw new Error(`injected after ${name}`); },
+      })).rejects.toThrow("injected after request-receipts.db");
+      expect((await readHomeUpgrade(f.vault, f.deps))?.phase).toBe("prepared");
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeTrue();
+      expect((await inspectHomeUpgradeAdmission(f.vault, f.deps)).admitted).toBeFalse();
+      const current = await openRequestReceiptsDb({ path: join(f.vault, ".dome", "state", "request-receipts.db") });
+      expect(current.ok).toBeTrue();
+      if (current.ok) current.value.db.close();
+      expect((await migratePreparedHomeUpgrade(f.vault, f.deps)).phase).toBe("prepared");
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("rollback after a post-commit migration crash restores exact N-1 store and credential truth", async () => {
+    const f = await fixture();
+    try {
+      const before = await logicalState(f.vault);
+      await prepareHomeUpgrade({ vaultPath: f.vault, transactionId: randomUUID(), candidateArtifactId: CANDIDATE_ID }, f.deps);
+      await expect(migratePreparedHomeUpgrade(f.vault, {
+        ...f.deps,
+        afterStoreMigration: async () => { throw new Error("crash after committed store"); },
+      })).rejects.toThrow("crash after committed store");
+      expect((await restoreHomeUpgrade(f.vault, f.deps)).phase).toBe("restored");
+      expect(await logicalState(f.vault)).toEqual(before);
+      const authority = await openDeviceAuthority({ path: join(f.vault, ".dome", "state", "device-authority.db") });
+      if (!authority.ok) throw new Error(JSON.stringify(authority.error));
+      try {
+        expect(authority.value.authority.authenticate({
+          credential: f.credential,
+          csrfSecret: f.csrfSecret,
+          requireCsrf: true,
+          now: new Date("2026-07-13T00:05:00.000Z"),
+        }).kind).toBe("authenticated");
+        expect(authority.value.authority.authenticate({
+          credential: f.revokedCredential,
+          now: new Date("2026-07-13T00:05:00.000Z"),
+        }).kind).toBe("revoked");
+      } finally { authority.value.authority.close(); }
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  for (const candidateFault of ["missing", "incompatible"] as const) {
+    test(`candidate durable-state ${candidateFault} evidence refuses before active publication`, async () => {
+      const f = await fixture();
+      try {
+        const before = await logicalState(f.vault);
+        const paths = homeInstallationPaths(f.vault, f.deps);
+        const manifestPath = join(releaseRoot(paths, CANDIDATE_ID), "manifest.json");
+        const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+          durableState?: { stores: Array<{ currentSchemaHash: string }> };
+        };
+        if (candidateFault === "missing") delete manifest.durableState;
+        else manifest.durableState!.stores[0]!.currentSchemaHash = "e".repeat(64);
+        await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, { mode: 0o600 });
+        await expect(prepareHomeUpgrade({
+          vaultPath: f.vault,
+          transactionId: randomUUID(),
+          candidateArtifactId: CANDIDATE_ID,
+        }, f.deps)).rejects.toThrow(candidateFault === "missing" ? "lacks required" : "incompatible with durable snapshot");
+        expect(await readHomeUpgrade(f.vault, f.deps)).toBeNull();
+        expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
+        expect(await logicalState(f.vault)).toEqual(before);
+      } finally { await rm(f.root, { recursive: true, force: true }); }
+    });
+  }
+
+  test("candidate manifest drift refuses migration without touching N-1 stores", async () => {
+    const f = await fixture();
+    try {
+      await prepareHomeUpgrade({ vaultPath: f.vault, transactionId: randomUUID(), candidateArtifactId: CANDIDATE_ID }, f.deps);
+      const paths = homeInstallationPaths(f.vault, f.deps);
+      const manifestPath = join(releaseRoot(paths, CANDIDATE_ID), "manifest.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>;
+      manifest["future"] = true;
+      await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, { mode: 0o600 });
+      await expect(migratePreparedHomeUpgrade(f.vault, f.deps)).rejects.toThrow("manifest changed");
+      const db = new Database(join(f.vault, ".dome", "state", "request-receipts.db"), { readonly: true, create: false });
+      try {
+        expect(db.query<{ schema_hash: string }, []>("SELECT schema_hash FROM request_receipts_meta").get()?.schema_hash)
+          .toBe(REQUEST_RECEIPTS_N1_SCHEMA_HASH);
+      } finally { db.close(); }
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeTrue();
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
   test("prepares a closed external snapshot and restores exact N-1 logical state", async () => {
     const f = await fixture();
     try {
@@ -339,7 +509,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
     }
   });
 
-  test("legacy artifacts stay runnable but are ineligible on either side of upgrade", async () => {
+  test("writer-barrier omission is upgrade-ineligible, while old-side durable-state omission is eligible", async () => {
     const f = await fixture();
     try {
       const paths = homeInstallationPaths(f.vault, f.deps);
@@ -357,6 +527,11 @@ describe("Product Host pre-commit upgrade transaction", () => {
         await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, { mode: 0o600 });
       }
       expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
+      expect((await prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId: randomUUID(),
+        candidateArtifactId: CANDIDATE_ID,
+      }, f.deps)).phase).toBe("prepared");
     } finally {
       await rm(f.root, { recursive: true, force: true });
     }
@@ -395,29 +570,17 @@ async function fixture(options: { durableFiles?: boolean } = {}) {
   await writeFile(join(vault, "note.md"), "# N-1\n");
   await add(vault, "note.md");
   await commit({ path: vault, message: "N-1 fixture" });
-  await seedStores(vault);
+  const frozen = await seedStores(vault);
 
-  let credential = "";
-  let csrfSecret = "";
+  const credential = frozen.authorityCanary.activeCredential;
+  const csrfSecret = frozen.authorityCanary.activeCsrf;
   let unusedPairingCode = "";
-  let revokedCredential = "";
+  const revokedCredential = frozen.authorityCanary.revokedCredential;
   const authority = await openDeviceAuthority({ path: join(vault, ".dome", "state", "device-authority.db") });
   if (!authority.ok) throw new Error("authority fixture failed");
-  const first = authority.value.authority.mintPairingGrant({ deviceName: "phone", capabilities: ["read", "capture"], now: new Date("2026-07-13T00:00:00.000Z") });
-  if (first.kind !== "minted") throw new Error("grant fixture failed");
-  const paired = authority.value.authority.exchangePairingCode({ pairingCode: first.pairingCode, now: new Date("2026-07-13T00:00:01.000Z") });
-  if (paired.kind !== "paired") throw new Error("pair fixture failed");
-  credential = paired.credential;
-  csrfSecret = paired.csrfSecret;
   const unused = authority.value.authority.mintPairingGrant({ deviceName: "tablet", capabilities: ["read"], now: new Date("2026-07-13T00:00:02.000Z") });
   if (unused.kind !== "minted") throw new Error("unused grant fixture failed");
   unusedPairingCode = unused.pairingCode;
-  const revokedGrant = authority.value.authority.mintPairingGrant({ deviceName: "old phone", capabilities: ["read"], now: new Date("2026-07-13T00:00:02.000Z") });
-  if (revokedGrant.kind !== "minted") throw new Error("revoked grant fixture failed");
-  const revoked = authority.value.authority.exchangePairingCode({ pairingCode: revokedGrant.pairingCode, now: new Date("2026-07-13T00:00:03.000Z") });
-  if (revoked.kind !== "paired") throw new Error("revoked pair fixture failed");
-  revokedCredential = revoked.credential;
-  if (authority.value.authority.revokeDevice({ deviceId: revoked.device.id, now: new Date("2026-07-13T00:00:04.000Z") }).kind !== "revoked") throw new Error("revoke fixture failed");
   const authEpoch = authority.value.authority.authEpoch();
   authority.value.authority.close();
 
@@ -443,6 +606,12 @@ async function fixture(options: { durableFiles?: boolean } = {}) {
       artifact: { id },
       product: { name: "Dome Home", version },
       writerBarrier: { protocol: 1 },
+      ...(id === CANDIDATE_ID ? {
+        durableState: {
+          protocol: HOME_DURABLE_STATE_PROTOCOL,
+          stores: HOME_STORE_MIGRATIONS,
+        },
+      } : {}),
     })}\n`, { mode: 0o600 });
   }
   const oldManifest = JSON.parse(await readFile(join(releaseRoot(paths, OLD_ID), "manifest.json"), "utf8")) as HomeArtifactManifest;
@@ -451,32 +620,12 @@ async function fixture(options: { durableFiles?: boolean } = {}) {
   return { root, vault, deps, credential, csrfSecret, revokedCredential, unusedPairingCode, authEpoch };
 }
 
-async function seedStores(vault: string): Promise<void> {
+async function seedStores(vault: string) {
   const state = join(vault, ".dome", "state");
-  const answers = await openAnswersDb({ path: join(state, "answers.db") });
-  if (!answers.ok) throw new Error("answers fixture failed");
-  recordQuestionAnswer(answers.value.db, { idempotencyKey: "answer-1", answer: "yes", answeredAt: "2026-07-13T00:00:00.000Z", questionId: 1, question: "Proceed?", processorId: "dome.test", adoptedCommit: OID, answeredBy: "owner" });
-  answers.value.db.close();
-  const proposals = await openProposalsDb({ path: join(state, "proposals.db") });
-  if (!proposals.ok) throw new Error("proposals fixture failed");
-  enqueuePendingProposal(proposals.value.db, { processorId: "dome.test", extensionId: "dome.test", runId: null, reason: "fixture", changes: [fileChange({ kind: "write", path: "future.md", content: "future\n" })], sourceRefs: [], baseCommit: OID, baseContents: { "future.md": null }, createdAt: "2026-07-13T00:00:00.000Z" });
-  proposals.value.db.close();
-  const outbox = await openOutboxDb({ path: join(state, "outbox.db") });
-  if (!outbox.ok) throw new Error("outbox fixture failed");
-  insertPending(outbox.value.db, { effect: externalActionEffect({ capability: "slack.write", idempotencyKey: "outbox-1", payload: { text: "pending" }, sourceRefs: [sourceRef({ commit: OID, path: "note.md" })] }), runId: "run-fixture", now: new Date("2026-07-13T00:00:00.000Z") });
-  outbox.value.db.close();
-  const ledger = await openLedgerDb({ path: join(state, "runs.db") });
-  if (!ledger.ok) throw new Error("ledger fixture failed");
-  const runId = newRunId(new Date("2026-07-13T00:00:00.000Z"), () => "abc123");
-  insertQueued(ledger.value.db, { id: runId, proposalId: null, processorId: "dome.test", processorVersion: "1", phase: "garden", inputCommit: OID, triggerKind: "signal", triggerPayload: { name: "fixture" }, startedAt: new Date("2026-07-13T00:00:00.000Z") });
-  markRunning(ledger.value.db, runId, new Date("2026-07-13T00:00:00.001Z"));
-  markSucceeded(ledger.value.db, { id: runId, effectHashes: ["effect"], costUsd: 0, durationMs: 1, outputCommit: null, finishedAt: new Date("2026-07-13T00:00:00.002Z") });
-  ledger.value.db.close();
-  const receiptDb = await openRequestReceiptsDb({ path: join(state, "request-receipts.db") });
-  if (!receiptDb.ok) throw new Error("receipt fixture failed");
-  const receipts = createRequestReceipts(receiptDb.value.db, { now: () => new Date("2026-07-13T00:00:00.000Z"), createId: () => "operation-1" });
-  receipts.admit({ requestId: "request-1", actorId: "owner", deviceId: "device-1", credentialId: "credential-1", transport: "cookie", hostInstanceId: "host-1", executor: "http", operation: "capture", operationClass: "workspace-mutation" });
-  receipts.close();
+  return await materializeFrozenN1Fixture({
+    fixtureRoot: join(import.meta.dir, "..", "fixtures", "home-upgrade", "n-1", FROZEN_N1_RELEASE),
+    destination: state,
+  });
 }
 
 async function mutateDurableState(vault: string): Promise<void> {

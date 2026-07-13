@@ -210,7 +210,10 @@ export type SimpleStorePolicy =
   | { readonly kind: "refuse" }
   | {
       readonly kind: "migrate";
-      /** Returns true if it brought a known prior hash up to date, else false (→ refuse). */
+      /**
+       * Transaction-neutral callback: never BEGIN/COMMIT/ROLLBACK. Returns true
+       * after mutating a known predecessor, or false to roll back and refuse.
+       */
       readonly tryMigrate: (db: Database, storedHash: string) => boolean;
     };
 
@@ -220,6 +223,8 @@ export type SimpleStoreSpec = {
   readonly ddl: ReadonlyArray<string>;
   readonly currentHash: string;
   readonly shapes: ReadonlyArray<SqliteTableShape>;
+  /** Optional store-specific proof (for example, an exact index inventory). */
+  readonly validate?: ((db: Database) => string | null) | undefined;
   readonly policy: SimpleStorePolicy;
   readonly foreignKeys?: boolean;
 };
@@ -257,23 +262,34 @@ export function openSimpleStore(
           expected: currentHash,
         });
       }
-      // migrate: hand the store's tryMigrate the stored hash it keys on.
-      const handled = spec.policy.tryMigrate(raw, storedHash ?? "");
-      if (!handled) {
-        raw.close();
-        return err({
-          kind: "schema-mismatch",
-          stored: storedHash ?? "",
-          expected: currentHash,
-        });
-      }
-      migrated = true;
     }
-
-    applyDdlInTransaction(raw, spec.ddl);
-    const shapeError = validateSqliteTableShapes(raw, spec.shapes);
-    if (shapeError !== null) throw new Error(shapeError);
-    writeSingleMetaRow(raw, spec.metaTable, currentHash);
+    raw.run("BEGIN IMMEDIATE");
+    try {
+      if (isSchemaChanged) {
+        const handled = spec.policy.kind === "migrate" &&
+          spec.policy.tryMigrate(raw, storedHash ?? "");
+        if (!handled) {
+          raw.run("ROLLBACK");
+          raw.close();
+          return err({
+            kind: "schema-mismatch",
+            stored: storedHash ?? "",
+            expected: currentHash,
+          });
+        }
+        migrated = true;
+      }
+      for (const statement of spec.ddl) raw.run(statement);
+      const shapeError = validateSqliteTableShapes(raw, spec.shapes);
+      if (shapeError !== null) throw new Error(shapeError);
+      const validationError = spec.validate?.(raw) ?? null;
+      if (validationError !== null) throw new Error(validationError);
+      writeSingleMetaRow(raw, spec.metaTable, currentHash);
+      raw.run("COMMIT");
+    } catch (error) {
+      try { raw.run("ROLLBACK"); } catch {}
+      throw error;
+    }
   } catch (e) {
     raw.close();
     return err({ kind: "schema-init-failed", cause: errorMessage(e) });
@@ -284,7 +300,7 @@ export function openSimpleStore(
 }
 
 /**
- * Write the single meta row: `DELETE` then `INSERT` in one transaction. The
+ * Write the single meta row inside the caller-owned transaction. The
  * robust superset of the per-store mechanics this seam replaced — correct even
  * when the hash CHANGES (an additive migration leaves an orphan old-hash row
  * under `INSERT OR REPLACE`, since `schema_hash` is the primary key). Fresh:
@@ -296,16 +312,9 @@ function writeSingleMetaRow(
   metaTable: string,
   schemaHash: string,
 ): void {
-  db.run("BEGIN");
-  try {
-    db.run(`DELETE FROM ${metaTable}`);
-    db.run(`INSERT INTO ${metaTable} (schema_hash, built_at) VALUES (?, ?)`, [
-      schemaHash,
-      new Date().toISOString(),
-    ]);
-    db.run("COMMIT");
-  } catch (e) {
-    db.run("ROLLBACK");
-    throw e;
-  }
+  db.run(`DELETE FROM ${metaTable}`);
+  db.run(`INSERT INTO ${metaTable} (schema_hash, built_at) VALUES (?, ?)`, [
+    schemaHash,
+    new Date().toISOString(),
+  ]);
 }

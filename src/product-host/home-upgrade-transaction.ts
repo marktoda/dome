@@ -1,7 +1,7 @@
 // product-host/home-upgrade-transaction: durable pre-commit upgrade recovery.
-// This Module owns the prepare/read/restore lifecycle plus normal-host
-// admission inspection. It does not migrate stores, launch candidates, switch
-// launchd, or commit an installation selection.
+// This Module owns prepare/read/migrate/restore plus normal-host admission
+// inspection. Migration remains private and write-closed; it does not launch
+// candidates, switch launchd, or commit an installation selection.
 
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
@@ -27,6 +27,12 @@ import {
   type HomeInstallationPaths,
 } from "./home-installation";
 import { verifyHomeArtifact, type HomeArtifactVerifier } from "./home-artifact";
+import {
+  HOME_DURABLE_STATE_PROTOCOL,
+  migratePreparedHomeStores,
+  preflightHomeStoreMigrations,
+  type HomeStoreMigrationEntry,
+} from "./home-store-migrations";
 import {
   engageHomeUpgradeBarrier,
   readHomeUpgradeBarrier,
@@ -107,6 +113,7 @@ export type HomeUpgradeTransactionDeps = HomeInstallationDeps & {
   readonly publishTransaction?: ((source: string, target: string) => Promise<void>) | undefined;
   readonly launchAgentsDir?: string | undefined;
   readonly afterRestoreEntry?: ((name: typeof SNAPSHOT_NAMES[number]) => Promise<void>) | undefined;
+  readonly afterStoreMigration?: ((name: HomeStoreMigrationEntry["name"]) => Promise<void>) | undefined;
 };
 
 /**
@@ -242,7 +249,14 @@ async function prepareHomeUpgradeWhileQuiesced(
       throw new Error("Dome Home upgrade candidate must differ from the selected release");
     }
 
+    // Exact N-1 compatibility is proved for all six stores while both host
+    // ownership layers are held and before any snapshot or journal publication.
+    await preflightHomeStoreMigrations({
+      stateRoot: join(vault, ".dome", "state"),
+      phase: "prepare",
+    });
     const inventory = await snapshotDurableState(vault, snapshotRoot);
+    await assertCandidateDurableCompatibility(candidate, inventory, verify);
     const preparedAt = (deps.now?.() ?? new Date()).toISOString();
     assertTimestamp(preparedAt, "prepared timestamp");
     const journal: HomeUpgradeTransaction = Object.freeze({
@@ -270,6 +284,50 @@ async function prepareHomeUpgradeWhileQuiesced(
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
+}
+
+/**
+ * Migrate a published prepared transaction while write admission remains
+ * closed. There is deliberately no new journal phase: per-store current hash
+ * is the idempotent retry cursor, and `phase: prepared` remains rollbackable.
+ */
+export async function migratePreparedHomeUpgrade(
+  vaultPath: string,
+  deps: HomeUpgradeTransactionDeps = {},
+): Promise<HomeUpgradeTransaction> {
+  const vault = await canonicalVault(vaultPath);
+  const initial = await readRequiredHomeUpgrade(vault, deps);
+  if (initial.phase !== "prepared") throw new Error("only a prepared Dome Home upgrade may migrate durable state");
+  await engageForTransaction(vault, initial.transactionId, deps);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const ownership = await withHomeUpgradeBarrierOwnership({
+      vaultPath: vault,
+      transactionId: initial.transactionId,
+    }, deps, async (owner) => {
+      await assertActiveHomeBarrier(vault, owner, deps);
+      return await withQuiescedOwnership(vault, async () => {
+        const journal = await readRequiredHomeUpgrade(vault, deps);
+        if (journal.phase !== "prepared" || journal.transactionId !== initial.transactionId) {
+          throw new Error("prepared Dome Home upgrade evidence changed before migration");
+        }
+        const verify = deps.verifyArtifact ?? verifyHomeArtifact;
+        await assertCandidateDurableCompatibility(journal.candidate, journal.snapshot.inventory, verify);
+        await migratePreparedHomeStores({
+          stateRoot: join(vault, ".dome", "state"),
+          ...(deps.afterStoreMigration === undefined ? {} : { afterStore: deps.afterStoreMigration }),
+        });
+        // The migration Module completed its WAL-aware quick_check/target-hash
+        // proof after every changed handle committed and closed.
+        return await readRequiredHomeUpgrade(vault, deps);
+      });
+    });
+    if (ownership.kind === "owned") return ownership.value;
+    if (ownership.transactionId !== null && ownership.transactionId !== initial.transactionId) {
+      throw new Error(`another Dome Home upgrade transaction is active: ${ownership.transactionId}`);
+    }
+    await engageForTransaction(vault, initial.transactionId, deps);
+  }
+  throw new Error("Dome Home upgrade migration ownership could not be recovered");
 }
 
 /** Strict, non-mutating read of the one active transaction and its inventory. */
@@ -601,6 +659,32 @@ async function artifactEvidence(
     releasePath: root,
     manifestSha256: await hashFile(join(root, "manifest.json")),
   });
+}
+
+async function assertCandidateDurableCompatibility(
+  candidate: HomeUpgradeArtifactEvidence,
+  inventory: ReadonlyArray<HomeUpgradeSnapshotEntry>,
+  verify: HomeArtifactVerifier,
+): Promise<void> {
+  if (await hashFile(join(candidate.releasePath, "manifest.json")) !== candidate.manifestSha256) {
+    throw new Error("upgrade candidate manifest changed before durable-state migration");
+  }
+  const manifest = await verify(candidate.releasePath);
+  if (manifest.artifact.id !== candidate.artifactId || manifest.product.version !== candidate.version) {
+    throw new Error("upgrade candidate artifact or product version changed");
+  }
+  if (manifest.writerBarrier?.protocol !== 1 || manifest.durableState?.protocol !== HOME_DURABLE_STATE_PROTOCOL) {
+    throw new Error("upgrade candidate lacks required writer-barrier or durable-state protocol");
+  }
+  for (const database of DATABASES) {
+    const snapshot = inventory.find((entry) => entry.name === database.name);
+    const route = manifest.durableState.stores.find((entry) => entry.name === database.name);
+    if (snapshot?.schemaHash === null || snapshot?.schemaHash === undefined || route === undefined ||
+      route.metaTable !== database.metaTable ||
+      (snapshot.schemaHash !== route.currentSchemaHash && !route.migratesFrom.includes(snapshot.schemaHash))) {
+      throw new Error(`upgrade candidate is incompatible with durable snapshot: ${database.name}`);
+    }
+  }
 }
 
 async function validateJournalReferences(
