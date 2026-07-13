@@ -1,16 +1,26 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { createAgentRuntime, type AgentRun } from "../../src/assistant/runtime";
 import { runInit } from "../../src/cli/commands/init";
 import { openDeviceAuthority } from "../../src/device-authority/device-authority";
 import { add, commit } from "../../src/git";
 import { startProductHost, type ProductHost } from "../../src/product-host/product-host";
+import { homeInstallationPaths, releaseRoot } from "../../src/product-host/home-installation";
+import {
+  inspectHomeLifecycleSuspension,
+  withSupervisedHomeSuspended,
+} from "../../src/product-host/home-lifecycle-suspension";
 import { openRequestReceiptsDb } from "../../src/request-receipts/db";
 import { createRequestReceipts } from "../../src/request-receipts/request-receipts";
+import { vaultServiceSlug, type LaunchctlRunner } from "../../src/surface/service-probe";
+import {
+  engageOperationalWriterBarrier,
+  releaseOperationalWriterBarrier,
+} from "../../src/operational-state/writer-barrier";
 
 const roots: string[] = [];
 const hosts: ProductHost[] = [];
@@ -81,6 +91,111 @@ describe("P3 Product Host", () => {
         headers: { cookie: auth.cookie },
       })).status).toBe(200);
     }
+  }, 30_000);
+
+  test("an exact launchd child starts while its supervisor holds resuming Tx2", async () => {
+    const vault = await initializedVault();
+    const f = await installedResumeFixture(vault);
+    let childStart: Promise<Awaited<ReturnType<typeof startProductHost>>> | null = null;
+    let reportChild!: (result: Awaited<ReturnType<typeof startProductHost>>) => void;
+    const childObserved = new Promise<Awaited<ReturnType<typeof startProductHost>>>((resolve) => {
+      reportChild = resolve;
+    });
+    let childReported = false;
+    const operationId = "product-host-live-resume";
+    const parent = withSupervisedHomeSuspended({
+      mode: "new",
+      vaultPath: vault,
+      purpose: "backup",
+      operationId,
+    }, async () => "snapshot", {
+      platform: "darwin",
+      uid: 501,
+      applicationSupportDir: f.support,
+      launchAgentsDir: f.agents,
+      launchctl: f.launchctl,
+      drainTimeoutMs: 50,
+      readinessTimeoutMs: 5_000,
+      readiness: async () => {
+        childStart ??= startProductHost({
+          vaultPath: vault,
+          port: 0,
+          launch: {
+            kind: "normal",
+            artifact: { id: f.artifactId, version: f.artifactVersion },
+          },
+        }, { homeStartup: f.startupDeps });
+        const result = await childStart;
+        if (!childReported) {
+          childReported = true;
+          if (result.ok) hosts.push(result.value);
+          reportChild(result);
+        }
+        return result.ok;
+      },
+    });
+    const resumed = await within(parent, 10_000);
+    expect(resumed).toMatchObject({ kind: "ready", value: "snapshot" });
+    const child = await childObserved;
+    expect(child.ok).toBeTrue();
+    expect(f.verification.calls).toBe(1);
+    expect(await inspectHomeLifecycleSuspension(vault)).toEqual({ kind: "inactive" });
+  }, 30_000);
+
+  test("startup admission denies before Product Host durable stores mutate", async () => {
+    const vault = await initializedVault();
+    const protectedPaths = [
+      join(vault, ".dome", "state", "request-receipts.db"),
+      join(vault, ".dome", "state", "device-authority.db"),
+      join(vault, ".dome", "state", "product-host-id"),
+    ];
+    const before = await fingerprintFiles(protectedPaths);
+    const transactionId = "product-host-startup-closed";
+    expect((await engageOperationalWriterBarrier({ vaultPath: vault, transactionId })).ok).toBeTrue();
+    const denied = await startProductHost({ vaultPath: vault, port: 0 });
+    expect(denied).toMatchObject({
+      ok: false,
+      error: { kind: "startup-failed" },
+    });
+    if (!denied.ok) expect(denied.error.message).toContain(transactionId);
+    expect(await fingerprintFiles(protectedPaths)).toEqual(before);
+    await releaseOperationalWriterBarrier({
+      vaultPath: vault,
+      transactionId,
+      validateAndRemoveExternalEvidence: async () => {},
+    });
+  }, 30_000);
+
+  test("startup denial preserves the exact suspension operation id", async () => {
+    const vault = await initializedVault();
+    const f = await installedResumeFixture(vault);
+    const operationId = "product-host-resume-recovery";
+    const suspended = await withSupervisedHomeSuspended({
+      mode: "new",
+      vaultPath: vault,
+      purpose: "backup",
+      operationId,
+    }, async () => "snapshot", {
+      platform: "darwin",
+      uid: 501,
+      applicationSupportDir: f.support,
+      launchAgentsDir: f.agents,
+      launchctl: f.launchctl,
+      drainTimeoutMs: 20,
+      readinessTimeoutMs: 1,
+      readiness: async () => false,
+    });
+    expect(suspended.kind).toBe("failed");
+    const denied = await startProductHost({
+      vaultPath: vault,
+      port: 0,
+      launch: {
+        kind: "normal",
+        artifact: { id: f.artifactId, version: f.artifactVersion },
+      },
+    });
+    expect(denied).toMatchObject({ ok: false, error: { kind: "startup-failed" } });
+    if (!denied.ok) expect(denied.error.message).toContain(`suspension operation ${operationId}`);
   }, 30_000);
 
   test("a slow model turn does not block readiness, adopted reads, or capture", async () => {
@@ -248,6 +363,90 @@ async function initializedVault(): Promise<string> {
   await commit({ path: vault, message: "seed product host fixture" });
   return vault;
 }
+
+async function installedResumeFixture(vaultPath: string) {
+  const vault = await realpath(vaultPath);
+  const root = dirname(vault);
+  const support = join(root, `${basename(vault)}-Home-Support`);
+  const agents = join(root, `${basename(vault)}-LaunchAgents`);
+  roots.push(support, agents);
+  const paths = homeInstallationPaths(vault, { applicationSupportDir: support });
+  const artifactId = "a".repeat(64);
+  const artifactVersion = "1.0.0";
+  const release = releaseRoot(paths, artifactId);
+  const runtime = join(release, "runtime", "bun");
+  const entrypoint = join(release, "app", "bin", "dome");
+  await mkdir(paths.installations, { recursive: true });
+  await mkdir(dirname(runtime), { recursive: true });
+  await mkdir(dirname(entrypoint), { recursive: true });
+  await mkdir(agents, { recursive: true });
+  await writeFile(runtime, "test Bun runtime\n", { mode: 0o700 });
+  await writeFile(entrypoint, "test Dome entrypoint\n", { mode: 0o700 });
+  await writeFile(paths.record, `${JSON.stringify({
+    schema: "dome.home.installation/v1",
+    vault,
+    artifact: { id: artifactId, version: artifactVersion },
+    environment: [],
+  })}\n`, { mode: 0o600 });
+  const label = `com.dome.home.${vaultServiceSlug(vault)}`;
+  const target = `gui/501/${label}`;
+  const plist = join(agents, `${label}.plist`);
+  await writeFile(plist, "strict plist bytes\n", { mode: 0o600 });
+  const loaded = new Set([target]);
+  const launchctl: LaunchctlRunner = async (args) => {
+    const candidate = args.at(-1) ?? "";
+    if (args[0] === "print") return launchctlOutcome(loaded.has(candidate) ? 0 : 113);
+    if (args[0] === "bootout") { loaded.delete(candidate); return launchctlOutcome(0); }
+    if (args[0] === "bootstrap") {
+      const bootLabel = basename(args[2] ?? "").replace(/\.plist$/, "");
+      loaded.add(`${args[1]}/${bootLabel}`);
+      return launchctlOutcome(0);
+    }
+    if (args[0] === "kickstart") { loaded.add(candidate); return launchctlOutcome(0); }
+    return launchctlOutcome(0);
+  };
+  const verification = { calls: 0 };
+  const verifyArtifact = async (candidate: string) => {
+    verification.calls += 1;
+    if (candidate !== release) throw new Error("unexpected managed release path");
+    return { artifact: { id: artifactId }, product: { version: artifactVersion } } as never;
+  };
+  return {
+    support,
+    agents,
+    artifactId,
+    artifactVersion,
+    launchctl,
+    verification,
+    startupDeps: {
+      applicationSupportDir: support,
+      launchAgentsDir: agents,
+      invokingRuntimePath: runtime,
+      invokingEntrypointPath: entrypoint,
+      verifyArtifact,
+    },
+  };
+}
+
+async function fingerprintFiles(paths: ReadonlyArray<string>): Promise<ReadonlyArray<string>> {
+  return Promise.all(paths.map(async (path) => {
+    try {
+      const info = await lstat(path);
+      const mode = (info.mode & 0o777).toString(8);
+      if (!info.isFile() || info.isSymbolicLink()) {
+        return `other\0${path}\0${mode}`;
+      }
+      return `file\0${path}\0${mode}\0${Buffer.from(await readFile(path)).toString("base64")}`;
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return `missing\0${path}`;
+      }
+      throw error;
+    }
+  }));
+}
+
+function launchctlOutcome(exitCode: number) { return { exitCode, stdout: "", stderr: "" }; }
 
 type BrowserAuth = { readonly cookie: string; readonly csrf: string };
 

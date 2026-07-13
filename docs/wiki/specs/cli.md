@@ -2778,7 +2778,8 @@ admission and closes the complete Product Host lifecycle.
 way to complete an upgrade. It is accepted only from a self-contained invoking
 artifact whose existing strict manifest verifier supplies the exact artifact
 id and version. It bypasses every write-capable Vault/store/recovery opener and
-serves only loopback liveness, readiness, and closed pairing status. Readiness
+the Home lifecycle coordinator itself, and serves only loopback liveness,
+readiness, and closed pairing status. Readiness
 reports `host.state: probation` and `writesAdmitted: false`; all other routes
 return `503 write-admission-closed`. No environment or CLI boolean can open
 writes, and this checkpoint has no committed-upgrade launch mode.

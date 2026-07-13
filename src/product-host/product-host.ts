@@ -23,11 +23,14 @@ import {
   type RequestReceipts,
 } from "../request-receipts/request-receipts";
 import { createAssistantMutationExecutor } from "../request-receipts/assistant-mutation-executor";
-import { acquireOperationalWriterLease } from "../operational-state/writer-barrier";
 import { openVault, type Vault } from "../vault";
 import { ProductOperationScheduler } from "./operation-scheduler";
 import { ensureVaultId } from "./vault-id";
 import { withProductHostOwnership } from "./host-ownership";
+import {
+  acquireHomeStartupAdmission,
+  type HomeStartupAdmissionDeps,
+} from "./home-lifecycle-suspension";
 import { startProbationHost } from "./probation-host";
 import {
   inspectHomeUpgradeAdmission,
@@ -79,6 +82,8 @@ export type ProductHostOptions = {
 type ProductHostRuntimeDeps = {
   /** Internal path dependency used by isolated lifecycle/startup tests. */
   readonly upgradeTransaction?: HomeUpgradeTransactionDeps | undefined;
+  /** Internal provenance/evidence dependencies for exact lifecycle resume. */
+  readonly homeStartup?: HomeStartupAdmissionDeps | undefined;
 };
 
 type HostState = {
@@ -139,17 +144,20 @@ export async function startProductHost(
     });
   }
 
-  // The operational lease is intentionally outside both Product Host locks:
-  // one global order (operational -> external host -> vault-local host) keeps
-  // upgrade drain free of lock-order cycles.
-  const writerAdmission = await acquireOperationalWriterLease({
+  // The deep lifecycle Module atomically crosses lifecycle -> operational.
+  // The returned SHARED lease remains outside both Product Host locks and
+  // lives until complete host cleanup.
+  const writerAdmission = await acquireHomeStartupAdmission({
     vaultPath,
-    command: "dome-product-host",
-  });
+    launchArtifact: admission.artifact,
+  }, runtimeDeps.homeStartup);
   if (!writerAdmission.ok) {
+    const operation = writerAdmission.error.operationId === undefined
+      ? ""
+      : ` (suspension operation ${writerAdmission.error.operationId})`;
     return failure(
       "startup-failed",
-      `Dome operational write admission is closed: ${writerAdmission.error.kind}`,
+      `Dome Home startup admission is closed: ${writerAdmission.error.message}${operation}`,
     );
   }
 

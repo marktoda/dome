@@ -14,6 +14,7 @@ import {
   type ProductHost,
 } from "../../src/product-host/product-host";
 import { externalProductHostLockPath } from "../../src/product-host/host-ownership";
+import { homeLifecycleCoordinatorPath } from "../../src/product-host/home-lifecycle-suspension";
 import { openRequestReceiptsDb } from "../../src/request-receipts/db";
 import { createRequestReceipts } from "../../src/request-receipts/request-receipts";
 
@@ -30,6 +31,37 @@ afterEach(async () => {
 });
 
 describe("Product Host upgrade probation", () => {
+  test("does not initialize the Home lifecycle coordinator for a fresh vault", async () => {
+    const vault = await initializedUnstartedVault();
+    const journal = homeLifecycleCoordinatorPath(vault);
+    const coordinatorRoot = dirname(journal);
+    const establishmentRoot = join(dirname(coordinatorRoot), "home-lifecycle-suspension.established");
+    expect(await pathPresent(coordinatorRoot)).toBeFalse();
+    expect(await pathPresent(establishmentRoot)).toBeFalse();
+    const before = await treeFingerprint(vault);
+
+    const started = await startProductHost({
+      vaultPath: vault,
+      port: 0,
+      launch: {
+        kind: "upgrade-probation",
+        artifact: { id: "f".repeat(64), version: "0.2.0-candidate" },
+      },
+    });
+    expect(started.ok).toBeTrue();
+    if (!started.ok) return;
+    hosts.push(started.value);
+    expect(await pathPresent(coordinatorRoot)).toBeFalse();
+    expect(await pathPresent(establishmentRoot)).toBeFalse();
+    expect(await treeFingerprint(vault)).toEqual(before);
+
+    await started.value.close();
+    hosts.splice(hosts.indexOf(started.value), 1);
+    expect(await pathPresent(coordinatorRoot)).toBeFalse();
+    expect(await pathPresent(establishmentRoot)).toBeFalse();
+    expect(await treeFingerprint(vault)).toEqual(before);
+  }, 30_000);
+
   test("boots an exact candidate without changing Git or any vault state", async () => {
     const vault = await initializedProductVault();
     await seedAdmittedReceipt(vault);
@@ -221,6 +253,18 @@ function mutationRequests(baseUrl: string): ReadonlyArray<readonly [string, Requ
 }
 
 async function initializedProductVault(): Promise<string> {
+  const vault = await initializedUnstartedVault();
+
+  // Establish the normal Product Host's complete durable store inventory and
+  // stable vault id before taking the candidate's no-write snapshot.
+  const normal = await startProductHost({ vaultPath: vault, port: 0 });
+  expect(normal.ok).toBe(true);
+  if (!normal.ok) throw new Error(normal.error.message);
+  await normal.value.close();
+  return vault;
+}
+
+async function initializedUnstartedVault(): Promise<string> {
   console.log = () => {};
   console.error = () => {};
   const vault = mkdtempSync(join(tmpdir(), "dome-product-probation-"));
@@ -230,13 +274,10 @@ async function initializedProductVault(): Promise<string> {
   await writeFile(join(vault, "wiki", "host.md"), "# Product Host\n", "utf8");
   await add(vault, "wiki/host.md");
   await commit({ path: vault, message: "seed probation fixture" });
-
-  // Establish the normal Product Host's complete durable store inventory and
-  // stable vault id before taking the candidate's no-write snapshot.
-  const normal = await startProductHost({ vaultPath: vault, port: 0 });
-  expect(normal.ok).toBe(true);
-  if (!normal.ok) throw new Error(normal.error.message);
-  await normal.value.close();
+  await writeFile(join(vault, ".dome", "state", "product-host-id"), "probation-vault-id\n", {
+    encoding: "utf8",
+    mode: 0o600,
+  });
   return vault;
 }
 

@@ -10,8 +10,9 @@ import {
   engageOperationalWriterBarrier,
   releaseOperationalWriterBarrier,
 } from "../../src/operational-state/writer-barrier";
-import { homeInstallationPaths } from "../../src/product-host/home-installation";
+import { homeInstallationPaths, releaseRoot } from "../../src/product-host/home-installation";
 import {
+  acquireHomeStartupAdmission,
   homeLifecycleCoordinatorPath,
   inspectHomeLifecycleSuspension,
   withHomeLifecycleMutation,
@@ -23,6 +24,7 @@ import {
   type HomeSuspensionOperationContext,
   type HomeResumeAuthorization,
   type HomeSuspensionRecoveryPolicy,
+  type HomeStartupAdmissionDeps,
 } from "../../src/product-host/home-lifecycle-suspension";
 import { vaultServiceSlug, type LaunchctlRunner } from "../../src/surface/service-probe";
 
@@ -712,6 +714,200 @@ describe("supervised Home lifecycle suspension", () => {
     expect(results.every((result) => result.kind === "owned")).toBeTrue();
     expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("inactive");
   });
+
+  test("inactive startup atomically acquires and returns a lifetime operational lease", async () => {
+    const f = await fixture(false);
+    const admitted = await acquireHomeStartupAdmission({
+      vaultPath: f.vault,
+      launchArtifact: { id: "development", version: "0.1.0-dev" },
+    });
+    expect(admitted.ok).toBeTrue();
+    if (!admitted.ok) return;
+
+    let barrierSettled = false;
+    const barrier = engageOperationalWriterBarrier({
+      vaultPath: f.vault,
+      transactionId: "startup-lifetime",
+    }).then((value) => { barrierSettled = true; return value; });
+    await Bun.sleep(20);
+    expect(barrierSettled).toBeFalse();
+    admitted.lease.close();
+    const engaged = await barrier;
+    expect(engaged.ok).toBeTrue();
+    await releaseOperationalWriterBarrier({
+      vaultPath: f.vault,
+      transactionId: "startup-lifetime",
+      validateAndRemoveExternalEvidence: async () => {},
+    });
+  });
+
+  test("inactive read and operational acquisition are one lifecycle-owned decision", async () => {
+    const f = await fixture(true);
+    let entered!: () => void;
+    const inside = new Promise<void>((resolve) => { entered = resolve; });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const startup = acquireHomeStartupAdmission({
+      vaultPath: f.vault,
+      launchArtifact: { id: "development", version: "0.1.0-dev" },
+    }, {
+      beforeInactiveOperationalLease: async () => { entered(); await gate; },
+    });
+    await inside;
+
+    let callbackRan = false;
+    const suspension = suspend(f, "startup-race", async () => { callbackRan = true; }, "backup");
+    await Bun.sleep(20);
+    expect(callbackRan).toBeFalse();
+    release();
+    const admitted = await startup;
+    expect(admitted.ok).toBeTrue();
+    if (admitted.ok) admitted.lease.close();
+    await suspension;
+    expect(callbackRan).toBeTrue();
+  });
+
+  test("closed operational admission and non-resuming phases deny startup", async () => {
+    const blocked = await fixture(false);
+    const transactionId = "startup-closed";
+    expect((await engageOperationalWriterBarrier({ vaultPath: blocked.vault, transactionId })).ok).toBeTrue();
+    const denied = await acquireHomeStartupAdmission({
+      vaultPath: blocked.vault,
+      launchArtifact: { id: "development", version: "0.1.0-dev" },
+    });
+    expect(denied).toMatchObject({ ok: false, error: { kind: "operational-admission-closed" } });
+    await releaseOperationalWriterBarrier({
+      vaultPath: blocked.vault,
+      transactionId,
+      validateAndRemoveExternalEvidence: async () => {},
+    });
+
+    for (const phase of ["suspending", "suspended"] as const) {
+      const f = await fixture(true);
+      await seedResuming(f, `startup-${phase}`);
+      await setPhase(f.vault, phase);
+      const phaseDenied = await acquireHomeStartupAdmission({
+        vaultPath: f.vault,
+        launchArtifact: { id: f.artifactId, version: f.artifactVersion },
+      }, startupDeps(f));
+      expect(phaseDenied).toMatchObject({
+        ok: false,
+        error: { kind: "lifecycle-closed", operationId: `startup-${phase}` },
+      });
+    }
+  });
+
+  test("only exact verified resuming artifact provenance receives a lease", async () => {
+    const exact = await fixture(true);
+    await seedResuming(exact, "startup-exact");
+    const admitted = await acquireHomeStartupAdmission({
+      vaultPath: exact.vault,
+      launchArtifact: { id: exact.artifactId, version: exact.artifactVersion },
+    }, startupDeps(exact));
+    expect(admitted.ok).toBeTrue();
+    if (admitted.ok) admitted.lease.close();
+
+    const development = await fixture(true);
+    await seedResuming(development, "startup-development");
+    expect(await acquireHomeStartupAdmission({
+      vaultPath: development.vault,
+      launchArtifact: { id: "development", version: development.artifactVersion },
+    }, startupDeps(development))).toMatchObject({
+      ok: false,
+      error: { kind: "resume-evidence-invalid", operationId: "startup-development" },
+    });
+
+    const priorStopped = await fixture(true);
+    await seedResuming(priorStopped, "startup-prior-stopped");
+    const db = new Database(homeLifecycleCoordinatorPath(priorStopped.vault));
+    try { db.run("UPDATE home_lifecycle_suspension SET prior_loaded = 0"); }
+    finally { db.close(); }
+    expect(await acquireHomeStartupAdmission({
+      vaultPath: priorStopped.vault,
+      launchArtifact: { id: priorStopped.artifactId, version: priorStopped.artifactVersion },
+    }, startupDeps(priorStopped))).toMatchObject({
+      ok: false,
+      error: { kind: "resume-evidence-invalid", operationId: "startup-prior-stopped" },
+    });
+  });
+
+  test("resuming startup rejects artifact, selector, plist, runtime, and entrypoint mismatch", async () => {
+    for (const mismatch of ["artifact", "selector", "plist", "runtime", "entrypoint"] as const) {
+      const f = await fixture(true);
+      await seedResuming(f, `startup-mismatch-${mismatch}`);
+      const deps = { ...startupDeps(f) };
+      let artifact = { id: f.artifactId, version: f.artifactVersion };
+      if (mismatch === "artifact") artifact = { ...artifact, id: "b".repeat(64) };
+      if (mismatch === "selector") await writeFile(f.installation, "{}\n", { mode: 0o600 });
+      if (mismatch === "plist") await writeFile(f.plist, "changed plist\n", { mode: 0o600 });
+      if (mismatch === "runtime") deps.invokingRuntimePath = f.entrypoint;
+      if (mismatch === "entrypoint") deps.invokingEntrypointPath = f.runtime;
+      const denied = await acquireHomeStartupAdmission({ vaultPath: f.vault, launchArtifact: artifact }, deps);
+      expect(denied).toMatchObject({
+        ok: false,
+        error: { kind: "resume-evidence-invalid", operationId: `startup-mismatch-${mismatch}` },
+      });
+    }
+  });
+
+  test("resuming startup revalidates exact evidence after operational acquisition", async () => {
+    for (const drift of ["row", "plist"] as const) {
+      const f = await fixture(true);
+      const operationId = `startup-revalidate-${drift}`;
+      await seedResuming(f, operationId);
+      const denied = await acquireHomeStartupAdmission({
+        vaultPath: f.vault,
+        launchArtifact: { id: f.artifactId, version: f.artifactVersion },
+      }, startupDeps(f, {
+        afterResumingOperationalLease: async () => {
+          if (drift === "plist") {
+            await writeFile(f.plist, "changed after lease\n", { mode: 0o600 });
+          } else {
+            const db = new Database(homeLifecycleCoordinatorPath(f.vault));
+            try { db.run("UPDATE home_lifecycle_suspension SET last_error = 'changed after lease'"); }
+            finally { db.close(); }
+          }
+        },
+      }));
+      expect(denied).toMatchObject({
+        ok: false,
+        error: { kind: "resume-evidence-invalid", operationId },
+      });
+      const transactionId = `startup-revalidate-released-${drift}`;
+      expect((await engageOperationalWriterBarrier({ vaultPath: f.vault, transactionId })).ok).toBeTrue();
+      await releaseOperationalWriterBarrier({
+        vaultPath: f.vault,
+        transactionId,
+        validateAndRemoveExternalEvidence: async () => {},
+      });
+    }
+  });
+
+  test("startup aliases share lifecycle and operational identity", async () => {
+    const f = await fixture(false);
+    const alias = join(f.root, "vault-alias");
+    await symlink(f.vault, alias);
+    const admitted = await acquireHomeStartupAdmission({
+      vaultPath: alias,
+      launchArtifact: { id: "development", version: "0.1.0-dev" },
+    });
+    expect(admitted.ok).toBeTrue();
+    if (!admitted.ok) return;
+    let settled = false;
+    const barrier = engageOperationalWriterBarrier({
+      vaultPath: f.vault,
+      transactionId: "startup-alias",
+    }).then((value) => { settled = true; return value; });
+    await Bun.sleep(20);
+    expect(settled).toBeFalse();
+    admitted.lease.close();
+    expect((await barrier).ok).toBeTrue();
+    await releaseOperationalWriterBarrier({
+      vaultPath: alias,
+      transactionId: "startup-alias",
+      validateAndRemoveExternalEvidence: async () => {},
+    });
+  });
 });
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
@@ -726,11 +922,20 @@ async function fixture(loaded: boolean) {
   const paths = homeInstallationPaths(vault, { applicationSupportDir: support });
   await mkdir(paths.installations, { recursive: true });
   await mkdir(agents, { recursive: true });
+  const artifactId = "a".repeat(64);
+  const artifactVersion = "1.0.0";
+  const release = releaseRoot(paths, artifactId);
+  const runtime = join(release, "runtime", "bun");
+  const entrypoint = join(release, "app", "bin", "dome");
+  await mkdir(dirname(runtime), { recursive: true });
+  await mkdir(dirname(entrypoint), { recursive: true });
+  await writeFile(runtime, "test bun runtime\n", { mode: 0o700 });
+  await writeFile(entrypoint, "test Dome entrypoint\n", { mode: 0o700 });
   const installation = paths.record;
   await writeFile(installation, `${JSON.stringify({
     schema: "dome.home.installation/v1",
     vault,
-    artifact: { id: "a".repeat(64), version: "1.0.0" },
+    artifact: { id: artifactId, version: artifactVersion },
     environment: [],
   })}\n`, { mode: 0o600 });
   const label = `com.dome.home.${vaultServiceSlug(vault)}`;
@@ -756,6 +961,7 @@ async function fixture(loaded: boolean) {
   const launchd: FakeLaunchd = { calls, loaded: loadedTargets, runner: baseRunner };
   return {
     root, vault, support, agents, installation, plist, label, target, launchd, baseRunner,
+    artifactId, artifactVersion, release, runtime, entrypoint,
     readiness: async () => launchd.loaded.has(target),
   };
 }
@@ -798,6 +1004,34 @@ async function suspend<T>(
           : {}),
       };
   return withSupervisedHomeSuspended(invocation, operation, deps);
+}
+
+function startupDeps(
+  f: Fixture,
+  overrides: Partial<HomeStartupAdmissionDeps> = {},
+): HomeStartupAdmissionDeps {
+  return {
+    applicationSupportDir: f.support,
+    launchAgentsDir: f.agents,
+    invokingRuntimePath: f.runtime,
+    invokingEntrypointPath: f.entrypoint,
+    verifyArtifact: async (root) => {
+      if (root !== f.release) throw new Error("unexpected managed release path");
+      return {
+        artifact: { id: f.artifactId },
+        product: { version: f.artifactVersion },
+      } as never;
+    },
+    ...overrides,
+  };
+}
+
+async function seedResuming(f: Fixture, operationId: string): Promise<void> {
+  f.readiness = async () => false;
+  const result = await suspend(f, operationId, async () => "done");
+  expect(result.kind).toBe("failed");
+  const active = await inspectHomeLifecycleSuspension(f.vault);
+  expect(active).toMatchObject({ kind: "active", suspension: { phase: "resuming", operationId } });
 }
 
 async function setPhase(vault: string, phase: HomeSuspensionPhase): Promise<void> {
