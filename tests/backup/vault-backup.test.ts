@@ -1,10 +1,11 @@
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
-import { chmod, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { chmod, mkdtemp, mkdir, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { createVaultBackup, generateBackupIdentity, rehearseBlankTargetRestore, verifyVaultBackup } from "../../src/backup/vault-backup";
+import { createVaultBackup, generateBackupIdentity, restoreVaultBackup, verifyVaultBackup } from "../../src/backup/vault-backup";
 import { add, commit, initRepo } from "../../src/git";
 import { extractTarFile, inspectTar, writeTarTree } from "../../src/backup/tar";
 import { openDeviceAuthority } from "../../src/device-authority/device-authority";
@@ -76,11 +77,22 @@ describe("encrypted vault backup checkpoint", () => {
       expect(rejectedTamper.status).toBe("error");
       expect(rejectedTamper.error).toContain("presence disagrees");
 
+      const archiveHash = fileHash(await readFile(archive));
+      const identityHash = fileHash(await readFile(identity));
       const restored = join(root, "restored");
       const existingEmpty = join(root, "existing-empty");
       await mkdir(existingEmpty);
-      await expect(rehearseBlankTargetRestore({ archive, identity, target: existingEmpty }, tools)).rejects.toThrow("must be absent");
-      await rehearseBlankTargetRestore({ archive, identity, target: restored }, tools);
+      const refusedExisting = await restoreVaultBackup({ archive, identity, target: existingEmpty }, tools);
+      expect(refusedExisting).toMatchObject({ status: "error", exitCode: 64 });
+      const dangling = join(root, "dangling-target");
+      await symlink(join(root, "missing"), dangling);
+      expect((await restoreVaultBackup({ archive, identity, target: dangling }, tools)).exitCode).toBe(64);
+      const restoredResult = await restoreVaultBackup({ archive, identity, target: restored }, tools);
+      expect(restoredResult).toMatchObject({
+        status: "restored", exitCode: 0, authority: "invalidated", durability: "durable",
+      });
+      expect(fileHash(await readFile(archive))).toBe(archiveHash);
+      expect(fileHash(await readFile(identity))).toBe(identityHash);
       expect(await readFile(join(restored, "index.md"), "utf8")).toBe("# Vault\n");
       for (const name of ["answers.db", "proposals.db", "outbox.db", "runs.db", "request-receipts.db", "projection.db"]) {
         const db = new Database(join(restored, ".dome", "state", name), { readonly: true });
@@ -95,6 +107,86 @@ describe("encrypted vault backup checkpoint", () => {
       if (freshGrant.kind !== "minted") throw new Error("fresh grant failed");
       expect(restoredAuthority.value.authority.exchangePairingCode({ pairingCode: freshGrant.pairingCode }).kind).toBe("paired");
       restoredAuthority.value.authority.close();
+
+      const corruptTarget = join(root, "corrupt-target");
+      const corruptRestore = await restoreVaultBackup({ archive: tampered, identity, target: corruptTarget }, tools);
+      expect(corruptRestore.status).toBe("error");
+      expect(await pathPresent(corruptTarget)).toBeFalse();
+
+      const failedTarget = join(root, "failed-target");
+      const failedPublication = await restoreVaultBackup({ archive, identity, target: failedTarget }, {
+        ...tools,
+        publishRestoredVault: async () => { throw new Error("injected publication failure"); },
+      });
+      expect(failedPublication.error).toContain("injected publication failure");
+      expect(await pathPresent(failedTarget)).toBeFalse();
+      expect((await readdir(root)).filter((name) => name.startsWith(".failed-target.restore-"))).toEqual([]);
+
+      const unsyncedTarget = join(root, "unsynced-target");
+      let unsyncedPublished = false;
+      const unsynced = await restoreVaultBackup({ archive, identity, target: unsyncedTarget }, {
+        ...tools,
+        syncRestoreTree: async () => { throw new Error("injected restored-tree fsync failure"); },
+        publishRestoredVault: async () => { unsyncedPublished = true; },
+      });
+      expect(unsynced.error).toContain("restored-tree fsync failure");
+      expect(unsyncedPublished).toBeFalse();
+      expect(await pathPresent(unsyncedTarget)).toBeFalse();
+      expect((await readdir(root)).filter((name) => name.startsWith(".unsynced-target.restore-"))).toEqual([]);
+
+      const racedTarget = join(root, "raced-target");
+      const raced = await restoreVaultBackup({ archive, identity, target: racedTarget }, {
+        ...tools,
+        publishRestoredVault: async (_source, target) => {
+          await mkdir(target);
+          await writeFile(join(target, "winner"), "other restore\n");
+          throw new Error("exclusive publication lost race");
+        },
+      });
+      expect(raced.status).toBe("error");
+      expect(await readFile(join(racedTarget, "winner"), "utf8")).toBe("other restore\n");
+
+      let enterPublisher!: () => void;
+      let releasePublisher!: () => void;
+      const entered = new Promise<void>((resolve) => { enterPublisher = resolve; });
+      const released = new Promise<void>((resolve) => { releasePublisher = resolve; });
+      const canonicalParent = join(root, "canonical-parent");
+      const alternateParent = join(root, "alternate-parent");
+      const linkedParent = join(root, "linked-parent");
+      await mkdir(canonicalParent);
+      await mkdir(alternateParent);
+      await symlink(canonicalParent, linkedParent);
+      const canonicalTarget = join(await realpath(canonicalParent), "concurrent-target");
+      const requestedTarget = join(linkedParent, "concurrent-target");
+      const first = restoreVaultBackup({ archive, identity, target: requestedTarget }, {
+        ...tools,
+        publishRestoredVault: async (source, target) => {
+          enterPublisher();
+          await released;
+          await rename(source, target);
+        },
+      });
+      await entered;
+      await rm(linkedParent);
+      await symlink(alternateParent, linkedParent);
+      const second = await restoreVaultBackup({ archive, identity, target: canonicalTarget }, tools);
+      expect(second.error).toContain("another restore owns the target");
+      releasePublisher();
+      expect(await first).toMatchObject({ status: "restored", target: canonicalTarget });
+      expect(await readFile(join(canonicalTarget, "index.md"), "utf8")).toBe("# Vault\n");
+      expect(await pathPresent(join(alternateParent, "concurrent-target"))).toBeFalse();
+
+      const uncertainTarget = join(root, "uncertain-target");
+      const uncertain = await restoreVaultBackup({ archive, identity, target: uncertainTarget }, {
+        ...tools,
+        publishRestoredVault: rename,
+        syncRestoreParent: async () => { throw new Error("injected parent fsync failure"); },
+      });
+      expect(uncertain).toMatchObject({ status: "restored", exitCode: 1, durability: "uncertain" });
+      expect(uncertain.error).toContain("published");
+      expect(await readFile(join(uncertainTarget, "index.md"), "utf8")).toBe("# Vault\n");
+      expect(fileHash(await readFile(archive))).toBe(archiveHash);
+      expect(fileHash(await readFile(identity))).toBe(identityHash);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
@@ -195,6 +287,12 @@ describe("encrypted vault backup checkpoint", () => {
 
 function lifecycle<T extends Record<string, unknown>>(tools: T): T & { platform: "darwin"; uid: number; launchAgentsDir: string; launchctl: (args: ReadonlyArray<string>) => Promise<{ exitCode: number; stdout: string; stderr: string }> } {
   return { ...tools, platform: "darwin", uid: 501, launchAgentsDir: "/nonexistent-launch-agents", launchctl: async () => ({ exitCode: 1, stdout: "", stderr: "" }) };
+}
+
+function fileHash(bytes: Uint8Array): string { return createHash("sha256").update(bytes).digest("hex"); }
+
+async function pathPresent(path: string): Promise<boolean> {
+  try { await stat(path); return true; } catch { return false; }
 }
 
 async function fakeAgeTools(root: string): Promise<{ agePath: string; ageKeygenPath: string }> {

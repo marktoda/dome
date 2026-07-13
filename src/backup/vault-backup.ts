@@ -6,11 +6,11 @@ import { Database } from "bun:sqlite";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import {
-  access, chmod, copyFile, lstat, mkdir, mkdtemp, open, readFile, readdir,
+  chmod, copyFile, lstat, mkdir, mkdtemp, open, readFile, readdir,
   realpath, rename, rm, writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 
 import { openDeviceAuthority } from "../device-authority/device-authority";
@@ -24,6 +24,7 @@ import {
   type StandaloneBackupTreeEntry,
 } from "../git";
 import { waitForLaunchAgentDrain } from "../platform/launchd";
+import { publishDirectoryExclusive } from "../platform/exclusive-rename";
 import { homeServiceLabelForVault, isHomePairingReadiness } from "../product-host/home-lifecycle";
 import { resolveServiceDeps, serviceLabelForVault, type ServiceDeps } from "../surface/service-probe";
 import { extractTarTree, inspectTar, readTarFile, writeTarTree, type TarEntry } from "./tar";
@@ -60,14 +61,18 @@ const EXTERNAL_GIT_OBJECT_PATHS = [
 
 export type BackupResult = {
   readonly schema: typeof BACKUP_SCHEMA;
-  readonly operation: "keygen" | "create" | "verify";
-  readonly status: "created" | "verified" | "error";
+  readonly operation: "keygen" | "create" | "verify" | "restore";
+  readonly status: "created" | "verified" | "restored" | "error";
   readonly exitCode: 0 | 1 | 64;
   readonly output?: string;
   readonly archive?: string;
   readonly recipient?: string;
   readonly backupId?: string;
   readonly sha256?: string;
+  readonly target?: string;
+  readonly authEpoch?: number | null;
+  readonly authority?: "invalidated" | "absent";
+  readonly durability?: "durable" | "uncertain";
   readonly restart?: "not-running" | "restarted" | "failed";
   readonly restartError?: string;
   readonly error?: string;
@@ -142,6 +147,9 @@ export type BackupDeps = ServiceDeps & {
   readonly beforeSourceRecheck?: (() => Promise<void>) | undefined;
   readonly readiness?: (() => Promise<boolean>) | undefined;
   readonly readinessTimeoutMs?: number;
+  readonly publishRestoredVault?: ((source: string, target: string) => Promise<void>) | undefined;
+  readonly syncRestoreTree?: ((vault: string) => Promise<void>) | undefined;
+  readonly syncRestoreParent?: ((parent: string) => Promise<void>) | undefined;
 };
 
 export async function generateBackupIdentity(input: {
@@ -222,17 +230,15 @@ export async function verifyVaultBackup(input: {
   const archive = resolve(input.archive);
   const identity = resolve(input.identity);
   const temporary = await mkdtemp(join(tmpdir(), "dome-backup-verify-"));
-  const tarPath = join(temporary, "payload.tar");
   try {
-    await run([deps.agePath ?? "age", "--decrypt", "-i", identity, "-o", tarPath, archive]);
-    const manifest = await verifyPlainArchive(tarPath);
+    const staged = await stageVerifiedBackup({ archive, identity, staging: temporary }, deps);
     return Object.freeze({
       schema: BACKUP_SCHEMA,
       operation: "verify",
       status: "verified",
       exitCode: 0,
       archive,
-      backupId: manifest.backupId,
+      backupId: staged.manifest.backupId,
       sha256: await hashFile(archive),
     });
   } catch (error) {
@@ -242,36 +248,143 @@ export async function verifyVaultBackup(input: {
   }
 }
 
-/** Internal-only restore rehearsal. It never publishes a public restore surface. */
+/** Restore one verified archive into an absent blank-host vault path. */
+export async function restoreVaultBackup(input: {
+  readonly archive: string;
+  readonly identity: string;
+  readonly target: string;
+}, deps: BackupDeps = {}): Promise<BackupResult> {
+  if (!isAbsolute(input.target)) {
+    return failure("restore", "restore target must be an absolute path", 64);
+  }
+  const archive = resolve(input.archive);
+  const identity = resolve(input.identity);
+  const requestedTarget = resolve(input.target);
+  const requestedParent = dirname(requestedTarget);
+  let parent: string;
+  let target: string;
+  try {
+    if (await exists(requestedTarget)) return failure("restore", `restore target must be absent: ${requestedTarget}`, 64);
+    await mkdir(requestedParent, { recursive: true });
+    parent = await realpath(requestedParent);
+    target = join(parent, basename(requestedTarget));
+    if (await exists(target)) return failure("restore", `restore target must be absent: ${target}`, 64);
+  } catch (error) {
+    return failure("restore", message(error));
+  }
+  try {
+    const locked = await withExclusiveFileLock({
+      lockPath: join(parent, `.${basename(target)}.restore.lock`),
+      command: "dome-backup-restore",
+    }, async () => {
+      if (await exists(target)) return failure("restore", `restore target must be absent: ${target}`, 64);
+      return restoreWhileLocked({ archive, identity, target, parent }, deps);
+    });
+    return locked.kind === "busy"
+      ? failure("restore", `another restore owns the target: ${target}`)
+      : locked.value;
+  } catch (error) {
+    return failure("restore", message(error));
+  }
+}
+
+async function restoreWhileLocked(input: {
+  readonly archive: string;
+  readonly identity: string;
+  readonly target: string;
+  readonly parent: string;
+}, deps: BackupDeps): Promise<BackupResult> {
+  let staging: string | null = null;
+  try {
+    staging = await mkdtemp(join(input.parent, `.${basename(input.target)}.restore-`));
+    await chmod(staging, 0o700);
+    const staged = await stageVerifiedBackup({ archive: input.archive, identity: input.identity, staging }, deps);
+    const authority = await invalidateRestoredAuthority(staged.vault);
+    await validateReconstructedVault(staged.vault, staged.manifest);
+    await (deps.syncRestoreTree ?? fsyncDirectoryTree)(staged.vault);
+    if (await exists(input.target)) throw new Error(`restore target appeared before publication: ${input.target}`);
+    const publish = deps.publishRestoredVault
+      ?? ((source: string, target: string) => publishDirectoryExclusive({ source, target }));
+    await publish(staged.vault, input.target);
+    const restored = {
+      schema: BACKUP_SCHEMA,
+      operation: "restore",
+      status: "restored",
+      archive: input.archive,
+      target: input.target,
+      backupId: staged.manifest.backupId,
+      authEpoch: authority.authEpoch,
+      authority: authority.status,
+    } as const;
+    try {
+      await (deps.syncRestoreParent ?? fsyncDirectory)(input.parent);
+      return Object.freeze({ ...restored, exitCode: 0 as const, durability: "durable" as const });
+    } catch (error) {
+      return Object.freeze({
+        ...restored,
+        exitCode: 1 as const,
+        durability: "uncertain" as const,
+        error: `restore was published but parent-directory durability is uncertain: ${message(error)}`,
+      });
+    }
+  } catch (error) {
+    return failure("restore", message(error));
+  } finally {
+    if (staging !== null) await rm(staging, { recursive: true, force: true });
+  }
+}
+
+/** Compatibility wrapper retained for internal recovery rehearsals. */
 export async function rehearseBlankTargetRestore(input: {
   readonly archive: string;
   readonly identity: string;
   readonly target: string;
 }, deps: BackupDeps = {}): Promise<void> {
-  const target = resolve(input.target);
-  if (await exists(target)) throw new Error("restore rehearsal target must be absent");
-  const parent = dirname(target);
-  await mkdir(parent, { recursive: true });
-  const staging = await mkdtemp(join(parent, `.${basename(target)}.restore-`));
-  const tarPath = join(staging, "payload.tar");
-  const restored = join(staging, "restored");
+  const result = await restoreVaultBackup(input, deps);
+  if (result.status !== "restored") throw new Error(result.error ?? "restore rehearsal failed");
+}
+
+async function stageVerifiedBackup(input: {
+  readonly archive: string;
+  readonly identity: string;
+  readonly staging: string;
+}, deps: BackupDeps): Promise<{ readonly manifest: BackupManifest; readonly vault: string }> {
+  const tarPath = join(input.staging, "payload.tar");
+  const restored = join(input.staging, "restored");
+  await run([deps.agePath ?? "age", "--decrypt", "-i", input.identity, "-o", tarPath, input.archive]);
+  const manifest = await validatePlainArchive(tarPath);
+  await extractTarStrict(tarPath, restored);
+  const vault = join(restored, "vault");
+  await validateReconstructedVault(vault, manifest);
+  return Object.freeze({ manifest, vault });
+}
+
+async function invalidateRestoredAuthority(
+  vault: string,
+): Promise<{ readonly status: "invalidated" | "absent"; readonly authEpoch: number | null }> {
+  const authorityPath = join(vault, ".dome", "state", "device-authority.db");
+  if (!(await exists(authorityPath))) return Object.freeze({ status: "absent", authEpoch: null });
+  const opened = await openDeviceAuthority({ path: authorityPath });
+  if (!opened.ok) throw new Error(`restored device authority refused to open: ${opened.error.kind}`);
+  let authEpoch: number;
+  const previousEpoch = opened.value.authority.authEpoch();
+  try { authEpoch = opened.value.authority.invalidateAll().authEpoch; } finally { opened.value.authority.close(); }
+  if (authEpoch !== previousEpoch + 1) throw new Error("restored device authority epoch did not advance exactly once");
+  const checkpoint = new Database(authorityPath);
   try {
-    await run([deps.agePath ?? "age", "--decrypt", "-i", resolve(input.identity), "-o", tarPath, resolve(input.archive)]);
-    const manifest = await verifyPlainArchive(tarPath);
-    await extractTarStrict(tarPath, restored);
-    const vault = join(restored, "vault");
-    await validateReconstructedVault(vault, manifest);
-    const authorityPath = join(vault, ".dome", "state", "device-authority.db");
-    if (await exists(authorityPath)) {
-      const opened = await openDeviceAuthority({ path: authorityPath });
-      if (!opened.ok) throw new Error(`restored device authority refused to open: ${opened.error.kind}`);
-      try { opened.value.authority.invalidateAll(); } finally { opened.value.authority.close(); }
-    }
-    await rm(tarPath, { force: true });
-    await rename(vault, target);
-  } finally {
-    await rm(staging, { recursive: true, force: true });
-  }
+    const result = checkpoint.query<{ busy: number; log: number; checkpointed: number }, []>(
+      "PRAGMA wal_checkpoint(TRUNCATE)",
+    ).get();
+    if (result === null || result.busy !== 0) throw new Error("restored device authority WAL checkpoint was busy");
+  } finally { checkpoint.close(); }
+  await fsyncPath(authorityPath);
+  await fsyncDirectory(dirname(authorityPath));
+  const reopened = await openDeviceAuthority({ path: authorityPath });
+  if (!reopened.ok) throw new Error(`invalidated device authority refused to reopen: ${reopened.error.kind}`);
+  try {
+    if (reopened.value.authority.authEpoch() !== authEpoch) throw new Error("restored device authority epoch was not durable");
+  } finally { reopened.value.authority.close(); }
+  return Object.freeze({ status: "invalidated", authEpoch });
 }
 
 async function createWhileFenced(vault: string, output: string, recipient: string, deps: BackupDeps): Promise<BackupResult> {
@@ -440,7 +553,7 @@ async function quickCheckSqlite(path: string): Promise<void> {
   } finally { db.close(); }
 }
 
-async function verifyPlainArchive(tarPath: string): Promise<BackupManifest> {
+async function validatePlainArchive(tarPath: string): Promise<BackupManifest> {
   const entries = await inspectTar(tarPath);
   const manifestBytes = await readTarFile(tarPath, "manifest.json");
   const parsed = manifestSchema.safeParse(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(manifestBytes)));
@@ -448,12 +561,6 @@ async function verifyPlainArchive(tarPath: string): Promise<BackupManifest> {
   const manifest = parsed.data as BackupManifest;
   validateManifestSemantics(manifest);
   assertTarMatchesManifest(entries, manifest);
-  const temporary = await mkdtemp(join(tmpdir(), "dome-backup-restorable-check-"));
-  try {
-    const restored = join(temporary, "restored");
-    await extractTarStrict(tarPath, restored);
-    await validateReconstructedVault(join(restored, "vault"), manifest);
-  } finally { await rm(temporary, { recursive: true, force: true }); }
   return manifest;
 }
 
@@ -747,7 +854,22 @@ async function hashFile(path: string): Promise<string> {
 
 async function fsyncPath(path: string): Promise<void> { const handle = await open(path, "r"); try { await handle.sync(); } finally { await handle.close(); } }
 async function fsyncDirectory(path: string): Promise<void> { const handle = await open(path, "r"); try { await handle.sync(); } finally { await handle.close(); } }
-async function exists(path: string): Promise<boolean> { try { await access(path); return true; } catch { return false; } }
+async function fsyncDirectoryTree(root: string): Promise<void> {
+  async function visit(directory: string): Promise<void> {
+    for (const child of await readdir(directory, { withFileTypes: true })) {
+      if (child.isDirectory()) await visit(join(directory, child.name));
+    }
+    await fsyncDirectory(directory);
+  }
+  await visit(root);
+}
+async function exists(path: string): Promise<boolean> {
+  try { await lstat(path); return true; }
+  catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return false;
+    throw error;
+  }
+}
 async function canonicalNewOutput(path: string): Promise<string> {
   const absolute = resolve(path);
   await mkdir(dirname(absolute), { recursive: true });

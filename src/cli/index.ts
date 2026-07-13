@@ -998,7 +998,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
   const backupCommand = program
     .command("backup")
     .helpGroup(GROUP_SERVICE)
-    .description("Create and verify encrypted, offline Dome vault backups.");
+    .description("Create, verify, and restore encrypted offline Dome vault backups.");
   backupCommand.command("keygen")
     .description("Create a private age identity and print its public recipient.")
     .requiredOption("--output <identity-file>", "Private identity output (created mode 0600; must not exist).")
@@ -1024,6 +1024,15 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .action(async (archive: string, options: BackupCliOptions) => {
       const { runBackup } = await import("./commands/backup");
       setExitCode(await runBackup("verify", archive, options));
+    });
+  backupCommand.command("restore <archive>")
+    .description("Restore a verified backup into an absent absolute vault path and invalidate prior device authority.")
+    .requiredOption("--identity <identity-file>", "Private age identity path (contents are never logged).")
+    .requiredOption("--target <absent-vault-path>", "Absolute absent path to publish the reconstructed vault.")
+    .option("--json", "Emit JSON.")
+    .action(async (archive: string, options: BackupCliOptions) => {
+      const { runBackup } = await import("./commands/backup");
+      setExitCode(await runBackup("restore", archive, options));
     });
 
   program
@@ -1223,6 +1232,7 @@ type BackupCliOptions = {
   readonly output?: string;
   readonly recipient?: string;
   readonly identity?: string;
+  readonly target?: string;
   readonly vault?: string;
   readonly json?: boolean;
 };

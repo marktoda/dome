@@ -3,6 +3,7 @@
 import {
   createVaultBackup,
   generateBackupIdentity,
+  restoreVaultBackup,
   verifyVaultBackup,
   type BackupDeps,
   type BackupResult,
@@ -14,12 +15,13 @@ export type RunBackupOptions = {
   readonly output?: string;
   readonly recipient?: string;
   readonly identity?: string;
+  readonly target?: string;
   readonly vault?: string;
   readonly json?: boolean;
 };
 
 export async function runBackup(
-  operation: "keygen" | "create" | "verify",
+  operation: "keygen" | "create" | "verify" | "restore",
   argument: string | undefined,
   options: RunBackupOptions,
   deps: BackupDeps = {},
@@ -31,9 +33,14 @@ export async function runBackup(
   } else if (operation === "create") {
     if (options.output === undefined || options.recipient === undefined) return usage("create requires --output and --recipient");
     result = await createVaultBackup({ vaultPath: resolveVaultPath(options.vault), output: options.output, recipient: options.recipient }, deps);
-  } else {
+  } else if (operation === "verify") {
     if (argument === undefined || options.identity === undefined) return usage("verify requires an archive and --identity <identity-file>");
     result = await verifyVaultBackup({ archive: argument, identity: options.identity }, deps);
+  } else {
+    if (argument === undefined || options.identity === undefined || options.target === undefined) {
+      return usage("restore requires an archive, --identity <identity-file>, and --target <absent-vault-path>");
+    }
+    result = await restoreVaultBackup({ archive: argument, identity: options.identity, target: options.target }, deps);
   }
   present(result, options.json === true);
   return result.exitCode;
@@ -47,6 +54,11 @@ function usage(message: string): 64 {
 function present(result: BackupResult, json: boolean): void {
   if (json) {
     console.log(formatJson(result));
+    return;
+  }
+  if (result.operation === "restore" && result.status === "restored") {
+    console.log(`backup restored: ${result.target}\nbackup id: ${result.backupId}\ndevice authority: ${result.authority}${result.authEpoch === null ? "" : ` (epoch ${result.authEpoch})`}\ndurability: ${result.durability}`);
+    if (result.error !== undefined) console.error(`dome backup restore: ${result.error}`);
     return;
   }
   if (result.error !== undefined) {

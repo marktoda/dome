@@ -195,9 +195,9 @@ export async function extractTarTree(
           offset += length;
           remaining -= length;
         }
+        await output.chmod(mode);
         await output.sync();
       } finally { await output.close(); }
-      await chmod(target, mode);
       offset = await consumeZeroPadding(handle, offset, size, path);
       entries.push(Object.freeze({ path, type, mode, size, sha256: hash.digest("hex") }));
     }
