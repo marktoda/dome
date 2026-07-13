@@ -48,6 +48,7 @@ describe("bin/dome process boundary", () => {
       "install",
       "restart",
       "uninstall",
+      "backup",
       "status",
       "sync",
       // Decide:

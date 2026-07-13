@@ -1,0 +1,761 @@
+// backup/vault-backup: one deep Module for encrypted, offline Dome backups.
+// The CLI supplies paths; source admission, Home fencing, exact inventory,
+// SQLite snapshots, archive validation, encryption, and publication live here.
+
+import { Database } from "bun:sqlite";
+import { createHash, randomUUID } from "node:crypto";
+import { constants } from "node:fs";
+import {
+  access, chmod, copyFile, lstat, mkdir, mkdtemp, open, readFile, readdir,
+  realpath, rename, rm, writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { z } from "zod";
+
+import { openDeviceAuthority } from "../device-authority/device-authority";
+import { compareStrings } from "../core/compare";
+import { withExclusiveFileLock } from "../engine/host/file-lock";
+import { readServeHeartbeatStatus } from "../engine/host/compiler-host-heartbeat";
+import {
+  readStandaloneBackupSource,
+  readStandaloneBackupBlob,
+  validateStandaloneBackupRepository,
+  type StandaloneBackupTreeEntry,
+} from "../git";
+import { waitForLaunchAgentDrain } from "../platform/launchd";
+import { homeServiceLabelForVault, isHomePairingReadiness } from "../product-host/home-lifecycle";
+import { resolveServiceDeps, serviceLabelForVault, type ServiceDeps } from "../surface/service-probe";
+import { extractTarTree, inspectTar, readTarFile, writeTarTree, type TarEntry } from "./tar";
+
+export const BACKUP_SCHEMA = "dome.backup/v1" as const;
+export const BACKUP_MANIFEST_SCHEMA = "dome.backup-manifest/v1" as const;
+
+const DATABASES = [
+  { name: "answers.db", durability: "durable" },
+  { name: "proposals.db", durability: "durable" },
+  { name: "outbox.db", durability: "durable" },
+  { name: "runs.db", durability: "durable" },
+  { name: "request-receipts.db", durability: "durable" },
+  { name: "device-authority.db", durability: "durable" },
+  { name: "projection.db", durability: "rebuildable" },
+] as const;
+const DURABLE_FILES = new Set(["quarantined.json", "product-host-id"]);
+const TRANSIENT_FILES = new Set([
+  "serve-heartbeat.json", "model-provider-probe.json", "serve.log",
+  "serve-daemon.log", "home.log", "last-reconcile-mtime.txt",
+  "scheduled.json", "last-reconciled-sha.txt",
+]);
+const BACKUP_EXCLUSIONS = Object.freeze([
+  ".dome/state/locks/**", ".dome/state/*-wal", ".dome/state/*-shm",
+  ".dome/state/*.log", ".dome/state/serve-heartbeat.json",
+  ".dome/state/model-provider-probe.json", ".git/logs/**", ".git/index",
+  ".dome/state/last-reconcile-mtime.txt", ".dome/state/scheduled.json",
+  ".dome/state/last-reconciled-sha.txt", ".git/**/*.lock",
+]);
+const EXTERNAL_GIT_OBJECT_PATHS = [
+  "objects/info/alternates",
+  "objects/info/http-alternates",
+] as const;
+
+export type BackupResult = {
+  readonly schema: typeof BACKUP_SCHEMA;
+  readonly operation: "keygen" | "create" | "verify";
+  readonly status: "created" | "verified" | "error";
+  readonly exitCode: 0 | 1 | 64;
+  readonly output?: string;
+  readonly archive?: string;
+  readonly recipient?: string;
+  readonly backupId?: string;
+  readonly sha256?: string;
+  readonly restart?: "not-running" | "restarted" | "failed";
+  readonly restartError?: string;
+  readonly error?: string;
+};
+
+type BackupEntry = {
+  readonly path: string;
+  readonly type: "file" | "directory";
+  readonly mode: number;
+  readonly size: number;
+  readonly sha256?: string;
+};
+
+type BackupManifest = {
+  readonly schema: typeof BACKUP_MANIFEST_SCHEMA;
+  readonly backupId: string;
+  readonly createdAt: string;
+  readonly source: {
+    readonly vaultId: string | null;
+    readonly branch: string;
+    readonly head: string;
+    readonly refs: ReadonlyArray<{ readonly name: string; readonly oid: string }>;
+    readonly refDigest: string;
+    readonly repositoryDigest: string;
+    readonly policy: "clean-committed-standalone";
+  };
+  readonly databases: ReadonlyArray<{ readonly name: string; readonly durability: "durable" | "rebuildable"; readonly present: boolean }>;
+  readonly exclusions: ReadonlyArray<string>;
+  readonly restore: { readonly invalidateDeviceAuthority: true; readonly projectionRebuildable: true };
+  readonly entries: ReadonlyArray<BackupEntry>;
+};
+
+const hexOid = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/);
+const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
+const entrySchema = z.object({
+  path: z.string().min(1),
+  type: z.enum(["file", "directory"]),
+  mode: z.number().int().min(0).max(0o777),
+  size: z.number().int().nonnegative().max(64 * 1024 * 1024 * 1024),
+  sha256: sha256Schema.optional(),
+}).strict();
+const manifestSchema = z.object({
+  schema: z.literal(BACKUP_MANIFEST_SCHEMA),
+  backupId: z.string().uuid(),
+  createdAt: z.string().datetime(),
+  source: z.object({
+    vaultId: z.string().min(1).nullable(), branch: z.string().min(1), head: hexOid,
+    refs: z.array(z.object({ name: z.string().regex(/^refs\/[A-Za-z0-9._\/-]+$/), oid: hexOid }).strict()),
+    refDigest: sha256Schema, repositoryDigest: sha256Schema,
+    policy: z.literal("clean-committed-standalone"),
+  }).strict(),
+  databases: z.array(z.object({
+    name: z.enum(DATABASES.map((entry) => entry.name) as [typeof DATABASES[number]["name"], ...Array<typeof DATABASES[number]["name"]>]),
+    durability: z.enum(["durable", "rebuildable"]), present: z.boolean(),
+  }).strict()),
+  exclusions: z.array(z.string()),
+  restore: z.object({ invalidateDeviceAuthority: z.literal(true), projectionRebuildable: z.literal(true) }).strict(),
+  entries: z.array(entrySchema),
+}).strict();
+
+type SourceSnapshot = Omit<BackupManifest["source"], "policy">;
+type InspectedSource = {
+  readonly manifest: SourceSnapshot;
+  readonly tree: ReadonlyArray<StandaloneBackupTreeEntry>;
+  readonly worktreeDigest: string;
+};
+
+export type BackupDeps = ServiceDeps & {
+  readonly agePath?: string;
+  readonly ageKeygenPath?: string;
+  readonly now?: () => Date;
+  readonly beforeSourceRecheck?: (() => Promise<void>) | undefined;
+  readonly readiness?: (() => Promise<boolean>) | undefined;
+  readonly readinessTimeoutMs?: number;
+};
+
+export async function generateBackupIdentity(input: {
+  readonly output: string;
+}, deps: BackupDeps = {}): Promise<BackupResult> {
+  const output = resolve(input.output);
+  if (await exists(output)) return failure("keygen", `identity already exists: ${output}`, 64);
+  const temporary = join(dirname(output), `.${basename(output)}.tmp-${process.pid}-${randomUUID()}`);
+  try {
+    await mkdir(dirname(output), { recursive: true });
+    await run([deps.ageKeygenPath ?? "age-keygen", "-o", temporary]);
+    await chmod(temporary, 0o600);
+    const recipient = (await run([deps.ageKeygenPath ?? "age-keygen", "-y", temporary])).stdout.trim();
+    if (!recipient.startsWith("age1")) throw new Error("age-keygen did not return an X25519 recipient");
+    await rename(temporary, output);
+    await fsyncPath(output);
+    await fsyncDirectory(dirname(output));
+    return Object.freeze({ schema: BACKUP_SCHEMA, operation: "keygen", status: "created", exitCode: 0, output, recipient });
+  } catch (error) {
+    await rm(temporary, { force: true });
+    return failure("keygen", message(error));
+  }
+}
+
+export async function createVaultBackup(input: {
+  readonly vaultPath: string;
+  readonly output: string;
+  readonly recipient: string;
+}, deps: BackupDeps = {}): Promise<BackupResult> {
+  const vault = resolve(input.vaultPath);
+  let canonicalVault: string;
+  let output: string;
+  try {
+    canonicalVault = await realpath(vault);
+    output = await canonicalNewOutput(input.output);
+  } catch (error) { return failure("create", message(error), 64); }
+  if (!input.recipient.startsWith("age1")) return failure("create", "recipient must be an age X25519 public recipient", 64);
+  if (await exists(output)) return failure("create", `backup output already exists: ${output}`, 64);
+  if (isWithin(canonicalVault, output)) return failure("create", "backup output must be outside the vault", 64);
+
+  let home: Awaited<ReturnType<typeof stopSupervisedHome>>;
+  try {
+    home = await stopSupervisedHome(vault, deps);
+  } catch (error) {
+    return failure("create", message(error));
+  }
+  let created: BackupResult;
+  try {
+    if (home.stopError !== undefined) {
+      created = failure("create", home.stopError);
+    } else {
+      const locked = await withExclusiveFileLock({
+        lockPath: join(vault, ".dome", "state", "locks", "product-host.lock"),
+        command: "dome-backup-create",
+      }, async () => await createWhileFenced(vault, output, input.recipient, deps));
+      created = locked.kind === "busy"
+        ? failure("create", "Dome Home or another backup owns the vault; stop it and retry")
+        : locked.value;
+    }
+  } catch (error) {
+    created = failure("create", message(error));
+  } finally {
+    // Restart below: a finally must cover every path after successful bootout.
+  }
+  if (!home.wasLoaded) return Object.freeze({ ...created, restart: "not-running" });
+  try {
+    await home.restart();
+    return Object.freeze({ ...created, restart: "restarted" });
+  } catch (error) {
+    return Object.freeze({ ...created, exitCode: 1, restart: "failed", restartError: message(error) });
+  }
+}
+
+export async function verifyVaultBackup(input: {
+  readonly archive: string;
+  readonly identity: string;
+}, deps: BackupDeps = {}): Promise<BackupResult> {
+  const archive = resolve(input.archive);
+  const identity = resolve(input.identity);
+  const temporary = await mkdtemp(join(tmpdir(), "dome-backup-verify-"));
+  const tarPath = join(temporary, "payload.tar");
+  try {
+    await run([deps.agePath ?? "age", "--decrypt", "-i", identity, "-o", tarPath, archive]);
+    const manifest = await verifyPlainArchive(tarPath);
+    return Object.freeze({
+      schema: BACKUP_SCHEMA,
+      operation: "verify",
+      status: "verified",
+      exitCode: 0,
+      archive,
+      backupId: manifest.backupId,
+      sha256: await hashFile(archive),
+    });
+  } catch (error) {
+    return failure("verify", message(error));
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
+/** Internal-only restore rehearsal. It never publishes a public restore surface. */
+export async function rehearseBlankTargetRestore(input: {
+  readonly archive: string;
+  readonly identity: string;
+  readonly target: string;
+}, deps: BackupDeps = {}): Promise<void> {
+  const target = resolve(input.target);
+  if (await exists(target)) throw new Error("restore rehearsal target must be absent");
+  const parent = dirname(target);
+  await mkdir(parent, { recursive: true });
+  const staging = await mkdtemp(join(parent, `.${basename(target)}.restore-`));
+  const tarPath = join(staging, "payload.tar");
+  const restored = join(staging, "restored");
+  try {
+    await run([deps.agePath ?? "age", "--decrypt", "-i", resolve(input.identity), "-o", tarPath, resolve(input.archive)]);
+    const manifest = await verifyPlainArchive(tarPath);
+    await extractTarStrict(tarPath, restored);
+    const vault = join(restored, "vault");
+    await validateReconstructedVault(vault, manifest);
+    const authorityPath = join(vault, ".dome", "state", "device-authority.db");
+    if (await exists(authorityPath)) {
+      const opened = await openDeviceAuthority({ path: authorityPath });
+      if (!opened.ok) throw new Error(`restored device authority refused to open: ${opened.error.kind}`);
+      try { opened.value.authority.invalidateAll(); } finally { opened.value.authority.close(); }
+    }
+    await rm(tarPath, { force: true });
+    await rename(vault, target);
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+  }
+}
+
+async function createWhileFenced(vault: string, output: string, recipient: string, deps: BackupDeps): Promise<BackupResult> {
+  const temporary = await mkdtemp(join(tmpdir(), "dome-backup-create-"));
+  const root = join(temporary, "dome-backup");
+  const stagedVault = join(root, "vault");
+  const tarPath = join(temporary, "payload.tar");
+  const encrypted = join(dirname(output), `.${basename(output)}.tmp-${process.pid}-${randomUUID()}`);
+  try {
+    const sourceBefore = await inspectSource(vault);
+    await assertSourceAdmissible(vault, sourceBefore.manifest);
+    const stateBefore = await operationalSourceDigest(vault);
+    await mkdir(stagedVault, { recursive: true });
+    await copyTrackedTree(vault, sourceBefore.tree, stagedVault);
+    await copyGitDirectory(vault, stagedVault);
+    const databases = await snapshotOperationalState(vault, stagedVault);
+    const vaultEntries = await inventoryTree(stagedVault, "vault");
+    const manifest: BackupManifest = Object.freeze({
+      schema: BACKUP_MANIFEST_SCHEMA,
+      backupId: randomUUID(),
+      createdAt: (deps.now?.() ?? new Date()).toISOString(),
+      source: Object.freeze({ ...sourceBefore.manifest, policy: "clean-committed-standalone" as const }),
+      databases,
+      exclusions: BACKUP_EXCLUSIONS,
+      restore: Object.freeze({ invalidateDeviceAuthority: true as const, projectionRebuildable: true as const }),
+      entries: Object.freeze(vaultEntries),
+    });
+    await writeFile(join(root, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+    await deps.beforeSourceRecheck?.();
+    const sourceAfter = await inspectSource(vault);
+    if (JSON.stringify(sourceAfter.manifest) !== JSON.stringify(sourceBefore.manifest) || sourceAfter.worktreeDigest !== sourceBefore.worktreeDigest) throw new Error("vault Git state changed while the backup was being created");
+    await assertSourceAdmissible(vault, sourceAfter.manifest);
+    if (await operationalSourceDigest(vault) !== stateBefore) throw new Error("vault operational state changed while the backup was being created");
+    const tarEntries = await writeTarTree(root, tarPath);
+    assertTarMatchesManifest(tarEntries, manifest);
+    await mkdir(dirname(output), { recursive: true });
+    await run([deps.agePath ?? "age", "-r", recipient, "-o", encrypted, tarPath]);
+    await chmod(encrypted, 0o600);
+    await fsyncPath(encrypted);
+    await rename(encrypted, output);
+    await fsyncDirectory(dirname(output));
+    return Object.freeze({
+      schema: BACKUP_SCHEMA, operation: "create", status: "created", exitCode: 0,
+      archive: output, backupId: manifest.backupId, sha256: await hashFile(output),
+    });
+  } catch (error) {
+    await rm(encrypted, { force: true });
+    return failure("create", message(error));
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
+async function inspectSource(vault: string): Promise<InspectedSource> {
+  const source = await readStandaloneBackupSource(vault);
+  if (!source.clean) throw new Error("backup requires a clean working tree, including no untracked files");
+  const worktreeEntries: Array<{ readonly path: string; readonly mode: number; readonly size: number; readonly sha256: string }> = [];
+  for (const entry of source.tree) {
+    const path = join(vault, ...entry.path.split("/"));
+    const info = await lstat(path);
+    if (!info.isFile()) throw new Error(`backup requires a regular clean tracked file: ${entry.path}`);
+    const worktreeHash = await hashFile(path);
+    const committedHash = sha256(await readStandaloneBackupBlob(vault, entry.path));
+    if (worktreeHash !== committedHash) throw new Error(`backup requires a clean working tree: ${entry.path}`);
+    worktreeEntries.push({ path: entry.path, mode: info.mode & 0o777, size: info.size, sha256: worktreeHash });
+  }
+  const worktreeDigest = sha256(Buffer.from(JSON.stringify(worktreeEntries)));
+  const repositoryDigest = sha256(Buffer.from(JSON.stringify(await inventoryGitDirectory(join(vault, ".git")))));
+  const vaultIdPath = join(vault, ".dome", "state", "product-host-id");
+  const vaultId = await exists(vaultIdPath) ? (await readFile(vaultIdPath, "utf8")).trim() : null;
+  const manifest = Object.freeze({
+    branch: source.branch.replace(/^refs\/heads\//, ""),
+    head: source.head,
+    refs: source.refs,
+    refDigest: sha256(Buffer.from(JSON.stringify(source.refs))),
+    repositoryDigest,
+    vaultId,
+  });
+  return Object.freeze({ manifest, tree: source.tree, worktreeDigest });
+}
+
+async function assertSourceAdmissible(vault: string, source: SourceSnapshot): Promise<void> {
+  if (source.branch === "") throw new Error("backup requires a normal branch, not detached HEAD");
+  for (const marker of ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG", "rebase-apply", "rebase-merge"]) {
+    if (await exists(join(vault, ".git", marker))) throw new Error(`backup refuses an in-progress Git operation: ${marker}`);
+  }
+  const gitLocks = await findMatching(join(vault, ".git"), (path) => path.endsWith(".lock"));
+  if (gitLocks.length > 0) throw new Error(`backup refuses active Git lock: ${relative(vault, gitLocks[0]!)}`);
+  for (const path of EXTERNAL_GIT_OBJECT_PATHS) {
+    if (await exists(join(vault, ".git", ...path.split("/")))) throw new Error(`backup refuses external Git object dependency: .git/${path}`);
+  }
+  if (await exists(join(vault, ".dome", "state", "finalize-intent.json"))) throw new Error("backup refuses an active finalize-intent recovery journal");
+  const mutations = join(vault, ".dome", "state", "mutations");
+  if (await exists(mutations) && (await readdir(mutations)).some((name) => name.endsWith(".json"))) {
+    throw new Error("backup refuses an active controlled-mutation recovery journal");
+  }
+}
+
+async function copyTrackedTree(vault: string, tree: ReadonlyArray<StandaloneBackupTreeEntry>, destination: string): Promise<void> {
+  for (const entry of tree) {
+    const target = join(destination, entry.path);
+    await mkdir(dirname(target), { recursive: true });
+    const content = await readStandaloneBackupBlob(vault, entry.path);
+    await writeFile(target, content, { flag: "wx", mode: entry.mode & 0o111 ? 0o755 : 0o644 });
+  }
+}
+
+async function copyGitDirectory(vault: string, destination: string): Promise<void> {
+  const source = join(vault, ".git");
+  const target = join(destination, ".git");
+  await copyTree(source, target, (relativePath, info) => {
+    const path = relativePath.split(sep).join("/");
+    return includeGitPath(path) && (info.isDirectory() || info.isFile());
+  });
+}
+
+async function snapshotOperationalState(vault: string, destination: string): Promise<BackupManifest["databases"]> {
+  const sourceState = join(vault, ".dome", "state");
+  const targetState = join(destination, ".dome", "state");
+  await mkdir(targetState, { recursive: true });
+  await assertKnownStateInventory(sourceState);
+  const inventory: Array<{ name: string; durability: "durable" | "rebuildable"; present: boolean }> = [];
+  for (const database of DATABASES) {
+    const source = join(sourceState, database.name);
+    const target = join(targetState, database.name);
+    const present = await exists(source);
+    inventory.push(Object.freeze({ ...database, present }));
+    if (!present) continue;
+    await snapshotSqlite(source, target);
+  }
+  for (const name of [...DURABLE_FILES].sort()) {
+    const source = join(sourceState, name);
+    if (await exists(source)) await copyRegular(source, join(targetState, name));
+  }
+  return Object.freeze(inventory);
+}
+
+async function assertKnownStateInventory(state: string): Promise<void> {
+  if (!(await exists(state))) return;
+  const knownDbs = new Set(DATABASES.map((entry) => entry.name));
+  for (const entry of await readdir(state, { withFileTypes: true })) {
+    const name = entry.name;
+    if (entry.isDirectory() && (name === "locks" || name === "mutations")) continue;
+    if (knownDbs.has(name as (typeof DATABASES)[number]["name"]) || DURABLE_FILES.has(name) || TRANSIENT_FILES.has(name)) continue;
+    if (name.endsWith("-wal") || name.endsWith("-shm") || name.endsWith(".tmp") || name.includes(".tmp-")) continue;
+    throw new Error(`backup has no durability classification for .dome/state/${name}`);
+  }
+}
+
+async function snapshotSqlite(source: string, destination: string): Promise<void> {
+  await mkdir(dirname(destination), { recursive: true });
+  const db = new Database(source, { readonly: true, create: false });
+  try {
+    const quick = db.query<{ quick_check: string }, []>("PRAGMA quick_check").all();
+    if (quick.length !== 1 || quick[0]?.quick_check !== "ok") throw new Error(`SQLite quick_check failed: ${basename(source)}`);
+    db.query("VACUUM INTO ?").run(destination);
+  } finally { db.close(); }
+  await quickCheckSqlite(destination);
+}
+
+async function quickCheckSqlite(path: string): Promise<void> {
+  const db = new Database(path, { readonly: true, create: false });
+  try {
+    const rows = db.query<{ quick_check: string }, []>("PRAGMA quick_check").all();
+    if (rows.length !== 1 || rows[0]?.quick_check !== "ok") throw new Error(`staged SQLite quick_check failed: ${basename(path)}`);
+  } finally { db.close(); }
+}
+
+async function verifyPlainArchive(tarPath: string): Promise<BackupManifest> {
+  const entries = await inspectTar(tarPath);
+  const manifestBytes = await readTarFile(tarPath, "manifest.json");
+  const parsed = manifestSchema.safeParse(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(manifestBytes)));
+  if (!parsed.success) throw new Error(`backup manifest is invalid: ${parsed.error.issues[0]?.message ?? "schema mismatch"}`);
+  const manifest = parsed.data as BackupManifest;
+  validateManifestSemantics(manifest);
+  assertTarMatchesManifest(entries, manifest);
+  const temporary = await mkdtemp(join(tmpdir(), "dome-backup-restorable-check-"));
+  try {
+    const restored = join(temporary, "restored");
+    await extractTarStrict(tarPath, restored);
+    await validateReconstructedVault(join(restored, "vault"), manifest);
+  } finally { await rm(temporary, { recursive: true, force: true }); }
+  return manifest;
+}
+
+function validateManifestSemantics(manifest: BackupManifest): void {
+  if (JSON.stringify(manifest.exclusions) !== JSON.stringify(BACKUP_EXCLUSIONS)) throw new Error("backup manifest exclusions are not canonical");
+  if (manifest.databases.length !== DATABASES.length) throw new Error("backup manifest must classify exactly seven databases");
+  for (let index = 0; index < DATABASES.length; index += 1) {
+    const actual = manifest.databases[index];
+    const expected = DATABASES[index];
+    if (actual === undefined || expected === undefined || actual.name !== expected.name || actual.durability !== expected.durability) throw new Error("backup manifest database inventory is not canonical");
+  }
+  const refs = [...manifest.source.refs].sort((a, b) => compareStrings(a.name, b.name));
+  if (JSON.stringify(refs) !== JSON.stringify(manifest.source.refs) || new Set(refs.map((ref) => ref.name)).size !== refs.length) {
+    throw new Error("backup manifest refs are not sorted and unique");
+  }
+  if (sha256(Buffer.from(JSON.stringify(refs))) !== manifest.source.refDigest) throw new Error("backup manifest ref digest is invalid");
+  const paths = manifest.entries.map((entry) => entry.path);
+  if (new Set(paths).size !== paths.length || JSON.stringify([...paths].sort(compareStrings)) !== JSON.stringify(paths)) throw new Error("backup manifest entries are not sorted and unique");
+  for (const entry of manifest.entries) {
+    if (entry.path !== "vault" && !entry.path.startsWith("vault/")) throw new Error(`backup manifest entry escapes its root: ${entry.path}`);
+    if (entry.path.split("/").some((part) => part === "" || part === "." || part === "..")) throw new Error(`backup manifest entry path is unsafe: ${entry.path}`);
+    if (entry.type === "directory" && (entry.size !== 0 || entry.sha256 !== undefined)) throw new Error(`backup manifest directory metadata is invalid: ${entry.path}`);
+    if (entry.type === "file" && entry.sha256 === undefined) throw new Error(`backup manifest file checksum is missing: ${entry.path}`);
+  }
+  const gitEntries = manifest.entries
+    .filter((entry) => entry.path === "vault/.git" || entry.path.startsWith("vault/.git/"))
+    .map((entry) => ({ ...entry, path: entry.path.slice("vault/".length) }));
+  if (gitEntries.length === 0 || sha256(Buffer.from(JSON.stringify(gitEntries))) !== manifest.source.repositoryDigest) {
+    throw new Error("backup manifest repository digest is invalid");
+  }
+  for (const path of EXTERNAL_GIT_OBJECT_PATHS) {
+    if (manifest.entries.some((entry) => entry.path === `vault/.git/${path}`)) throw new Error(`backup manifest depends on external Git objects: .git/${path}`);
+  }
+  const statePrefix = "vault/.dome/state";
+  const stateEntries = manifest.entries.filter((entry) => entry.path === statePrefix || entry.path.startsWith(`${statePrefix}/`));
+  for (const entry of stateEntries) {
+    if (entry.type === "directory") {
+      if (entry.path !== statePrefix) throw new Error(`backup manifest contains an unexpected state directory: ${entry.path}`);
+      continue;
+    }
+    const name = entry.path.slice(`${statePrefix}/`.length);
+    if (name.includes("/") || (!DATABASES.some((database) => database.name === name) && !DURABLE_FILES.has(name))) {
+      throw new Error(`backup manifest contains an unclassified operational state entry: ${entry.path}`);
+    }
+  }
+  for (const database of manifest.databases) {
+    const present = manifest.entries.some((entry) => entry.type === "file" && entry.path === `${statePrefix}/${database.name}`);
+    if (present !== database.present) throw new Error(`backup manifest database presence disagrees for ${database.name}`);
+  }
+}
+
+function assertTarMatchesManifest(tarEntries: ReadonlyArray<TarEntry>, manifest: BackupManifest): void {
+  const actual = tarEntries.filter((entry) => entry.path !== "manifest.json").map(normalizeEntry);
+  const expected = manifest.entries.map(normalizeEntry);
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("backup archive entries do not exactly match the manifest");
+  const manifestEntries = tarEntries.filter((entry) => entry.path === "manifest.json");
+  if (manifestEntries.length !== 1 || tarEntries.some((entry) => !entry.path.startsWith("vault/") && entry.path !== "vault" && entry.path !== "manifest.json")) {
+    throw new Error("backup archive contains an unexpected root entry");
+  }
+}
+
+function normalizeEntry(entry: BackupEntry | TarEntry): BackupEntry {
+  return { path: entry.path, type: entry.type, mode: entry.mode, size: entry.size, ...(entry.sha256 === undefined ? {} : { sha256: entry.sha256 }) };
+}
+
+async function stopSupervisedHome(vault: string, deps: BackupDeps): Promise<{ wasLoaded: boolean; stopError?: string; restart: () => Promise<void> }> {
+  const d = resolveServiceDeps(deps);
+  if (d.platform !== "darwin" || d.uid === null) throw new Error("Dome backup is supported on macOS Home artifacts only");
+  const legacyLabel = serviceLabelForVault(vault);
+  const legacyPlist = join(d.launchAgentsDir, `${legacyLabel}.plist`);
+  const legacyHeartbeat = await readServeHeartbeatStatus({ vaultPath: vault });
+  if (await exists(legacyPlist) || legacyHeartbeat.status === "running" || (await d.launchctl(["print", `gui/${d.uid}/${legacyLabel}`])).exitCode === 0) {
+    throw new Error("legacy dome serve is installed or loaded; uninstall it before backing up Dome Home");
+  }
+  const label = homeServiceLabelForVault(vault);
+  const plist = join(d.launchAgentsDir, `${label}.plist`);
+  const target = `gui/${d.uid}/${label}`;
+  const loaded = (await d.launchctl(["print", target])).exitCode === 0;
+  if (!loaded) {
+    try {
+      const response = await fetch("http://127.0.0.1:3663/pair/status");
+      if (await isHomePairingReadiness(response)) throw new Error("a foreground Dome Home is running; stop it before backup");
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("foreground Dome Home")) throw error;
+    }
+    return { wasLoaded: false, restart: async () => {} };
+  }
+  if (!(await exists(plist))) throw new Error("Dome Home is loaded without its plist; repair lifecycle state before backup");
+  const restart = async () => {
+    const boot = await d.launchctl(["bootstrap", `gui/${d.uid}`, plist]);
+    if (boot.exitCode !== 0) throw new Error(boot.stderr.trim() || "launchctl bootstrap failed");
+    const kick = await d.launchctl(["kickstart", "-k", target]);
+    if (kick.exitCode !== 0) throw new Error(kick.stderr.trim() || "launchctl kickstart failed");
+    const deadline = Date.now() + (deps.readinessTimeoutMs ?? 10_000);
+    do {
+      try {
+        if (deps.readiness !== undefined) {
+          if (await deps.readiness()) return;
+        } else {
+          const response = await fetch("http://127.0.0.1:3663/pair/status");
+          if (await isHomePairingReadiness(response)) return;
+        }
+      } catch { /* retry until the strict readiness deadline */ }
+      await Bun.sleep(200);
+    } while (Date.now() < deadline);
+    throw new Error("Dome Home restarted but did not become pairing-ready");
+  };
+  const bootout = await d.launchctl(["bootout", target]);
+  if (bootout.exitCode !== 0) throw new Error(bootout.stderr.trim() || "launchctl bootout failed before backup");
+  let drained = false;
+  let drainError: string | undefined;
+  try {
+    drained = await waitForLaunchAgentDrain({ launchctl: d.launchctl, uid: d.uid, label, timeoutMs: d.drainTimeoutMs });
+  } catch (error) {
+    drainError = message(error);
+  }
+  return {
+    wasLoaded: true,
+    ...(drained ? {} : { stopError: drainError ?? "Dome Home did not stop before the backup drain timeout" }),
+    restart,
+  };
+}
+
+async function extractTarStrict(tarPath: string, destination: string): Promise<void> {
+  await extractTarTree(tarPath, destination);
+}
+
+async function validateReconstructedVault(vault: string, manifest: BackupManifest): Promise<void> {
+  if (!(await exists(join(vault, ".git", "HEAD")))) {
+    throw new Error("reconstructed Git directory is missing HEAD");
+  }
+  const source = await validateStandaloneBackupRepository(vault);
+  const refs = source.refs;
+  if (source.head !== manifest.source.head || source.branch.replace(/^refs\/heads\//, "") !== manifest.source.branch || sha256(Buffer.from(JSON.stringify(refs))) !== manifest.source.refDigest) {
+    throw new Error("reconstructed Git state does not match the backup manifest");
+  }
+  const repositoryDigest = sha256(Buffer.from(JSON.stringify(await inventoryGitDirectory(join(vault, ".git")))));
+  if (repositoryDigest !== manifest.source.repositoryDigest) throw new Error("reconstructed Git directory does not match the backup manifest");
+  const archivedTrackedFiles = manifest.entries
+    .filter((entry) => entry.type === "file" && !entry.path.startsWith("vault/.git/") && !entry.path.startsWith("vault/.dome/state/"))
+    .map((entry) => entry.path.slice("vault/".length));
+  if (JSON.stringify(archivedTrackedFiles) !== JSON.stringify(source.tree.map((entry) => entry.path))) {
+    throw new Error("reconstructed working tree does not exactly match committed Git paths");
+  }
+  for (const entry of source.tree) {
+    const workingPath = join(vault, ...entry.path.split("/"));
+    const info = await lstat(workingPath);
+    if (!info.isFile() || await hashFile(workingPath) !== sha256(await readStandaloneBackupBlob(vault, entry.path))) {
+      throw new Error(`reconstructed working tree differs from committed Git: ${entry.path}`);
+    }
+    const expectedMode = entry.mode & 0o111 ? 0o755 : 0o644;
+    if ((info.mode & 0o777) !== expectedMode) throw new Error(`reconstructed working tree mode differs from committed Git: ${entry.path}`);
+  }
+  for (const database of manifest.databases) if (database.present) await quickCheckSqlite(join(vault, ".dome", "state", database.name));
+  const quarantinePath = join(vault, ".dome", "state", "quarantined.json");
+  if (await exists(quarantinePath)) {
+    const parsed = JSON.parse(await readFile(quarantinePath, "utf8"));
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("restored quarantine state is not a JSON object");
+  }
+  const vaultIdPath = join(vault, ".dome", "state", "product-host-id");
+  const restoredVaultId = await exists(vaultIdPath) ? (await readFile(vaultIdPath, "utf8")).trim() : null;
+  if (restoredVaultId !== manifest.source.vaultId) throw new Error("restored Product Host identity does not match the backup manifest");
+}
+
+async function inventoryTree(root: string, prefix: string): Promise<BackupEntry[]> {
+  const entries: BackupEntry[] = [];
+  async function visit(directory: string): Promise<void> {
+    for (const child of (await readdir(directory, { withFileTypes: true })).sort((a, b) => compareStrings(a.name, b.name))) {
+      const absolute = join(directory, child.name);
+      const path = `${prefix}/${relative(root, absolute).split(sep).join("/")}`;
+      const info = await lstat(absolute);
+      if (info.isSymbolicLink()) throw new Error(`backup refuses symlink payload: ${path}`);
+      if (info.isDirectory()) {
+        entries.push({ path, type: "directory", mode: info.mode & 0o777, size: 0 });
+        await visit(absolute);
+      } else if (info.isFile()) {
+        entries.push({ path, type: "file", mode: info.mode & 0o777, size: info.size, sha256: await hashFile(absolute) });
+      } else throw new Error(`backup refuses special payload entry: ${path}`);
+    }
+  }
+  const rootInfo = await lstat(root);
+  entries.push({ path: prefix, type: "directory", mode: rootInfo.mode & 0o777, size: 0 });
+  await visit(root);
+  return entries.sort((a, b) => compareStrings(a.path, b.path));
+}
+
+async function inventoryGitDirectory(root: string): Promise<BackupEntry[]> {
+  const entries: BackupEntry[] = [{ path: ".git", type: "directory", mode: (await lstat(root)).mode & 0o777, size: 0 }];
+  async function visit(directory: string): Promise<void> {
+    for (const child of (await readdir(directory, { withFileTypes: true })).sort((a, b) => compareStrings(a.name, b.name))) {
+      const absolute = join(directory, child.name);
+      const relativePath = relative(root, absolute).split(sep).join("/");
+      if (!includeGitPath(relativePath)) continue;
+      const info = await lstat(absolute);
+      const path = `.git/${relativePath}`;
+      if (info.isDirectory()) { entries.push({ path, type: "directory", mode: info.mode & 0o777, size: 0 }); await visit(absolute); }
+      else if (info.isFile()) entries.push({ path, type: "file", mode: info.mode & 0o777, size: info.size, sha256: await hashFile(absolute) });
+      else throw new Error(`backup refuses special Git entry: ${relativePath}`);
+    }
+  }
+  await visit(root);
+  return entries.sort((a, b) => compareStrings(a.path, b.path));
+}
+
+function includeGitPath(path: string): boolean {
+  if (path === "index" || path === "COMMIT_EDITMSG" || path === "FETCH_HEAD" || path === "ORIG_HEAD") return false;
+  if (path === "logs" || path.startsWith("logs/") || path === "worktrees" || path.startsWith("worktrees/")) return false;
+  return !path.endsWith(".lock") && !path.includes("/.tmp");
+}
+
+async function operationalSourceDigest(vault: string): Promise<string> {
+  const state = join(vault, ".dome", "state");
+  await assertKnownStateInventory(state);
+  const paths = [
+    ...DATABASES.flatMap((database) => [database.name, `${database.name}-wal`]),
+    ...DURABLE_FILES,
+  ].sort(compareStrings);
+  const entries: Array<{ readonly path: string; readonly size: number; readonly mtimeMs: number; readonly sha256: string }> = [];
+  for (const path of paths) {
+    const absolute = join(state, path);
+    if (!(await exists(absolute))) continue;
+    const before = await lstat(absolute);
+    if (!before.isFile()) throw new Error(`backup operational state entry is not a regular file: ${path}`);
+    const digest = await hashFile(absolute);
+    const after = await lstat(absolute);
+    if (after.size !== before.size || after.mtimeMs !== before.mtimeMs) throw new Error(`vault operational state changed while hashing: ${path}`);
+    entries.push({ path, size: after.size, mtimeMs: after.mtimeMs, sha256: digest });
+  }
+  return sha256(Buffer.from(JSON.stringify(entries)));
+}
+
+async function copyTree(source: string, target: string, include: (path: string, info: Awaited<ReturnType<typeof lstat>>) => boolean): Promise<void> {
+  async function visit(currentSource: string, currentTarget: string): Promise<void> {
+    const info = await lstat(currentSource);
+    const path = relative(source, currentSource);
+    if (!include(path, info)) return;
+    if (info.isDirectory()) {
+      await mkdir(currentTarget, { recursive: true, mode: info.mode & 0o777 });
+      for (const entry of await readdir(currentSource)) await visit(join(currentSource, entry), join(currentTarget, entry));
+      return;
+    }
+    await copyRegular(currentSource, currentTarget);
+  }
+  await visit(source, target);
+}
+
+async function copyRegular(source: string, target: string): Promise<void> {
+  const info = await lstat(source);
+  if (!info.isFile()) throw new Error(`backup refuses non-regular file: ${source}`);
+  await mkdir(dirname(target), { recursive: true });
+  await copyFile(source, target, constants.COPYFILE_EXCL);
+  await chmod(target, info.mode & 0o777);
+}
+
+async function findMatching(root: string, predicate: (path: string) => boolean): Promise<string[]> {
+  if (!(await exists(root))) return [];
+  const found: string[] = [];
+  async function visit(directory: string): Promise<void> {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (predicate(path)) found.push(path);
+      if (entry.isDirectory()) await visit(path);
+    }
+  }
+  await visit(root);
+  return found;
+}
+
+async function run(command: ReadonlyArray<string>, cwd?: string): Promise<{ stdout: string; stderr: string }> {
+  const child = Bun.spawn([...command], { ...(cwd === undefined ? {} : { cwd }), stdout: "pipe", stderr: "pipe" });
+  const [exitCode, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+  if (exitCode !== 0) throw new Error(`${basename(command[0] ?? "command")} failed (${exitCode}): ${stderr.trim() || stdout.trim()}`);
+  return { stdout, stderr };
+}
+
+async function hashFile(path: string): Promise<string> {
+  const handle = await open(path, "r");
+  const hash = createHash("sha256");
+  try {
+    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    let offset = 0;
+    for (;;) {
+      const read = await handle.read(buffer, 0, buffer.length, offset);
+      if (read.bytesRead === 0) break;
+      hash.update(buffer.subarray(0, read.bytesRead));
+      offset += read.bytesRead;
+    }
+  } finally { await handle.close(); }
+  return hash.digest("hex");
+}
+
+async function fsyncPath(path: string): Promise<void> { const handle = await open(path, "r"); try { await handle.sync(); } finally { await handle.close(); } }
+async function fsyncDirectory(path: string): Promise<void> { const handle = await open(path, "r"); try { await handle.sync(); } finally { await handle.close(); } }
+async function exists(path: string): Promise<boolean> { try { await access(path); return true; } catch { return false; } }
+async function canonicalNewOutput(path: string): Promise<string> {
+  const absolute = resolve(path);
+  await mkdir(dirname(absolute), { recursive: true });
+  return join(await realpath(dirname(absolute)), basename(absolute));
+}
+function isWithin(root: string, path: string): boolean { const rel = relative(root, path); return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".."); }
+function sha256(value: Uint8Array): string { return createHash("sha256").update(value).digest("hex"); }
+function message(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+function failure(operation: BackupResult["operation"], error: string, exitCode: 1 | 64 = 1): BackupResult {
+  return Object.freeze({ schema: BACKUP_SCHEMA, operation, status: "error", exitCode, error });
+}

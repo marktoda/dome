@@ -329,6 +329,41 @@ plist byte-for-byte. A legacy `dome serve` plist, loaded service, or live serve
 heartbeat blocks Home installation with an explicit migration instruction so
 two long-lived hosts never compete for one vault.
 
+### P4 encrypted backup checkpoint
+
+The public recovery surface is deliberately create-and-verify only:
+
+```text
+dome backup keygen --output <identity-file>
+dome backup create --vault <path> --output <archive> --recipient <age1...>
+dome backup verify <archive> --identity <identity-file>
+```
+
+`keygen` publishes the private identity mode `0600`, refuses overwrite, and
+returns only its path and public recipient. Secrets are never accepted through
+an argument value or environment variable. The self-contained artifact pins
+the official age v1.3.1 darwin-arm64 binaries and upstream license.
+
+`create` is an offline clean-commit snapshot. It refuses legacy Serve,
+foreground Home, linked/outer/detached/dirty Git worktrees, Git locks,
+surviving mutation/finalize journals, output inside the vault, and unknown
+`.dome/state` entries. A loaded supervised Home is booted out and drained;
+backup then owns the Product Host lock and best-effort restarts Home through
+strict pairing readiness. Archive creation and restart are separate results.
+
+The closed manifest covers the committed tree and standalone Git repository,
+all refs, configuration/local extensions/providers, six durable SQLite stores,
+rebuildable `projection.db`, quarantine, and stable vault identity. SQLite uses
+`VACUUM INTO` plus `quick_check`; WAL/SHM files are never copied. Git/state is
+fingerprinted before and after snapshot. A normalized private ustar payload is
+age-encrypted, fsynced, and atomically published.
+
+`verify` privately decrypts and checks the strict manifest, exact paths/modes/
+sizes/SHA-256 values, tar structure and size budgets, and every database. Public
+restore remains deferred. An internal absent-target rehearsal reconstructs Git
+and every store, increments the Device Authority epoch, and proves old
+credentials and unused grants fail while new local pairing succeeds.
+
 ### P3 device-authority foundation
 
 `src/device-authority/` owns durable single-owner device authority behind

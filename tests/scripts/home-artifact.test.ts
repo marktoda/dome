@@ -8,6 +8,12 @@ import {
   assertSourceSnapshot,
   HOME_ARTIFACT_SCHEMA,
   normalizeArtifactModes,
+  PINNED_AGE_ARCHIVE_SHA256,
+  PINNED_AGE_ARCHIVE_URL,
+  PINNED_AGE_BINARY_SHA256,
+  PINNED_AGE_KEYGEN_BINARY_SHA256,
+  PINNED_AGE_LICENSE_SHA256,
+  PINNED_AGE_VERSION,
   PINNED_BUN_VERSION,
   verifyHomeArtifact,
   writeArtifactMetadata,
@@ -21,6 +27,28 @@ describe("Dome Home artifact", () => {
       expect(manifest.schema).toBe(HOME_ARTIFACT_SCHEMA);
       expect(manifest.product.version).toBe("9.8.7");
       expect(manifest.runtime.version).toBe(PINNED_BUN_VERSION);
+      expect(manifest.tools).toEqual([
+        {
+          name: "age",
+          version: PINNED_AGE_VERSION,
+          path: "runtime/age",
+          sourceUrl: PINNED_AGE_ARCHIVE_URL,
+          archiveSha256: PINNED_AGE_ARCHIVE_SHA256,
+          sha256: "unavailable",
+          licensePath: "licenses/age-LICENSE",
+          licenseSha256: "unavailable",
+        },
+        {
+          name: "age-keygen",
+          version: PINNED_AGE_VERSION,
+          path: "runtime/age-keygen",
+          sourceUrl: PINNED_AGE_ARCHIVE_URL,
+          archiveSha256: PINNED_AGE_ARCHIVE_SHA256,
+          sha256: "unavailable",
+          licensePath: "licenses/age-LICENSE",
+          licenseSha256: "unavailable",
+        },
+      ]);
       expect(manifest.distribution).toEqual({
         signed: false,
         notarized: false,
@@ -142,6 +170,48 @@ describe("Dome Home artifact", () => {
       expect((await lstat(join(root, "app"))).mode & 0o777).toBe(0o755);
       expect((await lstat(executable)).mode & 0o777).toBe(0o755);
       expect((await lstat(regular)).mode & 0o777).toBe(0o644);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("pins the official age archive and both darwin-arm64 executables", () => {
+    expect(PINNED_AGE_VERSION).toBe("1.3.1");
+    expect(PINNED_AGE_ARCHIVE_URL).toBe(
+      "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-darwin-arm64.tar.gz",
+    );
+    expect(PINNED_AGE_ARCHIVE_SHA256).toBe(
+      "01120ea2cbf0463d4c6bd767f99f3271bbed1cdc8a9aa718a76ba1fe4f01998b",
+    );
+    expect(PINNED_AGE_BINARY_SHA256).toBe(
+      "0e3ea0b1bed2b30aa2dc46eef4e1723864d626c80f37319c20d9b73ca045f56f",
+    );
+    expect(PINNED_AGE_KEYGEN_BINARY_SHA256).toBe(
+      "37c4b509d86f233d8dd065f5a905e11d2e1d5549d59445a9bc52da9235a622ad",
+    );
+    expect(PINNED_AGE_LICENSE_SHA256).toBe(
+      "afbdb4e07a359499db587ae632815809b1fc1670a92d5449af112ce9a67833a2",
+    );
+  });
+
+  test("inventories the bundled upstream age license in tool provenance and checksums", async () => {
+    const root = await fixture();
+    try {
+      const license = Buffer.from("upstream age license fixture\n");
+      await mkdir(join(root, "licenses"), { recursive: true });
+      await writeFile(join(root, "licenses", "age-LICENSE"), license);
+      const manifest = await writeArtifactMetadata(root, "1.0.0");
+      const licenseSha256 = digest(license);
+      expect(manifest.entries).toContainEqual(expect.objectContaining({
+        type: "file",
+        path: "licenses/age-LICENSE",
+        sha256: licenseSha256,
+      }));
+      expect(manifest.tools.every((tool) =>
+        tool.licensePath === "licenses/age-LICENSE" && tool.licenseSha256 === licenseSha256
+      )).toBe(true);
+      expect(await readFile(join(root, "checksums.sha256"), "utf8"))
+        .toContain(`${licenseSha256}  licenses/age-LICENSE`);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

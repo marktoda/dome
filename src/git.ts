@@ -10,6 +10,7 @@ import fs from "node:fs";
 import { dirname, isAbsolute, join, posix, relative, resolve } from "node:path";
 import { existsSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { compareStrings } from "./core/compare";
 
 /**
  * True iff `path` sits inside a git working tree. Walks up from `path` looking
@@ -78,6 +79,86 @@ function resolveGitFileEntry(gitPath: string): GitFileEntry | null {
 
 export async function isGitRepo(path: string): Promise<boolean> {
   return (await findGitRoot(path)) !== null;
+}
+
+export type StandaloneBackupRef = { readonly name: string; readonly oid: string };
+export type StandaloneBackupTreeEntry = {
+  readonly path: string;
+  readonly mode: number;
+  readonly oid: string;
+};
+export type StandaloneBackupSource = {
+  readonly branch: string;
+  readonly head: string;
+  readonly refs: ReadonlyArray<StandaloneBackupRef>;
+  readonly tree: ReadonlyArray<StandaloneBackupTreeEntry>;
+  readonly clean: boolean;
+};
+
+/**
+ * Read the complete committed source identity used by portable backups without
+ * invoking a native git executable. Linked/outer worktrees are deliberately
+ * rejected: a backup is a self-contained vault, not a slice of another repo.
+ */
+export async function readStandaloneBackupSource(path: string): Promise<StandaloneBackupSource> {
+  const root = resolve(path);
+  const discovered = await findGitRoot(root);
+  if (discovered !== root || !statSync(join(root, ".git")).isDirectory()) {
+    throw new Error("backup requires a normal standalone Git worktree");
+  }
+  const branch = await git.currentBranch({ fs, dir: root, fullname: true });
+  if (branch === undefined) throw new Error("backup requires a normal branch, not detached HEAD");
+  const head = await git.resolveRef({ fs, dir: root, ref: "HEAD" });
+  const refNames = (await git.listRefs({ fs, dir: root, filepath: "refs" }))
+    .map((name) => `refs/${name}`).sort(compareStrings);
+  const refs = await Promise.all(refNames.map(async (name) => Object.freeze({
+    name,
+    oid: await git.resolveRef({ fs, dir: root, ref: name }),
+  })));
+  const tree: StandaloneBackupTreeEntry[] = [];
+  await git.walk({
+    fs,
+    dir: root,
+    trees: [git.TREE({ ref: "HEAD" })],
+    map: async (filepath, entries) => {
+      const entry = entries[0];
+      if (entry == null) return filepath;
+      const type = await entry.type();
+      if (filepath === "." || type === "tree") return filepath;
+      if (type !== "blob") throw new Error(`backup refuses unsupported Git tree entry: ${filepath}`);
+      const mode = await entry.mode();
+      // Git mode 120000 is a symlink blob. Portable backup payloads reject
+      // links rather than following them or leaking data outside the vault.
+      if (mode === 0o120000) throw new Error(`backup refuses tracked symlink: ${filepath}`);
+      tree.push(Object.freeze({ path: filepath, mode, oid: await entry.oid() }));
+      return filepath;
+    },
+  });
+  tree.sort((left, right) => compareStrings(left.path, right.path));
+  const matrix = await git.statusMatrix({ fs, dir: root, filter: (filepath) => !isDomeStatePath(filepath, "") });
+  let clean = true;
+  for (const [filepath, headStatus, workdir, stage] of matrix) {
+    if (headStatus === 0 && (workdir !== 0 || stage !== 0) && await git.isIgnored({ fs, dir: root, filepath })) continue;
+    if (!(headStatus === 1 && workdir === 1 && stage === 1)) { clean = false; break; }
+  }
+  return Object.freeze({ branch, head, refs: Object.freeze(refs), tree: Object.freeze(tree), clean });
+}
+
+/** Read one committed HEAD blob for sequential backup materialization. */
+export async function readStandaloneBackupBlob(path: string, filepath: string): Promise<Uint8Array> {
+  const root = resolve(path);
+  const discovered = await findGitRoot(root);
+  if (discovered !== root || !statSync(join(root, ".git")).isDirectory()) throw new Error("backup blob read requires a standalone Git worktree");
+  const head = await git.resolveRef({ fs, dir: root, ref: "HEAD" });
+  return (await git.readBlob({ fs, dir: root, oid: head, filepath: validateVaultRelativePath(filepath) })).blob;
+}
+
+/** Reachability/shape validation for a reconstructed standalone repository. */
+export async function validateStandaloneBackupRepository(path: string): Promise<StandaloneBackupSource> {
+  const source = await readStandaloneBackupSource(path);
+  await git.readCommit({ fs, dir: resolve(path), oid: source.head });
+  for (const ref of source.refs) await git.readObject({ fs, dir: resolve(path), oid: ref.oid });
+  return source;
 }
 
 /**

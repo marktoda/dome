@@ -29,6 +29,13 @@ export const PINNED_BUN_ARCHIVE_URL =
   "https://github.com/oven-sh/bun/releases/download/bun-v1.2.13/bun-darwin-aarch64.zip";
 export const PINNED_BUN_ARCHIVE_SHA256 = "8154367524d8c298edb269b8d0df61d469ec4194d361c07e4b8d2c65fbbc2efb";
 export const PINNED_BUN_BINARY_SHA256 = "c059443bc18f61b17609d1c3c7ae3fa7d8e2c121921732baf2b71964c7142f6c";
+export const PINNED_AGE_VERSION = "1.3.1";
+export const PINNED_AGE_ARCHIVE_URL =
+  "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-darwin-arm64.tar.gz";
+export const PINNED_AGE_ARCHIVE_SHA256 = "01120ea2cbf0463d4c6bd767f99f3271bbed1cdc8a9aa718a76ba1fe4f01998b";
+export const PINNED_AGE_BINARY_SHA256 = "0e3ea0b1bed2b30aa2dc46eef4e1723864d626c80f37319c20d9b73ca045f56f";
+export const PINNED_AGE_KEYGEN_BINARY_SHA256 = "37c4b509d86f233d8dd065f5a905e11d2e1d5549d59445a9bc52da9235a622ad";
+export const PINNED_AGE_LICENSE_SHA256 = "afbdb4e07a359499db587ae632815809b1fc1670a92d5449af112ce9a67833a2";
 
 export type HomeArtifactManifest = {
   readonly schema: typeof HOME_ARTIFACT_SCHEMA;
@@ -43,6 +50,16 @@ export type HomeArtifactManifest = {
     readonly archiveSha256: string;
     readonly sha256: string;
   };
+  readonly tools: ReadonlyArray<{
+    readonly name: "age" | "age-keygen";
+    readonly version: string;
+    readonly path: "runtime/age" | "runtime/age-keygen";
+    readonly sourceUrl: string;
+    readonly archiveSha256: string;
+    readonly sha256: string;
+    readonly licensePath: "licenses/age-LICENSE";
+    readonly licenseSha256: string;
+  }>;
   readonly entrypoint: "bin/dome";
   readonly pwa: "app/pwa/dist";
   readonly distribution: {
@@ -85,6 +102,13 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
     throw new Error(`Dome Home v1 artifact must be built on darwin-arm64, got ${process.platform}-${process.arch}`);
   }
   const downloadedRuntime = await downloadPinnedRuntime();
+  let downloadedAge: Awaited<ReturnType<typeof downloadPinnedAge>>;
+  try {
+    downloadedAge = await downloadPinnedAge();
+  } catch (error) {
+    await rm(downloadedRuntime.temporary, { recursive: true, force: true });
+    throw error;
+  }
   const runtimePath = downloadedRuntime.path;
   try {
     if (!options.skipPwaBuild) {
@@ -104,10 +128,16 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
   await rm(directory, { recursive: true, force: true });
   await mkdir(join(directory, "bin"), { recursive: true });
   await mkdir(join(directory, "runtime"), { recursive: true });
+  await mkdir(join(directory, "licenses"), { recursive: true });
   await mkdir(join(directory, "app"), { recursive: true });
 
   await cp(runtimePath, join(directory, "runtime", "bun"));
   await chmod(join(directory, "runtime", "bun"), 0o755);
+  await cp(downloadedAge.age, join(directory, "runtime", "age"));
+  await chmod(join(directory, "runtime", "age"), 0o755);
+  await cp(downloadedAge.ageKeygen, join(directory, "runtime", "age-keygen"));
+  await chmod(join(directory, "runtime", "age-keygen"), 0o755);
+  await cp(downloadedAge.license, join(directory, "licenses", "age-LICENSE"));
   await cp(join(repoRoot, "src"), join(directory, "app", "src"), { recursive: true });
   await cp(join(repoRoot, "contracts"), join(directory, "app", "contracts"), { recursive: true });
   await cp(join(repoRoot, "bin"), join(directory, "app", "bin"), { recursive: true });
@@ -138,7 +168,10 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
   await rehearseHomeArtifact(archive);
     return { archive, archiveSha256: sha256(await readFile(archive)), directory, manifest };
   } finally {
-    await rm(downloadedRuntime.temporary, { recursive: true, force: true });
+    await Promise.all([
+      rm(downloadedRuntime.temporary, { recursive: true, force: true }),
+      rm(downloadedAge.temporary, { recursive: true, force: true }),
+    ]);
   }
 }
 
@@ -151,6 +184,9 @@ export async function writeArtifactMetadata(
   await rm(join(artifactRoot, "checksums.sha256"), { force: true });
   const entries = await inventoryEntries(artifactRoot);
   const runtimeEntry = entries.find((entry) => entry.type === "file" && entry.path === "runtime/bun");
+  const ageEntry = entries.find((entry) => entry.type === "file" && entry.path === "runtime/age");
+  const ageKeygenEntry = entries.find((entry) => entry.type === "file" && entry.path === "runtime/age-keygen");
+  const ageLicenseEntry = entries.find((entry) => entry.type === "file" && entry.path === "licenses/age-LICENSE");
   const fileEntries = entries.filter((entry): entry is Extract<HomeArtifactEntry, { type: "file" }> => entry.type === "file");
   const manifest: HomeArtifactManifest = Object.freeze({
     schema: HOME_ARTIFACT_SCHEMA,
@@ -165,6 +201,28 @@ export async function writeArtifactMetadata(
       archiveSha256: PINNED_BUN_ARCHIVE_SHA256,
       sha256: runtimeEntry?.type === "file" ? runtimeEntry.sha256 : "unavailable",
     }),
+    tools: Object.freeze([
+      Object.freeze({
+        name: "age" as const,
+        version: PINNED_AGE_VERSION,
+        path: "runtime/age" as const,
+        sourceUrl: PINNED_AGE_ARCHIVE_URL,
+        archiveSha256: PINNED_AGE_ARCHIVE_SHA256,
+        sha256: ageEntry?.type === "file" ? ageEntry.sha256 : "unavailable",
+        licensePath: "licenses/age-LICENSE" as const,
+        licenseSha256: ageLicenseEntry?.type === "file" ? ageLicenseEntry.sha256 : "unavailable",
+      }),
+      Object.freeze({
+        name: "age-keygen" as const,
+        version: PINNED_AGE_VERSION,
+        path: "runtime/age-keygen" as const,
+        sourceUrl: PINNED_AGE_ARCHIVE_URL,
+        archiveSha256: PINNED_AGE_ARCHIVE_SHA256,
+        sha256: ageKeygenEntry?.type === "file" ? ageKeygenEntry.sha256 : "unavailable",
+        licensePath: "licenses/age-LICENSE" as const,
+        licenseSha256: ageLicenseEntry?.type === "file" ? ageLicenseEntry.sha256 : "unavailable",
+      }),
+    ]),
     entrypoint: "bin/dome",
     pwa: "app/pwa/dist",
     distribution: Object.freeze({ signed: false, notarized: false, upgradeSupported: false }),
@@ -279,11 +337,46 @@ export async function verifyHomeArtifact(artifactRoot: string): Promise<HomeArti
   if (!(await lstat(join(artifactRoot, manifest.pwa, "index.html"))).isFile()) {
     throw new Error("artifact PWA index is missing");
   }
+  if (!Array.isArray(manifest.tools) || manifest.tools.length !== 2) {
+    throw new Error("artifact must include the pinned age toolchain");
+  }
+  const pinnedTools = [
+    { name: "age", path: "runtime/age", sha256: PINNED_AGE_BINARY_SHA256 },
+    { name: "age-keygen", path: "runtime/age-keygen", sha256: PINNED_AGE_KEYGEN_BINARY_SHA256 },
+  ] as const;
+  for (const pinned of pinnedTools) {
+    const tool = manifest.tools.find((candidate) => candidate.name === pinned.name);
+    if (
+      tool === undefined || tool.version !== PINNED_AGE_VERSION || tool.path !== pinned.path ||
+      tool.sourceUrl !== PINNED_AGE_ARCHIVE_URL ||
+      tool.archiveSha256 !== PINNED_AGE_ARCHIVE_SHA256 || tool.sha256 !== pinned.sha256 ||
+      tool.licensePath !== "licenses/age-LICENSE" ||
+      tool.licenseSha256 !== PINNED_AGE_LICENSE_SHA256
+    ) throw new Error(`artifact ${pinned.name} provenance is not the pinned official age release`);
+    const entry = manifest.entries.find((candidate) =>
+      candidate.type === "file" && candidate.path === tool.path
+    );
+    if (entry?.type !== "file" || entry.sha256 !== tool.sha256) {
+      throw new Error(`artifact ${pinned.name} checksum is missing or inconsistent`);
+    }
+    const licenseEntry = manifest.entries.find((candidate) =>
+      candidate.type === "file" && candidate.path === tool.licensePath
+    );
+    if (licenseEntry?.type !== "file" || licenseEntry.sha256 !== tool.licenseSha256) {
+      throw new Error("artifact age license checksum is missing or inconsistent");
+    }
+  }
   if (manifest.runtime.sha256 !== PINNED_BUN_BINARY_SHA256) {
     throw new Error("artifact runtime binary is not the pinned official Bun build");
   }
   const runtimeVersion = (await run([join(artifactRoot, "runtime", "bun"), "--version"], artifactRoot)).stdout.trim();
   if (runtimeVersion !== PINNED_BUN_VERSION) throw new Error(`artifact runtime reports ${runtimeVersion}`);
+  for (const tool of manifest.tools) {
+    const reported = (await run([join(artifactRoot, tool.path), "--version"], artifactRoot)).stdout.trim();
+    if (reported !== `v${PINNED_AGE_VERSION}`) {
+      throw new Error(`artifact ${tool.name} reports ${reported}`);
+    }
+  }
   return manifest;
 }
 
@@ -351,8 +444,31 @@ export async function rehearseHomeArtifact(archivePath: string): Promise<void> {
     if (lifecycleStatus.schema !== "dome.home.lifecycle/v1" || lifecycleStatus.status !== "not-installed") {
       throw new Error("artifact Home lifecycle status did not report not-installed");
     }
+    const identity = join(temporary, "backup identity.txt");
+    const keygen = await run([dome, "backup", "keygen", "--output", identity, "--json"], temporary, lifecycleEnvironment);
+    const key = JSON.parse(keygen.stdout) as { readonly schema?: unknown; readonly status?: unknown; readonly recipient?: unknown };
+    if (key.schema !== "dome.backup/v1" || key.status !== "created" || typeof key.recipient !== "string") {
+      throw new Error("artifact packaged backup keygen failed");
+    }
+    const backup = join(temporary, "vault backup.dome.age");
+    const createdBackup = await run([
+      dome, "backup", "create", "--vault", vault, "--output", backup,
+      "--recipient", key.recipient, "--json",
+    ], temporary, lifecycleEnvironment);
+    const created = JSON.parse(createdBackup.stdout) as { readonly schema?: unknown; readonly status?: unknown; readonly restart?: unknown };
+    if (created.schema !== "dome.backup/v1" || created.status !== "created" || created.restart !== "not-running") {
+      throw new Error("artifact packaged backup create failed");
+    }
+    const verifiedBackup = await run([
+      dome, "backup", "verify", backup, "--identity", identity, "--json",
+    ], temporary, lifecycleEnvironment);
+    const verified = JSON.parse(verifiedBackup.stdout) as { readonly schema?: unknown; readonly status?: unknown };
+    if (verified.schema !== "dome.backup/v1" || verified.status !== "verified") {
+      throw new Error("artifact packaged backup verify failed");
+    }
     await rehearseHomeServer(dome, vault, temporary);
     await rehearseHomeServer(dome, vault, temporary);
+    await rehearseAgeToolchain(installed, temporary);
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
@@ -409,6 +525,53 @@ async function downloadPinnedRuntime(): Promise<{ readonly temporary: string; re
       throw new Error(`Dome Home requires Bun ${PINNED_BUN_VERSION}, got ${version}`);
     }
     return { temporary, path };
+  } catch (error) {
+    await rm(temporary, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+async function downloadPinnedAge(): Promise<{
+  readonly temporary: string;
+  readonly age: string;
+  readonly ageKeygen: string;
+  readonly license: string;
+}> {
+  const temporary = await mkdtemp(join(tmpdir(), "dome-home-age-"));
+  try {
+    const response = await fetch(PINNED_AGE_ARCHIVE_URL);
+    if (!response.ok) throw new Error(`failed to download pinned age toolchain (${response.status})`);
+    const archive = Buffer.from(await response.arrayBuffer());
+    if (sha256(archive) !== PINNED_AGE_ARCHIVE_SHA256) {
+      throw new Error("downloaded age archive checksum does not match the pinned release");
+    }
+    const archivePath = join(temporary, "age.tar.gz");
+    const extracted = join(temporary, "extracted");
+    await writeFile(archivePath, archive);
+    await mkdir(extracted);
+    await run([
+      "/usr/bin/tar", "-xzf", archivePath, "-C", extracted,
+      "age/age", "age/age-keygen", "age/LICENSE",
+    ], temporary);
+    const age = await realpath(join(extracted, "age", "age"));
+    const ageKeygen = await realpath(join(extracted, "age", "age-keygen"));
+    const license = await realpath(join(extracted, "age", "LICENSE"));
+    if (sha256(await readFile(age)) !== PINNED_AGE_BINARY_SHA256) {
+      throw new Error("extracted age binary checksum does not match the pinned release");
+    }
+    if (sha256(await readFile(ageKeygen)) !== PINNED_AGE_KEYGEN_BINARY_SHA256) {
+      throw new Error("extracted age-keygen binary checksum does not match the pinned release");
+    }
+    if (sha256(await readFile(license)) !== PINNED_AGE_LICENSE_SHA256) {
+      throw new Error("extracted age license checksum does not match the pinned release");
+    }
+    for (const [name, path] of [["age", age], ["age-keygen", ageKeygen]] as const) {
+      const version = (await run([path, "--version"], temporary)).stdout.trim();
+      if (version !== `v${PINNED_AGE_VERSION}`) {
+        throw new Error(`Dome Home requires ${name} v${PINNED_AGE_VERSION}, got ${version}`);
+      }
+    }
+    return { temporary, age, ageKeygen, license };
   } catch (error) {
     await rm(temporary, { recursive: true, force: true });
     throw error;
@@ -564,6 +727,26 @@ async function rehearseHomeServer(dome: string, vault: string, cwd: string): Pro
   } finally {
     child.kill("SIGTERM");
     await child.exited;
+  }
+}
+
+async function rehearseAgeToolchain(artifactRoot: string, temporary: string): Promise<void> {
+  const age = join(artifactRoot, "runtime", "age");
+  const ageKeygen = join(artifactRoot, "runtime", "age-keygen");
+  const identity = join(temporary, "rehearsal-identity.txt");
+  const plaintext = join(temporary, "rehearsal-plaintext.txt");
+  const encrypted = join(temporary, "rehearsal-plaintext.txt.age");
+  const decrypted = join(temporary, "rehearsal-decrypted.txt");
+  const environment = offlineEnvironment();
+  await run([ageKeygen, "-o", identity], temporary, environment);
+  const recipient = (await run([ageKeygen, "-y", identity], temporary, environment)).stdout.trim();
+  if (!recipient.startsWith("age1")) throw new Error("artifact age-keygen did not produce an age recipient");
+  const content = "Dome Home encrypted backup rehearsal\n";
+  await writeFile(plaintext, content);
+  await run([age, "-r", recipient, "-o", encrypted, plaintext], temporary, environment);
+  await run([age, "-d", "-i", identity, "-o", decrypted, encrypted], temporary, environment);
+  if (await readFile(decrypted, "utf8") !== content) {
+    throw new Error("artifact age toolchain did not round-trip rehearsal bytes");
   }
 }
 

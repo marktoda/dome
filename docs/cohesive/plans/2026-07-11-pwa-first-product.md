@@ -553,6 +553,15 @@ logs, and backups on uninstall. Copying/removing artifact bytes, signing and
 notarization, upgrades/rollback, backup/restore, and provider setup remain
 explicitly deferred P4 work.
 
+The following P4 checkpoint adds encrypted offline backup creation and
+verification. The Home artifact bundles pinned official age v1.3.1 tools;
+`dome backup keygen|create|verify` fences supervised Home, snapshots the exact
+clean committed Git/state inventory, uses connection-level SQLite snapshots,
+publishes atomically, and validates a closed checksummed manifest. An internal
+blank-target rehearsal proves Git/store reconstruction and auth-epoch
+invalidation. Public restore, signing/notarization, upgrades/rollback, and
+guided provider setup remain P4 work.
+
 Exit journey: a clean Mac needs no source checkout or manual PWA build; it
 pairs an iPhone, upgrades an N-1 fixture after backup, handles a forced failed
 upgrade without admitting writes, and restores onto a blank host with all

@@ -41,6 +41,7 @@ and runs the installed-artifact journey available at that phase.
 | P2 host + Today | two loopback/in-process clients; slow fake turn; concurrent Today/source read/capture; kill/restart | no head-of-line blocking, stale host lease, orphan, or half-write |
 | P3 auth + Ask | enable configured Tailscale origin; pair phone/desktop with different grants; Ask/Stop/Retry/open source; revoke one | exact-origin/CSRF enforcement, session bounds, independent revoke, actor receipts |
 | P4 distribution/recovery | clean Mac install; iPhone pair; backup; forced failed N-1 upgrade before admission; rollback; blank-host restore/re-pair | no source checkout/manual build; preserved durable state; credential invalidation |
+| P4 backup checkpoint | bundled age keygen/create/verify; source-drift refusal; seven SQLite snapshots; adversarial verification; internal reconstruction | atomic encrypted archive; exact manifest; no native Git dependency; restored credentials/grants invalidated |
 | P5 product quality | installed/offline shell; text queue replay; expired auth; premature SSE EOF; update; keyboard/screen reader; real iOS | product state and accessibility/browser matrix |
 | P6 beta | full adversarial journey on at least five external owner-vaults | measured reliability, latency, cost, restore, and upgrade report |
 

@@ -13,6 +13,10 @@ const ALLOWED_DIRS = [
   // write. Surfaces supply expected/desired bytes; this Module alone
   // coordinates host locking, branch CAS, and conservative materialization.
   "src/mutation/",
+  // Deep portable-backup boundary: writes only private temp staging,
+  // encrypted archives, and internal absent-target restore rehearsals. It
+  // never edits the live vault's committed Markdown/Git tree.
+  "src/backup/",
 ];
 
 const ALLOWED_FILES = new Set([
