@@ -563,6 +563,47 @@ export async function restoreHomeUpgrade(
   return runRestoreOwnership(vault, initial, deps);
 }
 
+/** Release external then operational write barriers for an exact committed candidate. */
+export async function releaseCommittedHomeUpgrade(
+  vaultPath: string,
+  deps: HomeUpgradeTransactionDeps = {},
+): Promise<HomeUpgradeTransaction> {
+  const vault = await canonicalVault(vaultPath);
+  const committed = await readRequiredHomeUpgrade(vault, deps);
+  if (committed.phase !== "committed") {
+    throw new Error("only a committed Dome Home upgrade may release write admission");
+  }
+  const inspection = await inspectOperationalWriterBarrier(vault);
+  const marker = await readHomeUpgradeBarrier(vault, deps);
+  if (!inspection.blocked) {
+    if (marker !== null) throw new Error("committed upgrade has an orphaned external writer marker");
+    return committed;
+  }
+  if (inspection.transactionId !== committed.transactionId || inspection.blockedAt === null ||
+    (marker !== null && (marker.transactionId !== committed.transactionId || marker.engagedAt !== inspection.blockedAt))) {
+    throw new Error("committed upgrade writer evidence does not match");
+  }
+  const ownership = await withHomeUpgradeBarrierOwnership({
+    vaultPath: vault,
+    transactionId: committed.transactionId,
+  }, deps, async (owner) => {
+    await assertActiveHomeBarrier(vault, owner, deps);
+    await owner.release(async () => {
+      const current = await readRequiredHomeUpgrade(vault, deps);
+      if (current.phase !== "committed" || current.transactionId !== committed.transactionId) {
+        throw new Error("Dome Home upgrade is not durably committed");
+      }
+    });
+  });
+  if (ownership.kind === "not-owned") {
+    const after = await inspectOperationalWriterBarrier(vault);
+    if (after.blocked || await readHomeUpgradeBarrier(vault, deps) !== null) {
+      throw new Error("committed upgrade writer release raced with another owner");
+    }
+  }
+  return await readRequiredHomeUpgrade(vault, deps);
+}
+
 async function runRestoreOwnership(
   vault: string,
   initial: HomeUpgradeTransaction,
@@ -767,6 +808,7 @@ async function assertActiveHomeBarrier(
 export async function inspectHomeUpgradeAdmission(
   vaultPath: string,
   deps: HomeUpgradeTransactionDeps = {},
+  launchArtifact?: { readonly id: string; readonly version: string } | undefined,
 ): Promise<{ readonly admitted: true } | { readonly admitted: false; readonly reason: string }> {
   const vault = await canonicalVault(vaultPath);
   const paths = homeInstallationPaths(vault, deps);
@@ -776,8 +818,22 @@ export async function inspectHomeUpgradeAdmission(
     const active = join(upgrade, "active");
     if (!await present(active)) return Object.freeze({ admitted: true as const });
     const journal = await readBoundedJournal(active, vault);
-    if (journal.phase !== "restored") {
+    if (journal.phase !== "restored" && journal.phase !== "committed") {
       return Object.freeze({ admitted: false as const, reason: `upgrade transaction is ${journal.phase}` });
+    }
+    if (journal.phase === "committed") {
+      if (launchArtifact?.id !== journal.candidate.artifactId ||
+        launchArtifact.version !== journal.candidate.version) {
+        return Object.freeze({ admitted: false as const, reason: "committed upgrade launch artifact is not the candidate" });
+      }
+      const installation = await readHomeInstallation(vault, deps);
+      if (installation === null || installation.artifact.id !== journal.candidate.artifactId ||
+        installation.artifact.version !== journal.candidate.version) {
+        return Object.freeze({ admitted: false as const, reason: "committed upgrade selector is not the candidate" });
+      }
+      await validateArtifactReference(journal.candidate, paths);
+      await validateSelectorReferences(journal, paths, deps);
+      return Object.freeze({ admitted: true as const });
     }
     const installation = await readHomeInstallation(vault, deps);
     if (installation === null || installation.artifact.id !== journal.old.artifactId ||

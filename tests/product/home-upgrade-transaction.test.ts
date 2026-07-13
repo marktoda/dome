@@ -29,6 +29,7 @@ import {
   migratePreparedHomeUpgrade,
   prepareHomeUpgrade,
   readHomeUpgrade,
+  releaseCommittedHomeUpgrade,
   restoreHomeUpgrade,
   type HomeUpgradeTransactionDeps,
 } from "../../src/product-host/home-upgrade-transaction";
@@ -81,8 +82,21 @@ describe("Product Host pre-commit upgrade transaction", () => {
       expect(await readFile(homeInstallationPaths(f.vault, f.deps).record, "utf8")).toContain(CANDIDATE_ID);
       expect(await readFile(join(f.deps.launchAgentsDir!, `${homeServiceLabelForVault(f.vault)}.plist`), "utf8")).toContain(CANDIDATE_ID);
       expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeTrue();
+      expect((await inspectHomeUpgradeAdmission(f.vault, f.deps)).admitted).toBeFalse();
+      expect((await inspectHomeUpgradeAdmission(f.vault, f.deps, {
+        id: CANDIDATE_ID,
+        version: "wrong",
+      })).admitted).toBeFalse();
+      expect((await inspectHomeUpgradeAdmission(f.vault, f.deps, {
+        id: CANDIDATE_ID,
+        version: "2.0.0",
+      })).admitted).toBeTrue();
       await expect(restoreHomeUpgrade(f.vault, f.deps)).rejects.toThrow("irreversible");
       expect((await commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof() }, f.deps)).phase).toBe("committed");
+      expect((await releaseCommittedHomeUpgrade(f.vault, f.deps)).phase).toBe("committed");
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
+      expect(await readHomeUpgradeBarrier(f.vault, f.deps)).toBeNull();
+      expect((await releaseCommittedHomeUpgrade(f.vault, f.deps)).phase).toBe("committed");
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });
 
