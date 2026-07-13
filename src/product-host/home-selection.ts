@@ -5,7 +5,7 @@
 // without teaching the transaction journal how either document is rendered.
 
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, open, readFile, rename, rm } from "node:fs/promises";
+import { lstat, open, readFile, realpath, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -143,6 +143,14 @@ export async function publishHomeSelectionDocument(
   document: HomeSelectionDocument,
   deps: HomeSelectionDeps = {},
 ): Promise<void> {
+  assertDocumentEvidence(document);
+  const parentPath = dirname(document.path);
+  if (await realpath(parentPath) !== parentPath) {
+    throw new Error("Home selection parent is redirected");
+  }
+  // Upgrade selection replaces an exact existing pair. Missing, linked, or
+  // special targets are recovery evidence, never permission to create/repair.
+  await captureDocument(document.path, "existing Home selector");
   if (deps.publishFile !== undefined) return deps.publishFile(document.path, document.bytes);
   const temporary = `${document.path}.tmp-${process.pid}-${randomUUID()}`;
   const handle = await open(temporary, "wx", document.mode);
@@ -173,6 +181,13 @@ export function selectionDocument(
     size: body.byteLength,
     sha256: createHash("sha256").update(body).digest("hex"),
   });
+}
+
+function assertDocumentEvidence(document: HomeSelectionDocument): void {
+  const recomputed = selectionDocument(document.path, document.bytes, document.mode);
+  if (recomputed.size !== document.size || recomputed.sha256 !== document.sha256) {
+    throw new Error("Home selection document evidence does not match its bytes");
+  }
 }
 
 async function captureDocument(path: string, label: string): Promise<HomeSelectionDocument> {
