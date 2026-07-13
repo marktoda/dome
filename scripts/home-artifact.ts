@@ -466,8 +466,32 @@ export async function rehearseHomeArtifact(archivePath: string): Promise<void> {
     if (verified.schema !== "dome.backup/v1" || verified.status !== "verified") {
       throw new Error("artifact packaged backup verify failed");
     }
+    const restoreHelp = await run([
+      dome, "backup", "restore", "--help",
+    ], temporary, lifecycleEnvironment);
+    if (!restoreHelp.stdout.includes("Usage: dome backup restore")) {
+      throw new Error("artifact packaged backup restore help failed");
+    }
+    const restoredVault = join(temporary, "restored vault");
+    const restoredBackup = await run([
+      dome, "backup", "restore", backup, "--identity", identity,
+      "--target", restoredVault, "--json",
+    ], temporary, lifecycleEnvironment);
+    const restored = JSON.parse(restoredBackup.stdout) as {
+      readonly schema?: unknown;
+      readonly status?: unknown;
+      readonly authority?: unknown;
+      readonly durability?: unknown;
+    };
+    if (restored.schema !== "dome.backup/v1" || restored.status !== "restored"
+      || restored.authority !== "absent" || restored.durability !== "durable") {
+      throw new Error("artifact packaged backup restore failed");
+    }
+    if (!(await readFile(join(restoredVault, "core.md"), "utf8")).includes("# Core")) {
+      throw new Error("artifact packaged backup restore lost vault content");
+    }
     await rehearseHomeServer(dome, vault, temporary);
-    await rehearseHomeServer(dome, vault, temporary);
+    await rehearseHomeServer(dome, restoredVault, temporary);
     await rehearseAgeToolchain(installed, temporary);
   } finally {
     await rm(temporary, { recursive: true, force: true });

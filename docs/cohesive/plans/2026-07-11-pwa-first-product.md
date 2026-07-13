@@ -550,16 +550,18 @@ the per-vault LaunchAgent integration around the self-contained artifact,
 waits for schema-valid pairing readiness, refuses legacy Serve or foreground
 Home conflicts, and preserves artifact bytes, the complete vault, state,
 logs, and backups on uninstall. Copying/removing artifact bytes, signing and
-notarization, upgrades/rollback, backup/restore, and provider setup remain
+notarization, upgrades/rollback, in-place/merge recovery, and provider setup remain
 explicitly deferred P4 work.
 
-The following P4 checkpoint adds encrypted offline backup creation and
-verification. The Home artifact bundles pinned official age v1.3.1 tools;
-`dome backup keygen|create|verify` fences supervised Home, snapshots the exact
+The following P4 checkpoint adds encrypted offline backup creation,
+verification, and public blank-host restore. The Home artifact bundles pinned
+official age v1.3.1 tools; `dome backup keygen|create|verify|restore` fences supervised Home, snapshots the exact
 clean committed Git/state inventory, uses connection-level SQLite snapshots,
-publishes atomically, and validates a closed checksummed manifest. An internal
-blank-target rehearsal proves Git/store reconstruction and auth-epoch
-invalidation. Public restore, signing/notarization, upgrades/rollback, and
+publishes atomically, and validates a closed checksummed manifest. Blank-host
+restore accepts only an absent absolute target, reconstructs and validates in
+private sibling staging, checkpoints a fresh Device Authority epoch, fsyncs
+the reconstructed tree bottom-up, and uses one canonical target identity with
+macOS atomic no-replace publication. Signing/notarization, upgrades/rollback, and
 guided provider setup remain P4 work.
 
 Exit journey: a clean Mac needs no source checkout or manual PWA build; it

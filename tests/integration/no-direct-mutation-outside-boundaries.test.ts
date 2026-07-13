@@ -28,6 +28,9 @@ const ALLOWED_FILES = new Set([
   // init.ts.
   "src/cli/commands/install.ts",
   "src/platform/launchd.ts",
+  // macOS-only atomic no-replace directory publication for verified blank-host
+  // restores. This is a host filesystem boundary, not a vault content writer.
+  "src/platform/exclusive-rename.ts",
   "src/product-host/home-lifecycle.ts",
   "src/cli/commands/install-systemd.ts",
   // Stable opaque Product Host identity in gitignored operational state. The

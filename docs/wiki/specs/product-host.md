@@ -331,12 +331,14 @@ two long-lived hosts never compete for one vault.
 
 ### P4 encrypted backup checkpoint
 
-The public recovery surface is deliberately create-and-verify only:
+The public recovery surface supports encrypted creation, closed verification,
+and blank-host restore:
 
 ```text
 dome backup keygen --output <identity-file>
 dome backup create --vault <path> --output <archive> --recipient <age1...>
 dome backup verify <archive> --identity <identity-file>
+dome backup restore <archive> --identity <identity-file> --target <absent-absolute-vault-path>
 ```
 
 `keygen` publishes the private identity mode `0600`, refuses overwrite, and
@@ -359,10 +361,19 @@ fingerprinted before and after snapshot. A normalized private ustar payload is
 age-encrypted, fsynced, and atomically published.
 
 `verify` privately decrypts and checks the strict manifest, exact paths/modes/
-sizes/SHA-256 values, tar structure and size budgets, and every database. Public
-restore remains deferred. An internal absent-target rehearsal reconstructs Git
-and every store, increments the Device Authority epoch, and proves old
-credentials and unused grants fail while new local pairing succeeds.
+sizes/SHA-256 values, tar structure and size budgets, and every database.
+`restore` accepts only an absent absolute target. It decrypts into a private
+sibling staging directory, shares the same closed verification and one
+extraction path, reconstructs standalone Git and every store, and increments
+and checkpoints the Device Authority epoch before publication. Existing
+credentials and unused grants therefore fail; an archive with no prior Device
+Authority reports that truth explicitly. The requested parent is canonicalized
+once so symlink retargeting cannot change the lock, staging, or publication
+identity. Every restored directory is fsynced bottom-up before publication;
+publication then uses macOS atomic no-replace rename and fsyncs the canonical
+parent directory. Restore never overwrites, merges, or
+restores in place. A failure after publication reports the target as restored
+with uncertain durability rather than falsely claiming it is absent.
 
 ### P3 device-authority foundation
 

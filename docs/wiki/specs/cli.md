@@ -2785,16 +2785,24 @@ preserves the artifact, vault, Git data, state, logs, and backups. A legacy
 Serve plist, loaded service, or live heartbeat must be removed with the legacy
 top-level uninstall before Home can be installed.
 
-### `dome backup keygen|create|verify`
+### `dome backup keygen|create|verify|restore`
 
-Creates and verifies portable encrypted Dome Home backups. `keygen` requires
+Creates, verifies, and restores portable encrypted Dome Home backups. `keygen` requires
 `--output <identity-file>` and refuses overwrite. `create` requires public
 `--recipient <age1...>` and `--output <archive>` outside the clean standalone
 vault. `verify <archive>` requires `--identity <identity-file>`; identity
-contents never appear in output. All commands accept `--json` and return
-`dome.backup/v1`. Create reports archive and Home restart truth independently.
-Restore is intentionally not public until the internal blank-target rehearsal
-and credential invalidation contract graduate into the product interface.
+contents never appear in output. `restore <archive>` requires `--identity` and
+an absolute `--target` path that does not exist, including as a dangling
+symlink. It reconstructs and validates in a private sibling directory,
+checkpoints an incremented Device Authority epoch when prior authority exists,
+canonicalizes the target parent once, fsyncs the reconstructed directory tree
+bottom-up, and publishes with macOS atomic no-replace rename followed by a
+canonical-parent fsync. It never overwrites, merges,
+or restores in place. All commands accept `--json` and return
+`dome.backup/v1`. Create reports archive and Home restart truth independently;
+restore reports target, authority status/epoch, and publication durability. A
+post-publication parent-fsync failure is nonzero but truthfully reports
+`status: "restored"` and `durability: "uncertain"`.
 
 ### `dome http [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--token <token>] [--pair-code <code>] [--model <id>] [--static-dir <path>] [--allow-write] [--transcribe-cmd <cmd>] [--transcribe-key <key>] [--transcribe-url <url>] [--transcribe-model <model>]`
 
