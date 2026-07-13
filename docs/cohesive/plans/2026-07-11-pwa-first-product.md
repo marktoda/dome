@@ -544,6 +544,15 @@ remain P4 work, along with lifecycle management, backup/restore, migrations,
 and guided provider setup. The npm package rehearsal remains the SDK release
 gate and is intentionally separate from this end-user artifact.
 
+The next P4 checkpoint adds the supervised macOS lifecycle as nested
+`dome home install|start|restart|status|uninstall` commands. It installs only
+the per-vault LaunchAgent integration around the self-contained artifact,
+waits for schema-valid pairing readiness, refuses legacy Serve or foreground
+Home conflicts, and preserves artifact bytes, the complete vault, state,
+logs, and backups on uninstall. Copying/removing artifact bytes, signing and
+notarization, upgrades/rollback, backup/restore, and provider setup remain
+explicitly deferred P4 work.
+
 Exit journey: a clean Mac needs no source checkout or manual PWA build; it
 pairs an iPhone, upgrades an N-1 fixture after backup, handles a forced failed
 upgrade without admitting writes, and restores onto a blank host with all

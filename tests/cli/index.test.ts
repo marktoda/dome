@@ -95,6 +95,20 @@ describe("runCli", () => {
     expect(out).not.toContain("DOME status");
   });
 
+  test("home help exposes the nested lifecycle without starting foreground Home", async () => {
+    expect(await runCli(["home", "--help"])).toBe(0);
+    const out = captured.out.join("\n");
+    expect(out).toContain("Usage: dome home");
+    for (const action of ["install", "start", "restart", "status", "uninstall"]) {
+      expect(out).toContain(action);
+    }
+    expect(captured.err.join("\n")).not.toContain("dome home: serving");
+
+    captured.out = [];
+    expect(await runCli(["home", "status", "--help"])).toBe(0);
+    expect(captured.out.join("\n")).toContain("Usage: dome home status");
+  });
+
   test("init help exposes the optional model-provider scaffold", async () => {
     expect(await runCli(["init", "-h"])).toBe(0);
     const out = captured.out.join("\n");

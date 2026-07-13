@@ -304,6 +304,31 @@ P2 completed the controlled-mutation migration for settle, proposal apply, and
 assistant authoring plus the Product Host/PWA lifecycle. Compatibility
 lifecycle delegation finishes with the P4 distribution/service cutover.
 
+## P4 supervised Home lifecycle
+
+The self-contained macOS artifact exposes one nested operator surface while
+preserving bare `dome home` as the foreground Product Host:
+
+```text
+dome home install | start | restart | status | uninstall
+```
+
+The service is the per-vault LaunchAgent `com.dome.home.<vault-slug>`. It runs
+the artifact's pinned `runtime/bun` and `app/bin/dome` directly with `home`,
+loopback `127.0.0.1:3663`, and the bundled PWA path. `RunAtLoad` and
+`KeepAlive` supervise it; stdout and stderr append to
+`<vault>/.dome/state/home.log`. Install/start/restart succeed only after the
+public `/pair/status` document returns exactly `dome.device.pairing/v1` with
+`available: true` and a boolean `paired`; the compatibility pairing document
+is not Product Host readiness.
+
+Lifecycle ownership is intentionally narrow. Uninstall boots out and removes
+only the Home plist. It preserves the artifact, vault, Git history, all
+`.dome/state` databases and files, logs, and backups. Restart uses the existing
+plist byte-for-byte. A legacy `dome serve` plist, loaded service, or live serve
+heartbeat blocks Home installation with an explicit migration instruction so
+two long-lived hosts never compete for one vault.
+
 ### P3 device-authority foundation
 
 `src/device-authority/` owns durable single-owner device authority behind

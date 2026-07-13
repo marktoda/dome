@@ -45,10 +45,16 @@
 //   - Console output goes through `console.log` / `console.error`.
 
 import { existsSync } from "node:fs";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { findGitRoot } from "../../git";
+import {
+  activateLaunchAgent,
+  publishLaunchAgentPlist,
+  renderLaunchAgentPlist,
+  waitForLaunchAgentDrain,
+} from "../../platform/launchd";
 import { formatJson } from "../../surface/format";
 import {
   footer,
@@ -144,46 +150,17 @@ export function renderServePlist(input: {
   readonly environment?: ReadonlyMap<string, string>;
 }): string {
   const args = [input.bunPath, input.domeBin, "serve", "--vault", input.vaultPath];
-  const argXml = args
-    .map((arg) => `    <string>${xmlEscape(arg)}</string>`)
-    .join("\n");
   const environment = new Map<string, string>([
     ["PATH", servicePath(input.bunPath)],
     ...(input.environment ?? []),
   ]);
-  const envXml = [...environment]
-    .map(
-      ([key, value]) =>
-        `    <key>${xmlEscape(key)}</key>\n    <string>${xmlEscape(value)}</string>`,
-    )
-    .join("\n");
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>${xmlEscape(input.label)}</string>
-  <key>ProgramArguments</key>
-  <array>
-${argXml}
-  </array>
-  <key>EnvironmentVariables</key>
-  <dict>
-${envXml}
-  </dict>
-  <key>WorkingDirectory</key>
-  <string>${xmlEscape(input.vaultPath)}</string>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
-  <key>StandardOutPath</key>
-  <string>${xmlEscape(input.logPath)}</string>
-  <key>StandardErrorPath</key>
-  <string>${xmlEscape(input.logPath)}</string>
-</dict>
-</plist>
-`;
+  return renderLaunchAgentPlist({
+    label: input.label,
+    programArguments: args,
+    workingDirectory: input.vaultPath,
+    logPath: input.logPath,
+    environment,
+  });
 }
 
 /**
@@ -273,10 +250,10 @@ export async function runInstall(
     // Bootout-first for idempotent replacement. Failure is expected when the
     // service isn't currently loaded; launchctl reports it via exit code.
     await d.launchctl(["bootout", `gui/${uid}/${label}`]);
-    await waitForServiceDrain(d, uid, label);
+    await waitForLaunchAgentDrain({ launchctl: d.launchctl, uid, label, timeoutMs: d.drainTimeoutMs });
 
     const replaced = existsSync(plistPath);
-    await writeFile(
+    await publishLaunchAgentPlist(
       plistPath,
       renderServePlist({
         label,
@@ -286,15 +263,9 @@ export async function runInstall(
         logPath,
         environment,
       }),
-      "utf8",
     );
 
-    const activationError = await activateLaunchAgent(
-      d.launchctl,
-      uid,
-      label,
-      plistPath,
-    );
+    const activationError = await activateLaunchAgent({ launchctl: d.launchctl, uid, label, plistPath });
     if (activationError !== null) {
       if (json) {
         console.log(formatJson({
@@ -385,35 +356,6 @@ export async function runUninstall(
   }
 }
 
-// ----- Drain wait ------------------------------------------------------------
-
-const DRAIN_POLL_INTERVAL_MS = 200;
-
-/**
- * Wait (bounded) for a booted-out service to actually disappear from launchd.
- * `launchctl bootout` delivers SIGTERM and returns immediately; a serve
- * mid-agent-run drains for seconds, during which the label stays registered
- * and `launchctl bootstrap` fails (`Bootstrap failed: 5`) — the first-try
- * `dome restart` error of 2026-06-10. Poll `launchctl print` until the
- * service is gone; on timeout fall through to bootstrap and let its error
- * surface honestly.
- */
-async function waitForServiceDrain(
-  d: ReturnType<typeof resolveServiceDeps>,
-  uid: number,
-  label: string,
-): Promise<void> {
-  const deadline = Date.now() + d.drainTimeoutMs;
-  for (;;) {
-    const probe = await d.launchctl(["print", `gui/${uid}/${label}`]);
-    if (probe.exitCode !== 0) return; // gone — safe to bootstrap
-    if (Date.now() >= deadline) return;
-    await new Promise((resolve) =>
-      setTimeout(resolve, DRAIN_POLL_INTERVAL_MS),
-    );
-  }
-}
-
 // ----- runRestart -----------------------------------------------------------
 
 /**
@@ -470,14 +412,9 @@ export async function runRestart(
     // service is not currently loaded (a dead service is exactly why an
     // operator restarts).
     await d.launchctl(["bootout", `gui/${uid}/${label}`]);
-    await waitForServiceDrain(d, uid, label);
+    await waitForLaunchAgentDrain({ launchctl: d.launchctl, uid, label, timeoutMs: d.drainTimeoutMs });
 
-    const activationError = await activateLaunchAgent(
-      d.launchctl,
-      uid,
-      label,
-      plistPath,
-    );
+    const activationError = await activateLaunchAgent({ launchctl: d.launchctl, uid, label, plistPath });
     if (activationError !== null) {
       if (json) {
         console.log(formatJson({
@@ -512,42 +449,6 @@ export async function runRestart(
 }
 
 // ----- internals ------------------------------------------------------------
-
-/**
- * Register and explicitly start a launchd service. `bootstrap` alone can
- * leave a newly registered KeepAlive agent pended without launching its
- * process; `kickstart -k` makes the command's success contract observable.
- * Returns a user-facing launchctl error, or null once both steps succeed.
- */
-async function activateLaunchAgent(
-  launchctl: LaunchctlRunner,
-  uid: number,
-  label: string,
-  plistPath: string,
-): Promise<string | null> {
-  const bootstrap = await launchctl(["bootstrap", `gui/${uid}`, plistPath]);
-  if (bootstrap.exitCode !== 0) {
-    const detail = launchctlDetail(bootstrap);
-    return `launchctl bootstrap gui/${uid} failed: ${detail} (plist left at ${plistPath})`;
-  }
-
-  const target = `gui/${uid}/${label}`;
-  const kickstart = await launchctl(["kickstart", "-k", target]);
-  if (kickstart.exitCode !== 0) {
-    const detail = launchctlDetail(kickstart);
-    return `launchctl kickstart -k ${target} failed: ${detail} (plist left at ${plistPath})`;
-  }
-  return null;
-}
-
-function launchctlDetail(result: {
-  readonly exitCode: number;
-  readonly stdout: string;
-  readonly stderr: string;
-}): string {
-  return result.stderr.trim() || result.stdout.trim() ||
-    `exit ${result.exitCode}`;
-}
 
 /**
  * Resolve the extra EnvironmentVariables entries from `--env-file` then
@@ -806,13 +707,4 @@ function reportFailure(
     console.error(`dome ${verb}: failed: ${message}`);
   }
   return 1;
-}
-
-function xmlEscape(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
 }
