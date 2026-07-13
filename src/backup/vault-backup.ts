@@ -25,6 +25,7 @@ import {
 } from "../git";
 import { waitForLaunchAgentDrain } from "../platform/launchd";
 import { publishDirectoryExclusive } from "../platform/exclusive-rename";
+import { snapshotSqliteReadonly, validateSqliteSnapshot } from "../sqlite/snapshot";
 import { homeServiceLabelForVault, isHomePairingReadiness } from "../product-host/home-lifecycle";
 import { resolveServiceDeps, serviceLabelForVault, type ServiceDeps } from "../surface/service-probe";
 import { extractTarTree, inspectTar, readTarFile, writeTarTree, type TarEntry } from "./tar";
@@ -513,7 +514,7 @@ async function snapshotOperationalState(vault: string, destination: string): Pro
     const present = await exists(source);
     inventory.push(Object.freeze({ ...database, present }));
     if (!present) continue;
-    await snapshotSqlite(source, target);
+    await snapshotSqliteReadonly({ source, destination: target });
   }
   for (const name of [...DURABLE_FILES].sort()) {
     const source = join(sourceState, name);
@@ -534,23 +535,8 @@ async function assertKnownStateInventory(state: string): Promise<void> {
   }
 }
 
-async function snapshotSqlite(source: string, destination: string): Promise<void> {
-  await mkdir(dirname(destination), { recursive: true });
-  const db = new Database(source, { readonly: true, create: false });
-  try {
-    const quick = db.query<{ quick_check: string }, []>("PRAGMA quick_check").all();
-    if (quick.length !== 1 || quick[0]?.quick_check !== "ok") throw new Error(`SQLite quick_check failed: ${basename(source)}`);
-    db.query("VACUUM INTO ?").run(destination);
-  } finally { db.close(); }
-  await quickCheckSqlite(destination);
-}
-
 async function quickCheckSqlite(path: string): Promise<void> {
-  const db = new Database(path, { readonly: true, create: false });
-  try {
-    const rows = db.query<{ quick_check: string }, []>("PRAGMA quick_check").all();
-    if (rows.length !== 1 || rows[0]?.quick_check !== "ok") throw new Error(`staged SQLite quick_check failed: ${basename(path)}`);
-  } finally { db.close(); }
+  await validateSqliteSnapshot(path);
 }
 
 async function validatePlainArchive(tarPath: string): Promise<BackupManifest> {

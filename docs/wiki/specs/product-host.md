@@ -442,6 +442,83 @@ candidate boot foundation. Durable upgrade journaling, store snapshots,
 migration, commit-before-admission, automatic pre-commit rollback, and frozen
 N-1 fixtures remain the next P4 checkpoints.
 
+### P4 pre-commit upgrade-transaction checkpoint
+
+`src/product-host/home-upgrade-transaction.ts` is the durable rollback
+foundation beneath a future `dome home upgrade` orchestrator. Its complete
+interface is the prepare/read/restore lifecycle plus
+`inspectHomeUpgradeAdmission` for normal-host startup; this checkpoint does
+not migrate a store, launch a candidate, change launchd, select a release,
+admit candidate writes, or add a
+half-working CLI command. `installation.json` remains selected-release truth.
+The external journal records transaction truth only.
+
+The journal lives under the canonical per-vault Home installation directory,
+never in `.dome/state`. One private `active/` directory is published with
+macOS atomic no-replace rename after every file and directory is fsynced
+bottom-up. Its closed v1 document records the canonical vault and transaction
+id; `prepared` or `restored` phase; exact old/candidate artifact ids, versions,
+content-addressed release paths, and manifest hashes; exact N-1
+`installation.json` and launchd-plist hashes; timestamps; and a fixed snapshot
+inventory with presence, original mode, staged size/hash, and SQLite schema
+hash. Unknown fields, phases, files, symlinks, special files, redirected roots,
+corruption, and inconsistent selector or release evidence fail closed.
+
+Preparation snapshots six durable SQLite stores — answers, proposals, outbox,
+runs, request receipts, and Device Authority — plus optional
+`quarantined.json` and `product-host-id`. The shared SQLite mechanism copies
+the quiesced main file and WAL into private staging without opening the source,
+then opens that copy read-only, runs `quick_check`, uses `VACUUM INTO` so
+committed WAL state is visible, and validates the standalone result.
+`projection.db` is intentionally omitted because it is rebuildable; Git and
+Markdown are never part of this rollback snapshot. Private snapshot files are
+0600. An absent optional file is explicit inventory evidence, so rollback
+removes a file created by N rather than inventing an N-1 value.
+
+Prepare and restore require the internal `runUnderDurableUpgradeBarrier`
+capability and acquire both Product Host locks inside the operation it runs.
+The provider establishes or validates exclusion of Product Host and every
+standalone operational-store writer before invoking the operation. Operation
+return does not release the barrier: successful prepare returning `prepared`
+MUST leave it engaged across orchestrator crashes. It may be released only
+after terminal `restored`, or a future commit/recovery terminal outcome. There
+is no boolean, permissive default, or production provider. Product Host locking
+or launchd suspension alone is insufficient because an N-1 binary or
+standalone CLI/surface can otherwise write between snapshot/publication or
+state replacements. The cross-surface admission/barrier implementation is
+deferred and is required before any public upgrade orchestration.
+
+Normal current Home also inspects active upgrade evidence after ownership and
+before controlled-mutation recovery or any mutable store opener; prepared,
+corrupt, unknown, or selector-diverged evidence keeps write admission closed.
+After a terminal `restored` journal, startup checks the bounded terminal
+journal, exact N-1 selectors, and old manifest rather than re-hashing every
+retained snapshot; full snapshot validation remains the `read`/`restore`
+contract and journal retirement remains deferred.
+
+Restore is allowed only while `installation.json` and the plist still exactly
+select N-1. It validates the closed journal, all retained snapshot evidence,
+and the exact old artifact before its first state replacement; candidate
+identity/path remain closed journal evidence, but candidate payload existence
+or integrity is diagnostic-only and can never become a rollback prerequisite.
+Restore atomically replaces each durable file, removes stale SQLite
+WAL/SHM only after the main-file rename, and fsyncs the state directory after
+every entry. The journal stays `prepared` until the complete restored state
+and old schema hashes validate, so a partial crash retries idempotently. Only
+then does it atomically record `restored`. The phase update stages its private
+transaction-named file as a sibling of `active/`, renames it over
+`active/journal.json`, and fsyncs both `active/` and its `upgrade/` parent.
+Crash debris therefore stays outside the closed active inventory and is safely
+replaced on retry. Recovery evidence is retained.
+`restored` is terminal and non-replayable: a later restore invocation returns
+the validated terminal journal before reading or replacing live state, so
+legitimate post-rollback N-1 writes cannot be erased.
+Device Authority is restored without epoch invalidation, preserving N-1
+active and revoked credentials, grants, device audit, and epoch. Future
+cross-surface writer admission/barrier orchestration, migrations, candidate
+launch, selector commit, admission, journal retirement, and the public upgrade
+command remain deferred P4 work.
+
 ### P3 device-authority foundation
 
 `src/device-authority/` owns durable single-owner device authority behind
