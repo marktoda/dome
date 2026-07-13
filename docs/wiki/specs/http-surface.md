@@ -353,8 +353,12 @@ credentials do not require CSRF, but any supplied Origin must still be exact.
 
 All authenticated routes receive a frozen device context. Route capabilities,
 readiness, transcription, agent tools, and session ownership derive from that
-context. Persistent per-request mutation audit receipts remain a P3.3
-deliverable. Credential lifecycle failures share one public 401;
+context. Every admitted device mutation receives a durable, device-attributed
+request receipt. Assistant tool mutations are separate child operations that
+share the foreground turn's request id; read tools and prompts are never
+recorded. Admission fails closed, while a crash or lost post-mutation result is
+preserved as recovery-required uncertainty rather than a replayable failure.
+Credential lifecycle failures share one public 401;
 responses are no-store and carry CSP, frame, content-type, referrer,
 permissions, and request-id hardening headers.
 

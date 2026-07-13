@@ -40,6 +40,21 @@ function context(deviceId: string) {
 }
 
 describe("AgentRuntime", () => {
+  test("passes a matching per-turn mutation actor and omits device-mismatched attribution", async () => {
+    const seen: unknown[] = [];
+    const runtime = createAgentRuntime({
+      runTurn: ({ mutationActor }) => {
+        seen.push(mutationActor);
+        return stream("ok");
+      },
+    });
+    const session = runtime.createSession({ deviceId: "device-1", capabilities: new Set(["capture"]) });
+    const actor = { requestId: "request-1", actorId: "owner" as const, deviceId: "device-1", credentialId: "credential-1", transport: "cookie" as const };
+    await collect(session.send("one", undefined, actor).events);
+    await collect(session.send("two", undefined, { ...actor, requestId: "request-2", deviceId: "device-2" }).events);
+    expect(seen).toEqual([actor, undefined]);
+    runtime.close();
+  });
   test("preserves prose history across turns in one session", async () => {
     const seen: Array<ReadonlyArray<AgentMessage>> = [];
     const runtime = createAgentRuntime({

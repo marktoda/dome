@@ -22,6 +22,7 @@ import {
   createRequestReceipts,
   type RequestReceipts,
 } from "../request-receipts/request-receipts";
+import { createAssistantMutationExecutor } from "../request-receipts/assistant-mutation-executor";
 import { openVault, type Vault } from "../vault";
 import { ProductOperationScheduler } from "./operation-scheduler";
 import { ensureVaultId } from "./vault-id";
@@ -185,6 +186,11 @@ export async function startProductHost(
           readiness,
           operationScheduler: scheduler,
           requestReceiptRecorder: bindHttpRequestReceiptRecorder(requestReceipts, hostInstanceId),
+          assistantMutationExecutor: createAssistantMutationExecutor({
+            receipts: requestReceipts,
+            hostInstanceId,
+            scheduler,
+          }),
           ...(options.staticDir !== undefined ? { staticDir: options.staticDir } : {}),
           ...(options.agentRuntime !== undefined ? { agentRuntime: options.agentRuntime } : {}),
         });

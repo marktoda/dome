@@ -117,6 +117,13 @@ local-console-only.
 There are no accounts, organizations, OAuth flows, or general policy engine in
 the first product.
 
+Device mutations are admitted through the separate durable request-receipt
+store before their mutator runs. Direct HTTP operations and assistant child
+tools share the same six-state, crash-honest lifecycle, but assistant children
+have unique operation ids under the turn request id. The store is attribution
+and recovery evidence, not an idempotency system and not a simulated
+SQLite-plus-Git transaction. It stores no request or tool payload prose.
+
 ## Threat model
 
 ### Protected assets

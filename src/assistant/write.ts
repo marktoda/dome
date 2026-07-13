@@ -73,12 +73,67 @@ function mutationRequestId(input: {
   return `agent-write:${input.verb}:${digest}`;
 }
 
-export type AgentWriteCtx = { readonly vaultPath: string; readonly modelId: string; readonly scope?: WriteScope };
+export type AgentWriteCtx = {
+  readonly vaultPath: string;
+  readonly modelId: string;
+  readonly scope?: WriteScope;
+};
+
+export type AgentWriteMutationOutcome =
+  | { readonly kind: "committed"; readonly change: AgentChange; readonly commit: string }
+  | { readonly kind: "rejected"; readonly code: string; readonly message: string }
+  | { readonly kind: "interrupted"; readonly commit: string | null; readonly message: string };
+
+/** Pre-admission validation; mutation functions repeat checks to close races. */
+export async function validateCreateDocument(
+  ctx: AgentWriteCtx,
+  input: { path: string; content: string },
+): Promise<void> {
+  const rel = vaultRelPath(input.path, ctx.scope ?? DEFAULT_AGENT_WRITE_SCOPE);
+  if (existsSync(join(ctx.vaultPath, rel))) throw new AgentWriteError(`already exists: ${rel} (use edit_document to change it)`);
+  if (typeof input.content !== "string" || input.content.length === 0) throw new AgentWriteError("content is required");
+  await requireBranch(ctx.vaultPath);
+}
+
+export async function validateEditDocument(
+  ctx: AgentWriteCtx,
+  input: { path: string; old_string: string; new_string: string },
+): Promise<void> {
+  const rel = vaultRelPath(input.path, ctx.scope ?? DEFAULT_AGENT_WRITE_SCOPE);
+  const abs = join(ctx.vaultPath, rel);
+  if (!existsSync(abs)) throw new AgentWriteError(`not found: ${rel} (use create_document for a new page)`);
+  if (typeof input.old_string !== "string" || input.old_string.length === 0) throw new AgentWriteError("old_string is required");
+  if (typeof input.new_string !== "string") throw new AgentWriteError("new_string is required");
+  const current = await readFile(abs, "utf8");
+  const first = current.indexOf(input.old_string);
+  if (first === -1) throw new AgentWriteError(`old_string not found in ${rel}`);
+  if (current.indexOf(input.old_string, first + 1) !== -1) throw new AgentWriteError(`old_string is not unique in ${rel}; add more surrounding context`);
+  await requireBranch(ctx.vaultPath);
+}
 
 export async function createDocument(
   ctx: AgentWriteCtx,
   input: { path: string; content: string },
 ): Promise<AgentChange> {
+  return unwrapWriteOutcome(await createDocumentMutation(ctx, input));
+}
+
+export async function createDocumentMutation(
+  ctx: AgentWriteCtx,
+  input: { path: string; content: string },
+): Promise<AgentWriteMutationOutcome> {
+  try {
+    return await createDocumentMutationUnsafe(ctx, input);
+  } catch (error) {
+    if (error instanceof AgentWriteError) return { kind: "rejected", code: "validation-rejected", message: error.message };
+    throw error;
+  }
+}
+
+async function createDocumentMutationUnsafe(
+  ctx: AgentWriteCtx,
+  input: { path: string; content: string },
+): Promise<AgentWriteMutationOutcome> {
   const rel = vaultRelPath(input.path, ctx.scope ?? DEFAULT_AGENT_WRITE_SCOPE);
   const abs = join(ctx.vaultPath, rel);
   if (existsSync(abs)) {
@@ -102,14 +157,32 @@ export async function createDocument(
     message: commitMessage("create", rel, ctx.modelId),
     author: AGENT_COMMIT_AUTHOR,
   });
-  requireCommittedMutation(rel, mutation);
-  return { path: rel, kind: "create" };
+  return writeOutcome(rel, { path: rel, kind: "create" }, mutation);
 }
 
 export async function editDocument(
   ctx: AgentWriteCtx,
   input: { path: string; old_string: string; new_string: string },
 ): Promise<AgentChange> {
+  return unwrapWriteOutcome(await editDocumentMutation(ctx, input));
+}
+
+export async function editDocumentMutation(
+  ctx: AgentWriteCtx,
+  input: { path: string; old_string: string; new_string: string },
+): Promise<AgentWriteMutationOutcome> {
+  try {
+    return await editDocumentMutationUnsafe(ctx, input);
+  } catch (error) {
+    if (error instanceof AgentWriteError) return { kind: "rejected", code: "validation-rejected", message: error.message };
+    throw error;
+  }
+}
+
+async function editDocumentMutationUnsafe(
+  ctx: AgentWriteCtx,
+  input: { path: string; old_string: string; new_string: string },
+): Promise<AgentWriteMutationOutcome> {
   const rel = vaultRelPath(input.path, ctx.scope ?? DEFAULT_AGENT_WRITE_SCOPE);
   const abs = join(ctx.vaultPath, rel);
   if (!existsSync(abs)) {
@@ -147,8 +220,41 @@ export async function editDocument(
     message: commitMessage("edit", rel, ctx.modelId),
     author: AGENT_COMMIT_AUTHOR,
   });
-  requireCommittedMutation(rel, mutation);
-  return { path: rel, kind: "edit" };
+  return writeOutcome(rel, { path: rel, kind: "edit" }, mutation);
+}
+
+function unwrapWriteOutcome(outcome: AgentWriteMutationOutcome): AgentChange {
+  if (outcome.kind === "committed") return outcome.change;
+  throw new AgentWriteError(outcome.message);
+}
+
+function writeOutcome(
+  rel: string,
+  change: AgentChange,
+  mutation: ControlledMutationResult,
+): AgentWriteMutationOutcome {
+  switch (mutation.kind) {
+    case "committed":
+      return { kind: "committed", change, commit: mutation.commit };
+    case "busy":
+      return { kind: "rejected", code: "mutation-busy", message: "vault mutation lane is busy; retry later" };
+    case "diverged":
+      return {
+        kind: "interrupted",
+        commit: mutation.commit,
+        message: `authoring requires recovery: ${mutation.commit === null ? "candidate" : `commit ${mutation.commit}`} has checkout divergence at ${mutation.paths.join(", ") || rel}`,
+      };
+    case "no-commit":
+      return {
+        kind: "rejected",
+        code: mutation.reason,
+        message: mutation.reason === "working-tree-conflict"
+          ? `document changed before commit: ${mutation.paths.join(", ") || rel}; read it again before editing`
+          : mutation.reason === "branch-mismatch"
+            ? "branch changed before the authoring commit"
+            : "authoring candidate commit did not land",
+      };
+  }
 }
 
 async function requireBranch(vaultPath: string): Promise<string> {
@@ -159,31 +265,4 @@ async function requireBranch(vaultPath: string): Promise<string> {
     );
   }
   return branch;
-}
-
-function requireCommittedMutation(
-  rel: string,
-  mutation: ControlledMutationResult,
-): void {
-  switch (mutation.kind) {
-    case "committed":
-      return;
-    case "busy":
-      throw new AgentWriteError("vault mutation lane is busy; retry later");
-    case "diverged":
-      throw new AgentWriteError(
-        `authoring requires recovery: ${mutation.commit === null ? "candidate" : `commit ${mutation.commit}`} has checkout divergence at ${mutation.paths.join(", ") || rel}`,
-      );
-    case "no-commit":
-      switch (mutation.reason) {
-        case "working-tree-conflict":
-          throw new AgentWriteError(
-            `document changed before commit: ${mutation.paths.join(", ") || rel}; read it again before editing`,
-          );
-        case "branch-mismatch":
-          throw new AgentWriteError("branch changed before the authoring commit");
-        case "candidate-not-landed":
-          throw new AgentWriteError("authoring candidate commit did not land");
-      }
-  }
 }
