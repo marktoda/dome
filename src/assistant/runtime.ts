@@ -5,6 +5,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { Capability } from "../capabilities";
+import type { AuthenticatedMutationActor } from "../request-receipts/assistant-mutation-executor";
 
 import type { AgentChange, AgentMessage, Citation } from "./types";
 
@@ -76,7 +77,7 @@ export type AgentSessionCancelResult =
 export type AgentSession = {
   readonly id: string;
   readonly ownerDeviceId: string | null;
-  send(message: string, signal?: AbortSignal): AgentTurn;
+  send(message: string, signal?: AbortSignal, mutationActor?: AuthenticatedMutationActor): AgentTurn;
   cancel(): AgentSessionCancelResult;
 };
 
@@ -110,6 +111,7 @@ export type AgentTurnRunner = (input: {
   readonly question: string;
   readonly history: ReadonlyArray<AgentMessage>;
   readonly sessionContext?: AgentSessionContext | undefined;
+  readonly mutationActor?: AuthenticatedMutationActor | undefined;
   readonly signal?: AbortSignal | undefined;
 }) => AgentRun;
 
@@ -228,7 +230,7 @@ export function createAgentRuntime(opts: {
   const bind = (state: SessionState): AgentSession => Object.freeze({
     id: state.id,
     ownerDeviceId: state.context?.deviceId ?? null,
-    send(message: string, signal?: AbortSignal): AgentTurn {
+    send(message: string, signal?: AbortSignal, mutationActor?: AuthenticatedMutationActor): AgentTurn {
       const at = now();
       if (runtimeClosed || state.closed) return failedTurn("session-closed");
       if (expireIfNeeded(state, at)) return failedTurn("session-expired");
@@ -275,6 +277,10 @@ export function createAgentRuntime(opts: {
       state.activeStarted = false;
       state.lastActivityAt = at;
       const history = Object.freeze([...state.messages]);
+      const trustedMutationActor = mutationActor !== undefined &&
+          state.context !== null && mutationActor.deviceId === state.context.deviceId
+        ? mutationActor
+        : undefined;
 
       async function* events(): AsyncIterable<AgentEvent> {
         if (state.activeController === controller) state.activeStarted = true;
@@ -288,6 +294,7 @@ export function createAgentRuntime(opts: {
             question,
             history,
             ...(state.context !== null ? { sessionContext: state.context } : {}),
+            ...(trustedMutationActor !== undefined ? { mutationActor: trustedMutationActor } : {}),
             signal: controller.signal,
           });
           for await (const text of run.text) {

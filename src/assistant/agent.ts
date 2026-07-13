@@ -19,6 +19,7 @@ import { anthropic } from "@ai-sdk/anthropic";
 import type { Vault } from "../vault";
 import type { Capability } from "../capabilities";
 import { buildAgentTools, type AgentActionContext } from "./tools";
+import type { AssistantMutationExecutor, AuthenticatedMutationActor } from "../request-receipts/assistant-mutation-executor";
 import type {
   AgentChange,
   AgentMessage,
@@ -68,6 +69,8 @@ export type AgentOptions = {
    * write tools.
    */
   readonly capabilities?: ReadonlySet<Capability> | undefined;
+  readonly mutationActor?: AuthenticatedMutationActor | undefined;
+  readonly mutationExecutor?: AssistantMutationExecutor | undefined;
 };
 
 /**
@@ -87,10 +90,20 @@ function setupAgent(opts: AgentOptions): {
   const citations: Citation[] = [];
   const changes: AgentChange[] = [];
   const modelId = opts.modelId ?? DEFAULT_MODEL;
-  const capabilities = new Set<Capability>(opts.capabilities ?? []);
+  const mutationPairInvalid = (opts.mutationActor === undefined) !== (opts.mutationExecutor === undefined);
+  const capabilities = new Set<Capability>(
+    mutationPairInvalid
+      ? [...(opts.capabilities ?? [])].filter((capability) => capability === "read" || capability === "converse")
+      : opts.capabilities ?? [],
+  );
   const action: AgentActionContext | undefined =
     capabilities.size > 0
-      ? { vaultPath: opts.vault.path, modelId, changes, capabilities }
+      ? {
+          vaultPath: opts.vault.path, modelId, changes, capabilities,
+          ...(opts.mutationActor !== undefined ? { mutationActor: opts.mutationActor } : {}),
+          ...(opts.mutationExecutor !== undefined ? { mutationExecutor: opts.mutationExecutor } : {}),
+          ...(opts.abortSignal !== undefined ? { signal: opts.abortSignal } : {}),
+        }
       : undefined;
   // The contract tools are provisioned when any of their gating capabilities
   // is present; the charter teaches them only when they exist.

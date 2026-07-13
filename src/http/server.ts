@@ -96,6 +96,10 @@ import type {
   RequestReceiptOperation,
   RequestReceiptOperationClass,
 } from "../request-receipts/request-receipts";
+import type {
+  AssistantMutationExecutor,
+  AuthenticatedMutationActor,
+} from "../request-receipts/assistant-mutation-executor";
 
 // ----- Constants ------------------------------------------------------------
 
@@ -164,6 +168,7 @@ export type DomeHttpServerOptions = {
   readonly operationScheduler?: Pick<ProductOperationScheduler, "run"> | undefined;
   /** Durable Product Host mutation audit; absent in compatibility mode. */
   readonly requestReceiptRecorder?: HttpRequestReceiptRecorder | undefined;
+  readonly assistantMutationExecutor?: AssistantMutationExecutor | undefined;
   readonly model?: string | undefined;
   /**
    * Grant the `author` capability (agent write tools). Default off
@@ -519,6 +524,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     history: ReadonlyArray<AgentMessage>,
     signal: AbortSignal,
     turnCapabilities: ReadonlySet<Capability>,
+    mutationActor?: AuthenticatedMutationActor,
   ): AgentStream => {
     if (opts.vault !== undefined) {
       return runAgentStream({
@@ -527,6 +533,8 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
         history,
         abortSignal: signal,
         capabilities: turnCapabilities,
+        ...(mutationActor !== undefined ? { mutationActor } : {}),
+        ...(opts.assistantMutationExecutor !== undefined ? { mutationExecutor: opts.assistantMutationExecutor } : {}),
         ...(opts.model !== undefined ? { modelId: opts.model } : {}),
       });
     }
@@ -551,6 +559,8 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
           abortSignal: signal,
           // Same capability plumbing as defaultAgent above.
           capabilities: turnCapabilities,
+          ...(mutationActor !== undefined ? { mutationActor } : {}),
+          ...(opts.assistantMutationExecutor !== undefined ? { mutationExecutor: opts.assistantMutationExecutor } : {}),
           ...(opts.model !== undefined ? { modelId: opts.model } : {}),
         });
         ready();
@@ -599,13 +609,14 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
   };
 
   const agentRuntime = opts.agentRuntime ?? createAgentRuntime({
-    runTurn: ({ question, history, signal, sessionContext }): AgentRun => {
+    runTurn: ({ question, history, signal, sessionContext, mutationActor }): AgentRun => {
       const turnCapabilities = sessionContext?.capabilities ?? granted;
       const stream = defaultAgentStreamTurn(
         question,
         history,
         signal ?? new AbortController().signal,
         turnCapabilities,
+        mutationActor,
       );
       return {
         text: (async function* () {
@@ -789,11 +800,12 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     readonly question: string;
     readonly capabilities: ReadonlySet<Capability>;
     readonly requestId?: string | undefined;
+    readonly mutationActor?: AuthenticatedMutationActor | undefined;
   }): Response => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     const startedAt = Date.now();
-    const turn = input.session.send(input.question, controller.signal);
+    const turn = input.session.send(input.question, controller.signal, input.mutationActor);
     if (turn.failure !== undefined) {
       clearTimeout(timer);
       return agentRuntimeFailureResponse(turn.failure);
@@ -1025,6 +1037,7 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
         question: message,
         capabilities: requestGranted,
         ...(client !== undefined ? { requestId: client.requestId } : {}),
+        ...(client !== undefined ? { mutationActor: mutationActorOf(client) } : {}),
       });
     }
 
@@ -1153,12 +1166,14 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       const blockId = typeof body?.blockId === "string" ? body.blockId.trim() : "";
       const disposition = typeof body?.disposition === "string" ? body.disposition : "";
       const deferUntil = typeof body?.deferUntil === "string" ? body.deferUntil : undefined;
-      if (
-        blockId.length === 0 ||
-        !["close", "defer", "keep"].includes(disposition) ||
-        (disposition === "defer" && (deferUntil === undefined || !/^\d{4}-\d{2}-\d{2}$/.test(deferUntil)))
-      ) {
+      if (blockId.length === 0 || !["close", "defer", "keep"].includes(disposition)) {
         return dataErrorResponse(400, "settle-usage", "POST /settle requires a JSON body with non-empty `blockId` and `disposition` (optional `deferUntil`).");
+      }
+      if (disposition === "defer" && (deferUntil === undefined || !/^\d{4}-\d{2}-\d{2}$/.test(deferUntil))) {
+        return jsonResponse(400, settleResultJson({
+          status: "invalid",
+          message: "POST /settle requires a JSON body with non-empty `blockId` and `disposition` (optional `deferUntil`).",
+        }));
       }
       // performSettle is runtime-free (locates the line + a human commit) —
       // no enqueue/withVault needed, same as POST /capture.
@@ -1809,6 +1824,16 @@ function sessionOwnedBy(
   return client === undefined
     ? session.ownerDeviceId === null
     : session.ownerDeviceId === client.deviceId;
+}
+
+function mutationActorOf(client: DeviceRequestContext): AuthenticatedMutationActor {
+  return Object.freeze({
+    requestId: client.requestId,
+    actorId: client.actorId,
+    deviceId: client.deviceId,
+    credentialId: client.credentialId,
+    transport: client.transport,
+  });
 }
 
 function requestOriginAllowed(

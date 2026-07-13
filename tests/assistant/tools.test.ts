@@ -10,6 +10,7 @@ import type { Citation, AgentChange } from "../../src/assistant/types";
 import { grantedCapabilities, type Capability } from "../../src/capabilities";
 import { runInit } from "../../src/cli/commands/init";
 import { commitSingleFileOnHead, readBlob, resolveRef } from "../../src/git";
+import type { AssistantMutationExecutor } from "../../src/request-receipts/assistant-mutation-executor";
 
 // Real VaultViewResult shape: {kind: "ok", structured: {name, schema, data}, views, brokerDiagnostics}
 // Real query structured.data shape (dome.search.query/v1):
@@ -141,6 +142,19 @@ describe("buildAgentTools", () => {
     const out = await tools.read_document!.execute!({ path: "missing.md" }, callOpts);
     expect(String(out).toLowerCase()).toContain("not found");
     expect(citations).toHaveLength(0);
+  });
+
+  test("read tools never invoke the assistant mutation executor", async () => {
+    let executions = 0;
+    const executor = { execute: async () => { executions++; throw new Error("unexpected mutation"); } } as unknown as AssistantMutationExecutor;
+    const tools = buildAgentTools(fakeVault(), [], {
+      vaultPath: "/tmp/x", modelId: "m", changes: [], capabilities: new Set(["read"]),
+      mutationActor: { requestId: "request-1", actorId: "owner", deviceId: "device-1", credentialId: "credential-1", transport: "cookie" },
+      mutationExecutor: executor,
+    });
+    await tools.read_document!.execute!({ path: "wiki/x.md" }, callOpts);
+    await tools.run_view!.execute!({ command: "query", input: {} }, callOpts);
+    expect(executions).toBe(0);
   });
 });
 

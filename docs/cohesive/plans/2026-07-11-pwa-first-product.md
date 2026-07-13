@@ -514,6 +514,19 @@ unavailability. The PWA binds every successful response back to the requested
 path and commit and presents it as inert plain text in a keyboard-contained
 dialog. Persistent device-attributed mutation receipts remain P3.3d.
 
+**Checkpoint P3.3d implemented 2026-07-12.** The Product Host owns a separate,
+non-rebuildable `request-receipts.db` using WAL with full synchronous durability.
+Authenticated HTTP mutations and every mutating assistant tool fail closed if
+their receipt cannot be admitted. Receipts contain only opaque request,
+operation, device, credential, transport, lifecycle, result-code, and commit
+metadata—never bodies, prompts, answers, paths, model output, or credentials.
+Each assistant action is a distinct child operation sharing its turn request
+id and borrowing the correct short scheduler lane; read tools create no rows.
+Known rejections, successful commits, recovery-required landed commits, queued
+cancellation, and genuinely uncertain post-side-effect outcomes remain
+distinct. Startup marks prior-host admitted work interrupted, and only safe
+successful/rejected history is explicitly pruneable. P3.3 is complete.
+
 ### P4 — Self-contained distribution, backup, and upgrade
 
 Deliver the signed macOS product artifact with pinned runtime and PWA; one

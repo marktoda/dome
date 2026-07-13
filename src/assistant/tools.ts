@@ -40,8 +40,16 @@ import { z } from "zod";
 import type { Vault } from "../vault";
 import type { Citation, AgentChange } from "./types";
 import { commitOid, sourceRef } from "../core/source-ref";
-import { createDocument, editDocument } from "./write";
+import {
+  createDocumentMutation,
+  editDocumentMutation,
+  validateCreateDocument,
+  validateEditDocument,
+  type AgentWriteMutationOutcome,
+} from "./write";
 import { has, type Capability } from "../capabilities";
+import type { AssistantMutationExecutor, AuthenticatedMutationActor } from "../request-receipts/assistant-mutation-executor";
+import type { FinishRequestReceiptInput, RequestReceiptOperation, RequestReceiptOperationClass } from "../request-receipts/request-receipts";
 import { captureJsonDocument, performCapture } from "../surface/capture";
 import { runInstalledView } from "../surface/run-view";
 import { performSettle, settleResultJson } from "../surface/settle";
@@ -99,7 +107,20 @@ export type AgentActionContext = {
   readonly modelId: string;
   readonly changes: AgentChange[];
   readonly capabilities: ReadonlySet<Capability>;
+  readonly mutationActor?: AuthenticatedMutationActor | undefined;
+  readonly mutationExecutor?: AssistantMutationExecutor | undefined;
+  readonly signal?: AbortSignal | undefined;
 };
+
+export function agentWriteReceiptTerminal(outcome: AgentWriteMutationOutcome): FinishRequestReceiptInput {
+  if (outcome.kind === "committed") {
+    return { state: "succeeded", resultCode: outcome.change.kind === "create" ? "created" : "edited", commitOid: outcome.commit };
+  }
+  if (outcome.kind === "rejected") return { state: "rejected", resultCode: outcome.code };
+  return outcome.commit === null
+    ? { state: "interrupted", resultCode: "mutation-outcome-unknown", adoptionState: "unknown", recoveryRequired: true }
+    : { state: "succeeded", resultCode: "committed-recovery-required", commitOid: outcome.commit, recoveryRequired: true };
+}
 
 /**
  * Build the AI SDK tool set for the ask agent. Citations gathered during tool
@@ -166,6 +187,25 @@ export function buildAgentTools(
     if (change !== undefined) action.changes.push(change);
     return JSON.stringify(doc, null, 2);
   };
+  const runMutation = async <T>(
+    operation: RequestReceiptOperation,
+    operationClass: RequestReceiptOperationClass,
+    mutate: (signal: AbortSignal) => Promise<{ value: T; terminal: FinishRequestReceiptInput }>,
+  ): Promise<T> => {
+    if (action.mutationActor === undefined && action.mutationExecutor === undefined) {
+      return (await mutate(action.signal ?? new AbortController().signal)).value;
+    }
+    if (action.mutationActor === undefined || action.mutationExecutor === undefined) {
+      throw new Error("assistant mutation identity/executor pair is incomplete");
+    }
+    return action.mutationExecutor.execute({
+      actor: action.mutationActor,
+      operation,
+      operationClass,
+      mutate,
+      ...(action.signal !== undefined ? { signal: action.signal } : {}),
+    });
+  };
 
   if (has(action.capabilities, "capture")) {
     tools["capture_note"] = tool({
@@ -179,11 +219,25 @@ export function buildAgentTools(
           .describe("Optional explicit title; drives the filename slug and commit message."),
       }),
       execute: async (input) => {
-        const outcome = await performCapture({
-          text: input.text,
-          ...(input.title !== undefined ? { title: input.title } : {}),
-          vault: action.vaultPath,
-          source: "assistant",
+        if (input.text.trim().length === 0) return jsonResult({
+          schema: "dome.capture/v1", status: "error", error: "capture_note requires non-empty text",
+        });
+        const outcome = await runMutation("capture", "workspace-mutation", async () => {
+          const value = await performCapture({
+            text: input.text,
+            ...(input.title !== undefined ? { title: input.title } : {}),
+            vault: action.vaultPath,
+            source: "assistant",
+          });
+          if (value.kind === "error" && value.exitCode !== 64) throw new Error("capture outcome unknown");
+          return {
+            value,
+            terminal: value.kind === "captured"
+              ? { state: "succeeded", resultCode: "captured", commitOid: value.result.commit }
+              : value.kind === "duplicate"
+                ? { state: "succeeded", resultCode: "duplicate" }
+                : { state: "rejected", resultCode: "capture-invalid" },
+          };
         });
         return jsonResult(
           captureJsonDocument(outcome),
@@ -208,10 +262,22 @@ export function buildAgentTools(
           .describe("YYYY-MM-DD; required iff disposition is defer."),
       }),
       execute: async (input) => {
-        const outcome = await performSettle(action.vaultPath, {
-          blockId: input.blockId,
-          disposition: input.disposition,
-          ...(input.deferUntil !== undefined ? { deferUntil: input.deferUntil } : {}),
+        if (input.blockId.trim().length === 0 || (input.disposition === "defer" && !/^\d{4}-\d{2}-\d{2}$/.test(input.deferUntil ?? ""))) {
+          return jsonResult({ schema: "dome.settle/v1", status: "invalid", message: "invalid settle input" });
+        }
+        const outcome = await runMutation("settle", "workspace-mutation", async () => {
+          const value = await performSettle(action.vaultPath, {
+            blockId: input.blockId,
+            disposition: input.disposition,
+            ...(input.deferUntil !== undefined ? { deferUntil: input.deferUntil } : {}),
+          });
+          if (value.status === "invalid") throw new Error("settle outcome unknown");
+          return {
+            value,
+            terminal: value.status === "settled"
+              ? { state: "succeeded", resultCode: value.commit === undefined ? "settled-noop" : "settled", ...(value.commit !== undefined ? { commitOid: value.commit } : {}) }
+              : { state: "rejected", resultCode: "not-found" },
+          };
         });
         return jsonResult(
           settleResultJson(outcome),
@@ -239,7 +305,15 @@ export function buildAgentTools(
             message: "resolve_question requires a non-empty `value`.",
           });
         }
-        const outcome = await vault.resolve(input.id, value);
+        const outcome = await runMutation("resolve", "operational-transaction", async () => {
+          const result = await vault.resolve(input.id, value);
+          return {
+            value: result,
+            terminal: result.kind === "answered" || result.kind === "already-answered"
+              ? { state: "succeeded", resultCode: result.kind }
+              : { state: "rejected", resultCode: result.kind },
+          };
+        });
         switch (outcome.kind) {
           case "not-found":
             return jsonResult({
@@ -295,12 +369,20 @@ export function buildAgentTools(
                 commit: commitOid(citation.commit),
               })]
         );
-        const outcome = await vault.completeAgentWork({
-          questionId: input.questionId,
-          expectedRevision: input.expectedRevision,
-          answer: input.answer,
-          reason: input.reason,
-          evidence,
+        const outcome = await runMutation("agent-work-complete", "operational-transaction", async () => {
+          const result = await vault.completeAgentWork({
+            questionId: input.questionId,
+            expectedRevision: input.expectedRevision,
+            answer: input.answer,
+            reason: input.reason,
+            evidence,
+          });
+          return {
+            value: result,
+            terminal: result.kind === "completed" || result.kind === "already-completed"
+              ? { state: "succeeded", resultCode: result.kind }
+              : { state: "rejected", resultCode: result.kind },
+          };
         });
         if (outcome.kind === "not-found") {
           return jsonResult({
@@ -340,7 +422,16 @@ export function buildAgentTools(
         id: z.number().int().positive().describe("Proposal id from list_proposals."),
       }),
       execute: async (input) => {
-        const outcome = await performApply(action.vaultPath, input.id);
+        const outcome = await runMutation("apply-proposal", "workspace-mutation", async () => {
+          const value = await performApply(action.vaultPath, input.id);
+          if (value.status === "invalid") throw new Error("apply outcome unknown");
+          return {
+            value,
+            terminal: value.status === "applied"
+              ? { state: "succeeded", resultCode: value.commit === undefined ? "applied-noop" : "applied", ...(value.commit !== undefined ? { commitOid: value.commit } : {}), ...(value.recoveryRequired === true ? { recoveryRequired: true } : {}) }
+              : { state: "rejected", resultCode: value.status },
+          };
+        });
         return jsonResult(
           applyResultJson(outcome),
           outcome.status === "applied"
@@ -358,7 +449,15 @@ export function buildAgentTools(
         note: z.string().optional().describe("Optional note recording why."),
       }),
       execute: async (input) => {
-        const outcome = await performReject(action.vaultPath, input.id, input.note);
+        const outcome = await runMutation("reject-proposal", "operational-transaction", async () => {
+          const value = await performReject(action.vaultPath, input.id, input.note);
+          return {
+            value,
+            terminal: value.status === "rejected"
+              ? { state: "succeeded", resultCode: "proposal-rejected" }
+              : { state: "rejected", resultCode: value.status },
+          };
+        });
         return jsonResult(
           rejectResultJson(outcome),
           outcome.status === "rejected"
@@ -411,13 +510,21 @@ export function buildAgentTools(
     // Run a write op, record the change, and surface failures to the model as
     // an `error: …` string (never throw — a rejected write must not crash the loop).
     const runWrite = async (
-      op: () => Promise<AgentChange>,
+      operation: "create-document" | "edit-document",
+      op: () => Promise<AgentWriteMutationOutcome>,
       verb: "created" | "edited",
     ): Promise<string> => {
       try {
-        const change = await op();
-        action.changes.push(change);
-        return `${verb} ${change.path}`;
+        const outcome = await runMutation(operation, "workspace-mutation", async () => {
+          const value = await op();
+          return {
+            value,
+            terminal: agentWriteReceiptTerminal(value),
+          };
+        });
+        if (outcome.kind !== "committed") return `error: ${outcome.message}`;
+        action.changes.push(outcome.change);
+        return `${verb} ${outcome.change.path}`;
       } catch (e) {
         return `error: ${e instanceof Error ? e.message : String(e)}`;
       }
@@ -430,8 +537,16 @@ export function buildAgentTools(
         path: z.string().describe("Vault-relative .md path for the new page."),
         content: z.string().describe("Full markdown content of the new page."),
       }),
-      execute: (input) =>
-        runWrite(() => createDocument(action, { path: input.path, content: input.content }), "created"),
+      execute: async (input) => {
+        if (input.path.trim().length === 0 || input.content.length === 0) return "error: path and content are required";
+        try { await validateCreateDocument(action, input); } catch (error) {
+          return `error: ${error instanceof Error ? error.message : String(error)}`;
+        }
+        return runWrite("create-document", () => createDocumentMutation(
+          action,
+          { path: input.path, content: input.content },
+        ), "created");
+      },
     });
     tools["edit_document"] = tool({
       description:
@@ -441,16 +556,22 @@ export function buildAgentTools(
         old_string: z.string().describe("Exact text to replace; must be unique in the file."),
         new_string: z.string().describe("Replacement text."),
       }),
-      execute: (input) =>
-        runWrite(
+      execute: async (input) => {
+        if (input.path.trim().length === 0 || input.old_string.length === 0) return "error: path and old_string are required";
+        try { await validateEditDocument(action, input); } catch (error) {
+          return `error: ${error instanceof Error ? error.message : String(error)}`;
+        }
+        return runWrite(
+          "edit-document",
           () =>
-            editDocument(action, {
+            editDocumentMutation(action, {
               path: input.path,
               old_string: input.old_string,
               new_string: input.new_string,
             }),
           "edited",
-        ),
+        );
+      },
     });
   }
 
