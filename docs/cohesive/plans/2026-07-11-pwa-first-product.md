@@ -534,6 +534,16 @@ install/start/restart/status/uninstall lifecycle; guided Tailscale/model/
 transcription setup; encrypted consistent backup; blank-host restore; frozen
 N-1 migrations; pre-admission rollback.
 
+The first P4 checkpoint is deliberately narrower: `bun run
+build:home-artifact` produces a versioned `darwin-arm64` tarball containing a
+pinned Bun runtime, Dome runtime assets, production dependencies, and the built
+PWA. Its relocatable `bin/dome` wrapper works without a source checkout, and
+the v1 manifest plus sorted checksums make the contents inspectable. This
+checkpoint is **unsigned, not notarized, and has no upgrade mechanism**; those
+remain P4 work, along with lifecycle management, backup/restore, migrations,
+and guided provider setup. The npm package rehearsal remains the SDK release
+gate and is intentionally separate from this end-user artifact.
+
 Exit journey: a clean Mac needs no source checkout or manual PWA build; it
 pairs an iPhone, upgrades an N-1 fixture after backup, handles a forced failed
 upgrade without admitting writes, and restores onto a blank host with all

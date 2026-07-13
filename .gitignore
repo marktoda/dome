@@ -9,3 +9,4 @@ tests/tmp/
 
 pwa/node_modules/
 pwa/dist/
+/dist/
