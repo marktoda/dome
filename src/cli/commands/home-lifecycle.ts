@@ -24,7 +24,7 @@ export async function runHomeLifecycle(
   let environment: ReadonlyMap<string, string> | undefined;
   if (action === "install") {
     try {
-      environment = await resolveServiceEnvironment(options);
+      environment = await resolveHomeLifecycleEnvironment(action, options);
     } catch (error) {
       console.error(`dome home install: ${error instanceof Error ? error.message : String(error)}`);
       return 64;
@@ -41,10 +41,21 @@ export async function runHomeLifecycle(
     console.log(
       `dome home ${action}: ${result.status}\n` +
       `  service: ${result.label}\n  plist: ${result.plist}\n  log: ${result.log}\n` +
-      `  program: ${result.program}\n  installed: ${result.installed ? "yes" : "no"}\n` +
+      `  installation: ${result.installation}\n` +
+      `  artifact: ${result.artifactId ?? "none"}${result.productVersion === null ? "" : ` (${result.productVersion})`}\n` +
+      `  release: ${result.release ?? "none"}\n  program: ${result.program || "none"}\n  installed: ${result.installed ? "yes" : "no"}\n` +
       `  loaded: ${result.loaded === null ? "unknown" : result.loaded ? "yes" : "no"}\n` +
       `  ready: ${result.ready === null ? "n/a" : result.ready ? "yes" : "no"}`,
     );
   }
   return result.exitCode;
+}
+
+/** Undefined means preserve the selected installation record's environment. */
+export async function resolveHomeLifecycleEnvironment(
+  action: HomeLifecycleAction,
+  options: RunHomeLifecycleOptions,
+): Promise<ReadonlyMap<string, string> | undefined> {
+  if (action !== "install" || (options.env === undefined && options.envFile === undefined)) return undefined;
+  return resolveServiceEnvironment(options);
 }

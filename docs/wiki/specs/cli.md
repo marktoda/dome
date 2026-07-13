@@ -2776,14 +2776,34 @@ admission and closes the complete Product Host lifecycle.
 The macOS artifact also provides `dome home install|start|restart|status|
 uninstall`. These nested verbs manage `com.dome.home.<vault-slug>` through
 launchd without changing the legacy top-level `dome install|restart|uninstall`
-contract for `dome serve`. Home uses the pinned artifact runtime/program,
+contract for `dome serve`. Install strictly verifies the invoking artifact,
+copies it into `~/Library/Application Support/Dome/Home/releases/<artifact-id>`,
+fsyncs and re-verifies the complete staging tree, and publishes it with atomic
+no-replace semantics. One closed per-vault
+`installations/<vault-slug>/installation.json` is the sole artifact selector;
+there is deliberately no mutable `current` symlink. Home uses the selected
+pinned artifact runtime/program,
 fixed loopback `127.0.0.1:3663`, bundled PWA, `RunAtLoad`, `KeepAlive`, and
-`<vault>/.dome/state/home.log`. Status distinguishes absent, installed/stopped,
-ready, loaded/unreachable, loaded-without-plist, and broken-program states.
-Start/restart never render a new plist. Uninstall removes only the plist and
-preserves the artifact, vault, Git data, state, logs, and backups. A legacy
+`<vault>/.dome/state/home.log`. Status includes artifact ID and product version
+and distinguishes absent, installed/stopped, ready, loaded/unreachable,
+missing/corrupt selected release, invalid record, orphaned service, and plist
+mismatch states. Start/restart never render a new plist and resolve paths only
+through the record. A different invoking artifact is refused with an explicit
+instruction to use the future upgrade surface. Uninstall removes only the
+plist, fsyncs its parent, and preserves the record, every managed release,
+vault, Git data, state, logs, and backups. A legacy
+direct-artifact Home service with no installation record is also refused until
+`dome home uninstall` performs the one-time cutover cleanup. A legacy
 Serve plist, loaded service, or live heartbeat must be removed with the legacy
 top-level uninstall before Home can be installed.
+
+Reinstall without `--env` or `--env-file` preserves the record's stored
+environment; supplying either option intentionally replaces it. Plist
+publication uses a private exclusive temporary file, fsyncs its complete bytes,
+atomically renames it, and fsyncs the LaunchAgents directory before launchd is
+activated. With a valid record and release, a missing plist is `not-installed`
+only when the service is unloaded; a still-loaded service is the nonzero
+`orphaned-service` edge.
 
 ### `dome backup keygen|create|verify|restore`
 

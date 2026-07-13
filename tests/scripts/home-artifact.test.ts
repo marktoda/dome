@@ -18,8 +18,13 @@ import {
   verifyHomeArtifact,
   writeArtifactMetadata,
 } from "../../scripts/home-artifact";
+import { verifyHomeArtifact as shippedVerifyHomeArtifact } from "../../src/product-host/home-artifact";
 
 describe("Dome Home artifact", () => {
+  test("the builder exports the exact shipped verifier", () => {
+    expect(verifyHomeArtifact).toBe(shippedVerifyHomeArtifact);
+  });
+
   test("writes an honest versioned manifest and sorted checksums", async () => {
     const root = await fixture();
     try {
@@ -92,6 +97,19 @@ describe("Dome Home artifact", () => {
     try {
       await writeFile(join(root, "app", "pwa", "dist", "index.html"), "corrupted\n");
       expect(verifyHomeArtifact(root)).rejects.toThrow("artifact checksum mismatch");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects unknown manifest fields before trusting payload paths", async () => {
+    const root = await verifiableFixture();
+    try {
+      const path = join(root, "manifest.json");
+      const manifest = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+      manifest["futureSelector"] = "ambient-current-symlink";
+      await writeFile(path, `${JSON.stringify(manifest)}\n`);
+      expect(verifyHomeArtifact(root)).rejects.toThrow("unknown or missing fields");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -233,6 +251,12 @@ async function verifiableFixture(): Promise<string> {
   await mkdir(join(root, "runtime"), { recursive: true });
   await writeFile(join(root, "runtime", "bun"), `#!/bin/sh\necho ${PINNED_BUN_VERSION}\n`, { mode: 0o755 });
   await chmod(join(root, "runtime", "bun"), 0o755);
+  await writeFile(join(root, "runtime", "age"), `#!/bin/sh\necho v${PINNED_AGE_VERSION}\n`, { mode: 0o755 });
+  await writeFile(join(root, "runtime", "age-keygen"), `#!/bin/sh\necho v${PINNED_AGE_VERSION}\n`, { mode: 0o755 });
+  await chmod(join(root, "runtime", "age"), 0o755);
+  await chmod(join(root, "runtime", "age-keygen"), 0o755);
+  await mkdir(join(root, "licenses"), { recursive: true });
+  await writeFile(join(root, "licenses", "age-LICENSE"), "fixture license\n");
   await writeArtifactMetadata(root, "1.0.0");
   return root;
 }

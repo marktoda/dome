@@ -545,12 +545,14 @@ and guided provider setup. The npm package rehearsal remains the SDK release
 gate and is intentionally separate from this end-user artifact.
 
 The next P4 checkpoint adds the supervised macOS lifecycle as nested
-`dome home install|start|restart|status|uninstall` commands. It installs only
-the per-vault LaunchAgent integration around the self-contained artifact,
+`dome home install|start|restart|status|uninstall` commands. It installs the
+self-contained artifact as an immutable content-addressed managed release and
+uses one closed per-vault installation record as the sole selector for the
+LaunchAgent integration,
 waits for schema-valid pairing readiness, refuses legacy Serve or foreground
 Home conflicts, and preserves artifact bytes, the complete vault, state,
-logs, and backups on uninstall. Copying/removing artifact bytes, signing and
-notarization, upgrades/rollback, in-place/merge recovery, and provider setup remain
+logs, the installation record, and managed releases on uninstall. Signing and
+notarization, upgrades/rollback, release garbage collection, in-place/merge recovery, and provider setup remain
 explicitly deferred P4 work.
 
 The following P4 checkpoint adds encrypted offline backup creation,
