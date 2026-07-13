@@ -24,6 +24,10 @@ import { homeServiceLabelForVault } from "../../src/product-host/home-lifecycle"
 import { startProductHost } from "../../src/product-host/product-host";
 import { readHomeUpgradeBarrier } from "../../src/product-host/home-upgrade-barrier";
 import {
+  runHomeUpgradeCutover,
+  type HomeUpgradeCutoverDeps,
+} from "../../src/product-host/home-upgrade-cutover";
+import {
   commitPreparedHomeUpgrade,
   inspectHomeUpgradeAdmission,
   migratePreparedHomeUpgrade,
@@ -104,6 +108,207 @@ describe("Product Host pre-commit upgrade transaction", () => {
       expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
       expect(await readHomeUpgradeBarrier(f.vault, f.deps)).toBeNull();
       expect((await releaseCommittedHomeUpgrade(f.vault, f.deps)).phase).toBe("committed");
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("composes real migration, selector commit, barrier release, and candidate-only admission", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      let lifecycleActive = false;
+      let candidateAuthorized = false;
+      let lifecycleFinished = false;
+      let barrierReleasedBeforeLifecycleFinish = false;
+      const inspectLifecycle: NonNullable<HomeUpgradeCutoverDeps["inspectLifecycleSuspension"]> = async () => {
+        if (!lifecycleActive) return { kind: "inactive" };
+        const journal = await readHomeUpgradeForRecovery(f.vault, f.deps);
+        if (!candidateAuthorized || journal?.phase !== "committed") {
+          throw new Error("candidate lifecycle evidence requested before authorization");
+        }
+        return authorizedLifecycle(journal);
+      };
+      const deps: HomeUpgradeCutoverDeps = {
+        ...f.deps,
+        inspectLifecycleSuspension: inspectLifecycle,
+        operations: {
+          prove: async (input) => probationProof(input.transactionId),
+        },
+        suspendHome: (async (invocation, operation) => {
+          expect(invocation.mode).toBe("new");
+          lifecycleActive = true;
+          const value = await operation({
+            operationId: transactionId,
+            purpose: "upgrade",
+            authorizeCurrentHomeForResume: async () => { candidateAuthorized = true; },
+          });
+          barrierReleasedBeforeLifecycleFinish =
+            !(await inspectOperationalWriterBarrier(f.vault)).blocked && !lifecycleFinished;
+          lifecycleFinished = true;
+          lifecycleActive = false;
+          return {
+            kind: "ready",
+            operationId: transactionId,
+            recovered: false,
+            operationRan: true,
+            value,
+          };
+        }) as NonNullable<HomeUpgradeCutoverDeps["suspendHome"]>,
+      };
+
+      const cutover = await runHomeUpgradeCutover({
+        vaultPath: f.vault,
+        transactionId,
+        candidateArtifactId: CANDIDATE_ID,
+      }, deps);
+      expect(cutover).toMatchObject({
+        status: "ready",
+        transactionOutcome: { kind: "committed", transaction: { phase: "committed" } },
+        lifecycle: { kind: "ready" },
+      });
+      expect(barrierReleasedBeforeLifecycleFinish).toBeTrue();
+      expect(await readHomeUpgradeBarrier(f.vault, f.deps)).toBeNull();
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
+      expect(await inspectHomeUpgradeAdmission(f.vault, f.deps, {
+        id: CANDIDATE_ID,
+        version: "2.0.0",
+      })).toEqual({ admitted: true });
+      expect((await inspectHomeUpgradeAdmission(f.vault, f.deps, {
+        id: CANDIDATE_ID,
+        version: "wrong",
+      })).admitted).toBeFalse();
+      expect((await inspectHomeUpgradeAdmission(f.vault, f.deps, {
+        id: OLD_ID,
+        version: "1.0.0",
+      })).admitted).toBeFalse();
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("real committed candidate deletion remains blocked and reports forward recovery", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      let lifecycleActive = false;
+      let candidateAuthorized = false;
+      const inspectLifecycle: NonNullable<HomeUpgradeCutoverDeps["inspectLifecycleSuspension"]> = async () => {
+        if (!lifecycleActive) return { kind: "inactive" };
+        const journal = await readHomeUpgradeForRecovery(f.vault, f.deps);
+        if (!candidateAuthorized || journal?.phase !== "committed") {
+          throw new Error("candidate lifecycle evidence requested before authorization");
+        }
+        return authorizedLifecycle(journal);
+      };
+      const deps: HomeUpgradeCutoverDeps = {
+        ...f.deps,
+        inspectLifecycleSuspension: inspectLifecycle,
+        operations: {
+          prove: async (input) => probationProof(input.transactionId),
+          release: async () => { throw new Error("crash before barrier release"); },
+        },
+        suspendHome: (async (_invocation, operation) => {
+          lifecycleActive = true;
+          const value = await operation({
+            operationId: transactionId,
+            purpose: "upgrade",
+            authorizeCurrentHomeForResume: async () => { candidateAuthorized = true; },
+          });
+          return {
+            kind: "deferred",
+            reason: "write-barrier-closed",
+            transactionId,
+            operationId: transactionId,
+            recovered: false,
+            operationRan: true,
+            value,
+          };
+        }) as NonNullable<HomeUpgradeCutoverDeps["suspendHome"]>,
+      };
+      const first = await runHomeUpgradeCutover({
+        vaultPath: f.vault,
+        transactionId,
+        candidateArtifactId: CANDIDATE_ID,
+      }, deps);
+      expect(first).toMatchObject({
+        status: "recovery-required",
+        transactionOutcome: { kind: "committed" },
+        handoffError: "crash before barrier release",
+      });
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeTrue();
+
+      await rm(releaseRoot(homeInstallationPaths(f.vault, f.deps), CANDIDATE_ID), { recursive: true });
+      const recovered = await runHomeUpgradeCutover({
+        vaultPath: f.vault,
+        transactionId,
+        candidateArtifactId: CANDIDATE_ID,
+      }, deps);
+      expect(recovered).toMatchObject({
+        status: "recovery-required",
+        transactionOutcome: { kind: "committed", transaction: { phase: "committed" } },
+        lifecycle: { kind: "failed", operationRan: false },
+      });
+      expect((await readHomeUpgradeForRecovery(f.vault, f.deps))?.phase).toBe("committed");
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeTrue();
+      expect((await inspectHomeUpgradeAdmission(f.vault, f.deps, {
+        id: CANDIDATE_ID,
+        version: "2.0.0",
+      })).admitted).toBeFalse();
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("simultaneous cutover recoverers restore once and never recreate cleared lifecycle state", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      const prepared = await prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId,
+        candidateArtifactId: CANDIDATE_ID,
+      }, f.deps);
+      await migratePreparedHomeUpgrade(f.vault, f.deps);
+      let inspected = 0;
+      let releaseInspections!: () => void;
+      const bothInspected = new Promise<void>((resolve) => { releaseInspections = resolve; });
+      let lifecycleCleared = false;
+      const deps: HomeUpgradeCutoverDeps = {
+        ...f.deps,
+        inspectLifecycleSuspension: async () => {
+          inspected += 1;
+          if (inspected === 2) releaseInspections();
+          await bothInspected;
+          return oldLifecycle(prepared);
+        },
+        suspendHome: (async (invocation) => {
+          expect(invocation).toMatchObject({ mode: "recover", policy: "resume-only" });
+          if (lifecycleCleared) {
+            throw new Error(`Home lifecycle suspension ${transactionId} is no longer active`);
+          }
+          lifecycleCleared = true;
+          return {
+            kind: "ready",
+            operationId: transactionId,
+            recovered: true,
+            operationRan: false,
+          };
+        }) as NonNullable<HomeUpgradeCutoverDeps["suspendHome"]>,
+      };
+      const attempts = await Promise.allSettled(Array.from({ length: 2 }, () => runHomeUpgradeCutover({
+        vaultPath: f.vault,
+        transactionId,
+        candidateArtifactId: CANDIDATE_ID,
+      }, deps)));
+      expect(inspected).toBe(2);
+      expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1);
+      expect(attempts.filter((attempt) => attempt.status === "rejected")).toHaveLength(1);
+      const winner = attempts.find((attempt) => attempt.status === "fulfilled");
+      if (winner?.status === "fulfilled") {
+        expect(winner.value).toMatchObject({
+          status: "ready",
+          transactionOutcome: { kind: "rolled-back", transaction: { phase: "restored" } },
+        });
+      }
+      expect(lifecycleCleared).toBeTrue();
+      expect((await readHomeUpgradeForRecovery(f.vault, f.deps))?.phase).toBe("restored");
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
+      expect(await readHomeUpgradeBarrier(f.vault, f.deps)).toBeNull();
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });
 
@@ -957,6 +1162,36 @@ function authorizedLifecycle(journal: Awaited<ReturnType<typeof commitPreparedHo
       resumeArtifactVersion: journal.candidate.version,
       resumePlistPath: selection.candidate.plist.path,
       resumePlistSha256: selection.candidate.plist.sha256,
+      requestedAt: journal.timestamps.preparedAt,
+      phaseChangedAt: journal.timestamps.preparedAt,
+      lastError: null,
+    },
+  };
+}
+
+function oldLifecycle(journal: Awaited<ReturnType<typeof prepareHomeUpgrade>>) {
+  const selection = journal.selection!;
+  return {
+    kind: "active" as const,
+    suspension: {
+      schema: "dome.home-lifecycle-suspension/v1" as const,
+      phase: "suspended" as const,
+      purpose: "upgrade" as const,
+      operationId: journal.transactionId,
+      vault: journal.vault,
+      priorLoaded: true,
+      installationPath: journal.selectors.installation.path,
+      installationSha256: journal.selectors.installation.sha256,
+      artifactId: journal.old.artifactId,
+      artifactVersion: journal.old.version,
+      plistPath: journal.selectors.plist.path,
+      plistSha256: journal.selectors.plist.sha256,
+      resumeInstallationPath: selection.old.installation.path,
+      resumeInstallationSha256: selection.old.installation.sha256,
+      resumeArtifactId: journal.old.artifactId,
+      resumeArtifactVersion: journal.old.version,
+      resumePlistPath: selection.old.plist.path,
+      resumePlistSha256: selection.old.plist.sha256,
       requestedAt: journal.timestamps.preparedAt,
       phaseChangedAt: journal.timestamps.preparedAt,
       lastError: null,
