@@ -561,7 +561,11 @@ The following P4 checkpoint adds encrypted offline backup creation,
 verification, and public blank-host restore. The Home artifact bundles pinned
 official age v1.3.1 tools; `dome backup keygen|create|verify|restore` fences supervised Home, snapshots the exact
 clean committed Git/state inventory, uses connection-level SQLite snapshots,
-publishes atomically, and validates a closed checksummed manifest. Blank-host
+publishes atomically without replacement, and validates a closed checksummed
+manifest. Backup creation now uses the durable lifecycle suspension bracket,
+then the operational SHARED lease and complete external-plus-local Product
+Host ownership in fixed order. Archive and resume truth remain independent, so
+a created archive is never hidden by a failed or deferred Home restart. Blank-host
 restore accepts only an absent absolute target, reconstructs and validates in
 private sibling staging, checkpoints a fresh Device Authority epoch, fsyncs
 the reconstructed tree bottom-up, and uses one canonical target identity with
@@ -617,8 +621,9 @@ prerequisite. `restored` is terminal and never replays the snapshot over later
 N-1 writes. Artifact metadata carries writer-barrier protocol v1 while
 `distribution.upgradeSupported` remains false. Intact legacy v1 artifacts stay
 runnable but are ineligible on either side of an upgrade. Cross-surface
-exclusion is complete; supervised lifecycle suspension is still the next
-required orchestrator step because current Home holds a lifetime lease.
+exclusion is complete; backup consumes supervised lifecycle suspension, while
+the upgrade orchestrator must consume the same seam because current Home holds
+a lifetime lease.
 Migrations, candidate launch, plist/selection switching, commit-before-
 admission, journal retirement, frozen N-1 migration fixtures,
 signing/notarization, and a public upgrade command remain later P4 checkpoints.

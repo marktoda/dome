@@ -532,7 +532,14 @@ async function runOwnedSuspension<T>(input: {
       if (!sameResumeEvidence(active, evidence)) {
         const error = "Home selector or plist is not the authorized resume target";
         persistError(input.pair.journal, active.operationId, error);
-        return { result: failed(active, input.recovered, operationRan, error), operationError };
+        return {
+          result: Object.freeze({
+            ...resultBase(active, input.recovered, operationRan, value),
+            kind: "failed" as const,
+            error,
+          }),
+          operationError,
+        };
       }
       try {
         active = transition(input.pair.journal, active, "resuming", operationError === null ? null : message(operationError), input.deps);

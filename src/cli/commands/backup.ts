@@ -61,6 +61,12 @@ function present(result: BackupResult, json: boolean): void {
     if (result.error !== undefined) console.error(`dome backup restore: ${result.error}`);
     return;
   }
+  if (result.operation === "create" && result.status === "created") {
+    console.log(`backup created: ${result.archive}\nbackup id: ${result.backupId}\nsha256: ${result.sha256}`);
+    if (result.error !== undefined) console.error(`dome backup create: ${result.error}`);
+    if (result.restart === "failed") console.error(`Dome Home restart failed: ${result.restartError ?? "unknown error"}`);
+    return;
+  }
   if (result.error !== undefined) {
     console.error(`dome backup ${result.operation}: ${result.error}`);
     if (result.restart === "failed") console.error(`dome backup: Home restart failed: ${result.restartError ?? "unknown error"}`);

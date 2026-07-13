@@ -381,9 +381,18 @@ the official age v1.3.1 darwin-arm64 binaries and upstream license.
 `create` is an offline clean-commit snapshot. It refuses legacy Serve,
 foreground Home, linked/outer/detached/dirty Git worktrees, Git locks,
 surviving mutation/finalize journals, output inside the vault, and unknown
-`.dome/state` entries. A loaded supervised Home is booted out and drained;
-backup then owns the Product Host lock and best-effort restarts Home through
-strict pairing readiness. Archive creation and restart are separate results.
+`.dome/state` entries. The crash-honest lifecycle suspension Module records
+intent, boots out a loaded supervised Home, and proves drain before backup
+acquires an operational SHARED lease and both Product Host locks. It then
+best-effort resumes Home through strict pairing readiness. Active suspension,
+ambiguous launchctl results, selector/plist drift, and either ownership lock
+fail closed. An exact installed Home record and direct plist are required even
+when launchd reports that Home was previously stopped. Archive creation and
+restart are separate results: a published
+archive retains its id, checksum, and path even when resume is deferred or
+fails, while the command remains nonzero with explicit restart failure. The
+retained suspension operation id is recovery evidence; no public recovery
+command is claimed by this checkpoint.
 
 The closed manifest covers the committed tree and standalone Git repository,
 all refs, configuration/local extensions/providers, six durable SQLite stores,
@@ -498,9 +507,13 @@ ambiguous crash evidence fail closed. A validation failure before any active
 transaction publication may perform the one bounded abort-before-prepare
 release.
 
-The fixed acquisition order is operational lease, external Product Host lock,
-vault-local Product Host lock, then mutation/store locks. Normal Home acquires
-the outer lease before ownership or recovery; probation remains write-closed.
+Within admitted work the fixed acquisition order is operational lease,
+external Product Host lock, vault-local Product Host lock, then mutation/store
+locks. A supervised quiescing operation such as backup first owns the lifecycle
+transaction, durably records intent, boots out, and proves drain; its callback
+then follows that same operational/external/local/store order. Resume takes a
+separate operational lease while lifecycle ownership remains held. Normal Home
+acquires the outer lease before ownership or recovery; probation remains write-closed.
 Runtime, proposals, activity, inspect/repair, devices, and the durable-state
 section of live backup are covered by an exact reviewed-callsite drift test.
 Home lifecycle install, start, restart, and uninstall also hold an ordinary

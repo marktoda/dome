@@ -17,18 +17,21 @@ import { openDeviceAuthority } from "../device-authority/device-authority";
 import { compareStrings } from "../core/compare";
 import { withExclusiveFileLock } from "../engine/host/file-lock";
 import { acquireOperationalWriterLease } from "../operational-state/writer-barrier";
-import { readServeHeartbeatStatus } from "../engine/host/compiler-host-heartbeat";
 import {
   readStandaloneBackupSource,
   readStandaloneBackupBlob,
   validateStandaloneBackupRepository,
   type StandaloneBackupTreeEntry,
 } from "../git";
-import { waitForLaunchAgentDrain } from "../platform/launchd";
-import { publishDirectoryExclusive } from "../platform/exclusive-rename";
+import { publishDirectoryExclusive, publishPathExclusive } from "../platform/exclusive-rename";
 import { snapshotSqliteReadonly, validateSqliteSnapshot } from "../sqlite/snapshot";
-import { homeServiceLabelForVault, isHomePairingReadiness } from "../product-host/home-lifecycle";
-import { resolveServiceDeps, serviceLabelForVault, type ServiceDeps } from "../surface/service-probe";
+import {
+  withSupervisedHomeSuspended,
+  type HomeLifecycleSuspensionDeps,
+  type SupervisedHomeSuspensionResult,
+} from "../product-host/home-lifecycle-suspension";
+import { withProductHostOwnership } from "../product-host/host-ownership";
+import type { ServiceDeps } from "../surface/service-probe";
 import { extractTarTree, inspectTar, readTarFile, writeTarTree, type TarEntry } from "./tar";
 
 export const BACKUP_SCHEMA = "dome.backup/v1" as const;
@@ -142,7 +145,10 @@ type InspectedSource = {
   readonly worktreeDigest: string;
 };
 
-export type BackupDeps = ServiceDeps & {
+export type BackupDeps = ServiceDeps & Pick<
+  HomeLifecycleSuspensionDeps,
+  "applicationSupportDir" | "legacyServeRunning" | "checkpoint"
+> & {
   readonly agePath?: string;
   readonly ageKeygenPath?: string;
   readonly now?: () => Date;
@@ -192,44 +198,95 @@ export async function createVaultBackup(input: {
   if (await exists(output)) return failure("create", `backup output already exists: ${output}`, 64);
   if (isWithin(canonicalVault, output)) return failure("create", "backup output must be outside the vault", 64);
 
-  let home: Awaited<ReturnType<typeof stopSupervisedHome>>;
+  const operationId = randomUUID();
+  let suspended: SupervisedHomeSuspensionResult<BackupResult>;
+  let operationResult: BackupResult | undefined;
   try {
-    home = await stopSupervisedHome(vault, deps);
-  } catch (error) {
-    return failure("create", message(error));
-  }
-  let created: BackupResult;
-  try {
-    if (home.stopError !== undefined) {
-      created = failure("create", home.stopError);
-    } else {
-      const admission = await acquireOperationalWriterLease({ vaultPath: vault, command: "dome-backup-create" });
-      if (!admission.ok) {
-        created = failure("create", `operational write admission is closed: ${admission.error.kind}`);
-      } else {
+    suspended = await withSupervisedHomeSuspended({
+      mode: "new",
+      vaultPath: canonicalVault,
+      purpose: "backup",
+      operationId,
+    }, async () => {
+      try {
+        const admission = await acquireOperationalWriterLease({
+          vaultPath: canonicalVault,
+          command: "dome-backup-create",
+        });
+        if (!admission.ok) {
+          operationResult = failure("create", `operational write admission is closed: ${admission.error.kind}`);
+          return operationResult;
+        }
         try {
-          const locked = await withExclusiveFileLock({
-            lockPath: join(vault, ".dome", "state", "locks", "product-host.lock"),
-            command: "dome-backup-create",
-          }, async () => await createWhileFenced(vault, output, input.recipient, deps));
-          created = locked.kind === "busy"
-            ? failure("create", "Dome Home or another backup owns the vault; stop it and retry")
-            : locked.value;
-        } finally { admission.lease.close(); }
+          const owned = await withProductHostOwnership(
+            canonicalVault,
+            async () => {
+              operationResult = await createWhileFenced(canonicalVault, output, input.recipient, deps);
+              return operationResult;
+            },
+          );
+          if (owned.kind === "busy") {
+            operationResult = failure("create", "Dome Home, upgrade probation, or another backup owns the vault; stop it and retry");
+          } else {
+            operationResult = owned.value;
+          }
+          return operationResult;
+        } finally {
+          admission.lease.close();
+        }
+      } catch (error) {
+        operationResult = operationResult === undefined
+          ? failure("create", message(error))
+          : Object.freeze({
+              ...operationResult,
+              exitCode: 1,
+              error: operationResult.error === undefined
+                ? `backup operation cleanup failed: ${message(error)}`
+                : `${operationResult.error}; backup operation cleanup also failed: ${message(error)}`,
+            });
+        return operationResult;
       }
+    }, deps);
+  } catch (error) {
+    if (operationResult === undefined) return failure("create", message(error));
+    return Object.freeze({
+      ...operationResult,
+      exitCode: 1,
+      restart: "failed",
+      restartError: `Home suspension ${operationId} failed after the backup operation: ${message(error)}`,
+    });
+  }
+  return backupSuspensionResult(suspended);
+}
+
+function backupSuspensionResult(result: SupervisedHomeSuspensionResult<BackupResult>): BackupResult {
+  if (result.kind === "ready" || result.kind === "not-required") {
+    if (!result.operationRan || result.value === undefined) {
+      return Object.freeze({
+        ...failure("create", `Home suspension ${result.operationId} resumed without running the backup`),
+        restart: result.kind === "ready" ? "restarted" as const : "not-running" as const,
+      });
     }
-  } catch (error) {
-    created = failure("create", message(error));
-  } finally {
-    // Restart below: a finally must cover every path after successful bootout.
+    return Object.freeze({
+      ...result.value,
+      restart: result.kind === "ready" ? "restarted" as const : "not-running" as const,
+    });
   }
-  if (!home.wasLoaded) return Object.freeze({ ...created, restart: "not-running" });
-  try {
-    await home.restart();
-    return Object.freeze({ ...created, restart: "restarted" });
-  } catch (error) {
-    return Object.freeze({ ...created, exitCode: 1, restart: "failed", restartError: message(error) });
-  }
+
+  const archive = result.operationRan && result.value !== undefined
+    ? result.value
+    : failure("create", result.kind === "failed"
+      ? `Home suspension ${result.operationId} did not run the backup: ${result.error}`
+      : `Home suspension ${result.operationId} did not run the backup because operational write admission is closed by ${result.transactionId}`);
+  const restartError = result.kind === "deferred"
+    ? `Home suspension ${result.operationId} could not resume because operational write admission is closed by ${result.transactionId}`
+    : `Home suspension ${result.operationId} could not resume: ${result.error}`;
+  return Object.freeze({
+    ...archive,
+    exitCode: 1,
+    restart: "failed",
+    restartError,
+  });
 }
 
 export async function verifyVaultBackup(input: {
@@ -397,6 +454,7 @@ async function invalidateRestoredAuthority(
 }
 
 async function createWhileFenced(vault: string, output: string, recipient: string, deps: BackupDeps): Promise<BackupResult> {
+  if (await exists(output)) return failure("create", `backup output already exists: ${output}`, 64);
   const temporary = await mkdtemp(join(tmpdir(), "dome-backup-create-"));
   const root = join(temporary, "dome-backup");
   const stagedVault = join(root, "vault");
@@ -433,7 +491,7 @@ async function createWhileFenced(vault: string, output: string, recipient: strin
     await run([deps.agePath ?? "age", "-r", recipient, "-o", encrypted, tarPath]);
     await chmod(encrypted, 0o600);
     await fsyncPath(encrypted);
-    await rename(encrypted, output);
+    await publishPathExclusive({ source: encrypted, target: output });
     await fsyncDirectory(dirname(output));
     return Object.freeze({
       schema: BACKUP_SCHEMA, operation: "create", status: "created", exitCode: 0,
@@ -618,64 +676,6 @@ function assertTarMatchesManifest(tarEntries: ReadonlyArray<TarEntry>, manifest:
 
 function normalizeEntry(entry: BackupEntry | TarEntry): BackupEntry {
   return { path: entry.path, type: entry.type, mode: entry.mode, size: entry.size, ...(entry.sha256 === undefined ? {} : { sha256: entry.sha256 }) };
-}
-
-async function stopSupervisedHome(vault: string, deps: BackupDeps): Promise<{ wasLoaded: boolean; stopError?: string; restart: () => Promise<void> }> {
-  const d = resolveServiceDeps(deps);
-  if (d.platform !== "darwin" || d.uid === null) throw new Error("Dome backup is supported on macOS Home artifacts only");
-  const legacyLabel = serviceLabelForVault(vault);
-  const legacyPlist = join(d.launchAgentsDir, `${legacyLabel}.plist`);
-  const legacyHeartbeat = await readServeHeartbeatStatus({ vaultPath: vault });
-  if (await exists(legacyPlist) || legacyHeartbeat.status === "running" || (await d.launchctl(["print", `gui/${d.uid}/${legacyLabel}`])).exitCode === 0) {
-    throw new Error("legacy dome serve is installed or loaded; uninstall it before backing up Dome Home");
-  }
-  const label = homeServiceLabelForVault(vault);
-  const plist = join(d.launchAgentsDir, `${label}.plist`);
-  const target = `gui/${d.uid}/${label}`;
-  const loaded = (await d.launchctl(["print", target])).exitCode === 0;
-  if (!loaded) {
-    try {
-      const response = await fetch("http://127.0.0.1:3663/pair/status");
-      if (await isHomePairingReadiness(response)) throw new Error("a foreground Dome Home is running; stop it before backup");
-    } catch (error) {
-      if (error instanceof Error && error.message.includes("foreground Dome Home")) throw error;
-    }
-    return { wasLoaded: false, restart: async () => {} };
-  }
-  if (!(await exists(plist))) throw new Error("Dome Home is loaded without its plist; repair lifecycle state before backup");
-  const restart = async () => {
-    const boot = await d.launchctl(["bootstrap", `gui/${d.uid}`, plist]);
-    if (boot.exitCode !== 0) throw new Error(boot.stderr.trim() || "launchctl bootstrap failed");
-    const kick = await d.launchctl(["kickstart", "-k", target]);
-    if (kick.exitCode !== 0) throw new Error(kick.stderr.trim() || "launchctl kickstart failed");
-    const deadline = Date.now() + (deps.readinessTimeoutMs ?? 10_000);
-    do {
-      try {
-        if (deps.readiness !== undefined) {
-          if (await deps.readiness()) return;
-        } else {
-          const response = await fetch("http://127.0.0.1:3663/pair/status");
-          if (await isHomePairingReadiness(response)) return;
-        }
-      } catch { /* retry until the strict readiness deadline */ }
-      await Bun.sleep(200);
-    } while (Date.now() < deadline);
-    throw new Error("Dome Home restarted but did not become pairing-ready");
-  };
-  const bootout = await d.launchctl(["bootout", target]);
-  if (bootout.exitCode !== 0) throw new Error(bootout.stderr.trim() || "launchctl bootout failed before backup");
-  let drained = false;
-  let drainError: string | undefined;
-  try {
-    drained = await waitForLaunchAgentDrain({ launchctl: d.launchctl, uid: d.uid, label, timeoutMs: d.drainTimeoutMs });
-  } catch (error) {
-    drainError = message(error);
-  }
-  return {
-    wasLoaded: true,
-    ...(drained ? {} : { stopError: drainError ?? "Dome Home did not stop before the backup drain timeout" }),
-    restart,
-  };
 }
 
 async function extractTarStrict(tarPath: string, destination: string): Promise<void> {
