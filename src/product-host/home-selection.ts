@@ -126,8 +126,8 @@ export async function captureHomeSelection(
 ): Promise<HomeSelection> {
   const paths = homeSelectionPaths(vault, deps);
   return Object.freeze({
-    installation: await captureDocument(paths.installation, "installation selector"),
-    plist: await captureDocument(paths.plist, "LaunchAgent plist"),
+    installation: await captureHomeSelectionDocument(paths.installation, "installation selector"),
+    plist: await captureHomeSelectionDocument(paths.plist, "LaunchAgent plist"),
   });
 }
 
@@ -205,7 +205,10 @@ function assertDocumentEvidence(document: HomeSelectionDocument): void {
   }
 }
 
-async function captureDocument(path: string, label: string): Promise<HomeSelectionDocument> {
+export async function captureHomeSelectionDocument(
+  path: string,
+  label = "Home selector",
+): Promise<HomeSelectionDocument> {
   // lstat is diagnostic only. O_NOFOLLOW plus before/after fstat makes the
   // opened inode—not a raced path lookup—the evidence being hashed.
   const pathInfo = await lstat(path);
@@ -232,7 +235,7 @@ function assertCapturable(info: Stats, label: string): void {
 }
 
 async function assertCurrentDocument(expected: HomeSelectionDocument): Promise<void> {
-  const current = await captureDocument(expected.path, "existing Home selector");
+  const current = await captureHomeSelectionDocument(expected.path, "existing Home selector");
   if (!sameDocument(current, expected)) {
     throw new Error("Home selection CAS expected bytes changed");
   }
@@ -244,7 +247,7 @@ async function classifyDocument(
 ): Promise<"old" | "candidate" | "invalid"> {
   if (old.path !== candidate.path) return "invalid";
   let current: HomeSelectionDocument;
-  try { current = await captureDocument(old.path, "Home selector"); }
+  try { current = await captureHomeSelectionDocument(old.path, "Home selector"); }
   catch { return "invalid"; }
   if (sameDocument(current, old)) return "old";
   if (sameDocument(current, candidate)) return "candidate";

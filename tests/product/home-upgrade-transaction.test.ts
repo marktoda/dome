@@ -24,6 +24,7 @@ import { homeServiceLabelForVault } from "../../src/product-host/home-lifecycle"
 import { startProductHost } from "../../src/product-host/product-host";
 import { readHomeUpgradeBarrier } from "../../src/product-host/home-upgrade-barrier";
 import {
+  commitPreparedHomeUpgrade,
   inspectHomeUpgradeAdmission,
   migratePreparedHomeUpgrade,
   prepareHomeUpgrade,
@@ -46,7 +47,109 @@ const DATABASES = [
   "answers.db", "proposals.db", "outbox.db", "runs.db", "request-receipts.db", "device-authority.db",
 ] as const;
 
+function probationProof() {
+  return {
+    schema: "dome.home-upgrade-probation-proof/v1" as const,
+    readinessSchema: "dome.product.readiness/v1" as const,
+    hostState: "probation" as const,
+    artifactId: CANDIDATE_ID,
+    productVersion: "2.0.0",
+    vaultId: "stable-vault-id",
+    writesAdmitted: false as const,
+    provenAt: "2026-07-13T00:10:00.000Z",
+  };
+}
+
 describe("Product Host pre-commit upgrade transaction", () => {
+  test("commits candidate selection only after exact probation and makes rollback irreversible", async () => {
+    const f = await fixture();
+    try {
+      await prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId: randomUUID(),
+        candidateArtifactId: CANDIDATE_ID,
+      }, f.deps);
+      await migratePreparedHomeUpgrade(f.vault, f.deps);
+      const committed = await commitPreparedHomeUpgrade({
+        vaultPath: f.vault,
+        proof: probationProof(),
+      }, f.deps);
+      expect(committed).toMatchObject({
+        phase: "committed",
+        probation: { artifactId: CANDIDATE_ID, vaultId: "stable-vault-id" },
+      });
+      expect(await readFile(homeInstallationPaths(f.vault, f.deps).record, "utf8")).toContain(CANDIDATE_ID);
+      expect(await readFile(join(f.deps.launchAgentsDir!, `${homeServiceLabelForVault(f.vault)}.plist`), "utf8")).toContain(CANDIDATE_ID);
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeTrue();
+      await expect(restoreHomeUpgrade(f.vault, f.deps)).rejects.toThrow("irreversible");
+      expect((await commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof() }, f.deps)).phase).toBe("committed");
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  for (const crashAt of ["candidate-plist-published", "candidate-installation-published"] as const) {
+    test(`switching crash at ${crashAt} restores exact old selectors and stores`, async () => {
+      const f = await fixture();
+      try {
+        const before = await logicalState(f.vault);
+        const oldInstallation = await readFile(homeInstallationPaths(f.vault, f.deps).record);
+        const plist = join(f.deps.launchAgentsDir!, `${homeServiceLabelForVault(f.vault)}.plist`);
+        const oldPlist = await readFile(plist);
+        await prepareHomeUpgrade({ vaultPath: f.vault, transactionId: randomUUID(), candidateArtifactId: CANDIDATE_ID }, f.deps);
+        await migratePreparedHomeUpgrade(f.vault, f.deps);
+        await expect(commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof() }, {
+          ...f.deps,
+          selectionCheckpoint: async (name) => { if (name === crashAt) throw new Error(`crash at ${name}`); },
+        })).rejects.toThrow(`crash at ${crashAt}`);
+        expect((await readHomeUpgrade(f.vault, f.deps))?.phase).toBe("switching");
+        if (crashAt === "candidate-installation-published") {
+          await expect(restoreHomeUpgrade(f.vault, {
+            ...f.deps,
+            selectionCheckpoint: async (name) => {
+              if (name === "old-installation-restored") throw new Error("crash during selector rollback");
+            },
+          })).rejects.toThrow("crash during selector rollback");
+          expect((await readHomeUpgrade(f.vault, f.deps))?.phase).toBe("switching");
+        }
+        const restored = await restoreHomeUpgrade(f.vault, f.deps);
+        expect(restored.phase).toBe("restored");
+        expect(await readFile(homeInstallationPaths(f.vault, f.deps).record)).toEqual(oldInstallation);
+        expect(await readFile(plist)).toEqual(oldPlist);
+        expect(await logicalState(f.vault)).toEqual(before);
+      } finally { await rm(f.root, { recursive: true, force: true }); }
+    });
+  }
+
+  test("refuses selector commit before every live store is current or when proof names another vault", async () => {
+    const f = await fixture();
+    try {
+      await prepareHomeUpgrade({ vaultPath: f.vault, transactionId: randomUUID(), candidateArtifactId: CANDIDATE_ID }, f.deps);
+      await expect(commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof() }, f.deps))
+        .rejects.toThrow("not current");
+      expect((await readHomeUpgrade(f.vault, f.deps))?.phase).toBe("prepared");
+      await migratePreparedHomeUpgrade(f.vault, f.deps);
+      await expect(commitPreparedHomeUpgrade({
+        vaultPath: f.vault,
+        proof: { ...probationProof(), vaultId: "another-vault" },
+      }, f.deps)).rejects.toThrow("does not match");
+      expect((await readHomeUpgrade(f.vault, f.deps))?.phase).toBe("prepared");
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("a crash after durable commit recovers forward and can never restore", async () => {
+    const f = await fixture();
+    try {
+      await prepareHomeUpgrade({ vaultPath: f.vault, transactionId: randomUUID(), candidateArtifactId: CANDIDATE_ID }, f.deps);
+      await migratePreparedHomeUpgrade(f.vault, f.deps);
+      await expect(commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof() }, {
+        ...f.deps,
+        selectionCheckpoint: async (name) => { if (name === "committed-recorded") throw new Error("crash after commit"); },
+      })).rejects.toThrow("crash after commit");
+      expect((await readHomeUpgrade(f.vault, f.deps))?.phase).toBe("committed");
+      expect((await commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof() }, f.deps)).phase).toBe("committed");
+      await expect(restoreHomeUpgrade(f.vault, f.deps)).rejects.toThrow("irreversible");
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
   test("migrates a prepared N-1 receipt store, preserves all canaries, stays closed, retries, and restores exactly", async () => {
     const f = await fixture();
     try {
