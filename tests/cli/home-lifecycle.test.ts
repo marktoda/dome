@@ -13,6 +13,7 @@ import {
 import { serviceLabelForVault, type LaunchctlRunner } from "../../src/surface/service-probe";
 import { initRepo } from "../../src/git";
 import type { HomeArtifactManifest } from "../../src/product-host/home-artifact";
+import { engageHomeUpgradeBarrier } from "../../src/product-host/home-upgrade-barrier";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -167,6 +168,37 @@ describe("manageHome macOS lifecycle", () => {
     const before = await readFile(second.plist, "utf8");
     expect((await manageHome({ action: "restart", vaultPath: f.vault }, d)).status).toBe("restarted");
     expect(await readFile(second.plist, "utf8")).toBe(before);
+  });
+
+  test("prepared upgrade denies lifecycle mutations while status remains available", async () => {
+    const f = await fixture();
+    const fake = fakeLaunchctl();
+    const d = deps(f, fake);
+    const installed = await manageHome({ action: "install", vaultPath: f.vault }, d);
+    expect(installed.status).toBe("installed");
+    const plistBefore = await readFile(installed.plist);
+    const selectorBefore = await readFile(installed.installation);
+    const loadedBefore = new Set(fake.loaded);
+    await engageHomeUpgradeBarrier({
+      vaultPath: f.vault,
+      transactionId: "lifecycle-prepared",
+    }, { applicationSupportDir: f.support });
+    fake.calls.splice(0);
+
+    for (const action of ["install", "start", "restart", "uninstall"] as const) {
+      const denied = await manageHome({ action, vaultPath: f.vault }, d);
+      expect(denied.status).toBe("error");
+      expect(denied.error).toContain("write-admission-closed");
+    }
+    expect(fake.calls.filter((call) =>
+      call[0] === "bootout" || call[0] === "bootstrap" || call[0] === "kickstart"
+    )).toEqual([]);
+    expect(await readFile(installed.plist)).toEqual(plistBefore);
+    expect(await readFile(installed.installation)).toEqual(selectorBefore);
+    expect(fake.loaded).toEqual(loadedBefore);
+
+    const status = await manageHome({ action: "status", vaultPath: f.vault }, d);
+    expect(status.status).toBe("ready");
   });
 
   test("publishes a closed record selecting one immutable content-addressed release", async () => {

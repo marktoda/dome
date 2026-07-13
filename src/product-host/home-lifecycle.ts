@@ -7,6 +7,7 @@ import { dirname, join, resolve } from "node:path";
 
 import { findGitRoot } from "../git";
 import { readServeHeartbeatStatus } from "../engine/host/compiler-host-heartbeat";
+import { acquireOperationalWriterLease } from "../operational-state/writer-barrier";
 import {
   activateLaunchAgent,
   publishLaunchAgentPlist,
@@ -122,16 +123,18 @@ async function manageHomeInner(input: {
   const target = `gui/${uid}/${label}`;
 
   if (input.action === "uninstall") {
-    const loaded = await probeLoaded(d, uid, label) === true;
-    await d.launchctl(["bootout", target]);
-    const drained = await waitForLaunchAgentDrain({ launchctl: d.launchctl, uid, label, timeoutMs: d.drainTimeoutMs });
-    if (!drained) return result(await selectedBase(neutral, vault, deps), "error", existsSync(plist), true, null, { error: "Dome Home did not stop before the launchd drain timeout; plist preserved for retry" });
-    const hadPlist = existsSync(plist);
-    if (hadPlist) {
-      await (deps.unlinkPlist ?? unlink)(plist);
-      await (deps.syncPlistParent ?? syncDirectory)(dirname(plist));
-    }
-    return result(await selectedBase(neutral, vault, deps), hadPlist || loaded ? "uninstalled" : "not-installed", false, false, null);
+    return withHomeLifecycleWriterLease(neutral, vault, input.action, async () => {
+      const loaded = await probeLoaded(d, uid, label) === true;
+      await d.launchctl(["bootout", target]);
+      const drained = await waitForLaunchAgentDrain({ launchctl: d.launchctl, uid, label, timeoutMs: d.drainTimeoutMs });
+      if (!drained) return result(await selectedBase(neutral, vault, deps), "error", existsSync(plist), true, null, { error: "Dome Home did not stop before the launchd drain timeout; plist preserved for retry" });
+      const hadPlist = existsSync(plist);
+      if (hadPlist) {
+        await (deps.unlinkPlist ?? unlink)(plist);
+        await (deps.syncPlistParent ?? syncDirectory)(dirname(plist));
+      }
+      return result(await selectedBase(neutral, vault, deps), hadPlist || loaded ? "uninstalled" : "not-installed", false, false, null);
+    });
   }
 
   if (input.action === "install") {
@@ -162,24 +165,26 @@ async function manageHomeInner(input: {
     const hadPlist = existsSync(plist);
     if (await hasLegacyServeConflict(vault, d, uid, deps.legacyServeRunning)) return legacyConflict(installBase, hadPlist, loaded);
     if (!loaded && readyNow) return foregroundConflict(installBase, hadPlist);
-    await mkdir(join(vault, ".dome", "state"), { recursive: true });
-    await mkdir(d.launchAgentsDir, { recursive: true });
-    await d.launchctl(["bootout", target]);
-    const drained = await waitForLaunchAgentDrain({ launchctl: d.launchctl, uid, label, timeoutMs: d.drainTimeoutMs });
-    if (!drained) return result(installBase, "error", hadPlist, true, null, { error: "Dome Home did not stop before the launchd drain timeout" });
-    const managed = await ensureManagedRelease({ source, manifest, paths, platform: d.platform }, deps);
-    const intendedEnvironment = input.environment ?? new Map(previous?.environment.map((entry) => [entry.name, entry.value] as const) ?? []);
-    const environment = new Map<string, string>(intendedEnvironment);
-    const record = createHomeInstallation(vault, manifest, intendedEnvironment);
-    await publishHomeInstallation(paths.record, record, deps);
-    const selected = baseForRecord(neutral, paths, record);
-    environment.set("PATH", homeServicePath(join(managed.root, "runtime", "bun")));
-    await (deps.publishPlist ?? publishLaunchAgentPlist)(plist, renderExpectedPlist(selected, environment));
-    const activation = await activateLaunchAgent({ launchctl: d.launchctl, uid, label, plistPath: plist });
-    if (activation !== null) return result(selected, "error", true, await probeLoaded(d, uid, label), false, { error: activation, replaced: hadPlist, releasePublished: managed.published });
-    const ready = await waitForHomeReadiness(deps);
-    if (!ready) return result(selected, "error", true, await probeLoaded(d, uid, label), false, { error: `Dome Home did not become ready at http://${HOME_HOST}:${HOME_PORT}/pair/status`, replaced: hadPlist, releasePublished: managed.published });
-    return result(selected, "installed", true, true, true, { replaced: hadPlist, releasePublished: managed.published });
+    return withHomeLifecycleWriterLease(installBase, vault, input.action, async () => {
+      await mkdir(join(vault, ".dome", "state"), { recursive: true });
+      await mkdir(d.launchAgentsDir, { recursive: true });
+      await d.launchctl(["bootout", target]);
+      const drained = await waitForLaunchAgentDrain({ launchctl: d.launchctl, uid, label, timeoutMs: d.drainTimeoutMs });
+      if (!drained) return result(installBase, "error", hadPlist, true, null, { error: "Dome Home did not stop before the launchd drain timeout" });
+      const managed = await ensureManagedRelease({ source, manifest, paths, platform: d.platform }, deps);
+      const intendedEnvironment = input.environment ?? new Map(previous?.environment.map((entry) => [entry.name, entry.value] as const) ?? []);
+      const environment = new Map<string, string>(intendedEnvironment);
+      const record = createHomeInstallation(vault, manifest, intendedEnvironment);
+      await publishHomeInstallation(paths.record, record, deps);
+      const selected = baseForRecord(neutral, paths, record);
+      environment.set("PATH", homeServicePath(join(managed.root, "runtime", "bun")));
+      await (deps.publishPlist ?? publishLaunchAgentPlist)(plist, renderExpectedPlist(selected, environment));
+      const activation = await activateLaunchAgent({ launchctl: d.launchctl, uid, label, plistPath: plist });
+      if (activation !== null) return result(selected, "error", true, await probeLoaded(d, uid, label), false, { error: activation, replaced: hadPlist, releasePublished: managed.published });
+      const ready = await waitForHomeReadiness(deps);
+      if (!ready) return result(selected, "error", true, await probeLoaded(d, uid, label), false, { error: `Dome Home did not become ready at http://${HOME_HOST}:${HOME_PORT}/pair/status`, replaced: hadPlist, releasePublished: managed.published });
+      return result(selected, "installed", true, true, true, { replaced: hadPlist, releasePublished: managed.published });
+    });
   }
 
   let record: HomeInstallationRecord | null;
@@ -219,19 +224,40 @@ async function manageHomeInner(input: {
   if (await hasLegacyServeConflict(vault, d, uid, deps.legacyServeRunning)) return legacyConflict(selected, true, loaded);
   const readyNow = await probeHomeReadiness(deps);
   if (!loaded && readyNow) return foregroundConflict(selected, true);
-  if (input.action === "restart") {
-    await d.launchctl(["bootout", target]);
-    const drained = await waitForLaunchAgentDrain({ launchctl: d.launchctl, uid, label, timeoutMs: d.drainTimeoutMs });
-    if (!drained) return result(selected, "error", true, true, null, { error: "Dome Home did not stop before the launchd drain timeout" });
-  } else if (loaded) {
+  return withHomeLifecycleWriterLease(selected, vault, input.action, async () => {
+    if (input.action === "restart") {
+      await d.launchctl(["bootout", target]);
+      const drained = await waitForLaunchAgentDrain({ launchctl: d.launchctl, uid, label, timeoutMs: d.drainTimeoutMs });
+      if (!drained) return result(selected, "error", true, true, null, { error: "Dome Home did not stop before the launchd drain timeout" });
+    } else if (loaded) {
+      const ready = await waitForHomeReadiness(deps);
+      return ready ? result(selected, "started", true, true, true) : result(selected, "error", true, true, false, { error: "Dome Home is loaded but not ready" });
+    }
+    const activation = await activateLaunchAgent({ launchctl: d.launchctl, uid, label, plistPath: plist });
+    if (activation !== null) return result(selected, "error", true, await probeLoaded(d, uid, label), false, { error: activation });
     const ready = await waitForHomeReadiness(deps);
-    return ready ? result(selected, "started", true, true, true) : result(selected, "error", true, true, false, { error: "Dome Home is loaded but not ready" });
+    if (!ready) return result(selected, "error", true, await probeLoaded(d, uid, label), false, { error: "Dome Home did not become ready" });
+    return result(selected, input.action === "restart" ? "restarted" : "started", true, true, true);
+  });
+}
+
+async function withHomeLifecycleWriterLease(
+  base: Base,
+  vault: string,
+  action: Exclude<HomeLifecycleAction, "status">,
+  operation: () => Promise<HomeLifecycleResult>,
+): Promise<HomeLifecycleResult> {
+  const admission = await acquireOperationalWriterLease({
+    vaultPath: vault,
+    command: `dome-home-${action}`,
+  });
+  if (!admission.ok) {
+    return result(base, "error", existsSync(base.plist), null, null, {
+      error: `Dome operational write admission is closed: ${admission.error.kind}`,
+    });
   }
-  const activation = await activateLaunchAgent({ launchctl: d.launchctl, uid, label, plistPath: plist });
-  if (activation !== null) return result(selected, "error", true, await probeLoaded(d, uid, label), false, { error: activation });
-  const ready = await waitForHomeReadiness(deps);
-  if (!ready) return result(selected, "error", true, await probeLoaded(d, uid, label), false, { error: "Dome Home did not become ready" });
-  return result(selected, input.action === "restart" ? "restarted" : "started", true, true, true);
+  try { return await operation(); }
+  finally { admission.lease.close(); }
 }
 
 function baseForManifest(base: Base, paths: ReturnType<typeof homeInstallationPaths>, manifest: HomeArtifactManifest): Base {

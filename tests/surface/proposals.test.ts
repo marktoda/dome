@@ -33,6 +33,7 @@ import { runInit } from "../../src/cli/commands/init";
 import { compilerHostLockPath } from "../../src/engine/host/compiler-host-lock";
 import { withExclusiveFileLock } from "../../src/engine/host/file-lock";
 import { commitSingleFileOnHead, log, resolveRef } from "../../src/git";
+import { engageOperationalWriterBarrier } from "../../src/operational-state/writer-barrier";
 import { openProposalsDb } from "../../src/proposals/db";
 import { enqueuePendingProposal, getProposal } from "../../src/proposals/pending-proposals";
 import {
@@ -209,6 +210,22 @@ describe("collectProposals", () => {
     const all = await collectProposals(vault, { all: true });
     expect(all.proposals).toHaveLength(1);
     expect(all.proposals[0]!.status).toBe("rejected");
+  });
+
+  test("fails explicitly without touching the proposal store while upgrade admission is closed", async () => {
+    const vault = await initVault();
+    const databasePath = join(vault, ".dome", "state", "proposals.db");
+    expect(existsSync(databasePath)).toBeFalse();
+    const engaged = await engageOperationalWriterBarrier({
+      vaultPath: vault,
+      transactionId: "surface-denial",
+    });
+    expect(engaged.ok).toBeTrue();
+
+    await expect(collectProposals(vault)).rejects.toThrow(
+      "operational write admission is closed: write-admission-closed",
+    );
+    expect(existsSync(databasePath)).toBeFalse();
   });
 });
 

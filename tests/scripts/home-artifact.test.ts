@@ -18,7 +18,10 @@ import {
   verifyHomeArtifact,
   writeArtifactMetadata,
 } from "../../scripts/home-artifact";
-import { verifyHomeArtifact as shippedVerifyHomeArtifact } from "../../src/product-host/home-artifact";
+import {
+  parseHomeArtifactManifest,
+  verifyHomeArtifact as shippedVerifyHomeArtifact,
+} from "../../src/product-host/home-artifact";
 
 describe("Dome Home artifact", () => {
   test("the builder exports the exact shipped verifier", () => {
@@ -59,6 +62,7 @@ describe("Dome Home artifact", () => {
         notarized: false,
         upgradeSupported: false,
       });
+      expect(manifest.writerBarrier).toEqual({ protocol: 1 });
       expect(manifest.entries.filter((entry) => entry.type === "file").map((entry) => entry.path)).toEqual([
         "app/pwa/dist/index.html",
         "bin/dome",
@@ -110,6 +114,18 @@ describe("Dome Home artifact", () => {
       manifest["futureSelector"] = "ambient-current-symlink";
       await writeFile(path, `${JSON.stringify(manifest)}\n`);
       expect(verifyHomeArtifact(root)).rejects.toThrow("unknown or missing fields");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("general manifest verification accepts legacy v1 without an upgrade protocol", async () => {
+    const root = await verifiableFixture();
+    try {
+      const path = join(root, "manifest.json");
+      const manifest = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
+      delete manifest["writerBarrier"];
+      expect(parseHomeArtifactManifest(manifest).writerBarrier).toBeUndefined();
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -9,6 +9,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { compareStrings } from "../core/compare";
 
 export const HOME_ARTIFACT_SCHEMA = "dome.home-artifact/v1" as const;
+export const HOME_WRITER_BARRIER_PROTOCOL = 1 as const;
 export const HOME_ARTIFACT_TARGET = Object.freeze({ os: "darwin", arch: "arm64" });
 export const PINNED_BUN_VERSION = "1.2.13";
 export const PINNED_BUN_ARCHIVE_URL =
@@ -48,6 +49,8 @@ export type HomeArtifactManifest = {
   }>;
   readonly entrypoint: "bin/dome";
   readonly pwa: "app/pwa/dist";
+  /** Absent on intact legacy v1 artifacts, which remain runnable but not upgradeable. */
+  readonly writerBarrier?: { readonly protocol: typeof HOME_WRITER_BARRIER_PROTOCOL };
   readonly distribution: {
     readonly signed: false;
     readonly notarized: false;
@@ -73,7 +76,7 @@ export async function verifyHomeArtifact(artifactRootInput: string): Promise<Hom
   let decoded: unknown;
   try { decoded = JSON.parse(await readFile(manifestPath, "utf8")); }
   catch { throw new Error(`artifact manifest is invalid at ${manifestPath}`); }
-  const manifest = parseManifest(decoded);
+  const manifest = parseHomeArtifactManifest(decoded);
 
   const actualEntries = await inventoryEntriesWithoutMetadata(artifactRoot);
   const expectedShape = manifest.entries.map((entry) => `${entry.path}\0${entry.type}`).sort();
@@ -161,8 +164,15 @@ export async function verifyHomeArtifact(artifactRootInput: string): Promise<Hom
   return manifest;
 }
 
-function parseManifest(value: unknown): HomeArtifactManifest {
-  const root = record(value, "artifact manifest", ["schema", "product", "target", "build", "artifact", "runtime", "tools", "entrypoint", "pwa", "distribution", "entries"]);
+export function parseHomeArtifactManifest(value: unknown): HomeArtifactManifest {
+  const candidate = value as Record<string, unknown>;
+  const hasWriterBarrier = typeof candidate === "object" && candidate !== null &&
+    Object.hasOwn(candidate, "writerBarrier");
+  const root = record(value, "artifact manifest", [
+    "schema", "product", "target", "build", "artifact", "runtime", "tools",
+    "entrypoint", "pwa", ...(hasWriterBarrier ? ["writerBarrier"] : []),
+    "distribution", "entries",
+  ]);
   if (root["schema"] !== HOME_ARTIFACT_SCHEMA) throw new Error(`unsupported artifact schema: ${String(root["schema"])}`);
   const product = record(root["product"], "artifact product", ["name", "version"]);
   const target = record(root["target"], "artifact target", ["os", "arch"]);
@@ -170,12 +180,16 @@ function parseManifest(value: unknown): HomeArtifactManifest {
   const artifact = record(root["artifact"], "artifact identity", ["id"]);
   const runtime = record(root["runtime"], "artifact runtime", ["name", "version", "sourceUrl", "archiveSha256", "sha256"]);
   const distribution = record(root["distribution"], "artifact distribution", ["signed", "notarized", "upgradeSupported"]);
+  const writerBarrier = hasWriterBarrier
+    ? record(root["writerBarrier"], "artifact writer barrier", ["protocol"])
+    : null;
   if (product["name"] !== "Dome Home" || !nonempty(product["version"]) ||
     target["os"] !== HOME_ARTIFACT_TARGET.os || target["arch"] !== HOME_ARTIFACT_TARGET.arch ||
     !fullObjectId(build["gitCommit"]) || !sha(artifact["id"]) ||
     runtime["name"] !== "bun" || runtime["version"] !== PINNED_BUN_VERSION ||
     runtime["sourceUrl"] !== PINNED_BUN_ARCHIVE_URL || runtime["archiveSha256"] !== PINNED_BUN_ARCHIVE_SHA256 || !sha(runtime["sha256"]) ||
     root["entrypoint"] !== "bin/dome" || root["pwa"] !== "app/pwa/dist" ||
+    (writerBarrier !== null && writerBarrier["protocol"] !== HOME_WRITER_BARRIER_PROTOCOL) ||
     distribution["signed"] !== false || distribution["notarized"] !== false || distribution["upgradeSupported"] !== false) {
     throw new Error("artifact manifest fixed product semantics are invalid");
   }

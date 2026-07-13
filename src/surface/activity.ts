@@ -24,6 +24,7 @@ import { join } from "node:path";
 import { DOME_TRAILER_KEYS } from "../engine-commit";
 import { logWithTrailers, type TrailerLogEntry } from "../git";
 import { openLedgerDb, type LedgerDb } from "../ledger/db";
+import { acquireOperationalWriterLease } from "../operational-state/writer-barrier";
 import { getRun, type RunId, type RunRow, type RunStatus } from "../ledger/runs";
 import { resolveVaultPath } from "./resolve-vault";
 
@@ -92,7 +93,7 @@ export async function buildActivityLog(
 
   const ledger = await openLedgerReadOnly(vaultPath);
   try {
-    const joined = commits.map((commit) => joinEntry(commit, ledger));
+    const joined = commits.map((commit) => joinEntry(commit, ledger?.db ?? null));
     const filtered = joined.filter((row) =>
       matchesProcessor(row, options.processor) && matchesGrep(row, options.grep)
     );
@@ -116,11 +117,25 @@ type JoinedRow = {
  * vault they only read), so a missing file short-circuits to "no join";
  * an open refusal (schema mismatch) degrades the same way.
  */
-async function openLedgerReadOnly(vaultPath: string): Promise<LedgerDb | null> {
+async function openLedgerReadOnly(vaultPath: string): Promise<{
+  readonly db: LedgerDb;
+  readonly close: () => void;
+} | null> {
   const path = join(vaultPath, ".dome", "state", "runs.db");
   if (!existsSync(path)) return null;
+  const admission = await acquireOperationalWriterLease({ vaultPath, command: "dome-activity" });
+  if (!admission.ok) throw new Error(`operational write admission is closed: ${admission.error.kind}`);
   const result = await openLedgerDb({ path });
-  return result.ok ? result.value.db : null;
+  if (!result.ok) {
+    admission.lease.close();
+    return null;
+  }
+  return Object.freeze({
+    db: result.value.db,
+    close: () => {
+      try { result.value.db.close(); } finally { admission.lease.close(); }
+    },
+  });
 }
 
 function joinEntry(commit: TrailerLogEntry, ledger: LedgerDb | null): JoinedRow {

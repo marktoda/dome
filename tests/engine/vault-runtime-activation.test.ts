@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -18,6 +19,7 @@ import {
   openVaultRuntime,
 } from "../../src/engine/host/vault-runtime";
 import type { ModelProvider } from "../../src/engine/core/model-invoke";
+import { engageOperationalWriterBarrier } from "../../src/operational-state/writer-barrier";
 
 const roots: string[] = [];
 
@@ -29,6 +31,36 @@ afterEach(() => {
 });
 
 describe("openVaultRuntime bundle activation", () => {
+  test("an engaged upgrade barrier refuses before operational state is created", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-runtime-barrier-"));
+    roots.push(root);
+    mkdirSync(join(root, ".dome"), { recursive: true });
+    writeFileSync(join(root, ".dome", "config.yaml"), "extensions: {}\n", "utf8");
+    const registry = buildRegistry([]);
+    expect(registry.ok).toBeTrue();
+    if (!registry.ok) return;
+    expect((await engageOperationalWriterBarrier({
+      vaultPath: root,
+      transactionId: "runtime-denial",
+    })).ok).toBeTrue();
+
+    const result = await openVaultRuntime({
+      vaultPath: root,
+      registry: registry.value,
+      extensions: [],
+      processorVersions: [],
+    });
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        kind: "operational-write-admission-closed",
+        cause: "write-admission-closed",
+      },
+    });
+    expect(existsSync(join(root, ".dome", "state", "quarantined.json"))).toBeFalse();
+    expect(existsSync(join(root, ".dome", "state", "projection.db"))).toBeFalse();
+  });
+
   test("prebuilt registries respect .dome/config.yaml enabled bundle set", async () => {
     const root = mkdtempSync(join(tmpdir(), "dome-runtime-activation-"));
     roots.push(root);

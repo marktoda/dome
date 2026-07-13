@@ -20,6 +20,7 @@ import {
   type TaskAnchorScanFile,
 } from "../../engine/host/health";
 import { openLedgerDb, type LedgerDb } from "../../ledger/db";
+import { acquireOperationalWriterLease } from "../../operational-state/writer-barrier";
 import {
   planRunLedgerRetention,
   pruneRunLedger,
@@ -187,7 +188,7 @@ async function runRepairRunLedger(
       plan = planRunLedgerRetention(ledger.db, { cutoffIso });
     }
   } finally {
-    if (ledger.kind === "open") ledger.db.close();
+    if (ledger.kind === "open") ledger.close();
   }
 
   const status = plan.eligibleRuns === 0
@@ -322,15 +323,24 @@ function printTaskAnchorRepairText(input: {
 
 type RepairLedgerOpen =
   | { readonly kind: "absent" }
-  | { readonly kind: "open"; readonly db: LedgerDb }
+  | { readonly kind: "open"; readonly db: LedgerDb; readonly close: () => void }
   | { readonly kind: "error"; readonly message: string };
 
 async function openRepairLedger(vaultPath: string): Promise<RepairLedgerOpen> {
   const path = join(vaultPath, ".dome", "state", "runs.db");
   if (!existsSync(path)) return { kind: "absent" };
+  const admission = await acquireOperationalWriterLease({ vaultPath, command: "dome-repair-run-ledger" });
+  if (!admission.ok) return { kind: "error", message: admission.error.kind };
   const result = await openLedgerDb({ path });
-  if (!result.ok) return { kind: "error", message: result.error.kind };
-  return { kind: "open", db: result.value.db };
+  if (!result.ok) {
+    admission.lease.close();
+    return { kind: "error", message: result.error.kind };
+  }
+  return {
+    kind: "open",
+    db: result.value.db,
+    close: () => { try { result.value.db.close(); } finally { admission.lease.close(); } },
+  };
 }
 
 function emptyRunLedgerRetentionPlan(cutoffIso: string): RunLedgerRetentionPlan {
