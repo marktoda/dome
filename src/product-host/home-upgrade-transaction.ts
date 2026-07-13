@@ -158,6 +158,16 @@ export type HomeUpgradeTransaction = {
   };
 };
 
+export type HomeUpgradeHistorySummary = {
+  readonly operationId: string;
+  readonly candidate: {
+    readonly artifactId: string;
+    readonly productVersion: string;
+  };
+  readonly outcome: "committed" | "restored";
+  readonly terminalAt: string;
+};
+
 export type HomeUpgradeTransactionDeps = HomeInstallationDeps & {
   readonly platform?: NodeJS.Platform | undefined;
   readonly now?: (() => Date) | undefined;
@@ -604,6 +614,48 @@ export async function readHomeUpgradeHistory(
   validateArchivedSelectorPaths(journal, paths, deps);
   await validateSnapshotInventory(transactionRoot, journal.snapshot.inventory);
   return journal;
+}
+
+/**
+ * Bounded journal-only history read for intent/status. This proves the closed
+ * transaction root, bounded journal, and stored selector evidence, but
+ * deliberately does not hash or open retained snapshot databases.
+ */
+export async function readHomeUpgradeHistorySummary(
+  vaultPath: string,
+  transactionId: string,
+  deps: HomeUpgradeTransactionDeps = {},
+): Promise<HomeUpgradeHistorySummary | null> {
+  assertTransactionId(transactionId);
+  const vault = await canonicalVault(vaultPath);
+  const paths = homeInstallationPaths(vault, deps);
+  const upgrade = await inspectUpgradeAncestors(paths);
+  if (upgrade === null) return null;
+  const history = join(upgrade, "history");
+  if (!await present(history)) return null;
+  await assertPrivateDirectory(history, "upgrade history root");
+  const transactionRoot = join(history, transactionId);
+  if (!await present(transactionRoot)) return null;
+  const journal = await readBoundedJournal(transactionRoot, vault);
+  if (journal.transactionId !== transactionId) {
+    throw new Error("Dome Home upgrade history directory disagrees with its transaction identity");
+  }
+  if (journal.phase !== "committed" && journal.phase !== "restored") {
+    throw new Error("Dome Home upgrade history contains a non-terminal transaction");
+  }
+  const terminalAt = journal.phase === "committed"
+    ? journal.timestamps.committedAt
+    : journal.timestamps.restoredAt;
+  if (terminalAt === null) throw new Error("terminal Dome Home upgrade history lacks its terminal timestamp");
+  return Object.freeze({
+    operationId: journal.transactionId,
+    candidate: Object.freeze({
+      artifactId: journal.candidate.artifactId,
+      productVersion: journal.candidate.version,
+    }),
+    outcome: journal.phase,
+    terminalAt,
+  });
 }
 
 /**

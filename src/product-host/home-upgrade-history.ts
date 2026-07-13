@@ -29,6 +29,8 @@ import {
   readHomeUpgrade,
   readHomeUpgradeForRecovery,
   readHomeUpgradeHistory,
+  readHomeUpgradeHistorySummary,
+  type HomeUpgradeHistorySummary,
   type HomeUpgradeTransaction,
   type HomeUpgradeTransactionDeps,
 } from "./home-upgrade-transaction";
@@ -64,10 +66,10 @@ export type HomeUpgradeRetirement = {
 };
 
 /** Bounded intrinsic history for intent/status consumers; newest terminal first. */
-export async function listHomeUpgradeHistory(
+export async function listHomeUpgradeHistorySummaries(
   vaultPath: string,
   deps: HomeUpgradeHistoryDeps = {},
-): Promise<ReadonlyArray<HomeUpgradeTransaction>> {
+): Promise<ReadonlyArray<HomeUpgradeHistorySummary>> {
   const vault = await realpath(resolve(vaultPath));
   const paths = homeInstallationPaths(vault, deps);
   const history = join(paths.installations, "upgrade", "history");
@@ -85,24 +87,16 @@ export async function listHomeUpgradeHistory(
     }
   }
   names.sort(compareStrings);
-  const transactions: HomeUpgradeTransaction[] = [];
+  const summaries: HomeUpgradeHistorySummary[] = [];
   for (const transactionId of names) {
-    const transaction = await readHomeUpgradeHistory(vault, transactionId, deps);
-    if (transaction === null) throw new Error("Dome Home upgrade history changed during bounded inspection");
-    transactions.push(transaction);
+    const summary = await readHomeUpgradeHistorySummary(vault, transactionId, deps);
+    if (summary === null) throw new Error("Dome Home upgrade history changed during bounded inspection");
+    summaries.push(summary);
   }
-  return Object.freeze(transactions.sort((left, right) => {
-    const time = terminalTimestamp(right).localeCompare(terminalTimestamp(left));
-    return time === 0 ? compareStrings(right.transactionId, left.transactionId) : time;
+  return Object.freeze(summaries.sort((left, right) => {
+    const time = right.terminalAt.localeCompare(left.terminalAt);
+    return time === 0 ? compareStrings(right.operationId, left.operationId) : time;
   }));
-}
-
-function terminalTimestamp(transaction: HomeUpgradeTransaction): string {
-  const value = transaction.phase === "committed"
-    ? transaction.timestamps.committedAt
-    : transaction.timestamps.restoredAt;
-  if (value === null) throw new Error("terminal Dome Home upgrade history lacks its terminal timestamp");
-  return value;
 }
 
 /**

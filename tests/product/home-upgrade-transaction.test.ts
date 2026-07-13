@@ -24,7 +24,7 @@ import { homeServiceLabelForVault } from "../../src/product-host/home-lifecycle"
 import { startProductHost } from "../../src/product-host/product-host";
 import { readHomeUpgradeBarrier } from "../../src/product-host/home-upgrade-barrier";
 import {
-  listHomeUpgradeHistory,
+  listHomeUpgradeHistorySummaries,
   retireHomeUpgrade,
   type HomeUpgradeHistoryDeps,
   type HomeUpgradeRetirementCheckpoint,
@@ -41,6 +41,7 @@ import {
   readHomeUpgrade,
   readHomeUpgradeForRecovery,
   readHomeUpgradeHistory,
+  readHomeUpgradeHistorySummary,
   releaseCommittedHomeUpgrade,
   restoreHomeUpgrade,
   type HomeUpgradeTransactionDeps,
@@ -1183,13 +1184,13 @@ describe("Product Host terminal upgrade history", () => {
         expect(retired).toMatchObject({ retired: true, transaction: { transactionId, phase: outcome } });
         expect(await readHomeUpgrade(f.vault, f.deps)).toBeNull();
         expect((await readHomeUpgradeHistory(f.vault, transactionId, f.deps))?.phase).toBe(outcome);
-        expect((await listHomeUpgradeHistory(f.vault, f.deps)).map((entry) => entry.transactionId)).toEqual([
+        expect((await listHomeUpgradeHistorySummaries(f.vault, f.deps)).map((entry) => entry.operationId)).toEqual([
           transactionId,
         ]);
         const paths = homeInstallationPaths(f.vault, f.deps);
         const historyRoot = join(paths.installations, "upgrade", "history");
         await mkdir(join(historyRoot, "unknown-entry"));
-        await expect(listHomeUpgradeHistory(f.vault, f.deps)).rejects.toThrow("transaction id");
+        await expect(listHomeUpgradeHistorySummaries(f.vault, f.deps)).rejects.toThrow("transaction id");
         await rm(join(historyRoot, "unknown-entry"), { recursive: true });
 
         // Historical truth is intrinsic. A future selection or release GC
@@ -1199,6 +1200,17 @@ describe("Product Host terminal upgrade history", () => {
           force: true,
         });
         expect((await readHomeUpgradeHistory(f.vault, transactionId, f.deps))?.phase).toBe(outcome);
+
+        // Intent/status history is deliberately journal-only: retained state
+        // can be very large and full snapshot validation remains an audit API.
+        const retained = terminal.snapshot.inventory.find((entry) => entry.present);
+        if (retained === undefined) throw new Error("fixture lacks retained snapshot state");
+        await writeFile(join(historyRoot, transactionId, "snapshot", retained.name), "corrupt");
+        expect(await readHomeUpgradeHistorySummary(f.vault, transactionId, f.deps)).toMatchObject({
+          operationId: transactionId,
+          outcome,
+        });
+        await expect(readHomeUpgradeHistory(f.vault, transactionId, f.deps)).rejects.toThrow();
       } finally { await rm(f.root, { recursive: true, force: true }); }
     }
   });

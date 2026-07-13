@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  HomeUpgradeBusyError,
   HomeUpgradeSelectionChangedError,
   runHomeUpgradeCutover,
   type HomeUpgradeCutoverDeps,
@@ -8,6 +9,7 @@ import {
 import type { HomeUpgradeTransaction } from "../../src/product-host/home-upgrade-transaction";
 
 const TX = "11111111-1111-4111-8111-111111111111";
+const OTHER_TX = "22222222-2222-4222-8222-222222222222";
 const OLD = "a".repeat(64);
 const CANDIDATE = "b".repeat(64);
 
@@ -49,6 +51,23 @@ describe("private Home upgrade cutover", () => {
     await expect(attempt).rejects.toBeInstanceOf(HomeUpgradeSelectionChangedError);
     expect(calls).not.toContain("prepare");
     expect(calls).not.toContain("restore");
+  });
+
+  test("reports typed busy ownership when another lifecycle intent is active", async () => {
+    const calls: string[] = [];
+    let current: HomeUpgradeTransaction | null = null;
+    const exact = activeSuspension();
+    const attempt = runHomeUpgradeCutover({
+      vaultPath: "/vault",
+      transactionId: TX,
+      candidateArtifactId: CANDIDATE,
+      expectedCurrentArtifactId: OLD,
+    }, fakeDeps(calls, () => current, (next) => { current = next; }, {}, {
+      ...exact,
+      suspension: { ...exact.suspension, operationId: OTHER_TX },
+    }));
+    await expect(attempt).rejects.toBeInstanceOf(HomeUpgradeBusyError);
+    expect(calls).toEqual(["inspect"]);
   });
 
   test("automatically restores any pre-commit failure before resuming N-1", async () => {

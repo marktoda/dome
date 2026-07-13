@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { cp, lstat, mkdir, open, readFile, readdir, realpath, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 import { publishDirectoryExclusive } from "../platform/exclusive-rename";
 import { compareStrings } from "../core/compare";
@@ -89,7 +90,7 @@ export async function ensureManagedRelease(input: {
   if (await pathPresent(target)) {
     try {
       const installed = await verify(target);
-      assertSameArtifact(installed, input.manifest, "managed release identity mismatch");
+      assertSameManifest(installed, input.manifest, "managed release identity mismatch");
       return Object.freeze({ root: target, published: false });
     } catch (error) {
       throw new Error(`immutable managed release is corrupt at ${target}: ${error instanceof Error ? error.message : String(error)}`);
@@ -108,7 +109,7 @@ export async function ensureManagedRelease(input: {
       force: false,
     });
     const staged = await verify(staging);
-    assertSameArtifact(staged, input.manifest, "staged release identity changed during copy");
+    assertSameManifest(staged, input.manifest, "staged release identity changed during copy");
     await (deps.syncRelease ?? fsyncTree)(staging);
     let didPublish = true;
     try {
@@ -121,7 +122,7 @@ export async function ensureManagedRelease(input: {
       if (!await pathPresent(target)) throw publishError;
       try {
         const concurrent = await verify(target);
-        assertSameArtifact(concurrent, input.manifest, "concurrently published release identity mismatch");
+        assertSameManifest(concurrent, input.manifest, "concurrently published release identity mismatch");
         didPublish = false;
       } catch (verifyError) {
         throw new AggregateError(
@@ -132,22 +133,22 @@ export async function ensureManagedRelease(input: {
     }
     await fsyncDirectory(input.paths.releases);
     const published = await verify(target);
-    assertSameArtifact(published, input.manifest, "published release identity changed");
+    assertSameManifest(published, input.manifest, "published release identity changed");
     return Object.freeze({ root: target, published: didPublish });
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
 }
 
-function assertSameArtifact(
+function assertSameManifest(
   actual: HomeArtifactManifest,
   expected: HomeArtifactManifest,
   error: string,
 ): void {
-  if (actual.artifact.id !== expected.artifact.id ||
-    actual.product.version !== expected.product.version) {
-    throw new Error(error);
-  }
+  // Artifact ids cover the payload-entry inventory, not every closed manifest
+  // field. Publication convergence therefore requires the complete verified
+  // semantic manifest, while object property order remains irrelevant.
+  if (!isDeepStrictEqual(actual, expected)) throw new Error(error);
 }
 
 export async function publishHomeInstallation(

@@ -21,19 +21,20 @@ import {
   type SupervisedHomeSuspensionResult,
 } from "./home-lifecycle-suspension";
 import {
+  HomeUpgradeBusyError,
   HomeUpgradeSelectionChangedError,
   runHomeUpgradeCutover,
   type HomeUpgradeCutoverDeps,
   type HomeUpgradeCutoverResult,
 } from "./home-upgrade-cutover";
 import {
-  listHomeUpgradeHistory,
+  listHomeUpgradeHistorySummaries,
   retireHomeUpgrade,
   type HomeUpgradeHistoryDeps,
 } from "./home-upgrade-history";
 import {
   readHomeUpgradeForRecovery,
-  restoreHomeUpgrade,
+  type HomeUpgradeHistorySummary,
   type HomeUpgradeTransaction,
 } from "./home-upgrade-transaction";
 
@@ -90,9 +91,8 @@ type IntentOperations = {
   readonly readInstallation: typeof readHomeInstallation;
   readonly inspectLifecycle: typeof inspectHomeLifecycleSuspension;
   readonly readActive: typeof readHomeUpgradeForRecovery;
-  readonly listHistory: typeof listHomeUpgradeHistory;
+  readonly listHistory: typeof listHomeUpgradeHistorySummaries;
   readonly cutover: typeof runHomeUpgradeCutover;
-  readonly restore: typeof restoreHomeUpgrade;
   readonly retire: typeof retireHomeUpgrade;
   readonly recoverOrphan: (
     vaultPath: string,
@@ -121,30 +121,26 @@ export async function manageHomeUpgrade(input: {
   let requested: HomeUpgradeArtifactSummary | null = null;
   try { vault = await operations.canonicalizeVault(vault); }
   catch (error) {
-    return failure(vault, null, 64, "preflight-failed", message(error), "inspect-home-status");
+    return failure(vault, null, "error", 64, "preflight-failed", message(error), "inspect-home-status");
   }
   if ((deps.platform ?? process.platform) !== "darwin") {
-    return failure(vault, null, 64, "preflight-failed", "Dome Home upgrade requires macOS", "inspect-home-status");
+    return failure(vault, null, "error", 64, "preflight-failed", "Dome Home upgrade requires macOS", "inspect-home-status");
   }
   const artifactRoot = resolve(deps.artifactRoot ?? resolve(import.meta.dir, "../../.."));
   let manifest: HomeArtifactManifest;
   try { manifest = await operations.verifyInvokingArtifact(artifactRoot); }
   catch (error) {
-    return failure(vault, null, 64, "preflight-failed", `invoking Dome Home artifact is invalid: ${message(error)}`, "inspect-home-status");
+    return failure(vault, null, "error", 64, "preflight-failed", `invoking Dome Home artifact is invalid: ${message(error)}`, "inspect-home-status");
   }
   requested = artifactSummary(manifest.artifact.id, manifest.product.version);
   try {
-    if (manifest.writerBarrier?.protocol !== 1 || manifest.durableState === undefined) {
-      return failure(vault, requested, 64, "preflight-failed", "invoking artifact is not upgrade-capable", "inspect-home-status");
-    }
-
     const selected = await operations.readInstallation(vault, deps);
     if (selected === null) {
-      return failure(vault, requested, 64, "preflight-failed", "Dome Home has no managed installation", "inspect-home-status");
+      return failure(vault, requested, "error", 64, "preflight-failed", "Dome Home has no managed installation", "inspect-home-status");
     }
     const suspension = await operations.inspectLifecycle(vault);
     if (suspension.kind === "invalid" || suspension.kind === "unavailable") {
-      return failure(vault, requested, 1, "coordination-failed", suspension.error, "inspect-home-status", {
+      return failure(vault, requested, "recovery-required", 1, "coordination-failed", suspension.error, "inspect-home-status", {
         selected: installationSummary(selected),
       });
     }
@@ -162,12 +158,12 @@ export async function manageHomeUpgrade(input: {
 
     const current = await operations.readInstallation(vault, deps);
     if (current === null) {
-      return failure(vault, requested, 64, "preflight-failed", "Dome Home installation disappeared", "inspect-home-status");
+      return failure(vault, requested, "error", 64, "preflight-failed", "Dome Home installation disappeared", "inspect-home-status");
     }
     if (sameArtifact(installationSummary(current), requested)) {
       const service = await operations.inspectService(vault, deps);
       if (service !== "ready" && service !== "stopped") {
-        return failure(vault, requested, 1, "coordination-failed", "selected Dome Home artifact is not ready or stopped", "inspect-home-status", {
+        return failure(vault, requested, "error", 1, "coordination-failed", "selected Dome Home artifact is not ready or stopped", "inspect-home-status", {
           selected: installationSummary(current),
           service,
         });
@@ -185,18 +181,26 @@ export async function manageHomeUpgrade(input: {
 
     const history = await operations.listHistory(vault, deps);
     const priorRestore = history.find((transaction) =>
-      transaction.phase === "restored" && transaction.candidate.artifactId === requested!.artifactId);
+      transaction.outcome === "restored" && transaction.candidate.artifactId === requested!.artifactId);
     if (priorRestore !== undefined) {
-      return terminalResult({
+      return output({
         vault,
         requested,
         selected: installationSummary(current),
         transaction: priorRestore,
         status: "rolled-back",
+        exitCode: 1,
         recovered: true,
         service: await operations.inspectService(vault, deps),
         reason: "candidate-failed",
+        nextAction: "none",
         message: "This exact Dome Home artifact was previously rolled back.",
+      });
+    }
+
+    if (manifest.writerBarrier?.protocol !== 1 || manifest.durableState === undefined) {
+      return failure(vault, requested, "error", 64, "preflight-failed", "invoking artifact is not upgrade-capable", "inspect-home-status", {
+        selected: installationSummary(current),
       });
     }
 
@@ -231,14 +235,19 @@ export async function manageHomeUpgrade(input: {
             });
           }
         }
-        return failure(vault, requested, 75, "selection-changed", error.message, "rerun-requested-upgrade", {
+        return failure(vault, requested, "error", 75, "selection-changed", error.message, "rerun-requested-upgrade", {
           selected: error.selectedArtifact,
+        });
+      }
+      if (error instanceof HomeUpgradeBusyError) {
+        return failure(vault, requested, "error", 75, "busy", error.message, "rerun-requested-upgrade", {
+          selected: installationSummary(current),
         });
       }
       throw error;
     }
   } catch (error) {
-    return failure(vault, requested, 1, "coordination-failed", message(error), "inspect-home-status");
+    return failure(vault, requested, "error", 1, "coordination-failed", message(error), "inspect-home-status");
   }
 }
 
@@ -254,14 +263,14 @@ async function resolveRetained(input: {
   const { vault, requested, selected, suspension, active, deps, operations } = input;
   if (suspension.kind === "active" && active === null) {
     if (suspension.suspension.purpose !== "upgrade") {
-      return resultValue(failure(vault, requested, 75, "busy", `Home lifecycle is owned by ${suspension.suspension.purpose}`, "inspect-home-status", {
+      return resultValue(failure(vault, requested, "error", 75, "busy", `Home lifecycle is owned by ${suspension.suspension.purpose}`, "inspect-home-status", {
         selected: installationSummary(selected),
       }));
     }
     const recovered = await operations.recoverOrphan(vault, suspension.suspension.operationId, deps);
     const service = serviceFromLifecycle(recovered);
     if (service !== "ready" && service !== "stopped") {
-      return resultValue(failure(vault, requested, 1, "coordination-failed", "orphaned upgrade intent could not resume Home", "retry-recovery", {
+      return resultValue(failure(vault, requested, "recovery-required", 1, "coordination-failed", "orphaned upgrade intent could not resume Home", "retry-recovery", {
         selected: installationSummary(selected), recovered: true, service,
       }));
     }
@@ -280,7 +289,7 @@ async function resolveRetained(input: {
   }
   if (active === null) {
     if (suspension.kind === "active") {
-      return resultValue(failure(vault, requested, 1, "coordination-failed", "active lifecycle evidence changed during upgrade preflight", "retry-recovery", {
+      return resultValue(failure(vault, requested, "recovery-required", 1, "coordination-failed", "active lifecycle evidence changed during upgrade preflight", "retry-recovery", {
         selected: installationSummary(selected),
       }));
     }
@@ -288,15 +297,26 @@ async function resolveRetained(input: {
   }
   if (suspension.kind === "active" &&
     (suspension.suspension.purpose !== "upgrade" || suspension.suspension.operationId !== active.transactionId)) {
-    return resultValue(failure(vault, requested, 75, "busy", "lifecycle and upgrade transaction ownership disagree", "inspect-home-status", {
+    return resultValue(failure(vault, requested, "recovery-required", 1, "coordination-failed", "lifecycle and upgrade transaction ownership disagree", "retry-recovery", {
       selected: installationSummary(selected),
     }));
   }
 
   const sameRequested = active.candidate.artifactId === requested.artifactId;
   if (suspension.kind === "inactive" && (active.phase === "prepared" || active.phase === "switching")) {
-    const restored = await operations.restore(vault, deps);
-    return resultValue(await finalizeRestored(vault, requested, restored, !sameRequested, deps, operations));
+    return resultValue(failure(
+      vault,
+      requested,
+      "recovery-required",
+      1,
+      "coordination-failed",
+      "pre-commit Dome Home upgrade lacks its lifecycle suspension; refusing unsafe rollback",
+      "retry-recovery",
+      {
+        transaction: active,
+        selected: installationSummary(selected),
+      },
+    ));
   }
   if (suspension.kind === "inactive" && active.phase === "restored") {
     if (!sameRequested) {
@@ -311,7 +331,7 @@ async function resolveRetained(input: {
       if (!sameRequested) return Object.freeze({ kind: "continue" as const });
       const service = await operations.inspectService(vault, deps);
       if (service !== "ready" && service !== "stopped") {
-        return resultValue(failure(vault, requested, 1, "coordination-failed", "committed Dome Home is not ready or stopped", "inspect-home-status", {
+        return resultValue(failure(vault, requested, "recovery-required", 1, "coordination-failed", "committed Dome Home is not ready or stopped", "inspect-home-status", {
           transaction: active,
           selected: artifactSummary(active.candidate.artifactId, active.candidate.version),
           recovered: true,
@@ -355,7 +375,7 @@ async function finalizeRestored(
   try {
     await operations.retire({ vaultPath: vault, transactionId: transaction.transactionId }, deps);
   } catch (error) {
-    return failure(vault, requested, 1, "coordination-failed", `upgrade rollback needs finalization: ${message(error)}`, "inspect-home-status", {
+    return failure(vault, requested, "recovery-required", 1, "coordination-failed", `upgrade rollback needs finalization: ${message(error)}`, "inspect-home-status", {
       transaction,
       selected: artifactSummary(transaction.old.artifactId, transaction.old.version),
       recovered: true,
@@ -391,7 +411,7 @@ async function finalizeCutover(
     : artifactSummary(transaction.old.artifactId, transaction.old.version);
   const service = serviceFromLifecycle(cutover.lifecycle);
   if (cutover.status !== "ready") {
-    return failure(vault, requested, 1, "candidate-repair-required", cutover.handoffError ?? "upgrade handoff requires recovery", transaction.phase === "committed" ? "supply-exact-candidate" : "retry-recovery", {
+    return failure(vault, requested, "recovery-required", 1, "candidate-repair-required", cutover.handoffError ?? "upgrade handoff requires recovery", transaction.phase === "committed" ? "supply-exact-candidate" : "retry-recovery", {
       transaction,
       selected,
       recovered: cutover.lifecycle.recovered,
@@ -401,7 +421,7 @@ async function finalizeCutover(
   try {
     await operations.retire({ vaultPath: vault, transactionId: transaction.transactionId }, deps);
   } catch (error) {
-    return failure(vault, requested, 1, "coordination-failed", `terminal upgrade needs finalization: ${message(error)}`, "inspect-home-status", {
+    return failure(vault, requested, "recovery-required", 1, "coordination-failed", `terminal upgrade needs finalization: ${message(error)}`, "inspect-home-status", {
       transaction,
       selected,
       recovered: cutover.lifecycle.recovered,
@@ -448,6 +468,7 @@ function terminalResult(input: {
 function failure(
   vault: string,
   requested: HomeUpgradeArtifactSummary | null,
+  status: "error" | "recovery-required",
   exitCode: 1 | 64 | 75,
   reason: Exclude<HomeUpgradeResult["reason"], null>,
   detail: string,
@@ -464,7 +485,7 @@ function failure(
     requested,
     selected: extra.selected ?? null,
     transaction: extra.transaction,
-    status: exitCode === 64 || exitCode === 75 ? "error" : "recovery-required",
+    status,
     exitCode,
     recovered: extra.recovered ?? false,
     service: extra.service ?? "unknown",
@@ -478,7 +499,7 @@ function output(input: {
   readonly vault: string;
   readonly requested: HomeUpgradeArtifactSummary | null;
   readonly selected: HomeUpgradeArtifactSummary | null;
-  readonly transaction?: HomeUpgradeTransaction | undefined;
+  readonly transaction?: HomeUpgradeTransaction | HomeUpgradeHistorySummary | undefined;
   readonly status: HomeUpgradeResult["status"];
   readonly exitCode: HomeUpgradeResult["exitCode"];
   readonly recovered?: boolean | undefined;
@@ -508,7 +529,16 @@ function resultValue(value: HomeUpgradeResult): { readonly kind: "result"; reado
   return Object.freeze({ kind: "result" as const, value });
 }
 
-function transactionSummary(transaction: HomeUpgradeTransaction): NonNullable<HomeUpgradeResult["transaction"]> {
+function transactionSummary(
+  transaction: HomeUpgradeTransaction | HomeUpgradeHistorySummary,
+): NonNullable<HomeUpgradeResult["transaction"]> {
+  if ("operationId" in transaction) {
+    return Object.freeze({
+      operationId: transaction.operationId,
+      candidate: transaction.candidate,
+      outcome: transaction.outcome,
+    });
+  }
   return Object.freeze({
     operationId: transaction.transactionId,
     candidate: artifactSummary(transaction.candidate.artifactId, transaction.candidate.version),
@@ -543,9 +573,8 @@ function resolveOperations(overrides: Partial<IntentOperations> | undefined): In
     readInstallation: overrides?.readInstallation ?? readHomeInstallation,
     inspectLifecycle: overrides?.inspectLifecycle ?? inspectHomeLifecycleSuspension,
     readActive: overrides?.readActive ?? readHomeUpgradeForRecovery,
-    listHistory: overrides?.listHistory ?? listHomeUpgradeHistory,
+    listHistory: overrides?.listHistory ?? listHomeUpgradeHistorySummaries,
     cutover: overrides?.cutover ?? runHomeUpgradeCutover,
-    restore: overrides?.restore ?? restoreHomeUpgrade,
     retire: overrides?.retire ?? retireHomeUpgrade,
     recoverOrphan: overrides?.recoverOrphan ?? (async (vaultPath, operationId, deps) =>
       withSupervisedHomeSuspended({

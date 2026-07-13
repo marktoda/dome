@@ -9,6 +9,7 @@ import {
   homeInstallationPaths,
 } from "../../src/product-host/home-installation";
 import {
+  HomeUpgradeBusyError,
   HomeUpgradeSelectionChangedError,
   type HomeUpgradeCutoverResult,
 } from "../../src/product-host/home-upgrade-cutover";
@@ -16,7 +17,10 @@ import {
   manageHomeUpgrade,
   type HomeUpgradeIntentDeps,
 } from "../../src/product-host/home-upgrade";
-import type { HomeUpgradeTransaction } from "../../src/product-host/home-upgrade-transaction";
+import type {
+  HomeUpgradeHistorySummary,
+  HomeUpgradeTransaction,
+} from "../../src/product-host/home-upgrade-transaction";
 
 const TX = "11111111-1111-4111-8111-111111111111";
 const RETAINED_TX = "22222222-2222-4222-8222-222222222222";
@@ -73,7 +77,7 @@ describe("Home upgrade intent", () => {
     expect(current.calls).not.toContain("publish");
     expect(current.calls).not.toContain("uuid");
 
-    const restored = transaction("restored", TX, REQUESTED);
+    const restored = historySummary("restored", TX, REQUESTED);
     const prior = intentFixture({ history: [restored] });
     const priorResult = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, prior.deps);
     expect(priorResult).toMatchObject({ status: "rolled-back", exitCode: 1, recovered: true });
@@ -99,7 +103,7 @@ describe("Home upgrade intent", () => {
 
   test("disposes a different retained attempt once and requires a rerun", async () => {
     const retained = transaction("prepared", RETAINED_TX, OTHER);
-    const f = intentFixture({ active: retained });
+    const f = intentFixture({ active: retained, suspension: activeSuspension(RETAINED_TX) });
     const result = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, f.deps);
     expect(result).toMatchObject({
       status: "recovered-rerun-required",
@@ -107,11 +111,41 @@ describe("Home upgrade intent", () => {
       transaction: { operationId: RETAINED_TX, candidate: { artifactId: OTHER }, outcome: "restored" },
       nextAction: "rerun-requested-upgrade",
     });
-    expect(f.calls).toContain("restore");
+    expect(f.calls).toContain("cutover");
     expect(f.calls).toContain("retire");
     expect(f.calls).not.toContain("publish");
     expect(f.calls).not.toContain("uuid");
-    expect(f.calls).not.toContain("cutover");
+  });
+
+  test("refuses to restore a pre-commit journal without its lifecycle suspension", async () => {
+    for (const phase of ["prepared", "switching"] as const) {
+      const f = intentFixture({ active: transaction(phase, RETAINED_TX, OTHER) });
+      const result = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, f.deps);
+      expect(result).toMatchObject({
+        status: "recovery-required",
+        exitCode: 1,
+        transaction: { operationId: RETAINED_TX },
+        reason: "coordination-failed",
+        nextAction: "retry-recovery",
+      });
+      expect(f.calls).not.toContain("cutover");
+      expect(f.calls).not.toContain("retire");
+      expect(f.calls).not.toContain("publish");
+      expect(f.calls).not.toContain("uuid");
+    }
+  });
+
+  test("recovers retained ownership before applying new-candidate eligibility gates", async () => {
+    const f = intentFixture({
+      manifest: { ...manifest(), writerBarrier: undefined, durableState: undefined } as unknown as HomeArtifactManifest,
+      suspension: activeSuspension(RETAINED_TX),
+      active: null,
+    });
+    const result = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, f.deps);
+    expect(result).toMatchObject({ status: "recovered-rerun-required", reason: "prior-attempt-recovered" });
+    expect(f.recoveredIds).toEqual([RETAINED_TX]);
+    expect(f.calls).not.toContain("publish");
+    expect(f.calls).not.toContain("uuid");
   });
 
   test("retires inactive terminal housekeeping before starting a different candidate", async () => {
@@ -146,6 +180,56 @@ describe("Home upgrade intent", () => {
         });
       }
     }
+  });
+
+  test("classifies failures without durable recovery evidence as ordinary errors", async () => {
+    for (const options of [
+      { historyError: new Error("history unavailable") },
+      { publishError: new Error("publication unavailable") },
+    ]) {
+      const f = intentFixture(options);
+      const result = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, f.deps);
+      expect(result).toMatchObject({
+        status: "error",
+        exitCode: 1,
+        transaction: null,
+        reason: "coordination-failed",
+      });
+    }
+    const retained = intentFixture({ active: transaction("prepared", RETAINED_TX, OTHER) });
+    expect(await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, retained.deps)).toMatchObject({
+      status: "recovery-required",
+      transaction: { operationId: RETAINED_TX },
+    });
+  });
+
+  test("overlapping same-candidate intents return typed busy then converge on retry", async () => {
+    const f = intentFixture({ operationIds: [TX, RETAINED_TX] });
+    const original = f.operations.cutover!;
+    let entered!: () => void;
+    const firstEntered = new Promise<void>((resolve) => { entered = resolve; });
+    let release!: () => void;
+    const allowFirst = new Promise<void>((resolve) => { release = resolve; });
+    let owner: string | null = null;
+    f.setCutover(async (input, deps) => {
+      if (owner !== null) throw new HomeUpgradeBusyError("upgrade", owner);
+      owner = input.transactionId;
+      entered();
+      await allowFirst;
+      try { return await original(input, deps); }
+      finally { owner = null; }
+    });
+
+    const winnerPromise = manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, f.deps);
+    await firstEntered;
+    const loser = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, f.deps);
+    expect(loser).toMatchObject({ status: "error", exitCode: 75, reason: "busy" });
+    release();
+    expect(await winnerPromise).toMatchObject({ status: "upgraded", exitCode: 0 });
+    expect(await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, f.deps)).toMatchObject({
+      status: "already-current",
+      exitCode: 0,
+    });
   });
 
   test("same-artifact release publication loss converges on the verified winner", async () => {
@@ -184,13 +268,18 @@ describe("Home upgrade intent", () => {
 function intentFixture(options: {
   readonly selected?: ReturnType<typeof installation> | null;
   readonly active?: HomeUpgradeTransaction | null;
-  readonly history?: ReadonlyArray<HomeUpgradeTransaction>;
+  readonly history?: ReadonlyArray<HomeUpgradeHistorySummary>;
   readonly suspension?: ReturnType<typeof activeSuspension> | { readonly kind: "inactive" };
   readonly cutoverError?: Error;
   readonly verifyError?: Error;
+  readonly historyError?: Error;
+  readonly publishError?: Error;
+  readonly manifest?: HomeArtifactManifest;
+  readonly operationIds?: ReadonlyArray<string>;
 } = {}) {
   const calls: string[] = [];
   const recoveredIds: string[] = [];
+  let operationIndex = 0;
   let selected = options.selected === undefined ? installation(OLD, "1.0.0") : options.selected;
   let active = options.active ?? null;
   const operations: NonNullable<HomeUpgradeIntentDeps["intentOperations"]> = {
@@ -198,7 +287,7 @@ function intentFixture(options: {
     verifyInvokingArtifact: async () => {
       calls.push("verify");
       if (options.verifyError !== undefined) throw options.verifyError;
-      return manifest();
+      return options.manifest ?? manifest();
     },
     readInstallation: async () => { calls.push("read-installation"); return selected; },
     inspectLifecycle: async () => {
@@ -206,23 +295,34 @@ function intentFixture(options: {
       return options.suspension ?? { kind: "inactive" };
     },
     readActive: async () => { calls.push("read-active"); return active; },
-    listHistory: async () => { calls.push("list-history"); return options.history ?? []; },
-    publishCandidate: async () => { calls.push("publish"); return { root: "/releases/requested", published: true }; },
-    operationId: () => { calls.push("uuid"); return TX; },
+    listHistory: async () => {
+      calls.push("list-history");
+      if (options.historyError !== undefined) throw options.historyError;
+      return options.history ?? [];
+    },
+    publishCandidate: async () => {
+      calls.push("publish");
+      if (options.publishError !== undefined) throw options.publishError;
+      return { root: "/releases/requested", published: true };
+    },
+    operationId: () => {
+      calls.push("uuid");
+      return options.operationIds?.[operationIndex++] ?? TX;
+    },
     cutover: async (input) => {
       calls.push("cutover");
       if (options.cutoverError !== undefined) throw options.cutoverError;
       expect(input.expectedCurrentArtifactId).toBe(selected!.artifact.id);
+      if (active?.phase === "prepared" || active?.phase === "switching") {
+        const restored = transaction("restored", active.transactionId, active.candidate.artifactId);
+        active = restored;
+        selected = installation(OLD, "1.0.0");
+        return cutoverResult(restored, "rolled-back");
+      }
       const committed = transaction("committed", input.transactionId, input.candidateArtifactId);
       selected = installation(input.candidateArtifactId, committed.candidate.version);
       active = committed;
       return cutoverResult(committed);
-    },
-    restore: async () => {
-      calls.push("restore");
-      if (active === null) throw new Error("missing retained transaction");
-      active = transaction("restored", active.transactionId, active.candidate.artifactId);
-      return active;
     },
     retire: async ({ transactionId }) => {
       calls.push("retire");
@@ -240,6 +340,10 @@ function intentFixture(options: {
   return {
     calls,
     recoveredIds,
+    operations,
+    setCutover(value: NonNullable<NonNullable<HomeUpgradeIntentDeps["intentOperations"]>["cutover"]>) {
+      Object.assign(operations, { cutover: value });
+    },
     deps: {
       platform: "darwin" as const,
       artifactRoot: "/artifact",
@@ -266,10 +370,16 @@ function manifest(): HomeArtifactManifest {
   } as unknown as HomeArtifactManifest;
 }
 
-function cutoverResult(value: HomeUpgradeTransaction): HomeUpgradeCutoverResult {
+function cutoverResult(
+  value: HomeUpgradeTransaction,
+  kind: "committed" | "rolled-back" = "committed",
+): HomeUpgradeCutoverResult {
+  const transactionOutcome = kind === "committed"
+    ? { kind: "committed" as const, transaction: value }
+    : { kind: "rolled-back" as const, transaction: value, error: "recovered prior upgrade" };
   return {
     status: "ready",
-    transactionOutcome: { kind: "committed", transaction: value },
+    transactionOutcome,
     handoffError: null,
     lifecycle: {
       kind: "ready",
@@ -277,10 +387,26 @@ function cutoverResult(value: HomeUpgradeTransaction): HomeUpgradeCutoverResult 
       recovered: false,
       operationRan: true,
       value: {
-        transactionOutcome: { kind: "committed", transaction: value },
+        transactionOutcome,
         handoffError: null,
       },
     },
+  };
+}
+
+function historySummary(
+  outcome: "committed" | "restored",
+  operationId: string,
+  candidateId: string,
+): HomeUpgradeHistorySummary {
+  return {
+    operationId,
+    candidate: {
+      artifactId: candidateId,
+      productVersion: candidateId === REQUESTED ? "2.0.0" : "3.0.0",
+    },
+    outcome,
+    terminalAt: "2026-07-13T01:03:00.000Z",
   };
 }
 

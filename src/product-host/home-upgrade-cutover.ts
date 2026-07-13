@@ -81,6 +81,19 @@ export class HomeUpgradeSelectionChangedError extends Error {
   }
 }
 
+/** Stable signal that another lifecycle-owned intent must be allowed to finish. */
+export class HomeUpgradeBusyError extends Error {
+  readonly purpose: string;
+  readonly operationId: string;
+
+  constructor(purpose: string, operationId: string) {
+    super(`Home lifecycle is owned by ${purpose}:${operationId}`);
+    this.name = "HomeUpgradeBusyError";
+    this.purpose = purpose;
+    this.operationId = operationId;
+  }
+}
+
 export type HomeUpgradeCutoverDeps = HomeUpgradeTransactionDeps &
   HomeLifecycleSuspensionDeps & HomeUpgradeCandidateDeps & {
     /** One internal seam for deterministic orchestration tests. */
@@ -140,7 +153,7 @@ export async function runHomeUpgradeCutover(input: {
   } else {
     const active = suspension.suspension;
     if (active.purpose !== "upgrade" || active.operationId !== input.transactionId) {
-      throw new Error(`Home lifecycle is owned by ${active.purpose}:${active.operationId}`);
+      throw new HomeUpgradeBusyError(active.purpose, active.operationId);
     }
     let journal = await operations.readRecovery(input.vaultPath, deps);
     if (journal === null || journal.transactionId !== input.transactionId ||
