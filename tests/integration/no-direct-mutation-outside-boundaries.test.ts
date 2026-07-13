@@ -9,6 +9,9 @@ const ALLOWED_DIRS = [
   "src/projections/",
   "src/ledger/",
   "src/outbox/",
+  // Cross-process shared/exclusive admission for gitignored operational
+  // writers. This Module owns only excluded lock-protocol state.
+  "src/operational-state/",
   // Deep, recovery-journaled boundary for every Dome-mediated workspace
   // write. Surfaces supply expected/desired bytes; this Module alone
   // coordinates host locking, branch CAS, and conservative materialization.
@@ -39,6 +42,9 @@ const ALLOWED_FILES = new Set([
   // the external per-installation journal/snapshot and exact gitignored state
   // restoration targets; it never writes Git or Markdown knowledge.
   "src/product-host/home-upgrade-transaction.ts",
+  // External private/fsynced evidence paired with the operational writer
+  // coordinator during a Home upgrade transaction.
+  "src/product-host/home-upgrade-barrier.ts",
   "src/cli/commands/install-systemd.ts",
   // Stable opaque Product Host identity in gitignored operational state. The
   // exclusive create is not a Markdown/Git write path.

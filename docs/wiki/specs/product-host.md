@@ -475,18 +475,33 @@ Markdown are never part of this rollback snapshot. Private snapshot files are
 0600. An absent optional file is explicit inventory evidence, so rollback
 removes a file created by N rather than inventing an N-1 value.
 
-Prepare and restore require the internal `runUnderDurableUpgradeBarrier`
-capability and acquire both Product Host locks inside the operation it runs.
-The provider establishes or validates exclusion of Product Host and every
-standalone operational-store writer before invoking the operation. Operation
-return does not release the barrier: successful prepare returning `prepared`
-MUST leave it engaged across orchestrator crashes. It may be released only
-after terminal `restored`, or a future commit/recovery terminal outcome. There
-is no boolean, permissive default, or production provider. Product Host locking
-or launchd suspension alone is insufficient because an N-1 binary or
-standalone CLI/surface can otherwise write between snapshot/publication or
-state replacements. The cross-surface admission/barrier implementation is
-deferred and is required before any public upgrade orchestration.
+`src/operational-state/writer-barrier.ts` is the one cross-process operational
+writer-admission Module. Ordinary runtimes and direct store operations hold a
+rollback-journal SQLite SHARED transaction for their complete lifetime; the
+upgrade Adapter takes EXCLUSIVE, drains those leases, and durably records the
+transaction owner before snapshot or restore. A real singleton `SELECT`
+acquires SHARED (`BEGIN` alone does not). The coordinator is pinned to DELETE
+journal mode, NORMAL locking, and FULL synchronous durability; the ordinary
+WAL connection configuration is forbidden here.
+
+The coordinator lives at
+`.dome/state/locks/operational-writers.db`. It is excluded lock state, not
+backup or rollback inventory. The Home Adapter additionally publishes a
+strict private `upgrade/writer-barrier.json` outside the vault. Prepare leaves
+both barriers engaged after return or process death. Restore removes and
+fsyncs the external marker only after the journal is durably `restored`, then
+clears the coordinator last. Wrong owners, corrupt/unknown state, and
+ambiguous crash evidence fail closed. A validation failure before any active
+transaction publication may perform the one bounded abort-before-prepare
+release.
+
+The fixed acquisition order is operational lease, external Product Host lock,
+vault-local Product Host lock, then mutation/store locks. Normal Home acquires
+the outer lease before ownership or recovery; probation remains write-closed.
+Runtime, proposals, activity, inspect/repair, devices, and live backup are
+pinned by a structural callsite inventory. HTTP and MCP inherit runtime or
+proposal admission. Absent-target restore and exclusive upgrade restore are
+the narrow exceptions.
 
 Normal current Home also inspects active upgrade evidence after ownership and
 before controlled-mutation recovery or any mutable store opener; prepared,
@@ -514,10 +529,13 @@ replaced on retry. Recovery evidence is retained.
 the validated terminal journal before reading or replacing live state, so
 legitimate post-rollback N-1 writes cannot be erased.
 Device Authority is restored without epoch invalidation, preserving N-1
-active and revoked credentials, grants, device audit, and epoch. Future
-cross-surface writer admission/barrier orchestration, migrations, candidate
-launch, selector commit, admission, journal retirement, and the public upgrade
-command remain deferred P4 work.
+active and revoked credentials, grants, device audit, and epoch. Migrations,
+candidate launch, selector commit, admission, journal retirement, and the
+public upgrade command remain deferred P4 work. Artifacts carry writer-barrier
+protocol v1 while `distribution.upgradeSupported` remains false. Artifacts
+lacking protocol v1 are ineligible upgrade sources; this release is the
+minimum future upgrade baseline because a pre-protocol standalone binary
+cannot be excluded by the cooperative coordinator.
 
 ### P3 device-authority foundation
 

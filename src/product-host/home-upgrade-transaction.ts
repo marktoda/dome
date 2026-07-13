@@ -27,6 +27,11 @@ import {
   type HomeInstallationPaths,
 } from "./home-installation";
 import { verifyHomeArtifact, type HomeArtifactVerifier } from "./home-artifact";
+import {
+  engageHomeUpgradeBarrier,
+  releaseHomeUpgradeBarrier,
+  withHomeUpgradeOperationLock,
+} from "./home-upgrade-barrier";
 import { withProductHostOwnership } from "./host-ownership";
 import { homeServiceLabelForVault } from "./home-lifecycle";
 
@@ -100,16 +105,6 @@ export type HomeUpgradeTransactionDeps = HomeInstallationDeps & {
   readonly publishTransaction?: ((source: string, target: string) => Promise<void>) | undefined;
   readonly launchAgentsDir?: string | undefined;
   readonly afterRestoreEntry?: ((name: typeof SNAPSHOT_NAMES[number]) => Promise<void>) | undefined;
-  /**
-   * Internal capability supplied by the future cross-surface upgrade barrier.
-   * The provider establishes or validates durable exclusion of Product Host
-   * and every standalone operational-store writer before invoking `operation`.
-   * Callback return does NOT release the barrier: a successful `prepared`
-   * result leaves it engaged across process crashes. Release is permitted only
-   * after terminal `restored`, or a future commit/recovery terminal outcome.
-   * Both host locks are still acquired inside. No production provider exists.
-   */
-  readonly runUnderDurableUpgradeBarrier?: (<T>(vault: string, operation: () => Promise<T>) => Promise<T>) | undefined;
 };
 
 /**
@@ -125,67 +120,117 @@ export async function prepareHomeUpgrade(input: {
   assertTransactionId(input.transactionId);
   assertSha(input.candidateArtifactId, "candidate artifact id");
   const vault = await canonicalVault(input.vaultPath);
-  return withQuiescedOwnership(vault, deps, async () => {
+  return withHomeUpgradeOperationLock(vault, deps, async () => {
     const existing = await readHomeUpgrade(vault, deps);
     if (existing !== null) {
       if (existing.transactionId !== input.transactionId ||
         existing.candidate.artifactId !== input.candidateArtifactId) {
         throw new Error(`another Dome Home upgrade transaction is active: ${existing.transactionId}`);
       }
+      if (existing.phase === "restored") return existing;
+      await engageHomeUpgradeBarrier({
+        vaultPath: vault,
+        transactionId: input.transactionId,
+        now: deps.now?.() ?? new Date(),
+      }, deps);
       return existing;
     }
 
-    const paths = homeInstallationPaths(vault, deps);
-    const layout = await ensureUpgradeLayout(paths);
-    const staging = join(layout.upgrade, `.staging-${input.transactionId}`);
-    await clearOwnedStaging(staging);
-    await mkdir(staging, { mode: 0o700 });
-    await chmod(staging, 0o700);
-    const snapshotRoot = join(staging, "snapshot");
-    await mkdir(snapshotRoot, { mode: 0o700 });
-
     try {
-      const installation = await readHomeInstallation(vault, deps);
-      if (installation === null) throw new Error("Dome Home upgrade requires an installed release");
-      const selectors = Object.freeze({
-        installation: await fileEvidence(paths.record, "installation.json"),
-        plist: await fileEvidence(homePlistPath(vault, deps), "Dome Home launchd plist"),
-      });
-      const verify = deps.verifyArtifact ?? verifyHomeArtifact;
-      const old = await artifactEvidence(paths, installation.artifact.id, verify);
-      if (old.version !== installation.artifact.version) {
-        throw new Error("installed release version disagrees with installation.json");
-      }
-      const candidate = await artifactEvidence(paths, input.candidateArtifactId, verify);
-      if (candidate.artifactId === old.artifactId) {
-        throw new Error("Dome Home upgrade candidate must differ from the selected release");
-      }
-
-      const inventory = await snapshotDurableState(vault, snapshotRoot);
-      const preparedAt = (deps.now?.() ?? new Date()).toISOString();
-      assertTimestamp(preparedAt, "prepared timestamp");
-      const journal: HomeUpgradeTransaction = Object.freeze({
-        schema: HOME_UPGRADE_TRANSACTION_SCHEMA,
-        vault,
+      await engageHomeUpgradeBarrier({
+        vaultPath: vault,
         transactionId: input.transactionId,
-        phase: "prepared" as const,
-        old,
-        candidate,
-        selectors,
-        snapshot: Object.freeze({ root: "snapshot" as const, inventory }),
-        timestamps: Object.freeze({ preparedAt, restoredAt: null }),
-      });
-      await writePrivateJson(join(staging, "journal.json"), journal, true);
-      await fsyncTree(staging);
-      const publish = deps.publishTransaction ?? ((source: string, target: string) =>
-        publishDirectoryExclusive({ source, target, ...(deps.platform === undefined ? {} : { platform: deps.platform }) }));
-      await publish(staging, layout.active);
-      await fsyncDirectory(layout.upgrade);
-      return await readRequiredHomeUpgrade(vault, deps);
-    } finally {
-      await rm(staging, { recursive: true, force: true });
+        now: deps.now?.() ?? new Date(),
+      }, deps);
+      return await withQuiescedOwnership(
+        vault,
+        async () => prepareHomeUpgradeWhileQuiesced(input, vault, deps),
+      );
+    } catch (error) {
+      // A normal validation refusal before active/ publication must not leave
+      // the vault permanently write-closed. Any present/corrupt active evidence
+      // makes readHomeUpgrade throw or return a transaction, preserving block.
+      try {
+        await releaseHomeUpgradeBarrier({
+          vaultPath: vault,
+          transactionId: input.transactionId,
+          validateTerminal: async () => {
+            if (await readHomeUpgrade(vault, deps) !== null) {
+              throw new Error("an upgrade transaction was published before prepare failed");
+            }
+          },
+        }, deps);
+      } catch {
+        // Preserve the original validation error; conservative release failure
+        // intentionally leaves write admission closed for recovery.
+      }
+      throw error;
     }
   });
+}
+
+async function prepareHomeUpgradeWhileQuiesced(
+  input: {
+    readonly transactionId: string;
+    readonly candidateArtifactId: string;
+  },
+  vault: string,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<HomeUpgradeTransaction> {
+  const paths = homeInstallationPaths(vault, deps);
+  const layout = await ensureUpgradeLayout(paths);
+  const staging = join(layout.upgrade, `.staging-${input.transactionId}`);
+  await clearOwnedStaging(staging);
+  await mkdir(staging, { mode: 0o700 });
+  await chmod(staging, 0o700);
+  const snapshotRoot = join(staging, "snapshot");
+  await mkdir(snapshotRoot, { mode: 0o700 });
+
+  try {
+    const installation = await readHomeInstallation(vault, deps);
+    if (installation === null) throw new Error("Dome Home upgrade requires an installed release");
+    const selectors = Object.freeze({
+      installation: await fileEvidence(paths.record, "installation.json"),
+      plist: await fileEvidence(homePlistPath(vault, deps), "Dome Home launchd plist"),
+    });
+    const verify = deps.verifyArtifact ?? verifyHomeArtifact;
+    const old = await artifactEvidence(paths, installation.artifact.id, verify);
+    if (old.version !== installation.artifact.version) {
+      throw new Error("installed release version disagrees with installation.json");
+    }
+    const candidate = await artifactEvidence(paths, input.candidateArtifactId, verify);
+    if (candidate.artifactId === old.artifactId) {
+      throw new Error("Dome Home upgrade candidate must differ from the selected release");
+    }
+
+    const inventory = await snapshotDurableState(vault, snapshotRoot);
+    const preparedAt = (deps.now?.() ?? new Date()).toISOString();
+    assertTimestamp(preparedAt, "prepared timestamp");
+    const journal: HomeUpgradeTransaction = Object.freeze({
+      schema: HOME_UPGRADE_TRANSACTION_SCHEMA,
+      vault,
+      transactionId: input.transactionId,
+      phase: "prepared" as const,
+      old,
+      candidate,
+      selectors,
+      snapshot: Object.freeze({ root: "snapshot" as const, inventory }),
+      timestamps: Object.freeze({ preparedAt, restoredAt: null }),
+    });
+    await writePrivateJson(join(staging, "journal.json"), journal, true);
+    await fsyncTree(staging);
+    const publish = deps.publishTransaction ?? ((source: string, target: string) =>
+      publishDirectoryExclusive({
+        source,
+        target,
+        ...(deps.platform === undefined ? {} : { platform: deps.platform }),
+      }));
+    await publish(staging, layout.active);
+    await fsyncDirectory(layout.upgrade);
+    return await readRequiredHomeUpgrade(vault, deps);
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+  }
 }
 
 /** Strict, non-mutating read of the one active transaction and its inventory. */
@@ -215,88 +260,109 @@ export async function restoreHomeUpgrade(
   deps: HomeUpgradeTransactionDeps = {},
 ): Promise<HomeUpgradeTransaction> {
   const vault = await canonicalVault(vaultPath);
-  return withQuiescedOwnership(vault, deps, async () => {
-    const journal = await readRequiredRestoreHomeUpgrade(vault, deps);
-    // Terminal rollback is non-replayable. A later legitimate N-1 write must
-    // never be erased by an idempotence retry or stale operator invocation.
-    if (journal.phase === "restored") return journal;
-    const installation = await readHomeInstallation(vault, deps);
-    if (installation === null || installation.artifact.id !== journal.old.artifactId ||
-      installation.artifact.version !== journal.old.version) {
-      throw new Error("restore is refused after installation selection changed");
-    }
-    const paths = homeInstallationPaths(vault, deps);
-    await assertFileEvidence(journal.selectors.installation, paths.record, "installation.json");
-    await assertFileEvidence(journal.selectors.plist, homePlistPath(vault, deps), "Dome Home launchd plist");
-    const old = await artifactEvidence(paths, journal.old.artifactId, deps.verifyArtifact ?? verifyHomeArtifact);
-    if (JSON.stringify(old) !== JSON.stringify(journal.old)) {
-      throw new Error("selected N-1 release evidence changed before restore");
-    }
-    const state = join(vault, ".dome", "state");
-    await assertDirectDirectory(state, "vault operational-state root");
-    const snapshotRoot = join(paths.installations, "upgrade", "active", journal.snapshot.root);
-
-    // Corrupt or absent candidate databases are recoverable. Redirected or
-    // special target objects are not: reject all of them before the first
-    // replacement so rollback cannot traverse attacker-controlled paths.
-    for (const entry of journal.snapshot.inventory) {
-      const target = join(state, entry.name);
-      await rejectRedirectedIfPresent(target, `current ${entry.name}`);
-      if (entry.kind === "sqlite") {
-        await rejectRedirectedIfPresent(`${target}-wal`, `current ${entry.name}-wal`);
-        await rejectRedirectedIfPresent(`${target}-shm`, `current ${entry.name}-shm`);
+  return withHomeUpgradeOperationLock(vault, deps, async () => {
+    const before = await readRequiredRestoreHomeUpgrade(vault, deps);
+    await engageHomeUpgradeBarrier({
+      vaultPath: vault,
+      transactionId: before.transactionId,
+      now: deps.now?.() ?? new Date(),
+    }, deps);
+    const restored = await withQuiescedOwnership(vault, async () => {
+      const journal = await readRequiredRestoreHomeUpgrade(vault, deps);
+      // Terminal rollback is non-replayable. A later legitimate N-1 write must
+      // never be erased by an idempotence retry or stale operator invocation.
+      if (journal.phase === "restored") return journal;
+      const installation = await readHomeInstallation(vault, deps);
+      if (installation === null || installation.artifact.id !== journal.old.artifactId ||
+        installation.artifact.version !== journal.old.version) {
+        throw new Error("restore is refused after installation selection changed");
       }
-    }
-    for (const entry of journal.snapshot.inventory) {
-      const source = join(snapshotRoot, entry.name);
-      const target = join(state, entry.name);
-      if (!entry.present) {
-        await rm(target, { force: true });
+      const paths = homeInstallationPaths(vault, deps);
+      await assertFileEvidence(journal.selectors.installation, paths.record, "installation.json");
+      await assertFileEvidence(journal.selectors.plist, homePlistPath(vault, deps), "Dome Home launchd plist");
+      const old = await artifactEvidence(paths, journal.old.artifactId, deps.verifyArtifact ?? verifyHomeArtifact);
+      if (JSON.stringify(old) !== JSON.stringify(journal.old)) {
+        throw new Error("selected N-1 release evidence changed before restore");
+      }
+      const state = join(vault, ".dome", "state");
+      await assertDirectDirectory(state, "vault operational-state root");
+      const snapshotRoot = join(paths.installations, "upgrade", "active", journal.snapshot.root);
+
+      // Corrupt or absent candidate databases are recoverable. Redirected or
+      // special target objects are not: reject all of them before the first
+      // replacement so rollback cannot traverse attacker-controlled paths.
+      for (const entry of journal.snapshot.inventory) {
+        const target = join(state, entry.name);
+        await rejectRedirectedIfPresent(target, `current ${entry.name}`);
+        if (entry.kind === "sqlite") {
+          await rejectRedirectedIfPresent(`${target}-wal`, `current ${entry.name}-wal`);
+          await rejectRedirectedIfPresent(`${target}-shm`, `current ${entry.name}-shm`);
+        }
+      }
+      for (const entry of journal.snapshot.inventory) {
+        const source = join(snapshotRoot, entry.name);
+        const target = join(state, entry.name);
+        if (!entry.present) {
+          await rm(target, { force: true });
+          await fsyncDirectory(state);
+          await deps.afterRestoreEntry?.(entry.name);
+          continue;
+        }
+        const temporary = join(state, `.${entry.name}.restore-${journal.transactionId}`);
+        await clearOwnedRestoreTemporary(temporary);
+        await copyFile(source, temporary, constants.COPYFILE_EXCL);
+        await chmod(temporary, entry.mode ?? 0o600);
+        await fsyncFile(temporary);
+        await rename(temporary, target);
+        if (entry.kind === "sqlite") {
+          await rm(`${target}-wal`, { force: true });
+          await rm(`${target}-shm`, { force: true });
+        }
+        await fsyncFile(target);
         await fsyncDirectory(state);
         await deps.afterRestoreEntry?.(entry.name);
-        continue;
       }
-      const temporary = join(state, `.${entry.name}.restore-${journal.transactionId}`);
-      await clearOwnedRestoreTemporary(temporary);
-      await copyFile(source, temporary, constants.COPYFILE_EXCL);
-      await chmod(temporary, entry.mode ?? 0o600);
-      await fsyncFile(temporary);
-      await rename(temporary, target);
-      if (entry.kind === "sqlite") {
-        await rm(`${target}-wal`, { force: true });
-        await rm(`${target}-shm`, { force: true });
-      }
-      await fsyncFile(target);
       await fsyncDirectory(state);
-      await deps.afterRestoreEntry?.(entry.name);
-    }
-    await fsyncDirectory(state);
 
-    for (const database of DATABASES) {
-      const entry = journal.snapshot.inventory.find((candidate) => candidate.name === database.name)!;
-      const target = join(state, database.name);
-      await validateSqliteSnapshot(target);
-      if (await readSqliteSchemaHash(target, database.metaTable) !== entry.schemaHash) {
-        throw new Error(`restored SQLite schema evidence changed: ${database.name}`);
+      for (const database of DATABASES) {
+        const entry = journal.snapshot.inventory.find((candidate) => candidate.name === database.name)!;
+        const target = join(state, database.name);
+        await validateSqliteSnapshot(target);
+        if (await readSqliteSchemaHash(target, database.metaTable) !== entry.schemaHash) {
+          throw new Error(`restored SQLite schema evidence changed: ${database.name}`);
+        }
+        if (await hashFile(target) !== entry.sha256) throw new Error(`restored SQLite bytes changed: ${database.name}`);
       }
-      if (await hashFile(target) !== entry.sha256) throw new Error(`restored SQLite bytes changed: ${database.name}`);
-    }
-    for (const name of DURABLE_FILES) {
-      const entry = journal.snapshot.inventory.find((candidate) => candidate.name === name)!;
-      if (!entry.present) {
-        if (await present(join(state, name))) throw new Error(`absent N-1 file survived restore: ${name}`);
-      } else if (await hashFile(join(state, name)) !== entry.sha256) throw new Error(`restored file bytes changed: ${name}`);
-    }
+      for (const name of DURABLE_FILES) {
+        const entry = journal.snapshot.inventory.find((candidate) => candidate.name === name)!;
+        if (!entry.present) {
+          if (await present(join(state, name))) throw new Error(`absent N-1 file survived restore: ${name}`);
+        } else if (await hashFile(join(state, name)) !== entry.sha256) throw new Error(`restored file bytes changed: ${name}`);
+      }
 
-    const restoredAt = journal.timestamps.restoredAt ?? (deps.now?.() ?? new Date()).toISOString();
-    assertTimestamp(restoredAt, "restored timestamp");
-    const restored: HomeUpgradeTransaction = Object.freeze({
-      ...journal,
-      phase: "restored" as const,
-      timestamps: Object.freeze({ ...journal.timestamps, restoredAt }),
+      const restoredAt = journal.timestamps.restoredAt ?? (deps.now?.() ?? new Date()).toISOString();
+      assertTimestamp(restoredAt, "restored timestamp");
+      const restored: HomeUpgradeTransaction = Object.freeze({
+        ...journal,
+        phase: "restored" as const,
+        timestamps: Object.freeze({ ...journal.timestamps, restoredAt }),
+      });
+      await replaceJournal(join(paths.installations, "upgrade", "active", "journal.json"), restored);
+      return await readRequiredRestoreHomeUpgrade(vault, deps);
     });
-    await replaceJournal(join(paths.installations, "upgrade", "active", "journal.json"), restored);
-    return await readRequiredRestoreHomeUpgrade(vault, deps);
+    if (restored.phase === "restored") {
+      await releaseHomeUpgradeBarrier({
+        vaultPath: vault,
+        transactionId: restored.transactionId,
+        validateTerminal: async () => {
+          const terminal = await readRequiredRestoreHomeUpgrade(vault, deps);
+          if (terminal.phase !== "restored" || terminal.transactionId !== restored.transactionId) {
+            throw new Error("Dome Home upgrade is not durably restored");
+          }
+        },
+      }, deps);
+    }
+    return restored;
   });
 }
 
@@ -370,20 +436,14 @@ async function inspectUpgradeAncestors(paths: HomeInstallationPaths): Promise<st
 
 async function withQuiescedOwnership<T>(
   vault: string,
-  deps: HomeUpgradeTransactionDeps,
   operation: () => Promise<T>,
 ): Promise<T> {
-  if (deps.runUnderDurableUpgradeBarrier === undefined) {
-    throw new Error("Dome Home upgrade requires the durable all-writer upgrade barrier");
-  }
-  return deps.runUnderDurableUpgradeBarrier(vault, async () => {
-    const localLock = join(vault, ".dome", "state", "locks", "product-host.lock");
-    const before = await inspectExclusiveFileLock(localLock);
-    if (before.kind === "possibly-live") throw new Error("Dome Home is not quiesced; Product Host ownership may be live");
-    const owned = await withProductHostOwnership(vault, operation);
-    if (owned.kind === "busy") throw new Error("Dome Home is not quiesced; Product Host ownership is busy");
-    return owned.value;
-  });
+  const localLock = join(vault, ".dome", "state", "locks", "product-host.lock");
+  const before = await inspectExclusiveFileLock(localLock);
+  if (before.kind === "possibly-live") throw new Error("Dome Home is not quiesced; Product Host ownership may be live");
+  const owned = await withProductHostOwnership(vault, operation);
+  if (owned.kind === "busy") throw new Error("Dome Home is not quiesced; Product Host ownership is busy");
+  return owned.value;
 }
 
 async function ensureUpgradeLayout(paths: HomeInstallationPaths): Promise<{ readonly upgrade: string; readonly active: string }> {

@@ -15,6 +15,10 @@ import { openLedgerDb } from "../../src/ledger/db";
 import { insertQueued, markRunning, markSucceeded, newRunId } from "../../src/ledger/runs";
 import { openOutboxDb } from "../../src/outbox/db";
 import { insertPending } from "../../src/outbox/dispatch";
+import {
+  acquireOperationalWriterLease,
+  inspectOperationalWriterBarrier,
+} from "../../src/operational-state/writer-barrier";
 import { openProposalsDb } from "../../src/proposals/db";
 import { enqueuePendingProposal } from "../../src/proposals/pending-proposals";
 import {
@@ -25,6 +29,7 @@ import {
 } from "../../src/product-host/home-installation";
 import { homeServiceLabelForVault } from "../../src/product-host/home-lifecycle";
 import { startProductHost } from "../../src/product-host/product-host";
+import { readHomeUpgradeBarrier } from "../../src/product-host/home-upgrade-barrier";
 import {
   inspectHomeUpgradeAdmission,
   prepareHomeUpgrade,
@@ -127,6 +132,13 @@ describe("Product Host pre-commit upgrade transaction", () => {
       expect(await restoreHomeUpgrade(f.vault, f.deps)).toEqual(restored);
       expect(await logicalState(f.vault)).toEqual(legitimatePostRollbackState);
       expect((await inspectHomeUpgradeAdmission(f.vault, f.deps)).admitted).toBeTrue();
+      expect(await prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId,
+        candidateArtifactId: CANDIDATE_ID,
+      }, f.deps)).toEqual(restored);
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
+      expect(await readHomeUpgradeBarrier(f.vault, f.deps)).toBeNull();
 
       await writeFile(join(active, "snapshot", "answers.db"), "corrupt retained recovery snapshot");
       expect((await inspectHomeUpgradeAdmission(f.vault, f.deps)).admitted).toBeTrue();
@@ -230,7 +242,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
       await mkdir(attacker);
       await symlink(attacker, upgrade);
       expect((await inspectHomeUpgradeAdmission(f.vault, f.deps)).admitted).toBeFalse();
-      await expect(prepareHomeUpgrade({ vaultPath: f.vault, transactionId: randomUUID(), candidateArtifactId: CANDIDATE_ID }, f.deps)).rejects.toThrow("direct owned directory");
+      await expect(prepareHomeUpgrade({ vaultPath: f.vault, transactionId: randomUUID(), candidateArtifactId: CANDIDATE_ID }, f.deps)).rejects.toThrow("redirected");
       expect(await readdir(attacker)).toEqual([]);
       await rm(upgrade);
 
@@ -252,6 +264,33 @@ describe("Product Host pre-commit upgrade transaction", () => {
       expect(await gitEvidence(f.vault)).toEqual(gitBefore);
     } finally {
       walDb?.close();
+      await rm(f.root, { recursive: true, force: true });
+    }
+  });
+
+  test("a refusal before active publication reopens ordinary writer admission", async () => {
+    const f = await fixture();
+    try {
+      await expect(prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId: "missing-candidate",
+        candidateArtifactId: "d".repeat(64),
+      }, f.deps)).rejects.toThrow();
+
+      expect(await readHomeUpgrade(f.vault, f.deps)).toBeNull();
+      expect(await readHomeUpgradeBarrier(f.vault, f.deps)).toBeNull();
+      expect(await inspectOperationalWriterBarrier(f.vault)).toEqual({
+        blocked: false,
+        transactionId: null,
+        blockedAt: null,
+      });
+      const admitted = await acquireOperationalWriterLease({
+        vaultPath: f.vault,
+        command: "post-refusal-writer",
+      });
+      expect(admitted.ok).toBeTrue();
+      if (admitted.ok) admitted.lease.close();
+    } finally {
       await rm(f.root, { recursive: true, force: true });
     }
   });
@@ -305,10 +344,6 @@ async function fixture(options: { durableFiles?: boolean } = {}) {
     publishTransaction: rename,
     now: () => new Date("2026-07-13T01:00:00.000Z"),
     verifyArtifact: async (path) => JSON.parse(await readFile(join(path, "manifest.json"), "utf8")) as HomeArtifactManifest,
-    // Test-only fake: it proves call ordering, not the required persistent
-    // lifetime. Production has no provider until the durable cross-surface
-    // operational-writer barrier is implemented.
-    runUnderDurableUpgradeBarrier: async (_vault, operation) => operation(),
   };
   const paths = homeInstallationPaths(vault, deps);
   await mkdir(launchAgentsDir, { recursive: true });

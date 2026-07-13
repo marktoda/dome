@@ -573,6 +573,10 @@ Gitignored operational state:
 - `answers.db` — durable answers to `QuestionEffect` rows.
 - `runs.db` — see [[wiki/specs/run-ledger]].
 - `outbox.db` — see [[wiki/specs/projection-store]] §"Outbox".
+- `locks/operational-writers.db` — DELETE-journal cross-process writer
+  coordination. It is excluded lock state rather than user data: backup and
+  upgrade rollback never copy or restore it, and it must not use Dome's normal
+  WAL connection configuration.
 - `quarantined.json` — processor-quarantine state (carries forward from v0.5; persisted via the engine's quarantine-store helper). Each active quarantine has a `quarantineId` generation token so stale recovery answers cannot clear a newer quarantine for the same trigger key.
 - `last-reconcile-mtime.txt` — mtime-only marker; consumed today by `dome status` (drift-state surface) and in v1.x by the planned `dome inspect drift-age` subject. The pre-recut `dome doctor --time-since-reconcile` flag is retired.
 

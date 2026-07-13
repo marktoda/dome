@@ -23,6 +23,7 @@ import {
   type RequestReceipts,
 } from "../request-receipts/request-receipts";
 import { createAssistantMutationExecutor } from "../request-receipts/assistant-mutation-executor";
+import { acquireOperationalWriterLease } from "../operational-state/writer-barrier";
 import { openVault, type Vault } from "../vault";
 import { ProductOperationScheduler } from "./operation-scheduler";
 import { ensureVaultId } from "./vault-id";
@@ -136,6 +137,20 @@ export async function startProductHost(
         ? { transcriptionState: options.transcriptionState }
         : {}),
     });
+  }
+
+  // The operational lease is intentionally outside both Product Host locks:
+  // one global order (operational -> external host -> vault-local host) keeps
+  // upgrade drain free of lock-order cycles.
+  const writerAdmission = await acquireOperationalWriterLease({
+    vaultPath,
+    command: "dome-product-host",
+  });
+  if (!writerAdmission.ok) {
+    return failure(
+      "startup-failed",
+      `Dome operational write admission is closed: ${writerAdmission.error.kind}`,
+    );
   }
 
   let settleStarted!: (result: StartProductHostResult) => void;
@@ -283,15 +298,21 @@ export async function startProductHost(
           error instanceof Error ? error.message : String(error),
         ));
       } finally {
-        controller.abort();
-        scheduler.close();
-        listener?.stop(true);
-        if (http !== null) await http.close();
-        await poll.catch(() => {});
-        await scheduler.whenIdle();
-        requestReceipts?.close();
-        deviceAuthority?.close();
-        if (vault !== null) await vault.close();
+        let cleanupFailure: unknown = null;
+        const cleanup = async (operation: () => void | Promise<void>) => {
+          try { await operation(); }
+          catch (error) { if (cleanupFailure === null) cleanupFailure = error; }
+        };
+        await cleanup(() => controller.abort());
+        await cleanup(() => scheduler.close());
+        await cleanup(() => listener?.stop(true));
+        await cleanup(async () => { if (http !== null) await http.close(); });
+        await cleanup(async () => { await poll.catch(() => {}); });
+        await cleanup(async () => { await scheduler.whenIdle(); });
+        await cleanup(() => requestReceipts?.close());
+        await cleanup(() => deviceAuthority?.close());
+        await cleanup(async () => { if (vault !== null) await vault.close(); });
+        if (cleanupFailure !== null) throw cleanupFailure;
       }
     },
   );
@@ -305,7 +326,10 @@ export async function startProductHost(
       "startup-failed",
       error instanceof Error ? error.message : String(error),
     ));
-  }).finally(settleClosed);
+  }).finally(() => {
+    writerAdmission.lease.close();
+    settleClosed();
+  });
 
   return started;
 }

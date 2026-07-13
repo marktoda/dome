@@ -74,6 +74,7 @@ import {
 } from "../../extensions/loader";
 import { queryPatchRecords } from "../../ledger/capability-uses";
 import { openLedgerDb, type LedgerDb } from "../../ledger/db";
+import { acquireOperationalWriterLease } from "../../operational-state/writer-barrier";
 import {
   aggregateCostUsdByProcessor,
   queryRuns,
@@ -328,7 +329,7 @@ type CostReport = {
 };
 
 type CostLedgerOpen =
-  | { readonly kind: "open"; readonly db: LedgerDb }
+  | { readonly kind: "open"; readonly db: LedgerDb; readonly close: () => void }
   | { readonly kind: "absent" }
   | { readonly kind: "error"; readonly message: string };
 
@@ -361,7 +362,7 @@ async function runInspectCost(opts: {
       );
       return 1;
     } finally {
-      ledger.db.close();
+      ledger.close();
     }
   }
 
@@ -392,9 +393,18 @@ async function openCostLedgerReadOnly(
 ): Promise<CostLedgerOpen> {
   const path = join(vaultPath, ".dome", "state", "runs.db");
   if (!existsSync(path)) return { kind: "absent" };
+  const admission = await acquireOperationalWriterLease({ vaultPath, command: "dome-inspect-cost" });
+  if (!admission.ok) return { kind: "error", message: admission.error.kind };
   const result = await openLedgerDb({ path });
-  if (!result.ok) return { kind: "error", message: result.error.kind };
-  return { kind: "open", db: result.value.db };
+  if (!result.ok) {
+    admission.lease.close();
+    return { kind: "error", message: result.error.kind };
+  }
+  return {
+    kind: "open",
+    db: result.value.db,
+    close: () => { try { result.value.db.close(); } finally { admission.lease.close(); } },
+  };
 }
 
 function buildCostReport(opts: {

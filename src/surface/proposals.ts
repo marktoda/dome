@@ -48,6 +48,7 @@ import {
   type ControlledMutationResult,
 } from "../mutation/controlled-mutation";
 import { openProposalsDb } from "../proposals/db";
+import { acquireOperationalWriterLease } from "../operational-state/writer-barrier";
 import {
   decideProposal,
   getProposal,
@@ -126,8 +127,11 @@ export async function collectProposals(
   opts?: { readonly all?: boolean },
 ): Promise<{ schema: typeof PROPOSALS_SCHEMA; proposals: ReadonlyArray<ProposalView> }> {
   const vaultPath = resolveVaultPath(vault);
+  const admission = await acquireOperationalWriterLease({ vaultPath, command: "dome-proposals-list" });
+  if (!admission.ok) throw new Error(`operational write admission is closed: ${admission.error.kind}`);
   const opened = await openProposalsDb({ path: proposalsDbPath(vaultPath) });
   if (!opened.ok) {
+    admission.lease.close();
     return Object.freeze({ schema: PROPOSALS_SCHEMA, proposals: [] });
   }
   const { db } = opened.value;
@@ -136,7 +140,7 @@ export async function collectProposals(
     const proposals = rows.map((row) => toProposalView(vaultPath, row));
     return Object.freeze({ schema: PROPOSALS_SCHEMA, proposals: Object.freeze(proposals) });
   } finally {
-    db.close();
+    try { db.close(); } finally { admission.lease.close(); }
   }
 }
 
@@ -165,8 +169,12 @@ export async function performApply(
     return invalid("detached HEAD: applying needs a branch; check out a branch first");
   }
 
+  const admission = await acquireOperationalWriterLease({ vaultPath, command: "dome-proposal-apply" });
+  if (!admission.ok) return invalid(`operational write admission is closed: ${admission.error.kind}`);
+
   const opened = await openProposalsDb({ path: proposalsDbPath(vaultPath) });
   if (!opened.ok) {
+    admission.lease.close();
     return invalid(`could not open the proposals store: ${opened.error.kind}`);
   }
   const { db } = opened.value;
@@ -255,7 +263,7 @@ export async function performApply(
     const msg = e instanceof Error ? e.message : String(e);
     return invalid(`apply failed: ${msg}`);
   } finally {
-    db.close();
+    try { db.close(); } finally { admission.lease.close(); }
   }
 }
 
@@ -271,8 +279,12 @@ export async function performReject(
   const precondition = await checkVaultPreconditions(vaultPath, "rejecting");
   if (precondition !== null) return { status: "invalid", message: precondition };
 
+  const admission = await acquireOperationalWriterLease({ vaultPath, command: "dome-proposal-reject" });
+  if (!admission.ok) return { status: "invalid", message: `operational write admission is closed: ${admission.error.kind}` };
+
   const opened = await openProposalsDb({ path: proposalsDbPath(vaultPath) });
   if (!opened.ok) {
+    admission.lease.close();
     return { status: "invalid", message: `could not open the proposals store: ${opened.error.kind}` };
   }
   const { db } = opened.value;
@@ -293,7 +305,7 @@ export async function performReject(
     });
     return { status: "rejected", id };
   } finally {
-    db.close();
+    try { db.close(); } finally { admission.lease.close(); }
   }
 }
 

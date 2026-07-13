@@ -108,6 +108,10 @@ import {
 } from "../../extensions/maintenance-loops";
 import type { ManifestGrantEntryRequirement } from "../../extensions/manifest-schema";
 import {
+  acquireOperationalWriterLease,
+  type OperationalWriterLease,
+} from "../../operational-state/writer-barrier";
+import {
   flattenBundleProcessors,
   loadBundlesFromRoots,
   type LoadBundlesError,
@@ -349,6 +353,7 @@ export type OpenVaultRuntimeOpts =
  *     nested `RegistryError`.
  */
 export type OpenVaultRuntimeError =
+  | { readonly kind: "operational-write-admission-closed"; readonly cause: string }
   | { readonly kind: "projection-db-open-failed"; readonly cause: string }
   | { readonly kind: "answers-db-open-failed"; readonly cause: string }
   | { readonly kind: "proposals-db-open-failed"; readonly cause: string }
@@ -420,64 +425,91 @@ export async function openVaultRuntime(
     resolved: resolved.value,
   });
 
-  const operationalState = await openOperationalState({
+  const writerAdmission = await acquireOperationalWriterLease({
     vaultPath: opts.vaultPath,
-    extensions: resolved.value.extensions,
-    processorVersions: resolved.value.processorVersions,
-    capabilityPolicyHash: settings.capabilityPolicyHash,
+    command: "open-vault-runtime",
   });
-  if (!operationalState.ok) return operationalState;
-
-  // Registry-orphan GC: drop execution-state counters (quarantined.json) for
-  // processors that no longer exist — a retired bundle's rows (the stale
-  // dome.intake.synthesize-rollup counter that lived forever) AND a deleted
-  // processor's rows inside a still-enabled bundle (the quarantined
-  // dome.daily.attention-discount rows that outlived the processor's
-  // retirement). A registered-but-DISABLED bundle is still configured and its
-  // processors are deliberately absent from the registry, so its counters are
-  // preserved — `isKnownProcessor` treats a processor as known when it is in
-  // the resolved registry OR its bundle is configured-but-disabled.
-  //
-  // Conservatively gated: only prune when we actually established a non-empty
-  // known set (config found + at least one configured extension or a non-empty
-  // registry). A missing/empty config is almost always a read edge rather than
-  // a deliberate full retirement, and pruning everything then would silently
-  // discard live recovery state.
-  //
-  // Without this, a quarantine row for a deleted processor survives forever
-  // — the health emitter re-asks the operator about a processor that no
-  // longer exists (docs/cohesive/brainstorms/2026-07-02-pruning-pass-design.md
-  // §2's "orphaned-state fix"). `prunedUnknownProcessorQuarantines` captures
-  // WHICH quarantined processor ids this open just pruned (computed before
-  // the mutation) so a CLI host-startup surface (`dome serve`) can log it —
-  // engine/host code must not console.log itself.
-  let prunedUnknownProcessorQuarantines: ReadonlyArray<string> = [];
-  if (
-    policy.foundConfig &&
-    (policy.configuredExtensions.length > 0 || resolved.value.registry.size > 0)
-  ) {
-    const isKnownProcessor = isKnownProcessorFor(policy, resolved.value.registry);
-    prunedUnknownProcessorQuarantines = [
-      ...new Set(
-        operationalState.value.executionState
-          .quarantines()
-          .map((q) => q.key.processorId)
-          .filter((processorId) => !isKnownProcessor(processorId)),
-      ),
-    ].sort(compareStrings);
-    operationalState.value.executionState.pruneUnknownProcessors(
-      isKnownProcessor,
-    );
+  if (!writerAdmission.ok) {
+    return err({
+      kind: "operational-write-admission-closed",
+      cause: writerAdmission.error.kind,
+    });
   }
 
-  return ok(buildVaultRuntime({
-    opts,
-    policy,
-    resolved: resolved.value,
-    settings,
-    operationalState: operationalState.value,
-    prunedUnknownProcessorQuarantines,
-  }));
+  let operationalState: Result<OperationalState, OpenVaultRuntimeError>;
+  try {
+    operationalState = await openOperationalState({
+      vaultPath: opts.vaultPath,
+      extensions: resolved.value.extensions,
+      processorVersions: resolved.value.processorVersions,
+      capabilityPolicyHash: settings.capabilityPolicyHash,
+    });
+  } catch (error) {
+    writerAdmission.lease.close();
+    throw error;
+  }
+  if (!operationalState.ok) {
+    writerAdmission.lease.close();
+    return operationalState;
+  }
+
+  try {
+    // Registry-orphan GC: drop execution-state counters (quarantined.json) for
+    // processors that no longer exist — a retired bundle's rows (the stale
+    // dome.intake.synthesize-rollup counter that lived forever) AND a deleted
+    // processor's rows inside a still-enabled bundle (the quarantined
+    // dome.daily.attention-discount rows that outlived the processor's
+    // retirement). A registered-but-DISABLED bundle is still configured and its
+    // processors are deliberately absent from the registry, so its counters are
+    // preserved — `isKnownProcessor` treats a processor as known when it is in
+    // the resolved registry OR its bundle is configured-but-disabled.
+    //
+    // Conservatively gated: only prune when we actually established a non-empty
+    // known set (config found + at least one configured extension or a non-empty
+    // registry). A missing/empty config is almost always a read edge rather than
+    // a deliberate full retirement, and pruning everything then would silently
+    // discard live recovery state.
+    //
+    // Without this, a quarantine row for a deleted processor survives forever
+    // — the health emitter re-asks the operator about a processor that no
+    // longer exists (docs/cohesive/brainstorms/2026-07-02-pruning-pass-design.md
+    // §2's "orphaned-state fix"). `prunedUnknownProcessorQuarantines` captures
+    // WHICH quarantined processor ids this open just pruned (computed before
+    // the mutation) so a CLI host-startup surface (`dome serve`) can log it —
+    // engine/host code must not console.log itself.
+    let prunedUnknownProcessorQuarantines: ReadonlyArray<string> = [];
+    if (
+      policy.foundConfig &&
+      (policy.configuredExtensions.length > 0 || resolved.value.registry.size > 0)
+    ) {
+      const isKnownProcessor = isKnownProcessorFor(policy, resolved.value.registry);
+      prunedUnknownProcessorQuarantines = [
+        ...new Set(
+          operationalState.value.executionState
+            .quarantines()
+            .map((q) => q.key.processorId)
+            .filter((processorId) => !isKnownProcessor(processorId)),
+        ),
+      ].sort(compareStrings);
+      operationalState.value.executionState.pruneUnknownProcessors(
+        isKnownProcessor,
+      );
+    }
+
+    return ok(buildVaultRuntime({
+      opts,
+      policy,
+      resolved: resolved.value,
+      settings,
+      operationalState: operationalState.value,
+      writerLease: writerAdmission.lease,
+      prunedUnknownProcessorQuarantines,
+    }));
+  } catch (error) {
+    try { closeOperationalState(operationalState.value); }
+    finally { writerAdmission.lease.close(); }
+    throw error;
+  }
 }
 
 // ----- Runtime composition --------------------------------------------------
@@ -660,6 +692,7 @@ function buildVaultRuntime(input: {
   readonly resolved: ResolvedRegistry;
   readonly settings: RuntimeSettings;
   readonly operationalState: OperationalState;
+  readonly writerLease: OperationalWriterLease;
   readonly prunedUnknownProcessorQuarantines: ReadonlyArray<string>;
 }): VaultRuntime {
   const {
@@ -668,6 +701,7 @@ function buildVaultRuntime(input: {
     resolved,
     settings,
     operationalState,
+    writerLease,
     prunedUnknownProcessorQuarantines,
   } = input;
   const {
@@ -757,16 +791,28 @@ function buildVaultRuntime(input: {
       ? { modelStepProvider: settings.modelStepProvider }
       : {}),
     close: async () => {
-      await processorRuntime.close();
-      // Close in reverse-open order. SQLite handles are idempotent under
-      // `sqlite3_close_v2`, so a double-close is safe.
-      ledgerDb.close();
-      outboxDb.close();
-      proposalsDb.close();
-      answersDb.close();
-      projectionDb.close();
+      let failure: unknown = null;
+      try { await processorRuntime.close(); } catch (error) { failure = error; }
+      try { closeOperationalState(operationalState); }
+      catch (error) { if (failure === null) failure = error; }
+      finally { writerLease.close(); }
+      if (failure !== null) throw failure;
     },
   });
+}
+
+function closeOperationalState(state: OperationalState): void {
+  let failure: unknown = null;
+  for (const close of [
+    () => state.ledgerDb.close(),
+    () => state.outboxDb.close(),
+    () => state.proposalsDb.close(),
+    () => state.answersDb.close(),
+    () => state.projectionDb.close(),
+  ]) {
+    try { close(); } catch (error) { if (failure === null) failure = error; }
+  }
+  if (failure !== null) throw failure;
 }
 
 // ----- Registry resolution --------------------------------------------------

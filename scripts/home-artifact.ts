@@ -23,6 +23,7 @@ import { compareStrings } from "../src/core/compare";
 import {
   HOME_ARTIFACT_SCHEMA,
   HOME_ARTIFACT_TARGET,
+  HOME_WRITER_BARRIER_PROTOCOL,
   PINNED_AGE_ARCHIVE_SHA256,
   PINNED_AGE_ARCHIVE_URL,
   PINNED_AGE_BINARY_SHA256,
@@ -41,6 +42,7 @@ import {
 export {
   HOME_ARTIFACT_SCHEMA,
   HOME_ARTIFACT_TARGET,
+  HOME_WRITER_BARRIER_PROTOCOL,
   PINNED_AGE_ARCHIVE_SHA256,
   PINNED_AGE_ARCHIVE_URL,
   PINNED_AGE_BINARY_SHA256,
@@ -208,6 +210,7 @@ export async function writeArtifactMetadata(
     ]),
     entrypoint: "bin/dome",
     pwa: "app/pwa/dist",
+    writerBarrier: Object.freeze({ protocol: HOME_WRITER_BARRIER_PROTOCOL }),
     distribution: Object.freeze({ signed: false, notarized: false, upgradeSupported: false }),
     entries: Object.freeze(entries.map((entry) => Object.freeze(entry))),
   });

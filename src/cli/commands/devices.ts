@@ -10,6 +10,7 @@ import {
   type DeviceRecord,
 } from "../../device-authority/device-authority";
 import { findGitRoot } from "../../git";
+import { acquireOperationalWriterLease } from "../../operational-state/writer-barrier";
 import { formatJson } from "../../surface/format";
 import { resolveVaultPath } from "../../surface/resolve-vault";
 import { EX_USAGE } from "../exit-codes";
@@ -35,10 +36,15 @@ export async function runDevices(options: RunDevicesOptions): Promise<number> {
   ) {
     return fail(options, "not an initialized Dome vault; run `dome init` first");
   }
+  const admission = await acquireOperationalWriterLease({ vaultPath, command: "dome-devices" });
+  if (!admission.ok) return fail(options, `operational write admission is closed (${admission.error.kind})`);
   const opened = await openDeviceAuthority({
     path: join(vaultPath, ".dome", "state", "device-authority.db"),
   });
-  if (!opened.ok) return fail(options, `device authority failed to open (${opened.error.kind})`);
+  if (!opened.ok) {
+    admission.lease.close();
+    return fail(options, `device authority failed to open (${opened.error.kind})`);
+  }
   const authority = opened.value.authority;
   try {
     switch (options.action) {
@@ -56,7 +62,7 @@ export async function runDevices(options: RunDevicesOptions): Promise<number> {
         return fail(options, "action must be pair, list, revoke, rotate, or invalidate-all");
     }
   } finally {
-    authority.close();
+    try { authority.close(); } finally { admission.lease.close(); }
   }
 }
 

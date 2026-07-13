@@ -595,24 +595,28 @@ primitive to snapshot the six durable SQLite stores plus optional
 quarantine/host identity. Projection is
 explicitly omitted as rebuildable, and Git/Markdown are outside rollback.
 
-Prepare/restore have no boolean quiescence escape hatch: the future lifecycle
-orchestrator must supply the internal `runUnderDurableUpgradeBarrier`
-capability. Its provider establishes or validates the all-writer barrier before
-the operation; callback return never releases it, and successful prepare must
-leave it engaged across crashes until terminal restore or future
-commit/recovery. Both host locks are held inside the operation. No production
-provider exists yet. Current normal Home rejects active invalid or pre-commit
-evidence before any mutable opener. Restore refuses selector drift, preserves
+Prepare/restore have no boolean quiescence escape hatch. The next bounded P4
+checkpoint implements one DELETE-journal coordinator under excluded
+`.dome/state/locks/` state: ordinary operations hold lifetime SHARED leases and
+upgrade engagement drains them under EXCLUSIVE before publishing a private,
+fsynced external Home marker. Runtime, normal Home, proposals, ledger
+read/repair, devices, and live backup acquire before mutable openers; a
+structural inventory prevents new bypasses. Successful prepare leaves the
+barrier engaged across return and process death. Restore clears it only after
+durable terminal evidence, coordinator last. Current normal Home rejects
+active invalid or pre-commit evidence before any mutable opener. Restore
+refuses selector drift, preserves
 N-1 Device Authority active/revoked credentials, grants, epoch, and audit,
 replaces and fsyncs each
 state entry idempotently while prepared, and removes WAL/SHM only after
 replacement. A missing or corrupt failed-candidate payload is never a rollback
 prerequisite. `restored` is terminal and never replays the snapshot over later
-N-1 writes. Cross-surface writer admission/barrier orchestration is required
-before the public path; migrations, candidate launch, plist/selection
-switching, commit-before-admission, journal retirement, frozen N-1 migration
-fixtures, signing/notarization, and a public upgrade command remain later P4
-checkpoints.
+N-1 writes. Artifact metadata carries writer-barrier protocol v1 while
+`distribution.upgradeSupported` remains false. Pre-v1 artifacts are ineligible
+future upgrade sources, making this the minimum upgrade baseline. Migrations,
+candidate launch, plist/selection switching, commit-before-admission, journal
+retirement, frozen N-1 migration fixtures, signing/notarization, and a public
+upgrade command remain later P4 checkpoints.
 
 Exit journey: a clean Mac needs no source checkout or manual PWA build; it
 pairs an iPhone, upgrades an N-1 fixture after backup, handles a forced failed

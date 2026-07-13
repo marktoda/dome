@@ -16,6 +16,7 @@ import { z } from "zod";
 import { openDeviceAuthority } from "../device-authority/device-authority";
 import { compareStrings } from "../core/compare";
 import { withExclusiveFileLock } from "../engine/host/file-lock";
+import { acquireOperationalWriterLease } from "../operational-state/writer-barrier";
 import { readServeHeartbeatStatus } from "../engine/host/compiler-host-heartbeat";
 import {
   readStandaloneBackupSource,
@@ -202,13 +203,20 @@ export async function createVaultBackup(input: {
     if (home.stopError !== undefined) {
       created = failure("create", home.stopError);
     } else {
-      const locked = await withExclusiveFileLock({
-        lockPath: join(vault, ".dome", "state", "locks", "product-host.lock"),
-        command: "dome-backup-create",
-      }, async () => await createWhileFenced(vault, output, input.recipient, deps));
-      created = locked.kind === "busy"
-        ? failure("create", "Dome Home or another backup owns the vault; stop it and retry")
-        : locked.value;
+      const admission = await acquireOperationalWriterLease({ vaultPath: vault, command: "dome-backup-create" });
+      if (!admission.ok) {
+        created = failure("create", `operational write admission is closed: ${admission.error.kind}`);
+      } else {
+        try {
+          const locked = await withExclusiveFileLock({
+            lockPath: join(vault, ".dome", "state", "locks", "product-host.lock"),
+            command: "dome-backup-create",
+          }, async () => await createWhileFenced(vault, output, input.recipient, deps));
+          created = locked.kind === "busy"
+            ? failure("create", "Dome Home or another backup owns the vault; stop it and retry")
+            : locked.value;
+        } finally { admission.lease.close(); }
+      }
     }
   } catch (error) {
     created = failure("create", message(error));
