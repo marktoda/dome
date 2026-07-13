@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { lstat, mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { lstat, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   acquireOperationalWriterLease,
@@ -19,6 +21,66 @@ afterEach(async () => {
 });
 
 describe("operational writer barrier", () => {
+  test("simultaneous first openers both hold admitted leases after initialization", async () => {
+    const { root, vault } = await fixture();
+    const path = operationalWriterCoordinatorPath(vault);
+    await mkdir(join(vault, ".dome", "state", "locks"), { recursive: true });
+    await writeFile(path, "", { mode: 0o600 });
+
+    // Hold the empty coordinator EXCLUSIVE until both independent processes
+    // have had time to observe first-open state. Once released, one initializes
+    // while the other must close/reopen before joining it with a SHARED lease.
+    const blocker = Bun.spawn({
+      cmd: [process.execPath, "-e", `
+        import { Database } from "bun:sqlite";
+        const db = new Database(process.argv.at(-1));
+        db.run("BEGIN EXCLUSIVE");
+        console.log("ready");
+        await Bun.sleep(400);
+        db.run("ROLLBACK");
+        db.close();
+      `, path],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const reader = blocker.stdout.getReader();
+    const ready = await reader.read();
+    reader.releaseLock();
+    expect(new TextDecoder().decode(ready.value)).toContain("ready");
+
+    const moduleUrl = pathToFileURL(join(process.cwd(), "src", "operational-state", "writer-barrier.ts")).href;
+    const release = join(root, "release-first-openers");
+    const readyPaths = [join(root, "first-ready"), join(root, "second-ready")];
+    const spawnOpener = (readyPath: string) => Bun.spawn({
+      cmd: [process.execPath, "-e", `
+        import { existsSync } from "node:fs";
+        const [moduleUrl, vaultPath, readyPath, releasePath] = process.argv.slice(-4);
+        const { acquireOperationalWriterLease } = await import(moduleUrl);
+        const admission = await acquireOperationalWriterLease({
+          vaultPath,
+          command: "simultaneous-first-opener",
+        });
+        await Bun.write(readyPath, JSON.stringify(admission.ok ? { ok: true } : admission));
+        if (!admission.ok) process.exit(2);
+        while (!existsSync(releasePath)) await Bun.sleep(10);
+        admission.lease.close();
+      `, moduleUrl, vault, readyPath, release],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const openers = readyPaths.map(spawnOpener);
+    const bothHeld = await waitUntil(() => readyPaths.every(existsSync), 3_000);
+    await writeFile(release, "release");
+    const [firstExit, secondExit, blockerExit] = await Promise.all([
+      openers[0]!.exited,
+      openers[1]!.exited,
+      blocker.exited,
+    ]);
+
+    expect(bothHeld).toBeTrue();
+    expect([firstExit, secondExit, blockerExit]).toEqual([0, 0, 0]);
+  });
+
   test("canonical aliases converge and engagement drains both independent leases", async () => {
     const { root, vault } = await fixture();
     const alias = join(root, "vault-alias");
@@ -323,4 +385,13 @@ async function fixture(): Promise<{ readonly root: string; readonly vault: strin
   // Keep the fixture recognizably vault-shaped without depending on git.
   await mkdir(join(vault, ".git"));
   return { root, vault };
+}
+
+async function waitUntil(predicate: () => boolean, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await Bun.sleep(10);
+  }
+  return predicate();
 }

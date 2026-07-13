@@ -27,6 +27,7 @@ export const OPERATIONAL_WRITER_BARRIER_SCHEMA =
 const TABLE = "operational_writer_barrier";
 const COORDINATOR_NAME = "operational-writers.db";
 const SQLITE_BUSY_SLICE_MS = 25;
+const ADMISSION_WAIT_MS = 1_000;
 const EXCLUSIVE_WAIT_MS = 30_000;
 const EXCLUSIVE_RETRY_MS = 10;
 const TRANSACTION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -131,7 +132,7 @@ export async function acquireOperationalWriterLease(input: {
 
   let opened: OpenedCoordinator | null = null;
   try {
-    opened = openCoordinator(vaultPath);
+    opened = await openCoordinatorForAdmission(vaultPath);
     opened.db.run("BEGIN");
     const row = readBarrierRow(opened.db); // real read => held SHARED lock
     if (row.blocked_transaction_id !== null) {
@@ -327,14 +328,16 @@ function openCoordinator(vaultInput: string): OpenedCoordinator {
   ensureCoordinatorFile(path);
 
   const before = lstatSync(path);
+  const initializationPending = before.size === 0;
   const db = new Database(path);
   try {
     const after = lstatSync(path);
     if (before.dev !== after.dev || before.ino !== after.ino) {
       throw new Error("operational writer coordinator changed while opening");
     }
-    configureCoordinator(db);
-    const initialized = initializeOrValidate(db);
+    const initialized = initializationPending
+      ? initializeEmptyCoordinator(db)
+      : (configureCoordinator(db), initializeOrValidate(db));
     if (initialized) {
       fsyncPath(path);
       fsyncPath(dirname(path));
@@ -343,6 +346,20 @@ function openCoordinator(vaultInput: string): OpenedCoordinator {
   } catch (error) {
     db.close();
     throw error;
+  }
+}
+
+async function openCoordinatorForAdmission(vaultInput: string): Promise<OpenedCoordinator> {
+  const started = Date.now();
+  while (true) {
+    try { return openCoordinator(vaultInput); }
+    catch (error) {
+      if (!isBusy(error) || Date.now() - started >= ADMISSION_WAIT_MS) throw error;
+      // A concurrent first opener may have initialized the once-empty file.
+      // Close/reopen so this attempt observes the committed schema instead of
+      // continuing to demand EXCLUSIVE from a stale size=0 observation.
+      await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, EXCLUSIVE_RETRY_MS));
+    }
   }
 }
 
@@ -359,11 +376,17 @@ async function openCoordinatorForExclusive(vaultInput: string): Promise<OpenedCo
 
 function configureCoordinator(db: Database): void {
   db.run(`PRAGMA busy_timeout = ${SQLITE_BUSY_SLICE_MS}`);
-  const journal = db.query<{ journal_mode: string }, []>("PRAGMA journal_mode = DELETE").get();
+  let journal = db.query<{ journal_mode: string }, []>("PRAGMA journal_mode").get();
+  if (journal?.journal_mode.toLowerCase() !== "delete") {
+    journal = db.query<{ journal_mode: string }, []>("PRAGMA journal_mode = DELETE").get();
+  }
   if (journal?.journal_mode.toLowerCase() !== "delete") {
     throw new Error("operational writer coordinator must use DELETE journal mode");
   }
-  const locking = db.query<{ locking_mode: string }, []>("PRAGMA locking_mode = NORMAL").get();
+  let locking = db.query<{ locking_mode: string }, []>("PRAGMA locking_mode").get();
+  if (locking?.locking_mode.toLowerCase() !== "normal") {
+    locking = db.query<{ locking_mode: string }, []>("PRAGMA locking_mode = NORMAL").get();
+  }
   if (locking?.locking_mode.toLowerCase() !== "normal") {
     throw new Error("operational writer coordinator must use NORMAL locking mode");
   }
@@ -371,6 +394,34 @@ function configureCoordinator(db: Database): void {
   const synchronous = db.query<{ synchronous: number }, []>("PRAGMA synchronous").get();
   if (synchronous?.synchronous !== 2) {
     throw new Error("operational writer coordinator must use FULL synchronous mode");
+  }
+}
+
+function initializeEmptyCoordinator(db: Database): boolean {
+  configureCoordinator(db);
+  db.run("BEGIN EXCLUSIVE");
+  let initialized = false;
+  try {
+    if (readUserSchema(db).length === 0) {
+      db.run(DDL);
+      db.query(
+        `INSERT INTO ${TABLE}
+         (singleton, schema, blocked_transaction_id, blocked_at)
+         VALUES (1, ?, NULL, NULL)`,
+      ).run(OPERATIONAL_WRITER_BARRIER_SCHEMA);
+      initialized = true;
+    }
+    validateSchema(db);
+    const integrity = db.query<{ integrity_check: string }, []>("PRAGMA integrity_check").all();
+    if (integrity.length !== 1 || integrity[0]?.integrity_check !== "ok") {
+      throw new Error("operational writer coordinator failed integrity_check");
+    }
+    readBarrierRow(db);
+    db.run("COMMIT");
+    return initialized;
+  } catch (error) {
+    try { db.run("ROLLBACK"); } catch {}
+    throw error;
   }
 }
 
