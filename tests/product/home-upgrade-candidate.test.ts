@@ -46,6 +46,42 @@ describe("managed Home upgrade candidate", () => {
     await expect(fetch(`http://127.0.0.1:${port}/healthz`)).rejects.toThrow();
   });
 
+  for (const dishonest of ["readiness", "pairing", "mutation"] as const) {
+    test(`rejects dishonest ${dishonest} probation behavior`, async () => {
+      const fixture = await candidateFixture();
+      let settle!: (code: number) => void;
+      const exited = new Promise<number>((resolve) => { settle = resolve; });
+      await expect(proveHomeUpgradeCandidate({
+        vault: fixture.vault,
+        vaultId: "vault-proof-id",
+        transactionId: TRANSACTION_ID,
+        candidate: fixture.candidate,
+      }, {
+        port: 45670,
+        verifyCandidate: async () => {},
+        spawn: () => ({ exited, kill: () => settle(0) }),
+        fetch: async (url) => {
+          if (url.endsWith("/healthz")) throw new Error("drained");
+          if (dishonest === "readiness" && url.endsWith("/readyz")) {
+            const body = readiness() as Record<string, unknown>;
+            delete body["device"];
+            return Response.json(body);
+          }
+          if (dishonest === "pairing" && url.endsWith("/pair/status")) {
+            return Response.json({ available: true }, { status: 200 });
+          }
+          if (dishonest === "mutation" && url.endsWith("/capture")) {
+            return Response.json({ status: "ok" }, { status: 200 });
+          }
+          return probationResponse(url);
+        },
+        readinessTimeoutMs: 50,
+      })).rejects.toThrow(dishonest === "readiness"
+        ? "readiness does not match"
+        : dishonest === "pairing" ? "pairing surface is not closed" : "mutation surface is not closed");
+    });
+  }
+
   test("uses only the pinned runtime, entrypoint, and hidden probation argv", async () => {
     const fixture = await candidateFixture();
     let command: ReadonlyArray<string> = [];
@@ -65,7 +101,7 @@ describe("managed Home upgrade candidate", () => {
       },
       fetch: async (url) => {
         if (url.endsWith("/healthz")) throw new Error("drained");
-        return Response.json(readiness());
+        return probationResponse(url);
       },
     });
     expect(command).toEqual([
@@ -128,7 +164,7 @@ describe("managed Home upgrade candidate", () => {
       }),
       fetch: async (url) => {
         if (url.endsWith("/healthz")) throw new Error("drained");
-        return Response.json(readiness());
+        return probationResponse(url);
       },
       drainTimeoutMs: 5,
     });
@@ -176,6 +212,24 @@ function readiness() {
   };
 }
 
+function probationResponse(url: string): Response {
+  if (url.endsWith("/readyz")) return Response.json(readiness());
+  if (url.endsWith("/pair/status")) {
+    return Response.json({
+      schema: "dome.device.pairing/v1",
+      available: false,
+      paired: false,
+      error: "upgrade-probation",
+    }, { status: 503 });
+  }
+  return Response.json({
+    schema: "dome.http/v1",
+    status: "error",
+    error: "write-admission-closed",
+    message: "closed",
+  }, { status: 503 });
+}
+
 async function candidateFixture(overrides: { readonly writesAdmitted?: boolean } = {}) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "dome-upgrade-candidate-")));
   roots.push(root);
@@ -210,6 +264,13 @@ const server = Bun.serve({
       transcription: { state: "unconfigured" },
       nextActions: [{ code: "upgrade-probation", label: "Await commit" }],
     });
+    if (path === "/pair/status") return Response.json({
+      schema: "dome.device.pairing/v1", available: false, paired: false,
+      error: "upgrade-probation",
+    }, { status: 503 });
+    if (path === "/capture") return Response.json({
+      schema: "dome.http/v1", status: "error", error: "write-admission-closed", message: "closed",
+    }, { status: 503 });
     return Response.json({ ok: true });
   },
 });

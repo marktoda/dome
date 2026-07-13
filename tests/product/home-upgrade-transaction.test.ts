@@ -157,6 +157,10 @@ describe("Product Host pre-commit upgrade transaction", () => {
       }
       await expect(commitPreparedHomeUpgrade({
         vaultPath: f.vault,
+        proof: { ...probationProof(transactionId), transactionId: randomUUID() },
+      }, f.deps)).rejects.toThrow("does not match");
+      await expect(commitPreparedHomeUpgrade({
+        vaultPath: f.vault,
         proof: { ...probationProof(transactionId), vaultId: "another-vault" },
       }, f.deps)).rejects.toThrow("does not match");
       expect((await readHomeUpgrade(f.vault, f.deps))?.phase).toBe("prepared");

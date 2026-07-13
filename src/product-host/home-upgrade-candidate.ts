@@ -8,7 +8,11 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { PRODUCT_READINESS_SCHEMA, type ProductReadiness } from "../../contracts/product-readiness";
+import {
+  PRODUCT_READINESS_SCHEMA,
+  parseProductReadiness,
+  type ProductReadiness,
+} from "../../contracts/product-readiness";
 import type {
   HomeUpgradeArtifactEvidence,
   HomeUpgradeProbationProof,
@@ -73,6 +77,7 @@ export async function proveHomeUpgradeCandidate(input: {
       childState: () => ({ exited: childExited, code: childExitCode }),
       expected: input,
     });
+    await proveClosedProbationBehavior(origin, request);
     if (childExited) throw new Error(`upgrade candidate exited during probation (${childExitCode ?? "unknown"})`);
     proof = Object.freeze({
       schema: "dome.home-upgrade-probation-proof/v1" as const,
@@ -109,6 +114,34 @@ export async function proveHomeUpgradeCandidate(input: {
   if (cleanupError !== null) throw cleanupError;
   if (proof === null) throw new Error("upgrade candidate probation completed without proof");
   return proof;
+}
+
+async function proveClosedProbationBehavior(
+  origin: string,
+  request: (url: string, init?: RequestInit) => Promise<Response>,
+): Promise<void> {
+  const pairing = await request(`${origin}/pair/status`, {
+    signal: AbortSignal.timeout(1_000),
+    cache: "no-store",
+  });
+  const pairingBody = await pairing.json() as Record<string, unknown>;
+  if (pairing.status !== 503 || pairingBody["schema"] !== "dome.device.pairing/v1" ||
+    pairingBody["available"] !== false || pairingBody["paired"] !== false ||
+    pairingBody["error"] !== "upgrade-probation") {
+    throw new Error("upgrade candidate pairing surface is not closed during probation");
+  }
+  const mutation = await request(`${origin}/capture`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text: "candidate probation write-closure probe" }),
+    signal: AbortSignal.timeout(1_000),
+    cache: "no-store",
+  });
+  const mutationBody = await mutation.json() as Record<string, unknown>;
+  if (mutation.status !== 503 || mutationBody["schema"] !== "dome.http/v1" ||
+    mutationBody["error"] !== "write-admission-closed") {
+    throw new Error("upgrade candidate mutation surface is not closed during probation");
+  }
 }
 
 async function assertCandidateArtifact(candidate: HomeUpgradeArtifactEvidence): Promise<void> {
@@ -196,62 +229,16 @@ function assertExactReadiness(
   readiness: unknown,
   expected: { readonly vaultId: string; readonly candidate: HomeUpgradeArtifactEvidence },
 ): asserts readiness is ProductReadiness {
-  const root = exactRecord(readiness, [
-    "schema", "productVersion", "artifactId", "writesAdmitted", "contractVersions",
-    "assetVersion", "vault", "device", "host", "adoption", "model", "transcription",
-    "nextActions",
-  ]);
-  const vault = exactRecord(root["vault"], ["id", "name"]);
-  const device = exactRecord(root["device"], ["id", "name", "capabilities"]);
-  const host = exactRecord(root["host"], ["state", "since"]);
-  const adoption = exactRecord(root["adoption"], ["state", "head", "adopted", "lastSuccessAt"]);
-  const model = exactRecord(root["model"], ["state"]);
-  const transcription = exactRecord(root["transcription"], ["state"]);
-  const actions = Array.isArray(root["nextActions"])
-    ? root["nextActions"].map((value) => exactRecord(value, ["code", "label"]))
-    : [];
-  if (root["schema"] !== PRODUCT_READINESS_SCHEMA ||
-    root["artifactId"] !== expected.candidate.artifactId ||
-    root["productVersion"] !== expected.candidate.version || root["writesAdmitted"] !== false ||
-    !boundedText(root["assetVersion"]) ||
-    !Array.isArray(root["contractVersions"]) || !root["contractVersions"].every(boundedText) ||
-    vault["id"] !== expected.vaultId || !boundedText(vault["name"]) ||
-    !boundedText(device["id"]) || !boundedText(device["name"]) ||
-    !Array.isArray(device["capabilities"]) || !device["capabilities"].every(boundedText) ||
-    host["state"] !== "probation" || !exactTimestamp(host["since"]) ||
-    !["current", "pending", "blocked", "diverged", "unknown"].includes(adoption["state"] as string) ||
-    !nullableText(adoption["head"]) || !nullableText(adoption["adopted"]) ||
-    !(adoption["lastSuccessAt"] === null || exactTimestamp(adoption["lastSuccessAt"])) ||
-    !["ready", "unconfigured", "unreachable"].includes(model["state"] as string) ||
-    !["ready", "unconfigured", "unreachable"].includes(transcription["state"] as string) ||
-    !Array.isArray(root["nextActions"]) || actions.some((action) => !boundedText(action["code"]) || !boundedText(action["label"]))) {
+  let parsed: ProductReadiness;
+  try { parsed = parseProductReadiness(readiness); }
+  catch { throw new Error("upgrade candidate readiness does not match exact probation identity"); }
+  if (parsed.schema !== PRODUCT_READINESS_SCHEMA ||
+    parsed.artifactId !== expected.candidate.artifactId ||
+    parsed.productVersion !== expected.candidate.version ||
+    parsed.writesAdmitted !== false || parsed.host.state !== "probation" ||
+    parsed.vault.id !== expected.vaultId) {
     throw new Error("upgrade candidate readiness does not match exact probation identity");
   }
-}
-
-function exactRecord(value: unknown, keys: readonly string[]): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("upgrade candidate readiness does not match exact probation identity");
-  }
-  const record = value as Record<string, unknown>;
-  if (JSON.stringify(Object.keys(record).sort()) !== JSON.stringify([...keys].sort())) {
-    throw new Error("upgrade candidate readiness does not match exact probation identity");
-  }
-  return record;
-}
-
-function boundedText(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0 && value.length <= 4096 &&
-    !value.includes("\0") && !/[\r\n]/.test(value);
-}
-
-function nullableText(value: unknown): boolean {
-  return value === null || boundedText(value);
-}
-
-function exactTimestamp(value: unknown): boolean {
-  return typeof value === "string" && Number.isFinite(Date.parse(value)) &&
-    new Date(value).toISOString() === value;
 }
 
 async function settleChild(child: CandidateChild, timeoutMs: number): Promise<boolean> {
