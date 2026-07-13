@@ -18,6 +18,7 @@ import {
   verifyHomeArtifact,
   writeArtifactMetadata,
 } from "../../scripts/home-artifact";
+import { HOME_DURABLE_STATE_PROTOCOL, HOME_STORE_MIGRATIONS } from "../../src/product-host/home-store-migrations";
 import {
   parseHomeArtifactManifest,
   verifyHomeArtifact as shippedVerifyHomeArtifact,
@@ -63,6 +64,10 @@ describe("Dome Home artifact", () => {
         upgradeSupported: false,
       });
       expect(manifest.writerBarrier).toEqual({ protocol: 1 });
+      expect(manifest.durableState).toEqual({
+        protocol: HOME_DURABLE_STATE_PROTOCOL,
+        stores: HOME_STORE_MIGRATIONS,
+      });
       expect(manifest.entries.filter((entry) => entry.type === "file").map((entry) => entry.path)).toEqual([
         "app/pwa/dist/index.html",
         "bin/dome",
@@ -125,7 +130,44 @@ describe("Dome Home artifact", () => {
       const path = join(root, "manifest.json");
       const manifest = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
       delete manifest["writerBarrier"];
+      delete manifest["durableState"];
       expect(parseHomeArtifactManifest(manifest).writerBarrier).toBeUndefined();
+      expect(parseHomeArtifactManifest(manifest).durableState).toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("structurally validates closed historical durable-state evidence", async () => {
+    const root = await verifiableFixture();
+    try {
+      const manifest = JSON.parse(await readFile(join(root, "manifest.json"), "utf8")) as Record<string, unknown>;
+      const durable = structuredClone(manifest["durableState"]) as { protocol: number; stores: Array<Record<string, unknown>> };
+      durable.protocol = 2;
+      expect(() => parseHomeArtifactManifest({ ...manifest, durableState: durable })).toThrow("protocol or store inventory");
+      durable.protocol = 1;
+      durable.stores.pop();
+      expect(() => parseHomeArtifactManifest({ ...manifest, durableState: durable })).toThrow("protocol or store inventory");
+      durable.stores = structuredClone((manifest["durableState"] as { stores: Array<Record<string, unknown>> }).stores);
+      durable.stores.reverse();
+      expect(() => parseHomeArtifactManifest({ ...manifest, durableState: durable })).toThrow("store inventory is invalid");
+      durable.stores.reverse();
+      durable.stores[0]!["currentSchemaHash"] = "f".repeat(64);
+      durable.stores[0]!["migratesFrom"] = ["e".repeat(64)];
+      expect(parseHomeArtifactManifest({ ...manifest, durableState: durable }).durableState?.stores[0])
+        .toEqual(expect.objectContaining({ currentSchemaHash: "f".repeat(64), migratesFrom: ["e".repeat(64)] }));
+      durable.stores = structuredClone((manifest["durableState"] as { stores: Array<Record<string, unknown>> }).stores);
+      durable.stores[0]!["currentSchemaHash"] = "not-a-hash";
+      expect(() => parseHomeArtifactManifest({ ...manifest, durableState: durable })).toThrow("store inventory is invalid");
+      durable.stores = structuredClone((manifest["durableState"] as { stores: Array<Record<string, unknown>> }).stores);
+      durable.stores[1] = structuredClone(durable.stores[0]!);
+      expect(() => parseHomeArtifactManifest({ ...manifest, durableState: durable })).toThrow("store inventory is invalid");
+      durable.stores = structuredClone((manifest["durableState"] as { stores: Array<Record<string, unknown>> }).stores);
+      durable.stores[0]!["migratesFrom"] = ["b".repeat(64), "a".repeat(64)];
+      expect(() => parseHomeArtifactManifest({ ...manifest, durableState: durable })).toThrow("store inventory is invalid");
+      durable.stores = structuredClone((manifest["durableState"] as { stores: Array<Record<string, unknown>> }).stores);
+      durable.stores[0]!["future"] = true;
+      expect(() => parseHomeArtifactManifest({ ...manifest, durableState: durable })).toThrow("unknown or missing fields");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -1,0 +1,10 @@
+PRAGMA foreign_keys = OFF;
+BEGIN IMMEDIATE;
+CREATE TABLE answers_meta (schema_hash TEXT NOT NULL PRIMARY KEY,built_at TEXT NOT NULL);
+CREATE TABLE question_answers (idempotency_key TEXT PRIMARY KEY,answer TEXT NOT NULL,answered_at TEXT NOT NULL,question_id INTEGER,question TEXT NOT NULL,processor_id TEXT NOT NULL,adopted_commit TEXT NOT NULL,answered_by TEXT NOT NULL DEFAULT 'owner',answer_context_json TEXT,handler_status TEXT NOT NULL DEFAULT 'pending',handler_attempts INTEGER NOT NULL DEFAULT 0,last_handler_attempt_at TEXT,handled_at TEXT,last_handler_error TEXT);
+INSERT INTO "answers_meta" ("schema_hash", "built_at") VALUES ('0f7cdd246ffd6808d0b11ee32a5e9db4bd43b0993e649da9e470bf668249f846', '2026-07-13T12:00:00.000Z');
+INSERT INTO "question_answers" ("idempotency_key", "answer", "answered_at", "question_id", "question", "processor_id", "adopted_commit", "answered_by", "answer_context_json", "handler_status", "handler_attempts", "last_handler_attempt_at", "handled_at", "last_handler_error") VALUES ('answer-agent', 'Use the rollback rehearsal', '2026-07-13T12:02:00.000Z', 2, 'How?', 'dome.fixture', '2222222222222222222222222222222222222222', 'agent', '{"kind":"agent","reason":"fixture evidence","evidence":[]}', 'handled', 1, '2026-07-13T12:03:00.000Z', '2026-07-13T12:04:00.000Z', NULL);
+INSERT INTO "question_answers" ("idempotency_key", "answer", "answered_at", "question_id", "question", "processor_id", "adopted_commit", "answered_by", "answer_context_json", "handler_status", "handler_attempts", "last_handler_attempt_at", "handled_at", "last_handler_error") VALUES ('answer-owner', 'Keep the launch window', '2026-07-13T12:01:00.000Z', 1, 'Ship?', 'dome.fixture', '1111111111111111111111111111111111111111', 'owner', NULL, 'pending', 0, NULL, NULL, NULL);
+CREATE INDEX question_answers_by_answered_at ON question_answers(answered_at);
+CREATE INDEX question_answers_by_handler_status ON question_answers(handler_status, answered_at);
+COMMIT;

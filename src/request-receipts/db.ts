@@ -3,12 +3,21 @@
 // request-receipts.ts. Unknown schema changes refuse rather than erase audit.
 
 import { Database } from "bun:sqlite";
+import { createHash } from "node:crypto";
 
 import { type SqliteTableShape } from "../sqlite-shape";
 import { computeDdlHash } from "../sqlite/hash";
 import { openSimpleStore, type StoreOpenError } from "../sqlite/open-store";
 import { errorMessage } from "../sqlite/error-message";
 import { err, ok, type Result } from "../types";
+
+/** Sole frozen predecessor accepted by the private Home upgrade path. */
+export const REQUEST_RECEIPTS_N1_SCHEMA_HASH =
+  "286a2bebc2214df1c383b952dcc2b3f12699a5874c169952c16a074c56c55a9d";
+const REQUEST_RECEIPTS_N1_INVENTORY_SHA256 =
+  "608a256d53c1c164c81fae7e34d8476ca86e45436a61e09a51ebe8d14ddb8230";
+const REQUEST_RECEIPTS_CURRENT_INVENTORY_SHA256 =
+  "22c0de270c85baba33c454561f09b9f63e66f01bdd8bc4864cbcf9ca7067b602";
 
 const DDL: ReadonlyArray<string> = Object.freeze([
   "CREATE TABLE IF NOT EXISTS request_receipts_meta ("
@@ -63,6 +72,9 @@ const DDL: ReadonlyArray<string> = Object.freeze([
     + "ON request_receipts(device_id, admitted_at DESC)",
   "CREATE INDEX IF NOT EXISTS request_receipts_by_state "
     + "ON request_receipts(state, admitted_at)",
+  "CREATE INDEX IF NOT EXISTS request_receipts_prunable "
+    + "ON request_receipts(finished_at, operation_id) "
+    + "WHERE state IN ('succeeded','rejected')",
 ]);
 
 const REQUIRED_TABLE_SHAPES: ReadonlyArray<SqliteTableShape> = Object.freeze([
@@ -104,6 +116,7 @@ export async function openRequestReceiptsDb(input: {
     ddl: DDL,
     currentHash: computeRequestReceiptsSchemaHash(),
     shapes: REQUIRED_TABLE_SHAPES,
+    validate: (db) => exactSchemaInventory(db, REQUEST_RECEIPTS_CURRENT_INVENTORY_SHA256),
     policy: { kind: "refuse" },
   });
   if (!opened.ok) return err(opened.error);
@@ -126,4 +139,43 @@ export async function openRequestReceiptsDb(input: {
     db,
     migration: migration === "fresh" ? "fresh" as const : "ok" as const,
   }));
+}
+
+/**
+ * Upgrade-only exact N-1 route. Ordinary runtime opens intentionally keep
+ * refusing the old hash; only a prepared Home upgrade may call this seam.
+ */
+export async function migrateRequestReceiptsN1(input: {
+  readonly path: string;
+}): Promise<Result<{ readonly schemaHash: string }, RequestReceiptsDbError>> {
+  const opened = openSimpleStore({
+    path: input.path,
+    metaTable: "request_receipts_meta",
+    ddl: DDL,
+    currentHash: computeRequestReceiptsSchemaHash(),
+    shapes: REQUIRED_TABLE_SHAPES,
+    validate: (db) => exactSchemaInventory(db, REQUEST_RECEIPTS_CURRENT_INVENTORY_SHA256),
+    policy: {
+      kind: "migrate",
+      tryMigrate: (db, storedHash) => {
+        if (storedHash !== REQUEST_RECEIPTS_N1_SCHEMA_HASH) return false;
+        const inventoryError = exactSchemaInventory(db, REQUEST_RECEIPTS_N1_INVENTORY_SHA256);
+        if (inventoryError !== null) throw new Error(inventoryError);
+        return true;
+      },
+    },
+  });
+  if (!opened.ok) return err(opened.error);
+  opened.value.raw.close();
+  return ok(Object.freeze({ schemaHash: opened.value.schemaHash }));
+}
+
+function exactSchemaInventory(db: Database, expected: string): string | null {
+  const rows = db.query<{ type: string; name: string; tbl_name: string; sql: string }, []>(
+    "SELECT type,name,tbl_name,sql FROM sqlite_schema "
+      + "WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' "
+      + "ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 WHEN 'trigger' THEN 2 ELSE 3 END,name",
+  ).all().map((row) => ({ type: row.type, name: row.name, table: row.tbl_name, sql: row.sql }));
+  const actual = createHash("sha256").update(JSON.stringify(rows)).digest("hex");
+  return actual === expected ? null : `request receipt schema inventory mismatch: ${actual}`;
 }

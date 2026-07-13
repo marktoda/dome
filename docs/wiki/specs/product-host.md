@@ -518,12 +518,11 @@ N-1 fixtures remain the next P4 checkpoints.
 ### P4 pre-commit upgrade-transaction checkpoint
 
 `src/product-host/home-upgrade-transaction.ts` is the durable rollback
-foundation beneath a future `dome home upgrade` orchestrator. Its complete
-interface is the prepare/read/restore lifecycle plus
-`inspectHomeUpgradeAdmission` for normal-host startup; this checkpoint does
-not migrate a store, launch a candidate, change launchd, select a release,
-admit candidate writes, or add a
-half-working CLI command. `installation.json` remains selected-release truth.
+foundation beneath a future `dome home upgrade` orchestrator. Its private
+interface is prepare/read/migrate/restore plus `inspectHomeUpgradeAdmission`
+for normal-host startup; it does not launch a candidate, change launchd,
+select a release, admit candidate writes, or add a half-working CLI command.
+`installation.json` remains selected-release truth.
 The external journal records transaction truth only.
 
 The journal lives under the canonical per-vault Home installation directory,
@@ -618,15 +617,60 @@ replaced on retry. Recovery evidence is retained.
 the validated terminal journal before reading or replacing live state, so
 legitimate post-rollback N-1 writes cannot be erased.
 Device Authority is restored without epoch invalidation, preserving N-1
-active and revoked credentials, grants, device audit, and epoch. Migrations,
-candidate launch, selector commit, admission, journal retirement, and the
-public upgrade command remain deferred P4 work. Artifacts carry writer-barrier
-protocol v1 while `distribution.upgradeSupported` remains false. Intact legacy
-v1 artifacts remain verifiable and runnable, but artifacts lacking protocol v1
-are ineligible as either side of an upgrade because a pre-protocol standalone
-binary cannot be excluded by the cooperative coordinator.
+active and revoked credentials, grants, device audit, and epoch.
 
-Cross-surface exclusion is complete, but public orchestration is not: a
+### P4 frozen N-1 migration checkpoint
+
+The one supported predecessor is frozen as a checked-in, readable fixture
+before production schema changes. Its closed manifest binds the exact source
+commit, product/Bun/SQLite versions, six schema-defining source hashes, six
+compiled schema hashes and meta tables, canonical SQL hashes, schema-inventory
+hashes, and logical canary digest. The SQL materializes real standalone
+answers, proposals, outbox, runs/capability audit, request receipts, and Device
+Authority databases. CI only consumes and round-trips the fixture; the
+create-exclusive freezer is a test utility, not a release-time generator.
+
+`src/product-host/home-store-migrations.ts` is the private compatibility
+Module. Its interface is one closed, sorted six-store protocol-1 inventory and
+two operations: all-store preflight, then migration of a published prepared
+transaction. It is intentionally not a migration graph. Five stores are
+unchanged. Request receipts have the one exact predecessor route, adding the
+partial `(finished_at, operation_id)` index used by bounded success/rejection
+pruning. Ordinary receipt opening continues to refuse N-1; only the private
+upgrade seam can migrate it. The migration callback, canonical DDL, exact
+table/index validation, and single meta-row replacement commit in one
+`BEGIN IMMEDIATE` transaction. Callback refusal or failure rolls everything
+back.
+
+Prepare copies all six live stores without opening them while operational
+EXCLUSIVE and both Product Host locks are held, then proves exact N-1 from the
+private standalone rollback snapshots before journal publication. It also
+proves the candidate manifest's optional `durableState` protocol has the exact
+compiled six-store inventory compatible with every snapshot hash. General
+artifact verification accepts a structurally valid historical protocol-1
+inventory on the old side; it does not reinterpret old hashes as current.
+Legacy omission remains runnable and is allowed on the old side, but makes a
+candidate ineligible. Writer-barrier protocol 1 remains required on both
+sides. The artifact builder always emits both protocols;
+`distribution.upgradeSupported` remains false.
+
+`migratePreparedHomeUpgrade` is private and has no CLI. It revalidates the
+prepared marker, journal, selectors, candidate product version, manifest hash,
+and six-store compatibility under the same EXCLUSIVE/external/local lock
+order. A retry copies all six stores into a deterministic private scratch root
+outside `active/`, accepts only each exact predecessor or target hash there,
+and removes that scratch root after final proof. It preflights all six before
+the first live-store mutation, migrates remaining predecessors
+transactionally, and finishes with WAL-aware `quick_check` and target-hash
+proofs. The journal deliberately remains `prepared` and both barriers remain
+engaged. A crash after one store commits therefore retries forward or restores
+the exact retained N-1 snapshot; it can never admit writes or bless an
+unjournaled partial vault.
+
+Candidate launch, selector commit, admission, journal retirement, and the
+public upgrade command remain deferred P4 work.
+
+Cross-surface exclusion and private N-1 migration are complete, but public orchestration is not: a
 supervised current Home holds an ordinary lifetime lease, so the future
 upgrade command must first bootout and drain launchd through a narrow lifecycle
 suspension Adapter before engaging EXCLUSIVE. No public runnable upgrade path

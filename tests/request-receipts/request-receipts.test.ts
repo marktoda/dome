@@ -7,12 +7,19 @@ import { join } from "node:path";
 
 import {
   computeRequestReceiptsSchemaHash,
+  migrateRequestReceiptsN1,
   openRequestReceiptsDb,
+  REQUEST_RECEIPTS_N1_SCHEMA_HASH,
 } from "../../src/request-receipts/db";
 import {
   createRequestReceipts,
+  REQUEST_RECEIPT_PRUNE_CANDIDATES_SQL,
   type AdmitRequestReceiptInput,
 } from "../../src/request-receipts/request-receipts";
+import {
+  FROZEN_N1_RELEASE,
+  materializeFrozenN1Fixture,
+} from "../fixtures/home-upgrade/n-1/freeze-n1";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -53,6 +60,71 @@ async function opened(dbPath = path(), options: {
 }
 
 describe("request receipts store", () => {
+  test("ordinary open refuses frozen N-1 while the exact upgrade route adds the prune index", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-request-receipts-n1-"));
+    roots.push(root);
+    await materializeFrozenN1Fixture({
+      fixtureRoot: join(import.meta.dir, "..", "fixtures", "home-upgrade", "n-1", FROZEN_N1_RELEASE),
+      destination: root,
+    });
+    const dbPath = join(root, "request-receipts.db");
+    expect(REQUEST_RECEIPTS_N1_SCHEMA_HASH).not.toBe(computeRequestReceiptsSchemaHash());
+    const refused = await openRequestReceiptsDb({ path: dbPath });
+    expect(refused).toMatchObject({
+      ok: false,
+      error: { kind: "schema-mismatch", stored: REQUEST_RECEIPTS_N1_SCHEMA_HASH },
+    });
+    const migrated = await migrateRequestReceiptsN1({ path: dbPath });
+    expect(migrated).toEqual({ ok: true, value: { schemaHash: computeRequestReceiptsSchemaHash() } });
+    const current = await openRequestReceiptsDb({ path: dbPath });
+    if (!current.ok) throw new Error(JSON.stringify(current.error));
+    try {
+      expect(current.value.db.raw.query<{ operation_id: string; state: string }, []>(
+        "SELECT operation_id,state FROM request_receipts ORDER BY operation_id",
+      ).all()).toEqual([
+        { operation_id: "receipt-admitted", state: "admitted" },
+        { operation_id: "receipt-interrupted", state: "interrupted" },
+        { operation_id: "receipt-succeeded", state: "succeeded" },
+      ]);
+      expect(current.value.db.raw.query<{ name: string }, []>(
+        "SELECT name FROM sqlite_schema WHERE type='index' AND name='request_receipts_prunable'",
+      ).all()).toEqual([{ name: "request_receipts_prunable" }]);
+      expect(current.value.db.raw.query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_schema WHERE name='request_receipts_prunable'",
+      ).get()?.sql).toBe("CREATE INDEX request_receipts_prunable ON request_receipts(finished_at, operation_id) WHERE state IN ('succeeded','rejected')");
+      const forcedPruneSql = REQUEST_RECEIPT_PRUNE_CANDIDATES_SQL.replace(
+        "FROM request_receipts ",
+        "FROM request_receipts INDEXED BY request_receipts_prunable ",
+      );
+      const plan = current.value.db.raw.query<{ detail: string }, [string, number]>(
+        `EXPLAIN QUERY PLAN ${forcedPruneSql}`,
+      ).all("2027-01-01T00:00:00.000Z", 100);
+      expect(plan.some((row) => row.detail.includes("request_receipts_prunable"))).toBe(true);
+    } finally { current.value.db.close(); }
+  });
+
+  test("exact N-1 migration refuses meta-hash-only structural drift", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-request-receipts-drift-"));
+    roots.push(root);
+    await materializeFrozenN1Fixture({
+      fixtureRoot: join(import.meta.dir, "..", "fixtures", "home-upgrade", "n-1", FROZEN_N1_RELEASE),
+      destination: root,
+    });
+    const dbPath = join(root, "request-receipts.db");
+    const drift = new Database(dbPath);
+    drift.run("CREATE INDEX forged_receipt_index ON request_receipts(result_code)");
+    drift.run("PRAGMA wal_checkpoint(TRUNCATE)");
+    drift.close();
+    const result = await migrateRequestReceiptsN1({ path: dbPath });
+    expect(result).toMatchObject({ ok: false, error: { kind: "schema-init-failed" } });
+    const verify = new Database(dbPath, { readonly: true, create: false });
+    try {
+      expect(verify.query<{ schema_hash: string }, []>("SELECT schema_hash FROM request_receipts_meta").get()?.schema_hash)
+        .toBe(REQUEST_RECEIPTS_N1_SCHEMA_HASH);
+      expect(verify.query("SELECT name FROM sqlite_schema WHERE name='request_receipts_prunable'").all()).toEqual([]);
+    } finally { verify.close(); }
+  });
+
   test("opens fresh, persists safe attribution, and reopens without migration", async () => {
     const dbPath = path();
     const first = await opened(dbPath, { ids: ["operation-1"] });

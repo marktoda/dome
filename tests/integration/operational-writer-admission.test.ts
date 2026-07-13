@@ -11,6 +11,7 @@ const INVENTORY: ReadonlyArray<{
   { opener: "openOutboxDb", calls: { "src/outbox/db.ts": 1, "src/engine/host/vault-runtime.ts": 1 } },
   { opener: "openLedgerDb", calls: { "src/ledger/db.ts": 1, "src/engine/host/vault-runtime.ts": 1, "src/surface/activity.ts": 1, "src/cli/commands/inspect.ts": 1, "src/cli/commands/repair.ts": 1 } },
   { opener: "openRequestReceiptsDb", calls: { "src/request-receipts/db.ts": 1, "src/product-host/product-host.ts": 1 } },
+  { opener: "migrateRequestReceiptsN1", calls: { "src/request-receipts/db.ts": 1, "src/product-host/home-store-migrations.ts": 1 } },
   { opener: "openDeviceAuthority", calls: { "src/device-authority/device-authority.ts": 1, "src/product-host/product-host.ts": 1, "src/cli/commands/devices.ts": 1, "src/backup/vault-backup.ts": 2 } },
   { opener: "openQuarantineStore", calls: { "src/engine/operational/quarantine-store.ts": 1, "src/engine/host/vault-runtime.ts": 1 } },
   { opener: "ensureVaultId", calls: { "src/product-host/vault-id.ts": 1, "src/product-host/product-host.ts": 1 } },

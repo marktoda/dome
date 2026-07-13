@@ -287,24 +287,17 @@ export async function openOutboxDb(
 // ----- internals ------------------------------------------------------------
 
 function applyNextAttemptAtMigration(db: Database): void {
-  db.run("BEGIN");
-  try {
-    if (!outboxColumnExists(db, "next_attempt_at")) {
-      db.run(
-        `ALTER TABLE outbox ADD COLUMN next_attempt_at TEXT NOT NULL DEFAULT '${OUTBOX_EPOCH_ISO}'`,
-      );
-    }
+  if (!outboxColumnExists(db, "next_attempt_at")) {
     db.run(
-      `UPDATE outbox SET next_attempt_at = enqueued_at WHERE next_attempt_at = '${OUTBOX_EPOCH_ISO}'`,
+      `ALTER TABLE outbox ADD COLUMN next_attempt_at TEXT NOT NULL DEFAULT '${OUTBOX_EPOCH_ISO}'`,
     );
-    db.run(
-      "CREATE INDEX IF NOT EXISTS outbox_by_due ON outbox(status, next_attempt_at, enqueued_at)",
-    );
-    db.run("COMMIT");
-  } catch (e) {
-    db.run("ROLLBACK");
-    throw e;
   }
+  db.run(
+    `UPDATE outbox SET next_attempt_at = enqueued_at WHERE next_attempt_at = '${OUTBOX_EPOCH_ISO}'`,
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS outbox_by_due ON outbox(status, next_attempt_at, enqueued_at)",
+  );
 }
 
 function outboxColumnExists(db: Database, columnName: string): boolean {
