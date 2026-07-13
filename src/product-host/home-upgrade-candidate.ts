@@ -124,12 +124,14 @@ async function proveClosedProbationBehavior(
     signal: AbortSignal.timeout(1_000),
     cache: "no-store",
   });
-  const pairingBody = await pairing.json() as Record<string, unknown>;
+  const pairingBody = await readBoundedJson(pairing) as Record<string, unknown>;
   if (pairing.status !== 503 || pairingBody["schema"] !== "dome.device.pairing/v1" ||
     pairingBody["available"] !== false || pairingBody["paired"] !== false ||
     pairingBody["error"] !== "upgrade-probation") {
     throw new Error("upgrade candidate pairing surface is not closed during probation");
   }
+  // Deliberately unauthenticated and credential-free: a mistakenly normal
+  // host must reject this probe before any mutator can observe it.
   const mutation = await request(`${origin}/capture`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -137,11 +139,22 @@ async function proveClosedProbationBehavior(
     signal: AbortSignal.timeout(1_000),
     cache: "no-store",
   });
-  const mutationBody = await mutation.json() as Record<string, unknown>;
+  const mutationBody = await readBoundedJson(mutation) as Record<string, unknown>;
   if (mutation.status !== 503 || mutationBody["schema"] !== "dome.http/v1" ||
     mutationBody["error"] !== "write-admission-closed") {
     throw new Error("upgrade candidate mutation surface is not closed during probation");
   }
+}
+
+async function readBoundedJson(response: Response): Promise<unknown> {
+  const declared = response.headers.get("content-length");
+  if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > 64 * 1024)) {
+    throw new Error("upgrade candidate response exceeds its size budget");
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.byteLength > 64 * 1024) throw new Error("upgrade candidate response exceeds its size budget");
+  try { return JSON.parse(new TextDecoder().decode(bytes)); }
+  catch { throw new Error("upgrade candidate response is not JSON"); }
 }
 
 async function assertCandidateArtifact(candidate: HomeUpgradeArtifactEvidence): Promise<void> {
@@ -213,7 +226,7 @@ async function waitForExactReadiness(input: {
         cache: "no-store",
       });
       if (response.status === 200) {
-        const readiness: unknown = await response.json();
+        const readiness = await readBoundedJson(response);
         assertExactReadiness(readiness, input.expected);
         return readiness;
       }
