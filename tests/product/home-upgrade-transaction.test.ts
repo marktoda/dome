@@ -312,6 +312,81 @@ describe("Product Host pre-commit upgrade transaction", () => {
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });
 
+  for (const crashAt of ["probation-recorded", "switching-recorded"] as const) {
+    test(`composed cutover automatically rolls back and retries after ${crashAt}`, async () => {
+      const f = await fixture();
+      try {
+        const transactionId = randomUUID();
+        const before = await logicalState(f.vault);
+        const paths = homeInstallationPaths(f.vault, f.deps);
+        const plist = join(f.deps.launchAgentsDir!, `${homeServiceLabelForVault(f.vault)}.plist`);
+        const oldInstallation = await readFile(paths.record);
+        const oldPlist = await readFile(plist);
+        let suspendCalls = 0;
+        let authorized = false;
+        const deps: HomeUpgradeCutoverDeps = {
+          ...f.deps,
+          selectionCheckpoint: async (name) => {
+            if (name === crashAt) throw new Error(`crash at ${name}`);
+          },
+          inspectLifecycleSuspension: async () => ({ kind: "inactive" }),
+          operations: {
+            prove: async (input) => probationProof(input.transactionId),
+          },
+          suspendHome: (async (invocation, operation) => {
+            suspendCalls += 1;
+            expect(invocation.mode).toBe("new");
+            const value = await operation({
+              operationId: transactionId,
+              purpose: "upgrade",
+              authorizeCurrentHomeForResume: async () => { authorized = true; },
+            });
+            return {
+              kind: "ready",
+              operationId: transactionId,
+              recovered: false,
+              operationRan: true,
+              value,
+            };
+          }) as NonNullable<HomeUpgradeCutoverDeps["suspendHome"]>,
+        };
+
+        const first = await runHomeUpgradeCutover({
+          vaultPath: f.vault,
+          transactionId,
+          candidateArtifactId: CANDIDATE_ID,
+        }, deps);
+        expect(first).toMatchObject({
+          status: "ready",
+          transactionOutcome: {
+            kind: "rolled-back",
+            transaction: { phase: "restored" },
+            error: `crash at ${crashAt}`,
+          },
+          lifecycle: { kind: "ready", operationRan: true },
+        });
+        expect(authorized).toBeFalse();
+        expect(await readFile(paths.record)).toEqual(oldInstallation);
+        expect(await readFile(plist)).toEqual(oldPlist);
+        expect(await logicalState(f.vault)).toEqual(before);
+        expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
+        expect(await readHomeUpgradeBarrier(f.vault, f.deps)).toBeNull();
+
+        const retried = await runHomeUpgradeCutover({
+          vaultPath: f.vault,
+          transactionId,
+          candidateArtifactId: CANDIDATE_ID,
+        }, deps);
+        expect(retried).toMatchObject({
+          status: "ready",
+          transactionOutcome: { kind: "rolled-back", transaction: { phase: "restored" } },
+          lifecycle: { kind: "not-required", operationRan: false },
+        });
+        expect(suspendCalls).toBe(1);
+      } finally { await rm(f.root, { recursive: true, force: true }); }
+    });
+  }
+
   for (const crashAt of ["candidate-plist-published", "candidate-installation-published"] as const) {
     test(`switching crash at ${crashAt} restores exact old selectors and stores`, async () => {
       const f = await fixture();
