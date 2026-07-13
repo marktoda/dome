@@ -324,9 +324,11 @@ outbox, quarantine, and audit cannot silently disappear.
 Secrets have an explicit inclusion/redaction and encryption-key policy.
 Retention and restore verification are part of the product contract.
 
-A blank-host restore or rollback restores the device registry for audit but
-increments the auth epoch and invalidates all cookies and bearers. The owner
-must pair again locally; revoked credentials never resurrect.
+A blank-host restore reconstructs the device registry for audit but increments
+the auth epoch and invalidates all cookies, bearers, and unused grants. The
+owner must pair again locally; revoked credentials never resurrect. A failed
+pre-commit upgrade is not a blank-host restore: rollback restores the exact
+N-1 durable snapshots and preserves the N-1 auth epoch, credentials, and audit.
 
 Rollback means restore before the upgraded host admits writes. Once version N
 accepts writes, recovery is forward-fix/forward-migrate unless the owner
@@ -566,6 +568,24 @@ the reconstructed tree bottom-up, and uses one canonical target identity with
 macOS atomic no-replace publication. Signing/notarization, upgrades/rollback, and
 guided provider setup remain P4 work.
 
+The next P4 checkpoint establishes write-disabled upgrade probation without
+overclaiming a complete upgrade. `dome home --upgrade-probation` derives the
+candidate id/version from the strict invoking-artifact verifier, takes the same
+external cross-process ownership lock as normal Home, and boots a deliberately
+small validation Adapter. One initial `realpath` supplies the vault identity to
+admission and both modes' locks, so aliases cannot split ownership. A stale
+same-host/dead-PID vault lock may be inspected and ignored but is never mutated;
+malformed, remote, and ambiguous holders remain closed. The Adapter serves only
+loopback liveness/readiness
+and closed pairing status. It never opens the Vault or any SQLite store, never
+runs recovery/receipt interruption, never creates a vault id, and never starts
+the engine tick/scheduler; every other route fails `503` before implementation.
+Readiness is explicit (`host.state: probation`, exact `artifactId` and
+`productVersion`, `writesAdmitted: false`). There is no committed mode or
+boolean escape hatch in this checkpoint. Durable transaction journaling,
+snapshots, migrations, commit-before-admission, pre-commit rollback, frozen
+N-1 fixtures, signing/notarization, and guided provider setup remain P4 work.
+
 Exit journey: a clean Mac needs no source checkout or manual PWA build; it
 pairs an iPhone, upgrades an N-1 fixture after backup, handles a forced failed
 upgrade without admitting writes, and restores onto a blank host with all
@@ -621,7 +641,8 @@ is committed by this plan.
 - Mutation admission is bounded and returns retry semantics.
 - Every PWA document/event is versioned and runtime-validated.
 - No shared browser master credential; device credentials are scoped, hashed,
-  independently revocable, and invalidated by restore/rollback.
+  independently revocable, invalidated by blank-host restore, and preserved by
+  exact pre-commit upgrade rollback.
 - Public errors expose no filesystem paths, secrets, or raw provider output.
 - Installed artifact includes pinned runtime, migrations, PWA, and manifest.
 - Root gates build/test the installed PWA and real product host.

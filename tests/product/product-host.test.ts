@@ -48,6 +48,8 @@ describe("P3 Product Host", () => {
     const readyDocument = await ready.json() as { readonly vault: { readonly id: string } };
     expect(readyDocument).toMatchObject({
       schema: "dome.product.readiness/v1",
+      artifactId: "development",
+      writesAdmitted: true,
       host: { state: "ready" },
       adoption: { state: "current" },
       vault: { name: vault.split("/").at(-1) },

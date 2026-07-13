@@ -28,6 +28,11 @@ export type FileLockResult<T> =
   | { readonly kind: "acquired"; readonly value: T }
   | FileLockBusy;
 
+export type FileLockInspection =
+  | { readonly kind: "absent" }
+  | { readonly kind: "definitely-stale"; readonly holder: FileLockHolder }
+  | { readonly kind: "possibly-live"; readonly holder: FileLockHolder | null };
+
 export type FileLockWait = {
   readonly timeoutMs: number;
   readonly intervalMs: number;
@@ -57,6 +62,37 @@ export async function withExclusiveFileLock<T>(
     });
   } finally {
     await releaseLockIfOwner(opts.lockPath, token);
+  }
+}
+
+/**
+ * Read-only, conservative inspection for callers that cannot mutate a lock.
+ * Only a well-formed same-host holder with a definitely dead PID is stale.
+ * Malformed, remote-host, permission-denied, and ambiguous holders stay live.
+ */
+export async function inspectExclusiveFileLock(
+  lockPath: string,
+): Promise<FileLockInspection> {
+  const lock = await readLockFile(lockPath);
+  if (lock === null) return Object.freeze({ kind: "absent" as const });
+  const wellFormed = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    .test(lock.token) && lock.pid !== null && Number.isSafeInteger(lock.pid) && lock.pid > 0 &&
+    lock.hostname !== null && lock.hostname.length > 0 &&
+    lock.command !== null && lock.command.length > 0 &&
+    lock.acquiredAt !== null && Number.isFinite(Date.parse(lock.acquiredAt));
+  if (!wellFormed || lock.hostname !== hostname()) {
+    return Object.freeze({ kind: "possibly-live" as const, holder: readOnlyHolder(lock) });
+  }
+  try {
+    process.kill(lock.pid!, 0);
+    return Object.freeze({ kind: "possibly-live" as const, holder: readOnlyHolder(lock) });
+  } catch (error) {
+    // EPERM means the process exists but is not signalable. Only ESRCH proves
+    // the same-host PID no longer exists.
+    if (hasErrorCode(error, "ESRCH")) {
+      return Object.freeze({ kind: "definitely-stale" as const, holder: readOnlyHolder(lock) });
+    }
+    return Object.freeze({ kind: "possibly-live" as const, holder: readOnlyHolder(lock) });
   }
 }
 
@@ -189,6 +225,15 @@ async function readLockHolder(
 ): Promise<FileLockHolder | null> {
   const lock = await readLockFile(lockPath);
   if (lock === null) return null;
+  return Object.freeze({
+    pid: lock.pid,
+    hostname: lock.hostname,
+    command: lock.command,
+    acquiredAt: lock.acquiredAt,
+  });
+}
+
+function readOnlyHolder(lock: LockFile): FileLockHolder {
   return Object.freeze({
     pid: lock.pid,
     hostname: lock.hostname,

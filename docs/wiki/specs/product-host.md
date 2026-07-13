@@ -207,11 +207,16 @@ answer. Authenticated readiness is a versioned product contract:
 type ProductReadinessV1 = {
   schema: "dome.product.readiness/v1";
   productVersion: string;
+  artifactId: string;
+  writesAdmitted: boolean;
   contractVersions: readonly string[];
   assetVersion: string;
   vault: { id: string; name: string };
   device: { id: string; name: string; capabilities: readonly string[] };
-  host: { state: "starting" | "ready" | "degraded" | "blocked"; since: string };
+  host: {
+    state: "starting" | "ready" | "degraded" | "blocked" | "probation";
+    since: string;
+  };
   adoption: {
     state: "current" | "pending" | "blocked" | "diverged" | "unknown";
     head: string | null;
@@ -226,7 +231,10 @@ type ProductReadinessV1 = {
 
 The vault id is opaque and stable; filesystem paths never cross the remote
 contract. `host.state: ready` requires an open vault and usable adopted state,
-not merely an HTTP listener. Model/transcription degradation does not block
+not merely an HTTP listener. `host.state: probation` is narrower: the exact
+candidate artifact is alive and its read-only Git/vault-identity probes work,
+but `writesAdmitted` is necessarily false. It must never be interpreted as
+ordinary product readiness. Model/transcription degradation does not block
 Today, text capture, owner decisions, document reads, or lexical recall.
 
 ## Capture durability contract
@@ -267,8 +275,10 @@ backup or becomes a separately labeled stable-hash overlay.
 
 Restore verifies manifests/checksums and may rebuild projections. It never
 silently drops answers, proposal decisions, pending outbox, quarantine, or
-audit. Blank-host restore and rollback restore credential records for audit but
-increment the auth epoch and invalidate all credentials.
+audit. Blank-host restore reconstructs credential records for audit, increments
+the auth epoch, and invalidates all credentials. A pre-commit upgrade rollback
+is different: it restores the exact N-1 operational snapshots and preserves
+their auth epoch, credentials, and audit history.
 
 Rollback is allowed only before the upgraded host admits writes. After version
 N accepts writes, recovery is forward-fix/forward-migrate unless the owner
@@ -396,6 +406,41 @@ publication then uses macOS atomic no-replace rename and fsyncs the canonical
 parent directory. Restore never overwrites, merges, or
 restores in place. A failure after publication reports the target as restored
 with uncertain durability rather than falsely claiming it is absent.
+
+### P4 upgrade-probation checkpoint
+
+`dome home --upgrade-probation` is the candidate validation launch. The CLI
+accepts the candidate identity only from the existing strict invoking-artifact
+verifier; a caller-provided version string or environment flag cannot declare
+an artifact committed. The shared admission Module has only two states in this
+checkpoint: normal launches admit writes, while upgrade probation is
+permanently closed. There is deliberately no `committed` launch state until a
+durable external upgrade transaction can supply and validate that evidence.
+
+The lifecycle canonicalizes the vault with `realpath` exactly once before
+admission or lock derivation, so a symlink alias and canonical path cannot name
+different hosts. Probation then takes a cross-process lock outside the vault.
+Normal Home takes the same lock before its existing vault-local lock,
+preserving mutual exclusion without changing the rollback candidate's
+`.dome/state` bytes. Once it owns the external lock, probation ignores only a
+well-formed vault-local lock from the same host whose PID is provably dead; it
+does not unlink or rewrite that stale evidence. Malformed, remote-host, and
+possibly-live locks fail closed. The probation Adapter then bypasses
+controlled-mutation recovery, request-receipt
+interruption, `openVault`, all SQLite openers, Device Authority, vault-id
+creation, the startup engine tick, and the poll/scheduler loop. Its complete
+network surface is public loopback `GET /healthz`, `GET /readyz`, and a closed
+pairing status; every other route returns `503 write-admission-closed` before a
+mutator, model, provider, or read path that could ledger work can run.
+
+Readiness reports the manifest-derived `artifactId` and `productVersion`,
+`host.state: probation`, and `writesAdmitted: false`. Whole-vault fingerprint
+tests cover every Git and `.dome/state` byte while candidate readiness and
+representative HTTP attempts run; a seeded admitted receipt remains admitted,
+proving restart interruption is also skipped. This is only the write-disabled
+candidate boot foundation. Durable upgrade journaling, store snapshots,
+migration, commit-before-admission, automatic pre-commit rollback, and frozen
+N-1 fixtures remain the next P4 checkpoints.
 
 ### P3 device-authority foundation
 
