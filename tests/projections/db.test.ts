@@ -8,9 +8,16 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   computeExtensionSetHash,
@@ -54,6 +61,70 @@ describe("openProjectionDb", () => {
     }
     rmSync(root, { recursive: true, force: true });
   });
+
+  it("recovers a first open after another process wins SQLite write ownership", async () => {
+    const moduleUrl = pathToFileURL(
+      resolve(import.meta.dir, "../../src/projections/db.ts"),
+    ).href;
+    mkdirSync(join(root, ".dome", "state"), { recursive: true });
+    const empty = new Database(dbPath);
+    empty.run("PRAGMA journal_mode = WAL");
+    empty.close();
+
+    // Model the first initializer's write transaction while a second process
+    // observes the still-empty committed schema. The second opener's first DDL
+    // attempt gets SQLITE_BUSY; after the winner finishes, reopening must
+    // re-probe and initialize from the committed state.
+    const blocker = Bun.spawn({
+      cmd: [process.execPath, "-e", `
+        import { Database } from "bun:sqlite";
+        const db = new Database(process.argv.at(-1));
+        db.run("BEGIN IMMEDIATE");
+        db.run("CREATE TABLE initializer_in_progress (id INTEGER)");
+        console.log("ready");
+        await Bun.sleep(6000);
+        db.run("ROLLBACK");
+        db.close();
+      `, dbPath],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const blockerReader = blocker.stdout.getReader();
+    const blockerReady = await blockerReader.read();
+    blockerReader.releaseLock();
+    expect(new TextDecoder().decode(blockerReady.value)).toContain("ready");
+
+    const resultPath = join(root, "opener.json");
+    const opener = Bun.spawn({
+      cmd: [process.execPath, "-e", `
+        const [moduleUrl, dbPath, resultPath] = process.argv.slice(-3);
+        const { openProjectionDb } = await import(moduleUrl);
+        const result = await openProjectionDb({
+          path: dbPath,
+          extensionSet: [],
+          processorVersions: [],
+          capabilityPolicyHash: "policy-a",
+        });
+        await Bun.write(resultPath, JSON.stringify(result.ok ? { ok: true } : result));
+        if (!result.ok) process.exit(2);
+        result.value.db.close();
+      `, moduleUrl, dbPath, resultPath],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const returned = await waitUntil(() => existsSync(resultPath), 8_000);
+    const [openerExit, blockerExit] = await Promise.all([opener.exited, blocker.exited]);
+    const payload = existsSync(resultPath)
+      ? JSON.parse(readFileSync(resultPath, "utf8"))
+      : null;
+
+    expect({ returned, openerExit, blockerExit, payload }).toEqual({
+      returned: true,
+      openerExit: 0,
+      blockerExit: 0,
+      payload: { ok: true },
+    });
+  }, { timeout: 30_000 });
 
   it("returns migration: 'fresh' on a never-before-opened path", async () => {
     const r = await openProjectionDb({
@@ -453,6 +524,15 @@ describe("openProjectionDb", () => {
     ).toThrow();
   });
 });
+
+async function waitUntil(predicate: () => boolean, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await Bun.sleep(5);
+  }
+  return predicate();
+}
 
 describe("computeExtensionSetHash", () => {
   it("is order-insensitive — same elements, different order, same hash", () => {

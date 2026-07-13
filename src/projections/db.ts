@@ -543,6 +543,13 @@ export function computeProcessorVersionsHash(
 export async function openProjectionDb(
   opts: OpenProjectionDbOpts,
 ): Promise<Result<OpenProjectionDbResult, ProjectionDbError>> {
+  return openProjectionDbAttempt(opts, true);
+}
+
+async function openProjectionDbAttempt(
+  opts: OpenProjectionDbOpts,
+  retryDdlBusy: boolean,
+): Promise<Result<OpenProjectionDbResult, ProjectionDbError>> {
   // 1–3. The shared seam owns ensure-dir + open + configure + read stored hash.
   //      Projections keeps its own bespoke TAIL (the WIPE / cache-key / 4-state
   //      logic below) because it is a rebuildable cache, not a durable log — so
@@ -586,6 +593,13 @@ export async function openProjectionDb(
     applyDdlInTransaction(raw, DDL);
   } catch (e) {
     raw.close();
+    if (retryDdlBusy && isSqliteBusy(e)) {
+      // Two first openers can both observe an empty committed schema before
+      // one wins SQLite write ownership. Reopen once so the loser discards
+      // its stale freshness decision and re-probes the winner's schema.
+      await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 10));
+      return openProjectionDbAttempt(opts, false);
+    }
     return err({ kind: "schema-init-failed", cause: errorMessage(e) });
   }
 
@@ -775,6 +789,11 @@ export function projectionRequiresRebuild(
 }
 
 // ----- internals ------------------------------------------------------------
+
+function isSqliteBusy(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error &&
+    (error as { readonly code?: unknown }).code === "SQLITE_BUSY";
+}
 
 function projectionStateExists(db: Database): boolean {
   const placeholders = PROJECTION_TABLE_NAMES.map(() => "?").join(", ");
