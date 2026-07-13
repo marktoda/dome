@@ -14,15 +14,22 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  readFileSync,
   realpathSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
-import { inspectOperationalWriterBarrier } from "../operational-state/writer-barrier";
-import { activateLaunchAgent, waitForLaunchAgentDrain } from "../platform/launchd";
-import { resolveServiceDeps, vaultServiceSlug, type ServiceDeps } from "../surface/service-probe";
+import { acquireOperationalWriterLease } from "../operational-state/writer-barrier";
+import { activateLaunchAgent } from "../platform/launchd";
+import { resolveServiceDeps, serviceLabelForVault, vaultServiceSlug, type ServiceDeps } from "../surface/service-probe";
+import { readServeHeartbeatStatus } from "../engine/host/compiler-host-heartbeat";
 import { homeInstallationPaths, readHomeInstallation, type HomeInstallationDeps } from "./home-installation";
+import { isHomePairingReadiness } from "./home-readiness";
 
 export const HOME_LIFECYCLE_SUSPENSION_SCHEMA =
   "dome.home-lifecycle-suspension/v1" as const;
@@ -31,6 +38,9 @@ const JOURNAL_TABLE = "home_lifecycle_suspension";
 const OWNERSHIP_TABLE = "home_lifecycle_suspension_ownership";
 const JOURNAL_NAME = "home-lifecycle-suspension.db";
 const OWNERSHIP_NAME = "home-lifecycle-suspension-ownership.db";
+const STORAGE_NAME = "home-lifecycle-suspension";
+const LAYOUT_NAME = "layout.json";
+const LAYOUT_SCHEMA = "dome.home-lifecycle-suspension-layout/v1" as const;
 const BUSY_SLICE_MS = 25;
 const OWNERSHIP_WAIT_MS = 30_000;
 const OPERATION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -38,7 +48,8 @@ const SHA256 = /^[a-f0-9]{64}$/;
 
 const OWNERSHIP_DDL = `CREATE TABLE ${OWNERSHIP_TABLE} (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-  schema TEXT NOT NULL CHECK (schema = '${OWNERSHIP_SCHEMA}')
+  schema TEXT NOT NULL CHECK (schema = '${OWNERSHIP_SCHEMA}'),
+  layout_state TEXT NOT NULL CHECK (layout_state IN ('initializing', 'ready'))
 ) STRICT`;
 
 const JOURNAL_DDL = `CREATE TABLE ${JOURNAL_TABLE} (
@@ -55,6 +66,12 @@ const JOURNAL_DDL = `CREATE TABLE ${JOURNAL_TABLE} (
   artifact_version TEXT NOT NULL,
   plist_path TEXT NOT NULL,
   plist_sha256 TEXT NOT NULL,
+  resume_installation_path TEXT NOT NULL,
+  resume_installation_sha256 TEXT NOT NULL,
+  resume_artifact_id TEXT NOT NULL,
+  resume_artifact_version TEXT NOT NULL,
+  resume_plist_path TEXT NOT NULL,
+  resume_plist_sha256 TEXT NOT NULL,
   requested_at TEXT NOT NULL,
   phase_changed_at TEXT NOT NULL,
   last_error TEXT
@@ -76,6 +93,12 @@ export type HomeLifecycleSuspension = {
   readonly artifactVersion: string;
   readonly plistPath: string;
   readonly plistSha256: string;
+  readonly resumeInstallationPath: string;
+  readonly resumeInstallationSha256: string;
+  readonly resumeArtifactId: string;
+  readonly resumeArtifactVersion: string;
+  readonly resumePlistPath: string;
+  readonly resumePlistSha256: string;
   readonly requestedAt: string;
   readonly phaseChangedAt: string;
   readonly lastError: string | null;
@@ -84,6 +107,7 @@ export type HomeLifecycleSuspension = {
 export type HomeLifecycleSuspensionInspection =
   | { readonly kind: "inactive" }
   | { readonly kind: "active"; readonly suspension: HomeLifecycleSuspension }
+  | { readonly kind: "unavailable"; readonly error: string }
   | { readonly kind: "invalid"; readonly error: string };
 
 export type HomeLifecycleMutationResult<T> =
@@ -114,6 +138,47 @@ export type HomeLifecycleSuspensionDeps = ServiceDeps & HomeInstallationDeps & {
   readonly readiness?: (() => Promise<boolean>) | undefined;
   readonly readinessTimeoutMs?: number | undefined;
   readonly now?: (() => Date) | undefined;
+  readonly legacyServeRunning?: (() => Promise<boolean>) | undefined;
+};
+
+export type HomeSuspensionRecoveryPolicy =
+  /** Abort/recover only: finish drain and resume without invoking work. */
+  | "resume-only"
+  /** Callback is idempotent and keyed by operationId; crash gap is at-least-once. */
+  | "retry-idempotent"
+  /** Same at-least-once gap, plus an external exact upgrade-journal authorizer. */
+  | "authorized-upgrade-continuation";
+
+export type HomeSuspensionInvocation =
+  | {
+      readonly mode: "new";
+      readonly vaultPath: string;
+      readonly purpose: HomeSuspensionPurpose;
+      readonly operationId?: string | undefined;
+    }
+  | {
+      readonly mode: "recover";
+      readonly vaultPath: string;
+      readonly purpose: HomeSuspensionPurpose;
+      readonly operationId: string;
+      readonly policy: HomeSuspensionRecoveryPolicy;
+      /** Required external upgrade-journal authorization; this Module cannot infer it. */
+      readonly authorizeContinuation?: ((active: HomeLifecycleSuspension) => Promise<HomeResumeAuthorization>) | undefined;
+    };
+
+export type HomeResumeAuthorization = {
+  readonly operationId: string;
+  readonly artifactId: string;
+  readonly artifactVersion: string;
+  readonly installationSha256: string;
+  readonly plistSha256: string;
+};
+
+export type HomeSuspensionOperationContext = {
+  readonly operationId: string;
+  readonly purpose: HomeSuspensionPurpose;
+  /** Durably seal the currently selected Home as the only resume target. */
+  readonly authorizeCurrentHomeForResume: () => Promise<void>;
 };
 
 type JournalRow = {
@@ -130,6 +195,12 @@ type JournalRow = {
   readonly artifact_version: string;
   readonly plist_path: string;
   readonly plist_sha256: string;
+  readonly resume_installation_path: string;
+  readonly resume_installation_sha256: string;
+  readonly resume_artifact_id: string;
+  readonly resume_artifact_version: string;
+  readonly resume_plist_path: string;
+  readonly resume_plist_sha256: string;
   readonly requested_at: string;
   readonly phase_changed_at: string;
   readonly last_error: string | null;
@@ -140,7 +211,7 @@ type Evidence = Pick<HomeLifecycleSuspension,
   "artifactVersion" | "plistPath" | "plistSha256">;
 
 export function homeLifecycleCoordinatorPath(vaultPath: string): string {
-  return join(canonicalVault(vaultPath), ".dome", "state", "locks", JOURNAL_NAME);
+  return coordinatorPaths(canonicalVault(vaultPath)).journal;
 }
 
 /** Read-only diagnosis. Partial, corrupt, redirected, or foreign state is invalid. */
@@ -151,28 +222,48 @@ export async function inspectHomeLifecycleSuspension(
   try { vault = await realpath(resolve(vaultPath)); }
   catch (error) { return Object.freeze({ kind: "invalid", error: message(error) }); }
   const paths = coordinatorPaths(vault);
-  const journalExists = existsSync(paths.journal);
-  const ownershipExists = existsSync(paths.ownership);
-  if (!journalExists && !ownershipExists) return Object.freeze({ kind: "inactive" });
-  if (!journalExists || !ownershipExists) {
-    return Object.freeze({ kind: "invalid", error: "Home lifecycle suspension coordinator layout is incomplete" });
-  }
+  if (!existsSync(paths.root)) return Object.freeze({ kind: "inactive" });
   try {
-    validateExistingCoordinatorFile(paths.journal, "journal");
-    validateExistingCoordinatorFile(paths.ownership, "ownership");
-    const ownership = openEstablished(paths.ownership, OWNERSHIP_DDL, validateOwnershipRow);
-    const journal = openEstablished(paths.journal, JOURNAL_DDL, () => {});
-    try {
-      validateOwnershipRow(ownership);
-      const active = readActive(journal, vault);
-      return active === null
-        ? Object.freeze({ kind: "inactive" as const })
-        : Object.freeze({ kind: "active" as const, suspension: active });
-    } finally {
-      journal.close();
-      ownership.close();
+    validateDirectPrivateDirectory(paths.root);
+    const marker = readLayoutMarker(paths.layout);
+    if (marker.state === "initializing") {
+      return Object.freeze({ kind: "unavailable", error: "Home lifecycle coordinator initialization is incomplete" });
     }
   } catch (error) {
+    return Object.freeze({ kind: "invalid", error: message(error) });
+  }
+  const journalExists = existsSync(paths.journal);
+  const ownershipExists = existsSync(paths.ownership);
+  if (!journalExists && !ownershipExists) {
+    return Object.freeze({ kind: "invalid", error: "Home lifecycle coordinator databases are missing from a ready layout" });
+  }
+  if (!ownershipExists) {
+    return Object.freeze({ kind: "invalid", error: "Home lifecycle ownership coordinator is missing from an established layout" });
+  }
+  try {
+    validateExistingCoordinatorFile(paths.ownership, "ownership");
+    const ownership = await openEstablishedForInspection(paths.ownership, OWNERSHIP_DDL, validateOwnershipRow);
+    try {
+      const layout = readOwnershipLayout(ownership);
+      if (layout === "initializing") {
+        return Object.freeze({ kind: "unavailable", error: "Home lifecycle coordinator initialization is incomplete" });
+      }
+      if (!journalExists) {
+        return Object.freeze({ kind: "invalid", error: "Home lifecycle journal coordinator is missing from a ready layout" });
+      }
+      validateExistingCoordinatorFile(paths.journal, "journal");
+      const journal = await openEstablishedForInspection(paths.journal, JOURNAL_DDL, () => {});
+      try {
+        const active = readActive(journal, vault);
+        return active === null
+          ? Object.freeze({ kind: "inactive" as const })
+          : Object.freeze({ kind: "active" as const, suspension: active });
+      } finally { journal.close(); }
+    } finally { ownership.close(); }
+  } catch (error) {
+    if (isBusy(error)) {
+      return Object.freeze({ kind: "unavailable", error: "Home lifecycle coordinator is busy" });
+    }
     return Object.freeze({ kind: "invalid", error: message(error) });
   }
 }
@@ -216,18 +307,20 @@ export async function withHomeLifecycleMutation<T>(
  * Bracket a quiesced operation. Durable phase transitions use the journal
  * connection while Tx2 holds the ownership database's kernel writer lock.
  */
-export async function withSupervisedHomeSuspended<T>(input: {
-  readonly vaultPath: string;
-  readonly purpose: HomeSuspensionPurpose;
-  readonly operationId?: string | undefined;
-  readonly recoverExisting?: boolean | undefined;
-}, operation: () => Promise<T>, deps: HomeLifecycleSuspensionDeps = {}): Promise<SupervisedHomeSuspensionResult<T>> {
+export async function withSupervisedHomeSuspended<T>(
+  input: HomeSuspensionInvocation,
+  operation: (context: HomeSuspensionOperationContext) => Promise<T>,
+  deps: HomeLifecycleSuspensionDeps = {},
+): Promise<SupervisedHomeSuspensionResult<T>> {
   const vault = await realpath(resolve(input.vaultPath));
-  const requestedOperationId = input.operationId ?? randomUUID();
+  const requestedOperationId = input.mode === "new"
+    ? input.operationId ?? randomUUID()
+    : input.operationId;
   assertOperationId(requestedOperationId);
-  if (input.purpose === "upgrade" && input.operationId === undefined) {
+  if (input.mode === "new" && input.purpose === "upgrade" && input.operationId === undefined) {
     throw new Error("upgrade suspension requires an explicit operation id");
   }
+  validateRecoveryInvocation(input);
   const service = resolveServiceDeps(deps);
   if (service.platform !== "darwin" || service.uid === null) {
     throw new Error("supervised Home suspension requires macOS launchd");
@@ -245,6 +338,7 @@ export async function withSupervisedHomeSuspended<T>(input: {
     if (existing === null) {
       const evidence = await captureEvidence(vault, service.launchAgentsDir, deps);
       const priorLoaded = await isLoaded(service.launchctl, target);
+      await assertNoCompetingHost(vault, priorLoaded, service, deps);
       const now = exactTimestamp((deps.now ?? (() => new Date()))());
       active = Object.freeze({
         schema: HOME_LIFECYCLE_SUSPENSION_SCHEMA,
@@ -254,21 +348,39 @@ export async function withSupervisedHomeSuspended<T>(input: {
         vault,
         priorLoaded,
         ...evidence,
+        ...resumeEvidenceFields(evidence),
         requestedAt: now,
         phaseChangedAt: now,
         lastError: null,
       });
       writeJournal(pair.journal, () => insertActive(pair.journal, active));
     } else {
-      if (!input.recoverExisting) {
+      if (input.mode !== "recover") {
         throw new Error(`Home lifecycle is suspended by ${existing.purpose}:${existing.operationId}`);
       }
-      validateRecoveryOwner(existing, input.purpose, requestedOperationId);
-      const evidence = await captureEvidence(vault, service.launchAgentsDir, deps);
-      if (!sameEvidence(existing, evidence)) {
-        throw new Error("Home installation or plist evidence changed since suspension");
+      validateRecoveryOwner(existing, input);
+      let recoveredActive = existing;
+      if (input.policy === "authorized-upgrade-continuation" && existing.phase !== "resuming") {
+        const authorization = await input.authorizeContinuation!(existing);
+        validateResumeAuthorization(existing, authorization);
+        const evidence = await captureEvidence(vault, service.launchAgentsDir, deps);
+        if (!authorizationMatches(authorization, evidence)) {
+          throw new Error("current Home evidence does not match the externally authorized upgrade target");
+        }
+        if (!recoveryEvidenceMatches(existing, evidence)) {
+          recoveredActive = authorizeResumeEvidence(pair.journal, existing, evidence);
+        }
+      } else {
+        const evidence = await captureEvidence(vault, service.launchAgentsDir, deps);
+        if (!recoveryEvidenceMatches(existing, evidence)) {
+          throw new Error("Home installation or plist evidence changed since suspension");
+        }
       }
-      active = existing;
+      if (recoveredActive.phase !== "resuming") {
+        const currentlyLoaded = await isLoaded(service.launchctl, target);
+        await assertNoCompetingHost(vault, currentlyLoaded, service, deps);
+      }
+      active = recoveredActive;
       recovered = true;
     }
     pair.ownership.run("COMMIT");
@@ -286,6 +398,7 @@ export async function withSupervisedHomeSuspended<T>(input: {
       service,
       deps,
       operation,
+      recoveryPolicy: input.mode === "recover" ? input.policy : null,
     });
     pair.ownership.run("COMMIT");
 
@@ -315,7 +428,8 @@ async function runOwnedSuspension<T>(input: {
   readonly target: string;
   readonly service: ReturnType<typeof resolveServiceDeps>;
   readonly deps: HomeLifecycleSuspensionDeps;
-  readonly operation: () => Promise<T>;
+  readonly operation: (context: HomeSuspensionOperationContext) => Promise<T>;
+  readonly recoveryPolicy: HomeSuspensionRecoveryPolicy | null;
 }): Promise<{ readonly result: SupervisedHomeSuspensionResult<T>; readonly operationError: unknown | null }> {
   let active = input.active;
   let operationRan = false;
@@ -331,12 +445,7 @@ async function runOwnedSuspension<T>(input: {
         return { result: failed(active, input.recovered, false, error), operationError };
       }
     }
-    const drained = await waitForLaunchAgentDrain({
-      launchctl: input.service.launchctl,
-      uid: input.service.uid!,
-      label: input.label,
-      timeoutMs: input.service.drainTimeoutMs,
-    });
+    const drained = await waitForStrictLaunchAgentDrain(input.service.launchctl, input.target, input.service.drainTimeoutMs);
     if (!drained) {
       const error = "Dome Home did not stop before the launchd drain timeout";
       persistError(input.pair.journal, active.operationId, error);
@@ -346,50 +455,88 @@ async function runOwnedSuspension<T>(input: {
       active = transition(input.pair.journal, active, "suspended", null, input.deps);
     }
     const evidence = await captureEvidence(active.vault, input.service.launchAgentsDir, input.deps);
-    if (!sameEvidence(active, evidence)) {
+    if (!recoveryEvidenceMatches(active, evidence)) {
       const error = "Home installation or plist evidence changed while suspended";
       persistError(input.pair.journal, active.operationId, error);
       return { result: failed(active, input.recovered, false, error), operationError };
     }
-    operationRan = true;
-    try { value = await input.operation(); }
-    catch (error) { operationError = error; }
-    try {
-      active = transition(input.pair.journal, active, "resuming", operationError === null ? null : message(operationError), input.deps);
-    } catch (transitionError) {
-      if (operationError !== null) {
-        throw new AggregateError(
-          [operationError, transitionError],
-          "suspended operation failed and its resuming phase could not be persisted",
-        );
-      }
-      throw transitionError;
+    if (input.recoveryPolicy !== "resume-only") {
+      operationRan = true;
+      const context: HomeSuspensionOperationContext = Object.freeze({
+        operationId: active.operationId,
+        purpose: active.purpose,
+        authorizeCurrentHomeForResume: async () => {
+          if (active.purpose !== "upgrade") throw new Error("only an upgrade may authorize changed Home resume evidence");
+          const authorized = await captureEvidence(active.vault, input.service.launchAgentsDir, input.deps);
+          active = authorizeResumeEvidence(input.pair.journal, active, authorized);
+        },
+      });
+      try { value = await input.operation(context); }
+      catch (error) { operationError = error; }
     }
   }
 
-  let result: SupervisedHomeSuspensionResult<T>;
-  try {
-    result = await resumeOwned<T>({
-      active,
-      recovered: input.recovered,
-      operationRan,
-      value,
-      service: input.service,
-      label: input.label,
-      target: input.target,
-      journal: input.pair.journal,
-      deps: input.deps,
-    });
-  } catch (resumeError) {
-    const detail = `Dome Home resume failed: ${message(resumeError)}`;
-    persistError(input.pair.journal, active.operationId, detail);
-    result = Object.freeze({
-      ...resultBase(active, input.recovered, operationRan, value),
-      kind: "failed" as const,
-      error: detail,
-    });
+  const admission = await acquireOperationalWriterLease({
+    vaultPath: active.vault,
+    command: "home-lifecycle-resume",
+  });
+  if (!admission.ok) {
+    if (active.phase === "resuming") {
+      active = transition(input.pair.journal, active, "suspended", "operational write admission closed before resume", input.deps);
+    }
+    const base = resultBase(active, input.recovered, operationRan, value);
+    const result: SupervisedHomeSuspensionResult<T> = admission.error.kind === "write-admission-closed"
+      ? Object.freeze({ ...base, kind: "deferred" as const, reason: "write-barrier-closed" as const, transactionId: admission.error.transactionId })
+      : Object.freeze({ ...base, kind: "failed" as const, error: `cannot acquire resume admission: ${admission.error.cause}` });
+    persistError(input.pair.journal, active.operationId, resultFailure(result));
+    return { result, operationError };
   }
-  return { result, operationError };
+
+  try {
+    if (active.phase !== "resuming") {
+      const evidence = await captureEvidence(active.vault, input.service.launchAgentsDir, input.deps);
+      if (!sameResumeEvidence(active, evidence)) {
+        const error = "Home selector or plist is not the authorized resume target";
+        persistError(input.pair.journal, active.operationId, error);
+        return { result: failed(active, input.recovered, operationRan, error), operationError };
+      }
+      try {
+        active = transition(input.pair.journal, active, "resuming", operationError === null ? null : message(operationError), input.deps);
+      } catch (transitionError) {
+        if (operationError !== null) {
+          throw new AggregateError(
+            [operationError, transitionError],
+            "suspended operation failed and its resuming phase could not be persisted",
+          );
+        }
+        throw transitionError;
+      }
+    }
+
+    let result: SupervisedHomeSuspensionResult<T>;
+    try {
+      result = await resumeOwned<T>({
+        active,
+        recovered: input.recovered,
+        operationRan,
+        value,
+        service: input.service,
+        label: input.label,
+        target: input.target,
+        journal: input.pair.journal,
+        deps: input.deps,
+      });
+    } catch (resumeError) {
+      const detail = `Dome Home resume failed: ${message(resumeError)}`;
+      persistError(input.pair.journal, active.operationId, detail);
+      result = Object.freeze({
+        ...resultBase(active, input.recovered, operationRan, value),
+        kind: "failed" as const,
+        error: detail,
+      });
+    }
+    return { result, operationError };
+  } finally { admission.lease.close(); }
 }
 
 async function resumeOwned<T>(input: {
@@ -409,19 +556,6 @@ async function resumeOwned<T>(input: {
     return Object.freeze({ ...base, kind: "not-required" as const });
   }
 
-  let admission;
-  try { admission = await inspectOperationalWriterBarrier(input.active.vault); }
-  catch (error) {
-    const detail = `cannot inspect operational write admission: ${message(error)}`;
-    persistError(input.journal, input.active.operationId, detail);
-    return Object.freeze({ ...base, kind: "failed" as const, error: detail });
-  }
-  if (admission.blocked) {
-    const transactionId = admission.transactionId ?? "unknown";
-    persistError(input.journal, input.active.operationId, `operational write admission is closed by ${transactionId}`);
-    return Object.freeze({ ...base, kind: "deferred" as const, reason: "write-barrier-closed" as const, transactionId });
-  }
-
   let evidence: Evidence;
   try { evidence = await captureEvidence(input.active.vault, input.service.launchAgentsDir, input.deps); }
   catch (error) {
@@ -429,7 +563,7 @@ async function resumeOwned<T>(input: {
     persistError(input.journal, input.active.operationId, detail);
     return Object.freeze({ ...base, kind: "failed" as const, error: detail });
   }
-  if (!sameEvidence(input.active, evidence)) {
+  if (!sameResumeEvidence(input.active, evidence)) {
     const error = "Home installation or plist evidence changed while suspended";
     persistError(input.journal, input.active.operationId, error);
     return Object.freeze({ ...base, kind: "failed" as const, error });
@@ -440,7 +574,7 @@ async function resumeOwned<T>(input: {
       launchctl: input.service.launchctl,
       uid: input.service.uid!,
       label: input.label,
-      plistPath: input.active.plistPath,
+      plistPath: input.active.resumePlistPath,
     });
     if (activation !== null) {
       persistError(input.journal, input.active.operationId, activation);
@@ -479,12 +613,55 @@ type CoordinatorPair = { readonly ownership: Database; readonly journal: Databas
 
 async function openCoordinatorPair(vault: string): Promise<CoordinatorPair> {
   const paths = coordinatorPaths(vault);
-  ensureCoordinatorLayout(vault);
-  const ownership = await openOrInitialize(paths.ownership, OWNERSHIP_DDL, (db) => {
-    db.query(`INSERT INTO ${OWNERSHIP_TABLE} (singleton, schema) VALUES (1, ?)`).run(OWNERSHIP_SCHEMA);
+  await ensureCoordinatorLayout(vault);
+  const marker = readLayoutMarker(paths.layout);
+  const ownershipPresent = existsSync(paths.ownership);
+  const journalPresent = existsSync(paths.journal);
+  if (marker.state === "ready" && (!ownershipPresent || !journalPresent)) {
+    throw new Error("Home lifecycle coordinator database is missing from a ready layout");
+  }
+  if (!ownershipPresent && journalPresent) {
+    throw new Error("Home lifecycle ownership coordinator is missing from an established layout");
+  }
+  if (ownershipPresent && journalPresent && lstatSync(paths.ownership).size === 0) {
+    throw new Error("Home lifecycle ownership coordinator is empty beside an established journal");
+  }
+
+  const ownership = marker.state === "ready"
+    ? openEstablishedWritable(paths.ownership, OWNERSHIP_DDL, validateOwnershipRow)
+    : await openOrInitialize(paths.ownership, OWNERSHIP_DDL, (db) => {
+    db.query(`INSERT INTO ${OWNERSHIP_TABLE} (singleton, schema, layout_state) VALUES (1, ?, 'initializing')`).run(OWNERSHIP_SCHEMA);
   }, validateOwnershipRow);
   try {
-    const journal = await openOrInitialize(paths.journal, JOURNAL_DDL, () => {}, () => {});
+    const layout = readOwnershipLayout(ownership);
+    if (marker.state === "ready" && layout !== "ready") {
+      throw new Error("Home lifecycle layout marker and ownership state disagree");
+    }
+    let journal: Database;
+    if (layout === "ready") {
+      if (!existsSync(paths.journal)) {
+        throw new Error("Home lifecycle journal coordinator is missing from a ready layout");
+      }
+      journal = openEstablishedWritable(paths.journal, JOURNAL_DDL, () => {});
+    } else {
+      journal = await openOrInitialize(paths.journal, JOURNAL_DDL, () => {}, () => {});
+      await beginImmediate(ownership);
+      try {
+        if (readOwnershipLayout(ownership) === "initializing") {
+          if (ownership.query(
+            `UPDATE ${OWNERSHIP_TABLE} SET layout_state = 'ready'
+             WHERE singleton = 1 AND layout_state = 'initializing'`,
+          ).run().changes !== 1) throw new Error("Home lifecycle coordinator layout changed during publication");
+        }
+        ownership.run("COMMIT");
+      } catch (error) {
+        rollback(ownership);
+        journal.close();
+        throw error;
+      }
+    }
+    validateOwnershipRow(ownership);
+    if (marker.state === "initializing") publishLayoutMarker(paths.layout, "ready");
     return Object.freeze({ ownership, journal });
   } catch (error) {
     ownership.close();
@@ -497,21 +674,45 @@ function closePair(pair: CoordinatorPair): void {
   pair.ownership.close();
 }
 
-function coordinatorPaths(vault: string): { readonly journal: string; readonly ownership: string } {
+function coordinatorPaths(vault: string): { readonly root: string; readonly layout: string; readonly journal: string; readonly ownership: string } {
   const locks = join(vault, ".dome", "state", "locks");
-  return Object.freeze({ journal: join(locks, JOURNAL_NAME), ownership: join(locks, OWNERSHIP_NAME) });
+  const root = join(locks, STORAGE_NAME);
+  return Object.freeze({ root, layout: join(root, LAYOUT_NAME), journal: join(root, JOURNAL_NAME), ownership: join(root, OWNERSHIP_NAME) });
 }
 
-function ensureCoordinatorLayout(vault: string): void {
+async function ensureCoordinatorLayout(vault: string): Promise<void> {
   const dome = join(vault, ".dome");
   const state = join(dome, "state");
   const locks = join(state, "locks");
   ensureDirectDirectory(dome, false);
   ensureDirectDirectory(state, false);
   ensureDirectDirectory(locks, true);
+  const paths = coordinatorPaths(vault);
+  if (!existsSync(paths.root)) publishInitialStorageRoot(paths.root, locks);
+  validateDirectPrivateDirectory(paths.root);
+  if (!existsSync(paths.layout)) {
+    throw new Error("Home lifecycle suspension layout marker is missing from an established directory");
+  }
 }
 
-function ensureDirectDirectory(path: string, privateDirectory: boolean): void {
+function publishInitialStorageRoot(root: string, parent: string): void {
+  const staging = join(parent, `.${STORAGE_NAME}.init-${process.pid}-${randomUUID()}`);
+  mkdirSync(staging, { mode: 0o700 });
+  try {
+    publishLayoutMarker(join(staging, LAYOUT_NAME), "initializing", true);
+    fsyncPath(staging);
+    try {
+      renameSync(staging, root);
+      fsyncPath(parent);
+    } catch (error) {
+      if (!hasCode(error, "EEXIST") && !hasCode(error, "ENOTEMPTY")) throw error;
+    }
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+}
+
+function ensureDirectDirectory(path: string, privateDirectory: boolean): boolean {
   let created = false;
   try { mkdirSync(path, { mode: privateDirectory ? 0o700 : 0o755 }); created = true; }
   catch (error) { if (!hasCode(error, "EEXIST")) throw error; }
@@ -526,6 +727,55 @@ function ensureDirectDirectory(path: string, privateDirectory: boolean): void {
   if (created) {
     fsyncPath(path);
     fsyncPath(dirname(path));
+  }
+  return created;
+}
+
+function validateDirectPrivateDirectory(path: string): void {
+  const info = lstatSync(path);
+  if (!info.isDirectory() || info.isSymbolicLink() || realpathSync(path) !== resolve(path) || (info.mode & 0o077) !== 0) {
+    throw new Error(`Home lifecycle suspension directory is not direct and private: ${path}`);
+  }
+}
+
+function readLayoutMarker(path: string): { readonly schema: typeof LAYOUT_SCHEMA; readonly state: "initializing" | "ready" } {
+  validateExistingCoordinatorFile(path, "layout marker");
+  let value: unknown;
+  try { value = JSON.parse(readFileSync(path, "utf8")); }
+  catch { throw new Error("Home lifecycle suspension layout marker is invalid"); }
+  if (typeof value !== "object" || value === null || Array.isArray(value) ||
+    JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(["schema", "state"]) ||
+    (value as { schema?: unknown }).schema !== LAYOUT_SCHEMA ||
+    ((value as { state?: unknown }).state !== "initializing" && (value as { state?: unknown }).state !== "ready")) {
+    throw new Error("Home lifecycle suspension layout marker has unknown or invalid fields");
+  }
+  return Object.freeze(value as { schema: typeof LAYOUT_SCHEMA; state: "initializing" | "ready" });
+}
+
+function publishLayoutMarker(path: string, state: "initializing" | "ready", exclusive = false): void {
+  const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`;
+  const bytes = `${JSON.stringify({ schema: LAYOUT_SCHEMA, state })}\n`;
+  const flags = constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | noFollowFlag();
+  const fd = openSync(temporary, flags, 0o600);
+  try {
+    writeFileSync(fd, bytes);
+    fsyncSync(fd);
+  } finally { closeSync(fd); }
+  try {
+    if (exclusive) {
+      const markerFd = openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | noFollowFlag(), 0o600);
+      try {
+        writeFileSync(markerFd, bytes);
+        fsyncSync(markerFd);
+      } finally { closeSync(markerFd); }
+      unlinkSync(temporary);
+    } else {
+      renameSync(temporary, path);
+    }
+    fsyncPath(dirname(path));
+  } catch (error) {
+    try { unlinkSync(temporary); } catch {}
+    throw error;
   }
 }
 
@@ -583,8 +833,14 @@ function openOrInitializeOnce(path: string, ddl: string, seed: (db: Database) =>
 }
 
 function openEstablished(path: string, ddl: string, validateRows: (db: Database) => void): Database {
+  validateExistingCoordinatorFile(path, "coordinator");
+  const before = lstatSync(path);
   const db = new Database(path, { readonly: true, create: false });
   try {
+    const after = lstatSync(path);
+    if (before.dev !== after.dev || before.ino !== after.ino) {
+      throw new Error("Home lifecycle coordinator changed while opening");
+    }
     configureConnection(db, false);
     validateDatabase(db, ddl);
     validateRows(db);
@@ -592,6 +848,36 @@ function openEstablished(path: string, ddl: string, validateRows: (db: Database)
   } catch (error) {
     db.close();
     throw error;
+  }
+}
+
+function openEstablishedWritable(path: string, ddl: string, validateRows: (db: Database) => void): Database {
+  validateExistingCoordinatorFile(path, "coordinator");
+  const before = lstatSync(path);
+  const db = new Database(path, { readwrite: true, create: false });
+  try {
+    const after = lstatSync(path);
+    if (before.dev !== after.dev || before.ino !== after.ino) {
+      throw new Error("Home lifecycle coordinator changed while opening");
+    }
+    configureConnection(db, false);
+    validateDatabase(db, ddl);
+    validateRows(db);
+    return db;
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+}
+
+async function openEstablishedForInspection(path: string, ddl: string, validateRows: (db: Database) => void): Promise<Database> {
+  const started = Date.now();
+  for (;;) {
+    try { return openEstablished(path, ddl, validateRows); }
+    catch (error) {
+      if (!isBusy(error) || Date.now() - started >= 1_000) throw error;
+      await Bun.sleep(10);
+    }
   }
 }
 
@@ -631,11 +917,18 @@ function readSchema(db: Database): ReadonlyArray<{ readonly type: string; readon
   ).all();
 }
 
-function validateOwnershipRow(db: Database): void {
-  const rows = db.query<{ singleton: number; schema: string }, []>(`SELECT singleton, schema FROM ${OWNERSHIP_TABLE}`).all();
-  if (rows.length !== 1 || rows[0]?.singleton !== 1 || rows[0]?.schema !== OWNERSHIP_SCHEMA) {
+function validateOwnershipRow(db: Database): void { readOwnershipLayout(db); }
+
+function readOwnershipLayout(db: Database): "initializing" | "ready" {
+  const rows = db.query<{ singleton: number; schema: string; layout_state: string }, []>(
+    `SELECT singleton, schema, layout_state FROM ${OWNERSHIP_TABLE}`,
+  ).all();
+  const row = rows[0];
+  if (rows.length !== 1 || row?.singleton !== 1 || row.schema !== OWNERSHIP_SCHEMA ||
+    (row.layout_state !== "initializing" && row.layout_state !== "ready")) {
     throw new Error("Home lifecycle ownership singleton is invalid");
   }
+  return row.layout_state;
 }
 
 function readActive(db: Database, vault: string): HomeLifecycleSuspension | null {
@@ -649,7 +942,10 @@ function readActive(db: Database, vault: string): HomeLifecycleSuspension | null
     (row.prior_loaded !== 0 && row.prior_loaded !== 1) ||
     !absoluteDirectEvidencePath(row.installation_path) || !absoluteDirectEvidencePath(row.plist_path) ||
     !SHA256.test(row.installation_sha256) || !SHA256.test(row.artifact_id) || !SHA256.test(row.plist_sha256) ||
+    !absoluteDirectEvidencePath(row.resume_installation_path) || !absoluteDirectEvidencePath(row.resume_plist_path) ||
+    !SHA256.test(row.resume_installation_sha256) || !SHA256.test(row.resume_artifact_id) || !SHA256.test(row.resume_plist_sha256) ||
     row.artifact_version.length === 0 || row.artifact_version.length > 1024 ||
+    row.resume_artifact_version.length === 0 || row.resume_artifact_version.length > 1024 ||
     !isExactTimestamp(row.requested_at) || !isExactTimestamp(row.phase_changed_at) ||
     (row.last_error !== null && (row.last_error.length === 0 || row.last_error.length > 4096))) {
     throw new Error("Home lifecycle suspension active row is invalid");
@@ -667,6 +963,12 @@ function readActive(db: Database, vault: string): HomeLifecycleSuspension | null
     artifactVersion: row.artifact_version,
     plistPath: row.plist_path,
     plistSha256: row.plist_sha256,
+    resumeInstallationPath: row.resume_installation_path,
+    resumeInstallationSha256: row.resume_installation_sha256,
+    resumeArtifactId: row.resume_artifact_id,
+    resumeArtifactVersion: row.resume_artifact_version,
+    resumePlistPath: row.resume_plist_path,
+    resumePlistSha256: row.resume_plist_sha256,
     requestedAt: row.requested_at,
     phaseChangedAt: row.phase_changed_at,
     lastError: row.last_error,
@@ -677,11 +979,15 @@ function insertActive(db: Database, row: HomeLifecycleSuspension): void {
   db.query(`INSERT INTO ${JOURNAL_TABLE} (
     singleton, schema, phase, purpose, operation_id, vault, prior_loaded,
     installation_path, installation_sha256, artifact_id, artifact_version,
-    plist_path, plist_sha256, requested_at, phase_changed_at, last_error
-  ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    plist_path, plist_sha256, resume_installation_path, resume_installation_sha256,
+    resume_artifact_id, resume_artifact_version, resume_plist_path, resume_plist_sha256,
+    requested_at, phase_changed_at, last_error
+  ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     row.schema, row.phase, row.purpose, row.operationId, row.vault,
     row.priorLoaded ? 1 : 0, row.installationPath, row.installationSha256,
     row.artifactId, row.artifactVersion, row.plistPath, row.plistSha256,
+    row.resumeInstallationPath, row.resumeInstallationSha256, row.resumeArtifactId,
+    row.resumeArtifactVersion, row.resumePlistPath, row.resumePlistSha256,
     row.requestedAt, row.phaseChangedAt, row.lastError,
   );
 }
@@ -728,17 +1034,44 @@ function writeJournal(db: Database, operation: () => void): void {
 
 function requireSameActive(db: Database, vault: string, expected: HomeLifecycleSuspension): HomeLifecycleSuspension {
   const current = readActive(db, vault);
-  if (current === null || current.operationId !== expected.operationId || current.purpose !== expected.purpose || !sameEvidence(current, expected)) {
+  if (current === null || current.operationId !== expected.operationId || current.purpose !== expected.purpose ||
+    !sameEvidence(current, expected) || !sameResumeEvidence(current, resumeEvidence(expected))) {
     throw new Error("Home lifecycle suspension ownership changed before Tx2");
   }
   return current;
 }
 
-function validateRecoveryOwner(active: HomeLifecycleSuspension, purpose: HomeSuspensionPurpose, requestedOperationId: string): void {
-  if (active.purpose !== purpose) throw new Error(`Home lifecycle is suspended by ${active.purpose}:${active.operationId}`);
-  if (purpose === "upgrade" && active.operationId !== requestedOperationId) {
-    throw new Error(`upgrade suspension belongs to operation ${active.operationId}`);
+function validateRecoveryInvocation(input: HomeSuspensionInvocation): void {
+  if (input.mode !== "recover") return;
+  if (input.policy === "authorized-upgrade-continuation") {
+    if (input.purpose !== "upgrade" || input.authorizeContinuation === undefined) {
+      throw new Error("authorized upgrade continuation requires upgrade purpose and an external authorizer");
+    }
+  } else if (input.authorizeContinuation !== undefined) {
+    throw new Error("only authorized upgrade continuation accepts an external authorizer");
   }
+}
+
+function validateRecoveryOwner(active: HomeLifecycleSuspension, input: Extract<HomeSuspensionInvocation, { mode: "recover" }>): void {
+  if (active.purpose !== input.purpose) throw new Error(`Home lifecycle is suspended by ${active.purpose}:${active.operationId}`);
+  if (active.operationId !== input.operationId) {
+    throw new Error(`Home lifecycle suspension belongs to operation ${active.operationId}`);
+  }
+}
+
+function validateResumeAuthorization(active: HomeLifecycleSuspension, authorization: HomeResumeAuthorization): void {
+  if (authorization.operationId !== active.operationId || !SHA256.test(authorization.artifactId) ||
+    authorization.artifactVersion.length === 0 || authorization.artifactVersion.length > 1024 ||
+    !SHA256.test(authorization.installationSha256) || !SHA256.test(authorization.plistSha256)) {
+    throw new Error("external upgrade resume authorization is invalid or belongs to another operation");
+  }
+}
+
+function authorizationMatches(authorization: HomeResumeAuthorization, evidence: Evidence): boolean {
+  return authorization.artifactId === evidence.artifactId &&
+    authorization.artifactVersion === evidence.artifactVersion &&
+    authorization.installationSha256 === evidence.installationSha256 &&
+    authorization.plistSha256 === evidence.plistSha256;
 }
 
 async function captureEvidence(vault: string, launchAgentsDir: string, deps: HomeInstallationDeps): Promise<Evidence> {
@@ -775,30 +1108,112 @@ function sameEvidence(left: Evidence, right: Evidence): boolean {
     left.plistSha256 === right.plistSha256;
 }
 
+function resumeEvidenceFields(evidence: Evidence): Pick<HomeLifecycleSuspension,
+  "resumeInstallationPath" | "resumeInstallationSha256" | "resumeArtifactId" |
+  "resumeArtifactVersion" | "resumePlistPath" | "resumePlistSha256"> {
+  return Object.freeze({
+    resumeInstallationPath: evidence.installationPath,
+    resumeInstallationSha256: evidence.installationSha256,
+    resumeArtifactId: evidence.artifactId,
+    resumeArtifactVersion: evidence.artifactVersion,
+    resumePlistPath: evidence.plistPath,
+    resumePlistSha256: evidence.plistSha256,
+  });
+}
+
+function resumeEvidence(row: HomeLifecycleSuspension): Evidence {
+  return Object.freeze({
+    installationPath: row.resumeInstallationPath,
+    installationSha256: row.resumeInstallationSha256,
+    artifactId: row.resumeArtifactId,
+    artifactVersion: row.resumeArtifactVersion,
+    plistPath: row.resumePlistPath,
+    plistSha256: row.resumePlistSha256,
+  });
+}
+
+function sameResumeEvidence(row: HomeLifecycleSuspension, evidence: Evidence): boolean {
+  return sameEvidence(resumeEvidence(row), evidence);
+}
+
+function recoveryEvidenceMatches(row: HomeLifecycleSuspension, evidence: Evidence): boolean {
+  return sameEvidence(row, evidence) || sameResumeEvidence(row, evidence);
+}
+
+function authorizeResumeEvidence(db: Database, row: HomeLifecycleSuspension, evidence: Evidence): HomeLifecycleSuspension {
+  if (row.phase !== "suspended") throw new Error("resume evidence can be authorized only while suspended");
+  writeJournal(db, () => {
+    const changed = db.query(
+      `UPDATE ${JOURNAL_TABLE}
+       SET resume_installation_path = ?, resume_installation_sha256 = ?,
+           resume_artifact_id = ?, resume_artifact_version = ?,
+           resume_plist_path = ?, resume_plist_sha256 = ?
+       WHERE singleton = 1 AND operation_id = ? AND phase = 'suspended'`,
+    ).run(
+      evidence.installationPath, evidence.installationSha256, evidence.artifactId,
+      evidence.artifactVersion, evidence.plistPath, evidence.plistSha256, row.operationId,
+    ).changes;
+    if (changed !== 1) throw new Error("Home lifecycle suspension changed while authorizing resume evidence");
+  });
+  return Object.freeze({ ...row, ...resumeEvidenceFields(evidence) });
+}
+
 async function isLoaded(launchctl: ReturnType<typeof resolveServiceDeps>["launchctl"], target: string): Promise<boolean> {
-  return (await launchctl(["print", target])).exitCode === 0;
+  const result = await launchctl(["print", target]);
+  if (result.exitCode === 0) return true;
+  if (result.exitCode === 113) return false;
+  throw new Error(`launchctl print ${target} failed: ${launchctlDetail(result)}`);
+}
+
+async function waitForStrictLaunchAgentDrain(
+  launchctl: ReturnType<typeof resolveServiceDeps>["launchctl"],
+  target: string,
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (!await isLoaded(launchctl, target)) return true;
+    if (Date.now() >= deadline) return false;
+    await Bun.sleep(200);
+  }
+}
+
+async function assertNoCompetingHost(
+  vault: string,
+  homeLoaded: boolean,
+  service: ReturnType<typeof resolveServiceDeps>,
+  deps: HomeLifecycleSuspensionDeps,
+): Promise<void> {
+  const legacyLabel = serviceLabelForVault(vault);
+  const legacyPlist = join(service.launchAgentsDir, `${legacyLabel}.plist`);
+  const injectedLegacy = deps.legacyServeRunning === undefined ? null : await deps.legacyServeRunning();
+  const heartbeat = injectedLegacy === null ? await readServeHeartbeatStatus({ vaultPath: vault }) : null;
+  const legacyLoaded = await isLoaded(service.launchctl, `gui/${service.uid!}/${legacyLabel}`);
+  if (existsSync(legacyPlist) || injectedLegacy === true || heartbeat?.status === "running" || legacyLoaded) {
+    throw new Error("legacy dome serve is installed or running; stop it before suspending Dome Home");
+  }
+  if (!homeLoaded && await probeReadiness(deps)) {
+    throw new Error("a foreground Dome Home is pairing-ready outside launchd; stop it before suspension");
+  }
 }
 
 async function waitForReadiness(deps: HomeLifecycleSuspensionDeps): Promise<boolean> {
   const deadline = Date.now() + (deps.readinessTimeoutMs ?? 10_000);
   do {
     try {
-      if (deps.readiness !== undefined
-        ? await deps.readiness()
-        : await isStrictPairingReadiness(await fetch("http://127.0.0.1:3663/pair/status"))) return true;
+      if (await probeReadiness(deps)) return true;
     } catch { /* retry until bounded timeout */ }
     if (Date.now() >= deadline) return false;
     await Bun.sleep(200);
   } while (true);
 }
 
-async function isStrictPairingReadiness(response: Response): Promise<boolean> {
-  if (response.status !== 200) return false;
-  try {
-    const value = await response.json() as { readonly schema?: unknown; readonly available?: unknown; readonly paired?: unknown };
-    return value.schema === "dome.device.pairing/v1" && value.available === true && typeof value.paired === "boolean";
-  } catch { return false; }
+async function probeReadiness(deps: HomeLifecycleSuspensionDeps): Promise<boolean> {
+  return deps.readiness !== undefined
+    ? deps.readiness()
+    : isHomePairingReadiness(await fetch("http://127.0.0.1:3663/pair/status"));
 }
+
 
 function ensureCoordinatorFile(path: string): void {
   let created = false;

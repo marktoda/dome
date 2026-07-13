@@ -1,11 +1,14 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   engageOperationalWriterBarrier,
+  releaseOperationalWriterBarrier,
 } from "../../src/operational-state/writer-barrier";
 import { homeInstallationPaths } from "../../src/product-host/home-installation";
 import {
@@ -15,7 +18,11 @@ import {
   withSupervisedHomeSuspended,
   type HomeLifecycleSuspensionDeps,
   type HomeLifecycleSuspensionInspection,
+  type HomeLifecycleSuspension,
   type HomeSuspensionPhase,
+  type HomeSuspensionOperationContext,
+  type HomeResumeAuthorization,
+  type HomeSuspensionRecoveryPolicy,
 } from "../../src/product-host/home-lifecycle-suspension";
 import { vaultServiceSlug, type LaunchctlRunner } from "../../src/surface/service-probe";
 
@@ -111,7 +118,7 @@ describe("supervised Home lifecycle suspension", () => {
     if (active.kind === "active") expect(active.suspension.phase).toBe("resuming");
   });
 
-  test("closed operational admission defers restart and retains resuming truth", async () => {
+  test("closed operational admission defers restart and retains suspended truth", async () => {
     const f = await fixture(true);
     const result = await suspend(f, "upgrade-deferred", async () => {
       const engaged = await engageOperationalWriterBarrier({ vaultPath: f.vault, transactionId: "upgrade-deferred" });
@@ -122,7 +129,7 @@ describe("supervised Home lifecycle suspension", () => {
     expect(f.launchd.loaded.has(f.target)).toBeFalse();
     const active = await inspectHomeLifecycleSuspension(f.vault);
     expect(active.kind).toBe("active");
-    if (active.kind === "active") expect(active.suspension.phase).toBe("resuming");
+    if (active.kind === "active") expect(active.suspension.phase).toBe("suspended");
   });
 
   test("readiness failure keeps resuming evidence and recovery clears only after ready", async () => {
@@ -136,7 +143,7 @@ describe("supervised Home lifecycle suspension", () => {
 
     f.readiness = async () => f.launchd.loaded.has(f.target);
     let reran = false;
-    const recovered = await suspend(f, "different-backup-id", async () => { reran = true; }, "backup", true);
+    const recovered = await suspend(f, "backup-readiness", async () => { reran = true; }, "backup", "resume-only");
     expect(recovered).toMatchObject({ kind: "ready", recovered: true, operationRan: false });
     expect(reran).toBeFalse();
     active = await inspectHomeLifecycleSuspension(f.vault);
@@ -155,7 +162,7 @@ describe("supervised Home lifecycle suspension", () => {
       f.launchd.loaded.delete(f.target);
       f.launchd.runner = f.baseRunner;
       let runs = 0;
-      const recovered = await suspend(f, `recover-${phase}`, async () => { runs++; return phase; }, "backup", true);
+      const recovered = await suspend(f, `seed-${phase}`, async () => { runs++; return phase; }, "backup", "retry-idempotent");
       expect(recovered.kind).toBe("ready");
       expect(runs).toBe(phase === "resuming" ? 0 : 1);
       expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("inactive");
@@ -168,9 +175,144 @@ describe("supervised Home lifecycle suspension", () => {
       ? { exitCode: 5, stdout: "", stderr: "hold" }
       : f.baseRunner(args);
     expect((await suspend(f, "upgrade-exact", async () => {}, "upgrade")).kind).toBe("failed");
-    await expect(suspend(f, "upgrade-wrong", async () => {}, "upgrade", true)).rejects.toThrow("belongs to operation upgrade-exact");
+    await expect(suspend(f, "upgrade-wrong", async () => {}, "upgrade", "authorized-upgrade-continuation")).rejects.toThrow("belongs to operation upgrade-exact");
     f.launchd.runner = f.baseRunner;
-    expect((await suspend(f, "upgrade-exact", async () => {}, "upgrade", true)).kind).toBe("ready");
+    expect((await suspend(f, "upgrade-exact", async () => {}, "upgrade", "authorized-upgrade-continuation")).kind).toBe("ready");
+  });
+
+  test("backup recovery also requires the exact operation id", async () => {
+    const f = await fixture(true);
+    f.launchd.runner = async (args) => args[0] === "bootout"
+      ? { exitCode: 5, stdout: "", stderr: "hold" }
+      : f.baseRunner(args);
+    expect((await suspend(f, "backup-exact", async () => {})).kind).toBe("failed");
+    await expect(suspend(f, "backup-wrong", async () => {}, "backup", "retry-idempotent")).rejects.toThrow(
+      "belongs to operation backup-exact",
+    );
+  });
+
+  test("resume-only recovery skips callback from suspending and suspended phases", async () => {
+    for (const phase of ["suspending", "suspended"] as const) {
+      const f = await fixture(true);
+      f.launchd.runner = async (args) => args[0] === "bootout"
+        ? { exitCode: 5, stdout: "", stderr: "crash edge" }
+        : f.baseRunner(args);
+      expect((await suspend(f, `resume-only-${phase}`, async () => "never")).kind).toBe("failed");
+      await setPhase(f.vault, phase);
+      f.launchd.runner = f.baseRunner;
+      let ran = false;
+      const recovered = await suspend(f, `resume-only-${phase}`, async () => { ran = true; }, "backup", "resume-only");
+      expect(recovered).toMatchObject({ kind: "ready", recovered: true, operationRan: false });
+      expect(ran).toBeFalse();
+    }
+  });
+
+  test("upgrade can durably authorize a changed selector and plist as its exact resume target", async () => {
+    const f = await fixture(true);
+    const candidateId = "b".repeat(64);
+    let firstRuns = 0;
+    const prepared = await suspend(f, "upgrade-forward", async (context) => {
+      firstRuns++;
+      await writeFile(f.installation, `${JSON.stringify({
+        schema: "dome.home.installation/v1",
+        vault: f.vault,
+        artifact: { id: candidateId, version: "2.0.0" },
+        environment: [],
+      })}\n`, { mode: 0o600 });
+      await writeFile(f.plist, "candidate plist bytes\n", { mode: 0o600 });
+      await context.authorizeCurrentHomeForResume();
+      const engaged = await engageOperationalWriterBarrier({ vaultPath: f.vault, transactionId: "upgrade-forward" });
+      expect(engaged.ok).toBeTrue();
+      return "candidate-selected";
+    }, "upgrade");
+    expect(prepared.kind).toBe("deferred");
+    const active = await inspectHomeLifecycleSuspension(f.vault);
+    expect(active.kind).toBe("active");
+    if (active.kind === "active") {
+      expect(active.suspension.phase).toBe("suspended");
+      expect(active.suspension.resumeArtifactId).toBe(candidateId);
+      expect(active.suspension.resumeArtifactVersion).toBe("2.0.0");
+    }
+    await releaseOperationalWriterBarrier({
+      vaultPath: f.vault,
+      transactionId: "upgrade-forward",
+      validateAndRemoveExternalEvidence: async () => {},
+    });
+    let continuationRuns = 0;
+    const resumed = await suspend(f, "upgrade-forward", async () => { continuationRuns++; }, "upgrade", "authorized-upgrade-continuation");
+    expect(resumed.kind).toBe("ready");
+    expect(firstRuns).toBe(1);
+    expect(continuationRuns).toBe(1); // explicit at-least-once continuation policy
+  });
+
+  test("external upgrade authorization seals selector committed before callback sealing", async () => {
+    const f = await fixture(true);
+    f.launchd.runner = async (args) => args[0] === "bootout"
+      ? { exitCode: 5, stdout: "", stderr: "crash before callback" }
+      : f.baseRunner(args);
+    expect((await suspend(f, "upgrade-gap", async () => {}, "upgrade")).kind).toBe("failed");
+    await setPhase(f.vault, "suspended");
+    f.launchd.loaded.delete(f.target);
+    f.launchd.runner = f.baseRunner;
+    const candidateId = "d".repeat(64);
+    await writeFile(f.installation, `${JSON.stringify({
+      schema: "dome.home.installation/v1",
+      vault: f.vault,
+      artifact: { id: candidateId, version: "4.0.0" },
+      environment: [],
+    })}\n`, { mode: 0o600 });
+    await writeFile(f.plist, "gap candidate plist\n", { mode: 0o600 });
+    const recovered = await suspend(
+      f,
+      "upgrade-gap",
+      async () => "continued",
+      "upgrade",
+      "authorized-upgrade-continuation",
+      async () => ({
+        operationId: "upgrade-gap",
+        artifactId: candidateId,
+        artifactVersion: "4.0.0",
+        installationSha256: await fileSha(f.installation),
+        plistSha256: await fileSha(f.plist),
+      }),
+    );
+    expect(recovered).toMatchObject({ kind: "ready", value: "continued", recovered: true });
+  });
+
+  test("changed upgrade selector without durable resume authorization fails closed", async () => {
+    const f = await fixture(true);
+    const result = await suspend(f, "upgrade-unsealed", async () => {
+      await writeFile(f.installation, `${JSON.stringify({
+        schema: "dome.home.installation/v1",
+        vault: f.vault,
+        artifact: { id: "c".repeat(64), version: "3.0.0" },
+        environment: [],
+      })}\n`, { mode: 0o600 });
+      return "changed";
+    }, "upgrade");
+    expect(result.kind).toBe("failed");
+    const active = await inspectHomeLifecycleSuspension(f.vault);
+    expect(active.kind).toBe("active");
+    if (active.kind === "active") expect(active.suspension.phase).toBe("suspended");
+  });
+
+  test("refuses legacy Serve, foreground Home, and ambiguous launchctl probe failures before intent", async () => {
+    const legacy = await fixture(true);
+    await writeFile(join(legacy.agents, `com.dome.serve.${vaultServiceSlug(legacy.vault)}.plist`), "legacy\n");
+    await expect(suspend(legacy, "legacy-conflict", async () => {})).rejects.toThrow("legacy dome serve");
+    expect((await inspectHomeLifecycleSuspension(legacy.vault)).kind).toBe("inactive");
+
+    const foreground = await fixture(false);
+    foreground.readiness = async () => true;
+    await expect(suspend(foreground, "foreground-conflict", async () => {})).rejects.toThrow("foreground Dome Home");
+    expect((await inspectHomeLifecycleSuspension(foreground.vault)).kind).toBe("inactive");
+
+    const ambiguous = await fixture(true);
+    ambiguous.launchd.runner = async (args) => args[0] === "print"
+      ? { exitCode: 1, stdout: "", stderr: "permission denied" }
+      : ambiguous.baseRunner(args);
+    await expect(suspend(ambiguous, "ambiguous-probe", async () => {})).rejects.toThrow("permission denied");
+    expect((await inspectHomeLifecycleSuspension(ambiguous.vault)).kind).toBe("inactive");
   });
 
   test("selector or plist drift fails closed during recovery", async () => {
@@ -179,7 +321,7 @@ describe("supervised Home lifecycle suspension", () => {
       f.readiness = async () => false;
       expect((await suspend(f, `drift-${drift}`, async () => "done")).kind).toBe("failed");
       await writeFile(drift === "selector" ? f.installation : f.plist, `${drift} changed\n`, { mode: 0o600 });
-      await expect(suspend(f, `recover-${drift}`, async () => {}, "backup", true)).rejects.toThrow(
+      await expect(suspend(f, `drift-${drift}`, async () => {}, "backup", "retry-idempotent")).rejects.toThrow(
         drift === "selector" ? /installation record|invalid/ : /evidence changed/,
       );
       expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("active");
@@ -223,6 +365,144 @@ describe("supervised Home lifecycle suspension", () => {
     await withHomeLifecycleMutation(publicMode.vault, async () => {});
     await chmod(homeLifecycleCoordinatorPath(publicMode.vault), 0o644);
     expect((await inspectHomeLifecycleSuspension(publicMode.vault)).kind).toBe("invalid");
+  });
+
+  test("ready layout never recreates a deleted journal, ownership database, or complete pair", async () => {
+    for (const active of [false, true]) {
+      for (const deleted of ["journal", "ownership", "both"] as const) {
+        const f = await fixture(true);
+        if (active) {
+          f.readiness = async () => false;
+          expect((await suspend(f, `delete-${deleted}`, async () => "held")).kind).toBe("failed");
+        } else {
+          await withHomeLifecycleMutation(f.vault, async () => "initialized");
+        }
+        const journal = homeLifecycleCoordinatorPath(f.vault);
+        const ownership = join(dirname(journal), "home-lifecycle-suspension-ownership.db");
+        if (deleted === "journal" || deleted === "both") await unlink(journal);
+        if (deleted === "ownership" || deleted === "both") await unlink(ownership);
+
+        const inspection = await inspectHomeLifecycleSuspension(f.vault);
+        expect(inspection.kind).toBe("invalid");
+        let mutated = false;
+        await expect(withHomeLifecycleMutation(f.vault, async () => { mutated = true; })).rejects.toThrow(/missing|ready layout/);
+        expect(mutated).toBeFalse();
+        expect(await pathExists(journal)).toBe(deleted === "ownership");
+        expect(await pathExists(ownership)).toBe(deleted === "journal");
+      }
+    }
+  });
+
+  test("explicit initializing marker recovers a crash before database publication", async () => {
+    const f = await fixture(false);
+    const journal = homeLifecycleCoordinatorPath(f.vault);
+    const storage = dirname(journal);
+    await mkdir(storage, { recursive: true, mode: 0o700 });
+    await chmod(storage, 0o700);
+    await writeFile(join(storage, "layout.json"), `${JSON.stringify({
+      schema: "dome.home-lifecycle-suspension-layout/v1",
+      state: "initializing",
+    })}\n`, { mode: 0o600 });
+    expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("unavailable");
+    expect((await withHomeLifecycleMutation(f.vault, async () => "recovered")).kind).toBe("owned");
+    expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("inactive");
+  });
+
+  test("inspection distinguishes a busy coordinator from corrupt evidence", async () => {
+    const f = await fixture(false);
+    await withHomeLifecycleMutation(f.vault, async () => {});
+    const db = new Database(homeLifecycleCoordinatorPath(f.vault));
+    db.run("BEGIN EXCLUSIVE");
+    try {
+      const inspection = await inspectHomeLifecycleSuspension(f.vault);
+      expect(inspection.kind).toBe("unavailable");
+    } finally {
+      db.run("ROLLBACK");
+      db.close();
+    }
+    expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("inactive");
+  });
+
+  test("multiprocess first-open publishes one complete ready layout", async () => {
+    const f = await fixture(false);
+    const moduleUrl = pathToFileURL(resolve(import.meta.dir, "../../src/product-host/home-lifecycle-suspension.ts")).href;
+    const script = `
+      import { withHomeLifecycleMutation } from ${JSON.stringify(moduleUrl)};
+      const result = await withHomeLifecycleMutation(process.env.DOME_TEST_VAULT, async () => {
+        await Bun.sleep(10);
+        return process.pid;
+      });
+      if (result.kind !== "owned") throw new Error("not owned");
+    `;
+    const children = Array.from({ length: 6 }, () => Bun.spawn([process.execPath, "-e", script], {
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, DOME_TEST_VAULT: f.vault },
+    }));
+    const exits = await Promise.all(children.map(async (child) => ({
+      code: await child.exited,
+      stderr: await new Response(child.stderr).text(),
+    })));
+    expect(exits).toEqual(exits.map(() => ({ code: 0, stderr: "" })));
+    expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("inactive");
+  });
+
+  test("SIGKILL releases child-held Tx2 while durable suspended recovery survives", async () => {
+    const f = await fixture(true);
+    const entered = join(f.root, "child-entered");
+    const moduleUrl = pathToFileURL(resolve(import.meta.dir, "../../src/product-host/home-lifecycle-suspension.ts")).href;
+    const script = `
+      import { withSupervisedHomeSuspended } from ${JSON.stringify(moduleUrl)};
+      let loaded = true;
+      const target = process.env.DOME_TEST_TARGET;
+      await withSupervisedHomeSuspended({
+        mode: "new", vaultPath: process.env.DOME_TEST_VAULT,
+        purpose: "backup", operationId: "child-crash",
+      }, async () => {
+        await Bun.write(process.env.DOME_TEST_ENTERED, "entered");
+        await new Promise(() => {});
+      }, {
+        platform: "darwin", uid: 501,
+        launchAgentsDir: process.env.DOME_TEST_AGENTS,
+        applicationSupportDir: process.env.DOME_TEST_SUPPORT,
+        drainTimeoutMs: 20, readinessTimeoutMs: 1,
+        readiness: async () => false,
+        legacyServeRunning: async () => false,
+        launchctl: async (args) => {
+          const candidate = args.at(-1) ?? "";
+          if (args[0] === "print") return { exitCode: candidate === target && loaded ? 0 : 113, stdout: "", stderr: "" };
+          if (args[0] === "bootout") { loaded = false; return { exitCode: 0, stdout: "", stderr: "" }; }
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      });
+    `;
+    const child = Bun.spawn([process.execPath, "-e", script], {
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        DOME_TEST_VAULT: f.vault,
+        DOME_TEST_TARGET: f.target,
+        DOME_TEST_AGENTS: f.agents,
+        DOME_TEST_SUPPORT: f.support,
+        DOME_TEST_ENTERED: entered,
+      },
+    });
+    const deadline = Date.now() + 5_000;
+    while (!await pathExists(entered) && Date.now() < deadline) await Bun.sleep(10);
+    expect(await pathExists(entered)).toBeTrue();
+    child.kill("SIGKILL");
+    expect(await child.exited).not.toBe(0);
+    expect(await new Response(child.stderr).text()).toBe("");
+    const active = await inspectHomeLifecycleSuspension(f.vault);
+    expect(active.kind).toBe("active");
+    if (active.kind === "active") expect(active.suspension.phase).toBe("suspended");
+
+    f.launchd.loaded.delete(f.target);
+    let reran = false;
+    const recovered = await suspend(f, "child-crash", async () => { reran = true; return "recovered"; }, "backup", "retry-idempotent");
+    expect(recovered).toMatchObject({ kind: "ready", value: "recovered", recovered: true });
+    expect(reran).toBeTrue();
   });
 
   test("simultaneous first open initializes once and serializes every mutator", async () => {
@@ -292,9 +572,10 @@ async function fixture(loaded: boolean) {
 async function suspend<T>(
   f: Fixture,
   operationId: string,
-  operation: () => Promise<T>,
+  operation: (context: HomeSuspensionOperationContext) => Promise<T>,
   purpose: "backup" | "upgrade" = "backup",
-  recoverExisting = false,
+  recoveryPolicy: HomeSuspensionRecoveryPolicy | null = null,
+  authorizeContinuation?: (() => Promise<HomeResumeAuthorization>) | undefined,
 ) {
   const deps: HomeLifecycleSuspensionDeps = {
     platform: "darwin",
@@ -306,7 +587,26 @@ async function suspend<T>(
     readiness: () => f.readiness(),
     applicationSupportDir: f.support,
   };
-  return withSupervisedHomeSuspended({ vaultPath: f.vault, purpose, operationId, recoverExisting }, operation, deps);
+  const invocation = recoveryPolicy === null
+    ? { mode: "new" as const, vaultPath: f.vault, purpose, operationId }
+    : {
+        mode: "recover" as const,
+        vaultPath: f.vault,
+        purpose,
+        operationId,
+        policy: recoveryPolicy,
+        ...(recoveryPolicy === "authorized-upgrade-continuation"
+          ? { authorizeContinuation: async (active: HomeLifecycleSuspension) =>
+              authorizeContinuation?.() ?? {
+                operationId: active.operationId,
+                artifactId: active.resumeArtifactId,
+                artifactVersion: active.resumeArtifactVersion,
+                installationSha256: active.resumeInstallationSha256,
+                plistSha256: active.resumePlistSha256,
+              } }
+          : {}),
+      };
+  return withSupervisedHomeSuspended(invocation, operation, deps);
 }
 
 async function setPhase(vault: string, phase: HomeSuspensionPhase): Promise<void> {
@@ -318,4 +618,16 @@ async function setPhase(vault: string, phase: HomeSuspensionPhase): Promise<void
 
 function outcome(exitCode: number, stderr = "") {
   return { exitCode, stdout: "", stderr };
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try { await lstat(path); return true; }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function fileSha(path: string): Promise<string> {
+  return createHash("sha256").update(await readFile(path)).digest("hex");
 }
