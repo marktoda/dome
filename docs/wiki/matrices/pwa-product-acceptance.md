@@ -1,7 +1,7 @@
 ---
 type: matrix
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-07-13
 sources:
   - "[[cohesive/plans/2026-07-11-pwa-first-product]]"
   - "[[wiki/specs/product-host]]"
