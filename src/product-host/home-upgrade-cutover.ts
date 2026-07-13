@@ -171,9 +171,15 @@ export async function runHomeUpgradeCutover(input: {
   try {
     lifecycle = await suspend(invocation, async (context) => {
       const recoveryCurrent = await operations.readRecovery(input.vaultPath, deps);
-      const current = recoveryCurrent?.phase === "committed"
-        ? await operations.read(input.vaultPath, deps)
-        : recoveryCurrent;
+      let current = recoveryCurrent;
+      if (recoveryCurrent?.phase === "committed") {
+        try {
+          current = await operations.read(input.vaultPath, deps);
+          if (current === null) throw new Error("committed upgrade candidate evidence is unavailable");
+        } catch (error) {
+          return handoff(committed(recoveryCurrent), message(error));
+        }
+      }
       if (current?.phase === "committed") {
         try {
           await context.authorizeCurrentHomeForResume();

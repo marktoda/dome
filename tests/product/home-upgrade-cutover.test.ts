@@ -140,6 +140,55 @@ describe("private Home upgrade cutover", () => {
     }
   });
 
+  test("retains the real suspended lifecycle result when a committed candidate vanishes during recovery", async () => {
+    const calls: string[] = [];
+    let current: HomeUpgradeTransaction | null = transaction("committed");
+    let strictReads = 0;
+    const base = fakeDeps(calls, () => current, (next) => { current = next; }, {
+      read: async () => {
+        calls.push("read");
+        strictReads += 1;
+        if (strictReads === 1) return current;
+        throw new Error("candidate vanished after suspension");
+      },
+    }, activeSuspension());
+    const deps: HomeUpgradeCutoverDeps = {
+      ...base,
+      suspendHome: (async (invocation, operation) => {
+        calls.push("suspend:authorized-upgrade-continuation");
+        if (invocation.mode !== "recover") throw new Error("expected recovery");
+        await invocation.authorizeContinuation!(activeSuspension().suspension);
+        calls.push("external-authorize");
+        const value = await operation({
+          operationId: TX,
+          purpose: "upgrade",
+          authorizeCurrentHomeForResume: async () => { calls.push("authorize"); },
+        });
+        return {
+          kind: "deferred",
+          reason: "write-barrier-closed",
+          transactionId: TX,
+          operationId: TX,
+          recovered: true,
+          operationRan: true,
+          value,
+        };
+      }) as NonNullable<HomeUpgradeCutoverDeps["suspendHome"]>,
+    };
+    const result = await runHomeUpgradeCutover({
+      vaultPath: "/vault",
+      transactionId: TX,
+      candidateArtifactId: CANDIDATE,
+    }, deps);
+    expect(result).toMatchObject({
+      status: "recovery-required",
+      transactionOutcome: { kind: "committed" },
+      handoffError: "candidate vanished after suspension",
+      lifecycle: { kind: "deferred", operationRan: true },
+    });
+    expect(calls).not.toContain("restore");
+  });
+
   test("keeps durable disposition separate from handoff and lifecycle readiness", async () => {
     const handoffCalls: string[] = [];
     let handoffCurrent: HomeUpgradeTransaction | null = null;
