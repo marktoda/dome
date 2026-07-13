@@ -393,19 +393,22 @@ describe("supervised Home lifecycle suspension", () => {
     }
   });
 
-  test("explicit initializing marker recovers a crash before database publication", async () => {
+  test("prepublication crash debris never becomes a partial public layout", async () => {
     const f = await fixture(false);
     const journal = homeLifecycleCoordinatorPath(f.vault);
     const storage = dirname(journal);
-    await mkdir(storage, { recursive: true, mode: 0o700 });
-    await chmod(storage, 0o700);
-    await writeFile(join(storage, "layout.json"), `${JSON.stringify({
+    const debris = join(dirname(storage), ".home-lifecycle-suspension.init-crashed-child");
+    await mkdir(debris, { recursive: true, mode: 0o700 });
+    await writeFile(join(debris, "layout.json"), `${JSON.stringify({
       schema: "dome.home-lifecycle-suspension-layout/v1",
-      state: "initializing",
+      state: "ready",
     })}\n`, { mode: 0o600 });
-    expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("unavailable");
+    await writeFile(join(debris, "home-lifecycle-suspension-ownership.db"), "partial bytes", { mode: 0o600 });
+    expect(await pathExists(storage)).toBeFalse();
+    expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("inactive");
     expect((await withHomeLifecycleMutation(f.vault, async () => "recovered")).kind).toBe("owned");
     expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("inactive");
+    expect(await pathExists(debris)).toBeTrue();
   });
 
   test("inspection distinguishes a busy coordinator from corrupt evidence", async () => {
@@ -424,7 +427,6 @@ describe("supervised Home lifecycle suspension", () => {
   });
 
   test("multiprocess first-open publishes one complete ready layout", async () => {
-    const f = await fixture(false);
     const moduleUrl = pathToFileURL(resolve(import.meta.dir, "../../src/product-host/home-lifecycle-suspension.ts")).href;
     const script = `
       import { withHomeLifecycleMutation } from ${JSON.stringify(moduleUrl)};
@@ -434,17 +436,20 @@ describe("supervised Home lifecycle suspension", () => {
       });
       if (result.kind !== "owned") throw new Error("not owned");
     `;
-    const children = Array.from({ length: 6 }, () => Bun.spawn([process.execPath, "-e", script], {
-      stdout: "pipe",
-      stderr: "pipe",
-      env: { ...process.env, DOME_TEST_VAULT: f.vault },
-    }));
-    const exits = await Promise.all(children.map(async (child) => ({
-      code: await child.exited,
-      stderr: await new Response(child.stderr).text(),
-    })));
-    expect(exits).toEqual(exits.map(() => ({ code: 0, stderr: "" })));
-    expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("inactive");
+    for (let round = 0; round < 4; round++) {
+      const f = await fixture(false);
+      const children = Array.from({ length: 8 }, () => Bun.spawn([process.execPath, "-e", script], {
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...process.env, DOME_TEST_VAULT: f.vault },
+      }));
+      const exits = await Promise.all(children.map(async (child) => ({
+        code: await child.exited,
+        stderr: await new Response(child.stderr).text(),
+      })));
+      expect(exits).toEqual(exits.map(() => ({ code: 0, stderr: "" })));
+      expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("inactive");
+    }
   });
 
   test("SIGKILL releases child-held Tx2 while durable suspended recovery survives", async () => {
@@ -503,6 +508,84 @@ describe("supervised Home lifecycle suspension", () => {
     const recovered = await suspend(f, "child-crash", async () => { reran = true; return "recovered"; }, "backup", "retry-idempotent");
     expect(recovered).toMatchObject({ kind: "ready", value: "recovered", recovered: true });
     expect(reran).toBeTrue();
+  });
+
+  test("SIGKILL recovery is exact at intent, callback-returned, and readiness-proven windows", async () => {
+    const moduleUrl = pathToFileURL(resolve(import.meta.dir, "../../src/product-host/home-lifecycle-suspension.ts")).href;
+    const script = `
+      import { withSupervisedHomeSuspended } from ${JSON.stringify(moduleUrl)};
+      let loaded = true;
+      const target = process.env.DOME_TEST_TARGET;
+      await withSupervisedHomeSuspended({
+        mode: "new", vaultPath: process.env.DOME_TEST_VAULT,
+        purpose: "backup", operationId: process.env.DOME_TEST_OPERATION,
+      }, async () => "effect-returned", {
+        platform: "darwin", uid: 501,
+        launchAgentsDir: process.env.DOME_TEST_AGENTS,
+        applicationSupportDir: process.env.DOME_TEST_SUPPORT,
+        drainTimeoutMs: 20, readinessTimeoutMs: 20,
+        readiness: async () => loaded,
+        legacyServeRunning: async () => false,
+        checkpoint: async (name) => {
+          if (name !== process.env.DOME_TEST_CHECKPOINT) return;
+          await Bun.write(process.env.DOME_TEST_ENTERED, name);
+          await new Promise(() => {});
+        },
+        launchctl: async (args) => {
+          const candidate = args.at(-1) ?? "";
+          if (args[0] === "print") return { exitCode: candidate === target && loaded ? 0 : 113, stdout: "", stderr: "" };
+          if (args[0] === "bootout") { loaded = false; return { exitCode: 0, stdout: "", stderr: "" }; }
+          if (args[0] === "bootstrap" || args[0] === "kickstart") { loaded = true; return { exitCode: 0, stdout: "", stderr: "" }; }
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      });
+    `;
+    const cases = [
+      { checkpoint: "intent-committed", phase: "suspending", parentLoaded: true },
+      { checkpoint: "callback-returned", phase: "suspended", parentLoaded: false },
+      { checkpoint: "readiness-proven", phase: "resuming", parentLoaded: true },
+    ] as const;
+    for (const item of cases) {
+      const f = await fixture(true);
+      const operationId = `crash-${item.checkpoint}`;
+      const entered = join(f.root, `${item.checkpoint}.entered`);
+      const child = Bun.spawn([process.execPath, "-e", script], {
+        stdout: "pipe",
+        stderr: "pipe",
+        env: {
+          ...process.env,
+          DOME_TEST_VAULT: f.vault,
+          DOME_TEST_TARGET: f.target,
+          DOME_TEST_AGENTS: f.agents,
+          DOME_TEST_SUPPORT: f.support,
+          DOME_TEST_OPERATION: operationId,
+          DOME_TEST_CHECKPOINT: item.checkpoint,
+          DOME_TEST_ENTERED: entered,
+        },
+      });
+      const deadline = Date.now() + 5_000;
+      while (!await pathExists(entered) && Date.now() < deadline) await Bun.sleep(10);
+      expect(await pathExists(entered)).toBeTrue();
+      child.kill("SIGKILL");
+      expect(await child.exited).not.toBe(0);
+      expect(await new Response(child.stderr).text()).toBe("");
+      const active = await inspectHomeLifecycleSuspension(f.vault);
+      expect(active.kind).toBe("active");
+      if (active.kind === "active") expect(active.suspension.phase).toBe(item.phase);
+
+      item.parentLoaded ? f.launchd.loaded.add(f.target) : f.launchd.loaded.delete(f.target);
+      let reran = false;
+      const callsBeforeRecovery = f.launchd.calls.length;
+      const recovered = await suspend(f, operationId, async () => { reran = true; }, "backup", "resume-only");
+      expect(recovered).toMatchObject({ kind: "ready", recovered: true, operationRan: false });
+      expect(reran).toBeFalse();
+      if (item.checkpoint === "readiness-proven") {
+        const recoveryMutations = f.launchd.calls.slice(callsBeforeRecovery)
+          .filter(([verb]) => verb === "bootout" || verb === "bootstrap" || verb === "kickstart");
+        expect(recoveryMutations).toEqual([]);
+      }
+      expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("inactive");
+    }
   });
 
   test("simultaneous first open initializes once and serializes every mutator", async () => {

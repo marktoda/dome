@@ -18,7 +18,6 @@ import {
   realpathSync,
   renameSync,
   rmSync,
-  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { lstat, readFile, realpath } from "node:fs/promises";
@@ -49,7 +48,7 @@ const SHA256 = /^[a-f0-9]{64}$/;
 const OWNERSHIP_DDL = `CREATE TABLE ${OWNERSHIP_TABLE} (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   schema TEXT NOT NULL CHECK (schema = '${OWNERSHIP_SCHEMA}'),
-  layout_state TEXT NOT NULL CHECK (layout_state IN ('initializing', 'ready'))
+  layout_state TEXT NOT NULL CHECK (layout_state = 'ready')
 ) STRICT`;
 
 const JOURNAL_DDL = `CREATE TABLE ${JOURNAL_TABLE} (
@@ -139,6 +138,8 @@ export type HomeLifecycleSuspensionDeps = ServiceDeps & HomeInstallationDeps & {
   readonly readinessTimeoutMs?: number | undefined;
   readonly now?: (() => Date) | undefined;
   readonly legacyServeRunning?: (() => Promise<boolean>) | undefined;
+  /** Test/diagnostic crash seam; production leaves this absent. */
+  readonly checkpoint?: ((name: "intent-committed" | "callback-returned" | "readiness-proven") => Promise<void>) | undefined;
 };
 
 export type HomeSuspensionRecoveryPolicy =
@@ -225,10 +226,7 @@ export async function inspectHomeLifecycleSuspension(
   if (!existsSync(paths.root)) return Object.freeze({ kind: "inactive" });
   try {
     validateDirectPrivateDirectory(paths.root);
-    const marker = readLayoutMarker(paths.layout);
-    if (marker.state === "initializing") {
-      return Object.freeze({ kind: "unavailable", error: "Home lifecycle coordinator initialization is incomplete" });
-    }
+    readLayoutMarker(paths.layout);
   } catch (error) {
     return Object.freeze({ kind: "invalid", error: message(error) });
   }
@@ -244,10 +242,7 @@ export async function inspectHomeLifecycleSuspension(
     validateExistingCoordinatorFile(paths.ownership, "ownership");
     const ownership = await openEstablishedForInspection(paths.ownership, OWNERSHIP_DDL, validateOwnershipRow);
     try {
-      const layout = readOwnershipLayout(ownership);
-      if (layout === "initializing") {
-        return Object.freeze({ kind: "unavailable", error: "Home lifecycle coordinator initialization is incomplete" });
-      }
+      readOwnershipLayout(ownership);
       if (!journalExists) {
         return Object.freeze({ kind: "invalid", error: "Home lifecycle journal coordinator is missing from a ready layout" });
       }
@@ -384,6 +379,7 @@ export async function withSupervisedHomeSuspended<T>(
       recovered = true;
     }
     pair.ownership.run("COMMIT");
+    await deps.checkpoint?.("intent-committed");
 
     // Tx2 is live serialization. Durable journal commits do not release it.
     await beginImmediate(pair.ownership);
@@ -473,6 +469,7 @@ async function runOwnedSuspension<T>(input: {
       });
       try { value = await input.operation(context); }
       catch (error) { operationError = error; }
+      await input.deps.checkpoint?.("callback-returned");
     }
   }
 
@@ -586,6 +583,7 @@ async function resumeOwned<T>(input: {
     persistError(input.journal, input.active.operationId, error);
     return Object.freeze({ ...base, kind: "failed" as const, error });
   }
+  await input.deps.checkpoint?.("readiness-proven");
   clearActive(input.journal, input.active.operationId);
   return Object.freeze({ ...base, kind: "ready" as const });
 }
@@ -614,54 +612,20 @@ type CoordinatorPair = { readonly ownership: Database; readonly journal: Databas
 async function openCoordinatorPair(vault: string): Promise<CoordinatorPair> {
   const paths = coordinatorPaths(vault);
   await ensureCoordinatorLayout(vault);
-  const marker = readLayoutMarker(paths.layout);
+  readLayoutMarker(paths.layout);
   const ownershipPresent = existsSync(paths.ownership);
   const journalPresent = existsSync(paths.journal);
-  if (marker.state === "ready" && (!ownershipPresent || !journalPresent)) {
+  if (!ownershipPresent || !journalPresent) {
     throw new Error("Home lifecycle coordinator database is missing from a ready layout");
   }
-  if (!ownershipPresent && journalPresent) {
-    throw new Error("Home lifecycle ownership coordinator is missing from an established layout");
-  }
-  if (ownershipPresent && journalPresent && lstatSync(paths.ownership).size === 0) {
-    throw new Error("Home lifecycle ownership coordinator is empty beside an established journal");
-  }
-
-  const ownership = marker.state === "ready"
-    ? openEstablishedWritable(paths.ownership, OWNERSHIP_DDL, validateOwnershipRow)
-    : await openOrInitialize(paths.ownership, OWNERSHIP_DDL, (db) => {
-    db.query(`INSERT INTO ${OWNERSHIP_TABLE} (singleton, schema, layout_state) VALUES (1, ?, 'initializing')`).run(OWNERSHIP_SCHEMA);
-  }, validateOwnershipRow);
+  const ownership = openEstablishedWritable(paths.ownership, OWNERSHIP_DDL, validateOwnershipRow);
   try {
     const layout = readOwnershipLayout(ownership);
-    if (marker.state === "ready" && layout !== "ready") {
+    if (layout !== "ready") {
       throw new Error("Home lifecycle layout marker and ownership state disagree");
     }
-    let journal: Database;
-    if (layout === "ready") {
-      if (!existsSync(paths.journal)) {
-        throw new Error("Home lifecycle journal coordinator is missing from a ready layout");
-      }
-      journal = openEstablishedWritable(paths.journal, JOURNAL_DDL, () => {});
-    } else {
-      journal = await openOrInitialize(paths.journal, JOURNAL_DDL, () => {}, () => {});
-      await beginImmediate(ownership);
-      try {
-        if (readOwnershipLayout(ownership) === "initializing") {
-          if (ownership.query(
-            `UPDATE ${OWNERSHIP_TABLE} SET layout_state = 'ready'
-             WHERE singleton = 1 AND layout_state = 'initializing'`,
-          ).run().changes !== 1) throw new Error("Home lifecycle coordinator layout changed during publication");
-        }
-        ownership.run("COMMIT");
-      } catch (error) {
-        rollback(ownership);
-        journal.close();
-        throw error;
-      }
-    }
+    const journal = openEstablishedWritable(paths.journal, JOURNAL_DDL, () => {});
     validateOwnershipRow(ownership);
-    if (marker.state === "initializing") publishLayoutMarker(paths.layout, "ready");
     return Object.freeze({ ownership, journal });
   } catch (error) {
     ownership.close();
@@ -688,18 +652,24 @@ async function ensureCoordinatorLayout(vault: string): Promise<void> {
   ensureDirectDirectory(state, false);
   ensureDirectDirectory(locks, true);
   const paths = coordinatorPaths(vault);
-  if (!existsSync(paths.root)) publishInitialStorageRoot(paths.root, locks);
+  if (!existsSync(paths.root)) await publishCompleteStorageRoot(paths.root, locks);
   validateDirectPrivateDirectory(paths.root);
   if (!existsSync(paths.layout)) {
     throw new Error("Home lifecycle suspension layout marker is missing from an established directory");
   }
 }
 
-function publishInitialStorageRoot(root: string, parent: string): void {
+async function publishCompleteStorageRoot(root: string, parent: string): Promise<void> {
   const staging = join(parent, `.${STORAGE_NAME}.init-${process.pid}-${randomUUID()}`);
   mkdirSync(staging, { mode: 0o700 });
   try {
-    publishLayoutMarker(join(staging, LAYOUT_NAME), "initializing", true);
+    publishLayoutMarker(join(staging, LAYOUT_NAME));
+    const ownership = await openOrInitialize(join(staging, OWNERSHIP_NAME), OWNERSHIP_DDL, (db) => {
+      db.query(`INSERT INTO ${OWNERSHIP_TABLE} (singleton, schema, layout_state) VALUES (1, ?, 'ready')`).run(OWNERSHIP_SCHEMA);
+    }, validateOwnershipRow);
+    ownership.close();
+    const journal = await openOrInitialize(join(staging, JOURNAL_NAME), JOURNAL_DDL, () => {}, () => {});
+    journal.close();
     fsyncPath(staging);
     try {
       renameSync(staging, root);
@@ -738,7 +708,7 @@ function validateDirectPrivateDirectory(path: string): void {
   }
 }
 
-function readLayoutMarker(path: string): { readonly schema: typeof LAYOUT_SCHEMA; readonly state: "initializing" | "ready" } {
+function readLayoutMarker(path: string): { readonly schema: typeof LAYOUT_SCHEMA; readonly state: "ready" } {
   validateExistingCoordinatorFile(path, "layout marker");
   let value: unknown;
   try { value = JSON.parse(readFileSync(path, "utf8")); }
@@ -746,37 +716,21 @@ function readLayoutMarker(path: string): { readonly schema: typeof LAYOUT_SCHEMA
   if (typeof value !== "object" || value === null || Array.isArray(value) ||
     JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(["schema", "state"]) ||
     (value as { schema?: unknown }).schema !== LAYOUT_SCHEMA ||
-    ((value as { state?: unknown }).state !== "initializing" && (value as { state?: unknown }).state !== "ready")) {
+    (value as { state?: unknown }).state !== "ready") {
     throw new Error("Home lifecycle suspension layout marker has unknown or invalid fields");
   }
-  return Object.freeze(value as { schema: typeof LAYOUT_SCHEMA; state: "initializing" | "ready" });
+  return Object.freeze(value as { schema: typeof LAYOUT_SCHEMA; state: "ready" });
 }
 
-function publishLayoutMarker(path: string, state: "initializing" | "ready", exclusive = false): void {
-  const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`;
-  const bytes = `${JSON.stringify({ schema: LAYOUT_SCHEMA, state })}\n`;
+function publishLayoutMarker(path: string): void {
+  const bytes = `${JSON.stringify({ schema: LAYOUT_SCHEMA, state: "ready" })}\n`;
   const flags = constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | noFollowFlag();
-  const fd = openSync(temporary, flags, 0o600);
+  const fd = openSync(path, flags, 0o600);
   try {
     writeFileSync(fd, bytes);
     fsyncSync(fd);
   } finally { closeSync(fd); }
-  try {
-    if (exclusive) {
-      const markerFd = openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | noFollowFlag(), 0o600);
-      try {
-        writeFileSync(markerFd, bytes);
-        fsyncSync(markerFd);
-      } finally { closeSync(markerFd); }
-      unlinkSync(temporary);
-    } else {
-      renameSync(temporary, path);
-    }
-    fsyncPath(dirname(path));
-  } catch (error) {
-    try { unlinkSync(temporary); } catch {}
-    throw error;
-  }
+  fsyncPath(dirname(path));
 }
 
 async function openOrInitialize(
@@ -919,13 +873,12 @@ function readSchema(db: Database): ReadonlyArray<{ readonly type: string; readon
 
 function validateOwnershipRow(db: Database): void { readOwnershipLayout(db); }
 
-function readOwnershipLayout(db: Database): "initializing" | "ready" {
+function readOwnershipLayout(db: Database): "ready" {
   const rows = db.query<{ singleton: number; schema: string; layout_state: string }, []>(
     `SELECT singleton, schema, layout_state FROM ${OWNERSHIP_TABLE}`,
   ).all();
   const row = rows[0];
-  if (rows.length !== 1 || row?.singleton !== 1 || row.schema !== OWNERSHIP_SCHEMA ||
-    (row.layout_state !== "initializing" && row.layout_state !== "ready")) {
+  if (rows.length !== 1 || row?.singleton !== 1 || row.schema !== OWNERSHIP_SCHEMA || row.layout_state !== "ready") {
     throw new Error("Home lifecycle ownership singleton is invalid");
   }
   return row.layout_state;
