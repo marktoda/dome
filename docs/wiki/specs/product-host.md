@@ -501,12 +501,13 @@ release.
 The fixed acquisition order is operational lease, external Product Host lock,
 vault-local Product Host lock, then mutation/store locks. Normal Home acquires
 the outer lease before ownership or recovery; probation remains write-closed.
-Runtime, proposals, activity, inspect/repair, devices, and live backup are
-covered by an exact reviewed-callsite drift test. Home lifecycle install,
-start, restart, and uninstall also hold an ordinary lease before plist,
-selector, release, or launchctl mutation; status stays read-only for recovery
-diagnosis. This inventory is a review alarm, not semantic proof; behavioral
-denial tests pin the runtime, proposals, and Home lifecycle seams. HTTP and MCP
+Runtime, proposals, activity, inspect/repair, devices, and the durable-state
+section of live backup are covered by an exact reviewed-callsite drift test.
+Home lifecycle install, start, restart, and uninstall also hold an ordinary
+lease before plist, selector, release, or launchctl mutation; status stays
+read-only for recovery diagnosis. This inventory is a review alarm, not
+semantic proof. Behavioral denial tests pin the runtime, proposals, and Home
+lifecycle seams. HTTP and MCP
 inherit runtime or proposal admission. Absent-target restore and the exclusive
 upgrade owner are the narrow exceptions.
 
