@@ -17,9 +17,11 @@ import { dirname, join, resolve } from "node:path";
 
 import {
   engageOperationalWriterBarrier,
+  inspectOperationalWriterBarrier,
+  type OperationalWriterBarrierOwner,
   releaseOperationalWriterBarrier,
+  withOperationalWriterBarrierOwnership,
 } from "../operational-state/writer-barrier";
-import { withExclusiveFileLock } from "../engine/host/file-lock";
 import {
   homeInstallationPaths,
   type HomeInstallationDeps,
@@ -38,22 +40,11 @@ export type HomeUpgradeWriterBarrier = {
 
 export type HomeUpgradeBarrierDeps = HomeInstallationDeps;
 
-/** Serialize same-id recovery; resumption is for crashes, not concurrency. */
-export async function withHomeUpgradeOperationLock<T>(
-  vaultPath: string,
-  deps: HomeUpgradeBarrierDeps,
-  operation: () => Promise<T>,
-): Promise<T> {
-  const vault = await canonicalVault(vaultPath);
-  const marker = await markerPath(vault, deps, true);
-  if (marker === null) throw new Error("Dome Home upgrade operation path is unavailable");
-  const locked = await withExclusiveFileLock({
-    lockPath: join(dirname(marker), "operation.lock"),
-    command: "dome-home-upgrade",
-  }, operation);
-  if (locked.kind === "busy") throw new Error("another Dome Home upgrade operation is active");
-  return locked.value;
-}
+export type HomeUpgradeBarrierOwner = {
+  readonly transactionId: string;
+  readonly engagedAt: string;
+  readonly release: (validateTerminal: () => Promise<void>) => Promise<void>;
+};
 
 export async function engageHomeUpgradeBarrier(input: {
   readonly vaultPath: string;
@@ -61,6 +52,10 @@ export async function engageHomeUpgradeBarrier(input: {
   readonly now?: Date;
 }, deps: HomeUpgradeBarrierDeps = {}): Promise<HomeUpgradeWriterBarrier> {
   const vault = await canonicalVault(input.vaultPath);
+  // Establish a direct, durable external publication path before closing
+  // vault write admission. Failures before core engagement remain harmless.
+  const path = await markerPath(vault, deps, true);
+  if (path === null) throw new Error("external upgrade writer barrier path is unavailable");
   const engaged = await engageOperationalWriterBarrier({
     vaultPath: vault,
     transactionId: input.transactionId,
@@ -77,8 +72,6 @@ export async function engageHomeUpgradeBarrier(input: {
     protocol: 1 as const,
     engagedAt: engaged.blockedAt,
   });
-  const path = await markerPath(vault, deps, true);
-  if (path === null) throw new Error("external upgrade writer barrier path is unavailable");
   if (await present(path)) {
     const current = await readHomeUpgradeBarrier(vault, deps);
     if (
@@ -138,30 +131,86 @@ export async function readHomeUpgradeBarrier(
   return parseMarker(parsed, vault);
 }
 
+/** Hold SQLite EXCLUSIVE for the complete prepare/restore recovery section. */
+export async function withHomeUpgradeBarrierOwnership<T>(input: {
+  readonly vaultPath: string;
+  readonly transactionId: string;
+}, deps: HomeUpgradeBarrierDeps, operation: (
+  owner: HomeUpgradeBarrierOwner,
+) => Promise<T>): Promise<
+  | { readonly kind: "owned"; readonly value: T }
+  | { readonly kind: "not-owned"; readonly transactionId: string | null }
+> {
+  const vault = await canonicalVault(input.vaultPath);
+  return withOperationalWriterBarrierOwnership({
+    vaultPath: vault,
+    transactionId: input.transactionId,
+  }, async (owner) => operation(homeOwner(vault, deps, owner)));
+}
+
 export async function releaseHomeUpgradeBarrier(input: {
   readonly vaultPath: string;
   readonly transactionId: string;
   readonly validateTerminal: () => Promise<void>;
 }, deps: HomeUpgradeBarrierDeps = {}): Promise<void> {
   const vault = await canonicalVault(input.vaultPath);
+  const inspection = await inspectOperationalWriterBarrier(vault);
+  if (
+    inspection.transactionId !== input.transactionId ||
+    inspection.blockedAt === null
+  ) {
+    throw new Error("operational writer barrier is not owned by this transaction");
+  }
+  const blockedAt = inspection.blockedAt;
   await releaseOperationalWriterBarrier({
     vaultPath: vault,
     transactionId: input.transactionId,
     validateAndRemoveExternalEvidence: async () => {
       await input.validateTerminal();
-      const current = await readHomeUpgradeBarrier(vault, deps);
-      // Marker removal is deliberately before the coordinator clear. A crash
-      // after unlink+fsync therefore resumes here with blocked coordinator,
-      // terminal journal, and an absent marker.
-      if (current !== null && current.transactionId !== input.transactionId) {
-        throw new Error("external upgrade writer barrier is missing or has the wrong owner");
-      }
-      const path = await markerPath(vault, deps, false);
-      if (path === null) throw new Error("external upgrade writer barrier path is missing");
-      if (current !== null) await unlink(path);
-      await fsyncDirectory(dirname(path));
+      await removeExternalMarker(
+        vault,
+        deps,
+        input.transactionId,
+        blockedAt,
+      );
     },
   });
+}
+
+function homeOwner(
+  vault: string,
+  deps: HomeUpgradeBarrierDeps,
+  owner: OperationalWriterBarrierOwner,
+): HomeUpgradeBarrierOwner {
+  return Object.freeze({
+    transactionId: owner.transactionId,
+    engagedAt: owner.blockedAt,
+    release: async (validateTerminal) => owner.release(async () => {
+      await validateTerminal();
+      await removeExternalMarker(vault, deps, owner.transactionId, owner.blockedAt);
+    }),
+  });
+}
+
+async function removeExternalMarker(
+  vault: string,
+  deps: HomeUpgradeBarrierDeps,
+  transactionId: string,
+  engagedAt: string,
+): Promise<void> {
+  const current = await readHomeUpgradeBarrier(vault, deps);
+  // Marker removal is deliberately before the coordinator clear. A crash
+  // after unlink+fsync resumes with blocked coordinator and an absent marker.
+  if (
+    current !== null &&
+    (current.transactionId !== transactionId || current.engagedAt !== engagedAt)
+  ) {
+    throw new Error("external upgrade writer barrier is missing or has the wrong owner");
+  }
+  const path = await markerPath(vault, deps, false);
+  if (path === null) throw new Error("external upgrade writer barrier path is missing");
+  if (current !== null) await unlink(path);
+  await fsyncDirectory(dirname(path));
 }
 
 async function markerPath(
@@ -181,7 +230,17 @@ async function markerPath(
   const upgrade = join(paths.installations, "upgrade");
   if (!await present(upgrade)) {
     if (!create) return null;
-    await mkdir(upgrade, { mode: 0o700 });
+    let created = false;
+    try {
+      await mkdir(upgrade, { mode: 0o700 });
+      created = true;
+    } catch (error) {
+      if (!hasCode(error, "EEXIST")) throw error;
+    }
+    if (created) {
+      await fsyncDirectory(upgrade);
+      await fsyncDirectory(paths.installations);
+    }
   }
   await assertDirectDirectory(upgrade);
   return join(upgrade, "writer-barrier.json");
@@ -203,9 +262,14 @@ function parseMarker(value: unknown, vault: string): HomeUpgradeWriterBarrier {
     typeof record["transactionId"] !== "string" ||
     !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(record["transactionId"]) ||
     typeof record["engagedAt"] !== "string" ||
-    !Number.isFinite(Date.parse(record["engagedAt"]))
+    !isExactTimestamp(record["engagedAt"])
   ) throw new Error("external upgrade writer barrier has invalid fixed fields");
   return Object.freeze(record as unknown as HomeUpgradeWriterBarrier);
+}
+
+function isExactTimestamp(value: string): boolean {
+  const millis = Date.parse(value);
+  return Number.isFinite(millis) && new Date(millis).toISOString() === value;
 }
 
 async function canonicalVault(path: string): Promise<string> {

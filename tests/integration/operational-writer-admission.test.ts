@@ -4,28 +4,29 @@ import { readFile } from "node:fs/promises";
 
 const INVENTORY: ReadonlyArray<{
   readonly opener: string;
-  readonly files: ReadonlyArray<string>;
+  readonly calls: Readonly<Record<string, number>>;
 }> = [
-  { opener: "openAnswersDb", files: ["src/answers/db.ts", "src/engine/host/vault-runtime.ts"] },
-  { opener: "openProposalsDb", files: ["src/proposals/db.ts", "src/engine/host/vault-runtime.ts", "src/surface/proposals.ts"] },
-  { opener: "openOutboxDb", files: ["src/outbox/db.ts", "src/engine/host/vault-runtime.ts"] },
-  { opener: "openLedgerDb", files: ["src/ledger/db.ts", "src/engine/host/vault-runtime.ts", "src/surface/activity.ts", "src/cli/commands/inspect.ts", "src/cli/commands/repair.ts"] },
-  { opener: "openRequestReceiptsDb", files: ["src/request-receipts/db.ts", "src/product-host/product-host.ts"] },
-  { opener: "openDeviceAuthority", files: ["src/device-authority/device-authority.ts", "src/product-host/product-host.ts", "src/cli/commands/devices.ts", "src/backup/vault-backup.ts"] },
-  { opener: "openQuarantineStore", files: ["src/engine/operational/quarantine-store.ts", "src/engine/host/vault-runtime.ts"] },
-  { opener: "ensureVaultId", files: ["src/product-host/vault-id.ts", "src/product-host/product-host.ts"] },
+  { opener: "openAnswersDb", calls: { "src/answers/db.ts": 1, "src/engine/host/vault-runtime.ts": 1 } },
+  { opener: "openProposalsDb", calls: { "src/proposals/db.ts": 1, "src/engine/host/vault-runtime.ts": 1, "src/surface/proposals.ts": 3 } },
+  { opener: "openOutboxDb", calls: { "src/outbox/db.ts": 1, "src/engine/host/vault-runtime.ts": 1 } },
+  { opener: "openLedgerDb", calls: { "src/ledger/db.ts": 1, "src/engine/host/vault-runtime.ts": 1, "src/surface/activity.ts": 1, "src/cli/commands/inspect.ts": 1, "src/cli/commands/repair.ts": 1 } },
+  { opener: "openRequestReceiptsDb", calls: { "src/request-receipts/db.ts": 1, "src/product-host/product-host.ts": 1 } },
+  { opener: "openDeviceAuthority", calls: { "src/device-authority/device-authority.ts": 1, "src/product-host/product-host.ts": 1, "src/cli/commands/devices.ts": 1, "src/backup/vault-backup.ts": 2 } },
+  { opener: "openQuarantineStore", calls: { "src/engine/operational/quarantine-store.ts": 1, "src/engine/host/vault-runtime.ts": 1 } },
+  { opener: "ensureVaultId", calls: { "src/product-host/vault-id.ts": 1, "src/product-host/product-host.ts": 1 } },
 ];
 
-const PROTECTED_CHOKEPOINTS = [
-  "src/engine/host/vault-runtime.ts",
-  "src/product-host/product-host.ts",
-  "src/surface/proposals.ts",
-  "src/surface/activity.ts",
-  "src/cli/commands/inspect.ts",
-  "src/cli/commands/repair.ts",
-  "src/cli/commands/devices.ts",
-  "src/backup/vault-backup.ts",
-] as const;
+const PROTECTED_CHOKEPOINTS: Readonly<Record<string, number>> = {
+  "src/engine/host/vault-runtime.ts": 1,
+  "src/product-host/product-host.ts": 1,
+  "src/product-host/home-lifecycle.ts": 1,
+  "src/surface/proposals.ts": 3,
+  "src/surface/activity.ts": 1,
+  "src/cli/commands/inspect.ts": 1,
+  "src/cli/commands/repair.ts": 1,
+  "src/cli/commands/devices.ts": 1,
+  "src/backup/vault-backup.ts": 1,
+};
 
 describe("operational writer admission inventory", () => {
   test("every mutable operational opener remains at a reviewed seam", async () => {
@@ -34,21 +35,21 @@ describe("operational writer admission inventory", () => {
       source.set(file, stripTypeScriptComments(await readFile(file, "utf8")));
     }
     for (const item of INVENTORY) {
-      const pattern = new RegExp(`\\b${item.opener}\\s*\\(`);
-      const actual = [...source]
-        .filter(([, text]) => pattern.test(text))
-        .map(([file]) => file)
-        .sort();
-      expect(actual, `${item.opener} callsite inventory changed`).toEqual([...item.files].sort());
+      const pattern = new RegExp(`\\b${item.opener}\\s*\\(`, "g");
+      const actual = Object.fromEntries([...source]
+        .map(([file, text]) => [file, [...text.matchAll(pattern)].length] as const)
+        .filter(([, count]) => count > 0));
+      expect(actual, `${item.opener} callsite inventory changed`).toEqual(item.calls);
     }
   });
 
   test("each production chokepoint acquires the shared lifetime lease", async () => {
-    for (const file of PROTECTED_CHOKEPOINTS) {
-      const text = await readFile(file, "utf8");
-      expect(text, `${file} bypasses operational writer admission`).toContain(
-        "acquireOperationalWriterLease",
-      );
+    for (const [file, count] of Object.entries(PROTECTED_CHOKEPOINTS)) {
+      const text = stripTypeScriptComments(await readFile(file, "utf8"));
+      expect(
+        [...text.matchAll(/\bacquireOperationalWriterLease\s*\(/g)].length,
+        `${file} operational writer admission count changed`,
+      ).toBe(count);
     }
   });
 

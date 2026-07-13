@@ -18,7 +18,10 @@ import {
   verifyHomeArtifact,
   writeArtifactMetadata,
 } from "../../scripts/home-artifact";
-import { verifyHomeArtifact as shippedVerifyHomeArtifact } from "../../src/product-host/home-artifact";
+import {
+  parseHomeArtifactManifest,
+  verifyHomeArtifact as shippedVerifyHomeArtifact,
+} from "../../src/product-host/home-artifact";
 
 describe("Dome Home artifact", () => {
   test("the builder exports the exact shipped verifier", () => {
@@ -116,14 +119,13 @@ describe("Dome Home artifact", () => {
     }
   });
 
-  test("rejects artifacts from before writer-barrier protocol v1", async () => {
+  test("general manifest verification accepts legacy v1 without an upgrade protocol", async () => {
     const root = await verifiableFixture();
     try {
       const path = join(root, "manifest.json");
       const manifest = JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
       delete manifest["writerBarrier"];
-      await writeFile(path, `${JSON.stringify(manifest)}\n`);
-      expect(verifyHomeArtifact(root)).rejects.toThrow("unknown or missing fields");
+      expect(parseHomeArtifactManifest(manifest).writerBarrier).toBeUndefined();
     } finally {
       await rm(root, { recursive: true, force: true });
     }

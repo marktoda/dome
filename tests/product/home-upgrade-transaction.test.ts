@@ -129,7 +129,19 @@ describe("Product Host pre-commit upgrade transaction", () => {
       answersAfterRollback.value.db.close();
       const legitimatePostRollbackState = await logicalState(f.vault);
       expect(legitimatePostRollbackState).not.toEqual(before);
-      expect(await restoreHomeUpgrade(f.vault, f.deps)).toEqual(restored);
+      const ordinaryWriter = await acquireOperationalWriterLease({
+        vaultPath: f.vault,
+        command: "post-rollback-writer",
+      });
+      if (!ordinaryWriter.ok) throw new Error("post-rollback writer was not admitted");
+      try {
+        expect(await Promise.race([
+          restoreHomeUpgrade(f.vault, f.deps),
+          Bun.sleep(250).then(() => { throw new Error("terminal restore tried to drain N-1 writers"); }),
+        ])).toEqual(restored);
+      } finally {
+        ordinaryWriter.lease.close();
+      }
       expect(await logicalState(f.vault)).toEqual(legitimatePostRollbackState);
       expect((await inspectHomeUpgradeAdmission(f.vault, f.deps)).admitted).toBeTrue();
       expect(await prepareHomeUpgrade({
@@ -242,7 +254,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
       await mkdir(attacker);
       await symlink(attacker, upgrade);
       expect((await inspectHomeUpgradeAdmission(f.vault, f.deps)).admitted).toBeFalse();
-      await expect(prepareHomeUpgrade({ vaultPath: f.vault, transactionId: randomUUID(), candidateArtifactId: CANDIDATE_ID }, f.deps)).rejects.toThrow("redirected");
+      await expect(prepareHomeUpgrade({ vaultPath: f.vault, transactionId: randomUUID(), candidateArtifactId: CANDIDATE_ID }, f.deps)).rejects.toThrow("direct owned directory");
       expect(await readdir(attacker)).toEqual([]);
       await rm(upgrade);
 
@@ -273,7 +285,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
     try {
       await expect(prepareHomeUpgrade({
         vaultPath: f.vault,
-        transactionId: "missing-candidate",
+        transactionId: randomUUID(),
         candidateArtifactId: "d".repeat(64),
       }, f.deps)).rejects.toThrow();
 
@@ -290,6 +302,83 @@ describe("Product Host pre-commit upgrade transaction", () => {
       });
       expect(admitted.ok).toBeTrue();
       if (admitted.ok) admitted.lease.close();
+    } finally {
+      await rm(f.root, { recursive: true, force: true });
+    }
+  });
+
+  test("an abort-release failure reports recovery-required evidence and stays closed", async () => {
+    const f = await fixture();
+    try {
+      const markerPath = join(
+        homeInstallationPaths(f.vault, f.deps).installations,
+        "upgrade",
+        "writer-barrier.json",
+      );
+      const baseVerify = f.deps.verifyArtifact!;
+      await expect(prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId: randomUUID(),
+        candidateArtifactId: CANDIDATE_ID,
+      }, {
+        ...f.deps,
+        verifyArtifact: async (path) => {
+          if (path.endsWith(CANDIDATE_ID)) {
+            await writeFile(markerPath, "{corrupt marker\n", { mode: 0o600 });
+            throw new Error("candidate verification failed");
+          }
+          return baseVerify(path);
+        },
+      })).rejects.toThrow(
+        "preparation failed and write admission remains closed for recovery",
+      );
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeTrue();
+      await expect(readHomeUpgradeBarrier(f.vault, f.deps)).rejects.toThrow("corrupt");
+    } finally {
+      await rm(f.root, { recursive: true, force: true });
+    }
+  });
+
+  test("legacy artifacts stay runnable but are ineligible on either side of upgrade", async () => {
+    const f = await fixture();
+    try {
+      const paths = homeInstallationPaths(f.vault, f.deps);
+      for (const artifactId of [CANDIDATE_ID, OLD_ID]) {
+        const manifestPath = join(releaseRoot(paths, artifactId), "manifest.json");
+        const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>;
+        delete manifest["writerBarrier"];
+        await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, { mode: 0o600 });
+        await expect(prepareHomeUpgrade({
+          vaultPath: f.vault,
+          transactionId: randomUUID(),
+          candidateArtifactId: CANDIDATE_ID,
+        }, f.deps)).rejects.toThrow("writer-barrier protocol 1 is required");
+        manifest["writerBarrier"] = { protocol: 1 };
+        await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, { mode: 0o600 });
+      }
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
+    } finally {
+      await rm(f.root, { recursive: true, force: true });
+    }
+  });
+
+  test("prepared restore recreates a missing external marker before ownership", async () => {
+    const f = await fixture();
+    try {
+      await prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId: randomUUID(),
+        candidateArtifactId: CANDIDATE_ID,
+      }, f.deps);
+      const marker = join(
+        homeInstallationPaths(f.vault, f.deps).installations,
+        "upgrade",
+        "writer-barrier.json",
+      );
+      await rm(marker);
+      await mutateDurableState(f.vault);
+      expect((await restoreHomeUpgrade(f.vault, f.deps)).phase).toBe("restored");
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
     } finally {
       await rm(f.root, { recursive: true, force: true });
     }
@@ -350,7 +439,11 @@ async function fixture(options: { durableFiles?: boolean } = {}) {
   for (const [id, version] of [[OLD_ID, "1.0.0"], [CANDIDATE_ID, "2.0.0"]] as const) {
     const release = releaseRoot(paths, id);
     await mkdir(release, { recursive: true });
-    await writeFile(join(release, "manifest.json"), `${JSON.stringify({ artifact: { id }, product: { name: "Dome Home", version } })}\n`, { mode: 0o600 });
+    await writeFile(join(release, "manifest.json"), `${JSON.stringify({
+      artifact: { id },
+      product: { name: "Dome Home", version },
+      writerBarrier: { protocol: 1 },
+    })}\n`, { mode: 0o600 });
   }
   const oldManifest = JSON.parse(await readFile(join(releaseRoot(paths, OLD_ID), "manifest.json"), "utf8")) as HomeArtifactManifest;
   await publishHomeInstallation(paths.record, createHomeInstallation(vault, oldManifest, new Map()), deps);

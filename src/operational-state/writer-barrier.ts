@@ -13,12 +13,13 @@ import { constants } from "node:fs";
 import {
   chmodSync,
   closeSync,
+  fsyncSync,
   lstatSync,
   mkdirSync,
   openSync,
   realpathSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 export const OPERATIONAL_WRITER_BARRIER_SCHEMA =
   "dome.operational-writer-barrier/v1" as const;
@@ -87,6 +88,19 @@ export type OperationalWriterBarrierInspection = {
   readonly blockedAt: string | null;
 };
 
+export type OperationalWriterBarrierOwner = {
+  readonly transactionId: string;
+  readonly blockedAt: string;
+  /** Clear durable ownership inside this still-EXCLUSIVE transaction. */
+  readonly release: (
+    validateAndRemoveExternalEvidence: () => Promise<void>,
+  ) => Promise<void>;
+};
+
+export type OperationalWriterBarrierOwnership<T> =
+  | { readonly kind: "owned"; readonly value: T }
+  | { readonly kind: "not-owned"; readonly transactionId: string | null };
+
 type OpenedCoordinator = {
   readonly db: Database;
   readonly vaultPath: string;
@@ -152,7 +166,7 @@ export async function engageOperationalWriterBarrier(input: {
   assertTransactionId(input.transactionId);
   let opened: OpenedCoordinator | null = null;
   try {
-    opened = openCoordinator(input.vaultPath);
+    opened = await openCoordinatorForExclusive(input.vaultPath);
     await beginExclusive(opened.db);
     const row = readBarrierRow(opened.db);
     if (row.blocked_transaction_id !== null) {
@@ -203,24 +217,64 @@ export async function releaseOperationalWriterBarrier(input: {
   readonly transactionId: string;
   readonly validateAndRemoveExternalEvidence: () => Promise<void>;
 }): Promise<void> {
+  const owned = await withOperationalWriterBarrierOwnership({
+    vaultPath: input.vaultPath,
+    transactionId: input.transactionId,
+  }, async (owner) => {
+    await owner.release(input.validateAndRemoveExternalEvidence);
+  });
+  if (owned.kind !== "owned") {
+    throw new Error("operational writer barrier is not owned by this transaction");
+  }
+}
+
+/**
+ * Serialize recovery for one durably engaged transaction with SQLite's
+ * kernel-managed EXCLUSIVE lock. No PID/stale-file protocol participates;
+ * process death releases the lock while the committed blocked row remains.
+ */
+export async function withOperationalWriterBarrierOwnership<T>(
+  input: {
+    readonly vaultPath: string;
+    readonly transactionId: string;
+  },
+  operation: (owner: OperationalWriterBarrierOwner) => Promise<T>,
+): Promise<OperationalWriterBarrierOwnership<T>> {
   assertTransactionId(input.transactionId);
-  const opened = openCoordinator(input.vaultPath);
+  const opened = await openCoordinatorForExclusive(input.vaultPath);
   try {
     await beginExclusive(opened.db);
     const row = readBarrierRow(opened.db);
     if (row.blocked_transaction_id !== input.transactionId) {
-      throw new Error("operational writer barrier is not owned by this transaction");
+      opened.db.run("COMMIT");
+      return Object.freeze({
+        kind: "not-owned" as const,
+        transactionId: row.blocked_transaction_id,
+      });
     }
 
-    await input.validateAndRemoveExternalEvidence();
-    const changed = opened.db.query(
-      `UPDATE ${TABLE}
-       SET blocked_transaction_id = NULL, blocked_at = NULL
-       WHERE singleton = 1 AND blocked_transaction_id = ?`,
-    ).run(input.transactionId).changes;
-    if (changed !== 1) throw new Error("operational writer barrier ownership changed during release");
-    readBarrierRow(opened.db);
+    let released = false;
+    const owner: OperationalWriterBarrierOwner = Object.freeze({
+      transactionId: input.transactionId,
+      blockedAt: row.blocked_at!,
+      release: async (validateAndRemoveExternalEvidence) => {
+        if (released) throw new Error("operational writer barrier owner already released");
+        await validateAndRemoveExternalEvidence();
+        const changed = opened.db.query(
+          `UPDATE ${TABLE}
+           SET blocked_transaction_id = NULL, blocked_at = NULL
+           WHERE singleton = 1 AND blocked_transaction_id = ?`,
+        ).run(input.transactionId).changes;
+        if (changed !== 1) {
+          throw new Error("operational writer barrier ownership changed during release");
+        }
+        readBarrierRow(opened.db);
+        released = true;
+      },
+    });
+    const value = await operation(owner);
     opened.db.run("COMMIT");
+    return Object.freeze({ kind: "owned" as const, value });
   } catch (error) {
     try { opened.db.run("ROLLBACK"); } catch {}
     throw error;
@@ -280,11 +334,26 @@ function openCoordinator(vaultInput: string): OpenedCoordinator {
       throw new Error("operational writer coordinator changed while opening");
     }
     configureCoordinator(db);
-    initializeOrValidate(db);
+    const initialized = initializeOrValidate(db);
+    if (initialized) {
+      fsyncPath(path);
+      fsyncPath(dirname(path));
+    }
     return Object.freeze({ db, vaultPath });
   } catch (error) {
     db.close();
     throw error;
+  }
+}
+
+async function openCoordinatorForExclusive(vaultInput: string): Promise<OpenedCoordinator> {
+  const started = Date.now();
+  while (true) {
+    try { return openCoordinator(vaultInput); }
+    catch (error) {
+      if (!isBusy(error) || Date.now() - started >= EXCLUSIVE_WAIT_MS) throw error;
+      await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, EXCLUSIVE_RETRY_MS));
+    }
   }
 }
 
@@ -305,8 +374,9 @@ function configureCoordinator(db: Database): void {
   }
 }
 
-function initializeOrValidate(db: Database): void {
+function initializeOrValidate(db: Database): boolean {
   let schema = readUserSchema(db);
+  let initialized = false;
   if (schema.length === 0) {
     db.run("BEGIN EXCLUSIVE");
     try {
@@ -320,6 +390,7 @@ function initializeOrValidate(db: Database): void {
            (singleton, schema, blocked_transaction_id, blocked_at)
            VALUES (1, ?, NULL, NULL)`,
         ).run(OPERATIONAL_WRITER_BARRIER_SCHEMA);
+        initialized = true;
       }
       db.run("COMMIT");
     } catch (error) {
@@ -334,6 +405,7 @@ function initializeOrValidate(db: Database): void {
     throw new Error("operational writer coordinator failed integrity_check");
   }
   readBarrierRow(db);
+  return initialized;
 }
 
 type SchemaRow = {
@@ -444,7 +516,11 @@ function ensureOwnedDirectory(path: string): void {
   if (!info.isDirectory() || info.isSymbolicLink() || realpathSync(path) !== resolve(path)) {
     throw new Error(`operational writer coordination path is not a direct directory: ${path}`);
   }
-  if (created) chmodSync(path, 0o700);
+  if (created) {
+    chmodSync(path, 0o700);
+    fsyncPath(path);
+    fsyncPath(dirname(path));
+  }
 }
 
 function ensureCoordinatorFile(path: string): void {
@@ -468,6 +544,15 @@ function ensureCoordinatorFile(path: string): void {
   ) {
     throw new Error("operational writer coordinator must be a direct private regular file");
   }
+  if (created) {
+    fsyncPath(path);
+    fsyncPath(dirname(path));
+  }
+}
+
+function fsyncPath(path: string): void {
+  const fd = openSync(path, constants.O_RDONLY | noFollowFlag());
+  try { fsyncSync(fd); } finally { closeSync(fd); }
 }
 
 function noFollowFlag(): number {

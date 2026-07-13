@@ -482,7 +482,10 @@ upgrade Adapter takes EXCLUSIVE, drains those leases, and durably records the
 transaction owner before snapshot or restore. A real singleton `SELECT`
 acquires SHARED (`BEGIN` alone does not). The coordinator is pinned to DELETE
 journal mode, NORMAL locking, and FULL synchronous durability; the ordinary
-WAL connection configuration is forbidden here.
+WAL connection configuration is forbidden here. After durable engagement,
+prepare/restore hold the same coordinator's kernel-managed EXCLUSIVE lock for
+the whole recovery section. Process death releases serialization without a
+PID or stale-file takeover protocol while the committed blocked row remains.
 
 The coordinator lives at
 `.dome/state/locks/operational-writers.db`. It is excluded lock state, not
@@ -499,9 +502,13 @@ The fixed acquisition order is operational lease, external Product Host lock,
 vault-local Product Host lock, then mutation/store locks. Normal Home acquires
 the outer lease before ownership or recovery; probation remains write-closed.
 Runtime, proposals, activity, inspect/repair, devices, and live backup are
-pinned by a structural callsite inventory. HTTP and MCP inherit runtime or
-proposal admission. Absent-target restore and exclusive upgrade restore are
-the narrow exceptions.
+covered by an exact reviewed-callsite drift test. Home lifecycle install,
+start, restart, and uninstall also hold an ordinary lease before plist,
+selector, release, or launchctl mutation; status stays read-only for recovery
+diagnosis. This inventory is a review alarm, not semantic proof; behavioral
+denial tests pin the runtime, proposals, and Home lifecycle seams. HTTP and MCP
+inherit runtime or proposal admission. Absent-target restore and the exclusive
+upgrade owner are the narrow exceptions.
 
 Normal current Home also inspects active upgrade evidence after ownership and
 before controlled-mutation recovery or any mutable store opener; prepared,
@@ -532,10 +539,16 @@ Device Authority is restored without epoch invalidation, preserving N-1
 active and revoked credentials, grants, device audit, and epoch. Migrations,
 candidate launch, selector commit, admission, journal retirement, and the
 public upgrade command remain deferred P4 work. Artifacts carry writer-barrier
-protocol v1 while `distribution.upgradeSupported` remains false. Artifacts
-lacking protocol v1 are ineligible upgrade sources; this release is the
-minimum future upgrade baseline because a pre-protocol standalone binary
-cannot be excluded by the cooperative coordinator.
+protocol v1 while `distribution.upgradeSupported` remains false. Intact legacy
+v1 artifacts remain verifiable and runnable, but artifacts lacking protocol v1
+are ineligible as either side of an upgrade because a pre-protocol standalone
+binary cannot be excluded by the cooperative coordinator.
+
+Cross-surface exclusion is complete, but public orchestration is not: a
+supervised current Home holds an ordinary lifetime lease, so the future
+upgrade command must first bootout and drain launchd through a narrow lifecycle
+suspension Adapter before engaging EXCLUSIVE. No public runnable upgrade path
+is claimed by this checkpoint.
 
 ### P3 device-authority foundation
 
