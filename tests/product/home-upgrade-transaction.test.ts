@@ -24,10 +24,17 @@ import { homeServiceLabelForVault } from "../../src/product-host/home-lifecycle"
 import { startProductHost } from "../../src/product-host/product-host";
 import { readHomeUpgradeBarrier } from "../../src/product-host/home-upgrade-barrier";
 import {
+  runHomeUpgradeCutover,
+  type HomeUpgradeCutoverDeps,
+} from "../../src/product-host/home-upgrade-cutover";
+import {
+  commitPreparedHomeUpgrade,
   inspectHomeUpgradeAdmission,
   migratePreparedHomeUpgrade,
   prepareHomeUpgrade,
   readHomeUpgrade,
+  readHomeUpgradeForRecovery,
+  releaseCommittedHomeUpgrade,
   restoreHomeUpgrade,
   type HomeUpgradeTransactionDeps,
 } from "../../src/product-host/home-upgrade-transaction";
@@ -46,7 +53,474 @@ const DATABASES = [
   "answers.db", "proposals.db", "outbox.db", "runs.db", "request-receipts.db", "device-authority.db",
 ] as const;
 
+function probationProof(transactionId: string) {
+  return {
+    schema: "dome.home-upgrade-probation-proof/v1" as const,
+    transactionId,
+    readinessSchema: "dome.product.readiness/v1" as const,
+    hostState: "probation" as const,
+    artifactId: CANDIDATE_ID,
+    productVersion: "2.0.0",
+    vaultId: "stable-vault-id",
+    writesAdmitted: false as const,
+    provenAt: "2026-07-13T01:00:00.000Z",
+  };
+}
+
 describe("Product Host pre-commit upgrade transaction", () => {
+  test("commits candidate selection only after exact probation and makes rollback irreversible", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      await prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId,
+        candidateArtifactId: CANDIDATE_ID,
+      }, f.deps);
+      await migratePreparedHomeUpgrade(f.vault, f.deps);
+      const committed = await commitPreparedHomeUpgrade({
+        vaultPath: f.vault,
+        proof: probationProof(transactionId),
+      }, f.deps);
+      expect(committed).toMatchObject({
+        phase: "committed",
+        probation: { artifactId: CANDIDATE_ID, vaultId: "stable-vault-id" },
+      });
+      expect(await readFile(homeInstallationPaths(f.vault, f.deps).record, "utf8")).toContain(CANDIDATE_ID);
+      expect(await readFile(join(f.deps.launchAgentsDir!, `${homeServiceLabelForVault(f.vault)}.plist`), "utf8")).toContain(CANDIDATE_ID);
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeTrue();
+      expect((await inspectHomeUpgradeAdmission(f.vault, f.deps)).admitted).toBeFalse();
+      expect((await inspectHomeUpgradeAdmission(f.vault, f.deps, {
+        id: CANDIDATE_ID,
+        version: "wrong",
+      })).admitted).toBeFalse();
+      expect((await inspectHomeUpgradeAdmission(f.vault, f.deps, {
+        id: CANDIDATE_ID,
+        version: "2.0.0",
+      })).admitted).toBeTrue();
+      await expect(restoreHomeUpgrade(f.vault, f.deps)).rejects.toThrow("irreversible");
+      expect((await commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof(transactionId) }, f.deps)).phase).toBe("committed");
+      await expect(releaseCommittedHomeUpgrade(f.vault, f.deps)).rejects.toThrow("lifecycle resume authorization");
+      expect((await releaseCommittedHomeUpgrade(f.vault, {
+        ...f.deps,
+        inspectLifecycleSuspension: async () => authorizedLifecycle(committed),
+      })).phase).toBe("committed");
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
+      expect(await readHomeUpgradeBarrier(f.vault, f.deps)).toBeNull();
+      expect((await releaseCommittedHomeUpgrade(f.vault, f.deps)).phase).toBe("committed");
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("composes real migration, selector commit, barrier release, and candidate-only admission", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      let lifecycleActive = false;
+      let candidateAuthorized = false;
+      let lifecycleFinished = false;
+      let barrierReleasedBeforeLifecycleFinish = false;
+      const inspectLifecycle: NonNullable<HomeUpgradeCutoverDeps["inspectLifecycleSuspension"]> = async () => {
+        if (!lifecycleActive) return { kind: "inactive" };
+        const journal = await readHomeUpgradeForRecovery(f.vault, f.deps);
+        if (!candidateAuthorized || journal?.phase !== "committed") {
+          throw new Error("candidate lifecycle evidence requested before authorization");
+        }
+        return authorizedLifecycle(journal);
+      };
+      const deps: HomeUpgradeCutoverDeps = {
+        ...f.deps,
+        inspectLifecycleSuspension: inspectLifecycle,
+        operations: {
+          prove: async (input) => probationProof(input.transactionId),
+        },
+        suspendHome: (async (invocation, operation) => {
+          expect(invocation.mode).toBe("new");
+          lifecycleActive = true;
+          const value = await operation({
+            operationId: transactionId,
+            purpose: "upgrade",
+            authorizeCurrentHomeForResume: async () => { candidateAuthorized = true; },
+          });
+          barrierReleasedBeforeLifecycleFinish =
+            !(await inspectOperationalWriterBarrier(f.vault)).blocked && !lifecycleFinished;
+          lifecycleFinished = true;
+          lifecycleActive = false;
+          return {
+            kind: "ready",
+            operationId: transactionId,
+            recovered: false,
+            operationRan: true,
+            value,
+          };
+        }) as NonNullable<HomeUpgradeCutoverDeps["suspendHome"]>,
+      };
+
+      const cutover = await runHomeUpgradeCutover({
+        vaultPath: f.vault,
+        transactionId,
+        candidateArtifactId: CANDIDATE_ID,
+      }, deps);
+      expect(cutover).toMatchObject({
+        status: "ready",
+        transactionOutcome: { kind: "committed", transaction: { phase: "committed" } },
+        lifecycle: { kind: "ready" },
+      });
+      expect(barrierReleasedBeforeLifecycleFinish).toBeTrue();
+      expect(await readHomeUpgradeBarrier(f.vault, f.deps)).toBeNull();
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
+      expect(await inspectHomeUpgradeAdmission(f.vault, f.deps, {
+        id: CANDIDATE_ID,
+        version: "2.0.0",
+      })).toEqual({ admitted: true });
+      expect((await inspectHomeUpgradeAdmission(f.vault, f.deps, {
+        id: CANDIDATE_ID,
+        version: "wrong",
+      })).admitted).toBeFalse();
+      expect((await inspectHomeUpgradeAdmission(f.vault, f.deps, {
+        id: OLD_ID,
+        version: "1.0.0",
+      })).admitted).toBeFalse();
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("real committed candidate deletion remains blocked and reports forward recovery", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      let lifecycleActive = false;
+      let candidateAuthorized = false;
+      const inspectLifecycle: NonNullable<HomeUpgradeCutoverDeps["inspectLifecycleSuspension"]> = async () => {
+        if (!lifecycleActive) return { kind: "inactive" };
+        const journal = await readHomeUpgradeForRecovery(f.vault, f.deps);
+        if (!candidateAuthorized || journal?.phase !== "committed") {
+          throw new Error("candidate lifecycle evidence requested before authorization");
+        }
+        return authorizedLifecycle(journal);
+      };
+      const deps: HomeUpgradeCutoverDeps = {
+        ...f.deps,
+        inspectLifecycleSuspension: inspectLifecycle,
+        operations: {
+          prove: async (input) => probationProof(input.transactionId),
+          release: async () => { throw new Error("crash before barrier release"); },
+        },
+        suspendHome: (async (_invocation, operation) => {
+          lifecycleActive = true;
+          const value = await operation({
+            operationId: transactionId,
+            purpose: "upgrade",
+            authorizeCurrentHomeForResume: async () => { candidateAuthorized = true; },
+          });
+          return {
+            kind: "deferred",
+            reason: "write-barrier-closed",
+            transactionId,
+            operationId: transactionId,
+            recovered: false,
+            operationRan: true,
+            value,
+          };
+        }) as NonNullable<HomeUpgradeCutoverDeps["suspendHome"]>,
+      };
+      const first = await runHomeUpgradeCutover({
+        vaultPath: f.vault,
+        transactionId,
+        candidateArtifactId: CANDIDATE_ID,
+      }, deps);
+      expect(first).toMatchObject({
+        status: "recovery-required",
+        transactionOutcome: { kind: "committed" },
+        handoffError: "crash before barrier release",
+      });
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeTrue();
+
+      await rm(releaseRoot(homeInstallationPaths(f.vault, f.deps), CANDIDATE_ID), { recursive: true });
+      const recovered = await runHomeUpgradeCutover({
+        vaultPath: f.vault,
+        transactionId,
+        candidateArtifactId: CANDIDATE_ID,
+      }, deps);
+      expect(recovered).toMatchObject({
+        status: "recovery-required",
+        transactionOutcome: { kind: "committed", transaction: { phase: "committed" } },
+        lifecycle: { kind: "failed", operationRan: false },
+      });
+      expect((await readHomeUpgradeForRecovery(f.vault, f.deps))?.phase).toBe("committed");
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeTrue();
+      expect((await inspectHomeUpgradeAdmission(f.vault, f.deps, {
+        id: CANDIDATE_ID,
+        version: "2.0.0",
+      })).admitted).toBeFalse();
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("simultaneous cutover recoverers restore once and never recreate cleared lifecycle state", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      const prepared = await prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId,
+        candidateArtifactId: CANDIDATE_ID,
+      }, f.deps);
+      await migratePreparedHomeUpgrade(f.vault, f.deps);
+      let inspected = 0;
+      let releaseInspections!: () => void;
+      const bothInspected = new Promise<void>((resolve) => { releaseInspections = resolve; });
+      let lifecycleCleared = false;
+      const deps: HomeUpgradeCutoverDeps = {
+        ...f.deps,
+        inspectLifecycleSuspension: async () => {
+          inspected += 1;
+          if (inspected === 2) releaseInspections();
+          await bothInspected;
+          return oldLifecycle(prepared);
+        },
+        suspendHome: (async (invocation) => {
+          expect(invocation).toMatchObject({ mode: "recover", policy: "resume-only" });
+          if (lifecycleCleared) {
+            throw new Error(`Home lifecycle suspension ${transactionId} is no longer active`);
+          }
+          lifecycleCleared = true;
+          return {
+            kind: "ready",
+            operationId: transactionId,
+            recovered: true,
+            operationRan: false,
+          };
+        }) as NonNullable<HomeUpgradeCutoverDeps["suspendHome"]>,
+      };
+      const attempts = await Promise.allSettled(Array.from({ length: 2 }, () => runHomeUpgradeCutover({
+        vaultPath: f.vault,
+        transactionId,
+        candidateArtifactId: CANDIDATE_ID,
+      }, deps)));
+      expect(inspected).toBe(2);
+      expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1);
+      expect(attempts.filter((attempt) => attempt.status === "rejected")).toHaveLength(1);
+      const winner = attempts.find((attempt) => attempt.status === "fulfilled");
+      if (winner?.status === "fulfilled") {
+        expect(winner.value).toMatchObject({
+          status: "ready",
+          transactionOutcome: { kind: "rolled-back", transaction: { phase: "restored" } },
+        });
+      }
+      expect(lifecycleCleared).toBeTrue();
+      expect((await readHomeUpgradeForRecovery(f.vault, f.deps))?.phase).toBe("restored");
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
+      expect(await readHomeUpgradeBarrier(f.vault, f.deps)).toBeNull();
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  for (const crashAt of ["probation-recorded", "switching-recorded"] as const) {
+    test(`composed cutover automatically rolls back and retries after ${crashAt}`, async () => {
+      const f = await fixture();
+      try {
+        const transactionId = randomUUID();
+        const before = await logicalState(f.vault);
+        const paths = homeInstallationPaths(f.vault, f.deps);
+        const plist = join(f.deps.launchAgentsDir!, `${homeServiceLabelForVault(f.vault)}.plist`);
+        const oldInstallation = await readFile(paths.record);
+        const oldPlist = await readFile(plist);
+        let suspendCalls = 0;
+        let authorized = false;
+        const deps: HomeUpgradeCutoverDeps = {
+          ...f.deps,
+          selectionCheckpoint: async (name) => {
+            if (name === crashAt) throw new Error(`crash at ${name}`);
+          },
+          inspectLifecycleSuspension: async () => ({ kind: "inactive" }),
+          operations: {
+            prove: async (input) => probationProof(input.transactionId),
+          },
+          suspendHome: (async (invocation, operation) => {
+            suspendCalls += 1;
+            expect(invocation.mode).toBe("new");
+            const value = await operation({
+              operationId: transactionId,
+              purpose: "upgrade",
+              authorizeCurrentHomeForResume: async () => { authorized = true; },
+            });
+            return {
+              kind: "ready",
+              operationId: transactionId,
+              recovered: false,
+              operationRan: true,
+              value,
+            };
+          }) as NonNullable<HomeUpgradeCutoverDeps["suspendHome"]>,
+        };
+
+        const first = await runHomeUpgradeCutover({
+          vaultPath: f.vault,
+          transactionId,
+          candidateArtifactId: CANDIDATE_ID,
+        }, deps);
+        expect(first).toMatchObject({
+          status: "ready",
+          transactionOutcome: {
+            kind: "rolled-back",
+            transaction: { phase: "restored" },
+            error: `crash at ${crashAt}`,
+          },
+          lifecycle: { kind: "ready", operationRan: true },
+        });
+        expect(authorized).toBeFalse();
+        expect(await readFile(paths.record)).toEqual(oldInstallation);
+        expect(await readFile(plist)).toEqual(oldPlist);
+        expect(await logicalState(f.vault)).toEqual(before);
+        expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
+        expect(await readHomeUpgradeBarrier(f.vault, f.deps)).toBeNull();
+
+        const retried = await runHomeUpgradeCutover({
+          vaultPath: f.vault,
+          transactionId,
+          candidateArtifactId: CANDIDATE_ID,
+        }, deps);
+        expect(retried).toMatchObject({
+          status: "ready",
+          transactionOutcome: { kind: "rolled-back", transaction: { phase: "restored" } },
+          lifecycle: { kind: "not-required", operationRan: false },
+        });
+        expect(suspendCalls).toBe(1);
+      } finally { await rm(f.root, { recursive: true, force: true }); }
+    });
+  }
+
+  for (const crashAt of ["candidate-plist-published", "candidate-installation-published"] as const) {
+    test(`switching crash at ${crashAt} restores exact old selectors and stores`, async () => {
+      const f = await fixture();
+      try {
+        const before = await logicalState(f.vault);
+        const transactionId = randomUUID();
+        const oldInstallation = await readFile(homeInstallationPaths(f.vault, f.deps).record);
+        const plist = join(f.deps.launchAgentsDir!, `${homeServiceLabelForVault(f.vault)}.plist`);
+        const oldPlist = await readFile(plist);
+        await prepareHomeUpgrade({ vaultPath: f.vault, transactionId, candidateArtifactId: CANDIDATE_ID }, f.deps);
+        await migratePreparedHomeUpgrade(f.vault, f.deps);
+        await expect(commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof(transactionId) }, {
+          ...f.deps,
+          selectionCheckpoint: async (name) => { if (name === crashAt) throw new Error(`crash at ${name}`); },
+        })).rejects.toThrow(`crash at ${crashAt}`);
+        expect((await readHomeUpgrade(f.vault, f.deps))?.phase).toBe("switching");
+        if (crashAt === "candidate-installation-published") {
+          await expect(restoreHomeUpgrade(f.vault, {
+            ...f.deps,
+            selectionCheckpoint: async (name) => {
+              if (name === "old-installation-restored") throw new Error("crash during selector rollback");
+            },
+          })).rejects.toThrow("crash during selector rollback");
+          expect((await readHomeUpgrade(f.vault, f.deps))?.phase).toBe("switching");
+        }
+        const restored = await restoreHomeUpgrade(f.vault, f.deps);
+        expect(restored.phase).toBe("restored");
+        expect(await readFile(homeInstallationPaths(f.vault, f.deps).record)).toEqual(oldInstallation);
+        expect(await readFile(plist)).toEqual(oldPlist);
+        expect(await logicalState(f.vault)).toEqual(before);
+      } finally { await rm(f.root, { recursive: true, force: true }); }
+    });
+  }
+
+  test("rejects corrupted persisted probation bindings while rollback remains vault-identity tolerant", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      await prepareHomeUpgrade({ vaultPath: f.vault, transactionId, candidateArtifactId: CANDIDATE_ID }, f.deps);
+      await migratePreparedHomeUpgrade(f.vault, f.deps);
+      await expect(commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof(transactionId) }, {
+        ...f.deps,
+        selectionCheckpoint: async (name) => {
+          if (name === "candidate-plist-published") throw new Error("retain switching journal");
+        },
+      })).rejects.toThrow("retain switching journal");
+
+      const journalPath = join(
+        homeInstallationPaths(f.vault, f.deps).installations,
+        "upgrade", "active", "journal.json",
+      );
+      const original = JSON.parse(await readFile(journalPath, "utf8")) as Record<string, unknown>;
+      const writeMutation = async (mutate: (journal: Record<string, unknown>) => void) => {
+        const journal = structuredClone(original);
+        mutate(journal);
+        await writeFile(journalPath, `${JSON.stringify(journal)}\n`, { mode: 0o600 });
+      };
+
+      await writeMutation((journal) => {
+        (journal["probation"] as Record<string, unknown>)["transactionId"] = randomUUID();
+      });
+      await expect(readHomeUpgradeForRecovery(f.vault, f.deps)).rejects.toThrow("probation proof is invalid");
+
+      await writeMutation((journal) => {
+        (journal["probation"] as Record<string, unknown>)["provenAt"] = "2026-07-13T00:59:59.000Z";
+      });
+      await expect(readHomeUpgradeForRecovery(f.vault, f.deps)).rejects.toThrow("precedes preparation");
+
+      await writeMutation((journal) => {
+        (journal["probation"] as Record<string, unknown>)["provenAt"] = "2026-07-13T01:00:01.000Z";
+      });
+      await expect(readHomeUpgradeForRecovery(f.vault, f.deps)).rejects.toThrow("follows selector switching");
+
+      await writeMutation((journal) => {
+        (journal["probation"] as Record<string, unknown>)["vaultId"] = "corrupt-live-vault-binding";
+      });
+      await expect(readHomeUpgrade(f.vault, f.deps)).rejects.toThrow("live vault");
+      expect((await readHomeUpgradeForRecovery(f.vault, f.deps))?.phase).toBe("switching");
+      const restored = await restoreHomeUpgrade(f.vault, f.deps);
+      expect(restored.phase).toBe("restored");
+
+      await writeMutation((journal) => {
+        journal["phase"] = "restored";
+        (journal["timestamps"] as Record<string, unknown>)["switchingAt"] = null;
+        (journal["timestamps"] as Record<string, unknown>)["restoredAt"] = "2026-07-13T01:00:00.000Z";
+        (journal["probation"] as Record<string, unknown>)["provenAt"] = "2026-07-13T01:00:01.000Z";
+      });
+      await expect(readHomeUpgradeForRecovery(f.vault, f.deps)).rejects.toThrow("follows restoration");
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("refuses selector commit before every live store is current or when proof names another vault", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      await prepareHomeUpgrade({ vaultPath: f.vault, transactionId, candidateArtifactId: CANDIDATE_ID }, f.deps);
+      await expect(commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof(transactionId) }, f.deps))
+        .rejects.toThrow("not current");
+      expect((await readHomeUpgrade(f.vault, f.deps))?.phase).toBe("prepared");
+      await migratePreparedHomeUpgrade(f.vault, f.deps);
+      for (const provenAt of ["2026-07-13T00:59:59.000Z", "2026-07-13T01:00:01.000Z"]) {
+        await expect(commitPreparedHomeUpgrade({
+          vaultPath: f.vault,
+          proof: { ...probationProof(transactionId), provenAt },
+        }, f.deps)).rejects.toThrow("prepared-to-commit interval");
+      }
+      await expect(commitPreparedHomeUpgrade({
+        vaultPath: f.vault,
+        proof: { ...probationProof(transactionId), transactionId: randomUUID() },
+      }, f.deps)).rejects.toThrow("does not match");
+      await expect(commitPreparedHomeUpgrade({
+        vaultPath: f.vault,
+        proof: { ...probationProof(transactionId), vaultId: "another-vault" },
+      }, f.deps)).rejects.toThrow("does not match");
+      expect((await readHomeUpgrade(f.vault, f.deps))?.phase).toBe("prepared");
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("a crash after durable commit recovers forward and can never restore", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      await prepareHomeUpgrade({ vaultPath: f.vault, transactionId, candidateArtifactId: CANDIDATE_ID }, f.deps);
+      await migratePreparedHomeUpgrade(f.vault, f.deps);
+      await expect(commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof(transactionId) }, {
+        ...f.deps,
+        selectionCheckpoint: async (name) => { if (name === "committed-recorded") throw new Error("crash after commit"); },
+      })).rejects.toThrow("crash after commit");
+      expect((await readHomeUpgrade(f.vault, f.deps))?.phase).toBe("committed");
+      expect((await commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof(transactionId) }, f.deps)).phase).toBe("committed");
+      await expect(restoreHomeUpgrade(f.vault, f.deps)).rejects.toThrow("irreversible");
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
   test("migrates a prepared N-1 receipt store, preserves all canaries, stays closed, retries, and restores exactly", async () => {
     const f = await fixture();
     try {
@@ -244,7 +718,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
 
       expect(prepared.phase).toBe("prepared");
       expect(Object.keys(prepared).sort()).toEqual([
-        "candidate", "old", "phase", "schema", "selectors", "snapshot", "timestamps", "transactionId", "vault",
+        "candidate", "old", "phase", "probation", "schema", "selection", "selectors", "snapshot", "timestamps", "transactionId", "vault",
       ]);
       expect(prepared.old).toMatchObject({ artifactId: OLD_ID, version: "1.0.0" });
       expect(prepared.candidate).toMatchObject({ artifactId: CANDIDATE_ID, version: "2.0.0" });
@@ -257,6 +731,13 @@ describe("Product Host pre-commit upgrade transaction", () => {
       const active = join(homeInstallationPaths(f.vault, f.deps).installations, "upgrade", "active");
       expect((await stat(active)).mode & 0o777).toBe(0o700);
       expect((await stat(join(active, "journal.json"))).mode & 0o777).toBe(0o600);
+      expect((await readdir(active)).sort()).toEqual(["journal.json", "selectors", "snapshot"]);
+      expect((await readdir(join(active, "selectors"))).sort()).toEqual([
+        "candidate-installation.json", "candidate.plist", "old-installation.json", "old.plist",
+      ]);
+      for (const name of await readdir(join(active, "selectors"))) {
+        expect((await stat(join(active, "selectors", name))).mode & 0o777).toBe(0o600);
+      }
       expect((await readdir(join(active, "snapshot"))).sort()).not.toContain("projection.db");
       for (const entry of prepared.snapshot.inventory) {
         if (entry.present) expect((await stat(join(active, "snapshot", entry.name))).mode & 0o777).toBe(0o600);
@@ -276,7 +757,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
       const plist = join(f.deps.launchAgentsDir!, `${homeServiceLabelForVault(f.vault)}.plist`);
       const oldPlist = await readFile(plist);
       await writeFile(plist, "candidate selector\n");
-      await expect(restoreHomeUpgrade(f.vault, f.deps)).rejects.toThrow("plist evidence changed");
+      await expect(restoreHomeUpgrade(f.vault, f.deps)).rejects.toThrow("selector state invalid");
       await writeFile(plist, oldPlist);
       await chmod(plist, prepared.selectors.plist.mode);
 
@@ -386,6 +867,31 @@ describe("Product Host pre-commit upgrade transaction", () => {
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });
 
+  for (const candidateFault of ["missing", "corrupt"] as const) {
+    test(`switching rollback ignores ${candidateFault} candidate payload`, async () => {
+      const f = await fixture();
+      try {
+        const transactionId = randomUUID();
+        const before = await logicalState(f.vault);
+        await prepareHomeUpgrade({ vaultPath: f.vault, transactionId, candidateArtifactId: CANDIDATE_ID }, f.deps);
+        await migratePreparedHomeUpgrade(f.vault, f.deps);
+        await expect(commitPreparedHomeUpgrade({ vaultPath: f.vault, proof: probationProof(transactionId) }, {
+          ...f.deps,
+          selectionCheckpoint: async (name) => {
+            if (name === "candidate-plist-published") throw new Error("switching crash");
+          },
+        })).rejects.toThrow("switching crash");
+        const candidate = releaseRoot(homeInstallationPaths(f.vault, f.deps), CANDIDATE_ID);
+        if (candidateFault === "missing") await rm(candidate, { recursive: true });
+        else await writeFile(join(candidate, "manifest.json"), "corrupt candidate\n", { mode: 0o600 });
+        await expect(readHomeUpgrade(f.vault, f.deps)).rejects.toThrow();
+        expect((await readHomeUpgradeForRecovery(f.vault, f.deps))?.phase).toBe("switching");
+        expect((await restoreHomeUpgrade(f.vault, f.deps)).phase).toBe("restored");
+        expect(await logicalState(f.vault)).toEqual(before);
+      } finally { await rm(f.root, { recursive: true, force: true }); }
+    });
+  }
+
   test("partial restore retries, absent files are restored as absent, and corrupt evidence fails closed", async () => {
     const f = await fixture({ durableFiles: false });
     try {
@@ -418,6 +924,48 @@ describe("Product Host pre-commit upgrade transaction", () => {
         if (!started.ok) expect(started.error.message).toContain("write admission is closed");
       }
       await expect(readHomeUpgrade(f.vault, f.deps)).rejects.toThrow("unknown phase");
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("reads and restores a legacy v1 transaction without inventing forward evidence", async () => {
+    const f = await fixture();
+    try {
+      const before = await logicalState(f.vault);
+      await prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId: randomUUID(),
+        candidateArtifactId: CANDIDATE_ID,
+      }, f.deps);
+      const active = join(homeInstallationPaths(f.vault, f.deps).installations, "upgrade", "active");
+      const journalPath = join(active, "journal.json");
+      const journal = JSON.parse(await readFile(journalPath, "utf8")) as Record<string, unknown>;
+      journal["schema"] = "dome.home-upgrade-transaction/v1";
+      delete journal["selection"];
+      delete journal["probation"];
+      const timestamps = journal["timestamps"] as Record<string, unknown>;
+      journal["timestamps"] = {
+        preparedAt: timestamps["preparedAt"],
+        restoredAt: null,
+      };
+      await rm(join(active, "selectors"), { recursive: true });
+      await writeFile(journalPath, `${JSON.stringify(journal, null, 2)}\n`, { mode: 0o600 });
+
+      const legacy = await readHomeUpgrade(f.vault, f.deps);
+      expect(legacy).toMatchObject({
+        schema: "dome.home-upgrade-transaction/v1",
+        phase: "prepared",
+        selection: null,
+        probation: null,
+      });
+      await expect(migratePreparedHomeUpgrade(f.vault, f.deps)).rejects.toThrow("restore-only");
+      await mutateDurableState(f.vault);
+      const restored = await restoreHomeUpgrade(f.vault, f.deps);
+      expect(restored).toMatchObject({ schema: "dome.home-upgrade-transaction/v1", phase: "restored" });
+      expect(await logicalState(f.vault)).toEqual(before);
+      const terminal = JSON.parse(await readFile(journalPath, "utf8")) as Record<string, unknown>;
+      expect(Object.keys(terminal).sort()).toEqual([
+        "candidate", "old", "phase", "schema", "selectors", "snapshot", "timestamps", "transactionId", "vault",
+      ]);
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });
 
@@ -664,6 +1212,66 @@ async function fixture(options: { durableFiles?: boolean } = {}) {
   await publishHomeInstallation(paths.record, createHomeInstallation(vault, oldManifest, new Map()), deps);
   await writeFile(join(launchAgentsDir, `${homeServiceLabelForVault(vault)}.plist`), `<plist>${OLD_ID}</plist>\n`, { mode: 0o600 });
   return { root, vault, deps, credential, csrfSecret, revokedCredential, unusedPairingCode, authEpoch };
+}
+
+function authorizedLifecycle(journal: Awaited<ReturnType<typeof commitPreparedHomeUpgrade>>) {
+  const selection = journal.selection!;
+  return {
+    kind: "active" as const,
+    suspension: {
+      schema: "dome.home-lifecycle-suspension/v1" as const,
+      phase: "suspended" as const,
+      purpose: "upgrade" as const,
+      operationId: journal.transactionId,
+      vault: journal.vault,
+      priorLoaded: true,
+      installationPath: journal.selectors.installation.path,
+      installationSha256: journal.selectors.installation.sha256,
+      artifactId: journal.old.artifactId,
+      artifactVersion: journal.old.version,
+      plistPath: journal.selectors.plist.path,
+      plistSha256: journal.selectors.plist.sha256,
+      resumeInstallationPath: selection.candidate.installation.path,
+      resumeInstallationSha256: selection.candidate.installation.sha256,
+      resumeArtifactId: journal.candidate.artifactId,
+      resumeArtifactVersion: journal.candidate.version,
+      resumePlistPath: selection.candidate.plist.path,
+      resumePlistSha256: selection.candidate.plist.sha256,
+      requestedAt: journal.timestamps.preparedAt,
+      phaseChangedAt: journal.timestamps.preparedAt,
+      lastError: null,
+    },
+  };
+}
+
+function oldLifecycle(journal: Awaited<ReturnType<typeof prepareHomeUpgrade>>) {
+  const selection = journal.selection!;
+  return {
+    kind: "active" as const,
+    suspension: {
+      schema: "dome.home-lifecycle-suspension/v1" as const,
+      phase: "suspended" as const,
+      purpose: "upgrade" as const,
+      operationId: journal.transactionId,
+      vault: journal.vault,
+      priorLoaded: true,
+      installationPath: journal.selectors.installation.path,
+      installationSha256: journal.selectors.installation.sha256,
+      artifactId: journal.old.artifactId,
+      artifactVersion: journal.old.version,
+      plistPath: journal.selectors.plist.path,
+      plistSha256: journal.selectors.plist.sha256,
+      resumeInstallationPath: selection.old.installation.path,
+      resumeInstallationSha256: selection.old.installation.sha256,
+      resumeArtifactId: journal.old.artifactId,
+      resumeArtifactVersion: journal.old.version,
+      resumePlistPath: selection.old.plist.path,
+      resumePlistSha256: selection.old.plist.sha256,
+      requestedAt: journal.timestamps.preparedAt,
+      phaseChangedAt: journal.timestamps.preparedAt,
+      lastError: null,
+    },
+  };
 }
 
 async function seedStores(vault: string) {

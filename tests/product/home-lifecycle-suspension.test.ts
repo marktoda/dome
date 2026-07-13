@@ -40,6 +40,38 @@ type FakeLaunchd = {
 };
 
 describe("supervised Home lifecycle suspension", () => {
+  test("a recovery caller never recreates a suspension another caller already cleared", async () => {
+    const f = await fixture(true);
+    await expect(suspend(
+      f,
+      "already-cleared",
+      async () => "must not run",
+      "backup",
+      "resume-only",
+    )).rejects.toThrow("is no longer active");
+  });
+
+  test("simultaneous recoverers serialize and only one clears retained lifecycle truth", async () => {
+    const f = await fixture(true);
+    f.readiness = async () => false;
+    expect((await suspend(f, "racing-recovery", async () => "seed")).kind).toBe("failed");
+    expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("active");
+    f.readiness = async () => true;
+
+    const results = await Promise.allSettled(Array.from({ length: 2 }, () => suspend(
+      f,
+      "racing-recovery",
+      async () => "must not rerun",
+      "backup",
+      "resume-only",
+    )));
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    const winner = results.find((result) => result.status === "fulfilled");
+    if (winner?.status === "fulfilled") expect(winner.value.kind).toBe("ready");
+    expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("inactive");
+  });
+
   test("publishes durable suspending intent before bootout", async () => {
     const f = await fixture(true);
     const observed: HomeLifecycleSuspensionInspection[] = [];

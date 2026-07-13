@@ -641,9 +641,37 @@ idempotent retry, and leaves journal and barriers prepared/closed. Fault tests
 prove rollback of store transactions, retry after a committed-store crash, and
 exact N-1 restore including credential truth.
 
-Candidate launch, plist/selection switching, commit-before-admission, journal
-retirement, signing/notarization, and a public upgrade command remain later P4
-checkpoints.
+The private candidate-cutover checkpoint now composes those foundations behind
+one phase-free interface. It suspends and drains current Home, prepares and
+migrates frozen N-1, launches the exact managed candidate in write-closed
+probation, fully validates readiness plus closed pairing/capture behavior,
+drains it, and re-proves all six stores before durable selector commit. The
+v2 journal records transaction-bound probation and `switching`, publishes the
+plist first and installation selector last with CAS-shaped verification, then
+records irreversible `committed`. Only exact candidate lifecycle
+authorization can release the external and operational barriers before Home
+resumes. Normal admission then accepts only the manifest-derived candidate
+id/version; N-1 and wrong-version launches remain closed.
+
+Any `prepared`/`switching` failure restores exact N-1 selectors and durable
+state automatically, even when the candidate payload or live vault-id evidence
+is missing or corrupt. `committed` is forward-only: missing/corrupt candidate
+evidence reports `recovery-required` and never rolls back. The cutover result
+keeps durable `transactionOutcome`, `handoffError`, and raw lifecycle result as
+separate truths; top-level readiness derives from handoff plus lifecycle.
+
+Crash recovery has one narrow lock-order exception. An already-active
+`prepared`/`switching` attempt restores before reacquiring lifecycle Tx2 because
+selector/plist bytes may no longer match the old resume target. The retained
+lifecycle row denies every start and mutation, real operational EXCLUSIVE plus
+both host locks serialize restorers, and recover mode never recreates a row a
+winning recoverer cleared. Concurrent recovery tests pin one winner, one
+loser, terminal `restored`, and reopened admission.
+
+The public `dome home upgrade` CLI/UX, terminal-journal retirement,
+managed-release garbage collection, and artifact signing/notarization remain
+later P4 checkpoints. `distribution.upgradeSupported` remains false until the
+public supported flow ships.
 
 Exit journey: a clean Mac needs no source checkout or manual PWA build; it
 pairs an iPhone, upgrades an N-1 fixture after backup, handles a forced failed

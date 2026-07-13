@@ -483,10 +483,11 @@ with uncertain durability rather than falsely claiming it is absent.
 `dome home --upgrade-probation` is the candidate validation launch. The CLI
 accepts the candidate identity only from the existing strict invoking-artifact
 verifier; a caller-provided version string or environment flag cannot declare
-an artifact committed. The shared admission Module has only two states in this
-checkpoint: normal launches admit writes, while upgrade probation is
-permanently closed. There is deliberately no `committed` launch state until a
-durable external upgrade transaction can supply and validate that evidence.
+an artifact committed. The launch interface still has only normal and
+write-closed probation modes; there is no boolean or `committed` launch mode.
+A normal launch selected by an upgrade is admitted only when its
+manifest-derived artifact identity exactly matches a durable v2 `committed`
+transaction and its candidate selector/plist evidence.
 
 The lifecycle canonicalizes the vault with `realpath` exactly once before
 admission or lock derivation, so a symlink alias and canonical path cannot name
@@ -510,31 +511,35 @@ Readiness reports the manifest-derived `artifactId` and `productVersion`,
 `host.state: probation`, and `writesAdmitted: false`. Whole-vault fingerprint
 tests cover every Git and `.dome/state` byte while candidate readiness and
 representative HTTP attempts run; a seeded admitted receipt remains admitted,
-proving restart interruption is also skipped. This is only the write-disabled
-candidate boot foundation. Durable upgrade journaling, store snapshots,
-migration, commit-before-admission, automatic pre-commit rollback, and frozen
-N-1 fixtures remain the next P4 checkpoints.
+proving restart interruption is also skipped. This write-disabled candidate
+boot foundation is now consumed by the private candidate-cutover checkpoint
+below; it remains unavailable as a public standalone product flow.
 
-### P4 pre-commit upgrade-transaction checkpoint
+### P4 upgrade-transaction checkpoint
 
-`src/product-host/home-upgrade-transaction.ts` is the durable rollback
-foundation beneath a future `dome home upgrade` orchestrator. Its private
-interface is prepare/read/migrate/restore plus `inspectHomeUpgradeAdmission`
-for normal-host startup; it does not launch a candidate, change launchd,
-select a release, admit candidate writes, or add a half-working CLI command.
-`installation.json` remains selected-release truth.
-The external journal records transaction truth only.
+`src/product-host/home-upgrade-transaction.ts` is the durable rollback and
+selection Module used by the private cutover orchestrator. Its narrow
+interface prepares, reads, migrates, commits, restores, releases admission,
+and inspects normal-host admission. Candidate launch and lifecycle sequencing
+remain in `home-upgrade-cutover.ts`; no public CLI is claimed.
+`installation.json` remains selected-release truth. The external journal
+records transaction truth only.
 
 The journal lives under the canonical per-vault Home installation directory,
 never in `.dome/state`. One private `active/` directory is published with
 macOS atomic no-replace rename after every file and directory is fsynced
-bottom-up. Its closed v1 document records the canonical vault and transaction
-id; `prepared` or `restored` phase; exact old/candidate artifact ids, versions,
-content-addressed release paths, and manifest hashes; exact N-1
-`installation.json` and launchd-plist hashes; timestamps; and a fixed snapshot
-inventory with presence, original mode, staged size/hash, and SQLite schema
-hash. Unknown fields, phases, files, symlinks, special files, redirected roots,
-corruption, and inconsistent selector or release evidence fail closed.
+bottom-up. Its closed v2 document records the canonical vault and transaction
+id; `prepared`, `switching`, `committed`, or `restored` phase; exact
+old/candidate artifact ids, versions, content-addressed release paths, and
+manifest hashes; exact selector, probation, and phase-time evidence; and a
+fixed snapshot inventory with presence, original mode, staged size/hash, and
+SQLite schema hash. A separate private 0600 archive binds exact old and
+candidate `installation.json` and launchd-plist bytes. Persisted probation is
+cross-bound to the transaction, artifact, version, and phase-relative time;
+full reads also bind it to live vault identity. Closed v1 journals remain
+strictly readable and restore-only. Unknown fields, phases, files, symlinks,
+special files, redirected roots, corruption, and inconsistent selector or
+release evidence fail closed.
 
 Preparation snapshots six durable SQLite stores — answers, proposals, outbox,
 runs, request receipts, and Device Authority — plus optional
@@ -565,10 +570,13 @@ backup or rollback inventory. The Home Adapter additionally publishes a
 strict private `upgrade/writer-barrier.json` outside the vault. Prepare leaves
 both barriers engaged after return or process death. Restore removes and
 fsyncs the external marker only after the journal is durably `restored`, then
-clears the coordinator last. Wrong owners, corrupt/unknown state, and
-ambiguous crash evidence fail closed. A validation failure before any active
-transaction publication may perform the one bounded abort-before-prepare
-release.
+clears the coordinator last. The committed path may clear the same barriers
+only after the journal is durably `committed` and lifecycle has sealed the
+exact candidate selector, plist, artifact id, and version as its resume
+target; it removes the external marker first and clears the coordinator last.
+Wrong owners, corrupt/unknown state, and ambiguous crash evidence fail closed.
+A validation failure before any active transaction publication may perform the
+one bounded abort-before-prepare release.
 
 For Product Host startup, the fixed acquisition order is lifecycle startup
 admission, operational lease, external Product Host lock, vault-local Product
@@ -581,6 +589,17 @@ held. Normal Home acquires and retains that lease before Product Host ownership,
 recovery, or mutable store opening; denial is therefore fingerprint-pure for
 Product Host durable stores. Probation remains write-closed and bypasses
 lifecycle admission entirely.
+
+Active `prepared`/`switching` crash recovery has one narrow exception to the
+ordinary lifecycle → operational order: it restores before reacquiring
+lifecycle Tx2 because switching may already have changed selector/plist bytes,
+which prevents old-resume evidence from validating first. The retained active
+lifecycle row still denies every start and lifecycle mutation. Restore owns
+operational EXCLUSIVE plus both Product Host locks. Recoverers serialize on
+that ownership and again on lifecycle Tx2; after the winner clears the row,
+recover mode is forbidden from recreating it, so a loser fails rather than
+opening a second suspension.
+
 Runtime, proposals, activity, inspect/repair, devices, and the durable-state
 section of live backup are covered by an exact reviewed-callsite drift test.
 Home lifecycle install, start, restart, and uninstall first own lifecycle and
@@ -593,22 +612,27 @@ upgrade owner are the narrow exceptions.
 
 Normal current Home also inspects active upgrade evidence after ownership and
 before controlled-mutation recovery or any mutable store opener; prepared,
-corrupt, unknown, or selector-diverged evidence keeps write admission closed.
-After a terminal `restored` journal, startup checks the bounded terminal
-journal, exact N-1 selectors, and old manifest rather than re-hashing every
-retained snapshot; full snapshot validation remains the `read`/`restore`
-contract and journal retirement remains deferred.
+switching, corrupt, unknown, or selector-diverged evidence keeps write
+admission closed. After `restored`, startup requires the exact N-1 selectors
+and old manifest. After `committed`, startup requires the exact
+manifest-derived candidate runtime identity and candidate selector/plist
+evidence; N-1 and wrong-version launches remain closed. Full snapshot
+validation remains the `read`/`restore` contract and terminal evidence is
+retained; retirement remains deferred.
 
-Restore is allowed only while `installation.json` and the plist still exactly
-select N-1. It validates the closed journal, all retained snapshot evidence,
-and the exact old artifact before its first state replacement; candidate
-identity/path remain closed journal evidence, but candidate payload existence
-or integrity is diagnostic-only and can never become a rollback prerequisite.
+Restore is allowed only before durable `committed`. `prepared` requires exact
+old selection; `switching` may expose old, mixed, or candidate selection and
+restores `installation.json` to old first, then the plist, before restoring
+stores. It validates the closed journal, all retained snapshot evidence, and
+the exact old artifact before its first state replacement; candidate
+identity/path remain closed journal evidence, but candidate payload existence,
+integrity, and live vault-id agreement can never become rollback prerequisites.
 Restore atomically replaces each durable file, removes stale SQLite
 WAL/SHM only after the main-file rename, and fsyncs the state directory after
-every entry. The journal stays `prepared` until the complete restored state
-and old schema hashes validate, so a partial crash retries idempotently. Only
-then does it atomically record `restored`. The phase update stages its private
+every entry. The journal stays in its current precommit phase until the
+complete old selection/state and schema hashes validate, so a partial crash
+retries idempotently. Only then does it atomically record `restored`. The phase
+update stages its private
 transaction-named file as a sibling of `active/`, renames it over
 `active/journal.json`, and fsyncs both `active/` and its `upgrade/` parent.
 Crash debris therefore stays outside the closed active inventory and is safely
@@ -667,14 +691,40 @@ engaged. A crash after one store commits therefore retries forward or restores
 the exact retained N-1 snapshot; it can never admit writes or bless an
 unjournaled partial vault.
 
-Candidate launch, selector commit, admission, journal retirement, and the
-public upgrade command remain deferred P4 work.
+### P4 private candidate-cutover checkpoint
 
-Cross-surface exclusion and private N-1 migration are complete, but public orchestration is not: a
-supervised current Home holds an ordinary lifetime lease, so the future
-upgrade command must first bootout and drain launchd through a narrow lifecycle
-suspension Adapter before engaging EXCLUSIVE. No public runnable upgrade path
-is claimed by this checkpoint.
+`runHomeUpgradeCutover` is the single private composition seam; callers cannot
+select or reorder phases. A new attempt performs supervised Home suspension →
+prepare → migrate → launch/prove/drain the exact managed candidate → durable
+selector commit → seal candidate lifecycle resume evidence → release write
+barriers → resume/readiness. Probation re-verifies the candidate manifest
+immediately before spawning only its pinned runtime and entrypoint. It fully
+parses `dome.product.readiness/v1`, binds proof to transaction, artifact,
+version, vault, `host.state: probation`, `writesAdmitted: false`, and time, and
+actively proves `/pair/status` plus unauthenticated `/capture` remain closed.
+Every response has a timeout and an incrementally enforced 64 KiB budget.
+
+Commit re-proves all six live stores current, records probation and
+`switching`, publishes the plist first and `installation.json` last with
+expected-old/desired-candidate CAS-shaped verification and directory fsync,
+then durably records irreversible `committed`. Any `prepared`/`switching`
+failure automatically restores exact N-1 selection and state. `committed`
+never rolls back: recovery proceeds only forward through exact candidate
+authorization, barrier release, and resume. Missing or corrupt committed
+candidate payload remains closed and reports recovery required.
+
+The result separates durable `transactionOutcome` (`committed` or
+`rolled-back`) from `handoffError` and the raw lifecycle result. Top-level
+`status` is `ready` only when handoff has no error and lifecycle is `ready` or
+`not-required`; otherwise it is `recovery-required`. A prepublication failure
+throws because no transaction exists to restore; simultaneous upgrade and
+rollback failure throws an aggregate and remains closed. Retained terminal
+evidence makes committed release and restored rollback idempotent.
+
+Still deferred are the public `dome home upgrade` CLI and supported UX,
+terminal-journal retirement, managed-release garbage collection, and artifact
+signing/notarization. `distribution.upgradeSupported` remains false until that
+public supported flow ships.
 
 ### P3 device-authority foundation
 

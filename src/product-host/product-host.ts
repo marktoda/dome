@@ -187,7 +187,11 @@ export async function startProductHost(
       const scheduler = new ProductOperationScheduler();
       let poll: Promise<void> = Promise.resolve();
       try {
-        const upgradeAdmission = await inspectHomeUpgradeAdmission(vaultPath, runtimeDeps.upgradeTransaction);
+        const upgradeAdmission = await inspectHomeUpgradeAdmission(
+          vaultPath,
+          runtimeDeps.upgradeTransaction,
+          admission.artifact,
+        );
         if (!upgradeAdmission.admitted) {
           settleStarted(failure(
             "startup-failed",

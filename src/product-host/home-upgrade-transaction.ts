@@ -26,11 +26,23 @@ import {
   type HomeInstallationDeps,
   type HomeInstallationPaths,
 } from "./home-installation";
+import {
+  captureHomeSelection,
+  captureHomeSelectionDocument,
+  classifyHomeSelection,
+  publishHomeSelectionDocument,
+  renderHomeSelection,
+  selectionDocument,
+  type HomeSelection,
+  type HomeSelectionDocument,
+} from "./home-selection";
+import { readVaultId } from "./vault-id";
 import { verifyHomeArtifact, type HomeArtifactVerifier } from "./home-artifact";
 import {
   HOME_DURABLE_STATE_PROTOCOL,
   HOME_STORE_MIGRATIONS,
   migratePreparedHomeStores,
+  preflightHomeStoreMigrations,
   preflightHomeStoreSnapshots,
   type HomeStoreMigrationEntry,
 } from "./home-store-migrations";
@@ -43,8 +55,13 @@ import {
 import { inspectOperationalWriterBarrier } from "../operational-state/writer-barrier";
 import { withProductHostOwnership } from "./host-ownership";
 import { homeServiceLabelForVault } from "./home-lifecycle";
+import {
+  inspectHomeLifecycleSuspension,
+  type HomeLifecycleSuspensionInspection,
+} from "./home-lifecycle-suspension";
 
-export const HOME_UPGRADE_TRANSACTION_SCHEMA = "dome.home-upgrade-transaction/v1" as const;
+const HOME_UPGRADE_TRANSACTION_SCHEMA_V1 = "dome.home-upgrade-transaction/v1" as const;
+export const HOME_UPGRADE_TRANSACTION_SCHEMA = "dome.home-upgrade-transaction/v2" as const;
 
 const DATABASES = Object.freeze([
   { name: "answers.db", metaTable: "answers_meta" },
@@ -60,7 +77,7 @@ const SNAPSHOT_NAMES = Object.freeze([
   ...DURABLE_FILES,
 ] as const);
 
-type UpgradePhase = "prepared" | "restored";
+type UpgradePhase = "prepared" | "switching" | "committed" | "restored";
 
 export type HomeUpgradeArtifactEvidence = {
   readonly artifactId: string;
@@ -87,8 +104,36 @@ export type HomeUpgradeFileEvidence = {
   readonly sha256: string;
 };
 
+export type HomeUpgradeStoredSelectionDocument = HomeUpgradeFileEvidence & {
+  readonly stored: "selectors/old-installation.json" | "selectors/old.plist" |
+    "selectors/candidate-installation.json" | "selectors/candidate.plist";
+};
+
+export type HomeUpgradeSelectionEvidence = {
+  readonly old: {
+    readonly installation: HomeUpgradeStoredSelectionDocument;
+    readonly plist: HomeUpgradeStoredSelectionDocument;
+  };
+  readonly candidate: {
+    readonly installation: HomeUpgradeStoredSelectionDocument;
+    readonly plist: HomeUpgradeStoredSelectionDocument;
+  };
+};
+
+export type HomeUpgradeProbationProof = {
+  readonly schema: "dome.home-upgrade-probation-proof/v1";
+  readonly transactionId: string;
+  readonly readinessSchema: "dome.product.readiness/v1";
+  readonly hostState: "probation";
+  readonly artifactId: string;
+  readonly productVersion: string;
+  readonly vaultId: string;
+  readonly writesAdmitted: false;
+  readonly provenAt: string;
+};
+
 export type HomeUpgradeTransaction = {
-  readonly schema: typeof HOME_UPGRADE_TRANSACTION_SCHEMA;
+  readonly schema: typeof HOME_UPGRADE_TRANSACTION_SCHEMA | typeof HOME_UPGRADE_TRANSACTION_SCHEMA_V1;
   readonly vault: string;
   readonly transactionId: string;
   readonly phase: UpgradePhase;
@@ -98,12 +143,17 @@ export type HomeUpgradeTransaction = {
     readonly installation: HomeUpgradeFileEvidence;
     readonly plist: HomeUpgradeFileEvidence;
   };
+  /** Null only for a parsed legacy v1 transaction, which is restore-only. */
+  readonly selection: HomeUpgradeSelectionEvidence | null;
+  readonly probation: HomeUpgradeProbationProof | null;
   readonly snapshot: {
     readonly root: "snapshot";
     readonly inventory: ReadonlyArray<HomeUpgradeSnapshotEntry>;
   };
   readonly timestamps: {
     readonly preparedAt: string;
+    readonly switchingAt: string | null;
+    readonly committedAt: string | null;
     readonly restoredAt: string | null;
   };
 };
@@ -115,6 +165,14 @@ export type HomeUpgradeTransactionDeps = HomeInstallationDeps & {
   readonly launchAgentsDir?: string | undefined;
   readonly afterRestoreEntry?: ((name: typeof SNAPSHOT_NAMES[number]) => Promise<void>) | undefined;
   readonly afterStoreMigration?: ((name: HomeStoreMigrationEntry["name"]) => Promise<void>) | undefined;
+  /** Test/diagnostic crash seam for durable cutover and selector rollback. */
+  readonly selectionCheckpoint?: ((name:
+    "probation-recorded" | "switching-recorded" | "candidate-plist-published" |
+    "candidate-installation-published" | "committed-recorded" |
+    "old-installation-restored" | "old-plist-restored"
+  ) => Promise<void>) | undefined;
+  /** Internal lifecycle evidence seam used by isolated transaction tests. */
+  readonly inspectLifecycleSuspension?: ((vaultPath: string) => Promise<HomeLifecycleSuspensionInspection>) | undefined;
 };
 
 /**
@@ -249,6 +307,21 @@ async function prepareHomeUpgradeWhileQuiesced(
     if (candidate.artifactId === old.artifactId) {
       throw new Error("Dome Home upgrade candidate must differ from the selected release");
     }
+    const oldSelection = await captureHomeSelection(vault, deps);
+    if (oldSelection.installation.sha256 !== selectors.installation.sha256 ||
+      oldSelection.plist.sha256 !== selectors.plist.sha256) {
+      throw new Error("Dome Home selector evidence changed during upgrade preparation");
+    }
+    const candidateSelection = renderHomeSelection({
+      vault,
+      artifact: {
+        id: candidate.artifactId,
+        version: candidate.version,
+        releasePath: candidate.releasePath,
+      },
+      environment: installation.environment,
+    }, deps);
+    const selection = await storeSelectionEvidence(staging, oldSelection, candidateSelection);
 
     // Copy live SQLite state without opening it. Exact N-1 compatibility is
     // then proved from the private standalone rollback snapshots before the
@@ -269,8 +342,15 @@ async function prepareHomeUpgradeWhileQuiesced(
       old,
       candidate,
       selectors,
+      selection,
+      probation: null,
       snapshot: Object.freeze({ root: "snapshot" as const, inventory }),
-      timestamps: Object.freeze({ preparedAt, restoredAt: null }),
+      timestamps: Object.freeze({
+        preparedAt,
+        switchingAt: null,
+        committedAt: null,
+        restoredAt: null,
+      }),
     });
     await writePrivateJson(join(staging, "journal.json"), journal, true);
     await fsyncTree(staging);
@@ -300,6 +380,9 @@ export async function migratePreparedHomeUpgrade(
   const vault = await canonicalVault(vaultPath);
   const initial = await readRequiredHomeUpgrade(vault, deps);
   if (initial.phase !== "prepared") throw new Error("only a prepared Dome Home upgrade may migrate durable state");
+  if (initial.schema !== HOME_UPGRADE_TRANSACTION_SCHEMA) {
+    throw new Error("legacy Dome Home upgrade transactions are restore-only");
+  }
   await engageForTransaction(vault, initial.transactionId, deps);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const ownership = await withHomeUpgradeBarrierOwnership({
@@ -344,6 +427,110 @@ export async function migratePreparedHomeUpgrade(
   throw new Error("Dome Home upgrade migration ownership could not be recovered");
 }
 
+/**
+ * Durably cross the irreversible selection boundary after stopped probation.
+ * Barriers remain engaged: the lifecycle orchestrator must authorize resume
+ * evidence before releasing them and letting launchd admit candidate writes.
+ */
+export async function commitPreparedHomeUpgrade(input: {
+  readonly vaultPath: string;
+  readonly proof: HomeUpgradeProbationProof;
+}, deps: HomeUpgradeTransactionDeps = {}): Promise<HomeUpgradeTransaction> {
+  const vault = await canonicalVault(input.vaultPath);
+  const initial = await readRequiredHomeUpgrade(vault, deps);
+  if (initial.schema !== HOME_UPGRADE_TRANSACTION_SCHEMA) {
+    throw new Error("legacy Dome Home upgrade transactions are restore-only");
+  }
+  if (initial.phase === "restored") throw new Error("a restored Dome Home upgrade cannot commit");
+  await validateCommitProof(vault, initial, input.proof, deps.now?.() ?? new Date());
+  if (initial.phase === "committed") return initial;
+  await engageForTransaction(vault, initial.transactionId, deps);
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const ownership = await withHomeUpgradeBarrierOwnership({
+      vaultPath: vault,
+      transactionId: initial.transactionId,
+    }, deps, async (owner) => {
+      await assertActiveHomeBarrier(vault, owner, deps);
+      return await withQuiescedOwnership(vault, async () => {
+        let journal = await readRequiredHomeUpgrade(vault, deps);
+        if (journal.schema !== HOME_UPGRADE_TRANSACTION_SCHEMA ||
+          journal.transactionId !== initial.transactionId || journal.phase === "restored") {
+          throw new Error("Dome Home upgrade evidence changed before selector commit");
+        }
+        await validateCommitProof(vault, journal, input.proof, deps.now?.() ?? new Date());
+        if (journal.phase === "committed") return journal;
+        await assertCandidateDurableCompatibility(
+          journal.candidate,
+          journal.snapshot.inventory,
+          deps.verifyArtifact ?? verifyHomeArtifact,
+        );
+        await assertAllHomeStoresCurrent(vault, journal.transactionId, deps);
+        const journalPath = join(
+          homeInstallationPaths(vault, deps).installations,
+          "upgrade", "active", "journal.json",
+        );
+        if (journal.phase === "prepared") {
+          if (journal.probation !== null && JSON.stringify(journal.probation) !== JSON.stringify(input.proof)) {
+            throw new Error("Dome Home probation proof changed before selection");
+          }
+          if (journal.probation === null) {
+            journal = Object.freeze({ ...journal, probation: Object.freeze({ ...input.proof }) });
+            await replaceJournal(journalPath, journal);
+            journal = await readRequiredHomeUpgrade(vault, deps);
+            await deps.selectionCheckpoint?.("probation-recorded");
+          }
+          const switchingAt = (deps.now?.() ?? new Date()).toISOString();
+          assertTimestamp(switchingAt, "switching timestamp");
+          if (Date.parse(switchingAt) < Date.parse(journal.timestamps.preparedAt)) {
+            throw new Error("switching timestamp precedes preparation");
+          }
+          journal = Object.freeze({
+            ...journal,
+            phase: "switching" as const,
+            timestamps: Object.freeze({ ...journal.timestamps, switchingAt }),
+          });
+          await replaceJournal(journalPath, journal);
+          journal = await readRequiredHomeUpgrade(vault, deps);
+          await deps.selectionCheckpoint?.("switching-recorded");
+        }
+        if (journal.phase !== "switching" || journal.selection === null) {
+          throw new Error("Dome Home upgrade is not durably switching");
+        }
+        const stored = await loadStoredSelection(dirname(journalPath), journal.selection);
+        await publishCandidateDocument(stored.old.plist, stored.candidate.plist);
+        await deps.selectionCheckpoint?.("candidate-plist-published");
+        await publishCandidateDocument(stored.old.installation, stored.candidate.installation);
+        await deps.selectionCheckpoint?.("candidate-installation-published");
+        if (await classifyHomeSelection(stored) !== "candidate") {
+          throw new Error("candidate Home selection did not converge before commit");
+        }
+        const committedAt = (deps.now?.() ?? new Date()).toISOString();
+        assertTimestamp(committedAt, "committed timestamp");
+        if (journal.timestamps.switchingAt === null ||
+          Date.parse(committedAt) < Date.parse(journal.timestamps.switchingAt)) {
+          throw new Error("committed timestamp precedes selection");
+        }
+        const committed: HomeUpgradeTransaction = Object.freeze({
+          ...journal,
+          phase: "committed" as const,
+          timestamps: Object.freeze({ ...journal.timestamps, committedAt }),
+        });
+        await replaceJournal(journalPath, committed);
+        const durable = await readRequiredHomeUpgrade(vault, deps);
+        await deps.selectionCheckpoint?.("committed-recorded");
+        return durable;
+      });
+    });
+    if (ownership.kind === "owned") return ownership.value;
+    if (ownership.transactionId !== null && ownership.transactionId !== initial.transactionId) {
+      throw new Error(`another Dome Home upgrade transaction is active: ${ownership.transactionId}`);
+    }
+    await engageForTransaction(vault, initial.transactionId, deps);
+  }
+  throw new Error("Dome Home selector commit ownership could not be recovered");
+}
+
 /** Strict, non-mutating read of the one active transaction and its inventory. */
 export async function readHomeUpgrade(
   vaultPath: string,
@@ -357,6 +544,29 @@ export async function readHomeUpgrade(
   if (!await present(active)) return null;
   const journal = await readBoundedJournal(active, vault);
   await validateJournalReferences(journal, paths, deps);
+  await validateSnapshotInventory(active, journal.snapshot.inventory);
+  if (journal.probation !== null && journal.probation.vaultId !== await readVaultId(vault)) {
+    throw new Error("upgrade probation proof vault identity does not match the live vault");
+  }
+  return journal;
+}
+
+/**
+ * Read rollback truth without requiring the candidate payload to exist.
+ * Only recovery orchestration and restore use this narrower evidence view.
+ */
+export async function readHomeUpgradeForRecovery(
+  vaultPath: string,
+  deps: HomeUpgradeTransactionDeps = {},
+): Promise<HomeUpgradeTransaction | null> {
+  const vault = await canonicalVault(vaultPath);
+  const paths = homeInstallationPaths(vault, deps);
+  const upgrade = await inspectUpgradeAncestors(paths);
+  if (upgrade === null) return null;
+  const active = join(upgrade, "active");
+  if (!await present(active)) return null;
+  const journal = await readBoundedJournal(active, vault);
+  await validateRestoreJournalReferences(journal, paths, deps);
   await validateSnapshotInventory(active, journal.snapshot.inventory);
   return journal;
 }
@@ -372,12 +582,57 @@ export async function restoreHomeUpgrade(
 ): Promise<HomeUpgradeTransaction> {
   const vault = await canonicalVault(vaultPath);
   const initial = await readRequiredRestoreHomeUpgrade(vault, deps);
+  if (initial.phase === "committed") {
+    throw new Error("committed Dome Home upgrades are irreversible and cannot be restored");
+  }
   if (initial.phase === "restored") {
     await finishTerminalRestore(vault, initial, deps);
     return initial;
   }
   await engageForTransaction(vault, initial.transactionId, deps);
   return runRestoreOwnership(vault, initial, deps);
+}
+
+/** Release external then operational write barriers for an exact committed candidate. */
+export async function releaseCommittedHomeUpgrade(
+  vaultPath: string,
+  deps: HomeUpgradeTransactionDeps = {},
+): Promise<HomeUpgradeTransaction> {
+  const vault = await canonicalVault(vaultPath);
+  const committed = await readRequiredHomeUpgrade(vault, deps);
+  if (committed.phase !== "committed") {
+    throw new Error("only a committed Dome Home upgrade may release write admission");
+  }
+  const inspection = await inspectOperationalWriterBarrier(vault);
+  const marker = await readHomeUpgradeBarrier(vault, deps);
+  if (!inspection.blocked) {
+    if (marker !== null) throw new Error("committed upgrade has an orphaned external writer marker");
+    return committed;
+  }
+  if (inspection.transactionId !== committed.transactionId || inspection.blockedAt === null ||
+    (marker !== null && (marker.transactionId !== committed.transactionId || marker.engagedAt !== inspection.blockedAt))) {
+    throw new Error("committed upgrade writer evidence does not match");
+  }
+  await assertCandidateLifecycleAuthorization(committed, deps);
+  const ownership = await withHomeUpgradeBarrierOwnership({
+    vaultPath: vault,
+    transactionId: committed.transactionId,
+  }, deps, async (owner) => {
+    await assertActiveHomeBarrier(vault, owner, deps);
+    await owner.release(async () => {
+      const current = await readRequiredHomeUpgrade(vault, deps);
+      if (current.phase !== "committed" || current.transactionId !== committed.transactionId) {
+        throw new Error("Dome Home upgrade is not durably committed");
+      }
+    });
+  });
+  if (ownership.kind === "not-owned") {
+    const after = await inspectOperationalWriterBarrier(vault);
+    if (after.blocked || await readHomeUpgradeBarrier(vault, deps) !== null) {
+      throw new Error("committed upgrade writer release raced with another owner");
+    }
+  }
+  return await readRequiredHomeUpgrade(vault, deps);
 }
 
 async function runRestoreOwnership(
@@ -396,6 +651,12 @@ async function runRestoreOwnership(
         // Terminal rollback is non-replayable. A later legitimate N-1 write must
         // never be erased by an idempotence retry or stale operator invocation.
         if (journal.phase === "restored") return journal;
+        if (journal.phase === "committed") {
+          throw new Error("committed Dome Home upgrades are irreversible and cannot be restored");
+        }
+        if (journal.phase === "switching") {
+          await restoreOldHomeSelection(journal, deps);
+        }
         const installation = await readHomeInstallation(vault, deps);
         if (installation === null || installation.artifact.id !== journal.old.artifactId ||
           installation.artifact.version !== journal.old.version) {
@@ -469,7 +730,12 @@ async function runRestoreOwnership(
         const restored: HomeUpgradeTransaction = Object.freeze({
           ...journal,
           phase: "restored" as const,
-          timestamps: Object.freeze({ ...journal.timestamps, restoredAt }),
+          timestamps: Object.freeze({
+            ...journal.timestamps,
+            switchingAt: null,
+            committedAt: null,
+            restoredAt,
+          }),
         });
         await replaceJournal(join(paths.installations, "upgrade", "active", "journal.json"), restored);
         return await readRequiredRestoreHomeUpgrade(vault, deps);
@@ -573,6 +839,7 @@ async function assertActiveHomeBarrier(
 export async function inspectHomeUpgradeAdmission(
   vaultPath: string,
   deps: HomeUpgradeTransactionDeps = {},
+  launchArtifact?: { readonly id: string; readonly version: string } | undefined,
 ): Promise<{ readonly admitted: true } | { readonly admitted: false; readonly reason: string }> {
   const vault = await canonicalVault(vaultPath);
   const paths = homeInstallationPaths(vault, deps);
@@ -582,8 +849,22 @@ export async function inspectHomeUpgradeAdmission(
     const active = join(upgrade, "active");
     if (!await present(active)) return Object.freeze({ admitted: true as const });
     const journal = await readBoundedJournal(active, vault);
-    if (journal.phase !== "restored") {
+    if (journal.phase !== "restored" && journal.phase !== "committed") {
       return Object.freeze({ admitted: false as const, reason: `upgrade transaction is ${journal.phase}` });
+    }
+    if (journal.phase === "committed") {
+      if (launchArtifact?.id !== journal.candidate.artifactId ||
+        launchArtifact.version !== journal.candidate.version) {
+        return Object.freeze({ admitted: false as const, reason: "committed upgrade launch artifact is not the candidate" });
+      }
+      const installation = await readHomeInstallation(vault, deps);
+      if (installation === null || installation.artifact.id !== journal.candidate.artifactId ||
+        installation.artifact.version !== journal.candidate.version) {
+        return Object.freeze({ admitted: false as const, reason: "committed upgrade selector is not the candidate" });
+      }
+      await validateArtifactReference(journal.candidate, paths);
+      await validateSelectorReferences(journal, paths, deps);
+      return Object.freeze({ admitted: true as const });
     }
     const installation = await readHomeInstallation(vault, deps);
     if (installation === null || installation.artifact.id !== journal.old.artifactId ||
@@ -608,10 +889,6 @@ export async function inspectHomeUpgradeAdmission(
 
 async function readBoundedJournal(active: string, vault: string): Promise<HomeUpgradeTransaction> {
   await assertDirectDirectory(active, "upgrade transaction root");
-  const rootNames = (await readdir(active)).sort(compareStrings);
-  if (JSON.stringify(rootNames) !== JSON.stringify(["journal.json", "snapshot"])) {
-    throw new Error("Dome Home upgrade transaction has an unknown or missing root entry");
-  }
   await assertDirectDirectory(join(active, "snapshot"), "upgrade snapshot root");
   const journalPath = join(active, "journal.json");
   const info = await lstat(journalPath);
@@ -621,7 +898,16 @@ async function readBoundedJournal(active: string, vault: string): Promise<HomeUp
   let value: unknown;
   try { value = JSON.parse(await readFile(journalPath, "utf8")); }
   catch { throw new Error("Dome Home upgrade journal is corrupt"); }
-  return parseJournal(value, vault);
+  const journal = parseJournal(value, vault);
+  const rootNames = (await readdir(active)).sort(compareStrings);
+  const expected = journal.schema === HOME_UPGRADE_TRANSACTION_SCHEMA
+    ? ["journal.json", "selectors", "snapshot"]
+    : ["journal.json", "snapshot"];
+  if (JSON.stringify(rootNames) !== JSON.stringify(expected)) {
+    throw new Error("Dome Home upgrade transaction has an unknown or missing root entry");
+  }
+  if (journal.selection !== null) await validateStoredSelection(active, journal.selection);
+  return journal;
 }
 
 async function inspectUpgradeAncestors(paths: HomeInstallationPaths): Promise<string | null> {
@@ -756,8 +1042,21 @@ async function validateSelectorReferences(
   paths: HomeInstallationPaths,
   deps: HomeUpgradeTransactionDeps,
 ): Promise<void> {
-  await assertFileEvidence(journal.selectors.installation, paths.record, "installation.json");
-  await assertFileEvidence(journal.selectors.plist, homePlistPath(journal.vault, deps), "Dome Home launchd plist");
+  if (journal.selection === null) {
+    await assertFileEvidence(journal.selectors.installation, paths.record, "installation.json");
+    await assertFileEvidence(journal.selectors.plist, homePlistPath(journal.vault, deps), "Dome Home launchd plist");
+    return;
+  }
+  const stored = await loadStoredSelection(
+    join(paths.installations, "upgrade", "active"),
+    journal.selection,
+  );
+  const state = await classifyHomeSelection(stored);
+  if (state === "invalid" ||
+    ((journal.phase === "prepared" || journal.phase === "restored") && state !== "old") ||
+    (journal.phase === "committed" && state !== "candidate")) {
+    throw new Error(`Dome Home selector state ${state} is inconsistent with upgrade phase ${journal.phase}`);
+  }
 }
 
 async function snapshotDurableState(vault: string, snapshotRoot: string): Promise<ReadonlyArray<HomeUpgradeSnapshotEntry>> {
@@ -835,12 +1134,232 @@ async function validateSnapshotInventory(active: string, inventory: ReadonlyArra
   }
 }
 
+async function storeSelectionEvidence(
+  transactionRoot: string,
+  old: HomeSelection,
+  candidate: HomeSelection,
+): Promise<HomeUpgradeSelectionEvidence> {
+  const selectionRoot = join(transactionRoot, "selectors");
+  await mkdir(selectionRoot, { mode: 0o700 });
+  await chmod(selectionRoot, 0o700);
+  const entries = [
+    [old.installation, "selectors/old-installation.json"],
+    [old.plist, "selectors/old.plist"],
+    [candidate.installation, "selectors/candidate-installation.json"],
+    [candidate.plist, "selectors/candidate.plist"],
+  ] as const;
+  const evidence = new Map<string, HomeUpgradeStoredSelectionDocument>();
+  for (const [document, stored] of entries) {
+    if (document.size > 128 * 1024) throw new Error(`upgrade selector exceeds its size budget: ${stored}`);
+    const path = join(transactionRoot, stored);
+    await writePrivateBytes(path, document.bytes);
+    evidence.set(stored, Object.freeze({
+      path: document.path,
+      mode: document.mode,
+      size: document.size,
+      sha256: document.sha256,
+      stored,
+    }));
+  }
+  return Object.freeze({
+    old: Object.freeze({
+      installation: evidence.get("selectors/old-installation.json")!,
+      plist: evidence.get("selectors/old.plist")!,
+    }),
+    candidate: Object.freeze({
+      installation: evidence.get("selectors/candidate-installation.json")!,
+      plist: evidence.get("selectors/candidate.plist")!,
+    }),
+  });
+}
+
+async function validateStoredSelection(
+  active: string,
+  selection: HomeUpgradeSelectionEvidence,
+): Promise<void> {
+  const root = join(active, "selectors");
+  await assertDirectDirectory(root, "upgrade stored selectors");
+  const expected = [
+    "candidate-installation.json", "candidate.plist", "old-installation.json", "old.plist",
+  ];
+  if (JSON.stringify((await readdir(root)).sort(compareStrings)) !== JSON.stringify(expected)) {
+    throw new Error("upgrade stored selector inventory is not closed");
+  }
+  for (const document of storedSelectionDocuments(selection)) {
+    const path = join(active, document.stored);
+    const info = await assertRegular(path, `stored ${document.stored}`);
+    if ((info.mode & 0o777) !== 0o600 || info.size !== document.size ||
+      await hashFile(path) !== document.sha256) {
+      throw new Error(`upgrade stored selector evidence changed: ${document.stored}`);
+    }
+  }
+}
+
+async function loadStoredSelection(
+  active: string,
+  selection: HomeUpgradeSelectionEvidence,
+): Promise<{ readonly old: HomeSelection; readonly candidate: HomeSelection }> {
+  const load = async (document: HomeUpgradeStoredSelectionDocument): Promise<HomeSelectionDocument> =>
+    selectionDocument(document.path, await readFile(join(active, document.stored), "utf8"), document.mode);
+  return Object.freeze({
+    old: Object.freeze({
+      installation: await load(selection.old.installation),
+      plist: await load(selection.old.plist),
+    }),
+    candidate: Object.freeze({
+      installation: await load(selection.candidate.installation),
+      plist: await load(selection.candidate.plist),
+    }),
+  });
+}
+
+async function publishCandidateDocument(
+  old: HomeSelectionDocument,
+  candidate: HomeSelectionDocument,
+): Promise<void> {
+  const live = await captureHomeSelectionDocument(old.path);
+  if (sameSelectionDocument(live, candidate)) return;
+  if (!sameSelectionDocument(live, old)) {
+    throw new Error("live Home selector is neither exact old nor exact candidate evidence");
+  }
+  await publishHomeSelectionDocument({ expected: old, desired: candidate });
+}
+
+async function restoreOldHomeSelection(
+  journal: HomeUpgradeTransaction,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<void> {
+  if (journal.selection === null) throw new Error("switching upgrade lacks stored selector evidence");
+  const active = join(
+    homeInstallationPaths(journal.vault, deps).installations,
+    "upgrade", "active",
+  );
+  const stored = await loadStoredSelection(active, journal.selection);
+  await publishOldDocument(stored.candidate.installation, stored.old.installation);
+  await deps.selectionCheckpoint?.("old-installation-restored");
+  await publishOldDocument(stored.candidate.plist, stored.old.plist);
+  await deps.selectionCheckpoint?.("old-plist-restored");
+  if (await classifyHomeSelection(stored) !== "old") {
+    throw new Error("old Home selection did not converge during rollback");
+  }
+}
+
+async function publishOldDocument(
+  candidate: HomeSelectionDocument,
+  old: HomeSelectionDocument,
+): Promise<void> {
+  const live = await captureHomeSelectionDocument(old.path);
+  if (sameSelectionDocument(live, old)) return;
+  if (!sameSelectionDocument(live, candidate)) {
+    throw new Error("live Home selector is neither exact candidate nor exact old evidence");
+  }
+  await publishHomeSelectionDocument({ expected: candidate, desired: old });
+}
+
+function sameSelectionDocument(left: HomeSelectionDocument, right: HomeSelectionDocument): boolean {
+  return left.path === right.path && left.mode === right.mode && left.size === right.size &&
+    left.sha256 === right.sha256 && left.bytes === right.bytes;
+}
+
+async function validateCommitProof(
+  vault: string,
+  journal: HomeUpgradeTransaction,
+  proof: HomeUpgradeProbationProof,
+  commitClock: Date,
+): Promise<void> {
+  if (proof.schema !== "dome.home-upgrade-probation-proof/v1" ||
+    proof.readinessSchema !== "dome.product.readiness/v1" || proof.hostState !== "probation" ||
+    proof.transactionId !== journal.transactionId ||
+    proof.artifactId !== journal.candidate.artifactId ||
+    proof.productVersion !== journal.candidate.version || proof.writesAdmitted !== false ||
+    proof.vaultId !== await readVaultId(vault)) {
+    throw new Error("candidate probation proof does not match the upgrade transaction and vault");
+  }
+  assertTimestamp(proof.provenAt, "candidate probation proof timestamp");
+  if (Date.parse(proof.provenAt) < Date.parse(journal.timestamps.preparedAt) ||
+    Date.parse(proof.provenAt) > commitClock.getTime()) {
+    throw new Error("candidate probation proof is outside the prepared-to-commit interval");
+  }
+}
+
+async function assertCandidateLifecycleAuthorization(
+  journal: HomeUpgradeTransaction,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<void> {
+  if (journal.selection === null) throw new Error("committed upgrade lacks candidate selection evidence");
+  const inspected = await (deps.inspectLifecycleSuspension ?? inspectHomeLifecycleSuspension)(journal.vault);
+  if (inspected.kind !== "active" || inspected.suspension.purpose !== "upgrade" ||
+    inspected.suspension.operationId !== journal.transactionId ||
+    inspected.suspension.resumeArtifactId !== journal.candidate.artifactId ||
+    inspected.suspension.resumeArtifactVersion !== journal.candidate.version ||
+    inspected.suspension.resumeInstallationSha256 !== journal.selection.candidate.installation.sha256 ||
+    inspected.suspension.resumePlistSha256 !== journal.selection.candidate.plist.sha256) {
+    throw new Error("committed upgrade lacks exact candidate lifecycle resume authorization");
+  }
+}
+
+async function assertAllHomeStoresCurrent(
+  vault: string,
+  transactionId: string,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<void> {
+  const root = join(
+    homeInstallationPaths(vault, deps).installations,
+    "upgrade", `.selection-preflight-${transactionId}`,
+  );
+  await createOwnedMigrationPreflight(root);
+  try {
+    const evidence = await preflightHomeStoreMigrations({
+      stateRoot: join(vault, ".dome", "state"),
+      snapshotRoot: root,
+      phase: "prepared-retry",
+    });
+    const predecessor = evidence.find((entry) => entry.state !== "current");
+    if (predecessor !== undefined) {
+      throw new Error(`Dome Home store is not current before selector commit: ${predecessor.name}`);
+    }
+  } finally {
+    await clearOwnedMigrationPreflight(root);
+  }
+}
+
+function storedSelectionDocuments(
+  selection: HomeUpgradeSelectionEvidence,
+): ReadonlyArray<HomeUpgradeStoredSelectionDocument> {
+  return [
+    selection.old.installation, selection.old.plist,
+    selection.candidate.installation, selection.candidate.plist,
+  ];
+}
+
+function stripStoredSelection(
+  selection: HomeUpgradeSelectionEvidence["old"],
+): HomeUpgradeTransaction["selectors"] {
+  const strip = ({ stored: _stored, ...document }: HomeUpgradeStoredSelectionDocument) => document;
+  return Object.freeze({
+    installation: Object.freeze(strip(selection.installation)),
+    plist: Object.freeze(strip(selection.plist)),
+  });
+}
+
 function parseJournal(value: unknown, expectedVault: string): HomeUpgradeTransaction {
-  const root = exactRecord(value, "upgrade journal", [
-    "schema", "vault", "transactionId", "phase", "old", "candidate", "selectors", "snapshot", "timestamps",
-  ]);
-  if (root["schema"] !== HOME_UPGRADE_TRANSACTION_SCHEMA || root["vault"] !== expectedVault ||
-    (root["phase"] !== "prepared" && root["phase"] !== "restored")) {
+  const untrusted = exactRecordShape(value, "upgrade journal");
+  const schema = untrusted["schema"];
+  const isV2 = schema === HOME_UPGRADE_TRANSACTION_SCHEMA;
+  const root = exactRecord(value, "upgrade journal", isV2
+    ? [
+      "schema", "vault", "transactionId", "phase", "old", "candidate", "selectors",
+      "selection", "probation", "snapshot", "timestamps",
+    ]
+    : [
+      "schema", "vault", "transactionId", "phase", "old", "candidate", "selectors",
+      "snapshot", "timestamps",
+    ]);
+  const phase = root["phase"];
+  if ((schema !== HOME_UPGRADE_TRANSACTION_SCHEMA && schema !== HOME_UPGRADE_TRANSACTION_SCHEMA_V1) ||
+    root["vault"] !== expectedVault ||
+    (phase !== "prepared" && phase !== "switching" && phase !== "committed" && phase !== "restored") ||
+    (!isV2 && phase !== "prepared" && phase !== "restored")) {
     throw new Error("Dome Home upgrade journal has invalid fixed fields or unknown phase");
   }
   assertTransactionId(root["transactionId"]);
@@ -852,6 +1371,13 @@ function parseJournal(value: unknown, expectedVault: string): HomeUpgradeTransac
     installation: parseFileEvidence(selectorsValue["installation"], "installation selector"),
     plist: parseFileEvidence(selectorsValue["plist"], "plist selector"),
   });
+  const selection = isV2 ? parseSelectionEvidence(root["selection"], selectors) : null;
+  const probation = isV2
+    ? parseProbationProof(root["probation"], root["transactionId"] as string, candidate)
+    : null;
+  if ((phase === "switching" || phase === "committed") && probation === null) {
+    throw new Error("upgrade phase requires exact candidate probation proof");
+  }
   const snapshot = exactRecord(root["snapshot"], "upgrade snapshot", ["root", "inventory"]);
   if (snapshot["root"] !== "snapshot" || !Array.isArray(snapshot["inventory"]) || snapshot["inventory"].length !== SNAPSHOT_NAMES.length) {
     throw new Error("upgrade journal snapshot inventory is invalid");
@@ -860,26 +1386,51 @@ function parseJournal(value: unknown, expectedVault: string): HomeUpgradeTransac
   if (JSON.stringify(inventory.map((entry) => entry.name)) !== JSON.stringify(SNAPSHOT_NAMES)) {
     throw new Error("upgrade journal snapshot inventory is not canonical");
   }
-  const timestamps = exactRecord(root["timestamps"], "upgrade timestamps", ["preparedAt", "restoredAt"]);
+  const timestamps = exactRecord(root["timestamps"], "upgrade timestamps", isV2
+    ? ["preparedAt", "switchingAt", "committedAt", "restoredAt"]
+    : ["preparedAt", "restoredAt"]);
   assertTimestamp(timestamps["preparedAt"], "prepared timestamp");
+  if (isV2 && timestamps["switchingAt"] !== null) assertTimestamp(timestamps["switchingAt"], "switching timestamp");
+  if (isV2 && timestamps["committedAt"] !== null) assertTimestamp(timestamps["committedAt"], "committed timestamp");
   if (timestamps["restoredAt"] !== null) assertTimestamp(timestamps["restoredAt"], "restored timestamp");
-  if ((root["phase"] === "prepared") !== (timestamps["restoredAt"] === null)) {
+  if (!validPhaseTimestamps(phase as UpgradePhase, {
+    preparedAt: timestamps["preparedAt"],
+    switchingAt: isV2 ? timestamps["switchingAt"] : null,
+    committedAt: isV2 ? timestamps["committedAt"] : null,
+    restoredAt: timestamps["restoredAt"],
+  })) {
     throw new Error("upgrade journal phase evidence is inconsistent");
   }
+  validatePersistedProbationOrder(phase as UpgradePhase, probation, {
+    preparedAt: timestamps["preparedAt"] as string,
+    switchingAt: isV2 ? timestamps["switchingAt"] as string | null : null,
+    restoredAt: timestamps["restoredAt"] as string | null,
+  });
   return Object.freeze({
-    schema: HOME_UPGRADE_TRANSACTION_SCHEMA,
+    schema: schema as HomeUpgradeTransaction["schema"],
     vault: expectedVault,
     transactionId: root["transactionId"] as string,
-    phase: root["phase"] as UpgradePhase,
+    phase: phase as UpgradePhase,
     old,
     candidate,
     selectors,
+    selection,
+    probation,
     snapshot: Object.freeze({ root: "snapshot", inventory: Object.freeze(inventory) }),
     timestamps: Object.freeze({
       preparedAt: timestamps["preparedAt"] as string,
+      switchingAt: isV2 ? timestamps["switchingAt"] as string | null : null,
+      committedAt: isV2 ? timestamps["committedAt"] as string | null : null,
       restoredAt: timestamps["restoredAt"] as string | null,
     }),
   });
+}
+
+function exactRecordShape(value: unknown, label: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
 }
 
 function parseFileEvidence(value: unknown, label: string): HomeUpgradeFileEvidence {
@@ -891,6 +1442,128 @@ function parseFileEvidence(value: unknown, label: string): HomeUpgradeFileEviden
   }
   assertSha(evidence["sha256"], `${label} hash`);
   return Object.freeze(evidence as unknown as HomeUpgradeFileEvidence);
+}
+
+function parseSelectionEvidence(
+  value: unknown,
+  oldSelectors: HomeUpgradeTransaction["selectors"],
+): HomeUpgradeSelectionEvidence {
+  const root = exactRecord(value, "upgrade selection", ["old", "candidate"]);
+  const old = parseSelectionSide(root["old"], "old", {
+    installation: "selectors/old-installation.json",
+    plist: "selectors/old.plist",
+  });
+  const candidate = parseSelectionSide(root["candidate"], "candidate", {
+    installation: "selectors/candidate-installation.json",
+    plist: "selectors/candidate.plist",
+  });
+  if (JSON.stringify(stripStoredSelection(old)) !== JSON.stringify(oldSelectors)) {
+    throw new Error("upgrade old selection differs from legacy selector evidence");
+  }
+  if (old.installation.path !== candidate.installation.path || old.plist.path !== candidate.plist.path) {
+    throw new Error("upgrade selection paths differ between old and candidate");
+  }
+  if (old.installation.sha256 === candidate.installation.sha256 ||
+    old.plist.sha256 === candidate.plist.sha256) {
+    throw new Error("upgrade candidate selection is not distinct");
+  }
+  return Object.freeze({ old, candidate });
+}
+
+function parseSelectionSide(
+  value: unknown,
+  label: "old" | "candidate",
+  stored: { readonly installation: HomeUpgradeStoredSelectionDocument["stored"]; readonly plist: HomeUpgradeStoredSelectionDocument["stored"] },
+): HomeUpgradeSelectionEvidence["old"] {
+  const side = exactRecord(value, `${label} selection`, ["installation", "plist"]);
+  return Object.freeze({
+    installation: parseStoredSelectionDocument(side["installation"], `${label} installation`, stored.installation),
+    plist: parseStoredSelectionDocument(side["plist"], `${label} plist`, stored.plist),
+  });
+}
+
+function parseStoredSelectionDocument(
+  value: unknown,
+  label: string,
+  expectedStored: HomeUpgradeStoredSelectionDocument["stored"],
+): HomeUpgradeStoredSelectionDocument {
+  const root = exactRecord(value, label, ["path", "mode", "size", "sha256", "stored"]);
+  const evidence = parseFileEvidence({
+    path: root["path"], mode: root["mode"], size: root["size"], sha256: root["sha256"],
+  }, label);
+  if (root["stored"] !== expectedStored || evidence.size > 128 * 1024) {
+    throw new Error(`${label} stored evidence is invalid`);
+  }
+  return Object.freeze({ ...evidence, stored: expectedStored });
+}
+
+function parseProbationProof(
+  value: unknown,
+  transactionId: string,
+  candidate: HomeUpgradeArtifactEvidence,
+): HomeUpgradeProbationProof | null {
+  if (value === null) return null;
+  const proof = exactRecord(value, "upgrade probation proof", [
+    "schema", "transactionId", "readinessSchema", "hostState", "artifactId", "productVersion", "vaultId",
+    "writesAdmitted", "provenAt",
+  ]);
+  if (proof["schema"] !== "dome.home-upgrade-probation-proof/v1" ||
+    proof["readinessSchema"] !== "dome.product.readiness/v1" || proof["hostState"] !== "probation" ||
+    proof["transactionId"] !== transactionId ||
+    proof["artifactId"] !== candidate.artifactId || proof["productVersion"] !== candidate.version ||
+    typeof proof["vaultId"] !== "string" || proof["vaultId"].length === 0 || proof["vaultId"].length > 128 ||
+    proof["writesAdmitted"] !== false) {
+    throw new Error("upgrade probation proof is invalid");
+  }
+  assertTransactionId(proof["transactionId"]);
+  assertTimestamp(proof["provenAt"], "probation proof timestamp");
+  return Object.freeze(proof as unknown as HomeUpgradeProbationProof);
+}
+
+function validatePersistedProbationOrder(
+  phase: UpgradePhase,
+  proof: HomeUpgradeProbationProof | null,
+  timestamps: {
+    readonly preparedAt: string;
+    readonly switchingAt: string | null;
+    readonly restoredAt: string | null;
+  },
+): void {
+  if (proof === null) return;
+  const provenAt = Date.parse(proof.provenAt);
+  if (provenAt < Date.parse(timestamps.preparedAt)) {
+    throw new Error("upgrade probation proof precedes preparation");
+  }
+  if ((phase === "switching" || phase === "committed") &&
+    (timestamps.switchingAt === null || provenAt > Date.parse(timestamps.switchingAt))) {
+    throw new Error("upgrade probation proof follows selector switching");
+  }
+  if (phase === "restored" &&
+    (timestamps.restoredAt === null || provenAt > Date.parse(timestamps.restoredAt))) {
+    throw new Error("upgrade probation proof follows restoration");
+  }
+}
+
+function validPhaseTimestamps(
+  phase: UpgradePhase,
+  timestamps: { readonly preparedAt: unknown; readonly switchingAt: unknown; readonly committedAt: unknown; readonly restoredAt: unknown },
+): boolean {
+  const prepared = Date.parse(timestamps.preparedAt as string);
+  if (phase === "prepared") {
+    return timestamps.switchingAt === null && timestamps.committedAt === null && timestamps.restoredAt === null;
+  }
+  if (phase === "switching") {
+    return typeof timestamps.switchingAt === "string" && Date.parse(timestamps.switchingAt) >= prepared &&
+      timestamps.committedAt === null && timestamps.restoredAt === null;
+  }
+  if (phase === "committed") {
+    return typeof timestamps.switchingAt === "string" && typeof timestamps.committedAt === "string" &&
+      Date.parse(timestamps.switchingAt) >= prepared &&
+      Date.parse(timestamps.committedAt) >= Date.parse(timestamps.switchingAt) &&
+      timestamps.restoredAt === null;
+  }
+  return timestamps.switchingAt === null && timestamps.committedAt === null &&
+    typeof timestamps.restoredAt === "string" && Date.parse(timestamps.restoredAt) >= prepared;
 }
 
 function parseArtifact(value: unknown, label: string): HomeUpgradeArtifactEvidence {
@@ -953,7 +1626,7 @@ async function replaceJournal(path: string, journal: HomeUpgradeTransaction): Pr
   const temporary = join(upgrade, `.journal-${journal.transactionId}.tmp`);
   await rm(temporary, { force: true });
   try {
-    await writePrivateJson(temporary, journal, true);
+    await writePrivateJson(temporary, journalDocument(journal), true);
     await rename(temporary, path);
     await fsyncDirectory(active);
     await fsyncDirectory(upgrade);
@@ -961,6 +1634,24 @@ async function replaceJournal(path: string, journal: HomeUpgradeTransaction): Pr
     await rm(temporary, { force: true });
     await fsyncDirectory(upgrade);
   }
+}
+
+function journalDocument(journal: HomeUpgradeTransaction): unknown {
+  if (journal.schema === HOME_UPGRADE_TRANSACTION_SCHEMA) return journal;
+  return Object.freeze({
+    schema: journal.schema,
+    vault: journal.vault,
+    transactionId: journal.transactionId,
+    phase: journal.phase,
+    old: journal.old,
+    candidate: journal.candidate,
+    selectors: journal.selectors,
+    snapshot: journal.snapshot,
+    timestamps: Object.freeze({
+      preparedAt: journal.timestamps.preparedAt,
+      restoredAt: journal.timestamps.restoredAt,
+    }),
+  });
 }
 
 async function fileEvidence(path: string, label: string): Promise<HomeUpgradeFileEvidence> {
@@ -983,6 +1674,15 @@ async function writePrivateJson(path: string, value: unknown, exclusive: boolean
   const handle = await open(path, exclusive ? "wx" : "w", 0o600);
   try {
     await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, "utf8");
+    await handle.sync();
+  } finally { await handle.close(); }
+  await chmod(path, 0o600);
+}
+
+async function writePrivateBytes(path: string, bytes: string): Promise<void> {
+  const handle = await open(path, "wx", 0o600);
+  try {
+    await handle.writeFile(bytes, "utf8");
     await handle.sync();
   } finally { await handle.close(); }
   await chmod(path, 0o600);
@@ -1023,14 +1723,8 @@ async function readRequiredRestoreHomeUpgrade(
   vault: string,
   deps: HomeUpgradeTransactionDeps,
 ): Promise<HomeUpgradeTransaction> {
-  const paths = homeInstallationPaths(vault, deps);
-  const upgrade = await inspectUpgradeAncestors(paths);
-  if (upgrade === null) throw new Error("no prepared Dome Home upgrade transaction exists");
-  const active = join(upgrade, "active");
-  if (!await present(active)) throw new Error("no prepared Dome Home upgrade transaction exists");
-  const journal = await readBoundedJournal(active, vault);
-  await validateRestoreJournalReferences(journal, paths, deps);
-  await validateSnapshotInventory(active, journal.snapshot.inventory);
+  const journal = await readHomeUpgradeForRecovery(vault, deps);
+  if (journal === null) throw new Error("no prepared Dome Home upgrade transaction exists");
   return journal;
 }
 

@@ -38,6 +38,11 @@ const ALLOWED_FILES = new Set([
   // Host-level immutable Home releases and the closed per-vault selector.
   // This boundary never writes vault knowledge or operational state.
   "src/product-host/home-installation.ts",
+  // Deep exact-selector publication boundary used only while the durable
+  // upgrade journal and lifecycle suspension own cutover. It performs a
+  // no-follow expected-byte CAS-shaped replacement of installation/plist
+  // documents and verifies desired bytes; it never writes Git or Markdown.
+  "src/product-host/home-selection.ts",
   // Durable operational rollback boundary for Home upgrades. It writes only
   // the external per-installation journal/snapshot and exact gitignored state
   // restoration targets; it never writes Git or Markdown knowledge.
