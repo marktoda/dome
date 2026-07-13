@@ -114,6 +114,8 @@ export type HomeUpgradeSelectionEvidence = {
 
 export type HomeUpgradeProbationProof = {
   readonly schema: "dome.home-upgrade-probation-proof/v1";
+  readonly readinessSchema: "dome.product.readiness/v1";
+  readonly hostState: "probation";
   readonly artifactId: string;
   readonly productVersion: string;
   readonly vaultId: string;
@@ -1173,9 +1175,11 @@ function parseProbationProof(
 ): HomeUpgradeProbationProof | null {
   if (value === null) return null;
   const proof = exactRecord(value, "upgrade probation proof", [
-    "schema", "artifactId", "productVersion", "vaultId", "writesAdmitted", "provenAt",
+    "schema", "readinessSchema", "hostState", "artifactId", "productVersion", "vaultId",
+    "writesAdmitted", "provenAt",
   ]);
   if (proof["schema"] !== "dome.home-upgrade-probation-proof/v1" ||
+    proof["readinessSchema"] !== "dome.product.readiness/v1" || proof["hostState"] !== "probation" ||
     proof["artifactId"] !== candidate.artifactId || proof["productVersion"] !== candidate.version ||
     typeof proof["vaultId"] !== "string" || proof["vaultId"].length === 0 || proof["vaultId"].length > 128 ||
     proof["writesAdmitted"] !== false) {
