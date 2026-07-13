@@ -995,6 +995,37 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       .action((options: HomeLifecycleCliOptions) => homeLifecycle(action, options));
   }
 
+  const backupCommand = program
+    .command("backup")
+    .helpGroup(GROUP_SERVICE)
+    .description("Create and verify encrypted, offline Dome vault backups.");
+  backupCommand.command("keygen")
+    .description("Create a private age identity and print its public recipient.")
+    .requiredOption("--output <identity-file>", "Private identity output (created mode 0600; must not exist).")
+    .option("--json", "Emit JSON without secret identity contents.")
+    .action(async (options: BackupCliOptions) => {
+      const { runBackup } = await import("./commands/backup");
+      setExitCode(await runBackup("keygen", undefined, options));
+    });
+  backupCommand.command("create")
+    .description("Stop and fence Dome Home, then create an encrypted consistent backup.")
+    .requiredOption("--output <archive>", "Encrypted backup output (must not exist and must be outside the vault).")
+    .requiredOption("--recipient <age-recipient>", "Public age X25519 recipient.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--json", "Emit JSON.")
+    .action(async (options: BackupCliOptions) => {
+      const { runBackup } = await import("./commands/backup");
+      setExitCode(await runBackup("create", undefined, options));
+    });
+  backupCommand.command("verify <archive>")
+    .description("Decrypt privately and verify archive shape, checksums, and SQLite integrity.")
+    .requiredOption("--identity <identity-file>", "Private age identity path (contents are never logged).")
+    .option("--json", "Emit JSON.")
+    .action(async (archive: string, options: BackupCliOptions) => {
+      const { runBackup } = await import("./commands/backup");
+      setExitCode(await runBackup("verify", archive, options));
+    });
+
   program
     .command("mcp")
     .helpGroup(GROUP_ADAPTERS)
@@ -1185,6 +1216,14 @@ type HomeLifecycleCliOptions = {
   readonly vault?: string;
   readonly env?: string[];
   readonly envFile?: string;
+  readonly json?: boolean;
+};
+
+type BackupCliOptions = {
+  readonly output?: string;
+  readonly recipient?: string;
+  readonly identity?: string;
+  readonly vault?: string;
   readonly json?: boolean;
 };
 
