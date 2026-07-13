@@ -5,7 +5,9 @@
 // without teaching the transaction journal how either document is rendered.
 
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, open, readFile, realpath, rename, rm } from "node:fs/promises";
+import { constants } from "node:fs";
+import type { Stats } from "node:fs";
+import { lstat, open, realpath, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -15,6 +17,7 @@ import { vaultServiceSlug } from "../surface/service-probe";
 import {
   HOME_INSTALLATION_SCHEMA,
   homeInstallationPaths,
+  releaseRoot,
   type HomeInstallationDeps,
   type HomeInstallationRecord,
 } from "./home-installation";
@@ -24,7 +27,8 @@ const HOME_PORT = 3663;
 
 export type HomeSelectionDeps = Pick<HomeInstallationDeps, "applicationSupportDir"> & {
   readonly launchAgentsDir?: string | undefined;
-  readonly publishFile?: ((path: string, bytes: string) => Promise<void>) | undefined;
+  readonly beforeRename?: ((expected: HomeSelectionDocument, desired: HomeSelectionDocument) => Promise<void>) | undefined;
+  readonly renamePath?: ((source: string, target: string) => Promise<void>) | undefined;
 };
 
 export type HomeSelectionDocument = {
@@ -68,8 +72,9 @@ export function renderHomeSelection(input: {
   if (!/^[a-f0-9]{64}$/.test(input.artifact.id)) {
     throw new Error("Home selection artifact id is invalid");
   }
-  if (input.artifact.releasePath !== resolve(input.artifact.releasePath)) {
-    throw new Error("Home selection release path is not canonical");
+  const expectedRelease = releaseRoot(homeInstallationPaths(vault, deps), input.artifact.id);
+  if (input.artifact.releasePath !== expectedRelease) {
+    throw new Error("Home selection release path is not the canonical content-addressed release");
   }
   if (input.artifact.version.length === 0 || input.artifact.version.length > 1024) {
     throw new Error("Home selection artifact version is invalid");
@@ -140,28 +145,38 @@ export async function classifyHomeSelection(input: {
 
 /** Atomically replace one selector document and fsync its parent. */
 export async function publishHomeSelectionDocument(
-  document: HomeSelectionDocument,
+  input: {
+    readonly expected: HomeSelectionDocument;
+    readonly desired: HomeSelectionDocument;
+  },
   deps: HomeSelectionDeps = {},
 ): Promise<void> {
-  assertDocumentEvidence(document);
-  const parentPath = dirname(document.path);
+  assertDocumentEvidence(input.expected);
+  assertDocumentEvidence(input.desired);
+  if (input.expected.path !== input.desired.path) {
+    throw new Error("Home selection CAS paths differ");
+  }
+  const parentPath = dirname(input.desired.path);
   if (await realpath(parentPath) !== parentPath) {
     throw new Error("Home selection parent is redirected");
   }
-  // Upgrade selection replaces an exact existing pair. Missing, linked, or
-  // special targets are recovery evidence, never permission to create/repair.
-  await captureDocument(document.path, "existing Home selector");
-  if (deps.publishFile !== undefined) return deps.publishFile(document.path, document.bytes);
-  const temporary = `${document.path}.tmp-${process.pid}-${randomUUID()}`;
-  const handle = await open(temporary, "wx", document.mode);
+  await assertCurrentDocument(input.expected);
+  const temporary = `${input.desired.path}.tmp-${process.pid}-${randomUUID()}`;
+  const handle = await open(temporary, "wx", input.desired.mode);
   try {
-    await handle.writeFile(document.bytes, "utf8");
+    await handle.writeFile(input.desired.bytes, "utf8");
     await handle.sync();
   } finally { await handle.close(); }
   try {
-    await rename(temporary, document.path);
-    const parent = await open(dirname(document.path), "r");
+    await deps.beforeRename?.(input.expected, input.desired);
+    // This is the final expected-byte check before the one atomic replacement.
+    // External actors do not share a lock, so the interface makes the CAS
+    // expectation explicit and verifies desired bytes again after publication.
+    await assertCurrentDocument(input.expected);
+    await (deps.renamePath ?? rename)(temporary, input.desired.path);
+    const parent = await open(dirname(input.desired.path), "r");
     try { await parent.sync(); } finally { await parent.close(); }
+    await assertCurrentDocument(input.desired);
   } finally { await rm(temporary, { force: true }); }
 }
 
@@ -191,11 +206,36 @@ function assertDocumentEvidence(document: HomeSelectionDocument): void {
 }
 
 async function captureDocument(path: string, label: string): Promise<HomeSelectionDocument> {
-  const info = await lstat(path);
-  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.size > 1024 * 1024) {
+  // lstat is diagnostic only. O_NOFOLLOW plus before/after fstat makes the
+  // opened inode—not a raced path lookup—the evidence being hashed.
+  const pathInfo = await lstat(path);
+  if (pathInfo.isSymbolicLink()) throw new Error(`${label} is redirected`);
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const before = await handle.stat();
+    assertCapturable(before, label);
+    const bytes = await handle.readFile({ encoding: "utf8" });
+    const after = await handle.stat();
+    assertCapturable(after, label);
+    if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size ||
+      before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) {
+      throw new Error(`${label} changed while it was captured`);
+    }
+    return selectionDocument(path, bytes, before.mode & 0o777);
+  } finally { await handle.close(); }
+}
+
+function assertCapturable(info: Stats, label: string): void {
+  if (!info.isFile() || info.nlink !== 1 || info.size > 128 * 1024) {
     throw new Error(`${label} is not a bounded direct regular file`);
   }
-  return selectionDocument(path, await readFile(path, "utf8"), info.mode & 0o777);
+}
+
+async function assertCurrentDocument(expected: HomeSelectionDocument): Promise<void> {
+  const current = await captureDocument(expected.path, "existing Home selector");
+  if (!sameDocument(current, expected)) {
+    throw new Error("Home selection CAS expected bytes changed");
+  }
 }
 
 async function classifyDocument(

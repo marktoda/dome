@@ -1072,6 +1072,7 @@ function parseJournal(value: unknown, expectedVault: string): HomeUpgradeTransac
   if (isV2 && timestamps["committedAt"] !== null) assertTimestamp(timestamps["committedAt"], "committed timestamp");
   if (timestamps["restoredAt"] !== null) assertTimestamp(timestamps["restoredAt"], "restored timestamp");
   if (!validPhaseTimestamps(phase as UpgradePhase, {
+    preparedAt: timestamps["preparedAt"],
     switchingAt: isV2 ? timestamps["switchingAt"] : null,
     committedAt: isV2 ? timestamps["committedAt"] : null,
     restoredAt: timestamps["restoredAt"],
@@ -1191,18 +1192,24 @@ function parseProbationProof(
 
 function validPhaseTimestamps(
   phase: UpgradePhase,
-  timestamps: { readonly switchingAt: unknown; readonly committedAt: unknown; readonly restoredAt: unknown },
+  timestamps: { readonly preparedAt: unknown; readonly switchingAt: unknown; readonly committedAt: unknown; readonly restoredAt: unknown },
 ): boolean {
+  const prepared = Date.parse(timestamps.preparedAt as string);
   if (phase === "prepared") {
     return timestamps.switchingAt === null && timestamps.committedAt === null && timestamps.restoredAt === null;
   }
   if (phase === "switching") {
-    return typeof timestamps.switchingAt === "string" && timestamps.committedAt === null && timestamps.restoredAt === null;
+    return typeof timestamps.switchingAt === "string" && Date.parse(timestamps.switchingAt) >= prepared &&
+      timestamps.committedAt === null && timestamps.restoredAt === null;
   }
   if (phase === "committed") {
-    return typeof timestamps.switchingAt === "string" && typeof timestamps.committedAt === "string" && timestamps.restoredAt === null;
+    return typeof timestamps.switchingAt === "string" && typeof timestamps.committedAt === "string" &&
+      Date.parse(timestamps.switchingAt) >= prepared &&
+      Date.parse(timestamps.committedAt) >= Date.parse(timestamps.switchingAt) &&
+      timestamps.restoredAt === null;
   }
-  return timestamps.committedAt === null && typeof timestamps.restoredAt === "string";
+  return timestamps.switchingAt === null && timestamps.committedAt === null &&
+    typeof timestamps.restoredAt === "string" && Date.parse(timestamps.restoredAt) >= prepared;
 }
 
 function parseArtifact(value: unknown, label: string): HomeUpgradeArtifactEvidence {

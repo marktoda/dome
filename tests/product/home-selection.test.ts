@@ -35,9 +35,9 @@ describe("Home release selection", () => {
       expect(candidate.plist.bytes).toContain(join(support, "releases", "a".repeat(64)));
       expect(await classifyHomeSelection({ old, candidate })).toBe("old");
 
-      await publishHomeSelectionDocument(candidate.plist);
+      await publishHomeSelectionDocument({ expected: old.plist, desired: candidate.plist });
       expect(await classifyHomeSelection({ old, candidate })).toBe("mixed");
-      await publishHomeSelectionDocument(candidate.installation);
+      await publishHomeSelectionDocument({ expected: old.installation, desired: candidate.installation });
       expect(await classifyHomeSelection({ old, candidate })).toBe("candidate");
 
       await chmod(paths.plist, 0o644);
@@ -67,14 +67,14 @@ describe("Home release selection", () => {
       }, deps);
 
       await expect(publishHomeSelectionDocument({
-        ...candidate.plist,
-        bytes: `${candidate.plist.bytes}forged`,
+        expected: old.plist,
+        desired: { ...candidate.plist, bytes: `${candidate.plist.bytes}forged` },
       })).rejects.toThrow("does not match");
       expect(await readFile(paths.plist, "utf8")).toBe("old plist\n");
 
       await rm(paths.plist);
       expect(await classifyHomeSelection({ old, candidate })).toBe("invalid");
-      await expect(publishHomeSelectionDocument(candidate.plist)).rejects.toThrow();
+      await expect(publishHomeSelectionDocument({ expected: old.plist, desired: candidate.plist })).rejects.toThrow();
       await symlink(paths.installation, paths.plist);
       expect(await classifyHomeSelection({ old, candidate })).toBe("invalid");
       await rm(paths.plist);
@@ -84,12 +84,24 @@ describe("Home release selection", () => {
       await writeFile(paths.plist, "old plist\n", { mode: 0o600 });
 
       let publications = 0;
-      await publishHomeSelectionDocument(candidate.plist, {
+      await publishHomeSelectionDocument({ expected: old.plist, desired: candidate.plist }, {
         ...deps,
-        publishFile: async () => { publications += 1; throw new Error("injected publication failure"); },
+        beforeRename: async () => { publications += 1; throw new Error("injected publication failure"); },
       }).catch(() => {});
       expect(publications).toBe(1);
       expect(await classifyHomeSelection({ old, candidate })).toBe("old");
+
+      for (const [expected, desired] of [
+        [old.plist, candidate.plist],
+        [old.installation, candidate.installation],
+      ] as const) {
+        await expect(publishHomeSelectionDocument({ expected, desired }, {
+          ...deps,
+          beforeRename: async () => { await writeFile(expected.path, "concurrent owner bytes\n"); },
+        })).rejects.toThrow("expected bytes changed");
+        expect(await readFile(expected.path, "utf8")).toBe("concurrent owner bytes\n");
+        await writeFile(expected.path, expected.bytes, { mode: expected.mode });
+      }
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
