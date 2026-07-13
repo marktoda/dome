@@ -147,12 +147,37 @@ async function proveClosedProbationBehavior(
 }
 
 async function readBoundedJson(response: Response): Promise<unknown> {
+  const budget = 64 * 1024;
   const declared = response.headers.get("content-length");
-  if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > 64 * 1024)) {
+  if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > budget)) {
+    await response.body?.cancel().catch(() => {});
     throw new Error("upgrade candidate response exceeds its size budget");
   }
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > 64 * 1024) throw new Error("upgrade candidate response exceeds its size budget");
+  const reader = response.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  if (reader !== undefined) {
+    try {
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        size += next.value.byteLength;
+        if (size > budget) {
+          await reader.cancel().catch(() => {});
+          throw new Error("upgrade candidate response exceeds its size budget");
+        }
+        chunks.push(next.value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
   try { return JSON.parse(new TextDecoder().decode(bytes)); }
   catch { throw new Error("upgrade candidate response is not JSON"); }
 }

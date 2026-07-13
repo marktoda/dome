@@ -82,6 +82,42 @@ describe("managed Home upgrade candidate", () => {
     });
   }
 
+  for (const framing of ["declared", "chunked"] as const) {
+    test(`cancels an oversized ${framing} probation response without buffering it`, async () => {
+      const fixture = await candidateFixture();
+      let settle!: (code: number) => void;
+      const exited = new Promise<number>((resolve) => { settle = resolve; });
+      let cancelled = false;
+      let emitted = 0;
+      const oversized = () => new Response(new ReadableStream<Uint8Array>({
+        pull(controller) {
+          emitted += 1;
+          controller.enqueue(new Uint8Array(framing === "declared" ? 1 : 32 * 1024));
+          if (framing === "declared" || emitted === 4) controller.close();
+        },
+        cancel() { cancelled = true; },
+      }, { highWaterMark: 0 }), framing === "declared" ? { headers: { "content-length": String(64 * 1024 + 1) } } : undefined);
+
+      await expect(proveHomeUpgradeCandidate({
+        vault: fixture.vault,
+        vaultId: "vault-proof-id",
+        transactionId: TRANSACTION_ID,
+        candidate: fixture.candidate,
+      }, {
+        port: framing === "declared" ? 45683 : 45684,
+        verifyCandidate: async () => {},
+        spawn: () => ({ exited, kill: () => settle(0) }),
+        fetch: async (url) => {
+          if (url.endsWith("/healthz")) throw new Error("drained");
+          if (url.endsWith("/pair/status")) return oversized();
+          return probationResponse(url);
+        },
+      })).rejects.toThrow("response exceeds its size budget");
+      expect(cancelled).toBeTrue();
+      expect(emitted).toBeLessThan(framing === "declared" ? 1 : 4);
+    });
+  }
+
   test("uses only the pinned runtime, entrypoint, and hidden probation argv", async () => {
     const fixture = await candidateFixture();
     let command: ReadonlyArray<string> = [];
