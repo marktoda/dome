@@ -244,7 +244,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
 
       expect(prepared.phase).toBe("prepared");
       expect(Object.keys(prepared).sort()).toEqual([
-        "candidate", "old", "phase", "schema", "selectors", "snapshot", "timestamps", "transactionId", "vault",
+        "candidate", "old", "phase", "probation", "schema", "selection", "selectors", "snapshot", "timestamps", "transactionId", "vault",
       ]);
       expect(prepared.old).toMatchObject({ artifactId: OLD_ID, version: "1.0.0" });
       expect(prepared.candidate).toMatchObject({ artifactId: CANDIDATE_ID, version: "2.0.0" });
@@ -257,6 +257,13 @@ describe("Product Host pre-commit upgrade transaction", () => {
       const active = join(homeInstallationPaths(f.vault, f.deps).installations, "upgrade", "active");
       expect((await stat(active)).mode & 0o777).toBe(0o700);
       expect((await stat(join(active, "journal.json"))).mode & 0o777).toBe(0o600);
+      expect((await readdir(active)).sort()).toEqual(["journal.json", "selectors", "snapshot"]);
+      expect((await readdir(join(active, "selectors"))).sort()).toEqual([
+        "candidate-installation.json", "candidate.plist", "old-installation.json", "old.plist",
+      ]);
+      for (const name of await readdir(join(active, "selectors"))) {
+        expect((await stat(join(active, "selectors", name))).mode & 0o777).toBe(0o600);
+      }
       expect((await readdir(join(active, "snapshot"))).sort()).not.toContain("projection.db");
       for (const entry of prepared.snapshot.inventory) {
         if (entry.present) expect((await stat(join(active, "snapshot", entry.name))).mode & 0o777).toBe(0o600);
@@ -276,7 +283,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
       const plist = join(f.deps.launchAgentsDir!, `${homeServiceLabelForVault(f.vault)}.plist`);
       const oldPlist = await readFile(plist);
       await writeFile(plist, "candidate selector\n");
-      await expect(restoreHomeUpgrade(f.vault, f.deps)).rejects.toThrow("plist evidence changed");
+      await expect(restoreHomeUpgrade(f.vault, f.deps)).rejects.toThrow("selector state invalid");
       await writeFile(plist, oldPlist);
       await chmod(plist, prepared.selectors.plist.mode);
 
@@ -418,6 +425,48 @@ describe("Product Host pre-commit upgrade transaction", () => {
         if (!started.ok) expect(started.error.message).toContain("write admission is closed");
       }
       await expect(readHomeUpgrade(f.vault, f.deps)).rejects.toThrow("unknown phase");
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("reads and restores a legacy v1 transaction without inventing forward evidence", async () => {
+    const f = await fixture();
+    try {
+      const before = await logicalState(f.vault);
+      await prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId: randomUUID(),
+        candidateArtifactId: CANDIDATE_ID,
+      }, f.deps);
+      const active = join(homeInstallationPaths(f.vault, f.deps).installations, "upgrade", "active");
+      const journalPath = join(active, "journal.json");
+      const journal = JSON.parse(await readFile(journalPath, "utf8")) as Record<string, unknown>;
+      journal["schema"] = "dome.home-upgrade-transaction/v1";
+      delete journal["selection"];
+      delete journal["probation"];
+      const timestamps = journal["timestamps"] as Record<string, unknown>;
+      journal["timestamps"] = {
+        preparedAt: timestamps["preparedAt"],
+        restoredAt: null,
+      };
+      await rm(join(active, "selectors"), { recursive: true });
+      await writeFile(journalPath, `${JSON.stringify(journal, null, 2)}\n`, { mode: 0o600 });
+
+      const legacy = await readHomeUpgrade(f.vault, f.deps);
+      expect(legacy).toMatchObject({
+        schema: "dome.home-upgrade-transaction/v1",
+        phase: "prepared",
+        selection: null,
+        probation: null,
+      });
+      await expect(migratePreparedHomeUpgrade(f.vault, f.deps)).rejects.toThrow("restore-only");
+      await mutateDurableState(f.vault);
+      const restored = await restoreHomeUpgrade(f.vault, f.deps);
+      expect(restored).toMatchObject({ schema: "dome.home-upgrade-transaction/v1", phase: "restored" });
+      expect(await logicalState(f.vault)).toEqual(before);
+      const terminal = JSON.parse(await readFile(journalPath, "utf8")) as Record<string, unknown>;
+      expect(Object.keys(terminal).sort()).toEqual([
+        "candidate", "old", "phase", "schema", "selectors", "snapshot", "timestamps", "transactionId", "vault",
+      ]);
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });
 
