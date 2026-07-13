@@ -264,10 +264,29 @@ export function homeLifecycleCoordinatorPath(vaultPath: string): string {
 export async function inspectHomeLifecycleSuspension(
   vaultPath: string,
 ): Promise<HomeLifecycleSuspensionInspection> {
+  try {
+    return await inspectHomeLifecycleSuspensionUnsafe(vaultPath);
+  } catch (error) {
+    if (isBusy(error)) {
+      return Object.freeze({ kind: "unavailable", error: "Home lifecycle coordinator is busy" });
+    }
+    return Object.freeze({ kind: "invalid", error: message(error) });
+  }
+}
+
+async function inspectHomeLifecycleSuspensionUnsafe(
+  vaultPath: string,
+): Promise<HomeLifecycleSuspensionInspection> {
   let vault: string;
   try { vault = await realpath(resolve(vaultPath)); }
   catch (error) { return Object.freeze({ kind: "invalid", error: message(error) }); }
   const paths = coordinatorPaths(vault);
+  if (!pathPresent(paths.dome)) return Object.freeze({ kind: "inactive" });
+  validateDirectDirectory(paths.dome);
+  if (!pathPresent(paths.state)) return Object.freeze({ kind: "inactive" });
+  validateDirectDirectory(paths.state);
+  if (!pathPresent(paths.locks)) return Object.freeze({ kind: "inactive" });
+  validateDirectPrivateDirectory(paths.locks);
   const rootPresent = pathPresent(paths.root);
   const establishmentPresent = pathPresent(paths.establishmentRoot);
   if (!rootPresent && !establishmentPresent) return Object.freeze({ kind: "inactive" });
@@ -853,6 +872,8 @@ function resultFailure<T>(result: SupervisedHomeSuspensionResult<T>): string {
 
 type CoordinatorPair = { readonly ownership: Database; readonly journal: Database };
 type CoordinatorPaths = {
+  readonly dome: string;
+  readonly state: string;
   readonly locks: string;
   readonly root: string;
   readonly layout: string;
@@ -898,10 +919,14 @@ function closePair(pair: CoordinatorPair): void {
 }
 
 function coordinatorPaths(vault: string): CoordinatorPaths {
-  const locks = join(vault, ".dome", "state", "locks");
+  const dome = join(vault, ".dome");
+  const state = join(dome, "state");
+  const locks = join(state, "locks");
   const root = join(locks, STORAGE_NAME);
   const establishmentRoot = join(locks, ESTABLISHMENT_NAME);
   return Object.freeze({
+    dome,
+    state,
     locks,
     root,
     layout: join(root, LAYOUT_NAME),
@@ -1033,6 +1058,13 @@ function validateDirectPrivateDirectory(path: string): void {
   const info = lstatSync(path);
   if (!info.isDirectory() || info.isSymbolicLink() || realpathSync(path) !== resolve(path) || (info.mode & 0o077) !== 0) {
     throw new Error(`Home lifecycle suspension directory is not direct and private: ${path}`);
+  }
+}
+
+function validateDirectDirectory(path: string): void {
+  const info = lstatSync(path);
+  if (!info.isDirectory() || info.isSymbolicLink() || realpathSync(path) !== resolve(path)) {
+    throw new Error(`Home lifecycle suspension path is not a direct directory: ${path}`);
   }
 }
 

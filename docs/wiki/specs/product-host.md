@@ -413,8 +413,10 @@ Serve lifecycle's compatibility semantics.
 never initializes or repairs the coordinator. Its additive closed `lifecycle`
 document reports `inactive`; `active` with phase, purpose, operation id, and
 last error; or `unavailable`/`invalid` with the diagnostic. Active, unavailable,
-and invalid lifecycle truth is nonzero while still preserving independently
-observed installation, loaded, readiness, and artifact fields. A fresh status,
+and invalid coordinator truth for a valid initialized vault exits `1` while
+still preserving independently observed installation, loaded, readiness, and
+artifact fields. Invalid, uninitialized, nonexistent, non-exact-root, or
+unsupported pre-lifecycle CLI input remains usage error `64`. A fresh status,
 unsupported platform, and invalid or uninitialized vault do not scaffold
 lifecycle state.
 

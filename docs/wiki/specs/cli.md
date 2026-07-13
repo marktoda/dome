@@ -2799,9 +2799,12 @@ Every mutating verb takes Home lifecycle ownership before operational
 writer admission and re-reading mutable evidence. `status` is the read-only
 exception: it takes no lifecycle, operational, or Product Host lock and never
 creates the lifecycle coordinator. JSON status always includes the closed
-`lifecycle` document; human output prints the same state and exact recovery
-operation. When admission prevents evidence reads, `installed`, `loaded`, and
-`ready` print as `unknown`/`n/a` rather than `no`.
+`lifecycle` document; human error output prints the same state and exact
+recovery operation. When admission prevents evidence reads, structured/JSON
+`installed`, `loaded`, and `ready` fields are `null`, never false. Active or
+malformed coordinator recovery on a valid initialized vault exits `1`; invalid,
+uninitialized, nonexistent, non-exact-root, and unsupported pre-lifecycle
+inputs remain usage error `64`.
 Status includes artifact ID and product version
 and distinguishes absent, installed/stopped, ready, loaded/unreachable,
 missing/corrupt selected release, invalid record, orphaned service, and plist

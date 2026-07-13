@@ -202,7 +202,9 @@ async function manageHomeMutation(
 ): Promise<HomeLifecycleResult> {
   const lifetime: { lease: OperationalWriterLease | null } = { lease: null };
   let provisional: OwnedMutationResult | null = null;
-  let output: HomeLifecycleResult;
+  let output: HomeLifecycleResult | null = null;
+  let lifecycleFailure: unknown | null = null;
+  let leaseCloseFailure: unknown | null = null;
   try {
     const lifecycle = await withHomeLifecycleMutation(context.vault, async () => {
       await deps.beforeOperationalAdmission?.();
@@ -236,28 +238,39 @@ async function manageHomeMutation(
       output = await finishReadiness(lifecycle.value, context, deps);
     }
   } catch (error) {
+    lifecycleFailure = error;
+  } finally {
+    try {
+      if (lifetime.lease !== null) {
+        (deps.closeOperationalLease ?? ((lease: OperationalWriterLease) => lease.close()))(lifetime.lease);
+      }
+    } catch (error) {
+      leaseCloseFailure = error;
+    }
+  }
+  if (lifecycleFailure !== null) {
     const inspected = lifecycleRecovery(await inspectHomeLifecycleSuspension(context.vault));
     if (inspected.state === "active" && provisional === null) {
       output = activeMutationResult(context.neutral, inspected);
     } else {
       const recovery = inspected.state === "inactive"
-        ? Object.freeze({ state: "unavailable" as const, error: `Home lifecycle coordination failed: ${message(error)}` })
+        ? Object.freeze({ state: "unavailable" as const, error: `Home lifecycle coordination failed: ${message(lifecycleFailure)}` })
         : inspected;
-      output = await mutationCoordinationFailure(provisional, context, recovery, message(error));
+      output = await mutationCoordinationFailure(provisional, context, recovery, message(lifecycleFailure));
     }
   }
-  try {
-    if (lifetime.lease !== null) {
-      (deps.closeOperationalLease ?? ((lease: OperationalWriterLease) => lease.close()))(lifetime.lease);
-    }
+  if (output === null) {
+    output = result(context.neutral, "error", null, null, null, {
+      error: "Home lifecycle operation completed without a result",
+    });
   }
-  catch (error) {
+  if (leaseCloseFailure !== null) {
     const recovery = Object.freeze({
       state: "unavailable" as const,
-      error: `operational writer lease close failed: ${message(error)}`,
+      error: `operational writer lease close failed: ${message(leaseCloseFailure)}`,
     });
     output = await mutationCoordinationFailure(
-      provisional ?? complete(output),
+      complete(output),
       context,
       recovery,
       recovery.error,
@@ -325,11 +338,13 @@ async function executeOwnedInstall(
 
   if (loaded) {
     const stopped = await stopLoadedHome(context);
-    if (stopped !== null) return complete(result(installBase, "error", hadPlist, true, null, { error: stopped }));
+    if (stopped !== null) {
+      return complete(result(installBase, "error", hadPlist, await diagnosticLoaded(context), null, { error: stopped }));
+    }
   }
   let selected = installBase;
   let releasePublished: boolean | undefined;
-  let plistPublished = false;
+  let activationAttempted = false;
   try {
     await mkdir(join(context.vault, ".dome", "state"), { recursive: true });
     await mkdir(context.service.launchAgentsDir, { recursive: true });
@@ -349,7 +364,7 @@ async function executeOwnedInstall(
     const environment = new Map<string, string>(intendedEnvironment);
     environment.set("PATH", homeServicePath(join(managed.root, "runtime", "bun")));
     await (deps.publishPlist ?? publishLaunchAgentPlist)(context.plist, renderExpectedPlist(selected, environment));
-    plistPublished = true;
+    activationAttempted = true;
     const activation = await activateLaunchAgent({
       launchctl: context.service.launchctl,
       uid: context.service.uid!,
@@ -357,8 +372,7 @@ async function executeOwnedInstall(
       plistPath: context.plist,
     });
     if (activation !== null) {
-      return complete(result(selected, "error", true, await diagnosticLoaded(context), false, {
-        error: activation,
+      return complete(await activationFailureResult(selected, context, deps, activation, {
         replaced: hadPlist,
         releasePublished,
       }));
@@ -368,7 +382,13 @@ async function executeOwnedInstall(
       releasePublished,
     });
   } catch (error) {
-    return complete(result(selected, "error", plistPublished || hadPlist, false, null, {
+    if (activationAttempted) {
+      return complete(await activationFailureResult(selected, context, deps, message(error), {
+        replaced: hadPlist,
+        ...(releasePublished === undefined ? {} : { releasePublished }),
+      }));
+    }
+    return complete(result(selected, "error", existsSync(context.plist), false, null, {
       error: message(error),
       ...(releasePublished === undefined ? {} : { releasePublished }),
     }));
@@ -384,7 +404,7 @@ async function executeOwnedUninstall(context: HomeContext, deps: HomeLifecycleDe
   if (loaded) {
     const stopped = await stopLoadedHome(context);
     if (stopped !== null) {
-      return complete(result(selected, "error", hadPlist, true, null, {
+      return complete(result(selected, "error", hadPlist, await diagnosticLoaded(context), null, {
         error: `${stopped}; plist preserved for retry`,
       }));
     }
@@ -453,16 +473,23 @@ async function executeOwnedStart(
   }
   if (action === "restart" && loaded) {
     const stopped = await stopLoadedHome(context);
-    if (stopped !== null) return complete(result(selected, "error", true, true, null, { error: stopped }));
+    if (stopped !== null) {
+      return complete(result(selected, "error", true, await diagnosticLoaded(context), null, { error: stopped }));
+    }
   }
-  const activation = await activateLaunchAgent({
-    launchctl: context.service.launchctl,
-    uid: context.service.uid!,
-    label: context.label,
-    plistPath: context.plist,
-  });
+  let activation: string | null;
+  try {
+    activation = await activateLaunchAgent({
+      launchctl: context.service.launchctl,
+      uid: context.service.uid!,
+      label: context.label,
+      plistPath: context.plist,
+    });
+  } catch (error) {
+    return complete(await activationFailureResult(selected, context, deps, message(error)));
+  }
   if (activation !== null) {
-    return complete(result(selected, "error", true, await diagnosticLoaded(context), false, { error: activation }));
+    return complete(await activationFailureResult(selected, context, deps, activation));
   }
   return awaitReadiness(selected, action === "restart" ? "restarted" : "started", "Dome Home did not become ready");
 }
@@ -472,7 +499,7 @@ async function finishReadiness(
   context: HomeContext,
   deps: HomeLifecycleDeps,
 ): Promise<HomeLifecycleResult> {
-  let ready = false;
+  let ready: boolean | null = null;
   let readinessError: string | null = null;
   try { ready = await waitForHomeReadiness(deps); }
   catch (error) { readinessError = message(error); }
@@ -480,17 +507,30 @@ async function finishReadiness(
   let loadedError: string | null = null;
   try { loaded = await homeLoaded(context); }
   catch (error) { loaded = null; loadedError = message(error); }
+  const installed = existsSync(context.plist);
   const extra = {
     ...(continuation.replaced === undefined ? {} : { replaced: continuation.replaced }),
     ...(continuation.releasePublished === undefined ? {} : { releasePublished: continuation.releasePublished }),
   };
-  if (ready && loaded === true) {
+  if (installed && ready === true && loaded === true) {
     return result(continuation.base, continuation.successStatus, true, true, true, extra);
   }
-  const error = [readinessError, ready && loaded === false
+  const error = [readinessError, installed ? null : `Dome Home plist was removed during readiness observation at ${context.plist}`, ready && loaded === false
     ? "Dome Home became ready but is no longer loaded"
     : continuation.failure, loadedError].filter((value): value is string => value !== null).join("; ");
-  return result(continuation.base, "error", true, loaded, ready, { ...extra, error });
+  return result(continuation.base, "error", installed, loaded, ready, { ...extra, error });
+}
+
+async function activationFailureResult(
+  base: Base,
+  context: HomeContext,
+  deps: HomeLifecycleDeps,
+  error: string,
+  extra: { readonly replaced?: boolean; readonly releasePublished?: boolean } = {},
+): Promise<HomeLifecycleResult> {
+  const loaded = await diagnosticLoaded(context);
+  const ready = loaded === true ? await diagnosticReady(deps) : null;
+  return result(base, "error", true, loaded, ready, { error, ...extra });
 }
 
 function complete(value: HomeLifecycleResult): OwnedMutationResult {
@@ -753,6 +793,11 @@ async function homeLoaded(context: HomeContext): Promise<boolean> {
 
 async function diagnosticLoaded(context: HomeContext): Promise<boolean | null> {
   try { return await homeLoaded(context); }
+  catch { return null; }
+}
+
+async function diagnosticReady(deps: HomeLifecycleDeps): Promise<boolean | null> {
+  try { return await probeHomeReadiness(deps); }
   catch { return null; }
 }
 

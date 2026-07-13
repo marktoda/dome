@@ -391,6 +391,7 @@ describe("manageHome macOS lifecycle", () => {
     expect(result.status).toBe("error");
     expect(result.error).toContain("bootstrap");
     expect(result.loaded).toBe(false);
+    expect(result.ready).toBeNull();
     expect(existsSync(result.plist)).toBe(true);
 
     const kickstart = fakeLaunchctl("kickstart");
@@ -398,6 +399,24 @@ describe("manageHome macOS lifecycle", () => {
     expect(result.status).toBe("error");
     expect(result.error).toContain("kickstart");
     expect(result.loaded).toBe(true);
+    expect(result.ready).toBe(true);
+
+    const throwingKickstart = fakeLaunchctl();
+    result = await manageHome({ action: "install", vaultPath: f.vault }, deps(f, throwingKickstart, {
+      launchctl: async (args) => {
+        if (args[0] === "kickstart") throw new Error("kickstart transport broke");
+        return throwingKickstart.runner(args);
+      },
+    }));
+    expect(result).toMatchObject({
+      status: "error",
+      installed: true,
+      loaded: true,
+      ready: true,
+      replaced: true,
+      releasePublished: false,
+    });
+    expect(result.error).toContain("kickstart transport broke");
 
     const notReady = fakeLaunchctl();
     result = await manageHome({ action: "install", vaultPath: f.vault }, deps(f, notReady, {
@@ -407,6 +426,21 @@ describe("manageHome macOS lifecycle", () => {
     expect(result.status).toBe("error");
     expect(result.ready).toBe(false);
     expect(result.loaded).toBe(true);
+
+    const readinessThrows = fakeLaunchctl();
+    let readinessCalls = 0;
+    result = await manageHome({ action: "install", vaultPath: f.vault }, deps(f, readinessThrows, {
+      readiness: async () => {
+        readinessCalls += 1;
+        if (readinessCalls === 1) return false;
+        throw new Error("readiness transport broke");
+      },
+    }));
+    expect(result.status).toBe("error");
+    expect(result.installed).toBe(true);
+    expect(result.loaded).toBe(true);
+    expect(result.ready).toBeNull();
+    expect(result.error).toContain("readiness transport broke");
   });
 
   test("preflight failure makes no launchctl call; absent start is usage", async () => {
@@ -528,6 +562,22 @@ describe("manageHome macOS lifecycle", () => {
     expect(publish.loaded).toBe(false);
     expect(existsSync(publish.plist)).toBe(false);
     expect(publishFake.calls.some((call) => call[0] === "bootstrap")).toBe(false);
+
+    const partialPublishFake = fakeLaunchctl();
+    let publishedPlist = "";
+    const partialPublish = await manageHome({ action: "install", vaultPath: f.vault }, deps(f, partialPublishFake, {
+      publishPlist: async (path, contents) => {
+        publishedPlist = contents;
+        await writeFile(path, contents);
+        throw new Error("plist parent durability exploded");
+      },
+    }));
+    expect(partialPublish.status).toBe("error");
+    expect(partialPublish.error).toContain("plist parent durability exploded");
+    expect(partialPublish.installed).toBe(true);
+    expect(partialPublish.releasePublished).toBe(false);
+    expect(await readFile(partialPublish.plist, "utf8")).toBe(publishedPlist);
+    expect(partialPublishFake.calls.some((call) => call[0] === "bootstrap")).toBe(false);
 
     const readinessFake = fakeLaunchctl();
     let readinessProbes = 0;
@@ -727,6 +777,24 @@ describe("manageHome macOS lifecycle", () => {
     });
     expect(closeFailure.error).toContain("lease close exploded");
     expect(existsSync(closeFailure.plist)).toBeTrue();
+
+    const combined = await fixture();
+    const combinedFailure = await manageHome({ action: "install", vaultPath: combined.vault }, deps(combined, fakeLaunchctl(), {
+      afterOwnedMutation: async () => { throw new Error("lifecycle commit exploded"); },
+      closeOperationalLease: (lease) => {
+        lease.close();
+        throw new Error("combined lease close exploded");
+      },
+    }));
+    expect(combinedFailure).toMatchObject({
+      status: "error",
+      artifactId: ARTIFACT_ID,
+      installed: true,
+      releasePublished: true,
+      lifecycle: { state: "unavailable" },
+    });
+    expect(combinedFailure.error).toContain("lifecycle commit exploded");
+    expect(combinedFailure.error).toContain("combined lease close exploded");
   });
 
   test("post-lifecycle readiness retains SHARED admission until observation finishes", async () => {
@@ -765,6 +833,42 @@ describe("manageHome macOS lifecycle", () => {
       transactionId,
       validateAndRemoveExternalEvidence: async () => {},
     });
+  }, 30_000);
+
+  test("post-lifecycle readiness observes a concurrent uninstall instead of returning stale success", async () => {
+    const f = await fixture();
+    const fake = fakeLaunchctl();
+    const installed = await manageHome({ action: "install", vaultPath: f.vault }, deps(f, fake));
+    expect(installed.status).toBe("installed");
+
+    let releaseReadiness!: () => void;
+    let reportReadiness!: () => void;
+    const readinessEntered = new Promise<void>((resolve) => { reportReadiness = resolve; });
+    const readinessGate = new Promise<void>((resolve) => { releaseReadiness = resolve; });
+    let readinessCalls = 0;
+    const restart = manageHome({ action: "restart", vaultPath: f.vault }, deps(f, fake, {
+      readiness: async () => {
+        readinessCalls += 1;
+        if (readinessCalls === 1) return false;
+        reportReadiness();
+        await readinessGate;
+        return true;
+      },
+      readinessTimeoutMs: 5_000,
+    }));
+    await readinessEntered;
+
+    const uninstalled = await manageHome({ action: "uninstall", vaultPath: f.vault }, deps(f, fake));
+    expect(uninstalled.status).toBe("uninstalled");
+    expect(uninstalled.installed).toBe(false);
+    releaseReadiness();
+
+    const observed = await restart;
+    expect(observed.status).toBe("error");
+    expect(observed.installed).toBe(false);
+    expect(observed.loaded).toBe(false);
+    expect(observed.ready).toBe(true);
+    expect(observed.error).toContain("plist was removed during readiness observation");
   }, 30_000);
 
   test("restart releases lifecycle ownership before awaiting a real Product Host child", async () => {
@@ -855,6 +959,90 @@ describe("manageHome macOS lifecycle", () => {
     }
   }, 30_000);
 
+  test("malformed lifecycle ancestors remain structured and never bypass lease cleanup", async () => {
+    const statusFixture = await fixture();
+    const statusLocks = dirname(dirname(homeLifecycleCoordinatorPath(statusFixture.vault)));
+    const malformedBytes = Buffer.from("locks is not a directory\n");
+    await writeFile(statusLocks, malformedBytes);
+
+    const inspection = await inspectHomeLifecycleSuspension(statusFixture.vault);
+    expect(inspection).toMatchObject({ kind: "invalid" });
+    const status = await manageHome(
+      { action: "status", vaultPath: statusFixture.vault },
+      deps(statusFixture, fakeLaunchctl()),
+    );
+    expect(status).toMatchObject({
+      schema: "dome.home.lifecycle/v1",
+      action: "status",
+      status: "error",
+      lifecycle: { state: "invalid" },
+    });
+    expect(await readFile(statusLocks)).toEqual(malformedBytes);
+
+    const mutationFixture = await fixture();
+    const mutationLocks = dirname(dirname(homeLifecycleCoordinatorPath(mutationFixture.vault)));
+    const displacedLocks = `${mutationLocks}.displaced`;
+    let closeCalls = 0;
+    const mutation = await manageHome(
+      { action: "uninstall", vaultPath: mutationFixture.vault },
+      deps(mutationFixture, fakeLaunchctl(), {
+        afterOwnedMutation: async () => {
+          await rename(mutationLocks, displacedLocks);
+          await writeFile(mutationLocks, malformedBytes);
+          throw new Error("post-mutation lifecycle failure");
+        },
+        closeOperationalLease: (lease) => {
+          closeCalls += 1;
+          lease.close();
+        },
+      }),
+    );
+    expect(mutation).toMatchObject({
+      schema: "dome.home.lifecycle/v1",
+      action: "uninstall",
+      status: "error",
+      lifecycle: { state: "invalid" },
+    });
+    expect(closeCalls).toBe(1);
+    expect(await readFile(mutationLocks)).toEqual(malformedBytes);
+    expect(existsSync(displacedLocks)).toBeTrue();
+  });
+
+  test("symlinked and non-private lifecycle ancestors are invalid without inspection repair", async () => {
+    for (const ancestor of ["dome", "state", "locks"] as const) {
+      const f = await fixture();
+      const dome = join(f.vault, ".dome");
+      const state = join(dome, "state");
+      const locks = join(state, "locks");
+      const path = ancestor === "dome" ? dome : ancestor === "state" ? state : locks;
+      const external = join(dirname(f.vault), `external-${ancestor}`);
+      await mkdir(external);
+      if (ancestor === "dome") {
+        await writeFile(join(external, "config.yaml"), "extensions: {}\n");
+      }
+      if (existsSync(path)) await rename(path, `${path}.direct`);
+      await symlink(external, path);
+
+      expect(await inspectHomeLifecycleSuspension(f.vault)).toMatchObject({ kind: "invalid" });
+      const status = await manageHome({ action: "status", vaultPath: f.vault }, deps(f, fakeLaunchctl()));
+      expect(status.exitCode).toBe(1);
+      expect(status.lifecycle).toMatchObject({ state: "invalid" });
+      expect((await lstat(path)).isSymbolicLink()).toBeTrue();
+      expect(existsSync(join(external, "home-lifecycle-suspension"))).toBeFalse();
+    }
+
+    const nonPrivate = await fixture();
+    const locks = dirname(dirname(homeLifecycleCoordinatorPath(nonPrivate.vault)));
+    await mkdir(locks, { mode: 0o755 });
+    await chmod(locks, 0o755);
+    expect(await inspectHomeLifecycleSuspension(nonPrivate.vault)).toMatchObject({ kind: "invalid" });
+    const status = await manageHome({ action: "status", vaultPath: nonPrivate.vault }, deps(nonPrivate, fakeLaunchctl()));
+    expect(status.exitCode).toBe(1);
+    expect(status.lifecycle).toMatchObject({ state: "invalid" });
+    expect((await lstat(locks)).mode & 0o077).not.toBe(0);
+    expect(existsSync(dirname(homeLifecycleCoordinatorPath(nonPrivate.vault)))).toBeFalse();
+  });
+
   test("unsupported and invalid vault preflights never scaffold lifecycle state", async () => {
     const f = await fixture();
     const journal = homeLifecycleCoordinatorPath(f.vault);
@@ -864,6 +1052,13 @@ describe("manageHome macOS lifecycle", () => {
     });
     expect(unsupported.status).toBe("error");
     expect(existsSync(dirname(journal))).toBeFalse();
+    const unsupportedStatus = await manageHome({ action: "status", vaultPath: f.vault }, {
+      ...deps(f, fakeLaunchctl()),
+      platform: "linux",
+    });
+    expect(unsupportedStatus.exitCode).toBe(64);
+    expect(unsupportedStatus.lifecycle).toMatchObject({ state: "unavailable" });
+    expect(existsSync(dirname(journal))).toBeFalse();
 
     const invalid = join(dirname(f.vault), "not-a-vault");
     await mkdir(invalid);
@@ -871,6 +1066,7 @@ describe("manageHome macOS lifecycle", () => {
     expect(denied.exitCode).toBe(64);
     expect(existsSync(dirname(homeLifecycleCoordinatorPath(invalid)))).toBeFalse();
     const status = await manageHome({ action: "status", vaultPath: invalid }, deps(f, fakeLaunchctl()));
+    expect(status.exitCode).toBe(64);
     expect(status.lifecycle).toMatchObject({ state: "unavailable" });
     expect(existsSync(dirname(homeLifecycleCoordinatorPath(invalid)))).toBeFalse();
 
@@ -908,6 +1104,40 @@ describe("manageHome macOS lifecycle", () => {
     expect(refused.status).toBe("error");
     expect(refused.error).toContain("bootout failed");
     expect(bootout.calls.some((call) => call[0] === "bootstrap")).toBeFalse();
+    expect(await readFile(installed.plist)).toEqual(plistBefore);
+
+    const removed = fakeLaunchctl();
+    removed.loaded.add(`gui/501/${homeServiceLabelForVault(f.vault)}`);
+    const removedResult = await manageHome({ action: "restart", vaultPath: f.vault }, {
+      ...deps(f, removed),
+      launchctl: async (args) => {
+        const observed = await removed.runner(args);
+        return args[0] === "bootout" ? outcome(5, "bootout failed after removal") : observed;
+      },
+    });
+    expect(removedResult.status).toBe("error");
+    expect(removedResult.loaded).toBe(false);
+    expect(removed.calls.some((call) => call[0] === "bootstrap")).toBeFalse();
+    expect(await readFile(installed.plist)).toEqual(plistBefore);
+
+    const thrown = fakeLaunchctl();
+    thrown.loaded.add(`gui/501/${homeServiceLabelForVault(f.vault)}`);
+    let bootoutThrew = false;
+    const thrownResult = await manageHome({ action: "uninstall", vaultPath: f.vault }, {
+      ...deps(f, thrown),
+      launchctl: async (args) => {
+        if (args[0] === "print" && bootoutThrew) throw new Error("diagnostic print ambiguous");
+        if (args[0] === "bootout") {
+          await thrown.runner(args);
+          bootoutThrew = true;
+          throw new Error("bootout transport broke after removal");
+        }
+        return thrown.runner(args);
+      },
+    });
+    expect(thrownResult.status).toBe("error");
+    expect(thrownResult.loaded).toBeNull();
+    expect(thrownResult.error).toContain("bootout transport broke after removal");
     expect(await readFile(installed.plist)).toEqual(plistBefore);
   });
 
