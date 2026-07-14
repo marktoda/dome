@@ -4,10 +4,12 @@ import {
   lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   collectManagedReleaseGarbage,
+  manageHomeReleaseCleanup,
   type ManagedReleaseGcDeps,
 } from "../../src/product-host/managed-release-gc";
 import {
@@ -332,14 +334,155 @@ describe("managed Home release reachability GC", () => {
     } finally { await cleanup(f); }
   });
 
-  test("remains dormant with no production caller or public SDK export", async () => {
+  test("manual cleanup inspects without mutation and applies only the exact reported release", async () => {
+    const f = await fixture();
+    try {
+      await install(f, "vault", A);
+      await release(f, A);
+      await release(f, B);
+      const deps = { ...gcDeps(), applicationSupportDir: f.home };
+      const inspected = await manageHomeReleaseCleanup({ apply: false }, deps);
+      expect(inspected).toEqual({
+        schema: "dome.home.cleanup/v1",
+        operation: "cleanup",
+        mode: "inspect",
+        status: "candidates",
+        exitCode: 0,
+        protectedReleaseCount: 1,
+        candidateCount: 1,
+        removedCount: 0,
+        candidates: [{ artifactId: B, version: VERSION, kind: "release" }],
+        reason: null,
+        message: "Managed Dome Home release-store entries are eligible for cleanup.",
+        nextAction: "rerun-with-apply",
+      });
+      expect((await readdir(f.releases)).sort()).toEqual([A, B]);
+
+      const applied = await manageHomeReleaseCleanup({ apply: true }, deps);
+      expect(applied).toMatchObject({
+        mode: "apply",
+        status: "removed",
+        exitCode: 0,
+        candidateCount: 1,
+        removedCount: 1,
+        candidates: [{ artifactId: B, version: VERSION, kind: "release" }],
+      });
+      expect(applied.candidateCount).toBe(applied.removedCount);
+      expect(await readdir(f.releases)).toEqual([A]);
+      expect(await manageHomeReleaseCleanup({ apply: false }, deps)).toMatchObject({
+        status: "clean",
+        candidateCount: 0,
+      });
+    } finally { await cleanup(f); }
+  });
+
+  test("manual cleanup maps missing, busy, and partial failures to fixed public truth", async () => {
+    const missingRoot = await mkdtemp(join(tmpdir(), "dome-managed-release-missing-"));
+    try {
+      const absent = join(missingRoot, "absent-Home");
+      for (const apply of [false, true]) {
+        expect(await manageHomeReleaseCleanup({ apply }, {
+          applicationSupportDir: absent,
+        })).toMatchObject({ status: "not-installed", exitCode: 0, candidateCount: 0 });
+        expect(await pathExists(absent)).toBeFalse();
+      }
+    } finally { await rm(missingRoot, { recursive: true, force: true }); }
+
+    const f = await fixture();
+    try {
+      await install(f, "vault", A);
+      await release(f, A);
+      await release(f, B);
+      const deps = { ...gcDeps(), applicationSupportDir: f.home };
+      const entered = join(f.root, "busy-entered");
+      const moduleUrl = pathToFileURL(resolve(
+        import.meta.dir,
+        "../../src/product-host/managed-release-store-coordinator.ts",
+      )).href;
+      const child = Bun.spawn([process.execPath, "-e", `
+        import { withManagedReleaseStoreCoordinator } from ${JSON.stringify(moduleUrl)};
+        await withManagedReleaseStoreCoordinator(process.env.DOME_TEST_HOME, async () => {
+          await Bun.write(process.env.DOME_TEST_ENTERED, "entered");
+          for (;;) await Bun.sleep(1_000);
+        }, { waitMs: 0 });
+      `], {
+        stdout: "ignore",
+        stderr: "ignore",
+        env: { ...process.env, DOME_TEST_HOME: f.home, DOME_TEST_ENTERED: entered },
+      });
+      try {
+        const deadline = Date.now() + 5_000;
+        while (!await pathExists(entered) && Date.now() < deadline) await Bun.sleep(10);
+        expect(await pathExists(entered)).toBeTrue();
+        expect(await manageHomeReleaseCleanup({ apply: false }, deps)).toEqual({
+          schema: "dome.home.cleanup/v1",
+          operation: "cleanup",
+          mode: "inspect",
+          status: "busy",
+          exitCode: 75,
+          protectedReleaseCount: null,
+          candidateCount: null,
+          removedCount: null,
+          candidates: null,
+          reason: "release-store-busy",
+          message: "Dome Home release cleanup is busy; retry after the current Home operation finishes.",
+          nextAction: "rerun-inspect",
+        });
+      } finally {
+        child.kill("SIGKILL");
+        await child.exited;
+      }
+
+      const partial = await manageHomeReleaseCleanup({ apply: true }, {
+        ...deps,
+        checkpoint: async (name) => {
+          if (name === "removed") throw new Error("/secret/internal partial failure");
+        },
+      });
+      expect(partial).toEqual({
+        schema: "dome.home.cleanup/v1",
+        operation: "cleanup",
+        mode: "apply",
+        status: "error",
+        exitCode: 1,
+        protectedReleaseCount: null,
+        candidateCount: null,
+        removedCount: null,
+        candidates: null,
+        reason: "completion-unknown",
+        message: "Dome Home release cleanup completion is unknown; inspect again before retrying.",
+        nextAction: "rerun-inspect",
+      });
+      expect(JSON.stringify(partial)).not.toContain("secret");
+      expect(await readdir(f.releases)).toEqual([A]);
+      expect(await manageHomeReleaseCleanup({ apply: false }, deps)).toMatchObject({ status: "clean" });
+
+      const alias = join(f.root, "Home-alias");
+      await symlink(f.home, alias, "dir");
+      const redirected = await manageHomeReleaseCleanup({ apply: false }, {
+        ...gcDeps(),
+        applicationSupportDir: alias,
+      });
+      expect(redirected).toMatchObject({
+        status: "error",
+        exitCode: 1,
+        candidateCount: null,
+        reason: "verification-failed",
+      });
+      expect(JSON.stringify(redirected)).not.toContain(alias);
+    } finally { await cleanup(f); }
+  });
+
+  test("has exactly one manual CLI adapter and no automatic caller or public SDK export", async () => {
     const sourceRoot = join(import.meta.dir, "../../src");
     const offenders: string[] = [];
     for (const path of await sourceFiles(sourceRoot)) {
       if (basename(path) === "managed-release-gc.ts") continue;
       if ((await readFile(path, "utf8")).includes("managed-release-gc")) offenders.push(path);
     }
-    expect(offenders).toEqual([]);
+    expect(offenders.map((path) => path.slice(sourceRoot.length + 1))).toEqual([
+      "cli/commands/home-cleanup.ts",
+    ]);
   });
 });
 

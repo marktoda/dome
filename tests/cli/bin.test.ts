@@ -106,6 +106,23 @@ describe("bin/dome process boundary", () => {
     expect(status.serve_status).toBe("off");
   }, { timeout: 30_000 });
 
+  test("home cleanup is wired host-wide without vault discovery", async () => {
+    const home = mkdtempSync(join(tmpdir(), "dome-bin-home-cleanup-"));
+    fixtures.push(home);
+    const help = await runDome(["home", "--help"], { HOME: home });
+    expect(help.exitCode).toBe(0);
+    expect(help.stdout).toContain("cleanup");
+    const result = await runDome(["home", "cleanup", "--json"], { HOME: home });
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      schema: "dome.home.cleanup/v1",
+      operation: "cleanup",
+      status: "not-installed",
+      exitCode: 0,
+    });
+  });
+
   test("serve reports heartbeat and exits cleanly on SIGTERM", async () => {
     await expectServeSignalClearsHeartbeat("SIGTERM");
   }, { timeout: 30_000 });
@@ -121,7 +138,10 @@ type DomeProcessResult = {
   readonly stderr: string;
 };
 
-async function runDome(args: ReadonlyArray<string>): Promise<DomeProcessResult> {
+async function runDome(
+  args: ReadonlyArray<string>,
+  environment: Readonly<Record<string, string>> = {},
+): Promise<DomeProcessResult> {
   const proc = Bun.spawn({
     cmd: [DOME_BIN, ...args],
     cwd: REPO_ROOT,
@@ -129,6 +149,7 @@ async function runDome(args: ReadonlyArray<string>): Promise<DomeProcessResult> 
     stderr: "pipe",
     timeout: 10_000,
     killSignal: "SIGKILL",
+    env: { ...process.env, ...environment },
   });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),

@@ -853,9 +853,9 @@ owner callbacks; callback and proof failures are preserved together. Every
 open replays coordinator-directory and parent durability, so a retry after a
 post-rename fsync failure cannot bless a merely visible database entry. SQLite uses
 DELETE/NORMAL/FULL and one `BEGIN IMMEDIATE` transaction for ownership, so
-process death releases the kernel mutex. Callers choose an explicit bounded
-wait: automatic inspection/collection uses zero wait, while a future
-foreground maintenance surface may wait for at most 30 seconds. Invalid,
+process death releases the kernel mutex. Collector acquisition is always
+zero-wait; checkpoint 3 retains that behavior for the sole manual foreground
+surface. Invalid,
 linked, ambiguous, or nonempty unknown evidence is never repaired, recreated,
 or age-broken. `inspect` does not mutate the managed release or selector
 stores, but its first call intentionally initializes this persistent sibling
@@ -970,6 +970,47 @@ SDK export, or automatic caller. Checkpoint 2B makes later activation eligible
 only after lifecycle, operational, Product Host, and global ownership have all
 been released; activation policy and scheduling remain a separate reviewed
 checkpoint.
+
+### P6 managed-release collection checkpoint 3 — manual activation
+
+`dome home cleanup [--apply] [--json]` is the sole production Adapter over the
+host-wide cleanup interface. It derives the standard managed Home root through
+the same `homeInstallationRoot` helper used by installation and never performs
+vault discovery, requires a live vault, or accepts a vault or arbitrary Home
+root. Either inherited placement of `--vault` is a fixed usage error. An absent
+standard Home root is a successful `not-installed` no-op.
+
+The default is zero-wait inspection. It acquires global ownership, stabilizes
+upgrade namespaces, verifies the entire closed release-store inventory, and
+reports protected release and unreachable entry counts without removing
+anything. Destructive collection requires explicit `--apply`, which performs a
+fresh inventory rather than applying a prior report; there is no force, hidden
+wait, or automatic fallback. A successful apply is all-or-throw at the public
+seam: the raw removed candidates must be the exact ordered plan candidate objects, so
+`status: removed` implies `candidateCount === removedCount` and every sanitized
+listed candidate was removed. A crash or exception after any removal returns
+unknown completion with all counts and candidate evidence `null`; the next
+action is a fresh non-apply inspection, whose tombstone protocol converges the
+store.
+
+The stable `dome.home.cleanup/v1` document exposes only mode, fixed status and
+reason enums, exit code, counts, next action, and candidates shaped as artifact
+id, verified version (or `null` for debris), and kind. It never exposes Home or
+release paths, internal entry names, installation slugs, PIDs, UUIDs, device or
+inode identities, manifest hashes, or caught exceptions. Human output shortens
+artifact ids and prints versions, kinds, counts, and an explicit `--apply` or
+re-inspection instruction. Successful inspection—including candidates—and
+successful apply/no-op exit `0`; coordinator contention is fixed temporary exit
+`75`; fail-closed verification or unknown completion exits `1`; vault scope is
+usage exit `64`.
+
+The structural source inventory permits the high-level manual cleanup interface
+in exactly its Product Host Module and thin lazy CLI Adapter. The raw detailed
+collector remains Module-internal in production, and there is still no SDK
+export, daemon, scheduler, serve, HTTP, MCP, upgrade, or retirement caller.
+Automatic activation remains deferred until Dome has an explicit retention or
+disk-pressure policy, execution budget, contention policy, and operational
+telemetry.
 
 ### P3 device-authority foundation
 
