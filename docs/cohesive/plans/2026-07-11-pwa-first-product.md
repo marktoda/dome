@@ -723,8 +723,28 @@ automatic inspection: a reachability scan would verify every release, fsync
 upgrade namespaces, and take global ownership merely to decide whether to
 print a hint, while selectors for other vaults can still protect the retired
 release. Rollback and every recovery action remain higher priority.
-Automatic retention/scheduling policy and artifact signing/notarization remain
-later checkpoints.
+Automatic retention/scheduling policy remains a later checkpoint.
+
+The authenticated macOS distribution checkpoint adds one Apple Silicon
+release command, `bun run build:home-distribution`, above the installed-gated
+artifact builder. It preserves the pinned upstream Bun signature, signs only
+the two pinned `age` executables, signs and notarizes the outer DMG, staples
+the ticket, and rechecks UDIF and uncached Gatekeeper truth. The release
+receipt binds the actual native identities, accepted Apple submission, inner
+manifest, archive, and redacted activation evidence. Independent verification
+requires the expected publisher team and reads the artifact back from a
+read-only DMG mount; sidecar metadata is never the authority for embedded
+payload identity.
+
+Publication is one fsynced, no-replace envelope rather than a pair of sibling
+transactions. `public/` is the exact three-file distributable and `private/`
+retains the mode-0600 installed rehearsal preimage needed for audit. The three
+release inputs are a Developer ID Application identity, its Apple team id, and
+an existing `notarytool` Keychain profile. No credentialed release execution
+is claimed by tests: a real signed/notarized artifact and clean-consumer-Mac
+acceptance remain release gates. The next product slice is secure Keychain
+credential storage followed by guided Home/provider setup; no workflow or
+state-machine framework is introduced.
 
 Exit journey: a clean Mac needs no source checkout or manual PWA build; it
 pairs an iPhone, upgrades an N-1 fixture after backup, handles a forced failed

@@ -34,6 +34,7 @@
     "test": "bun test ./tests",
     "build:pwa": "bun run --cwd pwa build",
     "build:home-artifact": "bun scripts/home-artifact.ts",
+    "build:home-distribution": "bun scripts/home-macos-distribution.ts",
     "test:invariants": "bun test tests/invariants",
     "typecheck": "bunx tsc --noEmit && bunx tsc --noEmit -p tsconfig.bundles.json && bunx tsc --noEmit -p tsconfig.scripts.json",
     "v1:smoke": "bun scripts/v1-smoke.ts",

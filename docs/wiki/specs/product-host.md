@@ -827,7 +827,54 @@ installed N-1→N rehearsal against the frozen fixture, binds the returned
 identities to the still-staged bytes, writes a local execution receipt, and
 re-proves candidate and source immediately before atomic publication. This is
 a mandatory gate, not a claim that a real release execution has already
-passed. Artifact signing/notarization remains deferred.
+passed. Artifact signing/notarization is supplied by the following checkpoint.
+
+### P4 authenticated macOS distribution checkpoint
+
+`bun run build:home-distribution -- --output <absent-envelope>` is the release
+boundary for the Apple Silicon Home product. It runs only on `darwin-arm64`
+and requires three operator-supplied values: `DOME_CODESIGN_IDENTITY` (a
+Developer ID Application identity for the selected team),
+`DOME_APPLE_TEAM_ID`, and `DOME_NOTARY_KEYCHAIN_PROFILE`. The profile is an
+existing `notarytool` Keychain profile; credentials and profile names are
+never copied into artifact metadata, release receipts, or uncapped command
+diagnostics.
+
+The builder first runs the complete installed artifact and N-1 activation
+gate in private state. It preserves the pinned upstream Bun binary and its
+Developer ID signature byte-for-byte, signs only the two pinned `age`
+executables with the configured Dome identity, and inventories the exact
+three native paths again after signing. The inner artifact manifest binds
+source and shipped hashes, TeamIdentifier, CDHash, hardened runtime, secure
+timestamp, and canonical entitlements for every executable. Inner artifact
+truth is `signed: true, notarized: false`: notarization belongs to the outer
+container, not to the expanded directory.
+
+The builder creates and signs a DMG, submits that exact hash with
+`notarytool`, validates the complete accepted log envelope, staples the
+ticket, and then rechecks the native signature, staple, UDIF structure, and a
+fresh enabled Gatekeeper assessment. The independent distribution verifier
+requires the expected publisher team, checks the closed receipt and file
+inventory, mounts the DMG read-only in private state, runs the shipped
+artifact verifier on the embedded payload, and cross-binds its manifest to
+the receipt and activation evidence. Adjacent JSON therefore cannot replace
+or reinterpret the payload protected by the signed DMG.
+
+One exclusive rename publishes one private envelope. Its `public/` directory
+contains exactly the DMG, strict distribution receipt, and redacted activation
+binding. Its `private/release-evidence.json` retains the raw 0600 installed
+activation evidence without exposing host UID or local paths in the public
+release. Files and candidate directories are fsynced before publication; the
+parent is fsynced and the complete published envelope is independently
+reopened afterward. A collision is a definite no-publish result while a
+rename-complete or post-rename failure is reported as published with uncertain
+durability, and the possible winner is never removed.
+
+The implementation and hermetic gates do not claim that a credentialed public
+release has already been produced. A real Developer ID identity and notarization
+profile must run this boundary successfully for each shipped release. Guided
+provider setup and a clean-consumer-Mac acceptance run remain subsequent P4
+work.
 
 ### P6 managed-release collection checkpoint 1
 
