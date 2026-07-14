@@ -36,6 +36,7 @@ import {
   PINNED_BUN_BINARY_SHA256,
   PINNED_BUN_VERSION,
   verifyHomeArtifact,
+  type HomeArtifactCodeSigning,
   type HomeArtifactEntry,
   type HomeArtifactManifest,
 } from "../src/product-host/home-artifact";
@@ -92,6 +93,15 @@ export function homeArtifactReleaseClaimForTests(): typeof HOME_ARTIFACT_RELEASE
 type BuildOptions = {
   readonly repoRoot?: string;
   readonly outputDir?: string;
+  /** Distribution-only seam: sign copied executables after assembly and before inventory/manifest creation. */
+  readonly beforeManifest?: (input: Readonly<{
+    artifactRoot: string;
+    sources: Readonly<{
+      bun: string;
+      age: string;
+      ageKeygen: string;
+    }>;
+  }>) => Promise<HomeArtifactCodeSigning>;
 };
 
 export type HomeArtifactCandidatePaths = Readonly<{
@@ -342,7 +352,20 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
 
         await normalizeArtifactModes(directory);
         await assertSourceSnapshot(repoRoot, sourceHead, dirname(directory));
-        const manifest = await writeArtifactMetadataForRelease(directory, pkg.version, sourceHead);
+        const codeSigning = options.beforeManifest === undefined ? undefined : await options.beforeManifest({
+          artifactRoot: directory,
+          sources: Object.freeze({
+            bun: runtimePath,
+            age: downloadedAge.age,
+            ageKeygen: downloadedAge.ageKeygen,
+          }),
+        });
+        const manifest = await writeArtifactMetadataForRelease(
+          directory,
+          pkg.version,
+          sourceHead,
+          codeSigning,
+        );
         await writeFile(
           archive,
           gzipSync(await createDeterministicTar(directory, basename(directory)), { level: 9 }),
@@ -662,10 +685,21 @@ export async function writeArtifactMetadata(
   return await writeArtifactMetadataWithClaim(artifactRoot, productVersion, gitCommit, false);
 }
 
+/** Narrow test seam for exercising the real signed metadata writer without release activation. */
+export async function writeSignedArtifactMetadataForTests(
+  artifactRoot: string,
+  productVersion: string,
+  codeSigning: HomeArtifactCodeSigning,
+  gitCommit = "0000000000000000000000000000000000000000",
+): Promise<HomeArtifactManifest> {
+  return await writeArtifactMetadataWithClaim(artifactRoot, productVersion, gitCommit, false, codeSigning);
+}
+
 async function writeArtifactMetadataForRelease(
   artifactRoot: string,
   productVersion: string,
   gitCommit: string,
+  codeSigning?: HomeArtifactCodeSigning,
 ): Promise<HomeArtifactManifest> {
   if (productVersion !== HOME_ARTIFACT_RELEASE_CLAIM.version) {
     throw new Error(`Home release metadata requires exact version ${HOME_ARTIFACT_RELEASE_CLAIM.version}`);
@@ -675,6 +709,7 @@ async function writeArtifactMetadataForRelease(
     productVersion,
     gitCommit,
     HOME_ARTIFACT_RELEASE_CLAIM.upgradeSupported,
+    codeSigning,
   );
 }
 
@@ -683,6 +718,7 @@ async function writeArtifactMetadataWithClaim(
   productVersion: string,
   gitCommit: string,
   upgradeSupported: boolean,
+  codeSigning?: HomeArtifactCodeSigning,
 ): Promise<HomeArtifactManifest> {
   await rm(join(artifactRoot, "manifest.json"), { force: true });
   await rm(join(artifactRoot, "checksums.sha256"), { force: true });
@@ -737,7 +773,8 @@ async function writeArtifactMetadataWithClaim(
         migratesFrom: Object.freeze([...store.migratesFrom]),
       }))),
     }),
-    distribution: Object.freeze({ signed: false, notarized: false, upgradeSupported }),
+    ...(codeSigning === undefined ? {} : { codeSigning }),
+    distribution: Object.freeze({ signed: codeSigning !== undefined, notarized: false, upgradeSupported }),
     entries: Object.freeze(entries.map((entry) => Object.freeze(entry))),
   });
   const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;

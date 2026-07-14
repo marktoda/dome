@@ -16,14 +16,18 @@ import {
   PINNED_AGE_LICENSE_SHA256,
   PINNED_AGE_VERSION,
   PINNED_BUN_VERSION,
+  PINNED_BUN_BINARY_SHA256,
   stageAndPublishHomeArtifactCandidate,
   verifyHomeArtifact,
   writeArtifactMetadata,
+  writeSignedArtifactMetadataForTests,
 } from "../../scripts/home-artifact";
 import { HOME_DURABLE_STATE_PROTOCOL, HOME_STORE_MIGRATIONS } from "../../src/product-host/home-store-migrations";
 import {
   parseHomeArtifactManifest,
+  verifyHomeArtifactToolChecksumMetadataForTests,
   verifyHomeArtifact as shippedVerifyHomeArtifact,
+  type HomeArtifactCodeSigning,
 } from "../../src/product-host/home-artifact";
 
 describe("Dome Home artifact", () => {
@@ -711,7 +715,60 @@ describe("Dome Home artifact", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  test("the real signed writer and parser bind pinned age sources to changed shipped payload hashes", async () => {
+    const root = await verifiableFixture();
+    try {
+      const agePath = join(root, "runtime", "age");
+      const keygenPath = join(root, "runtime", "age-keygen");
+      await writeFile(agePath, `${await readFile(agePath, "utf8")}# signed age\n`);
+      await writeFile(keygenPath, `${await readFile(keygenPath, "utf8")}# signed age-keygen\n`);
+      const ageShipped = digest(await readFile(agePath));
+      const keygenShipped = digest(await readFile(keygenPath));
+      const codeSigning: HomeArtifactCodeSigning = Object.freeze({
+        executables: Object.freeze([
+          signedRow("runtime/age", PINNED_AGE_BINARY_SHA256, ageShipped, "A1B2C3D4E5", "1"),
+          signedRow("runtime/age-keygen", PINNED_AGE_KEYGEN_BINARY_SHA256, keygenShipped, "A1B2C3D4E5", "2"),
+          signedRow("runtime/bun", PINNED_BUN_BINARY_SHA256, PINNED_BUN_BINARY_SHA256, "7FRXF46ZSN", "3"),
+        ]),
+      });
+      const written = await writeSignedArtifactMetadataForTests(root, "1.0.0", codeSigning);
+      expect(written.tools.find((tool) => tool.name === "age")?.sha256).toBe(ageShipped);
+      expect(written.tools.find((tool) => tool.name === "age-keygen")?.sha256).toBe(keygenShipped);
+      expect(ageShipped).not.toBe(PINNED_AGE_BINARY_SHA256);
+      expect(keygenShipped).not.toBe(PINNED_AGE_KEYGEN_BINARY_SHA256);
+
+      const raw: unknown = JSON.parse(await readFile(join(root, "manifest.json"), "utf8"));
+      const verified = verifyHomeArtifactToolChecksumMetadataForTests(raw);
+      expect(verified.distribution.signed).toBeTrue();
+      const corrupted = structuredClone(raw) as { tools: Array<{ name: string; sha256: string }> };
+      corrupted.tools.find((tool) => tool.name === "age")!.sha256 = PINNED_AGE_BINARY_SHA256;
+      expect(() => verifyHomeArtifactToolChecksumMetadataForTests(corrupted))
+        .toThrow("artifact age checksum is missing or inconsistent");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
+
+function signedRow(
+  path: "runtime/age" | "runtime/age-keygen" | "runtime/bun",
+  sourceSha256: string,
+  shippedSha256: string,
+  teamId: string,
+  cd: string,
+): HomeArtifactCodeSigning["executables"][number] {
+  return Object.freeze({
+    path,
+    sourceSha256,
+    shippedSha256,
+    teamId,
+    cdHash: cd.repeat(40),
+    hardenedRuntime: true,
+    secureTimestamp: true,
+    entitlementsSha256: "4".repeat(64),
+  });
+}
 
 async function fixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "dome-home-artifact-test-"));

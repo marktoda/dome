@@ -4,7 +4,7 @@
 
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { lstat, readFile, readlink, readdir } from "node:fs/promises";
+import { lstat, open, readFile, readlink, readdir } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { compareStrings } from "../core/compare";
 import {
@@ -28,6 +28,30 @@ export const PINNED_AGE_ARCHIVE_SHA256 = "01120ea2cbf0463d4c6bd767f99f3271bbed1c
 export const PINNED_AGE_BINARY_SHA256 = "0e3ea0b1bed2b30aa2dc46eef4e1723864d626c80f37319c20d9b73ca045f56f";
 export const PINNED_AGE_KEYGEN_BINARY_SHA256 = "37c4b509d86f233d8dd065f5a905e11d2e1d5549d59445a9bc52da9235a622ad";
 export const PINNED_AGE_LICENSE_SHA256 = "afbdb4e07a359499db587ae632815809b1fc1670a92d5449af112ce9a67833a2";
+export const PINNED_BUN_DEVELOPER_ID_TEAM_ID = "7FRXF46ZSN";
+
+export const HOME_CODE_SIGNING_PATHS = Object.freeze([
+  "runtime/age",
+  "runtime/age-keygen",
+  "runtime/bun",
+] as const);
+
+export type HomeArtifactCodeSigningExecutable = Readonly<{
+  readonly path: typeof HOME_CODE_SIGNING_PATHS[number];
+  /** Hash of the pinned upstream bytes before any Dome signature is applied. */
+  readonly sourceSha256: string;
+  /** Hash of the exact executable bytes inventoried in this artifact. */
+  readonly shippedSha256: string;
+  readonly teamId: string;
+  readonly cdHash: string;
+  readonly hardenedRuntime: true;
+  readonly secureTimestamp: true;
+  readonly entitlementsSha256: string;
+}>;
+
+export type HomeArtifactCodeSigning = Readonly<{
+  readonly executables: ReadonlyArray<HomeArtifactCodeSigningExecutable>;
+}>;
 
 export type HomeArtifactManifest = {
   readonly schema: typeof HOME_ARTIFACT_SCHEMA;
@@ -61,8 +85,10 @@ export type HomeArtifactManifest = {
     readonly protocol: typeof HOME_DURABLE_STATE_PROTOCOL;
     readonly stores: ReadonlyArray<HomeStoreMigrationEntry>;
   };
+  /** Absent on legacy/ordinary unsigned artifacts. Inner payloads are signed but not themselves notarized. */
+  readonly codeSigning?: HomeArtifactCodeSigning;
   readonly distribution: {
-    readonly signed: false;
+    readonly signed: boolean;
     readonly notarized: false;
     readonly upgradeSupported: boolean;
   };
@@ -75,6 +101,9 @@ export type HomeArtifactEntry =
   | { readonly type: "symlink"; readonly path: string; readonly target: string; readonly targetSha256: string };
 
 export type HomeArtifactVerifier = (artifactRoot: string) => Promise<HomeArtifactManifest>;
+
+type NativeCommandResult = Readonly<{ exitCode: number; stdout: string; stderr: string }>;
+type NativeCommandRunner = (argv: ReadonlyArray<string>, cwd: string) => Promise<NativeCommandResult>;
 
 export async function verifyHomeArtifact(artifactRootInput: string): Promise<HomeArtifactManifest> {
   const artifactRoot = resolve(artifactRootInput);
@@ -145,17 +174,14 @@ export async function verifyHomeArtifact(artifactRootInput: string): Promise<Hom
     { name: "age", path: "runtime/age", sha256: PINNED_AGE_BINARY_SHA256 },
     { name: "age-keygen", path: "runtime/age-keygen", sha256: PINNED_AGE_KEYGEN_BINARY_SHA256 },
   ] as const;
+  assertHomeArtifactToolChecksumBindings(manifest, pinnedTools);
   for (const pinned of pinnedTools) {
     const tool = manifest.tools.find((candidate) => candidate.name === pinned.name);
     if (tool === undefined || tool.version !== PINNED_AGE_VERSION || tool.path !== pinned.path ||
       tool.sourceUrl !== PINNED_AGE_ARCHIVE_URL || tool.archiveSha256 !== PINNED_AGE_ARCHIVE_SHA256 ||
-      tool.sha256 !== pinned.sha256 || tool.licensePath !== "licenses/age-LICENSE" ||
+      tool.licensePath !== "licenses/age-LICENSE" ||
       tool.licenseSha256 !== PINNED_AGE_LICENSE_SHA256) {
       throw new Error(`artifact ${pinned.name} provenance is not the pinned official age release`);
-    }
-    const entry = manifest.entries.find((candidate) => candidate.type === "file" && candidate.path === tool.path);
-    if (entry?.type !== "file" || entry.sha256 !== tool.sha256) {
-      throw new Error(`artifact ${pinned.name} checksum is missing or inconsistent`);
     }
     const license = manifest.entries.find((candidate) => candidate.type === "file" && candidate.path === tool.licensePath);
     if (license?.type !== "file" || license.sha256 !== tool.licenseSha256) {
@@ -164,6 +190,25 @@ export async function verifyHomeArtifact(artifactRootInput: string): Promise<Hom
   }
   if (manifest.runtime.sha256 !== PINNED_BUN_BINARY_SHA256) {
     throw new Error("artifact runtime binary is not the pinned official Bun build");
+  }
+  if (manifest.codeSigning !== undefined) {
+    for (const executable of manifest.codeSigning.executables) {
+      const entry = manifest.entries.find((candidate) =>
+        candidate.type === "file" && candidate.path === executable.path
+      );
+      if (entry?.type !== "file" || entry.sha256 !== executable.shippedSha256) {
+        throw new Error(`artifact code signing evidence does not bind ${executable.path}`);
+      }
+    }
+    const bunSigning = manifest.codeSigning.executables.find((row) => row.path === "runtime/bun");
+    const domeSigned = manifest.codeSigning.executables.filter((row) => row.path !== "runtime/bun");
+    if (bunSigning === undefined || bunSigning.sourceSha256 !== PINNED_BUN_BINARY_SHA256 ||
+      bunSigning.shippedSha256 !== PINNED_BUN_BINARY_SHA256 ||
+      bunSigning.teamId !== PINNED_BUN_DEVELOPER_ID_TEAM_ID ||
+      domeSigned.length !== 2 || domeSigned[0]!.teamId !== domeSigned[1]!.teamId) {
+      throw new Error("artifact code signing provenance is inconsistent");
+    }
+    await verifySignedHomeArtifactNativeCode(artifactRoot, manifest.codeSigning, runNativeCommand);
   }
   const runtimeVersion = (await runVersion(join(artifactRoot, "runtime", "bun"), artifactRoot)).trim();
   if (runtimeVersion !== PINNED_BUN_VERSION) throw new Error(`artifact runtime reports ${runtimeVersion}`);
@@ -180,10 +225,13 @@ export function parseHomeArtifactManifest(value: unknown): HomeArtifactManifest 
     Object.hasOwn(candidate, "writerBarrier");
   const hasDurableState = typeof candidate === "object" && candidate !== null &&
     Object.hasOwn(candidate, "durableState");
+  const hasCodeSigning = typeof candidate === "object" && candidate !== null &&
+    Object.hasOwn(candidate, "codeSigning");
   const root = record(value, "artifact manifest", [
     "schema", "product", "target", "build", "artifact", "runtime", "tools",
     "entrypoint", "pwa", ...(hasWriterBarrier ? ["writerBarrier"] : []),
     ...(hasDurableState ? ["durableState"] : []),
+    ...(hasCodeSigning ? ["codeSigning"] : []),
     "distribution", "entries",
   ]);
   if (root["schema"] !== HOME_ARTIFACT_SCHEMA) throw new Error(`unsupported artifact schema: ${String(root["schema"])}`);
@@ -199,6 +247,7 @@ export function parseHomeArtifactManifest(value: unknown): HomeArtifactManifest 
   const durableState = hasDurableState
     ? parseDurableState(root["durableState"])
     : null;
+  const codeSigning = hasCodeSigning ? parseCodeSigning(root["codeSigning"]) : null;
   if (product["name"] !== "Dome Home" || !nonempty(product["version"]) ||
     target["os"] !== HOME_ARTIFACT_TARGET.os || target["arch"] !== HOME_ARTIFACT_TARGET.arch ||
     !fullObjectId(build["gitCommit"]) || !sha(artifact["id"]) ||
@@ -206,7 +255,8 @@ export function parseHomeArtifactManifest(value: unknown): HomeArtifactManifest 
     runtime["sourceUrl"] !== PINNED_BUN_ARCHIVE_URL || runtime["archiveSha256"] !== PINNED_BUN_ARCHIVE_SHA256 || !sha(runtime["sha256"]) ||
     root["entrypoint"] !== "bin/dome" || root["pwa"] !== "app/pwa/dist" ||
     (writerBarrier !== null && writerBarrier["protocol"] !== HOME_WRITER_BARRIER_PROTOCOL) ||
-    distribution["signed"] !== false || distribution["notarized"] !== false || typeof distribution["upgradeSupported"] !== "boolean") {
+    typeof distribution["signed"] !== "boolean" || distribution["signed"] !== (codeSigning !== null) ||
+    distribution["notarized"] !== false || typeof distribution["upgradeSupported"] !== "boolean") {
     throw new Error("artifact manifest fixed product semantics are invalid");
   }
   if (!Array.isArray(root["entries"]) || root["entries"].length === 0) throw new Error("artifact entries must be a non-empty array");
@@ -231,7 +281,189 @@ export function parseHomeArtifactManifest(value: unknown): HomeArtifactManifest 
     // Historical artifacts must remain verifiable by their successors.
     root["durableState"] = durableState;
   }
+  if (codeSigning !== null) root["codeSigning"] = codeSigning;
   return root as unknown as HomeArtifactManifest;
+}
+
+/** Test seam for the signed source-to-shipped checksum rule used by the real verifier. */
+export function verifyHomeArtifactToolChecksumMetadataForTests(value: unknown): HomeArtifactManifest {
+  const manifest = parseHomeArtifactManifest(value);
+  assertHomeArtifactToolChecksumBindings(manifest, [
+    { name: "age", path: "runtime/age", sha256: PINNED_AGE_BINARY_SHA256 },
+    { name: "age-keygen", path: "runtime/age-keygen", sha256: PINNED_AGE_KEYGEN_BINARY_SHA256 },
+  ]);
+  return manifest;
+}
+
+function assertHomeArtifactToolChecksumBindings(
+  manifest: HomeArtifactManifest,
+  pinnedTools: ReadonlyArray<Readonly<{
+    name: "age" | "age-keygen";
+    path: "runtime/age" | "runtime/age-keygen";
+    sha256: string;
+  }>>,
+): void {
+  for (const pinned of pinnedTools) {
+    const tool = manifest.tools.find((candidate) => candidate.name === pinned.name);
+    const entry = manifest.entries.find((candidate) => candidate.type === "file" && candidate.path === pinned.path);
+    const signing = manifest.codeSigning?.executables.find((candidate) => candidate.path === pinned.path);
+    const validUnsigned = signing === undefined && tool?.sha256 === pinned.sha256 &&
+      entry?.type === "file" && entry.sha256 === tool.sha256;
+    const validSigned = signing !== undefined && signing.sourceSha256 === pinned.sha256 &&
+      signing.shippedSha256 !== signing.sourceSha256 && tool?.sha256 === signing.shippedSha256 &&
+      entry?.type === "file" && entry.sha256 === signing.shippedSha256;
+    if (!validUnsigned && !validSigned) {
+      throw new Error(`artifact ${pinned.name} checksum is missing or inconsistent`);
+    }
+  }
+}
+
+/** Test-only command seam for the production signed-artifact trust check. */
+export async function verifySignedHomeArtifactNativeCodeForTests(
+  artifactRoot: string,
+  codeSigning: HomeArtifactCodeSigning,
+  run: NativeCommandRunner,
+): Promise<void> {
+  await verifySignedHomeArtifactNativeCode(resolve(artifactRoot), codeSigning, run);
+}
+
+async function verifySignedHomeArtifactNativeCode(
+  artifactRoot: string,
+  codeSigning: HomeArtifactCodeSigning,
+  run: NativeCommandRunner,
+): Promise<void> {
+  const inventory = await inventorySignedMachO(artifactRoot);
+  if (JSON.stringify(inventory) !== JSON.stringify(HOME_CODE_SIGNING_PATHS)) {
+    throw new Error(`signed Home artifact Mach-O inventory is not exact: ${inventory.join(", ") || "empty"}`);
+  }
+  for (const expected of codeSigning.executables) {
+    const path = join(artifactRoot, ...expected.path.split("/"));
+    await checkedNative(run, ["/usr/bin/codesign", "--verify", "--strict", "--verbose=2", path], artifactRoot);
+    const detail = await checkedNative(
+      run,
+      ["/usr/bin/codesign", "--display", "--verbose=4", path],
+      artifactRoot,
+    );
+    const text = `${detail.stdout}\n${detail.stderr}`;
+    const teamId = nativeCapture(text, /^TeamIdentifier=([A-Z0-9]{10})$/m, `${expected.path} team identifier`);
+    const cdHash = nativeCapture(
+      text,
+      /^CDHash=([a-fA-F0-9]{40}(?:[a-fA-F0-9]{24})?)$/m,
+      `${expected.path} CDHash`,
+    ).toLowerCase();
+    if (teamId !== expected.teamId || cdHash !== expected.cdHash ||
+      !/^CodeDirectory .*flags=.*\bruntime\b/m.test(text) || !/^Timestamp=.+$/m.test(text)) {
+      throw new Error(`signed Home artifact native evidence differs for ${expected.path}`);
+    }
+    const entitlements = await checkedNative(
+      run,
+      ["/usr/bin/codesign", "--display", "--entitlements", "-", "--xml", path],
+      artifactRoot,
+    );
+    if (canonicalHomeEntitlementsSha256(entitlements.stdout) !== expected.entitlementsSha256) {
+      throw new Error(`signed Home artifact entitlements differ for ${expected.path}`);
+    }
+  }
+}
+
+export function canonicalHomeEntitlementsSha256(output: string): string {
+  const normalized = output.replace(/\r\n?/g, "\n").trim();
+  const xmlStart = normalized.indexOf("<?xml");
+  const plistStart = normalized.indexOf("<plist");
+  const start = xmlStart >= 0 ? xmlStart : plistStart;
+  const canonical = (start >= 0 ? normalized.slice(start) : normalized).replace(/>\s+</g, "><");
+  return sha256(Buffer.from(canonical));
+}
+
+async function inventorySignedMachO(root: string): Promise<ReadonlyArray<string>> {
+  const found: string[] = [];
+  for (const path of await archiveEntries(root)) {
+    const absolute = join(root, ...path.split("/"));
+    const info = await lstat(absolute);
+    if (info.isFile() && await isMachO(absolute)) found.push(path);
+    if (info.isSymbolicLink()) {
+      const target = resolve(dirname(absolute), await readlink(absolute));
+      try {
+        if ((await lstat(target)).isFile() && await isMachO(target)) {
+          throw new Error(`signed Home artifact contains a symlink alias to native code: ${path}`);
+        }
+      } catch (error) {
+        if (!(isNodeError(error) && error.code === "ENOENT")) throw error;
+      }
+    }
+  }
+  return Object.freeze(found.sort(compareStrings));
+}
+
+async function isMachO(path: string): Promise<boolean> {
+  const handle = await open(path, "r");
+  try {
+    const bytes = Buffer.alloc(4);
+    if ((await handle.read(bytes, 0, 4, 0)).bytesRead !== 4) return false;
+    return new Set([
+      "feedface", "feedfacf", "cefaedfe", "cffaedfe",
+      "cafebabe", "bebafeca", "cafebabf", "bfbafeca",
+    ]).has(bytes.toString("hex"));
+  } finally { await handle.close(); }
+}
+
+async function checkedNative(
+  run: NativeCommandRunner,
+  argv: ReadonlyArray<string>,
+  cwd: string,
+): Promise<NativeCommandResult> {
+  const result = await run(Object.freeze([...argv]), cwd);
+  if (result.exitCode !== 0) {
+    const raw = result.stderr.trim() || result.stdout.trim() || String(result.exitCode);
+    const redacted = raw
+      .replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]")
+      .replace(/\bdome_(?:pair|cred|csrf)(?:\.[A-Za-z0-9_-]+)+/g, "[REDACTED]")
+      .replace(/\/Users\/[^/\s]+\//g, "/Users/[REDACTED]/");
+    const bounded = redacted.length <= 2_048 ? redacted : `${redacted.slice(0, 2_047)}…`;
+    throw new Error(`native signature verification failed: ${bounded}`);
+  }
+  return result;
+}
+
+function nativeCapture(text: string, pattern: RegExp, label: string): string {
+  const value = pattern.exec(text)?.[1];
+  if (value === undefined) throw new Error(`codesign did not report ${label}`);
+  return value;
+}
+
+async function runNativeCommand(argv: ReadonlyArray<string>, cwd: string): Promise<NativeCommandResult> {
+  const child = Bun.spawn([...argv], { cwd, stdout: "pipe", stderr: "pipe" });
+  const [exitCode, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  return Object.freeze({ exitCode, stdout, stderr });
+}
+
+function parseCodeSigning(value: unknown): HomeArtifactCodeSigning {
+  const root = record(value, "artifact code signing", ["executables"]);
+  if (!Array.isArray(root["executables"]) || root["executables"].length !== HOME_CODE_SIGNING_PATHS.length) {
+    throw new Error("artifact code signing must inventory the exact executable set");
+  }
+  const executables = root["executables"].map((candidate) => {
+    const row = record(candidate, "artifact code signing executable", [
+      "path", "sourceSha256", "shippedSha256", "teamId", "cdHash",
+      "hardenedRuntime", "secureTimestamp", "entitlementsSha256",
+    ]);
+    if (!HOME_CODE_SIGNING_PATHS.includes(row["path"] as typeof HOME_CODE_SIGNING_PATHS[number]) ||
+      !sha(row["sourceSha256"]) || !sha(row["shippedSha256"]) ||
+      typeof row["teamId"] !== "string" || !/^[A-Z0-9]{10}$/.test(row["teamId"]) ||
+      typeof row["cdHash"] !== "string" || !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(row["cdHash"]) ||
+      row["hardenedRuntime"] !== true || row["secureTimestamp"] !== true || !sha(row["entitlementsSha256"])) {
+      throw new Error("artifact code signing executable evidence is invalid");
+    }
+    return row as unknown as HomeArtifactCodeSigningExecutable;
+  });
+  if (executables.some((row, index) => row.path !== HOME_CODE_SIGNING_PATHS[index])) {
+    throw new Error("artifact code signing executable inventory is not exact and sorted");
+  }
+  return Object.freeze({ executables: Object.freeze(executables) });
 }
 
 function parseDurableState(value: unknown): NonNullable<HomeArtifactManifest["durableState"]> {
@@ -294,6 +526,9 @@ function sha(value: unknown): value is string { return typeof value === "string"
 function modeString(value: unknown): value is string { return typeof value === "string" && /^0[0-7]{3}$/.test(value); }
 function mode(value: number): string { return (value & 0o777).toString(8).padStart(4, "0"); }
 function sha256(content: Uint8Array): string { return createHash("sha256").update(content).digest("hex"); }
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
+}
 
 async function inventoryEntriesWithoutMetadata(root: string): Promise<HomeArtifactEntry[]> {
   const found: HomeArtifactEntry[] = [];
