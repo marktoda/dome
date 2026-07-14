@@ -656,6 +656,18 @@ answers, proposals, outbox, runs/capability audit, request receipts, and Device
 Authority databases. CI only consumes and round-trips the fixture; the
 create-exclusive freezer is a test utility, not a release-time generator.
 
+The sibling `artifact-receipt.json` pins the separately reconstructed N-1 Home
+archive as an **internal compatibility floor**, explicitly not as evidence of a
+previously distributed release. `scripts/home-predecessor-artifact.ts`
+reproduces it only on darwin-arm64 with Bun 1.2.13: two
+`git clone --no-local` detached clean checkouts build the exact source commit
+with isolated caches, accept only the pinned historical post-archive rehearsal
+failure, verify the archive checksum before private extraction, run the current
+artifact verifier, bind raw-manifest identity, require byte-identical archives,
+and only then publish the result. Receipt parsing and orchestration remain
+hermetic cross-platform tests; reconstruction itself is a release-gate
+operation.
+
 `src/product-host/home-store-migrations.ts` is the private compatibility
 Module. Its interface is one closed, sorted six-store protocol-1 inventory and
 two operations: all-store preflight, then migration of a published prepared
