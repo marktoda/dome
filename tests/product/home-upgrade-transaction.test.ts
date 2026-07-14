@@ -1396,6 +1396,124 @@ describe("Product Host terminal upgrade history", () => {
     }
   });
 
+  test("receipt proof never follows a journal swapped to a symlink", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      const terminal = await restoredTerminal(f, transactionId);
+      await retireHomeUpgrade(
+        { vaultPath: f.vault, transactionId },
+        historyDeps(f, terminal, "stopped"),
+      );
+      const upgrade = join(homeInstallationPaths(f.vault, f.deps).installations, "upgrade");
+      const journal = join(upgrade, "history", transactionId, "journal.json");
+      const retainedJournal = `${journal}.retained`;
+      const sentinel = join(f.root, "journal-sentinel.json");
+      const sentinelBytes = "sentinel must not be opened\n";
+      await writeFile(sentinel, sentinelBytes, { mode: 0o600 });
+      let swapped = false;
+      const deps: HomeUpgradeHistoryDeps = {
+        ...f.deps,
+        journalReadCheckpoint: async (name) => {
+          if (!swapped && name === "root-opened") {
+            swapped = true;
+            await rename(journal, retainedJournal);
+            await symlink(sentinel, journal);
+          }
+        },
+      };
+      await expect(readHomeUpgradeCandidateReceipt(f.vault, CANDIDATE_ID, deps)).rejects.toThrow(
+        "cannot be opened without following links",
+      );
+      expect(swapped).toBeTrue();
+      expect(await readFile(sentinel, "utf8")).toBe(sentinelBytes);
+
+      await rm(journal);
+      await rename(retainedJournal, journal);
+      expect(await readHomeUpgradeCandidateReceipt(f.vault, CANDIDATE_ID, f.deps)).toMatchObject({
+        operationId: transactionId,
+        outcome: "restored",
+      });
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("receipt proof rejects journal replacement after its stable handle opens", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      const terminal = await restoredTerminal(f, transactionId);
+      await retireHomeUpgrade(
+        { vaultPath: f.vault, transactionId },
+        historyDeps(f, terminal, "stopped"),
+      );
+      const upgrade = join(homeInstallationPaths(f.vault, f.deps).installations, "upgrade");
+      const journal = join(upgrade, "history", transactionId, "journal.json");
+      const retainedJournal = `${journal}.retained`;
+      const journalBytes = await readFile(journal);
+      let swapped = false;
+      const deps: HomeUpgradeHistoryDeps = {
+        ...f.deps,
+        journalReadCheckpoint: async (name) => {
+          if (!swapped && name === "journal-opened") {
+            swapped = true;
+            await rename(journal, retainedJournal);
+            await writeFile(journal, journalBytes, { mode: 0o600 });
+          }
+        },
+      };
+      await expect(readLatestHomeUpgradeSummary(f.vault, deps)).rejects.toThrow(
+        "journal changed during bounded inspection",
+      );
+      expect(swapped).toBeTrue();
+
+      await rm(journal);
+      await rename(retainedJournal, journal);
+      expect(await readLatestHomeUpgradeSummary(f.vault, f.deps)).toMatchObject({
+        operationId: transactionId,
+        outcome: "restored",
+      });
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("receipt proof rejects transaction-root inode replacement during closure", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      const terminal = await restoredTerminal(f, transactionId);
+      await retireHomeUpgrade(
+        { vaultPath: f.vault, transactionId },
+        historyDeps(f, terminal, "stopped"),
+      );
+      const upgrade = join(homeInstallationPaths(f.vault, f.deps).installations, "upgrade");
+      const archived = join(upgrade, "history", transactionId);
+      const replacement = join(upgrade, "history", `.replacement-${transactionId}`);
+      const retained = join(upgrade, "history", `.retained-${transactionId}`);
+      await cp(archived, replacement, { recursive: true });
+      let swapped = false;
+      const deps: HomeUpgradeHistoryDeps = {
+        ...f.deps,
+        journalReadCheckpoint: async (name) => {
+          if (!swapped && name === "before-root-recheck") {
+            swapped = true;
+            await rename(archived, retained);
+            await rename(replacement, archived);
+          }
+        },
+      };
+      await expect(readHomeUpgradeCandidateReceipt(f.vault, CANDIDATE_ID, deps)).rejects.toThrow(
+        "transaction root changed during bounded inspection",
+      );
+      expect(swapped).toBeTrue();
+
+      await rm(archived, { recursive: true });
+      await rename(retained, archived);
+      expect(await readHomeUpgradeCandidateReceipt(f.vault, CANDIDATE_ID, f.deps)).toMatchObject({
+        operationId: transactionId,
+        outcome: "restored",
+      });
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
   test("concurrent retirees converge and preserve history-before-upgrade fsync order", async () => {
     const f = await fixture();
     try {

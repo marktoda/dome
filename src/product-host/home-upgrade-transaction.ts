@@ -4,7 +4,7 @@
 // candidates, switch launchd, or commit an installation selection.
 
 import { createHash } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, type BigIntStats } from "node:fs";
 import {
   chmod, copyFile, lstat, mkdir, open, opendir, readFile, readdir, realpath, rename, rm,
 } from "node:fs/promises";
@@ -177,6 +177,10 @@ export type HomeUpgradeTransactionDeps = HomeInstallationDeps & {
   readonly afterStoreMigration?: ((name: HomeStoreMigrationEntry["name"]) => Promise<void>) | undefined;
   /** Test-only race seam for constant-cost immutable history identity reads. */
   readonly historyIdentityCheckpoint?: ((name: "transaction-observed") => Promise<void>) | undefined;
+  /** Test-only race seam for stable-handle journal inspection. */
+  readonly journalReadCheckpoint?: ((name:
+    "root-opened" | "journal-opened" | "before-root-recheck"
+  ) => Promise<void>) | undefined;
   /** Test/diagnostic crash seam for durable cutover and selector rollback. */
   readonly selectionCheckpoint?: ((name:
     "probation-recorded" | "switching-recorded" | "candidate-plist-published" |
@@ -554,7 +558,7 @@ export async function readHomeUpgrade(
   if (upgrade === null) return null;
   const active = join(upgrade, "active");
   if (!await present(active)) return null;
-  const journal = await readBoundedJournal(active, vault);
+  const journal = await readBoundedJournal(active, vault, deps);
   await validateJournalReferences(journal, active, paths, deps);
   await validateSnapshotInventory(active, journal.snapshot.inventory);
   if (journal.probation !== null && journal.probation.vaultId !== await readVaultId(vault)) {
@@ -577,7 +581,7 @@ export async function readHomeUpgradeForRecovery(
   if (upgrade === null) return null;
   const active = join(upgrade, "active");
   if (!await present(active)) return null;
-  const journal = await readBoundedJournal(active, vault);
+  const journal = await readBoundedJournal(active, vault, deps);
   await validateRestoreJournalReferences(journal, active, paths, deps);
   await validateSnapshotInventory(active, journal.snapshot.inventory);
   return journal;
@@ -604,7 +608,7 @@ export async function readHomeUpgradeHistory(
   await assertDirectDirectory(history, "upgrade history root");
   const transactionRoot = join(history, transactionId);
   if (!await present(transactionRoot)) return null;
-  const journal = await readBoundedJournal(transactionRoot, vault);
+  const journal = await readBoundedJournal(transactionRoot, vault, deps);
   if (journal.transactionId !== transactionId) {
     throw new Error("Dome Home upgrade history directory disagrees with its transaction identity");
   }
@@ -645,7 +649,7 @@ export async function readHomeUpgradeHistoryIdentity(
       if (!await present(transactionRoot)) return null;
       throw new Error("Dome Home archived upgrade transaction lacks its journal");
     }
-    const journal = await readBoundedJournalRoot(transactionRoot, vault);
+    const journal = await readBoundedJournalRoot(transactionRoot, vault, deps);
     if (journal.transactionId !== transactionId ||
       (journal.phase !== "committed" && journal.phase !== "restored")) {
       throw new Error("Dome Home archived upgrade journal has invalid terminal identity");
@@ -946,7 +950,7 @@ export async function inspectHomeUpgradeAdmission(
     if (upgrade === null) return Object.freeze({ admitted: true as const });
     const active = join(upgrade, "active");
     if (!await present(active)) return Object.freeze({ admitted: true as const });
-    const journal = await readBoundedJournal(active, vault);
+    const journal = await readBoundedJournal(active, vault, deps);
     if (journal.phase !== "restored" && journal.phase !== "committed") {
       return Object.freeze({ admitted: false as const, reason: `upgrade transaction is ${journal.phase}` });
     }
@@ -985,45 +989,113 @@ export async function inspectHomeUpgradeAdmission(
   }
 }
 
-async function readBoundedJournal(active: string, vault: string): Promise<HomeUpgradeTransaction> {
-  const journal = await readBoundedJournalRoot(active, vault);
+async function readBoundedJournal(
+  active: string,
+  vault: string,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<HomeUpgradeTransaction> {
+  const journal = await readBoundedJournalRoot(active, vault, deps);
   if (journal.selection !== null) await validateStoredSelection(active, journal.selection);
   return journal;
 }
 
-async function readBoundedJournalRoot(active: string, vault: string): Promise<HomeUpgradeTransaction> {
-  await assertPrivateDirectory(active, "upgrade transaction root");
-  await assertPrivateDirectory(join(active, "snapshot"), "upgrade snapshot root");
-  const journalPath = join(active, "journal.json");
-  const info = await lstat(journalPath);
-  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 ||
-    (info.mode & 0o777) !== 0o600 || info.size > 1024 * 1024) {
-    throw new Error("Dome Home upgrade journal is not a bounded regular file");
-  }
-  let value: unknown;
-  try { value = JSON.parse(await readFile(journalPath, "utf8")); }
-  catch { throw new Error("Dome Home upgrade journal is corrupt"); }
-  const journal = parseJournal(value, vault);
-  const expected = journal.schema === HOME_UPGRADE_TRANSACTION_SCHEMA
-    ? ["journal.json", "selectors", "snapshot"]
-    : ["journal.json", "snapshot"];
-  const withSummary = [...expected, "summary.json"].sort(compareStrings);
-  const rootNames = await readBoundedNames(active, withSummary.length);
-  if (JSON.stringify(rootNames) !== JSON.stringify(expected) &&
-    JSON.stringify(rootNames) !== JSON.stringify(withSummary)) {
-    throw new Error("Dome Home upgrade transaction has an unknown or missing root entry");
-  }
-  if (rootNames.includes("summary.json")) {
-    const summary = await assertRegular(join(active, "summary.json"), "upgrade terminal summary");
-    if ((await lstat(join(active, "summary.json"))).nlink !== 1 ||
-      (summary.mode & 0o777) !== 0o600 || summary.size === 0 || summary.size > 4096) {
-      throw new Error("Dome Home upgrade terminal summary is not a bounded private file");
+async function readBoundedJournalRoot(
+  active: string,
+  vault: string,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<HomeUpgradeTransaction> {
+  const root = await open(active, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  try {
+    const rootBefore = await root.stat({ bigint: true });
+    if (!rootBefore.isDirectory() || (rootBefore.mode & 0o777n) !== 0o700n) {
+      throw new Error("Dome Home upgrade transaction root is not a private directory");
     }
+    await assertOpenedDirectoryPath(active, rootBefore, "upgrade transaction root");
+    await deps.journalReadCheckpoint?.("root-opened");
+    return await withBoundedPrivateFile(
+      join(active, "journal.json"),
+      1024 * 1024,
+      "Dome Home upgrade journal",
+      deps,
+      async (bytes) => {
+        let value: unknown;
+        try { value = JSON.parse(bytes.toString("utf8")); }
+        catch { throw new Error("Dome Home upgrade journal is corrupt"); }
+        const journal = parseJournal(value, vault);
+        await assertPrivateDirectory(join(active, "snapshot"), "upgrade snapshot root");
+        const expected = journal.schema === HOME_UPGRADE_TRANSACTION_SCHEMA
+          ? ["journal.json", "selectors", "snapshot"]
+          : ["journal.json", "snapshot"];
+        const withSummary = [...expected, "summary.json"].sort(compareStrings);
+        const rootNames = await readBoundedNames(active, withSummary.length);
+        if (JSON.stringify(rootNames) !== JSON.stringify(expected) &&
+          JSON.stringify(rootNames) !== JSON.stringify(withSummary)) {
+          throw new Error("Dome Home upgrade transaction has an unknown or missing root entry");
+        }
+        if (rootNames.includes("summary.json")) {
+          const summary = await assertRegular(join(active, "summary.json"), "upgrade terminal summary");
+          if ((await lstat(join(active, "summary.json"))).nlink !== 1 ||
+            (summary.mode & 0o777) !== 0o600 || summary.size === 0 || summary.size > 4096) {
+            throw new Error("Dome Home upgrade terminal summary is not a bounded private file");
+          }
+        }
+        if (journal.selection !== null) {
+          await assertPrivateDirectory(join(active, "selectors"), "upgrade stored selectors");
+        }
+        await deps.journalReadCheckpoint?.("before-root-recheck");
+        const rootAfter = await root.stat({ bigint: true });
+        if (!sameOpenedStat(rootBefore, rootAfter)) {
+          throw new Error("Dome Home upgrade transaction root changed during bounded inspection");
+        }
+        await assertOpenedDirectoryPath(active, rootAfter, "upgrade transaction root");
+        return journal;
+      },
+    );
+  } finally { await root.close(); }
+}
+
+async function withBoundedPrivateFile<T>(
+  path: string,
+  maximumBytes: number,
+  label: string,
+  deps: HomeUpgradeTransactionDeps,
+  inspect: (bytes: Buffer) => Promise<T>,
+): Promise<T> {
+  let handle: Awaited<ReturnType<typeof open>>;
+  try { handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW); }
+  catch (error) {
+    if (hasCode(error, "ENOENT")) throw error;
+    throw new Error(`${label} cannot be opened without following links`);
   }
-  if (journal.selection !== null) {
-    await assertPrivateDirectory(join(active, "selectors"), "upgrade stored selectors");
-  }
-  return journal;
+  try {
+    const before = await handle.stat({ bigint: true });
+    if (!before.isFile() || before.nlink !== 1n || (before.mode & 0o777n) !== 0o600n ||
+      before.size === 0n || before.size > BigInt(maximumBytes)) {
+      throw new Error(`${label} is not a bounded private file`);
+    }
+    await assertOpenedFilePath(path, before, label);
+    await deps.journalReadCheckpoint?.("journal-opened");
+    const expected = Number(before.size);
+    const bytes = Buffer.alloc(expected + 1);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const result = await handle.read(bytes, offset, bytes.length - offset, offset);
+      if (result.bytesRead === 0) break;
+      offset += result.bytesRead;
+    }
+    const afterRead = await handle.stat({ bigint: true });
+    if (offset !== expected || !sameOpenedStat(before, afterRead)) {
+      throw new Error(`${label} changed during bounded inspection`);
+    }
+    await assertOpenedFilePath(path, afterRead, label);
+    const result = await inspect(bytes.subarray(0, offset));
+    const afterInspect = await handle.stat({ bigint: true });
+    if (!sameOpenedStat(before, afterInspect)) {
+      throw new Error(`${label} changed during bounded inspection`);
+    }
+    await assertOpenedFilePath(path, afterInspect, label);
+    return result;
+  } finally { await handle.close(); }
 }
 
 async function inspectUpgradeAncestors(paths: HomeInstallationPaths): Promise<string | null> {
@@ -1895,6 +1967,28 @@ async function assertPrivateDirectory(path: string, label: string): Promise<void
   if (((await lstat(path)).mode & 0o777) !== 0o700) {
     throw new Error(`${label} is not private: ${path}`);
   }
+}
+
+async function assertOpenedDirectoryPath(path: string, opened: BigIntStats, label: string): Promise<void> {
+  const current = await lstat(path, { bigint: true });
+  if (!current.isDirectory() || current.isSymbolicLink() || current.dev !== opened.dev || current.ino !== opened.ino ||
+    await realpath(path) !== resolve(path)) {
+    throw new Error(`Dome Home ${label} path changed during bounded inspection`);
+  }
+}
+
+async function assertOpenedFilePath(path: string, opened: BigIntStats, label: string): Promise<void> {
+  const current = await lstat(path, { bigint: true });
+  if (!current.isFile() || current.isSymbolicLink() || current.dev !== opened.dev || current.ino !== opened.ino ||
+    await realpath(path) !== resolve(path)) {
+    throw new Error(`${label} path changed during bounded inspection`);
+  }
+}
+
+function sameOpenedStat(left: BigIntStats, right: BigIntStats): boolean {
+  return left.dev === right.dev && left.ino === right.ino && left.mode === right.mode &&
+    left.nlink === right.nlink && left.uid === right.uid && left.gid === right.gid &&
+    left.size === right.size && left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs;
 }
 
 async function readBoundedNames(path: string, maximum: number): Promise<ReadonlyArray<string>> {
