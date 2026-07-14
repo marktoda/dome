@@ -1,14 +1,17 @@
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { openDeviceAuthority } from "../../src/device-authority/device-authority";
+import { migratePreparedHomeStores } from "../../src/product-host/home-store-migrations";
 import {
+  assertFrozenN1State,
   FROZEN_N1_RELEASE,
   FROZEN_N1_SOURCE_COMMIT,
   materializeFrozenN1Fixture,
+  observeFrozenN1State,
   readFrozenN1Manifest,
 } from "../fixtures/home-upgrade/n-1/freeze-n1";
 
@@ -90,6 +93,39 @@ describe("frozen Home N-1 durable-state fixture", () => {
         .rejects.toThrow("destination must be empty");
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("observes the six logical canaries and active/revoked credential truth", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-n1-observation-"));
+    try {
+      const manifest = await materializeFrozenN1Fixture({ fixtureRoot: FIXTURE, destination: root });
+      const observation = await observeFrozenN1State({ fixtureRoot: FIXTURE, stateRoot: root });
+      expect(() => assertFrozenN1State(observation, manifest)).not.toThrow();
+
+      const answers = new Database(join(root, "answers.db"));
+      try {
+        answers.query("UPDATE question_answers SET handler_status = 'failed'").run();
+      } finally { answers.close(); }
+      const changed = await observeFrozenN1State({ fixtureRoot: FIXTURE, stateRoot: root });
+      expect(() => assertFrozenN1State(changed, manifest)).toThrow("logical canary changed: answers");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("observes the same logical truth after the real N-1 to N migration", async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "dome-n1-migrated-observation-")));
+    const preflight = await realpath(await mkdtemp(join(tmpdir(), "dome-n1-migrated-preflight-")));
+    try {
+      await chmod(preflight, 0o700);
+      const manifest = await materializeFrozenN1Fixture({ fixtureRoot: FIXTURE, destination: root });
+      await migratePreparedHomeStores({ stateRoot: root, preflightRoot: preflight });
+      const observation = await observeFrozenN1State({ fixtureRoot: FIXTURE, stateRoot: root });
+      expect(() => assertFrozenN1State(observation, manifest)).not.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(preflight, { recursive: true, force: true });
     }
   });
 

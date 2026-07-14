@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createDeterministicTar,
+  inspectHomeArtifactTar,
   assertSourceSnapshot,
   HOME_ARTIFACT_SCHEMA,
   normalizeArtifactModes,
@@ -96,6 +97,85 @@ describe("Dome Home artifact", () => {
       await writeFile(join(root, "app", "pwa", "dist", "index.html"), "<main>Dome</main>\n");
       const second = await createDeterministicTar(root);
       expect(digest(second)).toBe(digest(first));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("strictly inspects USTAR while accepting only contained artifact symlinks", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-home-tar-links-"));
+    try {
+      await mkdir(join(root, "bin"));
+      await mkdir(join(root, "target"));
+      await writeFile(join(root, "target", "tool"), "tool\n");
+      await symlink("../target/tool", join(root, "bin", "tool"));
+      const inspected = inspectHomeArtifactTar(await createDeterministicTar(root, "dome"));
+      expect(inspected.root).toBe("dome");
+      expect(inspected.entries.find((entry) => entry.path === "dome/bin/tool")).toEqual({
+        path: "dome/bin/tool",
+        type: "symlink",
+        size: 0,
+        linkTarget: "../target/tool",
+      });
+
+      await rm(join(root, "bin", "tool"));
+      await symlink("../../outside", join(root, "bin", "tool"));
+      const escaping = await createDeterministicTar(root, "dome");
+      expect(() => inspectHomeArtifactTar(escaping))
+        .toThrow("symlink escapes its root");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects hardlinks and malformed USTAR checksums before extraction", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-home-tar-types-"));
+    try {
+      await writeFile(join(root, "file"), "payload\n");
+      const original = await createDeterministicTar(root, "dome");
+      const hardlink = Buffer.from(original);
+      rewriteTarType(hardlink, 512, "1");
+      expect(() => inspectHomeArtifactTar(hardlink)).toThrow("unsupported entry type");
+
+      const corrupt = Buffer.from(original);
+      corrupt[512] = (corrupt[512] ?? 0) ^ 1;
+      expect(() => inspectHomeArtifactTar(corrupt)).toThrow("header checksum is invalid");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects absolute links, members beneath links, duplicates, traversal, and trailing data", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-home-tar-closed-"));
+    try {
+      await mkdir(join(root, "link"));
+      await writeFile(join(root, "link", "child"), "");
+      const nested = await createDeterministicTar(root, "dome");
+      rewriteTarName(nested, 512, "dome/link");
+      rewriteTarLink(nested, 512, "target");
+      expect(() => inspectHomeArtifactTar(nested)).toThrow("member beneath symlink");
+
+      await rm(root, { recursive: true, force: true });
+      await mkdir(root);
+      await symlink("/tmp/outside", join(root, "absolute"));
+      const absolute = await createDeterministicTar(root, "dome");
+      expect(() => inspectHomeArtifactTar(absolute))
+        .toThrow("symlink target is unsafe");
+
+      await rm(root, { recursive: true, force: true });
+      await mkdir(root);
+      await writeFile(join(root, "a"), "");
+      await writeFile(join(root, "b"), "");
+      const duplicate = await createDeterministicTar(root, "dome");
+      rewriteTarName(duplicate, 1024, "dome/a");
+      expect(() => inspectHomeArtifactTar(duplicate)).toThrow("duplicate member");
+
+      const traversal = await createDeterministicTar(root, "dome");
+      rewriteTarName(traversal, 512, "dome/../escape");
+      expect(() => inspectHomeArtifactTar(traversal)).toThrow("path is unsafe");
+
+      const trailing = Buffer.concat([await createDeterministicTar(root, "dome"), Buffer.from([1])]);
+      expect(() => inspectHomeArtifactTar(trailing)).toThrow("termination or trailing data");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -342,6 +422,30 @@ async function verifiableFixture(): Promise<string> {
 
 function digest(content: Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
+}
+
+function rewriteTarType(tar: Buffer, headerOffset: number, type: string): void {
+  tar[headerOffset + 156] = type.charCodeAt(0);
+  rewriteTarChecksum(tar, headerOffset);
+}
+
+function rewriteTarLink(tar: Buffer, headerOffset: number, target: string): void {
+  tar[headerOffset + 156] = "2".charCodeAt(0);
+  tar.fill(0, headerOffset + 157, headerOffset + 257);
+  Buffer.from(target).copy(tar, headerOffset + 157);
+  rewriteTarChecksum(tar, headerOffset);
+}
+
+function rewriteTarName(tar: Buffer, headerOffset: number, name: string): void {
+  tar.fill(0, headerOffset, headerOffset + 100);
+  Buffer.from(name).copy(tar, headerOffset);
+  rewriteTarChecksum(tar, headerOffset);
+}
+
+function rewriteTarChecksum(tar: Buffer, headerOffset: number): void {
+  tar.fill(0x20, headerOffset + 148, headerOffset + 156);
+  const checksum = tar.subarray(headerOffset, headerOffset + 512).reduce((sum, byte) => sum + byte, 0);
+  Buffer.from(`${checksum.toString(8).padStart(6, "0")}\0 `).copy(tar, headerOffset + 148);
 }
 
 async function git(cwd: string, ...args: string[]): Promise<string> {
