@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import {
   createDeterministicTar,
   inspectHomeArtifactTar,
@@ -16,6 +16,7 @@ import {
   PINNED_AGE_LICENSE_SHA256,
   PINNED_AGE_VERSION,
   PINNED_BUN_VERSION,
+  stageAndPublishHomeArtifactCandidate,
   verifyHomeArtifact,
   writeArtifactMetadata,
 } from "../../scripts/home-artifact";
@@ -30,7 +31,324 @@ describe("Dome Home artifact", () => {
     expect(verifyHomeArtifact).toBe(shippedVerifyHomeArtifact);
   });
 
+  test("assembles and runs configured gates in private state before one publication", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-home-candidate-test-"));
+    const output = join(root, "release", "dist");
+    const events: string[] = [];
+    let privateDirectory = "";
+    try {
+      const result = await stageAndPublishHomeArtifactCandidate({
+        outputDir: output,
+        artifactName: "dome-home-0.1.0-darwin-arm64",
+        assemble: async (paths) => {
+          events.push("assemble");
+          privateDirectory = paths.directory;
+          expect(paths.artifactName).toBe("dome-home-0.1.0-darwin-arm64");
+          expect(paths.archiveName).toBe("dome-home-0.1.0-darwin-arm64.tar.gz");
+          expect(basename(dirname(paths.directory)).startsWith(".dome-home-candidate-")).toBeTrue();
+          await mkdir(paths.directory, { recursive: true });
+          await writeFile(join(paths.directory, "payload"), "candidate\n");
+          await writeFile(paths.archive, "archive\n");
+        },
+        verifyArtifact: async (candidate) => {
+          events.push("verify-artifact");
+          expect(await readFile(candidate.archive, "utf8")).toBe("archive\n");
+        },
+        rehearseArchive: async () => { events.push("rehearse-archive"); },
+      }, async (source, target) => {
+        events.push("publish");
+        expect(await pathExists(target)).toBeFalse();
+        expect((await readdir(source)).sort()).toEqual([
+          "dome-home-0.1.0-darwin-arm64",
+          "dome-home-0.1.0-darwin-arm64.tar.gz",
+        ]);
+        await rename(source, target);
+      });
+
+      expect(events).toEqual(["assemble", "verify-artifact", "rehearse-archive", "publish"]);
+      const canonicalOutput = join(await realpath(join(root, "release")), "dist");
+      expect(result.directory).toBe(join(canonicalOutput, "dome-home-0.1.0-darwin-arm64"));
+      expect(result.archive).toBe(join(canonicalOutput, "dome-home-0.1.0-darwin-arm64.tar.gz"));
+      expect(result.directory).not.toBe(privateDirectory);
+      expect(await readFile(join(result.directory, "payload"), "utf8")).toBe("candidate\n");
+      expect(await readdir(join(root, "release"))).toEqual(["dist"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a failed gate publishes nothing, skips later gates, and removes private state", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-home-candidate-failure-"));
+    const output = join(root, "dist");
+    const events: string[] = [];
+    try {
+      await expect(stageAndPublishHomeArtifactCandidate({
+        outputDir: output,
+        artifactName: "candidate",
+        assemble: async (paths) => {
+          events.push("assemble");
+          await mkdir(paths.directory);
+          await writeFile(paths.archive, "private archive");
+        },
+        verifyArtifact: async () => { events.push("verify-artifact"); },
+        rehearseArchive: async () => {
+          events.push("rehearse-archive");
+          throw new Error("candidate rejected");
+        },
+      }, async () => { events.push("publish"); })).rejects.toThrow("candidate rejected");
+
+      expect(events).toEqual(["assemble", "verify-artifact", "rehearse-archive"]);
+      expect(await pathExists(output)).toBeFalse();
+      expect((await readdir(root)).filter((name) => name.startsWith(".dome-home-candidate-"))).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("verification failure skips rehearsal and publication and removes private state", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-home-candidate-verification-"));
+    const events: string[] = [];
+    try {
+      await expect(stageAndPublishHomeArtifactCandidate({
+        outputDir: join(root, "dist"),
+        artifactName: "candidate",
+        assemble: async (paths) => {
+          events.push("assemble");
+          await mkdir(paths.directory);
+          await writeFile(paths.archive, "archive\n");
+        },
+        verifyArtifact: async () => {
+          events.push("verify-artifact");
+          throw new Error("verification rejected");
+        },
+        rehearseArchive: async () => { events.push("rehearse-archive"); },
+      }, async () => { events.push("publish"); })).rejects.toThrow("verification rejected");
+
+      expect(events).toEqual(["assemble", "verify-artifact"]);
+      expect((await readdir(root)).filter((name) => name.startsWith(".dome-home-candidate-"))).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("publication failure removes only the still-owned staging inode", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-home-candidate-publish-failure-"));
+    try {
+      await expect(stageAndPublishHomeArtifactCandidate({
+        outputDir: join(root, "dist"),
+        artifactName: "candidate",
+        assemble: async (paths) => {
+          await mkdir(paths.directory);
+          await writeFile(paths.archive, "archive\n");
+        },
+        verifyArtifact: async () => {},
+        rehearseArchive: async () => {},
+      }, async () => { throw new Error("publication rejected"); })).rejects.toThrow("publication rejected");
+
+      expect(await pathExists(join(root, "dist"))).toBeFalse();
+      expect((await readdir(root)).filter((name) => name.startsWith(".dome-home-candidate-"))).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rename-then-throw publication never removes a replacement at the former staging path", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-home-candidate-cleanup-race-"));
+    const output = join(root, "dist");
+    let replacement = "";
+    try {
+      await expect(stageAndPublishHomeArtifactCandidate({
+        outputDir: output,
+        artifactName: "candidate",
+        assemble: async (paths) => {
+          await mkdir(paths.directory);
+          await writeFile(paths.archive, "archive\n");
+        },
+        verifyArtifact: async () => {},
+        rehearseArchive: async () => {},
+      }, async (source, target) => {
+        await rename(source, target);
+        replacement = source;
+        await mkdir(replacement);
+        await writeFile(join(replacement, "not-owned-by-builder"), "keep\n");
+        throw new Error("publisher failed after rename");
+      })).rejects.toThrow("publisher failed after rename");
+
+      expect(await readFile(join(replacement, "not-owned-by-builder"), "utf8")).toBe("keep\n");
+      expect(await readFile(join(output, "candidate.tar.gz"), "utf8")).toBe("archive\n");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses every existing output target without assembling or deleting it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-home-candidate-existing-"));
+    try {
+      for (const kind of ["directory", "file", "symbolic link"] as const) {
+        const output = join(root, kind.replace(" ", "-"));
+        if (kind === "directory") await mkdir(output);
+        else if (kind === "file") await writeFile(output, "keep\n");
+        else await symlink(join(root, "missing-target"), output);
+        let assembled = false;
+        await expect(stageAndPublishHomeArtifactCandidate({
+          outputDir: output,
+          artifactName: "candidate",
+          assemble: async () => {
+            assembled = true;
+          },
+          verifyArtifact: async () => {},
+          rehearseArchive: async () => {},
+        })).rejects.toThrow(`already exists as a ${kind}`);
+        expect(assembled).toBeFalse();
+        expect((await lstat(output)).isSymbolicLink()).toBe(kind === "symbolic link");
+        if (kind === "file") expect(await readFile(output, "utf8")).toBe("keep\n");
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses a symlink output parent and a parent retarget before publication", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-home-candidate-parent-"));
+    try {
+      const realParent = join(root, "real-parent");
+      const linkedParent = join(root, "linked-parent");
+      await mkdir(realParent);
+      await symlink(realParent, linkedParent);
+      await expect(stageAndPublishHomeArtifactCandidate({
+        outputDir: join(linkedParent, "dist"),
+        artifactName: "candidate",
+        assemble: async () => {},
+        verifyArtifact: async () => {},
+        rehearseArchive: async () => {},
+      })).rejects.toThrow("output parent must be a direct non-symlink directory");
+
+      const parent = join(root, "mutable-parent");
+      const movedParent = join(root, "moved-parent");
+      await mkdir(parent);
+      let publishCalled = false;
+      let stagedName = "";
+      await expect(stageAndPublishHomeArtifactCandidate({
+        outputDir: join(parent, "dist"),
+        artifactName: "candidate",
+        assemble: async (paths) => {
+          stagedName = basename(dirname(paths.directory));
+          await mkdir(paths.directory);
+          await writeFile(paths.archive, "archive\n");
+        },
+        verifyArtifact: async () => {},
+        rehearseArchive: async () => {
+          await rename(parent, movedParent);
+          await mkdir(parent);
+        },
+      }, async () => { publishCalled = true; })).rejects.toThrow("output parent changed during candidate assembly");
+
+      expect(publishCalled).toBeFalse();
+      expect(await pathExists(join(parent, "dist"))).toBeFalse();
+      expect(await pathExists(join(movedParent, stagedName))).toBeTrue();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses staging beneath a copied source tree before assembly or directory creation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-home-candidate-recursion-"));
+    const copiedRoot = join(root, "src");
+    const nestedParent = join(copiedRoot, "generated");
+    await mkdir(copiedRoot);
+    let assembled = false;
+    try {
+      await expect(stageAndPublishHomeArtifactCandidate({
+        outputDir: join(nestedParent, "dist"),
+        artifactName: "candidate",
+        forbiddenStagingRoots: [copiedRoot],
+        assemble: async () => { assembled = true; },
+        verifyArtifact: async () => {},
+        rehearseArchive: async () => {},
+      })).rejects.toThrow("output parent is inside copied source tree");
+
+      expect(assembled).toBeFalse();
+      expect(await pathExists(nestedParent)).toBeFalse();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("concurrent candidate publications leave one complete winner and no staging debris", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-home-candidate-race-"));
+    const output = join(root, "dist");
+    let arrivals = 0;
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => { release = resolve; });
+    const build = (id: string) => stageAndPublishHomeArtifactCandidate({
+      outputDir: output,
+      artifactName: "candidate",
+      assemble: async (paths) => {
+        await mkdir(paths.directory);
+        await writeFile(join(paths.directory, "winner"), `${id}\n`);
+        await writeFile(paths.archive, `archive-${id}\n`);
+      },
+      verifyArtifact: async () => {
+        arrivals += 1;
+        if (arrivals === 2) release();
+        await ready;
+      },
+      rehearseArchive: async () => {},
+    }, async (source, target) => { await rename(source, target); });
+    try {
+      const outcomes = await Promise.allSettled([build("one"), build("two")]);
+      expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+      expect(outcomes.filter((outcome) => outcome.status === "rejected")).toHaveLength(1);
+      const winner = (await readFile(join(output, "candidate", "winner"), "utf8")).trim();
+      expect(["one", "two"]).toContain(winner);
+      expect(await readFile(join(output, "candidate.tar.gz"), "utf8")).toBe(`archive-${winner}\n`);
+      expect((await readdir(root)).filter((name) => name.startsWith(".dome-home-candidate-"))).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("source proof excludes only its private staging root and catches concurrent source mutation", async () => {
+    const repo = await mkdtemp(join(tmpdir(), "dome-home-candidate-source-"));
+    const events: string[] = [];
+    try {
+      await git(repo, "init", "-q");
+      await git(repo, "config", "user.name", "Artifact Test");
+      await git(repo, "config", "user.email", "artifact@localhost");
+      await writeFile(join(repo, "tracked.txt"), "one\n");
+      await git(repo, "add", ".");
+      await git(repo, "-c", "commit.gpgsign=false", "commit", "-qm", "one");
+      const head = (await git(repo, "rev-parse", "HEAD")).trim();
+
+      await expect(stageAndPublishHomeArtifactCandidate({
+        outputDir: join(repo, "dist"),
+        artifactName: "candidate",
+        assemble: async (paths) => {
+          events.push("assemble");
+          await mkdir(paths.directory);
+          await writeFile(paths.archive, "private archive\n");
+          await assertSourceSnapshot(repo, head, join(paths.directory, ".."));
+          events.push("private-staging-ignored");
+          await writeFile(join(repo, "tracked.txt"), "concurrent mutation\n");
+          await assertSourceSnapshot(repo, head, join(paths.directory, ".."));
+        },
+        verifyArtifact: async () => { events.push("verify"); },
+        rehearseArchive: async () => { events.push("rehearse"); },
+      }, async () => { events.push("publish"); })).rejects.toThrow("source worktree changed");
+
+      expect(events).toEqual(["assemble", "private-staging-ignored"]);
+      expect(await pathExists(join(repo, "dist"))).toBeFalse();
+      expect((await readdir(repo)).filter((name) => name.startsWith(".dome-home-candidate-"))).toEqual([]);
+    } finally {
+      await rm(repo, { recursive: true, force: true });
+    }
+  });
+
   test("writes an honest versioned manifest and sorted checksums", async () => {
+    const pkg = JSON.parse(await readFile(join(import.meta.dir, "..", "..", "package.json"), "utf8")) as {
+      readonly version: string;
+    };
+    expect(pkg.version).toBe("0.1.0");
     const root = await fixture();
     try {
       const manifest = await writeArtifactMetadata(root, "9.8.7");
@@ -422,6 +740,16 @@ async function verifiableFixture(): Promise<string> {
 
 function digest(content: Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 function rewriteTarType(tar: Buffer, headerOffset: number, type: string): void {

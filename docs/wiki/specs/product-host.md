@@ -645,6 +645,25 @@ legitimate post-rollback N-1 writes cannot be erased.
 Device Authority is restored without epoch invalidation, preserving N-1
 active and revoked credentials, grants, device audit, and epoch.
 
+### P4 private artifact publication checkpoint
+
+The normal Home artifact builder is
+`bun scripts/home-artifact.ts --output <absent-directory>`. The destination is
+the publication transaction and must be absent, including as a file or a
+dangling symlink; the builder creates only its parent and never deletes,
+merges, or replaces prior output. It assembles the expanded artifact and its
+archive together in a private same-filesystem sibling, then runs the shipped
+artifact verifier and the ordinary archive rehearsal in that fixed order.
+Only both successes permit one exclusive atomic rename of the complete output
+directory. Prepublication failures remove their private staging state when
+its owned inode is still present and expose neither final path; cleanup never
+follows a replaced path. Concurrent builders leave one complete winner and
+never replace it. This is an atomic-visibility and no-replace boundary, not a
+new power-loss durability claim. It does not run or claim the installed N-1→N
+upgrade rehearsal. The package remains `0.1.0` and the resulting manifest
+remains honest with
+`distribution.upgradeSupported: false`.
+
 ### P4 frozen N-1 migration checkpoint
 
 The one supported predecessor is frozen as a checked-in, readable fixture
