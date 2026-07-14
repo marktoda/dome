@@ -1188,7 +1188,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
   });
 
   test("candidate compatibility rejects non-advancing SemVer without changing vault fingerprints", async () => {
-    const malformed = ["v1.0.1", "=1.0.1", "01.0.1", "1.0.0-01"] as const;
+    const malformed = ["v1.0.1", "=1.0.1", "01.0.1", "1.0.0-01", " 1.0.1", "1.0.1 "] as const;
     for (const [side, version] of [
       ["candidate", "1.0.0"],
       ["candidate", "0.9.9"],

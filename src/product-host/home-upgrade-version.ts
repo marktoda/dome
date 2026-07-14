@@ -3,5 +3,9 @@
 import { gt, valid } from "semver";
 
 export function isHomeUpgradeVersionAdvance(current: string, candidate: string): boolean {
-  return valid(current) === current && valid(candidate) === candidate && gt(candidate, current);
+  return isStrictSemVer(current) && isStrictSemVer(candidate) && gt(candidate, current);
+}
+
+function isStrictSemVer(value: string): boolean {
+  return value === value.trim() && !value.startsWith("v") && valid(value) !== null;
 }

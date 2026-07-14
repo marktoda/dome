@@ -114,7 +114,7 @@ describe("Home upgrade intent", () => {
   });
 
   test("new attempts require a strict SemVer advance before publication or operation allocation", async () => {
-    const malformed = ["v1.0.1", "=1.0.1", "01.0.1", "1.0.0-01"] as const;
+    const malformed = ["v1.0.1", "=1.0.1", "01.0.1", "1.0.0-01", " 1.0.1", "1.0.1 "] as const;
     for (const [selectedVersion, candidateVersion] of [
       ["1.0.0", "1.0.0"],
       ["2.0.0", "1.9.9"],
