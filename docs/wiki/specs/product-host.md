@@ -653,16 +653,23 @@ the publication transaction and must be absent, including as a file or a
 dangling symlink; the builder creates only its parent and never deletes,
 merges, or replaces prior output. It assembles the expanded artifact and its
 archive together in a private same-filesystem sibling, then runs the shipped
-artifact verifier and the ordinary archive rehearsal in that fixed order.
-Only both successes permit one exclusive atomic rename of the complete output
-directory. Prepublication failures remove their private staging state when
+artifact verifier and the ordinary archive rehearsal in that fixed order. The
+exact `0.2.0` builder then privately reconstructs the pinned `0.1.0`
+predecessor twice, runs the installed N-1→N rehearsal against that archive,
+the exact staged candidate archive, and the frozen fixture, and binds the
+returned predecessor, candidate, fixture, host, and scenario identity. It
+writes that typed result beside the archive as a local execution receipt,
+re-hashes the archive and raw manifest, re-verifies the expanded artifact, and
+re-proves the clean source HEAD. The receipt is not a signature, notarization,
+or transferable cryptographic attestation. Only every success permits one
+exclusive atomic rename of the complete output directory. Prepublication
+failures remove their private staging state when
 its owned inode is still present and expose neither final path; cleanup never
 follows a replaced path. Concurrent builders leave one complete winner and
 never replace it. This is an atomic-visibility and no-replace boundary, not a
-new power-loss durability claim. It does not run or claim the installed N-1→N
-upgrade rehearsal. The package remains `0.1.0` and the resulting manifest
-remains honest with
-`distribution.upgradeSupported: false`.
+new power-loss durability claim. The package is `0.2.0`; only this closed
+installed-gated builder writes `distribution.upgradeSupported: true`. The
+exported fixture metadata writer remains fixed-false and cannot publish.
 
 ### P4 frozen N-1 migration checkpoint
 
@@ -708,8 +715,9 @@ artifact verification accepts a structurally valid historical protocol-1
 inventory on the old side; it does not reinterpret old hashes as current.
 Legacy omission remains runnable and is allowed on the old side, but makes a
 candidate ineligible. Writer-barrier protocol 1 remains required on both
-sides. The artifact builder always emits both protocols;
-`distribution.upgradeSupported` remains false.
+sides. The artifact builder always emits both protocols. At this frozen P4
+checkpoint `distribution.upgradeSupported` remained false; the 0.2 activation
+pipeline described below is the only path that can now emit true.
 
 `migratePreparedHomeUpgrade` is private and has no CLI. It revalidates the
 prepared marker, journal, selectors, candidate product version, manifest hash,
@@ -785,10 +793,14 @@ candidate versions and a strict monotonic advance, including standard
 prerelease ordering. A legacy non-SemVer installation remains runnable and
 repairable but is ineligible for upgrade. Exact committed repair is exempt
 because it re-establishes an already-irreversible candidate rather than opening
-a new attempt. The builder deliberately still emits `false` until the retained
-installed N-1→N rehearsal proves the distribution can make the supported
-claim. Managed-release garbage collection, artifact signing/notarization, and
-that activation rehearsal remain deferred.
+a new attempt. The exact 0.2 release builder emits `true` only after its private
+candidate pipeline reconstructs the pinned predecessor, passes the retained
+installed N-1→N rehearsal against the frozen fixture, binds the returned
+identities to the still-staged bytes, writes a local execution receipt, and
+re-proves candidate and source immediately before atomic publication. This is
+a mandatory gate, not a claim that a real release execution has already
+passed. Managed-release garbage collection and artifact signing/notarization
+remain deferred.
 
 ### P3 device-authority foundation
 

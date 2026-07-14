@@ -1,6 +1,6 @@
 {
   "name": "@dome/sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Dome — markdown-vault SDK with a four-concept engine model (Vault, Proposal, Processor, Effect).",
   "type": "module",
   "main": "src/index.ts",

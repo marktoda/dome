@@ -40,6 +40,19 @@ import {
   type HomeArtifactManifest,
 } from "../src/product-host/home-artifact";
 import { HOME_DURABLE_STATE_PROTOCOL, HOME_STORE_MIGRATIONS } from "../src/product-host/home-store-migrations";
+import {
+  assertInstalledHomeUpgradeHostPreconditions,
+  rehearseInstalledHomeUpgrade,
+  type InstalledHomeUpgradeRehearsalResult,
+} from "./home-installed-upgrade-rehearsal";
+import { reconstructHomePredecessorArtifact } from "./home-predecessor-artifact";
+import { readFrozenN1Manifest } from "../tests/fixtures/home-upgrade/n-1/freeze-n1";
+
+export {
+  inspectHomeArtifactTar,
+  MAX_HOME_ARTIFACT_TAR_BYTES,
+  type HomeArtifactTarEntry,
+} from "./home-artifact-tar";
 
 export {
   HOME_ARTIFACT_SCHEMA,
@@ -61,11 +74,24 @@ export {
 } from "../src/product-host/home-artifact";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
+const ACTIVATION_EVIDENCE_SUFFIX = ".installed-upgrade-evidence.json";
+const ACTIVATION_SCENARIOS = Object.freeze([
+  "ready-success",
+  "stopped-precommit-crash",
+  "committed-exact-repair",
+] as const);
+const HOME_ARTIFACT_RELEASE_CLAIM = Object.freeze({
+  version: "0.2.0",
+  upgradeSupported: true,
+} as const);
+
+export function homeArtifactReleaseClaimForTests(): typeof HOME_ARTIFACT_RELEASE_CLAIM {
+  return HOME_ARTIFACT_RELEASE_CLAIM;
+}
 
 type BuildOptions = {
   readonly repoRoot?: string;
   readonly outputDir?: string;
-  readonly skipPwaBuild?: boolean;
 };
 
 export type HomeArtifactCandidatePaths = Readonly<{
@@ -224,6 +250,8 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
   readonly archive: string;
   readonly archiveSha256: string;
   readonly directory: string;
+  readonly evidence: string;
+  readonly evidenceSha256: string;
   readonly manifest: HomeArtifactManifest;
 }> {
   const repoRoot = resolve(options.repoRoot ?? REPO_ROOT);
@@ -231,6 +259,11 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
   const pkg = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8")) as {
     readonly version: string;
   };
+  if (pkg.version !== HOME_ARTIFACT_RELEASE_CLAIM.version) {
+    throw new Error(
+      `Dome Home activation builder requires package version ${HOME_ARTIFACT_RELEASE_CLAIM.version}, got ${pkg.version}`,
+    );
+  }
 
   const dirty = (await run(["git", "status", "--porcelain", "--untracked-files=all"], repoRoot)).stdout.trim();
   if (dirty !== "") {
@@ -240,11 +273,13 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
   if (process.platform !== "darwin" || process.arch !== "arm64") {
     throw new Error(`Dome Home v1 artifact must be built on darwin-arm64, got ${process.platform}-${process.arch}`);
   }
+  await assertInstalledHomeUpgradeHostPreconditions();
   const artifactName = `dome-home-${pkg.version}-darwin-arm64`;
   let candidateMetadata: Readonly<{
     manifest: HomeArtifactManifest;
     archiveSha256: string;
   }> | undefined;
+  let activationReceipt: Readonly<{ evidenceSha256: string }> | undefined;
   const candidate = await stageAndPublishHomeArtifactCandidate({
     outputDir,
     artifactName,
@@ -266,11 +301,9 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
       }
       const runtimePath = downloadedRuntime.path;
       try {
-        if (!options.skipPwaBuild) {
-          await run([runtimePath, "install", "--frozen-lockfile"], repoRoot);
-          await run([runtimePath, "install", "--frozen-lockfile"], join(repoRoot, "pwa"));
-          await run([runtimePath, "run", "build"], join(repoRoot, "pwa"));
-        }
+        await run([runtimePath, "install", "--frozen-lockfile"], repoRoot);
+        await run([runtimePath, "install", "--frozen-lockfile"], join(repoRoot, "pwa"));
+        await run([runtimePath, "run", "build"], join(repoRoot, "pwa"));
         const pwaDist = join(repoRoot, "pwa", "dist");
         if (!existsSync(join(pwaDist, "index.html"))) {
           throw new Error("PWA build is missing pwa/dist/index.html");
@@ -309,7 +342,7 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
 
         await normalizeArtifactModes(directory);
         await assertSourceSnapshot(repoRoot, sourceHead, dirname(directory));
-        const manifest = await writeArtifactMetadata(directory, pkg.version, sourceHead);
+        const manifest = await writeArtifactMetadataForRelease(directory, pkg.version, sourceHead);
         await writeFile(
           archive,
           gzipSync(await createDeterministicTar(directory, basename(directory)), { level: 9 }),
@@ -323,21 +356,300 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
       }
     },
     verifyArtifact: async ({ directory }) => { await verifyHomeArtifact(directory); },
-    rehearseArchive: async ({ archive }) => { await rehearseHomeArtifact(archive); },
+    rehearseArchive: async ({ directory, archive }) => {
+      await rehearseHomeArtifact(archive);
+      if (candidateMetadata === undefined) throw new Error("Home artifact candidate metadata was not assembled");
+      activationReceipt = await activateHomeArtifactCandidate({
+        repoRoot,
+        sourceHead,
+        directory,
+        archive,
+        manifest: candidateMetadata.manifest,
+      });
+    },
   });
-  if (candidateMetadata === undefined) throw new Error("Home artifact candidate metadata was not assembled");
+  if (candidateMetadata === undefined || activationReceipt === undefined) {
+    throw new Error("Home artifact activation evidence was not assembled");
+  }
+  const evidence = join(dirname(candidate.archive), `${artifactName}${ACTIVATION_EVIDENCE_SUFFIX}`);
   return {
     archive: candidate.archive,
     archiveSha256: candidateMetadata.archiveSha256,
     directory: candidate.directory,
+    evidence,
+    evidenceSha256: activationReceipt.evidenceSha256,
     manifest: candidateMetadata.manifest,
   };
+}
+
+export type HomeArtifactActivationIdentityBinding = Readonly<{
+  predecessor: Readonly<{
+    artifactId: string;
+    version: string;
+    buildCommit: string;
+    archiveSha256: string;
+    manifestSha256: string;
+  }>;
+  candidate: Readonly<{
+    artifactId: string;
+    version: string;
+    buildCommit: string;
+    archiveSha256: string;
+    manifestSha256: string;
+  }>;
+  fixture: Readonly<{
+    releaseId: string;
+    sourceCommit: string;
+    canaryDigest: string;
+  }>;
+}>;
+
+type ActivationSequenceOperations<TPredecessor, TInstalled, TBound, TReceipt> = Readonly<{
+  reconstructPredecessor(): Promise<TPredecessor>;
+  runInstalledGate(predecessor: TPredecessor): Promise<TInstalled>;
+  bindIdentity(predecessor: TPredecessor, installed: TInstalled): Promise<TBound>;
+  writeReceipt(bound: TBound): Promise<TReceipt>;
+  reproveCandidate(bound: TBound, receipt: TReceipt): Promise<void>;
+  reproveSource(): Promise<void>;
+  cleanup(predecessor: TPredecessor | null): Promise<void>;
+}>;
+
+async function runActivationSequence<TPredecessor, TInstalled, TBound, TReceipt>(
+  operations: ActivationSequenceOperations<TPredecessor, TInstalled, TBound, TReceipt>,
+): Promise<TReceipt> {
+  let predecessor: TPredecessor | null = null;
+  try {
+    predecessor = await operations.reconstructPredecessor();
+    const installed = await operations.runInstalledGate(predecessor);
+    const bound = await operations.bindIdentity(predecessor, installed);
+    const receipt = await operations.writeReceipt(bound);
+    await operations.reproveCandidate(bound, receipt);
+    await operations.reproveSource();
+    return receipt;
+  } finally {
+    await operations.cleanup(predecessor);
+  }
+}
+
+/** Portable ordering seam. It cannot construct or return installed evidence. */
+export async function exerciseHomeArtifactActivationForTests(operations: Readonly<{
+  reconstructPredecessor(): Promise<void>;
+  runInstalledGate(): Promise<void>;
+  bindIdentity(): Promise<void>;
+  writeReceipt(): Promise<void>;
+  reproveCandidate(): Promise<void>;
+  reproveSource(): Promise<void>;
+  cleanup(): Promise<void>;
+}>): Promise<Readonly<{ evidence: false }>> {
+  await runActivationSequence({
+    reconstructPredecessor: operations.reconstructPredecessor,
+    runInstalledGate: operations.runInstalledGate,
+    bindIdentity: operations.bindIdentity,
+    writeReceipt: operations.writeReceipt,
+    reproveCandidate: operations.reproveCandidate,
+    reproveSource: operations.reproveSource,
+    cleanup: async () => { await operations.cleanup(); },
+  });
+  return Object.freeze({ evidence: false });
+}
+
+/** Schema-free identity comparison used by the real gate and portable tests. */
+export function assertHomeArtifactActivationIdentityBindingForTests(
+  expected: HomeArtifactActivationIdentityBinding,
+  observed: HomeArtifactActivationIdentityBinding,
+): void {
+  if (JSON.stringify(observed) !== JSON.stringify(expected)) {
+    throw new Error("installed Home upgrade evidence identity does not match the staged release");
+  }
+}
+
+async function activateHomeArtifactCandidate(input: Readonly<{
+  repoRoot: string;
+  sourceHead: string;
+  directory: string;
+  archive: string;
+  manifest: HomeArtifactManifest;
+}>): Promise<Readonly<{ evidenceSha256: string }>> {
+  const artifactName = basename(input.directory);
+  const stagingOutput = dirname(input.directory);
+  const predecessorOutput = join(stagingOutput, ".installed-upgrade-predecessor");
+  const evidencePath = join(stagingOutput, `${artifactName}${ACTIVATION_EVIDENCE_SUFFIX}`);
+  const frozenFixtureRoot = join(
+    input.repoRoot,
+    "tests", "fixtures", "home-upgrade", "n-1", "0.1.0-eb644dc2",
+  );
+  await assertOutputTargetAbsent(predecessorOutput);
+  await assertOutputTargetAbsent(evidencePath);
+
+  type Predecessor = Awaited<ReturnType<typeof reconstructHomePredecessorArtifact>> & Readonly<{
+    fixture: Awaited<ReturnType<typeof readFrozenN1Manifest>>;
+  }>;
+  type Bound = Readonly<{
+    evidence: InstalledHomeUpgradeRehearsalResult;
+    binding: HomeArtifactActivationIdentityBinding;
+  }>;
+  type Receipt = Readonly<{ evidenceSha256: string }>;
+
+  const receipt = await runActivationSequence<Predecessor, InstalledHomeUpgradeRehearsalResult, Bound, Receipt>({
+    reconstructPredecessor: async () => {
+      const fixture = await readFrozenN1Manifest(frozenFixtureRoot);
+      const predecessor = await reconstructHomePredecessorArtifact({
+        repoRoot: input.repoRoot,
+        outputDir: predecessorOutput,
+      });
+      return Object.freeze({ ...predecessor, fixture });
+    },
+    runInstalledGate: async (predecessor) => await rehearseInstalledHomeUpgrade({
+      predecessorArchive: predecessor.archive,
+      candidateArchive: input.archive,
+      frozenFixtureRoot,
+    }),
+    bindIdentity: async (predecessor, evidence) => {
+      assertInstalledEvidenceEnvelope(evidence);
+      const binding = await observeCandidateActivationBinding(input, predecessor);
+      assertHomeArtifactActivationIdentityBindingForTests(binding, bindingFromInstalledEvidence(evidence));
+      return Object.freeze({ evidence, binding });
+    },
+    writeReceipt: async (bound) => {
+      const bytes = Buffer.from(`${JSON.stringify(bound.evidence, null, 2)}\n`);
+      await writeFile(evidencePath, bytes, { flag: "wx", mode: 0o644 });
+      return Object.freeze({ evidenceSha256: sha256(bytes) });
+    },
+    reproveCandidate: async (bound, written) => {
+      const observed = await observeCandidateActivationIdentity(input);
+      if (JSON.stringify(observed) !== JSON.stringify(bound.binding.candidate)) {
+        throw new Error("staged candidate changed after installed Home upgrade rehearsal");
+      }
+      if (sha256(await readFile(evidencePath)) !== written.evidenceSha256) {
+        throw new Error("installed Home upgrade evidence receipt changed after write");
+      }
+    },
+    reproveSource: async () => {
+      await assertSourceSnapshot(input.repoRoot, input.sourceHead, stagingOutput);
+    },
+    cleanup: async () => {
+      await rm(predecessorOutput, { recursive: true, force: true });
+    },
+  });
+  await assertPathAbsent(predecessorOutput, "private predecessor reconstruction remained before publication");
+  await assertSourceSnapshot(input.repoRoot, input.sourceHead, stagingOutput);
+  return receipt;
+}
+
+async function observeCandidateActivationBinding(
+  input: Readonly<{
+    sourceHead: string;
+    directory: string;
+    archive: string;
+    manifest: HomeArtifactManifest;
+  }>,
+  predecessor: Awaited<ReturnType<typeof reconstructHomePredecessorArtifact>> & Readonly<{
+    fixture: Awaited<ReturnType<typeof readFrozenN1Manifest>>;
+  }>,
+): Promise<HomeArtifactActivationIdentityBinding> {
+  const candidate = await observeCandidateActivationIdentity(input);
+  return Object.freeze({
+    predecessor: Object.freeze({
+      artifactId: predecessor.receipt.manifest.artifactId,
+      version: predecessor.receipt.manifest.productVersion,
+      buildCommit: predecessor.receipt.manifest.buildCommit,
+      archiveSha256: predecessor.receipt.archive.sha256,
+      manifestSha256: predecessor.receipt.manifest.sha256,
+    }),
+    candidate,
+    fixture: Object.freeze({
+      releaseId: predecessor.fixture.releaseId,
+      sourceCommit: predecessor.fixture.sourceCommit,
+      canaryDigest: predecessor.fixture.canaryDigest,
+    }),
+  });
+}
+
+async function observeCandidateActivationIdentity(
+  input: Readonly<{
+    sourceHead: string;
+    directory: string;
+    archive: string;
+    manifest: HomeArtifactManifest;
+  }>,
+): Promise<HomeArtifactActivationIdentityBinding["candidate"]> {
+  const archiveSha256 = sha256(await readFile(input.archive));
+  const verified = await verifyHomeArtifact(input.directory);
+  const manifestSha256 = sha256(await readFile(join(input.directory, "manifest.json")));
+  if (verified.artifact.id !== input.manifest.artifact.id ||
+    verified.product.version !== input.manifest.product.version ||
+    verified.build.gitCommit !== input.sourceHead) {
+    throw new Error("expanded staged candidate identity changed before publication");
+  }
+  return Object.freeze({
+    artifactId: verified.artifact.id,
+    version: verified.product.version,
+    buildCommit: verified.build.gitCommit,
+    archiveSha256,
+    manifestSha256,
+  });
+}
+
+function bindingFromInstalledEvidence(
+  evidence: InstalledHomeUpgradeRehearsalResult,
+): HomeArtifactActivationIdentityBinding {
+  return Object.freeze({
+    predecessor: evidence.predecessor,
+    candidate: evidence.candidate,
+    fixture: evidence.fixture,
+  });
+}
+
+function assertInstalledEvidenceEnvelope(evidence: InstalledHomeUpgradeRehearsalResult): void {
+  const uid = process.getuid?.();
+  if (evidence.schema !== "dome.home-installed-upgrade-rehearsal/v1" ||
+    evidence.evidence !== "installed-darwin-arm64" ||
+    evidence.host.platform !== "darwin" || evidence.host.arch !== "arm64" ||
+    uid === undefined || evidence.host.uid !== uid ||
+    JSON.stringify(evidence.scenarios) !== JSON.stringify(ACTIVATION_SCENARIOS)) {
+    throw new Error("installed Home upgrade evidence envelope is not the exact local rehearsal result");
+  }
+}
+
+async function assertPathAbsent(path: string, message: string): Promise<void> {
+  try {
+    await lstat(path);
+    throw new Error(message);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return;
+    throw error;
+  }
 }
 
 export async function writeArtifactMetadata(
   artifactRoot: string,
   productVersion: string,
   gitCommit = "0000000000000000000000000000000000000000",
+): Promise<HomeArtifactManifest> {
+  return await writeArtifactMetadataWithClaim(artifactRoot, productVersion, gitCommit, false);
+}
+
+async function writeArtifactMetadataForRelease(
+  artifactRoot: string,
+  productVersion: string,
+  gitCommit: string,
+): Promise<HomeArtifactManifest> {
+  if (productVersion !== HOME_ARTIFACT_RELEASE_CLAIM.version) {
+    throw new Error(`Home release metadata requires exact version ${HOME_ARTIFACT_RELEASE_CLAIM.version}`);
+  }
+  return await writeArtifactMetadataWithClaim(
+    artifactRoot,
+    productVersion,
+    gitCommit,
+    HOME_ARTIFACT_RELEASE_CLAIM.upgradeSupported,
+  );
+}
+
+async function writeArtifactMetadataWithClaim(
+  artifactRoot: string,
+  productVersion: string,
+  gitCommit: string,
+  upgradeSupported: boolean,
 ): Promise<HomeArtifactManifest> {
   await rm(join(artifactRoot, "manifest.json"), { force: true });
   await rm(join(artifactRoot, "checksums.sha256"), { force: true });
@@ -392,7 +704,7 @@ export async function writeArtifactMetadata(
         migratesFrom: Object.freeze([...store.migratesFrom]),
       }))),
     }),
-    distribution: Object.freeze({ signed: false, notarized: false, upgradeSupported: false }),
+    distribution: Object.freeze({ signed: false, notarized: false, upgradeSupported }),
     entries: Object.freeze(entries.map((entry) => Object.freeze(entry))),
   });
   const manifestText = `${JSON.stringify(manifest, null, 2)}\n`;
@@ -575,128 +887,6 @@ export async function createDeterministicTar(root: string, prefix = ""): Promise
   }
   chunks.push(Buffer.alloc(1024));
   return Buffer.concat(chunks);
-}
-
-export type HomeArtifactTarEntry = Readonly<{
-  path: string;
-  type: "file" | "directory" | "symlink";
-  size: number;
-  linkTarget: string | null;
-}>;
-
-export const MAX_HOME_ARTIFACT_TAR_BYTES = 512 * 1024 * 1024;
-
-/**
- * Parse the normalized USTAR contract emitted above before any extraction.
- * Safe in-root symlinks are permitted; hardlinks and extension entry types are
- * deliberately outside the Home artifact format.
- */
-export function inspectHomeArtifactTar(input: Uint8Array): Readonly<{
-  root: string;
-  entries: ReadonlyArray<HomeArtifactTarEntry>;
-}> {
-  if (input.byteLength > MAX_HOME_ARTIFACT_TAR_BYTES) {
-    throw new Error("Home artifact tar exceeds its uncompressed size budget");
-  }
-  const tar = Buffer.isBuffer(input) ? input : Buffer.from(input);
-  const entries: HomeArtifactTarEntry[] = [];
-  const seen = new Set<string>();
-  let offset = 0;
-  for (;;) {
-    if (offset + 512 > tar.length) throw new Error("Home artifact tar is truncated");
-    const header = tar.subarray(offset, offset + 512);
-    offset += 512;
-    if (header.every((byte) => byte === 0)) {
-      if (offset + 512 !== tar.length || !tar.subarray(offset).every((byte) => byte === 0)) {
-        throw new Error("Home artifact tar has invalid termination or trailing data");
-      }
-      break;
-    }
-    assertHomeTarHeader(header);
-    const typeFlag = String.fromCharCode(header[156]!);
-    const type = typeFlag === "0" ? "file" : typeFlag === "5" ? "directory" :
-      typeFlag === "2" ? "symlink" : null;
-    if (type === null) throw new Error(`Home artifact tar contains unsupported entry type ${JSON.stringify(typeFlag)}`);
-    const name = homeTarString(header, 0, 100);
-    const prefix = homeTarString(header, 345, 155);
-    const rawPath = prefix === "" ? name : `${prefix}/${name}`;
-    if ((type === "directory") !== rawPath.endsWith("/")) {
-      throw new Error(`Home artifact tar member type disagrees with path: ${rawPath}`);
-    }
-    const path = validateHomeTarPath(type === "directory" ? rawPath.slice(0, -1) : rawPath);
-    if (seen.has(path)) throw new Error(`Home artifact tar contains duplicate member: ${path}`);
-    seen.add(path);
-    const size = homeTarOctal(header, 124, 12);
-    if ((type === "directory" || type === "symlink") && size !== 0) {
-      throw new Error(`Home artifact tar ${type} has a body: ${path}`);
-    }
-    const linkTarget = type === "symlink" ? homeTarString(header, 157, 100) : null;
-    if (offset + size > tar.length) throw new Error(`Home artifact tar body is truncated: ${path}`);
-    offset += size;
-    const padding = (512 - (size % 512)) % 512;
-    if (offset + padding > tar.length || !tar.subarray(offset, offset + padding).every((byte) => byte === 0)) {
-      throw new Error(`Home artifact tar padding is invalid: ${path}`);
-    }
-    offset += padding;
-    entries.push(Object.freeze({ path, type, size, linkTarget }));
-  }
-  if (entries.length === 0) throw new Error("Home artifact tar is empty");
-  const roots = new Set(entries.map((entry) => entry.path.split("/")[0]!));
-  if (roots.size !== 1) throw new Error("Home artifact tar must contain exactly one root");
-  const root = [...roots][0]!;
-  if (!entries.some((entry) => entry.path === root && entry.type === "directory")) {
-    throw new Error("Home artifact tar root must be an explicit directory");
-  }
-  const rootAbsolute = resolve("/payload", root);
-  const symlinks = entries.filter((entry) => entry.type === "symlink");
-  for (const link of symlinks) {
-    const target = link.linkTarget;
-    if (target === null || target === "" || target.includes("\0") || isAbsolute(target)) {
-      throw new Error(`Home artifact tar symlink target is unsafe: ${link.path}`);
-    }
-    const resolvedTarget = resolve("/payload", dirname(link.path), target);
-    if (resolvedTarget !== rootAbsolute && !resolvedTarget.startsWith(`${rootAbsolute}${sep}`)) {
-      throw new Error(`Home artifact tar symlink escapes its root: ${link.path}`);
-    }
-    if (entries.some((entry) => entry.path.startsWith(`${link.path}/`))) {
-      throw new Error(`Home artifact tar contains a member beneath symlink: ${link.path}`);
-    }
-  }
-  return Object.freeze({ root, entries: Object.freeze(entries) });
-}
-
-function assertHomeTarHeader(header: Buffer): void {
-  if (!header.subarray(257, 263).equals(Buffer.from("ustar\0")) ||
-    !header.subarray(263, 265).equals(Buffer.from("00"))) {
-    throw new Error("Home artifact tar is not normalized USTAR");
-  }
-  const expected = homeTarOctal(header, 148, 8);
-  const copy = Buffer.from(header);
-  copy.fill(0x20, 148, 156);
-  const actual = copy.reduce((sum, byte) => sum + byte, 0);
-  if (expected !== actual) throw new Error("Home artifact tar header checksum is invalid");
-}
-
-function validateHomeTarPath(path: string): string {
-  if (path === "" || path.startsWith("/") || path.includes("\\") || path.includes("\0") ||
-    path.split("/").some((part) => part === "" || part === "." || part === "..")) {
-    throw new Error(`Home artifact tar path is unsafe: ${JSON.stringify(path)}`);
-  }
-  return path;
-}
-
-function homeTarString(buffer: Buffer, offset: number, length: number): string {
-  const field = buffer.subarray(offset, offset + length);
-  const zero = field.indexOf(0);
-  return new TextDecoder("utf-8", { fatal: true }).decode(zero === -1 ? field : field.subarray(0, zero));
-}
-
-function homeTarOctal(buffer: Buffer, offset: number, length: number): number {
-  const raw = homeTarString(buffer, offset, length).trim().replace(/\0+$/g, "");
-  if (!/^[0-7]+$/.test(raw)) throw new Error("Home artifact tar contains an invalid numeric field");
-  const value = Number.parseInt(raw, 8);
-  if (!Number.isSafeInteger(value)) throw new Error("Home artifact tar numeric field is too large");
-  return value;
 }
 
 async function downloadPinnedRuntime(): Promise<{ readonly temporary: string; readonly path: string }> {
@@ -962,9 +1152,18 @@ async function readHomeUrl(
 }
 
 async function main(): Promise<void> {
-  const outputFlag = process.argv.indexOf("--output");
-  const outputDir = outputFlag === -1 ? undefined : process.argv[outputFlag + 1];
-  if (outputFlag !== -1 && outputDir === undefined) throw new Error("--output requires a directory");
+  const args = process.argv.slice(2);
+  let outputDir: string | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]!;
+    if (argument !== "--output") throw new Error(`unknown option: ${argument}`);
+    if (outputDir !== undefined) throw new Error("--output may be supplied only once");
+    outputDir = args[index + 1];
+    if (outputDir === undefined || outputDir.startsWith("--")) {
+      throw new Error("--output requires a directory");
+    }
+    index += 1;
+  }
   const result = await buildHomeArtifact(outputDir === undefined ? {} : { outputDir });
   process.stdout.write(`${JSON.stringify({
     schema: result.manifest.schema,
@@ -972,6 +1171,8 @@ async function main(): Promise<void> {
     directory: result.directory,
     archive: result.archive,
     archiveSha256: result.archiveSha256,
+    evidence: result.evidence,
+    evidenceSha256: result.evidenceSha256,
   }, null, 2)}\n`);
 }
 

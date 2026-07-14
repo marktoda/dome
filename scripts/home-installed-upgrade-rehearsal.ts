@@ -27,7 +27,7 @@ import { homeServiceLabelForVault } from "../src/product-host/home-lifecycle";
 import { HOME_STORE_MIGRATIONS } from "../src/product-host/home-store-migrations";
 import { isHomeUpgradeVersionAdvance } from "../src/product-host/home-upgrade-version";
 import { readHomePredecessorReceipt } from "./home-predecessor-artifact";
-import { inspectHomeArtifactTar, MAX_HOME_ARTIFACT_TAR_BYTES } from "./home-artifact";
+import { inspectHomeArtifactTar, MAX_HOME_ARTIFACT_TAR_BYTES } from "./home-artifact-tar";
 import {
   assertFrozenN1State,
   materializeFrozenN1Fixture,
@@ -228,7 +228,7 @@ function realOperations(): RehearsalOperations<PreparedArtifacts> {
 }
 
 async function prepareRealArtifacts(input: InstalledHomeUpgradeRehearsalInput): Promise<PreparedArtifacts> {
-  await assertRealHostPreconditions();
+  await assertInstalledHomeUpgradeHostPreconditions();
   const predecessorArchive = await realpath(resolve(input.predecessorArchive));
   const candidateArchive = await realpath(resolve(input.candidateArchive));
   const fixtureRoot = await realpath(resolve(input.frozenFixtureRoot));
@@ -345,7 +345,7 @@ function assertCandidateContract(predecessor: HomeArtifactManifest, candidate: H
   }
 }
 
-async function assertRealHostPreconditions(): Promise<void> {
+export async function assertInstalledHomeUpgradeHostPreconditions(): Promise<void> {
   if (process.platform !== "darwin" || process.arch !== "arm64") {
     throw new Error(`installed upgrade rehearsal requires darwin-arm64, got ${process.platform}-${process.arch}`);
   }

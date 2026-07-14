@@ -618,9 +618,10 @@ replaces and fsyncs each
 state entry idempotently while prepared, and removes WAL/SHM only after
 replacement. A missing or corrupt failed-candidate payload is never a rollback
 prerequisite. `restored` is terminal and never replays the snapshot over later
-N-1 writes. Artifact metadata carries writer-barrier protocol v1 while
-`distribution.upgradeSupported` remains false. Intact legacy v1 artifacts stay
-runnable but are ineligible on either side of an upgrade. Cross-surface
+N-1 writes. Artifact metadata carries writer-barrier protocol v1. At this
+frozen checkpoint `distribution.upgradeSupported` remained false; the later
+0.2 activation pipeline is the only path that can emit true. Intact legacy v1
+artifacts stay runnable but are ineligible on either side of an upgrade. Cross-surface
 exclusion is complete; backup consumes supervised lifecycle suspension, while
 the upgrade orchestrator must consume the same seam because current Home holds
 a lifetime lease.
@@ -676,10 +677,15 @@ coordination nonzero. General artifact parsing accepts a boolean capability,
 while both new-attempt boundaries require exact
 `distribution.upgradeSupported: true`.
 
-The builder still emits `false`. The retained installed N-1→N rehearsal must
-exercise this exact command and status UX before distribution activation can
-claim supported upgrades. Managed-release garbage collection and artifact
-signing/notarization remain later checkpoints.
+The exact 0.2 release builder now emits `true` only after a private staged
+pipeline reconstructs the pinned predecessor, exercises this exact command and
+status UX through the retained installed N-1→N rehearsal and frozen fixture,
+binds the result to candidate/predecessor/fixture identities, writes a local
+execution receipt, and re-proves candidate and source before atomic
+publication. No public flag or ordinary fixture writer can bypass the gate;
+this contract does not claim a real release execution has already passed.
+Managed-release garbage collection and artifact signing/notarization remain
+later checkpoints.
 
 Exit journey: a clean Mac needs no source checkout or manual PWA build; it
 pairs an iPhone, upgrades an N-1 fixture after backup, handles a forced failed
