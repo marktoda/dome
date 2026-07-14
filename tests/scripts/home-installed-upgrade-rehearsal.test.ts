@@ -1,9 +1,20 @@
 import { describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   assertBoundedArchiveStatForTests,
-  classifyLaunchctlDrainForTests,
+  assertInstalledBackupRestoreCanaryForTests,
+  canonicalizeInstalledScenarioRootForTests,
+  classifyInstalledHomeDrainForTests,
   exerciseInstalledUpgradeOrchestrationForTests,
+  pairedDeviceIdForTests,
+  predecessorHomeInstallInvocationForTests,
+  retainedCheckpointOwnershipMatchesForTests,
+  renderInstalledCoordinationErrorForTests,
+  retainedCheckpointOwnershipSummaryForTests,
+  resolveContainedArtifactRootForTests,
   type InstalledHomeUpgradeRehearsalInput,
   type InstalledHomeUpgradeScenario,
 } from "../../scripts/home-installed-upgrade-rehearsal";
@@ -22,13 +33,213 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     expect(() => assertBoundedArchiveStatForTests({ isFile: true, size: 9 }, 10, 10)).toThrow("immutable receipt");
   });
 
-  test("accepts only the real launchctl bootout/print drain pairs", () => {
-    expect(classifyLaunchctlDrainForTests(0, 0)).toBe("pending");
-    expect(classifyLaunchctlDrainForTests(0, 113)).toBe("drained");
-    expect(classifyLaunchctlDrainForTests(3, 113)).toBe("drained");
-    expect(() => classifyLaunchctlDrainForTests(3, 0)).toThrow("without absent print proof");
-    expect(() => classifyLaunchctlDrainForTests(113, 113)).toThrow("bootout failed");
-    expect(() => classifyLaunchctlDrainForTests(0, 3)).toThrow("print failed");
+  test("requires the launchd label, Home port, and Product Host ownership to drain", () => {
+    expect(classifyInstalledHomeDrainForTests(0, 0, false, false)).toBe("pending");
+    expect(classifyInstalledHomeDrainForTests(0, 113, false, false)).toBe("pending");
+    expect(classifyInstalledHomeDrainForTests(0, 113, true, false)).toBe("pending");
+    expect(classifyInstalledHomeDrainForTests(0, 113, true, true)).toBe("drained");
+    expect(classifyInstalledHomeDrainForTests(3, 113, true, true)).toBe("drained");
+    expect(() => classifyInstalledHomeDrainForTests(3, 0, false, false)).toThrow("without absent print proof");
+    expect(() => classifyInstalledHomeDrainForTests(113, 113, false, false)).toThrow("bootout failed");
+    expect(() => classifyInstalledHomeDrainForTests(0, 3, false, false)).toThrow("print failed");
+  });
+
+  test("renders bounded recursive coordination diagnostics without secrets", () => {
+    const error = new AggregateError([
+      new Error("terminal dome_csrf.abc- inner Bearer abc+DEF/ghi==, after"),
+      new Error(
+        "csrf dome_csrf.mUc9houYvJlhJBTZqI5tweTbcJFEucu_QUQTmKSqTZw " +
+          "credential dome_cred.CTl4LDmCa7J6AvU4nnVtZQ.LJXJLpi2Hwpu0rMflghz6c10uRWJGKPSEu7W5J4y9N8 " +
+          "x".repeat(3_000),
+      ),
+    ], "outer failure");
+    const rendered = renderInstalledCoordinationErrorForTests(error);
+    expect(rendered.startsWith(
+      "AggregateError: outer failure | nested: Error: terminal [REDACTED] inner Bearer [REDACTED], after | " +
+        "nested: Error: csrf [REDACTED] credential [REDACTED] ",
+    )).toBeTrue();
+    expect(rendered).not.toContain("dome_cred");
+    expect(rendered).not.toContain("dome_csrf");
+    expect(rendered).not.toContain("abc-");
+    expect(rendered).not.toContain("abc+DEF/ghi==");
+    expect(rendered.length).toBe(2_048);
+    const embedded = Function(`return (${renderInstalledCoordinationErrorForTests.toString()});`)() as
+      ((error: unknown) => string);
+    expect(embedded(error)).toBe(rendered);
+    expect(embedded(error)).not.toContain("dome_csrf");
+    expect(embedded(error)).not.toContain("abc-");
+    expect(embedded(error)).not.toContain("abc+DEF/ghi==");
+    expect(renderInstalledCoordinationErrorForTests({ private: "value" }))
+      .toBe("Non-Error coordination failure");
+  });
+
+  test("renders only bounded allowlisted retained ownership state", () => {
+    const operationId = "11111111-1111-4111-8111-111111111111";
+    expect(retainedCheckpointOwnershipSummaryForTests({
+      lifecycle: {
+        state: "active", phase: "suspended", purpose: "upgrade", operationId,
+        error: "dome_csrf.must-not-leak",
+      },
+      upgrade: {
+        state: "unavailable", operationId: "dome_cred.must-not-leak", outcome: null,
+        nextAction: "inspect-home-status", error: "Bearer must-not-leak",
+      },
+    })).toBe(JSON.stringify({
+      lifecycle: { state: "active", phase: "suspended", purpose: "upgrade", operationId },
+      upgrade: { state: "unavailable", operationId: null, outcome: null, nextAction: "inspect-home-status" },
+    }));
+  });
+
+  test("requires exact phase-specific retained lifecycle and upgrade ownership", () => {
+    const transactionId = "11111111-1111-4111-8111-111111111111";
+    const status = (
+      state: "active" | "complete",
+      outcome: null | "committed",
+      nextAction: "retry-recovery" | "none",
+    ) => ({
+      lifecycle: {
+        state: "active", phase: "suspended", purpose: "upgrade", operationId: transactionId,
+      },
+      upgrade: { state, operationId: transactionId, outcome, nextAction },
+    });
+    const switching = status("active", null, "retry-recovery");
+    const committed = status("complete", "committed", "none");
+
+    expect(retainedCheckpointOwnershipMatchesForTests(switching, "switching", transactionId)).toBeTrue();
+    expect(retainedCheckpointOwnershipMatchesForTests(committed, "committed", transactionId)).toBeTrue();
+    expect(retainedCheckpointOwnershipMatchesForTests(committed, "switching", transactionId)).toBeFalse();
+    expect(retainedCheckpointOwnershipMatchesForTests(switching, "committed", transactionId)).toBeFalse();
+    expect(retainedCheckpointOwnershipMatchesForTests({
+      ...switching,
+      lifecycle: { ...switching.lifecycle, operationId: "22222222-2222-4222-8222-222222222222" },
+    }, "switching", transactionId)).toBeFalse();
+    expect(retainedCheckpointOwnershipMatchesForTests({
+      ...committed,
+      upgrade: { ...committed.upgrade, nextAction: "retry-recovery" },
+    }, "committed", transactionId)).toBeFalse();
+  });
+
+  test("canonicalizes an aliased extraction destination and still rejects a sibling escape", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-installed-extraction-alias-"));
+    try {
+      const destination = join(root, "destination");
+      const alias = join(root, "destination-alias");
+      const artifact = join(destination, "artifact");
+      await mkdir(artifact, { recursive: true });
+      await symlink(destination, alias, "dir");
+      const canonicalDestination = await realpath(alias);
+
+      expect(await resolveContainedArtifactRootForTests(canonicalDestination, "artifact"))
+        .toBe(await realpath(artifact));
+
+      await rm(artifact, { recursive: true });
+      const sibling = join(root, "sibling");
+      await mkdir(sibling);
+      await symlink("../sibling", artifact, "dir");
+      await expect(resolveContainedArtifactRootForTests(canonicalDestination, "artifact"))
+        .rejects.toThrow("escaped extraction directory");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("installs the exact pre-fix predecessor through cwd discovery without nested --vault", () => {
+    const invocation = predecessorHomeInstallInvocationForTests({
+      dome: "/artifact-0.1/bin/dome",
+      vault: "/scenario/vault",
+      home: "/scenario/home",
+    });
+    expect(invocation).toEqual({
+      command: [
+        "/artifact-0.1/bin/dome",
+        "home",
+        "install",
+        "--env",
+        "HOME=/scenario/home",
+        "--json",
+      ],
+      cwd: "/scenario/vault",
+    });
+    expect(invocation.command).not.toContain("--vault");
+  });
+
+  test("reads the paired identity from the nested device response", () => {
+    expect(pairedDeviceIdForTests({
+      schema: "dome.device.pairing/v1",
+      status: "paired",
+      id: "top-level-decoy",
+      device: { id: "device_exact", name: "Upgrade canary" },
+    })).toBe("device_exact");
+    expect(() => pairedDeviceIdForTests({
+      schema: "dome.device.pairing/v1",
+      status: "paired",
+      id: "top-level-decoy",
+      device: { name: "Upgrade canary" },
+    })).toThrow("id must be a nonempty string");
+    expect(() => pairedDeviceIdForTests({
+      schema: "dome.device.pairing/v1",
+      status: "paired",
+      id: "top-level-decoy",
+    })).toThrow("device must be an object");
+  });
+
+  test("captures an aliased scenario root once before deriving owned descendants", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-installed-scenario-alias-"));
+    try {
+      const physicalParent = join(root, "physical-parent");
+      const redirectedParent = join(root, "redirected-parent");
+      const alias = join(root, "scenario-parent-alias");
+      await mkdir(physicalParent);
+      await mkdir(redirectedParent);
+      await symlink(physicalParent, alias, "dir");
+      const lexical = await mkdtemp(join(alias, "scenario-"));
+      const canonical = await canonicalizeInstalledScenarioRootForTests(lexical);
+      expect(canonical.startsWith(`${await realpath(physicalParent)}/scenario-`)).toBeTrue();
+
+      await rm(alias);
+      await symlink(redirectedParent, alias, "dir");
+      expect(join(canonical, "home")).toStartWith(`${await realpath(physicalParent)}/`);
+      expect(join(canonical, "vault")).not.toStartWith(`${await realpath(redirectedParent)}/`);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("requires the installed backup canary to restore and invalidate authority", () => {
+    const restored = {
+      schema: "dome.backup/v1",
+      operation: "restore",
+      status: "restored",
+      exitCode: 0,
+      authority: "invalidated",
+      durability: "durable",
+    };
+    const ownerSha256 = "a".repeat(64);
+    expect(() => assertInstalledBackupRestoreCanaryForTests(
+      restored,
+      "# Core\n",
+      ownerSha256,
+      ownerSha256,
+    )).not.toThrow();
+    expect(() => assertInstalledBackupRestoreCanaryForTests(
+      { ...restored, authority: "absent" },
+      "# Core\n",
+      ownerSha256,
+      ownerSha256,
+    )).toThrow('expected authority="invalidated"');
+    expect(() => assertInstalledBackupRestoreCanaryForTests(
+      restored,
+      "# Other\n",
+      ownerSha256,
+      ownerSha256,
+    ))
+      .toThrow("lost core.md content");
+    expect(() => assertInstalledBackupRestoreCanaryForTests(
+      restored,
+      "# Core\n",
+      "b".repeat(64),
+      ownerSha256,
+    )).toThrow("changed the owner canary");
   });
 
   test("runs the three scenarios sequentially and cleans each boundary", async () => {

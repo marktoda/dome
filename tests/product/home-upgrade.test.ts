@@ -323,6 +323,38 @@ describe("Home upgrade intent", () => {
     });
   });
 
+  test("reports the exact internal error without changing the public coordination result", async () => {
+    const diagnostics: unknown[] = [];
+    const failure = new Error("publication failed for a private internal path");
+    const f = intentFixture({
+      publishError: failure,
+    });
+    const result = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, {
+      ...f.deps,
+      onCoordinationError: (error) => { diagnostics.push(error); },
+    });
+    expect(result).toMatchObject({
+      status: "error",
+      exitCode: 1,
+      transaction: null,
+      selectedArtifact: null,
+      reason: "coordination-failed",
+      message: "Dome Home upgrade coordination failed",
+    });
+    expect(JSON.stringify(result)).not.toContain("publication failed");
+    expect(diagnostics).toEqual([failure]);
+
+    const stable = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, {
+      ...f.deps,
+      onCoordinationError: () => { throw new Error("observer failed"); },
+    });
+    expect(stable).toMatchObject({
+      status: "error",
+      reason: "coordination-failed",
+      message: "Dome Home upgrade coordination failed",
+    });
+  });
+
   test("public handoff failures hide internals and reserve exact-candidate guidance for candidate absence", async () => {
     for (const phase of ["committed", "restored"] as const) {
       const value = transaction(phase, TX, REQUESTED);

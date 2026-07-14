@@ -21,18 +21,24 @@ import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 
+import { inspectExclusiveFileLock } from "../src/engine/host/file-lock";
 import { verifyHomeArtifact, type HomeArtifactManifest } from "../src/product-host/home-artifact";
+import { externalProductHostLockPath } from "../src/product-host/host-ownership";
 import { homeInstallationPaths } from "../src/product-host/home-installation";
 import { homeServiceLabelForVault } from "../src/product-host/home-lifecycle";
 import { HOME_STORE_MIGRATIONS } from "../src/product-host/home-store-migrations";
 import { isHomeUpgradeVersionAdvance } from "../src/product-host/home-upgrade-version";
 import { readHomePredecessorReceipt } from "./home-predecessor-artifact";
-import { inspectHomeArtifactTar, MAX_HOME_ARTIFACT_TAR_BYTES } from "./home-artifact";
+import { inspectHomeArtifactTar, MAX_HOME_ARTIFACT_TAR_BYTES } from "./home-artifact-tar";
 import {
   assertFrozenN1State,
+  assertFrozenN1RuntimeBaseline,
+  assertFrozenN1RuntimeProvenance,
+  establishFrozenN1RuntimeBaseline,
   materializeFrozenN1Fixture,
   observeFrozenN1State,
   readFrozenN1Manifest,
+  type FrozenN1StateObservation,
 } from "../tests/fixtures/home-upgrade/n-1/freeze-n1";
 
 const HOST = "127.0.0.1";
@@ -50,6 +56,8 @@ export type InstalledHomeUpgradeScenario =
   | "ready-success"
   | "stopped-precommit-crash"
   | "committed-exact-repair";
+
+type RetainedCheckpointPhase = "switching" | "committed";
 
 const SCENARIOS: ReadonlyArray<InstalledHomeUpgradeScenario> = Object.freeze([
   "ready-success",
@@ -72,19 +80,107 @@ export type NonEvidenceInstalledUpgradeResult = Readonly<{
   scenarios: ReadonlyArray<InstalledHomeUpgradeScenario>;
 }>;
 
-/** Portable launchctl exit-pair contract; it emits no installed evidence. */
-export function classifyLaunchctlDrainForTests(
+/** Exact safe renderer embedded in diagnostic children; it emits no installed evidence. */
+export function renderInstalledCoordinationErrorForTests(error: unknown, depth = 0): string {
+  if (!(error instanceof Error)) return "Non-Error coordination failure";
+  const parts = [`${error.name}: ${error.message}`];
+  if (depth < 2) {
+    if (error instanceof AggregateError) {
+      for (const nested of error.errors.slice(0, 4)) {
+        parts.push(`nested: ${renderInstalledCoordinationErrorForTests(nested, depth + 1)}`);
+      }
+    } else if (error.cause !== undefined) {
+      parts.push(`caused by: ${renderInstalledCoordinationErrorForTests(error.cause, depth + 1)}`);
+    }
+  }
+  const redacted = parts.join(" | ")
+    .replace(/\bdome_(?:pair|cred|csrf)(?:\.[A-Za-z0-9_-]+)+(?![A-Za-z0-9_-])/g, "[REDACTED]")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [REDACTED]");
+  return redacted.length <= 2_048 ? redacted : `${redacted.slice(0, 2_047)}…`;
+}
+
+/** Bounded allowlisted ownership detail for a strict checkpoint failure. */
+export function retainedCheckpointOwnershipSummaryForTests(status: unknown): string {
+  const root = status !== null && typeof status === "object" && !Array.isArray(status)
+    ? status as Record<string, unknown>
+    : {};
+  const lifecycle = summaryRecord(root["lifecycle"]);
+  const upgrade = summaryRecord(root["upgrade"]);
+  return JSON.stringify({
+    lifecycle: {
+      state: summaryEnum(lifecycle["state"], ["inactive", "active", "invalid", "unavailable"]),
+      phase: summaryEnum(lifecycle["phase"], ["suspending", "suspended", "resuming"]),
+      purpose: summaryEnum(lifecycle["purpose"], ["backup", "upgrade"]),
+      operationId: summaryOperationId(lifecycle["operationId"]),
+    },
+    upgrade: {
+      state: summaryEnum(upgrade["state"], ["inactive", "active", "complete", "recovery-required", "unavailable"]),
+      operationId: summaryOperationId(upgrade["operationId"]),
+      outcome: summaryEnum(upgrade["outcome"], ["committed", "restored"]),
+      nextAction: summaryEnum(upgrade["nextAction"], [
+        "none", "rerun-requested-upgrade", "retry-recovery", "supply-exact-candidate", "inspect-home-status",
+      ]),
+    },
+  });
+}
+
+/** Exact lifecycle and upgrade ownership expected at each durable crash checkpoint. */
+export function retainedCheckpointOwnershipMatchesForTests(
+  status: unknown,
+  phase: RetainedCheckpointPhase,
+  transactionId: string,
+): boolean {
+  const root = summaryRecord(status);
+  const lifecycle = summaryRecord(root["lifecycle"]);
+  const upgrade = summaryRecord(root["upgrade"]);
+  const expectedUpgrade = phase === "switching"
+    ? { state: "active", outcome: null, nextAction: "retry-recovery" }
+    : { state: "complete", outcome: "committed", nextAction: "none" };
+  return lifecycle["state"] === "active" &&
+    lifecycle["phase"] === "suspended" &&
+    lifecycle["purpose"] === "upgrade" &&
+    lifecycle["operationId"] === transactionId &&
+    upgrade["state"] === expectedUpgrade.state &&
+    upgrade["operationId"] === transactionId &&
+    upgrade["outcome"] === expectedUpgrade.outcome &&
+    upgrade["nextAction"] === expectedUpgrade.nextAction;
+}
+
+function summaryRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function summaryEnum(value: unknown, allowed: ReadonlyArray<string>): string | null {
+  return typeof value === "string" && allowed.includes(value) ? value : null;
+}
+
+function summaryOperationId(value: unknown): string | null {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ? value
+    : null;
+}
+
+/** Portable launchd-label plus listener drain contract; it emits no installed evidence. */
+export function classifyInstalledHomeDrainForTests(
   bootoutExitCode: number,
   printExitCode: number,
+  portFree: boolean,
+  ownershipFree: boolean,
 ): "drained" | "pending" {
+  let labelDrained = false;
   if (bootoutExitCode === 3) {
-    if (printExitCode === 113) return "drained";
-    throw new Error(`launchctl bootout reported absent (${bootoutExitCode}) without absent print proof (${printExitCode})`);
+    if (printExitCode !== 113) {
+      throw new Error(`launchctl bootout reported absent (${bootoutExitCode}) without absent print proof (${printExitCode})`);
+    }
+    labelDrained = true;
+  } else {
+    if (bootoutExitCode !== 0) throw new Error(`launchctl bootout failed (${bootoutExitCode})`);
+    if (printExitCode === 113) labelDrained = true;
+    else if (printExitCode !== 0) throw new Error(`launchctl print failed (${printExitCode})`);
   }
-  if (bootoutExitCode !== 0) throw new Error(`launchctl bootout failed (${bootoutExitCode})`);
-  if (printExitCode === 113) return "drained";
-  if (printExitCode === 0) return "pending";
-  throw new Error(`launchctl print failed (${printExitCode})`);
+  return labelDrained && portFree && ownershipFree ? "drained" : "pending";
 }
 
 /** Portable pre-read archive allocation gate; it emits no installed evidence. */
@@ -228,7 +324,7 @@ function realOperations(): RehearsalOperations<PreparedArtifacts> {
 }
 
 async function prepareRealArtifacts(input: InstalledHomeUpgradeRehearsalInput): Promise<PreparedArtifacts> {
-  await assertRealHostPreconditions();
+  await assertInstalledHomeUpgradeHostPreconditions();
   const predecessorArchive = await realpath(resolve(input.predecessorArchive));
   const candidateArchive = await realpath(resolve(input.candidateArchive));
   const fixtureRoot = await realpath(resolve(input.frozenFixtureRoot));
@@ -345,7 +441,7 @@ function assertCandidateContract(predecessor: HomeArtifactManifest, candidate: H
   }
 }
 
-async function assertRealHostPreconditions(): Promise<void> {
+export async function assertInstalledHomeUpgradeHostPreconditions(): Promise<void> {
   if (process.platform !== "darwin" || process.arch !== "arm64") {
     throw new Error(`installed upgrade rehearsal requires darwin-arm64, got ${process.platform}-${process.arch}`);
   }
@@ -404,18 +500,30 @@ async function stageBoundedArchive(
 
 async function extractOneSafeArtifact(archive: string, destination: string): Promise<string> {
   await mkdir(destination, { mode: 0o700 });
+  const canonicalDestination = await realpath(destination);
   const tar = gunzipSync(await readFile(archive), { maxOutputLength: MAX_HOME_ARTIFACT_TAR_BYTES });
   const inspected = inspectHomeArtifactTar(tar);
-  const validatedTar = join(destination, ".validated-artifact.tar");
+  const validatedTar = join(canonicalDestination, ".validated-artifact.tar");
   await writeFile(validatedTar, tar, { flag: "wx", mode: 0o600 });
   try {
-    await runRaw(["/usr/bin/tar", "-xf", validatedTar, "-C", destination], destination, process.env);
+    await runRaw(
+      ["/usr/bin/tar", "-xf", validatedTar, "-C", canonicalDestination],
+      canonicalDestination,
+      process.env,
+    );
   } finally {
     await rm(validatedTar, { force: true });
   }
-  const root = inspected.root;
-  const extracted = await realpath(join(destination, root));
-  const contained = relative(destination, extracted);
+  return await resolveContainedArtifactRootForTests(canonicalDestination, inspected.root);
+}
+
+/** Resolve an extracted root against one canonical containment boundary. */
+export async function resolveContainedArtifactRootForTests(
+  canonicalDestination: string,
+  artifactRoot: string,
+): Promise<string> {
+  const extracted = await realpath(join(canonicalDestination, artifactRoot));
+  const contained = relative(canonicalDestination, extracted);
   if (contained === ".." || contained.startsWith(`..${sep}`) || isAbsolute(contained)) {
     throw new Error("artifact root escaped extraction directory");
   }
@@ -437,6 +545,7 @@ type ScenarioContext = {
   readonly ownerMarkdownSha256: string;
   readonly fixtureRoot: string;
   readonly fixtureManifest: Awaited<ReturnType<typeof readFrozenN1Manifest>>;
+  runtimeBaseline: FrozenN1StateObservation | null;
   activeDevice: LiveDevice | null;
   revokedDevice: LiveDevice | null;
   checkpointChild: ReturnType<typeof Bun.spawn> | null;
@@ -448,7 +557,9 @@ async function createScenario(
   unsafeCleanup: () => void,
 ): Promise<ScenarioContext> {
   await assertPortFree();
-  const root = await mkdtemp(join(prepared.temporary, `${name}-`));
+  const root = await canonicalizeInstalledScenarioRootForTests(
+    await mkdtemp(join(prepared.temporary, `${name}-`)),
+  );
   const home = join(root, "home");
   const vault = join(root, `vault-${randomUUID()}`);
   const label = homeServiceLabelForVault(vault);
@@ -465,6 +576,11 @@ async function createScenario(
     fixtureRoot: prepared.fixtureRoot,
     destination: stateRoot,
   });
+  const rawFixture = await observeFrozenN1State({
+    fixtureRoot: prepared.fixtureRoot,
+    stateRoot,
+  });
+  assertFrozenN1State(rawFixture, fixtureManifest);
   const ownerMarkdown = join(vault, "owner-upgrade-canary.md");
   await writeFile(ownerMarkdown, "# Owner upgrade canary\n\nThese bytes must survive the installed upgrade.\n", { flag: "wx" });
   await runRaw(["/usr/bin/git", "add", "owner-upgrade-canary.md"], vault, environment);
@@ -474,10 +590,19 @@ async function createScenario(
   ], vault, environment);
   const seedCommit = (await runRaw(["/usr/bin/git", "rev-parse", "HEAD"], vault, environment)).stdout.trim();
 
-  const installed = await runJson([
-    predecessorDome, "home", "install", "--vault", vault,
-    "--env", `HOME=${home}`, "--json",
-  ], root, environment);
+  // Frozen 0.1 predates correct nested Home --vault forwarding. Preserve its
+  // exact bytes and use the compiler boundary it already supports: cwd vault
+  // discovery. Candidate/0.2 nested commands continue to pass --vault.
+  const predecessorInstall = predecessorHomeInstallInvocationForTests({
+    dome: predecessorDome,
+    vault,
+    home,
+  });
+  const installed = await runJson(
+    predecessorInstall.command,
+    predecessorInstall.cwd,
+    environment,
+  );
   assertObjectFields(installed, { status: "installed", loaded: true, ready: true });
   if (stringField(installed, "label") !== label) throw new Error("installed Home returned the wrong unique label");
   const plist = stringField(installed, "plist");
@@ -489,7 +614,7 @@ async function createScenario(
     name, root, home, vault, label, plist, environment, seedCommit, ownerMarkdown,
     fixtureRoot: prepared.fixtureRoot,
     ownerMarkdownSha256: await fileSha256(ownerMarkdown), fixtureManifest,
-    activeDevice: null, revokedDevice: null, checkpointChild: null,
+    runtimeBaseline: null, activeDevice: null, revokedDevice: null, checkpointChild: null,
   };
   context.activeDevice = await pairFreshDevice(context, prepared.predecessorRoot, `${name}-active`);
   context.revokedDevice = await pairFreshDevice(context, prepared.predecessorRoot, `${name}-revoked`);
@@ -498,11 +623,23 @@ async function createScenario(
     "--vault", vault, "--json",
   ], root, environment);
   await assertLiveCredentialTruth(context, prepared.predecessor);
+  context.runtimeBaseline = await establishFrozenN1RuntimeBaseline({
+    fixtureRoot: context.fixtureRoot,
+    stateRoot,
+  });
+  const completedTick = await readinessTick(context);
+  await waitForNextReadinessTick(context, completedTick);
+  assertFrozenN1RuntimeProvenance(stateRoot);
+  const quiescent = await observeFrozenN1State({
+    fixtureRoot: context.fixtureRoot,
+    stateRoot,
+  });
+  assertFrozenN1RuntimeBaseline(quiescent, context.runtimeBaseline);
   await assertFrozenState(context, "n1");
   return context;
   } catch (error) {
     const cleanupFailures: unknown[] = [];
-    try { await bootoutAndDrain({ label }); } catch (cleanupError) { cleanupFailures.push(cleanupError); }
+    try { await bootoutAndDrain({ label, vault }); } catch (cleanupError) { cleanupFailures.push(cleanupError); }
     try { await assertPortFree(); } catch (cleanupError) { cleanupFailures.push(cleanupError); }
     if (cleanupFailures.length === 0) {
       await rm(root, { recursive: true, force: true });
@@ -511,6 +648,30 @@ async function createScenario(
     unsafeCleanup();
     throw new AggregateError([error, ...cleanupFailures], `partial installed rehearsal cleanup failed for ${label}; root retained at ${root}`);
   }
+}
+
+/** Capture the physical identity of a fresh private scenario root exactly once. */
+export async function canonicalizeInstalledScenarioRootForTests(createdRoot: string): Promise<string> {
+  return await realpath(createdRoot);
+}
+
+/** Exact compatibility invocation for the frozen pre-fix 0.1 Home CLI. */
+export function predecessorHomeInstallInvocationForTests(input: Readonly<{
+  dome: string;
+  vault: string;
+  home: string;
+}>): Readonly<{ command: ReadonlyArray<string>; cwd: string }> {
+  return Object.freeze({
+    command: Object.freeze([
+      input.dome,
+      "home",
+      "install",
+      "--env",
+      `HOME=${input.home}`,
+      "--json",
+    ]),
+    cwd: input.vault,
+  });
 }
 
 async function runRealScenario(context: ScenarioContext, prepared: PreparedArtifacts): Promise<void> {
@@ -554,8 +715,8 @@ async function stoppedPrecommitCrash(context: ScenarioContext, prepared: Prepare
   }
   const receipt = await candidateUpgrade(context, prepared.candidateRoot, true);
   if (field(receipt, "status") !== "rolled-back" || field(receipt, "service") !== "stopped" ||
-    stringField(record(receipt, "transaction"), "operationId") !==
-      stringField(record(recovered, "transaction"), "operationId")) {
+    stringField(objectField(receipt, "transaction"), "operationId") !==
+      stringField(objectField(recovered, "transaction"), "operationId")) {
     throw new Error("packaged candidate did not return the terminal rollback receipt");
   }
   await assertTerminalStatus(context, prepared.candidateRoot, prepared.predecessor, "stopped");
@@ -569,9 +730,9 @@ async function committedExactRepair(context: ScenarioContext, prepared: Prepared
   const active = join(homeInstallationPaths(context.vault, {
     applicationSupportDir: join(context.home, "Library", "Application Support", "Dome", "Home"),
   }).installations, "upgrade", "active");
-  await rm(stringField(record(journal, "old"), "releasePath"), { recursive: true, force: true });
+  await rm(stringField(objectField(journal, "old"), "releasePath"), { recursive: true, force: true });
   await damageSnapshot(active, journal);
-  const candidateRelease = stringField(record(journal, "candidate"), "releasePath");
+  const candidateRelease = stringField(objectField(journal, "candidate"), "releasePath");
   await rm(candidateRelease, { recursive: true, force: true });
   await writeFile(join(homeInstallationPaths(context.vault, {
     applicationSupportDir: join(context.home, "Library", "Application Support", "Dome", "Home"),
@@ -631,8 +792,7 @@ async function pairFreshDevice(
     body: JSON.stringify({ code: pairingCode }),
   });
   if (response.status !== 200) throw new Error(`fresh device pairing failed (${response.status})`);
-  const body = record(await response.json(), "pair response");
-  const deviceId = stringField(record(body, "device"), "id");
+  const deviceId = pairedDeviceIdForTests(await response.json());
   const cookie = response.headers.getSetCookie().map((value) => value.split(";", 1)[0]!).join("; ");
   if (cookie === "") throw new Error("fresh device pairing returned no credential cookies");
   return Object.freeze({ deviceId, cookie });
@@ -651,15 +811,15 @@ async function assertLiveCredentialTruth(
   const revoked = await fetch(`http://${HOST}:${PORT}/readyz`, {
     headers: { cookie: context.revokedDevice.cookie },
   });
-  const activeBody = active.status === 200 ? record(await active.json(), "active readiness") : null;
-  const revokedBody = revoked.status === 401 ? record(await revoked.json(), "revoked readiness error") : null;
+  const activeBody = active.status === 200 ? asRecord(await active.json(), "active readiness") : null;
+  const revokedBody = revoked.status === 401 ? asRecord(await revoked.json(), "revoked readiness error") : null;
   if (active.status !== 200 || activeBody === null ||
     field(activeBody, "schema") !== "dome.product.readiness/v1" ||
     field(activeBody, "artifactId") !== expected.artifact.id ||
     field(activeBody, "productVersion") !== expected.product.version ||
     field(activeBody, "writesAdmitted") !== true ||
-    field(record(activeBody, "host"), "state") !== "ready" ||
-    field(record(activeBody, "device"), "id") !== context.activeDevice.deviceId ||
+    field(objectField(activeBody, "host"), "state") !== "ready" ||
+    field(objectField(activeBody, "device"), "id") !== context.activeDevice.deviceId ||
     revoked.status !== 401 || revokedBody === null ||
     field(revokedBody, "status") !== "error" ||
     field(revokedBody, "error") !== "credential-invalid" ||
@@ -689,11 +849,14 @@ async function assertLiveCredentialRows(context: ScenarioContext): Promise<void>
 }
 
 async function assertFrozenState(context: ScenarioContext, expectedSchema: "n1" | "current"): Promise<void> {
+  if (context.runtimeBaseline === null) {
+    throw new Error("frozen N-1 runtime baseline was not captured");
+  }
   const observation = await observeFrozenN1State({
     fixtureRoot: context.fixtureRoot,
     stateRoot: join(context.vault, ".dome", "state"),
   });
-  assertFrozenN1State(observation, context.fixtureManifest);
+  assertFrozenN1RuntimeBaseline(observation, context.runtimeBaseline);
   for (const store of observation.stores) {
     const expected = expectedSchema === "n1"
       ? context.fixtureManifest.stores.find((entry) => entry.name === store.name)?.schemaHash
@@ -702,6 +865,26 @@ async function assertFrozenState(context: ScenarioContext, expectedSchema: "n1" 
       throw new Error(`unexpected ${expectedSchema} schema hash: ${store.name}`);
     }
   }
+}
+
+async function readinessTick(context: ScenarioContext): Promise<string> {
+  if (context.activeDevice === null) throw new Error("readiness tick requires an active device");
+  const response = await fetch(`http://${HOST}:${PORT}/readyz`, {
+    headers: { cookie: context.activeDevice.cookie },
+  });
+  if (response.status !== 200) throw new Error(`readiness tick unavailable (${response.status})`);
+  const body = asRecord(await response.json(), "readiness tick");
+  return stringField(objectField(body, "adoption"), "lastSuccessAt");
+}
+
+async function waitForNextReadinessTick(context: ScenarioContext, previous: string): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const current = await readinessTick(context);
+    if (current !== previous) return;
+    await Bun.sleep(100);
+  }
+  throw new Error("frozen N-1 Product Host did not complete a second runtime tick");
 }
 
 async function crashAtCheckpoint(
@@ -716,11 +899,14 @@ async function crashAtCheckpoint(
     'import { open } from "node:fs/promises";',
     `const marker = ${JSON.stringify(marker)};`,
     `const markerParent = ${JSON.stringify(context.root)};`,
+    "let coordinationCause = null;",
+    `const renderCoordinationError = ${renderInstalledCoordinationErrorForTests.toString()};`,
     `const imported = await import(${JSON.stringify(moduleUrl)});`,
-    "await imported.manageHomeUpgrade(",
+    "const result = await imported.manageHomeUpgrade(",
     `  { action: "run", vaultPath: ${JSON.stringify(context.vault)} },`,
     "  {",
     `    artifactRoot: ${JSON.stringify(candidateRoot)},`,
+    "    onCoordinationError: (error) => { coordinationCause = renderCoordinationError(error); },",
     "    selectionCheckpoint: async (name) => {",
     `      if (name !== ${JSON.stringify(checkpoint)}) return;`,
     "      const handle = await open(marker, \"wx\", 0o600);",
@@ -731,7 +917,7 @@ async function crashAtCheckpoint(
     "    },",
     "  },",
     ");",
-    "throw new Error(\"diagnostic checkpoint was not reached\");",
+    "throw new Error(`diagnostic checkpoint was not reached: ${JSON.stringify({ result, coordinationCause })}`);",
     "",
   ].join("\n");
   await writeFile(childScript, source, { flag: "wx", mode: 0o600 });
@@ -756,34 +942,36 @@ async function crashAtCheckpoint(
 
 async function assertRetainedCheckpoint(
   context: ScenarioContext,
-  phase: "switching" | "committed",
+  phase: RetainedCheckpointPhase,
 ): Promise<Record<string, unknown>> {
   const paths = homeInstallationPaths(context.vault, {
     applicationSupportDir: join(context.home, "Library", "Application Support", "Dome", "Home"),
   });
   const active = join(paths.installations, "upgrade", "active");
-  const journal = record(JSON.parse(await readFile(join(active, "journal.json"), "utf8")), "journal");
+  const journal = asRecord(JSON.parse(await readFile(join(active, "journal.json"), "utf8")), "journal");
   if (field(journal, "phase") !== phase) throw new Error(`retained journal did not reach ${phase}`);
-  const selection = record(journal, "selection");
-  const candidate = record(selection, "candidate");
-  await assertFileSha(paths.record, stringField(record(candidate, "installation"), "sha256"));
-  await assertFileSha(context.plist, stringField(record(candidate, "plist"), "sha256"));
+  const transactionId = stringField(journal, "transactionId");
+  const selection = objectField(journal, "selection");
+  const candidate = objectField(selection, "candidate");
+  await assertFileSha(paths.record, stringField(objectField(candidate, "installation"), "sha256"));
+  await assertFileSha(context.plist, stringField(objectField(candidate, "plist"), "sha256"));
 
   const status = await runJson([
     join(context.home, "Library", "Application Support", "Dome", "Home", "releases",
-      stringField(record(journal, "candidate"), "artifactId"), "bin", "dome"),
+      stringField(objectField(journal, "candidate"), "artifactId"), "bin", "dome"),
     "home", "status", "--vault", context.vault, "--json",
   ], context.root, context.environment, true);
-  if (field(record(status, "lifecycle"), "state") !== "active" ||
-    field(record(status, "upgrade"), "state") !== "active") {
-    throw new Error("checkpoint crash did not retain lifecycle and upgrade ownership");
+  if (!retainedCheckpointOwnershipMatchesForTests(status, phase, transactionId)) {
+    throw new Error(
+      `checkpoint crash did not retain lifecycle and upgrade ownership: ${retainedCheckpointOwnershipSummaryForTests(status)}`,
+    );
   }
   return journal;
 }
 
 async function damageSnapshot(active: string, journal: Record<string, unknown>): Promise<void> {
-  const snapshot = record(journal, "snapshot");
-  const inventory = arrayField(snapshot, "inventory").map((entry) => record(entry, "snapshot entry"))
+  const snapshot = objectField(journal, "snapshot");
+  const inventory = arrayField(snapshot, "inventory").map((entry) => asRecord(entry, "snapshot entry"))
     .filter((entry) => field(entry, "present") === true);
   if (inventory.length < 2) throw new Error("committed rehearsal snapshot lacks two present entries to damage");
   await rm(join(active, "snapshot", stringField(inventory[0]!, "name")), { force: true });
@@ -827,11 +1015,47 @@ async function packagedBackup(context: ScenarioContext, candidateRoot: string): 
     dome, "backup", "create", "--vault", context.vault, "--output", archive,
     "--recipient", stringField(key, "recipient"), "--json",
   ], context.root, context.environment);
-  assertObjectFields(created, { status: "created" });
+  assertObjectFields(created, { status: "created", restart: "restarted" });
   const verified = await runJson([
     dome, "backup", "verify", archive, "--identity", identity, "--json",
   ], context.root, context.environment);
   assertObjectFields(verified, { status: "verified" });
+  const restoredVault = join(context.root, "restored-backup-vault");
+  const blankHome = join(context.root, "blank-restore-home");
+  await mkdir(blankHome, { mode: 0o700 });
+  const restored = await runJson([
+    dome, "backup", "restore", archive, "--identity", identity,
+    "--target", restoredVault, "--json",
+  ], context.root, { ...context.environment, HOME: blankHome });
+  assertInstalledBackupRestoreCanaryForTests(
+    restored,
+    await readFile(join(restoredVault, "core.md"), "utf8"),
+    await fileSha256(join(restoredVault, "owner-upgrade-canary.md")),
+    context.ownerMarkdownSha256,
+  );
+}
+
+/** Portable assertion for the real installed backup/blank-host restore canary. */
+export function assertInstalledBackupRestoreCanaryForTests(
+  restored: Record<string, unknown>,
+  coreMarkdown: string,
+  restoredOwnerMarkdownSha256: string,
+  expectedOwnerMarkdownSha256: string,
+): void {
+  assertObjectFields(restored, {
+    schema: "dome.backup/v1",
+    operation: "restore",
+    status: "restored",
+    exitCode: 0,
+    authority: "invalidated",
+    durability: "durable",
+  });
+  if (!coreMarkdown.includes("# Core")) {
+    throw new Error("installed packaged backup restore lost core.md content");
+  }
+  if (restoredOwnerMarkdownSha256 !== expectedOwnerMarkdownSha256) {
+    throw new Error("installed packaged backup restore changed the owner canary");
+  }
 }
 
 async function assertTerminalStatus(
@@ -851,8 +1075,8 @@ async function assertTerminalStatus(
     field(status, "productVersion") !== selected.product.version) {
     throw new Error("terminal Home status selected the wrong artifact");
   }
-  if (field(record(status, "lifecycle"), "state") !== "inactive" ||
-    field(record(status, "upgrade"), "state") !== "inactive") {
+  if (field(objectField(status, "lifecycle"), "state") !== "inactive" ||
+    field(objectField(status, "upgrade"), "state") !== "inactive") {
     throw new Error("terminal Home status retained lifecycle or upgrade ownership");
   }
   assertNoPhase(status);
@@ -883,19 +1107,26 @@ async function assertOwnerSubstrate(context: ScenarioContext): Promise<void> {
   ], context.vault, context.environment);
 }
 
-async function bootoutAndDrain(context: Pick<ScenarioContext, "label">): Promise<void> {
+async function bootoutAndDrain(context: Pick<ScenarioContext, "label" | "vault">): Promise<void> {
   const uid = process.getuid?.();
   if (uid === undefined) throw new Error("launchd drain requires a Unix uid");
   const target = `gui/${uid}/${context.label}`;
+  const ownershipPath = externalProductHostLockPath(await realpath(context.vault));
   const result = await runRawAllowFailure(["/bin/launchctl", "bootout", target], process.cwd(), process.env);
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     const printed = await runRawAllowFailure(["/bin/launchctl", "print", target], process.cwd(), process.env);
-    const state = classifyLaunchctlDrainForTests(result.exitCode, printed.exitCode);
+    const ownership = await inspectExclusiveFileLock(ownershipPath);
+    const state = classifyInstalledHomeDrainForTests(
+      result.exitCode,
+      printed.exitCode,
+      await isPortFree(),
+      ownership.kind !== "possibly-live",
+    );
     if (state === "drained") return;
     await Bun.sleep(100);
   }
-  throw new Error(`launchd label did not drain: ${context.label}`);
+  throw new Error(`launchd label, ${HOST}:${PORT}, or Product Host ownership did not drain: ${context.label}`);
 }
 
 async function assertLaunchdAbsent(label: string): Promise<void> {
@@ -929,13 +1160,22 @@ async function cleanupScenario(context: ScenarioContext): Promise<void> {
 }
 
 async function assertPortFree(): Promise<void> {
-  await new Promise<void>((resolvePromise, reject) => {
+  if (await isPortFree()) return;
+  throw new Error(`installed rehearsal requires ${HOST}:${PORT} to be unbound: address remains in use`);
+}
+
+async function isPortFree(): Promise<boolean> {
+  return await new Promise<boolean>((resolvePromise, reject) => {
     const server = createServer();
     server.unref();
-    server.once("error", reject);
-    server.listen(PORT, HOST, () => server.close((error) => error === undefined ? resolvePromise() : reject(error)));
-  }).catch((error: unknown) => {
-    throw new Error(`installed rehearsal requires ${HOST}:${PORT} to be unbound: ${error instanceof Error ? error.message : String(error)}`);
+    server.once("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "EADDRINUSE") resolvePromise(false);
+      else reject(error);
+    });
+    server.listen(PORT, HOST, () => server.close((error) => {
+      if (error === undefined) resolvePromise(true);
+      else reject(error);
+    }));
   });
 }
 
@@ -985,7 +1225,7 @@ async function runJson(
   let value: unknown;
   try { value = JSON.parse(result.stdout); }
   catch { throw new Error(`${renderCommand(command)} returned non-JSON output\n${result.stdout}${result.stderr}`); }
-  return record(value, "packaged command result");
+  return asRecord(value, "packaged command result");
 }
 
 async function runRaw(
@@ -1030,19 +1270,29 @@ function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function record(value: unknown, label: string): Record<string, unknown> {
+function asRecord(value: unknown, label: string): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${label} must be an object`);
   }
   return value as Record<string, unknown>;
 }
 
+function objectField(value: Record<string, unknown>, name: string): Record<string, unknown> {
+  return asRecord(value[name], name);
+}
+
+/** Portable response-shape assertion; it emits no installed evidence. */
+export function pairedDeviceIdForTests(value: unknown): string {
+  const response = asRecord(value, "pair response");
+  return stringField(objectField(response, "device"), "id");
+}
+
 function field(value: Record<string, unknown>, name: string): unknown {
   return value[name];
 }
 
-function stringField(value: Record<string, unknown>, name: string, nested?: string): string {
-  const candidate = nested === undefined ? value[name] : record(value[name], name)[nested];
+function stringField(value: Record<string, unknown>, name: string): string {
+  const candidate = value[name];
   if (typeof candidate !== "string" || candidate === "") throw new Error(`${name} must be a nonempty string`);
   return candidate;
 }

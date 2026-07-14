@@ -115,6 +115,8 @@ export type HomeUpgradeIntentDeps = HomeUpgradeCutoverDeps & HomeUpgradeHistoryD
   readonly artifactRoot?: string | undefined;
   /** One internal seam for intent/recovery decision-table tests. */
   readonly intentOperations?: Partial<IntentOperations> | undefined;
+  /** Internal installed-rehearsal observer; failures never affect the public result. */
+  readonly onCoordinationError?: ((error: unknown) => void) | undefined;
 };
 
 export async function manageHomeUpgrade(input: {
@@ -282,7 +284,8 @@ export async function manageHomeUpgrade(input: {
       }
       throw error;
     }
-  } catch {
+  } catch (error) {
+    try { deps.onCoordinationError?.(error); } catch { /* Diagnostics cannot affect intent behavior. */ }
     return failure(vault, requested, "error", 1, "coordination-failed", "Dome Home upgrade coordination failed", "inspect-home-status");
   }
 }

@@ -17,14 +17,21 @@ import { tmpdir } from "node:os";
 import { computeAnswersSchemaHash, openAnswersDb } from "../../../../src/answers/db";
 import { computeDeviceAuthoritySchemaHash, openDeviceAuthority } from "../../../../src/device-authority/device-authority";
 import { computeLedgerSchemaHash, openLedgerDb } from "../../../../src/ledger/db";
+import { recordCapabilityUse } from "../../../../src/ledger/capability-uses";
+import { insertQueued, markRunning, markSucceeded, newRunId } from "../../../../src/ledger/runs";
 import { computeOutboxSchemaHash, openOutboxDb } from "../../../../src/outbox/db";
 import { computeProposalsSchemaHash, openProposalsDb } from "../../../../src/proposals/db";
+import { enqueuePendingProposal } from "../../../../src/proposals/pending-proposals";
 import { computeRequestReceiptsSchemaHash, openRequestReceiptsDb } from "../../../../src/request-receipts/db";
 import { snapshotSqliteReadonly } from "../../../../src/sqlite/snapshot";
+import { patchEffect } from "../../../../src/core/effect";
+import { commitOid, sourceRef } from "../../../../src/core/source-ref";
+import { hashEffect } from "../../../../src/processors/executor";
 
 export const FROZEN_N1_SOURCE_COMMIT = "eb644dc29b37cbc0c964f8cffc5329a95cad49ba";
 export const FROZEN_N1_RELEASE = "0.1.0-eb644dc2";
 export const FROZEN_N1_SCHEMA = "dome.home-upgrade-n1-fixture/v1";
+export const FROZEN_N1_PENDING_RUN_ID = "run_1783845900000_f1a2b3";
 
 const FIXED_AT = "2026-07-13T12:00:00.000Z";
 const SOURCE_FILES = Object.freeze([
@@ -34,6 +41,7 @@ const SOURCE_FILES = Object.freeze([
   "src/ledger/db.ts",
   "src/request-receipts/db.ts",
   "src/device-authority/device-authority.ts",
+  "assets/extensions/dome.markdown/manifest.yaml",
 ] as const);
 const SOURCE_SHA256 = Object.freeze([
   "25c4bf6ba34200dc52f6009e81e4a33ce92fae60c251b14e12722521823e548f",
@@ -42,6 +50,7 @@ const SOURCE_SHA256 = Object.freeze([
   "4c7a7b8a63a0000124b2c240b754abd1f80afdcb482d53bb3015bb7e130ca662",
   "21a076dbc8daaf47cfee12f5fe7a928b9048737efbe3d5adf1d190fd970f4cc6",
   "a9e5b47c87690bc21ee7925d902506622c817b75c00fa82201455dcf0ac14c89",
+  "be6417121c07049084a420bea091964be222f0b5907f0854645ad4819866c0af",
 ] as const);
 
 const STORES = Object.freeze([
@@ -286,6 +295,182 @@ export function assertFrozenN1State(
   }
 }
 
+/**
+ * Compare logical state after the frozen runtime has performed its one-time
+ * crash recovery. Schema hashes are deliberately excluded: N migrates them.
+ */
+export function assertFrozenN1RuntimeBaseline(
+  observation: FrozenN1StateObservation,
+  baseline: FrozenN1StateObservation,
+): void {
+  if (observation.stores.length !== baseline.stores.length) {
+    throw new Error("frozen N-1 runtime baseline store inventory changed");
+  }
+  for (let index = 0; index < baseline.stores.length; index += 1) {
+    const expected = baseline.stores[index]!;
+    const actual = observation.stores[index];
+    if (actual?.name !== expected.name || actual.canarySha256 !== expected.canarySha256) {
+      throw new Error(`frozen N-1 runtime baseline changed: ${expected.name}`);
+    }
+  }
+  if (observation.canaryDigest !== baseline.canaryDigest) {
+    throw new Error("frozen N-1 runtime baseline aggregate changed");
+  }
+  if (observation.authority.active !== baseline.authority.active ||
+    observation.authority.revoked !== baseline.authority.revoked) {
+    throw new Error("frozen N-1 runtime baseline authority changed");
+  }
+}
+
+/** Assert provenance fields outside the selected logical canaries. */
+export function assertFrozenN1RuntimeProvenance(stateRoot: string): void {
+  const root = resolve(stateRoot);
+  const proposals = new Database(join(root, "proposals.db"), { readonly: true, create: false });
+  const receipts = new Database(join(root, "request-receipts.db"), { readonly: true, create: false });
+  const ledger = new Database(join(root, "runs.db"), { readonly: true, create: false });
+  try {
+    const proposal = proposals.query<Record<string, SqlValue>, []>(
+      "SELECT processor_id,extension_id,status,decided_at,decided_by,note " +
+        `FROM pending_proposals WHERE run_id='${FROZEN_N1_PENDING_RUN_ID}'`,
+    ).get();
+    if (stableJson(proposal) !== stableJson({
+      processor_id: "dome.markdown.attic-sweep",
+      extension_id: "dome.markdown",
+      status: "pending",
+      decided_at: null,
+      decided_by: null,
+      note: null,
+    })) throw new Error("frozen N-1 live pending proposal changed during startup");
+
+    const run = ledger.query<Record<string, SqlValue>, []>(
+      "SELECT proposal_id,processor_id,processor_version,phase,status,output_commit," +
+        "effect_hashes_json,cost_usd,duration_ms,trigger_kind,trigger_payload_json " +
+        `FROM runs WHERE id='${FROZEN_N1_PENDING_RUN_ID}'`,
+    ).get();
+    if (stableJson(run) !== stableJson({
+      proposal_id: null,
+      processor_id: "dome.markdown.attic-sweep",
+      processor_version: "0.1.0",
+      phase: "garden",
+      status: "succeeded",
+      output_commit: null,
+      effect_hashes_json: '["efc999db3d8f2233265735978dcc8cdcb3fa95624bc91c7bbb9b0c783dd22a8e"]',
+      cost_usd: null,
+      duration_ms: 1000,
+      trigger_kind: "schedule",
+      trigger_payload_json:
+        '[{"trigger":{"kind":"schedule","cron":"45 4 * * 0"},"matchedSignals":[]}]',
+    })) throw new Error("frozen N-1 pending proposal run ownership changed");
+    const capabilityUse = ledger.query<Record<string, SqlValue>, []>(
+      "SELECT capability,resource,outcome FROM capability_uses " +
+        `WHERE run_id='${FROZEN_N1_PENDING_RUN_ID}'`,
+    ).get();
+    if (stableJson(capabilityUse) !== stableJson({
+      capability: "patch.propose",
+      resource: "attic/notes/Untitled.md,notes/Untitled.md",
+      outcome: "allowed",
+    })) throw new Error("frozen N-1 pending proposal capability audit changed");
+
+    const interrupted = receipts.query<Record<string, SqlValue>, []>(
+      "SELECT finished_at FROM request_receipts WHERE operation_id='receipt-admitted'",
+    ).get();
+    if (interrupted === null || typeof interrupted["finished_at"] !== "string" ||
+      !Number.isFinite(Date.parse(interrupted["finished_at"]))) {
+      throw new Error("frozen N-1 interrupted receipt lacks a valid finish time");
+    }
+  } finally {
+    proposals.close();
+    receipts.close();
+    ledger.close();
+  }
+}
+
+/**
+ * Establish, but never invent, the post-start baseline: every selected row in
+ * all six canaries must be either raw-unchanged or an exact recovery outcome.
+ */
+export async function establishFrozenN1RuntimeBaseline(input: {
+  readonly fixtureRoot: string;
+  readonly stateRoot: string;
+}): Promise<FrozenN1StateObservation> {
+  assertFrozenN1RuntimeProvenance(input.stateRoot);
+  const root = resolve(input.stateRoot);
+  const manifest = await readFrozenN1Manifest(resolve(input.fixtureRoot));
+  const canaries: unknown[] = [];
+  for (const store of manifest.stores) {
+    const actual = logicalCanary(join(root, `${store.name}.db`), store.name);
+    const normalized = normalizedRuntimeCanary(store.name);
+    if (normalized === null) {
+      if (sha(stableJson(actual)) !== store.canarySha256) {
+        throw new Error(`frozen N-1 runtime baseline changed an unaffected canary: ${store.name}`);
+      }
+    } else if (stableJson(actual) !== stableJson(normalized)) {
+      throw new Error(`frozen N-1 runtime baseline normalization changed: ${store.name}`);
+    }
+    canaries.push(actual);
+  }
+
+  const observation = await observeFrozenN1State({
+    fixtureRoot: input.fixtureRoot,
+    stateRoot: root,
+  });
+  for (let index = 0; index < observation.stores.length; index += 1) {
+    if (observation.stores[index]?.canarySha256 !== sha(stableJson(canaries[index]))) {
+      throw new Error("frozen N-1 runtime baseline observation disagrees with selected canaries");
+    }
+  }
+  if (observation.canaryDigest !== sha(stableJson(canaries))) {
+    throw new Error("frozen N-1 runtime baseline aggregate disagrees with selected canaries");
+  }
+  if (observation.authority.active !== "authenticated" || observation.authority.revoked !== "revoked") {
+    throw new Error("frozen N-1 runtime baseline credential truth changed");
+  }
+  return observation;
+}
+
+function normalizedRuntimeCanary(name: typeof STORES[number]["name"]): unknown | null {
+  if (name === "outbox") {
+    return [
+      { idempotency_key: "outbox-failed", status: "failed", attempts: 3, last_error: "fixture failure" },
+      {
+        idempotency_key: "outbox-pending",
+        status: "failed",
+        attempts: 1,
+        last_error: "No external handler registered for capability 'notify.send'.",
+      },
+    ];
+  }
+  if (name === "request-receipts") {
+    return [
+      {
+        operation_id: "receipt-admitted",
+        state: "interrupted",
+        result_code: "host-restarted",
+        commit_oid: null,
+        adoption_state: "unknown",
+        recovery_required: 1,
+      },
+      {
+        operation_id: "receipt-interrupted",
+        state: "interrupted",
+        result_code: "host-restarted",
+        commit_oid: null,
+        adoption_state: "unknown",
+        recovery_required: 1,
+      },
+      {
+        operation_id: "receipt-succeeded",
+        state: "succeeded",
+        result_code: "captured",
+        commit_oid: "7777777777777777777777777777777777777777",
+        adoption_state: "pending",
+        recovery_required: 0,
+      },
+    ];
+  }
+  return null;
+}
+
 export async function readFrozenN1Manifest(root: string): Promise<FrozenN1Manifest> {
   const parsed: unknown = JSON.parse(await readFile(join(root, "manifest.json"), "utf8"));
   const value = record(parsed, "frozen N-1 manifest");
@@ -384,9 +569,37 @@ async function createAndSeedStores(root: string): Promise<FrozenN1Manifest["auth
 
   const proposals = await openProposalsDb({ path: join(root, "proposals.db") });
   if (!proposals.ok) throw new Error(JSON.stringify(proposals.error));
+  // Sunday 04:45 America/New_York: an exact `45 4 * * 0` fire.
+  const runStarted = new Date("2026-07-12T08:45:00.000Z");
+  const runFinished = new Date("2026-07-12T08:45:01.000Z");
+  const runId = newRunId(runStarted, () => "f1a2b3");
+  if (runId !== FROZEN_N1_PENDING_RUN_ID) throw new Error("frozen pending run id changed");
+  const baseCommit = commitOid("5555555555555555555555555555555555555555");
+  const effect = patchEffect({
+    mode: "propose",
+    changes: [
+      { kind: "write", path: "attic/notes/Untitled.md", content: "# Untitled\n" },
+      { kind: "delete", path: "notes/Untitled.md" },
+    ],
+    reason: "dome.markdown: archive 1 dead stub file(s) to attic/",
+    sourceRefs: [sourceRef({ commit: baseCommit, path: "notes/Untitled.md" })],
+  });
+  enqueuePendingProposal(proposals.value.db, {
+    processorId: "dome.markdown.attic-sweep",
+    extensionId: "dome.markdown",
+    runId,
+    reason: effect.reason,
+    changes: effect.changes,
+    sourceRefs: effect.sourceRefs,
+    baseCommit,
+    baseContents: {
+      "attic/notes/Untitled.md": null,
+      "notes/Untitled.md": "# Untitled\n",
+    },
+    createdAt: "2026-07-12T08:45:00.500Z",
+  });
   proposals.value.db.raw.exec("BEGIN; INSERT INTO pending_proposals "
     + "(dedupe_key,processor_id,extension_id,run_id,reason,changes_json,source_refs_json,base_commit,base_contents_json,created_at,status,decided_at,decided_by,applied_commit,note) VALUES "
-    + "('proposal-pending','dome.fixture','dome.fixture','run_fixture','pending fixture','[]','[]','3333333333333333333333333333333333333333','{}','2026-07-13T12:05:00.000Z','pending',NULL,NULL,NULL,NULL),"
     + "('proposal-decided','dome.fixture','dome.fixture',NULL,'decided fixture','[]','[]','4444444444444444444444444444444444444444','{}','2026-07-13T12:06:00.000Z','rejected','2026-07-13T12:07:00.000Z','owner',NULL,'not now'); COMMIT;");
   normalizeMeta(proposals.value.db.raw, "proposals_meta"); proposals.value.db.close();
 
@@ -394,16 +607,42 @@ async function createAndSeedStores(root: string): Promise<FrozenN1Manifest["auth
   if (!outbox.ok) throw new Error(JSON.stringify(outbox.error));
   outbox.value.db.raw.exec("BEGIN; INSERT INTO outbox "
     + "(capability,idempotency_key,payload_json,source_refs,status,external_id,attempts,max_attempts,enqueued_at,next_attempt_at,sent_at,last_error,run_id) VALUES "
-    + "('notify.send','outbox-pending','{\"message\":\"pending\"}','[]','pending',NULL,0,3,'2026-07-13T12:08:00.000Z','2026-07-13T12:08:00.000Z',NULL,NULL,'run_fixture'),"
-    + "('notify.send','outbox-failed','{\"message\":\"failed\"}','[]','failed',NULL,3,3,'2026-07-13T12:09:00.000Z','2026-07-13T12:10:00.000Z',NULL,'fixture failure','run_fixture'); COMMIT;");
+    + "('notify.send','outbox-pending','{\"message\":\"pending\"}','[]','pending',NULL,0,3,'2026-07-13T12:08:00.000Z','2026-07-13T12:08:00.000Z',NULL,NULL,'run_outbox_pruned'),"
+    + "('notify.send','outbox-failed','{\"message\":\"failed\"}','[]','failed',NULL,3,3,'2026-07-13T12:09:00.000Z','2026-07-13T12:10:00.000Z',NULL,'fixture failure','run_outbox_pruned'); COMMIT;");
   normalizeMeta(outbox.value.db.raw, "outbox_meta"); outbox.value.db.close();
 
   const ledger = await openLedgerDb({ path: join(root, "runs.db") });
   if (!ledger.ok) throw new Error(JSON.stringify(ledger.error));
-  ledger.value.db.raw.exec("BEGIN; INSERT INTO runs VALUES "
-    + "('run_fixture','proposal-pending','dome.fixture','1','garden','5555555555555555555555555555555555555555','6666666666666666666666666666666666666666','succeeded','[\"effect-fixture\"]',0.125,17,NULL,'signal','{\"name\":\"fixture\"}','2026-07-13T12:11:00.000Z','2026-07-13T12:11:01.000Z');"
-    + "INSERT INTO capability_uses (run_id,capability,resource,outcome,recorded_at) VALUES "
-    + "('run_fixture','vault.read','wiki/fixture.md','allowed','2026-07-13T12:11:00.500Z'); COMMIT;");
+  insertQueued(ledger.value.db, {
+    id: runId,
+    proposalId: null,
+    processorId: "dome.markdown.attic-sweep",
+    processorVersion: "0.1.0",
+    phase: "garden",
+    inputCommit: baseCommit,
+    triggerKind: "schedule",
+    triggerPayload: [{
+      trigger: { kind: "schedule", cron: "45 4 * * 0" },
+      matchedSignals: [],
+    }],
+    startedAt: runStarted,
+  });
+  markRunning(ledger.value.db, runId, runStarted);
+  recordCapabilityUse(ledger.value.db, {
+    runId,
+    capability: "patch.propose",
+    resource: "attic/notes/Untitled.md,notes/Untitled.md",
+    outcome: "allowed",
+    recordedAt: new Date("2026-07-12T08:45:00.500Z"),
+  });
+  markSucceeded(ledger.value.db, {
+    id: runId,
+    effectHashes: [hashEffect(effect)],
+    costUsd: null,
+    durationMs: runFinished.getTime() - runStarted.getTime(),
+    outputCommit: null,
+    finishedAt: runFinished,
+  });
   normalizeMeta(ledger.value.db.raw, "ledger_meta"); ledger.value.db.close();
 
   const receipts = await openRequestReceiptsDb({ path: join(root, "request-receipts.db") });
@@ -486,9 +725,9 @@ function logicalCanary(path: string, name: typeof STORES[number]["name"]): unkno
   try {
     switch (name) {
       case "answers": return rows(db, "SELECT idempotency_key,answered_by,handler_status FROM question_answers WHERE idempotency_key IN ('answer-agent','answer-owner') ORDER BY idempotency_key");
-      case "proposals": return rows(db, "SELECT dedupe_key,status,decided_by,note FROM pending_proposals WHERE dedupe_key IN ('proposal-decided','proposal-pending') ORDER BY dedupe_key");
+      case "proposals": return rows(db, `SELECT dedupe_key,status,decided_by,note FROM pending_proposals WHERE run_id='${FROZEN_N1_PENDING_RUN_ID}' OR dedupe_key='proposal-decided' ORDER BY dedupe_key`);
       case "outbox": return rows(db, "SELECT idempotency_key,status,attempts,last_error FROM outbox WHERE idempotency_key IN ('outbox-failed','outbox-pending') ORDER BY idempotency_key");
-      case "runs": return { runs: rows(db, "SELECT id,status,effect_hashes_json,cost_usd FROM runs WHERE id='run_fixture' ORDER BY id"), uses: rows(db, "SELECT run_id,capability,resource,outcome FROM capability_uses WHERE run_id='run_fixture' ORDER BY id") };
+      case "runs": return { runs: rows(db, `SELECT id,status,effect_hashes_json,cost_usd FROM runs WHERE id='${FROZEN_N1_PENDING_RUN_ID}' ORDER BY id`), uses: rows(db, `SELECT run_id,capability,resource,outcome FROM capability_uses WHERE run_id='${FROZEN_N1_PENDING_RUN_ID}' ORDER BY id`) };
       case "request-receipts": return rows(db, "SELECT operation_id,state,result_code,commit_oid,adoption_state,recovery_required FROM request_receipts WHERE operation_id IN ('receipt-admitted','receipt-interrupted','receipt-succeeded') ORDER BY operation_id");
       case "device-authority": return {
         epoch: rows(db, "SELECT auth_epoch FROM authority_state"),

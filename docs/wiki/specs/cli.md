@@ -2839,9 +2839,12 @@ release needs repair.
 General artifact verification accepts boolean
 `distribution.upgradeSupported`, but a new candidate is eligible only when it
 is exactly `true` in addition to the writer-barrier and durable-state protocols.
-The builder intentionally continues to emit `false`: the command and recovery
-UX are present, while supported distribution activation remains gated on the
-retained installed N-1→N rehearsal.
+The exact 0.2 release builder can emit `true` only inside its closed candidate
+pipeline after the retained installed N-1→N rehearsal succeeds against the
+pinned predecessor and frozen fixture, its returned identities match the
+staged bytes, and candidate plus source are re-proved before atomic
+publication. No CLI flag can skip or substitute that gate. This contract does
+not assert that a real release execution has already passed.
 
 Reinstall without `--env` or `--env-file` preserves the record's stored
 environment; supplying either option intentionally replaces it. Plist

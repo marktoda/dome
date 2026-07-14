@@ -1710,9 +1710,9 @@ async function waitForReadiness(deps: HomeLifecycleSuspensionDeps): Promise<bool
 }
 
 async function probeReadiness(deps: HomeLifecycleSuspensionDeps): Promise<boolean> {
-  return deps.readiness !== undefined
-    ? deps.readiness()
-    : isHomePairingReadiness(await fetch("http://127.0.0.1:3663/pair/status"));
+  if (deps.readiness !== undefined) return deps.readiness();
+  try { return await isHomePairingReadiness(await fetch("http://127.0.0.1:3663/pair/status")); }
+  catch { return false; }
 }
 
 
