@@ -114,11 +114,12 @@ describe("Home upgrade intent", () => {
   });
 
   test("new attempts require a strict SemVer advance before publication or operation allocation", async () => {
+    const malformed = ["v1.0.1", "=1.0.1", "01.0.1", "1.0.0-01"] as const;
     for (const [selectedVersion, candidateVersion] of [
       ["1.0.0", "1.0.0"],
       ["2.0.0", "1.9.9"],
-      ["1.0.0", "next"],
-      ["legacy", "2.0.0"],
+      ...malformed.map((version) => ["1.0.0", version] as const),
+      ...malformed.map((version) => [version, "2.0.0"] as const),
     ] as const) {
       const base = manifest();
       const candidate = {

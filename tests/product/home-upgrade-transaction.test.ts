@@ -1188,18 +1188,32 @@ describe("Product Host pre-commit upgrade transaction", () => {
   });
 
   test("candidate compatibility rejects non-advancing SemVer without changing vault fingerprints", async () => {
-    for (const candidateVersion of ["1.0.0", "0.9.9", "next"] as const) {
+    const malformed = ["v1.0.1", "=1.0.1", "01.0.1", "1.0.0-01"] as const;
+    for (const [side, version] of [
+      ["candidate", "1.0.0"],
+      ["candidate", "0.9.9"],
+      ...malformed.map((value) => ["candidate", value] as const),
+      ...malformed.map((value) => ["selected", value] as const),
+    ] as const) {
       const f = await fixture();
       try {
         const before = await logicalState(f.vault);
         const gitBefore = await gitEvidence(f.vault);
         const paths = homeInstallationPaths(f.vault, f.deps);
-        const manifestPath = join(releaseRoot(paths, CANDIDATE_ID), "manifest.json");
+        const artifactId = side === "candidate" ? CANDIDATE_ID : OLD_ID;
+        const manifestPath = join(releaseRoot(paths, artifactId), "manifest.json");
         const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
           product: { version: string };
         };
-        manifest.product.version = candidateVersion;
+        manifest.product.version = version;
         await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, { mode: 0o600 });
+        if (side === "selected") {
+          const installation = JSON.parse(await readFile(paths.record, "utf8")) as {
+            artifact: { version: string };
+          };
+          installation.artifact.version = version;
+          await writeFile(paths.record, `${JSON.stringify(installation)}\n`, { mode: 0o600 });
+        }
 
         await expect(prepareHomeUpgrade({
           vaultPath: f.vault,

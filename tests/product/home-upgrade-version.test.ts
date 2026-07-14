@@ -12,8 +12,9 @@ describe("Home upgrade version ordering", () => {
   });
 
   test("rejects malformed versions on either side", () => {
-    expect(isHomeUpgradeVersionAdvance("legacy", "2.0.0")).toBeFalse();
-    expect(isHomeUpgradeVersionAdvance("1.0.0", "next")).toBeFalse();
-    expect(isHomeUpgradeVersionAdvance("1.0", "2.0.0")).toBeFalse();
+    for (const malformed of ["v1.0.1", "=1.0.1", "01.0.1", "1.0.0-01"]) {
+      expect(isHomeUpgradeVersionAdvance(malformed, "2.0.0")).toBeFalse();
+      expect(isHomeUpgradeVersionAdvance("1.0.0", malformed)).toBeFalse();
+    }
   });
 });

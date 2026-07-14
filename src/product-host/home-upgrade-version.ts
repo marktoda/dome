@@ -1,9 +1,7 @@
 // product-host/home-upgrade-version: the one monotonic product-version rule.
 
-import { semver } from "bun";
+import { gt, valid } from "semver";
 
 export function isHomeUpgradeVersionAdvance(current: string, candidate: string): boolean {
-  return semver.satisfies(current, current) &&
-    semver.satisfies(candidate, candidate) &&
-    semver.order(candidate, current) === 1;
+  return valid(current) === current && valid(candidate) === candidate && gt(candidate, current);
 }
