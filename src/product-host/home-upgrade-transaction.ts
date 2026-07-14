@@ -158,6 +158,16 @@ export type HomeUpgradeTransaction = {
   };
 };
 
+export type HomeUpgradeHistoryIdentity = {
+  readonly operationId: string;
+  readonly candidate: {
+    readonly artifactId: string;
+    readonly productVersion: string;
+  };
+  readonly outcome: "committed" | "restored";
+  readonly terminalAt: string;
+};
+
 export type HomeUpgradeTransactionDeps = HomeInstallationDeps & {
   readonly platform?: NodeJS.Platform | undefined;
   readonly now?: (() => Date) | undefined;
@@ -165,6 +175,8 @@ export type HomeUpgradeTransactionDeps = HomeInstallationDeps & {
   readonly launchAgentsDir?: string | undefined;
   readonly afterRestoreEntry?: ((name: typeof SNAPSHOT_NAMES[number]) => Promise<void>) | undefined;
   readonly afterStoreMigration?: ((name: HomeStoreMigrationEntry["name"]) => Promise<void>) | undefined;
+  /** Test-only race seam for constant-cost immutable history identity reads. */
+  readonly historyIdentityCheckpoint?: ((name: "transaction-observed") => Promise<void>) | undefined;
   /** Test/diagnostic crash seam for durable cutover and selector rollback. */
   readonly selectionCheckpoint?: ((name:
     "probation-recorded" | "switching-recorded" | "candidate-plist-published" |
@@ -607,6 +619,57 @@ export async function readHomeUpgradeHistory(
 }
 
 /**
+ * Constant-cost immutable-history identity proof for derived receipt readers.
+ * This uses the canonical closed-root and strict journal parser, but never
+ * opens or hashes stored selector and snapshot contents; full audit stays in
+ * `readHomeUpgradeHistory`.
+ */
+export async function readHomeUpgradeHistoryIdentity(
+  vaultPath: string,
+  transactionId: string,
+  deps: HomeUpgradeTransactionDeps = {},
+): Promise<HomeUpgradeHistoryIdentity | null> {
+  assertTransactionId(transactionId);
+  const vault = await canonicalVault(vaultPath);
+  const paths = homeInstallationPaths(vault, deps);
+  const upgrade = await inspectUpgradeAncestors(paths);
+  if (upgrade === null) return null;
+  const history = join(upgrade, "history");
+  if (!await present(history)) return null;
+  await assertPrivateDirectory(history, "upgrade history root");
+  const transactionRoot = join(history, transactionId);
+  if (!await present(transactionRoot)) return null;
+  await deps.historyIdentityCheckpoint?.("transaction-observed");
+  try {
+    if (!await present(join(transactionRoot, "journal.json"))) {
+      if (!await present(transactionRoot)) return null;
+      throw new Error("Dome Home archived upgrade transaction lacks its journal");
+    }
+    const journal = await readBoundedJournalRoot(transactionRoot, vault);
+    if (journal.transactionId !== transactionId ||
+      (journal.phase !== "committed" && journal.phase !== "restored")) {
+      throw new Error("Dome Home archived upgrade journal has invalid terminal identity");
+    }
+    const terminalAt = journal.phase === "committed"
+      ? journal.timestamps.committedAt
+      : journal.timestamps.restoredAt;
+    if (terminalAt === null) throw new Error("Dome Home archived upgrade transaction lacks its terminal timestamp");
+    return Object.freeze({
+      operationId: journal.transactionId,
+      candidate: Object.freeze({
+        artifactId: journal.candidate.artifactId,
+        productVersion: journal.candidate.version,
+      }),
+      outcome: journal.phase,
+      terminalAt,
+    });
+  } catch (error) {
+    if (hasCode(error, "ENOENT") && !await present(transactionRoot)) return null;
+    throw error;
+  }
+}
+
+/**
  * Restore only a transaction still before installation selection. Every
  * durable store/file is replaced from the retained snapshot; Git and Markdown
  * are never inspected or written. Recovery evidence remains in `active`.
@@ -923,6 +986,12 @@ export async function inspectHomeUpgradeAdmission(
 }
 
 async function readBoundedJournal(active: string, vault: string): Promise<HomeUpgradeTransaction> {
+  const journal = await readBoundedJournalRoot(active, vault);
+  if (journal.selection !== null) await validateStoredSelection(active, journal.selection);
+  return journal;
+}
+
+async function readBoundedJournalRoot(active: string, vault: string): Promise<HomeUpgradeTransaction> {
   await assertPrivateDirectory(active, "upgrade transaction root");
   await assertPrivateDirectory(join(active, "snapshot"), "upgrade snapshot root");
   const journalPath = join(active, "journal.json");
@@ -951,7 +1020,9 @@ async function readBoundedJournal(active: string, vault: string): Promise<HomeUp
       throw new Error("Dome Home upgrade terminal summary is not a bounded private file");
     }
   }
-  if (journal.selection !== null) await validateStoredSelection(active, journal.selection);
+  if (journal.selection !== null) {
+    await assertPrivateDirectory(join(active, "selectors"), "upgrade stored selectors");
+  }
   return journal;
 }
 

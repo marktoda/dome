@@ -28,6 +28,7 @@ import {
   readHomeUpgrade,
   readHomeUpgradeForRecovery,
   readHomeUpgradeHistory,
+  readHomeUpgradeHistoryIdentity,
   type HomeUpgradeTransaction,
   type HomeUpgradeTransactionDeps,
 } from "./home-upgrade-transaction";
@@ -67,6 +68,8 @@ export type HomeUpgradeHistoryDeps = HomeUpgradeTransactionDeps &
     readonly publishReceipt?: ((source: string, target: string) => Promise<void>) | undefined;
     readonly syncHistoryDirectory?: ((path: string) => Promise<void>) | undefined;
     readonly inspectTerminalService?: ((vaultPath: string) => Promise<HomeUpgradeTerminalService>) | undefined;
+    /** Test-only race seam for O(1) active-precedence readers. */
+    readonly receiptCheckpoint?: ((name: "candidate-active-observed" | "latest-active-observed") => Promise<void>) | undefined;
     /** Test/diagnostic crash seam around the one atomic retirement boundary. */
     readonly retirementCheckpoint?: ((name: HomeUpgradeRetirementCheckpoint) => Promise<void>) | undefined;
   };
@@ -92,10 +95,7 @@ export async function readHomeUpgradeCandidateReceipt(
   const upgrade = join(paths.installations, "upgrade");
   if (!await present(upgrade)) return null;
   await assertDirectDirectory(upgrade, "upgrade root");
-  if (await present(join(upgrade, "active"))) {
-    await assertDirectDirectory(join(upgrade, "active"), "upgrade active transaction");
-    return null;
-  }
+  if ((await inspectActiveSummary(upgrade, "candidate", deps)).kind === "active") return null;
   if (!await inspectReceiptRoots(upgrade)) return null;
   const receipt = join(upgrade, "receipts", "candidates", `${artifactId}.json`);
   const summary = await readTerminalSummary(receipt);
@@ -103,7 +103,9 @@ export async function readHomeUpgradeCandidateReceipt(
   if (summary.outcome !== "restored" || summary.candidate.artifactId !== artifactId) {
     throw new Error("Dome Home failed-candidate receipt has invalid identity");
   }
-  return await validateArchivedReceipt(upgrade, summary);
+  const archived = await validateArchivedReceipt(vault, upgrade, summary, deps);
+  if ((await inspectActiveSummary(upgrade, "candidate", deps)).kind === "active") return null;
+  return archived;
 }
 
 /** O(1) latest terminal status without walking immutable history. */
@@ -116,14 +118,13 @@ export async function readLatestHomeUpgradeSummary(
   const upgrade = join(paths.installations, "upgrade");
   if (!await present(upgrade)) return null;
   await assertDirectDirectory(upgrade, "upgrade root");
-  const active = join(upgrade, "active");
-  if (await present(active)) {
-    await assertDirectDirectory(active, "upgrade active transaction");
-    return readTerminalSummary(join(active, "summary.json"));
-  }
+  const active = await inspectActiveSummary(upgrade, "latest", deps);
+  if (active.kind === "active") return active.summary;
   if (!await inspectReceiptRoots(upgrade)) return null;
   const summary = await readTerminalSummary(join(upgrade, "receipts", "latest.json"));
-  return summary === null ? null : validateArchivedReceipt(upgrade, summary);
+  const archived = summary === null ? null : await validateArchivedReceipt(vault, upgrade, summary, deps);
+  const after = await inspectActiveSummary(upgrade, "latest", deps);
+  return after.kind === "active" ? after.summary : archived;
 }
 
 /**
@@ -190,7 +191,7 @@ async function retireWhileOwned(
       throw new Error(`Dome Home upgrade transaction ${transactionId} is neither active nor retired`);
     }
     const summary = await requireExactSummary(join(destination, "summary.json"), terminalSummary(prior));
-    await publishDerivedReceipts(upgrade, summary, deps);
+    await publishDerivedReceipts(vault, upgrade, summary, deps);
     await syncRetirementParents(history, upgrade, deps);
     return Object.freeze({ transaction: prior, retired: false as const });
   }
@@ -222,7 +223,7 @@ async function retireWhileOwned(
   const summary = terminalSummary(finalTerminal);
   await publishTerminalSummary(active, upgrade, summary, deps);
   await deps.retirementCheckpoint?.("summary-published");
-  await publishDerivedReceipts(upgrade, summary, deps);
+  await publishDerivedReceipts(vault, upgrade, summary, deps);
   await deps.retirementCheckpoint?.("receipts-published");
 
   await deps.retirementCheckpoint?.("before-rename");
@@ -347,6 +348,7 @@ async function publishTerminalSummary(
 }
 
 async function publishDerivedReceipts(
+  vault: string,
   upgrade: string,
   summary: HomeUpgradeHistorySummary,
   deps: HomeUpgradeHistoryDeps,
@@ -361,7 +363,7 @@ async function publishDerivedReceipts(
     if (existing === null) {
       await publishExactSummary(candidate, summary, receipts, deps);
     } else if (summaryIdentity(existing) !== summaryIdentity(summary)) {
-      const archived = await validateArchivedReceipt(upgrade, existing);
+      const archived = await validateArchivedReceipt(vault, upgrade, existing, deps);
       if (archived === null) {
         await unlink(candidate);
         await (deps.syncHistoryDirectory ?? syncDirectory)(candidates);
@@ -371,7 +373,7 @@ async function publishDerivedReceipts(
       // candidate, so its exclusive failure receipt is intentionally kept.
     }
   }
-  await replaceLatestSummary(join(receipts, "latest.json"), summary, deps);
+  await replaceLatestSummary(vault, join(receipts, "latest.json"), summary, deps);
   const sync = deps.syncHistoryDirectory ?? syncDirectory;
   await sync(candidates);
   await sync(receipts);
@@ -412,12 +414,18 @@ async function publishExactSummary(
 }
 
 async function replaceLatestSummary(
+  vault: string,
   destination: string,
   summary: HomeUpgradeHistorySummary,
   deps: HomeUpgradeHistoryDeps,
 ): Promise<void> {
   const existing = await readTerminalSummary(destination);
-  if (existing !== null && await validateArchivedReceipt(dirname(dirname(destination)), existing) !== null &&
+  if (existing !== null && await validateArchivedReceipt(
+    vault,
+    dirname(dirname(destination)),
+    existing,
+    deps,
+  ) !== null &&
     (existing.terminalAt > summary.terminalAt ||
       (existing.terminalAt === summary.terminalAt && existing.operationId >= summary.operationId))) return;
   const temporary = join(dirname(destination), `.latest-${summary.operationId}.tmp`);
@@ -442,19 +450,32 @@ async function writePrivateSummary(path: string, summary: HomeUpgradeHistorySumm
 }
 
 async function readTerminalSummary(path: string): Promise<HomeUpgradeHistorySummary | null> {
+  const bytes = await readBoundedPrivateFile(path, MAX_SUMMARY_BYTES, "Dome Home terminal summary");
+  if (bytes === null) return null;
+  let value: unknown;
+  try { value = JSON.parse(bytes.toString("utf8")); }
+  catch { throw new Error("Dome Home terminal summary is corrupt"); }
+  return parseTerminalSummary(value);
+}
+
+async function readBoundedPrivateFile(
+  path: string,
+  maxBytes: number,
+  label: string,
+): Promise<Buffer | null> {
   let handle: Awaited<ReturnType<typeof open>>;
   try { handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW); }
   catch (error) {
     if (hasCode(error, "ENOENT")) return null;
-    throw new Error(`Dome Home terminal summary cannot be opened without following links: ${message(error)}`);
+    throw new Error(`${label} cannot be opened without following links: ${message(error)}`);
   }
   try {
     const before = await handle.stat({ bigint: true });
     if (!before.isFile() || before.nlink !== 1n || (before.mode & 0o777n) !== 0o600n ||
-      before.size === 0n || before.size > BigInt(MAX_SUMMARY_BYTES)) {
-      throw new Error("Dome Home terminal summary is not a bounded private file");
+      before.size === 0n || before.size > BigInt(maxBytes)) {
+      throw new Error(`${label} is not a bounded private file`);
     }
-    await assertOpenedPath(path, before);
+    await assertOpenedPath(path, before, label);
     const expected = Number(before.size);
     const bytes = Buffer.alloc(expected + 1);
     let offset = 0;
@@ -465,13 +486,10 @@ async function readTerminalSummary(path: string): Promise<HomeUpgradeHistorySumm
     }
     const after = await handle.stat({ bigint: true });
     if (offset !== expected || !sameFileStat(before, after)) {
-      throw new Error("Dome Home terminal summary changed during bounded inspection");
+      throw new Error(`${label} changed during bounded inspection`);
     }
-    await assertOpenedPath(path, after);
-    let value: unknown;
-    try { value = JSON.parse(bytes.subarray(0, offset).toString("utf8")); }
-    catch { throw new Error("Dome Home terminal summary is corrupt"); }
-    return parseTerminalSummary(value);
+    await assertOpenedPath(path, after, label);
+    return bytes.subarray(0, offset);
   } finally { await handle.close(); }
 }
 
@@ -487,17 +505,24 @@ async function requireExactSummary(
 }
 
 async function validateArchivedReceipt(
+  vault: string,
   upgrade: string,
   receipt: HomeUpgradeHistorySummary,
+  deps: HomeUpgradeHistoryDeps,
 ): Promise<HomeUpgradeHistorySummary | null> {
-  const transactionRoot = join(upgrade, "history", receipt.operationId);
-  if (!await present(transactionRoot)) return null;
-  await assertDirectDirectory(join(upgrade, "history"), "upgrade history root");
-  await assertDirectDirectory(transactionRoot, "upgrade history transaction");
-  const archived = await readTerminalSummary(join(transactionRoot, "summary.json"));
+  const proof = await readHomeUpgradeHistoryIdentity(vault, receipt.operationId, deps);
+  if (proof === null) return null;
+  if (summaryProofIdentity(proof) !== summaryProofIdentity(receipt)) {
+    throw new Error("Dome Home terminal receipt disagrees with its archived upgrade journal");
+  }
+  const archived = await readTerminalSummary(join(upgrade, "history", receipt.operationId, "summary.json"));
   if (archived === null || summaryIdentity(archived) !== summaryIdentity(receipt)) {
     throw new Error("Dome Home terminal receipt disagrees with immutable history");
   }
+  // Future GC must first atomically rename the whole history/<operation-id>
+  // directory out of history, then recursively delete it. The transaction
+  // Module rejects a partial in-place root, while an absent root expires the
+  // derived receipt without enumerating history.
   return archived;
 }
 
@@ -538,6 +563,14 @@ function exactRecord(value: unknown, label: string, keys: readonly string[]): Re
 }
 
 function summaryIdentity(summary: HomeUpgradeHistorySummary): string { return JSON.stringify(summary); }
+function summaryProofIdentity(summary: Omit<HomeUpgradeHistorySummary, "schema">): string {
+  return JSON.stringify({
+    operationId: summary.operationId,
+    candidate: summary.candidate,
+    outcome: summary.outcome,
+    terminalAt: summary.terminalAt,
+  });
+}
 function isArtifactId(value: string): boolean { return /^[0-9a-f]{64}$/.test(value); }
 function assertArtifactId(value: string): void {
   if (!isArtifactId(value)) throw new Error("Dome Home artifact id is invalid");
@@ -559,11 +592,41 @@ function sameFileStat(
     left.ctimeNs === right.ctimeNs;
 }
 
-async function assertOpenedPath(path: string, opened: BigIntStats): Promise<void> {
+async function assertOpenedPath(path: string, opened: BigIntStats, label: string): Promise<void> {
   const current = await lstat(path, { bigint: true });
   if (!current.isFile() || current.isSymbolicLink() || current.dev !== opened.dev || current.ino !== opened.ino ||
     await realpath(path) !== resolve(path)) {
-    throw new Error("Dome Home terminal summary path changed during bounded inspection");
+    throw new Error(`${label} path changed during bounded inspection`);
+  }
+}
+
+async function inspectActiveSummary(
+  upgrade: string,
+  consumer: "candidate" | "latest",
+  deps: HomeUpgradeHistoryDeps,
+): Promise<
+  | { readonly kind: "inactive" }
+  | { readonly kind: "active"; readonly summary: HomeUpgradeHistorySummary | null }
+> {
+  const active = join(upgrade, "active");
+  try { await lstat(active); }
+  catch (error) {
+    if (hasCode(error, "ENOENT")) return Object.freeze({ kind: "inactive" as const });
+    throw error;
+  }
+  await deps.receiptCheckpoint?.(`${consumer}-active-observed`);
+  try {
+    await assertDirectDirectory(active, "upgrade active transaction");
+    return Object.freeze({
+      kind: "active" as const,
+      summary: await readTerminalSummary(join(active, "summary.json")),
+    });
+  } catch (error) {
+    // Retirement's one atomic active -> history rename can linearize between
+    // observation and open. The caller then validates the already-durable
+    // receipt/history pair and performs one final active-precedence recheck.
+    if (hasCode(error, "ENOENT")) return Object.freeze({ kind: "inactive" as const });
+    throw error;
   }
 }
 

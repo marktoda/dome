@@ -603,11 +603,16 @@ export async function withSupervisedHomeSuspended<T>(
     // caller holds the live Tx2 lock. Reject new work without waiting for the
     // owner, while exact recovery still competes for the atomic seam below.
     const published = readActive(pair.journal, vault);
-    if (published !== null && input.mode === "new") {
+    if (published !== null && input.mode === "new" && input.purpose === "upgrade") {
       throw new HomeLifecycleContentionError(published);
     }
     // Tx1 owns the lifecycle seam before observing any mutable evidence.
-    await beginLifecycleOwnership(pair, vault);
+    await beginLifecycleOwnership(
+      pair,
+      vault,
+      undefined,
+      input.mode === "new" && input.purpose === "upgrade",
+    );
     validateOwnershipRow(pair.ownership);
     const existing = readActive(pair.journal, vault);
     if (existing === null) {
@@ -1686,6 +1691,7 @@ async function beginLifecycleOwnership(
   pair: CoordinatorPair,
   vault: string,
   expectedOperationId?: string,
+  failOnDifferentOwner = false,
 ): Promise<void> {
   const started = Date.now();
   for (;;) {
@@ -1695,12 +1701,12 @@ async function beginLifecycleOwnership(
       let owner: HomeLifecycleSuspension | null = null;
       try { owner = readActive(pair.journal, vault); }
       catch {}
-      // A different durable lifecycle owner should never be waited behind:
-      // it may supervise a long migration/restart. An ownerless lock can be a
+      // New public upgrade intents fail fast behind a durable owner because
+      // they have an explicit retry contract. Backups and recoveries retain
+      // their established bounded serialization. An ownerless lock can be a
       // startup admission, and our own Tx2 can briefly race one in the
-      // intentional Tx1-commit -> Tx2-reacquire window, so those remain
-      // bounded wait cases.
-      if (owner !== null && owner.operationId !== expectedOperationId) {
+      // intentional Tx1-commit -> Tx2-reacquire window, so those wait too.
+      if (failOnDifferentOwner && owner !== null && owner.operationId !== expectedOperationId) {
         throw new HomeLifecycleContentionError(owner);
       }
       if (Date.now() - started >= OWNERSHIP_WAIT_MS) {

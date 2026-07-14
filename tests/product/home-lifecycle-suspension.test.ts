@@ -136,6 +136,33 @@ describe("supervised Home lifecycle suspension", () => {
     expect((await holder).kind).toBe("ready");
   });
 
+  test("preserves bounded serialization for concurrent backup suspensions", async () => {
+    const f = await fixture(false);
+    let entered!: () => void;
+    const callbackEntered = new Promise<void>((resolve) => { entered = resolve; });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const first = suspend(f, "serial-backup-one", async () => {
+      entered();
+      await gate;
+      return "first";
+    });
+    await callbackEntered;
+    let secondRan = false;
+    let secondSettled = false;
+    const second = suspend(f, "serial-backup-two", async () => {
+      secondRan = true;
+      return "second";
+    }).then((value) => { secondSettled = true; return value; });
+    await Bun.sleep(20);
+    expect(secondSettled).toBeFalse();
+    expect(secondRan).toBeFalse();
+    release();
+    expect((await first).kind).toBe("not-required");
+    expect((await second).kind).toBe("not-required");
+    expect(secondRan).toBeTrue();
+  });
+
   test("boots out, proves loaded drain, then runs the callback", async () => {
     const f = await fixture(true);
     let callbackSawLoaded = true;

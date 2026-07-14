@@ -1288,6 +1288,14 @@ describe("Product Host terminal upgrade history", () => {
       const latest = join(upgrade, "receipts", "latest.json");
       const outside = join(f.root, "outside-summary.json");
       const outsideBytes = await readFile(latest);
+      const transactionRoot = join(history, transactionId);
+      await rm(join(transactionRoot, "journal.json"));
+      await rm(join(transactionRoot, "selectors"), { recursive: true });
+      await rm(join(transactionRoot, "snapshot"), { recursive: true });
+      await expect(readHomeUpgradeCandidateReceipt(f.vault, CANDIDATE_ID, f.deps)).rejects.toThrow(
+        "lacks its journal",
+      );
+      await expect(readLatestHomeUpgradeSummary(f.vault, f.deps)).rejects.toThrow("lacks its journal");
       await rm(join(history, transactionId), { recursive: true });
       expect(await readHomeUpgradeCandidateReceipt(f.vault, CANDIDATE_ID, f.deps)).toBeNull();
       expect(await readLatestHomeUpgradeSummary(f.vault, f.deps)).toBeNull();
@@ -1321,6 +1329,71 @@ describe("Product Host terminal upgrade history", () => {
         outcome: "restored",
       });
     } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("O(1) readers fall through when active retires between observation and open", async () => {
+    for (const consumer of ["candidate", "latest"] as const) {
+      const f = await fixture();
+      try {
+        const transactionId = randomUUID();
+        const terminal = await restoredTerminal(f, transactionId);
+        await expect(retireHomeUpgrade({ vaultPath: f.vault, transactionId }, {
+          ...historyDeps(f, terminal, "stopped"),
+          retirementCheckpoint: async (name) => {
+            if (name === "receipts-published") throw new Error("hold before rename");
+          },
+        })).rejects.toThrow("hold before rename");
+        const upgrade = join(homeInstallationPaths(f.vault, f.deps).installations, "upgrade");
+        let raced = false;
+        const deps: HomeUpgradeHistoryDeps = {
+          ...f.deps,
+          receiptCheckpoint: async (name) => {
+            if (!raced && name === `${consumer}-active-observed`) {
+              raced = true;
+              await rename(join(upgrade, "active"), join(upgrade, "history", transactionId));
+            }
+          },
+        };
+        const summary = consumer === "candidate"
+          ? await readHomeUpgradeCandidateReceipt(f.vault, CANDIDATE_ID, deps)
+          : await readLatestHomeUpgradeSummary(f.vault, deps);
+        expect(raced).toBeTrue();
+        expect(summary).toMatchObject({ operationId: transactionId, outcome: "restored" });
+      } finally { await rm(f.root, { recursive: true, force: true }); }
+    }
+  });
+
+  test("O(1) readers treat an atomic history GC rename as an expired receipt", async () => {
+    for (const consumer of ["candidate", "latest"] as const) {
+      const f = await fixture();
+      try {
+        const transactionId = randomUUID();
+        const terminal = await restoredTerminal(f, transactionId);
+        await retireHomeUpgrade(
+          { vaultPath: f.vault, transactionId },
+          historyDeps(f, terminal, "stopped"),
+        );
+        const upgrade = join(homeInstallationPaths(f.vault, f.deps).installations, "upgrade");
+        const archived = join(upgrade, "history", transactionId);
+        const garbage = join(upgrade, `gc-${transactionId}`);
+        let raced = false;
+        const deps: HomeUpgradeHistoryDeps = {
+          ...f.deps,
+          historyIdentityCheckpoint: async () => {
+            if (!raced) {
+              raced = true;
+              await rename(archived, garbage);
+            }
+          },
+        };
+        const summary = consumer === "candidate"
+          ? await readHomeUpgradeCandidateReceipt(f.vault, CANDIDATE_ID, deps)
+          : await readLatestHomeUpgradeSummary(f.vault, deps);
+        expect(raced).toBeTrue();
+        expect(summary).toBeNull();
+        expect(await stat(garbage)).toBeDefined();
+      } finally { await rm(f.root, { recursive: true, force: true }); }
+    }
   });
 
   test("concurrent retirees converge and preserve history-before-upgrade fsync order", async () => {
