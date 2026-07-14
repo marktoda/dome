@@ -20,6 +20,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { gzipSync } from "node:zlib";
 import { compareStrings } from "../src/core/compare";
+import { publishDirectoryExclusive } from "../src/platform/exclusive-rename";
 import {
   HOME_ARTIFACT_SCHEMA,
   HOME_ARTIFACT_TARGET,
@@ -67,6 +68,158 @@ type BuildOptions = {
   readonly skipPwaBuild?: boolean;
 };
 
+export type HomeArtifactCandidatePaths = Readonly<{
+  artifactName: string;
+  archiveName: string;
+  directory: string;
+  archive: string;
+}>;
+
+type CandidatePublisher = (source: string, target: string) => Promise<void>;
+
+type CandidateParent = Readonly<{
+  lexical: string;
+  canonical: string;
+  device: number;
+  inode: number;
+}>;
+
+/**
+ * Assemble and gate a complete release candidate before exposing any final
+ * output. The output directory is the transaction unit: publishing its two
+ * children separately could expose an expanded artifact without its archive,
+ * or vice versa.
+ */
+export async function stageAndPublishHomeArtifactCandidate(input: Readonly<{
+  outputDir: string;
+  artifactName: string;
+  forbiddenStagingRoots?: ReadonlyArray<string>;
+  assemble: (candidate: HomeArtifactCandidatePaths) => Promise<void>;
+  verifyArtifact: (candidate: HomeArtifactCandidatePaths) => Promise<void>;
+  rehearseArchive: (candidate: HomeArtifactCandidatePaths) => Promise<void>;
+}>, publish: CandidatePublisher = async (source, target) => {
+  await publishDirectoryExclusive({ source, target });
+}): Promise<HomeArtifactCandidatePaths> {
+  if (input.artifactName === "" || basename(input.artifactName) !== input.artifactName ||
+    input.artifactName === "." || input.artifactName === "..") {
+    throw new Error(`invalid Home artifact name: ${input.artifactName}`);
+  }
+  const requestedOutput = resolve(input.outputDir);
+  await assertOutputTargetAbsent(requestedOutput);
+  await assertAllowedStagingParent(dirname(requestedOutput), input.forbiddenStagingRoots ?? []);
+  const parent = await prepareCandidateParent(dirname(requestedOutput));
+  const outputDir = join(parent.canonical, basename(requestedOutput));
+  await assertOutputTargetAbsent(outputDir);
+  await assertAllowedStagingParent(parent.canonical, input.forbiddenStagingRoots ?? []);
+
+  const candidateOutput = await mkdtemp(join(parent.canonical, ".dome-home-candidate-"));
+  const candidateInfo = await lstat(candidateOutput);
+  const paths: HomeArtifactCandidatePaths = Object.freeze({
+    artifactName: input.artifactName,
+    archiveName: `${input.artifactName}.tar.gz`,
+    directory: join(candidateOutput, input.artifactName),
+    archive: join(candidateOutput, `${input.artifactName}.tar.gz`),
+  });
+  let published = false;
+  try {
+    await input.assemble(paths);
+    await input.verifyArtifact(paths);
+    await input.rehearseArchive(paths);
+    await assertCandidateParentUnchanged(parent);
+    await publish(candidateOutput, outputDir);
+    published = true;
+    return Object.freeze({
+      artifactName: paths.artifactName,
+      archiveName: paths.archiveName,
+      directory: join(outputDir, paths.artifactName),
+      archive: join(outputDir, paths.archiveName),
+    });
+  } finally {
+    if (!published) await removeOwnedCandidate(candidateOutput, candidateInfo.dev, candidateInfo.ino);
+  }
+}
+
+async function prepareCandidateParent(parentPath: string): Promise<CandidateParent> {
+  await mkdir(parentPath, { recursive: true });
+  const info = await lstat(parentPath);
+  if (!info.isDirectory() || info.isSymbolicLink()) {
+    throw new Error(`Home artifact output parent must be a direct non-symlink directory: ${parentPath}`);
+  }
+  const canonical = await realpath(parentPath);
+  const canonicalInfo = await lstat(canonical);
+  if (!canonicalInfo.isDirectory() || canonicalInfo.isSymbolicLink() ||
+    canonicalInfo.dev !== info.dev || canonicalInfo.ino !== info.ino) {
+    throw new Error(`Home artifact output parent identity is inconsistent: ${parentPath}`);
+  }
+  return Object.freeze({ lexical: parentPath, canonical, device: info.dev, inode: info.ino });
+}
+
+async function assertCandidateParentUnchanged(parent: CandidateParent): Promise<void> {
+  const info = await lstat(parent.lexical);
+  if (!info.isDirectory() || info.isSymbolicLink() || info.dev !== parent.device || info.ino !== parent.inode ||
+    await realpath(parent.lexical) !== parent.canonical) {
+    throw new Error(`Home artifact output parent changed during candidate assembly: ${parent.lexical}`);
+  }
+}
+
+async function assertAllowedStagingParent(parent: string, forbiddenRoots: ReadonlyArray<string>): Promise<void> {
+  const canonicalParent = await canonicalizePotentialPath(parent);
+  for (const rootInput of forbiddenRoots) {
+    const canonicalRoot = await canonicalizePotentialPath(rootInput);
+    if (pathContains(canonicalRoot, canonicalParent)) {
+      throw new Error(`Home artifact output parent is inside copied source tree: ${canonicalRoot}`);
+    }
+  }
+}
+
+async function canonicalizePotentialPath(pathInput: string): Promise<string> {
+  let cursor = resolve(pathInput);
+  const suffix: string[] = [];
+  while (true) {
+    try { return join(await realpath(cursor), ...suffix); }
+    catch (error) {
+      if (!isNodeError(error) || error.code !== "ENOENT") throw error;
+    }
+    const parent = dirname(cursor);
+    if (parent === cursor) throw new Error(`Home artifact path has no existing ancestor: ${pathInput}`);
+    suffix.unshift(basename(cursor));
+    cursor = parent;
+  }
+}
+
+function pathContains(root: string, candidate: string): boolean {
+  const path = relative(root, candidate);
+  return path === "" || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path));
+}
+
+async function removeOwnedCandidate(path: string, device: number, inode: number): Promise<void> {
+  try {
+    const info = await lstat(path);
+    if (!info.isDirectory() || info.isSymbolicLink() || info.dev !== device || info.ino !== inode) return;
+    await rm(path, { recursive: true, force: true });
+  } catch (error) {
+    if (!isNodeError(error) || error.code !== "ENOENT") throw error;
+  }
+}
+
+async function assertOutputTargetAbsent(outputDir: string): Promise<void> {
+  try {
+    const info = await lstat(outputDir);
+    const kind = info.isSymbolicLink() ? "symbolic link"
+      : info.isDirectory() ? "directory"
+      : info.isFile() ? "file"
+      : "filesystem entry";
+    throw new Error(`Home artifact output path already exists as a ${kind}: ${outputDir}`);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return;
+    throw error;
+  }
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
+}
+
 export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
   readonly archive: string;
   readonly archiveSha256: string;
@@ -87,78 +240,98 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
   if (process.platform !== "darwin" || process.arch !== "arm64") {
     throw new Error(`Dome Home v1 artifact must be built on darwin-arm64, got ${process.platform}-${process.arch}`);
   }
-  const downloadedRuntime = await downloadPinnedRuntime();
-  let downloadedAge: Awaited<ReturnType<typeof downloadPinnedAge>>;
-  try {
-    downloadedAge = await downloadPinnedAge();
-  } catch (error) {
-    await rm(downloadedRuntime.temporary, { recursive: true, force: true });
-    throw error;
-  }
-  const runtimePath = downloadedRuntime.path;
-  try {
-    if (!options.skipPwaBuild) {
-      await run([runtimePath, "install", "--frozen-lockfile"], repoRoot);
-      await run([runtimePath, "install", "--frozen-lockfile"], join(repoRoot, "pwa"));
-      await run([runtimePath, "run", "build"], join(repoRoot, "pwa"));
-    }
-    const pwaDist = join(repoRoot, "pwa", "dist");
-    if (!existsSync(join(pwaDist, "index.html"))) {
-      throw new Error("PWA build is missing pwa/dist/index.html");
-    }
-    await assertSourceSnapshot(repoRoot, sourceHead);
-
-  await mkdir(outputDir, { recursive: true });
   const artifactName = `dome-home-${pkg.version}-darwin-arm64`;
-  const directory = join(outputDir, artifactName);
-  await rm(directory, { recursive: true, force: true });
-  await mkdir(join(directory, "bin"), { recursive: true });
-  await mkdir(join(directory, "runtime"), { recursive: true });
-  await mkdir(join(directory, "licenses"), { recursive: true });
-  await mkdir(join(directory, "app"), { recursive: true });
+  let candidateMetadata: Readonly<{
+    manifest: HomeArtifactManifest;
+    archiveSha256: string;
+  }> | undefined;
+  const candidate = await stageAndPublishHomeArtifactCandidate({
+    outputDir,
+    artifactName,
+    forbiddenStagingRoots: [
+      join(repoRoot, "src"),
+      join(repoRoot, "assets"),
+      join(repoRoot, "bin"),
+      join(repoRoot, "contracts"),
+      join(repoRoot, "pwa", "dist"),
+    ],
+    assemble: async ({ directory, archive }) => {
+      const downloadedRuntime = await downloadPinnedRuntime();
+      let downloadedAge: Awaited<ReturnType<typeof downloadPinnedAge>>;
+      try {
+        downloadedAge = await downloadPinnedAge();
+      } catch (error) {
+        await rm(downloadedRuntime.temporary, { recursive: true, force: true });
+        throw error;
+      }
+      const runtimePath = downloadedRuntime.path;
+      try {
+        if (!options.skipPwaBuild) {
+          await run([runtimePath, "install", "--frozen-lockfile"], repoRoot);
+          await run([runtimePath, "install", "--frozen-lockfile"], join(repoRoot, "pwa"));
+          await run([runtimePath, "run", "build"], join(repoRoot, "pwa"));
+        }
+        const pwaDist = join(repoRoot, "pwa", "dist");
+        if (!existsSync(join(pwaDist, "index.html"))) {
+          throw new Error("PWA build is missing pwa/dist/index.html");
+        }
+        await assertSourceSnapshot(repoRoot, sourceHead, dirname(directory));
 
-  await cp(runtimePath, join(directory, "runtime", "bun"));
-  await chmod(join(directory, "runtime", "bun"), 0o755);
-  await cp(downloadedAge.age, join(directory, "runtime", "age"));
-  await chmod(join(directory, "runtime", "age"), 0o755);
-  await cp(downloadedAge.ageKeygen, join(directory, "runtime", "age-keygen"));
-  await chmod(join(directory, "runtime", "age-keygen"), 0o755);
-  await cp(downloadedAge.license, join(directory, "licenses", "age-LICENSE"));
-  await cp(join(repoRoot, "src"), join(directory, "app", "src"), { recursive: true });
-  await cp(join(repoRoot, "contracts"), join(directory, "app", "contracts"), { recursive: true });
-  await cp(join(repoRoot, "bin"), join(directory, "app", "bin"), { recursive: true });
-  await cp(join(repoRoot, "assets"), join(directory, "app", "assets"), { recursive: true });
-  await cp(pwaDist, join(directory, "app", "pwa", "dist"), { recursive: true });
-  await cp(join(repoRoot, "package.json"), join(directory, "app", "package.json"));
-  await cp(join(repoRoot, "bun.lock"), join(directory, "app", "bun.lock"));
+        await mkdir(join(directory, "bin"), { recursive: true });
+        await mkdir(join(directory, "runtime"), { recursive: true });
+        await mkdir(join(directory, "licenses"), { recursive: true });
+        await mkdir(join(directory, "app"), { recursive: true });
 
-  await writeFile(join(directory, "bin", "dome"), domeWrapper(), { mode: 0o755 });
-  await run([
-    join(directory, "runtime", "bun"),
-    "install",
-    "--production",
-    "--frozen-lockfile",
-    "--ignore-scripts",
-    "--backend=copyfile",
-  ], join(directory, "app"));
+        await cp(runtimePath, join(directory, "runtime", "bun"));
+        await chmod(join(directory, "runtime", "bun"), 0o755);
+        await cp(downloadedAge.age, join(directory, "runtime", "age"));
+        await chmod(join(directory, "runtime", "age"), 0o755);
+        await cp(downloadedAge.ageKeygen, join(directory, "runtime", "age-keygen"));
+        await chmod(join(directory, "runtime", "age-keygen"), 0o755);
+        await cp(downloadedAge.license, join(directory, "licenses", "age-LICENSE"));
+        await cp(join(repoRoot, "src"), join(directory, "app", "src"), { recursive: true });
+        await cp(join(repoRoot, "contracts"), join(directory, "app", "contracts"), { recursive: true });
+        await cp(join(repoRoot, "bin"), join(directory, "app", "bin"), { recursive: true });
+        await cp(join(repoRoot, "assets"), join(directory, "app", "assets"), { recursive: true });
+        await cp(pwaDist, join(directory, "app", "pwa", "dist"), { recursive: true });
+        await cp(join(repoRoot, "package.json"), join(directory, "app", "package.json"));
+        await cp(join(repoRoot, "bun.lock"), join(directory, "app", "bun.lock"));
 
-  await normalizeArtifactModes(directory);
-  await assertSourceSnapshot(repoRoot, sourceHead);
-  const manifest = await writeArtifactMetadata(directory, pkg.version, sourceHead);
-  await verifyHomeArtifact(directory);
-  const archive = `${directory}.tar.gz`;
-  await writeFile(
-    archive,
-    gzipSync(await createDeterministicTar(directory, basename(directory)), { level: 9 }),
-  );
-  await rehearseHomeArtifact(archive);
-    return { archive, archiveSha256: sha256(await readFile(archive)), directory, manifest };
-  } finally {
-    await Promise.all([
-      rm(downloadedRuntime.temporary, { recursive: true, force: true }),
-      rm(downloadedAge.temporary, { recursive: true, force: true }),
-    ]);
-  }
+        await writeFile(join(directory, "bin", "dome"), domeWrapper(), { mode: 0o755 });
+        await run([
+          join(directory, "runtime", "bun"),
+          "install",
+          "--production",
+          "--frozen-lockfile",
+          "--ignore-scripts",
+          "--backend=copyfile",
+        ], join(directory, "app"));
+
+        await normalizeArtifactModes(directory);
+        await assertSourceSnapshot(repoRoot, sourceHead, dirname(directory));
+        const manifest = await writeArtifactMetadata(directory, pkg.version, sourceHead);
+        await writeFile(
+          archive,
+          gzipSync(await createDeterministicTar(directory, basename(directory)), { level: 9 }),
+        );
+        candidateMetadata = Object.freeze({ manifest, archiveSha256: sha256(await readFile(archive)) });
+      } finally {
+        await Promise.all([
+          rm(downloadedRuntime.temporary, { recursive: true, force: true }),
+          rm(downloadedAge.temporary, { recursive: true, force: true }),
+        ]);
+      }
+    },
+    verifyArtifact: async ({ directory }) => { await verifyHomeArtifact(directory); },
+    rehearseArchive: async ({ archive }) => { await rehearseHomeArtifact(archive); },
+  });
+  if (candidateMetadata === undefined) throw new Error("Home artifact candidate metadata was not assembled");
+  return {
+    archive: candidate.archive,
+    archiveSha256: candidateMetadata.archiveSha256,
+    directory: candidate.directory,
+    manifest: candidateMetadata.manifest,
+  };
 }
 
 export async function writeArtifactMetadata(
@@ -253,10 +426,21 @@ async function inventoryEntries(artifactRoot: string): Promise<HomeArtifactEntry
   }));
 }
 
-export async function assertSourceSnapshot(repoRoot: string, expectedHead: string): Promise<void> {
+export async function assertSourceSnapshot(
+  repoRoot: string,
+  expectedHead: string,
+  privateBuildRoot?: string,
+): Promise<void> {
   const actualHead = (await run(["git", "rev-parse", "HEAD"], repoRoot)).stdout.trim();
   if (actualHead !== expectedHead) throw new Error("source HEAD changed during artifact build");
-  const dirty = (await run(["git", "status", "--porcelain", "--untracked-files=all"], repoRoot)).stdout.trim();
+  const status = ["git", "status", "--porcelain", "--untracked-files=all"];
+  const privateRelative = privateBuildRoot === undefined ? null
+    : relative(await canonicalizePotentialPath(repoRoot), await canonicalizePotentialPath(privateBuildRoot));
+  if (privateRelative !== null && privateRelative !== "" && privateRelative !== ".." &&
+    !privateRelative.startsWith(`..${sep}`) && !isAbsolute(privateRelative)) {
+    status.push("--", ".", `:(exclude,top,literal)${privateRelative}`);
+  }
+  const dirty = (await run(status, repoRoot)).stdout.trim();
   if (dirty !== "") throw new Error("source worktree changed during artifact build");
 }
 
