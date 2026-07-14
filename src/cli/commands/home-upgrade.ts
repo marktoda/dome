@@ -46,11 +46,15 @@ function present(result: HomeUpgradeResult, json: boolean): void {
     `  selected: ${selected}`,
     `  transaction: ${transaction}`,
     `  service: ${result.service}`,
-    `  next: ${result.nextAction}`,
+    `  next: ${nextAction(result.nextAction)}`,
     `  ${result.message}`,
   ].join("\n");
   if (result.exitCode === 0) console.log(detail);
   else console.error(detail);
+}
+
+function nextAction(action: HomeUpgradeResult["nextAction"]): string {
+  return action === "run-home-cleanup" ? "dome home cleanup" : action;
 }
 
 function artifact(value: HomeUpgradeResult["requestedArtifact"]): string {

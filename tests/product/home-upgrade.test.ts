@@ -18,6 +18,7 @@ import {
 import {
   manageHomeUpgrade,
   type HomeUpgradeIntentDeps,
+  type HomeUpgradeResult,
 } from "../../src/product-host/home-upgrade";
 import type {
   HomeUpgradeTransaction,
@@ -46,12 +47,13 @@ describe("Home upgrade intent", () => {
       recovered: false,
       service: "ready",
       reason: null,
-      nextAction: "none",
+      nextAction: "run-home-cleanup",
     });
     expect(f.calls).toEqual([
       "canonicalize", "verify", "inspect-lifecycle", "read-active", "read-installation",
       "read-installation", "read-candidate-receipt", "uuid", "cutover", "retire",
     ]);
+    expect(result.message).toContain("Optionally run `dome home cleanup`");
     expect(Object.keys(result)).toEqual([
       "schema", "operation", "status", "exitCode", "vault", "requestedArtifact",
       "transaction", "selectedArtifact", "recovered", "service", "reason", "message", "nextAction",
@@ -59,6 +61,106 @@ describe("Home upgrade intent", () => {
     expect(JSON.stringify(result)).not.toContain("releasePath");
     expect(JSON.stringify(result)).not.toContain("snapshot");
     expect(JSON.stringify(result)).not.toContain('"phase"');
+  });
+
+  test("advises manual cleanup only for healthy terminal results returned after retirement", async () => {
+    const fresh = intentFixture();
+    const upgraded = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, fresh.deps);
+    expect(upgraded).toMatchObject({
+      status: "upgraded",
+      exitCode: 0,
+      nextAction: "run-home-cleanup",
+    });
+    expect(fresh.calls.at(-1)).toBe("retire");
+
+    const committed = transaction("committed", RETAINED_TX, REQUESTED);
+    const recovered = intentFixture({
+      active: committed,
+      selected: installation(REQUESTED, "2.0.0"),
+      inspectService: "stopped",
+    });
+    const current = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, recovered.deps);
+    expect(current).toMatchObject({
+      status: "already-current",
+      exitCode: 0,
+      recovered: true,
+      service: "stopped",
+      nextAction: "run-home-cleanup",
+    });
+    expect(recovered.calls.slice(-2)).toEqual(["retire", "inspect-service"]);
+
+    for (const result of [upgraded, current]) {
+      expect(result.message).toContain("Optionally run `dome home cleanup`");
+      expect(result.message).not.toMatch(/\b[0-9]+ (?:candidate|release)/);
+      expect(Object.keys(result)).toEqual([
+        "schema", "operation", "status", "exitCode", "vault", "requestedArtifact",
+        "transaction", "selectedArtifact", "recovered", "service", "reason", "message", "nextAction",
+      ]);
+    }
+  });
+
+  test("preserves stronger actions and emits no advisory without healthy terminal retirement", async () => {
+    const ordinaryCurrent = intentFixture({ selected: installation(REQUESTED, "2.0.0") });
+    const ordinary = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, ordinaryCurrent.deps);
+    expect(ordinary).toMatchObject({ status: "already-current", nextAction: "none" });
+    expect(ordinaryCurrent.calls).not.toContain("retire");
+
+    const receipt = intentFixture({ history: [historySummary("restored", TX, REQUESTED)] });
+    const priorRollback = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, receipt.deps);
+    expect(priorRollback).toMatchObject({ status: "rolled-back", nextAction: "none" });
+    expect(receipt.calls).not.toContain("retire");
+
+    const restored = transaction("restored", TX, REQUESTED);
+    const rollback = intentFixture({ cutoverResult: cutoverResult(restored, "rolled-back") });
+    const rolledBack = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, rollback.deps);
+    expect(rolledBack).toMatchObject({ status: "rolled-back", nextAction: "none" });
+    expect(rolledBack.message).not.toContain("home cleanup");
+    expect(rollback.calls.at(-1)).toBe("retire");
+
+    const rerun = intentFixture({
+      active: transaction("prepared", RETAINED_TX, OTHER),
+      suspension: activeSuspension(RETAINED_TX),
+    });
+    expect(await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, rerun.deps)).toMatchObject({
+      status: "recovered-rerun-required",
+      nextAction: "rerun-requested-upgrade",
+    });
+
+    const unhealthy = intentFixture({
+      active: transaction("committed", RETAINED_TX, REQUESTED),
+      selected: installation(REQUESTED, "2.0.0"),
+      inspectService: "deferred",
+    });
+    const deferred = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, unhealthy.deps);
+    expect(deferred).toMatchObject({
+      status: "recovery-required",
+      service: "deferred",
+      nextAction: "inspect-home-status",
+    });
+    expect(deferred.message).not.toContain("home cleanup");
+
+    const retirementFailure = intentFixture({ retireError: new Error("/secret/retirement failed") });
+    const needsFinalization = await manageHomeUpgrade(
+      { action: "run", vaultPath: "/vault" },
+      retirementFailure.deps,
+    );
+    expect(needsFinalization).toMatchObject({
+      status: "recovery-required",
+      exitCode: 1,
+      nextAction: "inspect-home-status",
+      message: "terminal upgrade needs finalization",
+    });
+    expect(needsFinalization.message).not.toContain("home cleanup");
+  });
+
+  test("contains no automatic cleanup inspection or application seam", async () => {
+    const source = await readFile(join(import.meta.dir, "../../src/product-host/home-upgrade.ts"), "utf8");
+    expect(source).not.toContain("manageHomeReleaseCleanup");
+    expect(source).not.toContain("collectManagedReleaseGarbage");
+    expect(source).not.toContain("managed-release-gc");
+    expect(source).not.toContain("apply: false");
+    expect(source).not.toContain("apply: true");
+    expect(source).not.toContain("--apply");
   });
 
   test("usage failures, current selection, and prior exact rollback allocate no operation", async () => {
@@ -581,6 +683,8 @@ function intentFixture(options: {
   readonly inspectRepairError?: Error;
   readonly manifest?: HomeArtifactManifest;
   readonly operationIds?: ReadonlyArray<string>;
+  readonly inspectService?: HomeUpgradeResult["service"];
+  readonly retireError?: Error;
 } = {}) {
   const calls: string[] = [];
   const recoveredIds: string[] = [];
@@ -638,6 +742,7 @@ function intentFixture(options: {
     },
     retire: async ({ transactionId }) => {
       calls.push("retire");
+      if (options.retireError !== undefined) throw options.retireError;
       const value = active ?? transaction("restored", transactionId, OTHER);
       active = null;
       return { transaction: value, retired: true };
@@ -647,7 +752,7 @@ function intentFixture(options: {
       recoveredIds.push(operationId);
       return { kind: "ready", operationId, recovered: true, operationRan: false };
     },
-    inspectService: async () => { calls.push("inspect-service"); return "ready"; },
+    inspectService: async () => { calls.push("inspect-service"); return options.inspectService ?? "ready"; },
   };
   return {
     calls,

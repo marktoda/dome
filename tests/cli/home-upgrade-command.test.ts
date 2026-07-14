@@ -56,7 +56,8 @@ describe("home upgrade CLI adapter", () => {
     expect(logs.join("\n")).toContain("Dome Home upgrade: upgraded");
     expect(logs.join("\n")).toContain(`requested: 2.0.0 (${CANDIDATE})`);
     expect(logs.join("\n")).toContain(`transaction: committed (operation ${OPERATION})`);
-    expect(logs.join("\n")).toContain("next: none");
+    expect(logs.join("\n")).toContain("next: dome home cleanup");
+    expect(logs.join("\n")).not.toContain("run-home-cleanup");
 
     logs = [];
     const failure = { ...upgradeResult(1), message: "exact invoking committed candidate is required for forward repair" };
@@ -102,7 +103,9 @@ function upgradeResult(exitCode: HomeUpgradeResult["exitCode"]): HomeUpgradeResu
     recovered: false,
     service: success ? "ready" : "deferred",
     reason: success ? null : "candidate-repair-required",
-    message: success ? "Dome Home upgraded successfully." : "exact candidate required",
-    nextAction: success ? "none" : "supply-exact-candidate",
+    message: success
+      ? "Dome Home upgraded successfully. Optionally run `dome home cleanup` to inspect for unreachable managed release-store entries."
+      : "exact candidate required",
+    nextAction: success ? "run-home-cleanup" : "supply-exact-candidate",
   };
 }
