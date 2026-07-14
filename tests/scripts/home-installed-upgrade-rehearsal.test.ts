@@ -44,15 +44,16 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       const artifact = join(destination, "artifact");
       await mkdir(artifact, { recursive: true });
       await symlink(destination, alias, "dir");
+      const canonicalDestination = await realpath(alias);
 
-      expect(await resolveContainedArtifactRootForTests(alias, "artifact"))
+      expect(await resolveContainedArtifactRootForTests(canonicalDestination, "artifact"))
         .toBe(await realpath(artifact));
 
       await rm(artifact, { recursive: true });
       const sibling = join(root, "sibling");
       await mkdir(sibling);
       await symlink("../sibling", artifact, "dir");
-      await expect(resolveContainedArtifactRootForTests(alias, "artifact"))
+      await expect(resolveContainedArtifactRootForTests(canonicalDestination, "artifact"))
         .rejects.toThrow("escaped extraction directory");
     } finally {
       await rm(root, { recursive: true, force: true });

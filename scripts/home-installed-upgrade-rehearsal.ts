@@ -423,10 +423,9 @@ async function extractOneSafeArtifact(archive: string, destination: string): Pro
 
 /** Resolve an extracted root against one canonical containment boundary. */
 export async function resolveContainedArtifactRootForTests(
-  destination: string,
+  canonicalDestination: string,
   artifactRoot: string,
 ): Promise<string> {
-  const canonicalDestination = await realpath(destination);
   const extracted = await realpath(join(canonicalDestination, artifactRoot));
   const contained = relative(canonicalDestination, extracted);
   if (contained === ".." || contained.startsWith(`..${sep}`) || isAbsolute(contained)) {
