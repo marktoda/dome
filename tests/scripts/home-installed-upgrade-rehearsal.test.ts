@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   assertBoundedArchiveStatForTests,
   assertInstalledBackupRestoreCanaryForTests,
   classifyLaunchctlDrainForTests,
   exerciseInstalledUpgradeOrchestrationForTests,
+  resolveContainedArtifactRootForTests,
   type InstalledHomeUpgradeRehearsalInput,
   type InstalledHomeUpgradeScenario,
 } from "../../scripts/home-installed-upgrade-rehearsal";
@@ -30,6 +34,29 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     expect(() => classifyLaunchctlDrainForTests(3, 0)).toThrow("without absent print proof");
     expect(() => classifyLaunchctlDrainForTests(113, 113)).toThrow("bootout failed");
     expect(() => classifyLaunchctlDrainForTests(0, 3)).toThrow("print failed");
+  });
+
+  test("canonicalizes an aliased extraction destination and still rejects a sibling escape", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-installed-extraction-alias-"));
+    try {
+      const destination = join(root, "destination");
+      const alias = join(root, "destination-alias");
+      const artifact = join(destination, "artifact");
+      await mkdir(artifact, { recursive: true });
+      await symlink(destination, alias, "dir");
+
+      expect(await resolveContainedArtifactRootForTests(alias, "artifact"))
+        .toBe(await realpath(artifact));
+
+      await rm(artifact, { recursive: true });
+      const sibling = join(root, "sibling");
+      await mkdir(sibling);
+      await symlink("../sibling", artifact, "dir");
+      await expect(resolveContainedArtifactRootForTests(alias, "artifact"))
+        .rejects.toThrow("escaped extraction directory");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test("requires the installed backup canary to restore and invalidate authority", () => {

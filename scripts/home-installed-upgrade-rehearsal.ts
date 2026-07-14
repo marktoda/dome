@@ -404,18 +404,31 @@ async function stageBoundedArchive(
 
 async function extractOneSafeArtifact(archive: string, destination: string): Promise<string> {
   await mkdir(destination, { mode: 0o700 });
+  const canonicalDestination = await realpath(destination);
   const tar = gunzipSync(await readFile(archive), { maxOutputLength: MAX_HOME_ARTIFACT_TAR_BYTES });
   const inspected = inspectHomeArtifactTar(tar);
-  const validatedTar = join(destination, ".validated-artifact.tar");
+  const validatedTar = join(canonicalDestination, ".validated-artifact.tar");
   await writeFile(validatedTar, tar, { flag: "wx", mode: 0o600 });
   try {
-    await runRaw(["/usr/bin/tar", "-xf", validatedTar, "-C", destination], destination, process.env);
+    await runRaw(
+      ["/usr/bin/tar", "-xf", validatedTar, "-C", canonicalDestination],
+      canonicalDestination,
+      process.env,
+    );
   } finally {
     await rm(validatedTar, { force: true });
   }
-  const root = inspected.root;
-  const extracted = await realpath(join(destination, root));
-  const contained = relative(destination, extracted);
+  return await resolveContainedArtifactRootForTests(canonicalDestination, inspected.root);
+}
+
+/** Resolve an extracted root against one canonical containment boundary. */
+export async function resolveContainedArtifactRootForTests(
+  destination: string,
+  artifactRoot: string,
+): Promise<string> {
+  const canonicalDestination = await realpath(destination);
+  const extracted = await realpath(join(canonicalDestination, artifactRoot));
+  const contained = relative(canonicalDestination, extracted);
   if (contained === ".." || contained.startsWith(`..${sep}`) || isAbsolute(contained)) {
     throw new Error("artifact root escaped extraction directory");
   }
