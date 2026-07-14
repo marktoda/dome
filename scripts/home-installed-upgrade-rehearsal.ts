@@ -21,7 +21,9 @@ import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 
+import { inspectExclusiveFileLock } from "../src/engine/host/file-lock";
 import { verifyHomeArtifact, type HomeArtifactManifest } from "../src/product-host/home-artifact";
+import { externalProductHostLockPath } from "../src/product-host/host-ownership";
 import { homeInstallationPaths } from "../src/product-host/home-installation";
 import { homeServiceLabelForVault } from "../src/product-host/home-lifecycle";
 import { HOME_STORE_MIGRATIONS } from "../src/product-host/home-store-migrations";
@@ -81,6 +83,7 @@ export function classifyInstalledHomeDrainForTests(
   bootoutExitCode: number,
   printExitCode: number,
   portFree: boolean,
+  ownershipFree: boolean,
 ): "drained" | "pending" {
   let labelDrained = false;
   if (bootoutExitCode === 3) {
@@ -93,7 +96,7 @@ export function classifyInstalledHomeDrainForTests(
     if (printExitCode === 113) labelDrained = true;
     else if (printExitCode !== 0) throw new Error(`launchctl print failed (${printExitCode})`);
   }
-  return labelDrained && portFree ? "drained" : "pending";
+  return labelDrained && portFree && ownershipFree ? "drained" : "pending";
 }
 
 /** Portable pre-read archive allocation gate; it emits no installed evidence. */
@@ -552,7 +555,7 @@ async function createScenario(
   return context;
   } catch (error) {
     const cleanupFailures: unknown[] = [];
-    try { await bootoutAndDrain({ label }); } catch (cleanupError) { cleanupFailures.push(cleanupError); }
+    try { await bootoutAndDrain({ label, vault }); } catch (cleanupError) { cleanupFailures.push(cleanupError); }
     try { await assertPortFree(); } catch (cleanupError) { cleanupFailures.push(cleanupError); }
     if (cleanupFailures.length === 0) {
       await rm(root, { recursive: true, force: true });
@@ -1015,19 +1018,26 @@ async function assertOwnerSubstrate(context: ScenarioContext): Promise<void> {
   ], context.vault, context.environment);
 }
 
-async function bootoutAndDrain(context: Pick<ScenarioContext, "label">): Promise<void> {
+async function bootoutAndDrain(context: Pick<ScenarioContext, "label" | "vault">): Promise<void> {
   const uid = process.getuid?.();
   if (uid === undefined) throw new Error("launchd drain requires a Unix uid");
   const target = `gui/${uid}/${context.label}`;
+  const ownershipPath = externalProductHostLockPath(await realpath(context.vault));
   const result = await runRawAllowFailure(["/bin/launchctl", "bootout", target], process.cwd(), process.env);
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     const printed = await runRawAllowFailure(["/bin/launchctl", "print", target], process.cwd(), process.env);
-    const state = classifyInstalledHomeDrainForTests(result.exitCode, printed.exitCode, await isPortFree());
+    const ownership = await inspectExclusiveFileLock(ownershipPath);
+    const state = classifyInstalledHomeDrainForTests(
+      result.exitCode,
+      printed.exitCode,
+      await isPortFree(),
+      ownership.kind !== "possibly-live",
+    );
     if (state === "drained") return;
     await Bun.sleep(100);
   }
-  throw new Error(`launchd label or ${HOST}:${PORT} did not drain: ${context.label}`);
+  throw new Error(`launchd label, ${HOST}:${PORT}, or Product Host ownership did not drain: ${context.label}`);
 }
 
 async function assertLaunchdAbsent(label: string): Promise<void> {

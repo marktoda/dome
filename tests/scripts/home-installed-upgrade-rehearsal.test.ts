@@ -30,14 +30,15 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     expect(() => assertBoundedArchiveStatForTests({ isFile: true, size: 9 }, 10, 10)).toThrow("immutable receipt");
   });
 
-  test("requires both a drained launchd label and a free Home port", () => {
-    expect(classifyInstalledHomeDrainForTests(0, 0, false)).toBe("pending");
-    expect(classifyInstalledHomeDrainForTests(0, 113, false)).toBe("pending");
-    expect(classifyInstalledHomeDrainForTests(0, 113, true)).toBe("drained");
-    expect(classifyInstalledHomeDrainForTests(3, 113, true)).toBe("drained");
-    expect(() => classifyInstalledHomeDrainForTests(3, 0, false)).toThrow("without absent print proof");
-    expect(() => classifyInstalledHomeDrainForTests(113, 113, false)).toThrow("bootout failed");
-    expect(() => classifyInstalledHomeDrainForTests(0, 3, false)).toThrow("print failed");
+  test("requires the launchd label, Home port, and Product Host ownership to drain", () => {
+    expect(classifyInstalledHomeDrainForTests(0, 0, false, false)).toBe("pending");
+    expect(classifyInstalledHomeDrainForTests(0, 113, false, false)).toBe("pending");
+    expect(classifyInstalledHomeDrainForTests(0, 113, true, false)).toBe("pending");
+    expect(classifyInstalledHomeDrainForTests(0, 113, true, true)).toBe("drained");
+    expect(classifyInstalledHomeDrainForTests(3, 113, true, true)).toBe("drained");
+    expect(() => classifyInstalledHomeDrainForTests(3, 0, false, false)).toThrow("without absent print proof");
+    expect(() => classifyInstalledHomeDrainForTests(113, 113, false, false)).toThrow("bootout failed");
+    expect(() => classifyInstalledHomeDrainForTests(0, 3, false, false)).toThrow("print failed");
   });
 
   test("canonicalizes an aliased extraction destination and still rejects a sibling escape", async () => {
