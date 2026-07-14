@@ -46,16 +46,16 @@
     {
       "name": "proposals",
       "sql": "proposals.sql",
-      "sqlSha256": "99e62624ebdd9a276a3196aadef064d5c2f941f9a37001ba33efbd5df2b41e12",
+      "sqlSha256": "a0238056f4dd702843b8b68be6d02313877520fb1c11cbb2c269d12311ac2d3b",
       "metaTable": "proposals_meta",
       "schemaHash": "fb6a917d7b417aaa5a8d0cee444408feb42c73b407b24844cc94f3d570fdb795",
       "schemaInventorySha256": "7c4f56a269f53f2e57a4e0a85e00efd9466ed83b9b7afe51e290908c006c413b",
-      "canarySha256": "5c15c5448b91b5670569d4c9ac73b31d495a3f850231701861d4506009fc5837"
+      "canarySha256": "765962de13ab7b1690aa44c8d995438b4a0faad279531cc5b1b65f53ad993331"
     },
     {
       "name": "outbox",
       "sql": "outbox.sql",
-      "sqlSha256": "a89355f7830715892ba24d3ff7880ad97506cb45a7551be2805c26d04d7c55fc",
+      "sqlSha256": "5fb5774f691c0eb38712c6dc1dfd3fb93de258dac7edcef3166fc33214e9843b",
       "metaTable": "outbox_meta",
       "schemaHash": "124240475db9210aefeff676c93fe17ac38476bcc4824ca4f42b65f473e682ca",
       "schemaInventorySha256": "996b0e4ef69408baf0bad11057e356d607fc27916f3bbb6bb4bae0bacda928bb",
@@ -64,11 +64,11 @@
     {
       "name": "runs",
       "sql": "runs.sql",
-      "sqlSha256": "40bbec0f6a6130f14e25ea5cd2685d4d30e486b4a2df57f70d339522cd07045c",
+      "sqlSha256": "7f25e8379a6a24e1ff8e2efb8c736dd5e2a6572c14b1224d916965432702a891",
       "metaTable": "ledger_meta",
       "schemaHash": "ae374b71e876fec8aa01ad0bb5b83d9931c6e8d0f1d90615571182dec6cde243",
       "schemaInventorySha256": "55f6b7aa0bf1f3430f43baedd78ef914dc718f78b72764d2b9d70e900e321d0d",
-      "canarySha256": "51bc62cde44790b6fbc924269143d2e36041162216d02a1de5ea1d7c335e6242"
+      "canarySha256": "d0186947f23a52b761f6f6915f2d76afbc4926778ea3449dd7d1683df0b6138c"
     },
     {
       "name": "request-receipts",
@@ -90,7 +90,7 @@
     }
   ],
   "closedSchemaInventorySha256": "5f89e13422b8ca8f3691b9a37f6750028a91e6f3cf62acd7a65aee9e095a5ce9",
-  "canaryDigest": "b68c4c3979049fa7b72c4566b6bb19c5011f6cce7f7649102e64b668470b9e67",
+  "canaryDigest": "e24a5152a1dfb3040903fe4a175bec57864edeb282debc4f95f68a77f00451bb",
   "authorityCanary": {
     "activeDeviceId": "dev_7-zTlnWl-PbX7_6ZQ3X_UA",
     "activeCredential": "dome_cred.CTl4LDmCa7J6AvU4nnVtZQ.LJXJLpi2Hwpu0rMflghz6c10uRWJGKPSEu7W5J4y9N8",

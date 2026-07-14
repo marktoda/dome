@@ -682,6 +682,24 @@ answers, proposals, outbox, runs/capability audit, request receipts, and Device
 Authority databases. CI only consumes and round-trips the fixture; the
 create-exclusive freezer is a test utility, not a release-time generator.
 
+Raw fixture validation and installed runtime preservation are separate
+contracts. Before Home starts, the installed rehearsal proves the immutable
+SQL still matches all raw logical canaries. The first exact N-1 host
+startup/tick is then expected to normalize only genuine crash-era operational work: a due
+handlerless outbox row becomes failed with one attempt, a stale admitted
+request receipt becomes `interrupted` with `host-restarted`, `unknown`
+adoption, and recovery required, while the pending proposal remains pending
+under the live scheduled garden `dome.markdown.attic-sweep` processor and its
+`patch.propose` grant. The linked ledger run carries the same processor,
+schedule provenance, real patch effect hash, and proposal run id.
+
+The rehearsal validates every selected row in the six post-start canaries
+before capturing the resulting observation as its quiescent runtime baseline.
+It then waits for a distinct authenticated readiness tick and requires no
+further change. All later N-1 and N comparisons use this baseline; schema
+proofs and active/revoked credential truth remain separate mandatory
+assertions.
+
 The sibling `artifact-receipt.json` pins the separately reconstructed N-1 Home
 archive as an **internal compatibility floor**, explicitly not as evidence of a
 previously distributed release. `scripts/home-predecessor-artifact.ts`

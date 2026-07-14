@@ -30,9 +30,13 @@ import { readHomePredecessorReceipt } from "./home-predecessor-artifact";
 import { inspectHomeArtifactTar, MAX_HOME_ARTIFACT_TAR_BYTES } from "./home-artifact-tar";
 import {
   assertFrozenN1State,
+  assertFrozenN1RuntimeBaseline,
+  assertFrozenN1RuntimeNormalization,
+  establishFrozenN1RuntimeBaseline,
   materializeFrozenN1Fixture,
   observeFrozenN1State,
   readFrozenN1Manifest,
+  type FrozenN1StateObservation,
 } from "../tests/fixtures/home-upgrade/n-1/freeze-n1";
 
 const HOST = "127.0.0.1";
@@ -449,6 +453,7 @@ type ScenarioContext = {
   readonly ownerMarkdownSha256: string;
   readonly fixtureRoot: string;
   readonly fixtureManifest: Awaited<ReturnType<typeof readFrozenN1Manifest>>;
+  runtimeBaseline: FrozenN1StateObservation | null;
   activeDevice: LiveDevice | null;
   revokedDevice: LiveDevice | null;
   checkpointChild: ReturnType<typeof Bun.spawn> | null;
@@ -479,6 +484,11 @@ async function createScenario(
     fixtureRoot: prepared.fixtureRoot,
     destination: stateRoot,
   });
+  const rawFixture = await observeFrozenN1State({
+    fixtureRoot: prepared.fixtureRoot,
+    stateRoot,
+  });
+  assertFrozenN1State(rawFixture, fixtureManifest);
   const ownerMarkdown = join(vault, "owner-upgrade-canary.md");
   await writeFile(ownerMarkdown, "# Owner upgrade canary\n\nThese bytes must survive the installed upgrade.\n", { flag: "wx" });
   await runRaw(["/usr/bin/git", "add", "owner-upgrade-canary.md"], vault, environment);
@@ -512,7 +522,7 @@ async function createScenario(
     name, root, home, vault, label, plist, environment, seedCommit, ownerMarkdown,
     fixtureRoot: prepared.fixtureRoot,
     ownerMarkdownSha256: await fileSha256(ownerMarkdown), fixtureManifest,
-    activeDevice: null, revokedDevice: null, checkpointChild: null,
+    runtimeBaseline: null, activeDevice: null, revokedDevice: null, checkpointChild: null,
   };
   context.activeDevice = await pairFreshDevice(context, prepared.predecessorRoot, `${name}-active`);
   context.revokedDevice = await pairFreshDevice(context, prepared.predecessorRoot, `${name}-revoked`);
@@ -521,6 +531,18 @@ async function createScenario(
     "--vault", vault, "--json",
   ], root, environment);
   await assertLiveCredentialTruth(context, prepared.predecessor);
+  context.runtimeBaseline = await establishFrozenN1RuntimeBaseline({
+    fixtureRoot: context.fixtureRoot,
+    stateRoot,
+  });
+  const completedTick = await readinessTick(context);
+  await waitForNextReadinessTick(context, completedTick);
+  assertFrozenN1RuntimeNormalization(stateRoot);
+  const quiescent = await observeFrozenN1State({
+    fixtureRoot: context.fixtureRoot,
+    stateRoot,
+  });
+  assertFrozenN1RuntimeBaseline(quiescent, context.runtimeBaseline);
   await assertFrozenState(context, "n1");
   return context;
   } catch (error) {
@@ -735,11 +757,14 @@ async function assertLiveCredentialRows(context: ScenarioContext): Promise<void>
 }
 
 async function assertFrozenState(context: ScenarioContext, expectedSchema: "n1" | "current"): Promise<void> {
+  if (context.runtimeBaseline === null) {
+    throw new Error("frozen N-1 runtime baseline was not captured");
+  }
   const observation = await observeFrozenN1State({
     fixtureRoot: context.fixtureRoot,
     stateRoot: join(context.vault, ".dome", "state"),
   });
-  assertFrozenN1State(observation, context.fixtureManifest);
+  assertFrozenN1RuntimeBaseline(observation, context.runtimeBaseline);
   for (const store of observation.stores) {
     const expected = expectedSchema === "n1"
       ? context.fixtureManifest.stores.find((entry) => entry.name === store.name)?.schemaHash
@@ -748,6 +773,26 @@ async function assertFrozenState(context: ScenarioContext, expectedSchema: "n1" 
       throw new Error(`unexpected ${expectedSchema} schema hash: ${store.name}`);
     }
   }
+}
+
+async function readinessTick(context: ScenarioContext): Promise<string> {
+  if (context.activeDevice === null) throw new Error("readiness tick requires an active device");
+  const response = await fetch(`http://${HOST}:${PORT}/readyz`, {
+    headers: { cookie: context.activeDevice.cookie },
+  });
+  if (response.status !== 200) throw new Error(`readiness tick unavailable (${response.status})`);
+  const body = asRecord(await response.json(), "readiness tick");
+  return stringField(objectField(body, "adoption"), "lastSuccessAt");
+}
+
+async function waitForNextReadinessTick(context: ScenarioContext, previous: string): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const current = await readinessTick(context);
+    if (current !== previous) return;
+    await Bun.sleep(100);
+  }
+  throw new Error("frozen N-1 Product Host did not complete a second runtime tick");
 }
 
 async function crashAtCheckpoint(

@@ -642,6 +642,23 @@ idempotent retry, and leaves journal and barriers prepared/closed. Fault tests
 prove rollback of store transactions, retry after a committed-store crash, and
 exact N-1 restore including credential truth.
 
+The installed journey distinguishes immutable fixture truth from runtime
+truth. It first validates the raw six-store canaries immediately after
+materialization. Frozen Home startup and its first tick then perform ordinary one-time recovery:
+the due handlerless outbox row fails once, the stale admitted request receipt
+becomes interrupted/recovery-required, and the pending scheduled garden
+proposal stays pending because its `dome.markdown.attic-sweep` owner and
+`patch.propose` capability are live. Its linked run is generated through the
+real proposal and ledger interfaces with coherent schedule, effect-hash, base,
+source, change, and capability-use provenance.
+
+The rehearsal validates the entire selected six-store post-start canary before
+capturing that exact state as the quiescent runtime baseline, waits for a
+distinct authenticated host tick, and proves the baseline is unchanged. Every
+later N-1, migrated N, rollback, and forward-repair check preserves that
+runtime baseline while continuing to prove the appropriate schema hashes and
+active/revoked credential truth.
+
 The private candidate-cutover checkpoint now composes those foundations behind
 one phase-free interface. It suspends and drains current Home, prepares and
 migrates frozen N-1, launches the exact managed candidate in write-closed
