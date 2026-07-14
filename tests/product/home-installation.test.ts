@@ -21,10 +21,12 @@ import {
 } from "../../src/product-host/home-artifact";
 import {
   ensureManagedRelease,
+  ensureManagedReleaseOwned,
   homeInstallationPaths,
   repairManagedRelease,
   releaseRoot,
 } from "../../src/product-host/home-installation";
+import { withManagedReleaseStoreCoordinator } from "../../src/product-host/managed-release-store-coordinator";
 import { HOME_DURABLE_STATE_PROTOCOL, HOME_STORE_MIGRATIONS } from "../../src/product-host/home-store-migrations";
 
 const ARTIFACT_ID = "b".repeat(64);
@@ -68,6 +70,52 @@ const semanticMismatches = [
 ] as const;
 
 describe("immutable Dome Home release publication", () => {
+  test("owned publication rejects a token bound to another Home root", async () => {
+    const first = await releaseFixture("dome-release-owner-first-");
+    const second = await releaseFixture("dome-release-owner-second-");
+    try {
+      await Promise.all([first.paths.root, second.paths.root].map((root) => mkdir(root, { recursive: true })));
+      const expected = manifest();
+      const ownership = await withManagedReleaseStoreCoordinator(first.paths.root, async (owner) => {
+        await expect(ensureManagedReleaseOwned(owner, {
+          source: second.source,
+          manifest: expected,
+          paths: second.paths,
+          platform: "darwin",
+        }, { verifyArtifact: async () => expected })).rejects.toThrow("another Home root");
+        await expect(ensureManagedReleaseOwned(owner, {
+          source: first.source,
+          manifest: expected,
+          paths: { ...first.paths, releases: join(second.root, "redirected releases") },
+          platform: "darwin",
+        }, { verifyArtifact: async () => expected })).rejects.toThrow("not bound to the owned Home root");
+        return "checked";
+      }, { waitMs: 0 });
+      expect(ownership).toEqual({ kind: "owned", value: "checked" });
+    } finally {
+      await Promise.all([first, second].map((fixture) => rm(fixture.root, { recursive: true, force: true })));
+    }
+  });
+
+  test("artifact-ranked callbacks cannot request reversed global ownership", async () => {
+    const fixture = await releaseFixture("dome-release-rank-reversal-");
+    try {
+      const expected = manifest();
+      await expect(ensureManagedRelease({
+        source: fixture.source,
+        manifest: expected,
+        paths: fixture.paths,
+        platform: "darwin",
+      }, {
+        verifyArtifact: async () => expected,
+        syncRelease: async () => {},
+        publishRelease: async () => {
+          await withManagedReleaseStoreCoordinator(fixture.paths.root, async () => undefined, { waitMs: 0 });
+        },
+      })).rejects.toThrow("artifact ownership cannot acquire the global release store");
+    } finally { await rm(fixture.root, { recursive: true, force: true }); }
+  });
+
   test("preexisting convergence is independent of manifest object key order", async () => {
     const fixture = await releaseFixture("dome-existing-release-");
     try {

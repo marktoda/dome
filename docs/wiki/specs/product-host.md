@@ -846,13 +846,20 @@ The coordinator persists at
 `<dirname(Home)>/.dome-home-release-store/<sha256(canonical-Home)>.db`. Its
 closed row binds the exact Home root. The directory is direct, owned, and 0700;
 the database is direct, single-linked, owned, and 0600, with its inode held and
-re-proved through open, acquisition, and release. SQLite uses
+re-proved through open, acquisition, and release. First creation fsyncs the
+coordinator directory and the parent entry that names it. All Home, coordinator
+directory, and database release proofs run after both successful and throwing
+owner callbacks; callback and proof failures are preserved together. Every
+open replays coordinator-directory and parent durability, so a retry after a
+post-rename fsync failure cannot bless a merely visible database entry. SQLite uses
 DELETE/NORMAL/FULL and one `BEGIN IMMEDIATE` transaction for ownership, so
 process death releases the kernel mutex. Callers choose an explicit bounded
 wait: automatic inspection/collection uses zero wait, while a future
 foreground maintenance surface may wait for at most 30 seconds. Invalid,
 linked, ambiguous, or nonempty unknown evidence is never repaired, recreated,
-or age-broken.
+or age-broken. `inspect` does not mutate the managed release or selector
+stores, but its first call intentionally initializes this persistent sibling
+coordinator; it is therefore not a filesystem-byte-pure observation.
 
 The releases inventory is closed. Only exact 64-hex verified release
 directories and exact publication, repair, quarantine, or GC debris names are
@@ -873,17 +880,52 @@ and the tombstone inode unchanged, recursively removes it, and fsyncs again.
 Recognized tombstones make a crash after publication idempotently collectible.
 
 Checkpoint 1 is deliberately not exported by `@dome/sdk`, called by the CLI,
-or scheduled. Its lock currently serializes collectors only. Production
-collection is forbidden until checkpoint 2 places relevant writer sections
-beneath the same global lock. The future rank is lifecycle Tx2 → operational
-admission → external/local Product Host → global release store → artifact →
-selector/store. A collector holds only the global lock and must never acquire
-or wait for a per-vault lifecycle, operational, or host lock. Automatic
-collection runs only after terminal retirement releases every earlier lock.
-Writer integration covers install release-to-record publication, new-candidate
-publication through active-journal durability, committed repair, and terminal
-active-to-history retirement. Selector commit/restore remains protected by the
-active transaction and does not acquire the global lock independently.
+or scheduled. A collector holds only the global lock and must never acquire or
+wait for an earlier lock. Production collection remains forbidden until every
+reachability-changing writer participates as described below.
+
+### P6 managed-release collection checkpoint 2A
+
+The coordinator now validates and holds the exact absolute, normalized,
+canonical, direct, owned Home root in addition to its sibling database. Its
+owner callback receives one opaque live token bound to that exact root; forged,
+expired, or cross-root tokens fail at runtime. Release writers expose owned
+implementations that require the token, then acquire only their artifact-keyed
+lock. Async lock-rank context rejects nested global acquisition and any
+artifact-to-global reversal. The global lock hierarchy is **lifecycle →
+operational → [host when applicable] → global → artifact**. Ordinary install
+does not own a Product Host lock; its concrete span is **lifecycle →
+operational → global → artifact → durable selector**, where the selector is a
+write phase rather than another mutex rank.
+
+`publishManagedHomeInstallation` is the one deep ordinary-install publication
+interface. After lifecycle and operational ownership are already held, it
+establishes and canonicalizes Home, acquires global ownership, publishes or
+converges the immutable release under artifact ownership, and retains global
+ownership until `installation.json` is durably published. It releases global
+before plist publication, launchd bootstrap, or readiness. The same-artifact
+reinstall takes the identical span; idempotence does not weaken reachability
+serialization. On first install, every missing direct directory is created one
+component at a time to the first existing canonical ancestor, fsyncing the new
+directory and then the parent entry that names it. Home is durable relative to
+its parent before coordination; `releases/`, `installations/`, and the
+vault-selector directory become durable in dependency order before their
+payload or selector is reported durable. Establishment replays both fsyncs for
+an already-visible requested directory, so retry converges after failure at
+either durability step instead of assuming the prior attempt completed. A structural source inventory pins
+all imports, exports, and mentions of coordinator, owned/convenience writers,
+raw/deep selector publication, owner tokens, and rank helpers to exact reviewed
+modules; the two convenience upgrade callers are explicit checkpoint 2B debt.
+
+The collector remains dormant with no CLI or automatic caller. Checkpoint 2A
+does **not** activate current upgrade prepublication for collection: its
+isolated release-writer wrapper serializes the payload but releases global
+before active-journal reachability is durable. Checkpoint 2B must retain global
+ownership from new-candidate publication through active-journal durability,
+cover committed repair and terminal active-to-history retirement, and prove
+automatic collection begins only after all earlier locks are released.
+Selector commit/restore remains protected by the active transaction and does
+not acquire global independently.
 
 ### P3 device-authority foundation
 

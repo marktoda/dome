@@ -17,6 +17,12 @@ import {
   type HomeArtifactManifest,
   type HomeArtifactVerifier,
 } from "./home-artifact";
+import {
+  assertManagedReleaseStoreOwner,
+  withManagedReleaseArtifactRank,
+  withManagedReleaseStoreCoordinator,
+  type ManagedReleaseStoreOwner,
+} from "./managed-release-store-coordinator";
 
 export const HOME_INSTALLATION_SCHEMA = "dome.home.installation/v1" as const;
 
@@ -42,11 +48,41 @@ export type HomeInstallationDeps = {
   readonly publishRecord?: ((path: string, record: HomeInstallationRecord) => Promise<void>) | undefined;
   readonly quarantineRelease?: ((source: string, target: string) => Promise<void>) | undefined;
   readonly syncReleaseParent?: ((path: string) => Promise<void>) | undefined;
+  /** Test/diagnostic seam; runs immediately before each real directory fsync. */
+  readonly directoryDurabilityCheckpoint?: ((step: ManagedDirectoryDurabilityStep) => Promise<void>) | undefined;
   /** Test/diagnostic crash seam for committed-candidate release repair. */
   readonly repairReleaseCheckpoint?: ((name:
     "replacement-staged" | "corrupt-release-quarantined" | "candidate-release-published"
   ) => Promise<void>) | undefined;
 };
+
+export type ManagedDirectoryDurabilityStep = Readonly<{
+  subject: string;
+  path: string;
+  kind: "directory" | "parent-entry";
+}>;
+
+export type EnsureManagedReleaseInput = Readonly<{
+  source: string;
+  manifest: HomeArtifactManifest;
+  paths: HomeInstallationPaths;
+  platform: NodeJS.Platform;
+}>;
+
+export type RepairManagedReleaseInput = Readonly<EnsureManagedReleaseInput & {
+  expectedManifestSha256: string;
+}>;
+
+/** Preserves release-publication truth when selector durability fails. */
+export class ManagedHomeInstallationPublicationError extends Error {
+  readonly releasePublished: boolean;
+
+  constructor(cause: unknown, releasePublished: boolean) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = "ManagedHomeInstallationPublicationError";
+    this.releasePublished = releasePublished;
+  }
+}
 
 export function homeInstallationPaths(vault: string, deps: HomeInstallationDeps = {}): HomeInstallationPaths {
   const root = resolve(deps.applicationSupportDir ?? join(homedir(), "Library", "Application Support", "Dome", "Home"));
@@ -86,18 +122,32 @@ export function createHomeInstallation(
   });
 }
 
-export async function ensureManagedRelease(input: {
-  readonly source: string;
-  readonly manifest: HomeArtifactManifest;
-  readonly paths: HomeInstallationPaths;
-  readonly platform: NodeJS.Platform;
-}, deps: HomeInstallationDeps = {}): Promise<{ readonly root: string; readonly published: boolean }> {
+/** Isolated convenience interface; production spans use the owned interface. */
+export async function ensureManagedRelease(
+  input: EnsureManagedReleaseInput,
+  deps: HomeInstallationDeps = {},
+): Promise<{ readonly root: string; readonly published: boolean }> {
+  await prepareManagedReleaseStoreRoot(input.paths, deps);
+  const ownership = await withManagedReleaseStoreCoordinator(input.paths.root, async (owner) =>
+    ensureManagedReleaseOwned(owner, input, deps), { waitMs: 30_000 });
+  if (ownership.kind === "busy") throw new Error(`managed release publish is busy for ${input.manifest.artifact.id}`);
+  return ownership.value;
+}
+
+/** Publish or converge one artifact while the exact Home-global owner is live. */
+export async function ensureManagedReleaseOwned(
+  owner: ManagedReleaseStoreOwner,
+  input: EnsureManagedReleaseInput,
+  deps: HomeInstallationDeps = {},
+): Promise<{ readonly root: string; readonly published: boolean }> {
+  assertManagedReleaseStoreOwner(owner, input.paths.root);
+  assertManagedReleasePaths(input.paths);
   const verify = deps.verifyArtifact ?? verifyHomeArtifact;
   const source = resolve(input.source);
   const sourceManifest = await verify(source);
   assertSameManifest(sourceManifest, input.manifest, "managed release identity mismatch");
   const target = releaseRoot(input.paths, input.manifest.artifact.id);
-  return withManagedReleaseOwnership(input.paths, input.manifest.artifact.id, "publish", async () => {
+  return withManagedReleaseOwnership(owner, input.paths, input.manifest.artifact.id, "publish", async () => {
     if (await pathPresent(target)) {
       try {
         await durablyVerifyManagedRelease(target, input.paths, input.manifest, verify, deps);
@@ -106,8 +156,8 @@ export async function ensureManagedRelease(input: {
         throw new Error(`immutable managed release is corrupt at ${target}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-    await ensureOwnedDirectory(input.paths.root);
-    await ensureOwnedDirectory(input.paths.releases);
+    await ensureDurableDirectDirectory(input.paths.root, deps);
+    await ensureDurableDirectDirectory(input.paths.releases, deps);
     const staging = join(input.paths.releases, `.staging-${input.manifest.artifact.id}-${process.pid}-${randomUUID()}`);
     try {
       await cp(source, staging, {
@@ -152,21 +202,61 @@ export async function ensureManagedRelease(input: {
 }
 
 /**
+ * The ordinary-install publication interface. One Home-global span closes the
+ * reachability gap from immutable release publication through durable selector
+ * publication; lifecycle callers never handle owner tokens or lock ranks.
+ */
+export async function publishManagedHomeInstallation(
+  input: EnsureManagedReleaseInput & Readonly<{ record: HomeInstallationRecord }>,
+  deps: HomeInstallationDeps = {},
+): Promise<Readonly<{
+  managed: Readonly<{ root: string; published: boolean }>;
+  record: HomeInstallationRecord;
+}>> {
+  assertInstallationMatchesRelease(input);
+  await prepareManagedReleaseStoreRoot(input.paths, deps);
+  const ownership = await withManagedReleaseStoreCoordinator(input.paths.root, async (owner) => {
+    const managed = await ensureManagedReleaseOwned(owner, input, deps);
+    try { await publishHomeInstallation(input.paths.record, input.record, deps); }
+    catch (error) { throw new ManagedHomeInstallationPublicationError(error, managed.published); }
+    return Object.freeze({ managed, record: input.record });
+  }, { waitMs: 30_000 });
+  if (ownership.kind === "busy") throw new Error("managed Home release store is busy");
+  return ownership.value;
+}
+
+/**
  * Repair one global content-addressed release under artifact-keyed ownership.
  * Every repair caller re-inspects inside this lock, so a second vault can
  * never quarantine a valid winner based on stale corruption evidence.
  */
-export async function repairManagedRelease(input: {
-  readonly source: string;
-  readonly manifest: HomeArtifactManifest;
-  readonly expectedManifestSha256: string;
-  readonly paths: HomeInstallationPaths;
-  readonly platform: NodeJS.Platform;
-}, deps: HomeInstallationDeps = {}): Promise<{
+export async function repairManagedRelease(
+  input: RepairManagedReleaseInput,
+  deps: HomeInstallationDeps = {},
+): Promise<{
   readonly root: string;
   readonly published: boolean;
   readonly quarantined: string | null;
 }> {
+  await prepareManagedReleaseStoreRoot(input.paths, deps);
+  const ownership = await withManagedReleaseStoreCoordinator(input.paths.root, async (owner) =>
+    repairManagedReleaseOwned(owner, input, deps), { waitMs: 30_000 });
+  if (ownership.kind === "busy") throw new Error(`managed release repair is busy for ${input.manifest.artifact.id}`);
+  return ownership.value;
+}
+
+/** Repair one artifact while the exact Home-global owner is live. */
+export async function repairManagedReleaseOwned(
+  owner: ManagedReleaseStoreOwner,
+  input: RepairManagedReleaseInput,
+  deps: HomeInstallationDeps = {},
+): Promise<{
+  readonly root: string;
+  readonly published: boolean;
+  readonly quarantined: string | null;
+}> {
+  assertManagedReleaseStoreOwner(owner, input.paths.root);
+  assertManagedReleasePaths(input.paths);
   const verify = deps.verifyArtifact ?? verifyHomeArtifact;
   await assertExactArtifact(
     resolve(input.source),
@@ -176,10 +266,10 @@ export async function repairManagedRelease(input: {
     "invoking repair candidate",
   );
   const target = releaseRoot(input.paths, input.manifest.artifact.id);
-  return withManagedReleaseOwnership(input.paths, input.manifest.artifact.id, "repair", async () => {
-    // The source and target are deliberately re-read after global ownership.
-    // The pre-lock proof keeps wrong-candidate attempts write-free; this proof
-    // closes the wait/race window before staging or quarantine begins.
+  return withManagedReleaseOwnership(owner, input.paths, input.manifest.artifact.id, "repair", async () => {
+    // The source and target are deliberately re-read after artifact ownership.
+    // The pre-artifact proof keeps wrong-candidate attempts payload-write-free;
+    // this proof closes the wait/race window before staging or quarantine.
     await assertExactArtifact(
       resolve(input.source),
       input.manifest,
@@ -194,8 +284,8 @@ export async function repairManagedRelease(input: {
     }
     if (initialTarget === "valid-collision") throw validCollision(target);
 
-    await ensureOwnedDirectory(input.paths.root);
-    await ensureOwnedDirectory(input.paths.releases);
+    await ensureDurableDirectDirectory(input.paths.root, deps);
+    await ensureDurableDirectDirectory(input.paths.releases, deps);
     const staging = join(
       input.paths.releases,
       `.repair-staging-${input.manifest.artifact.id}-${process.pid}-${randomUUID()}`,
@@ -289,7 +379,7 @@ async function durablyVerifyManagedRelease(
   verify: HomeArtifactVerifier,
   deps: HomeInstallationDeps,
 ): Promise<void> {
-  await ensureOwnedDirectory(paths.releases);
+  await ensureDurableDirectDirectory(paths.releases, deps);
   await (deps.syncReleaseParent ?? fsyncDirectory)(paths.releases);
   const durable = await verify(target);
   assertSameManifest(durable, manifest, "managed release identity mismatch");
@@ -297,12 +387,11 @@ async function durablyVerifyManagedRelease(
 
 async function durablyVerifyExactRepairTarget(
   target: string,
-  input: Pick<Parameters<typeof repairManagedRelease>[0],
-    "manifest" | "expectedManifestSha256" | "paths">,
+  input: Pick<RepairManagedReleaseInput, "manifest" | "expectedManifestSha256" | "paths">,
   verify: HomeArtifactVerifier,
   deps: HomeInstallationDeps,
 ): Promise<void> {
-  await ensureOwnedDirectory(input.paths.releases);
+  await ensureDurableDirectDirectory(input.paths.releases, deps);
   await (deps.syncReleaseParent ?? fsyncDirectory)(input.paths.releases);
   await assertExactArtifact(
     target,
@@ -314,16 +403,18 @@ async function durablyVerifyExactRepairTarget(
 }
 
 async function withManagedReleaseOwnership<T>(
+  owner: ManagedReleaseStoreOwner,
   paths: HomeInstallationPaths,
   artifactId: string,
   purpose: "publish" | "repair",
   operation: () => Promise<T>,
 ): Promise<T> {
-  const ownership = await withExclusiveFileLock({
-    lockPath: releaseRepairLockPath(paths, artifactId),
-    command: `dome-home-release-${purpose}:${artifactId}`,
-    wait: { timeoutMs: 30_000, intervalMs: 25 },
-  }, operation);
+  const ownership = await withManagedReleaseArtifactRank(owner, paths.root, async () =>
+    withExclusiveFileLock({
+      lockPath: releaseRepairLockPath(paths, artifactId),
+      command: `dome-home-release-${purpose}:${artifactId}`,
+      wait: { timeoutMs: 30_000, intervalMs: 25 },
+    }, operation));
   if (ownership.kind === "busy") {
     throw new Error(`managed release ${purpose} is busy for ${artifactId}`);
   }
@@ -339,7 +430,7 @@ function releaseRepairLockPath(paths: HomeInstallationPaths, artifactId: string)
 
 async function classifyRepairTarget(
   target: string,
-  input: Pick<Parameters<typeof repairManagedRelease>[0], "manifest" | "expectedManifestSha256">,
+  input: Pick<RepairManagedReleaseInput, "manifest" | "expectedManifestSha256">,
   verify: HomeArtifactVerifier,
 ): Promise<"absent" | "exact" | "intrinsically-corrupt" | "valid-collision"> {
   if (!await pathPresent(target)) return "absent";
@@ -390,18 +481,38 @@ function assertSameManifest(
   if (!isDeepStrictEqual(actual, expected)) throw new Error(error);
 }
 
+function assertInstallationMatchesRelease(
+  input: EnsureManagedReleaseInput & Readonly<{ record: HomeInstallationRecord }>,
+): void {
+  parseHomeInstallationRecord(input.record, input.record.vault);
+  const expectedPaths = homeInstallationPaths(input.record.vault, { applicationSupportDir: input.paths.root });
+  if (input.record.vault !== resolve(input.record.vault) ||
+    input.record.artifact.id !== input.manifest.artifact.id ||
+    input.record.artifact.version !== input.manifest.product.version ||
+    expectedPaths.root !== input.paths.root || expectedPaths.releases !== input.paths.releases ||
+    expectedPaths.installations !== input.paths.installations || expectedPaths.record !== input.paths.record) {
+    throw new Error("managed Home installation record does not match its release or selector path");
+  }
+}
+
+function assertManagedReleasePaths(paths: HomeInstallationPaths): void {
+  if (paths.root !== resolve(paths.root) || paths.releases !== join(paths.root, "releases")) {
+    throw new Error("managed release paths are not bound to the owned Home root");
+  }
+}
+
 export async function publishHomeInstallation(
   path: string,
   record: HomeInstallationRecord,
   deps: HomeInstallationDeps = {},
 ): Promise<void> {
-  if (deps.publishRecord !== undefined) return deps.publishRecord(path, record);
   const installation = dirname(path);
   const installations = dirname(installation);
   const root = dirname(installations);
-  await ensureOwnedDirectory(root);
-  await ensureOwnedDirectory(installations);
-  await ensureOwnedDirectory(installation);
+  await ensureDurableDirectDirectory(root, deps);
+  await ensureDurableDirectDirectory(installations, deps);
+  await ensureDurableDirectDirectory(installation, deps);
+  if (deps.publishRecord !== undefined) return deps.publishRecord(path, record);
   const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`;
   const handle = await open(temporary, "wx", 0o600);
   try {
@@ -415,6 +526,15 @@ export async function publishHomeInstallation(
 }
 
 export async function syncDirectory(path: string): Promise<void> { await fsyncDirectory(path); }
+
+/** Establish only the direct Home root required before global coordination. */
+async function prepareManagedReleaseStoreRoot(
+  paths: HomeInstallationPaths,
+  deps: HomeInstallationDeps,
+): Promise<void> {
+  assertManagedReleasePaths(paths);
+  await ensureDurableDirectDirectory(paths.root, deps);
+}
 
 /** Strict pure parser shared by selector readers and host-wide release inventory. */
 export function parseHomeInstallationRecord(value: unknown, expectedVault: string): HomeInstallationRecord {
@@ -475,10 +595,34 @@ async function pathPresent(path: string): Promise<boolean> {
   }
 }
 
-async function ensureOwnedDirectory(path: string): Promise<void> {
-  if (!await pathPresent(path)) await mkdir(path, { recursive: true });
+async function ensureDurableDirectDirectory(path: string, deps: HomeInstallationDeps): Promise<void> {
+  if (!await pathPresent(path)) {
+    const parent = dirname(path);
+    if (parent === path) throw new Error(`managed Dome Home directory cannot be created: ${path}`);
+    await ensureDurableDirectDirectory(parent, deps);
+    try { await mkdir(path, { mode: 0o700 }); }
+    catch (error) { if (!hasCode(error, "EEXIST")) throw error; }
+  }
   const info = await lstat(path);
   if (!info.isDirectory() || info.isSymbolicLink() || await realpath(path) !== resolve(path)) {
     throw new Error(`managed Dome Home path is not a direct owned directory: ${path}`);
   }
+  // Always replay both proofs. A prior attempt may have created this visible
+  // directory and failed before its own or its parent-entry fsync completed.
+  await syncEstablishedDirectory(path, path, "directory", deps);
+  await syncEstablishedDirectory(path, dirname(path), "parent-entry", deps);
+}
+
+async function syncEstablishedDirectory(
+  subject: string,
+  path: string,
+  kind: ManagedDirectoryDurabilityStep["kind"],
+  deps: HomeInstallationDeps,
+): Promise<void> {
+  await deps.directoryDurabilityCheckpoint?.(Object.freeze({ subject, path, kind }));
+  await fsyncDirectory(path);
+}
+
+function hasCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && (error as NodeJS.ErrnoException).code === code;
 }

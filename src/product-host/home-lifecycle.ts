@@ -28,9 +28,9 @@ import {
 import { verifyHomeArtifact, type HomeArtifactManifest, type HomeArtifactVerifier } from "./home-artifact";
 import {
   createHomeInstallation,
-  ensureManagedRelease,
   homeInstallationPaths,
-  publishHomeInstallation,
+  ManagedHomeInstallationPublicationError,
+  publishManagedHomeInstallation,
   readHomeInstallation,
   releaseRoot,
   syncDirectory,
@@ -356,18 +356,18 @@ async function executeOwnedInstall(
   try {
     await mkdir(join(context.vault, ".dome", "state"), { recursive: true });
     await mkdir(context.service.launchAgentsDir, { recursive: true });
-    const managed = await ensureManagedRelease({
-      source,
-      manifest,
-      paths: context.paths,
-      platform: context.service.platform,
-    }, deps);
-    releasePublished = managed.published;
     const intendedEnvironment = requestedEnvironment ?? new Map(
       previous?.environment.map((entry) => [entry.name, entry.value] as const) ?? [],
     );
     const record = createHomeInstallation(context.vault, manifest, intendedEnvironment);
-    await publishHomeInstallation(context.paths.record, record, deps);
+    const { managed } = await publishManagedHomeInstallation({
+      source,
+      manifest,
+      paths: context.paths,
+      platform: context.service.platform,
+      record,
+    }, deps);
+    releasePublished = managed.published;
     selected = baseForRecord(context.neutral, context.paths, record);
     const environment = new Map<string, string>(intendedEnvironment);
     environment.set("PATH", homeServicePath(join(managed.root, "runtime", "bun")));
@@ -382,14 +382,17 @@ async function executeOwnedInstall(
     if (activation !== null) {
       return complete(await activationFailureResult(selected, context, deps, activation, {
         replaced: hadPlist,
-        releasePublished,
+        releasePublished: managed.published,
       }));
     }
     return awaitReadiness(selected, "installed", `Dome Home did not become ready at http://${HOME_HOST}:${HOME_PORT}/pair/status`, {
       replaced: hadPlist,
-      releasePublished,
+      releasePublished: managed.published,
     });
   } catch (error) {
+    if (error instanceof ManagedHomeInstallationPublicationError) {
+      releasePublished = error.releasePublished;
+    }
     if (activationAttempted) {
       return complete(await activationFailureResult(selected, context, deps, message(error), {
         replaced: hadPlist,
