@@ -721,10 +721,29 @@ throws because no transaction exists to restore; simultaneous upgrade and
 rollback failure throws an aggregate and remains closed. Retained terminal
 evidence makes committed release and restored rollback idempotent.
 
-Still deferred are the public `dome home upgrade` CLI and supported UX,
-terminal-journal retirement, managed-release garbage collection, and artifact
-signing/notarization. `distribution.upgradeSupported` remains false until that
-public supported flow ships.
+### P4 public upgrade-intent checkpoint
+
+`dome home upgrade [--vault <path>] [--json]` is a thin, lazy Adapter over the
+single phase-free `manageHomeUpgrade` intent. It has no artifact-path, phase,
+rollback, or recovery-control flags. The exact invoking artifact is the only
+new-candidate source; retained precommit work recovers before candidacy is
+evaluated, committed work moves only forward, and terminal evidence retires to
+immutable bounded receipts. Public results contain fixed messages and public
+artifact/operation/outcome/next-action evidence only.
+
+`dome home status` adds an always-present, read-only `upgrade` projection for
+status actions. It maps private precommit phases to `active`, exact extant
+terminal truth to `complete`, a broken committed forward proof to
+`recovery-required` plus `supply-exact-candidate`, and absent retired truth to
+`inactive`. It uses disposition and strict-forward readers without locks or
+writes and never reads terminal history to synthesize current coordination.
+
+The artifact parser accepts boolean `distribution.upgradeSupported`; both the
+intent and the transaction compatibility boundary require exact `true` for a
+new candidate. The builder deliberately still emits `false` until the retained
+installed N-1→N rehearsal proves the distribution can make the supported
+claim. Managed-release garbage collection, artifact signing/notarization, and
+that activation rehearsal remain deferred.
 
 ### P3 device-authority foundation
 

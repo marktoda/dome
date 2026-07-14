@@ -138,6 +138,27 @@ describe("Dome Home artifact", () => {
     }
   });
 
+  test("general manifest parsing accepts an explicit supported-upgrade capability", async () => {
+    const root = await verifiableFixture();
+    try {
+      const manifest = JSON.parse(await readFile(join(root, "manifest.json"), "utf8")) as Record<string, unknown>;
+      manifest["distribution"] = {
+        ...(manifest["distribution"] as Record<string, unknown>),
+        upgradeSupported: true,
+      };
+      expect(parseHomeArtifactManifest(manifest).distribution.upgradeSupported).toBeTrue();
+      expect(() => parseHomeArtifactManifest({
+        ...manifest,
+        distribution: {
+          ...(manifest["distribution"] as Record<string, unknown>),
+          upgradeSupported: "yes",
+        },
+      })).toThrow("fixed product semantics");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("structurally validates closed historical durable-state evidence", async () => {
     const root = await verifiableFixture();
     try {

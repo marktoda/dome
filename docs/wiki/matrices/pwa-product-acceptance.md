@@ -12,7 +12,7 @@ description: Versioned second-user and adversarial acceptance matrix for the PWA
 
 # PWA product acceptance
 
-**Scenario version:** `dome.product.acceptance/2026-07-11.2`
+**Scenario version:** `dome.product.acceptance/2026-07-11.3`
 
 This matrix is the product release charter. Unit, contract, and interface tests
 support it; they do not replace it. Every implementation phase P1–P6 extends
@@ -44,6 +44,7 @@ and runs the installed-artifact journey available at that phase.
 | P4 backup + blank-host restore checkpoint | bundled age keygen/create/verify/restore; supervised Home suspension; source/evidence-drift refusal; both Product Host locks; seven SQLite snapshots; adversarial verification; absent-target reconstruction | atomic encrypted archive and atomic no-replace publication; archive truth survives restart failure; exact manifest; no native Git dependency; restored credentials/grants invalidated; absent authority reported |
 | P4 frozen N-1 migration checkpoint | materialize checked predecessor; prepare; migrate under closed admission; inject post-store-commit crash; retry or restore | six closed SQL/schema/canary proofs; exact candidate protocol compatibility; transactional receipt index migration; no unjournaled mutation; N-1 credential truth restored |
 | P4 private candidate cutover checkpoint | suspend Home; prepare/migrate frozen N-1; launch exact managed candidate; prove readiness plus closed pair/capture behavior; drain; fault every selector-switch window; rollback or commit/authorize/release/resume; run competing recovery invocations | transaction-bound probation proof; exact six-store precommit proof; CAS-shaped plist-then-installation switch; candidate-independent prepared/switching rollback; committed-only forward recovery; exact candidate-bound admission; serialized recoverers |
+| P4 public upgrade intent checkpoint | invoke only `dome home upgrade --vault ...`; inspect `dome home status`; retry retained precommit work; repair a broken committed candidate from the exact invoking artifact; retire terminal evidence | lazy CLI imports only the intent; no phase/recovery/artifact-path controls; fixed redacted v1 results; phase-free lockless status; candidate requires explicit capability; builder remains false pending retained installed N-1→N rehearsal |
 | P5 product quality | installed/offline shell; text queue replay; expired auth; premature SSE EOF; update; keyboard/screen reader; real iOS | product state and accessibility/browser matrix |
 | P6 beta | full adversarial journey on at least five external owner-vaults | measured reliability, latency, cost, restore, and upgrade report |
 

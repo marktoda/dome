@@ -13,6 +13,7 @@ import { dirname, join, resolve } from "node:path";
 
 import { compareStrings } from "../core/compare";
 import { renderLaunchAgentPlist } from "../platform/launchd";
+import { publishPathExclusive } from "../platform/exclusive-rename";
 import { vaultServiceSlug } from "../surface/service-probe";
 import {
   HOME_INSTALLATION_SCHEMA,
@@ -29,6 +30,9 @@ export type HomeSelectionDeps = Pick<HomeInstallationDeps, "applicationSupportDi
   readonly launchAgentsDir?: string | undefined;
   readonly beforeRename?: ((expected: HomeSelectionDocument, desired: HomeSelectionDocument) => Promise<void>) | undefined;
   readonly renamePath?: ((source: string, target: string) => Promise<void>) | undefined;
+  readonly publishMissingPath?: ((source: string, target: string) => Promise<void>) | undefined;
+  readonly syncParent?: ((path: string) => Promise<void>) | undefined;
+  readonly platform?: NodeJS.Platform | undefined;
 };
 
 export type HomeSelectionDocument = {
@@ -174,10 +178,93 @@ export async function publishHomeSelectionDocument(
     // expectation explicit and verifies desired bytes again after publication.
     await assertCurrentDocument(input.expected);
     await (deps.renamePath ?? rename)(temporary, input.desired.path);
-    const parent = await open(dirname(input.desired.path), "r");
-    try { await parent.sync(); } finally { await parent.close(); }
+    await (deps.syncParent ?? syncDirectory)(dirname(input.desired.path));
     await assertCurrentDocument(input.desired);
   } finally { await rm(temporary, { force: true }); }
+}
+
+/**
+ * Converge the journal-owned candidate pair, plist first. Missing paths use
+ * no-replace publication; bounded direct files use stable-handle CAS. Both
+ * paths are inspected before the first write so redirected/special evidence
+ * cannot leave a predictable partial repair.
+ */
+export async function repairHomeSelection(
+  desired: HomeSelection,
+  deps: HomeSelectionDeps = {},
+  checkpoint?: ((name: "plist-published" | "installation-published") => Promise<void>) | undefined,
+): Promise<void> {
+  await inspectRepairableDocument(desired.plist.path);
+  await inspectRepairableDocument(desired.installation.path);
+  await convergeRepairDocument(desired.plist, deps);
+  await checkpoint?.("plist-published");
+  await convergeRepairDocument(desired.installation, deps);
+  await checkpoint?.("installation-published");
+}
+
+async function convergeRepairDocument(
+  desired: HomeSelectionDocument,
+  deps: HomeSelectionDeps,
+): Promise<void> {
+  const current = await inspectRepairableDocument(desired.path);
+  if (current !== null) {
+    if (sameDocument(current, desired)) {
+      await syncAndVerifyRepairDocument(desired, deps);
+      return;
+    }
+    await publishHomeSelectionDocument({ expected: current, desired }, deps);
+    return;
+  }
+  assertDocumentEvidence(desired);
+  const parentPath = dirname(desired.path);
+  if (await realpath(parentPath) !== parentPath) throw new Error("Home selection parent is redirected");
+  const temporary = `${desired.path}.repair-${process.pid}-${randomUUID()}`;
+  const handle = await open(temporary, "wx", desired.mode);
+  try {
+    await handle.writeFile(desired.bytes, "utf8");
+    await handle.sync();
+  } finally { await handle.close(); }
+  try {
+    try {
+      await (deps.publishMissingPath ?? (async (source, target) => publishPathExclusive({
+        source,
+        target,
+        ...(deps.platform === undefined ? {} : { platform: deps.platform }),
+      })))(temporary, desired.path);
+    } catch (error) {
+      const winner = await inspectRepairableDocument(desired.path);
+      if (winner === null || !sameDocument(winner, desired)) throw error;
+      await syncAndVerifyRepairDocument(desired, deps);
+      return;
+    }
+    await syncAndVerifyRepairDocument(desired, deps);
+  } finally { await rm(temporary, { force: true }); }
+}
+
+async function syncAndVerifyRepairDocument(
+  desired: HomeSelectionDocument,
+  deps: HomeSelectionDeps,
+): Promise<void> {
+  const parentPath = dirname(desired.path);
+  if (await realpath(parentPath) !== parentPath) throw new Error("Home selection parent is redirected");
+  await (deps.syncParent ?? syncDirectory)(parentPath);
+  const durable = await inspectRepairableDocument(desired.path);
+  if (durable === null || !sameDocument(durable, desired)) {
+    throw new Error("repaired Home selector does not match committed evidence");
+  }
+}
+
+async function syncDirectory(path: string): Promise<void> {
+  const parent = await open(path, "r");
+  try { await parent.sync(); } finally { await parent.close(); }
+}
+
+async function inspectRepairableDocument(path: string): Promise<HomeSelectionDocument | null> {
+  try { return await captureHomeSelectionDocument(path, "Home selector repair target"); }
+  catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 export function selectionDocument(

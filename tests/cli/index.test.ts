@@ -99,7 +99,7 @@ describe("runCli", () => {
     expect(await runCli(["home", "--help"])).toBe(0);
     const out = captured.out.join("\n");
     expect(out).toContain("Usage: dome home");
-    for (const action of ["install", "start", "restart", "status", "uninstall"]) {
+    for (const action of ["install", "start", "restart", "status", "uninstall", "upgrade"]) {
       expect(out).toContain(action);
     }
     expect(captured.err.join("\n")).not.toContain("dome home: serving");
@@ -107,6 +107,16 @@ describe("runCli", () => {
     captured.out = [];
     expect(await runCli(["home", "status", "--help"])).toBe(0);
     expect(captured.out.join("\n")).toContain("Usage: dome home status");
+
+    captured.out = [];
+    expect(await runCli(["home", "upgrade", "--help"])).toBe(0);
+    const upgradeHelp = captured.out.join("\n");
+    expect(upgradeHelp).toContain("Usage: dome home upgrade");
+    expect(upgradeHelp).toContain("--vault <path>");
+    expect(upgradeHelp).toContain("--json");
+    expect(upgradeHelp).not.toContain("recovery");
+    expect(upgradeHelp).not.toContain("candidate");
+    expect(upgradeHelp).not.toContain("phase");
   });
 
   test("init help exposes the optional model-provider scaffold", async () => {

@@ -39,6 +39,7 @@ export async function runHomeLifecycle(
   else if (result.error !== undefined) {
     console.error(`dome home ${action}: ${result.error}`);
     if (result.lifecycle !== undefined) console.error(`  lifecycle: ${formatLifecycle(result.lifecycle)}`);
+    if (result.upgrade !== undefined) console.error(`  upgrade: ${formatUpgrade(result.upgrade)}`);
   }
   else {
     console.log(
@@ -49,10 +50,19 @@ export async function runHomeLifecycle(
       `  release: ${result.release ?? "none"}\n  program: ${result.program || "none"}\n  installed: ${result.installed === null ? "unknown" : result.installed ? "yes" : "no"}\n` +
       `  loaded: ${result.loaded === null ? "unknown" : result.loaded ? "yes" : "no"}\n` +
       `  ready: ${result.ready === null ? "n/a" : result.ready ? "yes" : "no"}` +
-      (result.lifecycle === undefined ? "" : `\n  lifecycle: ${formatLifecycle(result.lifecycle)}`),
+      (result.lifecycle === undefined ? "" : `\n  lifecycle: ${formatLifecycle(result.lifecycle)}`) +
+      (result.upgrade === undefined ? "" : `\n  upgrade: ${formatUpgrade(result.upgrade)}`),
     );
   }
   return result.exitCode;
+}
+
+function formatUpgrade(upgrade: NonNullable<Awaited<ReturnType<typeof manageHome>>["upgrade"]>): string {
+  const identity = upgrade.candidate === null || upgrade.operationId === null
+    ? ""
+    : `; ${upgrade.candidate.productVersion} (${upgrade.candidate.artifactId}), operation ${upgrade.operationId}`;
+  const outcome = upgrade.outcome === null ? "" : `; outcome ${upgrade.outcome}`;
+  return `${upgrade.state}${identity}${outcome}; next ${upgrade.nextAction}`;
 }
 
 function formatLifecycle(lifecycle: NonNullable<Awaited<ReturnType<typeof manageHome>>["lifecycle"]>): string {

@@ -14,6 +14,7 @@ import { homeInstallationPaths, releaseRoot } from "../../src/product-host/home-
 import {
   acquireHomeStartupAdmission,
   homeLifecycleCoordinatorPath,
+  HomeLifecycleContentionError,
   inspectHomeLifecycleSuspension,
   withHomeLifecycleMutation,
   withSupervisedHomeSuspended,
@@ -105,6 +106,61 @@ describe("supervised Home lifecycle suspension", () => {
     expect(mutated).toBeFalse();
     release();
     expect((await holder).kind).toBe("ready");
+  });
+
+  test("reports the durable owner when a concurrent suspension reaches the atomic seam", async () => {
+    const f = await fixture(true);
+    let entered!: () => void;
+    const callbackEntered = new Promise<void>((resolve) => { entered = resolve; });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const holder = suspend(f, "owning-backup", async () => {
+      entered();
+      await gate;
+      return "done";
+    });
+    await callbackEntered;
+
+    let contention: unknown;
+    try {
+      await suspend(f, "competing-upgrade", async () => "must-not-run", "upgrade");
+    } catch (error) {
+      contention = error;
+    } finally {
+      release();
+    }
+    expect(contention).toBeInstanceOf(HomeLifecycleContentionError);
+    expect(contention).toMatchObject({
+      owner: { purpose: "backup", operationId: "owning-backup" },
+    });
+    expect((await holder).kind).toBe("ready");
+  });
+
+  test("preserves bounded serialization for concurrent backup suspensions", async () => {
+    const f = await fixture(false);
+    let entered!: () => void;
+    const callbackEntered = new Promise<void>((resolve) => { entered = resolve; });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const first = suspend(f, "serial-backup-one", async () => {
+      entered();
+      await gate;
+      return "first";
+    });
+    await callbackEntered;
+    let secondRan = false;
+    let secondSettled = false;
+    const second = suspend(f, "serial-backup-two", async () => {
+      secondRan = true;
+      return "second";
+    }).then((value) => { secondSettled = true; return value; });
+    await Bun.sleep(20);
+    expect(secondSettled).toBeFalse();
+    expect(secondRan).toBeFalse();
+    release();
+    expect((await first).kind).toBe("not-required");
+    expect((await second).kind).toBe("not-required");
+    expect(secondRan).toBeTrue();
   });
 
   test("boots out, proves loaded drain, then runs the callback", async () => {
@@ -277,6 +333,72 @@ describe("supervised Home lifecycle suspension", () => {
     expect(resumed.kind).toBe("ready");
     expect(firstRuns).toBe(1);
     expect(continuationRuns).toBe(1); // explicit at-least-once continuation policy
+  });
+
+  test("journal-authorized repair establishes intent before drain and never reads absent live selectors", async () => {
+    const f = await fixture(true);
+    const operationId = "upgrade-forward-repair";
+    const candidateId = "b".repeat(64);
+    const installationBytes = `${JSON.stringify({
+      schema: "dome.home.installation/v1",
+      vault: f.vault,
+      artifact: { id: candidateId, version: "2.0.0" },
+      environment: [],
+    })}\n`;
+    const plistBytes = "repaired candidate plist\n";
+    await rm(f.installation);
+    await writeFile(f.plist, "bounded corrupt selector\n", { mode: 0o600 });
+
+    let authorized = 0;
+    let operationRan = false;
+    const result = await withSupervisedHomeSuspended({
+      mode: "repair",
+      vaultPath: f.vault,
+      purpose: "upgrade",
+      operationId,
+      authorizeContinuation: async (active) => {
+        authorized++;
+        expect(active).toBeNull();
+        return {
+          operationId,
+          artifactId: candidateId,
+          artifactVersion: "2.0.0",
+          installationSha256: createHash("sha256").update(installationBytes).digest("hex"),
+          plistSha256: createHash("sha256").update(plistBytes).digest("hex"),
+        };
+      },
+    }, async (context) => {
+      operationRan = true;
+      expect(f.launchd.loaded.has(f.target)).toBeFalse();
+      const active = await inspectHomeLifecycleSuspension(f.vault);
+      expect(active).toMatchObject({
+        kind: "active",
+        suspension: { operationId, phase: "suspended" },
+      });
+      await writeFile(f.plist, plistBytes, { mode: 0o600 });
+      await writeFile(f.installation, installationBytes, { mode: 0o600 });
+      await context.authorizeCurrentHomeForResume();
+      return "repaired";
+    }, {
+      platform: "darwin",
+      uid: 501,
+      launchAgentsDir: f.agents,
+      launchctl: (...args) => f.launchd.runner(...args),
+      drainTimeoutMs: 20,
+      readinessTimeoutMs: 1,
+      readiness: () => f.readiness(),
+      applicationSupportDir: f.support,
+    });
+
+    expect(result).toMatchObject({
+      kind: "ready",
+      value: "repaired",
+      recovered: false,
+      operationRan: true,
+    });
+    expect(operationRan).toBeTrue();
+    expect(authorized).toBe(1);
+    expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("inactive");
   });
 
   test("external upgrade authorization seals selector committed before callback sealing", async () => {

@@ -4,12 +4,13 @@
 // candidates, switch launchd, or commit an installation selection.
 
 import { createHash } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, type BigIntStats } from "node:fs";
 import {
-  chmod, copyFile, lstat, mkdir, open, readFile, readdir, realpath, rename, rm,
+  chmod, copyFile, lstat, mkdir, open, opendir, readFile, readdir, realpath, rename, rm,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
+import { isDeepStrictEqual } from "node:util";
 
 import { compareStrings } from "../core/compare";
 import { inspectExclusiveFileLock } from "../engine/host/file-lock";
@@ -21,6 +22,7 @@ import {
 } from "../sqlite/snapshot";
 import {
   homeInstallationPaths,
+  repairManagedRelease,
   readHomeInstallation,
   releaseRoot,
   type HomeInstallationDeps,
@@ -31,13 +33,18 @@ import {
   captureHomeSelectionDocument,
   classifyHomeSelection,
   publishHomeSelectionDocument,
+  repairHomeSelection,
   renderHomeSelection,
   selectionDocument,
   type HomeSelection,
   type HomeSelectionDocument,
 } from "./home-selection";
 import { readVaultId } from "./vault-id";
-import { verifyHomeArtifact, type HomeArtifactVerifier } from "./home-artifact";
+import {
+  verifyHomeArtifact,
+  type HomeArtifactManifest,
+  type HomeArtifactVerifier,
+} from "./home-artifact";
 import {
   HOME_DURABLE_STATE_PROTOCOL,
   HOME_STORE_MIGRATIONS,
@@ -158,6 +165,21 @@ export type HomeUpgradeTransaction = {
   };
 };
 
+export type HomeUpgradeHistoryIdentity = {
+  readonly operationId: string;
+  readonly candidate: {
+    readonly artifactId: string;
+    readonly productVersion: string;
+  };
+  readonly outcome: "committed" | "restored";
+  readonly terminalAt: string;
+};
+
+export type HomeUpgradeRepairCandidate = {
+  readonly source: string;
+  readonly manifest: HomeArtifactManifest;
+};
+
 export type HomeUpgradeTransactionDeps = HomeInstallationDeps & {
   readonly platform?: NodeJS.Platform | undefined;
   readonly now?: (() => Date) | undefined;
@@ -165,6 +187,16 @@ export type HomeUpgradeTransactionDeps = HomeInstallationDeps & {
   readonly launchAgentsDir?: string | undefined;
   readonly afterRestoreEntry?: ((name: typeof SNAPSHOT_NAMES[number]) => Promise<void>) | undefined;
   readonly afterStoreMigration?: ((name: HomeStoreMigrationEntry["name"]) => Promise<void>) | undefined;
+  /** Test-only race seam for constant-cost immutable history identity reads. */
+  readonly historyIdentityCheckpoint?: ((name: "transaction-observed") => Promise<void>) | undefined;
+  /** Test-only race seam for stable-handle journal inspection. */
+  readonly journalReadCheckpoint?: ((name:
+    "root-opened" | "journal-opened" | "before-root-recheck"
+  ) => Promise<void>) | undefined;
+  /** Test/diagnostic crash seam for committed selector forward replay. */
+  readonly forwardRepairCheckpoint?: ((name:
+    "release-ready" | "candidate-plist-published" | "candidate-installation-published"
+  ) => Promise<void>) | undefined;
   /** Test/diagnostic crash seam for durable cutover and selector rollback. */
   readonly selectionCheckpoint?: ((name:
     "probation-recorded" | "switching-recorded" | "candidate-plist-published" |
@@ -542,8 +574,8 @@ export async function readHomeUpgrade(
   if (upgrade === null) return null;
   const active = join(upgrade, "active");
   if (!await present(active)) return null;
-  const journal = await readBoundedJournal(active, vault);
-  await validateJournalReferences(journal, paths, deps);
+  const journal = await readBoundedJournal(active, vault, deps);
+  await validateJournalReferences(journal, active, paths, deps);
   await validateSnapshotInventory(active, journal.snapshot.inventory);
   if (journal.probation !== null && journal.probation.vaultId !== await readVaultId(vault)) {
     throw new Error("upgrade probation proof vault identity does not match the live vault");
@@ -565,10 +597,221 @@ export async function readHomeUpgradeForRecovery(
   if (upgrade === null) return null;
   const active = join(upgrade, "active");
   if (!await present(active)) return null;
-  const journal = await readBoundedJournal(active, vault);
-  await validateRestoreJournalReferences(journal, paths, deps);
+  const journal = await readBoundedJournal(active, vault, deps);
+  await validateRestoreJournalReferences(journal, active, paths, deps);
   await validateSnapshotInventory(active, journal.snapshot.inventory);
   return journal;
+}
+
+/**
+ * Read intrinsic transaction truth without trusting the live candidate
+ * release or selector pair. Intent/cutover use this only to choose the one
+ * durable disposition; mutation still requires the stricter interfaces.
+ */
+export async function readHomeUpgradeDisposition(
+  vaultPath: string,
+  deps: HomeUpgradeTransactionDeps = {},
+): Promise<HomeUpgradeTransaction | null> {
+  const vault = await canonicalVault(vaultPath);
+  const paths = homeInstallationPaths(vault, deps);
+  const upgrade = await inspectUpgradeAncestors(paths);
+  if (upgrade === null) return null;
+  const active = join(upgrade, "active");
+  if (!await present(active)) return null;
+  const journal = await readBoundedJournal(active, vault, deps);
+  validateCanonicalArtifactPath(journal.old, paths);
+  validateCanonicalArtifactPath(journal.candidate, paths);
+  validateArchivedSelectorPaths(journal, paths, deps);
+  return journal;
+}
+
+/** Exact committed forward proof, intentionally independent of N-1 bytes. */
+export async function readCommittedHomeUpgradeForward(
+  vaultPath: string,
+  deps: HomeUpgradeTransactionDeps = {},
+): Promise<HomeUpgradeTransaction | null> {
+  const vault = await canonicalVault(vaultPath);
+  const journal = await readHomeUpgradeDisposition(vault, deps);
+  if (journal === null) return null;
+  assertCommittedRepairIdentity(journal, journal.transactionId);
+  const paths = homeInstallationPaths(vault, deps);
+  await validateArtifactReference(journal.candidate, paths);
+  await validateSelectorReferences(
+    journal,
+    join(paths.installations, "upgrade", "active"),
+    paths,
+    deps,
+  );
+  return journal;
+}
+
+/** Read-only exact-source gate. A failed repair preflight performs no writes. */
+export async function inspectCommittedHomeUpgradeRepair(input: {
+  readonly vaultPath: string;
+  readonly transactionId: string;
+  readonly candidate: HomeUpgradeRepairCandidate;
+}, deps: HomeUpgradeTransactionDeps = {}): Promise<HomeUpgradeTransaction> {
+  const vault = await canonicalVault(input.vaultPath);
+  const journal = await readRequiredUpgradeDisposition(vault, deps);
+  assertCommittedRepairIdentity(journal, input.transactionId);
+  await assertExactRepairCandidate(journal, input.candidate, deps);
+  return journal;
+}
+
+/**
+ * Rehydrate one irreversible committed candidate and converge its stored
+ * selector pair. The caller already owns lifecycle Tx2; this Module owns the
+ * operational barrier, Product Host locks, journal expectation, and selector
+ * CAS while the installation Module owns global release repair serialization.
+ */
+export async function repairCommittedHomeUpgrade(input: {
+  readonly vaultPath: string;
+  readonly transactionId: string;
+  readonly candidate: HomeUpgradeRepairCandidate;
+}, deps: HomeUpgradeTransactionDeps = {}): Promise<HomeUpgradeTransaction> {
+  const vault = await canonicalVault(input.vaultPath);
+  const initial = await inspectCommittedHomeUpgradeRepair({ ...input, vaultPath: vault }, deps);
+  await engageForTransaction(vault, initial.transactionId, deps);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const ownership = await withHomeUpgradeBarrierOwnership({
+      vaultPath: vault,
+      transactionId: initial.transactionId,
+    }, deps, async (owner) => {
+      await assertActiveHomeBarrier(vault, owner, deps);
+      return await withQuiescedOwnership(vault, async () => {
+        const journal = await readRequiredUpgradeDisposition(vault, deps);
+        assertCommittedRepairIdentity(journal, initial.transactionId);
+        if (JSON.stringify(journal) !== JSON.stringify(initial)) {
+          throw new Error("committed Dome Home upgrade evidence changed before forward repair");
+        }
+        await assertExactRepairCandidate(journal, input.candidate, deps);
+        if (journal.selection === null) {
+          throw new Error("committed Dome Home upgrade lacks stored candidate selectors");
+        }
+        const active = join(
+          homeInstallationPaths(vault, deps).installations,
+          "upgrade", "active",
+        );
+        const stored = await loadStoredSelection(active, journal.selection);
+        await repairManagedRelease({
+          source: input.candidate.source,
+          manifest: input.candidate.manifest,
+          expectedManifestSha256: journal.candidate.manifestSha256,
+          paths: homeInstallationPaths(vault, deps),
+          platform: deps.platform ?? process.platform,
+        }, deps);
+        await deps.forwardRepairCheckpoint?.("release-ready");
+        const afterRelease = await readRequiredUpgradeDisposition(vault, deps);
+        if (JSON.stringify(afterRelease) !== JSON.stringify(journal)) {
+          throw new Error("committed Dome Home upgrade evidence changed during release repair");
+        }
+
+        await repairHomeSelection(stored.candidate, deps, async (name) => {
+          await deps.forwardRepairCheckpoint?.(name === "plist-published"
+            ? "candidate-plist-published"
+            : "candidate-installation-published");
+        });
+        if (await classifyHomeSelection(stored) !== "candidate") {
+          throw new Error("committed Home selectors did not converge during forward repair");
+        }
+        const strict = await readRequiredCommittedHomeUpgradeForward(vault, deps);
+        assertCommittedRepairIdentity(strict, journal.transactionId);
+        return strict;
+      });
+    });
+    if (ownership.kind === "owned") return ownership.value;
+    if (ownership.transactionId !== null && ownership.transactionId !== initial.transactionId) {
+      throw new Error("another Dome Home upgrade transaction owns forward repair");
+    }
+    await engageForTransaction(vault, initial.transactionId, deps);
+  }
+  throw new Error("Dome Home committed repair ownership could not be recovered");
+}
+
+/**
+ * Strictly read one immutable terminal transaction. History is keyed by the
+ * operation identity, never by mutable selection state. History validation is
+ * intrinsic: later selections and release collection must not make an older
+ * closed record unreadable.
+ */
+export async function readHomeUpgradeHistory(
+  vaultPath: string,
+  transactionId: string,
+  deps: HomeUpgradeTransactionDeps = {},
+): Promise<HomeUpgradeTransaction | null> {
+  assertTransactionId(transactionId);
+  const vault = await canonicalVault(vaultPath);
+  const paths = homeInstallationPaths(vault, deps);
+  const upgrade = await inspectUpgradeAncestors(paths);
+  if (upgrade === null) return null;
+  const history = join(upgrade, "history");
+  if (!await present(history)) return null;
+  await assertDirectDirectory(history, "upgrade history root");
+  const transactionRoot = join(history, transactionId);
+  if (!await present(transactionRoot)) return null;
+  const journal = await readBoundedJournal(transactionRoot, vault, deps);
+  if (journal.transactionId !== transactionId) {
+    throw new Error("Dome Home upgrade history directory disagrees with its transaction identity");
+  }
+  if (journal.phase !== "committed" && journal.phase !== "restored") {
+    throw new Error("Dome Home upgrade history contains a non-terminal transaction");
+  }
+  validateCanonicalArtifactPath(journal.old, paths);
+  validateCanonicalArtifactPath(journal.candidate, paths);
+  validateArchivedSelectorPaths(journal, paths, deps);
+  await validateSnapshotInventory(transactionRoot, journal.snapshot.inventory);
+  return journal;
+}
+
+/**
+ * Constant-cost immutable-history identity proof for derived receipt readers.
+ * This uses the canonical closed-root and strict journal parser, but never
+ * opens or hashes stored selector and snapshot contents; full audit stays in
+ * `readHomeUpgradeHistory`.
+ */
+export async function readHomeUpgradeHistoryIdentity(
+  vaultPath: string,
+  transactionId: string,
+  deps: HomeUpgradeTransactionDeps = {},
+): Promise<HomeUpgradeHistoryIdentity | null> {
+  assertTransactionId(transactionId);
+  const vault = await canonicalVault(vaultPath);
+  const paths = homeInstallationPaths(vault, deps);
+  const upgrade = await inspectUpgradeAncestors(paths);
+  if (upgrade === null) return null;
+  const history = join(upgrade, "history");
+  if (!await present(history)) return null;
+  await assertPrivateDirectory(history, "upgrade history root");
+  const transactionRoot = join(history, transactionId);
+  if (!await present(transactionRoot)) return null;
+  await deps.historyIdentityCheckpoint?.("transaction-observed");
+  try {
+    if (!await present(join(transactionRoot, "journal.json"))) {
+      if (!await present(transactionRoot)) return null;
+      throw new Error("Dome Home archived upgrade transaction lacks its journal");
+    }
+    const journal = await readBoundedJournalRoot(transactionRoot, vault, deps);
+    if (journal.transactionId !== transactionId ||
+      (journal.phase !== "committed" && journal.phase !== "restored")) {
+      throw new Error("Dome Home archived upgrade journal has invalid terminal identity");
+    }
+    const terminalAt = journal.phase === "committed"
+      ? journal.timestamps.committedAt
+      : journal.timestamps.restoredAt;
+    if (terminalAt === null) throw new Error("Dome Home archived upgrade transaction lacks its terminal timestamp");
+    return Object.freeze({
+      operationId: journal.transactionId,
+      candidate: Object.freeze({
+        artifactId: journal.candidate.artifactId,
+        productVersion: journal.candidate.version,
+      }),
+      outcome: journal.phase,
+      terminalAt,
+    });
+  } catch (error) {
+    if (hasCode(error, "ENOENT") && !await present(transactionRoot)) return null;
+    throw error;
+  }
 }
 
 /**
@@ -599,10 +842,7 @@ export async function releaseCommittedHomeUpgrade(
   deps: HomeUpgradeTransactionDeps = {},
 ): Promise<HomeUpgradeTransaction> {
   const vault = await canonicalVault(vaultPath);
-  const committed = await readRequiredHomeUpgrade(vault, deps);
-  if (committed.phase !== "committed") {
-    throw new Error("only a committed Dome Home upgrade may release write admission");
-  }
+  const committed = await readRequiredCommittedHomeUpgradeForward(vault, deps);
   const inspection = await inspectOperationalWriterBarrier(vault);
   const marker = await readHomeUpgradeBarrier(vault, deps);
   if (!inspection.blocked) {
@@ -620,8 +860,8 @@ export async function releaseCommittedHomeUpgrade(
   }, deps, async (owner) => {
     await assertActiveHomeBarrier(vault, owner, deps);
     await owner.release(async () => {
-      const current = await readRequiredHomeUpgrade(vault, deps);
-      if (current.phase !== "committed" || current.transactionId !== committed.transactionId) {
+      const current = await readRequiredCommittedHomeUpgradeForward(vault, deps);
+      if (current.transactionId !== committed.transactionId) {
         throw new Error("Dome Home upgrade is not durably committed");
       }
     });
@@ -632,7 +872,7 @@ export async function releaseCommittedHomeUpgrade(
       throw new Error("committed upgrade writer release raced with another owner");
     }
   }
-  return await readRequiredHomeUpgrade(vault, deps);
+  return await readRequiredCommittedHomeUpgradeForward(vault, deps);
 }
 
 async function runRestoreOwnership(
@@ -848,7 +1088,7 @@ export async function inspectHomeUpgradeAdmission(
     if (upgrade === null) return Object.freeze({ admitted: true as const });
     const active = join(upgrade, "active");
     if (!await present(active)) return Object.freeze({ admitted: true as const });
-    const journal = await readBoundedJournal(active, vault);
+    const journal = await readBoundedJournal(active, vault, deps);
     if (journal.phase !== "restored" && journal.phase !== "committed") {
       return Object.freeze({ admitted: false as const, reason: `upgrade transaction is ${journal.phase}` });
     }
@@ -863,7 +1103,7 @@ export async function inspectHomeUpgradeAdmission(
         return Object.freeze({ admitted: false as const, reason: "committed upgrade selector is not the candidate" });
       }
       await validateArtifactReference(journal.candidate, paths);
-      await validateSelectorReferences(journal, paths, deps);
+      await validateSelectorReferences(journal, active, paths, deps);
       return Object.freeze({ admitted: true as const });
     }
     const installation = await readHomeInstallation(vault, deps);
@@ -887,27 +1127,113 @@ export async function inspectHomeUpgradeAdmission(
   }
 }
 
-async function readBoundedJournal(active: string, vault: string): Promise<HomeUpgradeTransaction> {
-  await assertDirectDirectory(active, "upgrade transaction root");
-  await assertDirectDirectory(join(active, "snapshot"), "upgrade snapshot root");
-  const journalPath = join(active, "journal.json");
-  const info = await lstat(journalPath);
-  if (!info.isFile() || info.isSymbolicLink() || info.size > 1024 * 1024) {
-    throw new Error("Dome Home upgrade journal is not a bounded regular file");
-  }
-  let value: unknown;
-  try { value = JSON.parse(await readFile(journalPath, "utf8")); }
-  catch { throw new Error("Dome Home upgrade journal is corrupt"); }
-  const journal = parseJournal(value, vault);
-  const rootNames = (await readdir(active)).sort(compareStrings);
-  const expected = journal.schema === HOME_UPGRADE_TRANSACTION_SCHEMA
-    ? ["journal.json", "selectors", "snapshot"]
-    : ["journal.json", "snapshot"];
-  if (JSON.stringify(rootNames) !== JSON.stringify(expected)) {
-    throw new Error("Dome Home upgrade transaction has an unknown or missing root entry");
-  }
+async function readBoundedJournal(
+  active: string,
+  vault: string,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<HomeUpgradeTransaction> {
+  const journal = await readBoundedJournalRoot(active, vault, deps);
   if (journal.selection !== null) await validateStoredSelection(active, journal.selection);
   return journal;
+}
+
+async function readBoundedJournalRoot(
+  active: string,
+  vault: string,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<HomeUpgradeTransaction> {
+  const root = await open(active, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  try {
+    const rootBefore = await root.stat({ bigint: true });
+    if (!rootBefore.isDirectory() || (rootBefore.mode & 0o777n) !== 0o700n) {
+      throw new Error("Dome Home upgrade transaction root is not a private directory");
+    }
+    await assertOpenedDirectoryPath(active, rootBefore, "upgrade transaction root");
+    await deps.journalReadCheckpoint?.("root-opened");
+    return await withBoundedPrivateFile(
+      join(active, "journal.json"),
+      1024 * 1024,
+      "Dome Home upgrade journal",
+      deps,
+      async (bytes) => {
+        let value: unknown;
+        try { value = JSON.parse(bytes.toString("utf8")); }
+        catch { throw new Error("Dome Home upgrade journal is corrupt"); }
+        const journal = parseJournal(value, vault);
+        await assertPrivateDirectory(join(active, "snapshot"), "upgrade snapshot root");
+        const expected = journal.schema === HOME_UPGRADE_TRANSACTION_SCHEMA
+          ? ["journal.json", "selectors", "snapshot"]
+          : ["journal.json", "snapshot"];
+        const withSummary = [...expected, "summary.json"].sort(compareStrings);
+        const rootNames = await readBoundedNames(active, withSummary.length);
+        if (JSON.stringify(rootNames) !== JSON.stringify(expected) &&
+          JSON.stringify(rootNames) !== JSON.stringify(withSummary)) {
+          throw new Error("Dome Home upgrade transaction has an unknown or missing root entry");
+        }
+        if (rootNames.includes("summary.json")) {
+          const summary = await assertRegular(join(active, "summary.json"), "upgrade terminal summary");
+          if ((await lstat(join(active, "summary.json"))).nlink !== 1 ||
+            (summary.mode & 0o777) !== 0o600 || summary.size === 0 || summary.size > 4096) {
+            throw new Error("Dome Home upgrade terminal summary is not a bounded private file");
+          }
+        }
+        if (journal.selection !== null) {
+          await assertPrivateDirectory(join(active, "selectors"), "upgrade stored selectors");
+        }
+        await deps.journalReadCheckpoint?.("before-root-recheck");
+        const rootAfter = await root.stat({ bigint: true });
+        if (!sameOpenedStat(rootBefore, rootAfter)) {
+          throw new Error("Dome Home upgrade transaction root changed during bounded inspection");
+        }
+        await assertOpenedDirectoryPath(active, rootAfter, "upgrade transaction root");
+        return journal;
+      },
+    );
+  } finally { await root.close(); }
+}
+
+async function withBoundedPrivateFile<T>(
+  path: string,
+  maximumBytes: number,
+  label: string,
+  deps: HomeUpgradeTransactionDeps,
+  inspect: (bytes: Buffer) => Promise<T>,
+): Promise<T> {
+  let handle: Awaited<ReturnType<typeof open>>;
+  try { handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW); }
+  catch (error) {
+    if (hasCode(error, "ENOENT")) throw error;
+    throw new Error(`${label} cannot be opened without following links`);
+  }
+  try {
+    const before = await handle.stat({ bigint: true });
+    if (!before.isFile() || before.nlink !== 1n || (before.mode & 0o777n) !== 0o600n ||
+      before.size === 0n || before.size > BigInt(maximumBytes)) {
+      throw new Error(`${label} is not a bounded private file`);
+    }
+    await assertOpenedFilePath(path, before, label);
+    await deps.journalReadCheckpoint?.("journal-opened");
+    const expected = Number(before.size);
+    const bytes = Buffer.alloc(expected + 1);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const result = await handle.read(bytes, offset, bytes.length - offset, offset);
+      if (result.bytesRead === 0) break;
+      offset += result.bytesRead;
+    }
+    const afterRead = await handle.stat({ bigint: true });
+    if (offset !== expected || !sameOpenedStat(before, afterRead)) {
+      throw new Error(`${label} changed during bounded inspection`);
+    }
+    await assertOpenedFilePath(path, afterRead, label);
+    const result = await inspect(bytes.subarray(0, offset));
+    const afterInspect = await handle.stat({ bigint: true });
+    if (!sameOpenedStat(before, afterInspect)) {
+      throw new Error(`${label} changed during bounded inspection`);
+    }
+    await assertOpenedFilePath(path, afterInspect, label);
+    return result;
+  } finally { await handle.close(); }
 }
 
 async function inspectUpgradeAncestors(paths: HomeInstallationPaths): Promise<string | null> {
@@ -973,8 +1299,9 @@ async function assertCandidateDurableCompatibility(
   if (manifest.artifact.id !== candidate.artifactId || manifest.product.version !== candidate.version) {
     throw new Error("upgrade candidate artifact or product version changed");
   }
-  if (manifest.writerBarrier?.protocol !== 1 || manifest.durableState?.protocol !== HOME_DURABLE_STATE_PROTOCOL) {
-    throw new Error("upgrade candidate lacks required writer-barrier or durable-state protocol");
+  if (manifest.distribution.upgradeSupported !== true ||
+    manifest.writerBarrier?.protocol !== 1 || manifest.durableState?.protocol !== HOME_DURABLE_STATE_PROTOCOL) {
+    throw new Error("upgrade candidate lacks supported-upgrade, writer-barrier, or durable-state protocol");
   }
   if (manifest.durableState.stores.length !== HOME_STORE_MIGRATIONS.length ||
     !HOME_STORE_MIGRATIONS.every((expected, index) => {
@@ -998,23 +1325,25 @@ async function assertCandidateDurableCompatibility(
 
 async function validateJournalReferences(
   journal: HomeUpgradeTransaction,
+  transactionRoot: string,
   paths: HomeInstallationPaths,
   deps: HomeUpgradeTransactionDeps,
 ): Promise<void> {
   for (const artifact of [journal.old, journal.candidate]) {
     await validateArtifactReference(artifact, paths);
   }
-  await validateSelectorReferences(journal, paths, deps);
+  await validateSelectorReferences(journal, transactionRoot, paths, deps);
 }
 
 async function validateRestoreJournalReferences(
   journal: HomeUpgradeTransaction,
+  transactionRoot: string,
   paths: HomeInstallationPaths,
   deps: HomeUpgradeTransactionDeps,
 ): Promise<void> {
   await validateArtifactReference(journal.old, paths);
   validateCanonicalArtifactPath(journal.candidate, paths);
-  await validateSelectorReferences(journal, paths, deps);
+  await validateSelectorReferences(journal, transactionRoot, paths, deps);
 }
 
 async function validateArtifactReference(
@@ -1039,6 +1368,7 @@ function validateCanonicalArtifactPath(
 
 async function validateSelectorReferences(
   journal: HomeUpgradeTransaction,
+  transactionRoot: string,
   paths: HomeInstallationPaths,
   deps: HomeUpgradeTransactionDeps,
 ): Promise<void> {
@@ -1048,7 +1378,7 @@ async function validateSelectorReferences(
     return;
   }
   const stored = await loadStoredSelection(
-    join(paths.installations, "upgrade", "active"),
+    transactionRoot,
     journal.selection,
   );
   const state = await classifyHomeSelection(stored);
@@ -1056,6 +1386,19 @@ async function validateSelectorReferences(
     ((journal.phase === "prepared" || journal.phase === "restored") && state !== "old") ||
     (journal.phase === "committed" && state !== "candidate")) {
     throw new Error(`Dome Home selector state ${state} is inconsistent with upgrade phase ${journal.phase}`);
+  }
+}
+
+function validateArchivedSelectorPaths(
+  journal: HomeUpgradeTransaction,
+  paths: HomeInstallationPaths,
+  deps: HomeUpgradeTransactionDeps,
+): void {
+  if (journal.selectors.installation.path !== paths.record) {
+    throw new Error("archived installation selector path is not canonical");
+  }
+  if (journal.selectors.plist.path !== homePlistPath(journal.vault, deps)) {
+    throw new Error("archived Dome Home plist path is not canonical");
   }
 }
 
@@ -1113,15 +1456,16 @@ async function snapshotDurableState(vault: string, snapshotRoot: string): Promis
 
 async function validateSnapshotInventory(active: string, inventory: ReadonlyArray<HomeUpgradeSnapshotEntry>): Promise<void> {
   const snapshot = join(active, "snapshot");
-  await assertDirectDirectory(snapshot, "upgrade snapshot root");
-  const names = (await readdir(snapshot)).sort(compareStrings);
+  await assertPrivateDirectory(snapshot, "upgrade snapshot root");
   const expected = inventory.filter((entry) => entry.present).map((entry) => entry.name).sort(compareStrings);
+  const names = await readBoundedNames(snapshot, expected.length);
   if (JSON.stringify(names) !== JSON.stringify(expected)) throw new Error("upgrade snapshot inventory is not closed");
   for (const entry of inventory) {
     if (!entry.present) continue;
     const path = join(snapshot, entry.name);
     const info = await assertRegular(path, `snapshot ${entry.name}`);
-    if ((info.mode & 0o777) !== 0o600 || info.size !== entry.size || await hashFile(path) !== entry.sha256) {
+    if ((await lstat(path)).nlink !== 1 || (info.mode & 0o777) !== 0o600 ||
+      info.size !== entry.size || await hashFile(path) !== entry.sha256) {
       throw new Error(`upgrade snapshot evidence changed: ${entry.name}`);
     }
     if (entry.kind === "sqlite") {
@@ -1178,17 +1522,17 @@ async function validateStoredSelection(
   selection: HomeUpgradeSelectionEvidence,
 ): Promise<void> {
   const root = join(active, "selectors");
-  await assertDirectDirectory(root, "upgrade stored selectors");
+  await assertPrivateDirectory(root, "upgrade stored selectors");
   const expected = [
     "candidate-installation.json", "candidate.plist", "old-installation.json", "old.plist",
   ];
-  if (JSON.stringify((await readdir(root)).sort(compareStrings)) !== JSON.stringify(expected)) {
+  if (JSON.stringify(await readBoundedNames(root, expected.length)) !== JSON.stringify(expected)) {
     throw new Error("upgrade stored selector inventory is not closed");
   }
   for (const document of storedSelectionDocuments(selection)) {
     const path = join(active, document.stored);
     const info = await assertRegular(path, `stored ${document.stored}`);
-    if ((info.mode & 0o777) !== 0o600 || info.size !== document.size ||
+    if ((await lstat(path)).nlink !== 1 || (info.mode & 0o777) !== 0o600 || info.size !== document.size ||
       await hashFile(path) !== document.sha256) {
       throw new Error(`upgrade stored selector evidence changed: ${document.stored}`);
     }
@@ -1719,6 +2063,15 @@ async function readRequiredHomeUpgrade(vault: string, deps: HomeUpgradeTransacti
   return journal;
 }
 
+async function readRequiredCommittedHomeUpgradeForward(
+  vault: string,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<HomeUpgradeTransaction> {
+  const journal = await readCommittedHomeUpgradeForward(vault, deps);
+  if (journal === null) throw new Error("no committed Dome Home upgrade transaction exists");
+  return journal;
+}
+
 async function readRequiredRestoreHomeUpgrade(
   vault: string,
   deps: HomeUpgradeTransactionDeps,
@@ -1726,6 +2079,38 @@ async function readRequiredRestoreHomeUpgrade(
   const journal = await readHomeUpgradeForRecovery(vault, deps);
   if (journal === null) throw new Error("no prepared Dome Home upgrade transaction exists");
   return journal;
+}
+
+async function readRequiredUpgradeDisposition(
+  vault: string,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<HomeUpgradeTransaction> {
+  const journal = await readHomeUpgradeDisposition(vault, deps);
+  if (journal === null) throw new Error("no Dome Home upgrade transaction exists");
+  return journal;
+}
+
+function assertCommittedRepairIdentity(journal: HomeUpgradeTransaction, transactionId: string): void {
+  if (journal.schema !== HOME_UPGRADE_TRANSACTION_SCHEMA || journal.phase !== "committed" ||
+    journal.transactionId !== transactionId || journal.selection === null) {
+    throw new Error("only the exact committed v2 Dome Home upgrade may be repaired forward");
+  }
+}
+
+async function assertExactRepairCandidate(
+  journal: HomeUpgradeTransaction,
+  candidate: HomeUpgradeRepairCandidate,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<void> {
+  try {
+    const verify = deps.verifyArtifact ?? verifyHomeArtifact;
+    const actual = await verify(resolve(candidate.source));
+    if (isDeepStrictEqual(actual, candidate.manifest) &&
+      actual.artifact.id === journal.candidate.artifactId &&
+      actual.product.version === journal.candidate.version &&
+      await hashFile(join(resolve(candidate.source), "manifest.json")) === journal.candidate.manifestSha256) return;
+  } catch { /* Collapse filesystem detail at the private repair gate. */ }
+  throw new Error("invoking artifact is not the exact committed repair candidate");
 }
 
 async function canonicalVault(path: string): Promise<string> {
@@ -1755,6 +2140,53 @@ async function assertDirectDirectory(path: string, label: string): Promise<void>
   if (!info.isDirectory() || info.isSymbolicLink() || await realpath(path) !== resolve(path)) {
     throw new Error(`${label} is not a direct owned directory: ${path}`);
   }
+}
+
+async function assertPrivateDirectory(path: string, label: string): Promise<void> {
+  await assertDirectDirectory(path, label);
+  if (((await lstat(path)).mode & 0o777) !== 0o700) {
+    throw new Error(`${label} is not private: ${path}`);
+  }
+}
+
+async function assertOpenedDirectoryPath(path: string, opened: BigIntStats, label: string): Promise<void> {
+  const current = await lstat(path, { bigint: true });
+  if (!current.isDirectory() || current.isSymbolicLink() || current.dev !== opened.dev || current.ino !== opened.ino ||
+    await realpath(path) !== resolve(path)) {
+    throw new Error(`Dome Home ${label} path changed during bounded inspection`);
+  }
+}
+
+async function assertOpenedFilePath(path: string, opened: BigIntStats, label: string): Promise<void> {
+  const current = await lstat(path, { bigint: true });
+  if (!current.isFile() || current.isSymbolicLink() || current.dev !== opened.dev || current.ino !== opened.ino ||
+    await realpath(path) !== resolve(path)) {
+    throw new Error(`${label} path changed during bounded inspection`);
+  }
+}
+
+function sameOpenedStat(left: BigIntStats, right: BigIntStats): boolean {
+  return left.dev === right.dev && left.ino === right.ino && left.mode === right.mode &&
+    left.nlink === right.nlink && left.uid === right.uid && left.gid === right.gid &&
+    left.size === right.size && left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs;
+}
+
+async function readBoundedNames(path: string, maximum: number): Promise<ReadonlyArray<string>> {
+  const names: string[] = [];
+  const directory = await opendir(path);
+  try {
+    for await (const entry of directory) {
+      names.push(entry.name);
+      if (names.length > maximum) {
+        throw new Error(`Dome Home upgrade directory is not closed; inventory budget exceeded: ${path}`);
+      }
+    }
+  } finally {
+    try { await directory.close(); } catch (error) {
+      if (!hasCode(error, "ERR_DIR_CLOSED")) throw error;
+    }
+  }
+  return names.sort(compareStrings);
 }
 
 async function assertRegular(path: string, label: string): Promise<{ readonly mode: number; readonly size: number }> {
@@ -1840,4 +2272,8 @@ async function present(path: string): Promise<boolean> {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
     throw error;
   }
+}
+
+function hasCode(error: unknown, code: string): boolean {
+  return error instanceof Error && "code" in error && error.code === code;
 }
