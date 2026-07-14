@@ -302,6 +302,35 @@ describe("AgentRuntime", () => {
     expect(second.send("available").failure).toBeUndefined();
   });
 
+  test("late consumption preserves timeout causes after abort-reason collection", async () => {
+    const runtime = createAgentRuntime({
+      runTurn: () => stream("unused"),
+      limits: {
+        maxSessions: 10,
+        maxSessionsPerDevice: 10,
+        maxActiveTurns: 10,
+        maxActiveTurnsPerDevice: 10,
+        turnTimeoutMs: 1,
+      },
+    });
+    const turns = Array.from(
+      { length: 10 },
+      () => runtime.createSession(context("phone")).send("never consumed"),
+    );
+
+    await Bun.sleep(5);
+    Bun.gc(true);
+
+    const terminalEvents = await Promise.all(turns.map((turn) => collect(turn.events)));
+    expect(terminalEvents.map((events) => events[0])).toEqual(
+      Array.from({ length: 10 }, () => ({
+        kind: "error",
+        code: "turn-timeout",
+        message: "agent turn timed out",
+      })),
+    );
+  });
+
   test("late consumption of a timed-out turn cannot release its replacement turn", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
