@@ -31,6 +31,10 @@
     {
       "path": "src/device-authority/device-authority.ts",
       "sha256": "a9e5b47c87690bc21ee7925d902506622c817b75c00fa82201455dcf0ac14c89"
+    },
+    {
+      "path": "assets/extensions/dome.markdown/manifest.yaml",
+      "sha256": "be6417121c07049084a420bea091964be222f0b5907f0854645ad4819866c0af"
     }
   ],
   "stores": [

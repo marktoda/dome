@@ -31,7 +31,7 @@ import { inspectHomeArtifactTar, MAX_HOME_ARTIFACT_TAR_BYTES } from "./home-arti
 import {
   assertFrozenN1State,
   assertFrozenN1RuntimeBaseline,
-  assertFrozenN1RuntimeNormalization,
+  assertFrozenN1RuntimeProvenance,
   establishFrozenN1RuntimeBaseline,
   materializeFrozenN1Fixture,
   observeFrozenN1State,
@@ -537,7 +537,7 @@ async function createScenario(
   });
   const completedTick = await readinessTick(context);
   await waitForNextReadinessTick(context, completedTick);
-  assertFrozenN1RuntimeNormalization(stateRoot);
+  assertFrozenN1RuntimeProvenance(stateRoot);
   const quiescent = await observeFrozenN1State({
     fixtureRoot: context.fixtureRoot,
     stateRoot,

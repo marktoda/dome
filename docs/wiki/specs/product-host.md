@@ -691,7 +691,10 @@ request receipt becomes `interrupted` with `host-restarted`, `unknown`
 adoption, and recovery required, while the pending proposal remains pending
 under the live scheduled garden `dome.markdown.attic-sweep` processor and its
 `patch.propose` grant. The linked ledger run carries the same processor,
-schedule provenance, real patch effect hash, and proposal run id.
+schedule provenance, real patch effect hash, and proposal run id. The frozen
+source inventory pins the owning extension manifest exactly; fixture tests
+hash and parse the checked-out bytes and therefore require no predecessor Git
+history.
 
 The rehearsal validates every selected row in the six post-start canaries
 before capturing the resulting observation as its quiescent runtime baseline.

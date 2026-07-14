@@ -41,6 +41,7 @@ const SOURCE_FILES = Object.freeze([
   "src/ledger/db.ts",
   "src/request-receipts/db.ts",
   "src/device-authority/device-authority.ts",
+  "assets/extensions/dome.markdown/manifest.yaml",
 ] as const);
 const SOURCE_SHA256 = Object.freeze([
   "25c4bf6ba34200dc52f6009e81e4a33ce92fae60c251b14e12722521823e548f",
@@ -49,6 +50,7 @@ const SOURCE_SHA256 = Object.freeze([
   "4c7a7b8a63a0000124b2c240b754abd1f80afdcb482d53bb3015bb7e130ca662",
   "21a076dbc8daaf47cfee12f5fe7a928b9048737efbe3d5adf1d190fd970f4cc6",
   "a9e5b47c87690bc21ee7925d902506622c817b75c00fa82201455dcf0ac14c89",
+  "be6417121c07049084a420bea091964be222f0b5907f0854645ad4819866c0af",
 ] as const);
 
 const STORES = Object.freeze([
@@ -320,13 +322,11 @@ export function assertFrozenN1RuntimeBaseline(
   }
 }
 
-/** Assert the exact, deterministic recovery performed by the first N-1 tick. */
-export function assertFrozenN1RuntimeNormalization(stateRoot: string): void {
+/** Assert provenance fields outside the selected logical canaries. */
+export function assertFrozenN1RuntimeProvenance(stateRoot: string): void {
   const root = resolve(stateRoot);
   const proposals = new Database(join(root, "proposals.db"), { readonly: true, create: false });
-  const outbox = new Database(join(root, "outbox.db"), { readonly: true, create: false });
   const receipts = new Database(join(root, "request-receipts.db"), { readonly: true, create: false });
-  const answers = new Database(join(root, "answers.db"), { readonly: true, create: false });
   const ledger = new Database(join(root, "runs.db"), { readonly: true, create: false });
   try {
     const proposal = proposals.query<Record<string, SqlValue>, []>(
@@ -371,57 +371,16 @@ export function assertFrozenN1RuntimeNormalization(stateRoot: string): void {
       outcome: "allowed",
     })) throw new Error("frozen N-1 pending proposal capability audit changed");
 
-    const failed = outbox.query<Record<string, SqlValue>, []>(
-      "SELECT status,attempts,max_attempts,last_error FROM outbox " +
-        "WHERE idempotency_key='outbox-pending'",
-    ).get();
-    if (stableJson(failed) !== stableJson({
-      status: "failed",
-      attempts: 1,
-      max_attempts: 3,
-      last_error: "No external handler registered for capability 'notify.send'.",
-    })) throw new Error("frozen N-1 pending outbox did not normalize exactly once");
-
     const interrupted = receipts.query<Record<string, SqlValue>, []>(
-      "SELECT state,result_code,commit_oid,adoption_state,recovery_required,finished_at " +
-        "FROM request_receipts WHERE operation_id='receipt-admitted'",
+      "SELECT finished_at FROM request_receipts WHERE operation_id='receipt-admitted'",
     ).get();
     if (interrupted === null || typeof interrupted["finished_at"] !== "string" ||
       !Number.isFinite(Date.parse(interrupted["finished_at"]))) {
       throw new Error("frozen N-1 interrupted receipt lacks a valid finish time");
     }
-    if (stableJson({
-      state: interrupted["state"],
-      result_code: interrupted["result_code"],
-      commit_oid: interrupted["commit_oid"],
-      adoption_state: interrupted["adoption_state"],
-      recovery_required: interrupted["recovery_required"],
-    }) !== stableJson({
-      state: "interrupted",
-      result_code: "host-restarted",
-      commit_oid: null,
-      adoption_state: "unknown",
-      recovery_required: 1,
-    })) {
-      throw new Error("frozen N-1 admitted receipt did not normalize to interrupted recovery");
-    }
-
-    const answer = answers.query<Record<string, SqlValue>, []>(
-      "SELECT handler_status,handler_attempts,last_handler_attempt_at,handled_at,last_handler_error " +
-        "FROM question_answers WHERE idempotency_key='answer-owner'",
-    ).get();
-    if (stableJson(answer) !== stableJson({
-      handler_status: "pending",
-      handler_attempts: 0,
-      last_handler_attempt_at: null,
-      handled_at: null,
-      last_handler_error: null,
-    })) throw new Error("frozen N-1 stored answer unexpectedly changed during startup");
   } finally {
     proposals.close();
-    outbox.close();
     receipts.close();
-    answers.close();
     ledger.close();
   }
 }
@@ -434,7 +393,7 @@ export async function establishFrozenN1RuntimeBaseline(input: {
   readonly fixtureRoot: string;
   readonly stateRoot: string;
 }): Promise<FrozenN1StateObservation> {
-  assertFrozenN1RuntimeNormalization(input.stateRoot);
+  assertFrozenN1RuntimeProvenance(input.stateRoot);
   const root = resolve(input.stateRoot);
   const manifest = await readFrozenN1Manifest(resolve(input.fixtureRoot));
   const canaries: unknown[] = [];

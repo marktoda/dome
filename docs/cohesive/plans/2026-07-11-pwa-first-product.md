@@ -650,7 +650,9 @@ becomes interrupted/recovery-required, and the pending scheduled garden
 proposal stays pending because its `dome.markdown.attic-sweep` owner and
 `patch.propose` capability are live. Its linked run is generated through the
 real proposal and ledger interfaces with coherent schedule, effect-hash, base,
-source, change, and capability-use provenance.
+source, change, and capability-use provenance. The closed frozen source
+inventory also pins the owning `dome.markdown` manifest bytes, so CI proves the
+owner and grant from the checkout without requiring Git history.
 
 The rehearsal validates the entire selected six-store post-start canary before
 capturing that exact state as the quiescent runtime baseline, waits for a

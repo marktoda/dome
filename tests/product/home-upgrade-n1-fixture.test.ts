@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { chmod, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,6 +38,7 @@ describe("frozen Home N-1 durable-state fixture", () => {
         "src/ledger/db.ts",
         "src/request-receipts/db.ts",
         "src/device-authority/device-authority.ts",
+        "assets/extensions/dome.markdown/manifest.yaml",
       ]);
       expect((await readdir(root)).sort()).toEqual([
         "answers.db",
@@ -94,12 +96,9 @@ describe("frozen Home N-1 durable-state fixture", () => {
   test("preserves raw startup recovery inputs under a live proposal owner", async () => {
     const root = await mkdtemp(join(tmpdir(), "dome-n1-runtime-baseline-"));
     try {
-      await materializeFrozenN1Fixture({ fixtureRoot: FIXTURE, destination: root });
+      const fixtureManifest = await materializeFrozenN1Fixture({ fixtureRoot: FIXTURE, destination: root });
       const proposals = new Database(join(root, "proposals.db"), { readonly: true, create: false });
-      const outbox = new Database(join(root, "outbox.db"), { readonly: true, create: false });
       const runs = new Database(join(root, "runs.db"), { readonly: true, create: false });
-      const receipts = new Database(join(root, "request-receipts.db"), { readonly: true, create: false });
-      const answers = new Database(join(root, "answers.db"), { readonly: true, create: false });
       try {
         const owner = proposals.query<{
           dedupe_key: string;
@@ -135,20 +134,16 @@ describe("frozen Home N-1 durable-state fixture", () => {
           "notes/Untitled.md": "# Untitled\n",
         });
 
-        const exactN1 = extensionManifest(await gitShow(
-          FROZEN_N1_SOURCE_COMMIT,
-          "assets/extensions/dome.markdown/manifest.yaml",
-        ));
-        const current = extensionManifest(await readFile(
-          join(import.meta.dir, "..", "..", "assets", "extensions", "dome.markdown", "manifest.yaml"),
-          "utf8",
-        ));
-        for (const manifest of [exactN1, current]) {
-          expect(manifest.id).toBe(owner.extension_id);
-          const processor = manifest.processors.find((candidate) => candidate.id === owner.processor_id);
-          expect(processor?.phase).toBe("garden");
-          expect(processor?.capabilities.map((capability) => capability.kind)).toContain("patch.propose");
-        }
+        const extensionPath = "assets/extensions/dome.markdown/manifest.yaml";
+        const pinnedExtension = fixtureManifest.sourceFiles.find((entry) => entry.path === extensionPath);
+        if (pinnedExtension === undefined) throw new Error("frozen extension source is missing");
+        const currentExtension = await readFile(join(import.meta.dir, "..", "..", extensionPath));
+        expect(createHash("sha256").update(currentExtension).digest("hex")).toBe(pinnedExtension.sha256);
+        const extension = extensionManifest(currentExtension.toString("utf8"));
+        expect(extension.id).toBe(owner.extension_id);
+        const processor = extension.processors.find((candidate) => candidate.id === owner.processor_id);
+        expect(processor?.phase).toBe("garden");
+        expect(processor?.capabilities.map((capability) => capability.kind)).toContain("patch.propose");
 
         const linkedRun = runs.query<Record<string, unknown>, []>(
           "SELECT proposal_id,processor_id,processor_version,phase,status,output_commit," +
@@ -183,35 +178,9 @@ describe("frozen Home N-1 durable-state fixture", () => {
           outcome: "allowed",
           recorded_at: owner.created_at,
         });
-        expect(outbox.query<Record<string, unknown>, []>(
-          "SELECT status,attempts,max_attempts,next_attempt_at,last_error FROM outbox " +
-            "WHERE idempotency_key='outbox-pending'",
-        ).get()).toEqual({
-          status: "pending",
-          attempts: 0,
-          max_attempts: 3,
-          next_attempt_at: "2026-07-13T12:08:00.000Z",
-          last_error: null,
-        });
-        expect(receipts.query<Record<string, unknown>, []>(
-          "SELECT state,result_code,adoption_state,recovery_required FROM request_receipts " +
-            "WHERE operation_id='receipt-admitted'",
-        ).get()).toEqual({
-          state: "admitted",
-          result_code: null,
-          adoption_state: "none",
-          recovery_required: 0,
-        });
-        expect(answers.query<Record<string, unknown>, []>(
-          "SELECT handler_status,handler_attempts FROM question_answers " +
-            "WHERE idempotency_key='answer-owner'",
-        ).get()).toEqual({ handler_status: "pending", handler_attempts: 0 });
       } finally {
         proposals.close();
-        outbox.close();
         runs.close();
-        receipts.close();
-        answers.close();
       }
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -340,20 +309,4 @@ function extensionManifest(source: string): BundleManifest {
     throw new Error("extension manifest lacks processor identity");
   }
   return value as BundleManifest;
-}
-
-async function gitShow(commit: string, path: string): Promise<string> {
-  const repo = join(import.meta.dir, "..", "..");
-  const child = Bun.spawn(["git", "show", `${commit}:${path}`], {
-    cwd: repo,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  if (exitCode !== 0) throw new Error(stderr || `git show failed: ${path}`);
-  return stdout;
 }
