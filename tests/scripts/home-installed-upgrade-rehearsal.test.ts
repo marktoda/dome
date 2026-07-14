@@ -11,6 +11,7 @@ import {
   exerciseInstalledUpgradeOrchestrationForTests,
   pairedDeviceIdForTests,
   predecessorHomeInstallInvocationForTests,
+  retainedCheckpointOwnershipMatchesForTests,
   renderInstalledCoordinationErrorForTests,
   retainedCheckpointOwnershipSummaryForTests,
   resolveContainedArtifactRootForTests,
@@ -87,6 +88,35 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       lifecycle: { state: "active", phase: "suspended", purpose: "upgrade", operationId },
       upgrade: { state: "unavailable", operationId: null, outcome: null, nextAction: "inspect-home-status" },
     }));
+  });
+
+  test("requires exact phase-specific retained lifecycle and upgrade ownership", () => {
+    const transactionId = "11111111-1111-4111-8111-111111111111";
+    const status = (
+      state: "active" | "complete",
+      outcome: null | "committed",
+      nextAction: "retry-recovery" | "none",
+    ) => ({
+      lifecycle: {
+        state: "active", phase: "suspended", purpose: "upgrade", operationId: transactionId,
+      },
+      upgrade: { state, operationId: transactionId, outcome, nextAction },
+    });
+    const switching = status("active", null, "retry-recovery");
+    const committed = status("complete", "committed", "none");
+
+    expect(retainedCheckpointOwnershipMatchesForTests(switching, "switching", transactionId)).toBeTrue();
+    expect(retainedCheckpointOwnershipMatchesForTests(committed, "committed", transactionId)).toBeTrue();
+    expect(retainedCheckpointOwnershipMatchesForTests(committed, "switching", transactionId)).toBeFalse();
+    expect(retainedCheckpointOwnershipMatchesForTests(switching, "committed", transactionId)).toBeFalse();
+    expect(retainedCheckpointOwnershipMatchesForTests({
+      ...switching,
+      lifecycle: { ...switching.lifecycle, operationId: "22222222-2222-4222-8222-222222222222" },
+    }, "switching", transactionId)).toBeFalse();
+    expect(retainedCheckpointOwnershipMatchesForTests({
+      ...committed,
+      upgrade: { ...committed.upgrade, nextAction: "retry-recovery" },
+    }, "committed", transactionId)).toBeFalse();
   });
 
   test("canonicalizes an aliased extraction destination and still rejects a sibling escape", async () => {

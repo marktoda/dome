@@ -57,6 +57,8 @@ export type InstalledHomeUpgradeScenario =
   | "stopped-precommit-crash"
   | "committed-exact-repair";
 
+type RetainedCheckpointPhase = "switching" | "committed";
+
 const SCENARIOS: ReadonlyArray<InstalledHomeUpgradeScenario> = Object.freeze([
   "ready-success",
   "stopped-precommit-crash",
@@ -120,6 +122,28 @@ export function retainedCheckpointOwnershipSummaryForTests(status: unknown): str
       ]),
     },
   });
+}
+
+/** Exact lifecycle and upgrade ownership expected at each durable crash checkpoint. */
+export function retainedCheckpointOwnershipMatchesForTests(
+  status: unknown,
+  phase: RetainedCheckpointPhase,
+  transactionId: string,
+): boolean {
+  const root = summaryRecord(status);
+  const lifecycle = summaryRecord(root["lifecycle"]);
+  const upgrade = summaryRecord(root["upgrade"]);
+  const expectedUpgrade = phase === "switching"
+    ? { state: "active", outcome: null, nextAction: "retry-recovery" }
+    : { state: "complete", outcome: "committed", nextAction: "none" };
+  return lifecycle["state"] === "active" &&
+    lifecycle["phase"] === "suspended" &&
+    lifecycle["purpose"] === "upgrade" &&
+    lifecycle["operationId"] === transactionId &&
+    upgrade["state"] === expectedUpgrade.state &&
+    upgrade["operationId"] === transactionId &&
+    upgrade["outcome"] === expectedUpgrade.outcome &&
+    upgrade["nextAction"] === expectedUpgrade.nextAction;
 }
 
 function summaryRecord(value: unknown): Record<string, unknown> {
@@ -918,7 +942,7 @@ async function crashAtCheckpoint(
 
 async function assertRetainedCheckpoint(
   context: ScenarioContext,
-  phase: "switching" | "committed",
+  phase: RetainedCheckpointPhase,
 ): Promise<Record<string, unknown>> {
   const paths = homeInstallationPaths(context.vault, {
     applicationSupportDir: join(context.home, "Library", "Application Support", "Dome", "Home"),
@@ -926,6 +950,7 @@ async function assertRetainedCheckpoint(
   const active = join(paths.installations, "upgrade", "active");
   const journal = asRecord(JSON.parse(await readFile(join(active, "journal.json"), "utf8")), "journal");
   if (field(journal, "phase") !== phase) throw new Error(`retained journal did not reach ${phase}`);
+  const transactionId = stringField(journal, "transactionId");
   const selection = objectField(journal, "selection");
   const candidate = objectField(selection, "candidate");
   await assertFileSha(paths.record, stringField(objectField(candidate, "installation"), "sha256"));
@@ -936,8 +961,7 @@ async function assertRetainedCheckpoint(
       stringField(objectField(journal, "candidate"), "artifactId"), "bin", "dome"),
     "home", "status", "--vault", context.vault, "--json",
   ], context.root, context.environment, true);
-  if (field(objectField(status, "lifecycle"), "state") !== "active" ||
-    field(objectField(status, "upgrade"), "state") !== "active") {
+  if (!retainedCheckpointOwnershipMatchesForTests(status, phase, transactionId)) {
     throw new Error(
       `checkpoint crash did not retain lifecycle and upgrade ownership: ${retainedCheckpointOwnershipSummaryForTests(status)}`,
     );
