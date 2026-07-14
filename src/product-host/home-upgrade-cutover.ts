@@ -5,9 +5,11 @@
 // interfaces so callers cannot reorder the irreversible handoff.
 
 import {
+  HomeLifecycleContentionError,
   inspectHomeLifecycleSuspension,
   withSupervisedHomeSuspended,
   type HomeLifecycleSuspensionDeps,
+  type HomeSuspensionPurpose,
   type HomeResumeAuthorization,
   type SupervisedHomeSuspensionResult,
 } from "./home-lifecycle-suspension";
@@ -83,11 +85,13 @@ export class HomeUpgradeSelectionChangedError extends Error {
 
 /** Stable signal that another lifecycle-owned intent must be allowed to finish. */
 export class HomeUpgradeBusyError extends Error {
-  readonly purpose: string;
-  readonly operationId: string;
+  readonly purpose: HomeSuspensionPurpose | null;
+  readonly operationId: string | null;
 
-  constructor(purpose: string, operationId: string) {
-    super(`Home lifecycle is owned by ${purpose}:${operationId}`);
+  constructor(purpose: HomeSuspensionPurpose | null, operationId: string | null) {
+    super(purpose === null || operationId === null
+      ? "Home lifecycle coordinator is busy"
+      : `Home lifecycle is owned by ${purpose}:${operationId}`);
     this.name = "HomeUpgradeBusyError";
     this.purpose = purpose;
     this.operationId = operationId;
@@ -274,6 +278,12 @@ export async function runHomeUpgradeCutover(input: {
       }
     }, deps);
   } catch (error) {
+    if (error instanceof HomeLifecycleContentionError) {
+      throw new HomeUpgradeBusyError(
+        error.owner?.purpose ?? null,
+        error.owner?.operationId ?? null,
+      );
+    }
     if (recoveryHandoff?.transactionOutcome.kind === "committed") {
       return recoveryRequiredWithoutLifecycle(
         recoveryHandoff.transactionOutcome.transaction,

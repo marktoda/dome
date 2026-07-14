@@ -158,16 +158,6 @@ export type HomeUpgradeTransaction = {
   };
 };
 
-export type HomeUpgradeHistorySummary = {
-  readonly operationId: string;
-  readonly candidate: {
-    readonly artifactId: string;
-    readonly productVersion: string;
-  };
-  readonly outcome: "committed" | "restored";
-  readonly terminalAt: string;
-};
-
 export type HomeUpgradeTransactionDeps = HomeInstallationDeps & {
   readonly platform?: NodeJS.Platform | undefined;
   readonly now?: (() => Date) | undefined;
@@ -617,48 +607,6 @@ export async function readHomeUpgradeHistory(
 }
 
 /**
- * Bounded journal-only history read for intent/status. This proves the closed
- * transaction root, bounded journal, and stored selector evidence, but
- * deliberately does not hash or open retained snapshot databases.
- */
-export async function readHomeUpgradeHistorySummary(
-  vaultPath: string,
-  transactionId: string,
-  deps: HomeUpgradeTransactionDeps = {},
-): Promise<HomeUpgradeHistorySummary | null> {
-  assertTransactionId(transactionId);
-  const vault = await canonicalVault(vaultPath);
-  const paths = homeInstallationPaths(vault, deps);
-  const upgrade = await inspectUpgradeAncestors(paths);
-  if (upgrade === null) return null;
-  const history = join(upgrade, "history");
-  if (!await present(history)) return null;
-  await assertPrivateDirectory(history, "upgrade history root");
-  const transactionRoot = join(history, transactionId);
-  if (!await present(transactionRoot)) return null;
-  const journal = await readBoundedJournal(transactionRoot, vault);
-  if (journal.transactionId !== transactionId) {
-    throw new Error("Dome Home upgrade history directory disagrees with its transaction identity");
-  }
-  if (journal.phase !== "committed" && journal.phase !== "restored") {
-    throw new Error("Dome Home upgrade history contains a non-terminal transaction");
-  }
-  const terminalAt = journal.phase === "committed"
-    ? journal.timestamps.committedAt
-    : journal.timestamps.restoredAt;
-  if (terminalAt === null) throw new Error("terminal Dome Home upgrade history lacks its terminal timestamp");
-  return Object.freeze({
-    operationId: journal.transactionId,
-    candidate: Object.freeze({
-      artifactId: journal.candidate.artifactId,
-      productVersion: journal.candidate.version,
-    }),
-    outcome: journal.phase,
-    terminalAt,
-  });
-}
-
-/**
  * Restore only a transaction still before installation selection. Every
  * durable store/file is replaced from the retained snapshot; Git and Markdown
  * are never inspected or written. Recovery evidence remains in `active`.
@@ -990,9 +938,18 @@ async function readBoundedJournal(active: string, vault: string): Promise<HomeUp
   const expected = journal.schema === HOME_UPGRADE_TRANSACTION_SCHEMA
     ? ["journal.json", "selectors", "snapshot"]
     : ["journal.json", "snapshot"];
-  const rootNames = await readBoundedNames(active, expected.length);
-  if (JSON.stringify(rootNames) !== JSON.stringify(expected)) {
+  const withSummary = [...expected, "summary.json"].sort(compareStrings);
+  const rootNames = await readBoundedNames(active, withSummary.length);
+  if (JSON.stringify(rootNames) !== JSON.stringify(expected) &&
+    JSON.stringify(rootNames) !== JSON.stringify(withSummary)) {
     throw new Error("Dome Home upgrade transaction has an unknown or missing root entry");
+  }
+  if (rootNames.includes("summary.json")) {
+    const summary = await assertRegular(join(active, "summary.json"), "upgrade terminal summary");
+    if ((await lstat(join(active, "summary.json"))).nlink !== 1 ||
+      (summary.mode & 0o777) !== 0o600 || summary.size === 0 || summary.size > 4096) {
+      throw new Error("Dome Home upgrade terminal summary is not a bounded private file");
+    }
   }
   if (journal.selection !== null) await validateStoredSelection(active, journal.selection);
   return journal;

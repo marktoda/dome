@@ -14,6 +14,7 @@ import { homeInstallationPaths, releaseRoot } from "../../src/product-host/home-
 import {
   acquireHomeStartupAdmission,
   homeLifecycleCoordinatorPath,
+  HomeLifecycleContentionError,
   inspectHomeLifecycleSuspension,
   withHomeLifecycleMutation,
   withSupervisedHomeSuspended,
@@ -104,6 +105,34 @@ describe("supervised Home lifecycle suspension", () => {
     expect(denied.kind).toBe("suspended");
     expect(mutated).toBeFalse();
     release();
+    expect((await holder).kind).toBe("ready");
+  });
+
+  test("reports the durable owner when a concurrent suspension reaches the atomic seam", async () => {
+    const f = await fixture(true);
+    let entered!: () => void;
+    const callbackEntered = new Promise<void>((resolve) => { entered = resolve; });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const holder = suspend(f, "owning-backup", async () => {
+      entered();
+      await gate;
+      return "done";
+    });
+    await callbackEntered;
+
+    let contention: unknown;
+    try {
+      await suspend(f, "competing-upgrade", async () => "must-not-run", "upgrade");
+    } catch (error) {
+      contention = error;
+    } finally {
+      release();
+    }
+    expect(contention).toBeInstanceOf(HomeLifecycleContentionError);
+    expect(contention).toMatchObject({
+      owner: { purpose: "backup", operationId: "owning-backup" },
+    });
     expect((await holder).kind).toBe("ready");
   });
 

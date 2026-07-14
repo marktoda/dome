@@ -8,6 +8,8 @@ import {
   ensureManagedRelease,
   homeInstallationPaths,
 } from "../../src/product-host/home-installation";
+import { homeServiceLabelForVault } from "../../src/product-host/home-lifecycle";
+import { inspectHomeLifecycleSuspension } from "../../src/product-host/home-lifecycle-suspension";
 import {
   HomeUpgradeBusyError,
   HomeUpgradeSelectionChangedError,
@@ -18,9 +20,10 @@ import {
   type HomeUpgradeIntentDeps,
 } from "../../src/product-host/home-upgrade";
 import type {
-  HomeUpgradeHistorySummary,
   HomeUpgradeTransaction,
 } from "../../src/product-host/home-upgrade-transaction";
+import type { HomeUpgradeHistorySummary } from "../../src/product-host/home-upgrade-history";
+import type { HomeLifecycleSuspensionInspection } from "../../src/product-host/home-lifecycle-suspension";
 
 const TX = "11111111-1111-4111-8111-111111111111";
 const RETAINED_TX = "22222222-2222-4222-8222-222222222222";
@@ -47,7 +50,7 @@ describe("Home upgrade intent", () => {
     });
     expect(f.calls).toEqual([
       "canonicalize", "verify", "read-installation", "inspect-lifecycle", "read-active",
-      "read-installation", "list-history", "publish", "uuid", "cutover", "retire",
+      "read-installation", "read-candidate-receipt", "publish", "uuid", "cutover", "retire",
     ]);
     expect(Object.keys(result)).toEqual([
       "schema", "operation", "status", "exitCode", "vault", "requestedArtifact",
@@ -148,6 +151,23 @@ describe("Home upgrade intent", () => {
     expect(f.calls).not.toContain("uuid");
   });
 
+  test("distinguishes temporary lifecycle contention from corrupt lifecycle evidence", async () => {
+    const unavailable = intentFixture({ suspension: { kind: "unavailable", error: "coordinator busy" } });
+    expect(await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, unavailable.deps)).toMatchObject({
+      status: "error",
+      exitCode: 75,
+      reason: "busy",
+      nextAction: "rerun-requested-upgrade",
+    });
+    const invalid = intentFixture({ suspension: { kind: "invalid", error: "coordinator corrupt" } });
+    expect(await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, invalid.deps)).toMatchObject({
+      status: "recovery-required",
+      exitCode: 1,
+      reason: "coordination-failed",
+      nextAction: "inspect-home-status",
+    });
+  });
+
   test("retires inactive terminal housekeeping before starting a different candidate", async () => {
     for (const phase of ["restored", "committed"] as const) {
       const retained = transaction(phase, RETAINED_TX, OTHER);
@@ -232,6 +252,126 @@ describe("Home upgrade intent", () => {
     });
   });
 
+  test("composed intents translate real atomic lifecycle contention and retry to current", async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "dome-upgrade-intent-contention-")));
+    try {
+      const vault = join(root, "vault");
+      const support = join(root, "support");
+      const agents = join(root, "LaunchAgents");
+      await mkdir(join(vault, ".dome", "state"), { recursive: true });
+      await mkdir(agents, { recursive: true });
+      const paths = homeInstallationPaths(vault, { applicationSupportDir: support });
+      await mkdir(paths.installations, { recursive: true });
+      const installationPath = paths.record;
+      const plistPath = join(agents, `${homeServiceLabelForVault(vault)}.plist`);
+      let selected = installation(OLD, "1.0.0", vault);
+      await writeFile(installationPath, `${JSON.stringify(selected)}\n`, { mode: 0o600 });
+      await writeFile(plistPath, `old ${OLD}\n`, { mode: 0o600 });
+      expect((await inspectHomeLifecycleSuspension(vault)).kind).toBe("inactive");
+
+      let current: HomeUpgradeTransaction | null = null;
+      let operationIndex = 0;
+      let intentInspections = 0;
+      let releaseIntentInspections!: () => void;
+      const bothIntentInspected = new Promise<void>((resolve) => { releaseIntentInspections = resolve; });
+      let cutoverInspections = 0;
+      let releaseCutoverInspections!: () => void;
+      const bothCutoversInspected = new Promise<void>((resolve) => { releaseCutoverInspections = resolve; });
+      let enteredPrepare!: () => void;
+      const prepareEntered = new Promise<void>((resolve) => { enteredPrepare = resolve; });
+      let releasePrepare!: () => void;
+      const allowPrepare = new Promise<void>((resolve) => { releasePrepare = resolve; });
+      let prepareCalls = 0;
+      const deps: HomeUpgradeIntentDeps = {
+        platform: "darwin",
+        uid: 501,
+        artifactRoot: "/artifact",
+        applicationSupportDir: support,
+        launchAgentsDir: agents,
+        launchctl: async () => ({ exitCode: 113, stdout: "", stderr: "not loaded" }),
+        drainTimeoutMs: 20,
+        readinessTimeoutMs: 20,
+        readiness: async () => false,
+        inspectLifecycleSuspension: async (path) => {
+          const observed = await inspectHomeLifecycleSuspension(path);
+          cutoverInspections += 1;
+          if (cutoverInspections === 2) releaseCutoverInspections();
+          await bothCutoversInspected;
+          return observed;
+        },
+        operations: {
+          readInstallation: async () => selected,
+          read: async () => current,
+          readRecovery: async () => current,
+          prepare: async (input) => {
+            prepareCalls += 1;
+            current = { ...transaction("prepared", input.transactionId, input.candidateArtifactId), vault };
+            if (prepareCalls === 1) {
+              enteredPrepare();
+              await allowPrepare;
+            }
+            return current;
+          },
+          migrate: async () => current!,
+          prove: async (input) => ({
+            schema: "dome.home-upgrade-probation-proof/v1",
+            transactionId: input.transactionId,
+            readinessSchema: "dome.product.readiness/v1",
+            hostState: "probation",
+            artifactId: REQUESTED,
+            productVersion: "2.0.0",
+            vaultId: "vault-id",
+            writesAdmitted: false,
+            provenAt: "2026-07-13T01:00:00.000Z",
+          }),
+          commit: async () => {
+            if (current === null) throw new Error("missing prepared transaction");
+            current = { ...transaction("committed", current.transactionId, REQUESTED), vault };
+            selected = installation(REQUESTED, "2.0.0", vault);
+            await writeFile(installationPath, `${JSON.stringify(selected)}\n`, { mode: 0o600 });
+            await writeFile(plistPath, `candidate ${REQUESTED}\n`, { mode: 0o600 });
+            return current;
+          },
+          restore: async () => { throw new Error("unexpected restore"); },
+          release: async () => current!,
+          readVaultId: async () => "vault-id",
+        },
+        intentOperations: {
+          verifyInvokingArtifact: async () => manifest(),
+          publishCandidate: async () => ({ root: "/release", published: false }),
+          inspectLifecycle: async (path) => {
+            const observed = await inspectHomeLifecycleSuspension(path);
+            intentInspections += 1;
+            if (intentInspections === 2) releaseIntentInspections();
+            await bothIntentInspected;
+            return observed;
+          },
+          operationId: () => [TX, RETAINED_TX][operationIndex++]!,
+          retire: async ({ transactionId }) => ({
+            transaction: current ?? transaction("committed", transactionId, REQUESTED),
+            retired: true,
+          }),
+          inspectService: async () => "stopped",
+        },
+      };
+
+      const attempts = [
+        manageHomeUpgrade({ action: "run", vaultPath: vault }, deps),
+        manageHomeUpgrade({ action: "run", vaultPath: vault }, deps),
+      ];
+      await prepareEntered;
+      const first = await Promise.race(attempts.map(async (attempt, index) => ({ index, result: await attempt })));
+      expect(first.result).toMatchObject({ status: "error", exitCode: 75, reason: "busy" });
+      releasePrepare();
+      const settled = await Promise.all(attempts);
+      expect(settled.filter((result) => result.status === "upgraded")).toHaveLength(1);
+      expect(await manageHomeUpgrade({ action: "run", vaultPath: vault }, deps)).toMatchObject({
+        status: "already-current",
+        exitCode: 0,
+      });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   test("same-artifact release publication loss converges on the verified winner", async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "dome-release-race-")));
     try {
@@ -269,7 +409,7 @@ function intentFixture(options: {
   readonly selected?: ReturnType<typeof installation> | null;
   readonly active?: HomeUpgradeTransaction | null;
   readonly history?: ReadonlyArray<HomeUpgradeHistorySummary>;
-  readonly suspension?: ReturnType<typeof activeSuspension> | { readonly kind: "inactive" };
+  readonly suspension?: HomeLifecycleSuspensionInspection;
   readonly cutoverError?: Error;
   readonly verifyError?: Error;
   readonly historyError?: Error;
@@ -295,10 +435,10 @@ function intentFixture(options: {
       return options.suspension ?? { kind: "inactive" };
     },
     readActive: async () => { calls.push("read-active"); return active; },
-    listHistory: async () => {
-      calls.push("list-history");
+    readCandidateReceipt: async (_vault, artifactId) => {
+      calls.push("read-candidate-receipt");
       if (options.historyError !== undefined) throw options.historyError;
-      return options.history ?? [];
+      return options.history?.find((summary) => summary.candidate.artifactId === artifactId) ?? null;
     },
     publishCandidate: async () => {
       calls.push("publish");
@@ -352,10 +492,10 @@ function intentFixture(options: {
   };
 }
 
-function installation(id: string, version: string) {
+function installation(id: string, version: string, vault = "/vault") {
   return {
     schema: "dome.home.installation/v1" as const,
-    vault: "/vault",
+    vault,
     artifact: { id, version },
     environment: [],
   };
@@ -400,6 +540,7 @@ function historySummary(
   candidateId: string,
 ): HomeUpgradeHistorySummary {
   return {
+    schema: "dome.home-upgrade-terminal-summary/v1",
     operationId,
     candidate: {
       artifactId: candidateId,

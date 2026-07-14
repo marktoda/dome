@@ -126,6 +126,27 @@ export type HomeLifecycleSuspensionInspection =
   | { readonly kind: "unavailable"; readonly error: string }
   | { readonly kind: "invalid"; readonly error: string };
 
+/** Stable signal that another caller owns, or just resolved, the lifecycle seam. */
+export class HomeLifecycleContentionError extends Error {
+  readonly owner: {
+    readonly purpose: HomeSuspensionPurpose;
+    readonly operationId: string;
+  } | null;
+
+  constructor(
+    owner: Pick<HomeLifecycleSuspension, "purpose" | "operationId"> | null,
+    detail?: string,
+  ) {
+    super(detail ?? (owner === null
+      ? "Home lifecycle coordinator is busy"
+      : `Home lifecycle is suspended by ${owner.purpose}:${owner.operationId}`));
+    this.name = "HomeLifecycleContentionError";
+    this.owner = owner === null
+      ? null
+      : Object.freeze({ purpose: owner.purpose, operationId: owner.operationId });
+  }
+}
+
 export type HomeLifecycleMutationResult<T> =
   | { readonly kind: "owned"; readonly value: T }
   | { readonly kind: "suspended"; readonly suspension: HomeLifecycleSuspension };
@@ -578,13 +599,23 @@ export async function withSupervisedHomeSuspended<T>(
   let active: HomeLifecycleSuspension;
   let recovered = false;
   try {
+    // A published row is durable ownership evidence even while another
+    // caller holds the live Tx2 lock. Reject new work without waiting for the
+    // owner, while exact recovery still competes for the atomic seam below.
+    const published = readActive(pair.journal, vault);
+    if (published !== null && input.mode === "new") {
+      throw new HomeLifecycleContentionError(published);
+    }
     // Tx1 owns the lifecycle seam before observing any mutable evidence.
-    await beginImmediate(pair.ownership);
+    await beginLifecycleOwnership(pair, vault);
     validateOwnershipRow(pair.ownership);
     const existing = readActive(pair.journal, vault);
     if (existing === null) {
       if (input.mode === "recover") {
-        throw new Error(`Home lifecycle suspension ${requestedOperationId} is no longer active`);
+        throw new HomeLifecycleContentionError(
+          null,
+          `Home lifecycle suspension ${requestedOperationId} is no longer active`,
+        );
       }
       const evidence = await captureEvidence(vault, service.launchAgentsDir, deps);
       const priorLoaded = await probeLaunchAgentLoadedStrict({ launchctl: service.launchctl, target });
@@ -606,7 +637,7 @@ export async function withSupervisedHomeSuspended<T>(
       writeJournal(pair.journal, () => insertActive(pair.journal, active));
     } else {
       if (input.mode !== "recover") {
-        throw new Error(`Home lifecycle is suspended by ${existing.purpose}:${existing.operationId}`);
+        throw new HomeLifecycleContentionError(existing);
       }
       validateRecoveryOwner(existing, input);
       let recoveredActive = existing;
@@ -637,7 +668,7 @@ export async function withSupervisedHomeSuspended<T>(
     await deps.checkpoint?.("intent-committed");
 
     // Tx2 is live serialization. Durable journal commits do not release it.
-    await beginImmediate(pair.ownership);
+    await beginLifecycleOwnership(pair, vault, active.operationId);
     validateOwnershipRow(pair.ownership);
     active = requireSameActive(pair.journal, vault, active);
     const execution = await runOwnedSuspension({
@@ -1378,8 +1409,13 @@ function writeJournal(db: Database, operation: () => void): void {
 
 function requireSameActive(db: Database, vault: string, expected: HomeLifecycleSuspension): HomeLifecycleSuspension {
   const current = readActive(db, vault);
-  if (current === null || current.operationId !== expected.operationId || current.purpose !== expected.purpose ||
-    !sameEvidence(current, expected) || !sameResumeEvidence(current, resumeEvidence(expected))) {
+  if (current === null) {
+    throw new HomeLifecycleContentionError(null, "Home lifecycle suspension ownership changed before Tx2");
+  }
+  if (current.operationId !== expected.operationId || current.purpose !== expected.purpose) {
+    throw new HomeLifecycleContentionError(current, "Home lifecycle suspension ownership changed before Tx2");
+  }
+  if (!sameEvidence(current, expected) || !sameResumeEvidence(current, resumeEvidence(expected))) {
     throw new Error("Home lifecycle suspension ownership changed before Tx2");
   }
   return current;
@@ -1397,9 +1433,9 @@ function validateRecoveryInvocation(input: HomeSuspensionInvocation): void {
 }
 
 function validateRecoveryOwner(active: HomeLifecycleSuspension, input: Extract<HomeSuspensionInvocation, { mode: "recover" }>): void {
-  if (active.purpose !== input.purpose) throw new Error(`Home lifecycle is suspended by ${active.purpose}:${active.operationId}`);
+  if (active.purpose !== input.purpose) throw new HomeLifecycleContentionError(active);
   if (active.operationId !== input.operationId) {
-    throw new Error(`Home lifecycle suspension belongs to operation ${active.operationId}`);
+    throw new HomeLifecycleContentionError(active, `Home lifecycle suspension belongs to operation ${active.operationId}`);
   }
 }
 
@@ -1641,6 +1677,35 @@ async function beginImmediate(db: Database): Promise<void> {
     try { db.run("BEGIN IMMEDIATE"); return; }
     catch (error) {
       if (!isBusy(error) || Date.now() - started >= OWNERSHIP_WAIT_MS) throw error;
+      await Bun.sleep(10);
+    }
+  }
+}
+
+async function beginLifecycleOwnership(
+  pair: CoordinatorPair,
+  vault: string,
+  expectedOperationId?: string,
+): Promise<void> {
+  const started = Date.now();
+  for (;;) {
+    try { pair.ownership.run("BEGIN IMMEDIATE"); return; }
+    catch (error) {
+      if (!isBusy(error)) throw error;
+      let owner: HomeLifecycleSuspension | null = null;
+      try { owner = readActive(pair.journal, vault); }
+      catch {}
+      // A different durable lifecycle owner should never be waited behind:
+      // it may supervise a long migration/restart. An ownerless lock can be a
+      // startup admission, and our own Tx2 can briefly race one in the
+      // intentional Tx1-commit -> Tx2-reacquire window, so those remain
+      // bounded wait cases.
+      if (owner !== null && owner.operationId !== expectedOperationId) {
+        throw new HomeLifecycleContentionError(owner);
+      }
+      if (Date.now() - started >= OWNERSHIP_WAIT_MS) {
+        throw new HomeLifecycleContentionError(owner);
+      }
       await Bun.sleep(10);
     }
   }

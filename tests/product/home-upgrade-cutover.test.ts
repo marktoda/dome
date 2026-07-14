@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { HomeLifecycleContentionError } from "../../src/product-host/home-lifecycle-suspension";
 import {
   HomeUpgradeBusyError,
   HomeUpgradeSelectionChangedError,
@@ -68,6 +69,36 @@ describe("private Home upgrade cutover", () => {
     }));
     await expect(attempt).rejects.toBeInstanceOf(HomeUpgradeBusyError);
     expect(calls).toEqual(["inspect"]);
+  });
+
+  test("translates atomic lifecycle contention after an inactive preflight", async () => {
+    for (const owner of [
+      { purpose: "backup" as const, operationId: "backup-owner" },
+      null,
+    ]) {
+      const calls: string[] = [];
+      let current: HomeUpgradeTransaction | null = null;
+      const deps = fakeDeps(calls, () => current, (next) => { current = next; });
+      const attempt = runHomeUpgradeCutover({
+        vaultPath: "/vault",
+        transactionId: TX,
+        candidateArtifactId: CANDIDATE,
+        expectedCurrentArtifactId: OLD,
+      }, {
+        ...deps,
+        suspendHome: (async () => {
+          throw new HomeLifecycleContentionError(owner);
+        }) as NonNullable<HomeUpgradeCutoverDeps["suspendHome"]>,
+      });
+      let busy: unknown;
+      try { await attempt; }
+      catch (error) { busy = error; }
+      expect(busy).toBeInstanceOf(HomeUpgradeBusyError);
+      expect(busy).toMatchObject(owner === null
+        ? { purpose: null, operationId: null }
+        : owner);
+      expect(calls).toEqual(["inspect", "read-recovery"]);
+    }
   });
 
   test("automatically restores any pre-commit failure before resuming N-1", async () => {

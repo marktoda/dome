@@ -24,7 +24,8 @@ import { homeServiceLabelForVault } from "../../src/product-host/home-lifecycle"
 import { startProductHost } from "../../src/product-host/product-host";
 import { readHomeUpgradeBarrier } from "../../src/product-host/home-upgrade-barrier";
 import {
-  listHomeUpgradeHistorySummaries,
+  readHomeUpgradeCandidateReceipt,
+  readLatestHomeUpgradeSummary,
   retireHomeUpgrade,
   type HomeUpgradeHistoryDeps,
   type HomeUpgradeRetirementCheckpoint,
@@ -41,7 +42,6 @@ import {
   readHomeUpgrade,
   readHomeUpgradeForRecovery,
   readHomeUpgradeHistory,
-  readHomeUpgradeHistorySummary,
   releaseCommittedHomeUpgrade,
   restoreHomeUpgrade,
   type HomeUpgradeTransactionDeps,
@@ -1184,13 +1184,16 @@ describe("Product Host terminal upgrade history", () => {
         expect(retired).toMatchObject({ retired: true, transaction: { transactionId, phase: outcome } });
         expect(await readHomeUpgrade(f.vault, f.deps)).toBeNull();
         expect((await readHomeUpgradeHistory(f.vault, transactionId, f.deps))?.phase).toBe(outcome);
-        expect((await listHomeUpgradeHistorySummaries(f.vault, f.deps)).map((entry) => entry.operationId)).toEqual([
-          transactionId,
-        ]);
+        expect(await readLatestHomeUpgradeSummary(f.vault, f.deps)).toMatchObject({ operationId: transactionId, outcome });
+        expect(await readHomeUpgradeCandidateReceipt(f.vault, CANDIDATE_ID, f.deps)).toEqual(
+          outcome === "restored"
+            ? expect.objectContaining({ operationId: transactionId, outcome: "restored" })
+            : null,
+        );
         const paths = homeInstallationPaths(f.vault, f.deps);
         const historyRoot = join(paths.installations, "upgrade", "history");
         await mkdir(join(historyRoot, "unknown-entry"));
-        await expect(listHomeUpgradeHistorySummaries(f.vault, f.deps)).rejects.toThrow("transaction id");
+        expect(await readLatestHomeUpgradeSummary(f.vault, f.deps)).toMatchObject({ operationId: transactionId });
         await rm(join(historyRoot, "unknown-entry"), { recursive: true });
 
         // Historical truth is intrinsic. A future selection or release GC
@@ -1206,7 +1209,7 @@ describe("Product Host terminal upgrade history", () => {
         const retained = terminal.snapshot.inventory.find((entry) => entry.present);
         if (retained === undefined) throw new Error("fixture lacks retained snapshot state");
         await writeFile(join(historyRoot, transactionId, "snapshot", retained.name), "corrupt");
-        expect(await readHomeUpgradeHistorySummary(f.vault, transactionId, f.deps)).toMatchObject({
+        expect(await readLatestHomeUpgradeSummary(f.vault, f.deps)).toMatchObject({
           operationId: transactionId,
           outcome,
         });
@@ -1217,6 +1220,8 @@ describe("Product Host terminal upgrade history", () => {
 
   test("every retirement crash window retries to one immutable row", async () => {
     for (const checkpoint of [
+      "summary-published",
+      "receipts-published",
       "before-rename",
       "after-rename",
       "history-synced",
@@ -1236,6 +1241,10 @@ describe("Product Host terminal upgrade history", () => {
             }
           },
         })).rejects.toThrow(`crash at ${checkpoint}`);
+        expect(await readLatestHomeUpgradeSummary(f.vault, f.deps)).toMatchObject({
+          operationId: transactionId,
+          outcome: "committed",
+        });
 
         const retry = await retireHomeUpgrade(
           { vaultPath: f.vault, transactionId },
@@ -1247,8 +1256,71 @@ describe("Product Host terminal upgrade history", () => {
         await expect(stat(join(upgrade, "active"))).rejects.toThrow();
         expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
         expect(await readHomeUpgradeBarrier(f.vault, f.deps)).toBeNull();
+        expect(await readLatestHomeUpgradeSummary(f.vault, f.deps)).toMatchObject({
+          operationId: transactionId,
+          outcome: "committed",
+        });
       } finally { await rm(f.root, { recursive: true, force: true }); }
     }
+  });
+
+  test("O(1) receipts ignore lifetime history volume and never follow a swapped summary link", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      const terminal = await restoredTerminal(f, transactionId);
+      await retireHomeUpgrade(
+        { vaultPath: f.vault, transactionId },
+        historyDeps(f, terminal, "stopped"),
+      );
+      const upgrade = join(homeInstallationPaths(f.vault, f.deps).installations, "upgrade");
+      const history = join(upgrade, "history");
+      for (let offset = 0; offset < 1025; offset += 64) {
+        await Promise.all(Array.from({ length: Math.min(64, 1025 - offset) }, (_, index) =>
+          mkdir(join(history, `gc-substrate-${offset + index}`))));
+      }
+      expect(await readHomeUpgradeCandidateReceipt(f.vault, CANDIDATE_ID, f.deps)).toMatchObject({
+        operationId: transactionId,
+        outcome: "restored",
+      });
+      expect(await readLatestHomeUpgradeSummary(f.vault, f.deps)).toMatchObject({ operationId: transactionId });
+
+      const latest = join(upgrade, "receipts", "latest.json");
+      const outside = join(f.root, "outside-summary.json");
+      const outsideBytes = await readFile(latest);
+      await rm(join(history, transactionId), { recursive: true });
+      expect(await readHomeUpgradeCandidateReceipt(f.vault, CANDIDATE_ID, f.deps)).toBeNull();
+      expect(await readLatestHomeUpgradeSummary(f.vault, f.deps)).toBeNull();
+      await writeFile(outside, outsideBytes, { mode: 0o600 });
+      await rm(latest);
+      await symlink(outside, latest);
+      await expect(readLatestHomeUpgradeSummary(f.vault, f.deps)).rejects.toThrow("without following links");
+      expect(await readFile(outside)).toEqual(outsideBytes);
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("a pre-rename restored receipt stays subordinate to active then becomes O(1) history", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      const terminal = await restoredTerminal(f, transactionId);
+      await expect(retireHomeUpgrade({ vaultPath: f.vault, transactionId }, {
+        ...historyDeps(f, terminal, "stopped"),
+        retirementCheckpoint: async (name) => {
+          if (name === "receipts-published") throw new Error("crash before retirement rename");
+        },
+      })).rejects.toThrow("crash before retirement rename");
+      expect(await readHomeUpgradeCandidateReceipt(f.vault, CANDIDATE_ID, f.deps)).toBeNull();
+      expect(await readLatestHomeUpgradeSummary(f.vault, f.deps)).toMatchObject({
+        operationId: transactionId,
+        outcome: "restored",
+      });
+      await retireHomeUpgrade({ vaultPath: f.vault, transactionId }, historyDeps(f, terminal, "stopped"));
+      expect(await readHomeUpgradeCandidateReceipt(f.vault, CANDIDATE_ID, f.deps)).toMatchObject({
+        operationId: transactionId,
+        outcome: "restored",
+      });
+    } finally { await rm(f.root, { recursive: true, force: true }); }
   });
 
   test("concurrent retirees converge and preserve history-before-upgrade fsync order", async () => {

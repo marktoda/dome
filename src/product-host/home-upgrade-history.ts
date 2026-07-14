@@ -2,16 +2,15 @@
 // The transaction Module owns evidence interpretation. This Module owns the
 // lifecycle/operational serialization and the one active -> history rename.
 
-import { lstat, mkdir, opendir, realpath } from "node:fs/promises";
-import { join, resolve } from "node:path";
-
-import { compareStrings } from "../core/compare";
+import { constants, type BigIntStats } from "node:fs";
+import { lstat, mkdir, open, realpath, rename, rm, unlink } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import {
   acquireOperationalWriterLease,
   inspectOperationalWriterBarrier,
   operationalWriterCoordinatorPath,
 } from "../operational-state/writer-barrier";
-import { publishDirectoryExclusive } from "../platform/exclusive-rename";
+import { publishDirectoryExclusive, publishPathExclusive } from "../platform/exclusive-rename";
 import {
   homeInstallationPaths,
   syncDirectory,
@@ -29,13 +28,23 @@ import {
   readHomeUpgrade,
   readHomeUpgradeForRecovery,
   readHomeUpgradeHistory,
-  readHomeUpgradeHistorySummary,
-  type HomeUpgradeHistorySummary,
   type HomeUpgradeTransaction,
   type HomeUpgradeTransactionDeps,
 } from "./home-upgrade-transaction";
 
-const MAX_HISTORY_ENTRIES = 1024;
+const HOME_UPGRADE_TERMINAL_SUMMARY_SCHEMA = "dome.home-upgrade-terminal-summary/v1" as const;
+const MAX_SUMMARY_BYTES = 4096;
+
+export type HomeUpgradeHistorySummary = {
+  readonly schema: typeof HOME_UPGRADE_TERMINAL_SUMMARY_SCHEMA;
+  readonly operationId: string;
+  readonly candidate: {
+    readonly artifactId: string;
+    readonly productVersion: string;
+  };
+  readonly outcome: "committed" | "restored";
+  readonly terminalAt: string;
+};
 
 export type HomeUpgradeTerminalService = {
   readonly state: "ready" | "stopped";
@@ -44,6 +53,8 @@ export type HomeUpgradeTerminalService = {
 };
 
 export type HomeUpgradeRetirementCheckpoint =
+  | "summary-published"
+  | "receipts-published"
   | "before-rename"
   | "after-rename"
   | "history-synced"
@@ -53,6 +64,7 @@ export type HomeUpgradeHistoryDeps = HomeUpgradeTransactionDeps &
   HomeLifecycleDeps &
   HomeLifecycleMutationDeps & {
     readonly publishHistory?: ((source: string, target: string) => Promise<void>) | undefined;
+    readonly publishReceipt?: ((source: string, target: string) => Promise<void>) | undefined;
     readonly syncHistoryDirectory?: ((path: string) => Promise<void>) | undefined;
     readonly inspectTerminalService?: ((vaultPath: string) => Promise<HomeUpgradeTerminalService>) | undefined;
     /** Test/diagnostic crash seam around the one atomic retirement boundary. */
@@ -65,38 +77,53 @@ export type HomeUpgradeRetirement = {
   readonly retired: boolean;
 };
 
-/** Bounded intrinsic history for intent/status consumers; newest terminal first. */
-export async function listHomeUpgradeHistorySummaries(
+/**
+ * O(1) failed-candidate lookup. History GC invalidates its derived receipt by
+ * removing the referenced immutable transaction; stale receipts then miss.
+ */
+export async function readHomeUpgradeCandidateReceipt(
   vaultPath: string,
+  artifactId: string,
   deps: HomeUpgradeHistoryDeps = {},
-): Promise<ReadonlyArray<HomeUpgradeHistorySummary>> {
+): Promise<HomeUpgradeHistorySummary | null> {
+  assertArtifactId(artifactId);
   const vault = await realpath(resolve(vaultPath));
   const paths = homeInstallationPaths(vault, deps);
-  const history = join(paths.installations, "upgrade", "history");
-  if (!await present(history)) return Object.freeze([]);
-  await assertDirectDirectory(history, "upgrade history root");
-  if (((await lstat(history)).mode & 0o777) !== 0o700) {
-    throw new Error("Dome Home upgrade history root is not private");
+  const upgrade = join(paths.installations, "upgrade");
+  if (!await present(upgrade)) return null;
+  await assertDirectDirectory(upgrade, "upgrade root");
+  if (await present(join(upgrade, "active"))) {
+    await assertDirectDirectory(join(upgrade, "active"), "upgrade active transaction");
+    return null;
   }
-  const names: string[] = [];
-  const directory = await opendir(history);
-  for await (const entry of directory) {
-    names.push(entry.name);
-    if (names.length > MAX_HISTORY_ENTRIES) {
-      throw new Error("Dome Home upgrade history exceeds its bounded inventory");
-    }
+  if (!await inspectReceiptRoots(upgrade)) return null;
+  const receipt = join(upgrade, "receipts", "candidates", `${artifactId}.json`);
+  const summary = await readTerminalSummary(receipt);
+  if (summary === null) return null;
+  if (summary.outcome !== "restored" || summary.candidate.artifactId !== artifactId) {
+    throw new Error("Dome Home failed-candidate receipt has invalid identity");
   }
-  names.sort(compareStrings);
-  const summaries: HomeUpgradeHistorySummary[] = [];
-  for (const transactionId of names) {
-    const summary = await readHomeUpgradeHistorySummary(vault, transactionId, deps);
-    if (summary === null) throw new Error("Dome Home upgrade history changed during bounded inspection");
-    summaries.push(summary);
+  return await validateArchivedReceipt(upgrade, summary);
+}
+
+/** O(1) latest terminal status without walking immutable history. */
+export async function readLatestHomeUpgradeSummary(
+  vaultPath: string,
+  deps: HomeUpgradeHistoryDeps = {},
+): Promise<HomeUpgradeHistorySummary | null> {
+  const vault = await realpath(resolve(vaultPath));
+  const paths = homeInstallationPaths(vault, deps);
+  const upgrade = join(paths.installations, "upgrade");
+  if (!await present(upgrade)) return null;
+  await assertDirectDirectory(upgrade, "upgrade root");
+  const active = join(upgrade, "active");
+  if (await present(active)) {
+    await assertDirectDirectory(active, "upgrade active transaction");
+    return readTerminalSummary(join(active, "summary.json"));
   }
-  return Object.freeze(summaries.sort((left, right) => {
-    const time = right.terminalAt.localeCompare(left.terminalAt);
-    return time === 0 ? compareStrings(right.operationId, left.operationId) : time;
-  }));
+  if (!await inspectReceiptRoots(upgrade)) return null;
+  const summary = await readTerminalSummary(join(upgrade, "receipts", "latest.json"));
+  return summary === null ? null : validateArchivedReceipt(upgrade, summary);
 }
 
 /**
@@ -162,6 +189,8 @@ async function retireWhileOwned(
     if (prior === null) {
       throw new Error(`Dome Home upgrade transaction ${transactionId} is neither active nor retired`);
     }
+    const summary = await requireExactSummary(join(destination, "summary.json"), terminalSummary(prior));
+    await publishDerivedReceipts(upgrade, summary, deps);
     await syncRetirementParents(history, upgrade, deps);
     return Object.freeze({ transaction: prior, retired: false as const });
   }
@@ -187,6 +216,15 @@ async function retireWhileOwned(
     throw new Error("Dome Home terminal upgrade evidence changed before retirement");
   }
 
+  // The immutable summary and its O(1) derived receipts become durable while
+  // active remains authoritative. Therefore any crash before rename retries
+  // from active, while every crash after rename already has lookup receipts.
+  const summary = terminalSummary(finalTerminal);
+  await publishTerminalSummary(active, upgrade, summary, deps);
+  await deps.retirementCheckpoint?.("summary-published");
+  await publishDerivedReceipts(upgrade, summary, deps);
+  await deps.retirementCheckpoint?.("receipts-published");
+
   await deps.retirementCheckpoint?.("before-rename");
   const publish = deps.publishHistory ?? ((source: string, target: string) =>
     publishDirectoryExclusive({
@@ -211,6 +249,7 @@ async function retireWhileOwned(
   if (archived === null || transactionIdentity(archived) !== sourceIdentity) {
     throw new Error("retired Dome Home upgrade history differs from active evidence");
   }
+  await requireExactSummary(join(destination, "summary.json"), summary);
   await syncRetirementParents(history, upgrade, deps);
   return Object.freeze({ transaction: archived, retired });
 }
@@ -276,6 +315,292 @@ async function inspectTerminalService(
     });
   }
   throw new Error(`Dome Home terminal service is neither ready nor stopped: ${status.status}`);
+}
+
+function terminalSummary(transaction: HomeUpgradeTransaction): HomeUpgradeHistorySummary {
+  const terminalAt = transaction.phase === "committed"
+    ? transaction.timestamps.committedAt
+    : transaction.phase === "restored" ? transaction.timestamps.restoredAt : null;
+  if (terminalAt === null) throw new Error("terminal Dome Home upgrade lacks its terminal timestamp");
+  return Object.freeze({
+    schema: HOME_UPGRADE_TERMINAL_SUMMARY_SCHEMA,
+    operationId: transaction.transactionId,
+    candidate: Object.freeze({
+      artifactId: transaction.candidate.artifactId,
+      productVersion: transaction.candidate.version,
+    }),
+    outcome: transaction.phase as "committed" | "restored",
+    terminalAt,
+  });
+}
+
+async function publishTerminalSummary(
+  active: string,
+  upgrade: string,
+  summary: HomeUpgradeHistorySummary,
+  deps: HomeUpgradeHistoryDeps,
+): Promise<void> {
+  await publishExactSummary(join(active, "summary.json"), summary, upgrade, deps);
+  const sync = deps.syncHistoryDirectory ?? syncDirectory;
+  await sync(active);
+  await sync(upgrade);
+}
+
+async function publishDerivedReceipts(
+  upgrade: string,
+  summary: HomeUpgradeHistorySummary,
+  deps: HomeUpgradeHistoryDeps,
+): Promise<void> {
+  const receipts = join(upgrade, "receipts");
+  const candidates = join(receipts, "candidates");
+  await ensurePrivateDirectory(receipts, upgrade, deps);
+  await ensurePrivateDirectory(candidates, receipts, deps);
+  if (summary.outcome === "restored") {
+    const candidate = join(candidates, `${summary.candidate.artifactId}.json`);
+    const existing = await readTerminalSummary(candidate);
+    if (existing === null) {
+      await publishExactSummary(candidate, summary, receipts, deps);
+    } else if (summaryIdentity(existing) !== summaryIdentity(summary)) {
+      const archived = await validateArchivedReceipt(upgrade, existing);
+      if (archived === null) {
+        await unlink(candidate);
+        await (deps.syncHistoryDirectory ?? syncDirectory)(candidates);
+        await publishExactSummary(candidate, summary, receipts, deps);
+      }
+      // A still-referenced first rollback remains authoritative for this
+      // candidate, so its exclusive failure receipt is intentionally kept.
+    }
+  }
+  await replaceLatestSummary(join(receipts, "latest.json"), summary, deps);
+  const sync = deps.syncHistoryDirectory ?? syncDirectory;
+  await sync(candidates);
+  await sync(receipts);
+  await sync(upgrade);
+}
+
+async function publishExactSummary(
+  destination: string,
+  summary: HomeUpgradeHistorySummary,
+  temporaryParent: string,
+  deps: HomeUpgradeHistoryDeps,
+): Promise<void> {
+  const existing = await readTerminalSummary(destination);
+  if (existing !== null) {
+    if (summaryIdentity(existing) !== summaryIdentity(summary)) {
+      throw new Error(`Dome Home terminal summary conflicts at ${destination}`);
+    }
+    return;
+  }
+  const temporary = join(temporaryParent, `.summary-${summary.operationId}.tmp`);
+  await rm(temporary, { force: true });
+  try {
+    await writePrivateSummary(temporary, summary);
+    const publish = deps.publishReceipt ?? ((source: string, target: string) => publishPathExclusive({
+      source,
+      target,
+      ...(deps.platform === undefined ? {} : { platform: deps.platform }),
+    }));
+    try { await publish(temporary, destination); }
+    catch (error) {
+      const winner = await readTerminalSummary(destination);
+      if (winner === null || summaryIdentity(winner) !== summaryIdentity(summary)) throw error;
+    }
+    await (deps.syncHistoryDirectory ?? syncDirectory)(dirname(destination));
+  } finally {
+    await rm(temporary, { force: true });
+  }
+}
+
+async function replaceLatestSummary(
+  destination: string,
+  summary: HomeUpgradeHistorySummary,
+  deps: HomeUpgradeHistoryDeps,
+): Promise<void> {
+  const existing = await readTerminalSummary(destination);
+  if (existing !== null && await validateArchivedReceipt(dirname(dirname(destination)), existing) !== null &&
+    (existing.terminalAt > summary.terminalAt ||
+      (existing.terminalAt === summary.terminalAt && existing.operationId >= summary.operationId))) return;
+  const temporary = join(dirname(destination), `.latest-${summary.operationId}.tmp`);
+  await rm(temporary, { force: true });
+  try {
+    await writePrivateSummary(temporary, summary);
+    await rename(temporary, destination);
+    await (deps.syncHistoryDirectory ?? syncDirectory)(dirname(destination));
+  } finally {
+    await rm(temporary, { force: true });
+  }
+}
+
+async function writePrivateSummary(path: string, summary: HomeUpgradeHistorySummary): Promise<void> {
+  const body = `${JSON.stringify(summary)}\n`;
+  if (Buffer.byteLength(body) > MAX_SUMMARY_BYTES) throw new Error("Dome Home terminal summary exceeds its byte budget");
+  const handle = await open(path, "wx", 0o600);
+  try {
+    await handle.writeFile(body, "utf8");
+    await handle.sync();
+  } finally { await handle.close(); }
+}
+
+async function readTerminalSummary(path: string): Promise<HomeUpgradeHistorySummary | null> {
+  let handle: Awaited<ReturnType<typeof open>>;
+  try { handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW); }
+  catch (error) {
+    if (hasCode(error, "ENOENT")) return null;
+    throw new Error(`Dome Home terminal summary cannot be opened without following links: ${message(error)}`);
+  }
+  try {
+    const before = await handle.stat({ bigint: true });
+    if (!before.isFile() || before.nlink !== 1n || (before.mode & 0o777n) !== 0o600n ||
+      before.size === 0n || before.size > BigInt(MAX_SUMMARY_BYTES)) {
+      throw new Error("Dome Home terminal summary is not a bounded private file");
+    }
+    await assertOpenedPath(path, before);
+    const expected = Number(before.size);
+    const bytes = Buffer.alloc(expected + 1);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const read = await handle.read(bytes, offset, bytes.length - offset, offset);
+      if (read.bytesRead === 0) break;
+      offset += read.bytesRead;
+    }
+    const after = await handle.stat({ bigint: true });
+    if (offset !== expected || !sameFileStat(before, after)) {
+      throw new Error("Dome Home terminal summary changed during bounded inspection");
+    }
+    await assertOpenedPath(path, after);
+    let value: unknown;
+    try { value = JSON.parse(bytes.subarray(0, offset).toString("utf8")); }
+    catch { throw new Error("Dome Home terminal summary is corrupt"); }
+    return parseTerminalSummary(value);
+  } finally { await handle.close(); }
+}
+
+async function requireExactSummary(
+  path: string,
+  expected: HomeUpgradeHistorySummary,
+): Promise<HomeUpgradeHistorySummary> {
+  const summary = await readTerminalSummary(path);
+  if (summary === null || summaryIdentity(summary) !== summaryIdentity(expected)) {
+    throw new Error("immutable Dome Home history lacks its exact terminal summary");
+  }
+  return summary;
+}
+
+async function validateArchivedReceipt(
+  upgrade: string,
+  receipt: HomeUpgradeHistorySummary,
+): Promise<HomeUpgradeHistorySummary | null> {
+  const transactionRoot = join(upgrade, "history", receipt.operationId);
+  if (!await present(transactionRoot)) return null;
+  await assertDirectDirectory(join(upgrade, "history"), "upgrade history root");
+  await assertDirectDirectory(transactionRoot, "upgrade history transaction");
+  const archived = await readTerminalSummary(join(transactionRoot, "summary.json"));
+  if (archived === null || summaryIdentity(archived) !== summaryIdentity(receipt)) {
+    throw new Error("Dome Home terminal receipt disagrees with immutable history");
+  }
+  return archived;
+}
+
+function parseTerminalSummary(value: unknown): HomeUpgradeHistorySummary {
+  const root = exactRecord(value, "Dome Home terminal summary", [
+    "schema", "operationId", "candidate", "outcome", "terminalAt",
+  ]);
+  const candidate = exactRecord(root["candidate"], "Dome Home terminal summary candidate", [
+    "artifactId", "productVersion",
+  ]);
+  if (root["schema"] !== HOME_UPGRADE_TERMINAL_SUMMARY_SCHEMA ||
+    typeof root["operationId"] !== "string" || !isOperationId(root["operationId"]) ||
+    (root["outcome"] !== "committed" && root["outcome"] !== "restored") ||
+    typeof root["terminalAt"] !== "string" || !isExactTimestamp(root["terminalAt"]) ||
+    typeof candidate["artifactId"] !== "string" || !isArtifactId(candidate["artifactId"]) ||
+    typeof candidate["productVersion"] !== "string" || candidate["productVersion"].length === 0 ||
+    candidate["productVersion"].length > 1024) {
+    throw new Error("Dome Home terminal summary has invalid fields");
+  }
+  return Object.freeze({
+    schema: HOME_UPGRADE_TERMINAL_SUMMARY_SCHEMA,
+    operationId: root["operationId"],
+    candidate: Object.freeze({
+      artifactId: candidate["artifactId"],
+      productVersion: candidate["productVersion"],
+    }),
+    outcome: root["outcome"],
+    terminalAt: root["terminalAt"],
+  } as HomeUpgradeHistorySummary);
+}
+
+function exactRecord(value: unknown, label: string, keys: readonly string[]): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error(`${label} is not an object`);
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`${label} has unknown or missing keys`);
+  return value as Record<string, unknown>;
+}
+
+function summaryIdentity(summary: HomeUpgradeHistorySummary): string { return JSON.stringify(summary); }
+function isArtifactId(value: string): boolean { return /^[0-9a-f]{64}$/.test(value); }
+function assertArtifactId(value: string): void {
+  if (!isArtifactId(value)) throw new Error("Dome Home artifact id is invalid");
+}
+function isOperationId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+function isExactTimestamp(value: string): boolean {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+
+function sameFileStat(
+  left: BigIntStats,
+  right: BigIntStats,
+): boolean {
+  return left.dev === right.dev && left.ino === right.ino && left.size === right.size &&
+    left.mode === right.mode && left.nlink === right.nlink && left.mtimeNs === right.mtimeNs &&
+    left.ctimeNs === right.ctimeNs;
+}
+
+async function assertOpenedPath(path: string, opened: BigIntStats): Promise<void> {
+  const current = await lstat(path, { bigint: true });
+  if (!current.isFile() || current.isSymbolicLink() || current.dev !== opened.dev || current.ino !== opened.ino ||
+    await realpath(path) !== resolve(path)) {
+    throw new Error("Dome Home terminal summary path changed during bounded inspection");
+  }
+}
+
+async function inspectReceiptRoots(upgrade: string): Promise<boolean> {
+  const receipts = join(upgrade, "receipts");
+  const candidates = join(receipts, "candidates");
+  if (!await present(receipts) || !await present(candidates)) return false;
+  await assertPrivateSameDevice(receipts, upgrade, "upgrade receipts root");
+  await assertPrivateSameDevice(candidates, receipts, "upgrade candidate receipts root");
+  return true;
+}
+
+async function assertPrivateSameDevice(path: string, parent: string, label: string): Promise<void> {
+  await assertDirectDirectory(path, label);
+  const info = await lstat(path);
+  const parentInfo = await lstat(parent);
+  if ((info.mode & 0o777) !== 0o700 || info.dev !== parentInfo.dev) {
+    throw new Error(`${label} must be private and on its parent filesystem`);
+  }
+}
+
+async function ensurePrivateDirectory(
+  path: string,
+  parent: string,
+  deps: HomeUpgradeHistoryDeps,
+): Promise<void> {
+  if (!await present(path)) {
+    try { await mkdir(path, { mode: 0o700 }); }
+    catch (error) { if (!hasCode(error, "EEXIST")) throw error; }
+  }
+  await assertDirectDirectory(path, "upgrade receipt directory");
+  const info = await lstat(path);
+  const parentInfo = await lstat(parent);
+  if ((info.mode & 0o777) !== 0o700 || info.dev !== parentInfo.dev) {
+    throw new Error("upgrade receipt directory must be private and on the upgrade filesystem");
+  }
+  await (deps.syncHistoryDirectory ?? syncDirectory)(parent);
 }
 
 async function ensureHistoryRoot(
@@ -350,3 +675,5 @@ async function present(path: string): Promise<boolean> {
 function hasCode(error: unknown, code: string): boolean {
   return error instanceof Error && "code" in error && error.code === code;
 }
+
+function message(error: unknown): string { return error instanceof Error ? error.message : String(error); }

@@ -28,13 +28,13 @@ import {
   type HomeUpgradeCutoverResult,
 } from "./home-upgrade-cutover";
 import {
-  listHomeUpgradeHistorySummaries,
+  readHomeUpgradeCandidateReceipt,
   retireHomeUpgrade,
+  type HomeUpgradeHistorySummary,
   type HomeUpgradeHistoryDeps,
 } from "./home-upgrade-history";
 import {
   readHomeUpgradeForRecovery,
-  type HomeUpgradeHistorySummary,
   type HomeUpgradeTransaction,
 } from "./home-upgrade-transaction";
 
@@ -91,7 +91,7 @@ type IntentOperations = {
   readonly readInstallation: typeof readHomeInstallation;
   readonly inspectLifecycle: typeof inspectHomeLifecycleSuspension;
   readonly readActive: typeof readHomeUpgradeForRecovery;
-  readonly listHistory: typeof listHomeUpgradeHistorySummaries;
+  readonly readCandidateReceipt: typeof readHomeUpgradeCandidateReceipt;
   readonly cutover: typeof runHomeUpgradeCutover;
   readonly retire: typeof retireHomeUpgrade;
   readonly recoverOrphan: (
@@ -139,7 +139,12 @@ export async function manageHomeUpgrade(input: {
       return failure(vault, requested, "error", 64, "preflight-failed", "Dome Home has no managed installation", "inspect-home-status");
     }
     const suspension = await operations.inspectLifecycle(vault);
-    if (suspension.kind === "invalid" || suspension.kind === "unavailable") {
+    if (suspension.kind === "unavailable") {
+      return failure(vault, requested, "error", 75, "busy", suspension.error, "rerun-requested-upgrade", {
+        selected: installationSummary(selected),
+      });
+    }
+    if (suspension.kind === "invalid") {
       return failure(vault, requested, "recovery-required", 1, "coordination-failed", suspension.error, "inspect-home-status", {
         selected: installationSummary(selected),
       });
@@ -179,10 +184,8 @@ export async function manageHomeUpgrade(input: {
       });
     }
 
-    const history = await operations.listHistory(vault, deps);
-    const priorRestore = history.find((transaction) =>
-      transaction.outcome === "restored" && transaction.candidate.artifactId === requested!.artifactId);
-    if (priorRestore !== undefined) {
+    const priorRestore = await operations.readCandidateReceipt(vault, requested.artifactId, deps);
+    if (priorRestore !== null) {
       return output({
         vault,
         requested,
@@ -573,7 +576,7 @@ function resolveOperations(overrides: Partial<IntentOperations> | undefined): In
     readInstallation: overrides?.readInstallation ?? readHomeInstallation,
     inspectLifecycle: overrides?.inspectLifecycle ?? inspectHomeLifecycleSuspension,
     readActive: overrides?.readActive ?? readHomeUpgradeForRecovery,
-    listHistory: overrides?.listHistory ?? listHomeUpgradeHistorySummaries,
+    readCandidateReceipt: overrides?.readCandidateReceipt ?? readHomeUpgradeCandidateReceipt,
     cutover: overrides?.cutover ?? runHomeUpgradeCutover,
     retire: overrides?.retire ?? retireHomeUpgrade,
     recoverOrphan: overrides?.recoverOrphan ?? (async (vaultPath, operationId, deps) =>
