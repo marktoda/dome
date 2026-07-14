@@ -44,7 +44,7 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
 
   test("renders bounded recursive coordination diagnostics without secrets", () => {
     const error = new AggregateError([
-      new Error("inner Bearer abc+DEF/ghi==, after"),
+      new Error("terminal dome_csrf.abc- inner Bearer abc+DEF/ghi==, after"),
       new Error(
         "csrf dome_csrf.mUc9houYvJlhJBTZqI5tweTbcJFEucu_QUQTmKSqTZw " +
           "credential dome_cred.CTl4LDmCa7J6AvU4nnVtZQ.LJXJLpi2Hwpu0rMflghz6c10uRWJGKPSEu7W5J4y9N8 " +
@@ -53,17 +53,19 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     ], "outer failure");
     const rendered = renderInstalledCoordinationErrorForTests(error);
     expect(rendered.startsWith(
-      "AggregateError: outer failure | nested: Error: inner Bearer [REDACTED], after | " +
+      "AggregateError: outer failure | nested: Error: terminal [REDACTED] inner Bearer [REDACTED], after | " +
         "nested: Error: csrf [REDACTED] credential [REDACTED] ",
     )).toBeTrue();
     expect(rendered).not.toContain("dome_cred");
     expect(rendered).not.toContain("dome_csrf");
+    expect(rendered).not.toContain("abc-");
     expect(rendered).not.toContain("abc+DEF/ghi==");
     expect(rendered.length).toBe(2_048);
     const embedded = Function(`return (${renderInstalledCoordinationErrorForTests.toString()});`)() as
       ((error: unknown) => string);
     expect(embedded(error)).toBe(rendered);
     expect(embedded(error)).not.toContain("dome_csrf");
+    expect(embedded(error)).not.toContain("abc-");
     expect(embedded(error)).not.toContain("abc+DEF/ghi==");
     expect(renderInstalledCoordinationErrorForTests({ private: "value" }))
       .toBe("Non-Error coordination failure");

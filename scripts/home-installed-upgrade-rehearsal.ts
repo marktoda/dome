@@ -92,7 +92,7 @@ export function renderInstalledCoordinationErrorForTests(error: unknown, depth =
     }
   }
   const redacted = parts.join(" | ")
-    .replace(/\bdome_(?:pair|cred|csrf)(?:\.[A-Za-z0-9_-]+)+\b/g, "[REDACTED]")
+    .replace(/\bdome_(?:pair|cred|csrf)(?:\.[A-Za-z0-9_-]+)+(?![A-Za-z0-9_-])/g, "[REDACTED]")
     .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [REDACTED]");
   return redacted.length <= 2_048 ? redacted : `${redacted.slice(0, 2_047)}…`;
 }
