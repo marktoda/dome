@@ -1,11 +1,9 @@
 // product-host/managed-release-gc: one dormant, host-wide reachability collector.
 //
 // This checkpoint deliberately has no CLI or automatic caller. Its lock is the
-// future global release-store rank. Ordinary install participates; upgrade,
-// committed repair, and retirement do not yet hold the complete reachability
-// span. The collector holds no per-vault lock. Production collection remains
-// forbidden until every writer shares the order documented by the Product Host
-// spec.
+// future global release-store rank. Release writers now participate in that
+// rank, but activation remains a separate reviewed checkpoint. The collector
+// holds no per-vault lock and has no production caller.
 
 import { createHash, randomUUID } from "node:crypto";
 import { constants, type BigIntStats } from "node:fs";
@@ -89,6 +87,8 @@ export type ManagedReleaseGcDeps = Readonly<{
   readActiveProtection?: ((vaultIdentity: string, homeRoot: string) => Promise<ActiveProtection | null>) | undefined;
   publishGarbage?: ((source: string, target: string) => Promise<void>) | undefined;
   syncReleaseParent?: ((path: string) => Promise<void>) | undefined;
+  /** Test/diagnostic seam for the post-crash upgrade namespace durability proof. */
+  syncUpgradeDirectory?: ((path: string) => Promise<void>) | undefined;
   operationId?: (() => string) | undefined;
   checkpoint?: ((name: "before-rename" | "renamed" | "reproved" | "removed", candidate: ManagedReleaseGcCandidate) => Promise<void>) | undefined;
 }>;
@@ -96,8 +96,8 @@ export type ManagedReleaseGcDeps = Readonly<{
 /**
  * The only collector interface: acquire ownership, inventory all references,
  * optionally remove exactly the resulting unreachable set, and return the
- * immutable evidence. `inspect` is non-mutating; `collect` remains deliberately
- * unwired until every release publisher and selector writer shares this lock.
+ * immutable evidence. `inspect` removes nothing; `collect` remains deliberately
+ * unwired pending a separate activation-policy and scheduling checkpoint.
  */
 export async function collectManagedReleaseGarbage(
   input: Readonly<{ homeRoot: string; mode: "inspect" | "collect" }>,
@@ -106,6 +106,7 @@ export async function collectManagedReleaseGarbage(
   const homeRoot = await canonicalDirectHomeRoot(input.homeRoot);
   const ownership = await withManagedReleaseStoreCoordinator(homeRoot, async () => {
     const roots = await inspectRoots(homeRoot);
+    await stabilizeUpgradeNamespaces(roots, deps);
     const built = await buildPlan(roots, deps);
     if (input.mode === "inspect") return makeResult(input.mode, built.plan, []);
     const removed = await collectPlan(roots, built, deps);
@@ -261,6 +262,52 @@ async function inventoryProtections(
       sources: Object.freeze([...values].sort((left, right) =>
         compareStrings(`${left.installation}\0${left.kind}`, `${right.installation}\0${right.kind}`))),
     })));
+}
+
+/**
+ * A process can die after terminal active->history rename but before either
+ * parent fsync. The kernel mutex is then released before the namespace is known
+ * durable. A collector must first make the namespace it observes durable, so a
+ * later filesystem recovery cannot resurrect active references to a release it
+ * has already removed.
+ */
+async function stabilizeUpgradeNamespace(upgradeRoot: string, deps: ManagedReleaseGcDeps): Promise<void> {
+  const sync = deps.syncUpgradeDirectory ?? syncDirectory;
+  const upgradeIdentity = await directDirectoryIdentity(upgradeRoot, "managed upgrade root");
+  const names = await boundedNames(upgradeRoot, MAX_INSTALLATION_ENTRIES, "managed upgrade root");
+  if (names.includes("history")) {
+    const historyRoot = join(upgradeRoot, "history");
+    const historyIdentity = await directDirectoryIdentity(historyRoot, "managed upgrade history root");
+    await sync(historyRoot);
+    assertRootIdentity(
+      "managed upgrade history root",
+      historyIdentity,
+      await directDirectoryIdentity(historyRoot, "managed upgrade history root"),
+    );
+  }
+  await sync(upgradeRoot);
+  assertRootIdentity(
+    "managed upgrade root",
+    upgradeIdentity,
+    await directDirectoryIdentity(upgradeRoot, "managed upgrade root"),
+  );
+}
+
+async function stabilizeUpgradeNamespaces(roots: RootEvidence, deps: ManagedReleaseGcDeps): Promise<void> {
+  await reproveRoots(roots);
+  for (const installation of await boundedNames(
+    roots.installationsRoot,
+    MAX_INSTALLATIONS,
+    "managed installations",
+  )) {
+    const installationRoot = join(roots.installationsRoot, installation);
+    await directDirectoryIdentity(installationRoot, "managed installation");
+    const names = await boundedNames(installationRoot, MAX_INSTALLATION_ENTRIES, "managed installation");
+    if (names.includes("upgrade")) {
+      await stabilizeUpgradeNamespace(join(installationRoot, "upgrade"), deps);
+    }
+  }
+  await reproveRoots(roots);
 }
 
 async function collectPlan(

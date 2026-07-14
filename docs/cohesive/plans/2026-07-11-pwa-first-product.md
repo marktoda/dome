@@ -707,9 +707,12 @@ Managed-release collection checkpoint 1 now supplies a dormant, fail-closed
 host-wide reachability Module and exclusive tombstone protocol. Checkpoint 2A
 adds the canonical Home-bound owner token and places ordinary fresh/idempotent
 install release-through-selector publication under the exact global→artifact
-rank. Collection remains unwired until checkpoint 2B spans upgrade candidate
-publication through active-journal durability plus committed repair and
-terminal retirement; that integration and artifact signing/notarization remain
+rank. Checkpoint 2B now extends the same ownership through upgrade candidate
+publication and durable active readback, committed release repair and durable
+active reproof, and terminal active-to-history retirement through history then
+upgrade fsync. A one-time pre-inventory namespace stabilization pass closes the
+process-death window after retirement rename. Collection remains deliberately
+unwired; activation policy/scheduling and artifact signing/notarization remain
 later checkpoints.
 
 Exit journey: a clean Mac needs no source checkout or manual PWA build; it

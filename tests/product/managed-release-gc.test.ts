@@ -303,7 +303,36 @@ describe("managed Home release reachability GC", () => {
     } finally { await cleanup(f); }
   });
 
-  test("has no production caller or public SDK export at checkpoint 1", async () => {
+  test("stabilizes history before upgrade and refuses inventory when crash convergence fails", async () => {
+    const f = await fixture();
+    try {
+      const vault = await install(f, "vault", A);
+      await release(f, A);
+      const upgrade = join(homeInstallationPaths(vault, { applicationSupportDir: f.home }).installations, "upgrade");
+      await mkdir(join(upgrade, "history"), { recursive: true, mode: 0o700 });
+      const syncs: string[] = [];
+      let activeReads = 0;
+      await inspect(f, {
+        ...gcDeps(),
+        syncUpgradeDirectory: async (path) => { syncs.push(basename(path)); },
+        readActiveProtection: async () => { activeReads += 1; return null; },
+      });
+      expect(syncs).toEqual(["history", "upgrade"]);
+      expect(activeReads).toBe(1);
+
+      activeReads = 0;
+      await expect(inspect(f, {
+        ...gcDeps(),
+        syncUpgradeDirectory: async (path) => {
+          if (path === upgrade) throw new Error("upgrade namespace sync failed");
+        },
+        readActiveProtection: async () => { activeReads += 1; return null; },
+      })).rejects.toThrow("upgrade namespace sync failed");
+      expect(activeReads).toBe(0);
+    } finally { await cleanup(f); }
+  });
+
+  test("remains dormant with no production caller or public SDK export", async () => {
     const sourceRoot = join(import.meta.dir, "../../src");
     const offenders: string[] = [];
     for (const path of await sourceFiles(sourceRoot)) {

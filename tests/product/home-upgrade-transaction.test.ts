@@ -22,6 +22,8 @@ import {
 } from "../../src/product-host/home-installation";
 import { homeServiceLabelForVault } from "../../src/product-host/home-lifecycle";
 import { startProductHost } from "../../src/product-host/product-host";
+import { collectManagedReleaseGarbage } from "../../src/product-host/managed-release-gc";
+import { withManagedReleaseStoreCoordinator } from "../../src/product-host/managed-release-store-coordinator";
 import { readHomeUpgradeBarrier } from "../../src/product-host/home-upgrade-barrier";
 import {
   readHomeUpgradeCandidateReceipt,
@@ -39,6 +41,7 @@ import {
   inspectHomeUpgradeAdmission,
   migratePreparedHomeUpgrade,
   prepareHomeUpgrade,
+  prepareHomeUpgradeCandidate,
   readCommittedHomeUpgradeForward,
   readHomeUpgrade,
   readHomeUpgradeDisposition,
@@ -191,6 +194,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
         transactionId,
         candidateArtifactId: CANDIDATE_ID,
         expectedCurrentArtifactId: OLD_ID,
+        repairCandidate: await managedCandidate(f),
       }, deps);
       expect(cutover).toMatchObject({
         status: "ready",
@@ -215,6 +219,49 @@ describe("Product Host pre-commit upgrade transaction", () => {
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });
 
+  test("candidate publication holds global ownership until active reachability is durable", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      const paths = homeInstallationPaths(f.vault, f.deps);
+      const managed = releaseRoot(paths, CANDIDATE_ID);
+      const source = join(f.root, "external-candidate");
+      await cp(managed, source, { recursive: true });
+      const manifest = await f.deps.verifyArtifact!(source);
+      await rm(managed, { recursive: true });
+      let entered!: () => void;
+      const activePublicationEntered = new Promise<void>((resolve) => { entered = resolve; });
+      let release!: () => void;
+      const allowActivePublication = new Promise<void>((resolve) => { release = resolve; });
+      const preparing = prepareHomeUpgradeCandidate({
+        vaultPath: f.vault,
+        transactionId,
+        candidate: { source, manifest },
+      }, {
+        ...f.deps,
+        preparationCheckpoint: async (name) => {
+          expect(name).toBe("active-reproved");
+          entered();
+          await allowActivePublication;
+        },
+      });
+      await activePublicationEntered;
+      expect(await readHomeUpgradeDisposition(f.vault, f.deps)).toMatchObject({
+        phase: "prepared",
+        transactionId,
+      });
+      await expect(collectManagedReleaseGarbage({ homeRoot: paths.root, mode: "inspect" }))
+        .rejects.toThrow("coordinator is busy");
+      release();
+      expect(await preparing).toMatchObject({ phase: "prepared", transactionId });
+      const plan = await collectManagedReleaseGarbage({ homeRoot: paths.root, mode: "inspect" }, {
+        ...gcDepsForFixture(f),
+      });
+      expect(plan.plan.candidates).toEqual([]);
+      expect(plan.plan.protections.map((entry) => entry.artifactId)).toEqual([OLD_ID, CANDIDATE_ID]);
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
   test("exact invoking candidate repairs committed deletion without N-1 or snapshot dependency", async () => {
     const f = await fixture();
     try {
@@ -227,6 +274,12 @@ describe("Product Host pre-commit upgrade transaction", () => {
       let lifecycleActive = false;
       let candidateAuthorized = false;
       let crashRelease = true;
+      let holdForwardRepair = false;
+      let repairEntered!: () => void;
+      const forwardRepairEntered = new Promise<void>((resolve) => { repairEntered = resolve; });
+      let releaseRepair!: () => void;
+      const allowForwardRepair = new Promise<void>((resolve) => { releaseRepair = resolve; });
+      const selectorOwnership: Array<"owned" | "busy"> = [];
       const inspectLifecycle: NonNullable<HomeUpgradeCutoverDeps["inspectLifecycleSuspension"]> = async () => {
         if (!lifecycleActive) return { kind: "inactive" };
         const journal = await readHomeUpgradeDisposition(f.vault, f.deps);
@@ -238,6 +291,18 @@ describe("Product Host pre-commit upgrade transaction", () => {
       const deps: HomeUpgradeCutoverDeps = {
         ...f.deps,
         inspectLifecycleSuspension: inspectLifecycle,
+        forwardRepairCheckpoint: async (name) => {
+          if (holdForwardRepair && name === "release-ready") {
+            repairEntered();
+            await allowForwardRepair;
+          } else if (holdForwardRepair && name === "candidate-plist-published") {
+            selectorOwnership.push((await withManagedReleaseStoreCoordinator(
+              paths.root,
+              async () => undefined,
+              { waitMs: 0 },
+            )).kind);
+          }
+        },
         operations: {
           prove: async (input) => probationProof(input.transactionId),
           release: async (vault, releaseDeps) => {
@@ -274,6 +339,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
         transactionId,
         candidateArtifactId: CANDIDATE_ID,
         expectedCurrentArtifactId: OLD_ID,
+        repairCandidate: { source: repairSource, manifest: repairManifest },
       }, deps);
       expect(first).toMatchObject({
         status: "recovery-required",
@@ -295,13 +361,20 @@ describe("Product Host pre-commit upgrade transaction", () => {
         join(paths.installations, "upgrade", "active", "snapshot", snapshotEntries[1]!.name),
         "irrelevant",
       );
-      const recovered = await runHomeUpgradeCutover({
+      holdForwardRepair = true;
+      const recovering = runHomeUpgradeCutover({
         vaultPath: f.vault,
         transactionId,
         candidateArtifactId: CANDIDATE_ID,
         expectedCurrentArtifactId: OLD_ID,
         repairCandidate: { source: repairSource, manifest: repairManifest },
       }, deps);
+      await forwardRepairEntered;
+      await expect(collectManagedReleaseGarbage({ homeRoot: paths.root, mode: "inspect" }))
+        .rejects.toThrow("coordinator is busy");
+      releaseRepair();
+      const recovered = await recovering;
+      expect(selectorOwnership).toEqual(["owned"]);
       expect(recovered).toMatchObject({
         status: "ready",
         transactionOutcome: { kind: "committed", transaction: { phase: "committed" } },
@@ -439,6 +512,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
           transactionId,
           candidateArtifactId: CANDIDATE_ID,
           expectedCurrentArtifactId: OLD_ID,
+          repairCandidate: await managedCandidate(f),
         }, deps);
         expect(first).toMatchObject({
           status: "ready",
@@ -1380,9 +1454,18 @@ describe("Product Host terminal upgrade history", () => {
           outcome: "committed",
         });
 
-        if (["after-rename", "history-synced", "upgrade-synced"].includes(checkpoint)) {
-          const paths = homeInstallationPaths(f.vault, f.deps);
-          await rm(releaseRoot(paths, OLD_ID), { recursive: true, force: true });
+        const paths = homeInstallationPaths(f.vault, f.deps);
+        const afterRename = ["after-rename", "history-synced", "upgrade-synced"].includes(checkpoint);
+        const collection = await collectManagedReleaseGarbage({
+          homeRoot: paths.root,
+          mode: afterRename ? "collect" : "inspect",
+        }, gcDepsForFixture(f));
+        expect(collection.plan.candidates.map((candidate) => candidate.artifactId))
+          .toEqual(afterRename ? [OLD_ID] : []);
+        expect(collection.removed.map((candidate) => candidate.artifactId))
+          .toEqual(afterRename ? [OLD_ID] : []);
+
+        if (afterRename) {
           const archivedSnapshot = join(
             paths.installations,
             "upgrade", "history", transactionId, "snapshot",
@@ -1408,6 +1491,37 @@ describe("Product Host terminal upgrade history", () => {
         });
       } finally { await rm(f.root, { recursive: true, force: true }); }
     }
+  });
+
+  test("retirement holds global ownership through rename and both parent durability proofs", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      const terminal = await committedTerminal(f, transactionId);
+      const paths = homeInstallationPaths(f.vault, f.deps);
+      let entered!: () => void;
+      const renameReproved = new Promise<void>((resolve) => { entered = resolve; });
+      let release!: () => void;
+      const allowDurability = new Promise<void>((resolve) => { release = resolve; });
+      const retiring = retireHomeUpgrade({ vaultPath: f.vault, transactionId }, {
+        ...historyDeps(f, terminal),
+        retirementCheckpoint: async (name) => {
+          if (name === "upgrade-synced") {
+            entered();
+            await allowDurability;
+          }
+        },
+      });
+      await renameReproved;
+      await expect(collectManagedReleaseGarbage({ homeRoot: paths.root, mode: "inspect" }))
+        .rejects.toThrow("coordinator is busy");
+      release();
+      expect(await retiring).toMatchObject({ retired: true, transaction: { transactionId } });
+      const collection = await collectManagedReleaseGarbage({ homeRoot: paths.root, mode: "inspect" }, {
+        verifyRelease: verifyManagedRelease,
+      });
+      expect(collection.plan.candidates.map((candidate) => candidate.artifactId)).toEqual([OLD_ID]);
+    } finally { await rm(f.root, { recursive: true, force: true }); }
   });
 
   test("restored retirement keeps full rollback proof and leaves active on snapshot damage", async () => {
@@ -1846,6 +1960,42 @@ describe("Product Host terminal upgrade history", () => {
 });
 
 type UpgradeFixture = Awaited<ReturnType<typeof fixture>>;
+
+async function managedCandidate(f: UpgradeFixture) {
+  const source = releaseRoot(homeInstallationPaths(f.vault, f.deps), CANDIDATE_ID);
+  return Object.freeze({ source, manifest: await f.deps.verifyArtifact!(source) });
+}
+
+async function verifyManagedRelease(root: string) {
+  const bytes = await readFile(join(root, "manifest.json"));
+  const manifest = JSON.parse(bytes.toString("utf8")) as HomeArtifactManifest;
+  return Object.freeze({
+    artifactId: manifest.artifact.id,
+    version: manifest.product.version,
+    manifestSha256: createHash("sha256").update(bytes).digest("hex"),
+  });
+}
+
+function gcDepsForFixture(f: UpgradeFixture) {
+  return Object.freeze({
+    verifyRelease: verifyManagedRelease,
+    readActiveProtection: async (vault: string) => {
+      const active = await readHomeUpgradeDispositionFromInstallation(vault, f.deps);
+      return active === null ? null : Object.freeze({
+        old: Object.freeze({
+          artifactId: active.old.artifactId,
+          version: active.old.version,
+          manifestSha256: active.old.manifestSha256,
+        }),
+        candidate: Object.freeze({
+          artifactId: active.candidate.artifactId,
+          version: active.candidate.version,
+          manifestSha256: active.candidate.manifestSha256,
+        }),
+      });
+    },
+  });
+}
 
 async function committedTerminal(f: UpgradeFixture, transactionId: string) {
   await prepareHomeUpgrade({

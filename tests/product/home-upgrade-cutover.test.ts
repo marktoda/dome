@@ -24,6 +24,7 @@ describe("private Home upgrade cutover", () => {
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
       expectedCurrentArtifactId: OLD,
+      repairCandidate: candidateInput(),
     }, deps);
     expect(result).toMatchObject({ status: "ready", transactionOutcome: { kind: "committed" }, handoffError: null });
     expect(calls).toEqual([
@@ -46,6 +47,7 @@ describe("private Home upgrade cutover", () => {
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
       expectedCurrentArtifactId: OLD,
+      repairCandidate: candidateInput(),
     }, fakeDeps(calls, () => current, (next) => { current = next; }, {
       readInstallation: async () => { calls.push("read-installation"); return selectedCandidate; },
     }));
@@ -63,6 +65,7 @@ describe("private Home upgrade cutover", () => {
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
       expectedCurrentArtifactId: OLD,
+      repairCandidate: candidateInput(),
     }, fakeDeps(calls, () => current, (next) => { current = next; }, {}, {
       ...exact,
       suspension: { ...exact.suspension, operationId: OTHER_TX },
@@ -112,6 +115,7 @@ describe("private Home upgrade cutover", () => {
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
       expectedCurrentArtifactId: OLD,
+      repairCandidate: candidateInput(),
     }, deps);
     expect(result).toMatchObject({
       status: "ready",
@@ -148,6 +152,7 @@ describe("private Home upgrade cutover", () => {
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
       expectedCurrentArtifactId: OLD,
+      repairCandidate: candidateInput(),
     }, deps);
     expect(result).toMatchObject({ status: "ready", transactionOutcome: { kind: "committed" }, handoffError: null });
     expect(calls).toEqual([
@@ -192,6 +197,7 @@ describe("private Home upgrade cutover", () => {
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
       expectedCurrentArtifactId: OLD,
+      repairCandidate: candidateInput(),
     }, fakeDeps(failureCalls, () => absent, (next) => { absent = next; }, {
       prepare: async () => { failureCalls.push("prepare"); throw new Error("prepare failed before publication"); },
     }))).rejects.toThrow("prepare failed before publication");
@@ -333,6 +339,7 @@ describe("private Home upgrade cutover", () => {
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
       expectedCurrentArtifactId: OLD,
+      repairCandidate: candidateInput(),
     }, fakeDeps(handoffCalls, () => handoffCurrent, (next) => { handoffCurrent = next; }, {
       release: async () => { handoffCalls.push("release"); throw new Error("barrier release failed"); },
     }));
@@ -374,6 +381,7 @@ describe("private Home upgrade cutover", () => {
       transactionId: TX,
       candidateArtifactId: CANDIDATE,
       expectedCurrentArtifactId: OLD,
+      repairCandidate: candidateInput(),
     }, lifecycleDeps);
     expect(lifecycleResult).toMatchObject({
       status: "recovery-required",
@@ -383,6 +391,13 @@ describe("private Home upgrade cutover", () => {
     });
   });
 });
+
+function candidateInput() {
+  return Object.freeze({
+    source: "/candidate",
+    manifest: { artifact: { id: CANDIDATE }, product: { version: "2.0.0" } } as never,
+  });
+}
 
 function fakeDeps(
   calls: string[],

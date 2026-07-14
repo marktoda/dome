@@ -7,8 +7,6 @@ import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import {
-  ensureManagedRelease,
-  homeInstallationPaths,
   readHomeInstallation,
   type HomeInstallationRecord,
 } from "./home-installation";
@@ -90,7 +88,6 @@ export type HomeUpgradeResult = {
 type IntentOperations = {
   readonly canonicalizeVault: (path: string) => Promise<string>;
   readonly verifyInvokingArtifact: (root: string) => Promise<HomeArtifactManifest>;
-  readonly publishCandidate: typeof ensureManagedRelease;
   readonly readInstallation: typeof readHomeInstallation;
   readonly inspectLifecycle: typeof inspectHomeLifecycleSuspension;
   readonly readActive: typeof readHomeUpgradeDisposition;
@@ -241,12 +238,6 @@ export async function manageHomeUpgrade(input: {
       });
     }
 
-    await operations.publishCandidate({
-      source: artifactRoot,
-      manifest,
-      paths: homeInstallationPaths(vault, deps),
-      platform: deps.platform ?? process.platform,
-    }, deps);
     const transactionId = operations.operationId();
     try {
       const cutover = await operations.cutover({
@@ -672,7 +663,6 @@ function resolveOperations(overrides: Partial<IntentOperations> | undefined): In
   return Object.freeze({
     canonicalizeVault: overrides?.canonicalizeVault ?? (async (path) => realpath(path)),
     verifyInvokingArtifact: overrides?.verifyInvokingArtifact ?? verifyHomeArtifact,
-    publishCandidate: overrides?.publishCandidate ?? ensureManagedRelease,
     readInstallation: overrides?.readInstallation ?? readHomeInstallation,
     inspectLifecycle: overrides?.inspectLifecycle ?? inspectHomeLifecycleSuspension,
     readActive: overrides?.readActive ?? readHomeUpgradeDisposition,

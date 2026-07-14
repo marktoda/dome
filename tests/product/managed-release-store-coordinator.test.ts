@@ -220,6 +220,8 @@ test("production imports, exports, and mentions remain on exact reviewed ownersh
   const expected = new Map<string, string[]>([
     ["withManagedReleaseStoreCoordinator", [
       "product-host/home-installation.ts",
+      "product-host/home-upgrade-history.ts",
+      "product-host/home-upgrade-transaction.ts",
       "product-host/managed-release-gc.ts",
       "product-host/managed-release-store-coordinator.ts",
     ]],
@@ -229,23 +231,33 @@ test("production imports, exports, and mentions remain on exact reviewed ownersh
     ]],
     ["ManagedReleaseStoreOwner", [
       "product-host/home-installation.ts",
+      "product-host/home-upgrade-transaction.ts",
       "product-host/managed-release-store-coordinator.ts",
     ]],
     ["withManagedReleaseArtifactRank", [
       "product-host/home-installation.ts",
       "product-host/managed-release-store-coordinator.ts",
     ]],
-    ["ensureManagedReleaseOwned", ["product-host/home-installation.ts"]],
-    ["repairManagedReleaseOwned", ["product-host/home-installation.ts"]],
-    // These two isolated upgrade callers are the explicit checkpoint 2B debt.
-    ["ensureManagedRelease", [
-      "product-host/home-installation.ts",
-      "product-host/home-upgrade.ts",
-    ]],
-    ["repairManagedRelease", [
+    ["ensureManagedReleaseOwned", [
       "product-host/home-installation.ts",
       "product-host/home-upgrade-transaction.ts",
     ]],
+    ["repairManagedReleaseOwned", [
+      "product-host/home-installation.ts",
+      "product-host/home-upgrade-transaction.ts",
+    ]],
+    ["ensureManagedRelease", ["product-host/home-installation.ts"]],
+    ["repairManagedRelease", ["product-host/home-installation.ts"]],
+    ["prepareHomeUpgradeCandidate", [
+      "product-host/home-upgrade-cutover.ts",
+      "product-host/home-upgrade-transaction.ts",
+    ]],
+    ["prepareHomeUpgrade", ["product-host/home-upgrade-transaction.ts"]],
+    ["retireHomeUpgrade", [
+      "product-host/home-upgrade-history.ts",
+      "product-host/home-upgrade.ts",
+    ]],
+    ["collectManagedReleaseGarbage", ["product-host/managed-release-gc.ts"]],
     ["publishHomeInstallation", ["product-host/home-installation.ts"]],
     ["publishManagedHomeInstallation", [
       "product-host/home-installation.ts",

@@ -50,7 +50,7 @@ describe("Home upgrade intent", () => {
     });
     expect(f.calls).toEqual([
       "canonicalize", "verify", "inspect-lifecycle", "read-active", "read-installation",
-      "read-installation", "read-candidate-receipt", "publish", "uuid", "cutover", "retire",
+      "read-installation", "read-candidate-receipt", "uuid", "cutover", "retire",
     ]);
     expect(Object.keys(result)).toEqual([
       "schema", "operation", "status", "exitCode", "vault", "requestedArtifact",
@@ -273,7 +273,7 @@ describe("Home upgrade intent", () => {
       });
       const result = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, f.deps);
       expect(result.status).toBe("upgraded");
-      expect(f.calls.indexOf("retire")).toBeLessThan(f.calls.indexOf("publish"));
+      expect(f.calls.indexOf("retire")).toBeLessThan(f.calls.indexOf("uuid"));
       expect(f.calls.filter((call) => call === "retire")).toHaveLength(2);
     }
   });
@@ -305,7 +305,7 @@ describe("Home upgrade intent", () => {
   test("classifies failures without durable recovery evidence as ordinary errors", async () => {
     for (const options of [
       { historyError: new Error("history unavailable") },
-      { publishError: new Error("publication unavailable") },
+      { cutoverError: new Error("candidate cutover unavailable") },
     ]) {
       const f = intentFixture(options);
       const result = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, f.deps);
@@ -325,9 +325,9 @@ describe("Home upgrade intent", () => {
 
   test("reports the exact internal error without changing the public coordination result", async () => {
     const diagnostics: unknown[] = [];
-    const failure = new Error("publication failed for a private internal path");
+    const failure = new Error("candidate cutover failed for a private internal path");
     const f = intentFixture({
-      publishError: failure,
+      cutoverError: failure,
     });
     const result = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, {
       ...f.deps,
@@ -469,7 +469,7 @@ describe("Home upgrade intent", () => {
           readRecovery: async () => current,
           prepare: async (input) => {
             prepareCalls += 1;
-            current = { ...transaction("prepared", input.transactionId, input.candidateArtifactId), vault };
+            current = { ...transaction("prepared", input.transactionId, input.candidate.manifest.artifact.id), vault };
             if (prepareCalls === 1) {
               enteredPrepare();
               await allowPrepare;
@@ -502,7 +502,6 @@ describe("Home upgrade intent", () => {
         },
         intentOperations: {
           verifyInvokingArtifact: async () => manifest(),
-          publishCandidate: async () => ({ root: "/release", published: false }),
           inspectLifecycle: async (path) => {
             const observed = await inspectHomeLifecycleSuspension(path);
             intentInspections += 1;
@@ -578,7 +577,6 @@ function intentFixture(options: {
   readonly cutoverResult?: HomeUpgradeCutoverResult;
   readonly verifyError?: Error;
   readonly historyError?: Error;
-  readonly publishError?: Error;
   readonly readForwardError?: Error;
   readonly inspectRepairError?: Error;
   readonly manifest?: HomeArtifactManifest;
@@ -617,11 +615,6 @@ function intentFixture(options: {
       if (options.inspectRepairError !== undefined) throw options.inspectRepairError;
       if (active === null) throw new Error("no committed transaction");
       return active;
-    },
-    publishCandidate: async () => {
-      calls.push("publish");
-      if (options.publishError !== undefined) throw options.publishError;
-      return { root: "/releases/requested", published: true };
     },
     operationId: () => {
       calls.push("uuid");

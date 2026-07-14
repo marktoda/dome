@@ -23,6 +23,7 @@ import {
   withHomeLifecycleMutation,
   type HomeLifecycleMutationDeps,
 } from "./home-lifecycle-suspension";
+import { withManagedReleaseStoreCoordinator } from "./managed-release-store-coordinator";
 import { readHomeUpgradeBarrier } from "./home-upgrade-barrier";
 import {
   readCommittedHomeUpgradeForward,
@@ -210,51 +211,54 @@ async function retireWhileOwned(
     throw new Error("Dome Home upgrade evidence exists in both active and immutable history");
   }
 
-  // Re-read live truth at the last possible point under both owners. History
-  // setup and collision inspection above are intentionally outside this
-  // terminal qualification window.
-  const finalTerminal = await readTerminalActive(vault, transactionId, deps);
-  await assertTerminalState(vault, finalTerminal, deps);
-  if (transactionIdentity(finalTerminal) !== sourceIdentity) {
-    throw new Error("Dome Home terminal upgrade evidence changed before retirement");
-  }
-
   // The immutable summary and its O(1) derived receipts become durable while
   // active remains authoritative. Therefore any crash before rename retries
   // from active, while every crash after rename already has lookup receipts.
-  const summary = terminalSummary(finalTerminal);
+  const summary = terminalSummary(terminal);
   await publishTerminalSummary(active, upgrade, summary, deps);
   await deps.retirementCheckpoint?.("summary-published");
   await publishDerivedReceipts(vault, upgrade, summary, deps);
   await deps.retirementCheckpoint?.("receipts-published");
 
-  await deps.retirementCheckpoint?.("before-rename");
-  const publish = deps.publishHistory ?? ((source: string, target: string) =>
-    publishDirectoryExclusive({
-      source,
-      target,
-      ...(deps.platform === undefined ? {} : { platform: deps.platform }),
-    }));
-  let retired = true;
-  try {
-    await publish(active, destination);
-  } catch (error) {
-    if (await present(active)) throw error;
-    const concurrent = await readTerminalHistory(vault, transactionId, deps);
-    if (concurrent === null || transactionIdentity(concurrent) !== sourceIdentity) {
-      throw new Error("Dome Home upgrade retirement lost its active transaction without exact history");
+  const global = await withManagedReleaseStoreCoordinator(paths.root, async () => {
+    // Re-read local durable reachability at the last possible point. The full
+    // service/operational proof above deliberately remains outside global.
+    const finalTerminal = await readTerminalActive(vault, transactionId, deps);
+    if (transactionIdentity(finalTerminal) !== sourceIdentity) {
+      throw new Error("Dome Home terminal upgrade evidence changed before retirement");
     }
-    retired = false;
-  }
-  await deps.retirementCheckpoint?.("after-rename");
+    await requireExactSummary(join(active, "summary.json"), terminalSummary(finalTerminal));
 
-  const archived = await readTerminalHistory(vault, transactionId, deps);
-  if (archived === null || transactionIdentity(archived) !== sourceIdentity) {
-    throw new Error("retired Dome Home upgrade history differs from active evidence");
-  }
-  await requireExactSummary(join(destination, "summary.json"), summary);
-  await syncRetirementParents(history, upgrade, deps);
-  return Object.freeze({ transaction: archived, retired });
+    await deps.retirementCheckpoint?.("before-rename");
+    const publish = deps.publishHistory ?? ((source: string, target: string) =>
+      publishDirectoryExclusive({
+        source,
+        target,
+        ...(deps.platform === undefined ? {} : { platform: deps.platform }),
+      }));
+    let retired = true;
+    try {
+      await publish(active, destination);
+    } catch (error) {
+      if (await present(active)) throw error;
+      const concurrent = await readTerminalHistory(vault, transactionId, deps);
+      if (concurrent === null || transactionIdentity(concurrent) !== sourceIdentity) {
+        throw new Error("Dome Home upgrade retirement lost its active transaction without exact history");
+      }
+      retired = false;
+    }
+    await deps.retirementCheckpoint?.("after-rename");
+
+    const archived = await readTerminalHistory(vault, transactionId, deps);
+    if (archived === null || transactionIdentity(archived) !== sourceIdentity) {
+      throw new Error("retired Dome Home upgrade history differs from active evidence");
+    }
+    await requireExactSummary(join(destination, "summary.json"), summary);
+    await syncRetirementParents(history, upgrade, deps);
+    return Object.freeze({ transaction: archived, retired });
+  }, { waitMs: 30_000 });
+  if (global.kind === "busy") throw new Error("managed Home release store is busy during retirement");
+  return global.value;
 }
 
 async function readTerminalActive(
