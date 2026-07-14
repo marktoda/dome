@@ -1,0 +1,38 @@
+{
+  "schema": "dome.home-predecessor-artifact/v1",
+  "classification": "reconstructed-internal-floor",
+  "distributed": false,
+  "releaseId": "0.1.0-eb644dc2",
+  "builder": {
+    "bun": "1.2.13",
+    "sourceCommit": "eb644dc29b37cbc0c964f8cffc5329a95cad49ba",
+    "expectedExitCode": 1
+  },
+  "archive": {
+    "name": "dome-home-0.1.0-darwin-arm64.tar.gz",
+    "root": "dome-home-0.1.0-darwin-arm64",
+    "bytes": 37808584,
+    "sha256": "35de119b40172ea5e418c0fa784a4db549c6ddf2911de9106beabf88fd492ebd"
+  },
+  "manifest": {
+    "bytes": 1591997,
+    "sha256": "fd375d9e8c492d730dcb75c6c12aa0efc35424bf1750f1437856a7e807d6dcaa",
+    "schema": "dome.home-artifact/v1",
+    "productVersion": "0.1.0",
+    "target": {
+      "os": "darwin",
+      "arch": "arm64"
+    },
+    "buildCommit": "eb644dc29b37cbc0c964f8cffc5329a95cad49ba",
+    "artifactId": "911d5219bd5888f8a45fbfb0bbcf6da57b54e3a0ffcf8077bd2d843327747096"
+  },
+  "knownPostArchiveFailure": {
+    "command": ["home", "status", "--vault", "<rehearsal-vault>", "--json"],
+    "commandExitCode": 64,
+    "schema": "dome.home.lifecycle/v1",
+    "action": "status",
+    "status": "error",
+    "exitCode": 64,
+    "error": "not an initialized Dome vault; run `dome init` first"
+  }
+}
