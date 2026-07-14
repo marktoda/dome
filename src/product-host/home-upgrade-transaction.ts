@@ -617,6 +617,24 @@ export async function readHomeUpgradeDisposition(
   deps: HomeUpgradeTransactionDeps = {},
 ): Promise<HomeUpgradeTransaction | null> {
   const vault = await canonicalVault(vaultPath);
+  return await readHomeUpgradeDispositionFromInstallation(vault, deps);
+}
+
+/**
+ * Strict intrinsic transaction truth for host-wide installation inventory.
+ * Unlike the public vault-path reader this does not require the vault to
+ * remain present: an installed selector is durable reachability evidence even
+ * after its owner moves or temporarily unmounts the vault. The supplied
+ * identity must be the absolute normalized value parsed from installation.json.
+ */
+export async function readHomeUpgradeDispositionFromInstallation(
+  vaultIdentity: string,
+  deps: HomeUpgradeTransactionDeps = {},
+): Promise<HomeUpgradeTransaction | null> {
+  if (vaultIdentity !== resolve(vaultIdentity)) {
+    throw new Error("Dome Home installation vault identity is not absolute and normalized");
+  }
+  const vault = vaultIdentity;
   const paths = homeInstallationPaths(vault, deps);
   const upgrade = await inspectUpgradeAncestors(paths);
   if (upgrade === null) return null;

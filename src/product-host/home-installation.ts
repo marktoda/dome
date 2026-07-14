@@ -68,7 +68,7 @@ export async function readHomeInstallation(vault: string, deps: HomeInstallation
   let parsed: unknown;
   try { parsed = JSON.parse(await readFile(path, "utf8")); }
   catch { throw new Error(`Dome Home installation record is invalid at ${path}`); }
-  return parseHomeInstallation(parsed, resolve(vault));
+  return parseHomeInstallationRecord(parsed, resolve(vault));
 }
 
 export function createHomeInstallation(
@@ -416,7 +416,8 @@ export async function publishHomeInstallation(
 
 export async function syncDirectory(path: string): Promise<void> { await fsyncDirectory(path); }
 
-function parseHomeInstallation(value: unknown, expectedVault: string): HomeInstallationRecord {
+/** Strict pure parser shared by selector readers and host-wide release inventory. */
+export function parseHomeInstallationRecord(value: unknown, expectedVault: string): HomeInstallationRecord {
   const root = exactRecord(value, "installation record", ["schema", "vault", "artifact", "environment"]);
   const artifact = exactRecord(root["artifact"], "installation artifact", ["id", "version"]);
   if (root["schema"] !== HOME_INSTALLATION_SCHEMA || root["vault"] !== expectedVault ||
