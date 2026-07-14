@@ -704,10 +704,13 @@ execution receipt, and re-proves candidate and source before atomic
 publication. No public flag or ordinary fixture writer can bypass the gate;
 this contract does not claim a real release execution has already passed.
 Managed-release collection checkpoint 1 now supplies a dormant, fail-closed
-host-wide reachability Module and exclusive tombstone protocol. It remains
-unwired until install publication, new-candidate-to-active publication,
-committed repair, and terminal retirement participate in its global lock;
-that integration and artifact signing/notarization remain later checkpoints.
+host-wide reachability Module and exclusive tombstone protocol. Checkpoint 2A
+adds the canonical Home-bound owner token and places ordinary fresh/idempotent
+install release-through-selector publication under the exact global→artifact
+rank. Collection remains unwired until checkpoint 2B spans upgrade candidate
+publication through active-journal durability plus committed repair and
+terminal retirement; that integration and artifact signing/notarization remain
+later checkpoints.
 
 Exit journey: a clean Mac needs no source checkout or manual PWA build; it
 pairs an iPhone, upgrades an N-1 fixture after backup, handles a forced failed

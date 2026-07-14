@@ -1,10 +1,11 @@
 // product-host/managed-release-gc: one dormant, host-wide reachability collector.
 //
 // This checkpoint deliberately has no CLI or automatic caller. Its lock is the
-// future global release-store rank, but existing writer paths do not
-// participate yet. The collector holds no per-vault lock. Collection in
-// production is forbidden until writers share the global rank in the order
-// documented by the Product Host spec.
+// future global release-store rank. Ordinary install participates; upgrade,
+// committed repair, and retirement do not yet hold the complete reachability
+// span. The collector holds no per-vault lock. Production collection remains
+// forbidden until every writer shares the order documented by the Product Host
+// spec.
 
 import { createHash, randomUUID } from "node:crypto";
 import { constants, type BigIntStats } from "node:fs";

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, realpathSync } from "node:fs";
 import { chmod, lstat, mkdir, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 
 import {
   homeServiceLabelForVault,
@@ -26,6 +26,15 @@ import {
   releaseOperationalWriterBarrier,
 } from "../../src/operational-state/writer-barrier";
 import { startProductHost, type ProductHost } from "../../src/product-host/product-host";
+import {
+  ensureManagedRelease,
+  homeInstallationPaths,
+  publishHomeInstallation,
+  releaseRoot,
+  syncDirectory,
+} from "../../src/product-host/home-installation";
+import { collectManagedReleaseGarbage } from "../../src/product-host/managed-release-gc";
+import { withManagedReleaseStoreCoordinator } from "../../src/product-host/managed-release-store-coordinator";
 
 const roots: string[] = [];
 const hosts: ProductHost[] = [];
@@ -131,6 +140,204 @@ function deps(f: Awaited<ReturnType<typeof fixture>>, fake: Fake, extra: Partial
 }
 
 describe("manageHome macOS lifecycle", () => {
+  test("ordinary install holds global ownership through durable selector publication", async () => {
+    const f = await fixture();
+    const fake = fakeLaunchctl();
+    let reportRecord!: () => void;
+    let releaseRecord!: () => void;
+    const recordEntered = new Promise<void>((resolve) => { reportRecord = resolve; });
+    const recordGate = new Promise<void>((resolve) => { releaseRecord = resolve; });
+    const d = deps(f, fake, {
+      publishRecord: async (path, record) => {
+        reportRecord();
+        await recordGate;
+        await publishHomeInstallation(path, record);
+      },
+    });
+    const installing = manageHome({ action: "install", vaultPath: f.vault }, d);
+    await recordEntered;
+
+    await expect(collectManagedReleaseGarbage({ homeRoot: f.support, mode: "inspect" }, {
+      verifyRelease: async (root) => ({
+        artifactId: basename(root), version: "1.0.0", manifestSha256: "f".repeat(64),
+      }),
+      readActiveProtection: async () => null,
+    })).rejects.toThrow("coordinator is busy");
+
+    const manifest = await verifyFixtureArtifact(f.artifact);
+    let writerSettled = false;
+    const writer = ensureManagedRelease({
+      source: f.artifact,
+      manifest,
+      paths: homeInstallationPaths(f.vault, d),
+      platform: "darwin",
+    }, d).finally(() => { writerSettled = true; });
+    await Bun.sleep(50);
+    expect(writerSettled).toBeFalse();
+
+    releaseRecord();
+    expect((await installing).status).toBe("installed");
+    expect(await writer).toMatchObject({ published: false });
+    expect(writerSettled).toBeTrue();
+  });
+
+  test("same-artifact reinstall keeps the selector in the global ownership span", async () => {
+    const f = await fixture();
+    const fake = fakeLaunchctl();
+    const initialDeps = deps(f, fake);
+    expect((await manageHome({ action: "install", vaultPath: f.vault }, initialDeps)).status).toBe("installed");
+    let reportRecord!: () => void;
+    let releaseRecord!: () => void;
+    const recordEntered = new Promise<void>((resolve) => { reportRecord = resolve; });
+    const recordGate = new Promise<void>((resolve) => { releaseRecord = resolve; });
+    const reinstalling = manageHome({ action: "install", vaultPath: f.vault }, deps(f, fake, {
+      publishRecord: async (path, record) => {
+        reportRecord();
+        await recordGate;
+        await publishHomeInstallation(path, record);
+      },
+    }));
+    await recordEntered;
+    expect((await withManagedReleaseStoreCoordinator(f.support, async () => "collector", { waitMs: 0 })).kind)
+      .toBe("busy");
+    releaseRecord();
+    const result = await reinstalling;
+    expect(result.status).toBe("installed");
+    expect(result.releasePublished).toBeFalse();
+  });
+
+  test("ordinary install releases global ownership before plist and readiness", async () => {
+    const f = await fixture();
+    const fake = fakeLaunchctl();
+    const observations: string[] = [];
+    const result = await manageHome({ action: "install", vaultPath: f.vault }, deps(f, fake, {
+      publishPlist: async (path, contents) => {
+        const ownership = await withManagedReleaseStoreCoordinator(f.support, async () => "plist", { waitMs: 0 });
+        expect(ownership).toEqual({ kind: "owned", value: "plist" });
+        observations.push("plist");
+        await writeFile(path, contents);
+      },
+      readiness: async () => {
+        if (!existsSync(f.support)) return false;
+        const ownership = await withManagedReleaseStoreCoordinator(f.support, async () => "readiness", { waitMs: 0 });
+        expect(ownership).toEqual({ kind: "owned", value: "readiness" });
+        observations.push("readiness");
+        return fake.loaded.has(`gui/501/${homeServiceLabelForVault(f.vault)}`);
+      },
+    }));
+    expect(result.status).toBe("installed");
+    expect(observations).toEqual(["plist", "readiness"]);
+  });
+
+  test("fresh install durably establishes every ancestor before publishing its dependent entry", async () => {
+    const f = await fixture();
+    const fake = fakeLaunchctl();
+    const base = dirname(dirname(dirname(f.support)));
+    const paths = homeInstallationPaths(f.vault, { applicationSupportDir: f.support });
+    const events: string[] = [];
+    const result = await manageHome({ action: "install", vaultPath: f.vault }, deps(f, fake, {
+      directoryDurabilityCheckpoint: async (step) => {
+        events.push(`${step.kind}:${relative(base, step.subject)}->${relative(base, step.path)}`);
+      },
+      publishRelease: async (source, target) => {
+        events.push("release-published");
+        await rename(source, target);
+      },
+      syncReleaseParent: async (path) => {
+        events.push("release-parent-durable");
+        await syncDirectory(path);
+      },
+      publishRecord: async (path, record) => {
+        await publishHomeInstallation(path, record);
+        events.push("record-durable");
+      },
+      publishPlist: async (path, contents) => {
+        events.push("plist-published");
+        await writeFile(path, contents);
+      },
+    }));
+    expect(result.status).toBe("installed");
+    const requiredOrder = [
+      "directory:Application Support->Application Support",
+      "parent-entry:Application Support->",
+      "directory:Application Support/Dome->Application Support/Dome",
+      "parent-entry:Application Support/Dome->Application Support",
+      "directory:Application Support/Dome/Home->Application Support/Dome/Home",
+      "parent-entry:Application Support/Dome/Home->Application Support/Dome",
+      "directory:Application Support/Dome/Home/releases->Application Support/Dome/Home/releases",
+      "parent-entry:Application Support/Dome/Home/releases->Application Support/Dome/Home",
+      "release-published",
+      "release-parent-durable",
+      "directory:Application Support/Dome/Home/installations->Application Support/Dome/Home/installations",
+      "parent-entry:Application Support/Dome/Home/installations->Application Support/Dome/Home",
+      `directory:${relative(base, paths.installations)}->${relative(base, paths.installations)}`,
+      `parent-entry:${relative(base, paths.installations)}->Application Support/Dome/Home/installations`,
+      "record-durable",
+      "plist-published",
+    ];
+    let cursor = -1;
+    for (const marker of requiredOrder) {
+      const index = events.indexOf(marker, cursor + 1);
+      expect(index).toBeGreaterThan(cursor);
+      cursor = index;
+    }
+  });
+
+  test("fresh install stops at every failed directory or parent-entry fsync", async () => {
+    for (const failed of [
+      "application support", "Dome", "Home", "releases", "installations", "vault selector",
+    ] as const) {
+      for (const kind of ["directory", "parent-entry"] as const) {
+        const f = await fixture();
+        const fake = fakeLaunchctl();
+        const paths = homeInstallationPaths(f.vault, { applicationSupportDir: f.support });
+        const subject = failed === "application support" ? dirname(dirname(paths.root))
+          : failed === "Dome" ? dirname(paths.root)
+          : failed === "Home" ? paths.root
+          : failed === "releases" ? paths.releases
+          : failed === "installations" ? dirname(paths.installations)
+          : paths.installations;
+        const hits = { directory: 0, "parent-entry": 0 };
+        const d = deps(f, fake, {
+          directoryDurabilityCheckpoint: async (step) => {
+            if (step.subject !== subject) return;
+            hits[step.kind] += 1;
+            if (step.kind === kind && hits[step.kind] === 1) {
+              throw new Error(`${failed} ${kind} durability failed`);
+            }
+          },
+        });
+        const result = await manageHome({ action: "install", vaultPath: f.vault }, d);
+        expect(result.status).toBe("error");
+        expect(result.error).toContain(`${failed} ${kind} durability failed`);
+        expect(existsSync(paths.record)).toBeFalse();
+        expect(existsSync(result.plist)).toBeFalse();
+        expect(fake.calls.some((call) => call[0] === "bootstrap")).toBeFalse();
+        expect(existsSync(releaseRoot(paths, ARTIFACT_ID))).toBe(
+          failed === "installations" || failed === "vault selector",
+        );
+        const retry = await manageHome({ action: "install", vaultPath: f.vault }, d);
+        expect(retry.status).toBe("installed");
+        expect(existsSync(paths.record)).toBeTrue();
+        expect(existsSync(retry.plist)).toBeTrue();
+        expect(hits.directory).toBeGreaterThanOrEqual(2);
+        expect(hits["parent-entry"]).toBeGreaterThanOrEqual(kind === "parent-entry" ? 2 : 1);
+      }
+    }
+  });
+
+  test("selector publication failure retains exact release-publication truth", async () => {
+    const f = await fixture();
+    const result = await manageHome({ action: "install", vaultPath: f.vault }, deps(f, fakeLaunchctl(), {
+      publishRecord: async () => { throw new Error("selector durability failed"); },
+    }));
+    expect(result.status).toBe("error");
+    expect(result.error).toContain("selector durability failed");
+    expect(result.releasePublished).toBeTrue();
+    expect(existsSync(result.release!)).toBeTrue();
+    expect(existsSync(result.installation)).toBeFalse();
+  });
+
   test("readiness accepts only a 200 recognized pairing document", async () => {
     expect(await isHomePairingReadiness(Response.json({
       schema: "dome.device.pairing/v1",
