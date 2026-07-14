@@ -41,6 +41,7 @@ export type HomeInstallationDeps = {
   readonly syncRelease?: ((root: string) => Promise<void>) | undefined;
   readonly publishRecord?: ((path: string, record: HomeInstallationRecord) => Promise<void>) | undefined;
   readonly quarantineRelease?: ((source: string, target: string) => Promise<void>) | undefined;
+  readonly syncReleaseParent?: ((path: string) => Promise<void>) | undefined;
   /** Test/diagnostic crash seam for committed-candidate release repair. */
   readonly repairReleaseCheckpoint?: ((name:
     "replacement-staged" | "corrupt-release-quarantined" | "candidate-release-published"
@@ -99,8 +100,7 @@ export async function ensureManagedRelease(input: {
   return withManagedReleaseOwnership(input.paths, input.manifest.artifact.id, "publish", async () => {
     if (await pathPresent(target)) {
       try {
-        const installed = await verify(target);
-        assertSameManifest(installed, input.manifest, "managed release identity mismatch");
+        await durablyVerifyManagedRelease(target, input.paths, input.manifest, verify, deps);
         return Object.freeze({ root: target, published: false });
       } catch (error) {
         throw new Error(`immutable managed release is corrupt at ${target}: ${error instanceof Error ? error.message : String(error)}`);
@@ -141,7 +141,7 @@ export async function ensureManagedRelease(input: {
           );
         }
       }
-      await fsyncDirectory(input.paths.releases);
+      await (deps.syncReleaseParent ?? fsyncDirectory)(input.paths.releases);
       const published = await verify(target);
       assertSameManifest(published, input.manifest, "published release identity changed");
       return Object.freeze({ root: target, published: didPublish });
@@ -189,6 +189,7 @@ export async function repairManagedRelease(input: {
     );
     const initialTarget = await classifyRepairTarget(target, input, verify);
     if (initialTarget === "exact") {
+      await durablyVerifyExactRepairTarget(target, input, verify, deps);
       return Object.freeze({ root: target, published: false, quarantined: null });
     }
     if (initialTarget === "valid-collision") throw validCollision(target);
@@ -223,6 +224,7 @@ export async function repairManagedRelease(input: {
       // publisher may have filled a previously missing target while we copied.
       const stagedTarget = await classifyRepairTarget(target, input, verify);
       if (stagedTarget === "exact") {
+        await durablyVerifyExactRepairTarget(target, input, verify, deps);
         return Object.freeze({ root: target, published: false, quarantined: null });
       }
       if (stagedTarget === "valid-collision") throw validCollision(target);
@@ -240,13 +242,14 @@ export async function repairManagedRelease(input: {
         } catch (error) {
           const raced = await classifyRepairTarget(target, input, verify);
           if (raced === "exact") {
+            await durablyVerifyExactRepairTarget(target, input, verify, deps);
             return Object.freeze({ root: target, published: false, quarantined: null });
           }
           if (raced === "valid-collision") throw validCollision(target);
           if (raced === "intrinsically-corrupt") throw error;
           quarantined = null;
         }
-        await fsyncDirectory(input.paths.releases);
+        await (deps.syncReleaseParent ?? fsyncDirectory)(input.paths.releases);
         await deps.repairReleaseCheckpoint?.("corrupt-release-quarantined");
       }
 
@@ -263,7 +266,7 @@ export async function repairManagedRelease(input: {
         if (winner !== "exact") throw publishError;
         published = false;
       }
-      await fsyncDirectory(input.paths.releases);
+      await (deps.syncReleaseParent ?? fsyncDirectory)(input.paths.releases);
       await deps.repairReleaseCheckpoint?.("candidate-release-published");
       await assertExactArtifact(
         target,
@@ -277,6 +280,37 @@ export async function repairManagedRelease(input: {
       await rm(staging, { recursive: true, force: true });
     }
   });
+}
+
+async function durablyVerifyManagedRelease(
+  target: string,
+  paths: HomeInstallationPaths,
+  manifest: HomeArtifactManifest,
+  verify: HomeArtifactVerifier,
+  deps: HomeInstallationDeps,
+): Promise<void> {
+  await ensureOwnedDirectory(paths.releases);
+  await (deps.syncReleaseParent ?? fsyncDirectory)(paths.releases);
+  const durable = await verify(target);
+  assertSameManifest(durable, manifest, "managed release identity mismatch");
+}
+
+async function durablyVerifyExactRepairTarget(
+  target: string,
+  input: Pick<Parameters<typeof repairManagedRelease>[0],
+    "manifest" | "expectedManifestSha256" | "paths">,
+  verify: HomeArtifactVerifier,
+  deps: HomeInstallationDeps,
+): Promise<void> {
+  await ensureOwnedDirectory(input.paths.releases);
+  await (deps.syncReleaseParent ?? fsyncDirectory)(input.paths.releases);
+  await assertExactArtifact(
+    target,
+    input.manifest,
+    input.expectedManifestSha256,
+    verify,
+    "durable repaired managed release",
+  );
 }
 
 async function withManagedReleaseOwnership<T>(

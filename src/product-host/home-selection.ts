@@ -31,6 +31,7 @@ export type HomeSelectionDeps = Pick<HomeInstallationDeps, "applicationSupportDi
   readonly beforeRename?: ((expected: HomeSelectionDocument, desired: HomeSelectionDocument) => Promise<void>) | undefined;
   readonly renamePath?: ((source: string, target: string) => Promise<void>) | undefined;
   readonly publishMissingPath?: ((source: string, target: string) => Promise<void>) | undefined;
+  readonly syncParent?: ((path: string) => Promise<void>) | undefined;
   readonly platform?: NodeJS.Platform | undefined;
 };
 
@@ -177,8 +178,7 @@ export async function publishHomeSelectionDocument(
     // expectation explicit and verifies desired bytes again after publication.
     await assertCurrentDocument(input.expected);
     await (deps.renamePath ?? rename)(temporary, input.desired.path);
-    const parent = await open(dirname(input.desired.path), "r");
-    try { await parent.sync(); } finally { await parent.close(); }
+    await (deps.syncParent ?? syncDirectory)(dirname(input.desired.path));
     await assertCurrentDocument(input.desired);
   } finally { await rm(temporary, { force: true }); }
 }
@@ -208,7 +208,10 @@ async function convergeRepairDocument(
 ): Promise<void> {
   const current = await inspectRepairableDocument(desired.path);
   if (current !== null) {
-    if (sameDocument(current, desired)) return;
+    if (sameDocument(current, desired)) {
+      await syncAndVerifyRepairDocument(desired, deps);
+      return;
+    }
     await publishHomeSelectionDocument({ expected: current, desired }, deps);
     return;
   }
@@ -231,15 +234,29 @@ async function convergeRepairDocument(
     } catch (error) {
       const winner = await inspectRepairableDocument(desired.path);
       if (winner === null || !sameDocument(winner, desired)) throw error;
+      await syncAndVerifyRepairDocument(desired, deps);
       return;
     }
-    const parent = await open(parentPath, "r");
-    try { await parent.sync(); } finally { await parent.close(); }
-    const published = await inspectRepairableDocument(desired.path);
-    if (published === null || !sameDocument(published, desired)) {
-      throw new Error("repaired Home selector does not match committed evidence");
-    }
+    await syncAndVerifyRepairDocument(desired, deps);
   } finally { await rm(temporary, { force: true }); }
+}
+
+async function syncAndVerifyRepairDocument(
+  desired: HomeSelectionDocument,
+  deps: HomeSelectionDeps,
+): Promise<void> {
+  const parentPath = dirname(desired.path);
+  if (await realpath(parentPath) !== parentPath) throw new Error("Home selection parent is redirected");
+  await (deps.syncParent ?? syncDirectory)(parentPath);
+  const durable = await inspectRepairableDocument(desired.path);
+  if (durable === null || !sameDocument(durable, desired)) {
+    throw new Error("repaired Home selector does not match committed evidence");
+  }
+}
+
+async function syncDirectory(path: string): Promise<void> {
+  const parent = await open(path, "r");
+  try { await parent.sync(); } finally { await parent.close(); }
 }
 
 async function inspectRepairableDocument(path: string): Promise<HomeSelectionDocument | null> {

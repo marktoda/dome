@@ -274,6 +274,62 @@ describe("immutable Dome Home release publication", () => {
     } finally { await rm(fixture.root, { recursive: true, force: true }); }
   });
 
+  test("retry closes ambiguous release publication and parent-sync failure gaps", async () => {
+    const fixture = await repairFixture("dome-release-durable-retry-");
+    try {
+      let parentSyncs = 0;
+      await expect(repairManagedRelease(fixture.input, {
+        ...fixture.deps,
+        publishRelease: async (source, target) => {
+          await rename(source, target);
+          throw new Error("publisher lost rename completion");
+        },
+        syncReleaseParent: async () => {
+          parentSyncs++;
+          throw new Error("release parent sync failed");
+        },
+      })).rejects.toThrow("release parent sync failed");
+      expect(await fixture.verify(releaseRoot(fixture.paths, ARTIFACT_ID))).toEqual(fixture.expected);
+      expect(parentSyncs).toBe(1);
+
+      const retry = await repairManagedRelease(fixture.input, {
+        ...fixture.deps,
+        syncReleaseParent: async () => { parentSyncs++; },
+      });
+      expect(retry).toEqual({
+        root: releaseRoot(fixture.paths, ARTIFACT_ID),
+        published: false,
+        quarantined: null,
+      });
+      expect(parentSyncs).toBe(2);
+      expect(await fixture.verify(retry.root)).toEqual(fixture.expected);
+
+      let ordinarySyncs = 0;
+      await expect(ensureManagedRelease({
+        source: fixture.source,
+        manifest: fixture.expected,
+        paths: fixture.paths,
+        platform: "darwin",
+      }, {
+        ...fixture.deps,
+        syncReleaseParent: async () => {
+          ordinarySyncs++;
+          throw new Error("ordinary parent sync failed");
+        },
+      })).rejects.toThrow("ordinary parent sync failed");
+      expect((await ensureManagedRelease({
+        source: fixture.source,
+        manifest: fixture.expected,
+        paths: fixture.paths,
+        platform: "darwin",
+      }, {
+        ...fixture.deps,
+        syncReleaseParent: async () => { ordinarySyncs++; },
+      })).published).toBeFalse();
+      expect(ordinarySyncs).toBe(2);
+    } finally { await rm(fixture.root, { recursive: true, force: true }); }
+  });
+
   test("normal publisher waits for same-artifact repair and observes its valid winner", async () => {
     const fixture = await repairFixture("dome-release-publish-repair-race-");
     try {
