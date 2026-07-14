@@ -20,6 +20,7 @@ import { computeLedgerSchemaHash, openLedgerDb } from "../../../../src/ledger/db
 import { computeOutboxSchemaHash, openOutboxDb } from "../../../../src/outbox/db";
 import { computeProposalsSchemaHash, openProposalsDb } from "../../../../src/proposals/db";
 import { computeRequestReceiptsSchemaHash, openRequestReceiptsDb } from "../../../../src/request-receipts/db";
+import { snapshotSqliteReadonly } from "../../../../src/sqlite/snapshot";
 
 export const FROZEN_N1_SOURCE_COMMIT = "eb644dc29b37cbc0c964f8cffc5329a95cad49ba";
 export const FROZEN_N1_RELEASE = "0.1.0-eb644dc2";
@@ -86,6 +87,19 @@ export type FrozenN1Manifest = Readonly<{
     revokedDeviceId: string;
     revokedCredential: string;
     revokedCsrf: string;
+  }>;
+}>;
+
+export type FrozenN1StateObservation = Readonly<{
+  stores: ReadonlyArray<Readonly<{
+    name: typeof STORES[number]["name"];
+    schemaHash: string;
+    canarySha256: string;
+  }>>;
+  canaryDigest: string;
+  authority: Readonly<{
+    active: string;
+    revoked: string;
   }>;
 }>;
 
@@ -180,6 +194,96 @@ export async function materializeFrozenN1Fixture(input: {
     throw new Error("frozen N-1 logical canaries changed after materialization");
   }
   return manifest;
+}
+
+/**
+ * Observe the fixture's durable logical state after an installed upgrade.
+ *
+ * Schema inventories intentionally do not participate: N is expected to
+ * migrate schemas. The six logical canaries and both credential outcomes are
+ * the preservation contract shared by the real installed rehearsal and its
+ * focused fixture tests.
+ */
+export async function observeFrozenN1State(input: {
+  readonly fixtureRoot: string;
+  readonly stateRoot: string;
+}): Promise<FrozenN1StateObservation> {
+  const manifest = await readFrozenN1Manifest(resolve(input.fixtureRoot));
+  const canaries = manifest.stores.map((store) => {
+    const path = join(resolve(input.stateRoot), `${store.name}.db`);
+    assertQuickCheck(path);
+    return logicalCanary(path, store.name);
+  });
+  const stores = manifest.stores.map((store, index) => Object.freeze({
+    name: store.name,
+    schemaHash: readSchemaHash(join(resolve(input.stateRoot), `${store.name}.db`), store.metaTable),
+    canarySha256: sha(stableJson(canaries[index])),
+  }));
+
+  const authorityScratch = await mkdtemp(join(tmpdir(), "dome-n1-authority-observation-"));
+  let active: string;
+  let revoked: string;
+  try {
+    const snapshot = join(authorityScratch, "device-authority.db");
+    await snapshotSqliteReadonly({
+      source: join(resolve(input.stateRoot), "device-authority.db"),
+      destination: snapshot,
+    });
+    const opened = await openDeviceAuthority({ path: snapshot });
+    if (!opened.ok) {
+      throw new Error(`frozen N-1 device authority could not be opened: ${opened.error.kind}`);
+    }
+    try {
+      const now = new Date("2026-07-13T12:16:00.000Z");
+      active = opened.value.authority.authenticate({
+        credential: manifest.authorityCanary.activeCredential,
+        csrfSecret: manifest.authorityCanary.activeCsrf,
+        requireCsrf: true,
+        now,
+      }).kind;
+      revoked = opened.value.authority.authenticate({
+        credential: manifest.authorityCanary.revokedCredential,
+        csrfSecret: manifest.authorityCanary.revokedCsrf,
+        requireCsrf: true,
+        now,
+      }).kind;
+    } finally {
+      opened.value.authority.close();
+    }
+  } finally {
+    await rm(authorityScratch, { recursive: true, force: true });
+  }
+
+  return Object.freeze({
+    stores: Object.freeze(stores),
+    canaryDigest: sha(stableJson(canaries)),
+    authority: Object.freeze({ active, revoked }),
+  });
+}
+
+export function assertFrozenN1State(
+  observation: FrozenN1StateObservation,
+  manifest: FrozenN1Manifest,
+): void {
+  if (observation.stores.length !== manifest.stores.length) {
+    throw new Error("frozen N-1 observation store inventory is not closed");
+  }
+  for (let index = 0; index < manifest.stores.length; index += 1) {
+    const expected = manifest.stores[index]!;
+    const actual = observation.stores[index];
+    if (actual?.name !== expected.name || actual.canarySha256 !== expected.canarySha256) {
+      throw new Error(`frozen N-1 logical canary changed: ${expected.name}`);
+    }
+  }
+  if (observation.canaryDigest !== manifest.canaryDigest) {
+    throw new Error("frozen N-1 aggregate logical canary changed");
+  }
+  if (observation.authority.active !== "authenticated") {
+    throw new Error(`frozen N-1 active credential changed: ${observation.authority.active}`);
+  }
+  if (observation.authority.revoked !== "revoked") {
+    throw new Error(`frozen N-1 revoked credential changed: ${observation.authority.revoked}`);
+  }
 }
 
 export async function readFrozenN1Manifest(root: string): Promise<FrozenN1Manifest> {
@@ -381,18 +485,27 @@ function logicalCanary(path: string, name: typeof STORES[number]["name"]): unkno
   const db = new Database(path, { readonly: true, create: false });
   try {
     switch (name) {
-      case "answers": return rows(db, "SELECT idempotency_key,answered_by,handler_status FROM question_answers ORDER BY idempotency_key");
-      case "proposals": return rows(db, "SELECT dedupe_key,status,decided_by,note FROM pending_proposals ORDER BY dedupe_key");
-      case "outbox": return rows(db, "SELECT idempotency_key,status,attempts,last_error FROM outbox ORDER BY idempotency_key");
-      case "runs": return { runs: rows(db, "SELECT id,status,effect_hashes_json,cost_usd FROM runs ORDER BY id"), uses: rows(db, "SELECT run_id,capability,resource,outcome FROM capability_uses ORDER BY id") };
-      case "request-receipts": return rows(db, "SELECT operation_id,state,result_code,commit_oid,adoption_state,recovery_required FROM request_receipts ORDER BY operation_id");
+      case "answers": return rows(db, "SELECT idempotency_key,answered_by,handler_status FROM question_answers WHERE idempotency_key IN ('answer-agent','answer-owner') ORDER BY idempotency_key");
+      case "proposals": return rows(db, "SELECT dedupe_key,status,decided_by,note FROM pending_proposals WHERE dedupe_key IN ('proposal-decided','proposal-pending') ORDER BY dedupe_key");
+      case "outbox": return rows(db, "SELECT idempotency_key,status,attempts,last_error FROM outbox WHERE idempotency_key IN ('outbox-failed','outbox-pending') ORDER BY idempotency_key");
+      case "runs": return { runs: rows(db, "SELECT id,status,effect_hashes_json,cost_usd FROM runs WHERE id='run_fixture' ORDER BY id"), uses: rows(db, "SELECT run_id,capability,resource,outcome FROM capability_uses WHERE run_id='run_fixture' ORDER BY id") };
+      case "request-receipts": return rows(db, "SELECT operation_id,state,result_code,commit_oid,adoption_state,recovery_required FROM request_receipts WHERE operation_id IN ('receipt-admitted','receipt-interrupted','receipt-succeeded') ORDER BY operation_id");
       case "device-authority": return {
         epoch: rows(db, "SELECT auth_epoch FROM authority_state"),
-        devices: rows(db, "SELECT name,revoked_at IS NOT NULL AS revoked FROM devices ORDER BY name"),
-        credentials: rows(db, "SELECT d.name,c.revoked_at IS NOT NULL AS revoked,c.rotated_at IS NOT NULL AS rotated FROM device_credentials c JOIN devices d ON d.id=c.device_id ORDER BY d.name,c.created_at,c.id"),
-        grants: rows(db, "SELECT device_name,consumed_at IS NOT NULL AS consumed FROM pairing_grants ORDER BY device_name"),
+        devices: rows(db, "SELECT name,revoked_at IS NOT NULL AS revoked FROM devices WHERE name IN ('Active Fixture','Revoked Fixture') ORDER BY name"),
+        credentials: rows(db, "SELECT d.name,c.revoked_at IS NOT NULL AS revoked,c.rotated_at IS NOT NULL AS rotated FROM device_credentials c JOIN devices d ON d.id=c.device_id WHERE d.name IN ('Active Fixture','Revoked Fixture') ORDER BY d.name,c.created_at,c.id"),
+        grants: rows(db, "SELECT device_name,consumed_at IS NOT NULL AS consumed FROM pairing_grants WHERE device_name IN ('Active Fixture','Revoked Fixture','Unused Fixture') ORDER BY device_name"),
       };
     }
+  } finally { db.close(); }
+}
+
+function readSchemaHash(path: string, metaTable: string): string {
+  const db = new Database(path, { readonly: true, create: false });
+  try {
+    const value = db.query<{ schema_hash: string }, []>(`SELECT schema_hash FROM ${metaTable}`).get()?.schema_hash;
+    if (value === undefined) throw new Error(`frozen N-1 schema hash is missing: ${path}`);
+    return value;
   } finally { db.close(); }
 }
 
