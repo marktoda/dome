@@ -17,7 +17,7 @@ import {
   commitPreparedHomeUpgrade,
   inspectCommittedHomeUpgradeRepair,
   migratePreparedHomeUpgrade,
-  prepareHomeUpgrade,
+  prepareHomeUpgradeCandidate,
   readCommittedHomeUpgradeForward,
   readHomeUpgradeDisposition,
   readHomeUpgradeForRecovery,
@@ -60,7 +60,7 @@ type UpgradeOperations = {
   readonly readRecovery: typeof readHomeUpgradeForRecovery;
   readonly inspectRepair: typeof inspectCommittedHomeUpgradeRepair;
   readonly repair: typeof repairCommittedHomeUpgrade;
-  readonly prepare: typeof prepareHomeUpgrade;
+  readonly prepare: typeof prepareHomeUpgradeCandidate;
   readonly migrate: typeof migratePreparedHomeUpgrade;
   readonly prove: typeof proveHomeUpgradeCandidate;
   readonly commit: typeof commitPreparedHomeUpgrade;
@@ -289,12 +289,18 @@ export async function runHomeUpgradeCutover(input: {
           if (selected?.artifact.id !== input.expectedCurrentArtifactId) {
             throw new HomeUpgradeSelectionChangedError(input.expectedCurrentArtifactId, selected);
           }
+          if (input.repairCandidate === undefined ||
+            input.repairCandidate.manifest.artifact.id !== input.candidateArtifactId) {
+            throw new Error("exact invoking candidate is required before upgrade preparation");
+          }
         }
-        journal = await operations.prepare({
-          vaultPath: input.vaultPath,
-          transactionId: input.transactionId,
-          candidateArtifactId: input.candidateArtifactId,
-        }, deps);
+        if (journal === null) {
+          journal = await operations.prepare({
+            vaultPath: input.vaultPath,
+            transactionId: input.transactionId,
+            candidate: input.repairCandidate!,
+          }, deps);
+        }
         journal = await operations.migrate(input.vaultPath, deps);
         const proof = await operations.prove({
           vault: journal.vault,
@@ -370,7 +376,7 @@ function resolveOperations(overrides: Partial<UpgradeOperations> | undefined): U
     readRecovery: overrides?.readRecovery ?? readHomeUpgradeForRecovery,
     inspectRepair: overrides?.inspectRepair ?? inspectCommittedHomeUpgradeRepair,
     repair: overrides?.repair ?? repairCommittedHomeUpgrade,
-    prepare: overrides?.prepare ?? prepareHomeUpgrade,
+    prepare: overrides?.prepare ?? prepareHomeUpgradeCandidate,
     migrate: overrides?.migrate ?? migratePreparedHomeUpgrade,
     prove: overrides?.prove ?? proveHomeUpgradeCandidate,
     commit: overrides?.commit ?? commitPreparedHomeUpgrade,

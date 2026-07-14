@@ -912,20 +912,64 @@ its parent before coordination; `releases/`, `installations/`, and the
 vault-selector directory become durable in dependency order before their
 payload or selector is reported durable. Establishment replays both fsyncs for
 an already-visible requested directory, so retry converges after failure at
-either durability step instead of assuming the prior attempt completed. A structural source inventory pins
+either durability step instead of assuming the prior attempt completed. A
+structural source inventory pins
 all imports, exports, and mentions of coordinator, owned/convenience writers,
 raw/deep selector publication, owner tokens, and rank helpers to exact reviewed
-modules; the two convenience upgrade callers are explicit checkpoint 2B debt.
+modules.
 
 The collector remains dormant with no CLI or automatic caller. Checkpoint 2A
-does **not** activate current upgrade prepublication for collection: its
-isolated release-writer wrapper serializes the payload but releases global
-before active-journal reachability is durable. Checkpoint 2B must retain global
-ownership from new-candidate publication through active-journal durability,
-cover committed repair and terminal active-to-history retirement, and prove
-automatic collection begins only after all earlier locks are released.
-Selector commit/restore remains protected by the active transaction and does
-not acquire global independently.
+does **not** activate collection; upgrade and retirement integration is the next
+checkpoint.
+
+### P6 managed-release collection checkpoint 2B
+
+Upgrade reachability writers now share the global coordinator without exposing
+its owner token outside Product Host internals. The new-candidate deep
+interface `prepareHomeUpgradeCandidate` runs under lifecycle Tx2, the
+operational barrier, and Product Host ownership; it acquires global, publishes
+or converges the candidate under artifact ownership, then retains global until
+the active journal has been atomically published, its upgrade parent fsynced,
+and the exact journal re-read. Global is released before migration, probation,
+selector commit, activation, or readiness. The raw `prepareHomeUpgrade` test
+seam also holds global through the same active proof and has no production
+caller. Recovery of an existing journal skips fresh candidate preparation.
+
+Irreversible committed repair follows lifecycle → operational → Product Host →
+global → artifact. It repairs or converges the exact invoking release and
+re-proves the unchanged durable active journal before releasing global.
+Selector convergence and strict forward proof then continue outside global;
+the active journal protects old and candidate reachability throughout.
+Selector commit and restore likewise remain global-free because neither
+removes active protection.
+
+Terminal retirement follows lifecycle → operational SHARED → global. Summary
+and receipt derivation can finish before global while active still pins both
+releases. Under global, retirement performs a final local durable terminal
+reproof, atomically renames active into intrinsic history, re-proves the
+archived identity and summary, fsyncs history before upgrade, and only then
+releases global. It performs no network readiness probe while global is held.
+If a process dies after rename but before either parent fsync, the kernel mutex
+is released; therefore every later collector first stabilizes each visible
+upgrade namespace exactly once under global—history fsync and reproof, then
+upgrade fsync and reproof—before initial reachability inventory. Failed
+stabilization aborts before active evidence is read. This pass is linear in
+installations and is not repeated by per-candidate cheap rescans.
+
+Crash-window tests interleave the dormant collector at durable active readback
+and after preparation returns, during committed repair, and at every retirement
+durability seam. They pin
+zero-wait contention through the final reachability proof, release before
+global-free work, post-process-death namespace convergence, and idempotent
+retirement after collection. Exact structural inventories keep owned writers,
+candidate and raw preparation, retirement, and the collector on reviewed
+modules only.
+
+The collector remains deliberately dormant: there is still no CLI, scheduler,
+SDK export, or automatic caller. Checkpoint 2B makes later activation eligible
+only after lifecycle, operational, Product Host, and global ownership have all
+been released; activation policy and scheduling remain a separate reviewed
+checkpoint.
 
 ### P3 device-authority foundation
 

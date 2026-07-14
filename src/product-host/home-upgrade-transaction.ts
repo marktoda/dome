@@ -22,13 +22,18 @@ import {
   validateSqliteSnapshot,
 } from "../sqlite/snapshot";
 import {
+  ensureManagedReleaseOwned,
   homeInstallationPaths,
-  repairManagedRelease,
+  repairManagedReleaseOwned,
   readHomeInstallation,
   releaseRoot,
   type HomeInstallationDeps,
   type HomeInstallationPaths,
 } from "./home-installation";
+import {
+  withManagedReleaseStoreCoordinator,
+  type ManagedReleaseStoreOwner,
+} from "./managed-release-store-coordinator";
 import {
   captureHomeSelection,
   captureHomeSelectionDocument,
@@ -185,6 +190,8 @@ export type HomeUpgradeTransactionDeps = HomeInstallationDeps & {
   readonly platform?: NodeJS.Platform | undefined;
   readonly now?: (() => Date) | undefined;
   readonly publishTransaction?: ((source: string, target: string) => Promise<void>) | undefined;
+  /** Test/diagnostic seam after durable active publication and exact readback. */
+  readonly preparationCheckpoint?: ((name: "active-reproved") => Promise<void>) | undefined;
   readonly launchAgentsDir?: string | undefined;
   readonly afterRestoreEntry?: ((name: typeof SNAPSHOT_NAMES[number]) => Promise<void>) | undefined;
   readonly afterStoreMigration?: ((name: HomeStoreMigrationEntry["name"]) => Promise<void>) | undefined;
@@ -225,7 +232,31 @@ export async function prepareHomeUpgrade(input: {
   validateMatchingPrepare(existing, input);
   if (existing?.phase === "restored") return existing;
   await engageForTransaction(vault, input.transactionId, deps);
-  return runPreparedOwnership(input, vault, deps);
+  return runPreparedOwnership(input, vault, undefined, deps);
+}
+
+/**
+ * The new-upgrade publication interface. Lifecycle Tx2 is already held by the
+ * cutover; this Module owns operational, Product Host, global, artifact, and
+ * active-journal ordering without exposing any owner token to its caller.
+ */
+export async function prepareHomeUpgradeCandidate(input: {
+  readonly vaultPath: string;
+  readonly transactionId: string;
+  readonly candidate: HomeUpgradeRepairCandidate;
+}, deps: HomeUpgradeTransactionDeps = {}): Promise<HomeUpgradeTransaction> {
+  assertTransactionId(input.transactionId);
+  assertSha(input.candidate.manifest.artifact.id, "candidate artifact id");
+  const vault = await canonicalVault(input.vaultPath);
+  const prepareInput = Object.freeze({
+    transactionId: input.transactionId,
+    candidateArtifactId: input.candidate.manifest.artifact.id,
+  });
+  const existing = await readHomeUpgrade(vault, deps);
+  validateMatchingPrepare(existing, prepareInput);
+  if (existing?.phase === "restored") return existing;
+  await engageForTransaction(vault, input.transactionId, deps);
+  return runPreparedOwnership(prepareInput, vault, input.candidate, deps);
 }
 
 async function runPreparedOwnership(
@@ -234,6 +265,7 @@ async function runPreparedOwnership(
     readonly candidateArtifactId: string;
   },
   vault: string,
+  candidate: HomeUpgradeRepairCandidate | undefined,
   deps: HomeUpgradeTransactionDeps,
 ): Promise<HomeUpgradeTransaction> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -245,10 +277,20 @@ async function runPreparedOwnership(
       validateMatchingPrepare(current, input);
       if (current !== null) return Object.freeze({ kind: "prepared" as const, value: current });
       try {
-        const prepared = await withQuiescedOwnership(
-          vault,
-          async () => prepareHomeUpgradeWhileQuiesced(input, vault, deps),
-        );
+        const prepared = await withQuiescedOwnership(vault, async () => {
+          const paths = homeInstallationPaths(vault, deps);
+          return withManagedReleaseStoreOwnership(paths, async (globalOwner) => {
+            if (candidate !== undefined) {
+              await ensureManagedReleaseOwned(globalOwner, {
+                source: candidate.source,
+                manifest: candidate.manifest,
+                paths,
+                platform: deps.platform ?? process.platform,
+              }, deps);
+            }
+            return prepareHomeUpgradeWhileQuiesced(input, vault, deps);
+          });
+        });
         return Object.freeze({ kind: "prepared" as const, value: prepared });
       } catch (prepareError) {
         try {
@@ -398,7 +440,9 @@ async function prepareHomeUpgradeWhileQuiesced(
       }));
     await publish(staging, layout.active);
     await fsyncDirectory(layout.upgrade);
-    return await readRequiredHomeUpgrade(vault, deps);
+    const prepared = await readRequiredHomeUpgrade(vault, deps);
+    await deps.preparationCheckpoint?.("active-reproved");
+    return prepared;
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
@@ -683,8 +727,8 @@ export async function inspectCommittedHomeUpgradeRepair(input: {
 /**
  * Rehydrate one irreversible committed candidate and converge its stored
  * selector pair. The caller already owns lifecycle Tx2; this Module owns the
- * operational barrier, Product Host locks, journal expectation, and selector
- * CAS while the installation Module owns global release repair serialization.
+ * operational barrier, Product Host locks, global release repair plus durable
+ * journal reproof, and the later global-free selector CAS.
  */
 export async function repairCommittedHomeUpgrade(input: {
   readonly vaultPath: string;
@@ -710,24 +754,23 @@ export async function repairCommittedHomeUpgrade(input: {
         if (journal.selection === null) {
           throw new Error("committed Dome Home upgrade lacks stored candidate selectors");
         }
-        const active = join(
-          homeInstallationPaths(vault, deps).installations,
-          "upgrade", "active",
-        );
+        const paths = homeInstallationPaths(vault, deps);
+        const active = join(paths.installations, "upgrade", "active");
         const stored = await loadStoredSelection(active, journal.selection);
-        await repairManagedRelease({
-          source: input.candidate.source,
-          manifest: input.candidate.manifest,
-          expectedManifestSha256: journal.candidate.manifestSha256,
-          paths: homeInstallationPaths(vault, deps),
-          platform: deps.platform ?? process.platform,
-        }, deps);
-        await deps.forwardRepairCheckpoint?.("release-ready");
-        const afterRelease = await readRequiredUpgradeDisposition(vault, deps);
-        if (JSON.stringify(afterRelease) !== JSON.stringify(journal)) {
-          throw new Error("committed Dome Home upgrade evidence changed during release repair");
-        }
-
+        await withManagedReleaseStoreOwnership(paths, async (globalOwner) => {
+          await repairManagedReleaseOwned(globalOwner, {
+            source: input.candidate.source,
+            manifest: input.candidate.manifest,
+            expectedManifestSha256: journal.candidate.manifestSha256,
+            paths,
+            platform: deps.platform ?? process.platform,
+          }, deps);
+          await deps.forwardRepairCheckpoint?.("release-ready");
+          const afterRelease = await readRequiredUpgradeDisposition(vault, deps);
+          if (JSON.stringify(afterRelease) !== JSON.stringify(journal)) {
+            throw new Error("committed Dome Home upgrade evidence changed during release repair");
+          }
+        });
         await repairHomeSelection(stored.candidate, deps, async (name) => {
           await deps.forwardRepairCheckpoint?.(name === "plist-published"
             ? "candidate-plist-published"
@@ -1303,6 +1346,15 @@ async function withQuiescedOwnership<T>(
   const owned = await withProductHostOwnership(vault, operation);
   if (owned.kind === "busy") throw new Error("Dome Home is not quiesced; Product Host ownership is busy");
   return owned.value;
+}
+
+async function withManagedReleaseStoreOwnership<T>(
+  paths: HomeInstallationPaths,
+  operation: (owner: ManagedReleaseStoreOwner) => Promise<T>,
+): Promise<T> {
+  const ownership = await withManagedReleaseStoreCoordinator(paths.root, operation, { waitMs: 30_000 });
+  if (ownership.kind === "busy") throw new Error("managed Home release store is busy");
+  return ownership.value;
 }
 
 async function ensureUpgradeLayout(paths: HomeInstallationPaths): Promise<{ readonly upgrade: string; readonly active: string }> {
