@@ -241,7 +241,7 @@ describe("Dome Home 0.2 activation", () => {
     expect(ordinary).toContain('"backup", "restore", "--help"');
     expect(ordinary).not.toContain('"backup", "create"');
     expect(ordinary).not.toContain('"backup", "verify"');
-    expect(ordinary).not.toContain('"backup", "restore", archive');
+    expect(ordinary).not.toContain('"backup", "restore", backup');
 
     const installedSource = await readFile(
       join(import.meta.dir, "..", "..", "scripts", "home-installed-upgrade-rehearsal.ts"),
