@@ -13,12 +13,13 @@ import { Database } from "bun:sqlite";
 import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import {
-  cp, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm,
-  stat, writeFile,
+  cp, lstat, mkdir, mkdtemp, open, readFile, readdir, readlink, realpath, rm,
+  writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import { gunzipSync } from "node:zlib";
 
 import { verifyHomeArtifact, type HomeArtifactManifest } from "../src/product-host/home-artifact";
 import { homeInstallationPaths } from "../src/product-host/home-installation";
@@ -26,6 +27,7 @@ import { homeServiceLabelForVault } from "../src/product-host/home-lifecycle";
 import { HOME_STORE_MIGRATIONS } from "../src/product-host/home-store-migrations";
 import { isHomeUpgradeVersionAdvance } from "../src/product-host/home-upgrade-version";
 import { readHomePredecessorReceipt } from "./home-predecessor-artifact";
+import { inspectHomeArtifactTar, MAX_HOME_ARTIFACT_TAR_BYTES } from "./home-artifact";
 import {
   assertFrozenN1State,
   materializeFrozenN1Fixture,
@@ -35,6 +37,7 @@ import {
 
 const HOST = "127.0.0.1";
 const PORT = 3663;
+const MAX_COMPRESSED_ARTIFACT_BYTES = 256 * 1024 * 1024;
 const EVIDENCE_SCHEMA = "dome.home-installed-upgrade-rehearsal/v1" as const;
 
 export type InstalledHomeUpgradeRehearsalInput = Readonly<{
@@ -58,8 +61,9 @@ export type InstalledHomeUpgradeRehearsalResult = Readonly<{
   schema: typeof EVIDENCE_SCHEMA;
   evidence: "installed-darwin-arm64";
   host: Readonly<{ platform: "darwin"; arch: "arm64"; uid: number }>;
-  predecessor: Readonly<{ artifactId: string; version: string; archiveSha256: string; manifestSha256: string }>;
-  candidate: Readonly<{ artifactId: string; version: string; archiveSha256: string; manifestSha256: string }>;
+  fixture: Readonly<{ releaseId: string; sourceCommit: string; canaryDigest: string }>;
+  predecessor: Readonly<{ artifactId: string; version: string; buildCommit: string; archiveSha256: string; manifestSha256: string }>;
+  candidate: Readonly<{ artifactId: string; version: string; buildCommit: string; archiveSha256: string; manifestSha256: string }>;
   scenarios: ReadonlyArray<InstalledHomeUpgradeScenario>;
 }>;
 
@@ -67,6 +71,35 @@ export type NonEvidenceInstalledUpgradeResult = Readonly<{
   evidence: false;
   scenarios: ReadonlyArray<InstalledHomeUpgradeScenario>;
 }>;
+
+/** Portable launchctl exit-pair contract; it emits no installed evidence. */
+export function classifyLaunchctlDrainForTests(
+  bootoutExitCode: number,
+  printExitCode: number,
+): "drained" | "pending" {
+  if (bootoutExitCode === 3) {
+    if (printExitCode === 113) return "drained";
+    throw new Error(`launchctl bootout reported absent (${bootoutExitCode}) without absent print proof (${printExitCode})`);
+  }
+  if (bootoutExitCode !== 0) throw new Error(`launchctl bootout failed (${bootoutExitCode})`);
+  if (printExitCode === 113) return "drained";
+  if (printExitCode === 0) return "pending";
+  throw new Error(`launchctl print failed (${printExitCode})`);
+}
+
+/** Portable pre-read archive allocation gate; it emits no installed evidence. */
+export function assertBoundedArchiveStatForTests(
+  input: Readonly<{ isFile: boolean; size: number }>,
+  maxBytes: number,
+  expectedBytes?: number,
+): void {
+  if (!input.isFile || !Number.isSafeInteger(input.size) || input.size < 1 || input.size > maxBytes) {
+    throw new Error("archive is not a bounded regular file");
+  }
+  if (expectedBytes !== undefined && input.size !== expectedBytes) {
+    throw new Error("archive size differs from its immutable receipt");
+  }
+}
 
 type PreparedArtifacts = Readonly<{
   temporary: string;
@@ -79,6 +112,7 @@ type PreparedArtifacts = Readonly<{
   candidateArchiveSha256: string;
   candidateManifestSha256: string;
   fixtureRoot: string;
+  fixtureManifest: Awaited<ReturnType<typeof readFrozenN1Manifest>>;
 }>;
 
 type RehearsalOperations<TPrepared> = Readonly<{
@@ -102,15 +136,22 @@ export async function rehearseInstalledHomeUpgrade(
     schema: EVIDENCE_SCHEMA,
     evidence: "installed-darwin-arm64",
     host: Object.freeze({ platform: "darwin", arch: "arm64", uid }),
+    fixture: Object.freeze({
+      releaseId: prepared.fixtureManifest.releaseId,
+      sourceCommit: prepared.fixtureManifest.sourceCommit,
+      canaryDigest: prepared.fixtureManifest.canaryDigest,
+    }),
     predecessor: Object.freeze({
       artifactId: prepared.predecessor.artifact.id,
       version: prepared.predecessor.product.version,
+      buildCommit: prepared.predecessor.build.gitCommit,
       archiveSha256: prepared.predecessorArchiveSha256,
       manifestSha256: prepared.predecessorManifestSha256,
     }),
     candidate: Object.freeze({
       artifactId: prepared.candidate.artifact.id,
       version: prepared.candidate.product.version,
+      buildCommit: prepared.candidate.build.gitCommit,
       archiveSha256: prepared.candidateArchiveSha256,
       manifestSha256: prepared.candidateManifestSha256,
     }),
@@ -188,25 +229,36 @@ function realOperations(): RehearsalOperations<PreparedArtifacts> {
 
 async function prepareRealArtifacts(input: InstalledHomeUpgradeRehearsalInput): Promise<PreparedArtifacts> {
   await assertRealHostPreconditions();
-  const receipt = await readHomePredecessorReceipt();
   const predecessorArchive = await realpath(resolve(input.predecessorArchive));
   const candidateArchive = await realpath(resolve(input.candidateArchive));
   const fixtureRoot = await realpath(resolve(input.frozenFixtureRoot));
-  const predecessorInfo = await stat(predecessorArchive);
-  const predecessorArchiveSha256 = await fileSha256(predecessorArchive);
-  const candidateInfo = await stat(candidateArchive);
-  const candidateArchiveSha256 = await fileSha256(candidateArchive);
-  if (!predecessorInfo.isFile() || predecessorInfo.size !== receipt.archive.bytes ||
-    predecessorArchiveSha256 !== receipt.archive.sha256) {
-    throw new Error("predecessor archive differs from its immutable receipt");
-  }
-  if (!candidateInfo.isFile()) throw new Error("candidate archive is not a regular file");
-  await readFrozenN1Manifest(fixtureRoot);
+  const receipt = await readHomePredecessorReceipt(join(fixtureRoot, "artifact-receipt.json"));
+  const fixtureManifest = await readFrozenN1Manifest(fixtureRoot);
 
   const temporary = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
   try {
-    const receiptManifest = await readArchiveMember(
+    const stagedInputs = join(temporary, "inputs");
+    await mkdir(stagedInputs, { mode: 0o700 });
+    const stagedPredecessor = join(stagedInputs, "predecessor.tar.gz");
+    const stagedCandidate = join(stagedInputs, "candidate.tar.gz");
+    const predecessorStage = await stageBoundedArchive(
       predecessorArchive,
+      stagedPredecessor,
+      MAX_COMPRESSED_ARTIFACT_BYTES,
+      receipt.archive.bytes,
+    );
+    if (predecessorStage.sha256 !== receipt.archive.sha256) {
+      throw new Error("predecessor archive differs from its immutable receipt");
+    }
+    const candidateStage = await stageBoundedArchive(
+      candidateArchive,
+      stagedCandidate,
+      MAX_COMPRESSED_ARTIFACT_BYTES,
+    );
+    const predecessorArchiveSha256 = predecessorStage.sha256;
+    const candidateArchiveSha256 = candidateStage.sha256;
+    const receiptManifest = await readArchiveMember(
+      stagedPredecessor,
       `${receipt.archive.root}/manifest.json`,
       temporary,
     );
@@ -214,7 +266,7 @@ async function prepareRealArtifacts(input: InstalledHomeUpgradeRehearsalInput): 
       sha256(receiptManifest) !== receipt.manifest.sha256) {
       throw new Error("predecessor raw manifest differs from its immutable receipt before extraction");
     }
-    const predecessorRoot = await extractOneSafeArtifact(predecessorArchive, join(temporary, "predecessor"));
+    const predecessorRoot = await extractOneSafeArtifact(stagedPredecessor, join(temporary, "predecessor"));
     const rawPredecessorManifest = await readFile(join(predecessorRoot, "manifest.json"));
     if (rawPredecessorManifest.byteLength !== receipt.manifest.bytes ||
       sha256(rawPredecessorManifest) !== receipt.manifest.sha256) {
@@ -227,7 +279,7 @@ async function prepareRealArtifacts(input: InstalledHomeUpgradeRehearsalInput): 
       throw new Error("predecessor artifact identity differs from its immutable receipt");
     }
 
-    const candidateRoot = await extractOneSafeArtifact(candidateArchive, join(temporary, "candidate"));
+    const candidateRoot = await extractOneSafeArtifact(stagedCandidate, join(temporary, "candidate"));
     const candidateManifestSha256 = await fileSha256(join(candidateRoot, "manifest.json"));
     const candidate = await verifyHomeArtifact(candidateRoot);
     assertCandidateContract(predecessor, candidate);
@@ -242,6 +294,7 @@ async function prepareRealArtifacts(input: InstalledHomeUpgradeRehearsalInput): 
       candidateArchiveSha256,
       candidateManifestSha256,
       fixtureRoot,
+      fixtureManifest,
     });
   } catch (error) {
     await rm(temporary, { recursive: true, force: true });
@@ -302,27 +355,70 @@ async function assertRealHostPreconditions(): Promise<void> {
   await assertPortFree();
 }
 
+async function stageBoundedArchive(
+  source: string,
+  destination: string,
+  maxBytes: number,
+  expectedBytes?: number,
+): Promise<Readonly<{ bytes: number; sha256: string }>> {
+  const input = await open(source, "r");
+  let bytes: Buffer;
+  try {
+    const before = await input.stat();
+    assertBoundedArchiveStatForTests({ isFile: before.isFile(), size: before.size }, maxBytes, expectedBytes);
+    bytes = Buffer.allocUnsafe(before.size);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const read = await input.read(bytes, offset, bytes.length - offset, offset);
+      if (read.bytesRead <= 0) throw new Error("archive changed or truncated during its bounded read");
+      offset += read.bytesRead;
+    }
+    const extra = Buffer.alloc(1);
+    if ((await input.read(extra, 0, 1, bytes.length)).bytesRead !== 0) {
+      throw new Error("archive grew during its bounded read");
+    }
+    const after = await input.stat();
+    if (after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size ||
+      after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs) {
+      throw new Error("archive changed during its bounded read");
+    }
+  } finally {
+    await input.close();
+  }
+
+  const output = await open(destination, "wx", 0o600);
+  try {
+    let offset = 0;
+    while (offset < bytes.length) {
+      const written = await output.write(bytes, offset, bytes.length - offset, offset);
+      if (written.bytesWritten <= 0) throw new Error("staged archive write made no progress");
+      offset += written.bytesWritten;
+    }
+    await output.chmod(0o400);
+    await output.sync();
+  } finally {
+    await output.close();
+  }
+  return Object.freeze({ bytes: bytes.length, sha256: sha256(bytes) });
+}
+
 async function extractOneSafeArtifact(archive: string, destination: string): Promise<string> {
   await mkdir(destination, { mode: 0o700 });
-  const listing = (await runRaw(["/usr/bin/tar", "-tzf", archive], destination, process.env)).stdout
-    .split("\n").filter((entry) => entry.length > 0);
-  if (listing.length === 0) throw new Error("artifact archive is empty");
-  const roots = new Set<string>();
-  for (const entry of listing) {
-    if (entry.startsWith("/") || entry.includes("\\") || entry.includes("\0")) {
-      throw new Error(`artifact archive has unsafe member: ${entry}`);
-    }
-    const parts = entry.replace(/\/$/, "").split("/");
-    if (parts.some((part) => part === "" || part === "." || part === "..")) {
-      throw new Error(`artifact archive has unsafe member: ${entry}`);
-    }
-    roots.add(parts[0]!);
+  const tar = gunzipSync(await readFile(archive), { maxOutputLength: MAX_HOME_ARTIFACT_TAR_BYTES });
+  const inspected = inspectHomeArtifactTar(tar);
+  const validatedTar = join(destination, ".validated-artifact.tar");
+  await writeFile(validatedTar, tar, { flag: "wx", mode: 0o600 });
+  try {
+    await runRaw(["/usr/bin/tar", "-xf", validatedTar, "-C", destination], destination, process.env);
+  } finally {
+    await rm(validatedTar, { force: true });
   }
-  if (roots.size !== 1) throw new Error("artifact archive must contain exactly one closed root");
-  const root = [...roots][0]!;
-  await runRaw(["/usr/bin/tar", "-xzf", archive, "-C", destination], destination, process.env);
+  const root = inspected.root;
   const extracted = await realpath(join(destination, root));
-  if (relative(destination, extracted).startsWith(`..${sep}`)) throw new Error("artifact root escaped extraction directory");
+  const contained = relative(destination, extracted);
+  if (contained === ".." || contained.startsWith(`..${sep}`) || isAbsolute(contained)) {
+    throw new Error("artifact root escaped extraction directory");
+  }
   return extracted;
 }
 
@@ -401,7 +497,7 @@ async function createScenario(
     predecessorDome, "devices", "revoke", context.revokedDevice.deviceId,
     "--vault", vault, "--json",
   ], root, environment);
-  await assertLiveCredentialTruth(context);
+  await assertLiveCredentialTruth(context, prepared.predecessor);
   await assertFrozenState(context, "n1");
   return context;
   } catch (error) {
@@ -433,32 +529,36 @@ async function runRealScenario(context: ScenarioContext, prepared: PreparedArtif
 }
 
 async function readySuccess(context: ScenarioContext, prepared: PreparedArtifacts): Promise<void> {
+  await packagedBackup(context, prepared.candidateRoot);
+  await assertTerminalStatus(context, prepared.candidateRoot, prepared.predecessor, "ready");
+  await assertFrozenState(context, "n1");
+  await assertLiveCredentialTruth(context, prepared.predecessor);
   const upgraded = await candidateUpgrade(context, prepared.candidateRoot);
   assertObjectFields(upgraded, { status: "upgraded", exitCode: 0, service: "ready" });
-  await assertTerminalStatus(context, prepared.candidate, "ready");
+  await assertTerminalStatus(context, prepared.candidateRoot, prepared.candidate, "ready");
   await assertFrozenState(context, "current");
-  await assertLiveCredentialTruth(context);
+  await assertLiveCredentialTruth(context, prepared.candidate);
   await assertPwa();
-  await packagedBackup(context, prepared.candidateRoot);
-  await assertTerminalStatus(context, prepared.candidate, "ready");
 }
 
 async function stoppedPrecommitCrash(context: ScenarioContext, prepared: PreparedArtifacts): Promise<void> {
   await bootoutAndDrain(context);
-  await assertTerminalStatus(context, prepared.predecessor, "stopped");
+  await assertTerminalStatus(context, prepared.candidateRoot, prepared.predecessor, "stopped");
   await crashAtCheckpoint(context, prepared.candidateRoot, "candidate-installation-published");
   await assertRetainedCheckpoint(context, "switching");
 
   const recovered = await candidateUpgrade(context, prepared.candidateRoot, true);
-  if (field(recovered, "status") !== "recovered-rerun-required" ||
-    field(recovered, "service") !== "stopped") {
+  if (field(recovered, "status") !== "rolled-back" ||
+    field(recovered, "service") !== "stopped" || field(recovered, "recovered") !== true) {
     throw new Error("packaged candidate did not exactly recover the stopped pre-commit crash");
   }
   const receipt = await candidateUpgrade(context, prepared.candidateRoot, true);
-  if (field(receipt, "status") !== "rolled-back" || field(receipt, "service") !== "stopped") {
+  if (field(receipt, "status") !== "rolled-back" || field(receipt, "service") !== "stopped" ||
+    stringField(record(receipt, "transaction"), "operationId") !==
+      stringField(record(recovered, "transaction"), "operationId")) {
     throw new Error("packaged candidate did not return the terminal rollback receipt");
   }
-  await assertTerminalStatus(context, prepared.predecessor, "stopped");
+  await assertTerminalStatus(context, prepared.candidateRoot, prepared.predecessor, "stopped");
   await assertFrozenState(context, "n1");
   await assertLiveCredentialRows(context);
 }
@@ -481,23 +581,26 @@ async function committedExactRepair(context: ScenarioContext, prepared: Prepared
   const wrong = await createWrongRawCandidate(context, prepared.candidateRoot);
   await verifyHomeArtifact(wrong);
   await assertPortFree();
+  await assertLaunchdAbsent(context.label);
   const before = await fullFingerprint([context.home, context.vault]);
   const refused = await candidateUpgrade(context, wrong, true);
   assertObjectFields(refused, {
     status: "recovery-required",
+    exitCode: 1,
     reason: "candidate-repair-required",
     nextAction: "supply-exact-candidate",
   });
   const after = await fullFingerprint([context.home, context.vault]);
   if (before !== after) throw new Error("wrong raw-manifest candidate refusal was not write-free");
+  await assertLaunchdAbsent(context.label);
 
   const repaired = await candidateUpgrade(context, prepared.candidateRoot);
   if (!["upgraded", "already-current"].includes(String(field(repaired, "status")))) {
     throw new Error("exact packaged candidate did not complete committed forward repair");
   }
-  await assertTerminalStatus(context, prepared.candidate, "ready");
+  await assertTerminalStatus(context, prepared.candidateRoot, prepared.candidate, "ready");
   await assertFrozenState(context, "current");
-  await assertLiveCredentialTruth(context);
+  await assertLiveCredentialTruth(context, prepared.candidate);
   await assertPwa();
 }
 
@@ -535,17 +638,32 @@ async function pairFreshDevice(
   return Object.freeze({ deviceId, cookie });
 }
 
-async function assertLiveCredentialTruth(context: ScenarioContext): Promise<void> {
+async function assertLiveCredentialTruth(
+  context: ScenarioContext,
+  expected: HomeArtifactManifest,
+): Promise<void> {
   if (context.activeDevice === null || context.revokedDevice === null) {
     throw new Error("fresh live credential evidence is incomplete");
   }
-  const active = await fetch(`http://${HOST}:${PORT}/status`, {
+  const active = await fetch(`http://${HOST}:${PORT}/readyz`, {
     headers: { cookie: context.activeDevice.cookie },
   });
-  const revoked = await fetch(`http://${HOST}:${PORT}/status`, {
+  const revoked = await fetch(`http://${HOST}:${PORT}/readyz`, {
     headers: { cookie: context.revokedDevice.cookie },
   });
-  if (active.status !== 200 || revoked.status !== 401) {
+  const activeBody = active.status === 200 ? record(await active.json(), "active readiness") : null;
+  const revokedBody = revoked.status === 401 ? record(await revoked.json(), "revoked readiness error") : null;
+  if (active.status !== 200 || activeBody === null ||
+    field(activeBody, "schema") !== "dome.product.readiness/v1" ||
+    field(activeBody, "artifactId") !== expected.artifact.id ||
+    field(activeBody, "productVersion") !== expected.product.version ||
+    field(activeBody, "writesAdmitted") !== true ||
+    field(record(activeBody, "host"), "state") !== "ready" ||
+    field(record(activeBody, "device"), "id") !== context.activeDevice.deviceId ||
+    revoked.status !== 401 || revokedBody === null ||
+    field(revokedBody, "status") !== "error" ||
+    field(revokedBody, "error") !== "credential-invalid" ||
+    field(revokedBody, "message") !== "Device authentication is invalid.") {
     throw new Error(`fresh active/revoked credential truth changed (${active.status}/${revoked.status})`);
   }
   await assertLiveCredentialRows(context);
@@ -718,12 +836,12 @@ async function packagedBackup(context: ScenarioContext, candidateRoot: string): 
 
 async function assertTerminalStatus(
   context: ScenarioContext,
+  observerRoot: string,
   selected: HomeArtifactManifest,
   service: "ready" | "stopped",
 ): Promise<void> {
   const status = await runJson([
-    join(context.home, "Library", "Application Support", "Dome", "Home", "releases",
-      selected.artifact.id, "bin", "dome"),
+    join(observerRoot, "bin", "dome"),
     "home", "status", "--vault", context.vault, "--json",
   ], context.root, context.environment);
   assertObjectFields(status, service === "ready"
@@ -760,7 +878,9 @@ async function assertOwnerSubstrate(context: ScenarioContext): Promise<void> {
   if (await fileSha256(context.ownerMarkdown) !== context.ownerMarkdownSha256) {
     throw new Error("owner Markdown bytes changed during installed upgrade");
   }
-  await runRaw(["/usr/bin/git", "cat-file", "-e", `${context.seedCommit}^{commit}`], context.vault, context.environment);
+  await runRaw([
+    "/usr/bin/git", "merge-base", "--is-ancestor", context.seedCommit, "HEAD",
+  ], context.vault, context.environment);
 }
 
 async function bootoutAndDrain(context: Pick<ScenarioContext, "label">): Promise<void> {
@@ -768,17 +888,25 @@ async function bootoutAndDrain(context: Pick<ScenarioContext, "label">): Promise
   if (uid === undefined) throw new Error("launchd drain requires a Unix uid");
   const target = `gui/${uid}/${context.label}`;
   const result = await runRawAllowFailure(["/bin/launchctl", "bootout", target], process.cwd(), process.env);
-  if (result.exitCode !== 0 && result.exitCode !== 113) {
-    throw new Error(`launchctl bootout failed (${result.exitCode})\n${result.stdout}${result.stderr}`);
-  }
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     const printed = await runRawAllowFailure(["/bin/launchctl", "print", target], process.cwd(), process.env);
-    if (printed.exitCode === 113) return;
-    if (printed.exitCode !== 0) throw new Error(`launchctl print failed (${printed.exitCode})`);
+    const state = classifyLaunchctlDrainForTests(result.exitCode, printed.exitCode);
+    if (state === "drained") return;
     await Bun.sleep(100);
   }
   throw new Error(`launchd label did not drain: ${context.label}`);
+}
+
+async function assertLaunchdAbsent(label: string): Promise<void> {
+  const uid = process.getuid?.();
+  if (uid === undefined) throw new Error("launchd absence proof requires a Unix uid");
+  const printed = await runRawAllowFailure([
+    "/bin/launchctl", "print", `gui/${uid}/${label}`,
+  ], process.cwd(), process.env);
+  if (printed.exitCode !== 113) {
+    throw new Error(`launchd label is not absent: ${label} (${printed.exitCode})`);
+  }
 }
 
 async function cleanupScenario(context: ScenarioContext): Promise<void> {
