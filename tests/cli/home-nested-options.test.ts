@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -52,11 +52,16 @@ test("nested Home install forwards vault and local options without mutating an i
   mkdirSync(notVault);
   process.chdir(root);
 
-  expect(await runCli([
-    "home", "install", "--vault", notVault, "--env", "DOME_TEST=value", "--json",
-  ])).toBe(64);
-  const result = resultJson<{ readonly action?: string; readonly vault?: string; readonly status?: string }>();
-  expect(result).toMatchObject({ action: "install", vault: realpathSync(notVault), status: "error" });
+  for (const args of [
+    ["home", "install", "--vault", notVault, "--env", "DOME_TEST=value", "--json"],
+    ["home", "--vault", notVault, "install", "--env", "DOME_TEST=value", "--json"],
+  ]) {
+    output = [];
+    expect(await runCli(args)).toBe(64);
+    const result = resultJson<{ readonly action?: string; readonly vault?: string; readonly status?: string }>();
+    expect(result).toMatchObject({ action: "install", vault: realpathSync(notVault), status: "error" });
+  }
+  expect(existsSync(join(notVault, ".dome"))).toBeFalse();
 });
 
 test("nested Home upgrade forwards the explicit vault before its non-artifact preflight", async () => {
@@ -66,13 +71,20 @@ test("nested Home upgrade forwards the explicit vault before its non-artifact pr
   mkdirSync(notVault);
   process.chdir(root);
 
-  expect(await runCli(["home", "upgrade", "--vault", notVault, "--json"])).toBe(64);
-  const result = resultJson<{ readonly operation?: string; readonly vault?: string; readonly reason?: string }>();
-  expect(result).toMatchObject({
-    operation: "upgrade",
-    vault: realpathSync(notVault),
-    reason: "preflight-failed",
-  });
+  for (const args of [
+    ["home", "upgrade", "--vault", notVault, "--json"],
+    ["home", "--vault", notVault, "upgrade", "--json"],
+  ]) {
+    output = [];
+    expect(await runCli(args)).toBe(64);
+    const result = resultJson<{ readonly operation?: string; readonly vault?: string; readonly reason?: string }>();
+    expect(result).toMatchObject({
+      operation: "upgrade",
+      vault: realpathSync(notVault),
+      reason: "preflight-failed",
+    });
+  }
+  expect(existsSync(join(notVault, ".dome"))).toBeFalse();
 });
 
 function resultJson<Result>(): Result {

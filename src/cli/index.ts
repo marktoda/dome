@@ -981,8 +981,32 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     const { runHomeLifecycle } = await import("./commands/home-lifecycle");
     setExitCode(await runHomeLifecycle(action, options));
   };
-  const homeNestedOptions = <Options>(command: Command): Options =>
-    command.optsWithGlobals() as Options;
+  const sharedHomeVault = (command: Command): string | undefined => {
+    const value = command.parent?.getOptionValue("vault");
+    return typeof value === "string" ? value : undefined;
+  };
+  const homeLifecycleOptions = (
+    options: HomeLifecycleCliOptions,
+    command: Command,
+  ): HomeLifecycleCliOptions => {
+    const vault = sharedHomeVault(command);
+    return {
+      ...(vault === undefined ? {} : { vault }),
+      ...(options.json === undefined ? {} : { json: options.json }),
+      ...(options.env === undefined ? {} : { env: options.env }),
+      ...(options.envFile === undefined ? {} : { envFile: options.envFile }),
+    };
+  };
+  const homeUpgradeOptions = (
+    options: HomeUpgradeCliOptions,
+    command: Command,
+  ): HomeUpgradeCliOptions => {
+    const vault = sharedHomeVault(command);
+    return {
+      ...(vault === undefined ? {} : { vault }),
+      ...(options.json === undefined ? {} : { json: options.json }),
+    };
+  };
   const showSharedHomeOptions = (command: Command): Command => command.configureHelp({
     showGlobalOptions: true,
     visibleGlobalOptions: () => homeCommand.options.filter((option) => option.attributeName() === "vault"),
@@ -992,21 +1016,21 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .option("--env <KEY=VALUE>", "Add a service environment entry.", (value: string, previous: string[]) => [...previous, value], [] as string[])
     .option("--env-file <path>", "Read service environment entries from a file.")
     .option("--json", "Emit JSON.")
-    .action((_options: HomeLifecycleCliOptions, command: Command) =>
-      homeLifecycle("install", homeNestedOptions<HomeLifecycleCliOptions>(command)));
+    .action((options: HomeLifecycleCliOptions, command: Command) =>
+      homeLifecycle("install", homeLifecycleOptions(options, command)));
   for (const action of ["start", "restart", "status", "uninstall"] as const) {
     showSharedHomeOptions(homeCommand.command(action))
       .description(`${action[0]?.toUpperCase()}${action.slice(1)} the supervised Dome Home service.`)
       .option("--json", "Emit JSON.")
-      .action((_options: HomeLifecycleCliOptions, command: Command) =>
-        homeLifecycle(action, homeNestedOptions<HomeLifecycleCliOptions>(command)));
+      .action((options: HomeLifecycleCliOptions, command: Command) =>
+        homeLifecycle(action, homeLifecycleOptions(options, command)));
   }
   showSharedHomeOptions(homeCommand.command("upgrade"))
     .description("Upgrade to the invoking supported Dome Home artifact.")
     .option("--json", "Emit JSON.")
-    .action(async (_options: HomeUpgradeCliOptions, command: Command) => {
+    .action(async (options: HomeUpgradeCliOptions, command: Command) => {
       const { runHomeUpgrade } = await import("./commands/home-upgrade");
-      setExitCode(await runHomeUpgrade(homeNestedOptions<HomeUpgradeCliOptions>(command)));
+      setExitCode(await runHomeUpgrade(homeUpgradeOptions(options, command)));
     });
 
   const backupCommand = program
