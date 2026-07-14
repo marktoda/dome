@@ -7,7 +7,7 @@ import {
   assertBoundedArchiveStatForTests,
   assertInstalledBackupRestoreCanaryForTests,
   canonicalizeInstalledScenarioRootForTests,
-  classifyLaunchctlDrainForTests,
+  classifyInstalledHomeDrainForTests,
   exerciseInstalledUpgradeOrchestrationForTests,
   pairedDeviceIdForTests,
   predecessorHomeInstallInvocationForTests,
@@ -30,13 +30,14 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     expect(() => assertBoundedArchiveStatForTests({ isFile: true, size: 9 }, 10, 10)).toThrow("immutable receipt");
   });
 
-  test("accepts only the real launchctl bootout/print drain pairs", () => {
-    expect(classifyLaunchctlDrainForTests(0, 0)).toBe("pending");
-    expect(classifyLaunchctlDrainForTests(0, 113)).toBe("drained");
-    expect(classifyLaunchctlDrainForTests(3, 113)).toBe("drained");
-    expect(() => classifyLaunchctlDrainForTests(3, 0)).toThrow("without absent print proof");
-    expect(() => classifyLaunchctlDrainForTests(113, 113)).toThrow("bootout failed");
-    expect(() => classifyLaunchctlDrainForTests(0, 3)).toThrow("print failed");
+  test("requires both a drained launchd label and a free Home port", () => {
+    expect(classifyInstalledHomeDrainForTests(0, 0, false)).toBe("pending");
+    expect(classifyInstalledHomeDrainForTests(0, 113, false)).toBe("pending");
+    expect(classifyInstalledHomeDrainForTests(0, 113, true)).toBe("drained");
+    expect(classifyInstalledHomeDrainForTests(3, 113, true)).toBe("drained");
+    expect(() => classifyInstalledHomeDrainForTests(3, 0, false)).toThrow("without absent print proof");
+    expect(() => classifyInstalledHomeDrainForTests(113, 113, false)).toThrow("bootout failed");
+    expect(() => classifyInstalledHomeDrainForTests(0, 3, false)).toThrow("print failed");
   });
 
   test("canonicalizes an aliased extraction destination and still rejects a sibling escape", async () => {

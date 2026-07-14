@@ -76,19 +76,24 @@ export type NonEvidenceInstalledUpgradeResult = Readonly<{
   scenarios: ReadonlyArray<InstalledHomeUpgradeScenario>;
 }>;
 
-/** Portable launchctl exit-pair contract; it emits no installed evidence. */
-export function classifyLaunchctlDrainForTests(
+/** Portable launchd-label plus listener drain contract; it emits no installed evidence. */
+export function classifyInstalledHomeDrainForTests(
   bootoutExitCode: number,
   printExitCode: number,
+  portFree: boolean,
 ): "drained" | "pending" {
+  let labelDrained = false;
   if (bootoutExitCode === 3) {
-    if (printExitCode === 113) return "drained";
-    throw new Error(`launchctl bootout reported absent (${bootoutExitCode}) without absent print proof (${printExitCode})`);
+    if (printExitCode !== 113) {
+      throw new Error(`launchctl bootout reported absent (${bootoutExitCode}) without absent print proof (${printExitCode})`);
+    }
+    labelDrained = true;
+  } else {
+    if (bootoutExitCode !== 0) throw new Error(`launchctl bootout failed (${bootoutExitCode})`);
+    if (printExitCode === 113) labelDrained = true;
+    else if (printExitCode !== 0) throw new Error(`launchctl print failed (${printExitCode})`);
   }
-  if (bootoutExitCode !== 0) throw new Error(`launchctl bootout failed (${bootoutExitCode})`);
-  if (printExitCode === 113) return "drained";
-  if (printExitCode === 0) return "pending";
-  throw new Error(`launchctl print failed (${printExitCode})`);
+  return labelDrained && portFree ? "drained" : "pending";
 }
 
 /** Portable pre-read archive allocation gate; it emits no installed evidence. */
@@ -808,7 +813,7 @@ async function crashAtCheckpoint(
     `const marker = ${JSON.stringify(marker)};`,
     `const markerParent = ${JSON.stringify(context.root)};`,
     `const imported = await import(${JSON.stringify(moduleUrl)});`,
-    "await imported.manageHomeUpgrade(",
+    "const result = await imported.manageHomeUpgrade(",
     `  { action: "run", vaultPath: ${JSON.stringify(context.vault)} },`,
     "  {",
     `    artifactRoot: ${JSON.stringify(candidateRoot)},`,
@@ -822,7 +827,7 @@ async function crashAtCheckpoint(
     "    },",
     "  },",
     ");",
-    "throw new Error(\"diagnostic checkpoint was not reached\");",
+    "throw new Error(`diagnostic checkpoint was not reached: ${JSON.stringify(result)}`);",
     "",
   ].join("\n");
   await writeFile(childScript, source, { flag: "wx", mode: 0o600 });
@@ -1018,11 +1023,11 @@ async function bootoutAndDrain(context: Pick<ScenarioContext, "label">): Promise
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     const printed = await runRawAllowFailure(["/bin/launchctl", "print", target], process.cwd(), process.env);
-    const state = classifyLaunchctlDrainForTests(result.exitCode, printed.exitCode);
+    const state = classifyInstalledHomeDrainForTests(result.exitCode, printed.exitCode, await isPortFree());
     if (state === "drained") return;
     await Bun.sleep(100);
   }
-  throw new Error(`launchd label did not drain: ${context.label}`);
+  throw new Error(`launchd label or ${HOST}:${PORT} did not drain: ${context.label}`);
 }
 
 async function assertLaunchdAbsent(label: string): Promise<void> {
@@ -1056,13 +1061,22 @@ async function cleanupScenario(context: ScenarioContext): Promise<void> {
 }
 
 async function assertPortFree(): Promise<void> {
-  await new Promise<void>((resolvePromise, reject) => {
+  if (await isPortFree()) return;
+  throw new Error(`installed rehearsal requires ${HOST}:${PORT} to be unbound: address remains in use`);
+}
+
+async function isPortFree(): Promise<boolean> {
+  return await new Promise<boolean>((resolvePromise, reject) => {
     const server = createServer();
     server.unref();
-    server.once("error", reject);
-    server.listen(PORT, HOST, () => server.close((error) => error === undefined ? resolvePromise() : reject(error)));
-  }).catch((error: unknown) => {
-    throw new Error(`installed rehearsal requires ${HOST}:${PORT} to be unbound: ${error instanceof Error ? error.message : String(error)}`);
+    server.once("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "EADDRINUSE") resolvePromise(false);
+      else reject(error);
+    });
+    server.listen(PORT, HOST, () => server.close((error) => {
+      if (error === undefined) resolvePromise(true);
+      else reject(error);
+    }));
   });
 }
 
