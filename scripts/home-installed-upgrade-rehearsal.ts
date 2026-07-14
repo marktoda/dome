@@ -486,10 +486,19 @@ async function createScenario(
   ], vault, environment);
   const seedCommit = (await runRaw(["/usr/bin/git", "rev-parse", "HEAD"], vault, environment)).stdout.trim();
 
-  const installed = await runJson([
-    predecessorDome, "home", "install", "--vault", vault,
-    "--env", `HOME=${home}`, "--json",
-  ], root, environment);
+  // Frozen 0.1 predates correct nested Home --vault forwarding. Preserve its
+  // exact bytes and use the compiler boundary it already supports: cwd vault
+  // discovery. Candidate/0.2 nested commands continue to pass --vault.
+  const predecessorInstall = predecessorHomeInstallInvocationForTests({
+    dome: predecessorDome,
+    vault,
+    home,
+  });
+  const installed = await runJson(
+    predecessorInstall.command,
+    predecessorInstall.cwd,
+    environment,
+  );
   assertObjectFields(installed, { status: "installed", loaded: true, ready: true });
   if (stringField(installed, "label") !== label) throw new Error("installed Home returned the wrong unique label");
   const plist = stringField(installed, "plist");
@@ -523,6 +532,25 @@ async function createScenario(
     unsafeCleanup();
     throw new AggregateError([error, ...cleanupFailures], `partial installed rehearsal cleanup failed for ${label}; root retained at ${root}`);
   }
+}
+
+/** Exact compatibility invocation for the frozen pre-fix 0.1 Home CLI. */
+export function predecessorHomeInstallInvocationForTests(input: Readonly<{
+  dome: string;
+  vault: string;
+  home: string;
+}>): Readonly<{ command: ReadonlyArray<string>; cwd: string }> {
+  return Object.freeze({
+    command: Object.freeze([
+      input.dome,
+      "home",
+      "install",
+      "--env",
+      `HOME=${input.home}`,
+      "--json",
+    ]),
+    cwd: input.vault,
+  });
 }
 
 async function runRealScenario(context: ScenarioContext, prepared: PreparedArtifacts): Promise<void> {

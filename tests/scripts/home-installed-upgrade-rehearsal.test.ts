@@ -8,6 +8,7 @@ import {
   assertInstalledBackupRestoreCanaryForTests,
   classifyLaunchctlDrainForTests,
   exerciseInstalledUpgradeOrchestrationForTests,
+  predecessorHomeInstallInvocationForTests,
   resolveContainedArtifactRootForTests,
   type InstalledHomeUpgradeRehearsalInput,
   type InstalledHomeUpgradeScenario,
@@ -58,6 +59,26 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  test("installs the exact pre-fix predecessor through cwd discovery without nested --vault", () => {
+    const invocation = predecessorHomeInstallInvocationForTests({
+      dome: "/artifact-0.1/bin/dome",
+      vault: "/scenario/vault",
+      home: "/scenario/home",
+    });
+    expect(invocation).toEqual({
+      command: [
+        "/artifact-0.1/bin/dome",
+        "home",
+        "install",
+        "--env",
+        "HOME=/scenario/home",
+        "--json",
+      ],
+      cwd: "/scenario/vault",
+    });
+    expect(invocation.command).not.toContain("--vault");
   });
 
   test("requires the installed backup canary to restore and invalidate authority", () => {
