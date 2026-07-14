@@ -61,8 +61,20 @@ export async function inspectHomeUpgradeStatus(
     }
     return summary(forward, "complete", "committed", "none");
   } catch {
-    return summary(transaction, "recovery-required", "committed", "supply-exact-candidate");
+    let current: HomeUpgradeTransaction | null;
+    try { current = await operations.readDisposition(vaultPath, deps); }
+    catch { return unavailable(); }
+    if (current === null) return inactive();
+    if (!sameIdentity(current, transaction)) return unavailable();
+    if (current.phase !== "committed") return unavailable();
+    return summary(current, "recovery-required", "committed", "supply-exact-candidate");
   }
+}
+
+function sameIdentity(left: HomeUpgradeTransaction, right: HomeUpgradeTransaction): boolean {
+  return left.transactionId === right.transactionId &&
+    left.candidate.artifactId === right.candidate.artifactId &&
+    left.candidate.version === right.candidate.version;
 }
 
 function summary(

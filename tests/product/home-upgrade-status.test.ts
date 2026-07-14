@@ -93,6 +93,34 @@ describe("Home upgrade lifecycle projection", () => {
       nextAction: "none",
     });
   });
+
+  test("rechecks disposition when strict forward inspection races retirement or a successor", async () => {
+    const committed = transaction("committed");
+    let retiredReads = 0;
+    expect(await inspectHomeUpgradeStatus("/vault", deps(committed, {
+      readDisposition: async () => retiredReads++ === 0 ? committed : null,
+      readForward: async () => { throw Object.assign(new Error("active disappeared"), { code: "ENOENT" }); },
+    }))).toEqual({
+      state: "inactive",
+      candidate: null,
+      operationId: null,
+      outcome: null,
+      nextAction: "none",
+    });
+
+    const successor = { ...committed, transactionId: "22222222-2222-4222-8222-222222222222" };
+    let successorReads = 0;
+    expect(await inspectHomeUpgradeStatus("/vault", deps(committed, {
+      readDisposition: async () => successorReads++ === 0 ? committed : successor,
+      readForward: async () => { throw new Error("active identity changed"); },
+    }))).toEqual({
+      state: "unavailable",
+      candidate: null,
+      operationId: null,
+      outcome: null,
+      nextAction: "inspect-home-status",
+    });
+  });
 });
 
 function deps(
