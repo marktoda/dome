@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync } from "node:fs";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { resolveHomeLifecycleEnvironment, runHomeLifecycle } from "../../src/cli/commands/home-lifecycle";
 import type { HomeLifecycleDeps } from "../../src/product-host/home-lifecycle";
@@ -196,7 +196,7 @@ test("lifecycle CLI leaves environment undefined when install flags are absent",
   expect(await resolveHomeLifecycleEnvironment("install", { env: [] })).toEqual(new Map());
 });
 
-test("runHomeLifecycle preserves stored environment when reinstall flags are absent", async () => {
+test("runHomeLifecycle rejects secret persistence before coordination and preserves stored non-secret environment", async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "dome-home-command-install-")));
   roots.push(root);
   const vault = join(root, "vault");
@@ -230,10 +230,21 @@ test("runHomeLifecycle preserves stored environment when reinstall flags are abs
     legacyServeRunning: async () => false,
     readinessTimeoutMs: 10,
   };
-  expect(await runHomeLifecycle("install", { vault, env: ["DOME_SECRET=kept"], json: true }, d)).toBe(0);
+  expect(await runHomeLifecycle("install", { vault, env: ["DOME_SECRET=must-not-persist"], json: true }, d)).toBe(64);
+  expect(JSON.parse(logs.at(-1) ?? "{}")).toMatchObject({
+    status: "credential-migration-required",
+    exitCode: 64,
+  });
+  expect(existsSync(dirname(homeLifecycleCoordinatorPath(vault)))).toBeFalse();
+  expect(existsSync(join(root, "support"))).toBeFalse();
+  expect(existsSync(join(root, "agents"))).toBeFalse();
+  expect(loaded.size).toBe(0);
+
+  logs = [];
+  expect(await runHomeLifecycle("install", { vault, env: ["DOME_SETTING=kept"], json: true }, d)).toBe(0);
   logs = [];
   expect(await runHomeLifecycle("install", { vault, json: true }, d)).toBe(0);
   const result = JSON.parse(logs.at(-1) ?? "{}") as { readonly installation: string };
   const record = JSON.parse(await readFile(result.installation, "utf8")) as { readonly environment: ReadonlyArray<{ readonly name: string; readonly value: string }> };
-  expect(record.environment).toEqual([{ name: "DOME_SECRET", value: "kept" }]);
+  expect(record.environment).toEqual([{ name: "DOME_SETTING", value: "kept" }]);
 });

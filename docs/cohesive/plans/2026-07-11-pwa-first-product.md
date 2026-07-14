@@ -746,6 +746,27 @@ acceptance remain release gates. The next product slice is secure Keychain
 credential storage followed by guided Home/provider setup; no workflow or
 state-machine framework is introduced.
 
+The secure credential substrate slice is now present without a setup wizard,
+CLI migration, or cleanup mutation. Two closed provider slots live under the
+versioned Dome Home Keychain service and stable vault-id accounts. Secret use
+is callback-scoped; inspect/read and idempotent removal name one exact validated
+user default Keychain. Interactive write is deferred until a native helper can
+bind the prompt to that proved Keychain. Every new installation/selection publication boundary
+rejects secret-like environment persistence while retaining legacy parsing for
+status. A read-only, path-free scanner reports `clean`, `residue`, or
+`indeterminate` across live, temporary, staging, active, and immutable-history
+copies. Future runtime resolution must fail unequal Keychain/legacy ambiguity,
+may prefer equal Keychain truth while reporting residue, never fall back after
+locked/denied access, and treats absent-Keychain legacy use as temporary
+compatibility. Orphan Keychain-item cleanup remains deferred to an explicit
+lifecycle design.
+
+Existing active upgrades remain recoverable even if their already-persisted
+selector evidence contains legacy credentials: recovery may replay those exact
+bytes only to terminalize the extant barrier, while every new attempt remains
+closed. Migration follows terminal recovery so the system never trades a
+plaintext-residue problem for a permanently write-closed vault.
+
 Exit journey: a clean Mac needs no source checkout or manual PWA build; it
 pairs an iPhone, upgrades an N-1 fixture after backup, handles a forced failed
 upgrade without admitting writes, and restores onto a blank host with all

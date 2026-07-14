@@ -21,6 +21,7 @@ import {
   releaseRoot,
 } from "../../src/product-host/home-installation";
 import { homeServiceLabelForVault } from "../../src/product-host/home-lifecycle";
+import { HomeCredentialMigrationRequiredError } from "../../src/product-host/home-credentials";
 import { startProductHost } from "../../src/product-host/product-host";
 import { collectManagedReleaseGarbage } from "../../src/product-host/managed-release-gc";
 import { withManagedReleaseStoreCoordinator } from "../../src/product-host/managed-release-store-coordinator";
@@ -83,6 +84,29 @@ function probationProof(transactionId: string) {
 }
 
 describe("Product Host pre-commit upgrade transaction", () => {
+  test("legacy secret-bearing upgrade refuses before barrier, release, or selector mutation", async () => {
+    const f = await fixture();
+    try {
+      const paths = homeInstallationPaths(f.vault, f.deps);
+      const record = JSON.parse(await readFile(paths.record, "utf8")) as {
+        environment: Array<{ name: string; value: string }>;
+      };
+      record.environment = [{ name: "ANTHROPIC_API_KEY", value: "legacy-secret" }];
+      await writeFile(paths.record, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
+      const before = await readFile(paths.record, "utf8");
+      const error = await prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId: randomUUID(),
+        candidateArtifactId: CANDIDATE_ID,
+      }, f.deps).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(HomeCredentialMigrationRequiredError);
+      expect(error).toMatchObject({ code: "credential-migration-required" });
+      expect(await readFile(paths.record, "utf8")).toBe(before);
+      expect(await exists(join(paths.installations, "upgrade"))).toBeFalse();
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
   test("host inventory reads active disposition after the recorded vault path disappears", async () => {
     const f = await fixture();
     try {

@@ -46,6 +46,7 @@ import {
   type HomeSelectionDocument,
 } from "./home-selection";
 import { readVaultId } from "./vault-id";
+import { assertHomeEnvironmentHasNoSecrets } from "./home-credentials";
 import {
   verifyHomeArtifact,
   type HomeArtifactManifest,
@@ -231,6 +232,7 @@ export async function prepareHomeUpgrade(input: {
   const existing = await readHomeUpgrade(vault, deps);
   validateMatchingPrepare(existing, input);
   if (existing?.phase === "restored") return existing;
+  if (existing === null) await assertInstallationCredentialMigrationComplete(vault, deps);
   await engageForTransaction(vault, input.transactionId, deps);
   return runPreparedOwnership(input, vault, undefined, deps);
 }
@@ -255,8 +257,18 @@ export async function prepareHomeUpgradeCandidate(input: {
   const existing = await readHomeUpgrade(vault, deps);
   validateMatchingPrepare(existing, prepareInput);
   if (existing?.phase === "restored") return existing;
+  if (existing === null) await assertInstallationCredentialMigrationComplete(vault, deps);
   await engageForTransaction(vault, input.transactionId, deps);
   return runPreparedOwnership(prepareInput, vault, input.candidate, deps);
+}
+
+async function assertInstallationCredentialMigrationComplete(
+  vault: string,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<void> {
+  const installation = await readHomeInstallation(vault, deps);
+  if (installation === null) throw new Error("Dome Home upgrade requires an installed release");
+  assertHomeEnvironmentHasNoSecrets(installation.environment);
 }
 
 async function runPreparedOwnership(

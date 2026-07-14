@@ -20,9 +20,12 @@ import {
   type HomeArtifactManifest,
 } from "../../src/product-host/home-artifact";
 import {
+  createHomeInstallation,
   ensureManagedRelease,
   ensureManagedReleaseOwned,
   homeInstallationPaths,
+  parseHomeInstallationRecord,
+  publishHomeInstallation,
   repairManagedRelease,
   releaseRoot,
 } from "../../src/product-host/home-installation";
@@ -30,6 +33,42 @@ import { withManagedReleaseStoreCoordinator } from "../../src/product-host/manag
 import { HOME_DURABLE_STATE_PROTOCOL, HOME_STORE_MIGRATIONS } from "../../src/product-host/home-store-migrations";
 
 const ARTIFACT_ID = "b".repeat(64);
+
+describe("Home installation environment persistence", () => {
+  test("rejects secret-like names only when rendering a new installation", () => {
+    expect(() => createHomeInstallation("/vault", manifest(), new Map([
+      ["ANTHROPIC_API_KEY", "must-not-persist"],
+    ]))).toThrow("macOS Keychain");
+    expect(createHomeInstallation("/vault", manifest(), new Map([
+      ["DOME_LOG_LEVEL", "info"],
+    ])).environment).toEqual([{ name: "DOME_LOG_LEVEL", value: "info" }]);
+  });
+
+  test("keeps legacy secret-bearing installation records readable", () => {
+    const parsed = parseHomeInstallationRecord({
+      schema: "dome.home.installation/v1",
+      vault: "/vault",
+      artifact: { id: ARTIFACT_ID, version: "2.0.0" },
+      environment: [{ name: "ANTHROPIC_API_KEY", value: "legacy-value" }],
+    }, "/vault");
+    expect(parsed.environment).toEqual([{ name: "ANTHROPIC_API_KEY", value: "legacy-value" }]);
+  });
+
+  test("refuses a constructed secret-bearing record before creating publication directories", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-home-secret-record-"));
+    const target = join(root, "missing", "installation.json");
+    try {
+      const record = parseHomeInstallationRecord({
+        schema: "dome.home.installation/v1",
+        vault: "/vault",
+        artifact: { id: ARTIFACT_ID, version: "2.0.0" },
+        environment: [{ name: "SERVICE_TOKEN", value: "legacy-value" }],
+      }, "/vault");
+      await expect(publishHomeInstallation(target, record)).rejects.toThrow("macOS Keychain");
+      expect(await readdir(root)).toEqual([]);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+});
 
 const semanticMismatches = [
   {

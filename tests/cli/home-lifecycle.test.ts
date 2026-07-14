@@ -360,7 +360,7 @@ describe("manageHome macOS lifecycle", () => {
     const result = await manageHome({
       action: "install",
       vaultPath: f.vault,
-      environment: new Map([["HOME_TOKEN", "a&<b>"], ["SPACE_VALUE", "two words"], ["PATH", "/evil"]]),
+      environment: new Map([["HOME_LABEL", "a&<b>"], ["SPACE_VALUE", "two words"], ["PATH", "/evil"]]),
     }, deps(f, fake));
     expect(result.status).toBe("installed");
     expect(result.ready).toBe(true);
@@ -533,9 +533,9 @@ describe("manageHome macOS lifecycle", () => {
     const f = await fixture();
     const fake = fakeLaunchctl();
     const d = deps(f, fake);
-    const installed = await manageHome({ action: "install", vaultPath: f.vault, environment: new Map([["DOME_SECRET", "kept"]]) }, d);
+    const installed = await manageHome({ action: "install", vaultPath: f.vault, environment: new Map([["DOME_SETTING", "kept"]]) }, d);
     const repaired = await manageHome({ action: "install", vaultPath: f.vault }, d);
-    expect(await readFile(repaired.plist, "utf8")).toContain("DOME_SECRET");
+    expect(await readFile(repaired.plist, "utf8")).toContain("DOME_SETTING");
     expect(await readFile(repaired.plist, "utf8")).toContain("kept");
     const recordBefore = await readFile(repaired.installation, "utf8");
     const programBefore = await readFile(repaired.program, "utf8");
@@ -547,6 +547,54 @@ describe("manageHome macOS lifecycle", () => {
     expect(status.installed).toBe(false);
     expect(status.artifactId).toBe(ARTIFACT_ID);
     expect(installed.release).toBe(repaired.release);
+  });
+
+  test("legacy secret-bearing reinstall is migration-required before selector or launchctl mutation", async () => {
+    const f = await fixture();
+    const fake = fakeLaunchctl();
+    const d = deps(f, fake);
+    const installed = await manageHome({ action: "install", vaultPath: f.vault }, d);
+    const record = JSON.parse(await readFile(installed.installation, "utf8")) as {
+      environment: Array<{ name: string; value: string }>;
+    };
+    record.environment = [{ name: "ANTHROPIC_API_KEY", value: "legacy-secret" }];
+    await writeFile(installed.installation, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
+    const beforePlist = await readFile(installed.plist, "utf8");
+    const coordinator = homeLifecycleCoordinatorPath(f.vault);
+    const coordinatorBefore = await readFile(coordinator);
+    const ownershipBefore = await readFile(join(dirname(coordinator), "home-lifecycle-suspension-ownership.db"));
+    const callsBefore = fake.calls.length;
+    let operationalAdmissions = 0;
+    const refused = await manageHome({ action: "install", vaultPath: f.vault }, {
+      ...d,
+      beforeOperationalAdmission: async () => { operationalAdmissions += 1; },
+    });
+    expect(refused).toMatchObject({ status: "credential-migration-required", exitCode: 64 });
+    expect(await readFile(installed.plist, "utf8")).toBe(beforePlist);
+    expect(await readFile(coordinator)).toEqual(coordinatorBefore);
+    expect(await readFile(join(dirname(coordinator), "home-lifecycle-suspension-ownership.db")))
+      .toEqual(ownershipBefore);
+    expect(operationalAdmissions).toBe(0);
+    expect(fake.calls).toHaveLength(callsBefore);
+  });
+
+  test("explicit secret environment refuses before lifecycle, operational, or publication state exists", async () => {
+    const f = await fixture();
+    const fake = fakeLaunchctl();
+    let operationalAdmissions = 0;
+    const refused = await manageHome({
+      action: "install",
+      vaultPath: f.vault,
+      environment: new Map([["SERVICE_TOKEN", "must-not-persist"]]),
+    }, deps(f, fake, {
+      beforeOperationalAdmission: async () => { operationalAdmissions += 1; },
+    }));
+    expect(refused).toMatchObject({ status: "credential-migration-required", exitCode: 64 });
+    expect(existsSync(dirname(homeLifecycleCoordinatorPath(f.vault)))).toBeFalse();
+    expect(existsSync(f.support)).toBeFalse();
+    expect(existsSync(f.agents)).toBeFalse();
+    expect(operationalAdmissions).toBe(0);
+    expect(fake.calls).toEqual([]);
   });
 
   test("status reports deleted-plist loaded edge and uninstall preserves every owned byte", async () => {

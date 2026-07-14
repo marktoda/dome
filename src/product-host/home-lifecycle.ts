@@ -39,6 +39,10 @@ import {
 } from "./home-installation";
 import { isHomePairingReadiness } from "./home-readiness";
 import {
+  assertHomeEnvironmentHasNoSecrets,
+  HomeCredentialMigrationRequiredError,
+} from "./home-credentials";
+import {
   inspectHomeLifecycleSuspension,
   withHomeLifecycleMutation,
   type HomeLifecycleSuspensionInspection,
@@ -61,7 +65,8 @@ export type HomeLifecycleAction = "install" | "start" | "restart" | "status" | "
 export type HomeLifecycleStatus =
   | "installed" | "started" | "restarted" | "ready" | "loaded-unreachable"
   | "installed-stopped" | "not-installed" | "uninstalled" | "missing-release"
-  | "corrupt-release" | "plist-mismatch" | "orphaned-service" | "invalid-installation" | "error";
+  | "corrupt-release" | "plist-mismatch" | "orphaned-service" | "invalid-installation"
+  | "credential-migration-required" | "error";
 
 export type HomeLifecycleRecovery =
   | { readonly state: "inactive" }
@@ -196,11 +201,44 @@ export async function manageHome(input: {
   if (vaultFailure !== null) {
     return result(context.neutral, "error", null, null, null, { error: vaultFailure, exitCode: 64 });
   }
+  if (input.action === "install") {
+    const credentialRefusal = await installCredentialAdmission(input.environment, context, deps);
+    if (credentialRefusal !== null) return credentialRefusal;
+  }
   return manageHomeMutation({
     action: input.action,
     vaultPath: vault,
     ...(input.environment === undefined ? {} : { environment: input.environment }),
   }, context, deps);
+}
+
+async function installCredentialAdmission(
+  requestedEnvironment: ReadonlyMap<string, string> | undefined,
+  context: HomeContext,
+  deps: HomeLifecycleDeps,
+): Promise<HomeLifecycleResult | null> {
+  let base = context.neutral;
+  let environment: Iterable<Readonly<{ name: string }>>;
+  if (requestedEnvironment !== undefined) {
+    environment = [...requestedEnvironment].map(([name]) => ({ name }));
+  } else {
+    let previous: HomeInstallationRecord | null;
+    try { previous = await readHomeInstallation(context.vault, deps); }
+    catch { return null; }
+    if (previous === null) return null;
+    base = baseForRecord(context.neutral, context.paths, previous);
+    environment = previous.environment;
+  }
+  try {
+    assertHomeEnvironmentHasNoSecrets(environment);
+    return null;
+  } catch (error) {
+    if (!(error instanceof HomeCredentialMigrationRequiredError)) throw error;
+    return result(base, "credential-migration-required", existsSync(context.plist), null, null, {
+      error: "credential migration required before Dome Home installation can be changed; move provider secrets to macOS Keychain",
+      exitCode: 64,
+    });
+  }
 }
 
 async function manageHomeMutation(
@@ -316,6 +354,18 @@ async function executeOwnedInstall(
   catch (error) {
     return complete(result(installBase, "invalid-installation", existsSync(context.plist), await diagnosticLoaded(context), null, { error: message(error) }));
   }
+  const intendedEnvironment = requestedEnvironment ?? new Map(
+    previous?.environment.map((entry) => [entry.name, entry.value] as const) ?? [],
+  );
+  try {
+    assertHomeEnvironmentHasNoSecrets([...intendedEnvironment].map(([name]) => ({ name })));
+  } catch (error) {
+    if (!(error instanceof HomeCredentialMigrationRequiredError)) throw error;
+    return complete(result(installBase, "credential-migration-required", existsSync(context.plist), null, null, {
+      error: "credential migration required before Dome Home installation can be changed; move provider secrets to macOS Keychain",
+      exitCode: 64,
+    }));
+  }
   const hadPlist = existsSync(context.plist);
   let loaded: boolean;
   try { loaded = await homeLoaded(context); }
@@ -356,9 +406,6 @@ async function executeOwnedInstall(
   try {
     await mkdir(join(context.vault, ".dome", "state"), { recursive: true });
     await mkdir(context.service.launchAgentsDir, { recursive: true });
-    const intendedEnvironment = requestedEnvironment ?? new Map(
-      previous?.environment.map((entry) => [entry.name, entry.value] as const) ?? [],
-    );
     const record = createHomeInstallation(context.vault, manifest, intendedEnvironment);
     const { managed } = await publishManagedHomeInstallation({
       source,
