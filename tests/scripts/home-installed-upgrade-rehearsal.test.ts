@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   assertBoundedArchiveStatForTests,
+  assertInstalledBackupRestoreCanaryForTests,
   classifyLaunchctlDrainForTests,
   exerciseInstalledUpgradeOrchestrationForTests,
   type InstalledHomeUpgradeRehearsalInput,
@@ -29,6 +30,43 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     expect(() => classifyLaunchctlDrainForTests(3, 0)).toThrow("without absent print proof");
     expect(() => classifyLaunchctlDrainForTests(113, 113)).toThrow("bootout failed");
     expect(() => classifyLaunchctlDrainForTests(0, 3)).toThrow("print failed");
+  });
+
+  test("requires the installed backup canary to restore and invalidate authority", () => {
+    const restored = {
+      schema: "dome.backup/v1",
+      operation: "restore",
+      status: "restored",
+      exitCode: 0,
+      authority: "invalidated",
+      durability: "durable",
+    };
+    const ownerSha256 = "a".repeat(64);
+    expect(() => assertInstalledBackupRestoreCanaryForTests(
+      restored,
+      "# Core\n",
+      ownerSha256,
+      ownerSha256,
+    )).not.toThrow();
+    expect(() => assertInstalledBackupRestoreCanaryForTests(
+      { ...restored, authority: "absent" },
+      "# Core\n",
+      ownerSha256,
+      ownerSha256,
+    )).toThrow('expected authority="invalidated"');
+    expect(() => assertInstalledBackupRestoreCanaryForTests(
+      restored,
+      "# Other\n",
+      ownerSha256,
+      ownerSha256,
+    ))
+      .toThrow("lost core.md content");
+    expect(() => assertInstalledBackupRestoreCanaryForTests(
+      restored,
+      "# Core\n",
+      "b".repeat(64),
+      ownerSha256,
+    )).toThrow("changed the owner canary");
   });
 
   test("runs the three scenarios sequentially and cleans each boundary", async () => {

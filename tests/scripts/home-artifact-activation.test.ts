@@ -227,6 +227,45 @@ describe("Dome Home 0.2 activation", () => {
     expect(inspectHomeArtifactTarFromBuilder).toBe(inspectHomeArtifactTarFromLeaf);
   });
 
+  test("ordinary rehearsal never backs up an uninstalled vault; installed ready-success owns the full canary", async () => {
+    const ordinarySource = await readFile(
+      join(import.meta.dir, "..", "..", "scripts", "home-artifact.ts"),
+      "utf8",
+    );
+    const ordinary = sourceFunction(
+      ordinarySource,
+      "export async function rehearseHomeArtifact",
+      "export async function createDeterministicTar",
+    );
+    expect(ordinary).toContain('"backup", "keygen"');
+    expect(ordinary).toContain('"backup", "restore", "--help"');
+    expect(ordinary).not.toContain('"backup", "create"');
+    expect(ordinary).not.toContain('"backup", "verify"');
+    expect(ordinary).not.toContain('"backup", "restore", archive');
+
+    const installedSource = await readFile(
+      join(import.meta.dir, "..", "..", "scripts", "home-installed-upgrade-rehearsal.ts"),
+      "utf8",
+    );
+    const readySuccess = sourceFunction(
+      installedSource,
+      "async function readySuccess",
+      "async function stoppedPrecommitCrash",
+    );
+    const packagedBackup = sourceFunction(
+      installedSource,
+      "async function packagedBackup",
+      "/** Portable assertion",
+    );
+    expect(readySuccess).toContain("await packagedBackup(context, prepared.candidateRoot)");
+    expect(packagedBackup).toContain('"backup", "create"');
+    expect(packagedBackup).toContain('"backup", "verify"');
+    expect(packagedBackup).toContain('"backup", "restore"');
+    expect(packagedBackup).toContain("HOME: blankHome");
+    expect(packagedBackup).toContain('join(restoredVault, "core.md")');
+    expect(packagedBackup).toContain('join(restoredVault, "owner-upgrade-canary.md")');
+  });
+
   test.each(["--skip-installed-gate", "--fixture", "--version"])(
     "the artifact CLI rejects the unsupported release override %s before building",
     async (argument) => {
@@ -297,4 +336,11 @@ async function exists(path: string): Promise<boolean> {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
     throw error;
   }
+}
+
+function sourceFunction(source: string, start: string, end: string): string {
+  const from = source.indexOf(start);
+  const to = source.indexOf(end, from + start.length);
+  if (from === -1 || to === -1) throw new Error(`source boundary not found: ${start}`);
+  return source.slice(from, to);
 }

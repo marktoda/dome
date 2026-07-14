@@ -827,11 +827,47 @@ async function packagedBackup(context: ScenarioContext, candidateRoot: string): 
     dome, "backup", "create", "--vault", context.vault, "--output", archive,
     "--recipient", stringField(key, "recipient"), "--json",
   ], context.root, context.environment);
-  assertObjectFields(created, { status: "created" });
+  assertObjectFields(created, { status: "created", restart: "restarted" });
   const verified = await runJson([
     dome, "backup", "verify", archive, "--identity", identity, "--json",
   ], context.root, context.environment);
   assertObjectFields(verified, { status: "verified" });
+  const restoredVault = join(context.root, "restored-backup-vault");
+  const blankHome = join(context.root, "blank-restore-home");
+  await mkdir(blankHome, { mode: 0o700 });
+  const restored = await runJson([
+    dome, "backup", "restore", archive, "--identity", identity,
+    "--target", restoredVault, "--json",
+  ], context.root, { ...context.environment, HOME: blankHome });
+  assertInstalledBackupRestoreCanaryForTests(
+    restored,
+    await readFile(join(restoredVault, "core.md"), "utf8"),
+    await fileSha256(join(restoredVault, "owner-upgrade-canary.md")),
+    context.ownerMarkdownSha256,
+  );
+}
+
+/** Portable assertion for the real installed backup/blank-host restore canary. */
+export function assertInstalledBackupRestoreCanaryForTests(
+  restored: Record<string, unknown>,
+  coreMarkdown: string,
+  restoredOwnerMarkdownSha256: string,
+  expectedOwnerMarkdownSha256: string,
+): void {
+  assertObjectFields(restored, {
+    schema: "dome.backup/v1",
+    operation: "restore",
+    status: "restored",
+    exitCode: 0,
+    authority: "invalidated",
+    durability: "durable",
+  });
+  if (!coreMarkdown.includes("# Core")) {
+    throw new Error("installed packaged backup restore lost core.md content");
+  }
+  if (restoredOwnerMarkdownSha256 !== expectedOwnerMarkdownSha256) {
+    throw new Error("installed packaged backup restore changed the owner canary");
+  }
 }
 
 async function assertTerminalStatus(
