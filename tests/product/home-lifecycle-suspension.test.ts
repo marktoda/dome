@@ -452,11 +452,16 @@ describe("supervised Home lifecycle suspension", () => {
     if (active.kind === "active") expect(active.suspension.phase).toBe("suspended");
   });
 
-  test("refuses legacy Serve, foreground Home, and ambiguous launchctl probe failures before intent", async () => {
+  test("treats unreachable readiness as stopped but refuses real foreground Home and ambiguous launchctl", async () => {
     const legacy = await fixture(true);
     await writeFile(join(legacy.agents, `com.dome.serve.${vaultServiceSlug(legacy.vault)}.plist`), "legacy\n");
     await expect(suspend(legacy, "legacy-conflict", async () => {})).rejects.toThrow("legacy dome serve");
     expect((await inspectHomeLifecycleSuspension(legacy.vault)).kind).toBe("inactive");
+
+    const stopped = await fixture(false);
+    stopped.readiness = async () => { throw new TypeError("Unable to connect"); };
+    expect(await suspend(stopped, "stopped-unreachable", async () => "stopped"))
+      .toMatchObject({ kind: "not-required", value: "stopped" });
 
     const foreground = await fixture(false);
     foreground.readiness = async () => true;
