@@ -113,6 +113,34 @@ describe("Home upgrade intent", () => {
     expect(JSON.stringify(result)).not.toContain("artifactRoot");
   });
 
+  test("new attempts require a strict SemVer advance before publication or operation allocation", async () => {
+    for (const [selectedVersion, candidateVersion] of [
+      ["1.0.0", "1.0.0"],
+      ["2.0.0", "1.9.9"],
+      ["1.0.0", "next"],
+      ["legacy", "2.0.0"],
+    ] as const) {
+      const base = manifest();
+      const candidate = {
+        ...base,
+        product: { ...base.product, version: candidateVersion },
+      };
+      const f = intentFixture({
+        selected: installation(OLD, selectedVersion),
+        manifest: candidate,
+      });
+      expect(await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, f.deps)).toMatchObject({
+        status: "error",
+        exitCode: 64,
+        reason: "preflight-failed",
+        message: "invoking artifact does not advance the installed SemVer version",
+      });
+      expect(f.calls).not.toContain("publish");
+      expect(f.calls).not.toContain("uuid");
+      expect(f.calls).not.toContain("cutover");
+    }
+  });
+
   test("committed repair requires the exact raw candidate fingerprint before any mutation", async () => {
     const committed = transaction("committed", RETAINED_TX, REQUESTED);
     for (const f of [
@@ -235,6 +263,12 @@ describe("Home upgrade intent", () => {
       const f = intentFixture({
         active: retained,
         selected: phase === "committed" ? installation(OTHER, "3.0.0") : installation(OLD, "1.0.0"),
+        ...(phase === "committed" ? {
+          manifest: {
+            ...manifest(),
+            product: { ...manifest().product, version: "4.0.0" },
+          },
+        } : {}),
       });
       const result = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, f.deps);
       expect(result.status).toBe("upgraded");

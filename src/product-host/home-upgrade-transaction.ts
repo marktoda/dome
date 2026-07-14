@@ -14,6 +14,7 @@ import { isDeepStrictEqual } from "node:util";
 
 import { compareStrings } from "../core/compare";
 import { inspectExclusiveFileLock } from "../engine/host/file-lock";
+import { inspectOperationalWriterBarrier } from "../operational-state/writer-barrier";
 import { publishDirectoryExclusive } from "../platform/exclusive-rename";
 import {
   readSqliteSchemaHash,
@@ -59,7 +60,7 @@ import {
   type HomeUpgradeBarrierOwner,
   withHomeUpgradeBarrierOwnership,
 } from "./home-upgrade-barrier";
-import { inspectOperationalWriterBarrier } from "../operational-state/writer-barrier";
+import { isHomeUpgradeVersionAdvance } from "./home-upgrade-version";
 import { withProductHostOwnership } from "./host-ownership";
 import { homeServiceLabelForVault } from "./home-lifecycle";
 import {
@@ -338,6 +339,9 @@ async function prepareHomeUpgradeWhileQuiesced(
     const candidate = await artifactEvidence(paths, input.candidateArtifactId, verify);
     if (candidate.artifactId === old.artifactId) {
       throw new Error("Dome Home upgrade candidate must differ from the selected release");
+    }
+    if (!isHomeUpgradeVersionAdvance(old.version, candidate.version)) {
+      throw new Error("Dome Home upgrade candidate must be a valid SemVer version newer than the selected release");
     }
     const oldSelection = await captureHomeSelection(vault, deps);
     if (oldSelection.installation.sha256 !== selectors.installation.sha256 ||

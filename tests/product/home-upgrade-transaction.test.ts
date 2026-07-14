@@ -1187,6 +1187,33 @@ describe("Product Host pre-commit upgrade transaction", () => {
     }
   });
 
+  test("candidate compatibility rejects non-advancing SemVer without changing vault fingerprints", async () => {
+    for (const candidateVersion of ["1.0.0", "0.9.9", "next"] as const) {
+      const f = await fixture();
+      try {
+        const before = await logicalState(f.vault);
+        const gitBefore = await gitEvidence(f.vault);
+        const paths = homeInstallationPaths(f.vault, f.deps);
+        const manifestPath = join(releaseRoot(paths, CANDIDATE_ID), "manifest.json");
+        const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+          product: { version: string };
+        };
+        manifest.product.version = candidateVersion;
+        await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, { mode: 0o600 });
+
+        await expect(prepareHomeUpgrade({
+          vaultPath: f.vault,
+          transactionId: randomUUID(),
+          candidateArtifactId: CANDIDATE_ID,
+        }, f.deps)).rejects.toThrow("must be a valid SemVer version newer");
+        expect(await logicalState(f.vault)).toEqual(before);
+        expect(await gitEvidence(f.vault)).toEqual(gitBefore);
+        expect(await readHomeUpgrade(f.vault, f.deps)).toBeNull();
+        expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
+      } finally { await rm(f.root, { recursive: true, force: true }); }
+    }
+  });
+
   test("historical durable-state drift is old-side eligible but candidate-side incompatible", async () => {
     for (const artifactId of [OLD_ID, CANDIDATE_ID]) {
       const f = await fixture();

@@ -39,6 +39,7 @@ import {
   readHomeUpgradeDisposition,
   type HomeUpgradeTransaction,
 } from "./home-upgrade-transaction";
+import { isHomeUpgradeVersionAdvance } from "./home-upgrade-version";
 
 export const HOME_UPGRADE_RESULT_SCHEMA = "dome.home.upgrade/v1" as const;
 
@@ -229,6 +230,11 @@ export async function manageHomeUpgrade(input: {
     if (manifest.distribution.upgradeSupported !== true ||
       manifest.writerBarrier?.protocol !== 1 || manifest.durableState === undefined) {
       return failure(vault, requested, "error", 64, "preflight-failed", "invoking artifact is not upgrade-capable", "inspect-home-status", {
+        selected: installationSummary(current),
+      });
+    }
+    if (!isHomeUpgradeVersionAdvance(current.artifact.version, requested.productVersion)) {
+      return failure(vault, requested, "error", 64, "preflight-failed", "invoking artifact does not advance the installed SemVer version", "inspect-home-status", {
         selected: installationSummary(current),
       });
     }

@@ -749,7 +749,12 @@ writes and never reads terminal history to synthesize current coordination.
 
 The artifact parser accepts boolean `distribution.upgradeSupported`; both the
 intent and the transaction compatibility boundary require exact `true` for a
-new candidate. The builder deliberately still emits `false` until the retained
+new candidate. Both boundaries also require valid SemVer for the selected and
+candidate versions and a strict monotonic advance, including standard
+prerelease ordering. A legacy non-SemVer installation remains runnable and
+repairable but is ineligible for upgrade. Exact committed repair is exempt
+because it re-establishes an already-irreversible candidate rather than opening
+a new attempt. The builder deliberately still emits `false` until the retained
 installed N-1→N rehearsal proves the distribution can make the supported
 claim. Managed-release garbage collection, artifact signing/notarization, and
 that activation rehearsal remain deferred.
