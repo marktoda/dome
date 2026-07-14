@@ -84,8 +84,16 @@ export class ManagedHomeInstallationPublicationError extends Error {
   }
 }
 
+export function homeInstallationRoot(
+  deps: Pick<HomeInstallationDeps, "applicationSupportDir"> = {},
+): string {
+  return resolve(
+    deps.applicationSupportDir ?? join(homedir(), "Library", "Application Support", "Dome", "Home"),
+  );
+}
+
 export function homeInstallationPaths(vault: string, deps: HomeInstallationDeps = {}): HomeInstallationPaths {
-  const root = resolve(deps.applicationSupportDir ?? join(homedir(), "Library", "Application Support", "Dome", "Home"));
+  const root = homeInstallationRoot(deps);
   const releases = join(root, "releases");
   const installations = join(root, "installations", vaultServiceSlug(vault));
   return Object.freeze({ root, releases, installations, record: join(installations, "installation.json") });

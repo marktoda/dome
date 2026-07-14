@@ -712,7 +712,12 @@ publication and durable active readback, committed release repair and durable
 active reproof, and terminal active-to-history retirement through history then
 upgrade fsync. A one-time pre-inventory namespace stabilization pass closes the
 process-death window after retirement rename. Collection remains deliberately
-unwired; activation policy/scheduling and artifact signing/notarization remain
+unwired through checkpoint 2B. Checkpoint 3 now adds one host-wide manual
+`dome home cleanup` Adapter: inspection is the default, deletion requires
+explicit `--apply`, public evidence is path-free and redacted, and failed apply
+completion is unknown until a fresh inspection. The raw collector remains
+behind the Product Host interface with no SDK export or automatic caller.
+Automatic retention/scheduling policy and artifact signing/notarization remain
 later checkpoints.
 
 Exit journey: a clean Mac needs no source checkout or manual PWA build; it

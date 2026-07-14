@@ -1007,6 +1007,14 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       ...(options.json === undefined ? {} : { json: options.json }),
     };
   };
+  const homeCleanupOptions = (
+    options: HomeCleanupCliOptions,
+    command: Command,
+  ): HomeCleanupCliOptions & { readonly vaultSpecified: boolean } => ({
+    ...(options.apply === undefined ? {} : { apply: options.apply }),
+    ...(options.json === undefined ? {} : { json: options.json }),
+    vaultSpecified: sharedHomeVault(command) !== undefined,
+  });
   const showSharedHomeOptions = (command: Command): Command => command.configureHelp({
     showGlobalOptions: true,
     visibleGlobalOptions: () => homeCommand.options.filter((option) => option.attributeName() === "vault"),
@@ -1031,6 +1039,14 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     .action(async (options: HomeUpgradeCliOptions, command: Command) => {
       const { runHomeUpgrade } = await import("./commands/home-upgrade");
       setExitCode(await runHomeUpgrade(homeUpgradeOptions(options, command)));
+    });
+  homeCommand.command("cleanup")
+    .description("Inspect or remove unreachable managed Home release-store entries.")
+    .option("--apply", "Recheck and remove currently unreachable managed release-store entries.")
+    .option("--json", "Emit JSON.")
+    .action(async (options: HomeCleanupCliOptions, command: Command) => {
+      const { runHomeCleanup } = await import("./commands/home-cleanup");
+      setExitCode(await runHomeCleanup(homeCleanupOptions(options, command)));
     });
 
   const backupCommand = program
@@ -1269,6 +1285,11 @@ type HomeLifecycleCliOptions = {
 
 type HomeUpgradeCliOptions = {
   readonly vault?: string;
+  readonly json?: boolean;
+};
+
+type HomeCleanupCliOptions = {
+  readonly apply?: boolean;
   readonly json?: boolean;
 };
 

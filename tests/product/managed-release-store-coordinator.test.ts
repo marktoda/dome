@@ -258,6 +258,14 @@ test("production imports, exports, and mentions remain on exact reviewed ownersh
       "product-host/home-upgrade.ts",
     ]],
     ["collectManagedReleaseGarbage", ["product-host/managed-release-gc.ts"]],
+    ["manageHomeReleaseCleanup", [
+      "cli/commands/home-cleanup.ts",
+      "product-host/managed-release-gc.ts",
+    ]],
+    ["homeInstallationRoot", [
+      "product-host/home-installation.ts",
+      "product-host/managed-release-gc.ts",
+    ]],
     ["publishHomeInstallation", ["product-host/home-installation.ts"]],
     ["publishManagedHomeInstallation", [
       "product-host/home-installation.ts",

@@ -111,6 +111,9 @@ dome home [--vault <path>] [--port <port>] [--host <host>]
 dome home upgrade [--vault <path>] [--json]
                                 Run or recover the self-contained Home upgrade
                                 intent without exposing private phases.
+dome home cleanup [--apply] [--json]
+                                Inspect host-wide managed release reachability;
+                                remove unreachable release-store entries only with --apply.
 dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
                                 read/capture tools (capture, views, query, export_context,
                                 status, check, resolve, settle, tasks, brief) for
@@ -2845,6 +2848,25 @@ pinned predecessor and frozen fixture, its returned identities match the
 staged bytes, and candidate plus source are re-proved before atomic
 publication. No CLI flag can skip or substitute that gate. This contract does
 not assert that a real release execution has already passed.
+
+### `dome home cleanup [--apply] [--json]`
+
+Runs host-wide against the standard managed Dome Home root and never discovers
+or validates a vault. The default is a non-removing reachability inspection;
+`--apply` is the only destructive form and always re-inventories current state
+instead of applying a saved inspection. Parent or local `--vault` scope is a
+fixed usage error because cleanup covers every installation selector under the
+shared Home store. A missing Home installation is a successful no-op.
+
+The Adapter returns `dome.home.cleanup/v1`. Candidates expose only full artifact
+id, verified product version (`null` for recognized debris), and kind. Paths,
+internal names, installation sources, manifest hashes, PIDs/UUIDs, filesystem
+identities, and caught errors never cross the interface. Human output uses shortened ids
+and gives an explicit apply or re-inspection instruction. Success is `0`, even
+when inspection finds candidates; global-owner contention is temporary `75`;
+fail-closed verification or unknown apply completion is `1`; vault scope is
+usage `64`. After any apply error, counts and candidates are unknown and the
+operator must rerun without `--apply` before deciding whether to retry.
 
 Reinstall without `--env` or `--env-file` preserves the record's stored
 environment; supplying either option intentionally replaces it. Plist

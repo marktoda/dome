@@ -1,9 +1,9 @@
-// product-host/managed-release-gc: one dormant, host-wide reachability collector.
+// product-host/managed-release-gc: host-wide managed-release reachability and
+// explicit manual cleanup.
 //
-// This checkpoint deliberately has no CLI or automatic caller. Its lock is the
-// future global release-store rank. Release writers now participate in that
-// rank, but activation remains a separate reviewed checkpoint. The collector
-// holds no per-vault lock and has no production caller.
+// The manual CLI is the only production caller. There is no scheduled or
+// automatic policy. The collector holds only the global release-store rank and
+// never acquires a per-vault lock.
 
 import { createHash, randomUUID } from "node:crypto";
 import { constants, type BigIntStats } from "node:fs";
@@ -15,8 +15,10 @@ import { publishDirectoryExclusive } from "../platform/exclusive-rename";
 import { vaultServiceSlug } from "../surface/service-probe";
 import { verifyHomeArtifact } from "./home-artifact";
 import {
+  homeInstallationRoot,
   homeInstallationPaths,
   parseHomeInstallationRecord,
+  type HomeInstallationDeps,
   type HomeInstallationRecord,
 } from "./home-installation";
 import { readHomeUpgradeDispositionFromInstallation } from "./home-upgrade-transaction";
@@ -55,6 +57,7 @@ export type ManagedReleaseGcCandidate = Readonly<{
   kind: ManagedReleaseGcCandidateKind;
   name: string;
   path: string;
+  version: string | null;
   identity: Readonly<{ dev: string; ino: string }>;
 }>;
 
@@ -67,8 +70,39 @@ export type ManagedReleaseGcPlan = Readonly<{
 
 export type ManagedReleaseGcResult = Readonly<{
   mode: "inspect" | "collect";
+  homePresent: boolean;
   plan: ManagedReleaseGcPlan;
   removed: ReadonlyArray<ManagedReleaseGcCandidate>;
+}>;
+
+export class ManagedReleaseGcBusyError extends Error {
+  constructor() {
+    super("managed Home release store coordinator is busy");
+    this.name = "ManagedReleaseGcBusyError";
+  }
+}
+
+export const HOME_RELEASE_CLEANUP_SCHEMA = "dome.home.cleanup/v1" as const;
+
+export type HomeReleaseCleanupCandidate = Readonly<{
+  artifactId: string;
+  version: string | null;
+  kind: ManagedReleaseGcCandidateKind;
+}>;
+
+export type HomeReleaseCleanupResult = Readonly<{
+  schema: typeof HOME_RELEASE_CLEANUP_SCHEMA;
+  operation: "cleanup";
+  mode: "inspect" | "apply";
+  status: "not-installed" | "clean" | "candidates" | "removed" | "busy" | "error" | "usage-error";
+  exitCode: 0 | 1 | 64 | 75;
+  protectedReleaseCount: number | null;
+  candidateCount: number | null;
+  removedCount: number | null;
+  candidates: ReadonlyArray<HomeReleaseCleanupCandidate> | null;
+  reason: null | "release-store-busy" | "verification-failed" | "completion-unknown" | "host-wide-command";
+  message: string;
+  nextAction: "none" | "rerun-with-apply" | "rerun-inspect" | "inspect-home-store";
 }>;
 
 type VerifiedRelease = Readonly<{
@@ -93,26 +127,171 @@ export type ManagedReleaseGcDeps = Readonly<{
   checkpoint?: ((name: "before-rename" | "renamed" | "reproved" | "removed", candidate: ManagedReleaseGcCandidate) => Promise<void>) | undefined;
 }>;
 
+export type HomeReleaseCleanupDeps = ManagedReleaseGcDeps &
+  Pick<HomeInstallationDeps, "applicationSupportDir">;
+
+/**
+ * The host-wide manual cleanup interface. It owns root derivation, collection,
+ * public sanitization, and deterministic error mapping; callers choose only
+ * inspection or explicit application.
+ */
+export async function manageHomeReleaseCleanup(
+  input: Readonly<{ apply: boolean }>,
+  deps: HomeReleaseCleanupDeps = {},
+): Promise<HomeReleaseCleanupResult> {
+  const mode = input.apply ? "apply" as const : "inspect" as const;
+  try {
+    const result = await collectManagedReleaseGarbage({
+      homeRoot: homeInstallationRoot(deps),
+      mode: input.apply ? "collect" : "inspect",
+    }, deps);
+    if (input.apply && (
+      result.removed.length !== result.plan.candidates.length ||
+      result.removed.some((candidate, index) => candidate !== result.plan.candidates[index])
+    )) {
+      throw new Error("managed Home cleanup did not remove its exact candidate set");
+    }
+    const candidates = Object.freeze(result.plan.candidates.map(cleanupCandidate));
+    const removed = Object.freeze(result.removed.map(cleanupCandidate));
+    if (!result.homePresent) {
+      return cleanupResult({
+        mode,
+        status: "not-installed",
+        protectedReleaseCount: 0,
+        candidateCount: 0,
+        removedCount: 0,
+        candidates,
+        message: "Dome Home is not installed; there are no managed release-store entries to clean up.",
+        nextAction: "none",
+      });
+    }
+    const removedCount = removed.length;
+    const status = input.apply
+      ? removedCount === 0 ? "clean" as const : "removed" as const
+      : candidates.length === 0 ? "clean" as const : "candidates" as const;
+    return cleanupResult({
+      mode,
+      status,
+      protectedReleaseCount: result.plan.protections.length,
+      candidateCount: candidates.length,
+      removedCount,
+      candidates,
+      message: status === "candidates"
+        ? "Managed Dome Home release-store entries are eligible for cleanup."
+        : status === "removed"
+          ? "Managed Dome Home release-store cleanup completed."
+          : "No unreachable managed Dome Home release-store entries were found.",
+      nextAction: status === "candidates" ? "rerun-with-apply" : "none",
+    });
+  } catch (error) {
+    if (error instanceof ManagedReleaseGcBusyError) {
+      return cleanupFailure(
+        mode,
+        "busy",
+        75,
+        "Dome Home release cleanup is busy; retry after the current Home operation finishes.",
+        "rerun-inspect",
+      );
+    }
+    return cleanupFailure(
+      mode,
+      "error",
+      1,
+      input.apply
+        ? "Dome Home release cleanup completion is unknown; inspect again before retrying."
+        : "Dome Home release cleanup could not safely inspect the managed store.",
+      input.apply ? "rerun-inspect" : "inspect-home-store",
+    );
+  }
+}
+
+function cleanupCandidate(candidate: ManagedReleaseGcCandidate): HomeReleaseCleanupCandidate {
+  return Object.freeze({
+    artifactId: candidate.artifactId,
+    version: candidate.version,
+    kind: candidate.kind,
+  });
+}
+
+function cleanupResult(input: Readonly<{
+  mode: "inspect" | "apply";
+  status: "not-installed" | "clean" | "candidates" | "removed";
+  protectedReleaseCount: number;
+  candidateCount: number;
+  removedCount: number;
+  candidates: ReadonlyArray<HomeReleaseCleanupCandidate>;
+  message: string;
+  nextAction: "none" | "rerun-with-apply";
+}>): HomeReleaseCleanupResult {
+  return Object.freeze({
+    schema: HOME_RELEASE_CLEANUP_SCHEMA,
+    operation: "cleanup",
+    mode: input.mode,
+    status: input.status,
+    exitCode: 0,
+    protectedReleaseCount: input.protectedReleaseCount,
+    candidateCount: input.candidateCount,
+    removedCount: input.removedCount,
+    candidates: input.candidates,
+    reason: null,
+    message: input.message,
+    nextAction: input.nextAction,
+  });
+}
+
+function cleanupFailure(
+  mode: "inspect" | "apply",
+  status: "busy" | "error",
+  exitCode: 1 | 75,
+  message: string,
+  nextAction: "rerun-inspect" | "inspect-home-store",
+): HomeReleaseCleanupResult {
+  return Object.freeze({
+    schema: HOME_RELEASE_CLEANUP_SCHEMA,
+    operation: "cleanup",
+    mode,
+    status,
+    exitCode,
+    protectedReleaseCount: null,
+    candidateCount: null,
+    removedCount: null,
+    candidates: null,
+    reason: status === "busy"
+      ? "release-store-busy"
+      : mode === "apply" ? "completion-unknown" : "verification-failed",
+    message,
+    nextAction,
+  });
+}
+
 /**
  * The only collector interface: acquire ownership, inventory all references,
  * optionally remove exactly the resulting unreachable set, and return the
- * immutable evidence. `inspect` removes nothing; `collect` remains deliberately
- * unwired pending a separate activation-policy and scheduling checkpoint.
+ * immutable evidence. `inspect` removes nothing. Only the manual cleanup
+ * interface invokes collection; automatic policy and scheduling remain absent.
  */
 export async function collectManagedReleaseGarbage(
   input: Readonly<{ homeRoot: string; mode: "inspect" | "collect" }>,
   deps: ManagedReleaseGcDeps = {},
 ): Promise<ManagedReleaseGcResult> {
   const homeRoot = await canonicalDirectHomeRoot(input.homeRoot);
+  if (homeRoot === null) {
+    return makeResult(input.mode, false, Object.freeze({
+      homeRoot: resolve(input.homeRoot),
+      releasesRoot: join(resolve(input.homeRoot), "releases"),
+      protections: Object.freeze([]),
+      candidates: Object.freeze([]),
+    }), []);
+  }
   const ownership = await withManagedReleaseStoreCoordinator(homeRoot, async () => {
     const roots = await inspectRoots(homeRoot);
     await stabilizeUpgradeNamespaces(roots, deps);
     const built = await buildPlan(roots, deps);
-    if (input.mode === "inspect") return makeResult(input.mode, built.plan, []);
+    if (input.mode === "inspect") return makeResult(input.mode, true, built.plan, []);
     const removed = await collectPlan(roots, built, deps);
-    return makeResult(input.mode, built.plan, removed);
+    return makeResult(input.mode, true, built.plan, removed);
   }, { waitMs: 0 });
-  if (ownership.kind === "busy") throw new Error("managed Home release store coordinator is busy");
+  if (ownership.kind === "busy") throw new ManagedReleaseGcBusyError();
   return ownership.value;
 }
 
@@ -171,14 +350,14 @@ async function buildPlan(roots: RootEvidence, deps: ManagedReleaseGcDeps): Promi
       assertSha(verified.manifestSha256, "verified manifest hash");
       const protection = protectedById.get(entry.name);
       if (protection === undefined) {
-        candidates.push(candidate(entry.name, entry.path, entry.name, "release", entry.identity));
+        candidates.push(candidate(entry.name, entry.path, entry.name, "release", verified.version, entry.identity));
         candidateManifests.set(entry.name, verified.manifestSha256);
       }
       else assertProtectionMatchesRelease(protection, verified);
       releases.add(entry.name);
       continue;
     }
-    candidates.push(candidate(entry.artifactId, entry.path, entry.name, entry.kind, entry.identity));
+    candidates.push(candidate(entry.artifactId, entry.path, entry.name, entry.kind, null, entry.identity));
   }
   for (const protection of protections) {
     if (!releases.has(protection.artifactId)) {
@@ -469,10 +648,14 @@ async function assertPrivateTemporary(path: string): Promise<void> {
   }
 }
 
-async function canonicalDirectHomeRoot(path: string): Promise<string> {
+async function canonicalDirectHomeRoot(path: string): Promise<string | null> {
   const normalized = resolve(path);
   if (path !== normalized) throw new Error("managed Home root must be absolute and normalized");
-  await directDirectoryIdentity(normalized, "managed Home root");
+  try { await directDirectoryIdentity(normalized, "managed Home root"); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
   return normalized;
 }
 
@@ -515,9 +698,10 @@ function candidate(
   path: string,
   name: string,
   kind: ManagedReleaseGcCandidateKind,
+  version: string | null,
   identity: { readonly dev: string; readonly ino: string },
 ): ManagedReleaseGcCandidate {
-  return Object.freeze({ artifactId, kind, name, path, identity });
+  return Object.freeze({ artifactId, kind, name, path, version, identity });
 }
 
 function parseDebris(name: string): { readonly artifactId: string; readonly kind: ManagedReleaseGcCandidateKind } | null {
@@ -607,10 +791,11 @@ function sha256(bytes: Uint8Array): string {
 
 function makeResult(
   mode: "inspect" | "collect",
+  homePresent: boolean,
   plan: ManagedReleaseGcPlan,
   removed: ReadonlyArray<ManagedReleaseGcCandidate>,
 ): ManagedReleaseGcResult {
-  return Object.freeze({ mode, plan, removed: Object.freeze([...removed]) });
+  return Object.freeze({ mode, homePresent, plan, removed: Object.freeze([...removed]) });
 }
 
 async function syncDirectory(path: string): Promise<void> {
