@@ -876,6 +876,51 @@ profile must run this boundary successfully for each shipped release. Guided
 provider setup and a clean-consumer-Mac acceptance run remain subsequent P4
 work.
 
+### P4 secure Home credential substrate checkpoint
+
+`src/product-host/home-credentials.ts` is the one deep macOS Keychain Module
+for Home provider credentials. Its closed slots are
+`model.anthropic.api-key` and `transcription.api-key`; both use service
+`com.dome.home.credentials.v1` and the stable account
+`<product-host-vault-id>:<slot>`. Reads and deletes first resolve and validate
+the direct owner-controlled user default Keychain, then name that exact file so
+another search-list entry cannot win. The checkpoint is deliberately write-free:
+the system `security` CLI cannot bind its interactive `-w` prompt to an exact
+prevalidated Keychain, so secure replacement requires a future native helper.
+The interface exposes only presence, idempotent exact-Keychain removal truth,
+and callback-scoped secret use; bounded nonempty secret bytes never become a
+return value or diagnostic.
+
+Legacy v1 installation records remain strictly readable for status and future
+migration. New installation, record publication, selection rendering, ordinary
+reinstall, and new upgrade attempts reject recognized or conservatively named
+secret environment variables before release, selector, lifecycle, or writer
+barrier mutation. These return typed `credential-migration-required` truth;
+they never silently preserve or strip plaintext credentials.
+
+An already-active upgrade is the narrow recovery exception. It may replay or
+move secret-bearing selector evidence that the prior version already created
+in order to terminalize its extant writer barrier. It may not admit a new
+attempt or create new selector evidence. Credential migration must wait until
+that recovery is terminal; blocking recovery would strand the vault write-closed.
+Low-level selector repair is recovery machinery, not an ordinary publication
+surface.
+
+The read-only credential-residue inspector covers the live installation/plist,
+their crash-retained temporary siblings, upgrade staging selectors, the active
+upgrade, and every immutable history selector copy. Stable direct-file reads,
+closed generated-plist parsing, bounded inventories, private modes, journal
+hashes, and before/after rescans yield only `clean`, path-free variable-name
+`residue`, or `indeterminate`; runtime process state is explicitly unknown.
+No cleanup or migration occurs in this checkpoint.
+
+Future runtime precedence is pinned now: unequal Keychain and legacy values are
+ambiguous and must fail; equal values may use Keychain while continuing to
+report residue; locked or denied Keychain access never falls back; and an
+absent Keychain with a legacy value is deprecated compatibility only until
+explicit migration. Keychain orphan collection after vault removal is a
+deferred lifecycle concern, not permission for this substrate to delete data.
+
 ### P6 managed-release collection checkpoint 1
 
 `src/product-host/managed-release-gc.ts` is the one host-wide managed-release

@@ -190,6 +190,24 @@ describe("Home upgrade intent", () => {
     expect(prior.calls).not.toContain("uuid");
   });
 
+  test("refuses a secret-bearing legacy selection before allocating or running an upgrade", async () => {
+    const legacy = intentFixture({
+      selected: installation(OLD, "1.0.0", "/vault", [
+        { name: "ANTHROPIC_API_KEY", value: "legacy-secret" },
+      ]),
+    });
+    const result = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, legacy.deps);
+    expect(result).toMatchObject({
+      status: "error",
+      exitCode: 64,
+      reason: "credential-migration-required",
+      nextAction: "inspect-home-status",
+    });
+    expect(JSON.stringify(result)).not.toContain("legacy-secret");
+    expect(legacy.calls).not.toContain("uuid");
+    expect(legacy.calls).not.toContain("cutover");
+  });
+
   test("refuses an artifact without the explicit supported-upgrade capability using a fixed public message", async () => {
     const unsupported = intentFixture({
       manifest: { ...manifest(), distribution: { signed: false, notarized: false, upgradeSupported: false } },
@@ -296,9 +314,15 @@ describe("Home upgrade intent", () => {
     expect(f.calls).not.toContain("cutover");
   });
 
-  test("disposes a different retained attempt once and requires a rerun", async () => {
+  test("recovers a retained secret-bearing attempt before refusing all new attempts", async () => {
     const retained = transaction("prepared", RETAINED_TX, OTHER);
-    const f = intentFixture({ active: retained, suspension: activeSuspension(RETAINED_TX) });
+    const f = intentFixture({
+      active: retained,
+      suspension: activeSuspension(RETAINED_TX),
+      selected: installation(OLD, "1.0.0", "/vault", [
+        { name: "ANTHROPIC_API_KEY", value: "legacy-secret" },
+      ]),
+    });
     const result = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, f.deps);
     expect(result).toMatchObject({
       status: "recovered-rerun-required",
@@ -310,6 +334,7 @@ describe("Home upgrade intent", () => {
     expect(f.calls).toContain("retire");
     expect(f.calls).not.toContain("publish");
     expect(f.calls).not.toContain("uuid");
+    expect(JSON.stringify(result)).not.toContain("legacy-secret");
   });
 
   test("refuses to restore a pre-commit journal without its lifecycle suspension", async () => {
@@ -769,12 +794,17 @@ function intentFixture(options: {
   };
 }
 
-function installation(id: string, version: string, vault = "/vault") {
+function installation(
+  id: string,
+  version: string,
+  vault = "/vault",
+  environment: ReadonlyArray<Readonly<{ name: string; value: string }>> = [],
+) {
   return {
     schema: "dome.home.installation/v1" as const,
     vault,
     artifact: { id, version },
-    environment: [],
+    environment,
   };
 }
 

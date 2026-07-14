@@ -38,6 +38,10 @@ import {
   type HomeUpgradeTransaction,
 } from "./home-upgrade-transaction";
 import { isHomeUpgradeVersionAdvance } from "./home-upgrade-version";
+import {
+  assertHomeEnvironmentHasNoSecrets,
+  HomeCredentialMigrationRequiredError,
+} from "./home-credentials";
 
 export const HOME_UPGRADE_RESULT_SCHEMA = "dome.home.upgrade/v1" as const;
 
@@ -69,6 +73,7 @@ export type HomeUpgradeResult = {
   readonly service: "ready" | "stopped" | "deferred" | "failed" | "unknown";
   readonly reason:
     | "preflight-failed"
+    | "credential-migration-required"
     | "candidate-failed"
     | "prior-attempt-recovered"
     | "candidate-repair-required"
@@ -237,6 +242,20 @@ export async function manageHomeUpgrade(input: {
       return failure(vault, requested, "error", 64, "preflight-failed", "invoking artifact does not advance the installed SemVer version", "inspect-home-status", {
         selected: installationSummary(current),
       });
+    }
+    try { assertHomeEnvironmentHasNoSecrets(current.environment); }
+    catch (error) {
+      if (!(error instanceof HomeCredentialMigrationRequiredError)) throw error;
+      return failure(
+        vault,
+        requested,
+        "error",
+        64,
+        "credential-migration-required",
+        "credential migration is required before Dome Home upgrade; move provider secrets to macOS Keychain",
+        "inspect-home-status",
+        { selected: installationSummary(current) },
+      );
     }
 
     const transactionId = operations.operationId();

@@ -22,6 +22,7 @@ import {
   type HomeInstallationDeps,
   type HomeInstallationRecord,
 } from "./home-installation";
+import { assertHomeEnvironmentHasNoSecrets } from "./home-credentials";
 
 const HOME_HOST = "127.0.0.1";
 const HOME_PORT = 3663;
@@ -85,6 +86,7 @@ export function renderHomeSelection(input: {
   }
   const environment = [...input.environment]
     .sort((left, right) => compareStrings(left.name, right.name));
+  assertHomeEnvironmentHasNoSecrets(environment);
   if (environment.some((entry, index) =>
     entry.name.length === 0 || entry.name.includes("=") || entry.name.includes("\0") ||
     entry.value.includes("\0") ||

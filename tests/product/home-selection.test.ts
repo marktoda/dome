@@ -13,6 +13,18 @@ import {
 } from "../../src/product-host/home-selection";
 
 describe("Home release selection", () => {
+  test("rejects secret-like environment before rendering selector or plist bytes", () => {
+    const input = {
+      vault: "/vault",
+      artifact: { id: "a".repeat(64), version: "2.0.0", releasePath: `/support/releases/${"a".repeat(64)}` },
+      environment: [{ name: "SERVICE_TOKEN", value: "must-not-persist" }],
+    };
+    expect(() => renderHomeSelection(input, { applicationSupportDir: "/support" })).toThrow("macOS Keychain");
+    expect(renderHomeSelection({ ...input, environment: [{ name: "DOME_LOG_LEVEL", value: "debug" }] }, {
+      applicationSupportDir: "/support",
+    }).installation.bytes).toContain("DOME_LOG_LEVEL");
+  });
+
   test("renders a closed candidate pair and classifies only exact old/candidate bytes", async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "dome-home-selection-")));
     try {

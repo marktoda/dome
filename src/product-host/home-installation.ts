@@ -17,6 +17,7 @@ import {
   type HomeArtifactManifest,
   type HomeArtifactVerifier,
 } from "./home-artifact";
+import { assertHomeEnvironmentHasNoSecrets } from "./home-credentials";
 import {
   assertManagedReleaseStoreOwner,
   withManagedReleaseArtifactRank,
@@ -120,6 +121,7 @@ export function createHomeInstallation(
   manifest: HomeArtifactManifest,
   environment: ReadonlyMap<string, string>,
 ): HomeInstallationRecord {
+  assertHomeEnvironmentHasNoSecrets([...environment].map(([name]) => ({ name })));
   return Object.freeze({
     schema: HOME_INSTALLATION_SCHEMA,
     vault: resolve(vault),
@@ -221,6 +223,7 @@ export async function publishManagedHomeInstallation(
   managed: Readonly<{ root: string; published: boolean }>;
   record: HomeInstallationRecord;
 }>> {
+  assertHomeEnvironmentHasNoSecrets(input.record.environment);
   assertInstallationMatchesRelease(input);
   await prepareManagedReleaseStoreRoot(input.paths, deps);
   const ownership = await withManagedReleaseStoreCoordinator(input.paths.root, async (owner) => {
@@ -514,6 +517,7 @@ export async function publishHomeInstallation(
   record: HomeInstallationRecord,
   deps: HomeInstallationDeps = {},
 ): Promise<void> {
+  assertHomeEnvironmentHasNoSecrets(record.environment);
   const installation = dirname(path);
   const installations = dirname(installation);
   const root = dirname(installations);
