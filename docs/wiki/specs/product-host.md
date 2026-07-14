@@ -827,8 +827,63 @@ installed N-1→N rehearsal against the frozen fixture, binds the returned
 identities to the still-staged bytes, writes a local execution receipt, and
 re-proves candidate and source immediately before atomic publication. This is
 a mandatory gate, not a claim that a real release execution has already
-passed. Managed-release garbage collection and artifact signing/notarization
-remain deferred.
+passed. Artifact signing/notarization remains deferred.
+
+### P6 managed-release collection checkpoint 1
+
+`src/product-host/managed-release-gc.ts` is the one host-wide managed-release
+reachability Module. Its single dormant interface acquires a kernel-backed
+SQLite coordinator keyed by the canonical direct Home root outside that
+managed root, inventories every direct
+`installations/<vault-service-slug>/installation.json`, and protects both the
+selected release and the old/candidate sides of every extant active upgrade.
+Terminal history and derived receipts do not pin releases. Selected evidence
+binds artifact id and product version; active evidence additionally binds the
+manifest hash. Inventory uses the authoritative upgrade disposition parser but
+does not require the referenced vault directory to remain mounted.
+
+The coordinator persists at
+`<dirname(Home)>/.dome-home-release-store/<sha256(canonical-Home)>.db`. Its
+closed row binds the exact Home root. The directory is direct, owned, and 0700;
+the database is direct, single-linked, owned, and 0600, with its inode held and
+re-proved through open, acquisition, and release. SQLite uses
+DELETE/NORMAL/FULL and one `BEGIN IMMEDIATE` transaction for ownership, so
+process death releases the kernel mutex. Callers choose an explicit bounded
+wait: automatic inspection/collection uses zero wait, while a future
+foreground maintenance surface may wait for at most 30 seconds. Invalid,
+linked, ambiguous, or nonempty unknown evidence is never repaired, recreated,
+or age-broken.
+
+The releases inventory is closed. Only exact 64-hex verified release
+directories and exact publication, repair, quarantine, or GC debris names are
+understood; near misses, redirects, special entries, malformed selectors,
+unknown installation entries, and missing protected payloads fail the whole
+operation closed. Exact installation-record publication temporaries are known
+non-pinning evidence and must still be private direct files.
+
+Collection fully verifies each release payload once while building the initial
+plan. Before every candidate it cheaply rescans exact references plus the
+closed release names, directory identities, and the candidate's stable
+canonical manifest fingerprint; it never repeats all payload verification per
+candidate. It holds and re-proves the Home,
+`releases/`, and `installations/` directory identities, requires the candidate
+on the release-store device, publishes a unique `.gc-*` tombstone with atomic
+no-replace directory publication, fsyncs the parent, proves the source absent
+and the tombstone inode unchanged, recursively removes it, and fsyncs again.
+Recognized tombstones make a crash after publication idempotently collectible.
+
+Checkpoint 1 is deliberately not exported by `@dome/sdk`, called by the CLI,
+or scheduled. Its lock currently serializes collectors only. Production
+collection is forbidden until checkpoint 2 places relevant writer sections
+beneath the same global lock. The future rank is lifecycle Tx2 → operational
+admission → external/local Product Host → global release store → artifact →
+selector/store. A collector holds only the global lock and must never acquire
+or wait for a per-vault lifecycle, operational, or host lock. Automatic
+collection runs only after terminal retirement releases every earlier lock.
+Writer integration covers install release-to-record publication, new-candidate
+publication through active-journal durability, committed repair, and terminal
+active-to-history retirement. Selector commit/restore remains protected by the
+active transaction and does not acquire the global lock independently.
 
 ### P3 device-authority foundation
 

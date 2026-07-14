@@ -42,6 +42,7 @@ import {
   readCommittedHomeUpgradeForward,
   readHomeUpgrade,
   readHomeUpgradeDisposition,
+  readHomeUpgradeDispositionFromInstallation,
   readHomeUpgradeForRecovery,
   readHomeUpgradeHistory,
   readHomeUpgradeHistoryIdentity,
@@ -79,6 +80,25 @@ function probationProof(transactionId: string) {
 }
 
 describe("Product Host pre-commit upgrade transaction", () => {
+  test("host inventory reads active disposition after the recorded vault path disappears", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      await prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId,
+        candidateArtifactId: CANDIDATE_ID,
+      }, f.deps);
+      await rename(f.vault, `${f.vault}-moved`);
+      const active = await readHomeUpgradeDispositionFromInstallation(f.vault, f.deps);
+      expect(active).toMatchObject({
+        transactionId,
+        old: { artifactId: OLD_ID, version: "1.0.0" },
+        candidate: { artifactId: CANDIDATE_ID, version: "2.0.0" },
+      });
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
   test("commits candidate selection only after exact probation and makes rollback irreversible", async () => {
     const f = await fixture();
     try {
