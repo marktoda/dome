@@ -717,6 +717,12 @@ unwired through checkpoint 2B. Checkpoint 3 now adds one host-wide manual
 explicit `--apply`, public evidence is path-free and redacted, and failed apply
 completion is unknown until a fresh inspection. The raw collector remains
 behind the Product Host interface with no SDK export or automatic caller.
+Checkpoint 4 adds only a count-free optional manual-cleanup advisory after a
+healthy committed retirement has returned. It deliberately performs no
+automatic inspection: a reachability scan would verify every release, fsync
+upgrade namespaces, and take global ownership merely to decide whether to
+print a hint, while selectors for other vaults can still protect the retired
+release. Rollback and every recovery action remain higher priority.
 Automatic retention/scheduling policy and artifact signing/notarization remain
 later checkpoints.
 

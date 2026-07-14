@@ -1012,6 +1012,43 @@ Automatic activation remains deferred until Dome has an explicit retention or
 disk-pressure policy, execution budget, contention policy, and operational
 telemetry.
 
+### P6 managed-release collection checkpoint 4 — post-retirement advisory
+
+The upgrade intent adds one optional manual-maintenance hint only after
+`retireHomeUpgrade` has completely returned. At that point retirement has
+released lifecycle, operational, and global ownership. The private
+`withPostRetirementCleanupAdvisory` helper is pure result decoration: it cannot
+inventory, coordinate, or remove a release. It preserves every
+`dome.home.upgrade/v1` key plus the existing status and exit code, appends one
+fixed count-free message, and changes the otherwise-empty next action to
+`run-home-cleanup`. The CLI renders that token as the exact command
+`dome home cleanup`.
+
+Only healthy committed outcomes receive the hint: a fresh `upgraded` result,
+or recovered `already-current` after this invocation retired its committed
+journal. Ordinary already-current results did not retire anything. Restored
+transactions receive no cleanup advice; final rolled-back outcomes keep
+`candidate-failed` so the failed artifact remains available for postmortem.
+Rerun, recovery, unhealthy, busy, preflight, selection, and
+retirement-finalization results retain their higher-priority next action and
+unchanged message.
+
+The advice is unconditional and makes no candidate or count claim. Retirement
+may unpin an old release, but another vault selector may still protect it. Only
+the later explicit manual command can determine reachability. Automatically
+calling even inspect mode was rejected: it is linear in every installation and
+release, fully verifies each payload, stabilizes and fsyncs upgrade namespaces,
+takes global ownership, and may initialize coordinator state. That cost must
+not lengthen a completed foreground upgrade merely to conditionally print a
+hint.
+
+Structural source inventories continue to keep `manageHomeReleaseCleanup` in
+the manual CLI Adapter and its Product Host Module only, and keep the raw
+collector Module-local in production. The upgrade Module additionally fences
+both cleanup symbols, the cleanup module import, and either apply mode. There
+is still no automatic inspection or deletion caller, scheduler, daemon, HTTP,
+MCP, or SDK export.
+
 ### P3 device-authority foundation
 
 `src/device-authority/` owns durable single-owner device authority behind

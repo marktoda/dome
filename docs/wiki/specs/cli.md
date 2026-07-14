@@ -2849,6 +2849,22 @@ staged bytes, and candidate plus source are re-proved before atomic
 publication. No CLI flag can skip or substitute that gate. This contract does
 not assert that a real release execution has already passed.
 
+After a healthy committed retirement returns, a fresh `upgraded` result—or a
+recovered `already-current` result whose committed journal this invocation
+retired—keeps the same `dome.home.upgrade/v1` keys, status, and exit code but
+uses `nextAction: run-home-cleanup`. Human output renders that token as the
+exact optional command `dome home cleanup`. The fixed message is deliberately
+count-free: retirement can make an entry unreachable, but selectors for other
+vaults may still protect it. Ordinary already-current results, rollbacks,
+rerun/recovery results, unhealthy service results, and retirement failures do
+not receive this lower-priority advice.
+
+The upgrade command does not inspect or apply cleanup. In particular it never
+verifies the host-wide release inventory, synchronizes upgrade namespaces, or
+takes the global release-store owner after retirement merely to decide whether
+to print the hint. `dome home cleanup` remains the only inspection Adapter and
+`--apply` remains the only deletion request.
+
 ### `dome home cleanup [--apply] [--json]`
 
 Runs host-wide against the standard managed Dome Home root and never discovers

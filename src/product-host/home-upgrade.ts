@@ -79,6 +79,7 @@ export type HomeUpgradeResult = {
   readonly message: string;
   readonly nextAction:
     | "none"
+    | "run-home-cleanup"
     | "rerun-requested-upgrade"
     | "retry-recovery"
     | "supply-exact-candidate"
@@ -418,7 +419,7 @@ async function resolveRetained(input: {
           service,
         }));
       }
-      return resultValue(output({
+      return resultValue(withPostRetirementCleanupAdvisory(output({
         vault,
         requested,
         selected: artifactSummary(active.candidate.artifactId, active.candidate.version),
@@ -428,7 +429,7 @@ async function resolveRetained(input: {
         recovered: true,
         service,
         message: "The invoking Dome Home artifact was already committed.",
-      }));
+      })));
     } catch {
       // Not yet terminal-healthy: the journal-bound cutover below performs
       // the one permitted forward recovery disposition.
@@ -523,7 +524,7 @@ async function finalizeCutover(
     });
   }
   const rolledBack = cutover.transactionOutcome.kind === "rolled-back";
-  return terminalResult({
+  return withPostRetirementCleanupAdvisory(terminalResult({
     vault,
     requested,
     selected,
@@ -537,6 +538,23 @@ async function finalizeCutover(
       : rolledBack
       ? "The requested Dome Home artifact was rolled back."
       : "Dome Home upgraded successfully.",
+  }));
+}
+
+/**
+ * Add one optional, count-free manual-maintenance hint after terminal
+ * retirement has fully returned. This helper never inventories releases: that
+ * cost and all cleanup truth remain behind the explicit `dome home cleanup`
+ * command.
+ */
+function withPostRetirementCleanupAdvisory(result: HomeUpgradeResult): HomeUpgradeResult {
+  const healthy = result.service === "ready" || result.service === "stopped";
+  const terminal = result.status === "upgraded" || result.status === "already-current";
+  if (!healthy || !terminal || result.nextAction !== "none") return result;
+  return Object.freeze({
+    ...result,
+    message: `${result.message} Optionally run \`dome home cleanup\` to inspect for unreachable managed release-store entries.`,
+    nextAction: "run-home-cleanup" as const,
   });
 }
 
