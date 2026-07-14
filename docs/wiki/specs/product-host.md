@@ -694,6 +694,13 @@ and only then publish the result. Receipt parsing and orchestration remain
 hermetic cross-platform tests; reconstruction itself is a release-gate
 operation.
 
+The immutable frozen 0.1 artifact contains the historical duplicate nested
+Home `--vault` forwarding bug. The installed rehearsal therefore invokes only
+its predecessor `home install` from the exact initialized vault cwd without
+`--vault`, exercising supported upward discovery rather than rewriting N-1.
+All 0.2 candidate nested commands keep explicit `--vault` and test the fixed
+forwarding behavior.
+
 `src/product-host/home-store-migrations.ts` is the private compatibility
 Module. Its interface is one closed, sorted six-store protocol-1 inventory and
 two operations: all-store preflight, then migration of a published prepared
