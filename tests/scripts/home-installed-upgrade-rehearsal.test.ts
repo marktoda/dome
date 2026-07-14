@@ -12,6 +12,7 @@ import {
   pairedDeviceIdForTests,
   predecessorHomeInstallInvocationForTests,
   renderInstalledCoordinationErrorForTests,
+  retainedCheckpointOwnershipSummaryForTests,
   resolveContainedArtifactRootForTests,
   type InstalledHomeUpgradeRehearsalInput,
   type InstalledHomeUpgradeScenario,
@@ -69,6 +70,23 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     expect(embedded(error)).not.toContain("abc+DEF/ghi==");
     expect(renderInstalledCoordinationErrorForTests({ private: "value" }))
       .toBe("Non-Error coordination failure");
+  });
+
+  test("renders only bounded allowlisted retained ownership state", () => {
+    const operationId = "11111111-1111-4111-8111-111111111111";
+    expect(retainedCheckpointOwnershipSummaryForTests({
+      lifecycle: {
+        state: "active", phase: "suspended", purpose: "upgrade", operationId,
+        error: "dome_csrf.must-not-leak",
+      },
+      upgrade: {
+        state: "unavailable", operationId: "dome_cred.must-not-leak", outcome: null,
+        nextAction: "inspect-home-status", error: "Bearer must-not-leak",
+      },
+    })).toBe(JSON.stringify({
+      lifecycle: { state: "active", phase: "suspended", purpose: "upgrade", operationId },
+      upgrade: { state: "unavailable", operationId: null, outcome: null, nextAction: "inspect-home-status" },
+    }));
   });
 
   test("canonicalizes an aliased extraction destination and still rejects a sibling escape", async () => {

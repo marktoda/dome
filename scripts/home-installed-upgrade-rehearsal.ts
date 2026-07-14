@@ -97,6 +97,47 @@ export function renderInstalledCoordinationErrorForTests(error: unknown, depth =
   return redacted.length <= 2_048 ? redacted : `${redacted.slice(0, 2_047)}…`;
 }
 
+/** Bounded allowlisted ownership detail for a strict checkpoint failure. */
+export function retainedCheckpointOwnershipSummaryForTests(status: unknown): string {
+  const root = status !== null && typeof status === "object" && !Array.isArray(status)
+    ? status as Record<string, unknown>
+    : {};
+  const lifecycle = summaryRecord(root["lifecycle"]);
+  const upgrade = summaryRecord(root["upgrade"]);
+  return JSON.stringify({
+    lifecycle: {
+      state: summaryEnum(lifecycle["state"], ["inactive", "active", "invalid", "unavailable"]),
+      phase: summaryEnum(lifecycle["phase"], ["suspending", "suspended", "resuming"]),
+      purpose: summaryEnum(lifecycle["purpose"], ["backup", "upgrade"]),
+      operationId: summaryOperationId(lifecycle["operationId"]),
+    },
+    upgrade: {
+      state: summaryEnum(upgrade["state"], ["inactive", "active", "complete", "recovery-required", "unavailable"]),
+      operationId: summaryOperationId(upgrade["operationId"]),
+      outcome: summaryEnum(upgrade["outcome"], ["committed", "restored"]),
+      nextAction: summaryEnum(upgrade["nextAction"], [
+        "none", "rerun-requested-upgrade", "retry-recovery", "supply-exact-candidate", "inspect-home-status",
+      ]),
+    },
+  });
+}
+
+function summaryRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function summaryEnum(value: unknown, allowed: ReadonlyArray<string>): string | null {
+  return typeof value === "string" && allowed.includes(value) ? value : null;
+}
+
+function summaryOperationId(value: unknown): string | null {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ? value
+    : null;
+}
+
 /** Portable launchd-label plus listener drain contract; it emits no installed evidence. */
 export function classifyInstalledHomeDrainForTests(
   bootoutExitCode: number,
@@ -897,7 +938,9 @@ async function assertRetainedCheckpoint(
   ], context.root, context.environment, true);
   if (field(objectField(status, "lifecycle"), "state") !== "active" ||
     field(objectField(status, "upgrade"), "state") !== "active") {
-    throw new Error("checkpoint crash did not retain lifecycle and upgrade ownership");
+    throw new Error(
+      `checkpoint crash did not retain lifecycle and upgrade ownership: ${retainedCheckpointOwnershipSummaryForTests(status)}`,
+    );
   }
   return journal;
 }
