@@ -37,6 +37,12 @@ export type AgentRuntimeFailure = Readonly<{
   retryable: boolean;
 }>;
 
+type AgentTerminalFailureCode =
+  | "session-expired"
+  | "session-closed"
+  | "turn-cancelled"
+  | "turn-timeout";
+
 export class AgentRuntimeError extends Error {
   readonly code: AgentRuntimeFailureCode;
   readonly retryable: boolean;
@@ -170,6 +176,9 @@ export function createAgentRuntime(opts: {
 }): AgentRuntime {
   const sessions = new Map<string, SessionState>();
   const expiredOwners = new Map<string, { readonly ownerDeviceId: string | null; readonly expiredAt: number }>();
+  // AbortSignal.reason is not retained reliably by every supported runtime.
+  // Keep the first terminal cause beside the controller for late consumers.
+  const terminalCauses = new WeakMap<AbortController, AgentTerminalFailureCode>();
   const createId = opts.createId ?? randomUUID;
   const now = (): number => {
     const value = opts.now?.() ?? Date.now();
@@ -177,6 +186,18 @@ export function createAgentRuntime(opts: {
   };
   const limits = resolveLimits(opts.limits);
   let runtimeClosed = false;
+
+  const abortController = (
+    controller: AbortController,
+    code: AgentTerminalFailureCode,
+  ): void => {
+    if (controller.signal.aborted) return;
+    terminalCauses.set(controller, code);
+    controller.abort(failure(code));
+  };
+
+  const terminalCause = (controller: AbortController): AgentTerminalFailureCode =>
+    terminalCauses.get(controller) ?? abortCode(controller.signal);
 
   const rememberExpired = (state: SessionState, at: number): void => {
     expiredOwners.delete(state.id);
@@ -198,7 +219,9 @@ export function createAgentRuntime(opts: {
     if (!absoluteExpired && !idleExpired) return false;
     rememberExpired(state, at);
     state.closed = true;
-    state.activeController?.abort(failure("session-expired"));
+    if (state.activeController !== null) {
+      abortController(state.activeController, "session-expired");
+    }
     // A cancellation-resistant runner keeps consuming capacity until its
     // stream exits. Remove idle sessions immediately; active ones leave in
     // their `finally` after cooperative shutdown.
@@ -216,7 +239,7 @@ export function createAgentRuntime(opts: {
   const cancelState = (state: SessionState): AgentSessionCancelResult => {
     if (state.closed) return { kind: "closed" };
     if (!state.busy || state.activeController === null) return { kind: "idle" };
-    state.activeController.abort(failure("turn-cancelled"));
+    abortController(state.activeController, "turn-cancelled");
     if (!state.activeStarted) {
       if (state.activeTimer !== null) clearTimeout(state.activeTimer);
       state.activeTimer = null;
@@ -258,7 +281,7 @@ export function createAgentRuntime(opts: {
             rememberExpired(state, now());
             state.closed = true;
           }
-          controller.abort(failure(absolute ? "session-expired" : "turn-timeout"));
+          abortController(controller, absolute ? "session-expired" : "turn-timeout");
           if (!state.activeStarted && state.activeController === controller) {
             state.activeTimer = null;
             state.activeController = null;
@@ -269,7 +292,7 @@ export function createAgentRuntime(opts: {
         },
         Math.min(limits.turnTimeoutMs, remainingAbsoluteMs),
       );
-      const forwardAbort = (): void => controller.abort(failure("turn-cancelled"));
+      const forwardAbort = (): void => abortController(controller, "turn-cancelled");
       signal?.addEventListener("abort", forwardAbort, { once: true });
       state.busy = true;
       state.activeController = controller;
@@ -287,7 +310,7 @@ export function createAgentRuntime(opts: {
         let answer = "";
         try {
           if (controller.signal.aborted) {
-            yield runtimeErrorEvent(abortCode(controller.signal));
+            yield runtimeErrorEvent(terminalCause(controller));
             return;
           }
           const run = opts.runTurn({
@@ -299,7 +322,7 @@ export function createAgentRuntime(opts: {
           });
           for await (const text of run.text) {
             if (controller.signal.aborted) {
-              yield runtimeErrorEvent(abortCode(controller.signal));
+              yield runtimeErrorEvent(terminalCause(controller));
               return;
             }
             answer += text;
@@ -307,7 +330,7 @@ export function createAgentRuntime(opts: {
           }
           const finished = await run.finished;
           if (controller.signal.aborted) {
-            yield runtimeErrorEvent(abortCode(controller.signal));
+            yield runtimeErrorEvent(terminalCause(controller));
             return;
           }
           state.messages.push(
@@ -324,7 +347,7 @@ export function createAgentRuntime(opts: {
           };
         } catch (error) {
           if (controller.signal.aborted) {
-            yield runtimeErrorEvent(abortCode(controller.signal));
+            yield runtimeErrorEvent(terminalCause(controller));
           } else {
             yield {
               kind: "error",
@@ -424,7 +447,9 @@ export function createAgentRuntime(opts: {
       const state = sessions.get(id);
       if (state === undefined || state.closed) return false;
       state.closed = true;
-      state.activeController?.abort(failure("session-closed"));
+      if (state.activeController !== null) {
+        abortController(state.activeController, "session-closed");
+      }
       if (!state.activeStarted) {
         if (state.activeTimer !== null) clearTimeout(state.activeTimer);
         state.activeTimer = null;
@@ -444,7 +469,9 @@ export function createAgentRuntime(opts: {
       for (const state of sessions.values()) {
         state.closed = true;
         if (!state.activeStarted && state.activeTimer !== null) clearTimeout(state.activeTimer);
-        state.activeController?.abort(failure("session-closed"));
+        if (state.activeController !== null) {
+          abortController(state.activeController, "session-closed");
+        }
       }
       sessions.clear();
     },
@@ -473,7 +500,7 @@ function pruneHistory(messages: AgentMessage[], limits: AgentRuntimeLimits): voi
   }
 }
 
-function abortCode(signal: AbortSignal): "session-expired" | "session-closed" | "turn-cancelled" | "turn-timeout" {
+function abortCode(signal: AbortSignal): AgentTerminalFailureCode {
   const reason: unknown = signal.reason;
   if (
     typeof reason === "object" && reason !== null && "code" in reason &&
@@ -491,7 +518,7 @@ function abortCode(signal: AbortSignal): "session-expired" | "session-closed" | 
 }
 
 function runtimeErrorEvent(
-  code: "session-expired" | "session-closed" | "turn-cancelled" | "turn-timeout",
+  code: AgentTerminalFailureCode,
 ): Extract<AgentEvent, { readonly kind: "error" }> {
   const problem = failure(code);
   return Object.freeze({ kind: "error", code, message: problem.message });
