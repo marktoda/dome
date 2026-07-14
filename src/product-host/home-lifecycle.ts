@@ -45,6 +45,11 @@ import {
   type HomeSuspensionPhase,
   type HomeSuspensionPurpose,
 } from "./home-lifecycle-suspension";
+import {
+  inspectHomeUpgradeStatus,
+  type HomeUpgradeLifecycleSummary,
+  type HomeUpgradeStatusDeps,
+} from "./home-upgrade-status";
 
 export { isHomePairingReadiness } from "./home-readiness";
 
@@ -90,10 +95,12 @@ export type HomeLifecycleResult = {
   readonly releasePublished?: boolean;
   readonly legacyServeConflict?: boolean;
   readonly lifecycle?: HomeLifecycleRecovery;
+  /** Present on every status result; omitted from lifecycle mutations. */
+  readonly upgrade?: HomeUpgradeLifecycleSummary;
   readonly error?: string;
 };
 
-export type HomeLifecycleDeps = ServiceDeps & HomeInstallationDeps & {
+export type HomeLifecycleDeps = ServiceDeps & HomeInstallationDeps & HomeUpgradeStatusDeps & {
   /** Invoking self-contained artifact root; tests may inject a strict verifier. */
   readonly artifactRoot?: string | undefined;
   readonly verifyArtifact?: HomeArtifactVerifier | undefined;
@@ -168,6 +175,7 @@ export async function manageHome(input: {
     try { return await inspectHomeStatus(context, deps); }
     catch (error) {
       const lifecycle = lifecycleRecovery(await inspectHomeLifecycleSuspension(context.vault));
+      const upgrade = await inspectHomeUpgradeStatus(context.vault, deps);
       const base = await selectedBase(context.neutral, context.vault, deps);
       return statusWithLifecycle(result(
         base,
@@ -176,7 +184,7 @@ export async function manageHome(input: {
         await diagnosticLoaded(context),
         null,
         { error: message(error) },
-      ), lifecycle);
+      ), lifecycle, upgrade);
     }
   }
 
@@ -554,8 +562,10 @@ async function inspectHomeStatus(context: HomeContext, deps: HomeLifecycleDeps):
       error: vaultFailure,
       exitCode: 64,
       lifecycle,
+      upgrade: HOME_UPGRADE_UNAVAILABLE,
     });
   }
+  const upgrade = await inspectHomeUpgradeStatus(context.vault, deps);
   const lifecycle = lifecycleRecovery(await inspectHomeLifecycleSuspension(context.vault));
   let record: HomeInstallationRecord | null;
   try { record = await readHomeInstallation(context.vault, deps); }
@@ -567,7 +577,7 @@ async function inspectHomeStatus(context: HomeContext, deps: HomeLifecycleDeps):
       await diagnosticLoaded(context),
       null,
       { error: message(error) },
-    ), lifecycle);
+    ), lifecycle, upgrade);
   }
   const base = record === null
     ? context.neutral
@@ -576,14 +586,14 @@ async function inspectHomeStatus(context: HomeContext, deps: HomeLifecycleDeps):
   let loaded: boolean;
   try { loaded = await homeLoaded(context); }
   catch (error) {
-    return statusWithLifecycle(result(base, "error", hasPlist, null, null, { error: message(error) }), lifecycle);
+    return statusWithLifecycle(result(base, "error", hasPlist, null, null, { error: message(error) }), lifecycle, upgrade);
   }
   if (record === null) {
     const orphaned = hasPlist || loaded;
     let legacyServeConflict: boolean | undefined;
     try { legacyServeConflict = await hasLegacyServeConflict(context, deps.legacyServeRunning); }
     catch (error) {
-      return statusWithLifecycle(result(context.neutral, "error", hasPlist, loaded, null, { error: message(error) }), lifecycle);
+      return statusWithLifecycle(result(context.neutral, "error", hasPlist, loaded, null, { error: message(error) }), lifecycle, upgrade);
     }
     return statusWithLifecycle(result(
       context.neutral,
@@ -595,28 +605,28 @@ async function inspectHomeStatus(context: HomeContext, deps: HomeLifecycleDeps):
         ...(orphaned ? { error: `service exists without its installation record at ${context.paths.record}` } : {}),
         legacyServeConflict,
       },
-    ), lifecycle);
+    ), lifecycle, upgrade);
   }
   const integrity = await inspectSelectedRelease(base, deps);
   if (integrity !== null) {
-    return statusWithLifecycle(result(base, integrity.status, hasPlist, loaded, null, { error: integrity.error }), lifecycle);
+    return statusWithLifecycle(result(base, integrity.status, hasPlist, loaded, null, { error: integrity.error }), lifecycle, upgrade);
   }
   if (!hasPlist) {
     return statusWithLifecycle(loaded
       ? result(base, "orphaned-service", false, true, null, { error: `Dome Home is loaded without its plist at ${context.plist}` })
-      : result(base, "not-installed", false, false, null), lifecycle);
+      : result(base, "not-installed", false, false, null), lifecycle, upgrade);
   }
   const expectedPlist = renderExpectedPlist(base, recordEnvironment(record, base));
   if (await readFile(context.plist, "utf8") !== expectedPlist) {
     return statusWithLifecycle(result(base, "plist-mismatch", true, loaded, null, {
       error: `LaunchAgent plist does not select artifact ${record.artifact.id}`,
-    }), lifecycle);
+    }), lifecycle, upgrade);
   }
   const ready = loaded ? await probeHomeReadiness(deps) : null;
   let legacyServeConflict: boolean;
   try { legacyServeConflict = await hasLegacyServeConflict(context, deps.legacyServeRunning); }
   catch (error) {
-    return statusWithLifecycle(result(base, "error", true, loaded, ready, { error: message(error) }), lifecycle);
+    return statusWithLifecycle(result(base, "error", true, loaded, ready, { error: message(error) }), lifecycle, upgrade);
   }
   return statusWithLifecycle(result(
     base,
@@ -625,24 +635,37 @@ async function inspectHomeStatus(context: HomeContext, deps: HomeLifecycleDeps):
     loaded,
     ready,
     { legacyServeConflict },
-  ), lifecycle);
+  ), lifecycle, upgrade);
 }
 
 function statusWithLifecycle(
   service: HomeLifecycleResult,
   lifecycle: HomeLifecycleRecovery,
+  upgrade: HomeUpgradeLifecycleSummary,
 ): HomeLifecycleResult {
-  if (lifecycle.state === "inactive") return Object.freeze({ ...service, lifecycle });
-  const lifecycleError = lifecycleRecoveryMessage(lifecycle);
+  const lifecycleError = lifecycle.state === "inactive" ? null : lifecycleRecoveryMessage(lifecycle);
+  const upgradeError = upgradeCoordinationMessage(upgrade);
+  if (lifecycleError === null && upgradeError === null) return Object.freeze({ ...service, lifecycle, upgrade });
+  const coordinationError = [lifecycleError, upgradeError].filter((value): value is string => value !== null).join("; ");
   return Object.freeze({
     ...service,
     status: "error" as const,
     exitCode: 1 as const,
     lifecycle,
+    upgrade,
     error: service.error === undefined
-      ? lifecycleError
-      : `${lifecycleError}; service status: ${service.error}`,
+      ? coordinationError
+      : `${coordinationError}; service status: ${service.error}`,
   });
+}
+
+function upgradeCoordinationMessage(upgrade: HomeUpgradeLifecycleSummary): string | null {
+  if (upgrade.state === "active") return "Home upgrade recovery is in progress";
+  if (upgrade.state === "recovery-required") {
+    return "Home upgrade requires the exact committed candidate for forward recovery";
+  }
+  if (upgrade.state === "unavailable") return "Home upgrade status is unavailable";
+  return null;
 }
 
 function homeContext(
@@ -882,10 +905,21 @@ function foregroundConflict(base: Base, installed: boolean): HomeLifecycleResult
   return result(base, "error", installed, false, true, { error: "Dome Home is already ready on 127.0.0.1:3663 but its LaunchAgent is not loaded; stop the foreground host before continuing" });
 }
 function result(base: Base, status: HomeLifecycleStatus, installed: boolean | null, loaded: boolean | null, ready: boolean | null,
-  extra: Partial<Pick<HomeLifecycleResult, "replaced" | "releasePublished" | "legacyServeConflict" | "lifecycle" | "error" | "exitCode">> = {}): HomeLifecycleResult {
-  return Object.freeze({ ...base, status, installed, loaded, ready,
+  extra: Partial<Pick<HomeLifecycleResult, "replaced" | "releasePublished" | "legacyServeConflict" | "lifecycle" | "upgrade" | "error" | "exitCode">> = {}): HomeLifecycleResult {
+  const statusDefault = base.action === "status" && extra.upgrade === undefined
+    ? { upgrade: HOME_UPGRADE_UNAVAILABLE }
+    : {};
+  return Object.freeze({ ...base, status, installed, loaded, ready, ...statusDefault,
     exitCode: extra.exitCode ?? (["error", "loaded-unreachable", "missing-release", "corrupt-release", "plist-mismatch", "orphaned-service", "invalid-installation"].includes(status) ? 1 : 0), ...extra });
 }
+
+const HOME_UPGRADE_UNAVAILABLE = Object.freeze({
+  state: "unavailable" as const,
+  candidate: null,
+  operationId: null,
+  outcome: null,
+  nextAction: "inspect-home-status" as const,
+});
 
 async function vaultPreflight(vault: string): Promise<string | null> {
   const gitRoot = await findGitRoot(vault);

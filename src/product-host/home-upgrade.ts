@@ -226,7 +226,8 @@ export async function manageHomeUpgrade(input: {
       });
     }
 
-    if (manifest.writerBarrier?.protocol !== 1 || manifest.durableState === undefined) {
+    if (manifest.distribution.upgradeSupported !== true ||
+      manifest.writerBarrier?.protocol !== 1 || manifest.durableState === undefined) {
       return failure(vault, requested, "error", 64, "preflight-failed", "invoking artifact is not upgrade-capable", "inspect-home-status", {
         selected: installationSummary(current),
       });

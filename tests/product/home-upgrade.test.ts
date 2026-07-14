@@ -88,6 +88,31 @@ describe("Home upgrade intent", () => {
     expect(prior.calls).not.toContain("uuid");
   });
 
+  test("refuses an artifact without the explicit supported-upgrade capability using a fixed public message", async () => {
+    const unsupported = intentFixture({
+      manifest: { ...manifest(), distribution: { signed: false, notarized: false, upgradeSupported: false } },
+    });
+    const result = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, unsupported.deps);
+    expect(result).toEqual({
+      schema: "dome.home.upgrade/v1",
+      operation: "upgrade",
+      status: "error",
+      exitCode: 64,
+      vault: "/vault",
+      requestedArtifact: { artifactId: REQUESTED, productVersion: "2.0.0" },
+      transaction: null,
+      selectedArtifact: { artifactId: OLD, productVersion: "1.0.0" },
+      recovered: false,
+      service: "unknown",
+      reason: "preflight-failed",
+      message: "invoking artifact is not upgrade-capable",
+      nextAction: "inspect-home-status",
+    });
+    expect(unsupported.calls).not.toContain("publish");
+    expect(JSON.stringify(result)).not.toContain("distribution");
+    expect(JSON.stringify(result)).not.toContain("artifactRoot");
+  });
+
   test("committed repair requires the exact raw candidate fingerprint before any mutation", async () => {
     const committed = transaction("committed", RETAINED_TX, REQUESTED);
     for (const f of [
@@ -594,6 +619,7 @@ function manifest(): HomeArtifactManifest {
     product: { name: "Dome Home", version: "2.0.0" },
     writerBarrier: { protocol: 1 },
     durableState: { protocol: 1, stores: [] },
+    distribution: { signed: false, notarized: false, upgradeSupported: true },
   } as unknown as HomeArtifactManifest;
 }
 

@@ -64,7 +64,7 @@ export type HomeArtifactManifest = {
   readonly distribution: {
     readonly signed: false;
     readonly notarized: false;
-    readonly upgradeSupported: false;
+    readonly upgradeSupported: boolean;
   };
   readonly entries: ReadonlyArray<HomeArtifactEntry>;
 };
@@ -206,7 +206,7 @@ export function parseHomeArtifactManifest(value: unknown): HomeArtifactManifest 
     runtime["sourceUrl"] !== PINNED_BUN_ARCHIVE_URL || runtime["archiveSha256"] !== PINNED_BUN_ARCHIVE_SHA256 || !sha(runtime["sha256"]) ||
     root["entrypoint"] !== "bin/dome" || root["pwa"] !== "app/pwa/dist" ||
     (writerBarrier !== null && writerBarrier["protocol"] !== HOME_WRITER_BARRIER_PROTOCOL) ||
-    distribution["signed"] !== false || distribution["notarized"] !== false || distribution["upgradeSupported"] !== false) {
+    distribution["signed"] !== false || distribution["notarized"] !== false || typeof distribution["upgradeSupported"] !== "boolean") {
     throw new Error("artifact manifest fixed product semantics are invalid");
   }
   if (!Array.isArray(root["entries"]) || root["entries"].length === 0) throw new Error("artifact entries must be a non-empty array");

@@ -108,6 +108,9 @@ dome home [--vault <path>] [--port <port>] [--host <host>]
           [--upgrade-probation]
                                 Run the loopback Product Host: one long-lived
                                 vault, compiler scheduler, HTTP API, and built PWA.
+dome home upgrade [--vault <path>] [--json]
+                                Run or recover the self-contained Home upgrade
+                                intent without exposing private phases.
 dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
                                 read/capture tools (capture, views, query, export_context,
                                 status, check, resolve, settle, tasks, brief) for
@@ -2799,8 +2802,12 @@ Every mutating verb takes Home lifecycle ownership before operational
 writer admission and re-reading mutable evidence. `status` is the read-only
 exception: it takes no lifecycle, operational, or Product Host lock and never
 creates the lifecycle coordinator. JSON status always includes the closed
-`lifecycle` document; human error output prints the same state and exact
-recovery operation. When admission prevents evidence reads, structured/JSON
+`lifecycle` document and a phase-free `upgrade` summary. The latter reports
+only state, candidate, operation id, terminal outcome, and next action; it
+takes no lock and never exposes journal, selector, snapshot, release-path, or
+caught-error detail. Active, broken committed, and unavailable upgrade
+coordination make status nonzero. Human output prints the same public summary.
+When admission prevents evidence reads, structured/JSON
 `installed`, `loaded`, and `ready` fields are `null`, never false. Active or
 malformed coordinator recovery on a valid initialized vault exits `1`; invalid,
 uninitialized, nonexistent, non-exact-root, and unsupported pre-lifecycle
@@ -2810,13 +2817,31 @@ and distinguishes absent, installed/stopped, ready, loaded/unreachable,
 missing/corrupt selected release, invalid record, orphaned service, and plist
 mismatch states. Start/restart never render a new plist and resolve paths only
 through the record. A different invoking artifact is refused with an explicit
-instruction to use the future upgrade surface. Uninstall removes only the
+instruction to use the upgrade surface. Uninstall removes only the
 plist, fsyncs its parent, and preserves the record, every managed release,
 vault, Git data, state, logs, and backups. A legacy
 direct-artifact Home service with no installation record is also refused until
 `dome home uninstall` performs the one-time cutover cleanup. A legacy
 Serve plist, loaded service, or live heartbeat must be removed with the legacy
 top-level uninstall before Home can be installed.
+
+### `dome home upgrade [--vault <path>] [--json]`
+
+Runs the single `manageHomeUpgrade` intent against the exact self-contained
+artifact invoking the command. The Adapter has no artifact path, phase,
+rollback, journal, or recovery override. It returns `dome.home.upgrade/v1`,
+preserves intent exit codes (`0`, `1`, `64`, or temporary `75`), and prints only
+the intent's fixed public messages and phase-free evidence. Retained attempts
+are recovered before a new candidate is evaluated; irreversible committed
+attempts move only forward and require the exact candidate when its managed
+release needs repair.
+
+General artifact verification accepts boolean
+`distribution.upgradeSupported`, but a new candidate is eligible only when it
+is exactly `true` in addition to the writer-barrier and durable-state protocols.
+The builder intentionally continues to emit `false`: the command and recovery
+UX are present, while supported distribution activation remains gated on the
+retained installed N-1→N rehearsal.
 
 Reinstall without `--env` or `--env-file` preserves the record's stored
 environment; supplying either option intentionally replaces it. Plist

@@ -1299,8 +1299,9 @@ async function assertCandidateDurableCompatibility(
   if (manifest.artifact.id !== candidate.artifactId || manifest.product.version !== candidate.version) {
     throw new Error("upgrade candidate artifact or product version changed");
   }
-  if (manifest.writerBarrier?.protocol !== 1 || manifest.durableState?.protocol !== HOME_DURABLE_STATE_PROTOCOL) {
-    throw new Error("upgrade candidate lacks required writer-barrier or durable-state protocol");
+  if (manifest.distribution.upgradeSupported !== true ||
+    manifest.writerBarrier?.protocol !== 1 || manifest.durableState?.protocol !== HOME_DURABLE_STATE_PROTOCOL) {
+    throw new Error("upgrade candidate lacks supported-upgrade, writer-barrier, or durable-state protocol");
   }
   if (manifest.durableState.stores.length !== HOME_STORE_MIGRATIONS.length ||
     !HOME_STORE_MIGRATIONS.every((expected, index) => {

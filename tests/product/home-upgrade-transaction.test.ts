@@ -720,7 +720,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
           vaultPath: f.vault,
           transactionId: randomUUID(),
           candidateArtifactId: CANDIDATE_ID,
-        }, f.deps)).rejects.toThrow(candidateFault === "missing" ? "lacks required" : "differs from this build");
+        }, f.deps)).rejects.toThrow(candidateFault === "missing" ? "lacks supported-upgrade" : "differs from this build");
         expect(await readHomeUpgrade(f.vault, f.deps)).toBeNull();
         expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
         expect(await logicalState(f.vault)).toEqual(before);
@@ -1141,6 +1141,28 @@ describe("Product Host pre-commit upgrade transaction", () => {
         transactionId: randomUUID(),
         candidateArtifactId: CANDIDATE_ID,
       }, f.deps)).phase).toBe("prepared");
+    } finally {
+      await rm(f.root, { recursive: true, force: true });
+    }
+  });
+
+  test("candidate compatibility requires the explicit supported-upgrade capability", async () => {
+    const f = await fixture();
+    try {
+      const paths = homeInstallationPaths(f.vault, f.deps);
+      const manifestPath = join(releaseRoot(paths, CANDIDATE_ID), "manifest.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+        distribution: { upgradeSupported: boolean };
+      };
+      manifest.distribution.upgradeSupported = false;
+      await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, { mode: 0o600 });
+      await expect(prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId: randomUUID(),
+        candidateArtifactId: CANDIDATE_ID,
+      }, f.deps)).rejects.toThrow("lacks supported-upgrade");
+      expect(await readHomeUpgrade(f.vault, f.deps)).toBeNull();
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
     } finally {
       await rm(f.root, { recursive: true, force: true });
     }
@@ -1783,6 +1805,7 @@ async function fixture(options: { durableFiles?: boolean } = {}) {
       product: { name: "Dome Home", version },
       writerBarrier: { protocol: 1 },
       ...(id === CANDIDATE_ID ? {
+        distribution: { signed: false, notarized: false, upgradeSupported: true },
         durableState: {
           protocol: HOME_DURABLE_STATE_PROTOCOL,
           stores: HOME_STORE_MIGRATIONS,

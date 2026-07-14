@@ -55,7 +55,7 @@ const semanticMismatches = [
     name: "distribution metadata",
     value: (base: HomeArtifactManifest): HomeArtifactManifest => ({
       ...base,
-      distribution: { ...base.distribution, upgradeSupported: true as false },
+      distribution: { ...base.distribution, upgradeSupported: true },
     }),
   },
   {

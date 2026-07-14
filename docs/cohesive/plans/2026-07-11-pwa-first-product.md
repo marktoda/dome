@@ -668,10 +668,18 @@ both host locks serialize restorers, and recover mode never recreates a row a
 winning recoverer cleared. Concurrent recovery tests pin one winner, one
 loser, terminal `restored`, and reopened admission.
 
-The public `dome home upgrade` CLI/UX, terminal-journal retirement,
-managed-release garbage collection, and artifact signing/notarization remain
-later P4 checkpoints. `distribution.upgradeSupported` remains false until the
-public supported flow ships.
+The phase-free upgrade intent, terminal-journal retirement, exact committed
+candidate forward repair, and thin `dome home upgrade [--vault] [--json]`
+Adapter are now present. Lifecycle status exposes one read-only, phase-free
+current-upgrade summary and makes active, broken committed, or unavailable
+coordination nonzero. General artifact parsing accepts a boolean capability,
+while both new-attempt boundaries require exact
+`distribution.upgradeSupported: true`.
+
+The builder still emits `false`. The retained installed N-1→N rehearsal must
+exercise this exact command and status UX before distribution activation can
+claim supported upgrades. Managed-release garbage collection and artifact
+signing/notarization remain later checkpoints.
 
 Exit journey: a clean Mac needs no source checkout or manual PWA build; it
 pairs an iPhone, upgrades an N-1 fixture after backup, handles a forced failed

@@ -995,6 +995,14 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       .option("--vault <path>", "Vault path (defaults to current directory).")
       .action((options: HomeLifecycleCliOptions) => homeLifecycle(action, options));
   }
+  homeCommand.command("upgrade")
+    .description("Upgrade to the invoking supported Dome Home artifact.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .action(async (options: HomeUpgradeCliOptions) => {
+      const { runHomeUpgrade } = await import("./commands/home-upgrade");
+      setExitCode(await runHomeUpgrade(options));
+    });
 
   const backupCommand = program
     .command("backup")
@@ -1227,6 +1235,11 @@ type HomeLifecycleCliOptions = {
   readonly vault?: string;
   readonly env?: string[];
   readonly envFile?: string;
+  readonly json?: boolean;
+};
+
+type HomeUpgradeCliOptions = {
+  readonly vault?: string;
   readonly json?: boolean;
 };
 
