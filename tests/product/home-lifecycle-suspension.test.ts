@@ -335,6 +335,72 @@ describe("supervised Home lifecycle suspension", () => {
     expect(continuationRuns).toBe(1); // explicit at-least-once continuation policy
   });
 
+  test("journal-authorized repair establishes intent before drain and never reads absent live selectors", async () => {
+    const f = await fixture(true);
+    const operationId = "upgrade-forward-repair";
+    const candidateId = "b".repeat(64);
+    const installationBytes = `${JSON.stringify({
+      schema: "dome.home.installation/v1",
+      vault: f.vault,
+      artifact: { id: candidateId, version: "2.0.0" },
+      environment: [],
+    })}\n`;
+    const plistBytes = "repaired candidate plist\n";
+    await rm(f.installation);
+    await writeFile(f.plist, "bounded corrupt selector\n", { mode: 0o600 });
+
+    let authorized = 0;
+    let operationRan = false;
+    const result = await withSupervisedHomeSuspended({
+      mode: "repair",
+      vaultPath: f.vault,
+      purpose: "upgrade",
+      operationId,
+      authorizeContinuation: async (active) => {
+        authorized++;
+        expect(active).toBeNull();
+        return {
+          operationId,
+          artifactId: candidateId,
+          artifactVersion: "2.0.0",
+          installationSha256: createHash("sha256").update(installationBytes).digest("hex"),
+          plistSha256: createHash("sha256").update(plistBytes).digest("hex"),
+        };
+      },
+    }, async (context) => {
+      operationRan = true;
+      expect(f.launchd.loaded.has(f.target)).toBeFalse();
+      const active = await inspectHomeLifecycleSuspension(f.vault);
+      expect(active).toMatchObject({
+        kind: "active",
+        suspension: { operationId, phase: "suspended" },
+      });
+      await writeFile(f.plist, plistBytes, { mode: 0o600 });
+      await writeFile(f.installation, installationBytes, { mode: 0o600 });
+      await context.authorizeCurrentHomeForResume();
+      return "repaired";
+    }, {
+      platform: "darwin",
+      uid: 501,
+      launchAgentsDir: f.agents,
+      launchctl: (...args) => f.launchd.runner(...args),
+      drainTimeoutMs: 20,
+      readinessTimeoutMs: 1,
+      readiness: () => f.readiness(),
+      applicationSupportDir: f.support,
+    });
+
+    expect(result).toMatchObject({
+      kind: "ready",
+      value: "repaired",
+      recovered: false,
+      operationRan: true,
+    });
+    expect(operationRan).toBeTrue();
+    expect(authorized).toBe(1);
+    expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("inactive");
+  });
+
   test("external upgrade authorization seals selector committed before callback sealing", async () => {
     const f = await fixture(true);
     f.launchd.runner = async (args) => args[0] === "bootout"

@@ -49,7 +49,7 @@ describe("Home upgrade intent", () => {
       nextAction: "none",
     });
     expect(f.calls).toEqual([
-      "canonicalize", "verify", "read-installation", "inspect-lifecycle", "read-active",
+      "canonicalize", "verify", "inspect-lifecycle", "read-active", "read-installation",
       "read-installation", "read-candidate-receipt", "publish", "uuid", "cutover", "retire",
     ]);
     expect(Object.keys(result)).toEqual([
@@ -86,6 +86,42 @@ describe("Home upgrade intent", () => {
     expect(priorResult).toMatchObject({ status: "rolled-back", exitCode: 1, recovered: true });
     expect(prior.calls).not.toContain("publish");
     expect(prior.calls).not.toContain("uuid");
+  });
+
+  test("committed repair requires the exact raw candidate fingerprint before any mutation", async () => {
+    const committed = transaction("committed", RETAINED_TX, REQUESTED);
+    for (const f of [
+      intentFixture({
+        active: committed,
+        selected: installation(REQUESTED, "2.0.0"),
+        inspectRepairError: new Error("raw manifest fingerprint differs"),
+      }),
+      intentFixture({
+        active: committed,
+        verifyError: new Error("invoking candidate is unavailable"),
+      }),
+      intentFixture({
+        active: transaction("committed", RETAINED_TX, OTHER),
+        selected: null,
+        readForwardError: new Error("committed candidate release is missing"),
+      }),
+    ]) {
+      const result = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, f.deps);
+      expect(result).toMatchObject({
+        status: "recovery-required",
+        exitCode: 1,
+        reason: "candidate-repair-required",
+        nextAction: "supply-exact-candidate",
+        transaction: { operationId: RETAINED_TX, outcome: "committed" },
+      });
+      expect(f.calls).not.toContain("publish");
+      expect(f.calls).not.toContain("uuid");
+      expect(f.calls).not.toContain("cutover");
+      expect(f.calls).not.toContain("retire");
+      expect(JSON.stringify(result)).not.toContain("/artifact");
+      expect(JSON.stringify(result)).not.toContain("manifestSha256");
+      expect(JSON.stringify(result)).not.toContain('"phase"');
+    }
   });
 
   test("recovers an orphan lifecycle intent by its durable id before any publication", async () => {
@@ -183,20 +219,24 @@ describe("Home upgrade intent", () => {
   });
 
   test("classifies same-candidate and different-candidate selection races", async () => {
-    for (const selectedId of [REQUESTED, OTHER] as const) {
-      const selected = installation(selectedId, selectedId === REQUESTED ? "2.0.0" : "3.0.0");
+    for (const [selectedId, selectedVersion] of [
+      [REQUESTED, "2.0.0"],
+      [REQUESTED, "9.0.0"],
+      [OTHER, "3.0.0"],
+    ] as const) {
+      const selected = installation(selectedId, selectedVersion);
       const f = intentFixture({
         cutoverError: new HomeUpgradeSelectionChangedError(OLD, selected),
       });
       const result = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, f.deps);
-      if (selectedId === REQUESTED) {
+      if (selectedId === REQUESTED && selectedVersion === "2.0.0") {
         expect(result).toMatchObject({ status: "already-current", exitCode: 0 });
       } else {
         expect(result).toMatchObject({
           status: "error",
           exitCode: 75,
           reason: "selection-changed",
-          selectedArtifact: { artifactId: OTHER },
+          selectedArtifact: { artifactId: selectedId, productVersion: selectedVersion },
         });
       }
     }
@@ -221,6 +261,38 @@ describe("Home upgrade intent", () => {
       status: "recovery-required",
       transaction: { operationId: RETAINED_TX },
     });
+  });
+
+  test("public handoff failures hide internals and reserve exact-candidate guidance for candidate absence", async () => {
+    for (const phase of ["committed", "restored"] as const) {
+      const value = transaction(phase, TX, REQUESTED);
+      const transactionOutcome = phase === "committed"
+        ? { kind: "committed" as const, transaction: value }
+        : { kind: "rolled-back" as const, transaction: value, error: "/secret/snapshot restore failed" };
+      const f = intentFixture({
+        cutoverResult: {
+          status: "recovery-required",
+          transactionOutcome,
+          handoffError: "/secret/releases/candidate barrier failed",
+          lifecycle: {
+            kind: "failed",
+            operationId: TX,
+            recovered: true,
+            operationRan: true,
+            error: "/secret/lifecycle journal failed",
+          },
+        },
+      });
+      const result = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, f.deps);
+      expect(result).toMatchObject({
+        status: "recovery-required",
+        reason: "coordination-failed",
+        nextAction: "retry-recovery",
+        message: "Dome Home upgrade handoff requires recovery",
+      });
+      expect(JSON.stringify(result)).not.toContain("/secret");
+      expect(result.reason).not.toBe("candidate-repair-required");
+    }
   });
 
   test("overlapping same-candidate intents return typed busy then converge on retry", async () => {
@@ -411,9 +483,12 @@ function intentFixture(options: {
   readonly history?: ReadonlyArray<HomeUpgradeHistorySummary>;
   readonly suspension?: HomeLifecycleSuspensionInspection;
   readonly cutoverError?: Error;
+  readonly cutoverResult?: HomeUpgradeCutoverResult;
   readonly verifyError?: Error;
   readonly historyError?: Error;
   readonly publishError?: Error;
+  readonly readForwardError?: Error;
+  readonly inspectRepairError?: Error;
   readonly manifest?: HomeArtifactManifest;
   readonly operationIds?: ReadonlyArray<string>;
 } = {}) {
@@ -440,6 +515,17 @@ function intentFixture(options: {
       if (options.historyError !== undefined) throw options.historyError;
       return options.history?.find((summary) => summary.candidate.artifactId === artifactId) ?? null;
     },
+    readForward: async () => {
+      calls.push("read-forward");
+      if (options.readForwardError !== undefined) throw options.readForwardError;
+      return active;
+    },
+    inspectRepair: async () => {
+      calls.push("inspect-repair");
+      if (options.inspectRepairError !== undefined) throw options.inspectRepairError;
+      if (active === null) throw new Error("no committed transaction");
+      return active;
+    },
     publishCandidate: async () => {
       calls.push("publish");
       if (options.publishError !== undefined) throw options.publishError;
@@ -452,6 +538,7 @@ function intentFixture(options: {
     cutover: async (input) => {
       calls.push("cutover");
       if (options.cutoverError !== undefined) throw options.cutoverError;
+      if (options.cutoverResult !== undefined) return options.cutoverResult;
       expect(input.expectedCurrentArtifactId).toBe(selected!.artifact.id);
       if (active?.phase === "prepared" || active?.phase === "switching") {
         const restored = transaction("restored", active.transactionId, active.candidate.artifactId);

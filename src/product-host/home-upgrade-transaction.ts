@@ -10,6 +10,7 @@ import {
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
+import { isDeepStrictEqual } from "node:util";
 
 import { compareStrings } from "../core/compare";
 import { inspectExclusiveFileLock } from "../engine/host/file-lock";
@@ -21,6 +22,7 @@ import {
 } from "../sqlite/snapshot";
 import {
   homeInstallationPaths,
+  repairManagedRelease,
   readHomeInstallation,
   releaseRoot,
   type HomeInstallationDeps,
@@ -31,13 +33,18 @@ import {
   captureHomeSelectionDocument,
   classifyHomeSelection,
   publishHomeSelectionDocument,
+  repairHomeSelection,
   renderHomeSelection,
   selectionDocument,
   type HomeSelection,
   type HomeSelectionDocument,
 } from "./home-selection";
 import { readVaultId } from "./vault-id";
-import { verifyHomeArtifact, type HomeArtifactVerifier } from "./home-artifact";
+import {
+  verifyHomeArtifact,
+  type HomeArtifactManifest,
+  type HomeArtifactVerifier,
+} from "./home-artifact";
 import {
   HOME_DURABLE_STATE_PROTOCOL,
   HOME_STORE_MIGRATIONS,
@@ -168,6 +175,11 @@ export type HomeUpgradeHistoryIdentity = {
   readonly terminalAt: string;
 };
 
+export type HomeUpgradeRepairCandidate = {
+  readonly source: string;
+  readonly manifest: HomeArtifactManifest;
+};
+
 export type HomeUpgradeTransactionDeps = HomeInstallationDeps & {
   readonly platform?: NodeJS.Platform | undefined;
   readonly now?: (() => Date) | undefined;
@@ -180,6 +192,10 @@ export type HomeUpgradeTransactionDeps = HomeInstallationDeps & {
   /** Test-only race seam for stable-handle journal inspection. */
   readonly journalReadCheckpoint?: ((name:
     "root-opened" | "journal-opened" | "before-root-recheck"
+  ) => Promise<void>) | undefined;
+  /** Test/diagnostic crash seam for committed selector forward replay. */
+  readonly forwardRepairCheckpoint?: ((name:
+    "release-ready" | "candidate-plist-published" | "candidate-installation-published"
   ) => Promise<void>) | undefined;
   /** Test/diagnostic crash seam for durable cutover and selector rollback. */
   readonly selectionCheckpoint?: ((name:
@@ -588,6 +604,131 @@ export async function readHomeUpgradeForRecovery(
 }
 
 /**
+ * Read intrinsic transaction truth without trusting the live candidate
+ * release or selector pair. Intent/cutover use this only to choose the one
+ * durable disposition; mutation still requires the stricter interfaces.
+ */
+export async function readHomeUpgradeDisposition(
+  vaultPath: string,
+  deps: HomeUpgradeTransactionDeps = {},
+): Promise<HomeUpgradeTransaction | null> {
+  const vault = await canonicalVault(vaultPath);
+  const paths = homeInstallationPaths(vault, deps);
+  const upgrade = await inspectUpgradeAncestors(paths);
+  if (upgrade === null) return null;
+  const active = join(upgrade, "active");
+  if (!await present(active)) return null;
+  const journal = await readBoundedJournal(active, vault, deps);
+  validateCanonicalArtifactPath(journal.old, paths);
+  validateCanonicalArtifactPath(journal.candidate, paths);
+  validateArchivedSelectorPaths(journal, paths, deps);
+  return journal;
+}
+
+/** Exact committed forward proof, intentionally independent of N-1 bytes. */
+export async function readCommittedHomeUpgradeForward(
+  vaultPath: string,
+  deps: HomeUpgradeTransactionDeps = {},
+): Promise<HomeUpgradeTransaction | null> {
+  const vault = await canonicalVault(vaultPath);
+  const journal = await readHomeUpgradeDisposition(vault, deps);
+  if (journal === null) return null;
+  assertCommittedRepairIdentity(journal, journal.transactionId);
+  const paths = homeInstallationPaths(vault, deps);
+  await validateArtifactReference(journal.candidate, paths);
+  await validateSelectorReferences(
+    journal,
+    join(paths.installations, "upgrade", "active"),
+    paths,
+    deps,
+  );
+  return journal;
+}
+
+/** Read-only exact-source gate. A failed repair preflight performs no writes. */
+export async function inspectCommittedHomeUpgradeRepair(input: {
+  readonly vaultPath: string;
+  readonly transactionId: string;
+  readonly candidate: HomeUpgradeRepairCandidate;
+}, deps: HomeUpgradeTransactionDeps = {}): Promise<HomeUpgradeTransaction> {
+  const vault = await canonicalVault(input.vaultPath);
+  const journal = await readRequiredUpgradeDisposition(vault, deps);
+  assertCommittedRepairIdentity(journal, input.transactionId);
+  await assertExactRepairCandidate(journal, input.candidate, deps);
+  return journal;
+}
+
+/**
+ * Rehydrate one irreversible committed candidate and converge its stored
+ * selector pair. The caller already owns lifecycle Tx2; this Module owns the
+ * operational barrier, Product Host locks, journal expectation, and selector
+ * CAS while the installation Module owns global release repair serialization.
+ */
+export async function repairCommittedHomeUpgrade(input: {
+  readonly vaultPath: string;
+  readonly transactionId: string;
+  readonly candidate: HomeUpgradeRepairCandidate;
+}, deps: HomeUpgradeTransactionDeps = {}): Promise<HomeUpgradeTransaction> {
+  const vault = await canonicalVault(input.vaultPath);
+  const initial = await inspectCommittedHomeUpgradeRepair({ ...input, vaultPath: vault }, deps);
+  await engageForTransaction(vault, initial.transactionId, deps);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const ownership = await withHomeUpgradeBarrierOwnership({
+      vaultPath: vault,
+      transactionId: initial.transactionId,
+    }, deps, async (owner) => {
+      await assertActiveHomeBarrier(vault, owner, deps);
+      return await withQuiescedOwnership(vault, async () => {
+        const journal = await readRequiredUpgradeDisposition(vault, deps);
+        assertCommittedRepairIdentity(journal, initial.transactionId);
+        if (JSON.stringify(journal) !== JSON.stringify(initial)) {
+          throw new Error("committed Dome Home upgrade evidence changed before forward repair");
+        }
+        await assertExactRepairCandidate(journal, input.candidate, deps);
+        if (journal.selection === null) {
+          throw new Error("committed Dome Home upgrade lacks stored candidate selectors");
+        }
+        const active = join(
+          homeInstallationPaths(vault, deps).installations,
+          "upgrade", "active",
+        );
+        const stored = await loadStoredSelection(active, journal.selection);
+        await repairManagedRelease({
+          source: input.candidate.source,
+          manifest: input.candidate.manifest,
+          expectedManifestSha256: journal.candidate.manifestSha256,
+          paths: homeInstallationPaths(vault, deps),
+          platform: deps.platform ?? process.platform,
+        }, deps);
+        await deps.forwardRepairCheckpoint?.("release-ready");
+        const afterRelease = await readRequiredUpgradeDisposition(vault, deps);
+        if (JSON.stringify(afterRelease) !== JSON.stringify(journal)) {
+          throw new Error("committed Dome Home upgrade evidence changed during release repair");
+        }
+
+        await repairHomeSelection(stored.candidate, deps, async (name) => {
+          await deps.forwardRepairCheckpoint?.(name === "plist-published"
+            ? "candidate-plist-published"
+            : "candidate-installation-published");
+        });
+        if (await classifyHomeSelection(stored) !== "candidate") {
+          throw new Error("committed Home selectors did not converge during forward repair");
+        }
+        const strict = await readRequiredCommittedHomeUpgradeForward(vault, deps);
+        assertCommittedRepairIdentity(strict, journal.transactionId);
+        return strict;
+      });
+    });
+    if (ownership.kind === "owned") return ownership.value;
+    if (ownership.transactionId !== null && ownership.transactionId !== initial.transactionId) {
+      throw new Error("another Dome Home upgrade transaction owns forward repair");
+    }
+    await engageForTransaction(vault, initial.transactionId, deps);
+  }
+  throw new Error("Dome Home committed repair ownership could not be recovered");
+}
+
+/**
  * Strictly read one immutable terminal transaction. History is keyed by the
  * operation identity, never by mutable selection state. History validation is
  * intrinsic: later selections and release collection must not make an older
@@ -701,10 +842,7 @@ export async function releaseCommittedHomeUpgrade(
   deps: HomeUpgradeTransactionDeps = {},
 ): Promise<HomeUpgradeTransaction> {
   const vault = await canonicalVault(vaultPath);
-  const committed = await readRequiredHomeUpgrade(vault, deps);
-  if (committed.phase !== "committed") {
-    throw new Error("only a committed Dome Home upgrade may release write admission");
-  }
+  const committed = await readRequiredCommittedHomeUpgradeForward(vault, deps);
   const inspection = await inspectOperationalWriterBarrier(vault);
   const marker = await readHomeUpgradeBarrier(vault, deps);
   if (!inspection.blocked) {
@@ -722,8 +860,8 @@ export async function releaseCommittedHomeUpgrade(
   }, deps, async (owner) => {
     await assertActiveHomeBarrier(vault, owner, deps);
     await owner.release(async () => {
-      const current = await readRequiredHomeUpgrade(vault, deps);
-      if (current.phase !== "committed" || current.transactionId !== committed.transactionId) {
+      const current = await readRequiredCommittedHomeUpgradeForward(vault, deps);
+      if (current.transactionId !== committed.transactionId) {
         throw new Error("Dome Home upgrade is not durably committed");
       }
     });
@@ -734,7 +872,7 @@ export async function releaseCommittedHomeUpgrade(
       throw new Error("committed upgrade writer release raced with another owner");
     }
   }
-  return await readRequiredHomeUpgrade(vault, deps);
+  return await readRequiredCommittedHomeUpgradeForward(vault, deps);
 }
 
 async function runRestoreOwnership(
@@ -1924,6 +2062,15 @@ async function readRequiredHomeUpgrade(vault: string, deps: HomeUpgradeTransacti
   return journal;
 }
 
+async function readRequiredCommittedHomeUpgradeForward(
+  vault: string,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<HomeUpgradeTransaction> {
+  const journal = await readCommittedHomeUpgradeForward(vault, deps);
+  if (journal === null) throw new Error("no committed Dome Home upgrade transaction exists");
+  return journal;
+}
+
 async function readRequiredRestoreHomeUpgrade(
   vault: string,
   deps: HomeUpgradeTransactionDeps,
@@ -1931,6 +2078,38 @@ async function readRequiredRestoreHomeUpgrade(
   const journal = await readHomeUpgradeForRecovery(vault, deps);
   if (journal === null) throw new Error("no prepared Dome Home upgrade transaction exists");
   return journal;
+}
+
+async function readRequiredUpgradeDisposition(
+  vault: string,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<HomeUpgradeTransaction> {
+  const journal = await readHomeUpgradeDisposition(vault, deps);
+  if (journal === null) throw new Error("no Dome Home upgrade transaction exists");
+  return journal;
+}
+
+function assertCommittedRepairIdentity(journal: HomeUpgradeTransaction, transactionId: string): void {
+  if (journal.schema !== HOME_UPGRADE_TRANSACTION_SCHEMA || journal.phase !== "committed" ||
+    journal.transactionId !== transactionId || journal.selection === null) {
+    throw new Error("only the exact committed v2 Dome Home upgrade may be repaired forward");
+  }
+}
+
+async function assertExactRepairCandidate(
+  journal: HomeUpgradeTransaction,
+  candidate: HomeUpgradeRepairCandidate,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<void> {
+  try {
+    const verify = deps.verifyArtifact ?? verifyHomeArtifact;
+    const actual = await verify(resolve(candidate.source));
+    if (isDeepStrictEqual(actual, candidate.manifest) &&
+      actual.artifact.id === journal.candidate.artifactId &&
+      actual.product.version === journal.candidate.version &&
+      await hashFile(join(resolve(candidate.source), "manifest.json")) === journal.candidate.manifestSha256) return;
+  } catch { /* Collapse filesystem detail at the private repair gate. */ }
+  throw new Error("invoking artifact is not the exact committed repair candidate");
 }
 
 async function canonicalVault(path: string): Promise<string> {

@@ -8,6 +8,7 @@ import {
   classifyHomeSelection,
   homeSelectionPaths,
   publishHomeSelectionDocument,
+  repairHomeSelection,
   renderHomeSelection,
 } from "../../src/product-host/home-selection";
 
@@ -102,6 +103,43 @@ describe("Home release selection", () => {
         expect(await readFile(expected.path, "utf8")).toBe("concurrent owner bytes\n");
         await writeFile(expected.path, expected.bytes, { mode: expected.mode });
       }
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("forward repair inspects both paths before writing, then converges missing and corrupt selectors", async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "dome-home-selection-repair-")));
+    try {
+      const vault = join(root, "vault");
+      const support = join(root, "support");
+      const launchAgentsDir = join(root, "LaunchAgents");
+      await mkdir(join(vault, ".dome", "state"), { recursive: true });
+      await mkdir(launchAgentsDir, { recursive: true });
+      const deps = { applicationSupportDir: support, launchAgentsDir, platform: "darwin" as const };
+      const paths = homeSelectionPaths(vault, deps);
+      await mkdir(join(support, "installations", paths.installation.split("/").at(-2)!), { recursive: true });
+      await writeFile(paths.installation, "old installation\n", { mode: 0o600 });
+      await writeFile(paths.plist, "old plist\n", { mode: 0o600 });
+      const candidate = renderHomeSelection({
+        vault,
+        artifact: { id: "c".repeat(64), version: "3.0.0", releasePath: join(support, "releases", "c".repeat(64)) },
+        environment: [],
+      }, deps);
+
+      await writeFile(paths.plist, "bounded corrupt plist\n", { mode: 0o600 });
+      await rm(paths.installation);
+      const outside = join(root, "outside-selector");
+      await writeFile(outside, "outside\n", { mode: 0o600 });
+      await symlink(outside, paths.installation);
+      await expect(repairHomeSelection(candidate, deps)).rejects.toThrow("redirected");
+      expect(await readFile(paths.plist, "utf8")).toBe("bounded corrupt plist\n");
+      expect(await readFile(outside, "utf8")).toBe("outside\n");
+
+      await rm(paths.installation);
+      const checkpoints: string[] = [];
+      await repairHomeSelection(candidate, deps, async (name) => { checkpoints.push(name); });
+      expect(checkpoints).toEqual(["plist-published", "installation-published"]);
+      expect(await readFile(paths.plist, "utf8")).toBe(candidate.plist.bytes);
+      expect(await readFile(paths.installation, "utf8")).toBe(candidate.installation.bytes);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

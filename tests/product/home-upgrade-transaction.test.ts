@@ -39,7 +39,9 @@ import {
   inspectHomeUpgradeAdmission,
   migratePreparedHomeUpgrade,
   prepareHomeUpgrade,
+  readCommittedHomeUpgradeForward,
   readHomeUpgrade,
+  readHomeUpgradeDisposition,
   readHomeUpgradeForRecovery,
   readHomeUpgradeHistory,
   releaseCommittedHomeUpgrade,
@@ -192,15 +194,21 @@ describe("Product Host pre-commit upgrade transaction", () => {
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });
 
-  test("real committed candidate deletion remains blocked and reports forward recovery", async () => {
+  test("exact invoking candidate repairs committed deletion without N-1 or snapshot dependency", async () => {
     const f = await fixture();
     try {
       const transactionId = randomUUID();
+      const paths = homeInstallationPaths(f.vault, f.deps);
+      const candidateRoot = releaseRoot(paths, CANDIDATE_ID);
+      const repairSource = join(f.root, "self-contained-candidate");
+      await cp(candidateRoot, repairSource, { recursive: true });
+      const repairManifest = await f.deps.verifyArtifact!(repairSource);
       let lifecycleActive = false;
       let candidateAuthorized = false;
+      let crashRelease = true;
       const inspectLifecycle: NonNullable<HomeUpgradeCutoverDeps["inspectLifecycleSuspension"]> = async () => {
         if (!lifecycleActive) return { kind: "inactive" };
-        const journal = await readHomeUpgradeForRecovery(f.vault, f.deps);
+        const journal = await readHomeUpgradeDisposition(f.vault, f.deps);
         if (!candidateAuthorized || journal?.phase !== "committed") {
           throw new Error("candidate lifecycle evidence requested before authorization");
         }
@@ -211,7 +219,10 @@ describe("Product Host pre-commit upgrade transaction", () => {
         inspectLifecycleSuspension: inspectLifecycle,
         operations: {
           prove: async (input) => probationProof(input.transactionId),
-          release: async () => { throw new Error("crash before barrier release"); },
+          release: async (vault, releaseDeps) => {
+            if (crashRelease) throw new Error("crash before barrier release");
+            return releaseCommittedHomeUpgrade(vault, releaseDeps);
+          },
         },
         suspendHome: (async (_invocation, operation) => {
           lifecycleActive = true;
@@ -220,12 +231,18 @@ describe("Product Host pre-commit upgrade transaction", () => {
             purpose: "upgrade",
             authorizeCurrentHomeForResume: async () => { candidateAuthorized = true; },
           });
-          return {
+          return crashRelease ? {
             kind: "deferred",
             reason: "write-barrier-closed",
             transactionId,
             operationId: transactionId,
             recovered: false,
+            operationRan: true,
+            value,
+          } : {
+            kind: "ready",
+            operationId: transactionId,
+            recovered: true,
             operationRan: true,
             value,
           };
@@ -244,24 +261,39 @@ describe("Product Host pre-commit upgrade transaction", () => {
       });
       expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeTrue();
 
-      await rm(releaseRoot(homeInstallationPaths(f.vault, f.deps), CANDIDATE_ID), { recursive: true });
+      crashRelease = false;
+      await rm(candidateRoot, { recursive: true });
+      await rm(releaseRoot(paths, OLD_ID), { recursive: true });
+      await rm(paths.record);
+      const plistPath = join(f.deps.launchAgentsDir!, `${homeServiceLabelForVault(f.vault)}.plist`);
+      await writeFile(plistPath, "bounded corrupt candidate selector\n", { mode: 0o600 });
+      const snapshotEntry = (await readHomeUpgradeDisposition(f.vault, f.deps))!.snapshot.inventory
+        .find((entry) => entry.present)!;
+      await writeFile(join(paths.installations, "upgrade", "active", "snapshot", snapshotEntry.name), "irrelevant");
       const recovered = await runHomeUpgradeCutover({
         vaultPath: f.vault,
         transactionId,
         candidateArtifactId: CANDIDATE_ID,
         expectedCurrentArtifactId: OLD_ID,
+        repairCandidate: { source: repairSource, manifest: repairManifest },
       }, deps);
       expect(recovered).toMatchObject({
-        status: "recovery-required",
+        status: "ready",
         transactionOutcome: { kind: "committed", transaction: { phase: "committed" } },
-        lifecycle: { kind: "failed", operationRan: false },
+        lifecycle: { kind: "ready", operationRan: true },
       });
-      expect((await readHomeUpgradeForRecovery(f.vault, f.deps))?.phase).toBe("committed");
-      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeTrue();
+      expect((await readCommittedHomeUpgradeForward(f.vault, f.deps))?.phase).toBe("committed");
+      expect(JSON.parse(await readFile(paths.record, "utf8")).artifact).toEqual({
+        id: CANDIDATE_ID,
+        version: "2.0.0",
+      });
+      expect(await readFile(plistPath, "utf8")).toContain(CANDIDATE_ID);
+      expect(await readFile(plistPath, "utf8")).not.toContain("bounded corrupt");
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
       expect((await inspectHomeUpgradeAdmission(f.vault, f.deps, {
         id: CANDIDATE_ID,
         version: "2.0.0",
-      })).admitted).toBeFalse();
+      })).admitted).toBeTrue();
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });
 

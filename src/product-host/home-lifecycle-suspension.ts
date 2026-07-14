@@ -216,6 +216,9 @@ export type HomeSuspensionRecoveryPolicy =
   /** Same at-least-once gap, plus an external exact upgrade-journal authorizer. */
   | "authorized-upgrade-continuation";
 
+/** Private execution-only authority; callers can select it only through mode: repair. */
+type HomeSuspensionExecutionPolicy = HomeSuspensionRecoveryPolicy | "authorized-upgrade-repair";
+
 export type HomeSuspensionInvocation =
   | {
       readonly mode: "new";
@@ -229,8 +232,16 @@ export type HomeSuspensionInvocation =
       readonly purpose: HomeSuspensionPurpose;
       readonly operationId: string;
       readonly policy: HomeSuspensionRecoveryPolicy;
-      /** Required external upgrade-journal authorization; this Module cannot infer it. */
+      /** Required by either authorized upgrade policy; this Module cannot infer journal truth. */
       readonly authorizeContinuation?: ((active: HomeLifecycleSuspension) => Promise<HomeResumeAuthorization>) | undefined;
+    }
+  | {
+      /** Establish/recover exact committed repair without trusting live selectors. */
+      readonly mode: "repair";
+      readonly vaultPath: string;
+      readonly purpose: "upgrade";
+      readonly operationId: string;
+      readonly authorizeContinuation: (active: HomeLifecycleSuspension | null) => Promise<HomeResumeAuthorization>;
     };
 
 export type HomeResumeAuthorization = {
@@ -622,9 +633,16 @@ export async function withSupervisedHomeSuspended<T>(
           `Home lifecycle suspension ${requestedOperationId} is no longer active`,
         );
       }
-      const evidence = await captureEvidence(vault, service.launchAgentsDir, deps);
       const priorLoaded = await probeLaunchAgentLoadedStrict({ launchctl: service.launchctl, target });
       await assertNoCompetingHost(vault, priorLoaded, service, deps);
+      let evidence: Evidence;
+      if (input.mode === "repair") {
+        const authorization = await input.authorizeContinuation(null);
+        validateResumeAuthorizationOperation(requestedOperationId, authorization);
+        evidence = authorizationEvidence(vault, authorization, service.launchAgentsDir, deps);
+      } else {
+        evidence = await captureEvidence(vault, service.launchAgentsDir, deps);
+      }
       const now = exactTimestamp((deps.now ?? (() => new Date()))());
       active = Object.freeze({
         schema: HOME_LIFECYCLE_SUSPENSION_SCHEMA,
@@ -641,12 +659,13 @@ export async function withSupervisedHomeSuspended<T>(
       });
       writeJournal(pair.journal, () => insertActive(pair.journal, active));
     } else {
-      if (input.mode !== "recover") {
+      if (input.mode === "new") {
         throw new HomeLifecycleContentionError(existing);
       }
       validateRecoveryOwner(existing, input);
       let recoveredActive = existing;
-      if (input.policy === "authorized-upgrade-continuation" && existing.phase !== "resuming") {
+      const recoveryPolicy = input.mode === "repair" ? "authorized-upgrade-repair" : input.policy;
+      if (recoveryPolicy === "authorized-upgrade-continuation" && existing.phase !== "resuming") {
         const authorization = await input.authorizeContinuation!(existing);
         validateResumeAuthorization(existing, authorization);
         const evidence = await captureEvidence(vault, service.launchAgentsDir, deps);
@@ -655,6 +674,21 @@ export async function withSupervisedHomeSuspended<T>(
         }
         if (!recoveryEvidenceMatches(existing, evidence)) {
           recoveredActive = authorizeResumeEvidence(pair.journal, existing, evidence);
+        }
+      } else if (recoveryPolicy === "authorized-upgrade-repair") {
+        const authorization = await input.authorizeContinuation!(existing);
+        validateResumeAuthorization(existing, authorization);
+        // A failed prior forward handoff can leave a durable resuming row.
+        // Exact journal authorization permits one lifecycle-owned callback to
+        // rehydrate bytes and reassert selectors before sealing resume again.
+        if (recoveredActive.phase === "resuming") {
+          recoveredActive = transition(
+            pair.journal,
+            recoveredActive,
+            "suspended",
+            "reopening exact committed candidate forward repair",
+            deps,
+          );
         }
       } else {
         const evidence = await captureEvidence(vault, service.launchAgentsDir, deps);
@@ -685,7 +719,9 @@ export async function withSupervisedHomeSuspended<T>(
       service,
       deps,
       operation,
-      recoveryPolicy: input.mode === "recover" ? input.policy : null,
+      recoveryPolicy: input.mode === "recover"
+        ? input.policy
+        : input.mode === "repair" ? "authorized-upgrade-repair" : null,
     });
     pair.ownership.run("COMMIT");
 
@@ -716,7 +752,7 @@ async function runOwnedSuspension<T>(input: {
   readonly service: ReturnType<typeof resolveServiceDeps>;
   readonly deps: HomeLifecycleSuspensionDeps;
   readonly operation: (context: HomeSuspensionOperationContext) => Promise<T>;
-  readonly recoveryPolicy: HomeSuspensionRecoveryPolicy | null;
+  readonly recoveryPolicy: HomeSuspensionExecutionPolicy | null;
 }): Promise<{ readonly result: SupervisedHomeSuspensionResult<T>; readonly operationError: unknown | null }> {
   let active = input.active;
   let operationRan = false;
@@ -745,11 +781,13 @@ async function runOwnedSuspension<T>(input: {
     if (active.phase === "suspending") {
       active = transition(input.pair.journal, active, "suspended", null, input.deps);
     }
-    const evidence = await captureEvidence(active.vault, input.service.launchAgentsDir, input.deps);
-    if (!recoveryEvidenceMatches(active, evidence)) {
-      const error = "Home installation or plist evidence changed while suspended";
-      persistError(input.pair.journal, active.operationId, error);
-      return { result: failed(active, input.recovered, false, error), operationError };
+    if (input.recoveryPolicy !== "authorized-upgrade-repair") {
+      const evidence = await captureEvidence(active.vault, input.service.launchAgentsDir, input.deps);
+      if (!recoveryEvidenceMatches(active, evidence)) {
+        const error = "Home installation or plist evidence changed while suspended";
+        persistError(input.pair.journal, active.operationId, error);
+        return { result: failed(active, input.recovered, false, error), operationError };
+      }
     }
     if (input.recoveryPolicy !== "resume-only") {
       operationRan = true;
@@ -1427,17 +1465,21 @@ function requireSameActive(db: Database, vault: string, expected: HomeLifecycleS
 }
 
 function validateRecoveryInvocation(input: HomeSuspensionInvocation): void {
+  if (input.mode === "repair") return;
   if (input.mode !== "recover") return;
   if (input.policy === "authorized-upgrade-continuation") {
     if (input.purpose !== "upgrade" || input.authorizeContinuation === undefined) {
-      throw new Error("authorized upgrade continuation requires upgrade purpose and an external authorizer");
+      throw new Error("authorized upgrade recovery requires upgrade purpose and an external authorizer");
     }
   } else if (input.authorizeContinuation !== undefined) {
-    throw new Error("only authorized upgrade continuation accepts an external authorizer");
+    throw new Error("only authorized upgrade recovery accepts an external authorizer");
   }
 }
 
-function validateRecoveryOwner(active: HomeLifecycleSuspension, input: Extract<HomeSuspensionInvocation, { mode: "recover" }>): void {
+function validateRecoveryOwner(
+  active: HomeLifecycleSuspension,
+  input: Extract<HomeSuspensionInvocation, { mode: "recover" | "repair" }>,
+): void {
   if (active.purpose !== input.purpose) throw new HomeLifecycleContentionError(active);
   if (active.operationId !== input.operationId) {
     throw new HomeLifecycleContentionError(active, `Home lifecycle suspension belongs to operation ${active.operationId}`);
@@ -1445,11 +1487,32 @@ function validateRecoveryOwner(active: HomeLifecycleSuspension, input: Extract<H
 }
 
 function validateResumeAuthorization(active: HomeLifecycleSuspension, authorization: HomeResumeAuthorization): void {
-  if (authorization.operationId !== active.operationId || !SHA256.test(authorization.artifactId) ||
+  validateResumeAuthorizationOperation(active.operationId, authorization);
+}
+
+function validateResumeAuthorizationOperation(operationId: string, authorization: HomeResumeAuthorization): void {
+  if (authorization.operationId !== operationId || !SHA256.test(authorization.artifactId) ||
     authorization.artifactVersion.length === 0 || authorization.artifactVersion.length > 1024 ||
     !SHA256.test(authorization.installationSha256) || !SHA256.test(authorization.plistSha256)) {
     throw new Error("external upgrade resume authorization is invalid or belongs to another operation");
   }
+}
+
+function authorizationEvidence(
+  vault: string,
+  authorization: HomeResumeAuthorization,
+  launchAgentsDir: string,
+  deps: HomeInstallationDeps,
+): Evidence {
+  const installationPath = homeInstallationPaths(vault, deps).record;
+  return Object.freeze({
+    installationPath,
+    installationSha256: authorization.installationSha256,
+    artifactId: authorization.artifactId,
+    artifactVersion: authorization.artifactVersion,
+    plistPath: join(launchAgentsDir, `com.dome.home.${vaultServiceSlug(vault)}.plist`),
+    plistSha256: authorization.plistSha256,
+  });
 }
 
 function authorizationMatches(authorization: HomeResumeAuthorization, evidence: Evidence): boolean {

@@ -213,7 +213,7 @@ describe("private Home upgrade cutover", () => {
       expect(result).toMatchObject({
         status: "recovery-required",
         transactionOutcome: { kind: "committed", transaction: { phase: "committed" } },
-        handoffError: `${fault} candidate payload`,
+        handoffError: "exact invoking committed candidate is required for forward repair",
         lifecycle: { kind: "failed", operationRan: false },
       });
       expect(calls).toEqual(["inspect", "read-recovery", "read"]);
@@ -268,6 +268,60 @@ describe("private Home upgrade cutover", () => {
       handoffError: "candidate vanished after suspension",
       lifecycle: { kind: "deferred", operationRan: true },
     });
+    expect(calls).not.toContain("restore");
+  });
+
+  test("repair success with release failure remains committed and retries only forward", async () => {
+    const calls: string[] = [];
+    let current: HomeUpgradeTransaction | null = transaction("committed");
+    let repaired = false;
+    let failRelease = true;
+    const deps = fakeDeps(calls, () => current, (next) => { current = next; }, {
+      read: async () => {
+        calls.push("read");
+        if (!repaired) throw new Error("candidate is incomplete");
+        return current;
+      },
+      repair: async () => {
+        calls.push("repair");
+        repaired = true;
+        return current!;
+      },
+      release: async () => {
+        calls.push("release");
+        if (failRelease) throw new Error("barrier release failed after repair");
+        return current!;
+      },
+    }, activeSuspension());
+    const input = {
+      vaultPath: "/vault",
+      transactionId: TX,
+      candidateArtifactId: CANDIDATE,
+      expectedCurrentArtifactId: OLD,
+      repairCandidate: {
+        source: "/candidate",
+        manifest: { artifact: { id: CANDIDATE }, product: { version: "2.0.0" } } as never,
+      },
+    };
+
+    const first = await runHomeUpgradeCutover(input, deps);
+    expect(first).toMatchObject({
+      status: "recovery-required",
+      transactionOutcome: { kind: "committed" },
+      handoffError: "barrier release failed after repair",
+    });
+    expect(calls).toContain("repair");
+    expect(calls).not.toContain("restore");
+
+    failRelease = false;
+    calls.length = 0;
+    const retry = await runHomeUpgradeCutover(input, deps);
+    expect(retry).toMatchObject({
+      status: "ready",
+      transactionOutcome: { kind: "committed" },
+      handoffError: null,
+    });
+    expect(calls).not.toContain("repair");
     expect(calls).not.toContain("restore");
   });
 
@@ -348,7 +402,10 @@ function fakeDeps(
       };
     },
     read: async () => { calls.push("read"); return read(); },
+    readDisposition: async () => { calls.push("read-recovery"); return read(); },
     readRecovery: async () => { calls.push("read-recovery"); return read(); },
+    inspectRepair: async () => { calls.push("inspect-repair"); return read()!; },
+    repair: async () => { calls.push("repair"); return read()!; },
     prepare: async () => { calls.push("prepare"); const value = transaction("prepared"); set(value); return value; },
     migrate: async () => { calls.push("migrate"); return read()!; },
     prove: async (input) => {
@@ -372,7 +429,11 @@ function fakeDeps(
     ...overrides,
   };
   const suspendHome = (async (invocation: Parameters<NonNullable<HomeUpgradeCutoverDeps["suspendHome"]>>[0], operation: Parameters<NonNullable<HomeUpgradeCutoverDeps["suspendHome"]>>[1]) => {
-    calls.push(`suspend:${invocation.mode === "new" ? "new" : invocation.policy}`);
+    calls.push(`suspend:${invocation.mode === "new" ? "new" : invocation.mode === "repair" ? "repair" : invocation.policy}`);
+    if (invocation.mode === "repair") {
+      await invocation.authorizeContinuation(activeSuspension().suspension);
+      calls.push("external-authorize");
+    }
     if (invocation.mode === "recover" && invocation.policy === "authorized-upgrade-continuation") {
       await invocation.authorizeContinuation!(activeSuspension().suspension);
       calls.push("external-authorize");
@@ -385,7 +446,7 @@ function fakeDeps(
       purpose: "upgrade",
       authorizeCurrentHomeForResume: async () => { calls.push("authorize"); },
     });
-    return { kind: "ready", operationId: TX, recovered: invocation.mode === "recover", operationRan: true, value };
+    return { kind: "ready", operationId: TX, recovered: invocation.mode !== "new", operationRan: true, value };
   }) as NonNullable<HomeUpgradeCutoverDeps["suspendHome"]>;
   return {
     operations,

@@ -15,12 +15,16 @@ import {
 } from "./home-lifecycle-suspension";
 import {
   commitPreparedHomeUpgrade,
+  inspectCommittedHomeUpgradeRepair,
   migratePreparedHomeUpgrade,
   prepareHomeUpgrade,
-  readHomeUpgrade,
+  readCommittedHomeUpgradeForward,
+  readHomeUpgradeDisposition,
   readHomeUpgradeForRecovery,
+  repairCommittedHomeUpgrade,
   releaseCommittedHomeUpgrade,
   restoreHomeUpgrade,
+  type HomeUpgradeRepairCandidate,
   type HomeUpgradeTransaction,
   type HomeUpgradeTransactionDeps,
 } from "./home-upgrade-transaction";
@@ -51,8 +55,11 @@ export type HomeUpgradeCutoverResult = {
 
 type UpgradeOperations = {
   readonly readInstallation: typeof readHomeInstallation;
-  readonly read: typeof readHomeUpgrade;
+  readonly read: typeof readCommittedHomeUpgradeForward;
+  readonly readDisposition: typeof readHomeUpgradeDisposition;
   readonly readRecovery: typeof readHomeUpgradeForRecovery;
+  readonly inspectRepair: typeof inspectCommittedHomeUpgradeRepair;
+  readonly repair: typeof repairCommittedHomeUpgrade;
   readonly prepare: typeof prepareHomeUpgrade;
   readonly migrate: typeof migratePreparedHomeUpgrade;
   readonly prove: typeof proveHomeUpgradeCandidate;
@@ -112,6 +119,8 @@ export async function runHomeUpgradeCutover(input: {
   readonly candidateArtifactId: string;
   /** Installation selection captured by the intent preflight. */
   readonly expectedCurrentArtifactId: string;
+  /** Verified invoking artifact; only the exact committed candidate can repair forward. */
+  readonly repairCandidate?: HomeUpgradeRepairCandidate | undefined;
 }, deps: HomeUpgradeCutoverDeps = {}): Promise<HomeUpgradeCutoverResult> {
   const operations = resolveOperations(deps.operations);
   const suspension = await (deps.inspectLifecycleSuspension ?? inspectHomeLifecycleSuspension)(input.vaultPath);
@@ -121,22 +130,27 @@ export async function runHomeUpgradeCutover(input: {
 
   let invocation: Parameters<typeof withSupervisedHomeSuspended>[0];
   let recoveryHandoff: HomeUpgradeHandoff | null = null;
+  let repairRequired = false;
   if (suspension.kind === "inactive") {
-    let existing = await operations.readRecovery(input.vaultPath, deps);
+    const existing = await operations.readDisposition(input.vaultPath, deps);
     if (existing !== null) {
       if (existing.transactionId !== input.transactionId ||
         existing.candidate.artifactId !== input.candidateArtifactId) {
         throw new Error("retained Dome Home upgrade belongs to another attempt");
       }
       if (existing.phase === "committed") {
-        const recovery = existing;
         try {
           const strict = await operations.read(input.vaultPath, deps);
           if (strict === null) throw new Error("committed upgrade candidate evidence is unavailable");
           const released = await operations.release(input.vaultPath, deps);
           return terminalWithoutLifecycle(handoff(committed(released)), input.transactionId);
         } catch (error) {
-          return recoveryRequiredWithoutLifecycle(recovery, input.transactionId, message(error));
+          const repairError = await inspectRepairCandidate(existing, input, deps, operations);
+          if (repairError !== null) {
+            return recoveryRequiredWithoutLifecycle(existing, input.transactionId, repairError);
+          }
+          repairRequired = true;
+          recoveryHandoff = handoff(committed(existing), message(error));
         }
       }
       if (existing.phase === "restored") {
@@ -146,20 +160,30 @@ export async function runHomeUpgradeCutover(input: {
           error: "pre-commit upgrade was already restored",
         })), input.transactionId);
       }
-      throw new Error("active pre-commit Dome Home upgrade lacks lifecycle suspension");
+      if (existing.phase !== "committed") {
+        throw new Error("active pre-commit Dome Home upgrade lacks lifecycle suspension");
+      }
     }
-    invocation = Object.freeze({
-      mode: "new" as const,
-      vaultPath: input.vaultPath,
-      purpose: "upgrade" as const,
-      operationId: input.transactionId,
-    });
+    invocation = repairRequired && existing !== null
+      ? Object.freeze({
+        mode: "repair" as const,
+        vaultPath: input.vaultPath,
+        purpose: "upgrade" as const,
+        operationId: input.transactionId,
+        authorizeContinuation: async () => candidateResumeAuthorization(existing),
+      })
+      : Object.freeze({
+        mode: "new" as const,
+        vaultPath: input.vaultPath,
+        purpose: "upgrade" as const,
+        operationId: input.transactionId,
+      });
   } else {
     const active = suspension.suspension;
     if (active.purpose !== "upgrade" || active.operationId !== input.transactionId) {
       throw new HomeUpgradeBusyError(active.purpose, active.operationId);
     }
-    let journal = await operations.readRecovery(input.vaultPath, deps);
+    let journal = await operations.readDisposition(input.vaultPath, deps);
     if (journal === null || journal.transactionId !== input.transactionId ||
       journal.candidate.artifactId !== input.candidateArtifactId) {
       throw new Error("lifecycle recovery does not match an exact upgrade transaction");
@@ -182,18 +206,30 @@ export async function runHomeUpgradeCutover(input: {
         error: "pre-commit upgrade was already restored",
       }));
     } else {
-      // Forward recovery requires the candidate payload; rollback never does.
       try {
         const strict = await operations.read(input.vaultPath, deps);
         if (strict === null) throw new Error("committed upgrade candidate evidence is unavailable");
         journal = strict;
         recoveryHandoff = handoff(committed(journal));
       } catch (error) {
-        return recoveryRequiredWithoutLifecycle(journal, input.transactionId, message(error));
+        const repairError = await inspectRepairCandidate(journal, input, deps, operations);
+        if (repairError !== null) {
+          return recoveryRequiredWithoutLifecycle(journal, input.transactionId, repairError);
+        }
+        repairRequired = true;
+        recoveryHandoff = handoff(committed(journal), message(error));
       }
     }
     invocation = journal.phase === "committed"
-      ? Object.freeze({
+      ? repairRequired
+        ? Object.freeze({
+          mode: "repair" as const,
+          vaultPath: input.vaultPath,
+          purpose: "upgrade" as const,
+          operationId: input.transactionId,
+          authorizeContinuation: async () => candidateResumeAuthorization(journal!),
+        })
+        : Object.freeze({
         mode: "recover" as const,
         vaultPath: input.vaultPath,
         purpose: "upgrade" as const,
@@ -214,14 +250,26 @@ export async function runHomeUpgradeCutover(input: {
   let lifecycle: SupervisedHomeSuspensionResult<HomeUpgradeHandoff>;
   try {
     lifecycle = await suspend(invocation, async (context) => {
-      const recoveryCurrent = await operations.readRecovery(input.vaultPath, deps);
+      const recoveryCurrent = await operations.readDisposition(input.vaultPath, deps);
       let current = recoveryCurrent;
       if (recoveryCurrent?.phase === "committed") {
         try {
           current = await operations.read(input.vaultPath, deps);
           if (current === null) throw new Error("committed upgrade candidate evidence is unavailable");
         } catch (error) {
-          return handoff(committed(recoveryCurrent), message(error));
+          if (input.repairCandidate === undefined) {
+            return handoff(committed(recoveryCurrent), message(error));
+          }
+          try {
+            current = await operations.repair({
+              vaultPath: input.vaultPath,
+              transactionId: recoveryCurrent.transactionId,
+              candidate: input.repairCandidate,
+            }, deps);
+          } catch (repairError) {
+            void repairError;
+            return handoff(committed(recoveryCurrent), "committed candidate forward repair failed");
+          }
         }
       }
       if (current?.phase === "committed") {
@@ -259,7 +307,7 @@ export async function runHomeUpgradeCutover(input: {
         journal = await operations.release(journal.vault, deps);
         return handoff(committed(journal));
       } catch (error) {
-        const latest = await operations.readRecovery(input.vaultPath, deps);
+        const latest = await operations.readDisposition(input.vaultPath, deps);
         if (latest !== null && latest.phase !== "committed" && latest.phase !== "restored") {
           try {
             const restored = await operations.restore(input.vaultPath, deps);
@@ -317,8 +365,11 @@ function candidateResumeAuthorization(journal: HomeUpgradeTransaction): HomeResu
 function resolveOperations(overrides: Partial<UpgradeOperations> | undefined): UpgradeOperations {
   return Object.freeze({
     readInstallation: overrides?.readInstallation ?? readHomeInstallation,
-    read: overrides?.read ?? readHomeUpgrade,
+    read: overrides?.read ?? readCommittedHomeUpgradeForward,
+    readDisposition: overrides?.readDisposition ?? readHomeUpgradeDisposition,
     readRecovery: overrides?.readRecovery ?? readHomeUpgradeForRecovery,
+    inspectRepair: overrides?.inspectRepair ?? inspectCommittedHomeUpgradeRepair,
+    repair: overrides?.repair ?? repairCommittedHomeUpgrade,
     prepare: overrides?.prepare ?? prepareHomeUpgrade,
     migrate: overrides?.migrate ?? migratePreparedHomeUpgrade,
     prove: overrides?.prove ?? proveHomeUpgradeCandidate,
@@ -327,6 +378,29 @@ function resolveOperations(overrides: Partial<UpgradeOperations> | undefined): U
     release: overrides?.release ?? releaseCommittedHomeUpgrade,
     readVaultId: overrides?.readVaultId ?? readVaultId,
   });
+}
+
+async function inspectRepairCandidate(
+  journal: HomeUpgradeTransaction,
+  input: Parameters<typeof runHomeUpgradeCutover>[0],
+  deps: HomeUpgradeCutoverDeps,
+  operations: UpgradeOperations,
+): Promise<string | null> {
+  const candidate = input.repairCandidate;
+  if (candidate === undefined || candidate.manifest.artifact.id !== journal.candidate.artifactId ||
+    candidate.manifest.product.version !== journal.candidate.version) {
+    return "exact invoking committed candidate is required for forward repair";
+  }
+  try {
+    await operations.inspectRepair({
+      vaultPath: input.vaultPath,
+      transactionId: journal.transactionId,
+      candidate,
+    }, deps);
+    return null;
+  } catch {
+    return "exact invoking committed candidate is required for forward repair";
+  }
 }
 
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error); }
