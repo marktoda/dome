@@ -981,27 +981,32 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     const { runHomeLifecycle } = await import("./commands/home-lifecycle");
     setExitCode(await runHomeLifecycle(action, options));
   };
-  homeCommand.command("install")
+  const homeNestedOptions = <Options>(command: Command): Options =>
+    command.optsWithGlobals() as Options;
+  const showSharedHomeOptions = (command: Command): Command => command.configureHelp({
+    showGlobalOptions: true,
+    visibleGlobalOptions: () => homeCommand.options.filter((option) => option.attributeName() === "vault"),
+  });
+  showSharedHomeOptions(homeCommand.command("install"))
     .description("Install and start Dome Home as a macOS LaunchAgent.")
     .option("--env <KEY=VALUE>", "Add a service environment entry.", (value: string, previous: string[]) => [...previous, value], [] as string[])
     .option("--env-file <path>", "Read service environment entries from a file.")
     .option("--json", "Emit JSON.")
-    .option("--vault <path>", "Vault path (defaults to current directory).")
-    .action((options: HomeLifecycleCliOptions) => homeLifecycle("install", options));
+    .action((_options: HomeLifecycleCliOptions, command: Command) =>
+      homeLifecycle("install", homeNestedOptions<HomeLifecycleCliOptions>(command)));
   for (const action of ["start", "restart", "status", "uninstall"] as const) {
-    homeCommand.command(action)
+    showSharedHomeOptions(homeCommand.command(action))
       .description(`${action[0]?.toUpperCase()}${action.slice(1)} the supervised Dome Home service.`)
       .option("--json", "Emit JSON.")
-      .option("--vault <path>", "Vault path (defaults to current directory).")
-      .action((options: HomeLifecycleCliOptions) => homeLifecycle(action, options));
+      .action((_options: HomeLifecycleCliOptions, command: Command) =>
+        homeLifecycle(action, homeNestedOptions<HomeLifecycleCliOptions>(command)));
   }
-  homeCommand.command("upgrade")
+  showSharedHomeOptions(homeCommand.command("upgrade"))
     .description("Upgrade to the invoking supported Dome Home artifact.")
     .option("--json", "Emit JSON.")
-    .option("--vault <path>", "Vault path (defaults to current directory).")
-    .action(async (options: HomeUpgradeCliOptions) => {
+    .action(async (_options: HomeUpgradeCliOptions, command: Command) => {
       const { runHomeUpgrade } = await import("./commands/home-upgrade");
-      setExitCode(await runHomeUpgrade(options));
+      setExitCode(await runHomeUpgrade(homeNestedOptions<HomeUpgradeCliOptions>(command)));
     });
 
   const backupCommand = program
