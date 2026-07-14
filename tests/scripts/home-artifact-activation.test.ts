@@ -34,6 +34,7 @@ describe("Dome Home 0.2 activation", () => {
     const result = await exerciseHomeArtifactActivationForTests(operations(events));
     expect(result).toEqual({ evidence: false });
     expect(events).toEqual([
+      "admit-candidate",
       "reconstruct-predecessor",
       "run-installed-gate",
       "bind-identity",
@@ -41,7 +42,41 @@ describe("Dome Home 0.2 activation", () => {
       "reprove-candidate",
       "reprove-source",
       "cleanup",
+      "reprove-final-source",
+      "reprove-final-receipt",
     ]);
+  });
+
+  test("candidate replacement after ordinary rehearsal is refused before predecessor work", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-home-activation-admission-"));
+    const events: string[] = [];
+    let publishCalled = false;
+    try {
+      await expect(stageAndPublishHomeArtifactCandidate({
+        outputDir: join(root, "dist"),
+        artifactName: "dome-home-0.2.0-darwin-arm64",
+        assemble: async ({ directory, archive }) => {
+          await mkdir(directory);
+          await writeFile(archive, "original candidate\n");
+        },
+        verifyArtifact: async () => {},
+        rehearseArchive: async ({ archive }) => {
+          await writeFile(archive, "replacement candidate\n");
+          await exerciseHomeArtifactActivationForTests(operations(events, {
+            admitCandidate: async () => {
+              events.push("admit-candidate");
+              throw new Error("staged candidate changed after ordinary archive rehearsal");
+            },
+          }));
+        },
+      }, async () => { publishCalled = true; })).rejects.toThrow("changed after ordinary archive rehearsal");
+
+      expect(publishCalled).toBeFalse();
+      expect(events).toEqual(["admit-candidate"]);
+      expect(await exists(join(root, "dist"))).toBeFalse();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test("installed gate failure publishes nothing and still cleans private predecessor state", async () => {
@@ -68,7 +103,7 @@ describe("Dome Home 0.2 activation", () => {
       }, async () => { publishCalled = true; })).rejects.toThrow("installed rehearsal rejected");
 
       expect(publishCalled).toBeFalse();
-      expect(events).toEqual(["reconstruct-predecessor", "run-installed-gate", "cleanup"]);
+      expect(events).toEqual(["admit-candidate", "reconstruct-predecessor", "run-installed-gate", "cleanup"]);
       expect(await exists(join(root, "dist"))).toBeFalse();
       expect((await readdir(root)).filter((name) => name.startsWith(".dome-home-candidate-"))).toEqual([]);
     } finally {
@@ -104,6 +139,7 @@ describe("Dome Home 0.2 activation", () => {
 
       expect(publishCalled).toBeFalse();
       expect(events).toEqual([
+        "admit-candidate",
         "reconstruct-predecessor",
         "run-installed-gate",
         "bind-identity",
@@ -111,6 +147,48 @@ describe("Dome Home 0.2 activation", () => {
         "reprove-candidate",
         "reprove-source",
         "cleanup",
+      ]);
+      expect(await exists(join(root, "dist"))).toBeFalse();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("evidence replacement after cleanup and final source proof prevents publication", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-home-activation-evidence-"));
+    const events: string[] = [];
+    let publishCalled = false;
+    try {
+      await expect(stageAndPublishHomeArtifactCandidate({
+        outputDir: join(root, "dist"),
+        artifactName: "dome-home-0.2.0-darwin-arm64",
+        assemble: async ({ directory, archive }) => {
+          await mkdir(directory);
+          await writeFile(archive, "candidate\n");
+        },
+        verifyArtifact: async () => {},
+        rehearseArchive: async () => {
+          await exerciseHomeArtifactActivationForTests(operations(events, {
+            reproveFinalReceipt: async () => {
+              events.push("reprove-final-receipt");
+              throw new Error("installed evidence changed after final source proof");
+            },
+          }));
+        },
+      }, async () => { publishCalled = true; })).rejects.toThrow("evidence changed after final source proof");
+
+      expect(publishCalled).toBeFalse();
+      expect(events).toEqual([
+        "admit-candidate",
+        "reconstruct-predecessor",
+        "run-installed-gate",
+        "bind-identity",
+        "write-receipt",
+        "reprove-candidate",
+        "reprove-source",
+        "cleanup",
+        "reprove-final-source",
+        "reprove-final-receipt",
       ]);
       expect(await exists(join(root, "dist"))).toBeFalse();
     } finally {
@@ -168,6 +246,7 @@ function operations(
   overrides: Partial<Parameters<typeof exerciseHomeArtifactActivationForTests>[0]> = {},
 ): Parameters<typeof exerciseHomeArtifactActivationForTests>[0] {
   return {
+    admitCandidate: async () => { events.push("admit-candidate"); },
     reconstructPredecessor: async () => { events.push("reconstruct-predecessor"); },
     runInstalledGate: async () => { events.push("run-installed-gate"); },
     bindIdentity: async () => { events.push("bind-identity"); },
@@ -175,6 +254,8 @@ function operations(
     reproveCandidate: async () => { events.push("reprove-candidate"); },
     reproveSource: async () => { events.push("reprove-source"); },
     cleanup: async () => { events.push("cleanup"); },
+    reproveFinalSource: async () => { events.push("reprove-final-source"); },
+    reproveFinalReceipt: async () => { events.push("reprove-final-receipt"); },
     ...overrides,
   };
 }

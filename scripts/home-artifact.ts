@@ -277,7 +277,7 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
   const artifactName = `dome-home-${pkg.version}-darwin-arm64`;
   let candidateMetadata: Readonly<{
     manifest: HomeArtifactManifest;
-    archiveSha256: string;
+    identity: HomeArtifactActivationIdentityBinding["candidate"];
   }> | undefined;
   let activationReceipt: Readonly<{ evidenceSha256: string }> | undefined;
   const candidate = await stageAndPublishHomeArtifactCandidate({
@@ -347,7 +347,10 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
           archive,
           gzipSync(await createDeterministicTar(directory, basename(directory)), { level: 9 }),
         );
-        candidateMetadata = Object.freeze({ manifest, archiveSha256: sha256(await readFile(archive)) });
+        candidateMetadata = Object.freeze({
+          manifest,
+          identity: await captureCandidateActivationIdentity({ directory, archive, manifest }),
+        });
       } finally {
         await Promise.all([
           rm(downloadedRuntime.temporary, { recursive: true, force: true }),
@@ -364,7 +367,7 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
         sourceHead,
         directory,
         archive,
-        manifest: candidateMetadata.manifest,
+        expectedCandidate: candidateMetadata.identity,
       });
     },
   });
@@ -374,7 +377,7 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
   const evidence = join(dirname(candidate.archive), `${artifactName}${ACTIVATION_EVIDENCE_SUFFIX}`);
   return {
     archive: candidate.archive,
-    archiveSha256: candidateMetadata.archiveSha256,
+    archiveSha256: candidateMetadata.identity.archiveSha256,
     directory: candidate.directory,
     evidence,
     evidenceSha256: activationReceipt.evidenceSha256,
@@ -433,6 +436,7 @@ async function runActivationSequence<TPredecessor, TInstalled, TBound, TReceipt>
 
 /** Portable ordering seam. It cannot construct or return installed evidence. */
 export async function exerciseHomeArtifactActivationForTests(operations: Readonly<{
+  admitCandidate(): Promise<void>;
   reconstructPredecessor(): Promise<void>;
   runInstalledGate(): Promise<void>;
   bindIdentity(): Promise<void>;
@@ -440,7 +444,10 @@ export async function exerciseHomeArtifactActivationForTests(operations: Readonl
   reproveCandidate(): Promise<void>;
   reproveSource(): Promise<void>;
   cleanup(): Promise<void>;
+  reproveFinalSource(): Promise<void>;
+  reproveFinalReceipt(): Promise<void>;
 }>): Promise<Readonly<{ evidence: false }>> {
+  await operations.admitCandidate();
   await runActivationSequence({
     reconstructPredecessor: operations.reconstructPredecessor,
     runInstalledGate: operations.runInstalledGate,
@@ -450,6 +457,8 @@ export async function exerciseHomeArtifactActivationForTests(operations: Readonl
     reproveSource: operations.reproveSource,
     cleanup: async () => { await operations.cleanup(); },
   });
+  await operations.reproveFinalSource();
+  await operations.reproveFinalReceipt();
   return Object.freeze({ evidence: false });
 }
 
@@ -468,7 +477,7 @@ async function activateHomeArtifactCandidate(input: Readonly<{
   sourceHead: string;
   directory: string;
   archive: string;
-  manifest: HomeArtifactManifest;
+  expectedCandidate: HomeArtifactActivationIdentityBinding["candidate"];
 }>): Promise<Readonly<{ evidenceSha256: string }>> {
   const artifactName = basename(input.directory);
   const stagingOutput = dirname(input.directory);
@@ -480,6 +489,11 @@ async function activateHomeArtifactCandidate(input: Readonly<{
   );
   await assertOutputTargetAbsent(predecessorOutput);
   await assertOutputTargetAbsent(evidencePath);
+  assertCandidateActivationIdentity(
+    input.expectedCandidate,
+    await observeCandidateActivationIdentity(input),
+    "staged candidate changed after ordinary archive rehearsal",
+  );
 
   type Predecessor = Awaited<ReturnType<typeof reconstructHomePredecessorArtifact>> & Readonly<{
     fixture: Awaited<ReturnType<typeof readFrozenN1Manifest>>;
@@ -506,7 +520,7 @@ async function activateHomeArtifactCandidate(input: Readonly<{
     }),
     bindIdentity: async (predecessor, evidence) => {
       assertInstalledEvidenceEnvelope(evidence);
-      const binding = await observeCandidateActivationBinding(input, predecessor);
+      const binding = expectedCandidateActivationBinding(input.expectedCandidate, predecessor);
       assertHomeArtifactActivationIdentityBindingForTests(binding, bindingFromInstalledEvidence(evidence));
       return Object.freeze({ evidence, binding });
     },
@@ -515,11 +529,13 @@ async function activateHomeArtifactCandidate(input: Readonly<{
       await writeFile(evidencePath, bytes, { flag: "wx", mode: 0o644 });
       return Object.freeze({ evidenceSha256: sha256(bytes) });
     },
-    reproveCandidate: async (bound, written) => {
+    reproveCandidate: async (_bound, written) => {
       const observed = await observeCandidateActivationIdentity(input);
-      if (JSON.stringify(observed) !== JSON.stringify(bound.binding.candidate)) {
-        throw new Error("staged candidate changed after installed Home upgrade rehearsal");
-      }
+      assertCandidateActivationIdentity(
+        input.expectedCandidate,
+        observed,
+        "staged candidate changed after installed Home upgrade rehearsal",
+      );
       if (sha256(await readFile(evidencePath)) !== written.evidenceSha256) {
         throw new Error("installed Home upgrade evidence receipt changed after write");
       }
@@ -533,21 +549,19 @@ async function activateHomeArtifactCandidate(input: Readonly<{
   });
   await assertPathAbsent(predecessorOutput, "private predecessor reconstruction remained before publication");
   await assertSourceSnapshot(input.repoRoot, input.sourceHead, stagingOutput);
-  return receipt;
+  const evidenceSha256 = sha256(await readFile(evidencePath));
+  if (evidenceSha256 !== receipt.evidenceSha256) {
+    throw new Error("installed Home upgrade evidence receipt changed after final source proof");
+  }
+  return Object.freeze({ evidenceSha256 });
 }
 
-async function observeCandidateActivationBinding(
-  input: Readonly<{
-    sourceHead: string;
-    directory: string;
-    archive: string;
-    manifest: HomeArtifactManifest;
-  }>,
+function expectedCandidateActivationBinding(
+  candidate: HomeArtifactActivationIdentityBinding["candidate"],
   predecessor: Awaited<ReturnType<typeof reconstructHomePredecessorArtifact>> & Readonly<{
     fixture: Awaited<ReturnType<typeof readFrozenN1Manifest>>;
   }>,
-): Promise<HomeArtifactActivationIdentityBinding> {
-  const candidate = await observeCandidateActivationIdentity(input);
+): HomeArtifactActivationIdentityBinding {
   return Object.freeze({
     predecessor: Object.freeze({
       artifactId: predecessor.receipt.manifest.artifactId,
@@ -570,15 +584,12 @@ async function observeCandidateActivationIdentity(
     sourceHead: string;
     directory: string;
     archive: string;
-    manifest: HomeArtifactManifest;
   }>,
 ): Promise<HomeArtifactActivationIdentityBinding["candidate"]> {
   const archiveSha256 = sha256(await readFile(input.archive));
   const verified = await verifyHomeArtifact(input.directory);
   const manifestSha256 = sha256(await readFile(join(input.directory, "manifest.json")));
-  if (verified.artifact.id !== input.manifest.artifact.id ||
-    verified.product.version !== input.manifest.product.version ||
-    verified.build.gitCommit !== input.sourceHead) {
+  if (verified.build.gitCommit !== input.sourceHead) {
     throw new Error("expanded staged candidate identity changed before publication");
   }
   return Object.freeze({
@@ -588,6 +599,28 @@ async function observeCandidateActivationIdentity(
     archiveSha256,
     manifestSha256,
   });
+}
+
+async function captureCandidateActivationIdentity(input: Readonly<{
+  directory: string;
+  archive: string;
+  manifest: HomeArtifactManifest;
+}>): Promise<HomeArtifactActivationIdentityBinding["candidate"]> {
+  return Object.freeze({
+    artifactId: input.manifest.artifact.id,
+    version: input.manifest.product.version,
+    buildCommit: input.manifest.build.gitCommit,
+    archiveSha256: sha256(await readFile(input.archive)),
+    manifestSha256: sha256(await readFile(join(input.directory, "manifest.json"))),
+  });
+}
+
+function assertCandidateActivationIdentity(
+  expected: HomeArtifactActivationIdentityBinding["candidate"],
+  observed: HomeArtifactActivationIdentityBinding["candidate"],
+  message: string,
+): void {
+  if (JSON.stringify(observed) !== JSON.stringify(expected)) throw new Error(message);
 }
 
 function bindingFromInstalledEvidence(
