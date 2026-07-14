@@ -460,7 +460,9 @@ async function createScenario(
   unsafeCleanup: () => void,
 ): Promise<ScenarioContext> {
   await assertPortFree();
-  const root = await mkdtemp(join(prepared.temporary, `${name}-`));
+  const root = await canonicalizeInstalledScenarioRootForTests(
+    await mkdtemp(join(prepared.temporary, `${name}-`)),
+  );
   const home = join(root, "home");
   const vault = join(root, `vault-${randomUUID()}`);
   const label = homeServiceLabelForVault(vault);
@@ -532,6 +534,11 @@ async function createScenario(
     unsafeCleanup();
     throw new AggregateError([error, ...cleanupFailures], `partial installed rehearsal cleanup failed for ${label}; root retained at ${root}`);
   }
+}
+
+/** Capture the physical identity of a fresh private scenario root exactly once. */
+export async function canonicalizeInstalledScenarioRootForTests(createdRoot: string): Promise<string> {
+  return await realpath(createdRoot);
 }
 
 /** Exact compatibility invocation for the frozen pre-fix 0.1 Home CLI. */

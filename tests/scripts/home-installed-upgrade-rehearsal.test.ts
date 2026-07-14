@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   assertBoundedArchiveStatForTests,
   assertInstalledBackupRestoreCanaryForTests,
+  canonicalizeInstalledScenarioRootForTests,
   classifyLaunchctlDrainForTests,
   exerciseInstalledUpgradeOrchestrationForTests,
   predecessorHomeInstallInvocationForTests,
@@ -79,6 +80,28 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       cwd: "/scenario/vault",
     });
     expect(invocation.command).not.toContain("--vault");
+  });
+
+  test("captures an aliased scenario root once before deriving owned descendants", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-installed-scenario-alias-"));
+    try {
+      const physicalParent = join(root, "physical-parent");
+      const redirectedParent = join(root, "redirected-parent");
+      const alias = join(root, "scenario-parent-alias");
+      await mkdir(physicalParent);
+      await mkdir(redirectedParent);
+      await symlink(physicalParent, alias, "dir");
+      const lexical = await mkdtemp(join(alias, "scenario-"));
+      const canonical = await canonicalizeInstalledScenarioRootForTests(lexical);
+      expect(canonical.startsWith(`${await realpath(physicalParent)}/scenario-`)).toBeTrue();
+
+      await rm(alias);
+      await symlink(redirectedParent, alias, "dir");
+      expect(join(canonical, "home")).toStartWith(`${await realpath(physicalParent)}/`);
+      expect(join(canonical, "vault")).not.toStartWith(`${await realpath(redirectedParent)}/`);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test("requires the installed backup canary to restore and invalidate authority", () => {
