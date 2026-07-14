@@ -601,8 +601,8 @@ async function stoppedPrecommitCrash(context: ScenarioContext, prepared: Prepare
   }
   const receipt = await candidateUpgrade(context, prepared.candidateRoot, true);
   if (field(receipt, "status") !== "rolled-back" || field(receipt, "service") !== "stopped" ||
-    stringField(record(receipt, "transaction"), "operationId") !==
-      stringField(record(recovered, "transaction"), "operationId")) {
+    stringField(objectField(receipt, "transaction"), "operationId") !==
+      stringField(objectField(recovered, "transaction"), "operationId")) {
     throw new Error("packaged candidate did not return the terminal rollback receipt");
   }
   await assertTerminalStatus(context, prepared.candidateRoot, prepared.predecessor, "stopped");
@@ -616,9 +616,9 @@ async function committedExactRepair(context: ScenarioContext, prepared: Prepared
   const active = join(homeInstallationPaths(context.vault, {
     applicationSupportDir: join(context.home, "Library", "Application Support", "Dome", "Home"),
   }).installations, "upgrade", "active");
-  await rm(stringField(record(journal, "old"), "releasePath"), { recursive: true, force: true });
+  await rm(stringField(objectField(journal, "old"), "releasePath"), { recursive: true, force: true });
   await damageSnapshot(active, journal);
-  const candidateRelease = stringField(record(journal, "candidate"), "releasePath");
+  const candidateRelease = stringField(objectField(journal, "candidate"), "releasePath");
   await rm(candidateRelease, { recursive: true, force: true });
   await writeFile(join(homeInstallationPaths(context.vault, {
     applicationSupportDir: join(context.home, "Library", "Application Support", "Dome", "Home"),
@@ -678,8 +678,7 @@ async function pairFreshDevice(
     body: JSON.stringify({ code: pairingCode }),
   });
   if (response.status !== 200) throw new Error(`fresh device pairing failed (${response.status})`);
-  const body = record(await response.json(), "pair response");
-  const deviceId = stringField(record(body, "device"), "id");
+  const deviceId = pairedDeviceIdForTests(await response.json());
   const cookie = response.headers.getSetCookie().map((value) => value.split(";", 1)[0]!).join("; ");
   if (cookie === "") throw new Error("fresh device pairing returned no credential cookies");
   return Object.freeze({ deviceId, cookie });
@@ -698,15 +697,15 @@ async function assertLiveCredentialTruth(
   const revoked = await fetch(`http://${HOST}:${PORT}/readyz`, {
     headers: { cookie: context.revokedDevice.cookie },
   });
-  const activeBody = active.status === 200 ? record(await active.json(), "active readiness") : null;
-  const revokedBody = revoked.status === 401 ? record(await revoked.json(), "revoked readiness error") : null;
+  const activeBody = active.status === 200 ? asRecord(await active.json(), "active readiness") : null;
+  const revokedBody = revoked.status === 401 ? asRecord(await revoked.json(), "revoked readiness error") : null;
   if (active.status !== 200 || activeBody === null ||
     field(activeBody, "schema") !== "dome.product.readiness/v1" ||
     field(activeBody, "artifactId") !== expected.artifact.id ||
     field(activeBody, "productVersion") !== expected.product.version ||
     field(activeBody, "writesAdmitted") !== true ||
-    field(record(activeBody, "host"), "state") !== "ready" ||
-    field(record(activeBody, "device"), "id") !== context.activeDevice.deviceId ||
+    field(objectField(activeBody, "host"), "state") !== "ready" ||
+    field(objectField(activeBody, "device"), "id") !== context.activeDevice.deviceId ||
     revoked.status !== 401 || revokedBody === null ||
     field(revokedBody, "status") !== "error" ||
     field(revokedBody, "error") !== "credential-invalid" ||
@@ -809,28 +808,28 @@ async function assertRetainedCheckpoint(
     applicationSupportDir: join(context.home, "Library", "Application Support", "Dome", "Home"),
   });
   const active = join(paths.installations, "upgrade", "active");
-  const journal = record(JSON.parse(await readFile(join(active, "journal.json"), "utf8")), "journal");
+  const journal = asRecord(JSON.parse(await readFile(join(active, "journal.json"), "utf8")), "journal");
   if (field(journal, "phase") !== phase) throw new Error(`retained journal did not reach ${phase}`);
-  const selection = record(journal, "selection");
-  const candidate = record(selection, "candidate");
-  await assertFileSha(paths.record, stringField(record(candidate, "installation"), "sha256"));
-  await assertFileSha(context.plist, stringField(record(candidate, "plist"), "sha256"));
+  const selection = objectField(journal, "selection");
+  const candidate = objectField(selection, "candidate");
+  await assertFileSha(paths.record, stringField(objectField(candidate, "installation"), "sha256"));
+  await assertFileSha(context.plist, stringField(objectField(candidate, "plist"), "sha256"));
 
   const status = await runJson([
     join(context.home, "Library", "Application Support", "Dome", "Home", "releases",
-      stringField(record(journal, "candidate"), "artifactId"), "bin", "dome"),
+      stringField(objectField(journal, "candidate"), "artifactId"), "bin", "dome"),
     "home", "status", "--vault", context.vault, "--json",
   ], context.root, context.environment, true);
-  if (field(record(status, "lifecycle"), "state") !== "active" ||
-    field(record(status, "upgrade"), "state") !== "active") {
+  if (field(objectField(status, "lifecycle"), "state") !== "active" ||
+    field(objectField(status, "upgrade"), "state") !== "active") {
     throw new Error("checkpoint crash did not retain lifecycle and upgrade ownership");
   }
   return journal;
 }
 
 async function damageSnapshot(active: string, journal: Record<string, unknown>): Promise<void> {
-  const snapshot = record(journal, "snapshot");
-  const inventory = arrayField(snapshot, "inventory").map((entry) => record(entry, "snapshot entry"))
+  const snapshot = objectField(journal, "snapshot");
+  const inventory = arrayField(snapshot, "inventory").map((entry) => asRecord(entry, "snapshot entry"))
     .filter((entry) => field(entry, "present") === true);
   if (inventory.length < 2) throw new Error("committed rehearsal snapshot lacks two present entries to damage");
   await rm(join(active, "snapshot", stringField(inventory[0]!, "name")), { force: true });
@@ -934,8 +933,8 @@ async function assertTerminalStatus(
     field(status, "productVersion") !== selected.product.version) {
     throw new Error("terminal Home status selected the wrong artifact");
   }
-  if (field(record(status, "lifecycle"), "state") !== "inactive" ||
-    field(record(status, "upgrade"), "state") !== "inactive") {
+  if (field(objectField(status, "lifecycle"), "state") !== "inactive" ||
+    field(objectField(status, "upgrade"), "state") !== "inactive") {
     throw new Error("terminal Home status retained lifecycle or upgrade ownership");
   }
   assertNoPhase(status);
@@ -1068,7 +1067,7 @@ async function runJson(
   let value: unknown;
   try { value = JSON.parse(result.stdout); }
   catch { throw new Error(`${renderCommand(command)} returned non-JSON output\n${result.stdout}${result.stderr}`); }
-  return record(value, "packaged command result");
+  return asRecord(value, "packaged command result");
 }
 
 async function runRaw(
@@ -1113,19 +1112,29 @@ function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function record(value: unknown, label: string): Record<string, unknown> {
+function asRecord(value: unknown, label: string): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${label} must be an object`);
   }
   return value as Record<string, unknown>;
 }
 
+function objectField(value: Record<string, unknown>, name: string): Record<string, unknown> {
+  return asRecord(value[name], name);
+}
+
+/** Portable response-shape assertion; it emits no installed evidence. */
+export function pairedDeviceIdForTests(value: unknown): string {
+  const response = asRecord(value, "pair response");
+  return stringField(objectField(response, "device"), "id");
+}
+
 function field(value: Record<string, unknown>, name: string): unknown {
   return value[name];
 }
 
-function stringField(value: Record<string, unknown>, name: string, nested?: string): string {
-  const candidate = nested === undefined ? value[name] : record(value[name], name)[nested];
+function stringField(value: Record<string, unknown>, name: string): string {
+  const candidate = value[name];
   if (typeof candidate !== "string" || candidate === "") throw new Error(`${name} must be a nonempty string`);
   return candidate;
 }

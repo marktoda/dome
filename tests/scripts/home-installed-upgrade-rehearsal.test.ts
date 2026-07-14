@@ -9,6 +9,7 @@ import {
   canonicalizeInstalledScenarioRootForTests,
   classifyLaunchctlDrainForTests,
   exerciseInstalledUpgradeOrchestrationForTests,
+  pairedDeviceIdForTests,
   predecessorHomeInstallInvocationForTests,
   resolveContainedArtifactRootForTests,
   type InstalledHomeUpgradeRehearsalInput,
@@ -80,6 +81,26 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       cwd: "/scenario/vault",
     });
     expect(invocation.command).not.toContain("--vault");
+  });
+
+  test("reads the paired identity from the nested device response", () => {
+    expect(pairedDeviceIdForTests({
+      schema: "dome.device.pairing/v1",
+      status: "paired",
+      id: "top-level-decoy",
+      device: { id: "device_exact", name: "Upgrade canary" },
+    })).toBe("device_exact");
+    expect(() => pairedDeviceIdForTests({
+      schema: "dome.device.pairing/v1",
+      status: "paired",
+      id: "top-level-decoy",
+      device: { name: "Upgrade canary" },
+    })).toThrow("id must be a nonempty string");
+    expect(() => pairedDeviceIdForTests({
+      schema: "dome.device.pairing/v1",
+      status: "paired",
+      id: "top-level-decoy",
+    })).toThrow("device must be an object");
   });
 
   test("captures an aliased scenario root once before deriving owned descendants", async () => {
