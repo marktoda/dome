@@ -739,6 +739,33 @@ export async function readHomeUpgradeHistory(
   transactionId: string,
   deps: HomeUpgradeTransactionDeps = {},
 ): Promise<HomeUpgradeTransaction | null> {
+  const archived = await readArchivedHomeUpgradeDisposition(vaultPath, transactionId, deps);
+  if (archived === null) return null;
+  await validateSnapshotInventory(archived.transactionRoot, archived.journal.snapshot.inventory);
+  return archived.journal;
+}
+
+/**
+ * Read one archived terminal disposition without reopening rollback bytes.
+ * Retirement uses the full bounded journal as its collision/retry identity;
+ * `readHomeUpgradeHistory` remains the strict retained-state audit.
+ */
+export async function readHomeUpgradeHistoryDisposition(
+  vaultPath: string,
+  transactionId: string,
+  deps: HomeUpgradeTransactionDeps = {},
+): Promise<HomeUpgradeTransaction | null> {
+  return (await readArchivedHomeUpgradeDisposition(vaultPath, transactionId, deps))?.journal ?? null;
+}
+
+async function readArchivedHomeUpgradeDisposition(
+  vaultPath: string,
+  transactionId: string,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<{
+  readonly journal: HomeUpgradeTransaction;
+  readonly transactionRoot: string;
+} | null> {
   assertTransactionId(transactionId);
   const vault = await canonicalVault(vaultPath);
   const paths = homeInstallationPaths(vault, deps);
@@ -759,8 +786,7 @@ export async function readHomeUpgradeHistory(
   validateCanonicalArtifactPath(journal.old, paths);
   validateCanonicalArtifactPath(journal.candidate, paths);
   validateArchivedSelectorPaths(journal, paths, deps);
-  await validateSnapshotInventory(transactionRoot, journal.snapshot.inventory);
-  return journal;
+  return Object.freeze({ journal, transactionRoot });
 }
 
 /**
