@@ -78,6 +78,25 @@ export type NonEvidenceInstalledUpgradeResult = Readonly<{
   scenarios: ReadonlyArray<InstalledHomeUpgradeScenario>;
 }>;
 
+/** Exact safe renderer embedded in diagnostic children; it emits no installed evidence. */
+export function renderInstalledCoordinationErrorForTests(error: unknown, depth = 0): string {
+  if (!(error instanceof Error)) return "Non-Error coordination failure";
+  const parts = [`${error.name}: ${error.message}`];
+  if (depth < 2) {
+    if (error instanceof AggregateError) {
+      for (const nested of error.errors.slice(0, 4)) {
+        parts.push(`nested: ${renderInstalledCoordinationErrorForTests(nested, depth + 1)}`);
+      }
+    } else if (error.cause !== undefined) {
+      parts.push(`caused by: ${renderInstalledCoordinationErrorForTests(error.cause, depth + 1)}`);
+    }
+  }
+  const redacted = parts.join(" | ")
+    .replace(/\bdome_(?:pair|cred|csrf)\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+\b/g, "[REDACTED]")
+    .replace(/\bBearer\s+[A-Za-z0-9._~-]+/gi, "Bearer [REDACTED]");
+  return redacted.length <= 2_048 ? redacted : `${redacted.slice(0, 2_047)}…`;
+}
+
 /** Portable launchd-label plus listener drain contract; it emits no installed evidence. */
 export function classifyInstalledHomeDrainForTests(
   bootoutExitCode: number,
@@ -815,11 +834,14 @@ async function crashAtCheckpoint(
     'import { open } from "node:fs/promises";',
     `const marker = ${JSON.stringify(marker)};`,
     `const markerParent = ${JSON.stringify(context.root)};`,
+    "let coordinationCause = null;",
+    `const renderCoordinationError = ${renderInstalledCoordinationErrorForTests.toString()};`,
     `const imported = await import(${JSON.stringify(moduleUrl)});`,
     "const result = await imported.manageHomeUpgrade(",
     `  { action: "run", vaultPath: ${JSON.stringify(context.vault)} },`,
     "  {",
     `    artifactRoot: ${JSON.stringify(candidateRoot)},`,
+    "    onCoordinationError: (error) => { coordinationCause = renderCoordinationError(error); },",
     "    selectionCheckpoint: async (name) => {",
     `      if (name !== ${JSON.stringify(checkpoint)}) return;`,
     "      const handle = await open(marker, \"wx\", 0o600);",
@@ -830,7 +852,7 @@ async function crashAtCheckpoint(
     "    },",
     "  },",
     ");",
-    "throw new Error(`diagnostic checkpoint was not reached: ${JSON.stringify(result)}`);",
+    "throw new Error(`diagnostic checkpoint was not reached: ${JSON.stringify({ result, coordinationCause })}`);",
     "",
   ].join("\n");
   await writeFile(childScript, source, { flag: "wx", mode: 0o600 });

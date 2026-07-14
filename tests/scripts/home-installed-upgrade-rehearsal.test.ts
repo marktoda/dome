@@ -11,6 +11,7 @@ import {
   exerciseInstalledUpgradeOrchestrationForTests,
   pairedDeviceIdForTests,
   predecessorHomeInstallInvocationForTests,
+  renderInstalledCoordinationErrorForTests,
   resolveContainedArtifactRootForTests,
   type InstalledHomeUpgradeRehearsalInput,
   type InstalledHomeUpgradeScenario,
@@ -39,6 +40,28 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     expect(() => classifyInstalledHomeDrainForTests(3, 0, false, false)).toThrow("without absent print proof");
     expect(() => classifyInstalledHomeDrainForTests(113, 113, false, false)).toThrow("bootout failed");
     expect(() => classifyInstalledHomeDrainForTests(0, 3, false, false)).toThrow("print failed");
+  });
+
+  test("renders bounded recursive coordination diagnostics without secrets", () => {
+    const error = new AggregateError([
+      new Error("inner Bearer abc.def_123"),
+      new Error(
+        "credential dome_cred.CTl4LDmCa7J6AvU4nnVtZQ.LJXJLpi2Hwpu0rMflghz6c10uRWJGKPSEu7W5J4y9N8 " +
+          "x".repeat(3_000),
+      ),
+    ], "outer failure");
+    const rendered = renderInstalledCoordinationErrorForTests(error);
+    expect(rendered.startsWith(
+      "AggregateError: outer failure | nested: Error: inner Bearer [REDACTED] | " +
+        "nested: Error: credential [REDACTED] ",
+    )).toBeTrue();
+    expect(rendered).not.toContain("dome_cred");
+    expect(rendered.length).toBe(2_048);
+    const embedded = Function(`return (${renderInstalledCoordinationErrorForTests.toString()});`)() as
+      ((error: unknown) => string);
+    expect(embedded(error)).toBe(rendered);
+    expect(renderInstalledCoordinationErrorForTests({ private: "value" }))
+      .toBe("Non-Error coordination failure");
   });
 
   test("canonicalizes an aliased extraction destination and still rejects a sibling escape", async () => {
