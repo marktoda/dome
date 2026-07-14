@@ -57,12 +57,14 @@
     "gray-matter": "^4.0.3",
     "isomorphic-git": "^1.27.0",
     "picocolors": "^1.1.1",
+    "semver": "^7.8.5",
     "string-width": "^7",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/semver": "^7.7.1",
     "typescript": "^5.5.0"
   }
 }

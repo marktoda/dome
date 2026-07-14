@@ -44,6 +44,7 @@ import {
   readHomeUpgradeDisposition,
   readHomeUpgradeForRecovery,
   readHomeUpgradeHistory,
+  readHomeUpgradeHistoryIdentity,
   releaseCommittedHomeUpgrade,
   restoreHomeUpgrade,
   type HomeUpgradeTransactionDeps,
@@ -267,9 +268,13 @@ describe("Product Host pre-commit upgrade transaction", () => {
       await rm(paths.record);
       const plistPath = join(f.deps.launchAgentsDir!, `${homeServiceLabelForVault(f.vault)}.plist`);
       await writeFile(plistPath, "bounded corrupt candidate selector\n", { mode: 0o600 });
-      const snapshotEntry = (await readHomeUpgradeDisposition(f.vault, f.deps))!.snapshot.inventory
-        .find((entry) => entry.present)!;
-      await writeFile(join(paths.installations, "upgrade", "active", "snapshot", snapshotEntry.name), "irrelevant");
+      const snapshotEntries = (await readHomeUpgradeDisposition(f.vault, f.deps))!.snapshot.inventory
+        .filter((entry) => entry.present);
+      await rm(join(paths.installations, "upgrade", "active", "snapshot", snapshotEntries[0]!.name));
+      await writeFile(
+        join(paths.installations, "upgrade", "active", "snapshot", snapshotEntries[1]!.name),
+        "irrelevant",
+      );
       const recovered = await runHomeUpgradeCutover({
         vaultPath: f.vault,
         transactionId,
@@ -294,6 +299,20 @@ describe("Product Host pre-commit upgrade transaction", () => {
         id: CANDIDATE_ID,
         version: "2.0.0",
       })).admitted).toBeTrue();
+      const retired = await retireHomeUpgrade(
+        { vaultPath: f.vault, transactionId },
+        historyDeps(f, recovered.transactionOutcome.transaction, "ready"),
+      );
+      expect(retired).toMatchObject({ retired: true, transaction: { phase: "committed" } });
+      expect(await readHomeUpgradeDisposition(f.vault, f.deps)).toBeNull();
+      expect((await readHomeUpgradeHistoryIdentity(f.vault, transactionId, f.deps))?.outcome).toBe("committed");
+      expect(await readLatestHomeUpgradeSummary(f.vault, f.deps)).toMatchObject({
+        operationId: transactionId,
+        outcome: "committed",
+      });
+      await expect(readHomeUpgradeHistory(f.vault, transactionId, f.deps)).rejects.toThrow(
+        "snapshot inventory is not closed",
+      );
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });
 
@@ -1168,6 +1187,47 @@ describe("Product Host pre-commit upgrade transaction", () => {
     }
   });
 
+  test("candidate compatibility rejects non-advancing SemVer without changing vault fingerprints", async () => {
+    const malformed = ["v1.0.1", "=1.0.1", "01.0.1", "1.0.0-01", " 1.0.1", "1.0.1 "] as const;
+    for (const [side, version] of [
+      ["candidate", "1.0.0"],
+      ["candidate", "0.9.9"],
+      ...malformed.map((value) => ["candidate", value] as const),
+      ...malformed.map((value) => ["selected", value] as const),
+    ] as const) {
+      const f = await fixture();
+      try {
+        const before = await logicalState(f.vault);
+        const gitBefore = await gitEvidence(f.vault);
+        const paths = homeInstallationPaths(f.vault, f.deps);
+        const artifactId = side === "candidate" ? CANDIDATE_ID : OLD_ID;
+        const manifestPath = join(releaseRoot(paths, artifactId), "manifest.json");
+        const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+          product: { version: string };
+        };
+        manifest.product.version = version;
+        await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, { mode: 0o600 });
+        if (side === "selected") {
+          const installation = JSON.parse(await readFile(paths.record, "utf8")) as {
+            artifact: { version: string };
+          };
+          installation.artifact.version = version;
+          await writeFile(paths.record, `${JSON.stringify(installation)}\n`, { mode: 0o600 });
+        }
+
+        await expect(prepareHomeUpgrade({
+          vaultPath: f.vault,
+          transactionId: randomUUID(),
+          candidateArtifactId: CANDIDATE_ID,
+        }, f.deps)).rejects.toThrow("must be a valid SemVer version newer");
+        expect(await logicalState(f.vault)).toEqual(before);
+        expect(await gitEvidence(f.vault)).toEqual(gitBefore);
+        expect(await readHomeUpgrade(f.vault, f.deps)).toBeNull();
+        expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
+      } finally { await rm(f.root, { recursive: true, force: true }); }
+    }
+  });
+
   test("historical durable-state drift is old-side eligible but candidate-side incompatible", async () => {
     for (const artifactId of [OLD_ID, CANDIDATE_ID]) {
       const f = await fixture();
@@ -1300,6 +1360,18 @@ describe("Product Host terminal upgrade history", () => {
           outcome: "committed",
         });
 
+        if (["after-rename", "history-synced", "upgrade-synced"].includes(checkpoint)) {
+          const paths = homeInstallationPaths(f.vault, f.deps);
+          await rm(releaseRoot(paths, OLD_ID), { recursive: true, force: true });
+          const archivedSnapshot = join(
+            paths.installations,
+            "upgrade", "history", transactionId, "snapshot",
+          );
+          const retained = terminal.snapshot.inventory.filter((entry) => entry.present);
+          await rm(join(archivedSnapshot, retained[0]!.name));
+          await writeFile(join(archivedSnapshot, retained[1]!.name), "corrupt\n", { mode: 0o600 });
+        }
+
         const retry = await retireHomeUpgrade(
           { vaultPath: f.vault, transactionId },
           historyDeps(f, terminal),
@@ -1314,6 +1386,47 @@ describe("Product Host terminal upgrade history", () => {
           operationId: transactionId,
           outcome: "committed",
         });
+      } finally { await rm(f.root, { recursive: true, force: true }); }
+    }
+  });
+
+  test("restored retirement keeps full rollback proof and leaves active on snapshot damage", async () => {
+    const f = await fixture();
+    try {
+      const transactionId = randomUUID();
+      const terminal = await restoredTerminal(f, transactionId);
+      const paths = homeInstallationPaths(f.vault, f.deps);
+      const retained = terminal.snapshot.inventory.filter((entry) => entry.present);
+      await rm(join(paths.installations, "upgrade", "active", "snapshot", retained[0]!.name));
+      await expect(retireHomeUpgrade(
+        { vaultPath: f.vault, transactionId },
+        historyDeps(f, terminal, "stopped"),
+      )).rejects.toThrow("snapshot inventory is not closed");
+      expect((await readHomeUpgradeDisposition(f.vault, f.deps))?.phase).toBe("restored");
+      await expect(stat(join(paths.installations, "upgrade", "active"))).resolves.toBeDefined();
+      await expect(stat(join(paths.installations, "upgrade", "history", transactionId))).rejects.toThrow();
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("committed retirement refuses broken forward candidate or selector truth without moving active", async () => {
+    for (const fault of ["missing-candidate", "corrupt-candidate", "selector-drift"] as const) {
+      const f = await fixture();
+      try {
+        const transactionId = randomUUID();
+        const terminal = await committedTerminal(f, transactionId);
+        const paths = homeInstallationPaths(f.vault, f.deps);
+        const candidate = releaseRoot(paths, CANDIDATE_ID);
+        if (fault === "missing-candidate") await rm(candidate, { recursive: true });
+        else if (fault === "corrupt-candidate") {
+          await writeFile(join(candidate, "manifest.json"), "corrupt\n", { mode: 0o600 });
+        } else await writeFile(paths.record, "selector drift\n", { mode: 0o600 });
+
+        await expect(retireHomeUpgrade(
+          { vaultPath: f.vault, transactionId },
+          historyDeps(f, terminal, "ready"),
+        )).rejects.toThrow();
+        await expect(stat(join(paths.installations, "upgrade", "active"))).resolves.toBeDefined();
+        await expect(stat(join(paths.installations, "upgrade", "history", transactionId))).rejects.toThrow();
       } finally { await rm(f.root, { recursive: true, force: true }); }
     }
   });
@@ -1677,8 +1790,8 @@ describe("Product Host terminal upgrade history", () => {
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });
 
-  test("rejects exact duplicates, redirected destinations, and wrong history identity", async () => {
-    for (const corruption of ["duplicate", "redirect", "wrong-identity"] as const) {
+  test("rejects exact duplicates, redirected destinations, and conflicting full history identity", async () => {
+    for (const corruption of ["duplicate", "redirect", "wrong-identity", "same-summary-different-journal"] as const) {
       const f = await fixture();
       try {
         const transactionId = randomUUID();
@@ -1692,10 +1805,11 @@ describe("Product Host terminal upgrade history", () => {
           await symlink(active, destination, "dir");
         } else {
           await cp(active, destination, { recursive: true, preserveTimestamps: true });
-          if (corruption === "wrong-identity") {
+          if (corruption === "wrong-identity" || corruption === "same-summary-different-journal") {
             const journalPath = join(destination, "journal.json");
             const journal = JSON.parse(await readFile(journalPath, "utf8"));
-            journal.transactionId = randomUUID();
+            if (corruption === "wrong-identity") journal.transactionId = randomUUID();
+            else journal.old.manifestSha256 = "e".repeat(64);
             await writeFile(journalPath, `${JSON.stringify(journal, null, 2)}\n`, { mode: 0o600 });
           }
         }

@@ -617,8 +617,10 @@ admission closed. After `restored`, startup requires the exact N-1 selectors
 and old manifest. After `committed`, startup requires the exact
 manifest-derived candidate runtime identity and candidate selector/plist
 evidence; N-1 and wrong-version launches remain closed. Full snapshot
-validation remains the `read`/`restore` contract and terminal evidence is
-retained; retirement remains deferred.
+validation remains the `read`/`restore` and restored-retirement contract.
+Committed retirement instead proves exact forward candidate and selector
+truth, because irreversible forward recovery cannot depend on obsolete N-1 or
+rollback-snapshot contents.
 
 Restore is allowed only before durable `committed`. `prepared` requires exact
 old selection; `switching` may expose old, mixed, or candidate selection and
@@ -731,6 +733,13 @@ evaluated, committed work moves only forward, and terminal evidence retires to
 immutable bounded receipts. Public results contain fixed messages and public
 artifact/operation/outcome/next-action evidence only.
 
+Across the active-to-history rename, retirement compares the complete bounded
+terminal journal rather than the smaller receipt summary. Archived committed
+disposition reads keep that intrinsic identity independent of rollback bytes;
+the strict history audit still reports retained snapshot damage. Archived
+restored disposition never weakens: it retains full old-release, selector, and
+rollback-snapshot proof.
+
 `dome home status` adds an always-present, read-only `upgrade` projection for
 status actions. It maps private precommit phases to `active`, exact extant
 terminal truth to `complete`, a broken committed forward proof to
@@ -740,7 +749,12 @@ writes and never reads terminal history to synthesize current coordination.
 
 The artifact parser accepts boolean `distribution.upgradeSupported`; both the
 intent and the transaction compatibility boundary require exact `true` for a
-new candidate. The builder deliberately still emits `false` until the retained
+new candidate. Both boundaries also require valid SemVer for the selected and
+candidate versions and a strict monotonic advance, including standard
+prerelease ordering. A legacy non-SemVer installation remains runnable and
+repairable but is ineligible for upgrade. Exact committed repair is exempt
+because it re-establishes an already-irreversible candidate rather than opening
+a new attempt. The builder deliberately still emits `false` until the retained
 installed N-1→N rehearsal proves the distribution can make the supported
 claim. Managed-release garbage collection, artifact signing/notarization, and
 that activation rehearsal remain deferred.

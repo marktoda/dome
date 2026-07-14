@@ -25,9 +25,11 @@ import {
 } from "./home-lifecycle-suspension";
 import { readHomeUpgradeBarrier } from "./home-upgrade-barrier";
 import {
-  readHomeUpgrade,
+  readCommittedHomeUpgradeForward,
+  readHomeUpgradeDisposition,
   readHomeUpgradeForRecovery,
   readHomeUpgradeHistory,
+  readHomeUpgradeHistoryDisposition,
   readHomeUpgradeHistoryIdentity,
   type HomeUpgradeTransaction,
   type HomeUpgradeTransactionDeps,
@@ -186,7 +188,7 @@ async function retireWhileOwned(
   await ensureHistoryRoot(history, upgrade, deps);
 
   if (!await present(active)) {
-    const prior = await readHomeUpgradeHistory(vault, transactionId, deps);
+    const prior = await readTerminalHistory(vault, transactionId, deps);
     if (prior === null) {
       throw new Error(`Dome Home upgrade transaction ${transactionId} is neither active nor retired`);
     }
@@ -200,7 +202,7 @@ async function retireWhileOwned(
   await assertTerminalState(vault, terminal, deps);
   const sourceIdentity = transactionIdentity(terminal);
 
-  const existing = await readHomeUpgradeHistory(vault, transactionId, deps);
+  const existing = await readTerminalHistory(vault, transactionId, deps);
   if (existing !== null) {
     if (transactionIdentity(existing) !== sourceIdentity) {
       throw new Error("Dome Home upgrade history destination conflicts with active evidence");
@@ -238,7 +240,7 @@ async function retireWhileOwned(
     await publish(active, destination);
   } catch (error) {
     if (await present(active)) throw error;
-    const concurrent = await readHomeUpgradeHistory(vault, transactionId, deps);
+    const concurrent = await readTerminalHistory(vault, transactionId, deps);
     if (concurrent === null || transactionIdentity(concurrent) !== sourceIdentity) {
       throw new Error("Dome Home upgrade retirement lost its active transaction without exact history");
     }
@@ -246,7 +248,7 @@ async function retireWhileOwned(
   }
   await deps.retirementCheckpoint?.("after-rename");
 
-  const archived = await readHomeUpgradeHistory(vault, transactionId, deps);
+  const archived = await readTerminalHistory(vault, transactionId, deps);
   if (archived === null || transactionIdentity(archived) !== sourceIdentity) {
     throw new Error("retired Dome Home upgrade history differs from active evidence");
   }
@@ -260,18 +262,28 @@ async function readTerminalActive(
   transactionId: string,
   deps: HomeUpgradeHistoryDeps,
 ): Promise<HomeUpgradeTransaction> {
-  const recovery = await readHomeUpgradeForRecovery(vault, deps);
-  if (recovery === null || recovery.transactionId !== transactionId) {
-    throw new Error(`another Dome Home upgrade transaction is active: ${recovery?.transactionId ?? "unknown"}`);
+  const disposition = await readHomeUpgradeDisposition(vault, deps);
+  if (disposition === null || disposition.transactionId !== transactionId) {
+    throw new Error(`another Dome Home upgrade transaction is active: ${disposition?.transactionId ?? "unknown"}`);
   }
-  const terminal = recovery.phase === "committed"
-    ? await readHomeUpgrade(vault, deps)
-    : recovery;
+  const terminal = disposition.phase === "committed"
+    ? await readCommittedHomeUpgradeForward(vault, deps)
+    : await readHomeUpgradeForRecovery(vault, deps);
   if (terminal === null || terminal.transactionId !== transactionId ||
     (terminal.phase !== "committed" && terminal.phase !== "restored")) {
     throw new Error("only an exact committed or restored Dome Home upgrade may retire");
   }
   return terminal;
+}
+
+async function readTerminalHistory(
+  vault: string,
+  transactionId: string,
+  deps: HomeUpgradeHistoryDeps,
+): Promise<HomeUpgradeTransaction | null> {
+  const disposition = await readHomeUpgradeHistoryDisposition(vault, transactionId, deps);
+  if (disposition === null || disposition.phase === "committed") return disposition;
+  return await readHomeUpgradeHistory(vault, transactionId, deps);
 }
 
 async function assertTerminalState(
@@ -714,9 +726,9 @@ async function syncRetirementParents(
 }
 
 function transactionIdentity(transaction: HomeUpgradeTransaction): string {
-  // Strict parsing has already proven the bounded private journal, stored
-  // selector bytes, and every snapshot file against the evidence below.
-  // Reuse that closed identity instead of performing a weaker second walk.
+  // Phase-specific qualification has already proven either exact committed
+  // forward truth or full restored rollback truth. The bounded private journal
+  // is the intrinsic identity that must remain stable across the rename.
   return JSON.stringify(transaction);
 }
 

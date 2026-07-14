@@ -14,6 +14,7 @@ import { isDeepStrictEqual } from "node:util";
 
 import { compareStrings } from "../core/compare";
 import { inspectExclusiveFileLock } from "../engine/host/file-lock";
+import { inspectOperationalWriterBarrier } from "../operational-state/writer-barrier";
 import { publishDirectoryExclusive } from "../platform/exclusive-rename";
 import {
   readSqliteSchemaHash,
@@ -59,7 +60,7 @@ import {
   type HomeUpgradeBarrierOwner,
   withHomeUpgradeBarrierOwnership,
 } from "./home-upgrade-barrier";
-import { inspectOperationalWriterBarrier } from "../operational-state/writer-barrier";
+import { isHomeUpgradeVersionAdvance } from "./home-upgrade-version";
 import { withProductHostOwnership } from "./host-ownership";
 import { homeServiceLabelForVault } from "./home-lifecycle";
 import {
@@ -338,6 +339,9 @@ async function prepareHomeUpgradeWhileQuiesced(
     const candidate = await artifactEvidence(paths, input.candidateArtifactId, verify);
     if (candidate.artifactId === old.artifactId) {
       throw new Error("Dome Home upgrade candidate must differ from the selected release");
+    }
+    if (!isHomeUpgradeVersionAdvance(old.version, candidate.version)) {
+      throw new Error("Dome Home upgrade candidate must be a valid SemVer version newer than the selected release");
     }
     const oldSelection = await captureHomeSelection(vault, deps);
     if (oldSelection.installation.sha256 !== selectors.installation.sha256 ||
@@ -739,6 +743,33 @@ export async function readHomeUpgradeHistory(
   transactionId: string,
   deps: HomeUpgradeTransactionDeps = {},
 ): Promise<HomeUpgradeTransaction | null> {
+  const archived = await readArchivedHomeUpgradeDisposition(vaultPath, transactionId, deps);
+  if (archived === null) return null;
+  await validateSnapshotInventory(archived.transactionRoot, archived.journal.snapshot.inventory);
+  return archived.journal;
+}
+
+/**
+ * Read one archived terminal disposition without reopening rollback bytes.
+ * Retirement uses the full bounded journal as its collision/retry identity;
+ * `readHomeUpgradeHistory` remains the strict retained-state audit.
+ */
+export async function readHomeUpgradeHistoryDisposition(
+  vaultPath: string,
+  transactionId: string,
+  deps: HomeUpgradeTransactionDeps = {},
+): Promise<HomeUpgradeTransaction | null> {
+  return (await readArchivedHomeUpgradeDisposition(vaultPath, transactionId, deps))?.journal ?? null;
+}
+
+async function readArchivedHomeUpgradeDisposition(
+  vaultPath: string,
+  transactionId: string,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<{
+  readonly journal: HomeUpgradeTransaction;
+  readonly transactionRoot: string;
+} | null> {
   assertTransactionId(transactionId);
   const vault = await canonicalVault(vaultPath);
   const paths = homeInstallationPaths(vault, deps);
@@ -759,8 +790,7 @@ export async function readHomeUpgradeHistory(
   validateCanonicalArtifactPath(journal.old, paths);
   validateCanonicalArtifactPath(journal.candidate, paths);
   validateArchivedSelectorPaths(journal, paths, deps);
-  await validateSnapshotInventory(transactionRoot, journal.snapshot.inventory);
-  return journal;
+  return Object.freeze({ journal, transactionRoot });
 }
 
 /**
