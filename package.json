@@ -7,6 +7,10 @@
   "types": "src/index.ts",
   "files": [
     "src/",
+    "contracts/agent-stream.ts",
+    "contracts/capture.ts",
+    "contracts/product-readiness.ts",
+    "contracts/source-document.ts",
     "assets/extensions/",
     "assets/model-providers/",
     "assets/source-handlers/",

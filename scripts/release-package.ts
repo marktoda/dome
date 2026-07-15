@@ -15,6 +15,10 @@ export const RELEASE_PACKAGE_CAPS = Object.freeze({
 
 const ALLOWED_PATHS = Object.freeze([
   "src/",
+  "contracts/agent-stream.ts",
+  "contracts/capture.ts",
+  "contracts/product-readiness.ts",
+  "contracts/source-document.ts",
   "assets/extensions/",
   "assets/model-providers/",
   "assets/source-handlers/",
@@ -102,6 +106,10 @@ export function validatePackResult(result: PackResult): void {
   for (const required of [
     "README.md",
     "package.json",
+    "contracts/agent-stream.ts",
+    "contracts/capture.ts",
+    "contracts/product-readiness.ts",
+    "contracts/source-document.ts",
     "assets/extensions/dome.markdown/manifest.yaml",
     "assets/model-providers/anthropic.ts",
     "assets/source-handlers/claude-slack.sh",
