@@ -335,7 +335,10 @@ async function assertAdaptiveAccessibility(page: Page): Promise<void> {
     if (await diagnostics.count() !== 1) {
       throw new Error(`installed PWA connection diagnostics are unavailable at ${viewport.width}x${viewport.height}`);
     }
-    await diagnostics.evaluate(`(element) => { element.scrollTop = 0; element.focus({ preventScroll: true }); }`);
+    await diagnostics.evaluate((element) => {
+      element.scrollTop = 0;
+      (element as unknown as { focus(options: { preventScroll: boolean }): void }).focus({ preventScroll: true });
+    });
     const diagnosticFocus = await page.evaluate(`(() => {
       const body = document.querySelector(".connection-body");
       const summary = document.querySelector(".connection-summary");
@@ -365,26 +368,30 @@ async function assertAdaptiveAccessibility(page: Page): Promise<void> {
     }
     if (diagnosticFocus.scrollable) {
       await page.keyboard.press("PageDown");
-      await page.evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
-      const keyboardScroll = await page.evaluate(`(() => {
-        const body = document.querySelector(".connection-body");
-        const summary = document.querySelector(".connection-summary");
-        if (!(body instanceof HTMLElement) || !(summary instanceof HTMLElement)) return null;
-        const rect = summary.getBoundingClientRect();
-        return {
-          scrolled: body.scrollTop > 0,
-          focused: document.activeElement === body,
-          summaryInside: rect.left >= -0.5 && rect.top >= -0.5 &&
-            rect.right <= innerWidth + 0.5 && rect.bottom <= innerHeight + 0.5,
-        };
-      })()` ) as null | Readonly<{ scrolled: boolean; focused: boolean; summaryInside: boolean }>;
+      let keyboardScroll: null | Readonly<{ scrolled: boolean; focused: boolean; summaryInside: boolean }> = null;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        keyboardScroll = await page.evaluate(`(() => {
+          const body = document.querySelector(".connection-body");
+          const summary = document.querySelector(".connection-summary");
+          if (!(body instanceof HTMLElement) || !(summary instanceof HTMLElement)) return null;
+          const rect = summary.getBoundingClientRect();
+          return {
+            scrolled: body.scrollTop > 0,
+            focused: document.activeElement === body,
+            summaryInside: rect.left >= -0.5 && rect.top >= -0.5 &&
+              rect.right <= innerWidth + 0.5 && rect.bottom <= innerHeight + 0.5,
+          };
+        })()` ) as null | Readonly<{ scrolled: boolean; focused: boolean; summaryInside: boolean }>;
+        if (keyboardScroll?.scrolled) break;
+        await Bun.sleep(25);
+      }
       if (keyboardScroll === null || !keyboardScroll.scrolled) {
         throw new Error(`installed PWA connection diagnostics did not keyboard-scroll at ${viewport.width}x${viewport.height}`);
       }
       if (!keyboardScroll.focused || !keyboardScroll.summaryInside) {
         throw new Error(`installed PWA connection summary or focus left the viewport during keyboard scroll at ${viewport.width}x${viewport.height}`);
       }
-      await diagnostics.evaluate(`(element) => { element.scrollTop = 0; }`);
+      await diagnostics.evaluate((element) => { element.scrollTop = 0; });
     }
   }
 
@@ -505,6 +512,7 @@ async function runAcceptanceSequence(
     ["replay", operations.assertReplay],
   ];
   let failure: AcceptancePhase | null = null;
+  let adaptiveDiagnostic: string | null = null;
   let cleanupFailed = false;
   for (const [phase, operation] of steps) {
     const outcome = await runCooperativePhase(
@@ -515,6 +523,9 @@ async function runAcceptanceSequence(
     );
     if (!outcome.ok) {
       failure = phase;
+      adaptiveDiagnostic = phase === "adaptive-accessibility"
+        ? safeAdaptiveFailureDiagnostic(outcome.kind, outcome.cause)
+        : null;
       cleanupFailed ||= outcome.emergencyCloseFailed;
       break;
     }
@@ -529,7 +540,7 @@ async function runAcceptanceSequence(
   if (failure !== null) {
     const action = failure === "launch"
       ? "launch failed; verify the installed Google Chrome stable channel, then retry"
-      : `failed at ${failure}`;
+      : `failed at ${failure}${adaptiveDiagnostic === null ? "" : ` [${adaptiveDiagnostic}]`}`;
     throw new Error(`installed Home Chromium acceptance ${action}${cleanupFailed ? "; cleanup also failed" : ""}`);
   }
   if (cleanupFailed) throw new Error("installed Home Chromium acceptance cleanup failed");
@@ -540,16 +551,21 @@ async function runCooperativePhase(
   emergencyClose: () => Promise<void>,
   timeoutMs: number,
   emergencyTimeoutMs: number,
-): Promise<Readonly<{ ok: boolean; emergencyCloseFailed: boolean }>> {
+): Promise<Readonly<{
+  ok: boolean;
+  emergencyCloseFailed: boolean;
+  kind: "fulfilled" | "rejected" | "timed-out" | "invalid-deadline";
+  cause: unknown | null;
+}>> {
   if (!validDeadline(timeoutMs) || !validDeadline(emergencyTimeoutMs)) {
-    return Object.freeze({ ok: false, emergencyCloseFailed: true });
+    return Object.freeze({ ok: false, emergencyCloseFailed: true, kind: "invalid-deadline", cause: null });
   }
   const controller = new AbortController();
   const settlement = Promise.resolve()
     .then(() => operation(controller.signal))
     .then(
-      () => Object.freeze({ ok: true }),
-      () => Object.freeze({ ok: false }),
+      () => Object.freeze({ ok: true, kind: "fulfilled" as const, cause: null }),
+      (cause: unknown) => Object.freeze({ ok: false, kind: "rejected" as const, cause }),
     );
   let timer: ReturnType<typeof setTimeout> | undefined;
   let timeoutStarted = false;
@@ -576,16 +592,49 @@ async function runCooperativePhase(
   if (!winner.timedOut) {
     if (timeoutStarted) {
       const timedOut = await timeout;
-      return Object.freeze({ ok: false, emergencyCloseFailed: timedOut.emergencyCloseFailed });
+      return Object.freeze({ ok: false, emergencyCloseFailed: timedOut.emergencyCloseFailed, kind: "timed-out", cause: null });
     }
     if (timer !== undefined) clearTimeout(timer);
-    return Object.freeze({ ok: winner.result.ok, emergencyCloseFailed: false });
+    return Object.freeze({
+      ok: winner.result.ok,
+      emergencyCloseFailed: false,
+      kind: winner.result.kind,
+      cause: winner.result.cause,
+    });
   }
   // Timeout is cooperative, not abandon-on-race: abort is visible to host
   // callbacks, emergency close rejects Playwright work, and the losing phase
   // must settle before final cleanup can release scenario ownership.
   await settlement;
-  return Object.freeze({ ok: false, emergencyCloseFailed: winner.emergencyCloseFailed });
+  return Object.freeze({ ok: false, emergencyCloseFailed: winner.emergencyCloseFailed, kind: "timed-out", cause: null });
+}
+
+function safeAdaptiveFailureDiagnostic(
+  kind: "fulfilled" | "rejected" | "timed-out" | "invalid-deadline",
+  cause: unknown,
+): string {
+  if (kind === "timed-out") return "phase-timeout";
+  if (kind === "invalid-deadline") return "invalid-deadline";
+  if (kind !== "rejected") return "unclassified";
+  const message = cause instanceof Error ? cause.message : "";
+  if (message === "installed PWA reduced-motion policy left animation or transition enabled") {
+    return "reduced-motion@844x390";
+  }
+  const patterns: ReadonlyArray<readonly [RegExp, string]> = [
+    [/^installed PWA overflows horizontally at (320x568|390x844|844x390)$/, "horizontal-overflow"],
+    [/^installed PWA has undersized targets at (320x568|390x844|844x390)$/, "undersized-target"],
+    [/^installed PWA critical controls leave the viewport at (320x568|390x844|844x390)$/, "critical-control"],
+    [/^installed PWA keyboard focus is not visibly contained at (320x568|390x844|844x390)$/, "initial-focus"],
+    [/^installed PWA connection diagnostics are unavailable at (320x568|390x844|844x390)$/, "diagnostics-missing"],
+    [/^installed PWA connection diagnostics did not receive keyboard focus at (320x568|390x844|844x390)$/, "diagnostics-focus"],
+    [/^installed PWA connection diagnostics did not keyboard-scroll at (320x568|390x844|844x390)$/, "diagnostics-scroll"],
+    [/^installed PWA connection summary or focus left the viewport during keyboard scroll at (320x568|390x844|844x390)$/, "diagnostics-containment"],
+  ];
+  for (const [pattern, code] of patterns) {
+    const viewport = pattern.exec(message)?.[1];
+    if (viewport !== undefined) return `${code}@${viewport}`;
+  }
+  return "unclassified";
 }
 
 export function parseHomePwaCaptureExportForTests(bytes: Uint8Array, expectedText: string): string {
@@ -693,7 +742,7 @@ async function assertActivitySource(page: Page, canary: InstalledFunctionalCanar
   }
   await page.keyboard.press("Escape");
   await dialog.waitFor({ state: "hidden", timeout: WAIT_MS });
-  if (!await row.evaluate("(element) => document.activeElement === element")) {
+  if (!await row.evaluate((element) => element.ownerDocument.activeElement === element)) {
     throw new Error("installed PWA source viewer did not restore Activity focus");
   }
 }
