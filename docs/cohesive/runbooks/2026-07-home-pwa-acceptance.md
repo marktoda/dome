@@ -31,7 +31,7 @@ each result. A skipped row is not a pass.
    including UI pairing, validated Connection readiness, controlled offline
    reload, uncached `/readyz`, local capture/export, revoke, auth repair, and
    one logical replay in system Chrome. Before pairing, Chrome also validates
-   the emitted platform metadata and decodes the exact favicon, SVG, touch,
+   the emitted platform metadata and decodes the exact PNG, SVG, touch,
    `any`, and maskable icon set at their declared dimensions. After readiness,
    it checks 320×568, 390×844, and 844×390 for overflow, 44px enabled controls
    and coarse targets (excluding inline prose links), critical-control

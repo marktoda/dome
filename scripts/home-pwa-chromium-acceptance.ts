@@ -26,6 +26,7 @@ export type HomePwaChromiumAcceptanceInput = Readonly<{
 
 type AcceptancePhase =
   | "launch"
+  | "install-identity"
   | "pair"
   | "readiness"
   | "adaptive-accessibility"
@@ -41,6 +42,7 @@ type AcceptancePhase =
 
 type AcceptanceOperations = Readonly<{
   launch(signal: AbortSignal): Promise<void>;
+  assertInstallIdentity(signal: AbortSignal): Promise<void>;
   pair(signal: AbortSignal): Promise<void>;
   assertReadiness(signal: AbortSignal): Promise<void>;
   assertAdaptiveAccessibility(signal: AbortSignal): Promise<void>;
@@ -135,6 +137,10 @@ export async function runHomePwaChromiumAcceptance(
         throw new Error("installed system Google Chrome stable channel is unavailable");
       }
       signal.throwIfAborted();
+    },
+    assertInstallIdentity: async (signal) => {
+      signal.throwIfAborted();
+      if (browser === null) throw new Error("browser is unavailable");
       // These are the complete context options. In particular, there is no
       // recordHar, recordVideo, storageState, or persistent user-data path.
       context = await browser.newContext({ serviceWorkers: "allow", acceptDownloads: true });
@@ -352,12 +358,13 @@ async function assertInstallIdentity(page: Page): Promise<void> {
       metadata: {
         colorScheme: meta("color-scheme"), appleCapable: meta("apple-mobile-web-app-capable"),
         appleStatusBar: meta("apple-mobile-web-app-status-bar-style"), appleTitle: meta("apple-mobile-web-app-title"),
-        favicon: link('link[rel="icon"][sizes="48x48"]'), svgIcon: link('link[rel="icon"][sizes="any"]'),
+        rasterIcon: link('link[rel="icon"][sizes="64x64"][type="image/png"]'),
+        svgIcon: link('link[rel="icon"][sizes="any"]'),
         appleTouch: link('link[rel="apple-touch-icon"]'), manifest: link('link[rel="manifest"]'),
       },
       images: {
-        favicon: await decode("/favicon.ico"), svg: await decode("/dome.svg"),
-        appleTouch: await decode("/apple-touch-icon-180x180.png"), icon64: await decode("/pwa-64x64.png"),
+        rasterIcon: await decode("/pwa-64x64.png"), svg: await decode("/dome.svg"),
+        appleTouch: await decode("/apple-touch-icon-180x180.png"),
         icon192: await decode("/pwa-192x192.png"), icon512: await decode("/pwa-512x512.png"),
         maskable512: await decode("/maskable-icon-512x512.png"),
       },
@@ -375,7 +382,7 @@ async function assertInstallIdentity(page: Page): Promise<void> {
     appleCapable: "yes",
     appleStatusBar: "black-translucent",
     appleTitle: "Dome",
-    favicon: "/favicon.ico",
+    rasterIcon: "/pwa-64x64.png",
     svgIcon: "/dome.svg",
     appleTouch: "/apple-touch-icon-180x180.png",
     manifest: "/manifest.webmanifest",
@@ -384,7 +391,7 @@ async function assertInstallIdentity(page: Page): Promise<void> {
   }
   const svg = identity.images["svg"];
   const expectedImages: Readonly<Record<string, readonly [number, number]>> = {
-    favicon: [48, 48], appleTouch: [180, 180], icon64: [64, 64], icon192: [192, 192],
+    rasterIcon: [64, 64], appleTouch: [180, 180], icon192: [192, 192],
     icon512: [512, 512], maskable512: [512, 512],
   };
   if (Object.entries(expectedImages).some(([name, size]) =>
@@ -428,6 +435,7 @@ async function runAcceptanceSequence(
 ): Promise<void> {
   const steps: ReadonlyArray<readonly [AcceptancePhase, (signal: AbortSignal) => Promise<void>]> = [
     ["launch", operations.launch],
+    ["install-identity", operations.assertInstallIdentity],
     ["pair", operations.pair],
     ["readiness", operations.assertReadiness],
     ["adaptive-accessibility", operations.assertAdaptiveAccessibility],
@@ -464,7 +472,7 @@ async function runAcceptanceSequence(
   cleanupFailed ||= !cleanup.ok || cleanup.emergencyCloseFailed;
   if (failure !== null) {
     const action = failure === "launch"
-      ? "launch or initial shell failed; verify the installed Google Chrome stable channel and Home, then retry"
+      ? "launch failed; verify the installed Google Chrome stable channel, then retry"
       : `failed at ${failure}`;
     throw new Error(`installed Home Chromium acceptance ${action}${cleanupFailed ? "; cleanup also failed" : ""}`);
   }

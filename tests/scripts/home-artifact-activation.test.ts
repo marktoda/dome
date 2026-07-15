@@ -298,6 +298,8 @@ describe("Dome Home 0.3 activation", () => {
     expect(chromiumSource).toContain('["activity-source", operations.assertActivitySource]');
     expect(chromiumSource).toContain('["task-settlement", operations.assertTaskSettlement]');
     expect(chromiumSource).toContain("const TASK_SETTLEMENT_PHASE_TIMEOUT_MS = 120_000;");
+    expect(chromiumSource).toContain("/pwa-64x64.png");
+    expect(chromiumSource).not.toContain("favicon.ico");
     const chromiumRunner = sourceFunction(
       chromiumSource,
       "export async function runHomePwaChromiumAcceptance",

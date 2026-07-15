@@ -1179,7 +1179,6 @@ const PWA_WORKBOX_DEFINE = /^define\(\["\.\/(workbox-[a-f0-9]{8})"\],function\(/
 const PWA_INSTALL_ASSETS = Object.freeze([
   "apple-touch-icon-180x180.png",
   "dome.svg",
-  "favicon.ico",
   "maskable-icon-512x512.png",
   "pwa-64x64.png",
   "pwa-192x192.png",
@@ -1277,7 +1276,7 @@ async function rehearseHomeServer(dome: string, vault: string, cwd: string): Pro
       '<meta name="apple-mobile-web-app-capable" content="yes"',
       '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"',
       '<meta name="apple-mobile-web-app-title" content="Dome"',
-      '<link rel="icon" href="/favicon.ico" sizes="48x48"',
+      '<link rel="icon" href="/pwa-64x64.png" sizes="64x64" type="image/png"',
       '<link rel="icon" href="/dome.svg" sizes="any" type="image/svg+xml"',
       '<link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png"',
       '<link rel="manifest" href="/manifest.webmanifest"',
@@ -1374,7 +1373,7 @@ async function assertPwaInstallAssets(baseUrl: string): Promise<void> {
       throw new Error(`artifact Dome Home install asset ${path} is invalid`);
     }
   }
-  for (const [path, type] of [["dome.svg", "image/svg+xml"], ["favicon.ico", "image/x-icon"]] as const) {
+  for (const [path, type] of [["dome.svg", "image/svg+xml"]] as const) {
     const response = await fetch(new URL(`/${path}`, baseUrl));
     const bytes = await response.arrayBuffer();
     if (!response.ok || response.headers.get("cache-control") !== "no-cache" ||

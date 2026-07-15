@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { PWA_OPTIONS } from "../vite.config";
@@ -28,7 +28,6 @@ describe("generated PWA policy", () => {
     ]);
     expect(PWA_OPTIONS.workbox.globPatterns).toEqual([
       "**/*.{js,css,html}",
-      "favicon.ico",
       "dome.svg",
       "apple-touch-icon-180x180.png",
     ]);
@@ -57,8 +56,11 @@ describe("generated PWA policy", () => {
     const generator = await readFile(join(import.meta.dir, "..", "pwa-assets.config.mjs"), "utf8");
     expect(generator).toContain('background: "#111111"');
     expect(generator.match(/padding: 0,/g)).toHaveLength(2);
-    expect((await readFile(join(import.meta.dir, "..", "public", "favicon.ico"))).byteLength)
-      .toBeGreaterThan(100);
+    const index = await readFile(join(import.meta.dir, "..", "index.html"), "utf8");
+    expect(index).toContain('<link rel="icon" href="/pwa-64x64.png" sizes="64x64" type="image/png" />');
+    expect(index).not.toContain("favicon.ico");
+    expect(generator).not.toContain("favicons:");
+    await expect(access(join(import.meta.dir, "..", "public", "favicon.ico"))).rejects.toThrow();
   });
 });
 
