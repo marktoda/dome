@@ -1,27 +1,22 @@
-// product-host/home-credentials: the complete macOS Keychain seam for Dome
-// Home provider credentials. Callers can observe presence or lend a secret to
-// one callback; secret bytes are never returned, persisted, or passed in argv.
+// product-host/home-credentials: the closed macOS Keychain seam for Dome
+// Home's shipped Anthropic model provider. The native helper owns every item
+// lookup and provider launch. The Dome Bun host never receives secret bytes;
+// only the fixed provider Bun child receives them in its explicit environment.
 
 import { homedir } from "node:os";
-import { constants, type BigIntStats } from "node:fs";
-import { lstat, open } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { lstat, realpath } from "node:fs/promises";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const SECURITY = "/usr/bin/security";
 export const HOME_CREDENTIAL_SERVICE = "com.dome.home.credentials.v1" as const;
-export const HOME_CREDENTIAL_SLOTS = Object.freeze([
-  "model.anthropic.api-key",
-  "transcription.api-key",
-] as const);
+export const HOME_MODEL_CREDENTIAL_SLOT = "model.anthropic.api-key" as const;
 
-export type HomeCredentialSlot = typeof HOME_CREDENTIAL_SLOTS[number];
 export type HomeCredentialErrorCode =
   | "unsupported-platform"
   | "missing"
   | "locked"
   | "denied"
-  | "failed"
-  | "consumer-failed";
+  | "failed";
 
 export class HomeCredentialError extends Error {
   readonly code: HomeCredentialErrorCode;
@@ -46,174 +41,143 @@ export type HomeCredentialInspection = Readonly<{ present: boolean }>;
 export type HomeCredentialRemoval = Readonly<{ removed: boolean }>;
 
 export type HomeCredentials = Readonly<{
-  inspect(vaultPath: string, slot: HomeCredentialSlot): Promise<HomeCredentialInspection>;
-  withSecret(vaultPath: string, slot: HomeCredentialSlot, consume: (secret: string) => Promise<unknown>): Promise<void>;
-  remove(vaultPath: string, slot: HomeCredentialSlot): Promise<HomeCredentialRemoval>;
+  inspect(vaultPath: string): Promise<HomeCredentialInspection>;
+  configure(vaultPath: string): Promise<void>;
+  check(vaultPath: string): Promise<HomeCredentialInspection>;
+  remove(vaultPath: string): Promise<HomeCredentialRemoval>;
+  modelProviderCommand(vaultPath: string): Promise<ReadonlyArray<string>>;
 }>;
 
-export type HomeCredentialCommand = Readonly<{
-  stdin: "ignore";
-  stdout: "capture" | "ignore";
-  stderr: "capture";
-  timeoutMs: number;
-}>;
-
-export type HomeCredentialCommandResult = Readonly<{
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}>;
-
-export type HomeCredentialCommandRunner = (
+export type HomeCredentialHelperRunner = (
   argv: ReadonlyArray<string>,
-  io: HomeCredentialCommand,
-) => Promise<HomeCredentialCommandResult>;
+  options?: Readonly<{ timeoutMs?: number }>,
+) => Promise<Readonly<{ exitCode: number }>>;
 
-export function openHomeCredentials(): HomeCredentials {
-  return openHomeCredentialsForTests({});
+const DEFAULT_HELPER_TIMEOUT_MS = 1_000;
+
+export function openHomeCredentials(options: Readonly<{ helperPath?: string }> = {}): HomeCredentials {
+  return openHomeCredentialsForTests(options);
 }
 
 /** Test adapter seam; production callers use openHomeCredentials(). */
 export function openHomeCredentialsForTests(deps: Readonly<{
   platform?: NodeJS.Platform;
-  run?: HomeCredentialCommandRunner;
-  credentialIdentityReadCheckpoint?: ((path: string) => Promise<void>) | undefined;
+  runHelper?: HomeCredentialHelperRunner;
+  helperPath?: string;
+  helperTimeoutMs?: number;
 }>): HomeCredentials {
   const platform = deps.platform ?? process.platform;
-  const run = deps.run ?? runSecurity;
-  const account = async (vaultPath: string, slot: HomeCredentialSlot): Promise<string> => {
+  const runHelper = deps.runHelper ?? runHomeCredentialHelper;
+  const helperTimeoutMs = deps.helperTimeoutMs ?? DEFAULT_HELPER_TIMEOUT_MS;
+  if (!Number.isFinite(helperTimeoutMs) || helperTimeoutMs <= 0) {
+    throw new RangeError("helperTimeoutMs must be a positive finite number");
+  }
+  let mutationTail = Promise.resolve();
+
+  const command = async (
+    vaultPath: string,
+    operation: "replace" | "inspect" | "check" | "remove" | "run-model-provider",
+  ): Promise<ReadonlyArray<string>> => {
     if (platform !== "darwin") {
       throw new HomeCredentialError("unsupported-platform", "Dome Home credentials require macOS Keychain");
     }
-    assertSlot(slot);
-    return `${await readCredentialVaultId(vaultPath, deps.credentialIdentityReadCheckpoint)}:${slot}`;
+    const [helper, vault] = await Promise.all([
+      validatedHelperPath(deps.helperPath ?? defaultCredentialHelperPath()),
+      canonicalVaultPath(vaultPath),
+    ]);
+    return Object.freeze([helper, operation, vault]);
   };
+
   const invoke = async (
-    argv: ReadonlyArray<string>,
-    io: HomeCredentialCommand,
-    sensitive: ReadonlyArray<string>,
-  ): Promise<HomeCredentialCommandResult> => {
-    const result = await run(Object.freeze([...argv]), io);
+    vaultPath: string,
+    operation: "replace" | "inspect" | "check" | "remove",
+  ): Promise<number> => {
+    const argv = await command(vaultPath, operation);
+    let result: Readonly<{ exitCode: number }>;
+    try {
+      result = await runHelper(
+        argv,
+        operation === "replace" ? {} : { timeoutMs: helperTimeoutMs },
+      );
+    } catch {
+      throw new HomeCredentialError("failed", "Dome Home credential helper failed");
+    }
     if (!Number.isSafeInteger(result.exitCode)) {
-      throw new HomeCredentialError("failed", "Dome Home Keychain command returned invalid status");
+      throw new HomeCredentialError("failed", "Dome Home credential helper returned invalid status");
+    }
+    if (result.exitCode === 3) {
+      throw new HomeCredentialError("denied", "Dome Home credential access was denied or cancelled");
+    }
+    if (result.exitCode === 5) {
+      throw new HomeCredentialError("locked", "Dome Home Keychain is locked or unavailable");
     }
     if (result.exitCode !== 0 && result.exitCode !== 44) {
-      const detail = redactDiagnostic(result.stderr, sensitive);
-      if (result.exitCode === 36 || /interaction.*not allowed|keychain.*locked/i.test(result.stderr)) {
-        throw new HomeCredentialError("locked", "Dome Home Keychain is locked or unavailable for interaction");
-      }
-      if (result.exitCode === 51 || /user.*cancel|authorization.*denied|auth.*failed/i.test(result.stderr)) {
-        throw new HomeCredentialError("denied", "Dome Home Keychain access was denied");
-      }
-      throw new HomeCredentialError(
-        "failed",
-        detail.length === 0 ? "Dome Home Keychain command failed" : `Dome Home Keychain command failed: ${detail}`,
-      );
+      throw new HomeCredentialError("failed", "Dome Home credential helper failed");
     }
-    return result;
+    return result.exitCode;
   };
-  const defaultKeychain = async (): Promise<string> => {
-    const result = await invoke([
-      SECURITY, "default-keychain", "-d", "user",
-    ], { stdin: "ignore", stdout: "capture", stderr: "capture", timeoutMs: 10_000 }, []);
-    if (result.exitCode === 44) throw new HomeCredentialError("failed", "Dome Home user Keychain is unavailable");
-    const line = stripSecurityNewline(result.stdout);
-    const quoted = /^[\t ]*("(?:[^"\\]|\\.)*")[\t ]*$/.exec(line);
-    if (quoted === null) {
-      throw new HomeCredentialError("failed", "Dome Home default Keychain response is malformed");
-    }
-    let path: unknown;
-    try { path = JSON.parse(quoted[1]!); }
-    catch { throw new HomeCredentialError("failed", "Dome Home default Keychain response is malformed"); }
-    if (typeof path !== "string" || path.length === 0 || path.includes("\0") || !isAbsolute(path) || resolve(path) !== path) {
-      throw new HomeCredentialError("failed", "Dome Home default Keychain path is malformed");
-    }
-    let info: Awaited<ReturnType<typeof lstat>>;
-    try { info = await lstat(path); }
-    catch { throw new HomeCredentialError("failed", "Dome Home default Keychain is unavailable"); }
-    if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 ||
-      (typeof process.getuid === "function" && info.uid !== process.getuid())) {
-      throw new HomeCredentialError("failed", "Dome Home default Keychain is redirected or not owner-controlled");
-    }
-    return path;
+
+  // Serialize mutations inside this process. Provider children do not join this
+  // queue: each child asks the helper for the current Keychain value at launch.
+  const serializeMutation = async <T>(work: () => Promise<T>): Promise<T> => {
+    const previous = mutationTail;
+    let release!: () => void;
+    mutationTail = new Promise<void>((resolveTail) => { release = resolveTail; });
+    await previous;
+    try { return await work(); }
+    finally { release(); }
   };
+
   return Object.freeze({
-    async inspect(vaultPath, slot) {
-      const key = await account(vaultPath, slot);
-      const keychain = await defaultKeychain();
-      const result = await invoke([
-        SECURITY, "find-generic-password", "-s", HOME_CREDENTIAL_SERVICE, "-a", key, keychain,
-      ], { stdin: "ignore", stdout: "ignore", stderr: "capture", timeoutMs: 10_000 }, [key, keychain]);
-      return Object.freeze({ present: result.exitCode === 0 });
+    async inspect(vaultPath) {
+      return Object.freeze({ present: await invoke(vaultPath, "inspect") === 0 });
     },
-    async withSecret(vaultPath, slot, consume) {
-      const key = await account(vaultPath, slot);
-      const keychain = await defaultKeychain();
-      const result = await invoke([
-        SECURITY, "find-generic-password", "-w", "-s", HOME_CREDENTIAL_SERVICE, "-a", key, keychain,
-      ], { stdin: "ignore", stdout: "capture", stderr: "capture", timeoutMs: 10_000 }, [key, keychain]);
-      if (result.exitCode === 44) {
-        throw new HomeCredentialError("missing", "Dome Home credential is not configured");
-      }
-      const secret = stripSecurityNewline(result.stdout);
-      if (secret.length === 0 || Buffer.byteLength(secret, "utf8") > 16 * 1024 || secret.includes("\0")) {
-        throw new HomeCredentialError("failed", "Dome Home Keychain returned invalid credential bytes");
-      }
-      try { await consume(secret); }
-      catch {
-        throw new HomeCredentialError("consumer-failed", "Dome Home credential consumer failed");
-      }
+    async configure(vaultPath) {
+      await serializeMutation(async () => {
+        if (await invoke(vaultPath, "replace") !== 0 || await invoke(vaultPath, "check") !== 0) {
+          throw new HomeCredentialError("failed", "Dome Home Keychain did not retain the model credential");
+        }
+      });
     },
-    async remove(vaultPath, slot) {
-      const key = await account(vaultPath, slot);
-      const keychain = await defaultKeychain();
-      const result = await invoke([
-        SECURITY, "delete-generic-password", "-s", HOME_CREDENTIAL_SERVICE, "-a", key, keychain,
-      ], { stdin: "ignore", stdout: "ignore", stderr: "capture", timeoutMs: 10_000 }, [key, keychain]);
-      return Object.freeze({ removed: result.exitCode === 0 });
+    async check(vaultPath) {
+      const result = await invoke(vaultPath, "check");
+      if (result === 44) throw new HomeCredentialError("missing", "Dome Home model credential is not configured");
+      return Object.freeze({ present: true });
+    },
+    async remove(vaultPath) {
+      return await serializeMutation(async () =>
+        Object.freeze({ removed: await invoke(vaultPath, "remove") === 0 }));
+    },
+    async modelProviderCommand(vaultPath) {
+      return await command(vaultPath, "run-model-provider");
     },
   });
 }
 
-async function readCredentialVaultId(
-  vaultPath: string,
-  checkpoint?: (path: string) => Promise<void>,
-): Promise<string> {
-  const path = join(resolve(vaultPath), ".dome", "state", "product-host-id");
-  let handle: Awaited<ReturnType<typeof open>>;
-  try { handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW); }
-  catch { throw new Error("Product Host vault identity is unavailable or redirected"); }
-  try {
-    const before = await handle.stat({ bigint: true });
-    if (!before.isFile() || before.nlink !== 1n || before.size > 1024n ||
-      (before.mode & 0o777n) !== 0o600n ||
-      (typeof process.getuid === "function" && before.uid !== BigInt(process.getuid()))) {
-      throw new Error("Product Host vault identity is not a private owner-controlled regular file");
-    }
-    await checkpoint?.(path);
-    const bytes = await handle.readFile();
-    const after = await handle.stat({ bigint: true });
-    const named = await lstat(path, { bigint: true });
-    if (!sameStableFile(before, after) || named.dev !== after.dev || named.ino !== after.ino ||
-      BigInt(bytes.byteLength) !== before.size) {
-      throw new Error("Product Host vault identity changed while being read");
-    }
-    let text: string;
-    try { text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
-    catch { throw new Error("Product Host vault identity is missing or malformed"); }
-    const matched = /^([A-Za-z0-9_-]{1,128})\n?$/.exec(text);
-    if (matched === null) throw new Error("Product Host vault identity is missing or malformed");
-    return matched[1]!;
-  } finally { await handle.close(); }
+function defaultCredentialHelperPath(): string {
+  return fileURLToPath(new URL("../../../runtime/dome-keychain-helper", import.meta.url));
 }
 
-function sameStableFile(
-  left: BigIntStats,
-  right: BigIntStats,
-): boolean {
-  return left.dev === right.dev && left.ino === right.ino && left.size === right.size &&
-    left.mode === right.mode && left.nlink === right.nlink && left.uid === right.uid &&
-    left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs;
+async function canonicalVaultPath(input: string): Promise<string> {
+  const requested = resolve(input);
+  let canonical: string;
+  try { canonical = await realpath(requested); }
+  catch { throw new HomeCredentialError("failed", "Dome Home vault is unavailable"); }
+  return canonical;
+}
+
+async function validatedHelperPath(input: string): Promise<string> {
+  const path = resolve(input);
+  let info: Awaited<ReturnType<typeof lstat>>;
+  try { info = await lstat(path); }
+  catch { throw new HomeCredentialError("failed", "Dome Home credential helper is unavailable"); }
+  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 ||
+    (info.mode & 0o022) !== 0 || (info.mode & 0o111) === 0 ||
+    (typeof process.getuid === "function" && info.uid !== process.getuid()) ||
+    await realpath(path) !== path) {
+    throw new HomeCredentialError("failed", "Dome Home credential helper is not a direct owner-controlled executable");
+  }
+  return path;
 }
 
 export function isHomeSecretEnvironmentName(name: string): boolean {
@@ -234,74 +198,37 @@ export function assertHomeEnvironmentHasNoSecrets(
   }
 }
 
-function assertSlot(slot: string): asserts slot is HomeCredentialSlot {
-  if (!(HOME_CREDENTIAL_SLOTS as readonly string[]).includes(slot)) {
-    throw new Error("unknown Dome Home credential slot");
-  }
-}
-
-function stripSecurityNewline(value: string): string {
-  if (value.endsWith("\r\n")) return value.slice(0, -2);
-  if (value.endsWith("\n")) return value.slice(0, -1);
-  return value;
-}
-
-function redactDiagnostic(value: string, sensitive: ReadonlyArray<string>): string {
-  let redacted = value;
-  for (const item of sensitive) if (item.length > 0) redacted = redacted.replaceAll(item, "[REDACTED]");
-  return redacted
-    .replaceAll(homedir(), "~")
-    .replace(/(?:sk-ant-|Bearer\s+)[A-Za-z0-9._-]+/gi, "[REDACTED]")
-    .replace(/[\r\n\t]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 1024);
-}
-
-async function runSecurity(
+/** Small process seam: callers explicitly opt into a hard timeout. */
+export async function runHomeCredentialHelper(
   argv: ReadonlyArray<string>,
-  io: HomeCredentialCommand,
-): Promise<HomeCredentialCommandResult> {
+  options: Readonly<{ timeoutMs?: number }> = {},
+): Promise<Readonly<{ exitCode: number }>> {
+  if (options.timeoutMs !== undefined &&
+    (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0)) {
+    throw new RangeError("timeoutMs must be a positive finite number");
+  }
   const child = Bun.spawn([...argv], {
-    stdin: io.stdin,
-    stdout: io.stdout === "capture" ? "pipe" : io.stdout,
-    stderr: io.stderr === "capture" ? "pipe" : "inherit",
+    stdin: "inherit",
+    stdout: "ignore",
+    stderr: "inherit",
     env: { HOME: homedir(), PATH: "/usr/bin:/bin" },
   });
-  const abort = setTimeout(() => child.kill("SIGKILL"), io.timeoutMs);
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited.finally(() => { clearTimeout(abort); }),
-    io.stdout === "capture" ? readRequiredStream(child.stdout, 64 * 1024) : Promise.resolve(""),
-    io.stderr === "capture" ? readRequiredStream(child.stderr, 2048) : Promise.resolve(""),
-  ]);
-  return Object.freeze({ exitCode, stdout, stderr });
-}
-
-async function readRequiredStream(
-  stream: ReadableStream<Uint8Array> | undefined,
-  maximum: number,
-): Promise<string> {
-  if (stream === undefined) {
-    throw new HomeCredentialError("failed", "Dome Home Keychain output was unavailable");
+  if (options.timeoutMs === undefined) {
+    return Object.freeze({ exitCode: await child.exited });
   }
-  return await readBoundedStream(stream, maximum);
-}
-
-async function readBoundedStream(stream: ReadableStream<Uint8Array>, maximum: number): Promise<string> {
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    while (true) {
-      const next = await reader.read();
-      if (next.done) break;
-      size += next.value.byteLength;
-      if (size > maximum) throw new HomeCredentialError("failed", "Dome Home Keychain output exceeded its bound");
-      chunks.push(next.value);
-    }
-  } finally { reader.releaseLock(); }
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const outcome = await Promise.race([
+    child.exited.then((exitCode) => ({ kind: "exited" as const, exitCode })),
+    new Promise<{ readonly kind: "timed-out" }>((resolveTimeout) => {
+      timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        resolveTimeout({ kind: "timed-out" });
+      }, options.timeoutMs);
+    }),
+  ]);
+  if (timer !== undefined) clearTimeout(timer);
+  if (outcome.kind === "timed-out") {
+    throw new Error(`Dome Home credential helper exceeded ${options.timeoutMs}ms`);
+  }
+  return Object.freeze({ exitCode: outcome.exitCode });
 }

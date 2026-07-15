@@ -40,7 +40,7 @@ const ProbeResultSchema = z.discriminatedUnion("status", [
     keyPresent: z.boolean().optional(),
     defaultModel: z.string().optional(),
   }),
-  z.object({ status: z.literal("probe-unsupported"), detail: z.string() }),
+  z.object({ status: z.literal("probe-unsupported"), exitCode: z.number().int().nonnegative().optional(), detail: z.string() }),
   z.object({ status: z.literal("spawn-failed"), detail: z.string() }),
   z.object({ status: z.literal("invalid-response"), detail: z.string() }),
   z.object({ status: z.literal("timed-out"), detail: z.string() }),
@@ -98,6 +98,10 @@ function normalizeResult(
         ? { defaultModel: result.defaultModel }
         : {}),
     });
+  }
+  if (result.status === "probe-unsupported") {
+    return Object.freeze({ status: result.status, detail: result.detail,
+      ...(result.exitCode !== undefined ? { exitCode: result.exitCode } : {}) });
   }
   return Object.freeze({ status: result.status, detail: result.detail });
 }

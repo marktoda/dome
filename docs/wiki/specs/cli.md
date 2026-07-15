@@ -114,6 +114,9 @@ dome home upgrade [--vault <path>] [--json]
 dome home cleanup [--apply] [--json]
                                 Inspect host-wide managed release reachability;
                                 remove unreachable release-store entries only with --apply.
+dome home setup <status|configure|check|remove> [--vault <path>] [--json]
+                                Inspect or manage the shipped Anthropic provider
+                                through Dome Home's macOS Keychain helper.
 dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
                                 read/capture tools (capture, views, query, export_context,
                                 status, check, resolve, settle, tasks, brief) for
@@ -2828,6 +2831,38 @@ direct-artifact Home service with no installation record is also refused until
 Serve plist, loaded service, or live heartbeat must be removed with the legacy
 top-level uninstall before Home can be installed.
 
+### `dome home setup status|configure|check|remove [--vault <path>] [--json]`
+
+Derived local-console setup for the shipped Anthropic model provider. There is
+no provider argument and no transcription surface. `status` combines exact
+vault model-provider configuration, Keychain presence, the provider's local
+probe, and legacy plaintext-residue inspection. `configure` prompts through
+the packaged native helper, performs a decrypting post-write check, and then
+uses the same fixed helper/provider probe as normal packaged Home. `check` is
+read/decrypt/probe only; `remove` is idempotent. None of the verbs writes a
+setup record or changes `.dome/config.yaml`.
+
+Only exact command `["bun", ".dome/model-provider.ts"]` is managed. Missing
+configuration points to `dome init --with-model-provider anthropic`; custom
+configuration is reported and preserved. Output is the fixed
+`dome.home.setup/v1` document: action/status/exit code, model
+configuration/credential/runtime states, residue state, fixed next action, and
+a bounded message—never secret bytes or helper diagnostics. Mutations have live-rotation semantics: an
+already-running provider child may finish with its launch-time key, while each
+subsequent invocation reads current Keychain truth without a Home restart.
+Authenticated readiness rechecks decrypting local Keychain truth without a
+network probe. Concurrent reads share one check, and a cache bounded to one
+second makes configure/remove/lock changes visible within at most one second;
+the update is bounded rather than immediate.
+For managed Home this command is an opt-in selector, not the executed script:
+the signed helper launches the manifest-bound immutable artifact provider by
+an already-open descriptor after checking its compiled SHA-256. It never
+executes a vault's mutable `.dome/model-provider.ts`, and neither
+`ANTHROPIC_BASE_URL` nor arbitrary inherited environment crosses that helper
+boundary.
+Source-checkout Home retains ordinary vault-config provider behavior, and
+upgrade probation never opens config, Keychain, or provider machinery.
+
 ### `dome home upgrade [--vault <path>] [--json]`
 
 Runs the single `manageHomeUpgrade` intent against the exact self-contained
@@ -2842,7 +2877,7 @@ release needs repair.
 General artifact verification accepts boolean
 `distribution.upgradeSupported`, but a new candidate is eligible only when it
 is exactly `true` in addition to the writer-barrier and durable-state protocols.
-The exact 0.2 release builder can emit `true` only inside its closed candidate
+The exact 0.3 release builder can emit `true` only inside its closed candidate
 pipeline after the retained installed N-1→N rehearsal succeeds against the
 pinned predecessor and frozen fixture, its returned identities match the
 staged bytes, and candidate plus source are re-proved before atomic

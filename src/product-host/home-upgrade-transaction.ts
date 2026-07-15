@@ -48,6 +48,8 @@ import {
 import { readVaultId } from "./vault-id";
 import { assertHomeEnvironmentHasNoSecrets } from "./home-credentials";
 import {
+  HOME_CREDENTIAL_HELPER_PATH,
+  HOME_CREDENTIAL_HELPER_PROTOCOL,
   verifyHomeArtifact,
   type HomeArtifactManifest,
   type HomeArtifactVerifier,
@@ -1412,7 +1414,9 @@ async function assertCandidateDurableCompatibility(
     throw new Error("upgrade candidate artifact or product version changed");
   }
   if (manifest.distribution.upgradeSupported !== true ||
-    manifest.writerBarrier?.protocol !== 1 || manifest.durableState?.protocol !== HOME_DURABLE_STATE_PROTOCOL) {
+    manifest.writerBarrier?.protocol !== 1 || manifest.durableState?.protocol !== HOME_DURABLE_STATE_PROTOCOL ||
+    manifest.homeCredentials?.protocol !== HOME_CREDENTIAL_HELPER_PROTOCOL ||
+    manifest.homeCredentials.path !== HOME_CREDENTIAL_HELPER_PATH) {
     throw new Error("upgrade candidate lacks supported-upgrade, writer-barrier, or durable-state protocol");
   }
   if (manifest.durableState.stores.length !== HOME_STORE_MIGRATIONS.length ||

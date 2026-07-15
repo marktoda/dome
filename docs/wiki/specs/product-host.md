@@ -654,7 +654,7 @@ dangling symlink; the builder creates only its parent and never deletes,
 merges, or replaces prior output. It assembles the expanded artifact and its
 archive together in a private same-filesystem sibling, then runs the shipped
 artifact verifier and the ordinary archive rehearsal in that fixed order. The
-exact `0.2.0` builder then privately reconstructs the pinned `0.1.0`
+exact `0.3.0` builder then privately reconstructs the pinned `0.1.0`
 predecessor twice, runs the installed N-1→N rehearsal against that archive,
 the exact staged candidate archive, and the frozen fixture, and binds the
 returned predecessor, candidate, fixture, host, and scenario identity. It
@@ -667,7 +667,7 @@ failures remove their private staging state when
 its owned inode is still present and expose neither final path; cleanup never
 follows a replaced path. Concurrent builders leave one complete winner and
 never replace it. This is an atomic-visibility and no-replace boundary, not a
-new power-loss durability claim. The package is `0.2.0`; only this closed
+new power-loss durability claim. The package is `0.3.0`; only this closed
 installed-gated builder writes `distribution.upgradeSupported: true`. The
 exported fixture metadata writer remains fixed-false and cannot publish.
 
@@ -821,7 +821,7 @@ candidate versions and a strict monotonic advance, including standard
 prerelease ordering. A legacy non-SemVer installation remains runnable and
 repairable but is ineligible for upgrade. Exact committed repair is exempt
 because it re-establishes an already-irreversible candidate rather than opening
-a new attempt. The exact 0.2 release builder emits `true` only after its private
+a new attempt. The exact 0.3 release builder emits `true` only after its private
 candidate pipeline reconstructs the pinned predecessor, passes the retained
 installed N-1→N rehearsal against the frozen fixture, binds the returned
 identities to the still-staged bytes, writes a local execution receipt, and
@@ -842,9 +842,11 @@ diagnostics.
 
 The builder first runs the complete installed artifact and N-1 activation
 gate in private state. It preserves the pinned upstream Bun binary and its
-Developer ID signature byte-for-byte, signs only the two pinned `age`
-executables with the configured Dome identity, and inventories the exact
-three native paths again after signing. The inner artifact manifest binds
+Developer ID signature byte-for-byte, signs the two pinned `age` executables
+and the compiled credential helper with the configured Dome identity, and
+inventories the exact four native paths again after signing. The arm64 helper
+pins a macOS 13 deployment target and stable signing identifier
+`com.dome.home.keychain-helper`. The inner artifact manifest binds
 source and shipped hashes, TeamIdentifier, CDHash, hardened runtime, secure
 timestamp, and canonical entitlements for every executable. Inner artifact
 truth is `signed: true, notarized: false`: notarization belongs to the outer
@@ -870,26 +872,67 @@ reopened afterward. A collision is a definite no-publish result while a
 rename-complete or post-rename failure is reported as published with uncertain
 durability, and the possible winner is never removed.
 
+Legacy signed artifacts with the prior exact three-row inventory remain
+strictly verifiable and runnable. The optional `homeCredentials` protocol/hash
+capability selects the four-row inventory and is required for a new upgrade
+candidate; old-side upgrade evidence remains legacy-compatible.
+
 The implementation and hermetic gates do not claim that a credentialed public
 release has already been produced. A real Developer ID identity and notarization
-profile must run this boundary successfully for each shipped release. Guided
-provider setup and a clean-consumer-Mac acceptance run remain subsequent P4
-work.
+profile must run this boundary successfully for each shipped release. A real
+signed ACL/rotation execution and clean-consumer-Mac acceptance run remain
+release gates.
 
 ### P4 secure Home credential substrate checkpoint
 
 `src/product-host/home-credentials.ts` is the one deep macOS Keychain Module
-for Home provider credentials. Its closed slots are
-`model.anthropic.api-key` and `transcription.api-key`; both use service
-`com.dome.home.credentials.v1` and the stable account
-`<product-host-vault-id>:<slot>`. Reads and deletes first resolve and validate
-the direct owner-controlled user default Keychain, then name that exact file so
-another search-list entry cannot win. The checkpoint is deliberately write-free:
-the system `security` CLI cannot bind its interactive `-w` prompt to an exact
-prevalidated Keychain, so secure replacement requires a future native helper.
-The interface exposes only presence, idempotent exact-Keychain removal truth,
-and callback-scoped secret use; bounded nonempty secret bytes never become a
-return value or diagnostic.
+for the shipped Anthropic model provider. Its packaged native helper owns
+service `com.dome.home.credentials.v1`, slot `model.anthropic.api-key`, and
+account `<product-host-vault-id>:model.anthropic.api-key:<sha256(canonical-vault-path)>`.
+The path binding prevents a copied vault identity file from aliasing another
+vault's Keychain item. The helper accepts
+only an operation plus canonical vault path. It validates the owner-controlled
+vault, `.dome`/state/identity closure, sibling runtime, and
+every canonical default-Keychain component beneath `~/Library/Keychains`
+before retaining the exact `SecKeychainRef` used by the item operation.
+
+The helper performs interactive replacement, inspect, decrypting check,
+idempotent remove, and fixed provider execution. The signed artifact manifest
+binds the helper, sibling Bun, and the immutable
+`app/assets/model-providers/anthropic.ts`; the helper is compiled with the
+SHA-256 of the exact staged Bun and provider payloads, then opens, validates,
+and hashes both held descriptors before passing the provider to Bun as
+`/dev/fd/<n>`. The mutable
+`.dome/model-provider.ts` is only the opt-in configuration selector and is
+never executed by managed Home. Sibling Bun is held open and its named inode
+is re-proved after environment/argv assembly, Keychain cleanup, and `chdir`,
+immediately before the final path-based `execve`; macOS provides no `fexecve`,
+so artifact signature and inventory verification remain the authority at that
+final executable boundary.
+Secret bytes never enter the Dome Bun host, argv, persistent files, the host's
+global process environment, stdout, or setup results. Only the fixed provider
+Bun child receives the API key in its explicit environment together with a closed allowlist of non-secret
+Anthropic tuning variables; endpoint override is deliberately excluded.
+Custom provider commands remain untouched and run
+with a scrubbed non-secret environment without the managed credential.
+
+`dome home setup status|configure|check|remove` is a model-only derived
+surface. It persists no setup state and never rewrites `.dome/config.yaml`.
+Configure is available only for exact command
+`["bun", ".dome/model-provider.ts"]`, performs a decrypting post-write check,
+and probes the same helper route used by normal packaged Home. Missing config
+points to `dome init --with-model-provider anthropic`; custom config is
+reported and preserved. Mutations serialize within one Home process. An
+in-flight provider child may finish with its launch-time key; each subsequent
+invocation re-reads current Keychain truth, so rotation needs no restart.
+Authenticated readiness performs the same bounded decrypting Keychain check
+without probing the model network. One shared single-flight resolver and a
+cache bounded to one second coalesce concurrent reads; configure, remove, lock,
+and unlock transitions become visible within at most one second without
+restarting Home. Because the
+Keychain account is bound to the canonical vault path, moving or renaming a
+vault requires reconfiguration; the prior item remains orphaned until the
+deferred credential lifecycle collector handles it.
 
 Legacy v1 installation records remain strictly readable for status and future
 migration. New installation, record publication, selection rendering, ordinary
@@ -914,12 +957,10 @@ hashes, and before/after rescans yield only `clean`, path-free variable-name
 `residue`, or `indeterminate`; runtime process state is explicitly unknown.
 No cleanup or migration occurs in this checkpoint.
 
-Future runtime precedence is pinned now: unequal Keychain and legacy values are
-ambiguous and must fail; equal values may use Keychain while continuing to
-report residue; locked or denied Keychain access never falls back; and an
-absent Keychain with a legacy value is deprecated compatibility only until
-explicit migration. Keychain orphan collection after vault removal is a
-deferred lifecycle concern, not permission for this substrate to delete data.
+Legacy plaintext residue remains report-only: runtime never falls back to it,
+and locked, unavailable, or denied Keychain access stays explicit. Cleanup,
+migration, transcription setup, and Keychain orphan collection remain deferred
+and are not implied by this checkpoint.
 
 ### P6 managed-release collection checkpoint 1
 

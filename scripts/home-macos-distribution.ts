@@ -24,6 +24,8 @@ import { tmpdir } from "node:os";
 
 import {
   HOME_CODE_SIGNING_PATHS,
+  HOME_CREDENTIAL_HELPER_PATH,
+  LEGACY_HOME_CODE_SIGNING_PATHS,
   PINNED_AGE_BINARY_SHA256,
   PINNED_AGE_KEYGEN_BINARY_SHA256,
   PINNED_BUN_BINARY_SHA256,
@@ -398,7 +400,7 @@ export async function buildHomeMacosDistributionForTests(
 
 export type NativeSigningInput = Readonly<{
   artifactRoot: string;
-  sources: Readonly<{ bun: string; age: string; ageKeygen: string }>;
+  sources: Readonly<{ bun: string; age: string; ageKeygen: string; homeCredentialHelper?: string }>;
   domeTeamId: string;
   signingIdentity: string;
 }>;
@@ -410,9 +412,9 @@ type NativeSigningDeps = Readonly<{
 }>;
 
 /**
- * Sign exactly the two ad-hoc age tools and preserve Bun's upstream
- * Developer-ID signature. The returned evidence is the only way a manifest
- * may claim `distribution.signed: true`.
+ * Sign the two ad-hoc age tools plus the Home credential helper when present,
+ * and preserve Bun's upstream Developer-ID signature. The returned evidence
+ * is the only way a manifest may claim `distribution.signed: true`.
  */
 export async function signHomeArtifactNativeCode(
   input: NativeSigningInput,
@@ -425,8 +427,13 @@ export async function signHomeArtifactNativeCode(
   const run = deps.run ?? runCommand;
   const digest = deps.digest ?? fileEvidence;
   const inventory = await (deps.inventoryMachO ?? inventoryMachO)(input.artifactRoot);
-  if (JSON.stringify(inventory) !== JSON.stringify(HOME_CODE_SIGNING_PATHS)) {
+  const currentInventory = JSON.stringify(inventory) === JSON.stringify(HOME_CODE_SIGNING_PATHS);
+  const legacyInventory = JSON.stringify(inventory) === JSON.stringify(LEGACY_HOME_CODE_SIGNING_PATHS);
+  if (!currentInventory && !legacyInventory) {
     throw new Error(`Home artifact Mach-O inventory is not exact: ${inventory.join(", ") || "empty"}`);
+  }
+  if (currentInventory && input.sources.homeCredentialHelper === undefined) {
+    throw new Error("Home credential helper source is required for the current signing capability");
   }
 
   const bunSource = await digest(input.sources.bun);
@@ -442,25 +449,35 @@ export async function signHomeArtifactNativeCode(
     expectedTeamId: PINNED_BUN_DEVELOPER_ID_TEAM_ID,
   }, run);
 
-  const ageSources = Object.freeze([
+  const domeSources = Object.freeze([
     Object.freeze({
       path: "runtime/age" as const,
       source: input.sources.age,
       pinned: PINNED_AGE_BINARY_SHA256,
+      identifier: undefined,
     }),
     Object.freeze({
       path: "runtime/age-keygen" as const,
       source: input.sources.ageKeygen,
       pinned: PINNED_AGE_KEYGEN_BINARY_SHA256,
+      identifier: undefined,
     }),
+    ...(input.sources.homeCredentialHelper === undefined ? [] : [Object.freeze({
+      path: HOME_CREDENTIAL_HELPER_PATH,
+      source: input.sources.homeCredentialHelper,
+      pinned: undefined,
+      identifier: "com.dome.home.keychain-helper",
+    })]),
   ]);
   const signed: HomeArtifactCodeSigningExecutable[] = [];
-  for (const item of ageSources) {
+  const sourceHashes = new Map<string, string>();
+  for (const item of domeSources) {
     const source = await digest(item.source);
+    sourceHashes.set(item.path, source.sha256);
     const target = join(input.artifactRoot, ...item.path.split("/"));
     const before = await digest(target);
-    if (source.sha256 !== item.pinned || before.sha256 !== source.sha256) {
-      throw new Error(`${item.path} is not the exact pinned upstream binary before signing`);
+    if ((item.pinned !== undefined && source.sha256 !== item.pinned) || before.sha256 !== source.sha256) {
+      throw new Error(`${item.path} is not the exact expected source binary before signing`);
     }
     await checked(run, [
       CODESIGN,
@@ -468,6 +485,7 @@ export async function signHomeArtifactNativeCode(
       "--options", "runtime",
       "--timestamp",
       "--sign", input.signingIdentity,
+      ...(item.identifier === undefined ? [] : ["--identifier", item.identifier]),
       target,
     ], `sign ${item.path}`, [input.signingIdentity]);
     const after = await digest(target);
@@ -480,21 +498,24 @@ export async function signHomeArtifactNativeCode(
       sourceSha256: source.sha256,
       shippedSha256: after.sha256,
       expectedTeamId: input.domeTeamId,
+      ...(item.identifier === undefined ? {} : { expectedIdentifier: item.identifier }),
     }, run));
   }
 
   const finalInventory = await (deps.inventoryMachO ?? inventoryMachO)(input.artifactRoot);
-  if (JSON.stringify(finalInventory) !== JSON.stringify(HOME_CODE_SIGNING_PATHS)) {
+  const expectedInventory = currentInventory ? HOME_CODE_SIGNING_PATHS : LEGACY_HOME_CODE_SIGNING_PATHS;
+  if (JSON.stringify(finalInventory) !== JSON.stringify(expectedInventory)) {
     throw new Error(`signed Home artifact Mach-O inventory is not exact: ${finalInventory.join(", ") || "empty"}`);
   }
-  for (const item of ageSources) {
-    if ((await digest(item.source)).sha256 !== item.pinned) {
-      throw new Error(`${item.path} pinned source bytes changed during signing`);
+  for (const item of domeSources) {
+    const source = await digest(item.source);
+    if (source.sha256 !== sourceHashes.get(item.path)) {
+      throw new Error(`${item.path} source bytes changed during signing`);
     }
   }
 
   return Object.freeze({
-    executables: Object.freeze([signed[0]!, signed[1]!, bun]),
+    executables: Object.freeze([signed[0]!, signed[1]!, bun, ...(signed[2] === undefined ? [] : [signed[2]])]),
   });
 }
 
@@ -910,15 +931,20 @@ function parseDmgSignature(value: unknown): HomeDmgSignatureEvidence {
 
 function parseReceiptCodeSigning(value: unknown): HomeArtifactCodeSigning {
   const root = exactRecord(value, "receipt code signing", ["executables"]);
-  if (!Array.isArray(root["executables"]) || root["executables"].length !== HOME_CODE_SIGNING_PATHS.length) {
+  if (!Array.isArray(root["executables"]) ||
+    (root["executables"].length !== LEGACY_HOME_CODE_SIGNING_PATHS.length &&
+      root["executables"].length !== HOME_CODE_SIGNING_PATHS.length)) {
     throw new Error("receipt code signing inventory is invalid");
   }
+  const expectedPaths = root["executables"].length === LEGACY_HOME_CODE_SIGNING_PATHS.length
+    ? LEGACY_HOME_CODE_SIGNING_PATHS
+    : HOME_CODE_SIGNING_PATHS;
   const executables = root["executables"].map((value, index) => {
     const row = exactRecord(value, "receipt signed executable", [
       "path", "sourceSha256", "shippedSha256", "teamId", "cdHash", "hardenedRuntime",
       "secureTimestamp", "entitlementsSha256",
     ]);
-    if (row["path"] !== HOME_CODE_SIGNING_PATHS[index] || !sha(row["sourceSha256"]) ||
+    if (row["path"] !== expectedPaths[index] || !sha(row["sourceSha256"]) ||
       !sha(row["shippedSha256"]) || typeof row["teamId"] !== "string" ||
       !/^[A-Z0-9]{10}$/.test(row["teamId"]) || typeof row["cdHash"] !== "string" ||
       !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(row["cdHash"]) || row["hardenedRuntime"] !== true ||
@@ -936,6 +962,7 @@ type SignatureInspection = Readonly<{
   sourceSha256: string;
   shippedSha256: string;
   expectedTeamId: string;
+  expectedIdentifier?: string;
 }>;
 
 async function inspectSignature(
@@ -948,6 +975,10 @@ async function inspectSignature(
   const teamId = capture(text, /^TeamIdentifier=([A-Z0-9]{10})$/m, `${input.relativePath} team identifier`);
   const cdHash = capture(text, /^CDHash=([a-f0-9]{40}(?:[a-f0-9]{24})?)$/m, `${input.relativePath} CDHash`);
   if (teamId !== input.expectedTeamId) throw new Error(`${input.relativePath} is signed by unexpected team ${teamId}`);
+  if (input.expectedIdentifier !== undefined &&
+    !text.split(/\r?\n/).includes(`Identifier=${input.expectedIdentifier}`)) {
+    throw new Error(`${input.relativePath} has an unexpected signing identifier`);
+  }
   if (!/^CodeDirectory .*flags=.*\bruntime\b/m.test(text)) {
     throw new Error(`${input.relativePath} does not enable hardened runtime`);
   }

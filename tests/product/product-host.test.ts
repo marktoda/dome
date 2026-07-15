@@ -93,6 +93,26 @@ describe("P3 Product Host", () => {
     }
   }, 30_000);
 
+  test("readiness resolves current local model state on every read", async () => {
+    const vault = await initializedVault();
+    let modelState: "ready" | "unconfigured" | "unreachable" = "unconfigured";
+    let reads = 0;
+    const started = await startProductHost({
+      vaultPath: vault,
+      port: 0,
+      resolveModelState: async () => { reads += 1; return modelState; },
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    hosts.push(started.value);
+    expect((await started.value.readiness()).model.state).toBe("unconfigured");
+    modelState = "ready";
+    expect((await started.value.readiness()).model.state).toBe("ready");
+    modelState = "unreachable";
+    expect((await started.value.readiness()).model.state).toBe("unreachable");
+    expect(reads).toBe(3);
+  }, 30_000);
+
   test("an exact launchd child starts while its supervisor holds resuming Tx2", async () => {
     const vault = await initializedVault();
     const f = await installedResumeFixture(vault);

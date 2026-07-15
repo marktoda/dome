@@ -22,6 +22,7 @@ import {
   PINNED_AGE_KEYGEN_BINARY_SHA256,
   PINNED_BUN_BINARY_SHA256,
   PINNED_BUN_DEVELOPER_ID_TEAM_ID,
+  HOME_CREDENTIAL_HELPER_PATH,
   canonicalHomeEntitlementsSha256,
   verifySignedHomeArtifactNativeCodeForTests,
   type HomeArtifactCodeSigning,
@@ -33,22 +34,25 @@ const IDENTITY = `Developer ID Application: Dome Test (${DOME_TEAM})`;
 const OK = Object.freeze({ exitCode: 0, stdout: "", stderr: "" });
 
 describe("Home macOS native signing", () => {
-  test("preserves upstream Bun and signs only the exact age executables before returning evidence", async () => {
+  test("preserves upstream Bun and signs the current Dome executables with a stable helper identifier", async () => {
     const commands: string[][] = [];
     const signed = new Set<string>();
     const sourceHashes = new Map([
       ["/sources/bun", PINNED_BUN_BINARY_SHA256],
       ["/sources/age", PINNED_AGE_BINARY_SHA256],
       ["/sources/age-keygen", PINNED_AGE_KEYGEN_BINARY_SHA256],
+      ["/sources/dome-keychain-helper", "c".repeat(64)],
     ]);
     const targetSource = new Map([
       ["/artifact/runtime/bun", PINNED_BUN_BINARY_SHA256],
       ["/artifact/runtime/age", PINNED_AGE_BINARY_SHA256],
       ["/artifact/runtime/age-keygen", PINNED_AGE_KEYGEN_BINARY_SHA256],
+      ["/artifact/runtime/dome-keychain-helper", "c".repeat(64)],
     ]);
     const shipped = new Map([
       ["/artifact/runtime/age", "a".repeat(64)],
       ["/artifact/runtime/age-keygen", "b".repeat(64)],
+      ["/artifact/runtime/dome-keychain-helper", "d".repeat(64)],
     ]);
     const run = async (argv: ReadonlyArray<string>): Promise<DistributionCommandResult> => {
       commands.push([...argv]);
@@ -66,6 +70,7 @@ describe("Home macOS native signing", () => {
           ...OK,
           stderr:
             "CodeDirectory v=20500 size=100 flags=0x10000(runtime) hashes=1+0 location=embedded\n" +
+            (path.endsWith("dome-keychain-helper") ? "Identifier=com.dome.home.keychain-helper\n" : "") +
             `CDHash=${path.endsWith("/bun") ? "1" : path.endsWith("age-keygen") ? "2" : "3"}`.padEnd(47, path.endsWith("/bun") ? "1" : path.endsWith("age-keygen") ? "2" : "3") + "\n" +
             `TeamIdentifier=${team}\nTimestamp=Jul 14, 2026 at 12:00:00 PM\n`,
         };
@@ -75,12 +80,13 @@ describe("Home macOS native signing", () => {
 
     const result = await signHomeArtifactNativeCode({
       artifactRoot: "/artifact",
-      sources: { bun: "/sources/bun", age: "/sources/age", ageKeygen: "/sources/age-keygen" },
+      sources: { bun: "/sources/bun", age: "/sources/age", ageKeygen: "/sources/age-keygen",
+        homeCredentialHelper: "/sources/dome-keychain-helper" },
       domeTeamId: DOME_TEAM,
       signingIdentity: IDENTITY,
     }, {
       run,
-      inventoryMachO: async () => ["runtime/age", "runtime/age-keygen", "runtime/bun"],
+      inventoryMachO: async () => ["runtime/age", "runtime/age-keygen", "runtime/bun", HOME_CREDENTIAL_HELPER_PATH],
       digest: async (path) => {
         const source = sourceHashes.get(path) ?? targetSource.get(path);
         const hash = signed.has(path) ? shipped.get(path) : source;
@@ -90,7 +96,7 @@ describe("Home macOS native signing", () => {
     });
 
     expect(result.executables.map((row) => row.path)).toEqual([
-      "runtime/age", "runtime/age-keygen", "runtime/bun",
+      "runtime/age", "runtime/age-keygen", "runtime/bun", HOME_CREDENTIAL_HELPER_PATH,
     ]);
     expect(result.executables[0]).toMatchObject({
       sourceSha256: PINNED_AGE_BINARY_SHA256,
@@ -108,7 +114,10 @@ describe("Home macOS native signing", () => {
     expect(signingCommands.map((argv) => argv.at(-1))).toEqual([
       "/artifact/runtime/age",
       "/artifact/runtime/age-keygen",
+      "/artifact/runtime/dome-keychain-helper",
     ]);
+    expect(signingCommands.at(-1)).toContain("--identifier");
+    expect(signingCommands.at(-1)).toContain("com.dome.home.keychain-helper");
     expect(signingCommands.some((argv) => argv.at(-1)?.endsWith("/bun"))).toBeFalse();
   });
 
@@ -216,16 +225,16 @@ describe("Home notarized DMG", () => {
   test("binds the accepted, stapled, Gatekeeper-assessed DMG without retaining credential profile", async () => {
     const commands: string[][] = [];
     let stapled = false;
-    const manifest = signedManifest();
+    const manifest = currentSignedManifest();
     const result = await createNotarizedHomeDmg({
       payloadRoot: "/private/payload",
-      artifactRoot: "/private/dome-home-0.2.0-darwin-arm64",
+      artifactRoot: "/private/dome-home-0.3.0-darwin-arm64",
       manifest,
       activationEvidencePath: "/private/activation.json",
       activationBinding: activationBinding(),
       archiveSha256: "6".repeat(64),
-      dmgPath: "/private/dome-home-0.2.0-darwin-arm64.dmg",
-      volumeName: "Dome Home 0.2.0",
+      dmgPath: "/private/dome-home-0.3.0-darwin-arm64.dmg",
+      volumeName: "Dome Home 0.3.0",
       signingIdentity: IDENTITY,
       teamId: DOME_TEAM,
       notaryKeychainProfile: "dome-notary-private-profile",
@@ -244,14 +253,14 @@ describe("Home notarized DMG", () => {
             jobId: "11111111-2222-4333-8444-555555555555",
             status: "Accepted",
             statusCode: 0,
-            archiveFilename: "dome-home-0.2.0-darwin-arm64.dmg",
+            archiveFilename: "dome-home-0.3.0-darwin-arm64.dmg",
             sha256: "c".repeat(64),
             issues: null,
             statusSummary: "Ready for distribution",
             uploadDate: "2026-07-14T12:00:00.000Z",
             ticketContents: [
               {
-                path: "dome-home-0.2.0-darwin-arm64.dmg",
+                path: "dome-home-0.3.0-darwin-arm64.dmg",
                 digestAlgorithm: "SHA-256",
                 cdhash: "9".repeat(40),
               },
@@ -295,13 +304,13 @@ describe("Home notarized DMG", () => {
       "/usr/bin/xcrun stapler validate",
       "/usr/bin/codesign --verify --strict",
       "/usr/bin/codesign --display --verbose=4",
-      "/usr/bin/hdiutil verify /private/dome-home-0.2.0-darwin-arm64.dmg",
+      "/usr/bin/hdiutil verify /private/dome-home-0.3.0-darwin-arm64.dmg",
       "/usr/sbin/spctl --status",
       "/usr/sbin/spctl --assess --ignore-cache",
     ]);
     expect(result).toMatchObject({
       schema: "dome.home-macos-distribution/v1",
-      product: { version: "0.2.0", target: "darwin-arm64" },
+      product: { version: "0.3.0", target: "darwin-arm64" },
       artifact: {
         id: "9".repeat(64),
         manifestSha256: "e".repeat(64),
@@ -310,7 +319,7 @@ describe("Home notarized DMG", () => {
       },
       container: {
         format: "dmg",
-        name: "dome-home-0.2.0-darwin-arm64.dmg",
+        name: "dome-home-0.3.0-darwin-arm64.dmg",
         submitted: { sha256: "c".repeat(64) },
         distributed: { sha256: "d".repeat(64) },
         signature: { teamId: DOME_TEAM, cdHash: "5".repeat(40), secureTimestamp: true },
@@ -395,7 +404,7 @@ describe("Home macOS distribution publication", () => {
     const output = join(root, "release");
     const events: string[] = [];
     try {
-      await writeFile(join(root, "package.json"), JSON.stringify({ version: "0.2.0" }));
+      await writeFile(join(root, "package.json"), JSON.stringify({ version: "0.3.0" }));
       let builtManifest: HomeArtifactManifest | undefined;
       const result = await buildHomeMacosDistributionForTests({
         repoRoot: root,
@@ -414,7 +423,7 @@ describe("Home macOS distribution publication", () => {
         },
         buildArtifact: async (options) => {
           events.push("build");
-          const artifactRoot = join(options.outputDir, "dome-home-0.2.0-darwin-arm64");
+          const artifactRoot = join(options.outputDir, "dome-home-0.3.0-darwin-arm64");
           await mkdir(artifactRoot, { recursive: true });
           const codeSigning = await options.beforeManifest({
             artifactRoot,
@@ -452,7 +461,7 @@ describe("Home macOS distribution publication", () => {
           const codeSigning = input.manifest.codeSigning!;
           return {
             schema: "dome.home-macos-distribution/v1",
-            product: { version: "0.2.0", target: "darwin-arm64" },
+            product: { version: "0.3.0", target: "darwin-arm64" },
             artifact: {
               id: input.manifest.artifact.id,
               buildCommit: input.manifest.build.gitCommit,
@@ -465,7 +474,7 @@ describe("Home macOS distribution publication", () => {
             },
             container: {
               format: "dmg",
-              name: "dome-home-0.2.0-darwin-arm64.dmg",
+              name: "dome-home-0.3.0-darwin-arm64.dmg",
               submitted: { bytes: 14, sha256: "8".repeat(64) },
               distributed: { bytes: 16, sha256: digestText("distributed dmg\n") },
               signature: { teamId: DOME_TEAM, cdHash: "5".repeat(40), secureTimestamp: true },
@@ -509,9 +518,9 @@ describe("Home macOS distribution publication", () => {
         publish: async (source, target) => {
           events.push("publish");
           expect((await readdir(join(source, "public"))).sort()).toEqual([
-            "dome-home-0.2.0-darwin-arm64.activation-binding.json",
-            "dome-home-0.2.0-darwin-arm64.distribution-receipt.json",
-            "dome-home-0.2.0-darwin-arm64.dmg",
+            "dome-home-0.3.0-darwin-arm64.activation-binding.json",
+            "dome-home-0.3.0-darwin-arm64.distribution-receipt.json",
+            "dome-home-0.3.0-darwin-arm64.dmg",
           ].sort());
           await rename(source, target);
         },
@@ -524,9 +533,9 @@ describe("Home macOS distribution publication", () => {
       expect(result.envelope).toBe(join(await realpath(root), "release"));
       expect((await readdir(output)).sort()).toEqual(["private", "public"]);
       expect((await readdir(join(output, "public"))).sort()).toEqual([
-        "dome-home-0.2.0-darwin-arm64.activation-binding.json",
-        "dome-home-0.2.0-darwin-arm64.distribution-receipt.json",
-        "dome-home-0.2.0-darwin-arm64.dmg",
+        "dome-home-0.3.0-darwin-arm64.activation-binding.json",
+        "dome-home-0.3.0-darwin-arm64.distribution-receipt.json",
+        "dome-home-0.3.0-darwin-arm64.dmg",
       ].sort());
       const receipt = await readFile(result.receipt, "utf8");
       expect(receipt).not.toContain(IDENTITY);
@@ -545,7 +554,7 @@ describe("Home macOS distribution publication", () => {
     const output = join(root, "release");
     let published = false;
     try {
-      await writeFile(join(root, "package.json"), JSON.stringify({ version: "0.2.0" }));
+      await writeFile(join(root, "package.json"), JSON.stringify({ version: "0.3.0" }));
       await expect(buildHomeMacosDistributionForTests({
         repoRoot: root,
         outputDir: output,
@@ -555,7 +564,7 @@ describe("Home macOS distribution publication", () => {
         arch: "arm64",
         signArtifact: async () => signedManifest().codeSigning!,
         buildArtifact: async (options) => {
-          const artifactRoot = join(options.outputDir, "dome-home-0.2.0-darwin-arm64");
+          const artifactRoot = join(options.outputDir, "dome-home-0.3.0-darwin-arm64");
           await mkdir(artifactRoot, { recursive: true });
           const codeSigning = await options.beforeManifest({
             artifactRoot,
@@ -596,7 +605,7 @@ describe("Home macOS distribution publication", () => {
     const root = await mkdtemp(join(tmpdir(), "dome-home-distribution-strict-verify-"));
     const output = join(root, "release");
     try {
-      await writeFile(join(root, "package.json"), JSON.stringify({ version: "0.2.0" }));
+      await writeFile(join(root, "package.json"), JSON.stringify({ version: "0.3.0" }));
       await buildHomeMacosDistributionForTests({
         repoRoot: root, outputDir: output,
         config: { signingIdentity: IDENTITY, teamId: DOME_TEAM, notaryKeychainProfile: "profile" },
@@ -700,7 +709,7 @@ describe("Home macOS distribution publication", () => {
     const root = await mkdtemp(join(tmpdir(), "dome-home-distribution-rename-throw-"));
     const output = join(root, "release");
     try {
-      await writeFile(join(root, "package.json"), JSON.stringify({ version: "0.2.0" }));
+      await writeFile(join(root, "package.json"), JSON.stringify({ version: "0.3.0" }));
       const deps = fakeDistributionBuildDeps({
         publish: async (source, target) => {
           await rename(source, target);
@@ -721,7 +730,7 @@ describe("Home macOS distribution publication", () => {
     const root = await mkdtemp(join(tmpdir(), "dome-home-distribution-collision-"));
     const output = join(root, "release");
     try {
-      await writeFile(join(root, "package.json"), JSON.stringify({ version: "0.2.0" }));
+      await writeFile(join(root, "package.json"), JSON.stringify({ version: "0.3.0" }));
       const error = await buildHomeMacosDistributionForTests({
         repoRoot: root, outputDir: output,
         config: { signingIdentity: IDENTITY, teamId: DOME_TEAM, notaryKeychainProfile: "profile" },
@@ -744,7 +753,7 @@ describe("Home macOS distribution publication", () => {
     const output = join(root, "release");
     let directorySyncs = 0;
     try {
-      await writeFile(join(root, "package.json"), JSON.stringify({ version: "0.2.0" }));
+      await writeFile(join(root, "package.json"), JSON.stringify({ version: "0.3.0" }));
       const error = await buildHomeMacosDistributionForTests({
         repoRoot: root, outputDir: output,
         config: { signingIdentity: IDENTITY, teamId: DOME_TEAM, notaryKeychainProfile: "profile" },
@@ -766,7 +775,7 @@ describe("Home macOS distribution publication", () => {
     const moved = join(root, "moved-parent");
     const output = join(parent, "release");
     try {
-      await writeFile(join(root, "package.json"), JSON.stringify({ version: "0.2.0" }));
+      await writeFile(join(root, "package.json"), JSON.stringify({ version: "0.3.0" }));
       await mkdir(parent);
       await expect(buildHomeMacosDistributionForTests({
         repoRoot: root, outputDir: output,
@@ -786,7 +795,7 @@ describe("Home macOS distribution publication", () => {
     const output = join(root, "release");
     let verifications = 0;
     try {
-      await writeFile(join(root, "package.json"), JSON.stringify({ version: "0.2.0" }));
+      await writeFile(join(root, "package.json"), JSON.stringify({ version: "0.3.0" }));
       const base = fakeDistributionBuildDeps();
       const error = await buildHomeMacosDistributionForTests({
         repoRoot: root, outputDir: output,
@@ -849,7 +858,7 @@ function fakeDistributionBuildDeps(
     arch: "arm64",
     signArtifact: async () => signedManifest().codeSigning!,
     buildArtifact: async (options) => {
-      const artifactRoot = join(options.outputDir, "dome-home-0.2.0-darwin-arm64");
+      const artifactRoot = join(options.outputDir, "dome-home-0.3.0-darwin-arm64");
       await mkdir(artifactRoot, { recursive: true });
       const codeSigning = await options.beforeManifest({
         artifactRoot,
@@ -891,7 +900,7 @@ function fakeDistributionBuildDeps(
         },
         container: {
           format: "dmg",
-          name: "dome-home-0.2.0-darwin-arm64.dmg",
+          name: "dome-home-0.3.0-darwin-arm64.dmg",
           submitted: { bytes: 14, sha256: "8".repeat(64) },
           distributed: { bytes: 16, sha256: digestText("distributed dmg\n") },
           signature: { teamId: DOME_TEAM, cdHash: "5".repeat(40), secureTimestamp: true },
@@ -939,13 +948,24 @@ function signedManifest(): HomeArtifactManifest {
   });
   return {
     schema: "dome.home-artifact/v1",
-    product: { name: "Dome Home", version: "0.2.0" },
+    product: { name: "Dome Home", version: "0.3.0" },
     target: { os: "darwin", arch: "arm64" },
     build: { gitCommit: "6".repeat(40) },
     artifact: { id: "9".repeat(64) },
     codeSigning,
     distribution: { signed: true, notarized: false, upgradeSupported: true },
   } as HomeArtifactManifest;
+}
+
+function currentSignedManifest(): HomeArtifactManifest {
+  const legacy = signedManifest();
+  const helper = signingRow(HOME_CREDENTIAL_HELPER_PATH, "c".repeat(64), "d".repeat(64), DOME_TEAM, "4");
+  return {
+    ...legacy,
+    homeCredentials: { protocol: 1, path: HOME_CREDENTIAL_HELPER_PATH, sha256: helper.shippedSha256,
+      providerPath: "app/assets/model-providers/anthropic.ts", providerSha256: "e".repeat(64) },
+    codeSigning: { executables: Object.freeze([...legacy.codeSigning!.executables, helper]) },
+  };
 }
 
 function digestText(value: string): string {
@@ -960,7 +980,7 @@ function activationBinding(): HomeMacosActivationBinding {
       archiveSha256: "3".repeat(64), manifestSha256: "4".repeat(64),
     },
     candidate: {
-      artifactId: "9".repeat(64), version: "0.2.0", buildCommit: "6".repeat(40),
+      artifactId: "9".repeat(64), version: "0.3.0", buildCommit: "6".repeat(40),
       archiveSha256: "6".repeat(64), manifestSha256: "e".repeat(64),
     },
     fixture: { releaseId: "n-1", sourceCommit: "7".repeat(40), canaryDigest: "8".repeat(64) },
@@ -982,7 +1002,7 @@ function rawActivationEvidence(input: Readonly<{ archiveSha256: string; manifest
 }
 
 function signingRow(
-  path: "runtime/age" | "runtime/age-keygen" | "runtime/bun",
+  path: "runtime/age" | "runtime/age-keygen" | "runtime/bun" | typeof HOME_CREDENTIAL_HELPER_PATH,
   sourceSha256: string,
   shippedSha256: string,
   teamId: string,

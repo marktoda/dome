@@ -2114,6 +2114,8 @@ async function fixture(options: { durableFiles?: boolean } = {}) {
       writerBarrier: { protocol: 1 },
       ...(id === CANDIDATE_ID ? {
         distribution: { signed: false, notarized: false, upgradeSupported: true },
+        homeCredentials: { protocol: 1, path: "runtime/dome-keychain-helper", sha256: "a".repeat(64),
+          providerPath: "app/assets/model-providers/anthropic.ts", providerSha256: "b".repeat(64) },
         durableState: {
           protocol: HOME_DURABLE_STATE_PROTOCOL,
           stores: HOME_STORE_MIGRATIONS,

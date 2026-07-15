@@ -88,6 +88,7 @@ process.exit(1);
     });
     expect(result.status).toBe("probe-unsupported");
     if (result.status === "probe-unsupported") {
+      expect(result.exitCode).toBe(1);
       expect(result.detail).toContain("exited 1");
       expect(result.detail).toContain("unsupported Dome model provider");
     }
