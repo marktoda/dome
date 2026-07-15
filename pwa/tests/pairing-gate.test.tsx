@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { PairingGate } from "../src/auth/PairingGate";
+import { AuthRepair } from "../src/components/Connection";
+import { readinessResponse } from "./readiness-fixture";
 
 const originalFetch = globalThis.fetch;
 
@@ -14,11 +16,8 @@ afterEach(() => {
 describe("PairingGate", () => {
   test("renders children immediately for an existing paired cookie", async () => {
     localStorage.setItem("dome.token", "legacy-master-token");
-    globalThis.fetch = mock(async () => new Response(JSON.stringify({
-      schema: "dome.pairing/v1",
-      available: true,
-      paired: true,
-    }), { status: 200 })) as never;
+    document.cookie = "dome_csrf=existing; Path=/";
+    globalThis.fetch = mock(async () => readinessResponse()) as never;
     render(<PairingGate>{() => <div>connected</div>}</PairingGate>);
     await waitFor(() => expect(screen.getByText("connected")).toBeDefined());
     expect(localStorage.getItem("dome.token")).toBeNull();
@@ -30,13 +29,11 @@ describe("PairingGate", () => {
     globalThis.fetch = mock(async (request: Request) => {
       const path = new URL(request.url).pathname;
       paths.push(path);
-      return new Response(JSON.stringify({
-        schema: "dome.device.pairing/v1", available: true, paired: true,
-      }), { status: 200 });
+      return readinessResponse();
     }) as never;
     render(<PairingGate>{() => <div>connected</div>}</PairingGate>);
     await waitFor(() => expect(screen.getByText("connected")).toBeDefined());
-    expect(paths).toEqual(["/pair/status"]);
+    expect(paths).toEqual(["/readyz"]);
   });
 
   test("exchanges a code without writing browser storage", async () => {
@@ -54,10 +51,9 @@ describe("PairingGate", () => {
         authorization: request.headers.get("authorization"),
         credentials: request.credentials,
       });
-      return new Response(JSON.stringify(path === "/pair/status"
-        ? { schema: "dome.pairing/v1", available: true, paired: false }
-        : { schema: "dome.pairing/v1", status: "paired", expires_at: "2026-07-12T00:00:00Z" }),
-      { status: 200 });
+      if (path === "/pair/status") return new Response(JSON.stringify({ schema: "dome.pairing/v1", available: true, paired: false }), { status: 200 });
+      if (path === "/readyz") return readinessResponse();
+      return new Response(JSON.stringify({ schema: "dome.pairing/v1", status: "paired", expires_at: "2026-07-12T00:00:00Z" }), { status: 200 });
     }) as never;
     localStorage.clear();
     render(<PairingGate>{() => <div>connected</div>}</PairingGate>);
@@ -68,6 +64,7 @@ describe("PairingGate", () => {
     expect(requests).toEqual([
       { path: "/pair/status", body: null, authorization: null, credentials: "same-origin" },
       { path: "/pair", body: { code: "local-code-123" }, authorization: null, credentials: "same-origin" },
+      { path: "/readyz", body: null, authorization: null, credentials: "same-origin" },
     ]);
     expect(localStorage.getItem("dome.token")).toBeNull();
   });
@@ -114,7 +111,7 @@ describe("PairingGate", () => {
     globalThis.fetch = mock(async () => {
       attempts++;
       if (attempts === 1) throw new Error("host down");
-      return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 });
+      return readinessResponse();
     }) as never;
     render(<PairingGate>{(_client, availability) => <div>shell {availability}</div>}</PairingGate>);
     await waitFor(() => expect(screen.getByText("shell unreachable")).toBeDefined());
@@ -129,7 +126,7 @@ describe("PairingGate", () => {
     globalThis.fetch = mock(async () => {
       attempts++;
       if (attempts === 1) {
-        return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 });
+        return readinessResponse();
       }
       throw new Error("host disappeared");
     }) as never;
@@ -144,9 +141,7 @@ describe("PairingGate", () => {
     document.cookie = "dome_csrf=source-evidence; Path=/";
     globalThis.fetch = mock(async (request: Request) => {
       const path = new URL(request.url).pathname;
-      if (path === "/pair/status") {
-        return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 });
-      }
+      if (path === "/readyz") return readinessResponse();
       throw new Error("source transport lost");
     }) as never;
     render(<PairingGate>{(client, availability) => (
@@ -159,6 +154,129 @@ describe("PairingGate", () => {
     await waitFor(() => expect(screen.getByText(/shell unreachable/)).toBeDefined());
   });
 
+  test("a current 401 returns a revoked device to pairing", async () => {
+    document.cookie = "dome_csrf=revoked-device; Path=/";
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/readyz") return readinessResponse();
+      return new Response(JSON.stringify({ error: "device-revoked" }), { status: 401 });
+    }) as never;
+    render(<PairingGate>{(client, _availability, connection) => (
+      <div>limited shell {connection.authRepair === null ? "authorized" : "repair"}<button type="button" onClick={() => { void client.tasks().catch(() => {}); }}>load fixture</button></div>
+    )}</PairingGate>);
+    await waitFor(() => expect(screen.getByRole("button", { name: "load fixture" })).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "load fixture" }));
+    await waitFor(() => expect(screen.getByText(/limited shell repair/i)).toBeDefined());
+    expect(screen.getByRole("button", { name: "load fixture" })).toBeDefined();
+  });
+
+  test("an invalid repair code stays an inline error and does not replace the limited shell", async () => {
+    document.cookie = "dome_csrf=repair-code; Path=/";
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/readyz") return new Response(JSON.stringify({ error: "device-revoked" }), { status: 401 });
+      if (path === "/pair") return new Response(JSON.stringify({
+        error: "pairing-code-invalid", message: "The pairing code is invalid or expired.",
+      }), { status: 401 });
+      throw new Error(`unexpected request: ${path}`);
+    }) as never;
+    render(<PairingGate>{(_client, _availability, connection) => (
+      <div>limited shell {connection.authRepair === null ? "authorized" : "repair"}{connection.authRepair === null ? null : <AuthRepair control={connection.authRepair} />}</div>
+    )}</PairingGate>);
+    await waitFor(() => expect(screen.getByText(/limited shell repair/i)).toBeDefined());
+    fireEvent.change(screen.getByLabelText("New pairing code"), { target: { value: "expired" } });
+    fireEvent.click(screen.getByRole("button", { name: "Pair again" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("pairing-code-invalid"));
+    expect(screen.getByText(/limited shell repair/i)).toBeDefined();
+  });
+
+  test("repair transport failure re-enables repair instead of leaving Pairing stuck", async () => {
+    document.cookie = "dome_csrf=repair-transport; Path=/";
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/readyz") return readinessResponse();
+      if (path === "/tasks") return new Response(JSON.stringify({ error: "device-revoked" }), { status: 401 });
+      if (path === "/pair") throw new Error("Home disappeared during repair");
+      throw new Error(`unexpected request: ${path}`);
+    }) as never;
+    render(<PairingGate>{(client, availability, connection) => (
+      <div>limited shell {availability}{connection.authRepair === null ? null : <AuthRepair control={connection.authRepair} />}<button type="button" onClick={() => { void client.tasks().catch(() => {}); }}>revoke fixture</button></div>
+    )}</PairingGate>);
+    await waitFor(() => expect(screen.getByRole("button", { name: "revoke fixture" })).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "revoke fixture" }));
+    await waitFor(() => expect(screen.getByLabelText("New pairing code")).toBeDefined());
+    fireEvent.change(screen.getByLabelText("New pairing code"), { target: { value: "retry-code" } });
+    fireEvent.click(screen.getByRole("button", { name: "Pair again" }));
+    await waitFor(() => expect(screen.getByText(/limited shell unreachable/i)).toBeDefined());
+    expect((screen.getByRole("button", { name: "Pair again" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  test("session pairing evidence without a readable cookie retains the shell on auth loss", async () => {
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/pair/status") return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: false }), { status: 200 });
+      if (path === "/pair") return new Response(JSON.stringify({
+        schema: "dome.device.pairing/v1", status: "paired", csrfToken: "memory-only",
+      }), { status: 200 });
+      if (path === "/readyz") return readinessResponse();
+      if (path === "/tasks") return new Response(JSON.stringify({ error: "device-revoked" }), { status: 401 });
+      throw new Error(`unexpected request: ${path}`);
+    }) as never;
+    render(<PairingGate>{(client, _availability, connection) => (
+      <div>limited shell {connection.authRepair === null ? "authorized" : "repair"}<button type="button" onClick={() => { void client.tasks().catch(() => {}); }}>auth loss fixture</button></div>
+    )}</PairingGate>);
+    await waitFor(() => expect(screen.getByLabelText("Pairing code")).toBeDefined());
+    fireEvent.change(screen.getByLabelText("Pairing code"), { target: { value: "first-code" } });
+    fireEvent.click(screen.getByRole("button", { name: "Pair device" }));
+    await waitFor(() => expect(screen.getByText(/limited shell authorized/i)).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "auth loss fixture" }));
+    await waitFor(() => expect(screen.getByText(/limited shell repair/i)).toBeDefined());
+    expect(screen.queryByRole("button", { name: "Pair device" })).toBeNull();
+  });
+
+  test("an older 401 cannot beat a newer successful readiness proof", async () => {
+    document.cookie = "dome_csrf=race-device; Path=/";
+    let readinessCalls = 0;
+    let releaseOld!: (response: Response) => void;
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/readyz") {
+        readinessCalls++;
+        return readinessResponse();
+      }
+      return await new Promise<Response>((resolve) => { releaseOld = resolve; });
+    }) as never;
+    render(<PairingGate>{(client) => (
+      <div>connected<button type="button" onClick={() => { void client.tasks().catch(() => {}); }}>old request</button></div>
+    )}</PairingGate>);
+    await waitFor(() => expect(screen.getByText("connected")).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "old request" }));
+    await waitFor(() => expect(releaseOld).toBeDefined());
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(readinessCalls).toBe(2));
+    releaseOld(new Response(JSON.stringify({ error: "device-revoked" }), { status: 401 }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText("connected")).toBeDefined();
+    expect(screen.queryByLabelText(/pairing code/i)).toBeNull();
+  });
+
+  test("failed readiness keeps the last document only as stale context", async () => {
+    document.cookie = "dome_csrf=stale-readiness; Path=/";
+    let readinessCalls = 0;
+    globalThis.fetch = mock(async () => {
+      readinessCalls++;
+      return readinessCalls === 1
+        ? readinessResponse()
+        : new Response(JSON.stringify({ error: "starting" }), { status: 503 });
+    }) as never;
+    render(<PairingGate>{(_client, _availability, connection) => (
+      <div>{connection.readiness.document?.vault.name ?? "none"} · {connection.readiness.stale ? "stale" : "current"} · {connection.readiness.issue ?? "valid"}</div>
+    )}</PairingGate>);
+    await waitFor(() => expect(screen.getByText("Work · current · valid")).toBeDefined());
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(screen.getByText("Work · stale · readiness-failed")).toBeDefined());
+  });
+
   test("explicit retry upgrades an unreachable shell and coalesces concurrent retries", async () => {
     document.cookie = "dome_csrf=retry-evidence; Path=/";
     let attempts = 0;
@@ -167,7 +285,7 @@ describe("PairingGate", () => {
       attempts++;
       if (attempts === 1) throw new Error("host unavailable");
       await new Promise<void>((resolve) => { release = resolve; });
-      return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 });
+      return readinessResponse();
     }) as never;
     render(<PairingGate>{(_client, availability, connection) => (
       <div>shell {availability}<button type="button" onClick={() => { connection.recheck(); connection.recheck(); }}>retry fixture</button></div>
@@ -187,7 +305,7 @@ describe("PairingGate", () => {
     globalThis.fetch = mock(async () => {
       attempts++;
       if (attempts === 1) {
-        return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 });
+        return readinessResponse();
       }
       return await new Promise<Response>((resolve) => { release = resolve; });
     }) as never;
@@ -198,7 +316,7 @@ describe("PairingGate", () => {
     Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
     window.dispatchEvent(new Event("offline"));
     await waitFor(() => expect(screen.getByText("shell offline")).toBeDefined());
-    release(new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 }));
+    release(readinessResponse());
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.getByText("shell offline")).toBeDefined();
   });

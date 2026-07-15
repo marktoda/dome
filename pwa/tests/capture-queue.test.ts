@@ -82,4 +82,46 @@ describe("CaptureQueue", () => {
     expect(ids).toEqual(["device:capture-1"]);
     expect(await q.all()).toEqual([]);
   });
+
+  test("a cross-instance local delete cannot be resurrected by a late drain failure", async () => {
+    const factory = new IDBFactory();
+    const drainingQueue = new CaptureQueue(factory);
+    const deletingQueue = new CaptureQueue(factory);
+    await drainingQueue.save({ text: "first" }, deps);
+    let rejectSend!: (reason: Error) => void;
+    const draining = drainingQueue.drain(() => new Promise((_, reject) => { rejectSend = reject; }));
+
+    while ((await deletingQueue.all())[0]?.state !== "sending") await Promise.resolve();
+    await deletingQueue.remove("device:capture-1");
+    rejectSend(new Error("device-revoked"));
+    await draining;
+
+    expect(await drainingQueue.all()).toEqual([]);
+  });
+
+  test("a deletion after the drain snapshot prevents the sending transition and network call", async () => {
+    const factory = new IDBFactory();
+    const drainingQueue = new CaptureQueue(factory);
+    const deletingQueue = new CaptureQueue(factory);
+    await drainingQueue.save({ text: "first" }, deps);
+    const originalAll = drainingQueue.all.bind(drainingQueue);
+    let intercepted = false;
+    drainingQueue.all = async () => {
+      const staleSnapshot = await originalAll();
+      if (!intercepted) {
+        intercepted = true;
+        await deletingQueue.remove("device:capture-1");
+      }
+      return staleSnapshot;
+    };
+    let sends = 0;
+
+    await drainingQueue.drain(async () => {
+      sends++;
+      throw new Error("must not send a deleted capture");
+    });
+
+    expect(sends).toBe(0);
+    expect(await deletingQueue.all()).toEqual([]);
+  });
 });

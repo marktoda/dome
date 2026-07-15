@@ -1,12 +1,26 @@
 import { afterEach, beforeEach, describe, expect, test, mock } from "bun:test";
 import { cleanup, render, screen, waitFor, fireEvent } from "@testing-library/react";
 import App, { reconcileStoppedTurn } from "../src/App";
+import { CaptureQueue } from "../src/capture/captureQueue";
+import { READY_PRODUCT, readinessResponse } from "./readiness-fixture";
 
 const originalFetch = globalThis.fetch;
+const originalAnchorClick = HTMLAnchorElement.prototype.click;
+const originalCreateObjectURL = URL.createObjectURL;
+const originalRevokeObjectURL = URL.revokeObjectURL;
 
-afterEach(() => {
+async function clearCaptureQueue(): Promise<void> {
+  const queue = new CaptureQueue();
+  for (const item of await queue.all()) await queue.remove(item.id);
+}
+
+afterEach(async () => {
   cleanup();
+  await clearCaptureQueue();
   globalThis.fetch = originalFetch;
+  HTMLAnchorElement.prototype.click = originalAnchorClick;
+  URL.createObjectURL = originalCreateObjectURL;
+  URL.revokeObjectURL = originalRevokeObjectURL;
   document.cookie = "dome_csrf=; Max-Age=0; Path=/";
   Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
 });
@@ -14,12 +28,14 @@ afterEach(() => {
 const TODAY_BODY = JSON.stringify({ schema: "dome.daily.today/v1", date: "2026-06-17", openTasks: [], followups: [], questions: [], brief: null, calendar: null, hero: null, counts: { openTasks: 0, followups: 0, questions: 0 } });
 const RECENTS_BODY = JSON.stringify({ schema: "dome.recents/v1", count: 0, entries: [] });
 
-beforeEach(() => {
+beforeEach(async () => {
+  await clearCaptureQueue();
   localStorage.clear();
   // agentStream calls fetch(string, opts); tasks/recents call fetch(new Request(...))
   globalThis.fetch = mock(async (reqOrUrl: Request | string) => {
     const rawUrl = typeof reqOrUrl === "string" ? reqOrUrl : reqOrUrl.url;
     const url = new URL(rawUrl, "http://x");
+    if (url.pathname === "/readyz") return readinessResponse();
     if (url.pathname === "/pair/status") return new Response(JSON.stringify({ schema: "dome.pairing/v1", available: true, paired: true }), { status: 200 });
     if (url.pathname === "/tasks") return new Response(TODAY_BODY, { status: 200 });
     if (url.pathname === "/recents") return new Response(RECENTS_BODY, { status: 200 });
@@ -45,6 +61,32 @@ describe("App", () => {
     expect(screen.getByPlaceholderText(/ask/i)).toBeDefined();
   });
 
+  test("does not show healthy connection before post-pair readiness validates", async () => {
+    let releaseReadiness!: (response: Response) => void;
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/pair/status") return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: false }), { status: 200 });
+      if (path === "/pair") return new Response(JSON.stringify({
+        schema: "dome.device.pairing/v1", status: "paired", csrfToken: "new-csrf",
+      }), { status: 200 });
+      if (path === "/readyz") return await new Promise<Response>((resolve) => { releaseReadiness = resolve; });
+      if (path === "/tasks") return new Response(TODAY_BODY, { status: 200 });
+      if (path === "/recents") return new Response(RECENTS_BODY, { status: 200 });
+      throw new Error(`unexpected request: ${path}`);
+    }) as never;
+    render(<App />);
+    await waitFor(() => expect(screen.getByLabelText(/pairing code/i)).toBeDefined());
+    fireEvent.change(screen.getByLabelText(/pairing code/i), { target: { value: "pair-me" } });
+    fireEvent.click(screen.getByRole("button", { name: /pair device/i }));
+    await waitFor(() => expect(screen.getByText("Checking Dome Home")).toBeDefined());
+    expect(document.querySelector(".availability-dot.available")).toBeNull();
+    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
+
+    releaseReadiness(readinessResponse());
+    await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
+    expect(document.querySelector(".availability-dot.available")).not.toBeNull();
+  });
+
   test("refetches the brief after the agent reports a write", async () => {
     // Build an SSE ReadableStream that emits a done event with changes.
     // We construct it directly so happy-dom's getReader() can consume it.
@@ -59,6 +101,7 @@ describe("App", () => {
       // agentStream calls fetch(string, opts); tasks/recents call fetch(new Request(...))
       const rawUrl = typeof reqOrUrl === "string" ? reqOrUrl : reqOrUrl.url;
       const url = new URL(rawUrl, "http://x");
+      if (url.pathname === "/readyz") return readinessResponse();
       if (url.pathname === "/pair/status") return new Response(JSON.stringify({ schema: "dome.pairing/v1", available: true, paired: true }), { status: 200 });
       if (url.pathname === "/tasks") { taskCallCount++; return new Response(TODAY_BODY, { status: 200 }); }
       if (url.pathname === "/recents") { recentsCallCount++; return new Response(RECENTS_BODY, { status: 200 }); }
@@ -112,6 +155,7 @@ describe("App", () => {
     let resolveCancel: ((response: Response) => void) | undefined;
     globalThis.fetch = mock(async (request: Request) => {
       const path = new URL(request.url).pathname;
+      if (path === "/readyz") return readinessResponse();
       if (path === "/pair/status") return new Response(JSON.stringify({ schema: "dome.pairing/v1", available: true, paired: true }), { status: 200 });
       if (path === "/tasks") return new Response(TODAY_BODY, { status: 200 });
       if (path === "/recents") return new Response(RECENTS_BODY, { status: 200 });
@@ -151,6 +195,7 @@ describe("App", () => {
     let cancelRequests = 0;
     globalThis.fetch = mock(async (request: Request) => {
       const path = new URL(request.url).pathname;
+      if (path === "/readyz") return readinessResponse();
       if (path === "/pair/status") return new Response(JSON.stringify({ schema: "dome.pairing/v1", available: true, paired: true }), { status: 200 });
       if (path === "/tasks") return new Response(TODAY_BODY, { status: 200 });
       if (path === "/recents") return new Response(RECENTS_BODY, { status: 200 });
@@ -179,6 +224,7 @@ describe("App", () => {
     let messages = 0;
     globalThis.fetch = mock(async (request: Request) => {
       const path = new URL(request.url).pathname;
+      if (path === "/readyz") return readinessResponse();
       if (path === "/pair/status") return new Response(JSON.stringify({ schema: "dome.pairing/v1", available: true, paired: true }), { status: 200 });
       if (path === "/tasks") return new Response(TODAY_BODY, { status: 200 });
       if (path === "/recents") return new Response(RECENTS_BODY, { status: 200 });
@@ -234,6 +280,7 @@ describe("App", () => {
   test("reports two HTTP view failures without falsely calling Home unreachable", async () => {
     globalThis.fetch = mock(async (request: Request) => {
       const path = new URL(request.url).pathname;
+      if (path === "/readyz") return readinessResponse();
       if (path === "/pair/status") {
         return new Response(JSON.stringify({ schema: "dome.pairing/v1", available: true, paired: true }), { status: 200 });
       }
@@ -249,6 +296,7 @@ describe("App", () => {
   test("reports a partial view failure while preserving the successful Today view", async () => {
     globalThis.fetch = mock(async (request: Request) => {
       const path = new URL(request.url).pathname;
+      if (path === "/readyz") return readinessResponse();
       if (path === "/pair/status") {
         return new Response(JSON.stringify({ schema: "dome.pairing/v1", available: true, paired: true }), { status: 200 });
       }
@@ -262,9 +310,120 @@ describe("App", () => {
     expect(screen.queryByText("Dome Home unavailable")).toBeNull();
   });
 
+  test("a reachable readiness failure is visibly stale and never looks healthy", async () => {
+    document.cookie = "dome_csrf=readiness-failure; Path=/";
+    let readinessCalls = 0;
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/readyz") {
+        readinessCalls++;
+        return readinessCalls === 1
+          ? readinessResponse()
+          : new Response(JSON.stringify({ error: "readiness-unavailable" }), { status: 503 });
+      }
+      if (path === "/tasks") return new Response(TODAY_BODY, { status: 200 });
+      if (path === "/recents") return new Response(RECENTS_BODY, { status: 200 });
+      throw new Error(`unexpected request: ${path}`);
+    }) as never;
+    render(<App />);
+    await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(screen.getByText("Product readiness unavailable")).toBeDefined());
+    expect(screen.getByText(/Last known details are context only/i)).toBeDefined();
+    expect(screen.getByText(/Connection · readiness unavailable/i)).toBeDefined();
+    expect(document.querySelector(".availability-dot.available")).toBeNull();
+    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test("optional providers and write admission gate only their dependent affordances", async () => {
+    const limited = {
+      ...READY_PRODUCT,
+      writesAdmitted: false,
+      model: { state: "unconfigured" as const },
+      transcription: { state: "unreachable" as const },
+      nextActions: [{ code: "configure-model", label: "Configure the model provider" }],
+    };
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/readyz") return readinessResponse(limited);
+      if (path === "/pair/status") return new Response(JSON.stringify({ schema: "dome.pairing/v1", available: true, paired: true }), { status: 200 });
+      if (path === "/tasks") return new Response(TODAY_BODY, { status: 200 });
+      if (path === "/recents") return new Response(RECENTS_BODY, { status: 200 });
+      throw new Error(`unexpected remote request: ${path}`);
+    }) as never;
+    render(<App />);
+    await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
+    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "record" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByText(/Connection · ready/i));
+    expect(screen.getByText("Configure the model provider")).toBeDefined();
+    expect(screen.getByText(/Available now: read/i)).toBeDefined();
+
+    const input = screen.getByLabelText("ask your brain") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "still saved locally" } });
+    fireEvent.click(screen.getByRole("button", { name: "capture thought" }));
+    await waitFor(() => expect(screen.getByText("still saved locally")).toBeDefined());
+    expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /delete pending capture/i }));
+  });
+
+  test("revoked auth returns to re-pair without deleting the local capture queue", async () => {
+    HTMLAnchorElement.prototype.click = mock(() => {});
+    const createObjectURL = mock(() => "blob:test-export");
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = mock(() => {});
+    document.cookie = "dome_csrf=soon-revoked; Path=/";
+    let pairedAgain = false;
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/readyz") return readinessResponse(pairedAgain
+        ? { ...READY_PRODUCT, writesAdmitted: false }
+        : READY_PRODUCT);
+      if (path === "/tasks") return new Response(TODAY_BODY, { status: 200 });
+      if (path === "/recents") return new Response(RECENTS_BODY, { status: 200 });
+      if (path === "/capture") return new Response(JSON.stringify({ error: "device-revoked" }), { status: 401 });
+      if (path === "/pair") {
+        pairedAgain = true;
+        return new Response(JSON.stringify({
+          schema: "dome.device.pairing/v1", status: "paired", csrfToken: "new-csrf",
+        }), { status: 200 });
+      }
+      throw new Error(`unexpected remote request: ${path}`);
+    }) as never;
+    render(<App />);
+    await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
+    const input = screen.getByLabelText("ask your brain") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "survive revoked auth" } });
+    fireEvent.click(screen.getByRole("button", { name: "capture thought" }));
+    await waitFor(() => expect(screen.getByLabelText("New pairing code")).toBeDefined());
+    expect(screen.getByText("survive revoked auth")).toBeDefined();
+    expect(screen.getByText(/you're clear/i)).toBeDefined();
+    await waitFor(() => expect(screen.getByText(/failed · device-revoked/i)).toBeDefined());
+
+    fireEvent.change(input, { target: { value: "local during repair" } });
+    fireEvent.click(screen.getByRole("button", { name: "capture thought" }));
+    await waitFor(() => expect(screen.getByText("local during repair")).toBeDefined());
+    const repairItem = screen.getByText("local during repair").closest(".capture-outbox-item");
+    expect(repairItem).not.toBeNull();
+    fireEvent.click(repairItem!.querySelector("button")!);
+    await waitFor(() => expect(screen.queryByText("local during repair")).toBeNull());
+    await waitFor(async () => expect((await new CaptureQueue().all()).some((item) => item.text === "local during repair")).toBe(false));
+    expect(screen.getByText("survive revoked auth")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByLabelText("New pairing code"), { target: { value: "fresh-code" } });
+    fireEvent.click(screen.getByRole("button", { name: "Pair again" }));
+    await waitFor(() => expect(screen.getByText("survive revoked auth")).toBeDefined());
+    await waitFor(() => expect(screen.queryByLabelText("New pairing code")).toBeNull());
+    expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /delete pending capture/i }));
+  });
+
   test("two transport failures feed unreachable truth back to the pairing owner", async () => {
     globalThis.fetch = mock(async (request: Request) => {
       const path = new URL(request.url).pathname;
+      if (path === "/readyz") return readinessResponse();
       if (path === "/pair/status") {
         return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 });
       }
@@ -281,6 +440,7 @@ describe("App", () => {
     document.cookie = "dome_csrf=capture-transport; Path=/";
     globalThis.fetch = mock(async (request: Request) => {
       const path = new URL(request.url).pathname;
+      if (path === "/readyz") return readinessResponse();
       if (path === "/pair/status") {
         return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 });
       }
@@ -319,6 +479,7 @@ describe("App", () => {
     });
     globalThis.fetch = mock(async (request: Request) => {
       const path = new URL(request.url).pathname;
+      if (path === "/readyz") return readinessResponse();
       if (path === "/pair/status") {
         return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 });
       }
@@ -342,6 +503,7 @@ describe("App", () => {
     document.cookie = "dome_csrf=ask-transport; Path=/";
     globalThis.fetch = mock(async (request: Request) => {
       const path = new URL(request.url).pathname;
+      if (path === "/readyz") return readinessResponse();
       if (path === "/pair/status") {
         return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 });
       }
@@ -370,6 +532,7 @@ describe("App", () => {
     document.cookie = "dome_csrf=recovery-evidence; Path=/";
     globalThis.fetch = mock(async (request: Request) => {
       const path = new URL(request.url).pathname;
+      if (path === "/readyz") return readinessResponse();
       if (!serverUp) throw new Error("host unavailable");
       if (path === "/pair/status") {
         return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 });
@@ -403,17 +566,17 @@ describe("App", () => {
 
   test("delayed old view failures cannot downgrade a successful connection recheck", async () => {
     document.cookie = "dome_csrf=view-generation; Path=/";
-    let pairCalls = 0;
+    let readinessCalls = 0;
     let taskCalls = 0;
     let recentCalls = 0;
     let rejectOldTasks!: (reason: unknown) => void;
     let rejectOldRecents!: (reason: unknown) => void;
     globalThis.fetch = mock(async (request: Request) => {
       const path = new URL(request.url).pathname;
-      if (path === "/pair/status") {
-        pairCalls++;
-        if (pairCalls === 2) throw new Error("temporary pairing transport failure");
-        return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 });
+      if (path === "/readyz") {
+        readinessCalls++;
+        if (readinessCalls === 2) throw new Error("temporary readiness transport failure");
+        return readinessResponse();
       }
       if (path === "/tasks") {
         taskCalls++;
