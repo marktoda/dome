@@ -17,7 +17,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 
@@ -54,6 +54,8 @@ const PORT = 3663;
 const MAX_COMPRESSED_ARTIFACT_BYTES = 256 * 1024 * 1024;
 const PREDECESSOR_INSTALL_TIMEOUT_MS = 60_000;
 const PREDECESSOR_LATE_READINESS_TIMEOUT_MS = 30_000;
+const INSTALLED_TEMPORARY_CLEANUP_TIMEOUT_MS = 30_000;
+const INSTALLED_TEMPORARY_PREFIX = "dome-installed-upgrade-";
 const FROZEN_PREDECESSOR_ARTIFACT_ID = "911d5219bd5888f8a45fbfb0bbcf6da57b54e3a0ffcf8077bd2d843327747096";
 const FROZEN_PREDECESSOR_VERSION = "0.1.0";
 const EVIDENCE_SCHEMA = "dome.home-installed-upgrade-rehearsal/v1" as const;
@@ -369,7 +371,7 @@ function realOperations(): RehearsalOperations<PreparedArtifacts> {
         throw new Error(`installed rehearsal cleanup is incomplete; roots retained at ${prepared.temporary}`);
       }
       await assertPortFree();
-      await rm(prepared.temporary, { recursive: true, force: true });
+      await removeInstalledTemporaryRoot(prepared.temporary);
     },
   });
 }
@@ -444,8 +446,128 @@ async function prepareRealArtifacts(input: InstalledHomeUpgradeRehearsalInput): 
       fixtureManifest,
     });
   } catch (error) {
-    await rm(temporary, { recursive: true, force: true });
+    try {
+      await removeInstalledTemporaryRoot(temporary);
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        "installed artifact preparation and temporary cleanup both failed",
+      );
+    }
     throw error;
+  }
+}
+
+type InstalledTemporaryRemovalOptions = Readonly<{
+  /** Test-only full argv override; production always uses `/bin/rm` directly. */
+  command?: ReadonlyArray<string>;
+  timeoutMs?: number;
+}>;
+
+/**
+ * Portable test seam for the top-level installed-rehearsal root remover. It
+ * emits no evidence and never certifies unsafe or incomplete removal.
+ */
+export async function removeInstalledTemporaryRootForTests(
+  root: string,
+  options: InstalledTemporaryRemovalOptions = {},
+): Promise<void> {
+  await removeInstalledTemporaryRoot(root, options);
+}
+
+/**
+ * Remove exactly one owned top-level rehearsal root using a fresh bounded OS
+ * primitive. Bun 1.2.13 recursive `fs.rm` can partially delete these deep
+ * artifact trees and then raise EFAULT, so this boundary deliberately does
+ * not retry that primitive. Every failure is fixed-text, never certifies
+ * absence, and retains whatever material the external primitive did not
+ * remove.
+ */
+async function removeInstalledTemporaryRoot(
+  root: string,
+  options: InstalledTemporaryRemovalOptions = {},
+): Promise<void> {
+  const canonicalRoot = await canonicalInstalledTemporaryRoot(root);
+  const timeoutMs = options.timeoutMs ?? INSTALLED_TEMPORARY_CLEANUP_TIMEOUT_MS;
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > INSTALLED_TEMPORARY_CLEANUP_TIMEOUT_MS) {
+    throw new Error("installed rehearsal temporary cleanup timeout is invalid");
+  }
+  const command = options.command ?? ["/bin/rm", "-rf", "--", canonicalRoot];
+  if (command.length === 0) {
+    throw new Error("installed rehearsal temporary cleanup command is invalid");
+  }
+  await runBoundedInstalledRemovalCommand(command, timeoutMs);
+  if (await pathStillExists(canonicalRoot)) {
+    throw new Error("installed rehearsal temporary cleanup command left the root present");
+  }
+}
+
+async function canonicalInstalledTemporaryRoot(root: string): Promise<string> {
+  try {
+    if (!isAbsolute(root) || root !== resolve(root)) throw new Error("not canonical input");
+    const lexicalTemporary = resolve(tmpdir());
+    if (dirname(root) !== lexicalTemporary) throw new Error("not a direct temporary child");
+    const name = basename(root);
+    if (!name.startsWith(INSTALLED_TEMPORARY_PREFIX) || name.length === INSTALLED_TEMPORARY_PREFIX.length) {
+      throw new Error("wrong temporary prefix");
+    }
+    const stat = await lstat(root);
+    const uid = process.getuid?.();
+    if (!stat.isDirectory() || stat.isSymbolicLink() || uid === undefined || stat.uid !== uid) {
+      throw new Error("not an owned directory");
+    }
+    const [canonicalTemporary, canonicalRoot] = await Promise.all([
+      realpath(lexicalTemporary),
+      realpath(root),
+    ]);
+    if (dirname(canonicalRoot) !== canonicalTemporary || basename(canonicalRoot) !== name) {
+      throw new Error("physical root escaped temporary directory");
+    }
+    return canonicalRoot;
+  } catch {
+    throw new Error("installed rehearsal temporary root is unsafe");
+  }
+}
+
+async function runBoundedInstalledRemovalCommand(
+  command: ReadonlyArray<string>,
+  timeoutMs: number,
+): Promise<void> {
+  let child: ReturnType<typeof Bun.spawn>;
+  try {
+    child = Bun.spawn([...command], { stdout: "ignore", stderr: "ignore" });
+  } catch {
+    throw new Error("installed rehearsal temporary cleanup command failed");
+  }
+  const exited = child.exited.then(
+    (exitCode) => ({ kind: "exit" as const, exitCode }),
+    () => ({ kind: "failed" as const }),
+  );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bounded = new Promise<{ kind: "timeout" }>((resolveTimeout) => {
+    timer = setTimeout(() => resolveTimeout({ kind: "timeout" }), timeoutMs);
+  });
+  const outcome = await Promise.race([exited, bounded]);
+  if (timer !== undefined) clearTimeout(timer);
+  if (outcome.kind === "timeout") {
+    try { child.kill("SIGKILL"); } catch { /* already gone */ }
+    // Do not report retention while a remover could still mutate the root.
+    // SIGKILL is the bound; `exited` is the mandatory child-reap barrier.
+    await exited;
+    throw new Error("installed rehearsal temporary cleanup command timed out");
+  }
+  if (outcome.kind === "failed" || outcome.exitCode !== 0) {
+    throw new Error("installed rehearsal temporary cleanup command failed");
+  }
+}
+
+async function pathStillExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw new Error("installed rehearsal temporary cleanup could not verify absence");
   }
 }
 

@@ -64,6 +64,18 @@ type AcceptanceDeadlines = Readonly<{
   cleanupMs: number;
 }>;
 
+export type HomePwaTaskSettlementStage = "submit" | "closure" | "reload" | "removal";
+
+class HomePwaTaskSettlementStageError extends Error {
+  readonly stage: HomePwaTaskSettlementStage;
+
+  constructor(stage: HomePwaTaskSettlementStage) {
+    super(`installed PWA task settlement failed at ${stage}`);
+    this.name = "HomePwaTaskSettlementStageError";
+    this.stage = stage;
+  }
+}
+
 /**
  * Exercise the shipped PWA through the installed system Google Chrome stable
  * channel. The runner
@@ -194,15 +206,25 @@ export async function runHomePwaChromiumAcceptance(
     },
     assertTaskSettlement: async (signal) => {
       const activePage = requirePage();
-      const settlementCommit = await settleFunctionalTask(activePage, input.expected.functionalCanary);
-      signal.throwIfAborted();
-      await input.assertTaskSettlement(settlementCommit, signal);
-      signal.throwIfAborted();
-      await activePage.reload({ waitUntil: "domcontentloaded", timeout: WAIT_MS });
-      await assertReadyConnection(activePage, input.expected, DEVICE_NAME);
-      await activePage.getByRole("checkbox", { name: input.expected.functionalCanary.taskText })
-        .waitFor({ state: "detached", timeout: WAIT_MS });
-      signal.throwIfAborted();
+      const settlementCommit = await atTaskSettlementStage("submit", async () => {
+        const commit = await settleFunctionalTask(activePage, input.expected.functionalCanary);
+        signal.throwIfAborted();
+        return commit;
+      });
+      await atTaskSettlementStage("closure", async () => {
+        await input.assertTaskSettlement(settlementCommit, signal);
+        signal.throwIfAborted();
+      });
+      await atTaskSettlementStage("reload", async () => {
+        await activePage.reload({ waitUntil: "domcontentloaded", timeout: WAIT_MS });
+        await assertReadyConnection(activePage, input.expected, DEVICE_NAME);
+        signal.throwIfAborted();
+      });
+      await atTaskSettlementStage("removal", async () => {
+        await activePage.getByRole("checkbox", { name: input.expected.functionalCanary.taskText })
+          .waitFor({ state: "detached", timeout: WAIT_MS });
+        signal.throwIfAborted();
+      });
     },
     assertOfflineShell: async (signal) => {
       const activeContext = requireContext();
@@ -512,7 +534,7 @@ async function runAcceptanceSequence(
     ["replay", operations.assertReplay],
   ];
   let failure: AcceptancePhase | null = null;
-  let adaptiveDiagnostic: string | null = null;
+  let failureDiagnostic: string | null = null;
   let cleanupFailed = false;
   for (const [phase, operation] of steps) {
     const outcome = await runCooperativePhase(
@@ -523,9 +545,11 @@ async function runAcceptanceSequence(
     );
     if (!outcome.ok) {
       failure = phase;
-      adaptiveDiagnostic = phase === "adaptive-accessibility"
+      failureDiagnostic = phase === "adaptive-accessibility"
         ? safeAdaptiveFailureDiagnostic(outcome.kind, outcome.cause)
-        : null;
+        : phase === "task-settlement"
+          ? safeTaskSettlementFailureDiagnostic(outcome.kind, outcome.cause)
+          : null;
       cleanupFailed ||= outcome.emergencyCloseFailed;
       break;
     }
@@ -540,7 +564,7 @@ async function runAcceptanceSequence(
   if (failure !== null) {
     const action = failure === "launch"
       ? "launch failed; verify the installed Google Chrome stable channel, then retry"
-      : `failed at ${failure}${adaptiveDiagnostic === null ? "" : ` [${adaptiveDiagnostic}]`}`;
+      : `failed at ${failure}${failureDiagnostic === null ? "" : ` [${failureDiagnostic}]`}`;
     throw new Error(`installed Home Chromium acceptance ${action}${cleanupFailed ? "; cleanup also failed" : ""}`);
   }
   if (cleanupFailed) throw new Error("installed Home Chromium acceptance cleanup failed");
@@ -635,6 +659,37 @@ function safeAdaptiveFailureDiagnostic(
     if (viewport !== undefined) return `${code}@${viewport}`;
   }
   return "unclassified";
+}
+
+function safeTaskSettlementFailureDiagnostic(
+  kind: "fulfilled" | "rejected" | "timed-out" | "invalid-deadline",
+  cause: unknown,
+): string {
+  if (kind === "timed-out") return "phase-timeout";
+  if (kind === "invalid-deadline") return "invalid-deadline";
+  if (kind !== "rejected" || !(cause instanceof HomePwaTaskSettlementStageError)) {
+    return "unclassified";
+  }
+  return cause.stage;
+}
+
+async function atTaskSettlementStage<T>(
+  stage: HomePwaTaskSettlementStage,
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch {
+    throw new HomePwaTaskSettlementStageError(stage);
+  }
+}
+
+/** Portable stage-classification seam; launches no browser and emits no evidence. */
+export async function exerciseHomePwaTaskSettlementStageForTests(
+  stage: HomePwaTaskSettlementStage,
+  operation: () => Promise<void>,
+): Promise<void> {
+  await atTaskSettlementStage(stage, operation);
 }
 
 export function parseHomePwaCaptureExportForTests(bytes: Uint8Array, expectedText: string): string {
