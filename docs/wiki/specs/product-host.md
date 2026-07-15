@@ -1060,10 +1060,37 @@ task. Failure persists as an alert with explicit Retry for the same task; the
 App refresh must not add a second acknowledgement.
 
 Evidence for this checkpoint is limited to portable surface, HTTP, and
-component tests. The exact installed Activity and settlement journey, adaptive
-layout, global focus/touch-target auditing, screen-reader,
-safe-area/dynamic-type, visual-regression, and real-iPhone evidence remain
-P5.5b/owner-window work.
+component tests. Adaptive Chrome coverage continues in P5.5b; the exact
+installed Activity/settlement journey, screen-reader, safe-area/dynamic-type,
+visual-regression, and real-iPhone evidence remain owner-window work.
+
+### P5.5b adaptive accessibility checkpoint
+
+Source and capture modals share one local focus Module: initial focus, cyclic
+Tab/Shift-Tab, Escape handling, and final-unmount restoration. Capture
+recording, transcription, review/filing, and saved states expose named modal or
+atomic status semantics without streaming-token live chatter. Four safe-area
+axes, `100%`→`svh`→`dvh` sizing, dynamic dialog caps, 44px enabled controls and
+coarse targets, visible focus, contrast floors, narrow wrapping, and complete
+reduced-motion suppression are one CSS contract. Inline `.wl` prose links are
+the deliberate text-link exception to the coarse-target minimum.
+
+After readiness, the existing installed system-Chrome gate checks 320×568,
+390×844, and 844×390 for no horizontal document overflow, enabled visible
+controls/coarse targets of at least 44×44, critical controls inside the
+viewport, a visible keyboard focus ring, and disabled computed motion. It
+resets to 390×844 before
+the remaining offline/auth/replay journey and preserves existing deadlines,
+emergency cleanup, and artifact-free browser policy.
+
+This implements the artifact-bound gate; fresh exact Chrome evidence requires
+executing it against a candidate artifact.
+
+This does not prove real-iPhone portrait/landscape/notch or software-keyboard
+behavior, Dynamic Type/200% zoom, VoiceOver, or Safari touch/microphone flows;
+those remain owner-hardware evidence. Waiting-worker N→N+1 replacement remains
+a separate gate. The exact installed Activity/settlement journey is not added
+by this checkpoint.
 
 ### P6 managed-release collection checkpoint 1
 

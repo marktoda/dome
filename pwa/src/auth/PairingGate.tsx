@@ -232,10 +232,10 @@ export function PairingGate({
     })}</>;
   }
   return (
-    <main className="gate">
+    <main className="gate" aria-busy={state === "checking" || state === "pairing"}>
       <div className="seed" aria-hidden="true" />
       <h1>Dome</h1>
-      {state === "checking" ? <p className="lede">Checking this device…</p> : state === "connection-required" ? (
+      {state === "checking" ? <p className="lede" role="status" aria-live="polite">Checking this device…</p> : state === "connection-required" ? (
         <>
           <p className="lede" role="status">Dome Home is unavailable. Connect to your Home before pairing this device.</p>
           <button type="button" onClick={recheck}>Retry connection</button>
@@ -254,6 +254,7 @@ export function PairingGate({
             event.preventDefault();
             pair(draft, false);
           }}>
+            {state === "pairing" ? <span className="sr-only" role="status" aria-live="polite">Pairing device…</span> : null}
             <input
               aria-label="Pairing code"
               type="password"

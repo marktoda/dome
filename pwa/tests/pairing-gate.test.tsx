@@ -14,6 +14,26 @@ afterEach(() => {
 });
 
 describe("PairingGate", () => {
+  test("announces checking and pairing as busy states", async () => {
+    let releaseStatus!: (response: Response) => void;
+    globalThis.fetch = mock(async () => await new Promise<Response>((resolve) => { releaseStatus = resolve; })) as never;
+    const view = render(<PairingGate>{() => <div>connected</div>}</PairingGate>);
+    expect(screen.getByRole("status").textContent).toContain("Checking this device");
+    expect(screen.getByRole("main").getAttribute("aria-busy")).toBe("true");
+    releaseStatus(new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: false }), { status: 200 }));
+    await waitFor(() => expect(screen.getByLabelText("Pairing code")).toBeDefined());
+
+    let releasePair!: (response: Response) => void;
+    globalThis.fetch = mock(async () => await new Promise<Response>((resolve) => { releasePair = resolve; })) as never;
+    fireEvent.change(screen.getByLabelText("Pairing code"), { target: { value: "busy-code" } });
+    fireEvent.click(screen.getByRole("button", { name: "Pair device" }));
+    await waitFor(() => expect(screen.getByText("Pairing device…")).toBeDefined());
+    expect(screen.getByRole("main").getAttribute("aria-busy")).toBe("true");
+    expect((screen.getByRole("button", { name: "Pairing…" }) as HTMLButtonElement).disabled).toBe(true);
+    view.unmount();
+    releasePair(new Response(JSON.stringify({ schema: "dome.device.pairing/v1", status: "paired", csrfToken: "late" }), { status: 200 }));
+  });
+
   test("renders children immediately for an existing paired cookie", async () => {
     localStorage.setItem("dome.token", "legacy-master-token");
     document.cookie = "dome_csrf=existing; Path=/";

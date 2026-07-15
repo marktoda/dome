@@ -126,9 +126,74 @@ describe("Composer", () => {
       expect(receivedBytes).toBeGreaterThan(0);
       fireEvent.click(screen.getByRole("button", { name: "File it" }));
       await waitFor(() => expect(screen.getByText("Saved locally")).toBeDefined());
+      const saved = screen.getByRole("status");
+      expect(saved.getAttribute("aria-live")).toBe("polite");
+      expect(saved.getAttribute("aria-atomic")).toBe("true");
       expect(screen.getByText("Pending sync to Dome Home.")).toBeDefined();
       expect(screen.queryByText("Captured")).toBeNull();
       expect(screen.queryByText(/Filed to your inbox/i)).toBeNull();
+      await new Promise((resolve) => setTimeout(resolve, 1_700));
+      await waitFor(() => expect(screen.queryByText("Saved locally")).toBeNull());
+      expect(document.activeElement).toBe(screen.getByLabelText("ask your brain"));
+    } finally {
+      globalThis.MediaRecorder = originalRecorder;
+      if (originalMediaDevices === undefined) Reflect.deleteProperty(navigator, "mediaDevices");
+      else Object.defineProperty(navigator, "mediaDevices", originalMediaDevices);
+    }
+  });
+
+  test("capture dialogs focus, contain, Escape, and restore through one modal seam", async () => {
+    const originalRecorder = globalThis.MediaRecorder;
+    const originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+    let resolveTranscript!: (text: string) => void;
+    class FakeRecorder {
+      state: RecordingState = "inactive";
+      mimeType = "audio/webm";
+      ondataavailable: ((event: BlobEvent) => void) | null = null;
+      onstop: (() => void) | null = null;
+      start(): void { this.state = "recording"; }
+      stop(): void {
+        this.state = "inactive";
+        this.ondataavailable?.({ data: new Blob(["audio"]) } as BlobEvent);
+        queueMicrotask(() => this.onstop?.());
+      }
+    }
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: async () => ({ getTracks: () => [{ stop: () => {} }] }) },
+    });
+    globalThis.MediaRecorder = FakeRecorder as unknown as typeof MediaRecorder;
+    try {
+      render(<Composer availability="available" onAsk={() => {}} onCapture={async () => {}} onTranscribe={async () => await new Promise<string>((resolve) => { resolveTranscript = resolve; })} onFile={async () => {}} />);
+      fireEvent.click(screen.getByRole("button", { name: "record" }));
+      await screen.findByRole("dialog", { name: "LISTENING" });
+      const stop = screen.getByRole("button", { name: "stop recording" });
+      expect(document.activeElement).toBe(stop);
+      fireEvent.keyDown(document, { key: "Tab" });
+      expect(document.activeElement).toBe(stop);
+      fireEvent.keyDown(document, { key: "Escape" });
+
+      const transcribing = await screen.findByRole("dialog", { name: "Transcribing recording…" });
+      expect(transcribing.getAttribute("aria-busy")).toBe("true");
+      expect(document.activeElement).toBe(transcribing);
+      fireEvent.keyDown(document, { key: "Tab" });
+      expect(document.activeElement).toBe(transcribing);
+
+      resolveTranscript("heard words");
+      const review = await screen.findByRole("dialog", { name: /heard this/i });
+      const textarea = screen.getByLabelText("capture draft");
+      const fileButton = screen.getByRole("button", { name: "File it" });
+      expect(document.activeElement).toBe(textarea);
+      fileButton.focus();
+      fireEvent.keyDown(document, { key: "Tab" });
+      expect(document.activeElement).toBe(textarea);
+      textarea.focus();
+      fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+      expect(document.activeElement).toBe(fileButton);
+      fireEvent.keyDown(document, { key: "Escape" });
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(document.activeElement).toBe(screen.getByLabelText("ask your brain"));
+      expect(review.isConnected).toBe(false);
     } finally {
       globalThis.MediaRecorder = originalRecorder;
       if (originalMediaDevices === undefined) Reflect.deleteProperty(navigator, "mediaDevices");

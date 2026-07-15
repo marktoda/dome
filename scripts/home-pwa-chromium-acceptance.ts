@@ -24,6 +24,7 @@ type AcceptancePhase =
   | "launch"
   | "pair"
   | "readiness"
+  | "adaptive-accessibility"
   | "service-worker"
   | "offline-shell"
   | "local-capture"
@@ -36,6 +37,7 @@ type AcceptanceOperations = Readonly<{
   launch(signal: AbortSignal): Promise<void>;
   pair(signal: AbortSignal): Promise<void>;
   assertReadiness(signal: AbortSignal): Promise<void>;
+  assertAdaptiveAccessibility(signal: AbortSignal): Promise<void>;
   controlServiceWorker(signal: AbortSignal): Promise<void>;
   assertOfflineShell(signal: AbortSignal): Promise<void>;
   saveLocalCapture(signal: AbortSignal): Promise<void>;
@@ -151,6 +153,10 @@ export async function runHomePwaChromiumAcceptance(
       await assertReadyConnection(requirePage(), input.expected, DEVICE_NAME);
       signal.throwIfAborted();
     },
+    assertAdaptiveAccessibility: async (signal) => {
+      await assertAdaptiveAccessibility(requirePage());
+      signal.throwIfAborted();
+    },
     controlServiceWorker: async (signal) => {
       const activePage = requirePage();
       const registration = await activePage.evaluate(`Promise.race([
@@ -237,6 +243,73 @@ export async function runHomePwaChromiumAcceptance(
       await closeBrowser(true);
     },
   });
+}
+
+const RESPONSIVE_VIEWPORTS = Object.freeze([
+  Object.freeze({ width: 320, height: 568 }),
+  Object.freeze({ width: 390, height: 844 }),
+  Object.freeze({ width: 844, height: 390 }),
+]);
+const STABLE_MOBILE_VIEWPORT = Object.freeze({ width: 390, height: 844 });
+
+async function assertAdaptiveAccessibility(page: Page): Promise<void> {
+  for (const viewport of RESPONSIVE_VIEWPORTS) {
+    await page.setViewportSize(viewport);
+    const result = await page.evaluate(`(() => {
+      const visible = (element) => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+      };
+      const inside = (element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.left >= -0.5 && rect.top >= -0.5 && rect.right <= innerWidth + 0.5 && rect.bottom <= innerHeight + 0.5;
+      };
+      const enabled = [...document.querySelectorAll("button:not([disabled]), summary, a[href]:not(.wl), input:not([disabled]), textarea:not([disabled])")]
+        .filter(visible);
+      const undersized = enabled.filter((element) => {
+        const target = element.matches('input[type="checkbox"]') ? element.closest(".task-hit") ?? element : element;
+        const rect = target.getBoundingClientRect();
+        return rect.width < 43.5 || rect.height < 43.5;
+      }).map((element) => element.getAttribute("aria-label") || element.textContent?.trim().slice(0, 40) || element.tagName);
+      const critical = [".composer", '[aria-label="ask your brain"]', '[aria-label="capture thought"]', '[aria-label="send"]']
+        .map((selector) => document.querySelector(selector));
+      return {
+        overflow: document.documentElement.scrollWidth > innerWidth || document.body.scrollWidth > innerWidth,
+        undersized,
+        criticalMissing: critical.some((element) => element === null || !visible(element) || !inside(element)),
+      };
+    })()` ) as { readonly overflow: boolean; readonly undersized: readonly string[]; readonly criticalMissing: boolean };
+    if (result.overflow) throw new Error(`installed PWA overflows horizontally at ${viewport.width}x${viewport.height}`);
+    if (result.undersized.length > 0) throw new Error(`installed PWA has undersized targets at ${viewport.width}x${viewport.height}`);
+    if (result.criticalMissing) throw new Error(`installed PWA critical controls leave the viewport at ${viewport.width}x${viewport.height}`);
+
+    await page.evaluate(`(() => {
+      document.body.tabIndex = -1;
+      document.body.focus();
+      document.body.removeAttribute("tabindex");
+    })()`);
+    await page.keyboard.press("Tab");
+    const focusVisible = await page.evaluate(`(() => {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement) || active === document.body) return false;
+      const style = getComputedStyle(active);
+      const rect = active.getBoundingClientRect();
+      return style.outlineStyle !== "none" && parseFloat(style.outlineWidth) >= 3 &&
+        rect.left >= -0.5 && rect.top >= -0.5 && rect.right <= innerWidth + 0.5 && rect.bottom <= innerHeight + 0.5;
+    })()`);
+    if (!focusVisible) throw new Error(`installed PWA keyboard focus is not visibly contained at ${viewport.width}x${viewport.height}`);
+  }
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const motionDisabled = await page.evaluate(`(() => [...document.querySelectorAll("*")].every((element) => {
+    const style = getComputedStyle(element);
+    const transitions = style.transitionDuration.split(",").every((value) => parseFloat(value) === 0);
+    return style.animationName === "none" && transitions && style.scrollBehavior !== "smooth";
+  }))()`);
+  if (!motionDisabled) throw new Error("installed PWA reduced-motion policy left animation or transition enabled");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.setViewportSize(STABLE_MOBILE_VIEWPORT);
 }
 
 async function assertInstallIdentity(page: Page): Promise<void> {
@@ -327,6 +400,7 @@ async function runAcceptanceSequence(
     ["launch", operations.launch],
     ["pair", operations.pair],
     ["readiness", operations.assertReadiness],
+    ["adaptive-accessibility", operations.assertAdaptiveAccessibility],
     ["service-worker", operations.controlServiceWorker],
     ["offline-shell", operations.assertOfflineShell],
     ["local-capture", operations.saveLocalCapture],

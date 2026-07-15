@@ -59,6 +59,8 @@ describe("App", () => {
     render(<App />);
     await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
     expect(screen.getByPlaceholderText(/ask/i)).toBeDefined();
+    expect(screen.getByRole("form", { name: "Message composer" })).toBeDefined();
+    expect(screen.getByRole("region", { name: "Conversation" }).hasAttribute("aria-live")).toBe(false);
   });
 
   test("does not show healthy connection before post-pair readiness validates", async () => {
@@ -495,7 +497,9 @@ describe("App", () => {
 
     await waitFor(() => expect(screen.getByText("Dome Home unavailable")).toBeDefined());
     expect(screen.getByText("Hourly or daily?")).toBeDefined();
-    expect(screen.getByText("Answer not saved · Try again")).toBeDefined();
+    const ack = screen.getByText("Answer not saved · Try again");
+    expect(ack.getAttribute("role")).toBe("status");
+    expect(ack.getAttribute("aria-atomic")).toBe("true");
     expect(screen.queryByText(/Answer saved|Answered/)).toBeNull();
   });
 

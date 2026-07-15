@@ -272,6 +272,13 @@ describe("Dome Home 0.3 activation", () => {
     );
     expect(chromiumSource).toContain('channel: "chrome"');
     expect(chromiumSource).toContain('headless: true');
+    expect(chromiumSource).toContain("RESPONSIVE_VIEWPORTS");
+    expect(chromiumSource).toContain("{ width: 320, height: 568 }");
+    expect(chromiumSource).toContain("{ width: 390, height: 844 }");
+    expect(chromiumSource).toContain("{ width: 844, height: 390 }");
+    expect(chromiumSource).toContain('reducedMotion: "reduce"');
+    expect(chromiumSource).toContain("rect.width < 43.5 || rect.height < 43.5");
+    expect(chromiumSource).toContain('a[href]:not(.wl)');
     expect(chromiumSource).not.toContain("recordHar:");
     expect(chromiumSource).not.toContain("recordVideo:");
     expect(chromiumSource).not.toContain("storageState:");

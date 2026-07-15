@@ -38,6 +38,7 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       launch: operation("launch"),
       pair: operation("pair"),
       assertReadiness: operation("readiness"),
+      assertAdaptiveAccessibility: operation("adaptive-accessibility"),
       controlServiceWorker: operation("service-worker"),
       assertOfflineShell: operation("offline-shell"),
       saveLocalCapture: operation("local-capture"),
@@ -49,7 +50,7 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     });
     expect(result).toEqual({ evidence: false });
     expect(events).toEqual([
-      "launch", "pair", "readiness", "service-worker", "offline-shell",
+      "launch", "pair", "readiness", "adaptive-accessibility", "service-worker", "offline-shell",
       "local-capture", "revoke", "auth-repair", "replay", "cleanup",
     ]);
 
@@ -58,6 +59,7 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       launch: operation("launch"),
       pair: operation("pair"),
       assertReadiness: operation("readiness"),
+      assertAdaptiveAccessibility: operation("adaptive-accessibility"),
       controlServiceWorker: operation("service-worker"),
       assertOfflineShell: operation("offline-shell"),
       saveLocalCapture: async () => {
@@ -71,7 +73,7 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       close: operation("cleanup"),
     })).rejects.toThrow("installed Home Chromium acceptance failed at local-capture");
     expect(events).toEqual([
-      "launch", "pair", "readiness", "service-worker", "offline-shell", "local-capture", "cleanup",
+      "launch", "pair", "readiness", "adaptive-accessibility", "service-worker", "offline-shell", "local-capture", "cleanup",
     ]);
 
     events.length = 0;
@@ -79,6 +81,7 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       launch: async () => { events.push("partial-launch"); throw new Error("private Chrome path"); },
       pair: operation("pair"),
       assertReadiness: operation("readiness"),
+      assertAdaptiveAccessibility: operation("adaptive-accessibility"),
       controlServiceWorker: operation("service-worker"),
       assertOfflineShell: operation("offline-shell"),
       saveLocalCapture: operation("local-capture"),
@@ -97,6 +100,7 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       launch: operation("launch"),
       pair: operation("pair"),
       assertReadiness: async () => { events.push("readiness"); throw new Error("secret readiness"); },
+      assertAdaptiveAccessibility: operation("adaptive-accessibility"),
       controlServiceWorker: operation("service-worker"),
       assertOfflineShell: operation("offline-shell"),
       saveLocalCapture: operation("local-capture"),
@@ -121,6 +125,7 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
         }, { once: true });
       }),
       assertReadiness: operation("readiness"),
+      assertAdaptiveAccessibility: operation("adaptive-accessibility"),
       controlServiceWorker: operation("service-worker"),
       assertOfflineShell: operation("offline-shell"),
       saveLocalCapture: operation("local-capture"),
