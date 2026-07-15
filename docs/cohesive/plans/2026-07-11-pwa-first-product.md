@@ -836,11 +836,11 @@ screenshot, or storage state. `playwright-core` supplies browser control; the
 release host supplies an installed Google Chrome stable channel, so Dome neither downloads nor
 ships a browser.
 
-P5.3 does not claim install icons or Chromium PWA-install UI, automated update
-replacement, visual regression coverage, screen-reader evidence, real-device
-iOS Safari acceptance, signed/notarized execution, or clean-consumer-Mac
-acceptance. Those owner gates remain explicit in the Home PWA acceptance
-runbook.
+P5.3 does not claim install icons or Chromium PWA-install UI, visual regression
+coverage, screen-reader evidence, real-device iOS Safari acceptance,
+signed/notarized execution, or clean-consumer-Mac acceptance. Automated update
+replacement is implemented separately by P5.6, not evidenced by P5.3. The
+remaining owner gates stay explicit in the Home PWA acceptance runbook.
 
 The bounded P5.4 checkpoint ships the install identity contract: one
 code-native charcoal/sage source, tracked minimal-2023 raster/favicon outputs,
@@ -851,9 +851,9 @@ the emitted head, manifest, MIME/cache policy, and every precached asset. The
 existing installed Chrome gate also decodes the exact icon set before pairing.
 
 P5.4 does not claim Chrome's install UI, real-device iOS appearance, visual or
-screen-reader acceptance, dynamic type/safe-area behavior, waiting-worker
-replacement, signed/notarized execution, or clean-consumer-Mac evidence. Those
-remain P5.5 and owner-window work.
+screen-reader acceptance, dynamic type/safe-area behavior, signed/notarized
+execution, or clean-consumer-Mac evidence. Waiting-worker replacement is the
+separate P5.6 checkpoint; the other items remain owner-window work.
 
 The bounded P5.5a functional-closure checkpoint closes portable contracts for
 two existing Home surfaces. Activity is derived from the current branch's
@@ -886,8 +886,8 @@ computed styles, then returns to a stable 390×844 viewport.
 Fresh exact installed Chrome responsive evidence requires executing that
 artifact-bound gate. It does not prove real-iPhone portrait, landscape, notch,
 software-keyboard, Dynamic Type/200%, VoiceOver, or Safari touch/microphone
-behavior. Those remain owner-hardware gates. A waiting-worker N→N+1
-replacement journey also remains separate.
+behavior. Those remain owner-hardware gates. The waiting-worker N→N+1
+replacement journey is implemented separately by P5.6.
 
 The bounded P5.5c checkpoint extends the same installed `ready-success`
 journey through an end-to-end functional closure. The upgraded Home adopts one
@@ -901,8 +901,32 @@ reloads to prove the task is gone before continuing offline/auth/replay.
 
 The code and portable non-evidence fences are checked in; fresh artifact-bound
 evidence still requires executing the rehearsal. P5.5c does not widen the
-remaining real-device, assistive-technology, visual, update-replacement,
-signed-distribution, or clean-consumer claims above.
+remaining real-device, assistive-technology, visual, signed-distribution, or
+clean-consumer claims above; update replacement is the separate P5.6 gate.
+
+The bounded P5.6 waiting-worker checkpoint closes the automated update seam
+without introducing another Home topology. After the existing installed
+Chrome journey, a separate runner loads only the extracted candidate static
+inventory and derives an in-memory N by adding one fixed index marker and
+changing the exact singular Workbox index MD5. Every other byte is shared with
+N+1. One closed, bounded, static-only ephemeral loopback gateway publishes N
+and then atomically points at the untouched extracted candidate; it has no API
+proxy and `/readyz` remains 404.
+
+An ephemeral system-Chrome context controls N, saves a text capture through
+the limited shell, and records its exact IndexedDB identity. After explicit
+service-worker update discovery, the runner requires the prompt, waiting
+worker, old active controller, and N marker before the human-equivalent
+`Update now` action. A controllerchange-driven reload must expose exact
+candidate index/worker SHA-256 bytes, no marker or waiting worker, and the same
+local capture row. The row is then removed through the UI.
+
+This is deliberately a local-state survival claim, not capture replay, engine
+or vault persistence, logical idempotency, API compatibility, Chrome install
+UI, multi-tab/background-update behavior, real-device Safari, signed
+distribution, or clean-consumer evidence. Portable generation, closed-gateway,
+phase, cancellation-settlement, and cleanup tests remain non-evidence; fresh
+proof requires the installed artifact rehearsal.
 
 Exit journey: installed PWA boots offline, preserves/exports/replays text
 capture, recovers from expired auth and premature SSE EOF, passes keyboard and

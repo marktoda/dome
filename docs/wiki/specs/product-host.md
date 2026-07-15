@@ -1019,9 +1019,10 @@ identity. Failure diagnostics expose only the fixed journey phase, never
 pairing codes, browser internals, filesystem paths, or captured text.
 
 This gate is installed-artifact Chromium evidence, not installability or
-cross-browser evidence. Manifest icons, Chrome install UI, update replacement,
-screen-reader and visual acceptance, real-device iOS Safari, signed/notarized
-distribution, and clean-consumer-Mac execution remain separate owner gates in
+cross-browser evidence. Manifest icons, Chrome install UI, screen-reader and
+visual acceptance, real-device iOS Safari, signed/notarized distribution, and
+clean-consumer-Mac execution remain separate owner gates; update replacement
+is implemented separately by P5.6 and is not evidence from this checkpoint. See
 [[cohesive/runbooks/2026-07-home-pwa-acceptance]].
 
 ### P5.4 install identity checkpoint
@@ -1041,8 +1042,9 @@ The installed Chrome journey additionally decodes each icon before pairing.
 
 This is checked-in and artifact-gated identity evidence, not a claim about the
 Chrome install UI or real-device iOS rendering. Accessibility, safe-area and
-dynamic-type acceptance, visual review, automated update replacement, signed
-distribution, and clean-consumer execution remain P5.5/owner-window gates.
+dynamic-type acceptance, visual review, signed distribution, and clean-consumer
+execution remain owner-window gates; automated update replacement is the
+separate P5.6 checkpoint.
 
 ### P5.5a portable functional closure checkpoint
 
@@ -1089,8 +1091,8 @@ executing it against a candidate artifact.
 
 This does not prove real-iPhone portrait/landscape/notch or software-keyboard
 behavior, Dynamic Type/200% zoom, VoiceOver, or Safari touch/microphone flows;
-those remain owner-hardware evidence. Waiting-worker N→N+1 replacement remains
-a separate gate. The exact installed Activity/settlement journey is not added
+those remain owner-hardware evidence. Waiting-worker N→N+1 replacement is the
+separate P5.6 gate, not evidence from this checkpoint. The exact installed Activity/settlement journey is not added
 by this checkpoint.
 
 ### P5.5c installed functional closure checkpoint
@@ -1128,8 +1130,48 @@ tests cover canary shape plus phase ordering, failure, and cleanup and remain
 explicitly non-evidence. Fresh evidence requires executing the candidate
 artifact rehearsal. This checkpoint does not claim real iPhone/Safari,
 VoiceOver, Dynamic Type/zoom, software-keyboard/safe-area behavior, visual
-regression, waiting-worker N→N+1 replacement, signed distribution, or a clean
-consumer Mac.
+regression, signed distribution, or a clean consumer Mac. Waiting-worker
+N→N+1 replacement is implemented separately by P5.6, not claimed by P5.5c.
+
+### P5.6 waiting-worker update checkpoint
+
+The installed `ready-success` path now runs a second, deliberately isolated
+Chrome journey after the existing paired functional journey. Its only input is
+the exact extracted candidate static root at `app/pwa/dist`. It loads a closed,
+bounded, contained inventory, rejects symlinks and non-files, and retains all
+bytes in private copied maps. It starts no Home, creates no second paired
+device, and proxies no API: `/readyz` is an ordinary static 404 at the same
+ephemeral `127.0.0.1` origin as the PWA.
+
+Generation N is synthetic and in memory. The runner inserts exactly
+`<meta name="dome-rehearsal-generation" content="synthetic-predecessor">`
+before the candidate index head closure, first proves the candidate
+`index.html` MD5 equals its singular generated `sw.js` precache revision, and
+then replaces only that revision with the synthetic index MD5. Every other
+file is byte-identical to N+1, and both index and worker must differ. One
+atomic gateway pointer publication changes N to the exact extracted candidate.
+
+An ephemeral installed system Chrome stable context has no persistent profile,
+trace, HAR, video, screenshot, download, or storage-state artifact and rejects
+all cross-origin requests. A fixed non-secret `dome_csrf` cookie admits the
+limited shell while static `/readyz` fails. Chrome waits for N control and its
+DOM marker, saves one unique text capture through the UI, and records the exact
+single `dome-pwa/captures` IndexedDB row. After N+1 publication and explicit
+`registration.update()`, the gate requires the visible update prompt, a
+non-null waiting worker, the old active controller, and the still-marked N DOM
+before confirmation. `Update now` must produce `controllerchange` plus reload,
+remove the marker, leave no waiting worker, and return browser-fetched index
+and worker SHA-256 values equal to the extracted candidate. The same capture
+id, text, timestamp, local state, and zero attempts must remain; cleanup removes
+it through the UI and proves the object store empty.
+
+This checkpoint claims only prompt-mode N→N+1 activation and survival of that
+one local IndexedDB row. It does not claim replay to Home, engine or vault
+persistence, logical-capture idempotency, API compatibility, Chrome install
+UI, background update policy, multi-tab behavior, real iPhone/Safari, signed
+distribution, or clean-consumer execution. Pure generation, request-policy,
+phase, timeout-settlement, and cleanup tests are portable non-evidence; fresh
+artifact evidence requires executing the installed rehearsal.
 
 ### P6 managed-release collection checkpoint 1
 

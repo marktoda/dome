@@ -91,14 +91,44 @@ The Chrome grant is exactly `read,capture,resolve`; neither runner uses an
 engine write API. Portable ordering and canary tests remain explicitly
 non-evidence. Fresh exact evidence requires running the artifact builder.
 
+## Checked-in P5.6 waiting-worker gate
+
+After the existing installed Chromium journey closes, `ready-success` passes
+only the extracted candidate `app/pwa/dist` directory to the update rehearsal.
+The rehearsal uses one ephemeral static-only loopback origin and one ephemeral
+system-Chrome context. It does not start or proxy Home and does not pair a
+second device. A non-secret local-evidence cookie lets the static `/readyz`
+404 reach the limited capture shell.
+
+The runner derives N in memory from the exact N+1 inventory: one fixed meta
+marker is inserted in `index.html`, and only the singular matching Workbox
+index MD5 in `sw.js` is changed. It refuses stale or duplicate revisions,
+symlinks, unbounded inventories, unsafe paths, and missing generation files.
+The gateway atomically switches from N to the untouched extracted candidate.
+
+Chrome must establish N service-worker control and the marked DOM, save one
+text capture through the UI, then observe N+1 as a visible waiting update while
+the old controller and N DOM remain active. Only `Update now` may activate it.
+After a recorded `controllerchange` reload, the marker is absent, waiting is
+null, browser-fetched index/worker SHA-256 values match the candidate, and the
+exact IndexedDB capture id/text/local state remains. The gate deletes the row
+through the UI before destroying its context. No browser profile, trace, HAR,
+video, screenshot, download, or storage-state evidence is retained.
+
+The claim is limited to waiting-worker activation and local IndexedDB row
+survival. It is not capture replay, engine/vault persistence, logical capture
+idempotency, API compatibility, install UI, multi-tab, background-update, or
+real-device Safari evidence. Portable generation, gateway, phase-order,
+timeout-settlement, and cleanup suites are explicitly non-evidence.
+
 ## Current nonclaims
 
 The P5.4 manifest/icon contract is checked in and artifact-gated. P5.5a has
-portable contract-test evidence. P5.5b and P5.5c implement artifact-bound
-adaptive and functional Chrome gates; fresh exact installed Chrome evidence
-requires running the artifact builder above. These checkpoints do not claim Chrome install UI,
+portable contract-test evidence. P5.5b, P5.5c, and P5.6 implement artifact-bound
+adaptive, functional, and waiting-worker Chrome gates; fresh exact installed
+Chrome evidence requires running the artifact builder above. These checkpoints do not claim Chrome install UI,
 real-iPhone portrait/landscape/notch or software-keyboard behavior, Dynamic
-Type/200%, VoiceOver, Safari touch/microphone flows, visual regression, or an
-automated waiting-worker N→N+1 replacement. Signed execution still requires
+Type/200%, VoiceOver, Safari touch/microphone flows, visual regression, capture
+replay in the isolated update journey, or engine persistence from that journey. Signed execution still requires
 the three Apple inputs; clean-consumer acceptance still requires the clean Mac
 run above.

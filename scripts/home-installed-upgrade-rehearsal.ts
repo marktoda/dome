@@ -31,6 +31,7 @@ import { isHomeUpgradeVersionAdvance } from "../src/product-host/home-upgrade-ve
 import { readHomePredecessorReceipt } from "./home-predecessor-artifact";
 import { inspectHomeArtifactTar, MAX_HOME_ARTIFACT_TAR_BYTES } from "./home-artifact-tar";
 import { runHomePwaChromiumAcceptance } from "./home-pwa-chromium-acceptance";
+import { runHomePwaUpdateRehearsal } from "./home-pwa-update-rehearsal";
 import {
   assertInstalledFunctionalClosure,
   prepareInstalledFunctionalClosure,
@@ -731,6 +732,9 @@ async function readySuccess(context: ScenarioContext, prepared: PreparedArtifact
       await assertChromiumLogicalCapture(context, text, captureId, signal),
     assertTaskSettlement: async (commit, signal) =>
       await assertInstalledFunctionalClosure(functionalClosure, functionalCanary, commit, signal),
+  });
+  await runHomePwaUpdateRehearsal({
+    staticRoot: join(prepared.candidateRoot, "app", "pwa", "dist"),
   });
 }
 
