@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, mock } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Composer } from "../src/components/Composer";
 
 afterEach(cleanup);
@@ -43,5 +43,96 @@ describe("Composer", () => {
     fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
     expect(onNewConversation).toHaveBeenCalledTimes(1);
+  });
+
+  test("offline keeps text capture available while Ask, voice, and retry stay disabled", () => {
+    const capture = mock(async () => {});
+    const ask = mock(() => {});
+    render(<Composer availability="offline" turnPhase="retryable" onAsk={ask} onCapture={capture} onTranscribe={async () => ""} onFile={async () => {}} />);
+    const input = screen.getByLabelText("ask your brain") as HTMLInputElement;
+    expect(input.disabled).toBe(false);
+    fireEvent.change(input, { target: { value: "save this offline" } });
+    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "record" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Retry question" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "New conversation" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "capture thought" }));
+    expect(capture).toHaveBeenCalledWith("save this offline");
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  test("an availability loss while recording discards audio without transcription", async () => {
+    const originalRecorder = globalThis.MediaRecorder;
+    const originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+    const stopTrack = mock(() => {});
+    class FakeRecorder {
+      state: RecordingState = "inactive";
+      mimeType = "audio/webm";
+      ondataavailable: ((event: BlobEvent) => void) | null = null;
+      onstop: (() => void) | null = null;
+      start(): void { this.state = "recording"; }
+      stop(): void { this.state = "inactive"; queueMicrotask(() => this.onstop?.()); }
+    }
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: async () => ({ getTracks: () => [{ stop: stopTrack }] }) },
+    });
+    globalThis.MediaRecorder = FakeRecorder as unknown as typeof MediaRecorder;
+    const transcribe = mock(async () => "must not run");
+    try {
+      const view = render(<Composer availability="available" onAsk={() => {}} onCapture={async () => {}} onTranscribe={transcribe} onFile={async () => {}} />);
+      fireEvent.click(screen.getByRole("button", { name: "record" }));
+      await waitFor(() => expect(screen.getByText("LISTENING")).toBeDefined());
+      view.rerender(<Composer availability="unreachable" onAsk={() => {}} onCapture={async () => {}} onTranscribe={transcribe} onFile={async () => {}} />);
+      await waitFor(() => expect(screen.getByText(/Recording discarded because Dome Home is unavailable/i)).toBeDefined());
+      expect(transcribe).not.toHaveBeenCalled();
+      expect(stopTrack).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.MediaRecorder = originalRecorder;
+      if (originalMediaDevices === undefined) Reflect.deleteProperty(navigator, "mediaDevices");
+      else Object.defineProperty(navigator, "mediaDevices", originalMediaDevices);
+    }
+  });
+
+  test("an online recording snapshots non-empty bytes before clearing its buffer", async () => {
+    const originalRecorder = globalThis.MediaRecorder;
+    const originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+    class FakeRecorder {
+      state: RecordingState = "inactive";
+      mimeType = "audio/webm";
+      ondataavailable: ((event: BlobEvent) => void) | null = null;
+      onstop: (() => void) | null = null;
+      start(): void { this.state = "recording"; }
+      stop(): void {
+        this.state = "inactive";
+        this.ondataavailable?.({ data: new Blob(["recorded audio"]) } as BlobEvent);
+        queueMicrotask(() => this.onstop?.());
+      }
+    }
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: async () => ({ getTracks: () => [{ stop: () => {} }] }) },
+    });
+    globalThis.MediaRecorder = FakeRecorder as unknown as typeof MediaRecorder;
+    let receivedBytes = 0;
+    const transcribe = mock(async (audio: Blob) => { receivedBytes = audio.size; return "heard"; });
+    const file = mock(async () => {});
+    try {
+      render(<Composer availability="available" onAsk={() => {}} onCapture={async () => {}} onTranscribe={transcribe} onFile={file} />);
+      fireEvent.click(screen.getByRole("button", { name: "record" }));
+      await waitFor(() => expect(screen.getByText("LISTENING")).toBeDefined());
+      fireEvent.click(screen.getByRole("button", { name: "stop recording" }));
+      await waitFor(() => expect(screen.getByLabelText("capture draft")).toBeDefined());
+      expect(receivedBytes).toBeGreaterThan(0);
+      fireEvent.click(screen.getByRole("button", { name: "File it" }));
+      await waitFor(() => expect(screen.getByText("Saved locally")).toBeDefined());
+      expect(screen.getByText("Pending sync to Dome Home.")).toBeDefined();
+      expect(screen.queryByText("Captured")).toBeNull();
+      expect(screen.queryByText(/Filed to your inbox/i)).toBeNull();
+    } finally {
+      globalThis.MediaRecorder = originalRecorder;
+      if (originalMediaDevices === undefined) Reflect.deleteProperty(navigator, "mediaDevices");
+      else Object.defineProperty(navigator, "mediaDevices", originalMediaDevices);
+    }
   });
 });

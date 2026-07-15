@@ -9,9 +9,12 @@ export type ExactCitation = {
   readonly commit?: string | undefined;
 };
 
+export type SourceRequestExecutor = (request: Request) => Promise<Response>;
+
 /** Load one exact citation; this is deliberately separate from mutation auth. */
 export async function fetchSourceDocument(
   citation: ExactCitation,
+  execute: SourceRequestExecutor,
   signal?: AbortSignal,
 ): Promise<SourceDocumentResult> {
   if (citation.commit === undefined || citation.commit.length === 0) {
@@ -22,12 +25,15 @@ export async function fetchSourceDocument(
     };
   }
   const query = new URLSearchParams({ path: citation.path, commit: citation.commit });
-  const response = await fetch(`/source?${query.toString()}`, {
+  const origin = typeof location !== "undefined" && location.origin !== "null"
+    ? location.origin
+    : "http://dome.local";
+  const response = await execute(new Request(new URL(`/source?${query.toString()}`, origin), {
     method: "GET",
     credentials: "same-origin",
     headers: { accept: "application/json" },
     ...(signal !== undefined ? { signal } : {}),
-  });
+  }));
   let value: unknown;
   try {
     value = await response.json();

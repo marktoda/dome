@@ -9,7 +9,7 @@
 
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdtempSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { lstat, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, sep, join } from "node:path";
 
@@ -430,22 +430,49 @@ function queryTokenAuthorized(request: Request, url: URL, tokenDigest: Buffer): 
 // ----- Static asset serving --------------------------------------------------
 
 /**
- * Serve the PWA app shell ("/" → index.html) or an asset ("/assets/...").
- * Returns null for any path that should fall through to the API routes.
- * Traversal attacks are rejected with 403 before the file is read.
+ * Serve only the closed VitePWA GenerateSW output shape. Unknown root files,
+ * nested assets, and API paths fall through to authenticated routing.
  */
 async function serveStatic(staticDir: string, pathname: string): Promise<Response | null> {
-  // Only "/" (shell) and "/assets/..." are served. Everything else → null (fall through to API routing).
-  const rel = pathname === "/" ? "index.html" : pathname.startsWith("/assets/") ? pathname.slice(1) : null;
+  const rel = staticPath(pathname);
   if (rel === null) return null;
   const root = resolve(staticDir);
   const full = resolve(join(root, rel));
   if (full !== root && !full.startsWith(root + sep)) {
     return new Response("forbidden", { status: 403 }); // traversal guard
   }
+  try {
+    const [rootInfo, fileInfo, realRoot, realFile] = await Promise.all([
+      lstat(root), lstat(full), realpath(root), realpath(full),
+    ]);
+    if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink() ||
+      !fileInfo.isFile() || fileInfo.isSymbolicLink() ||
+      (realFile !== realRoot && !realFile.startsWith(`${realRoot}${sep}`))) {
+      return new Response("not found", { status: 404 });
+    }
+  } catch {
+    return new Response("not found", { status: 404 });
+  }
   const file = Bun.file(full);
-  if (!(await file.exists())) return new Response("not found", { status: 404 });
-  return new Response(file); // Bun sets content-type from extension
+  const headers = new Headers({
+    "cache-control": pathname === "/" || pathname === "/index.html" || pathname === "/manifest.webmanifest" || pathname === "/sw.js"
+      ? "no-cache"
+      : "public, max-age=31536000, immutable",
+  });
+  if (pathname === "/sw.js") headers.set("service-worker-allowed", "/");
+  return new Response(file, { headers }); // Bun supplies content-type from Blob metadata.
+}
+
+function staticPath(pathname: string): string | null {
+  if (pathname === "/" || pathname === "/index.html") return "index.html";
+  if (pathname === "/manifest.webmanifest") return "manifest.webmanifest";
+  if (pathname === "/sw.js") return "sw.js";
+  if (/^\/workbox-[a-f0-9]{8}\.js$/.test(pathname)) return pathname.slice(1);
+  const asset = /^\/assets\/([^/]+)$/.exec(pathname)?.[1];
+  if (asset !== undefined && /^[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{6,}\.(?:js|css)$/.test(asset)) {
+    return `assets/${asset}`;
+  }
+  return null;
 }
 
 // ----- Server factory -------------------------------------------------------
@@ -1605,10 +1632,12 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     }
     const requestId = randomUUID();
     const font = fontResponse(request);
-    if (font !== null) return hardenDeviceResponse(font, { requestId });
+    if (font !== null) return hardenDeviceResponse(font, { requestId, preserveStaticCacheControl: true });
     if (request.method === "GET" && opts.staticDir !== undefined) {
       const served = await serveStatic(opts.staticDir, url.pathname);
-      if (served !== null) return hardenDeviceResponse(served, { requestId });
+      if (served !== null) {
+        return hardenDeviceResponse(served, { requestId, preserveStaticCacheControl: true });
+      }
     }
     const authenticated = authenticateDeviceRequest(deviceAuth.authority, request, {
       allowedOrigins: deviceAuth.allowedOrigins(),

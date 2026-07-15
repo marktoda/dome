@@ -1172,6 +1172,55 @@ function offlineEnvironment(): Record<string, string> {
   };
 }
 
+const PWA_PRECACHE_MARKER = "precacheAndRoute(";
+const PWA_PRECACHE_ENTRY = /\{url:"([A-Za-z0-9_./-]{1,512})",revision:(?:null|"[a-f0-9]{32}")\}/y;
+
+/** Parse only the closed object-literal shape emitted by the pinned GenerateSW. */
+export function parseGeneratedPwaPrecache(workerBody: string): ReadonlyArray<string> {
+  if (workerBody.length === 0 || workerBody.length > 2_000_000) {
+    throw new Error("generated PWA service worker size is invalid");
+  }
+  const marker = workerBody.indexOf(PWA_PRECACHE_MARKER);
+  if (marker < 0 || workerBody.indexOf(PWA_PRECACHE_MARKER, marker + PWA_PRECACHE_MARKER.length) >= 0) {
+    throw new Error("generated PWA service worker must contain one precache call");
+  }
+  const open = marker + PWA_PRECACHE_MARKER.length;
+  if (workerBody[open] !== "[") throw new Error("generated PWA precache inventory is malformed");
+  const close = workerBody.indexOf("]", open + 1);
+  if (close < 0 || workerBody.slice(close + 1, close + 5) !== ",{})") {
+    throw new Error("generated PWA precache call has unmatched residue");
+  }
+  const literal = workerBody.slice(open + 1, close);
+  if (literal.length === 0 || literal.length > 1_000_000) {
+    throw new Error("generated PWA precache inventory is empty or oversized");
+  }
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  let cursor = 0;
+  while (cursor < literal.length) {
+    PWA_PRECACHE_ENTRY.lastIndex = cursor;
+    const matched = PWA_PRECACHE_ENTRY.exec(literal);
+    if (matched === null) throw new Error("generated PWA precache entry is malformed");
+    const url = matched[1]!;
+    if (!isShippedPwaPrecacheUrl(url)) throw new Error("generated PWA precache URL is unsafe or unsupported");
+    if (seen.has(url)) throw new Error("generated PWA precache URL is duplicated");
+    seen.add(url);
+    urls.push(url);
+    if (urls.length > 256) throw new Error("generated PWA precache inventory has too many entries");
+    cursor = PWA_PRECACHE_ENTRY.lastIndex;
+    if (cursor === literal.length) break;
+    if (literal[cursor] !== ",") throw new Error("generated PWA precache inventory has unmatched residue");
+    cursor++;
+  }
+  return Object.freeze(urls);
+}
+
+function isShippedPwaPrecacheUrl(url: string): boolean {
+  if (url === "index.html" || url === "manifest.webmanifest") return true;
+  if (!/^assets\/[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{6,}\.(?:js|css)$/.test(url)) return false;
+  return !url.split("/").includes("..");
+}
+
 async function rehearseHomeServer(dome: string, vault: string, cwd: string): Promise<void> {
   const child = Bun.spawn([dome, "home", "--vault", vault, "--host", "127.0.0.1", "--port", "0"], {
     cwd,
@@ -1203,6 +1252,35 @@ async function rehearseHomeServer(dome: string, vault: string, cwd: string): Pro
     const asset = await fetch(new URL(assetPath, result.url));
     if (!asset.ok || (await asset.arrayBuffer()).byteLength === 0) {
       throw new Error(`artifact dome home did not serve bundled asset ${assetPath}`);
+    }
+    const manifestResponse = await fetch(new URL("/manifest.webmanifest", result.url));
+    const manifest = await manifestResponse.json() as { readonly name?: unknown; readonly icons?: unknown };
+    if (!manifestResponse.ok || manifest.name !== "Dome" || !Array.isArray(manifest.icons) || manifest.icons.length !== 0) {
+      throw new Error("artifact Dome Home did not serve the honest generated PWA manifest");
+    }
+    const workerResponse = await fetch(new URL("/sw.js", result.url));
+    const workerBody = await workerResponse.text();
+    const workboxPath = workerBody.match(/["']\.\/(workbox-[a-f0-9]{8}\.js)["']/)?.[1];
+    if (!workerResponse.ok || workboxPath === undefined) {
+      throw new Error("artifact Dome Home did not serve the generated service worker");
+    }
+    const workbox = await fetch(new URL(`/${workboxPath}`, result.url));
+    if (!workbox.ok || (await workbox.arrayBuffer()).byteLength === 0) {
+      throw new Error("artifact Dome Home did not serve the generated Workbox runtime");
+    }
+    const precache = parseGeneratedPwaPrecache(workerBody);
+    if (!precache.includes("index.html")) {
+      throw new Error("artifact Dome Home service worker did not precache index.html");
+    }
+    for (const url of precache) {
+      const cached = await fetch(new URL(`/${url}`, result.url));
+      if (!cached.ok) {
+        throw new Error(`artifact Dome Home could not serve precache URL ${url}`);
+      }
+    }
+    const closedRoot = await fetch(new URL("/robots.txt", result.url));
+    if (closedRoot.status !== 401) {
+      throw new Error("artifact Dome Home static root exposed an unrecognized file");
     }
   } finally {
     child.kill("SIGTERM");

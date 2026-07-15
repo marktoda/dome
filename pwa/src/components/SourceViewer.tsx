@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import type { DomeClient } from "../api/client";
 import type { Citation } from "../api/types";
-import { fetchSourceDocument } from "../source/source-client";
 import type { SourceDocumentResult } from "../../../contracts/source-document";
 
 type State =
@@ -10,10 +10,12 @@ type State =
 
 export function SourceViewer({
   citation,
+  client,
   onClose,
   returnFocus,
 }: {
   readonly citation: Citation;
+  readonly client: DomeClient;
   readonly onClose: () => void;
   readonly returnFocus: HTMLElement | null;
 }): React.ReactElement {
@@ -24,7 +26,7 @@ export function SourceViewer({
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchSourceDocument(citation, controller.signal).then(
+    client.source(citation, controller.signal).then(
       (result) => setState({ kind: "loaded", result }),
       (error: unknown) => {
         if (!controller.signal.aborted) {
@@ -36,7 +38,7 @@ export function SourceViewer({
       },
     );
     return () => controller.abort();
-  }, [citation]);
+  }, [citation, client]);
 
   useEffect(() => {
     closeRef.current?.focus();

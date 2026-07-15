@@ -17,21 +17,23 @@ function reply(overrides: Record<string, unknown> = {}): void {
   }))) as unknown as typeof fetch;
 }
 
+const execute = (request: Request): Promise<Response> => fetch(request);
+
 describe("exact source client", () => {
   test("accepts only a response for the requested path and lowercase commit", async () => {
     reply();
-    expect(await fetchSourceDocument({ path: "wiki/source.md", commit: COMMIT })).toMatchObject({ status: "ok" });
+    expect(await fetchSourceDocument({ path: "wiki/source.md", commit: COMMIT }, execute)).toMatchObject({ status: "ok" });
   });
 
   test("rejects a valid document carrying a substituted path", async () => {
     reply({ path: "wiki/other.md" });
-    await expect(fetchSourceDocument({ path: "wiki/source.md", commit: COMMIT }))
+    await expect(fetchSourceDocument({ path: "wiki/source.md", commit: COMMIT }, execute))
       .rejects.toThrow("did not match");
   });
 
   test("rejects a valid document carrying a substituted commit", async () => {
     reply({ commit: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" });
-    await expect(fetchSourceDocument({ path: "wiki/source.md", commit: COMMIT }))
+    await expect(fetchSourceDocument({ path: "wiki/source.md", commit: COMMIT }, execute))
       .rejects.toThrow("did not match");
   });
 });

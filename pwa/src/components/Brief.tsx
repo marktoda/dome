@@ -5,7 +5,6 @@ import {
   priorityMarkerChars,
   type TodayTaskRow,
   type TodayQuestionRow,
-  type TodayReviewRow,
 } from "../../../src/surface/today-view";
 import type { Today } from "../api/types";
 import { renderRich } from "../rich";
@@ -29,10 +28,11 @@ function PriorityMark({ priority }: { priority: TodayTaskRow["priority"] }): Rea
 }
 
 function TaskRow(
-  { item, settling, onSettle }: {
+  { item, settling, onSettle, interactive }: {
     item: TodayTaskRow;
     settling: boolean;
     onSettle: (blockId: string) => void;
+    interactive: boolean;
   },
 ): React.ReactElement {
   const blockId = item.blockId;
@@ -43,7 +43,7 @@ function TaskRow(
           type="checkbox"
           className="box"
           checked={settling}
-          disabled={settling}
+          disabled={settling || !interactive}
           aria-label={item.text}
           onChange={() => onSettle(blockId)}
         />
@@ -59,30 +59,12 @@ function TaskRow(
   );
 }
 
-function QuestionCard({ q, onResolve }: { q: TodayQuestionRow; onResolve: (id: number, value: string) => void }): React.ReactElement {
+function QuestionCard({ q, onResolve, interactive }: { q: TodayQuestionRow; onResolve: (id: number, value: string) => void; interactive: boolean }): React.ReactElement {
   return (
     <div className="qcard">
       <div className="body">{renderRich(q.question)}</div>
       <div className="opts">
-        {q.options.map((opt) => <button key={opt} type="button" onClick={() => onResolve(q.id, opt)}>{opt}</button>)}
-      </div>
-    </div>
-  );
-}
-
-function ReviewCard({
-  review,
-  onReview,
-}: {
-  review: TodayReviewRow;
-  onReview: (id: number, decision: "apply" | "reject") => void;
-}): React.ReactElement {
-  return (
-    <div className="qcard">
-      <div className="body">{renderRich(review.reason)}</div>
-      <div className="opts">
-        <button type="button" onClick={() => onReview(review.id, "apply")}>apply</button>
-        <button type="button" onClick={() => onReview(review.id, "reject")}>reject</button>
+        {q.options.map((opt) => <button key={opt} type="button" disabled={!interactive} onClick={() => onResolve(q.id, opt)}>{opt}</button>)}
       </div>
     </div>
   );
@@ -90,12 +72,13 @@ function ReviewCard({
 
 /** One urgency bucket (overdue / today / this week / later) — header + rows; nothing when empty. */
 function Bucket(
-  { label, cls, items, settlingIds, onSettle }: {
+  { label, cls, items, settlingIds, onSettle, interactive }: {
     label: string;
     cls: string;
     items: ReadonlyArray<TodayTaskRow>;
     settlingIds: ReadonlySet<string>;
     onSettle: (blockId: string) => void;
+    interactive: boolean;
   },
 ): React.ReactElement | null {
   if (items.length === 0) return null;
@@ -109,6 +92,7 @@ function Bucket(
             item={t}
             settling={t.blockId !== undefined && settlingIds.has(t.blockId)}
             onSettle={onSettle}
+            interactive={interactive}
           />
         ))}
       </div>
@@ -119,7 +103,6 @@ function Bucket(
 type Props = {
   today: Today;
   onResolve: (id: number, value: string) => void;
-  onReview?: (id: number, decision: "apply" | "reject") => void;
   /** Settle a task closed by its ^block-anchor id; resolves to whether it
    * actually settled — the caller owns the API call, this component owns
    * only the optimistic strike-through + revert-on-failure UI state. */
@@ -127,10 +110,11 @@ type Props = {
   collapsed?: boolean;
   hasMessages?: boolean;
   onToggle?: () => void;
+  interactive?: boolean;
 };
 
 export function Brief(
-  { today, onResolve, onReview = () => {}, onSettle = async () => false, collapsed = false, hasMessages = false, onToggle = () => {} }: Props,
+  { today, onResolve, onSettle = async () => false, collapsed = false, hasMessages = false, onToggle = () => {}, interactive = true }: Props,
 ): React.ReactElement | null {
   const [showAll, setShowAll] = useState(false);
   const [settlingIds, setSettlingIds] = useState<ReadonlySet<string>>(new Set());
@@ -177,9 +161,14 @@ export function Brief(
   }
 
   const openCount = counts.openTasks + counts.followups;
-  const qCount = counts.questions + (counts.reviews ?? reviews.length);
+  const qCount = counts.questions;
+  const ownerBacklog = attentionBacklog + reviews.length;
   const summary =
-    [openCount > 0 ? `${openCount} open` : null, qCount > 0 ? `${qCount} to decide` : null]
+    [
+      openCount > 0 ? `${openCount} open` : null,
+      qCount > 0 ? `${qCount} to decide` : null,
+      ownerBacklog > 0 ? `${ownerBacklog} in CLI backlog` : null,
+    ]
       .filter(Boolean).join(" · ") || "all clear";
 
   if (collapsed) {
@@ -228,10 +217,10 @@ export function Brief(
       {shownInline > 0 || laterAll.length > 0 ? (
         <div className="section">
           <div className="label">Still open</div>
-          <Bucket label="overdue" cls="bucket-overdue" items={overdue} settlingIds={settlingIds} onSettle={handleSettle} />
-          <Bucket label="today" cls="bucket-today" items={dueToday} settlingIds={settlingIds} onSettle={handleSettle} />
-          <Bucket label="this week" cls="bucket-week" items={thisWeek} settlingIds={settlingIds} onSettle={handleSettle} />
-          {showAll ? <Bucket label="later" cls="bucket-later" items={laterAll} settlingIds={settlingIds} onSettle={handleSettle} /> : null}
+          <Bucket label="overdue" cls="bucket-overdue" items={overdue} settlingIds={settlingIds} onSettle={handleSettle} interactive={interactive} />
+          <Bucket label="today" cls="bucket-today" items={dueToday} settlingIds={settlingIds} onSettle={handleSettle} interactive={interactive} />
+          <Bucket label="this week" cls="bucket-week" items={thisWeek} settlingIds={settlingIds} onSettle={handleSettle} interactive={interactive} />
+          {showAll ? <Bucket label="later" cls="bucket-later" items={laterAll} settlingIds={settlingIds} onSettle={handleSettle} interactive={interactive} /> : null}
           {!showAll && hidden > 0 ? (
             <button type="button" className="brief-more" onClick={() => setShowAll(true)}>+{hidden} more, later ▾</button>
           ) : null}
@@ -244,19 +233,11 @@ export function Brief(
       {questions.length > 0 ? (
         <div className="section">
           <div className="label">To decide</div>
-          <div className="rows">{questions.map((q) => <QuestionCard key={q.id} q={q} onResolve={onResolve} />)}</div>
+          <div className="rows">{questions.map((q) => <QuestionCard key={q.id} q={q} onResolve={onResolve} interactive={interactive} />)}</div>
         </div>
       ) : null}
-      {reviews.length > 0 ? (
-        <div className="section">
-          <div className="label">To review</div>
-          <div className="rows">{reviews.map((review) => (
-            <ReviewCard key={review.id} review={review} onReview={onReview} />
-          ))}</div>
-        </div>
-      ) : null}
-      {attentionBacklog > 0 ? (
-        <div className="brief-more">+{attentionBacklog} in owner backlog</div>
+      {ownerBacklog > 0 ? (
+        <div className="brief-more">+{ownerBacklog} in owner backlog · review with Dome CLI</div>
       ) : null}
     </section>
   );

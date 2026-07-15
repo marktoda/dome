@@ -10,7 +10,7 @@
 
 import { afterAll, beforeEach, afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -28,6 +28,49 @@ import { enqueuePendingProposal } from "../../src/proposals/pending-proposals";
 
 const TEST_TIMEOUT_MS = 120_000;
 const TOKEN = "test-relay-token";
+
+describe("closed PWA static root", () => {
+  test("serves only GenerateSW output with explicit cache policy", async () => {
+    const staticDir = mkdtempSync(join(tmpdir(), "dome-http-static-"));
+    try {
+      await mkdir(join(staticDir, "assets"), { recursive: true });
+      await Promise.all([
+        writeFile(join(staticDir, "index.html"), "<main>Dome</main>"),
+        writeFile(join(staticDir, "manifest.webmanifest"), "{}"),
+        writeFile(join(staticDir, "sw.js"), "self.addEventListener('fetch',()=>{})"),
+        writeFile(join(staticDir, "workbox-1234abcd.js"), "workbox"),
+        writeFile(join(staticDir, "assets", "index-AbCd1234.js"), "app"),
+        writeFile(join(staticDir, "assets", "plain.js"), "not public"),
+        writeFile(join(staticDir, "assets", "image-AbCd1234.png"), "not a generated extension"),
+        writeFile(join(staticDir, "robots.txt"), "not public"),
+      ]);
+      await symlink("index-AbCd1234.js", join(staticDir, "assets", "linked-AbCd1234.js"));
+      const handler = createDomeHttpServer({ vaultPath: "/unused", token: TOKEN, staticDir });
+      for (const path of ["/", "/index.html", "/manifest.webmanifest", "/sw.js"]) {
+        const response = await handler.fetch(new Request(`http://localhost${path}`));
+        expect(response.status).toBe(200);
+        expect(response.headers.get("cache-control")).toBe("no-cache");
+      }
+      const worker = await handler.fetch(new Request("http://localhost/sw.js"));
+      expect(worker.headers.get("service-worker-allowed")).toBe("/");
+      for (const path of ["/workbox-1234abcd.js", "/assets/index-AbCd1234.js"]) {
+        const response = await handler.fetch(new Request(`http://localhost${path}`));
+        expect(response.status).toBe(200);
+        expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+      }
+      for (const path of ["/robots.txt", "/assets/plain.js", "/assets/image-AbCd1234.png", "/assets/nested/index-AbCd1234.js", "/readyz"]) {
+        const response = await handler.fetch(new Request(`http://localhost${path}`));
+        expect(response.status).toBe(401);
+        expect(response.headers.get("cache-control")).toBeNull();
+      }
+      expect((await handler.fetch(new Request("http://localhost/assets/missing-AbCd1234.js"))).status).toBe(404);
+      expect((await handler.fetch(new Request("http://localhost/assets/linked-AbCd1234.js"))).status).toBe(404);
+      await handler.close();
+    } finally {
+      await rm(staticDir, { recursive: true, force: true });
+    }
+  });
+});
 
 // ----- Console capture (runInit/runSync print; tests stay quiet) ---------------
 

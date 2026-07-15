@@ -54,8 +54,7 @@ describe("Brief", () => {
     expect(screen.getByText(/Standup/)).toBeDefined();
   });
 
-  test("renders proposal reviews in the owner queue and dispatches apply or reject", () => {
-    const onReview = mock(() => {});
+  test("counts proposal reviews in the CLI backlog without blind decision controls", () => {
     const today: Today = {
       ...base,
       reviews: [{
@@ -68,14 +67,13 @@ describe("Brief", () => {
       attentionBacklog: 2,
       counts: { openTasks: 0, followups: 0, questions: 0, reviews: 1 },
     };
-    render(<Brief today={today} onResolve={noop} onReview={onReview} />);
-    expect(screen.getByText("To review")).toBeDefined();
-    expect(screen.getByText("Promote the link repair processor")).toBeDefined();
-    expect(screen.getByText("+2 in owner backlog")).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "apply" }));
-    fireEvent.click(screen.getByRole("button", { name: "reject" }));
-    expect(onReview).toHaveBeenNthCalledWith(1, 12, "apply");
-    expect(onReview).toHaveBeenNthCalledWith(2, 12, "reject");
+    render(<Brief today={today} onResolve={noop} />);
+    expect(screen.queryByText("To review")).toBeNull();
+    expect(screen.queryByText("Promote the link repair processor")).toBeNull();
+    expect(screen.getByText("+3 in owner backlog · review with Dome CLI")).toBeDefined();
+    expect(screen.getByText(/today · 3 in CLI backlog/i)).toBeDefined();
+    expect(screen.queryByRole("button", { name: "apply" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "reject" })).toBeNull();
   });
 });
 

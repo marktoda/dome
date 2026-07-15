@@ -10,12 +10,16 @@ type Props = {
   onCapture: (text: string) => Promise<string | void>;
   onTranscribe: (audio: Blob) => Promise<string>;
   onFile: (text: string) => Promise<string | void>;
+  availability?: "available" | "offline" | "unreachable";
 };
 
-const canRecord =
+function canRecord(): boolean {
+  return (
   typeof navigator !== "undefined" &&
   typeof (navigator as Navigator).mediaDevices?.getUserMedia === "function" &&
-  typeof MediaRecorder !== "undefined";
+  typeof MediaRecorder !== "undefined"
+  );
+}
 
 const WAVE = [10, 18, 30, 44, 24, 36, 52, 28, 15, 33, 48, 22, 40, 56, 26, 13, 35, 46, 20, 30, 50, 24, 11, 38, 28, 44, 18, 32];
 
@@ -23,13 +27,24 @@ function fmtTime(s: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConversation, onCapture, onTranscribe, onFile }: Props): React.ReactElement {
+export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConversation, onCapture, onTranscribe, onFile, availability = "available" }: Props): React.ReactElement {
   const [text, setText] = useState("");
   const [cap, dispatch] = useReducer(captureReducer, INITIAL);
   const [secs, setSecs] = useState(0);
   const [captured, setCaptured] = useState<string | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const availabilityRef = useRef(availability);
+  const discardRecordingRef = useRef(false);
+  availabilityRef.current = availability;
+
+  useEffect(() => {
+    const recorder = recorderRef.current;
+    if (availability !== "available" && recorder !== null && recorder.state !== "inactive") {
+      discardRecordingRef.current = true;
+      recorder.stop();
+    }
+  }, [availability]);
 
   useEffect(() => {
     if (cap.phase !== "recording") { setSecs(0); return; }
@@ -39,15 +54,29 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
 
   const startRecording = async (): Promise<void> => {
     try {
+      if (availabilityRef.current !== "available") return;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (availabilityRef.current !== "available") {
+        stream.getTracks().forEach((track) => track.stop());
+        dispatch({ kind: "fail", error: "Recording discarded because Dome Home is unavailable." });
+        return;
+      }
       const rec = new MediaRecorder(stream);
       chunksRef.current = [];
       rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       rec.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
+        const discard = discardRecordingRef.current || availabilityRef.current !== "available";
+        discardRecordingRef.current = false;
+        const recordedChunks = chunksRef.current;
+        chunksRef.current = [];
+        if (discard) {
+          dispatch({ kind: "fail", error: "Recording discarded because Dome Home is unavailable." });
+          return;
+        }
         dispatch({ kind: "stop-recording" });
         try {
-          const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+          const blob = new Blob(recordedChunks, { type: rec.mimeType || "audio/webm" });
           dispatch({ kind: "transcribed", text: await onTranscribe(blob) });
         } catch (e) { dispatch({ kind: "fail", error: e instanceof Error ? e.message : String(e) }); }
       };
@@ -67,14 +96,14 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
     } catch (e) { dispatch({ kind: "fail", error: e instanceof Error ? e.message : String(e) }); }
   };
 
-  // Captured confirmation (B5) — supersedes the sheet while it shows.
+  // Local-save confirmation — remote commit/adoption is acknowledged only from a receipt.
   if (captured !== null) {
     return (
       <div className="overlay captured">
         <div className="center">
           <div className="check"><span className="mark" /></div>
-          <h2>Captured</h2>
-          <p>Filed to your inbox. The engine will sort it.</p>
+          <h2>Saved locally</h2>
+          <p>Pending sync to Dome Home.</p>
           {captured.length > 0 ? <div className="path">{captured}</div> : null}
         </div>
       </div>
@@ -130,7 +159,9 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
 
   // idle
   const activeTurn = turnPhase === "streaming" || turnPhase === "stopping";
-  const askBlocked = activeTurn || turnPhase === "session-ended";
+  const remoteAvailable = availability === "available";
+  const askBlocked = activeTurn || turnPhase === "session-ended" || !remoteAvailable;
+  const inputBlocked = activeTurn;
   return (
     <form className="composer" onSubmit={(e) => { e.preventDefault(); const q = text.trim(); if (!askBlocked && q.length > 0) { onAsk(q); setText(""); } }}>
       {activeTurn ? (
@@ -144,20 +175,20 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
       {turnPhase === "retryable" || turnPhase === "session-ended" ? (
         <div className="turn-control" role="status" aria-live="polite">
           <span>{turnPhase === "session-ended" ? "Conversation ended. Retry may repeat actions." : "Response interrupted; outcome may be uncertain. Retry may repeat actions."}</span>
-          <button type="button" onClick={onRetry}>Retry question</button>
-          <button type="button" onClick={onNewConversation}>New conversation</button>
+          <button type="button" onClick={onRetry} disabled={!remoteAvailable}>Retry question</button>
+          <button type="button" onClick={onNewConversation} disabled={!remoteAvailable}>New conversation</button>
         </div>
       ) : null}
       <div className="pill">
-        <button type="button" className="mic" aria-label="record" disabled={!canRecord || askBlocked} onClick={() => { void startRecording(); }}>
+        <button type="button" className="mic" aria-label="record" disabled={!canRecord() || askBlocked} onClick={() => { void startRecording(); }}>
           <span className="glyph"><span className="stem" /><span className="base" /></span>
         </button>
-        <input aria-label="ask your brain" placeholder="ask your brain…" value={text} disabled={askBlocked} onChange={(e) => setText(e.target.value)} />
+        <input aria-label="ask your brain" placeholder={remoteAvailable ? "ask your brain…" : "capture a thought…"} value={text} disabled={inputBlocked} onChange={(e) => setText(e.target.value)} />
         <button
           type="button"
           className="capture-text"
           aria-label="capture thought"
-          disabled={askBlocked || text.trim().length === 0}
+          disabled={inputBlocked || text.trim().length === 0}
           onClick={() => {
             const draft = text.trim();
             if (draft.length > 0) void onCapture(draft).then(() => setText(""));
@@ -165,6 +196,7 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
         >+</button>
         <button type="submit" disabled={askBlocked || text.trim().length === 0} className={`send${text.trim().length > 0 ? " active" : ""}`} aria-label="send">↑</button>
       </div>
+      {!remoteAvailable ? <span className="connection-hint">Ask and voice need Dome Home. Text capture stays local.</span> : null}
       {cap.error !== null ? <span className="err">{cap.error}</span> : null}
     </form>
   );

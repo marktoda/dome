@@ -10,6 +10,7 @@ import {
   assertSourceSnapshot,
   HOME_ARTIFACT_SCHEMA,
   normalizeArtifactModes,
+  parseGeneratedPwaPrecache,
   PINNED_AGE_ARCHIVE_SHA256,
   PINNED_AGE_ARCHIVE_URL,
   PINNED_AGE_BINARY_SHA256,
@@ -32,6 +33,25 @@ import {
 } from "../../src/product-host/home-artifact";
 
 describe("Dome Home artifact", () => {
+  test("strictly parses the pinned GenerateSW precache object literal", () => {
+    const revision = "a".repeat(32);
+    const worker = `define(["./workbox-1234abcd"],function(e){e.precacheAndRoute([{url:"manifest.webmanifest",revision:"${revision}"},{url:"index.html",revision:"${revision}"},{url:"assets/index-AbCd1234.js",revision:null}],{}),e.cleanupOutdatedCaches()});`;
+    expect(parseGeneratedPwaPrecache(worker)).toEqual([
+      "manifest.webmanifest", "index.html", "assets/index-AbCd1234.js",
+    ]);
+  });
+
+  test("rejects malformed residue, duplicate, and unsafe GenerateSW entries", () => {
+    const revision = "b".repeat(32);
+    const entry = `{url:"index.html",revision:"${revision}"}`;
+    const worker = (literal: string) => `e.precacheAndRoute([${literal}],{}),e.cleanupOutdatedCaches()`;
+    expect(() => parseGeneratedPwaPrecache(worker(`${entry},garbage`))).toThrow("malformed");
+    expect(() => parseGeneratedPwaPrecache(worker(`${entry},${entry}`))).toThrow("duplicated");
+    expect(() => parseGeneratedPwaPrecache(worker(`{url:"../index.html",revision:"${revision}"}`))).toThrow("unsafe");
+    expect(() => parseGeneratedPwaPrecache(worker(`{url:"assets/icon-AbCd1234.png",revision:null}`))).toThrow("unsafe");
+    expect(() => parseGeneratedPwaPrecache(`${worker(entry)}${worker(entry)}`)).toThrow("one precache call");
+  });
+
   test("the builder exports the exact shipped verifier", () => {
     expect(verifyHomeArtifact).toBe(shippedVerifyHomeArtifact);
   });

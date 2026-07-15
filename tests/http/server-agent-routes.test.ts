@@ -29,7 +29,7 @@ async function makeStaticDir(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), "dome-pwa-static-"));
   await writeFile(join(dir, "index.html"), "<!doctype html><title>Dome</title>", "utf8");
   await mkdir(join(dir, "assets"), { recursive: true });
-  await writeFile(join(dir, "assets", "app.js"), "console.log('dome')", "utf8");
+  await writeFile(join(dir, "assets", "app-AbCd1234.js"), "console.log('dome')", "utf8");
   return dir;
 }
 
@@ -53,10 +53,10 @@ describe("createDomeHttpServer static serving", () => {
     expect(await res.text()).toContain("<title>Dome</title>");
   });
 
-  test("GET /assets/* serves the asset unauthenticated", async () => {
+  test("GET /assets/<hashed>.js serves the generated-shape asset unauthenticated", async () => {
     const staticDir = await makeStaticDir();
     const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, staticDir });
-    const res = await server.fetch(new Request("http://localhost/assets/app.js"));
+    const res = await server.fetch(new Request("http://localhost/assets/app-AbCd1234.js"));
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("dome");
   });
@@ -64,11 +64,7 @@ describe("createDomeHttpServer static serving", () => {
   test("a traversal path under /assets is rejected", async () => {
     const staticDir = await makeStaticDir();
     const server = createDomeHttpServer({ vaultPath: "/tmp/unused", token: TOKEN, staticDir });
-    const res = await server.fetch(new Request("http://localhost/assets/../index.html"));
-    // URL normalization resolves assets/../ to / before our code sees it, so the
-    // traversal attempt produces /index.html which is neither "/" nor "/assets/*"
-    // — serveStatic returns null, auth gate fires (no token), 401. Also accept
-    // 403/404 in case a future runtime preserves the raw path.
+    const res = await server.fetch(new Request("http://localhost/assets/%2e%2e%2findex.html"));
     expect([401, 403, 404]).toContain(res.status);
   });
 
