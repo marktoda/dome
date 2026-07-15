@@ -232,9 +232,20 @@ export async function runHomePwaUpdateRehearsal(
         navigator.serviceWorker.addEventListener("controllerchange", () => {
           sessionStorage.setItem("dome-rehearsal-controllerchange", "observed");
         }, { once: true })`);
-      await activePage.getByRole("button", { name: "Update now" }).click();
-      await activePage.waitForFunction(`sessionStorage.getItem("dome-rehearsal-controllerchange") === "observed" &&
-        !document.querySelector('meta[name="dome-rehearsal-generation"]')`, undefined, { timeout: WAIT_MS });
+      // Arm the reload observer before the click. A DOM poll created after the
+      // click races the controllerchange reload and loses its execution context.
+      const reloaded = activePage.waitForNavigation({ waitUntil: "domcontentloaded", timeout: WAIT_MS });
+      await Promise.all([
+        reloaded,
+        activePage.getByRole("button", { name: "Update now" }).click(),
+      ]);
+      const activated = await activePage.evaluate(`({
+        controllerchange: sessionStorage.getItem("dome-rehearsal-controllerchange"),
+        marked: document.querySelector('meta[name="dome-rehearsal-generation"]') !== null
+      })`) as { controllerchange: string | null; marked: boolean };
+      if (activated.controllerchange !== "observed" || activated.marked) {
+        throw new Error("candidate document did not settle after controllerchange");
+      }
       signal.throwIfAborted();
     },
     assertSurvival: async (signal) => {

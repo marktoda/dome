@@ -318,8 +318,21 @@ describe("Dome Home 0.3 activation", () => {
     expect(updateSource).toContain("registration.update()");
     expect(updateSource).toContain('name: "Update now"');
     expect(updateSource).toContain('sessionStorage.setItem("dome-rehearsal-controllerchange", "observed")');
+    const updateActivation = sourceFunction(
+      updateSource,
+      "activateUpdate: async",
+      "assertSurvival: async",
+    );
+    expect(updateActivation).toContain("const reloaded = activePage.waitForNavigation(");
+    expect(updateActivation.indexOf("const reloaded = activePage.waitForNavigation("))
+      .toBeLessThan(updateActivation.indexOf('name: "Update now"'));
+    expect(updateActivation).toContain("await Promise.all([");
+    expect(updateActivation).not.toContain("waitForFunction(");
+    expect(updateActivation).toContain('activated.controllerchange !== "observed" || activated.marked');
     expect(updateSource).toContain("browser-fetched candidate bytes do not match the extracted artifact");
     expect(updateSource).toContain("local capture row changed during activation");
+    expect(updateSource).toContain("JSON.stringify(survived) !== JSON.stringify(capture)");
+    expect(updateSource).toContain("createdAt: value.createdAt");
     expect(updateSource).not.toContain("recordHar:");
     expect(updateSource).not.toContain("recordVideo:");
     expect(updateSource).not.toContain("storageState:");
