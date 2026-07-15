@@ -30,6 +30,7 @@ import { HOME_STORE_MIGRATIONS } from "../src/product-host/home-store-migrations
 import { isHomeUpgradeVersionAdvance } from "../src/product-host/home-upgrade-version";
 import { readHomePredecessorReceipt } from "./home-predecessor-artifact";
 import { inspectHomeArtifactTar, MAX_HOME_ARTIFACT_TAR_BYTES } from "./home-artifact-tar";
+import { runHomePwaChromiumAcceptance } from "./home-pwa-chromium-acceptance";
 import {
   assertFrozenN1State,
   assertFrozenN1RuntimeBaseline,
@@ -700,6 +701,27 @@ async function readySuccess(context: ScenarioContext, prepared: PreparedArtifact
   await assertFrozenState(context, "current");
   await assertLiveCredentialTruth(context, prepared.candidate);
   await assertPwa();
+  await runHomePwaChromiumAcceptance({
+    baseUrl: `http://${HOST}:${PORT}/`,
+    expected: {
+      productVersion: prepared.candidate.product.version,
+      vaultName: basename(context.vault),
+    },
+    mintPairingCode: async (deviceName, signal) => await mintChromiumPairingCode(
+      context,
+      prepared.candidateRoot,
+      deviceName,
+      signal,
+    ),
+    revokeDevice: async (deviceName, signal) => await revokeChromiumDevice(
+      context,
+      prepared.candidateRoot,
+      deviceName,
+      signal,
+    ),
+    assertLogicalCapture: async (text, captureId, signal) =>
+      await assertChromiumLogicalCapture(context, text, captureId, signal),
+  });
 }
 
 async function stoppedPrecommitCrash(context: ScenarioContext, prepared: PreparedArtifacts): Promise<void> {
@@ -796,6 +818,67 @@ async function pairFreshDevice(
   const cookie = response.headers.getSetCookie().map((value) => value.split(";", 1)[0]!).join("; ");
   if (cookie === "") throw new Error("fresh device pairing returned no credential cookies");
   return Object.freeze({ deviceId, cookie });
+}
+
+async function mintChromiumPairingCode(
+  context: ScenarioContext,
+  artifactRoot: string,
+  deviceName: string,
+  signal: AbortSignal,
+): Promise<string> {
+  const result = await runJson([
+    join(artifactRoot, "bin", "dome"), "devices", "pair",
+    "--name", deviceName, "--grant", "read,capture",
+    "--vault", context.vault, "--json",
+  ], context.root, context.environment, false, signal);
+  assertObjectFields(result, {
+    schema: "dome.devices.pairing-grant/v1",
+    status: "minted",
+    deviceName,
+  });
+  return stringField(result, "pairingCode");
+}
+
+async function revokeChromiumDevice(
+  context: ScenarioContext,
+  artifactRoot: string,
+  deviceName: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const dome = join(artifactRoot, "bin", "dome");
+  const listed = await runJson([
+    dome, "devices", "list", "--vault", context.vault, "--json",
+  ], context.root, context.environment, false, signal);
+  const devices = arrayField(listed, "devices")
+    .map((device) => asRecord(device, "device"))
+    .filter((device) => field(device, "name") === deviceName && field(device, "revokedAt") === null);
+  if (devices.length !== 1) throw new Error("Chromium acceptance device identity is not unique");
+  const revoked = await runJson([
+    dome, "devices", "revoke", stringField(devices[0]!, "id"),
+    "--vault", context.vault, "--json",
+  ], context.root, context.environment, false, signal);
+  assertObjectFields(revoked, { schema: "dome.devices.revoke/v1", status: "revoked" });
+}
+
+async function assertChromiumLogicalCapture(
+  context: ScenarioContext,
+  text: string,
+  captureId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const result = await runRaw([
+    "/usr/bin/git", "grep", "-l", "--fixed-strings", text, "HEAD",
+  ], context.vault, context.environment, signal);
+  signal.throwIfAborted();
+  const paths = result.stdout.split("\n").map((path) => path.trim()).filter((path) => path !== "");
+  if (paths.length !== 1) throw new Error("Chromium offline capture did not reconcile exactly once");
+  const body = await readFile(join(context.vault, paths[0]!), "utf8");
+  signal.throwIfAborted();
+  if (body.split(text).length !== 2 ||
+    !body.includes(`capture_id: ${JSON.stringify(captureId)}`) ||
+    body.split(`capture_id: ${JSON.stringify(captureId)}`).length !== 2) {
+    throw new Error("Chromium offline capture identity is missing or duplicated");
+  }
 }
 
 async function assertLiveCredentialTruth(
@@ -1217,8 +1300,9 @@ async function runJson(
   cwd: string,
   environment: Readonly<Record<string, string | undefined>>,
   allowFailure = false,
+  signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
-  const result = await runRawAllowFailure(command, cwd, environment);
+  const result = await runRawAllowFailure(command, cwd, environment, signal);
   if (!allowFailure && result.exitCode !== 0) {
     throw new Error(`${renderCommand(command)} failed (${result.exitCode})\n${result.stdout}${result.stderr}`);
   }
@@ -1232,8 +1316,9 @@ async function runRaw(
   command: ReadonlyArray<string>,
   cwd: string,
   environment: Readonly<Record<string, string | undefined>>,
+  signal?: AbortSignal,
 ): Promise<{ stdout: string; stderr: string }> {
-  const result = await runRawAllowFailure(command, cwd, environment);
+  const result = await runRawAllowFailure(command, cwd, environment, signal);
   if (result.exitCode !== 0) {
     throw new Error(`${renderCommand(command)} failed (${result.exitCode})\n${result.stdout}${result.stderr}`);
   }
@@ -1244,14 +1329,41 @@ async function runRawAllowFailure(
   command: ReadonlyArray<string>,
   cwd: string,
   environment: Readonly<Record<string, string | undefined>>,
+  signal?: AbortSignal,
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  const child = Bun.spawn([...command], { cwd, env: environment, stdout: "pipe", stderr: "pipe" });
-  const [exitCode, stdout, stderr] = await Promise.all([
+  if (abortSignalIsSet(signal)) throw new Error("installed Chromium acceptance command aborted");
+  const child = Bun.spawn([...command], {
+    cwd,
+    env: environment,
+    stdout: "pipe",
+    stderr: "pipe",
+    ...(signal === undefined ? {} : { signal, killSignal: "SIGKILL" as const }),
+  });
+  const settled = await Promise.allSettled([
     child.exited,
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
   ]);
-  return { exitCode, stdout, stderr };
+  if (abortSignalIsSet(signal)) throw new Error("installed Chromium acceptance command aborted");
+  const [exitCode, stdout, stderr] = settled;
+  if (exitCode?.status !== "fulfilled" || stdout?.status !== "fulfilled" || stderr?.status !== "fulfilled") {
+    throw new Error("installed command output did not settle");
+  }
+  return { exitCode: exitCode.value, stdout: stdout.value, stderr: stderr.value };
+}
+
+function abortSignalIsSet(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
+}
+
+/** Portable abort seam for the installed Chromium adapter; emits no installed evidence. */
+export async function exerciseAbortableInstalledCommandForTests(signal: AbortSignal): Promise<void> {
+  await runRawAllowFailure(
+    [process.execPath, "-e", "await Bun.sleep(60_000)"],
+    process.cwd(),
+    process.env,
+    signal,
+  );
 }
 
 function renderCommand(command: ReadonlyArray<string>): string {

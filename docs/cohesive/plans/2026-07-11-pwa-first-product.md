@@ -825,6 +825,23 @@ P5.2 does not add polling, another persisted connection schema, a workflow or
 state-machine framework, offline knowledge browsing, install icons, browser
 automation, real-device iOS acceptance, or the complete accessibility matrix.
 
+The bounded P5.3 checkpoint makes the installed system Google Chrome stable channel part of the
+existing prepublication installed-candidate gate. The exact candidate's
+supervised `ready-success` Home pairs through the shipped UI, validates
+Connection truth, proves a service-worker-controlled offline reload while
+`/readyz` remains uncached, saves and exports one local text capture, revokes
+that browser, preserves the queue through auth repair, and re-pairs to one
+logical replay. The ephemeral browser context records no trace, HAR, video,
+screenshot, or storage state. `playwright-core` supplies browser control; the
+release host supplies an installed Google Chrome stable channel, so Dome neither downloads nor
+ships a browser.
+
+P5.3 does not claim install icons or Chromium PWA-install UI, automated update
+replacement, visual regression coverage, screen-reader evidence, real-device
+iOS Safari acceptance, signed/notarized execution, or clean-consumer-Mac
+acceptance. Those owner gates remain explicit in the Home PWA acceptance
+runbook.
+
 Exit journey: installed PWA boots offline, preserves/exports/replays text
 capture, recovers from expired auth and premature SSE EOF, passes keyboard and
 screen-reader flows, and explains every degraded dependency.

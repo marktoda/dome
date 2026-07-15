@@ -999,6 +999,31 @@ Runtime never falls back to legacy plaintext residue, and locked, unavailable,
 or denied Keychain access stays explicit. Transcription migration and Keychain
 orphan collection remain deferred.
 
+### P5 installed Chromium acceptance checkpoint
+
+The artifact builder's existing installed N-1→N gate now deepens its exact
+`ready-success` scenario with one browser journey before candidate publication.
+`scripts/home-pwa-chromium-acceptance.ts` drives the installed system Google Chrome stable channel
+through `playwright-core`; it does not download a browser, open a persistent
+profile, or create trace, HAR, video, screenshot, or storage-state evidence.
+The page may reach only the installed loopback Home origin.
+
+The journey mints a read/capture grant through the exact candidate CLI, pairs
+through the shipped PWA, and checks validated Connection details. It waits for
+service-worker control, reloads offline, proves authenticated readiness is not
+served from cache, saves and exports one pending text capture, revokes the
+browser device, and reconnects into explicit auth repair with the queue still
+present. A fresh grant re-pairs the same ephemeral context; replay removes the
+queue only after the vault contains the canary exactly once with a capture
+identity. Failure diagnostics expose only the fixed journey phase, never
+pairing codes, browser internals, filesystem paths, or captured text.
+
+This gate is installed-artifact Chromium evidence, not installability or
+cross-browser evidence. Manifest icons, Chrome install UI, update replacement,
+screen-reader and visual acceptance, real-device iOS Safari, signed/notarized
+distribution, and clean-consumer-Mac execution remain separate owner gates in
+[[cohesive/runbooks/2026-07-home-pwa-acceptance]].
+
 ### P6 managed-release collection checkpoint 1
 
 `src/product-host/managed-release-gc.ts` is the one host-wide managed-release
