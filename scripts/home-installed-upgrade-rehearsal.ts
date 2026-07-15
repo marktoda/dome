@@ -32,6 +32,11 @@ import { readHomePredecessorReceipt } from "./home-predecessor-artifact";
 import { inspectHomeArtifactTar, MAX_HOME_ARTIFACT_TAR_BYTES } from "./home-artifact-tar";
 import { runHomePwaChromiumAcceptance } from "./home-pwa-chromium-acceptance";
 import {
+  assertInstalledFunctionalClosure,
+  prepareInstalledFunctionalClosure,
+  type FunctionalClosureBoundary,
+} from "./home-installed-functional-closure";
+import {
   assertFrozenN1State,
   assertFrozenN1RuntimeBaseline,
   assertFrozenN1RuntimeProvenance,
@@ -701,11 +706,14 @@ async function readySuccess(context: ScenarioContext, prepared: PreparedArtifact
   await assertFrozenState(context, "current");
   await assertLiveCredentialTruth(context, prepared.candidate);
   await assertPwa();
+  const functionalClosure = installedFunctionalClosureBoundary(context);
+  const functionalCanary = await prepareInstalledFunctionalClosure(functionalClosure);
   await runHomePwaChromiumAcceptance({
     baseUrl: `http://${HOST}:${PORT}/`,
     expected: {
       productVersion: prepared.candidate.product.version,
       vaultName: basename(context.vault),
+      functionalCanary,
     },
     mintPairingCode: async (deviceName, signal) => await mintChromiumPairingCode(
       context,
@@ -721,6 +729,8 @@ async function readySuccess(context: ScenarioContext, prepared: PreparedArtifact
     ),
     assertLogicalCapture: async (text, captureId, signal) =>
       await assertChromiumLogicalCapture(context, text, captureId, signal),
+    assertTaskSettlement: async (commit, signal) =>
+      await assertInstalledFunctionalClosure(functionalClosure, functionalCanary, commit, signal),
   });
 }
 
@@ -820,6 +830,47 @@ async function pairFreshDevice(
   return Object.freeze({ deviceId, cookie });
 }
 
+function installedFunctionalClosureBoundary(context: ScenarioContext): FunctionalClosureBoundary {
+  return Object.freeze({
+    vaultPath: context.vault,
+    git: async (args, signal) => await runRawAllowFailure(
+      ["/usr/bin/git", ...args], context.vault, context.environment, signal,
+    ),
+    readHome: async (pathname, signal) => {
+      if (context.activeDevice === null) throw new Error("functional acceptance requires an active host device");
+      try {
+        const response = await fetch(`http://${HOST}:${PORT}${pathname}`, {
+          headers: { cookie: context.activeDevice.cookie },
+          signal,
+        });
+        if (response.status !== 200) throw new Error(`functional acceptance read failed (${response.status})`);
+        return asRecord(await readFunctionalHomeJson(response, signal), "functional acceptance document");
+      } catch (error) {
+        if (signal.aborted) throw new Error("functional acceptance Home read exceeded its bound", { cause: error });
+        throw error;
+      }
+    },
+  });
+}
+
+async function readFunctionalHomeJson(response: Response, signal: AbortSignal): Promise<unknown> {
+  return await new Promise<unknown>((resolveBody, rejectBody) => {
+    const onAbort = (): void => {
+      signal.removeEventListener("abort", onAbort);
+      rejectBody(signal.reason);
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    void response.json().then(
+      (body) => { signal.removeEventListener("abort", onAbort); resolveBody(body); },
+      (error) => { signal.removeEventListener("abort", onAbort); rejectBody(error); },
+    );
+  });
+}
+
 async function mintChromiumPairingCode(
   context: ScenarioContext,
   artifactRoot: string,
@@ -828,7 +879,7 @@ async function mintChromiumPairingCode(
 ): Promise<string> {
   const result = await runJson([
     join(artifactRoot, "bin", "dome"), "devices", "pair",
-    "--name", deviceName, "--grant", "read,capture",
+    "--name", deviceName, "--grant", "read,capture,resolve",
     "--vault", context.vault, "--json",
   ], context.root, context.environment, false, signal);
   assertObjectFields(result, {

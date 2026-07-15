@@ -1060,9 +1060,10 @@ task. Failure persists as an alert with explicit Retry for the same task; the
 App refresh must not add a second acknowledgement.
 
 Evidence for this checkpoint is limited to portable surface, HTTP, and
-component tests. Adaptive Chrome coverage continues in P5.5b; the exact
-installed Activity/settlement journey, screen-reader, safe-area/dynamic-type,
-visual-regression, and real-iPhone evidence remain owner-window work.
+component tests. Adaptive Chrome coverage continues in P5.5b and the exact
+artifact-bound installed Activity/settlement journey in P5.5c; screen-reader,
+safe-area/dynamic-type, visual-regression, and real-iPhone evidence remain
+owner-window work.
 
 ### P5.5b adaptive accessibility checkpoint
 
@@ -1091,6 +1092,44 @@ behavior, Dynamic Type/200% zoom, VoiceOver, or Safari touch/microphone flows;
 those remain owner-hardware evidence. Waiting-worker N→N+1 replacement remains
 a separate gate. The exact installed Activity/settlement journey is not added
 by this checkpoint.
+
+### P5.5c installed functional closure checkpoint
+
+The `ready-success` artifact rehearsal prepares one deterministic knowledge
+page under `notes/` through an ordinary owner-attributed Git commit. Its task
+already carries a stable block anchor and an authenticated Home-local
+due-today date. Before Chrome starts, the host waits until `/recents` binds
+that page to the exact human commit and `/tasks` exposes the exact interactive
+task from adopted truth.
+
+`scripts/home-installed-functional-closure.ts` is the production evidence
+Module for this checkpoint. Its narrow boundary is vault path, abortable Git,
+and authenticated `/tasks`/`/recents` reads; it owns the bounded preparation,
+H/S ancestry, Git attribution, and exactly-once Markdown proofs independently
+of the Chromium adapter.
+
+The existing installed Chrome journey then opens that Activity row, requires
+the exact path, short commit, and recognizable source bytes, closes by Escape,
+and proves focus returned to the row. Its device grant is exactly
+`read,capture,resolve`. One completion click must return an exact successful
+`dome.settle/v1` receipt whose commit is passed to the bounded host callback.
+The callback waits for daemon adoption and proves exactly that one later source-changing commit:
+author `dome settle <dome-settle@local>`, one `Dome-Request` trailer and no
+`Dome-Run`, the exact source and daily paths, one closed anchored line, and one
+Done-today backlink. Chrome reloads and requires the task to be absent before
+continuing the pre-existing offline/auth/replay phases.
+
+Portable component tests, rather than this installed gate, own the transient
+pending/success UI states: the normal refresh may remove the row before a
+success frame is observable.
+
+This is an implemented artifact gate, not fresh installed evidence. Portable
+tests cover canary shape plus phase ordering, failure, and cleanup and remain
+explicitly non-evidence. Fresh evidence requires executing the candidate
+artifact rehearsal. This checkpoint does not claim real iPhone/Safari,
+VoiceOver, Dynamic Type/zoom, software-keyboard/safe-area behavior, visual
+regression, waiting-worker N→N+1 replacement, signed distribution, or a clean
+consumer Mac.
 
 ### P6 managed-release collection checkpoint 1
 
