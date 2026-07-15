@@ -258,12 +258,24 @@ describe("Dome Home 0.3 activation", () => {
       "/** Portable assertion",
     );
     expect(readySuccess).toContain("await packagedBackup(context, prepared.candidateRoot)");
+    expect(readySuccess).toContain("await runHomePwaChromiumAcceptance(");
     expect(packagedBackup).toContain('"backup", "create"');
     expect(packagedBackup).toContain('"backup", "verify"');
     expect(packagedBackup).toContain('"backup", "restore"');
     expect(packagedBackup).toContain("HOME: blankHome");
     expect(packagedBackup).toContain('join(restoredVault, "core.md")');
     expect(packagedBackup).toContain('join(restoredVault, "owner-upgrade-canary.md")');
+
+    const chromiumSource = await readFile(
+      join(import.meta.dir, "..", "..", "scripts", "home-pwa-chromium-acceptance.ts"),
+      "utf8",
+    );
+    expect(chromiumSource).toContain('channel: "chrome"');
+    expect(chromiumSource).toContain('headless: true');
+    expect(chromiumSource).not.toContain("recordHar:");
+    expect(chromiumSource).not.toContain("recordVideo:");
+    expect(chromiumSource).not.toContain("storageState:");
+    expect(chromiumSource).not.toContain("screenshot(");
   });
 
   test.each(["--skip-installed-gate", "--fixture", "--version"])(

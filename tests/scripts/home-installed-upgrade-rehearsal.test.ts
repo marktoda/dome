@@ -8,6 +8,7 @@ import {
   assertInstalledBackupRestoreCanaryForTests,
   canonicalizeInstalledScenarioRootForTests,
   classifyInstalledHomeDrainForTests,
+  exerciseAbortableInstalledCommandForTests,
   exerciseInstalledUpgradeOrchestrationForTests,
   pairedDeviceIdForTests,
   predecessorHomeInstallInvocationForTests,
@@ -18,6 +19,10 @@ import {
   type InstalledHomeUpgradeRehearsalInput,
   type InstalledHomeUpgradeScenario,
 } from "../../scripts/home-installed-upgrade-rehearsal";
+import {
+  exerciseHomePwaChromiumAcceptanceForTests,
+  parseHomePwaCaptureExportForTests,
+} from "../../scripts/home-pwa-chromium-acceptance";
 
 const INPUT: InstalledHomeUpgradeRehearsalInput = Object.freeze({
   predecessorArchive: "/synthetic/predecessor.tar.gz",
@@ -26,6 +31,141 @@ const INPUT: InstalledHomeUpgradeRehearsalInput = Object.freeze({
 });
 
 describe("installed Home upgrade portable orchestration (explicitly non-evidence)", () => {
+  test("keeps the installed Chromium journey ordered, cleanup-closed, and non-evidence", async () => {
+    const events: string[] = [];
+    const operation = (name: string) => async (): Promise<void> => { events.push(name); };
+    const result = await exerciseHomePwaChromiumAcceptanceForTests({
+      launch: operation("launch"),
+      pair: operation("pair"),
+      assertReadiness: operation("readiness"),
+      controlServiceWorker: operation("service-worker"),
+      assertOfflineShell: operation("offline-shell"),
+      saveLocalCapture: operation("local-capture"),
+      revoke: operation("revoke"),
+      repairAuthentication: operation("auth-repair"),
+      assertReplay: operation("replay"),
+      emergencyClose: operation("emergency-close"),
+      close: operation("cleanup"),
+    });
+    expect(result).toEqual({ evidence: false });
+    expect(events).toEqual([
+      "launch", "pair", "readiness", "service-worker", "offline-shell",
+      "local-capture", "revoke", "auth-repair", "replay", "cleanup",
+    ]);
+
+    events.length = 0;
+    await expect(exerciseHomePwaChromiumAcceptanceForTests({
+      launch: operation("launch"),
+      pair: operation("pair"),
+      assertReadiness: operation("readiness"),
+      controlServiceWorker: operation("service-worker"),
+      assertOfflineShell: operation("offline-shell"),
+      saveLocalCapture: async () => {
+        events.push("local-capture");
+        throw new Error("dome_csrf.secret /private/vault");
+      },
+      revoke: operation("revoke"),
+      repairAuthentication: operation("auth-repair"),
+      assertReplay: operation("replay"),
+      emergencyClose: operation("emergency-close"),
+      close: operation("cleanup"),
+    })).rejects.toThrow("installed Home Chromium acceptance failed at local-capture");
+    expect(events).toEqual([
+      "launch", "pair", "readiness", "service-worker", "offline-shell", "local-capture", "cleanup",
+    ]);
+
+    events.length = 0;
+    await expect(exerciseHomePwaChromiumAcceptanceForTests({
+      launch: async () => { events.push("partial-launch"); throw new Error("private Chrome path"); },
+      pair: operation("pair"),
+      assertReadiness: operation("readiness"),
+      controlServiceWorker: operation("service-worker"),
+      assertOfflineShell: operation("offline-shell"),
+      saveLocalCapture: operation("local-capture"),
+      revoke: operation("revoke"),
+      repairAuthentication: operation("auth-repair"),
+      assertReplay: operation("replay"),
+      emergencyClose: operation("emergency-close"),
+      close: operation("cleanup"),
+    })).rejects.toThrow(
+      "launch or initial shell failed; verify the installed Google Chrome stable channel and Home, then retry",
+    );
+    expect(events).toEqual(["partial-launch", "cleanup"]);
+
+    events.length = 0;
+    await expect(exerciseHomePwaChromiumAcceptanceForTests({
+      launch: operation("launch"),
+      pair: operation("pair"),
+      assertReadiness: async () => { events.push("readiness"); throw new Error("secret readiness"); },
+      controlServiceWorker: operation("service-worker"),
+      assertOfflineShell: operation("offline-shell"),
+      saveLocalCapture: operation("local-capture"),
+      revoke: operation("revoke"),
+      repairAuthentication: operation("auth-repair"),
+      assertReplay: operation("replay"),
+      emergencyClose: operation("emergency-close"),
+      close: async () => { events.push("cleanup"); throw new Error("private cleanup path"); },
+    })).rejects.toThrow("installed Home Chromium acceptance failed at readiness; cleanup also failed");
+    expect(events).toEqual(["launch", "pair", "readiness", "cleanup"]);
+
+    events.length = 0;
+    await expect(exerciseHomePwaChromiumAcceptanceForTests({
+      launch: operation("launch"),
+      pair: async (signal) => await new Promise<void>((resolve) => {
+        signal.addEventListener("abort", () => {
+          events.push("abort");
+          queueMicrotask(() => {
+            events.push("settled");
+            resolve();
+          });
+        }, { once: true });
+      }),
+      assertReadiness: operation("readiness"),
+      controlServiceWorker: operation("service-worker"),
+      assertOfflineShell: operation("offline-shell"),
+      saveLocalCapture: operation("local-capture"),
+      revoke: operation("revoke"),
+      repairAuthentication: operation("auth-repair"),
+      assertReplay: operation("replay"),
+      emergencyClose: operation("emergency-close"),
+      close: operation("cleanup"),
+    }, { phaseMs: 5, cleanupMs: 5 })).rejects.toThrow("installed Home Chromium acceptance failed at pair");
+    expect(events).toEqual(["launch", "abort", "emergency-close", "settled", "cleanup"]);
+  });
+
+  test("SIGKILLs and drains an aborted installed Chromium child", async () => {
+    const controller = new AbortController();
+    const running = exerciseAbortableInstalledCommandForTests(controller.signal);
+    setTimeout(() => controller.abort(), 10);
+    await expect(running).rejects.toThrow("installed Chromium acceptance command aborted");
+  });
+
+  test("strictly binds the exported offline capture identity", () => {
+    const captureId = "11111111-1111-4111-8111-111111111111";
+    const text = "Dome installed Chromium offline capture canary";
+    const exported = (capture: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+      Buffer.from(JSON.stringify({
+        schema: "dome.capture-queue/v1",
+        exported_at: "2026-07-15T12:00:00.000Z",
+        captures: [capture],
+        ...extra,
+      }));
+    const capture = {
+      id: captureId,
+      text,
+      createdAt: "2026-07-15T12:00:00.000Z",
+      state: "saved-locally",
+      attempts: 0,
+    };
+    expect(parseHomePwaCaptureExportForTests(exported(capture), text)).toBe(captureId);
+    expect(() => parseHomePwaCaptureExportForTests(exported({ ...capture, id: "not-a-uuid" }), text))
+      .toThrow("item is invalid");
+    expect(() => parseHomePwaCaptureExportForTests(exported(capture, { secret: true }), text))
+      .toThrow("fields are invalid");
+    expect(() => parseHomePwaCaptureExportForTests(Buffer.alloc(64 * 1024 + 1), text))
+      .toThrow("size is invalid");
+  });
+
   test("refuses non-files, oversize input, and predecessor size drift before archive reads", () => {
     expect(() => assertBoundedArchiveStatForTests({ isFile: true, size: 10 }, 10, 10)).not.toThrow();
     expect(() => assertBoundedArchiveStatForTests({ isFile: false, size: 10 }, 10)).toThrow("bounded regular file");
