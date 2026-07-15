@@ -769,8 +769,11 @@ rejects secret-like environment persistence while retaining legacy parsing for
 status. A read-only, path-free scanner reports `clean`, `residue`, or
 `indeterminate` across live, temporary, staging, active, and immutable-history
 copies. Runtime never falls back to legacy plaintext residue. Transcription
-setup, residue migration/cleanup, and orphan Keychain-item collection remain
-deferred to explicit lifecycle designs.
+setup and orphan Keychain-item collection remain deferred. Exact legacy
+Anthropic residue cleanup now ships as a preview-first, lifecycle-owned intent:
+it requires verified Keychain/provider readiness, refuses active upgrades,
+converges crash-retained tombstones, prunes contaminated terminal archives
+without rewriting them, and proves a clean two-pass inventory before resume.
 
 Existing active upgrades remain recoverable even if their already-persisted
 selector evidence contains legacy credentials: recovery may replay those exact

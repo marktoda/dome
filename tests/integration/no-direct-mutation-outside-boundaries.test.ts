@@ -35,6 +35,10 @@ const ALLOWED_FILES = new Set([
   // restores. This is a host filesystem boundary, not a vault content writer.
   "src/platform/exclusive-rename.ts",
   "src/product-host/home-lifecycle.ts",
+  // Private SQLite-backed Product Host lifecycle ownership and suspension
+  // journal. Its schema migration preserves active operational recovery truth;
+  // it never writes the vault's Git or Markdown substrate.
+  "src/product-host/home-lifecycle-suspension.ts",
   // Host-level immutable Home releases and the closed per-vault selector.
   // This boundary never writes vault knowledge or operational state.
   "src/product-host/home-installation.ts",
@@ -43,6 +47,12 @@ const ALLOWED_FILES = new Set([
   // no-follow expected-byte CAS-shaped replacement of installation/plist
   // documents and verifies desired bytes; it never writes Git or Markdown.
   "src/product-host/home-selection.ts",
+  // Preview-first, explicit-authorization migration boundary for the one
+  // supported legacy Home credential slot. Apply runs under lifecycle plus
+  // managed-release ownership, replaces only generated selector documents,
+  // and tombstones/removes exact contaminated operational archives; it never
+  // writes Git or Markdown knowledge.
+  "src/product-host/home-credential-residue.ts",
   // Durable operational rollback boundary for Home upgrades. It writes only
   // the external per-installation journal/snapshot and exact gitignored state
   // restoration targets; it never writes Git or Markdown knowledge.

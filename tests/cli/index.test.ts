@@ -117,6 +117,14 @@ describe("runCli", () => {
     expect(upgradeHelp).not.toContain("recovery");
     expect(upgradeHelp).not.toContain("candidate");
     expect(upgradeHelp).not.toContain("phase");
+
+    captured.out = [];
+    expect(await runCli(["home", "setup", "cleanup", "--help"])).toBe(0);
+    const cleanupHelp = captured.out.join("\n");
+    expect(cleanupHelp).toContain("Usage: dome home setup cleanup");
+    expect(cleanupHelp).toContain("--apply");
+    expect(cleanupHelp).toContain("--vault <path>");
+    expect(cleanupHelp).toContain("irreversibly");
   });
 
   test("init help exposes the optional model-provider scaffold", async () => {

@@ -68,7 +68,7 @@ const OWNERSHIP_DDL = `CREATE TABLE ${OWNERSHIP_TABLE} (
   layout_state TEXT NOT NULL CHECK (layout_state = 'ready')
 ) STRICT`;
 
-const JOURNAL_DDL = `CREATE TABLE ${JOURNAL_TABLE} (
+const LEGACY_JOURNAL_DDL = `CREATE TABLE ${JOURNAL_TABLE} (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   schema TEXT NOT NULL CHECK (schema = '${HOME_LIFECYCLE_SUSPENSION_SCHEMA}'),
   phase TEXT NOT NULL CHECK (phase IN ('suspending', 'suspended', 'resuming')),
@@ -93,7 +93,12 @@ const JOURNAL_DDL = `CREATE TABLE ${JOURNAL_TABLE} (
   last_error TEXT
 ) STRICT`;
 
-export type HomeSuspensionPurpose = "backup" | "upgrade";
+const JOURNAL_DDL = LEGACY_JOURNAL_DDL.replace(
+  "purpose IN ('backup', 'upgrade')",
+  "purpose IN ('backup', 'upgrade', 'credential-cleanup')",
+);
+
+export type HomeSuspensionPurpose = "backup" | "upgrade" | "credential-cleanup";
 export type HomeSuspensionPhase = "suspending" | "suspended" | "resuming";
 
 export type HomeLifecycleSuspension = {
@@ -424,6 +429,25 @@ export async function withHomeLifecycleMutation<T>(
 }
 
 /**
+ * Prove a selector-only lifecycle mutation cannot race any Home host. Callers
+ * invoke this from inside `withHomeLifecycleMutation`, after owning Tx2.
+ */
+export async function assertHomeStoppedForLifecycleMutation(
+  vaultPath: string,
+  deps: HomeLifecycleSuspensionDeps = {},
+): Promise<void> {
+  const vault = await realpath(resolve(vaultPath));
+  const service = resolveServiceDeps(deps);
+  if (service.platform !== "darwin" || service.uid === null) {
+    throw new Error("Home lifecycle mutation requires macOS launchd");
+  }
+  const target = `gui/${service.uid}/com.dome.home.${vaultServiceSlug(vault)}`;
+  const loaded = await probeLaunchAgentLoadedStrict({ launchctl: service.launchctl, target });
+  if (loaded) throw new Error("Dome Home became loaded before lifecycle mutation");
+  await assertNoCompetingHost(vault, false, service, deps);
+}
+
+/**
  * Atomically admit a normal Product Host startup. The returned operational
  * lease belongs to the caller for the host's complete lifetime.
  */
@@ -657,6 +681,13 @@ export async function withSupervisedHomeSuspended<T>(
         phaseChangedAt: now,
         lastError: null,
       });
+      if (active.purpose === "credential-cleanup") {
+        // Legacy coordinators remain fully readable and usable for their two
+        // original purposes. Widen the closed purpose catalog only while Tx1
+        // proves there is no active owner and immediately before publishing
+        // the first credential-cleanup row.
+        migrateLegacyJournalSchema(pair.journal, coordinatorPaths(vault).journal);
+      }
       writeJournal(pair.journal, () => insertActive(pair.journal, active));
     } else {
       if (input.mode === "new") {
@@ -692,7 +723,9 @@ export async function withSupervisedHomeSuspended<T>(
         }
       } else {
         const evidence = await captureEvidence(vault, service.launchAgentsDir, deps);
-        if (!recoveryEvidenceMatches(existing, evidence)) {
+        const cleanupConvergence = existing.purpose === "credential-cleanup" &&
+          recoveryPolicy === "retry-idempotent" && existing.phase !== "resuming";
+        if (!cleanupConvergence && !recoveryEvidenceMatches(existing, evidence)) {
           throw new Error("Home installation or plist evidence changed since suspension");
         }
       }
@@ -781,7 +814,9 @@ async function runOwnedSuspension<T>(input: {
     if (active.phase === "suspending") {
       active = transition(input.pair.journal, active, "suspended", null, input.deps);
     }
-    if (input.recoveryPolicy !== "authorized-upgrade-repair") {
+    const cleanupConvergence = active.purpose === "credential-cleanup" &&
+      input.recoveryPolicy === "retry-idempotent" && active.phase !== "resuming";
+    if (input.recoveryPolicy !== "authorized-upgrade-repair" && !cleanupConvergence) {
       const evidence = await captureEvidence(active.vault, input.service.launchAgentsDir, input.deps);
       if (!recoveryEvidenceMatches(active, evidence)) {
         const error = "Home installation or plist evidence changed while suspended";
@@ -795,7 +830,9 @@ async function runOwnedSuspension<T>(input: {
         operationId: active.operationId,
         purpose: active.purpose,
         authorizeCurrentHomeForResume: async () => {
-          if (active.purpose !== "upgrade") throw new Error("only an upgrade may authorize changed Home resume evidence");
+          if (active.purpose !== "upgrade" && active.purpose !== "credential-cleanup") {
+            throw new Error("only an upgrade or credential cleanup may authorize changed Home resume evidence");
+          }
           const authorized = await captureEvidence(active.vault, input.service.launchAgentsDir, input.deps);
           active = authorizeResumeEvidence(input.pair.journal, active, authorized);
         },
@@ -1289,6 +1326,27 @@ function openEstablishedWritable(path: string, ddl: string, validateRows: (db: D
   }
 }
 
+function migrateLegacyJournalSchema(db: Database, path: string): void {
+  const schema = readSchema(db);
+  const row = schema[0];
+  if (schema.length !== 1 || row === undefined || row.type !== "table" || row.sql === null) return;
+  if (compactSql(row.sql) === compactSql(JOURNAL_DDL)) return;
+  if (compactSql(row.sql) !== compactSql(LEGACY_JOURNAL_DDL)) return;
+  db.run("BEGIN EXCLUSIVE");
+  try {
+    db.run(`ALTER TABLE ${JOURNAL_TABLE} RENAME TO ${JOURNAL_TABLE}_legacy`);
+    db.run(JOURNAL_DDL);
+    db.run(`INSERT INTO ${JOURNAL_TABLE} SELECT * FROM ${JOURNAL_TABLE}_legacy`);
+    db.run(`DROP TABLE ${JOURNAL_TABLE}_legacy`);
+    db.run("COMMIT");
+  } catch (error) {
+    rollback(db);
+    throw error;
+  }
+  fsyncPath(path);
+  fsyncPath(dirname(path));
+}
+
 async function openEstablishedForInspection(path: string, ddl: string, validateRows: (db: Database) => void): Promise<Database> {
   const started = Date.now();
   for (;;) {
@@ -1321,7 +1379,11 @@ function configureConnection(db: Database, initializing: boolean): void {
 function validateDatabase(db: Database, ddl: string): void {
   const schema = readSchema(db);
   const row = schema[0];
-  if (schema.length !== 1 || row === undefined || row.type !== "table" || row.sql === null || compactSql(row.sql) !== compactSql(ddl)) {
+  const actual = row?.sql === null || row?.sql === undefined ? null : compactSql(row.sql);
+  const expected = compactSql(ddl);
+  const readableLegacyJournal = ddl === JOURNAL_DDL && actual === compactSql(LEGACY_JOURNAL_DDL);
+  if (schema.length !== 1 || row === undefined || row.type !== "table" || actual === null ||
+    (actual !== expected && !readableLegacyJournal)) {
     throw new Error("Home lifecycle coordinator has an unknown schema layout");
   }
   const integrity = db.query<{ integrity_check: string }, []>("PRAGMA integrity_check").all();
@@ -1355,7 +1417,7 @@ function readActive(db: Database, vault: string): HomeLifecycleSuspension | null
   const row = rows[0];
   if (rows.length !== 1 || row === undefined || row.singleton !== 1 ||
     row.schema !== HOME_LIFECYCLE_SUSPENSION_SCHEMA ||
-    !phase(row.phase) || (row.purpose !== "backup" && row.purpose !== "upgrade") ||
+    !phase(row.phase) || !purpose(row.purpose) ||
     !OPERATION_ID.test(row.operation_id) || row.vault !== vault ||
     (row.prior_loaded !== 0 && row.prior_loaded !== 1) ||
     !absoluteDirectEvidencePath(row.installation_path) || !absoluteDirectEvidencePath(row.plist_path) ||
@@ -1784,6 +1846,9 @@ function rollback(db: Database): void { try { db.run("ROLLBACK"); } catch {} }
 function canonicalVault(path: string): string { return realpathSync(resolve(path)); }
 function hash(bytes: Uint8Array): string { return createHash("sha256").update(bytes).digest("hex"); }
 function phase(value: string): value is HomeSuspensionPhase { return value === "suspending" || value === "suspended" || value === "resuming"; }
+function purpose(value: string): value is HomeSuspensionPurpose {
+  return value === "backup" || value === "upgrade" || value === "credential-cleanup";
+}
 function absoluteDirectEvidencePath(value: string): boolean { return value.length > 0 && value === resolve(value); }
 function exactTimestamp(value: Date): string { const timestamp = value.toISOString(); if (!isExactTimestamp(timestamp)) throw new Error("timestamp is invalid"); return timestamp; }
 function isExactTimestamp(value: string): boolean { const time = Date.parse(value); return Number.isFinite(time) && new Date(time).toISOString() === value; }

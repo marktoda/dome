@@ -115,6 +115,7 @@ dome home cleanup [--apply] [--json]
                                 Inspect host-wide managed release reachability;
                                 remove unreachable release-store entries only with --apply.
 dome home setup <status|configure|check|remove> [--vault <path>] [--json]
+dome home setup cleanup [--apply] [--vault <path>] [--json]
                                 Inspect or manage the shipped Anthropic provider
                                 through Dome Home's macOS Keychain helper.
 dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
@@ -2862,6 +2863,34 @@ executes a vault's mutable `.dome/model-provider.ts`, and neither
 boundary.
 Source-checkout Home retains ordinary vault-config provider behavior, and
 upgrade probation never opens config, Keychain, or provider machinery.
+
+### `dome home setup cleanup [--apply] [--vault <path>] [--json]`
+
+Preview-first removal of legacy `ANTHROPIC_API_KEY` plaintext from the managed
+Home installation/plist pair, exact crash debris, abandoned upgrade staging,
+and contaminated terminal upgrade archives. Without `--apply` it performs no
+mutation. `--apply` supplies the fixed authorization
+`discard-legacy-anthropic-plaintext` and warns that cleanup is irreversible
+and prunes contaminated terminal archives. No provider, slot, path, phase, or
+arbitrary policy option exists.
+
+Destructive cleanup requires the exact shipped Anthropic model configuration,
+a decrypting Keychain check, and responsive provider before Home stops; it
+checks again before resume. Any other secret-like variable blocks as
+unsupported residue. Every active upgrade must first finish or recover through
+`dome home upgrade`. Installation selection is sanitized before its derived
+plist, non-secret environment entries are preserved exactly, and the complete
+pair is rebound to a verified managed release before resume evidence is
+authorized. A crash retains an exact `credential-cleanup` lifecycle owner and
+recognized tombstones remain visible as transient residue until retry removes
+them. Results report cleanup truth separately from Home resume truth and never
+contain secret values or filesystem paths. Installation-only or absent live
+selection runs only after lifecycle and Product Host ownership freshly prove
+that launchd, foreground Home, and legacy Serve are quiescent; absent live
+selection can prune residue without synthesizing a new installation. Plist-only
+selection remains indeterminate. A cleanup callback failure that successfully
+restores the prior Home state reports `ready` or `stopped`, while retained
+resume failure reports `recovery-required`.
 
 ### `dome home upgrade [--vault <path>] [--json]`
 

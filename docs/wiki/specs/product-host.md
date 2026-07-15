@@ -955,12 +955,37 @@ upgrade, and every immutable history selector copy. Stable direct-file reads,
 closed generated-plist parsing, bounded inventories, private modes, journal
 hashes, and before/after rescans yield only `clean`, path-free variable-name
 `residue`, or `indeterminate`; runtime process state is explicitly unknown.
-No cleanup or migration occurs in this checkpoint.
+`cleanupHomeCredentialResidue` is the one preview/apply Module for the exact
+legacy Anthropic variable. Apply requires the literal destructive
+authorization, verified shipped-provider readiness, and decrypting Keychain
+checks before mutation and before resume. The existing supervised lifecycle
+Module carries the exact `credential-cleanup` purpose; its old two-purpose
+SQLite layout remains readable and writable for backup/upgrade. It widens
+atomically only after lifecycle ownership proves the journal inactive and
+immediately before the first credential-cleanup owner is published; denied
+mutation against an active legacy row leaves both row and schema untouched.
 
-Legacy plaintext residue remains report-only: runtime never falls back to it,
-and locked, unavailable, or denied Keychain access stays explicit. Cleanup,
-migration, transcription setup, and Keychain orphan collection remain deferred
-and are not implied by this checkpoint.
+Within lifecycle ownership cleanup re-inspects, refuses every active upgrade,
+and sanitizes the installation selector before deriving and publishing its
+plist. Installation-only and wholly absent live selections additionally
+re-prove launchd, foreground readiness, legacy Serve, and Product Host
+ownership after lifecycle admission; an absent pair skips live publication and
+may still prune transient/history residue, while plist-only state is invalid.
+The selected content-addressed release is strictly verified and
+cross-bound before changed resume evidence is authorized. Exact transient
+files and abandoned staging roots are tombstoned and removed; contaminated
+terminal history is never rewritten, only atomically tombstoned and pruned so
+existing receipts expire naturally. Operation-bound tombstones remain visible
+to the inspector as transient residue after crashes. Final two-pass inspection
+must be clean; cleanup truth remains distinct from Home resume truth.
+Callback failures are fixed tagged outcomes: a successfully resumed Home is
+reported ready/stopped even when cleanup failed before mutation, while a
+failed/deferred resume reports recovery-required. Clean-plus-recovery is
+returned only when cleanup itself completed and fresh inspection proves it.
+
+Runtime never falls back to legacy plaintext residue, and locked, unavailable,
+or denied Keychain access stays explicit. Transcription migration and Keychain
+orphan collection remain deferred.
 
 ### P6 managed-release collection checkpoint 1
 

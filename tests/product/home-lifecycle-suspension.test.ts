@@ -41,6 +41,88 @@ type FakeLaunchd = {
 };
 
 describe("supervised Home lifecycle suspension", () => {
+  test("reads and denies mutation against an active legacy backup row without migrating it", async () => {
+    const f = await fixture(true);
+    f.readiness = async () => false;
+    expect((await suspend(f, "legacy-backup-row", async () => "seed")).kind).toBe("failed");
+    const path = homeLifecycleCoordinatorPath(f.vault);
+    const before = await inspectHomeLifecycleSuspension(f.vault);
+    const db = new Database(path);
+    try {
+      db.run("BEGIN EXCLUSIVE");
+      db.run("ALTER TABLE home_lifecycle_suspension RENAME TO home_lifecycle_suspension_current");
+      db.run(`CREATE TABLE home_lifecycle_suspension (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        schema TEXT NOT NULL CHECK (schema = 'dome.home-lifecycle-suspension/v1'),
+        phase TEXT NOT NULL CHECK (phase IN ('suspending', 'suspended', 'resuming')),
+        purpose TEXT NOT NULL CHECK (purpose IN ('backup', 'upgrade')),
+        operation_id TEXT NOT NULL, vault TEXT NOT NULL,
+        prior_loaded INTEGER NOT NULL CHECK (prior_loaded IN (0, 1)),
+        installation_path TEXT NOT NULL, installation_sha256 TEXT NOT NULL,
+        artifact_id TEXT NOT NULL, artifact_version TEXT NOT NULL,
+        plist_path TEXT NOT NULL, plist_sha256 TEXT NOT NULL,
+        resume_installation_path TEXT NOT NULL, resume_installation_sha256 TEXT NOT NULL,
+        resume_artifact_id TEXT NOT NULL, resume_artifact_version TEXT NOT NULL,
+        resume_plist_path TEXT NOT NULL, resume_plist_sha256 TEXT NOT NULL,
+        requested_at TEXT NOT NULL, phase_changed_at TEXT NOT NULL, last_error TEXT
+      ) STRICT`);
+      db.run("INSERT INTO home_lifecycle_suspension SELECT * FROM home_lifecycle_suspension_current");
+      db.run("DROP TABLE home_lifecycle_suspension_current");
+      db.run("COMMIT");
+    } finally { db.close(); }
+    expect(await inspectHomeLifecycleSuspension(f.vault)).toEqual(before);
+    expect(await withHomeLifecycleMutation(f.vault, async () => "must not run")).toMatchObject({ kind: "suspended" });
+    const migrated = new Database(path, { readonly: true });
+    try {
+      const sql = migrated.query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'home_lifecycle_suspension'",
+      ).get()?.sql ?? "";
+      expect(sql).not.toContain("'credential-cleanup'");
+      expect(await inspectHomeLifecycleSuspension(f.vault)).toEqual(before);
+    } finally { migrated.close(); }
+  });
+
+  test("widens an inactive legacy journal only when publishing a credential cleanup owner", async () => {
+    const f = await fixture(true);
+    expect((await withHomeLifecycleMutation(f.vault, async () => "initialize")).kind).toBe("owned");
+    const path = homeLifecycleCoordinatorPath(f.vault);
+    rewriteJournalAsLegacy(path);
+    const legacy = new Database(path, { readonly: true });
+    try {
+      expect(legacy.query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'home_lifecycle_suspension'",
+      ).get()?.sql ?? "").not.toContain("'credential-cleanup'");
+    } finally { legacy.close(); }
+
+    expect((await suspend(f, "first-credential-cleanup", async () => "clean", "credential-cleanup")).kind)
+      .toBe("ready");
+    const widened = new Database(path, { readonly: true });
+    try {
+      expect(widened.query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'home_lifecycle_suspension'",
+      ).get()?.sql ?? "").toContain("'credential-cleanup'");
+    } finally { widened.close(); }
+  });
+
+  test("credential cleanup recovery may converge a partial selector then seals exact resume evidence", async () => {
+    const f = await fixture(true);
+    await expect(suspend(f, "cleanup-retry", async () => {
+      const record = JSON.parse(await readFile(f.installation, "utf8")) as { environment: unknown[] };
+      record.environment = [{ name: "DOME_LOG_LEVEL", value: "info" }];
+      await writeFile(f.installation, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+      throw new Error("crash after first selector");
+    }, "credential-cleanup")).rejects.toThrow();
+    expect(await inspectHomeLifecycleSuspension(f.vault)).toMatchObject({
+      kind: "active", suspension: { purpose: "credential-cleanup", phase: "suspended" },
+    });
+    const recovered = await suspend(f, "cleanup-retry", async (context) => {
+      await writeFile(f.plist, "sanitized plist\n", { mode: 0o600 });
+      await context.authorizeCurrentHomeForResume();
+    }, "credential-cleanup", "retry-idempotent");
+    expect(recovered.kind).toBe("ready");
+    expect(await inspectHomeLifecycleSuspension(f.vault)).toEqual({ kind: "inactive" });
+  });
+
   test("a recovery caller never recreates a suspension another caller already cleared", async () => {
     const f = await fixture(true);
     await expect(suspend(
@@ -1130,7 +1212,7 @@ async function suspend<T>(
   f: Fixture,
   operationId: string,
   operation: (context: HomeSuspensionOperationContext) => Promise<T>,
-  purpose: "backup" | "upgrade" = "backup",
+  purpose: "backup" | "upgrade" | "credential-cleanup" = "backup",
   recoveryPolicy: HomeSuspensionRecoveryPolicy | null = null,
   authorizeContinuation?: (() => Promise<HomeResumeAuthorization>) | undefined,
 ) {
@@ -1215,4 +1297,33 @@ async function pathExists(path: string): Promise<boolean> {
 
 async function fileSha(path: string): Promise<string> {
   return createHash("sha256").update(await readFile(path)).digest("hex");
+}
+
+function rewriteJournalAsLegacy(path: string): void {
+  const db = new Database(path);
+  try {
+    db.run("BEGIN EXCLUSIVE");
+    db.run("ALTER TABLE home_lifecycle_suspension RENAME TO home_lifecycle_suspension_current");
+    db.run(`CREATE TABLE home_lifecycle_suspension (
+      singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+      schema TEXT NOT NULL CHECK (schema = 'dome.home-lifecycle-suspension/v1'),
+      phase TEXT NOT NULL CHECK (phase IN ('suspending', 'suspended', 'resuming')),
+      purpose TEXT NOT NULL CHECK (purpose IN ('backup', 'upgrade')),
+      operation_id TEXT NOT NULL, vault TEXT NOT NULL,
+      prior_loaded INTEGER NOT NULL CHECK (prior_loaded IN (0, 1)),
+      installation_path TEXT NOT NULL, installation_sha256 TEXT NOT NULL,
+      artifact_id TEXT NOT NULL, artifact_version TEXT NOT NULL,
+      plist_path TEXT NOT NULL, plist_sha256 TEXT NOT NULL,
+      resume_installation_path TEXT NOT NULL, resume_installation_sha256 TEXT NOT NULL,
+      resume_artifact_id TEXT NOT NULL, resume_artifact_version TEXT NOT NULL,
+      resume_plist_path TEXT NOT NULL, resume_plist_sha256 TEXT NOT NULL,
+      requested_at TEXT NOT NULL, phase_changed_at TEXT NOT NULL, last_error TEXT
+    ) STRICT`);
+    db.run("INSERT INTO home_lifecycle_suspension SELECT * FROM home_lifecycle_suspension_current");
+    db.run("DROP TABLE home_lifecycle_suspension_current");
+    db.run("COMMIT");
+  } catch (error) {
+    try { db.run("ROLLBACK"); } catch { /* already rolled back */ }
+    throw error;
+  } finally { db.close(); }
 }
