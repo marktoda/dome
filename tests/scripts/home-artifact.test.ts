@@ -35,9 +35,10 @@ import {
 describe("Dome Home artifact", () => {
   test("strictly parses the pinned GenerateSW precache object literal", () => {
     const revision = "a".repeat(32);
-    const worker = `define(["./workbox-1234abcd"],function(e){e.precacheAndRoute([{url:"manifest.webmanifest",revision:"${revision}"},{url:"index.html",revision:"${revision}"},{url:"assets/index-AbCd1234.js",revision:null}],{}),e.cleanupOutdatedCaches()});`;
+    const worker = `define(["./workbox-1234abcd"],function(e){e.precacheAndRoute([{url:"manifest.webmanifest",revision:"${revision}"},{url:"index.html",revision:"${revision}"},{url:"pwa-192x192.png",revision:"${revision}"},{url:"maskable-icon-512x512.png",revision:"${revision}"},{url:"assets/index-AbCd1234.js",revision:null}],{}),e.cleanupOutdatedCaches()});`;
     expect(parseGeneratedPwaPrecache(worker)).toEqual([
-      "manifest.webmanifest", "index.html", "assets/index-AbCd1234.js",
+      "manifest.webmanifest", "index.html", "pwa-192x192.png", "maskable-icon-512x512.png",
+      "assets/index-AbCd1234.js",
     ]);
   });
 
@@ -49,6 +50,7 @@ describe("Dome Home artifact", () => {
     expect(() => parseGeneratedPwaPrecache(worker(`${entry},${entry}`))).toThrow("duplicated");
     expect(() => parseGeneratedPwaPrecache(worker(`{url:"../index.html",revision:"${revision}"}`))).toThrow("unsafe");
     expect(() => parseGeneratedPwaPrecache(worker(`{url:"assets/icon-AbCd1234.png",revision:null}`))).toThrow("unsafe");
+    expect(() => parseGeneratedPwaPrecache(worker(`{url:"pwa-128x128.png",revision:"${revision}"}`))).toThrow("unsafe");
     expect(() => parseGeneratedPwaPrecache(`${worker(entry)}${worker(entry)}`)).toThrow("one precache call");
   });
 

@@ -39,6 +39,13 @@ describe("closed PWA static root", () => {
         writeFile(join(staticDir, "manifest.webmanifest"), "{}"),
         writeFile(join(staticDir, "sw.js"), "self.addEventListener('fetch',()=>{})"),
         writeFile(join(staticDir, "workbox-1234abcd.js"), "workbox"),
+        writeFile(join(staticDir, "dome.svg"), '<svg xmlns="http://www.w3.org/2000/svg"/>'),
+        writeFile(join(staticDir, "favicon.ico"), "icon"),
+        writeFile(join(staticDir, "apple-touch-icon-180x180.png"), "apple"),
+        writeFile(join(staticDir, "pwa-64x64.png"), "64"),
+        writeFile(join(staticDir, "pwa-192x192.png"), "192"),
+        writeFile(join(staticDir, "pwa-512x512.png"), "512"),
+        writeFile(join(staticDir, "maskable-icon-512x512.png"), "maskable"),
         writeFile(join(staticDir, "assets", "index-AbCd1234.js"), "app"),
         writeFile(join(staticDir, "assets", "plain.js"), "not public"),
         writeFile(join(staticDir, "assets", "image-AbCd1234.png"), "not a generated extension"),
@@ -53,12 +60,26 @@ describe("closed PWA static root", () => {
       }
       const worker = await handler.fetch(new Request("http://localhost/sw.js"));
       expect(worker.headers.get("service-worker-allowed")).toBe("/");
+      for (const path of [
+        "/dome.svg",
+        "/favicon.ico",
+        "/apple-touch-icon-180x180.png",
+        "/pwa-64x64.png",
+        "/pwa-192x192.png",
+        "/pwa-512x512.png",
+        "/maskable-icon-512x512.png",
+      ]) {
+        const response = await handler.fetch(new Request(`http://localhost${path}`));
+        expect(response.status).toBe(200);
+        expect(response.headers.get("cache-control")).toBe("no-cache");
+        expect(response.headers.get("content-type")).not.toBeNull();
+      }
       for (const path of ["/workbox-1234abcd.js", "/assets/index-AbCd1234.js"]) {
         const response = await handler.fetch(new Request(`http://localhost${path}`));
         expect(response.status).toBe(200);
         expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
       }
-      for (const path of ["/robots.txt", "/assets/plain.js", "/assets/image-AbCd1234.png", "/assets/nested/index-AbCd1234.js", "/readyz"]) {
+      for (const path of ["/robots.txt", "/icon.png", "/pwa-128x128.png", "/assets/plain.js", "/assets/image-AbCd1234.png", "/assets/nested/index-AbCd1234.js", "/readyz"]) {
         const response = await handler.fetch(new Request(`http://localhost${path}`));
         expect(response.status).toBe(401);
         expect(response.headers.get("cache-control")).toBeNull();

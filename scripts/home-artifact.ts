@@ -1174,6 +1174,15 @@ function offlineEnvironment(): Record<string, string> {
 
 const PWA_PRECACHE_MARKER = "precacheAndRoute(";
 const PWA_PRECACHE_ENTRY = /\{url:"([A-Za-z0-9_./-]{1,512})",revision:(?:null|"[a-f0-9]{32}")\}/y;
+const PWA_INSTALL_ASSETS = Object.freeze([
+  "apple-touch-icon-180x180.png",
+  "dome.svg",
+  "favicon.ico",
+  "maskable-icon-512x512.png",
+  "pwa-64x64.png",
+  "pwa-192x192.png",
+  "pwa-512x512.png",
+]);
 
 /** Parse only the closed object-literal shape emitted by the pinned GenerateSW. */
 export function parseGeneratedPwaPrecache(workerBody: string): ReadonlyArray<string> {
@@ -1217,6 +1226,7 @@ export function parseGeneratedPwaPrecache(workerBody: string): ReadonlyArray<str
 
 function isShippedPwaPrecacheUrl(url: string): boolean {
   if (url === "index.html" || url === "manifest.webmanifest") return true;
+  if (PWA_INSTALL_ASSETS.includes(url)) return true;
   if (!/^assets\/[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{6,}\.(?:js|css)$/.test(url)) return false;
   return !url.split("/").includes("..");
 }
@@ -1245,6 +1255,18 @@ async function rehearseHomeServer(dome: string, vault: string, cwd: string): Pro
     if (!response.ok || !body.includes("id=\"root\"")) {
       throw new Error(`artifact dome home did not serve the bundled PWA (${response.status})`);
     }
+    for (const metadata of [
+      '<meta name="color-scheme" content="dark"',
+      '<meta name="apple-mobile-web-app-capable" content="yes"',
+      '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"',
+      '<meta name="apple-mobile-web-app-title" content="Dome"',
+      '<link rel="icon" href="/favicon.ico" sizes="48x48"',
+      '<link rel="icon" href="/dome.svg" sizes="any" type="image/svg+xml"',
+      '<link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png"',
+      '<link rel="manifest" href="/manifest.webmanifest"',
+    ]) {
+      if (!body.includes(metadata)) throw new Error("artifact PWA shell omitted required install metadata");
+    }
     const assetPath = body.match(/(?:src|href)="(\/assets\/[^"]+)"/)?.[1];
     if (assetPath === undefined || !/[-.][a-zA-Z0-9_]{6,}\.(?:js|css)$/.test(assetPath)) {
       throw new Error("artifact PWA shell did not reference a hashed asset");
@@ -1254,8 +1276,8 @@ async function rehearseHomeServer(dome: string, vault: string, cwd: string): Pro
       throw new Error(`artifact dome home did not serve bundled asset ${assetPath}`);
     }
     const manifestResponse = await fetch(new URL("/manifest.webmanifest", result.url));
-    const manifest = await manifestResponse.json() as { readonly name?: unknown; readonly icons?: unknown };
-    if (!manifestResponse.ok || manifest.name !== "Dome" || !Array.isArray(manifest.icons) || manifest.icons.length !== 0) {
+    const manifest = await manifestResponse.json() as Record<string, unknown>;
+    if (!manifestResponse.ok || !exactPwaManifest(manifest)) {
       throw new Error("artifact Dome Home did not serve the honest generated PWA manifest");
     }
     const workerResponse = await fetch(new URL("/sw.js", result.url));
@@ -1272,12 +1294,16 @@ async function rehearseHomeServer(dome: string, vault: string, cwd: string): Pro
     if (!precache.includes("index.html")) {
       throw new Error("artifact Dome Home service worker did not precache index.html");
     }
+    if (PWA_INSTALL_ASSETS.some((url) => !precache.includes(url))) {
+      throw new Error("artifact Dome Home service worker omitted an install asset");
+    }
     for (const url of precache) {
       const cached = await fetch(new URL(`/${url}`, result.url));
       if (!cached.ok) {
         throw new Error(`artifact Dome Home could not serve precache URL ${url}`);
       }
     }
+    await assertPwaInstallAssets(result.url);
     const closedRoot = await fetch(new URL("/robots.txt", result.url));
     if (closedRoot.status !== 401) {
       throw new Error("artifact Dome Home static root exposed an unrecognized file");
@@ -1286,6 +1312,65 @@ async function rehearseHomeServer(dome: string, vault: string, cwd: string): Pro
     child.kill("SIGTERM");
     await child.exited;
   }
+}
+
+function exactPwaManifest(manifest: Record<string, unknown>): boolean {
+  const expected = {
+    name: "Dome",
+    short_name: "Dome",
+    description: "Your private Dome Home knowledge companion.",
+    lang: "en",
+    id: "/",
+    start_url: "/",
+    scope: "/",
+    display: "standalone",
+    background_color: "#111111",
+    theme_color: "#111111",
+  } as const;
+  if (Object.keys(manifest).length !== Object.keys(expected).length + 1 ||
+    !Object.keys(manifest).every((key) => key === "icons" || key in expected)) return false;
+  for (const [key, value] of Object.entries(expected)) {
+    if (manifest[key] !== value) return false;
+  }
+  return JSON.stringify(manifest["icons"]) === JSON.stringify([
+    { src: "pwa-64x64.png", sizes: "64x64", type: "image/png", purpose: "any" },
+    { src: "pwa-192x192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+    { src: "pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+    { src: "maskable-icon-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+  ]);
+}
+
+async function assertPwaInstallAssets(baseUrl: string): Promise<void> {
+  const pngs = new Map([
+    ["apple-touch-icon-180x180.png", [180, 180]],
+    ["maskable-icon-512x512.png", [512, 512]],
+    ["pwa-64x64.png", [64, 64]],
+    ["pwa-192x192.png", [192, 192]],
+    ["pwa-512x512.png", [512, 512]],
+  ] as const);
+  for (const [path, dimensions] of pngs) {
+    const response = await fetch(new URL(`/${path}`, baseUrl));
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (!response.ok || response.headers.get("cache-control") !== "no-cache" ||
+      response.headers.get("content-type")?.split(";", 1)[0] !== "image/png" ||
+      bytes.byteLength < 24 || !pngDimensionsEqual(bytes, dimensions)) {
+      throw new Error(`artifact Dome Home install asset ${path} is invalid`);
+    }
+  }
+  for (const [path, type] of [["dome.svg", "image/svg+xml"], ["favicon.ico", "image/x-icon"]] as const) {
+    const response = await fetch(new URL(`/${path}`, baseUrl));
+    const bytes = await response.arrayBuffer();
+    if (!response.ok || response.headers.get("cache-control") !== "no-cache" ||
+      response.headers.get("content-type")?.split(";", 1)[0] !== type || bytes.byteLength === 0) {
+      throw new Error(`artifact Dome Home install asset ${path} is invalid`);
+    }
+  }
+}
+
+function pngDimensionsEqual(bytes: Uint8Array, dimensions: readonly [number, number]): boolean {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return bytes.slice(0, 8).every((byte, index) => byte === [137, 80, 78, 71, 13, 10, 26, 10][index]) &&
+    view.getUint32(16) === dimensions[0] && view.getUint32(20) === dimensions[1];
 }
 
 async function rehearseAgeToolchain(artifactRoot: string, temporary: string): Promise<void> {

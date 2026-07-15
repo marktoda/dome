@@ -26,7 +26,9 @@ each result. A skipped row is not a pass.
    Candidate publication means the existing installed N-1→N scenarios passed,
    including UI pairing, validated Connection readiness, controlled offline
    reload, uncached `/readyz`, local capture/export, revoke, auth repair, and
-   one logical replay in system Chrome.
+   one logical replay in system Chrome. Before pairing, Chrome also validates
+   the emitted platform metadata and decodes the exact favicon, SVG, touch,
+   `any`, and maskable icon set at their declared dimensions.
 4. Record `/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --version`
    beside the artifact id and archive SHA-256 printed by the builder. Preserve
    the builder's installed-activation evidence.
@@ -65,8 +67,10 @@ or the automated Chrome journey is not real-device iOS Safari evidence.
 
 ## Current nonclaims
 
-Until separately delivered and recorded, this runbook does not claim manifest
-icons or Chrome installability UI, automated waiting-worker replacement,
-visual-regression coverage, a complete screen-reader matrix, signed execution
-without the three Apple inputs, or clean-consumer acceptance without the clean
-Mac run above.
+The P5.4 manifest/icon contract is checked in and artifact-gated. It does not
+claim that Chrome presents or completes its install UI, nor does it replace a
+real-device iOS visual check. Until separately delivered and recorded, this
+runbook also does not claim automated waiting-worker replacement,
+visual-regression coverage, the P5.5 accessibility/safe-area/dynamic-type
+matrix, signed execution without the three Apple inputs, or clean-consumer
+acceptance without the clean Mac run above.
