@@ -43,6 +43,10 @@ import {
 import { DEFAULT_DAILY_PATH_SETTINGS } from "../../assets/extensions/dome.daily/processors/daily-types";
 import { renderDailySkeleton } from "../../assets/extensions/dome.daily/processors/daily-scaffold";
 import {
+  actionExtractionLineRanges,
+  lineIsInsideRanges,
+} from "../../assets/extensions/dome.daily/processors/action-extraction";
+import {
   appendDoneTodayBullet,
   findAnchorLine,
   setCheckboxMark,
@@ -162,15 +166,20 @@ export async function performSettle(
   }
 
   // --- Locate the task line by its ^block-anchor ----------------------------
-  const found = findAnchoredLine(vaultPath, blockId);
-  if (found === null) {
+  const matches = findAnchoredLines(vaultPath, blockId);
+  if (matches.length === 0) {
     return Object.freeze({
       status: "not-found" as const,
       message: `no task line carries anchor ^${blockId}`,
     });
   }
+  if (matches.length > 1) {
+    return invalid(
+      `multiple task lines carry anchor ^${blockId}; resolve the duplicate anchors before settling`,
+    );
+  }
 
-  const { relPath, lineIdx, lines } = found;
+  const { relPath, lineIdx, lines } = matches[0]!;
   const originalLine = lines[lineIdx]!;
   const taskText = taskLineBody(originalLine);
 
@@ -343,12 +352,16 @@ function stripMd(path: string): string {
  * `blockId` — the block-id identity lookup ([[wiki/specs/task-lifecycle]]
  * §"Block-anchor identity"). Reads the working tree (what the owner sees and
  * what the next commit adopts); `.git` and `.dome` are skipped. Returns the
- * first match, or null.
+ * canonical matches. Generated projections, frontmatter, and fenced examples
+ * use the same exclusion grammar as daily action extraction; the generated
+ * `dome.daily:captured` block remains visible because its tasks are origins.
+ * The caller rejects duplicate canonical anchors rather than guessing.
  */
-function findAnchoredLine(
+function findAnchoredLines(
   vaultPath: string,
   blockId: string,
-): { relPath: string; lineIdx: number; lines: string[] } | null {
+): ReadonlyArray<{ relPath: string; lineIdx: number; lines: string[] }> {
+  const matches: { relPath: string; lineIdx: number; lines: string[] }[] = [];
   for (const relPath of listMarkdownFiles(vaultPath)) {
     let text: string;
     try {
@@ -357,10 +370,18 @@ function findAnchoredLine(
       continue;
     }
     const lines = text.split("\n");
-    const lineIdx = findAnchorLine(lines, blockId);
-    if (lineIdx !== -1) return { relPath, lineIdx, lines };
+    const ignoredRanges = actionExtractionLineRanges(text);
+    let offset = 0;
+    while (offset < lines.length) {
+      const lineIdx = findAnchorLine(lines, blockId, offset);
+      if (lineIdx === -1) break;
+      if (!lineIsInsideRanges(lineIdx + 1, ignoredRanges)) {
+        matches.push({ relPath, lineIdx, lines });
+      }
+      offset = lineIdx + 1;
+    }
   }
-  return null;
+  return Object.freeze(matches);
 }
 
 const SKIP_DIRS = new Set([".git", ".dome", "node_modules"]);
@@ -382,7 +403,7 @@ function listMarkdownFiles(vaultPath: string): string[] {
     }
   };
   walk("");
-  return out;
+  return out.sort();
 }
 
 function readIfExists(absPath: string): string | null {

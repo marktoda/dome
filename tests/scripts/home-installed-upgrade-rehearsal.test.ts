@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import {
   assertBoundedArchiveStatForTests,
@@ -17,6 +17,7 @@ import {
   predecessorHomeInstallInvocationForTests,
   retainedCheckpointOwnershipMatchesForTests,
   renderInstalledCoordinationErrorForTests,
+  removeInstalledTemporaryRootForTests,
   retainedCheckpointOwnershipSummaryForTests,
   resolveContainedArtifactRootForTests,
   type InstalledHomeUpgradeRehearsalInput,
@@ -24,6 +25,7 @@ import {
 } from "../../scripts/home-installed-upgrade-rehearsal";
 import { renderInstalledFunctionalCanary } from "../../scripts/home-installed-functional-closure";
 import {
+  exerciseHomePwaTaskSettlementStageForTests,
   exerciseHomePwaChromiumAcceptanceForTests,
   parseHomePwaCaptureExportForTests,
   parseHomePwaSettlementReceiptForTests,
@@ -33,6 +35,90 @@ const INPUT: InstalledHomeUpgradeRehearsalInput = Object.freeze({
   predecessorArchive: "/synthetic/predecessor.tar.gz",
   candidateArchive: "/synthetic/candidate.tar.gz",
   frozenFixtureRoot: "/synthetic/fixture",
+});
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+describe("installed rehearsal temporary-root removal", () => {
+  test("removes one validated owned root and verifies absence", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
+    await mkdir(join(root, "nested", "payload"), { recursive: true });
+
+    await removeInstalledTemporaryRootForTests(root);
+
+    expect(await pathExists(root)).toBe(false);
+  });
+
+  test("rejects wrong-prefix, nested, path-trick, and symlink roots", async () => {
+    const wrongPrefix = await mkdtemp(join(tmpdir(), "dome-installed-upgrades-"));
+    const container = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
+    const nested = await mkdtemp(join(container, "dome-installed-upgrade-"));
+    const direct = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
+    const detour = await mkdtemp(join(tmpdir(), "dome-cleanup-detour-"));
+    const target = await mkdtemp(join(tmpdir(), "dome-cleanup-target-"));
+    const alias = join(tmpdir(), `dome-installed-upgrade-alias-${Date.now()}`);
+    await symlink(target, alias);
+    try {
+      for (const unsafe of [
+        wrongPrefix,
+        nested,
+        `${detour}/../${basename(direct)}`,
+        alias,
+      ]) {
+        await expect(removeInstalledTemporaryRootForTests(unsafe)).rejects.toThrow(
+          "installed rehearsal temporary root is unsafe",
+        );
+      }
+      expect(await pathExists(wrongPrefix)).toBe(true);
+      expect(await pathExists(nested)).toBe(true);
+      expect(await pathExists(direct)).toBe(true);
+      expect(await pathExists(alias)).toBe(true);
+    } finally {
+      await rm(alias, { force: true });
+      await rm(wrongPrefix, { recursive: true, force: true });
+      await rm(container, { recursive: true, force: true });
+      await rm(direct, { recursive: true, force: true });
+      await rm(detour, { recursive: true, force: true });
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  test("retains the root when the bounded remover fails, lies about removal, or times out", async () => {
+    const nonzeroRoot = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
+    const unchangedRoot = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
+    const timeoutRoot = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
+    try {
+      await expect(removeInstalledTemporaryRootForTests(nonzeroRoot, {
+        command: ["/usr/bin/false"],
+        timeoutMs: 500,
+      })).rejects.toThrow("installed rehearsal temporary cleanup command failed");
+      expect(await pathExists(nonzeroRoot)).toBe(true);
+
+      await expect(removeInstalledTemporaryRootForTests(unchangedRoot, {
+        command: ["/usr/bin/true"],
+        timeoutMs: 500,
+      })).rejects.toThrow("installed rehearsal temporary cleanup command left the root present");
+      expect(await pathExists(unchangedRoot)).toBe(true);
+
+      await expect(removeInstalledTemporaryRootForTests(timeoutRoot, {
+        command: [process.execPath, "-e", "await Bun.sleep(60_000)"],
+        timeoutMs: 20,
+      })).rejects.toThrow("installed rehearsal temporary cleanup command timed out");
+      expect(await pathExists(timeoutRoot)).toBe(true);
+    } finally {
+      await rm(nonzeroRoot, { recursive: true, force: true });
+      await rm(unchangedRoot, { recursive: true, force: true });
+      await rm(timeoutRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 const PREDECESSOR_EXPECTED = Object.freeze({
@@ -302,6 +388,64 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       signal.addEventListener("abort", () => resolve(), { once: true });
     }), { phaseMs: 5, cleanupMs: 50 });
     expect(timedOut).toBe("installed Home Chromium acceptance failed at adaptive-accessibility [phase-timeout]");
+  });
+
+  test("reports only fixed task-settlement stages and hides underlying failures", async () => {
+    const operation = async (): Promise<void> => {};
+    const journey = (settle: (signal: AbortSignal) => Promise<void>) => ({
+      launch: operation,
+      assertInstallIdentity: operation,
+      pair: operation,
+      assertReadiness: operation,
+      assertAdaptiveAccessibility: operation,
+      controlServiceWorker: operation,
+      assertActivitySource: operation,
+      assertTaskSettlement: settle,
+      assertOfflineShell: operation,
+      saveLocalCapture: operation,
+      revoke: operation,
+      repairAuthentication: operation,
+      assertReplay: operation,
+      emergencyClose: operation,
+      close: operation,
+    });
+    const failure = async (
+      settle: (signal: AbortSignal) => Promise<void>,
+      deadlines?: { phaseMs: number; taskSettlementPhaseMs: number; cleanupMs: number },
+    ): Promise<string> => {
+      try {
+        await exerciseHomePwaChromiumAcceptanceForTests(journey(settle), deadlines);
+        throw new Error("expected task settlement failure");
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    };
+
+    const secret = "private task text and vault path";
+    for (const stage of ["submit", "closure", "reload", "removal"] as const) {
+      const message = await failure(async () => {
+        await exerciseHomePwaTaskSettlementStageForTests(stage, async () => {
+          throw new Error(secret);
+        });
+      });
+      expect(message).toBe(
+        `installed Home Chromium acceptance failed at task-settlement [${stage}]`,
+      );
+      expect(message).not.toContain(secret);
+    }
+
+    const unclassified = await failure(async () => { throw new Error(secret); });
+    expect(unclassified).toBe(
+      "installed Home Chromium acceptance failed at task-settlement [unclassified]",
+    );
+    expect(unclassified).not.toContain(secret);
+
+    const timedOut = await failure(async (signal) => await new Promise<void>((resolve) => {
+      signal.addEventListener("abort", () => resolve(), { once: true });
+    }), { phaseMs: 50, taskSettlementPhaseMs: 5, cleanupMs: 50 });
+    expect(timedOut).toBe(
+      "installed Home Chromium acceptance failed at task-settlement [phase-timeout]",
+    );
   });
 
   test("SIGKILLs and drains an aborted installed Chromium child", async () => {
