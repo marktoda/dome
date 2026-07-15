@@ -2,7 +2,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const PREPARATION_MS = 15_000;
+const CONVERGENCE_MS = 60_000;
 const SETTLEMENT_MS = 15_000;
+const POLL_MS = 100;
 const PATH = "notes/installed-functional-canary.md";
 const TITLE = "Installed functional closure canary";
 const TASK = "Close the installed functional closure canary";
@@ -24,6 +26,11 @@ export type FunctionalClosureBoundary = Readonly<{
   git(args: ReadonlyArray<string>, signal: AbortSignal): Promise<FunctionalGitResult>;
   readHome(pathname: "/tasks" | "/recents", signal: AbortSignal): Promise<Record<string, unknown>>;
 }>;
+export type FunctionalClosurePreparationBounds = Readonly<{
+  setupMs?: number;
+  convergenceMs?: number;
+  pollMs?: number;
+}>;
 
 export function renderInstalledFunctionalCanary(date: string): Readonly<Omit<FunctionalClosureCanary, "commit" | "date">> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("functional canary date is invalid");
@@ -40,9 +47,10 @@ export function renderInstalledFunctionalCanary(date: string): Readonly<Omit<Fun
 /** Prepare H and wait until authenticated adopted Activity and Today expose it. */
 export async function prepareInstalledFunctionalClosure(
   boundary: FunctionalClosureBoundary,
-  timeoutMs = PREPARATION_MS,
+  bounds: number | FunctionalClosurePreparationBounds = {},
 ): Promise<FunctionalClosureCanary> {
-  return await withinDeadline(timeoutMs, "functional canary preparation did not complete within its bound", async (signal) => {
+  const deadlines = preparationBounds(bounds);
+  const canary = await withinDeadline(deadlines.setupMs, "functional canary preparation did not complete within its bound", async (signal) => {
     const status = await gitOk(boundary, ["status", "--porcelain"], signal);
     if (status.trim() !== "") throw new Error("functional canary requires a clean human Git boundary");
     const beforeTasks = await boundary.readHome("/tasks", signal);
@@ -65,25 +73,73 @@ export async function prepareInstalledFunctionalClosure(
     if (pathCommits.length !== 1) throw new Error("functional canary human commit is not unique");
     const commit = pathCommits[0]!;
     await assertHumanCanaryCommit(boundary, rendered.path, beforeHead, commit, signal);
-    const canary = Object.freeze({ ...rendered, date, commit });
+    return Object.freeze({ ...rendered, date, commit });
+  });
 
+  const convergence: FunctionalConvergenceEvidence = {
+    humanCommit: canary.commit,
+    adoptedCommit: null,
+    humanInAdopted: false,
+    recentsPresent: false,
+    todayPresent: false,
+  };
+  return await withinDeadline(deadlines.convergenceMs, () => convergenceTimeoutMessage(convergence), async (signal) => {
     while (true) {
       signal.throwIfAborted();
-      const [recents, tasks] = await Promise.all([
-        boundary.readHome("/recents", signal),
-        boundary.readHome("/tasks", signal),
-      ]);
-      if (tasks["date"] !== date) throw new Error("functional canary crossed the authenticated Home-local date boundary");
-      if (hasExactRecent(recents, canary) && hasExactTask(tasks, canary)) {
-        const adopted = await adoptedCommit(boundary, signal);
-        if (adopted === null) throw new Error("functional adopted ref is unavailable");
-        await requireAncestor(boundary, commit, adopted, "functional canary is not an ancestor of adopted truth", signal);
+      const adopted = await adoptedCommit(boundary, signal, true);
+      convergence.adoptedCommit = adopted;
+      convergence.humanInAdopted = adopted !== null && await isAncestor(boundary, canary.commit, adopted, signal);
+      convergence.recentsPresent = false;
+      convergence.todayPresent = false;
+      if (convergence.humanInAdopted && adopted !== null) {
         await requireAncestor(boundary, adopted, "HEAD", "functional adopted truth is not an ancestor of human HEAD", signal);
-        return canary;
+        const recents = await boundary.readHome("/recents", signal);
+        convergence.recentsPresent = hasExactRecent(recents, canary);
+        if (convergence.recentsPresent) {
+          const tasks = await boundary.readHome("/tasks", signal);
+          if (tasks["date"] !== canary.date) {
+            throw new Error("functional canary crossed the authenticated Home-local date boundary");
+          }
+          convergence.todayPresent = hasExactTask(tasks, canary);
+          if (convergence.todayPresent) return canary;
+        }
       }
-      await abortableDelay(100, signal);
+      await abortableDelay(deadlines.pollMs, signal);
     }
   });
+}
+
+type FunctionalConvergenceEvidence = {
+  humanCommit: string;
+  adoptedCommit: string | null;
+  humanInAdopted: boolean;
+  recentsPresent: boolean;
+  todayPresent: boolean;
+};
+
+function preparationBounds(bounds: number | FunctionalClosurePreparationBounds): Required<FunctionalClosurePreparationBounds> {
+  if (typeof bounds === "number") {
+    return { setupMs: bounds, convergenceMs: bounds, pollMs: Math.min(POLL_MS, bounds) };
+  }
+  return {
+    setupMs: bounds.setupMs ?? PREPARATION_MS,
+    convergenceMs: bounds.convergenceMs ?? CONVERGENCE_MS,
+    pollMs: bounds.pollMs ?? POLL_MS,
+  };
+}
+
+function convergenceTimeoutMessage(evidence: FunctionalConvergenceEvidence): string {
+  const phase = !evidence.humanInAdopted ? "human-not-adopted" :
+    !evidence.recentsPresent ? "adopted-recents-missing" : "adopted-recents-present-today-missing";
+  return [
+    "functional canary convergence timed out:",
+    `phase=${phase}`,
+    `humanCommit=${evidence.humanCommit}`,
+    `adoptedCommit=${evidence.adoptedCommit ?? "unavailable"}`,
+    `humanInAdopted=${evidence.humanInAdopted}`,
+    `recentsPresent=${evidence.recentsPresent}`,
+    `todayPresent=${evidence.todayPresent}`,
+  ].join(" ");
 }
 
 /** Bind receipted S to Git, Markdown, adopted ancestry, and public Today truth. */
@@ -210,16 +266,26 @@ function lines(value: string): string[] { return value.split("\n").filter(Boolea
 function occurrences(value: string, needle: string): number { return value.split(needle).length - 1; }
 
 async function withinDeadline<T>(
-  timeoutMs: number, timeoutMessage: string, operation: (signal: AbortSignal) => Promise<T>, parent?: AbortSignal,
+  timeoutMs: number, timeoutMessage: string | (() => string), operation: (signal: AbortSignal) => Promise<T>, parent?: AbortSignal,
 ): Promise<T> {
   const controller = new AbortController();
+  let timedOut = false;
   const onParentAbort = (): void => controller.abort(parent?.reason);
   parent?.addEventListener("abort", onParentAbort, { once: true });
   if (parent?.aborted === true) onParentAbort();
-  const timer = setTimeout(() => controller.abort(new Error(timeoutMessage)), timeoutMs);
+  const message = (): string => typeof timeoutMessage === "string" ? timeoutMessage : timeoutMessage();
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort(new Error(message()));
+  }, timeoutMs);
   try { return await operation(controller.signal); }
   catch (error) {
-    if (controller.signal.aborted) throw new Error(timeoutMessage, { cause: error });
+    if (controller.signal.aborted) {
+      const timeoutAtAbort = timedOut && controller.signal.reason instanceof Error
+        ? controller.signal.reason.message
+        : message();
+      throw new Error(timeoutAtAbort, { cause: error });
+    }
     throw error;
   } finally {
     clearTimeout(timer);

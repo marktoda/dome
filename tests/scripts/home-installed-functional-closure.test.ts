@@ -23,6 +23,17 @@ describe("installed functional closure deep module", () => {
     expect(await git(fixture.root, ["merge-base", "--is-ancestor", await adopted(fixture.root), "HEAD"])).toBe(0);
   });
 
+  test("keeps one H while adopted truth, Recents, and Today converge at different times", async () => {
+    const fixture = await fixtureBoundary({ adoptAfterChecks: 2, recentsAfterReads: 2, todayAfterReads: 2 });
+    const canary = await prepareInstalledFunctionalClosure(fixture.boundary, {
+      setupMs: 1_000,
+      convergenceMs: 1_000,
+      pollMs: 1,
+    });
+    expect(canary.commit).toBe(await gitOk(fixture.root, ["rev-parse", "HEAD"]));
+    expect((await gitOk(fixture.root, ["rev-list", "--count", `${fixture.seed}..HEAD`, "--", canary.path]))).toBe("1");
+  });
+
   test("fails boundedly on Home-date rollover and an accepted response body that stalls", async () => {
     const rollover = await fixtureBoundary({ rollover: true });
     await expect(prepareInstalledFunctionalClosure(rollover.boundary, 1_000))
@@ -35,10 +46,28 @@ describe("installed functional closure deep module", () => {
     expect(Date.now() - started).toBeLessThan(500);
   });
 
-  test("rejects adopted history that does not contain H", async () => {
-    const fixture = await fixtureBoundary({ keepSeedAdopted: true });
-    await expect(prepareInstalledFunctionalClosure(fixture.boundary, 1_000))
-      .rejects.toThrow("functional canary is not an ancestor of adopted truth");
+  test.each([
+    ["H is not adopted", { keepSeedAdopted: true }, "human-not-adopted", false, false, false],
+    ["H is adopted but Recents is missing", { stallRecents: true }, "adopted-recents-missing", true, false, false],
+    ["H and Recents are present but Today is missing", { stallToday: true }, "adopted-recents-present-today-missing", true, true, false],
+  ] as const)("classifies convergence timeout when %s", async (_name, options, phase, inAdopted, inRecents, inToday) => {
+    const fixture = await fixtureBoundary(options);
+    let error: unknown;
+    try {
+      await prepareInstalledFunctionalClosure(fixture.boundary, { setupMs: 1_000, convergenceMs: 500, pollMs: 1 });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(Error);
+    const message = (error as Error).message;
+    const head = await gitOk(fixture.root, ["rev-parse", "HEAD"]);
+    const expectedAdopted = inAdopted ? head : fixture.seed;
+    expect(message).toBe(
+      `functional canary convergence timed out: phase=${phase} humanCommit=${head} adoptedCommit=${expectedAdopted} ` +
+      `humanInAdopted=${inAdopted} recentsPresent=${inRecents} todayPresent=${inToday}`,
+    );
+    expect(message).not.toContain("Installed functional closure canary");
+    expect(message).not.toContain("Close the installed functional closure canary");
   });
 
   test("proves receipted S ancestry, exact two paths, attribution, and exactly-once Markdown", async () => {
@@ -123,7 +152,14 @@ async function settledFixture(options: SettlementOptions = {}): Promise<{
 }
 
 async function fixtureBoundary(options: Readonly<{
-  rollover?: boolean; keepSeedAdopted?: boolean; stallInitialTasks?: boolean;
+  rollover?: boolean;
+  keepSeedAdopted?: boolean;
+  stallInitialTasks?: boolean;
+  stallRecents?: boolean;
+  stallToday?: boolean;
+  adoptAfterChecks?: number;
+  recentsAfterReads?: number;
+  todayAfterReads?: number;
 }> = {}): Promise<{
   root: string; boundary: FunctionalClosureBoundary; seed: string; state: { settled: boolean };
 }> {
@@ -135,9 +171,22 @@ async function fixtureBoundary(options: Readonly<{
   await gitOk(root, ["update-ref", "refs/dome/adopted/main", seed]);
   const state = { settled: false };
   let taskReads = 0;
+  let recentsReads = 0;
+  let adoptedChecks = 0;
   const boundary: FunctionalClosureBoundary = {
     vaultPath: root,
-    git: async (args, signal) => await runGit(root, args, signal),
+    git: async (args, signal) => {
+      let result = await runGit(root, args, signal);
+      if (JSON.stringify(args) === JSON.stringify(["rev-parse", "--verify", "refs/dome/adopted/main"])) {
+        adoptedChecks += 1;
+        if (!options.keepSeedAdopted && adoptedChecks > (options.adoptAfterChecks ?? 0)) {
+          const head = await gitOk(root, ["rev-parse", "HEAD"]);
+          await gitOk(root, ["update-ref", "refs/dome/adopted/main", head]);
+          result = await runGit(root, args, signal);
+        }
+      }
+      return result;
+    },
     readHome: async (pathname, signal) => {
       signal.throwIfAborted();
       if (pathname === "/tasks") {
@@ -145,13 +194,21 @@ async function fixtureBoundary(options: Readonly<{
         if (options.stallInitialTasks && taskReads === 1) {
           await new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
         }
+        if (options.stallToday && taskReads > 1) {
+          await new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+        }
         const date = options.rollover && taskReads > 1 ? "2026-07-16" : "2026-07-15";
         if (taskReads === 1 || state.settled) return { date, openTasks: [] };
+        if (taskReads - 1 <= (options.todayAfterReads ?? 0)) return { date, openTasks: [] };
         const head = await gitOk(root, ["rev-parse", "HEAD"]);
         return { date, openTasks: [{ path: "notes/installed-functional-canary.md", text: "Close the installed functional closure canary", blockId: "tinstalledfunctional", dueDate: "2026-07-15" }], head };
       }
+      recentsReads += 1;
+      if (options.stallRecents) {
+        await new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+      }
+      if (recentsReads <= (options.recentsAfterReads ?? 0)) return { entries: [] };
       const head = await gitOk(root, ["rev-parse", "HEAD"]);
-      if (!options.keepSeedAdopted) await gitOk(root, ["update-ref", "refs/dome/adopted/main", head]);
       return { entries: [{ path: "notes/installed-functional-canary.md", title: "Installed functional closure canary", commit: head, changedBy: "human" }] };
     },
   };
