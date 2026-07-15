@@ -46,6 +46,9 @@ describe("PWA adaptive accessibility CSS policy", () => {
     const runner = await readFile(join(import.meta.dir, "..", "..", "scripts", "home-pwa-chromium-acceptance.ts"), "utf8");
     expect(runner).toContain('a[href]:not(.wl)');
     expect(runner).not.toContain('summary, a[href], input:not([disabled])');
+    expect(runner).toContain("diagnostics.evaluate((element) =>");
+    expect(runner).toContain("row.evaluate((element) =>");
+    expect(runner).not.toMatch(/\.evaluate\(\s*[`"']\(element\)\s*=>/);
   });
 
   test("keeps expanded connection diagnostics bounded and independently keyboard-scrollable", async () => {

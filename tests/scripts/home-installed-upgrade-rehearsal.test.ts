@@ -255,6 +255,55 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     expect(events).toEqual(["launch", "install-identity", "abort", "emergency-close", "settled", "cleanup"]);
   });
 
+  test("reports only allowlisted adaptive diagnostics and distinguishes a bounded timeout", async () => {
+    const operation = async (): Promise<void> => {};
+    const journey = (adaptive: (signal: AbortSignal) => Promise<void>) => ({
+      launch: operation,
+      assertInstallIdentity: operation,
+      pair: operation,
+      assertReadiness: operation,
+      assertAdaptiveAccessibility: adaptive,
+      controlServiceWorker: operation,
+      assertActivitySource: operation,
+      assertTaskSettlement: operation,
+      assertOfflineShell: operation,
+      saveLocalCapture: operation,
+      revoke: operation,
+      repairAuthentication: operation,
+      assertReplay: operation,
+      emergencyClose: operation,
+      close: operation,
+    });
+    const failure = async (
+      adaptive: (signal: AbortSignal) => Promise<void>,
+      deadlines?: { phaseMs: number; cleanupMs: number },
+    ): Promise<string> => {
+      try {
+        await exerciseHomePwaChromiumAcceptanceForTests(journey(adaptive), deadlines);
+        throw new Error("expected adaptive acceptance failure");
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    };
+
+    const classified = await failure(async () => {
+      throw new Error("installed PWA connection diagnostics did not receive keyboard focus at 320x568");
+    });
+    expect(classified).toBe(
+      "installed Home Chromium acceptance failed at adaptive-accessibility [diagnostics-focus@320x568]",
+    );
+
+    const secret = "private pairing code and vault path";
+    const hidden = await failure(async () => { throw new Error(secret); });
+    expect(hidden).toBe("installed Home Chromium acceptance failed at adaptive-accessibility [unclassified]");
+    expect(hidden).not.toContain(secret);
+
+    const timedOut = await failure(async (signal) => await new Promise<void>((resolve) => {
+      signal.addEventListener("abort", () => resolve(), { once: true });
+    }), { phaseMs: 5, cleanupMs: 50 });
+    expect(timedOut).toBe("installed Home Chromium acceptance failed at adaptive-accessibility [phase-timeout]");
+  });
+
   test("SIGKILLs and drains an aborted installed Chromium child", async () => {
     const controller = new AbortController();
     const running = exerciseAbortableInstalledCommandForTests(controller.signal);
