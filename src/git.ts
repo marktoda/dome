@@ -1232,6 +1232,8 @@ export async function logWithTrailers(opts: {
   readonly limit?: number;
   /** Anything `git log --since` accepts (ISO dates included). */
   readonly since?: string;
+  /** Commit-ish to walk. Defaults to HEAD for existing callers. */
+  readonly ref?: string;
 }): Promise<ReadonlyArray<TrailerLogEntry>> {
   const { root, prefix } = await resolveGitContext(opts.path);
   const args = [
@@ -1249,7 +1251,10 @@ export async function logWithTrailers(opts: {
   if (opts.since !== undefined) {
     args.push(`--since=${opts.since}`);
   }
-  args.push("HEAD");
+  // The ref is caller-selected adopted evidence on some read paths. End
+  // option parsing before it so an option-shaped value (for example --all)
+  // cannot broaden the revision walk.
+  args.push("--end-of-options", opts.ref ?? "HEAD");
   if (prefix !== "") {
     args.push("--", literalPathspec(prefix));
   }

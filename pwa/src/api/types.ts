@@ -99,6 +99,7 @@ export type RecentEntry = {
   lastChangedAt: string;
   changedBy: "human" | "engine";
   subject: string;
+  commit: string;
 };
 
 export type Recents = {

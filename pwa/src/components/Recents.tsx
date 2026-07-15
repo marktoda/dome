@@ -1,4 +1,7 @@
+import { useState } from "react";
+import type { DomeClient } from "../api/client";
 import type { Recents as RecentsT } from "../api/types";
+import { SourceViewer } from "./SourceViewer";
 
 function ago(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
@@ -10,7 +13,15 @@ function ago(iso: string): string {
   return `${Math.round(h / 24)}d ago`;
 }
 
-export function Recents({ recents }: { recents: RecentsT }): React.ReactElement {
+export function Recents({ recents, client, interactive }: {
+  recents: RecentsT;
+  client: DomeClient;
+  interactive: boolean;
+}): React.ReactElement {
+  const [opened, setOpened] = useState<{
+    entry: RecentsT["entries"][number];
+    trigger: HTMLButtonElement;
+  } | null>(null);
   if (recents.count === 0) {
     return <div className="recents"><p className="empty">nothing recent</p></div>;
   }
@@ -20,16 +31,31 @@ export function Recents({ recents }: { recents: RecentsT }): React.ReactElement 
         {recents.entries.map((e) => {
           const who = e.changedBy === "engine" ? "engine" : "you";
           return (
-            <li key={e.path}>
-              <span className={`rdot ${who}`} aria-hidden="true" />
-              <div className="rbody">
-                <span className="title">{e.title}</span>
-                <span className="meta">{who} · {e.subject} · {ago(e.lastChangedAt)}</span>
-              </div>
+            <li key={`${e.path}:${e.commit}`}>
+              <button
+                type="button"
+                className="recent-entry"
+                disabled={!interactive}
+                onClick={(event) => setOpened({ entry: e, trigger: event.currentTarget })}
+              >
+                <span className={`rdot ${who}`} aria-hidden="true" />
+                <span className="rbody">
+                  <span className="title">{e.title}</span>
+                  <span className="meta">{who} · {e.subject} · {ago(e.lastChangedAt)}</span>
+                </span>
+              </button>
             </li>
           );
         })}
       </ul>
+      {opened !== null ? (
+        <SourceViewer
+          citation={{ path: opened.entry.path, commit: opened.entry.commit }}
+          client={client}
+          returnFocus={opened.trigger}
+          onClose={() => setOpened(null)}
+        />
+      ) : null}
     </div>
   );
 }

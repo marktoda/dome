@@ -305,7 +305,7 @@ function Screen({ client, availability, connection }: {
         {recents !== null ? (
           <details className="recents-wrap">
             <summary>recents · {recents.count}</summary>
-            <Recents recents={recents} />
+            <Recents recents={recents} client={client} interactive={access.read} />
           </details>
         ) : null}
         <ChatTranscript state={chat} client={client} interactive={access.read} />

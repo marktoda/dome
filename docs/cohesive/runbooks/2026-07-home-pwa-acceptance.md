@@ -65,12 +65,28 @@ checkout. In current desktop Chrome and on a real iPhone in Safari, verify:
 Record failures and device details. Playwright WebKit, desktop responsive mode,
 or the automated Chrome journey is not real-device iOS Safari evidence.
 
+## Checked-in P5.5a portable contract gates
+
+The focused surface, HTTP, and PWA suites must prove that Activity reads only
+the current branch's adopted ancestry, is empty before initialization, excludes
+a newer unadopted edit, and opens its exact path and commit only with read
+access. They must also prove one pending task settlement, polite success,
+alerting failure, and explicit single-flight Retry. The implementation retains
+the normal App refresh path without adding an App-level acknowledgement; its
+exact installed behavior remains part of the deferred journey below.
+
+These portable checks do not prove the exact installed Activity/settlement
+journey and do not replace the P5.5b adaptive-layout, focus, screen-reader,
+safe-area, dynamic-type, touch-target, visual, or real-device owner-hardware
+evidence.
+
 ## Current nonclaims
 
-The P5.4 manifest/icon contract is checked in and artifact-gated. It does not
-claim that Chrome presents or completes its install UI, nor does it replace a
-real-device iOS visual check. Until separately delivered and recorded, this
-runbook also does not claim automated waiting-worker replacement,
+The P5.4 manifest/icon contract is checked in and artifact-gated. P5.5a has
+portable contract-test evidence only; its exact installed Activity/settlement
+journey remains P5.5b/owner evidence. Neither claims that Chrome presents or
+completes its install UI or replaces a real-device iOS visual check. Until
+separately delivered and recorded, this runbook also does not claim automated waiting-worker replacement,
 visual-regression coverage, the P5.5 accessibility/safe-area/dynamic-type
 matrix, signed execution without the three Apple inputs, or clean-consumer
 acceptance without the clean Mac run above.
