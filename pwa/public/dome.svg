@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Dome</title>
+  <rect width="512" height="512" fill="#111111"/>
+  <path
+    d="M128 318c0-77 49-137 128-137s128 60 128 137"
+    fill="none"
+    stroke="#c8f0d8"
+    stroke-linecap="round"
+    stroke-width="40"
+  />
+  <path d="M108 352h296" fill="none" stroke="#c8f0d8" stroke-linecap="round" stroke-width="40"/>
+  <circle cx="256" cy="125" r="27" fill="#c8f0d8"/>
+</svg>

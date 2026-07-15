@@ -842,6 +842,19 @@ iOS Safari acceptance, signed/notarized execution, or clean-consumer-Mac
 acceptance. Those owner gates remain explicit in the Home PWA acceptance
 runbook.
 
+The bounded P5.4 checkpoint ships the install identity contract: one
+code-native charcoal/sage source, tracked minimal-2023 raster/favicon outputs,
+stable manifest id, explicit `any`/`maskable` purposes, Apple standalone head
+metadata, and a closed exact HTTP/precache inventory. Portable tests pin PNG
+dimensions and opaque maskable/Apple output; the artifact rehearsal validates
+the emitted head, manifest, MIME/cache policy, and every precached asset. The
+existing installed Chrome gate also decodes the exact icon set before pairing.
+
+P5.4 does not claim Chrome's install UI, real-device iOS appearance, visual or
+screen-reader acceptance, dynamic type/safe-area behavior, waiting-worker
+replacement, signed/notarized execution, or clean-consumer-Mac evidence. Those
+remain P5.5 and owner-window work.
+
 Exit journey: installed PWA boots offline, preserves/exports/replays text
 capture, recovers from expired auth and premature SSE EOF, passes keyboard and
 screen-reader flows, and explains every degraded dependency.

@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "generate:icons": "bunx @vite-pwa/assets-generator@1.0.2 --config pwa-assets.config.mjs",
+    "check:icons": "bun run generate:icons && git diff --exit-code -- public",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "bun test",

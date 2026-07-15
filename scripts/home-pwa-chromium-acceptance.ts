@@ -136,6 +136,7 @@ export async function runHomePwaChromiumAcceptance(
       });
       page = await context.newPage();
       await page.goto(baseUrl.href, { waitUntil: "domcontentloaded", timeout: WAIT_MS });
+      await assertInstallIdentity(page);
       signal.throwIfAborted();
     },
     pair: async (signal) => {
@@ -236,6 +237,74 @@ export async function runHomePwaChromiumAcceptance(
       await closeBrowser(true);
     },
   });
+}
+
+async function assertInstallIdentity(page: Page): Promise<void> {
+  const identity = await page.evaluate(`(async () => {
+    const meta = (name) => document.querySelector('meta[name="' + name + '"]')?.getAttribute("content") ?? null;
+    const link = (selector) => document.querySelector(selector)?.getAttribute("href") ?? null;
+    const decode = async (src) => {
+      const image = new Image();
+      image.src = src;
+      await image.decode();
+      return [image.naturalWidth, image.naturalHeight];
+    };
+    const response = await fetch("/manifest.webmanifest", { cache: "no-store" });
+    return {
+      metadata: {
+        colorScheme: meta("color-scheme"), appleCapable: meta("apple-mobile-web-app-capable"),
+        appleStatusBar: meta("apple-mobile-web-app-status-bar-style"), appleTitle: meta("apple-mobile-web-app-title"),
+        favicon: link('link[rel="icon"][sizes="48x48"]'), svgIcon: link('link[rel="icon"][sizes="any"]'),
+        appleTouch: link('link[rel="apple-touch-icon"]'), manifest: link('link[rel="manifest"]'),
+      },
+      images: {
+        favicon: await decode("/favicon.ico"), svg: await decode("/dome.svg"),
+        appleTouch: await decode("/apple-touch-icon-180x180.png"), icon64: await decode("/pwa-64x64.png"),
+        icon192: await decode("/pwa-192x192.png"), icon512: await decode("/pwa-512x512.png"),
+        maskable512: await decode("/maskable-icon-512x512.png"),
+      },
+      manifestOk: response.ok,
+      manifest: await response.json(),
+    };
+  })()`) as unknown as {
+    readonly metadata: Record<string, string | null>;
+    readonly images: Record<string, readonly [number, number]>;
+    readonly manifestOk: boolean;
+    readonly manifest: unknown;
+  };
+  if (!identity.manifestOk || JSON.stringify(identity.metadata) !== JSON.stringify({
+    colorScheme: "dark",
+    appleCapable: "yes",
+    appleStatusBar: "black-translucent",
+    appleTitle: "Dome",
+    favicon: "/favicon.ico",
+    svgIcon: "/dome.svg",
+    appleTouch: "/apple-touch-icon-180x180.png",
+    manifest: "/manifest.webmanifest",
+  })) {
+    throw new Error("installed PWA platform metadata is incomplete");
+  }
+  const svg = identity.images["svg"];
+  const expectedImages: Readonly<Record<string, readonly [number, number]>> = {
+    favicon: [48, 48], appleTouch: [180, 180], icon64: [64, 64], icon192: [192, 192],
+    icon512: [512, 512], maskable512: [512, 512],
+  };
+  if (Object.entries(expectedImages).some(([name, size]) =>
+    JSON.stringify(identity.images[name]) !== JSON.stringify(size)
+  ) || svg === undefined || svg[0] <= 0 || svg[1] <= 0) {
+    throw new Error("installed PWA icon assets did not decode at their declared dimensions");
+  }
+  const manifest = identity.manifest as Record<string, unknown>;
+  if (manifest["id"] !== "/" || manifest["lang"] !== "en" || manifest["start_url"] !== "/" || manifest["scope"] !== "/" ||
+    manifest["display"] !== "standalone" || manifest["theme_color"] !== "#111111" ||
+    JSON.stringify(manifest["icons"]) !== JSON.stringify([
+      { src: "pwa-64x64.png", sizes: "64x64", type: "image/png", purpose: "any" },
+      { src: "pwa-192x192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "maskable-icon-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    ])) {
+    throw new Error("installed PWA manifest identity is incomplete");
+  }
 }
 
 /** Portable ordering seam. It cannot launch Chrome or return browser evidence. */

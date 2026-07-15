@@ -429,6 +429,16 @@ function queryTokenAuthorized(request: Request, url: URL, tokenDigest: Buffer): 
 
 // ----- Static asset serving --------------------------------------------------
 
+const PWA_INSTALL_ASSETS = new Set([
+  "apple-touch-icon-180x180.png",
+  "dome.svg",
+  "favicon.ico",
+  "maskable-icon-512x512.png",
+  "pwa-64x64.png",
+  "pwa-192x192.png",
+  "pwa-512x512.png",
+]);
+
 /**
  * Serve only the closed VitePWA GenerateSW output shape. Unknown root files,
  * nested assets, and API paths fall through to authenticated routing.
@@ -455,7 +465,7 @@ async function serveStatic(staticDir: string, pathname: string): Promise<Respons
   }
   const file = Bun.file(full);
   const headers = new Headers({
-    "cache-control": pathname === "/" || pathname === "/index.html" || pathname === "/manifest.webmanifest" || pathname === "/sw.js"
+    "cache-control": pathname === "/" || pathname === "/index.html" || pathname === "/manifest.webmanifest" || pathname === "/sw.js" || PWA_INSTALL_ASSETS.has(rel)
       ? "no-cache"
       : "public, max-age=31536000, immutable",
   });
@@ -467,6 +477,7 @@ function staticPath(pathname: string): string | null {
   if (pathname === "/" || pathname === "/index.html") return "index.html";
   if (pathname === "/manifest.webmanifest") return "manifest.webmanifest";
   if (pathname === "/sw.js") return "sw.js";
+  if (PWA_INSTALL_ASSETS.has(pathname.slice(1))) return pathname.slice(1);
   if (/^\/workbox-[a-f0-9]{8}\.js$/.test(pathname)) return pathname.slice(1);
   const asset = /^\/assets\/([^/]+)$/.exec(pathname)?.[1];
   if (asset !== undefined && /^[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{6,}\.(?:js|css)$/.test(asset)) {

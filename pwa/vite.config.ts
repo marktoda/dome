@@ -29,17 +29,31 @@ export const PWA_OPTIONS = {
     name: "Dome",
     short_name: "Dome",
     description: "Your private Dome Home knowledge companion.",
+    lang: "en",
+    id: "/",
     start_url: "/",
     scope: "/",
     display: "standalone",
     background_color: "#111111",
     theme_color: "#111111",
-    icons: [],
+    icons: [
+      { src: "pwa-64x64.png", sizes: "64x64", type: "image/png", purpose: "any" },
+      { src: "pwa-192x192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "maskable-icon-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    ],
   },
   workbox: {
-    // The plugin adds its generated manifest; this inventory adds only
-    // shell code/style/HTML so every precache URL appears exactly once.
-    globPatterns: ["**/*.{js,css,html}"],
+    // The plugin adds its manifest and manifest icons; this inventory adds
+    // shell code/style/HTML plus non-manifest head icons exactly once.
+    globPatterns: [
+      "**/*.{js,css,html}",
+      "favicon.ico",
+      "dome.svg",
+      "apple-touch-icon-180x180.png",
+      // Manifest icons are added to this inventory by vite-plugin-pwa.
+      // Repeating them here would emit duplicate precache entries.
+    ],
     navigateFallback: "/index.html",
     navigateFallbackAllowlist: [/^\/$/],
     runtimeCaching: [],

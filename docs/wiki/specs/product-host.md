@@ -1024,6 +1024,26 @@ screen-reader and visual acceptance, real-device iOS Safari, signed/notarized
 distribution, and clean-consumer-Mac execution remain separate owner gates in
 [[cohesive/runbooks/2026-07-home-pwa-acceptance]].
 
+### P5.4 install identity checkpoint
+
+The checked-in PWA now has one canonical charcoal-and-sage SVG identity and
+tracked 64, 192, 512, maskable 512, Apple touch 180, and favicon derivatives.
+`@vite-pwa/assets-generator@1.0.2` is an explicit regeneration command, not a
+runtime or ordinary-build dependency. Maskable and Apple pixels are opaque and
+full-bleed; the manifest gives `/` a stable id and uses separate explicit
+`any` and `maskable` purposes. The shell carries dark and Apple standalone
+metadata.
+
+Only those exact root assets are public. They are no-cache, all enter the
+static-only Workbox precache exactly once, and the artifact rehearsal checks
+the exact manifest/head inventory, MIME types, nonempty bytes, and PNG sizes.
+The installed Chrome journey additionally decodes each icon before pairing.
+
+This is checked-in and artifact-gated identity evidence, not a claim about the
+Chrome install UI or real-device iOS rendering. Accessibility, safe-area and
+dynamic-type acceptance, visual review, automated update replacement, signed
+distribution, and clean-consumer execution remain P5.5/owner-window gates.
+
 ### P6 managed-release collection checkpoint 1
 
 `src/product-host/managed-release-gc.ts` is the one host-wide managed-release
