@@ -1174,6 +1174,8 @@ function offlineEnvironment(): Record<string, string> {
 
 const PWA_PRECACHE_MARKER = "precacheAndRoute(";
 const PWA_PRECACHE_ENTRY = /\{url:"([A-Za-z0-9_./-]{1,512})",revision:(?:null|"[a-f0-9]{32}")\}/y;
+const PWA_WORKBOX_DEFINE_MARKER = "define([";
+const PWA_WORKBOX_DEFINE = /^define\(\["\.\/(workbox-[a-f0-9]{8})"\],function\(/;
 const PWA_INSTALL_ASSETS = Object.freeze([
   "apple-touch-icon-180x180.png",
   "dome.svg",
@@ -1222,6 +1224,21 @@ export function parseGeneratedPwaPrecache(workerBody: string): ReadonlyArray<str
     cursor++;
   }
   return Object.freeze(urls);
+}
+
+/** Parse the one extensionless AMD dependency emitted by the pinned GenerateSW. */
+export function parseGeneratedWorkboxRuntimePath(workerBody: string): string {
+  if (workerBody.length === 0 || workerBody.length > 2_000_000) {
+    throw new Error("generated PWA service worker size is invalid");
+  }
+  const marker = workerBody.indexOf(PWA_WORKBOX_DEFINE_MARKER);
+  if (marker < 0 ||
+    workerBody.indexOf(PWA_WORKBOX_DEFINE_MARKER, marker + PWA_WORKBOX_DEFINE_MARKER.length) >= 0) {
+    throw new Error("generated PWA service worker must contain one AMD dependency list");
+  }
+  const matched = PWA_WORKBOX_DEFINE.exec(workerBody.slice(marker));
+  if (matched === null) throw new Error("generated PWA Workbox dependency is malformed");
+  return `${matched[1]!}.js`;
 }
 
 function isShippedPwaPrecacheUrl(url: string): boolean {
@@ -1282,10 +1299,10 @@ async function rehearseHomeServer(dome: string, vault: string, cwd: string): Pro
     }
     const workerResponse = await fetch(new URL("/sw.js", result.url));
     const workerBody = await workerResponse.text();
-    const workboxPath = workerBody.match(/["']\.\/(workbox-[a-f0-9]{8}\.js)["']/)?.[1];
-    if (!workerResponse.ok || workboxPath === undefined) {
+    if (!workerResponse.ok) {
       throw new Error("artifact Dome Home did not serve the generated service worker");
     }
+    const workboxPath = parseGeneratedWorkboxRuntimePath(workerBody);
     const workbox = await fetch(new URL(`/${workboxPath}`, result.url));
     if (!workbox.ok || (await workbox.arrayBuffer()).byteLength === 0) {
       throw new Error("artifact Dome Home did not serve the generated Workbox runtime");
