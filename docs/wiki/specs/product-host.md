@@ -731,6 +731,15 @@ The immutable frozen 0.1 artifact contains the historical duplicate nested
 Home `--vault` forwarding bug. The installed rehearsal therefore invokes only
 its predecessor `home install` from the exact initialized vault cwd without
 `--vault`, exercising supported upward discovery rather than rewriting N-1.
+That historical command also has a fixed ten-second readiness window. The
+installed adapter accepts its timeout only when both the process exit and the
+complete lifecycle document match the immutable 0.1 installed-and-loaded
+late-readiness envelope. The install subprocess itself is capped at sixty
+seconds. The adapter then allows at most thirty additional seconds and
+requires strict pairing readiness, the exact launchd label, and a current
+candidate status observation binding the selected predecessor artifact,
+version, paths, and inactive lifecycle/upgrade state before pairing. Every
+other predecessor failure remains terminal.
 All 0.2 candidate nested commands keep explicit `--vault` and test the fixed
 forwarding behavior.
 

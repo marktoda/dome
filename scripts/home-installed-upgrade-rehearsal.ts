@@ -24,8 +24,9 @@ import { gunzipSync } from "node:zlib";
 import { inspectExclusiveFileLock } from "../src/engine/host/file-lock";
 import { verifyHomeArtifact, type HomeArtifactManifest } from "../src/product-host/home-artifact";
 import { externalProductHostLockPath } from "../src/product-host/host-ownership";
-import { homeInstallationPaths } from "../src/product-host/home-installation";
+import { homeInstallationPaths, releaseRoot } from "../src/product-host/home-installation";
 import { homeServiceLabelForVault } from "../src/product-host/home-lifecycle";
+import { isHomePairingReadiness } from "../src/product-host/home-readiness";
 import { HOME_STORE_MIGRATIONS } from "../src/product-host/home-store-migrations";
 import { isHomeUpgradeVersionAdvance } from "../src/product-host/home-upgrade-version";
 import { readHomePredecessorReceipt } from "./home-predecessor-artifact";
@@ -51,6 +52,10 @@ import {
 const HOST = "127.0.0.1";
 const PORT = 3663;
 const MAX_COMPRESSED_ARTIFACT_BYTES = 256 * 1024 * 1024;
+const PREDECESSOR_INSTALL_TIMEOUT_MS = 60_000;
+const PREDECESSOR_LATE_READINESS_TIMEOUT_MS = 30_000;
+const FROZEN_PREDECESSOR_ARTIFACT_ID = "911d5219bd5888f8a45fbfb0bbcf6da57b54e3a0ffcf8077bd2d843327747096";
+const FROZEN_PREDECESSOR_VERSION = "0.1.0";
 const EVIDENCE_SCHEMA = "dome.home-installed-upgrade-rehearsal/v1" as const;
 
 export type InstalledHomeUpgradeRehearsalInput = Readonly<{
@@ -605,17 +610,29 @@ async function createScenario(
     vault,
     home,
   });
-  const installed = await runJson(
+  const installed = await runJsonOutcomeWithin(
     predecessorInstall.command,
     predecessorInstall.cwd,
     environment,
+    PREDECESSOR_INSTALL_TIMEOUT_MS,
   );
-  assertObjectFields(installed, { status: "installed", loaded: true, ready: true });
-  if (stringField(installed, "label") !== label) throw new Error("installed Home returned the wrong unique label");
-  const plist = stringField(installed, "plist");
-  if (plist !== join(home, "Library", "LaunchAgents", `${label}.plist`)) {
-    throw new Error("installed Home escaped the isolated LaunchAgents directory");
-  }
+  const expectedInstall = predecessorInstallExpectation({
+    home,
+    vault,
+    label,
+    manifest: prepared.predecessor,
+  });
+  const classification = classifyPredecessorInstallForTests(installed, expectedInstall);
+  await awaitPredecessorInstallForTests({
+    classification,
+    observe: async (signal) => await observeLatePredecessorReadiness({
+      root,
+      environment,
+      candidateRoot: prepared.candidateRoot,
+      expected: expectedInstall,
+    }, signal),
+  });
+  const plist = expectedInstall.plist;
 
   const context: ScenarioContext = {
     name, root, home, vault, label, plist, environment, seedCommit, ownerMarkdown,
@@ -679,6 +696,221 @@ export function predecessorHomeInstallInvocationForTests(input: Readonly<{
     ]),
     cwd: input.vault,
   });
+}
+
+type PackagedJsonOutcome = Readonly<{
+  exitCode: number;
+  document: Record<string, unknown>;
+}>;
+
+type PredecessorInstallExpectation = Readonly<{
+  vault: string;
+  label: string;
+  plist: string;
+  log: string;
+  program: string;
+  installation: string;
+  release: string;
+  artifactId: string;
+  productVersion: string;
+}>;
+
+/** Strict immutable-N-1 compatibility classifier; every other failure stays fatal. */
+export function classifyPredecessorInstallForTests(
+  outcome: Readonly<{ exitCode: number; document: unknown }>,
+  expected: PredecessorInstallExpectation,
+): "ready" | "late-readiness" {
+  const common = {
+    schema: "dome.home.lifecycle/v1",
+    action: "install",
+    vault: expected.vault,
+    label: expected.label,
+    plist: expected.plist,
+    log: expected.log,
+    program: expected.program,
+    installation: expected.installation,
+    release: expected.release,
+    artifactId: expected.artifactId,
+    productVersion: expected.productVersion,
+    installed: true,
+    loaded: true,
+    replaced: false,
+    releasePublished: true,
+  } as const;
+  if (outcome.exitCode === 0 && exactShallowRecord(outcome.document, {
+    ...common,
+    status: "installed",
+    ready: true,
+    exitCode: 0,
+  })) return "ready";
+  if (expected.artifactId === FROZEN_PREDECESSOR_ARTIFACT_ID &&
+    expected.productVersion === FROZEN_PREDECESSOR_VERSION && outcome.exitCode === 1 &&
+    exactShallowRecord(outcome.document, {
+      ...common,
+      status: "error",
+      ready: false,
+      exitCode: 1,
+      error: `Dome Home did not become ready at http://${HOST}:${PORT}/pair/status`,
+    })) return "late-readiness";
+  throw new Error("predecessor Home install returned an unsupported lifecycle outcome");
+}
+
+/** Run the one bounded late-readiness compatibility arm through an injected strict observer. */
+export async function awaitPredecessorInstallForTests(input: Readonly<{
+  classification: "ready" | "late-readiness";
+  timeoutMs?: number;
+  observe(signal: AbortSignal): Promise<boolean>;
+}>): Promise<void> {
+  if (input.classification === "ready") return;
+  const timeoutMs = input.timeoutMs ?? PREDECESSOR_LATE_READINESS_TIMEOUT_MS;
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > PREDECESSOR_LATE_READINESS_TIMEOUT_MS) {
+    throw new Error("predecessor late-readiness timeout is invalid");
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    while (!controller.signal.aborted) {
+      if (await observeBeforeAbort(input.observe, controller.signal)) return;
+      await abortableDelay(Math.min(200, timeoutMs), controller.signal);
+    }
+  } catch (error) {
+    if (!controller.signal.aborted) throw error;
+  } finally {
+    clearTimeout(timeout);
+    controller.abort();
+  }
+  throw new Error("frozen predecessor Home did not reach bounded late readiness");
+}
+
+async function observeBeforeAbort(
+  observe: (signal: AbortSignal) => Promise<boolean>,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (signal.aborted) throw new Error("predecessor late-readiness observation aborted");
+  return await new Promise<boolean>((resolvePromise, reject) => {
+    const onAbort = (): void => reject(new Error("predecessor late-readiness observation aborted"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    void observe(signal).then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolvePromise(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
+function exactShallowRecord(value: unknown, expected: Readonly<Record<string, unknown>>): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record);
+  return keys.length === Object.keys(expected).length &&
+    keys.every((key) => Object.hasOwn(expected, key) && Object.is(record[key], expected[key]));
+}
+
+async function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) throw new Error("predecessor late-readiness observation aborted");
+  await new Promise<void>((resolvePromise, reject) => {
+    const timeout = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolvePromise();
+    }, milliseconds);
+    const onAbort = (): void => {
+      clearTimeout(timeout);
+      reject(new Error("predecessor late-readiness observation aborted"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** Candidate-observed terminal proof for the selected frozen predecessor. */
+export function assertPredecessorReadyObserverForTests(
+  outcome: Readonly<{ exitCode: number; document: unknown }>,
+  expected: PredecessorInstallExpectation,
+): void {
+  if (outcome.exitCode !== 0) throw new Error("predecessor ready observer command failed");
+  const document = asRecord(outcome.document, "predecessor ready observer");
+  assertObjectFields(document, {
+    schema: "dome.home.lifecycle/v1",
+    action: "status",
+    vault: expected.vault,
+    label: expected.label,
+    plist: expected.plist,
+    log: expected.log,
+    program: expected.program,
+    installation: expected.installation,
+    release: expected.release,
+    artifactId: expected.artifactId,
+    productVersion: expected.productVersion,
+    status: "ready",
+    installed: true,
+    loaded: true,
+    ready: true,
+    exitCode: 0,
+  });
+  if (field(objectField(document, "lifecycle"), "state") !== "inactive" ||
+    field(objectField(document, "upgrade"), "state") !== "inactive") {
+    throw new Error("predecessor ready observer retained lifecycle or upgrade ownership");
+  }
+}
+
+function predecessorInstallExpectation(input: Readonly<{
+  home: string;
+  vault: string;
+  label: string;
+  manifest: HomeArtifactManifest;
+}>): PredecessorInstallExpectation {
+  const paths = homeInstallationPaths(input.vault, {
+    applicationSupportDir: join(input.home, "Library", "Application Support", "Dome", "Home"),
+  });
+  const release = releaseRoot(paths, input.manifest.artifact.id);
+  return Object.freeze({
+    vault: input.vault,
+    label: input.label,
+    plist: join(input.home, "Library", "LaunchAgents", `${input.label}.plist`),
+    log: join(input.vault, ".dome", "state", "home.log"),
+    program: join(release, "app", "bin", "dome"),
+    installation: paths.record,
+    release,
+    artifactId: input.manifest.artifact.id,
+    productVersion: input.manifest.product.version,
+  });
+}
+
+async function observeLatePredecessorReadiness(input: Readonly<{
+  root: string;
+  environment: Readonly<Record<string, string | undefined>>;
+  candidateRoot: string;
+  expected: PredecessorInstallExpectation;
+}>, signal: AbortSignal): Promise<boolean> {
+  let response: Response;
+  try {
+    response = await fetch(`http://${HOST}:${PORT}/pair/status`, {
+      cache: "no-store",
+      signal,
+    });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return false;
+  }
+  if (!await isHomePairingReadiness(response)) return false;
+
+  const uid = process.getuid?.();
+  if (uid === undefined) throw new Error("predecessor ready observer requires a Unix uid");
+  const loaded = await runRawAllowFailure([
+    "/bin/launchctl", "print", `gui/${uid}/${input.expected.label}`,
+  ], input.root, input.environment, signal);
+  if (loaded.exitCode !== 0) throw new Error("late-ready predecessor launchd label is not loaded");
+
+  const status = await runJsonOutcome([
+    join(input.candidateRoot, "bin", "dome"),
+    "home", "status", "--vault", input.expected.vault, "--json",
+  ], input.root, input.environment, signal);
+  assertPredecessorReadyObserverForTests(status, input.expected);
+  return true;
 }
 
 async function runRealScenario(context: ScenarioContext, prepared: PreparedArtifacts): Promise<void> {
@@ -1365,6 +1597,37 @@ async function runJson(
   try { value = JSON.parse(result.stdout); }
   catch { throw new Error(`${renderCommand(command)} returned non-JSON output\n${result.stdout}${result.stderr}`); }
   return asRecord(value, "packaged command result");
+}
+
+async function runJsonOutcome(
+  command: ReadonlyArray<string>,
+  cwd: string,
+  environment: Readonly<Record<string, string | undefined>>,
+  signal?: AbortSignal,
+): Promise<PackagedJsonOutcome> {
+  const result = await runRawAllowFailure(command, cwd, environment, signal);
+  let value: unknown;
+  try { value = JSON.parse(result.stdout); }
+  catch { throw new Error(`${renderCommand(command)} returned non-JSON output\n${result.stdout}${result.stderr}`); }
+  return Object.freeze({
+    exitCode: result.exitCode,
+    document: asRecord(value, "packaged command result"),
+  });
+}
+
+async function runJsonOutcomeWithin(
+  command: ReadonlyArray<string>,
+  cwd: string,
+  environment: Readonly<Record<string, string | undefined>>,
+  timeoutMs: number,
+): Promise<PackagedJsonOutcome> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try { return await runJsonOutcome(command, cwd, environment, controller.signal); }
+  finally {
+    clearTimeout(timeout);
+    controller.abort();
+  }
 }
 
 async function runRaw(
