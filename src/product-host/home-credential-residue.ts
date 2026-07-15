@@ -1,19 +1,36 @@
 // Read-only, path-free discovery of legacy at-rest credential persistence for
 // one Dome Home vault. Runtime process state is deliberately out of scope.
 
-import { lstat, readdir, realpath } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { lstat, readdir, realpath, rename, rm, unlink } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { compareStrings } from "../core/compare";
-import { homeInstallationPaths, parseHomeInstallationRecord, type HomeInstallationDeps } from "./home-installation";
-import { captureHomeSelectionDocument, homeSelectionPaths, type HomeSelectionDeps } from "./home-selection";
+import { probeLaunchAgentLoadedStrict } from "../platform/launchd";
+import { resolveServiceDeps, vaultServiceSlug } from "../surface/service-probe";
+import { homeInstallationPaths, parseHomeInstallationRecord, readHomeInstallation, releaseRoot, syncDirectory, type HomeInstallationDeps } from "./home-installation";
+import { captureHomeSelectionDocument, homeSelectionPaths, publishHomeSelectionDocument, renderHomeSelection, type HomeSelectionDeps } from "./home-selection";
 import {
   readHomeUpgrade,
+  readHomeUpgradeDisposition,
   readHomeUpgradeHistory,
   type HomeUpgradeSelectionEvidence,
   type HomeUpgradeTransactionDeps,
 } from "./home-upgrade-transaction";
-import { isHomeSecretEnvironmentName } from "./home-credentials";
+import { isHomeSecretEnvironmentName, openHomeCredentials, type HomeCredentials } from "./home-credentials";
+import { resolveHomeModelRuntime, type HomeModelRuntime } from "./home-model-provider";
+import {
+  assertHomeStoppedForLifecycleMutation,
+  inspectHomeLifecycleSuspension,
+  withHomeLifecycleMutation,
+  withSupervisedHomeSuspended,
+  type HomeLifecycleSuspensionDeps,
+  type HomeLifecycleSuspensionInspection,
+  type SupervisedHomeSuspensionResult,
+} from "./home-lifecycle-suspension";
+import { withProductHostOwnership } from "./host-ownership";
+import { withManagedReleaseStoreCoordinator } from "./managed-release-store-coordinator";
+import { verifyHomeArtifact } from "./home-artifact";
 import { readVaultId } from "./vault-id";
 
 export const HOME_CREDENTIAL_RESIDUE_SCHEMA = "dome.home.credential-residue/v1" as const;
@@ -43,6 +60,40 @@ export type HomeCredentialResidueDeps = Pick<HomeInstallationDeps, "applicationS
   Pick<HomeUpgradeTransactionDeps, "journalReadCheckpoint"> & {
     /** Test-only race seam between the two complete read-only scans. */
     readonly credentialResidueBetweenScans?: (() => Promise<void>) | undefined;
+  };
+
+export const HOME_CREDENTIAL_CLEANUP_SCHEMA = "dome.home.credential-residue-cleanup/v1" as const;
+export const HOME_CREDENTIAL_CLEANUP_AUTHORIZATION = "discard-legacy-anthropic-plaintext" as const;
+export type HomeCredentialResidueCleanupResult = Readonly<{
+  schema: typeof HOME_CREDENTIAL_CLEANUP_SCHEMA;
+  mode: "preview" | "apply";
+  status: "clean" | "residue" | "cleaned" | "blocked" | "recovery-required" | "error";
+  cleanup: "clean" | "residue" | "indeterminate";
+  home: "not-run" | "ready" | "stopped" | "recovery-required";
+  reason: "authorization-required" | "unsupported-residue" | "configure-shipped-model" |
+    "configure-keychain" | "recover-upgrade" | "lifecycle-busy" | "verification-failed" |
+    "cleanup-incomplete" | "resume-failed" | null;
+  nextAction: "none" | "rerun-with-apply" | "configure-model" | "recover-upgrade" |
+    "retry-cleanup" | "inspect-residue";
+  message: string;
+  exitCode: 0 | 1 | 64 | 75;
+}>;
+
+export type HomeCredentialResidueCleanupDeps = HomeCredentialResidueDeps &
+  Pick<HomeInstallationDeps, "verifyArtifact"> &
+  Pick<HomeLifecycleSuspensionDeps, "platform" | "uid" | "launchctl" | "drainTimeoutMs" |
+    "readiness" | "readinessTimeoutMs" | "legacyServeRunning"> & {
+    readonly credentials?: HomeCredentials;
+    readonly resolveModel?: ((vaultPath: string) => Promise<HomeModelRuntime>) | undefined;
+    readonly inspectLifecycle?: ((vaultPath: string) => Promise<HomeLifecycleSuspensionInspection>) | undefined;
+    readonly readUpgrade?: ((vaultPath: string) => Promise<Awaited<ReturnType<typeof readHomeUpgradeDisposition>>>) | undefined;
+    readonly suspend?: typeof withSupervisedHomeSuspended | undefined;
+    readonly mutateLifecycle?: typeof withHomeLifecycleMutation | undefined;
+    readonly isServiceLoaded?: ((vaultPath: string) => Promise<boolean>) | undefined;
+    readonly proveStopped?: ((vaultPath: string) => Promise<void>) | undefined;
+    readonly operationId?: (() => string) | undefined;
+    readonly cleanupCheckpoint?: ((name: "installation-published" | "plist-published" |
+      "transient-renamed" | "history-renamed" | "before-final-inspection") => Promise<void>) | undefined;
   };
 
 const MAX_NAMES = 128;
@@ -98,9 +149,11 @@ async function scanPass(vault: string, deps: HomeCredentialResidueDeps): Promise
   }
   const liveInstallation = await present(context, paths.record);
   const livePlist = await present(context, selectionPaths.plist);
-  if (liveInstallation !== livePlist) throw new InspectionFailure("verification-failed");
+  if (!liveInstallation && livePlist) throw new InspectionFailure("verification-failed");
   if (liveInstallation) {
     await scanInstallation(context, paths.record, vault, "live");
+  }
+  if (livePlist) {
     await scanPlist(context, selectionPaths.plist, "live");
   }
   await scanTemporarySiblings(context, paths.record, selectionPaths.plist, vault);
@@ -117,14 +170,16 @@ async function scanTemporarySiblings(
   const installationParent = dirname(installationPath);
   if (await present(context, installationParent)) {
     const names = await boundedNames(context, installationParent, 0o700);
-    for (const name of names.filter((name) => name.startsWith(`${basename(installationPath)}.tmp-`))) {
+    for (const name of names.filter((name) => name.startsWith(`${basename(installationPath)}.tmp-`) ||
+      /^\.credential-cleanup-[A-Za-z0-9][A-Za-z0-9._-]{0,127}-installation$/.test(name))) {
       await scanInstallation(context, join(installationParent, name), vault, "transient");
     }
   }
   const plistParent = dirname(plistPath);
   if (await present(context, plistParent)) {
     const names = await boundedNames(context, plistParent, null);
-    for (const name of names.filter((name) => name.startsWith(`${basename(plistPath)}.tmp-`))) {
+    for (const name of names.filter((name) => name.startsWith(`${basename(plistPath)}.tmp-`) ||
+      /^\.credential-cleanup-[A-Za-z0-9][A-Za-z0-9._-]{0,127}-plist$/.test(name))) {
       await scanPlist(context, join(plistParent, name), "transient");
     }
   }
@@ -139,6 +194,10 @@ async function scanUpgradeState(
   const upgrade = join(installations, "upgrade");
   if (!await present(context, upgrade)) return;
   const before = await boundedNames(context, upgrade, 0o700);
+  for (const name of before.filter(isStagingCleanupTombstone)) {
+    await boundedNames(context, join(upgrade, name), 0o700);
+    addNames(context.findings, "transient", "installation", ["ANTHROPIC_API_KEY"]);
+  }
   for (const name of before.filter((name) => name.startsWith(".staging-"))) {
     await scanStaging(context, join(upgrade, name), vault);
   }
@@ -156,6 +215,11 @@ async function scanUpgradeState(
   if (await present(context, history)) {
     const historyNames = await boundedNames(context, history, 0o700);
     for (const transactionId of historyNames) {
+      if (isHistoryCleanupTombstone(transactionId)) {
+        await boundedNames(context, join(history, transactionId), 0o700);
+        addNames(context.findings, "transient", "installation", ["ANTHROPIC_API_KEY"]);
+        continue;
+      }
       const root = join(history, transactionId);
       await boundedNames(context, root, 0o700);
       const journal = await readHomeUpgradeHistory(vault, transactionId, deps);
@@ -387,6 +451,482 @@ function indeterminate(reason: "verification-failed" | "inventory-limit" | "chan
     findings: null,
     reason,
   });
+}
+
+class CleanupRefusal extends Error {
+  readonly reason: NonNullable<HomeCredentialResidueCleanupResult["reason"]>;
+  constructor(reason: NonNullable<HomeCredentialResidueCleanupResult["reason"]>) {
+    super(reason);
+    this.reason = reason;
+  }
+}
+
+type LiveSelectionState = "complete" | "installation-only" | "absent" | "invalid";
+type CleanupOperationOutcome =
+  | Readonly<{ kind: "cleaned" }>
+  | Readonly<{ kind: "cleaned-resume-unauthorized" }>
+  | Readonly<{ kind: "failed" }>;
+
+/**
+ * Preview or irreversibly remove the one supported legacy plaintext slot.
+ * Recovery phases, paths, and secret values remain hidden behind this Interface.
+ */
+export async function cleanupHomeCredentialResidue(input: Readonly<{
+  vaultPath: string;
+  authorization?: typeof HOME_CREDENTIAL_CLEANUP_AUTHORIZATION;
+}>, deps: HomeCredentialResidueCleanupDeps = {}): Promise<HomeCredentialResidueCleanupResult> {
+  if (input.authorization !== undefined && input.authorization !== HOME_CREDENTIAL_CLEANUP_AUTHORIZATION) {
+    return cleanupResult("apply", "blocked", "indeterminate", "not-run", "authorization-required",
+      "rerun-with-apply", 64,
+      "Credential cleanup requires the exact destructive authorization.");
+  }
+  const vault = resolve(input.vaultPath);
+  const preview = input.authorization === undefined;
+  const initial = await inspectHomeCredentialResidue(vault, deps);
+  if (initial.state === "indeterminate") {
+    return cleanupResult(preview ? "preview" : "apply", "error", "indeterminate", "not-run",
+      "verification-failed", "inspect-residue", 1,
+      "Legacy credential residue could not be verified safely.");
+  }
+  if (initial.state === "clean") {
+    const lifecycle = await (deps.inspectLifecycle ?? inspectHomeLifecycleSuspension)(vault);
+    if (lifecycle.kind === "active" && lifecycle.suspension.purpose === "credential-cleanup") {
+      if (preview) return cleanupResult("preview", "recovery-required", "clean", "recovery-required",
+        "cleanup-incomplete", "retry-cleanup", 1,
+        "Plaintext is clean, but an interrupted credential cleanup must resume or finish recovery.");
+    } else if (preview) {
+      return cleanupResult("preview", "clean", "clean", "not-run", null, "none", 0,
+        "No legacy plaintext credential residue was found.");
+    }
+  }
+  if (initial.state === "residue" && initial.findings.some((finding) => finding.variableName !== "ANTHROPIC_API_KEY")) {
+    return cleanupResult(preview ? "preview" : "apply", "blocked", "residue", "not-run",
+      "unsupported-residue", "inspect-residue", 64,
+      "Unsupported secret-like residue must be handled manually before cleanup.");
+  }
+  if (preview) {
+    return cleanupResult("preview", "residue", "residue", "not-run", "authorization-required",
+      "rerun-with-apply", 1,
+      "Legacy Anthropic plaintext residue is present; --apply irreversibly removes it and prunes contaminated terminal upgrade archives.");
+  }
+
+  const credentials = deps.credentials ?? openHomeCredentials();
+  const resolveModel = deps.resolveModel ?? ((path: string) => resolveHomeModelRuntime(path, { credentials }));
+  const readUpgrade = deps.readUpgrade ?? ((path: string) => readHomeUpgradeDisposition(path, deps));
+  try {
+    if (await readUpgrade(vault) !== null) throw new CleanupRefusal("recover-upgrade");
+    const lifecycle = await (deps.inspectLifecycle ?? inspectHomeLifecycleSuspension)(vault);
+    if (lifecycle.kind === "unavailable" || lifecycle.kind === "invalid") {
+      throw new CleanupRefusal("lifecycle-busy");
+    }
+    if (lifecycle.kind === "active" && lifecycle.suspension.purpose !== "credential-cleanup") {
+      throw new CleanupRefusal("lifecycle-busy");
+    }
+    if (initial.state === "clean" && lifecycle.kind === "inactive") {
+      return cleanupResult("apply", "clean", "clean", "not-run", null, "none", 0,
+        "No legacy plaintext credential residue was found.");
+    }
+    await requireReadyShippedModel(vault, resolveModel);
+    const operationId = lifecycle.kind === "active"
+      ? lifecycle.suspension.operationId
+      : (deps.operationId ?? randomUUID)();
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(operationId)) {
+      throw new Error("credential cleanup operation id is invalid");
+    }
+    const liveSelection = await classifyLiveSelection(vault, deps);
+    if (liveSelection === "invalid") throw new CleanupRefusal("verification-failed");
+    if (liveSelection === "installation-only" || liveSelection === "absent") {
+      if (await serviceLoaded(vault, deps)) throw new CleanupRefusal("lifecycle-busy");
+      const mutation = await (deps.mutateLifecycle ?? withHomeLifecycleMutation)(vault, async () => {
+        await (deps.proveStopped ?? ((path: string) => assertHomeStoppedForLifecycleMutation(path, deps)))(vault);
+        if (await classifyLiveSelection(vault, deps) !== liveSelection) {
+          throw new Error("Home selection changed before credential cleanup acquired ownership");
+        }
+        const host = await withProductHostOwnership(vault, () =>
+          cleanupWhileOwned(vault, operationId, resolveModel, deps, liveSelection));
+        if (host.kind === "busy") throw new Error("Dome Home Product Host ownership is busy");
+      });
+      if (mutation.kind === "suspended") throw new CleanupRefusal("lifecycle-busy");
+      return cleanupResult("apply", "cleaned", "clean", "stopped", null, "none", 0,
+        "Legacy Anthropic plaintext residue was removed; Home remains stopped.");
+    }
+    const invocation = lifecycle.kind === "active"
+      ? Object.freeze({ mode: "recover" as const, vaultPath: vault, purpose: "credential-cleanup" as const,
+        operationId, policy: "retry-idempotent" as const })
+      : Object.freeze({ mode: "new" as const, vaultPath: vault, purpose: "credential-cleanup" as const, operationId });
+    const suspended = await (deps.suspend ?? withSupervisedHomeSuspended)(invocation, async (context): Promise<CleanupOperationOutcome> => {
+      try {
+        await cleanupWhileOwned(vault, operationId, resolveModel, deps, "complete");
+      } catch {
+        return Object.freeze({ kind: "failed" });
+      }
+      try {
+        await context.authorizeCurrentHomeForResume();
+        return Object.freeze({ kind: "cleaned" });
+      } catch {
+        return Object.freeze({ kind: "cleaned-resume-unauthorized" });
+      }
+    }, deps);
+    return await completedSuspension(vault, suspended, deps);
+  } catch (error) {
+    const reason = error instanceof CleanupRefusal ? error.reason : "cleanup-incomplete";
+    if (reason === "recover-upgrade") {
+      return cleanupResult("apply", "blocked", await freshCleanupTruth(vault, deps), "not-run", reason, "recover-upgrade", 64,
+        "Finish or recover the active Dome Home upgrade before credential cleanup.");
+    }
+    if (reason === "configure-shipped-model" || reason === "configure-keychain") {
+      return cleanupResult("apply", "blocked", await freshCleanupTruth(vault, deps), "not-run", reason, "configure-model", 64,
+        "Configure and verify the shipped Anthropic model credential before cleanup.");
+    }
+    if (reason === "lifecycle-busy") {
+      return cleanupResult("apply", "blocked", await freshCleanupTruth(vault, deps), "not-run", reason, "retry-cleanup", 75,
+        "Another Dome Home lifecycle operation owns the vault; retry cleanup later.");
+    }
+    if (reason === "unsupported-residue") {
+      return cleanupResult("apply", "blocked", await freshCleanupTruth(vault, deps), "not-run", reason, "inspect-residue", 64,
+        "Unsupported secret-like residue must be handled manually before cleanup.");
+    }
+    return await failedApplyResult(vault, deps);
+  }
+}
+
+async function freshCleanupTruth(
+  vault: string,
+  deps: HomeCredentialResidueCleanupDeps,
+): Promise<HomeCredentialResidueCleanupResult["cleanup"]> {
+  return (await inspectHomeCredentialResidue(vault, deps)).state;
+}
+
+async function cleanupWhileOwned(
+  vault: string,
+  operationId: string,
+  resolveModel: (vaultPath: string) => Promise<HomeModelRuntime>,
+  deps: HomeCredentialResidueCleanupDeps,
+  liveSelection: Exclude<LiveSelectionState, "invalid">,
+): Promise<void> {
+  if (await (deps.readUpgrade ?? ((path: string) => readHomeUpgradeDisposition(path, deps)))(vault) !== null) {
+    throw new CleanupRefusal("recover-upgrade");
+  }
+  const before = await inspectHomeCredentialResidue(vault, deps);
+  requireSupportedInspection(before);
+  await requireReadyShippedModel(vault, resolveModel);
+  const paths = homeInstallationPaths(vault, deps);
+  const global = await withManagedReleaseStoreCoordinator(paths.root, async () => {
+    if (liveSelection !== "absent") await sanitizeLiveSelection(vault, deps, liveSelection);
+    await removeTransientResidue(vault, operationId, deps);
+    await removeContaminatedHistory(vault, operationId, deps);
+  }, { waitMs: 30_000 });
+  if (global.kind === "busy") throw new Error("managed Home store is busy");
+  await deps.cleanupCheckpoint?.("before-final-inspection");
+  await requireReadyShippedModel(vault, resolveModel);
+  const after = await inspectHomeCredentialResidue(vault, deps);
+  if (after.state !== "clean") throw new Error("credential residue remains after cleanup");
+}
+
+function requireSupportedInspection(inspection: HomeCredentialResidueInspection): void {
+  if (inspection.state === "indeterminate") throw new Error("credential residue is indeterminate");
+  if (inspection.state === "residue" &&
+    inspection.findings.some((finding) => finding.variableName !== "ANTHROPIC_API_KEY")) {
+    throw new CleanupRefusal("unsupported-residue");
+  }
+}
+
+async function requireReadyShippedModel(
+  vault: string,
+  resolveModel: (vaultPath: string) => Promise<HomeModelRuntime>,
+): Promise<void> {
+  const model = await resolveModel(vault);
+  if (model.configuration !== "shipped-anthropic") throw new CleanupRefusal("configure-shipped-model");
+  if (model.credential !== "present" || model.modelState !== "ready") throw new CleanupRefusal("configure-keychain");
+}
+
+async function sanitizeLiveSelection(
+  vault: string,
+  deps: HomeCredentialResidueCleanupDeps,
+  expected: "complete" | "installation-only",
+): Promise<void> {
+  if (await classifyLiveSelection(vault, deps) !== expected) {
+    throw new Error("Home selection changed before credential cleanup mutation");
+  }
+  const record = await readHomeInstallation(vault, deps);
+  if (record === null) throw new Error("Home installation is unavailable");
+  const paths = homeInstallationPaths(vault, deps);
+  const releasePath = releaseRoot(paths, record.artifact.id);
+  const manifest = await (deps.verifyArtifact ?? verifyHomeArtifact)(releasePath);
+  if (manifest.artifact.id !== record.artifact.id || manifest.product.version !== record.artifact.version) {
+    throw new Error("selected Home release does not match the installation record");
+  }
+  const environment = record.environment.filter((entry) => entry.name !== "ANTHROPIC_API_KEY");
+  if (environment.some((entry) => isHomeSecretEnvironmentName(entry.name))) throw new CleanupRefusal("unsupported-residue");
+  const desired = renderHomeSelection({
+    vault,
+    artifact: { id: record.artifact.id, version: record.artifact.version,
+      releasePath },
+    environment,
+  }, deps);
+  const current = await captureHomeSelectionDocument(paths.record, "legacy Home installation selector");
+  if (current.sha256 !== desired.installation.sha256) {
+    await publishHomeSelectionDocument({ expected: current, desired: desired.installation }, deps);
+    await deps.cleanupCheckpoint?.("installation-published");
+  }
+  const plistPath = homeSelectionPaths(vault, deps).plist;
+  if (!await pathExists(plistPath)) {
+    if (expected === "complete") throw new Error("Home plist disappeared during credential cleanup");
+    return;
+  }
+  const currentPlist = await captureHomeSelectionDocument(plistPath, "legacy Home LaunchAgent plist");
+  if (currentPlist.sha256 !== desired.plist.sha256) {
+    await publishHomeSelectionDocument({ expected: currentPlist, desired: desired.plist }, deps);
+    await deps.cleanupCheckpoint?.("plist-published");
+  }
+  const finalInstallation = await captureHomeSelectionDocument(paths.record, "sanitized Home installation selector");
+  const finalPlist = await captureHomeSelectionDocument(plistPath, "sanitized Home LaunchAgent plist");
+  if (finalInstallation.sha256 !== desired.installation.sha256 || finalPlist.sha256 !== desired.plist.sha256) {
+    throw new Error("sanitized Home selection did not converge to the verified release");
+  }
+}
+
+async function removeTransientResidue(
+  vault: string,
+  operationId: string,
+  deps: HomeCredentialResidueCleanupDeps,
+): Promise<void> {
+  const installation = homeInstallationPaths(vault, deps).record;
+  const plist = homeSelectionPaths(vault, deps).plist;
+  for (const [parent, prefix, kind] of [
+    [dirname(installation), `${basename(installation)}.tmp-`, "installation"],
+    [dirname(plist), `${basename(plist)}.tmp-`, "plist"],
+  ] as const) {
+    if (!await pathExists(parent)) continue;
+    const names = await readdir(parent);
+    names.sort((left, right) => Number(!isFileCleanupTombstone(left, kind)) -
+      Number(!isFileCleanupTombstone(right, kind)) || compareStrings(left, right));
+    for (const name of names) {
+      const ownTombstone = isFileCleanupTombstone(name, kind);
+      if (!name.startsWith(prefix) && !ownTombstone) continue;
+      const path = join(parent, name);
+      if (!ownTombstone && !await documentHasAnthropic(path, kind, vault)) continue;
+      await removeFileViaTombstone(path, join(parent, `.credential-cleanup-${operationId}-${kind}`), deps);
+    }
+  }
+  const upgrade = join(dirname(installation), "upgrade");
+  if (!await pathExists(upgrade)) return;
+  const names = await readdir(upgrade);
+  names.sort((left, right) => Number(!isStagingCleanupTombstone(left)) -
+    Number(!isStagingCleanupTombstone(right)) || compareStrings(left, right));
+  for (const name of names) {
+    const own = isStagingCleanupTombstone(name);
+    if (!name.startsWith(".staging-") && !own) continue;
+    const root = join(upgrade, name);
+    if (!own && !await directoryHasAnthropic(join(root, "selectors"), vault)) continue;
+    const tombstone = own ? root : join(upgrade, `.credential-cleanup-${operationId}-staging-${name.slice(1)}`);
+    await removeDirectoryViaTombstone(root, tombstone, "transient-renamed", deps);
+  }
+}
+
+async function removeContaminatedHistory(
+  vault: string,
+  operationId: string,
+  deps: HomeCredentialResidueCleanupDeps,
+): Promise<void> {
+  const history = join(homeInstallationPaths(vault, deps).installations, "upgrade", "history");
+  if (!await pathExists(history)) return;
+  const names = await readdir(history);
+  names.sort((left, right) => Number(!isHistoryCleanupTombstone(left)) -
+    Number(!isHistoryCleanupTombstone(right)) || compareStrings(left, right));
+  for (const name of names) {
+    const own = isHistoryCleanupTombstone(name);
+    if (own) {
+      await removeDirectoryViaTombstone(join(history, name), join(history, name), "history-renamed", deps);
+      continue;
+    }
+    const journal = await readHomeUpgradeHistory(vault, name, deps);
+    if (journal?.selection === null || journal === null) continue;
+    const root = join(history, name);
+    if (!await directoryHasAnthropic(join(root, "selectors"), vault)) continue;
+    await removeDirectoryViaTombstone(root,
+      join(history, `.credential-cleanup-${operationId}-history-${name}`), "history-renamed", deps);
+  }
+}
+
+function isFileCleanupTombstone(name: string, kind: "installation" | "plist"): boolean {
+  return new RegExp(`^\\.credential-cleanup-[A-Za-z0-9][A-Za-z0-9._-]{0,127}-${kind}$`).test(name);
+}
+
+function isStagingCleanupTombstone(name: string): boolean {
+  return /^\.credential-cleanup-[A-Za-z0-9][A-Za-z0-9._-]{0,127}-staging-[A-Za-z0-9._-]+$/.test(name);
+}
+
+function isHistoryCleanupTombstone(name: string): boolean {
+  return /^\.credential-cleanup-[A-Za-z0-9][A-Za-z0-9._-]{0,127}-history-[A-Za-z0-9._-]+$/.test(name);
+}
+
+async function directoryHasAnthropic(root: string, vault: string): Promise<boolean> {
+  if (!await pathExists(root)) return false;
+  const info = await lstat(root);
+  if (!info.isDirectory() || info.isSymbolicLink() || (info.mode & 0o777) !== 0o700 || await realpath(root) !== resolve(root)) {
+    throw new Error("credential residue directory is unsafe");
+  }
+  for (const name of await readdir(root, { withFileTypes: true })) {
+    const path = join(root, name.name);
+    if (name.isDirectory()) {
+      if (await directoryHasAnthropic(path, vault)) return true;
+    } else if (name.isFile()) {
+      const kind = name.name.endsWith(".plist") ? "plist"
+        : /^(?:old-|candidate-)?installation\.json$/.test(name.name) ? "installation" : null;
+      if (kind !== null && await documentHasAnthropic(path, kind, vault)) return true;
+    } else throw new Error("credential residue directory contains a redirected or special entry");
+  }
+  return false;
+}
+
+async function documentHasAnthropic(path: string, kind: "installation" | "plist", vault: string): Promise<boolean> {
+  const captured = await captureHomeSelectionDocument(path, "legacy credential residue document");
+  if (kind === "plist") return parsePlistEnvironmentNames(captured.bytes).includes("ANTHROPIC_API_KEY");
+  let value: unknown;
+  try { value = JSON.parse(captured.bytes); } catch { throw new Error("legacy installation residue is invalid"); }
+  return parseHomeInstallationRecord(value, vault).environment.some((entry) => entry.name === "ANTHROPIC_API_KEY");
+}
+
+async function removeFileViaTombstone(
+  source: string,
+  tombstone: string,
+  deps: HomeCredentialResidueCleanupDeps,
+): Promise<void> {
+  if (source !== tombstone) {
+    const before = await lstat(source, { bigint: true });
+    await rename(source, tombstone);
+    const after = await lstat(tombstone, { bigint: true });
+    if (before.dev !== after.dev || before.ino !== after.ino || !after.isFile() || after.isSymbolicLink()) {
+      throw new Error("credential residue file changed across tombstone rename");
+    }
+    await syncDirectory(dirname(tombstone));
+    await deps.cleanupCheckpoint?.("transient-renamed");
+  }
+  const direct = await lstat(tombstone);
+  if (!direct.isFile() || direct.isSymbolicLink() || direct.nlink !== 1) throw new Error("credential residue tombstone is unsafe");
+  await unlink(tombstone);
+  await syncDirectory(dirname(tombstone));
+}
+
+async function removeDirectoryViaTombstone(
+  source: string,
+  tombstone: string,
+  checkpoint: "transient-renamed" | "history-renamed",
+  deps: HomeCredentialResidueCleanupDeps,
+): Promise<void> {
+  if (source !== tombstone) {
+    const before = await lstat(source, { bigint: true });
+    await rename(source, tombstone);
+    const after = await lstat(tombstone, { bigint: true });
+    if (before.dev !== after.dev || before.ino !== after.ino || !after.isDirectory() || after.isSymbolicLink()) {
+      throw new Error("credential residue directory changed across tombstone rename");
+    }
+    await syncDirectory(dirname(tombstone));
+    await deps.cleanupCheckpoint?.(checkpoint);
+  }
+  const direct = await lstat(tombstone);
+  if (!direct.isDirectory() || direct.isSymbolicLink() || await realpath(tombstone) !== resolve(tombstone)) {
+    throw new Error("credential residue tombstone is unsafe");
+  }
+  await rm(tombstone, { recursive: true });
+  await syncDirectory(dirname(tombstone));
+}
+
+async function classifyLiveSelection(
+  vault: string,
+  deps: HomeCredentialResidueCleanupDeps,
+): Promise<LiveSelectionState> {
+  const installation = await pathExists(homeInstallationPaths(vault, deps).record);
+  const plist = await pathExists(homeSelectionPaths(vault, deps).plist);
+  if (installation && plist) return "complete";
+  if (installation) return "installation-only";
+  if (!plist) return "absent";
+  return "invalid";
+}
+
+async function serviceLoaded(vault: string, deps: HomeCredentialResidueCleanupDeps): Promise<boolean> {
+  if (deps.isServiceLoaded !== undefined) return await deps.isServiceLoaded(vault);
+  const service = resolveServiceDeps(deps);
+  if (service.platform !== "darwin" || service.uid === null) throw new Error("credential cleanup requires macOS launchd");
+  return await probeLaunchAgentLoadedStrict({
+    launchctl: service.launchctl,
+    target: `gui/${service.uid}/com.dome.home.${vaultServiceSlug(vault)}`,
+  });
+}
+
+async function completedSuspension(
+  vault: string,
+  result: SupervisedHomeSuspensionResult<CleanupOperationOutcome>,
+  deps: HomeCredentialResidueCleanupDeps,
+): Promise<HomeCredentialResidueCleanupResult> {
+  const after = await inspectHomeCredentialResidue(vault, deps);
+  const cleanup = after.state;
+  const home = result.kind === "ready" ? "ready" as const
+    : result.kind === "not-required" ? "stopped" as const
+    : "recovery-required" as const;
+  const outcome = result.operationRan ? result.value : undefined;
+  const cleanupSucceeded = outcome?.kind === "cleaned" || outcome?.kind === "cleaned-resume-unauthorized";
+
+  if (result.kind === "failed" || result.kind === "deferred") {
+    if (cleanupSucceeded && cleanup === "clean") {
+      return cleanupResult("apply", "recovery-required", "clean", home, "resume-failed", "retry-cleanup", 1,
+        "Plaintext cleanup completed, but Home resume requires retry.");
+    }
+    return cleanupResult("apply", "recovery-required", cleanup, home, "cleanup-incomplete", "retry-cleanup", 1,
+      "Credential cleanup did not complete and the retained Home suspension requires retry.");
+  }
+  if (!result.operationRan) {
+    if (cleanup === "clean") {
+      return cleanupResult("apply", "clean", "clean", home, null, "none", 0,
+        "Legacy plaintext is clean and Home lifecycle recovery completed.");
+    }
+    return cleanupResult("apply", "error", cleanup, home, "cleanup-incomplete", "retry-cleanup", 1,
+      "Home lifecycle recovery completed without running credential cleanup; retry cleanup.");
+  }
+  if (outcome?.kind !== "cleaned" || cleanup !== "clean") {
+    return cleanupResult("apply", "error", cleanup, home, "cleanup-incomplete", "retry-cleanup", 1,
+      "Credential cleanup did not complete; Home returned to its prior service state.");
+  }
+  return cleanupResult("apply", "cleaned", "clean", home, null, "none", 0,
+    home === "ready"
+      ? "Legacy Anthropic plaintext residue was removed and Home resumed ready."
+      : "Legacy Anthropic plaintext residue was removed; Home remains stopped.");
+}
+
+async function failedApplyResult(
+  vault: string,
+  deps: HomeCredentialResidueCleanupDeps,
+): Promise<HomeCredentialResidueCleanupResult> {
+  const [after, lifecycle] = await Promise.all([
+    inspectHomeCredentialResidue(vault, deps),
+    (deps.inspectLifecycle ?? inspectHomeLifecycleSuspension)(vault),
+  ]);
+  const retained = lifecycle.kind === "active" && lifecycle.suspension.purpose === "credential-cleanup";
+  return cleanupResult("apply", retained ? "recovery-required" : "error", after.state,
+    retained ? "recovery-required" : "not-run", "cleanup-incomplete", "retry-cleanup", 1,
+    retained
+      ? "Credential cleanup did not complete and the retained Home suspension requires retry."
+      : "Credential cleanup could not start or complete safely; retry cleanup.");
+}
+
+function cleanupResult(
+  mode: HomeCredentialResidueCleanupResult["mode"],
+  status: HomeCredentialResidueCleanupResult["status"],
+  cleanup: HomeCredentialResidueCleanupResult["cleanup"],
+  home: HomeCredentialResidueCleanupResult["home"],
+  reason: HomeCredentialResidueCleanupResult["reason"],
+  nextAction: HomeCredentialResidueCleanupResult["nextAction"],
+  exitCode: HomeCredentialResidueCleanupResult["exitCode"],
+  message: string,
+): HomeCredentialResidueCleanupResult {
+  return Object.freeze({ schema: HOME_CREDENTIAL_CLEANUP_SCHEMA, mode, status, cleanup, home,
+    reason, nextAction, message, exitCode });
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try { await lstat(path); return true; }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error; }
 }
 
 /** Test seam for the common active/history selector scanner. */

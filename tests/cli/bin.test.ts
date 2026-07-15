@@ -123,6 +123,15 @@ describe("bin/dome process boundary", () => {
     });
   });
 
+  test("guided credential cleanup is wired as a preview-first nested setup command", async () => {
+    const help = await runDome(["home", "setup", "cleanup", "--help"]);
+    expect(help.exitCode).toBe(0);
+    expect(help.stderr).toBe("");
+    expect(help.stdout).toContain("Usage: dome home setup cleanup");
+    expect(help.stdout).toContain("--apply");
+    expect(help.stdout).toContain("--vault <path>");
+  });
+
   test("serve reports heartbeat and exits cleanly on SIGTERM", async () => {
     await expectServeSignalClearsHeartbeat("SIGTERM");
   }, { timeout: 30_000 });

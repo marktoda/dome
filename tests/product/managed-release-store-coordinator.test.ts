@@ -219,6 +219,7 @@ test("production imports, exports, and mentions remain on exact reviewed ownersh
   const sourceRoot = resolve(import.meta.dir, "../../src");
   const expected = new Map<string, string[]>([
     ["withManagedReleaseStoreCoordinator", [
+      "product-host/home-credential-residue.ts",
       "product-host/home-installation.ts",
       "product-host/home-upgrade-history.ts",
       "product-host/home-upgrade-transaction.ts",
