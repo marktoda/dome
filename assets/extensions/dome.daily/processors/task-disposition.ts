@@ -29,14 +29,16 @@ import { DAILY_GENERATED_BLOCKS } from "./daily-types";
 
 /**
  * Find the line (0-indexed in `lines`) whose trailing `^id` block anchor
- * equals `anchor`. Returns the index, or -1 when no line carries it. A
- * mid-line caret does not count — identity is the trailing anchor only.
+ * equals `anchor`, beginning at optional `startAt`. Returns the index, or -1
+ * when no later line carries it. A mid-line caret does not count — identity
+ * is the trailing anchor only.
  */
 export function findAnchorLine(
   lines: ReadonlyArray<string>,
   anchor: string,
+  startAt = 0,
 ): number {
-  for (let i = 0; i < lines.length; i += 1) {
+  for (let i = Math.max(0, startAt); i < lines.length; i += 1) {
     const parsed = parseBlockAnchor(lines[i] ?? "");
     if (parsed !== null && parsed.id === anchor) return i;
   }

@@ -30,6 +30,7 @@ import {
 import { runInit } from "../../src/cli/commands/init";
 import { compilerHostLockPath } from "../../src/engine/host/compiler-host-lock";
 import { withExclusiveFileLock } from "../../src/engine/host/file-lock";
+import { generatedBlockMarkers } from "../../src/core/generated-block";
 import { commitSingleFileOnHead, log, readBlob, resolveRef } from "../../src/git";
 import { performSettle } from "../../src/surface/settle";
 
@@ -169,6 +170,91 @@ function closeBlockSlice(content: string): string {
 // ----- close ----------------------------------------------------------------
 
 describe("performSettle — close", () => {
+  test("settles the origin instead of a source-backed open-loop projection carrying the same anchor", async () => {
+    const vault = await initVault();
+    const originPath = "fixtures/projected-and-origin.md";
+    const markers = generatedBlockMarkers("dome.daily", "open-loops");
+    const projection = OPEN_TASK_LINE.replace(
+      ` ^${ANCHOR}`,
+      ` (from [[fixtures/projected-and-origin]]) ^${ANCHOR}`,
+    );
+    const projectedThenOrigin = [
+      "# Projected surface",
+      "",
+      markers.start,
+      projection,
+      markers.end,
+      "",
+      "# Human origin",
+      "",
+      OPEN_TASK_LINE,
+      "",
+    ].join("\n");
+
+    // A projection before its origin in one document makes the first-match bug
+    // deterministic instead of depending on filesystem traversal order.
+    await commitFile(vault, originPath, projectedThenOrigin);
+
+    const result = await performSettle(vault, { blockId: ANCHOR, disposition: "close" }, clock);
+    expect(result.status).toBe("settled");
+    const settled = await readAt(vault, originPath);
+    expect(settled).toContain(`- [x] #task ship the widget 📅 2026-06-01 ^${ANCHOR}`);
+    expect(settled).toContain(projection);
+    expect(await readAt(vault, TODAY_DAILY)).toContain(
+      `- ship the widget 📅 2026-06-01 ([[fixtures/projected-and-origin#^${ANCHOR}|from]])`,
+    );
+  });
+
+  test("still settles tasks originating inside the generated captured block", async () => {
+    const vault = await initVault();
+    const markers = generatedBlockMarkers("dome.daily", "captured");
+    await commitFile(vault, TODAY_DAILY, [
+      dailyFile(),
+      markers.start,
+      OPEN_TASK_LINE,
+      markers.end,
+      "",
+    ].join("\n"));
+
+    const result = await performSettle(vault, { blockId: ANCHOR, disposition: "close" }, clock);
+    expect(result.status).toBe("settled");
+    const daily = await readAt(vault, TODAY_DAILY);
+    expect(daily).toContain(`- [x] #task ship the widget 📅 2026-06-01 ^${ANCHOR}`);
+    expect(daily).toContain(`- ship the widget 📅 2026-06-01 ([[wiki/dailies/2026-06-15#^${ANCHOR}|from]])`);
+  });
+
+  test("keeps an already-settled origin idempotent when an earlier generated copy is still open", async () => {
+    const vault = await initVault();
+    const originPath = "fixtures/projected-and-settled-origin.md";
+    const markers = generatedBlockMarkers("dome.daily", "open-loops");
+    const projection = OPEN_TASK_LINE.replace(
+      ` ^${ANCHOR}`,
+      ` (from [[fixtures/projected-and-settled-origin]]) ^${ANCHOR}`,
+    );
+    const settledOrigin = OPEN_TASK_LINE.replace("- [ ]", "- [x]");
+    await commitFile(vault, originPath, [
+      markers.start,
+      projection,
+      markers.end,
+      "",
+      settledOrigin,
+      "",
+    ].join("\n"));
+    const before = await headSha(vault);
+
+    const result = await performSettle(
+      vault,
+      { blockId: ANCHOR, disposition: "close" },
+      clock,
+    );
+
+    expect(result).toEqual({ status: "settled", blockId: ANCHOR, disposition: "close" });
+    expect(await headSha(vault)).toBe(before);
+    const unchanged = await readAt(vault, originPath);
+    expect(unchanged).toContain(projection);
+    expect(unchanged).toContain(settledOrigin);
+  });
+
   test("checks the box and appends a Done-today bullet in one commit", async () => {
     const vault = await initVault();
     await commitFile(vault, ORIGIN_PATH, originFile(OPEN_TASK_LINE));
@@ -378,5 +464,27 @@ describe("performSettle — defer without a date", () => {
 
     expect(result.status).toBe("invalid");
     expect(await headSha(vault)).toBe(before);
+  });
+});
+
+describe("performSettle — duplicate canonical anchor", () => {
+  test("rejects duplicate canonical anchors without landing a commit", async () => {
+    const vault = await initVault();
+    await commitFile(vault, "fixtures/a-origin.md", originFile(OPEN_TASK_LINE));
+    await commitFile(vault, "fixtures/b-origin.md", originFile(OPEN_TASK_LINE));
+    const before = await headSha(vault);
+
+    const result = await performSettle(
+      vault,
+      { blockId: ANCHOR, disposition: "close" },
+      clock,
+    );
+
+    expect(result.status).toBe("invalid");
+    if (result.status !== "invalid") throw new Error("unreachable");
+    expect(result.message).toContain("multiple task lines carry anchor");
+    expect(await headSha(vault)).toBe(before);
+    expect(await readAt(vault, "fixtures/a-origin.md")).toContain(OPEN_TASK_LINE);
+    expect(await readAt(vault, "fixtures/b-origin.md")).toContain(OPEN_TASK_LINE);
   });
 });
