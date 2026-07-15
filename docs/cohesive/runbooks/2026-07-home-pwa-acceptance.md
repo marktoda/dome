@@ -23,6 +23,10 @@ each result. A skipped row is not a pass.
 2. Install or update Google Chrome through its normal system distribution.
    Dome intentionally does not download or ship a browser.
 3. Run `bun run build:home-artifact -- --output <new-absent-directory>`.
+   The frozen 0.1 predecessor may cross its historical ten-second readiness
+   window under build load; the gate permits only its exact installed/loaded
+   timeout envelope, then independently requires bounded, identity-bound
+   readiness before continuing.
    Candidate publication means the existing installed N-1→N scenarios passed,
    including UI pairing, validated Connection readiness, controlled offline
    reload, uncached `/readyz`, local capture/export, revoke, auth repair, and

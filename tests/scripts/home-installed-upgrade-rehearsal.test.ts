@@ -6,7 +6,10 @@ import { join } from "node:path";
 import {
   assertBoundedArchiveStatForTests,
   assertInstalledBackupRestoreCanaryForTests,
+  assertPredecessorReadyObserverForTests,
+  awaitPredecessorInstallForTests,
   canonicalizeInstalledScenarioRootForTests,
+  classifyPredecessorInstallForTests,
   classifyInstalledHomeDrainForTests,
   exerciseAbortableInstalledCommandForTests,
   exerciseInstalledUpgradeOrchestrationForTests,
@@ -31,6 +34,51 @@ const INPUT: InstalledHomeUpgradeRehearsalInput = Object.freeze({
   candidateArchive: "/synthetic/candidate.tar.gz",
   frozenFixtureRoot: "/synthetic/fixture",
 });
+
+const PREDECESSOR_EXPECTED = Object.freeze({
+  vault: "/scenario/vault",
+  label: "com.dome.home.vault-12345678",
+  plist: "/scenario/home/Library/LaunchAgents/com.dome.home.vault-12345678.plist",
+  log: "/scenario/vault/.dome/state/home.log",
+  program: "/scenario/releases/911d/app/bin/dome",
+  installation: "/scenario/installations/vault-12345678/installation.json",
+  release: "/scenario/releases/911d",
+  artifactId: "911d5219bd5888f8a45fbfb0bbcf6da57b54e3a0ffcf8077bd2d843327747096",
+  productVersion: "0.1.0",
+});
+
+function predecessorInstallDocument(kind: "ready" | "late-readiness"): Record<string, unknown> {
+  return {
+    schema: "dome.home.lifecycle/v1",
+    action: "install",
+    ...PREDECESSOR_EXPECTED,
+    status: kind === "ready" ? "installed" : "error",
+    installed: true,
+    loaded: true,
+    ready: kind === "ready",
+    exitCode: kind === "ready" ? 0 : 1,
+    replaced: false,
+    releasePublished: true,
+    ...(kind === "ready" ? {} : {
+      error: "Dome Home did not become ready at http://127.0.0.1:3663/pair/status",
+    }),
+  };
+}
+
+function predecessorObserverDocument(): Record<string, unknown> {
+  return {
+    schema: "dome.home.lifecycle/v1",
+    action: "status",
+    ...PREDECESSOR_EXPECTED,
+    status: "ready",
+    installed: true,
+    loaded: true,
+    ready: true,
+    exitCode: 0,
+    lifecycle: { state: "inactive" },
+    upgrade: { state: "inactive", candidate: null, operationId: null, outcome: null, nextAction: "none" },
+  };
+}
 
 describe("installed Home upgrade portable orchestration (explicitly non-evidence)", () => {
   test("keeps the installed Chromium journey ordered, cleanup-closed, and non-evidence", async () => {
@@ -362,6 +410,109 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       cwd: "/scenario/vault",
     });
     expect(invocation.command).not.toContain("--vault");
+  });
+
+  test("classifies only exact immediate and immutable-N-1 late install outcomes", () => {
+    expect(classifyPredecessorInstallForTests(
+      { exitCode: 0, document: predecessorInstallDocument("ready") },
+      PREDECESSOR_EXPECTED,
+    )).toBe("ready");
+    expect(classifyPredecessorInstallForTests(
+      { exitCode: 1, document: predecessorInstallDocument("late-readiness") },
+      PREDECESSOR_EXPECTED,
+    )).toBe("late-readiness");
+  });
+
+  test("rejects mismatched process/document exits, identity, paths, and document shape", () => {
+    const ready = predecessorInstallDocument("ready");
+    const late = predecessorInstallDocument("late-readiness");
+    for (const outcome of [
+      { exitCode: 1, document: ready },
+      { exitCode: 0, document: late },
+      { exitCode: 1, document: { ...late, exitCode: 0 } },
+      { exitCode: 1, document: { ...late, artifactId: "a".repeat(64) } },
+      { exitCode: 1, document: { ...late, plist: "/other/LaunchAgent.plist" } },
+      { exitCode: 1, document: { ...late, unexpected: true } },
+      { exitCode: 1, document: Object.fromEntries(Object.entries(late).filter(([key]) => key !== "program")) },
+    ]) {
+      expect(() => classifyPredecessorInstallForTests(outcome, PREDECESSOR_EXPECTED))
+        .toThrow("unsupported lifecycle outcome");
+    }
+    const wrongVersion = { ...PREDECESSOR_EXPECTED, productVersion: "0.1.1" };
+    expect(() => classifyPredecessorInstallForTests(
+      { exitCode: 1, document: { ...late, productVersion: "0.1.1" } },
+      wrongVersion,
+    )).toThrow("unsupported lifecycle outcome");
+  });
+
+  test("skips observation after exact normal readiness", async () => {
+    let observed = false;
+    await awaitPredecessorInstallForTests({
+      classification: "ready",
+      observe: async () => { observed = true; return true; },
+    });
+    expect(observed).toBeFalse();
+  });
+
+  test("bounds late readiness, retries nonready, and closes its abort signal", async () => {
+    let attempts = 0;
+    let observedSignal: AbortSignal | undefined;
+    await awaitPredecessorInstallForTests({
+      classification: "late-readiness",
+      timeoutMs: 1_000,
+      observe: async (signal) => {
+        attempts++;
+        observedSignal = signal;
+        return attempts === 2;
+      },
+    });
+    expect(attempts).toBe(2);
+    expect(observedSignal?.aborted).toBeTrue();
+
+    await expect(awaitPredecessorInstallForTests({
+      classification: "late-readiness",
+      timeoutMs: 10,
+      observe: async () => false,
+    })).rejects.toThrow("did not reach bounded late readiness");
+    await expect(awaitPredecessorInstallForTests({
+      classification: "late-readiness",
+      timeoutMs: 10,
+      observe: async () => await new Promise<boolean>(() => {}),
+    })).rejects.toThrow("did not reach bounded late readiness");
+    await expect(awaitPredecessorInstallForTests({
+      classification: "late-readiness",
+      timeoutMs: 30_001,
+      observe: async () => true,
+    })).rejects.toThrow("timeout is invalid");
+  });
+
+  test("requires the current observer to bind exact predecessor terminal truth", async () => {
+    expect(() => assertPredecessorReadyObserverForTests(
+      { exitCode: 0, document: predecessorObserverDocument() },
+      PREDECESSOR_EXPECTED,
+    )).not.toThrow();
+    for (const outcome of [
+      { exitCode: 1, document: predecessorObserverDocument() },
+      { exitCode: 0, document: { ...predecessorObserverDocument(), artifactId: "a".repeat(64) } },
+      { exitCode: 0, document: { ...predecessorObserverDocument(), label: "com.dome.home.wrong" } },
+      { exitCode: 0, document: { ...predecessorObserverDocument(), ready: false } },
+      { exitCode: 0, document: { ...predecessorObserverDocument(), lifecycle: { state: "active" } } },
+      { exitCode: 0, document: { ...predecessorObserverDocument(), upgrade: { state: "active" } } },
+    ]) {
+      expect(() => assertPredecessorReadyObserverForTests(outcome, PREDECESSOR_EXPECTED)).toThrow();
+    }
+
+    await expect(awaitPredecessorInstallForTests({
+      classification: "late-readiness",
+      timeoutMs: 1_000,
+      observe: async () => {
+        assertPredecessorReadyObserverForTests(
+          { exitCode: 0, document: { ...predecessorObserverDocument(), productVersion: "wrong" } },
+          PREDECESSOR_EXPECTED,
+        );
+        return true;
+      },
+    })).rejects.toThrow("expected productVersion");
   });
 
   test("reads the paired identity from the nested device response", () => {
