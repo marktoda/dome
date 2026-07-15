@@ -624,7 +624,7 @@ async function assertActivitySource(page: Page, canary: InstalledFunctionalCanar
   await dialog.getByText(`Revision ${canary.commit.slice(0, 8)}`, { exact: true }).waitFor({ timeout: WAIT_MS });
   const source = await dialog.locator("pre").textContent();
   if (source === null || !source.includes(canary.sourceMarker) ||
-    !source.includes(`- [ ] ${canary.taskText}`) || !source.includes(`^${canary.blockId}`)) {
+    !source.includes(`- [ ] #task ${canary.taskText}`) || !source.includes(`^${canary.blockId}`)) {
     throw new Error("installed PWA source viewer did not return the exact canary content");
   }
   await page.keyboard.press("Escape");
