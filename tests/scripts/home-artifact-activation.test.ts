@@ -259,6 +259,13 @@ describe("Dome Home 0.3 activation", () => {
     );
     expect(readySuccess).toContain("await packagedBackup(context, prepared.candidateRoot)");
     expect(readySuccess).toContain("await runHomePwaChromiumAcceptance(");
+    expect(readySuccess).toContain("await prepareInstalledFunctionalClosure(functionalClosure)");
+    expect(readySuccess.indexOf("await prepareInstalledFunctionalClosure(functionalClosure)"))
+      .toBeLessThan(readySuccess.indexOf("await runHomePwaChromiumAcceptance("));
+    expect(readySuccess).toContain("assertTaskSettlement: async (commit, signal)");
+    expect(readySuccess).toContain("assertInstalledFunctionalClosure(functionalClosure, functionalCanary, commit, signal)");
+    expect(installedSource).toContain("readFunctionalHomeJson(response, signal)");
+    expect(installedSource).toContain('signal.aborted) throw new Error("functional acceptance Home read exceeded its bound"');
     expect(packagedBackup).toContain('"backup", "create"');
     expect(packagedBackup).toContain('"backup", "verify"');
     expect(packagedBackup).toContain('"backup", "restore"');
@@ -283,6 +290,27 @@ describe("Dome Home 0.3 activation", () => {
     expect(chromiumSource).not.toContain("recordVideo:");
     expect(chromiumSource).not.toContain("storageState:");
     expect(chromiumSource).not.toContain("screenshot(");
+    expect(installedSource).toContain('"--grant", "read,capture,resolve"');
+    expect(chromiumSource).toContain('["activity-source", operations.assertActivitySource]');
+    expect(chromiumSource).toContain('["task-settlement", operations.assertTaskSettlement]');
+    const chromiumRunner = sourceFunction(
+      chromiumSource,
+      "export async function runHomePwaChromiumAcceptance",
+      "const RESPONSIVE_VIEWPORTS",
+    );
+    expect(chromiumRunner).toContain("await assertActivitySource(requirePage(), input.expected.functionalCanary)");
+    expect(chromiumRunner).toContain("await settleFunctionalTask(activePage, input.expected.functionalCanary)");
+    expect(chromiumSource).toContain("async function assertActivitySource(");
+    expect(chromiumSource).toContain("async function settleFunctionalTask(");
+
+    const functionalSource = await readFile(
+      join(import.meta.dir, "..", "..", "scripts", "home-installed-functional-closure.ts"),
+      "utf8",
+    );
+    expect(functionalSource).toContain("export async function prepareInstalledFunctionalClosure(");
+    expect(functionalSource).toContain("export async function assertInstalledFunctionalClosure(");
+    expect(functionalSource).toContain('gitOk(boundary, ["add", "--", rendered.path]');
+    expect(functionalSource).toContain('"commit", "-m", "add installed functional canary", "--", rendered.path');
   });
 
   test.each(["--skip-installed-gate", "--fixture", "--version"])(

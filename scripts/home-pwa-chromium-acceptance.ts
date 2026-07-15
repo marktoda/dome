@@ -1,4 +1,5 @@
 import { chromium, type Browser, type BrowserContext, type Download, type Page } from "playwright-core";
+import type { InstalledFunctionalCanary } from "./home-installed-functional-closure";
 
 const DEVICE_NAME = "Dome installed Chromium acceptance";
 const REPAIRED_DEVICE_NAME = "Dome installed Chromium acceptance repaired";
@@ -14,10 +15,12 @@ export type HomePwaChromiumAcceptanceInput = Readonly<{
   expected: Readonly<{
     productVersion: string;
     vaultName: string;
+    functionalCanary: InstalledFunctionalCanary;
   }>;
   mintPairingCode: (deviceName: string, signal: AbortSignal) => Promise<string>;
   revokeDevice: (deviceName: string, signal: AbortSignal) => Promise<void>;
   assertLogicalCapture: (text: string, captureId: string, signal: AbortSignal) => Promise<void>;
+  assertTaskSettlement: (commit: string, signal: AbortSignal) => Promise<void>;
 }>;
 
 type AcceptancePhase =
@@ -26,6 +29,8 @@ type AcceptancePhase =
   | "readiness"
   | "adaptive-accessibility"
   | "service-worker"
+  | "activity-source"
+  | "task-settlement"
   | "offline-shell"
   | "local-capture"
   | "revoke"
@@ -39,6 +44,8 @@ type AcceptanceOperations = Readonly<{
   assertReadiness(signal: AbortSignal): Promise<void>;
   assertAdaptiveAccessibility(signal: AbortSignal): Promise<void>;
   controlServiceWorker(signal: AbortSignal): Promise<void>;
+  assertActivitySource(signal: AbortSignal): Promise<void>;
+  assertTaskSettlement(signal: AbortSignal): Promise<void>;
   assertOfflineShell(signal: AbortSignal): Promise<void>;
   saveLocalCapture(signal: AbortSignal): Promise<void>;
   revoke(signal: AbortSignal): Promise<void>;
@@ -171,6 +178,22 @@ export async function runHomePwaChromiumAcceptance(
         { timeout: WAIT_MS },
       );
       await assertReadyConnection(activePage, input.expected, DEVICE_NAME);
+      signal.throwIfAborted();
+    },
+    assertActivitySource: async (signal) => {
+      await assertActivitySource(requirePage(), input.expected.functionalCanary);
+      signal.throwIfAborted();
+    },
+    assertTaskSettlement: async (signal) => {
+      const activePage = requirePage();
+      const settlementCommit = await settleFunctionalTask(activePage, input.expected.functionalCanary);
+      signal.throwIfAborted();
+      await input.assertTaskSettlement(settlementCommit, signal);
+      signal.throwIfAborted();
+      await activePage.reload({ waitUntil: "domcontentloaded", timeout: WAIT_MS });
+      await assertReadyConnection(activePage, input.expected, DEVICE_NAME);
+      await activePage.getByRole("checkbox", { name: input.expected.functionalCanary.taskText })
+        .waitFor({ state: "detached", timeout: WAIT_MS });
       signal.throwIfAborted();
     },
     assertOfflineShell: async (signal) => {
@@ -402,6 +425,8 @@ async function runAcceptanceSequence(
     ["readiness", operations.assertReadiness],
     ["adaptive-accessibility", operations.assertAdaptiveAccessibility],
     ["service-worker", operations.controlServiceWorker],
+    ["activity-source", operations.assertActivitySource],
+    ["task-settlement", operations.assertTaskSettlement],
     ["offline-shell", operations.assertOfflineShell],
     ["local-capture", operations.saveLocalCapture],
     ["revoke", operations.revoke],
@@ -578,7 +603,59 @@ async function assertReadyConnection(
   await details.getByText(expected.vaultName, { exact: true }).waitFor({ timeout: WAIT_MS });
   await details.getByText(deviceName, { exact: true }).waitFor({ timeout: WAIT_MS });
   await details.getByText(expected.productVersion, { exact: true }).waitFor({ timeout: WAIT_MS });
-  await details.getByText("capture, read", { exact: true }).waitFor({ timeout: WAIT_MS });
+  await details.getByText("capture, read, resolve", { exact: true }).waitFor({ timeout: WAIT_MS });
+}
+
+async function assertActivitySource(page: Page, canary: InstalledFunctionalCanary): Promise<void> {
+  const activity = page.locator("details.recents-wrap");
+  if (await activity.getAttribute("open") === null) await activity.locator("summary").click();
+  const row = activity.getByRole("button").filter({ hasText: canary.title });
+  if (await row.count() !== 1) throw new Error("installed PWA functional Activity row is not unique");
+  await row.click();
+  const dialog = page.getByRole("dialog", { name: canary.path });
+  await dialog.waitFor({ timeout: WAIT_MS });
+  await dialog.getByText(`Revision ${canary.commit.slice(0, 8)}`, { exact: true }).waitFor({ timeout: WAIT_MS });
+  const source = await dialog.locator("pre").textContent();
+  if (source === null || !source.includes(canary.sourceMarker) ||
+    !source.includes(`- [ ] ${canary.taskText}`) || !source.includes(`^${canary.blockId}`)) {
+    throw new Error("installed PWA source viewer did not return the exact canary content");
+  }
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "hidden", timeout: WAIT_MS });
+  if (!await row.evaluate("(element) => document.activeElement === element")) {
+    throw new Error("installed PWA source viewer did not restore Activity focus");
+  }
+}
+
+async function settleFunctionalTask(page: Page, canary: InstalledFunctionalCanary): Promise<string> {
+  const checkbox = page.getByRole("checkbox", { name: canary.taskText });
+  await checkbox.waitFor({ timeout: WAIT_MS });
+  if (!await checkbox.isEnabled() || await checkbox.isChecked()) {
+    throw new Error("installed PWA functional task was not initially actionable");
+  }
+  const responsePending = page.waitForResponse((response) => {
+    const request = response.request();
+    return request.method() === "POST" && new URL(response.url()).pathname === "/settle";
+  }, { timeout: WAIT_MS });
+  const [response] = await Promise.all([responsePending, checkbox.click()]);
+  if (response.status() !== 200) throw new Error("installed PWA functional settlement was not accepted");
+  return parseHomePwaSettlementReceiptForTests(await response.json(), canary.blockId);
+}
+
+/** Strict portable parser for the one installed functional settlement receipt. */
+export function parseHomePwaSettlementReceiptForTests(body: unknown, expectedBlockId: string): string {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error("installed PWA functional settlement receipt is invalid");
+  }
+  const receipt = body as Record<string, unknown>;
+  if (JSON.stringify(Object.keys(receipt).sort()) !==
+      JSON.stringify(["block_id", "commit", "disposition", "schema", "status"].sort()) ||
+    receipt["schema"] !== "dome.settle/v1" || receipt["status"] !== "settled" ||
+    expectedBlockId.length === 0 || receipt["block_id"] !== expectedBlockId || receipt["disposition"] !== "close" ||
+    typeof receipt["commit"] !== "string" || !/^[0-9a-f]{40}$/.test(receipt["commit"])) {
+    throw new Error("installed PWA functional settlement receipt is not exact");
+  }
+  return receipt["commit"];
 }
 
 function installedLoopbackUrl(value: string): URL {

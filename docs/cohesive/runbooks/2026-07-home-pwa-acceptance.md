@@ -80,16 +80,23 @@ the normal App refresh path without adding an App-level acknowledgement; its
 exact installed behavior remains owner evidence below.
 
 These portable checks do not prove the exact installed Activity/settlement
-journey. P5.5b adds installed Chrome viewport/target/focus/reduced-motion
-evidence, but not the real-device owner-hardware evidence below.
+journey. P5.5b adds the installed Chrome adaptive gate. P5.5c implements the
+artifact-bound functional journey: one ordinary human Git canary becomes
+adopted Activity and due-today truth; Chrome opens its exact commit and bytes,
+restores focus on Escape, clicks completion once, binds the exact successful
+settlement receipt, and reloads after a bounded host proof of that adopted
+commit and its Done-today record. Portable component tests own the transient
+pending/success presentation because refresh may remove the installed row.
+The Chrome grant is exactly `read,capture,resolve`; neither runner uses an
+engine write API. Portable ordering and canary tests remain explicitly
+non-evidence. Fresh exact evidence requires running the artifact builder.
 
 ## Current nonclaims
 
 The P5.4 manifest/icon contract is checked in and artifact-gated. P5.5a has
-portable contract-test evidence only; its exact installed Activity/settlement
-journey remains owner evidence. P5.5b implements the artifact-bound responsive
-gate; fresh exact installed Chrome evidence requires running the artifact
-builder above. These checkpoints do not claim Chrome install UI,
+portable contract-test evidence. P5.5b and P5.5c implement artifact-bound
+adaptive and functional Chrome gates; fresh exact installed Chrome evidence
+requires running the artifact builder above. These checkpoints do not claim Chrome install UI,
 real-iPhone portrait/landscape/notch or software-keyboard behavior, Dynamic
 Type/200%, VoiceOver, Safari touch/microphone flows, visual regression, or an
 automated waiting-worker N→N+1 replacement. Signed execution still requires

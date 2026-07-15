@@ -866,7 +866,8 @@ Today refresh; failure remains visible as an alert with an explicit Retry that
 cannot issue a duplicate in-flight settlement.
 
 P5.5a evidence is limited to surface, HTTP, and component tests; the exact
-installed Activity and settlement journey remains owner evidence. P5.5a also
+artifact-bound installed Activity and settlement journey continues in P5.5c.
+P5.5a also
 does not claim adaptive layout completion, global focus-order or
 44px-target auditing, screen-reader acceptance, safe-area or dynamic-type
 acceptance, visual regression coverage, or real-device iOS evidence. Those
@@ -887,6 +888,21 @@ artifact-bound gate. It does not prove real-iPhone portrait, landscape, notch,
 software-keyboard, Dynamic Type/200%, VoiceOver, or Safari touch/microphone
 behavior. Those remain owner-hardware gates. A waiting-worker N→N+1
 replacement journey also remains separate.
+
+The bounded P5.5c checkpoint extends the same installed `ready-success`
+journey through an end-to-end functional closure. The upgraded Home adopts one
+ordinary due-today anchored canary commit. A narrowly granted Chrome device
+opens the Activity row at that exact human revision, verifies its source,
+closes with focus restoration, then settles the Today task with one click and
+an exact successful response receipt. The installed gate binds that receipt rather
+than depending on either transient paint. The host independently proves that exact human settlement commit,
+closed source, Done-today record, and daemon adoption exactly once; Chrome
+reloads to prove the task is gone before continuing offline/auth/replay.
+
+The code and portable non-evidence fences are checked in; fresh artifact-bound
+evidence still requires executing the rehearsal. P5.5c does not widen the
+remaining real-device, assistive-technology, visual, update-replacement,
+signed-distribution, or clean-consumer claims above.
 
 Exit journey: installed PWA boots offline, preserves/exports/replays text
 capture, recovers from expired auth and premature SSE EOF, passes keyboard and

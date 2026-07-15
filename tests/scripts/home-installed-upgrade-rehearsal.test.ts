@@ -19,9 +19,11 @@ import {
   type InstalledHomeUpgradeRehearsalInput,
   type InstalledHomeUpgradeScenario,
 } from "../../scripts/home-installed-upgrade-rehearsal";
+import { renderInstalledFunctionalCanary } from "../../scripts/home-installed-functional-closure";
 import {
   exerciseHomePwaChromiumAcceptanceForTests,
   parseHomePwaCaptureExportForTests,
+  parseHomePwaSettlementReceiptForTests,
 } from "../../scripts/home-pwa-chromium-acceptance";
 
 const INPUT: InstalledHomeUpgradeRehearsalInput = Object.freeze({
@@ -40,6 +42,8 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       assertReadiness: operation("readiness"),
       assertAdaptiveAccessibility: operation("adaptive-accessibility"),
       controlServiceWorker: operation("service-worker"),
+      assertActivitySource: operation("activity-source"),
+      assertTaskSettlement: operation("task-settlement"),
       assertOfflineShell: operation("offline-shell"),
       saveLocalCapture: operation("local-capture"),
       revoke: operation("revoke"),
@@ -50,7 +54,7 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     });
     expect(result).toEqual({ evidence: false });
     expect(events).toEqual([
-      "launch", "pair", "readiness", "adaptive-accessibility", "service-worker", "offline-shell",
+      "launch", "pair", "readiness", "adaptive-accessibility", "service-worker", "activity-source", "task-settlement", "offline-shell",
       "local-capture", "revoke", "auth-repair", "replay", "cleanup",
     ]);
 
@@ -61,19 +65,21 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       assertReadiness: operation("readiness"),
       assertAdaptiveAccessibility: operation("adaptive-accessibility"),
       controlServiceWorker: operation("service-worker"),
-      assertOfflineShell: operation("offline-shell"),
-      saveLocalCapture: async () => {
-        events.push("local-capture");
-        throw new Error("dome_csrf.secret /private/vault");
+      assertActivitySource: async () => {
+        events.push("activity-source");
+        throw new Error("private source path");
       },
+      assertTaskSettlement: operation("task-settlement"),
+      assertOfflineShell: operation("offline-shell"),
+      saveLocalCapture: operation("local-capture"),
       revoke: operation("revoke"),
       repairAuthentication: operation("auth-repair"),
       assertReplay: operation("replay"),
       emergencyClose: operation("emergency-close"),
       close: operation("cleanup"),
-    })).rejects.toThrow("installed Home Chromium acceptance failed at local-capture");
+    })).rejects.toThrow("installed Home Chromium acceptance failed at activity-source");
     expect(events).toEqual([
-      "launch", "pair", "readiness", "adaptive-accessibility", "service-worker", "offline-shell", "local-capture", "cleanup",
+      "launch", "pair", "readiness", "adaptive-accessibility", "service-worker", "activity-source", "cleanup",
     ]);
 
     events.length = 0;
@@ -83,6 +89,8 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       assertReadiness: operation("readiness"),
       assertAdaptiveAccessibility: operation("adaptive-accessibility"),
       controlServiceWorker: operation("service-worker"),
+      assertActivitySource: operation("activity-source"),
+      assertTaskSettlement: operation("task-settlement"),
       assertOfflineShell: operation("offline-shell"),
       saveLocalCapture: operation("local-capture"),
       revoke: operation("revoke"),
@@ -102,6 +110,8 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       assertReadiness: async () => { events.push("readiness"); throw new Error("secret readiness"); },
       assertAdaptiveAccessibility: operation("adaptive-accessibility"),
       controlServiceWorker: operation("service-worker"),
+      assertActivitySource: operation("activity-source"),
+      assertTaskSettlement: operation("task-settlement"),
       assertOfflineShell: operation("offline-shell"),
       saveLocalCapture: operation("local-capture"),
       revoke: operation("revoke"),
@@ -127,6 +137,8 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       assertReadiness: operation("readiness"),
       assertAdaptiveAccessibility: operation("adaptive-accessibility"),
       controlServiceWorker: operation("service-worker"),
+      assertActivitySource: operation("activity-source"),
+      assertTaskSettlement: operation("task-settlement"),
       assertOfflineShell: operation("offline-shell"),
       saveLocalCapture: operation("local-capture"),
       revoke: operation("revoke"),
@@ -169,6 +181,50 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       .toThrow("fields are invalid");
     expect(() => parseHomePwaCaptureExportForTests(Buffer.alloc(64 * 1024 + 1), text))
       .toThrow("size is invalid");
+  });
+
+  test("renders one deterministic due-today functional canary with an ordinary stable anchor", () => {
+    const canary = renderInstalledFunctionalCanary("2026-07-15");
+    expect(canary).toEqual({
+      path: "notes/installed-functional-canary.md",
+      title: "Installed functional closure canary",
+      taskText: "Close the installed functional closure canary",
+      blockId: "tinstalledfunctional",
+      sourceMarker: "Dome installed functional source marker",
+      content: [
+        "# Installed functional closure canary",
+        "",
+        "Dome installed functional source marker",
+        "",
+        "- [ ] Close the installed functional closure canary 📅 2026-07-15 ^tinstalledfunctional",
+        "",
+      ].join("\n"),
+    });
+    expect(() => renderInstalledFunctionalCanary("July 15"))
+      .toThrow("functional canary date is invalid");
+  });
+
+  test("strictly binds the installed settlement receipt to one close commit", () => {
+    const commit = "a".repeat(40);
+    const blockId = "tinstalledfunctional";
+    const receipt = {
+      schema: "dome.settle/v1",
+      status: "settled",
+      block_id: blockId,
+      disposition: "close",
+      commit,
+    };
+    expect(parseHomePwaSettlementReceiptForTests(receipt, blockId)).toBe(commit);
+    for (const hostile of [
+      { ...receipt, block_id: "tother" },
+      { ...receipt, disposition: "keep" },
+      { ...receipt, commit: "not-a-commit" },
+      { schema: receipt.schema, status: receipt.status, block_id: blockId, disposition: "close" },
+      { ...receipt, extra: true },
+    ]) {
+      expect(() => parseHomePwaSettlementReceiptForTests(hostile, blockId))
+        .toThrow("settlement receipt is not exact");
+    }
   });
 
   test("refuses non-files, oversize input, and predecessor size drift before archive reads", () => {
