@@ -86,6 +86,53 @@ test("dome home refuses to start without built assets", async () => {
   expect(await runHome({ vault: "/tmp/unused", staticDir: missing })).toBe(64);
 });
 
+test("dome home passes the resolved provider and readiness through to Product Host", async () => {
+  console.error = () => {};
+  const staticDir = mkdtempSync(join(tmpdir(), "dome-home-provider-pwa-"));
+  roots.push(staticDir);
+  await writeFile(join(staticDir, "index.html"), "<!doctype html>", "utf8");
+  const textProvider = async () => ({ text: "ok" });
+  const stepProvider = async () => ({ text: "ok" });
+  const modelStateResolver = async () => "ready" as const;
+  let received: Record<string, unknown> | undefined;
+  expect(await runHome({ vault: "/vault", staticDir, signal: AbortSignal.abort() }, {
+    resolveLaunch: async () => ({ kind: "normal", artifact: { id: "a".repeat(64), version: "1.0.0" } }),
+    resolveModel: async () => ({
+      configuration: "shipped-anthropic", credential: "present", modelState: "ready", probe: null, detail: null,
+      modelStateResolver, modelProvider: textProvider, modelStepProvider: stepProvider,
+    }),
+    startHost: async (options) => {
+      received = options as unknown as Record<string, unknown>;
+      return { ok: true, value: { url: "http://127.0.0.1:3663", readiness: async () => { throw new Error("unused"); }, close: async () => {} } };
+    },
+  })).toBe(0);
+  expect(received).toMatchObject({
+    modelState: "ready", resolveModelState: modelStateResolver,
+    modelProvider: textProvider, modelStepProvider: stepProvider,
+  });
+});
+
+test("upgrade probation does not read config, Keychain, or provider state", async () => {
+  console.error = () => {};
+  const staticDir = mkdtempSync(join(tmpdir(), "dome-home-probation-provider-pwa-"));
+  roots.push(staticDir);
+  await writeFile(join(staticDir, "index.html"), "<!doctype html>", "utf8");
+  let modelResolutions = 0;
+  let received: Record<string, unknown> | undefined;
+  expect(await runHome({ vault: "/vault", staticDir, upgradeProbation: true, signal: AbortSignal.abort() }, {
+    resolveLaunch: async () => ({ kind: "upgrade-probation", artifact: { id: "b".repeat(64), version: "1.0.0" } }),
+    resolveModel: async () => { modelResolutions += 1; throw new Error("must not run"); },
+    startHost: async (options) => {
+      received = options as unknown as Record<string, unknown>;
+      return { ok: true, value: { url: "http://127.0.0.1:3663", readiness: async () => { throw new Error("unused"); }, close: async () => {} } };
+    },
+  })).toBe(0);
+  expect(modelResolutions).toBe(0);
+  expect(received).not.toHaveProperty("modelProvider");
+  expect(received).not.toHaveProperty("modelState");
+  expect(received).not.toHaveProperty("resolveModelState");
+});
+
 test("dome home rejects an insecure non-loopback external origin", async () => {
   console.log = () => {};
   console.error = () => {};

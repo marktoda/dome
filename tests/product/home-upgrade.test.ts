@@ -63,6 +63,22 @@ describe("Home upgrade intent", () => {
     expect(JSON.stringify(result)).not.toContain('"phase"');
   });
 
+  test("advances a legacy installed 0.2.0 selection to the helper-capable 0.3.0 candidate", async () => {
+    const candidate = { ...manifest(), product: { name: "Dome Home" as const, version: "0.3.0" } };
+    const committed = transaction("committed", TX, REQUESTED, "0.3.0");
+    const f = intentFixture({
+      selected: installation(OLD, "0.2.0"),
+      manifest: candidate,
+      cutoverResult: cutoverResult(committed),
+    });
+    expect(await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, f.deps)).toMatchObject({
+      status: "upgraded", exitCode: 0,
+      requestedArtifact: { artifactId: REQUESTED, productVersion: "0.3.0" },
+      selectedArtifact: { artifactId: REQUESTED, productVersion: "0.3.0" },
+    });
+    expect(f.calls).toContain("cutover");
+  });
+
   test("advises manual cleanup only for healthy terminal results returned after retirement", async () => {
     const fresh = intentFixture();
     const upgraded = await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, fresh.deps);
@@ -260,6 +276,17 @@ describe("Home upgrade intent", () => {
       expect(f.calls).not.toContain("uuid");
       expect(f.calls).not.toContain("cutover");
     }
+  });
+
+  test("legacy three-binary artifacts remain readable but are not eligible as new guided-setup candidates", async () => {
+    const legacy = { ...manifest(), homeCredentials: undefined } as unknown as HomeArtifactManifest;
+    const f = intentFixture({ manifest: legacy });
+    expect(await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, f.deps)).toMatchObject({
+      status: "error", exitCode: 64, reason: "preflight-failed",
+      message: "invoking artifact is not upgrade-capable",
+    });
+    expect(f.calls).not.toContain("publish");
+    expect(f.calls).not.toContain("cutover");
   });
 
   test("committed repair requires the exact raw candidate fingerprint before any mutation", async () => {
@@ -760,7 +787,12 @@ function intentFixture(options: {
         selected = installation(OLD, "1.0.0");
         return cutoverResult(restored, "rolled-back");
       }
-      const committed = transaction("committed", input.transactionId, input.candidateArtifactId);
+      const committed = transaction(
+        "committed",
+        input.transactionId,
+        input.candidateArtifactId,
+        options.manifest?.product.version,
+      );
       selected = installation(input.candidateArtifactId, committed.candidate.version);
       active = committed;
       return cutoverResult(committed);
@@ -814,6 +846,8 @@ function manifest(): HomeArtifactManifest {
     product: { name: "Dome Home", version: "2.0.0" },
     writerBarrier: { protocol: 1 },
     durableState: { protocol: 1, stores: [] },
+    homeCredentials: { protocol: 1, path: "runtime/dome-keychain-helper", sha256: "a".repeat(64),
+      providerPath: "app/assets/model-providers/anthropic.ts", providerSha256: "b".repeat(64) },
     distribution: { signed: false, notarized: false, upgradeSupported: true },
   } as unknown as HomeArtifactManifest;
 }
@@ -863,6 +897,7 @@ function transaction(
   phase: "prepared" | "switching" | "committed" | "restored",
   transactionId: string,
   candidateId: string,
+  candidateVersion?: string,
 ): HomeUpgradeTransaction {
   return {
     schema: "dome.home-upgrade-transaction/v2",
@@ -872,7 +907,7 @@ function transaction(
     old: { artifactId: OLD, version: "1.0.0", releasePath: `/releases/${OLD}`, manifestSha256: "d".repeat(64) },
     candidate: {
       artifactId: candidateId,
-      version: candidateId === REQUESTED ? "2.0.0" : "3.0.0",
+      version: candidateVersion ?? (candidateId === REQUESTED ? "2.0.0" : "3.0.0"),
       releasePath: `/releases/${candidateId}`,
       manifestSha256: "e".repeat(64),
     },

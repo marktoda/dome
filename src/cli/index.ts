@@ -982,8 +982,13 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     setExitCode(await runHomeLifecycle(action, options));
   };
   const sharedHomeVault = (command: Command): string | undefined => {
-    const value = command.parent?.getOptionValue("vault");
-    return typeof value === "string" ? value : undefined;
+    let current: Command | null = command;
+    while (current !== null) {
+      const value = current.getOptionValue("vault");
+      if (typeof value === "string") return value;
+      current = current.parent;
+    }
+    return undefined;
   };
   const homeLifecycleOptions = (
     options: HomeLifecycleCliOptions,
@@ -1015,6 +1020,16 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     ...(options.json === undefined ? {} : { json: options.json }),
     vaultSpecified: sharedHomeVault(command) !== undefined,
   });
+  const homeSetupOptions = (
+    options: HomeSetupCliOptions,
+    command: Command,
+  ): HomeSetupCliOptions => {
+    const vault = sharedHomeVault(command);
+    return {
+      ...(vault === undefined ? {} : { vault }),
+      ...(options.json === undefined ? {} : { json: options.json }),
+    };
+  };
   const showSharedHomeOptions = (command: Command): Command => command.configureHelp({
     showGlobalOptions: true,
     visibleGlobalOptions: () => homeCommand.options.filter((option) => option.attributeName() === "vault"),
@@ -1048,6 +1063,24 @@ function buildProgram(setExitCode: (code: number) => void): Command {
       const { runHomeCleanup } = await import("./commands/home-cleanup");
       setExitCode(await runHomeCleanup(homeCleanupOptions(options, command)));
     });
+  const homeSetup = homeCommand.command("setup")
+    .description("Inspect and configure the shipped Dome Home model provider.");
+  homeSetup.command("status")
+    .description("Show derived provider credential and plaintext-residue readiness.")
+    .option("--json", "Emit JSON.")
+    .action(async (options: HomeSetupCliOptions, command: Command) => {
+      const { runHomeSetup } = await import("./commands/home-setup");
+      setExitCode(await runHomeSetup("status", homeSetupOptions(options, command)));
+    });
+  for (const action of ["configure", "check", "remove"] as const) {
+    homeSetup.command(action)
+      .description(`${action[0]?.toUpperCase()}${action.slice(1)} the shipped model-provider credential.`)
+      .option("--json", "Emit JSON.")
+      .action(async (options: HomeSetupCliOptions, command: Command) => {
+        const { runHomeSetup } = await import("./commands/home-setup");
+        setExitCode(await runHomeSetup(action, homeSetupOptions(options, command)));
+      });
+  }
 
   const backupCommand = program
     .command("backup")
@@ -1290,6 +1323,11 @@ type HomeUpgradeCliOptions = {
 
 type HomeCleanupCliOptions = {
   readonly apply?: boolean;
+  readonly json?: boolean;
+};
+
+type HomeSetupCliOptions = {
+  readonly vault?: string;
   readonly json?: boolean;
 };
 

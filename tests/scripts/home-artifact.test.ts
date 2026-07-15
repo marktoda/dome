@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import {
   createDeterministicTar,
+  compileHomeCredentialHelper,
   inspectHomeArtifactTar,
   assertSourceSnapshot,
   HOME_ARTIFACT_SCHEMA,
@@ -33,6 +34,36 @@ import {
 describe("Dome Home artifact", () => {
   test("the builder exports the exact shipped verifier", () => {
     expect(verifyHomeArtifact).toBe(shippedVerifyHomeArtifact);
+  });
+
+  test("credential helper compilation pins the exact staged Bun and provider bytes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-home-helper-compile-"));
+    const source = join(root, "helper.c");
+    const provider = join(root, "anthropic.ts");
+    const bun = join(root, "bun");
+    const target = join(root, "helper");
+    let command: ReadonlyArray<string> = [];
+    try {
+      await writeFile(source, "int main(void) { return 0; }\n");
+      await writeFile(provider, "provider fixture\n");
+      await writeFile(bun, "bun fixture\n");
+      await compileHomeCredentialHelper(source, target, provider, bun, { run: async (argv) => {
+        command = argv;
+        await writeFile(target, "mach-o fixture", { mode: 0o755 });
+      } });
+      expect(command).toContain("-arch");
+      expect(command).toContain("arm64");
+      expect(command).toContain("-mmacosx-version-min=13.0");
+      expect(command).toContain(`-DSHIPPED_PROVIDER_SHA256=\"${digest(await readFile(provider))}\"`);
+      expect(command).toContain(`-DSHIPPED_BUN_SHA256=\"${digest(await readFile(bun))}\"`);
+      expect(command.at(-1)).toBe(target);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("the artifact builder compiles against the staged shipped Bun path", async () => {
+    const source = await readFile(join(import.meta.dir, "..", "..", "scripts", "home-artifact.ts"), "utf8");
+    expect(source).toContain('const shippedBun = join(directory, "runtime", "bun");');
+    expect(source).toContain("shippedModelProviderSource,\n          shippedBun,\n");
   });
 
   test("assembles and runs configured gates in private state before one publication", async () => {
@@ -352,7 +383,7 @@ describe("Dome Home artifact", () => {
     const pkg = JSON.parse(await readFile(join(import.meta.dir, "..", "..", "package.json"), "utf8")) as {
       readonly version: string;
     };
-    expect(pkg.version).toBe("0.2.0");
+    expect(pkg.version).toBe("0.3.0");
     const root = await fixture();
     try {
       const manifest = await writeArtifactMetadata(root, "9.8.7");
@@ -408,6 +439,31 @@ describe("Dome Home artifact", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  test("binds the credential-helper protocol to its exact checksummed executable", async () => {
+    const root = await verifiableFixture();
+    try {
+      const helper = join(root, "runtime", "dome-keychain-helper");
+      const provider = join(root, "app", "assets", "model-providers", "anthropic.ts");
+      await mkdir(dirname(provider), { recursive: true });
+      await writeFile(helper, "compiled helper fixture\n", { mode: 0o755 });
+      await writeFile(provider, "shipped provider fixture\n", { mode: 0o644 });
+      const manifest = await writeArtifactMetadata(root, "1.0.0");
+      const sha256 = digest(await readFile(helper));
+      const providerSha256 = digest(await readFile(provider));
+      expect(manifest.homeCredentials).toEqual({
+        protocol: 1, path: "runtime/dome-keychain-helper", sha256,
+        providerPath: "app/assets/model-providers/anthropic.ts", providerSha256,
+      });
+      expect(manifest.entries).toContainEqual(expect.objectContaining({
+        type: "file", path: "runtime/dome-keychain-helper", sha256, mode: "0755",
+      }));
+      expect(await readFile(join(root, "checksums.sha256"), "utf8"))
+        .toContain(`${sha256}  runtime/dome-keychain-helper`);
+      expect(parseHomeArtifactManifest(JSON.parse(await readFile(join(root, "manifest.json"), "utf8"))).homeCredentials)
+        .toEqual(manifest.homeCredentials);
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 
   test("emits byte-identical tar streams independent of mtimes", async () => {
@@ -716,7 +772,7 @@ describe("Dome Home artifact", () => {
     }
   });
 
-  test("the real signed writer and parser bind pinned age sources to changed shipped payload hashes", async () => {
+  test("the parser keeps a historical signed 0.2.0 three-executable manifest verifiable", async () => {
     const root = await verifiableFixture();
     try {
       const agePath = join(root, "runtime", "age");
@@ -732,7 +788,9 @@ describe("Dome Home artifact", () => {
           signedRow("runtime/bun", PINNED_BUN_BINARY_SHA256, PINNED_BUN_BINARY_SHA256, "7FRXF46ZSN", "3"),
         ]),
       });
-      const written = await writeSignedArtifactMetadataForTests(root, "1.0.0", codeSigning);
+      const written = await writeSignedArtifactMetadataForTests(root, "0.2.0", codeSigning);
+      expect(written.product.version).toBe("0.2.0");
+      expect(written.homeCredentials).toBeUndefined();
       expect(written.tools.find((tool) => tool.name === "age")?.sha256).toBe(ageShipped);
       expect(written.tools.find((tool) => tool.name === "age-keygen")?.sha256).toBe(keygenShipped);
       expect(ageShipped).not.toBe(PINNED_AGE_BINARY_SHA256);
@@ -741,6 +799,7 @@ describe("Dome Home artifact", () => {
       const raw: unknown = JSON.parse(await readFile(join(root, "manifest.json"), "utf8"));
       const verified = verifyHomeArtifactToolChecksumMetadataForTests(raw);
       expect(verified.distribution.signed).toBeTrue();
+      expect(verified.product.version).toBe("0.2.0");
       const corrupted = structuredClone(raw) as { tools: Array<{ name: string; sha256: string }> };
       corrupted.tools.find((tool) => tool.name === "age")!.sha256 = PINNED_AGE_BINARY_SHA256;
       expect(() => verifyHomeArtifactToolChecksumMetadataForTests(corrupted))

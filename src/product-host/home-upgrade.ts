@@ -10,7 +10,12 @@ import {
   readHomeInstallation,
   type HomeInstallationRecord,
 } from "./home-installation";
-import { verifyHomeArtifact, type HomeArtifactManifest } from "./home-artifact";
+import {
+  HOME_CREDENTIAL_HELPER_PATH,
+  HOME_CREDENTIAL_HELPER_PROTOCOL,
+  verifyHomeArtifact,
+  type HomeArtifactManifest,
+} from "./home-artifact";
 import { manageHome } from "./home-lifecycle";
 import {
   inspectHomeLifecycleSuspension,
@@ -233,7 +238,9 @@ export async function manageHomeUpgrade(input: {
     }
 
     if (manifest.distribution.upgradeSupported !== true ||
-      manifest.writerBarrier?.protocol !== 1 || manifest.durableState === undefined) {
+      manifest.writerBarrier?.protocol !== 1 || manifest.durableState === undefined ||
+      manifest.homeCredentials?.protocol !== HOME_CREDENTIAL_HELPER_PROTOCOL ||
+      manifest.homeCredentials.path !== HOME_CREDENTIAL_HELPER_PATH) {
       return failure(vault, requested, "error", 64, "preflight-failed", "invoking artifact is not upgrade-capable", "inspect-home-status", {
         selected: installationSummary(current),
       });

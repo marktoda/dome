@@ -30,10 +30,17 @@ export const PINNED_AGE_KEYGEN_BINARY_SHA256 = "37c4b509d86f233d8dd065f5a905e11d
 export const PINNED_AGE_LICENSE_SHA256 = "afbdb4e07a359499db587ae632815809b1fc1670a92d5449af112ce9a67833a2";
 export const PINNED_BUN_DEVELOPER_ID_TEAM_ID = "7FRXF46ZSN";
 
-export const HOME_CODE_SIGNING_PATHS = Object.freeze([
+export const LEGACY_HOME_CODE_SIGNING_PATHS = Object.freeze([
   "runtime/age",
   "runtime/age-keygen",
   "runtime/bun",
+] as const);
+export const HOME_CREDENTIAL_HELPER_PATH = "runtime/dome-keychain-helper" as const;
+export const HOME_CREDENTIAL_HELPER_PROTOCOL = 1 as const;
+export const HOME_SHIPPED_MODEL_PROVIDER_PATH = "app/assets/model-providers/anthropic.ts" as const;
+export const HOME_CODE_SIGNING_PATHS = Object.freeze([
+  ...LEGACY_HOME_CODE_SIGNING_PATHS,
+  HOME_CREDENTIAL_HELPER_PATH,
 ] as const);
 
 export type HomeArtifactCodeSigningExecutable = Readonly<{
@@ -84,6 +91,14 @@ export type HomeArtifactManifest = {
   readonly durableState?: {
     readonly protocol: typeof HOME_DURABLE_STATE_PROTOCOL;
     readonly stores: ReadonlyArray<HomeStoreMigrationEntry>;
+  };
+  /** Absent on legacy v1 artifacts; presence selects the four-binary signing inventory. */
+  readonly homeCredentials?: {
+    readonly protocol: typeof HOME_CREDENTIAL_HELPER_PROTOCOL;
+    readonly path: typeof HOME_CREDENTIAL_HELPER_PATH;
+    readonly sha256: string;
+    readonly providerPath: typeof HOME_SHIPPED_MODEL_PROVIDER_PATH;
+    readonly providerSha256: string;
   };
   /** Absent on legacy/ordinary unsigned artifacts. Inner payloads are signed but not themselves notarized. */
   readonly codeSigning?: HomeArtifactCodeSigning;
@@ -205,7 +220,8 @@ export async function verifyHomeArtifact(artifactRootInput: string): Promise<Hom
     if (bunSigning === undefined || bunSigning.sourceSha256 !== PINNED_BUN_BINARY_SHA256 ||
       bunSigning.shippedSha256 !== PINNED_BUN_BINARY_SHA256 ||
       bunSigning.teamId !== PINNED_BUN_DEVELOPER_ID_TEAM_ID ||
-      domeSigned.length !== 2 || domeSigned[0]!.teamId !== domeSigned[1]!.teamId) {
+      domeSigned.length !== (manifest.homeCredentials === undefined ? 2 : 3) ||
+      domeSigned.some((row) => row.teamId !== domeSigned[0]!.teamId)) {
       throw new Error("artifact code signing provenance is inconsistent");
     }
     await verifySignedHomeArtifactNativeCode(artifactRoot, manifest.codeSigning, runNativeCommand);
@@ -227,10 +243,13 @@ export function parseHomeArtifactManifest(value: unknown): HomeArtifactManifest 
     Object.hasOwn(candidate, "durableState");
   const hasCodeSigning = typeof candidate === "object" && candidate !== null &&
     Object.hasOwn(candidate, "codeSigning");
+  const hasHomeCredentials = typeof candidate === "object" && candidate !== null &&
+    Object.hasOwn(candidate, "homeCredentials");
   const root = record(value, "artifact manifest", [
     "schema", "product", "target", "build", "artifact", "runtime", "tools",
     "entrypoint", "pwa", ...(hasWriterBarrier ? ["writerBarrier"] : []),
     ...(hasDurableState ? ["durableState"] : []),
+    ...(hasHomeCredentials ? ["homeCredentials"] : []),
     ...(hasCodeSigning ? ["codeSigning"] : []),
     "distribution", "entries",
   ]);
@@ -247,7 +266,6 @@ export function parseHomeArtifactManifest(value: unknown): HomeArtifactManifest 
   const durableState = hasDurableState
     ? parseDurableState(root["durableState"])
     : null;
-  const codeSigning = hasCodeSigning ? parseCodeSigning(root["codeSigning"]) : null;
   if (product["name"] !== "Dome Home" || !nonempty(product["version"]) ||
     target["os"] !== HOME_ARTIFACT_TARGET.os || target["arch"] !== HOME_ARTIFACT_TARGET.arch ||
     !fullObjectId(build["gitCommit"]) || !sha(artifact["id"]) ||
@@ -255,7 +273,7 @@ export function parseHomeArtifactManifest(value: unknown): HomeArtifactManifest 
     runtime["sourceUrl"] !== PINNED_BUN_ARCHIVE_URL || runtime["archiveSha256"] !== PINNED_BUN_ARCHIVE_SHA256 || !sha(runtime["sha256"]) ||
     root["entrypoint"] !== "bin/dome" || root["pwa"] !== "app/pwa/dist" ||
     (writerBarrier !== null && writerBarrier["protocol"] !== HOME_WRITER_BARRIER_PROTOCOL) ||
-    typeof distribution["signed"] !== "boolean" || distribution["signed"] !== (codeSigning !== null) ||
+    typeof distribution["signed"] !== "boolean" ||
     distribution["notarized"] !== false || typeof distribution["upgradeSupported"] !== "boolean") {
     throw new Error("artifact manifest fixed product semantics are invalid");
   }
@@ -264,6 +282,14 @@ export function parseHomeArtifactManifest(value: unknown): HomeArtifactManifest 
   const keys = entries.map((entry) => `${entry.path}\0${entry.type}`);
   if (new Set(keys).size !== keys.length || entries.some((entry, index) => index > 0 && compareStrings(entries[index - 1]!.path, entry.path) >= 0)) {
     throw new Error("artifact entries must have unique, strictly sorted paths");
+  }
+  const homeCredentials = hasHomeCredentials
+    ? parseHomeCredentials(root["homeCredentials"], entries)
+    : null;
+  const expectedSigningPaths = homeCredentials === null ? LEGACY_HOME_CODE_SIGNING_PATHS : HOME_CODE_SIGNING_PATHS;
+  const codeSigning = hasCodeSigning ? parseCodeSigning(root["codeSigning"], expectedSigningPaths) : null;
+  if (distribution["signed"] !== (codeSigning !== null)) {
+    throw new Error("artifact signed distribution claim is inconsistent");
   }
   if (!Array.isArray(root["tools"]) || root["tools"].length !== 2) throw new Error("artifact must include the pinned age toolchain");
   const tools = root["tools"].map((candidate) => {
@@ -282,6 +308,7 @@ export function parseHomeArtifactManifest(value: unknown): HomeArtifactManifest 
     root["durableState"] = durableState;
   }
   if (codeSigning !== null) root["codeSigning"] = codeSigning;
+  if (homeCredentials !== null) root["homeCredentials"] = homeCredentials;
   return root as unknown as HomeArtifactManifest;
 }
 
@@ -333,7 +360,8 @@ async function verifySignedHomeArtifactNativeCode(
   run: NativeCommandRunner,
 ): Promise<void> {
   const inventory = await inventorySignedMachO(artifactRoot);
-  if (JSON.stringify(inventory) !== JSON.stringify(HOME_CODE_SIGNING_PATHS)) {
+  const expectedInventory = codeSigning.executables.map((row) => row.path);
+  if (JSON.stringify(inventory) !== JSON.stringify(expectedInventory)) {
     throw new Error(`signed Home artifact Mach-O inventory is not exact: ${inventory.join(", ") || "empty"}`);
   }
   for (const expected of codeSigning.executables) {
@@ -345,6 +373,10 @@ async function verifySignedHomeArtifactNativeCode(
       artifactRoot,
     );
     const text = `${detail.stdout}\n${detail.stderr}`;
+    if (expected.path === HOME_CREDENTIAL_HELPER_PATH &&
+      !text.split(/\r?\n/).includes("Identifier=com.dome.home.keychain-helper")) {
+      throw new Error("signed Home credential helper has an unexpected signing identifier");
+    }
     const teamId = nativeCapture(text, /^TeamIdentifier=([A-Z0-9]{10})$/m, `${expected.path} team identifier`);
     const cdHash = nativeCapture(
       text,
@@ -441,9 +473,12 @@ async function runNativeCommand(argv: ReadonlyArray<string>, cwd: string): Promi
   return Object.freeze({ exitCode, stdout, stderr });
 }
 
-function parseCodeSigning(value: unknown): HomeArtifactCodeSigning {
+function parseCodeSigning(
+  value: unknown,
+  expectedPaths: ReadonlyArray<HomeArtifactCodeSigningExecutable["path"]>,
+): HomeArtifactCodeSigning {
   const root = record(value, "artifact code signing", ["executables"]);
-  if (!Array.isArray(root["executables"]) || root["executables"].length !== HOME_CODE_SIGNING_PATHS.length) {
+  if (!Array.isArray(root["executables"]) || root["executables"].length !== expectedPaths.length) {
     throw new Error("artifact code signing must inventory the exact executable set");
   }
   const executables = root["executables"].map((candidate) => {
@@ -460,10 +495,37 @@ function parseCodeSigning(value: unknown): HomeArtifactCodeSigning {
     }
     return row as unknown as HomeArtifactCodeSigningExecutable;
   });
-  if (executables.some((row, index) => row.path !== HOME_CODE_SIGNING_PATHS[index])) {
+  if (executables.some((row, index) => row.path !== expectedPaths[index])) {
     throw new Error("artifact code signing executable inventory is not exact and sorted");
   }
   return Object.freeze({ executables: Object.freeze(executables) });
+}
+
+function parseHomeCredentials(
+  value: unknown,
+  entries: ReadonlyArray<HomeArtifactEntry>,
+): NonNullable<HomeArtifactManifest["homeCredentials"]> {
+  const capability = record(value, "artifact Home credentials capability", [
+    "protocol", "path", "sha256", "providerPath", "providerSha256",
+  ]);
+  if (capability["protocol"] !== HOME_CREDENTIAL_HELPER_PROTOCOL ||
+    capability["path"] !== HOME_CREDENTIAL_HELPER_PATH || !sha(capability["sha256"]) ||
+    capability["providerPath"] !== HOME_SHIPPED_MODEL_PROVIDER_PATH || !sha(capability["providerSha256"])) {
+    throw new Error("artifact Home credentials capability is invalid");
+  }
+  const entry = entries.find((candidate) => candidate.type === "file" && candidate.path === HOME_CREDENTIAL_HELPER_PATH);
+  if (entry?.type !== "file" || entry.sha256 !== capability["sha256"] ||
+    (Number.parseInt(entry.mode, 8) & 0o111) === 0) {
+    throw new Error("artifact Home credentials capability is not bound to its executable");
+  }
+  const provider = entries.find((candidate) =>
+    candidate.type === "file" && candidate.path === HOME_SHIPPED_MODEL_PROVIDER_PATH);
+  if (provider?.type !== "file" || provider.sha256 !== capability["providerSha256"]) {
+    throw new Error("artifact Home credentials capability is not bound to its shipped provider");
+  }
+  return Object.freeze({ protocol: HOME_CREDENTIAL_HELPER_PROTOCOL, path: HOME_CREDENTIAL_HELPER_PATH,
+    sha256: capability["sha256"] as string, providerPath: HOME_SHIPPED_MODEL_PROVIDER_PATH,
+    providerSha256: capability["providerSha256"] as string });
 }
 
 function parseDurableState(value: unknown): NonNullable<HomeArtifactManifest["durableState"]> {

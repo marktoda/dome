@@ -532,8 +532,8 @@ successful/rejected history is explicitly pruneable. P3.3 is complete.
 ### P4 — Self-contained distribution, backup, and upgrade
 
 Deliver the signed macOS product artifact with pinned runtime and PWA; one
-install/start/restart/status/uninstall lifecycle; guided Tailscale/model/
-transcription setup; encrypted consistent backup; blank-host restore; frozen
+install/start/restart/status/uninstall lifecycle; guided Tailscale/model
+setup; encrypted consistent backup; blank-host restore; frozen
 N-1 migrations; pre-admission rollback.
 
 The first P4 checkpoint is deliberately narrower: `bun run
@@ -696,7 +696,7 @@ coordination nonzero. General artifact parsing accepts a boolean capability,
 while both new-attempt boundaries require exact
 `distribution.upgradeSupported: true`.
 
-The exact 0.2 release builder now emits `true` only after a private staged
+The exact 0.3 release builder now emits `true` only after a private staged
 pipeline reconstructs the pinned predecessor, exercises this exact command and
 status UX through the retained installed N-1→N rehearsal and frozen fixture,
 binds the result to candidate/predecessor/fixture identities, writes a local
@@ -727,8 +727,8 @@ Automatic retention/scheduling policy remains a later checkpoint.
 
 The authenticated macOS distribution checkpoint adds one Apple Silicon
 release command, `bun run build:home-distribution`, above the installed-gated
-artifact builder. It preserves the pinned upstream Bun signature, signs only
-the two pinned `age` executables, signs and notarizes the outer DMG, staples
+artifact builder. It preserves the pinned upstream Bun signature, signs the
+two pinned `age` executables and closed credential helper, signs and notarizes the outer DMG, staples
 the ticket, and rechecks UDIF and uncached Gatekeeper truth. The release
 receipt binds the actual native identities, accepted Apple submission, inner
 manifest, archive, and redacted activation evidence. Independent verification
@@ -742,24 +742,35 @@ retains the mode-0600 installed rehearsal preimage needed for audit. The three
 release inputs are a Developer ID Application identity, its Apple team id, and
 an existing `notarytool` Keychain profile. No credentialed release execution
 is claimed by tests: a real signed/notarized artifact and clean-consumer-Mac
-acceptance remain release gates. The next product slice is secure Keychain
-credential storage followed by guided Home/provider setup; no workflow or
+acceptance remain release gates. The current product slice adds secure
+Keychain credential storage and guided model-provider setup; no workflow or
 state-machine framework is introduced.
 
-The secure credential substrate slice is now present without a setup wizard,
-CLI migration, or cleanup mutation. Two closed provider slots live under the
-versioned Dome Home Keychain service and stable vault-id accounts. Secret use
-is callback-scoped; inspect/read and idempotent removal name one exact validated
-user default Keychain. Interactive write is deferred until a native helper can
-bind the prompt to that proved Keychain. Every new installation/selection publication boundary
+The secure credential slice is model-only and end to end. A packaged native
+helper binds interactive replacement, inspection, decrypting check, removal,
+and exact shipped Anthropic provider launch to one validated default Keychain
+and vault-id-plus-canonical-path account. Package `0.3.0` binds the helper and
+immutable artifact Bun/provider payloads in the signed manifest; the helper
+also compiles in both staged SHA-256 values, verifies both held descriptors,
+and re-proves the named Bun inode immediately before `execve` after all launch
+assembly and Keychain cleanup.
+The mutable vault provider remains only an explicit configuration selector,
+and no endpoint override crosses the managed credential boundary. Secret bytes
+never enter the Dome Bun host; only the fixed provider Bun child receives them
+in its explicit scrubbed environment.
+`dome home setup status|configure|check|remove` derives truth from vault config,
+Keychain presence, the real provider probe, and plaintext-residue inspection;
+it creates no setup record and preserves missing/custom config. Rotation is
+live for subsequent provider launches and needs no restart. Authenticated local
+readiness single-flights concurrent decrypt checks and caches the result for at
+most one second, so credential changes are visible within one second rather
+than immediately. Every new installation/selection publication boundary
 rejects secret-like environment persistence while retaining legacy parsing for
 status. A read-only, path-free scanner reports `clean`, `residue`, or
 `indeterminate` across live, temporary, staging, active, and immutable-history
-copies. Future runtime resolution must fail unequal Keychain/legacy ambiguity,
-may prefer equal Keychain truth while reporting residue, never fall back after
-locked/denied access, and treats absent-Keychain legacy use as temporary
-compatibility. Orphan Keychain-item cleanup remains deferred to an explicit
-lifecycle design.
+copies. Runtime never falls back to legacy plaintext residue. Transcription
+setup, residue migration/cleanup, and orphan Keychain-item collection remain
+deferred to explicit lifecycle designs.
 
 Existing active upgrades remain recoverable even if their already-persisted
 selector evidence contains legacy credentials: recovery may replay those exact

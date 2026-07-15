@@ -44,7 +44,7 @@ type CommandModelProviderRequest = {
 
 export function buildCommandModelProvider(
   config: CommandModelProviderConfig,
-  opts: { readonly cwd?: string } = {},
+  opts: { readonly cwd?: string; readonly env?: Record<string, string | undefined> } = {},
 ): ModelProvider {
   return async (request) => invokeCommandProvider(config, request, opts);
 }
@@ -71,7 +71,7 @@ export type ModelProviderProbeResult =
       readonly keyPresent?: boolean;
       readonly defaultModel?: string;
     }
-  | { readonly status: "probe-unsupported"; readonly detail: string }
+  | { readonly status: "probe-unsupported"; readonly exitCode?: number; readonly detail: string }
   | { readonly status: "spawn-failed"; readonly detail: string }
   | { readonly status: "invalid-response"; readonly detail: string }
   | { readonly status: "timed-out"; readonly detail: string };
@@ -147,6 +147,7 @@ export async function probeCommandModelProvider(
       // alive, just predating (or declining) the probe schema.
       return Object.freeze({
         status: "probe-unsupported" as const,
+        exitCode,
         detail: `model provider command exited ${exitCode}${formatStderr(stderr)}`,
       });
     }
@@ -198,7 +199,7 @@ function parseProbeResponse(stdout: string): ModelProviderProbeResult {
 
 export function buildCommandModelStepProvider(
   config: CommandModelProviderConfig,
-  opts: { readonly cwd?: string } = {},
+  opts: { readonly cwd?: string; readonly env?: Record<string, string | undefined> } = {},
 ): ModelStepProvider {
   return async (request) => invokeCommandStepProvider(config, request, opts);
 }
@@ -206,13 +207,14 @@ export function buildCommandModelStepProvider(
 async function invokeCommandStepProvider(
   config: CommandModelProviderConfig,
   request: ModelStepRequest,
-  opts: { readonly cwd?: string },
+  opts: { readonly cwd?: string; readonly env?: Record<string, string | undefined> },
 ): Promise<ModelStepResponse> {
   if (request.signal.aborted) {
     throw new Error("model provider command was aborted before it started");
   }
   const proc = Bun.spawn([...config.command], {
     ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+    ...(opts.env !== undefined ? { env: opts.env } : {}),
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
@@ -264,7 +266,7 @@ function parseStepResponse(stdout: string): ModelStepResponse {
 async function invokeCommandProvider(
   config: CommandModelProviderConfig,
   request: ModelProviderRequest,
-  opts: { readonly cwd?: string },
+  opts: { readonly cwd?: string; readonly env?: Record<string, string | undefined> },
 ): Promise<ModelProviderResponse> {
   if (request.signal.aborted) {
     throw new Error("model provider command was aborted before it started");
@@ -272,6 +274,7 @@ async function invokeCommandProvider(
 
   const proc = Bun.spawn([...config.command], {
     ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+    ...(opts.env !== undefined ? { env: opts.env } : {}),
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",

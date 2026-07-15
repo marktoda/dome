@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { startProductHost, type ProductHost } from "../../product-host/product-host";
+import { resolveHomeModelRuntime } from "../../product-host/home-model-provider";
 import {
   verifyHomeArtifact,
   type HomeArtifactVerifier,
@@ -25,8 +26,14 @@ export type RunHomeOptions = {
   readonly onReady?: ((host: ProductHost) => void) | undefined;
 };
 
+type RunHomeDeps = Readonly<{
+  startHost?: typeof startProductHost;
+  resolveModel?: typeof resolveHomeModelRuntime;
+  resolveLaunch?: typeof resolveInvokingHomeLaunch;
+}>;
+
 /** Start Dome Home and own its complete listener/compiler lifecycle. */
-export async function runHome(options: RunHomeOptions = {}): Promise<number> {
+export async function runHome(options: RunHomeOptions = {}, deps: RunHomeDeps = {}): Promise<number> {
   const vaultPath = resolveVaultPath(options.vault);
   const port = options.port === undefined ? 3663 : Number(options.port);
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
@@ -46,7 +53,7 @@ export async function runHome(options: RunHomeOptions = {}): Promise<number> {
   }
   let launch: ProductHostLaunch | undefined;
   try {
-    launch = await resolveInvokingHomeLaunch({
+    launch = await (deps.resolveLaunch ?? resolveInvokingHomeLaunch)({
       upgradeProbation: options.upgradeProbation === true,
     });
   } catch (error) {
@@ -54,7 +61,10 @@ export async function runHome(options: RunHomeOptions = {}): Promise<number> {
     return EX_USAGE;
   }
 
-  const started = await startProductHost({
+  const modelRuntime = launch?.kind === "normal"
+    ? await (deps.resolveModel ?? resolveHomeModelRuntime)(vaultPath)
+    : undefined;
+  const started = await (deps.startHost ?? startProductHost)({
     vaultPath,
     port,
     staticDir,
@@ -63,6 +73,12 @@ export async function runHome(options: RunHomeOptions = {}): Promise<number> {
       : {}),
     ...(options.host !== undefined ? { hostname: options.host } : {}),
     ...(options.bundlesRoot !== undefined ? { bundlesRoot: options.bundlesRoot } : {}),
+    ...(modelRuntime === undefined ? {} : { modelState: modelRuntime.modelState }),
+    ...(modelRuntime?.modelStateResolver === undefined
+      ? {}
+      : { resolveModelState: modelRuntime.modelStateResolver }),
+    ...(modelRuntime?.modelProvider !== undefined ? { modelProvider: modelRuntime.modelProvider } : {}),
+    ...(modelRuntime?.modelStepProvider !== undefined ? { modelStepProvider: modelRuntime.modelStepProvider } : {}),
     ...(launch !== undefined ? { launch } : {}),
     ...(launch?.artifact !== undefined ? {
       productVersion: launch.artifact.version,

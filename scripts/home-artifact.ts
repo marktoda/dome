@@ -24,6 +24,9 @@ import { publishDirectoryExclusive } from "../src/platform/exclusive-rename";
 import {
   HOME_ARTIFACT_SCHEMA,
   HOME_ARTIFACT_TARGET,
+  HOME_CREDENTIAL_HELPER_PATH,
+  HOME_CREDENTIAL_HELPER_PROTOCOL,
+  HOME_SHIPPED_MODEL_PROVIDER_PATH,
   HOME_WRITER_BARRIER_PROTOCOL,
   PINNED_AGE_ARCHIVE_SHA256,
   PINNED_AGE_ARCHIVE_URL,
@@ -82,7 +85,7 @@ const ACTIVATION_SCENARIOS = Object.freeze([
   "committed-exact-repair",
 ] as const);
 const HOME_ARTIFACT_RELEASE_CLAIM = Object.freeze({
-  version: "0.2.0",
+  version: "0.3.0",
   upgradeSupported: true,
 } as const);
 
@@ -100,6 +103,7 @@ type BuildOptions = {
       bun: string;
       age: string;
       ageKeygen: string;
+      homeCredentialHelper: string;
     }>;
   }>) => Promise<HomeArtifactCodeSigning>;
 };
@@ -325,12 +329,23 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
         await mkdir(join(directory, "licenses"), { recursive: true });
         await mkdir(join(directory, "app"), { recursive: true });
 
-        await cp(runtimePath, join(directory, "runtime", "bun"));
-        await chmod(join(directory, "runtime", "bun"), 0o755);
+        const shippedBun = join(directory, "runtime", "bun");
+        await cp(runtimePath, shippedBun);
+        await chmod(shippedBun, 0o755);
         await cp(downloadedAge.age, join(directory, "runtime", "age"));
         await chmod(join(directory, "runtime", "age"), 0o755);
         await cp(downloadedAge.ageKeygen, join(directory, "runtime", "age-keygen"));
         await chmod(join(directory, "runtime", "age-keygen"), 0o755);
+        const credentialHelperSource = join(downloadedRuntime.temporary, "dome-keychain-helper");
+        const shippedModelProviderSource = join(repoRoot, "assets", "model-providers", "anthropic.ts");
+        await compileHomeCredentialHelper(
+          join(repoRoot, "native", "home-keychain-helper.c"),
+          credentialHelperSource,
+          shippedModelProviderSource,
+          shippedBun,
+        );
+        await cp(credentialHelperSource, join(directory, "runtime", "dome-keychain-helper"));
+        await chmod(join(directory, "runtime", "dome-keychain-helper"), 0o755);
         await cp(downloadedAge.license, join(directory, "licenses", "age-LICENSE"));
         await cp(join(repoRoot, "src"), join(directory, "app", "src"), { recursive: true });
         await cp(join(repoRoot, "contracts"), join(directory, "app", "contracts"), { recursive: true });
@@ -358,6 +373,7 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
             bun: runtimePath,
             age: downloadedAge.age,
             ageKeygen: downloadedAge.ageKeygen,
+            homeCredentialHelper: credentialHelperSource,
           }),
         });
         const manifest = await writeArtifactMetadataForRelease(
@@ -406,6 +422,36 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
     evidenceSha256: activationReceipt.evidenceSha256,
     manifest: candidateMetadata.manifest,
   };
+}
+
+export async function compileHomeCredentialHelper(
+  source: string,
+  target: string,
+  providerSource: string,
+  bunSource: string,
+  deps: Readonly<{
+    run?: (argv: ReadonlyArray<string>, cwd: string) => Promise<void>;
+  }> = {},
+): Promise<void> {
+  const sourcePath = resolve(source);
+  const targetPath = resolve(target);
+  const providerPath = resolve(providerSource);
+  const bunPath = resolve(bunSource);
+  const providerSha256 = sha256(await readFile(providerPath));
+  const bunSha256 = sha256(await readFile(bunPath));
+  const execute = deps.run ?? (async (argv, cwd) => { await run(argv, cwd); });
+  await execute([
+    "/usr/bin/xcrun", "--sdk", "macosx", "clang",
+    "-std=c11", "-Os", "-arch", "arm64", "-mmacosx-version-min=13.0",
+    `-DSHIPPED_PROVIDER_SHA256=\"${providerSha256}\"`,
+    `-DSHIPPED_BUN_SHA256=\"${bunSha256}\"`,
+    "-Wall", "-Wextra", "-Werror", "-Wno-deprecated-declarations",
+    sourcePath, "-framework", "Security", "-framework", "CoreFoundation", "-o", targetPath,
+  ], dirname(targetPath));
+  const info = await lstat(targetPath);
+  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || (info.mode & 0o111) === 0) {
+    throw new Error("compiled Dome Home credential helper is not a direct executable");
+  }
 }
 
 export type HomeArtifactActivationIdentityBinding = Readonly<{
@@ -726,6 +772,9 @@ async function writeArtifactMetadataWithClaim(
   const runtimeEntry = entries.find((entry) => entry.type === "file" && entry.path === "runtime/bun");
   const ageEntry = entries.find((entry) => entry.type === "file" && entry.path === "runtime/age");
   const ageKeygenEntry = entries.find((entry) => entry.type === "file" && entry.path === "runtime/age-keygen");
+  const credentialHelperEntry = entries.find((entry) => entry.type === "file" && entry.path === HOME_CREDENTIAL_HELPER_PATH);
+  const shippedModelProviderEntry = entries.find((entry) =>
+    entry.type === "file" && entry.path === HOME_SHIPPED_MODEL_PROVIDER_PATH);
   const ageLicenseEntry = entries.find((entry) => entry.type === "file" && entry.path === "licenses/age-LICENSE");
   const fileEntries = entries.filter((entry): entry is Extract<HomeArtifactEntry, { type: "file" }> => entry.type === "file");
   const manifest: HomeArtifactManifest = Object.freeze({
@@ -773,6 +822,15 @@ async function writeArtifactMetadataWithClaim(
         migratesFrom: Object.freeze([...store.migratesFrom]),
       }))),
     }),
+    ...(credentialHelperEntry?.type === "file" && shippedModelProviderEntry?.type === "file" ? {
+      homeCredentials: Object.freeze({
+        protocol: HOME_CREDENTIAL_HELPER_PROTOCOL,
+        path: HOME_CREDENTIAL_HELPER_PATH,
+        sha256: credentialHelperEntry.sha256,
+        providerPath: HOME_SHIPPED_MODEL_PROVIDER_PATH,
+        providerSha256: shippedModelProviderEntry.sha256,
+      }),
+    } : {}),
     ...(codeSigning === undefined ? {} : { codeSigning }),
     distribution: Object.freeze({ signed: codeSigning !== undefined, notarized: false, upgradeSupported }),
     entries: Object.freeze(entries.map((entry) => Object.freeze(entry))),

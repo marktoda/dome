@@ -28,7 +28,7 @@ const identityMutations: ReadonlyArray<readonly [string, (value: MutableBinding)
   ["fixture.canaryDigest", (value) => { value.fixture.canaryDigest = "changed"; }],
 ];
 
-describe("Dome Home 0.2 activation", () => {
+describe("Dome Home 0.3 activation", () => {
   test("keeps one closed activation order while portable execution emits no evidence", async () => {
     const events: string[] = [];
     const result = await exerciseHomeArtifactActivationForTests(operations(events));
@@ -54,7 +54,7 @@ describe("Dome Home 0.2 activation", () => {
     try {
       await expect(stageAndPublishHomeArtifactCandidate({
         outputDir: join(root, "dist"),
-        artifactName: "dome-home-0.2.0-darwin-arm64",
+        artifactName: "dome-home-0.3.0-darwin-arm64",
         assemble: async ({ directory, archive }) => {
           await mkdir(directory);
           await writeFile(archive, "original candidate\n");
@@ -86,7 +86,7 @@ describe("Dome Home 0.2 activation", () => {
     try {
       await expect(stageAndPublishHomeArtifactCandidate({
         outputDir: join(root, "dist"),
-        artifactName: "dome-home-0.2.0-darwin-arm64",
+        artifactName: "dome-home-0.3.0-darwin-arm64",
         assemble: async ({ directory, archive }) => {
           await mkdir(directory);
           await writeFile(archive, "candidate\n");
@@ -118,7 +118,7 @@ describe("Dome Home 0.2 activation", () => {
     try {
       await expect(stageAndPublishHomeArtifactCandidate({
         outputDir: join(root, "dist"),
-        artifactName: "dome-home-0.2.0-darwin-arm64",
+        artifactName: "dome-home-0.3.0-darwin-arm64",
         assemble: async ({ directory, archive }) => {
           await mkdir(directory);
           await writeFile(archive, "candidate\n");
@@ -161,7 +161,7 @@ describe("Dome Home 0.2 activation", () => {
     try {
       await expect(stageAndPublishHomeArtifactCandidate({
         outputDir: join(root, "dist"),
-        artifactName: "dome-home-0.2.0-darwin-arm64",
+        artifactName: "dome-home-0.3.0-darwin-arm64",
         assemble: async ({ directory, archive }) => {
           await mkdir(directory);
           await writeFile(archive, "candidate\n");
@@ -209,11 +209,11 @@ describe("Dome Home 0.2 activation", () => {
       .toThrow("identity does not match the staged release");
   });
 
-  test("fixes the official release claim at package 0.2.0 and upgrade support true", async () => {
+  test("fixes the official release claim at package 0.3.0 and upgrade support true", async () => {
     const pkg = JSON.parse(await readFile(join(import.meta.dir, "..", "..", "package.json"), "utf8")) as {
       readonly version: string;
     };
-    expect(homeArtifactReleaseClaimForTests()).toEqual({ version: "0.2.0", upgradeSupported: true });
+    expect(homeArtifactReleaseClaimForTests()).toEqual({ version: "0.3.0", upgradeSupported: true });
     expect(pkg.version).toBe(homeArtifactReleaseClaimForTests().version);
   });
 
@@ -310,7 +310,7 @@ function binding(): HomeArtifactActivationIdentityBinding {
     },
     candidate: {
       artifactId: "e".repeat(64),
-      version: "0.2.0",
+      version: "0.3.0",
       buildCommit: "f".repeat(40),
       archiveSha256: "1".repeat(64),
       manifestSha256: "2".repeat(64),

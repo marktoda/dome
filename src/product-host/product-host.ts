@@ -24,6 +24,7 @@ import {
 } from "../request-receipts/request-receipts";
 import { createAssistantMutationExecutor } from "../request-receipts/assistant-mutation-executor";
 import { openVault, type Vault } from "../vault";
+import type { ModelProvider, ModelStepProvider } from "../engine/core/model-invoke";
 import { ProductOperationScheduler } from "./operation-scheduler";
 import { ensureVaultId } from "./vault-id";
 import { withProductHostOwnership } from "./host-ownership";
@@ -70,7 +71,11 @@ export type ProductHostOptions = {
   readonly assetVersion?: string;
   readonly productVersion?: string;
   readonly agentRuntime?: AgentRuntime;
+  readonly modelProvider?: ModelProvider;
+  readonly modelStepProvider?: ModelStepProvider;
   readonly modelState?: "ready" | "unconfigured" | "unreachable";
+  /** Re-read bounded local provider readiness without restarting Home. */
+  readonly resolveModelState?: () => Promise<"ready" | "unconfigured" | "unreachable">;
   readonly transcriptionState?: "ready" | "unconfigured" | "unreachable";
   /**
    * Upgrade probation is a distinct, permanently write-closed launch mode.
@@ -231,6 +236,8 @@ export async function startProductHost(
         const opened = await openVault({
           path: vaultPath,
           ...(options.bundlesRoot !== undefined ? { bundlesRoot: options.bundlesRoot } : {}),
+          ...(options.modelProvider !== undefined ? { modelProvider: options.modelProvider } : {}),
+          ...(options.modelStepProvider !== undefined ? { modelStepProvider: options.modelStepProvider } : {}),
         });
         if (!opened.ok) {
           settleStarted(failure("open-failed", opened.error.kind));
@@ -394,6 +401,11 @@ async function buildReadiness(
   client?: DeviceRequestContext,
 ): Promise<ProductReadiness> {
   const adoption = await vault.getAdoptionStatus();
+  let modelState = options.modelState ?? "unconfigured";
+  if (options.resolveModelState !== undefined) {
+    try { modelState = await options.resolveModelState(); }
+    catch { modelState = "unreachable"; }
+  }
   const adoptionState = adoption.diverged
     ? "diverged" as const
     : adoption.adopted === null
@@ -436,7 +448,7 @@ async function buildReadiness(
       adopted: adoption.adopted,
       lastSuccessAt: state.lastSuccessAt,
     }),
-    model: Object.freeze({ state: options.modelState ?? "unconfigured" }),
+    model: Object.freeze({ state: modelState }),
     transcription: Object.freeze({ state: options.transcriptionState ?? "unconfigured" }),
     nextActions: Object.freeze(nextActions),
   });
