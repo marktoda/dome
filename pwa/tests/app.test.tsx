@@ -63,6 +63,19 @@ describe("App", () => {
     expect(screen.getByRole("region", { name: "Conversation" }).hasAttribute("aria-live")).toBe(false);
   });
 
+  test("expanded connection diagnostics expose a keyboard-focusable scroll region after the summary", async () => {
+    render(<App />);
+    const summary = await screen.findByRole("button", { name: /Connection · ready/i });
+    fireEvent.click(summary);
+    const diagnostics = screen.getByRole("region", { name: "Connection details" });
+
+    expect(summary.getAttribute("aria-expanded")).toBe("true");
+    expect(summary.nextElementSibling).toBe(diagnostics);
+    expect((diagnostics as HTMLElement).tabIndex).toBe(0);
+    (diagnostics as HTMLElement).focus();
+    expect(document.activeElement).toBe(diagnostics);
+  });
+
   test("does not show healthy connection before post-pair readiness validates", async () => {
     let releaseReadiness!: (response: Response) => void;
     globalThis.fetch = mock(async (request: Request) => {
