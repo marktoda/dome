@@ -284,7 +284,7 @@ async function orchestrate<TPrepared>(
   operations: RehearsalOperations<TPrepared>,
 ): Promise<TPrepared> {
   let prepared: TPrepared | null = null;
-  let completed = false;
+  let primaryError: unknown | null = null;
   try {
     prepared = await operations.prepare(input);
     for (const scenario of SCENARIOS) {
@@ -294,14 +294,27 @@ async function orchestrate<TPrepared>(
         await operations.cleanupScenario(scenario, prepared);
       }
     }
-    completed = true;
-    return prepared;
-  } finally {
+  } catch (error) {
+    primaryError = error;
+  }
+  let cleanupError: unknown | null = null;
+  try {
     // On success, the result retains only immutable manifest summaries. The
     // extracted roots are still destroyed before installed evidence returns.
     await operations.cleanup(prepared);
-    if (!completed) prepared = null;
+  } catch (error) {
+    cleanupError = error;
   }
+  if (primaryError !== null && cleanupError !== null) {
+    throw new Error(renderInstalledCoordinationErrorForTests(new AggregateError(
+      [primaryError, cleanupError],
+      "installed rehearsal and cleanup both failed",
+    )));
+  }
+  if (primaryError !== null) throw primaryError;
+  if (cleanupError !== null) throw cleanupError;
+  if (prepared === null) throw new Error("installed rehearsal completed without prepared artifacts");
+  return prepared;
 }
 
 function realOperations(): RehearsalOperations<PreparedArtifacts> {

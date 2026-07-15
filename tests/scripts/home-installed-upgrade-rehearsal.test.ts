@@ -711,6 +711,32 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     ]);
   });
 
+  test("preserves scenario cleanup evidence when global cleanup retains the roots", async () => {
+    const events: string[] = [];
+    let failure: unknown;
+    try {
+      await exerciseInstalledUpgradeOrchestrationForTests(INPUT, {
+        prepare: async () => ({ token: "synthetic" }),
+        runScenario: async (name) => { events.push(`run:${name}`); },
+        cleanupScenario: async (name) => {
+          events.push(`scenario-clean:${name}`);
+          throw new Error("launchd label did not drain dome_cred.must-not-leak");
+        },
+        cleanup: async () => {
+          events.push("clean:retained");
+          throw new Error("roots retained Bearer must-not-leak");
+        },
+      });
+    } catch (error) { failure = error; }
+    expect(failure).toBeInstanceOf(Error);
+    const message = failure instanceof Error ? failure.message : "";
+    expect(message).toContain("launchd label did not drain");
+    expect(message).toContain("roots retained");
+    expect(message).not.toContain("must-not-leak");
+    expect(message.length).toBeLessThanOrEqual(2_048);
+    expect(events).toEqual(["run:ready-success", "scenario-clean:ready-success", "clean:retained"]);
+  });
+
   test("runs global cleanup with null when preparation itself fails", async () => {
     const events: string[] = [];
     await expect(exerciseInstalledUpgradeOrchestrationForTests(INPUT, {
