@@ -711,6 +711,47 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     ]);
   });
 
+  test("preserves run, scenario-cleanup, and global-cleanup evidence in one bounded envelope", async () => {
+    const events: string[] = [];
+    let failure: unknown;
+    try {
+      await exerciseInstalledUpgradeOrchestrationForTests(INPUT, {
+        prepare: async () => ({ token: "synthetic" }),
+        runScenario: async (name) => {
+          events.push(`run:${name}`);
+          throw new Error(`run-fragment dome_cred.run-secret ${"r".repeat(3_000)}`);
+        },
+        cleanupScenario: async (name) => {
+          events.push(`scenario-clean:${name}`);
+          throw new Error(`scenario-cleanup-fragment Bearer scenario-secret ${"s".repeat(3_000)}`);
+        },
+        cleanup: async () => {
+          events.push("clean:retained");
+          throw new Error(`global-cleanup-fragment dome_csrf.global-secret ${"g".repeat(3_000)}`);
+        },
+      });
+    } catch (error) { failure = error; }
+    expect(failure).toBeInstanceOf(Error);
+    const message = failure instanceof Error ? failure.message : "";
+    const run = message.indexOf("run-fragment");
+    const scenarioCleanup = message.indexOf("scenario-cleanup-fragment");
+    const globalCleanup = message.indexOf("global-cleanup-fragment");
+    expect(run).toBeGreaterThanOrEqual(0);
+    expect(scenarioCleanup).toBeGreaterThan(run);
+    expect(globalCleanup).toBeGreaterThan(scenarioCleanup);
+    expect(message).not.toContain("run-secret");
+    expect(message).not.toContain("scenario-secret");
+    expect(message).not.toContain("global-secret");
+    expect(message.length).toBeLessThanOrEqual(2_048);
+    const outer = failure instanceof Error ? failure.cause : null;
+    expect(outer).toBeInstanceOf(AggregateError);
+    const primary = outer instanceof AggregateError ? outer.errors[0] : null;
+    expect(primary).toBeInstanceOf(AggregateError);
+    expect(primary instanceof AggregateError ? primary.errors.map((error) => (error as Error).message.slice(0, 12)) : [])
+      .toEqual(["run-fragment", "scenario-cle"]);
+    expect(events).toEqual(["run:ready-success", "scenario-clean:ready-success", "clean:retained"]);
+  });
+
   test("runs global cleanup with null when preparation itself fails", async () => {
     const events: string[] = [];
     await expect(exerciseInstalledUpgradeOrchestrationForTests(INPUT, {

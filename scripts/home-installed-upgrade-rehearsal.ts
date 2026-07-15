@@ -284,24 +284,63 @@ async function orchestrate<TPrepared>(
   operations: RehearsalOperations<TPrepared>,
 ): Promise<TPrepared> {
   let prepared: TPrepared | null = null;
-  let completed = false;
+  const causes: Array<Readonly<{ label: string; error: unknown }>> = [];
   try {
     prepared = await operations.prepare(input);
+  } catch (error) {
+    causes.push({ label: "prepare", error });
+  }
+  if (prepared !== null) {
     for (const scenario of SCENARIOS) {
-      try {
-        await operations.runScenario(scenario, prepared);
-      } finally {
-        await operations.cleanupScenario(scenario, prepared);
+      let runError: unknown | null = null;
+      let scenarioCleanupError: unknown | null = null;
+      try { await operations.runScenario(scenario, prepared); }
+      catch (error) { runError = error; }
+      try { await operations.cleanupScenario(scenario, prepared); }
+      catch (error) { scenarioCleanupError = error; }
+      if (runError !== null) causes.push({ label: `run:${scenario}`, error: runError });
+      if (scenarioCleanupError !== null) {
+        causes.push({ label: `scenario-cleanup:${scenario}`, error: scenarioCleanupError });
       }
+      if (runError !== null || scenarioCleanupError !== null) break;
     }
-    completed = true;
-    return prepared;
-  } finally {
+  }
+  try {
     // On success, the result retains only immutable manifest summaries. The
     // extracted roots are still destroyed before installed evidence returns.
     await operations.cleanup(prepared);
-    if (!completed) prepared = null;
+  } catch (error) {
+    causes.push({ label: "global-cleanup", error });
   }
+  if (causes.length > 1) {
+    const global = causes.at(-1)?.label === "global-cleanup" ? causes.at(-1)! : null;
+    const primary = global === null ? causes : causes.slice(0, -1);
+    const primaryError = primary.length === 1
+      ? primary[0]!.error
+      : new AggregateError(primary.map((cause) => cause.error), "installed scenario and cleanup both failed");
+    const combined = global === null
+      ? primaryError
+      : new AggregateError([primaryError, global.error], "installed rehearsal and global cleanup both failed");
+    throw new Error(renderInstalledOrchestrationCauses(causes), { cause: combined });
+  }
+  if (causes.length === 1) throw causes[0]!.error;
+  if (prepared === null) throw new Error("installed rehearsal completed without prepared artifacts");
+  return prepared;
+}
+
+function renderInstalledOrchestrationCauses(
+  causes: ReadonlyArray<Readonly<{ label: string; error: unknown }>>,
+): string {
+  const prefix = "installed rehearsal failures: ";
+  const separator = " | ";
+  const fixed = prefix.length + separator.length * (causes.length - 1) +
+    causes.reduce((sum, cause) => sum + cause.label.length + 2, 0);
+  const budget = Math.floor((2_048 - fixed) / causes.length);
+  return prefix + causes.map((cause) => {
+    const rendered = renderInstalledCoordinationErrorForTests(cause.error);
+    const fragment = rendered.length <= budget ? rendered : `${rendered.slice(0, budget - 1)}…`;
+    return `${cause.label}: ${fragment}`;
+  }).join(separator);
 }
 
 function realOperations(): RehearsalOperations<PreparedArtifacts> {
