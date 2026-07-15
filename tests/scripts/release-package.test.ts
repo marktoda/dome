@@ -22,6 +22,10 @@ describe("release package rehearsal", () => {
     };
     expect(pkg.files).toEqual([
       "src/",
+      "contracts/agent-stream.ts",
+      "contracts/capture.ts",
+      "contracts/product-readiness.ts",
+      "contracts/source-document.ts",
       "assets/extensions/",
       "assets/model-providers/",
       "assets/source-handlers/",
@@ -58,6 +62,10 @@ describe("release package rehearsal", () => {
       { path: "README.md", size: 1, mode: 0o644 },
       { path: "package.json", size: 1, mode: 0o644 },
       { path: "bin/dome", size: 1, mode: 0o755 },
+      { path: "contracts/agent-stream.ts", size: 1, mode: 0o644 },
+      { path: "contracts/capture.ts", size: 1, mode: 0o644 },
+      { path: "contracts/product-readiness.ts", size: 1, mode: 0o644 },
+      { path: "contracts/source-document.ts", size: 1, mode: 0o644 },
       { path: "assets/extensions/dome.markdown/manifest.yaml", size: 1, mode: 0o644 },
       { path: "assets/model-providers/anthropic.ts", size: 1, mode: 0o644 },
       { path: "assets/source-handlers/claude-slack.sh", size: 1, mode: 0o755 },
@@ -72,8 +80,18 @@ describe("release package rehearsal", () => {
     expect(() => validatePackResult(base)).not.toThrow();
     expect(() => validatePackResult({
       ...base,
+      entryCount: requiredFiles.length - 1,
+      files: requiredFiles.filter((file) => file.path !== "contracts/product-readiness.ts"),
+    })).toThrow("missing runtime path: contracts/product-readiness.ts");
+    expect(() => validatePackResult({
+      ...base,
       entryCount: requiredFiles.length + 1,
       files: [...requiredFiles, { path: "tests/leak.test.ts", size: 1, mode: 0o644 }],
+    })).toThrow("forbidden path");
+    expect(() => validatePackResult({
+      ...base,
+      entryCount: requiredFiles.length + 1,
+      files: [...requiredFiles, { path: "contracts/future.ts", size: 1, mode: 0o644 }],
     })).toThrow("forbidden path");
     expect(() => validatePackResult({
       ...base,
