@@ -86,6 +86,7 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     const operation = (name: string) => async (): Promise<void> => { events.push(name); };
     const result = await exerciseHomePwaChromiumAcceptanceForTests({
       launch: operation("launch"),
+      assertInstallIdentity: operation("install-identity"),
       pair: operation("pair"),
       assertReadiness: operation("readiness"),
       assertAdaptiveAccessibility: operation("adaptive-accessibility"),
@@ -102,13 +103,14 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     });
     expect(result).toEqual({ evidence: false });
     expect(events).toEqual([
-      "launch", "pair", "readiness", "adaptive-accessibility", "service-worker", "activity-source", "task-settlement", "offline-shell",
+      "launch", "install-identity", "pair", "readiness", "adaptive-accessibility", "service-worker", "activity-source", "task-settlement", "offline-shell",
       "local-capture", "revoke", "auth-repair", "replay", "cleanup",
     ]);
 
     events.length = 0;
     await expect(exerciseHomePwaChromiumAcceptanceForTests({
       launch: operation("launch"),
+      assertInstallIdentity: operation("install-identity"),
       pair: operation("pair"),
       assertReadiness: operation("readiness"),
       assertAdaptiveAccessibility: operation("adaptive-accessibility"),
@@ -127,12 +129,13 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       close: operation("cleanup"),
     })).rejects.toThrow("installed Home Chromium acceptance failed at activity-source");
     expect(events).toEqual([
-      "launch", "pair", "readiness", "adaptive-accessibility", "service-worker", "activity-source", "cleanup",
+      "launch", "install-identity", "pair", "readiness", "adaptive-accessibility", "service-worker", "activity-source", "cleanup",
     ]);
 
     events.length = 0;
     await expect(exerciseHomePwaChromiumAcceptanceForTests({
       launch: async () => { events.push("partial-launch"); throw new Error("private Chrome path"); },
+      assertInstallIdentity: operation("install-identity"),
       pair: operation("pair"),
       assertReadiness: operation("readiness"),
       assertAdaptiveAccessibility: operation("adaptive-accessibility"),
@@ -147,13 +150,43 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       emergencyClose: operation("emergency-close"),
       close: operation("cleanup"),
     })).rejects.toThrow(
-      "launch or initial shell failed; verify the installed Google Chrome stable channel and Home, then retry",
+      "launch failed; verify the installed Google Chrome stable channel, then retry",
     );
     expect(events).toEqual(["partial-launch", "cleanup"]);
 
     events.length = 0;
+    let installError: unknown;
+    try {
+      await exerciseHomePwaChromiumAcceptanceForTests({
+        launch: operation("launch"),
+        assertInstallIdentity: async () => {
+          events.push("install-identity");
+          throw new Error("private shell path");
+        },
+        pair: operation("pair"),
+        assertReadiness: operation("readiness"),
+        assertAdaptiveAccessibility: operation("adaptive-accessibility"),
+        controlServiceWorker: operation("service-worker"),
+        assertActivitySource: operation("activity-source"),
+        assertTaskSettlement: operation("task-settlement"),
+        assertOfflineShell: operation("offline-shell"),
+        saveLocalCapture: operation("local-capture"),
+        revoke: operation("revoke"),
+        repairAuthentication: operation("auth-repair"),
+        assertReplay: operation("replay"),
+        emergencyClose: operation("emergency-close"),
+        close: operation("cleanup"),
+      });
+    } catch (error) { installError = error; }
+    expect(installError).toBeInstanceOf(Error);
+    expect((installError as Error).message).toBe("installed Home Chromium acceptance failed at install-identity");
+    expect((installError as Error).message).not.toContain("private shell path");
+    expect(events).toEqual(["launch", "install-identity", "cleanup"]);
+
+    events.length = 0;
     await exerciseHomePwaChromiumAcceptanceForTests({
       launch: operation("launch"),
+      assertInstallIdentity: operation("install-identity"),
       pair: operation("pair"),
       assertReadiness: operation("readiness"),
       assertAdaptiveAccessibility: operation("adaptive-accessibility"),
@@ -169,13 +202,14 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       close: operation("cleanup"),
     }, { phaseMs: 5, taskSettlementPhaseMs: 100, cleanupMs: 50 });
     expect(events).toEqual([
-      "launch", "pair", "readiness", "adaptive-accessibility", "service-worker", "activity-source", "task-settlement", "offline-shell",
+      "launch", "install-identity", "pair", "readiness", "adaptive-accessibility", "service-worker", "activity-source", "task-settlement", "offline-shell",
       "local-capture", "revoke", "auth-repair", "replay", "cleanup",
     ]);
 
     events.length = 0;
     await expect(exerciseHomePwaChromiumAcceptanceForTests({
       launch: operation("launch"),
+      assertInstallIdentity: operation("install-identity"),
       pair: operation("pair"),
       assertReadiness: async () => { events.push("readiness"); throw new Error("secret readiness"); },
       assertAdaptiveAccessibility: operation("adaptive-accessibility"),
@@ -190,11 +224,12 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       emergencyClose: operation("emergency-close"),
       close: async () => { events.push("cleanup"); throw new Error("private cleanup path"); },
     })).rejects.toThrow("installed Home Chromium acceptance failed at readiness; cleanup also failed");
-    expect(events).toEqual(["launch", "pair", "readiness", "cleanup"]);
+    expect(events).toEqual(["launch", "install-identity", "pair", "readiness", "cleanup"]);
 
     events.length = 0;
     await expect(exerciseHomePwaChromiumAcceptanceForTests({
       launch: operation("launch"),
+      assertInstallIdentity: operation("install-identity"),
       pair: async (signal) => await new Promise<void>((resolve) => {
         signal.addEventListener("abort", () => {
           events.push("abort");
@@ -217,7 +252,7 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       emergencyClose: operation("emergency-close"),
       close: operation("cleanup"),
     }, { phaseMs: 5, taskSettlementPhaseMs: 100, cleanupMs: 5 })).rejects.toThrow("installed Home Chromium acceptance failed at pair");
-    expect(events).toEqual(["launch", "abort", "emergency-close", "settled", "cleanup"]);
+    expect(events).toEqual(["launch", "install-identity", "abort", "emergency-close", "settled", "cleanup"]);
   });
 
   test("SIGKILLs and drains an aborted installed Chromium child", async () => {

@@ -48,7 +48,6 @@ export const PWA_OPTIONS = {
     // shell code/style/HTML plus non-manifest head icons exactly once.
     globPatterns: [
       "**/*.{js,css,html}",
-      "favicon.ico",
       "dome.svg",
       "apple-touch-icon-180x180.png",
       // Manifest icons are added to this inventory by vite-plugin-pwa.

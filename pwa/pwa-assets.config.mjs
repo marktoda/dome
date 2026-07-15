@@ -9,7 +9,6 @@ export default {
       sizes: [64, 192, 512],
       padding: 0.05,
       resizeOptions: { fit: "contain", background: "transparent" },
-      favicons: [[48, "favicon.ico"]],
     },
     maskable: {
       sizes: [512],

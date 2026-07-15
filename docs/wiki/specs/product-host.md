@@ -1037,7 +1037,10 @@ is implemented separately by P5.6 and is not evidence from this checkpoint. See
 ### P5.4 install identity checkpoint
 
 The checked-in PWA now has one canonical charcoal-and-sage SVG identity and
-tracked 64, 192, 512, maskable 512, Apple touch 180, and favicon derivatives.
+tracked 64, 192, 512, maskable 512, and Apple touch 180 PNG derivatives.
+The shell advertises the SVG plus the existing 64px PNG as its raster fallback
+and deliberately ships no ICO: installed Chrome reliably decodes the PNG under
+the acceptance route boundary that rejected the generated ICO container.
 `@vite-pwa/assets-generator@1.0.2` is an explicit regeneration command, not a
 runtime or ordinary-build dependency. Maskable and Apple pixels are opaque and
 full-bleed; the manifest gives `/` a stable id and uses separate explicit
@@ -1047,7 +1050,8 @@ metadata.
 Only those exact root assets are public. They are no-cache, all enter the
 static-only Workbox precache exactly once, and the artifact rehearsal checks
 the exact manifest/head inventory, MIME types, nonempty bytes, and PNG sizes.
-The installed Chrome journey additionally decodes each icon before pairing.
+The installed Chrome journey additionally decodes each advertised and manifest
+icon before pairing.
 
 This is checked-in and artifact-gated identity evidence, not a claim about the
 Chrome install UI or real-device iOS rendering. Accessibility, safe-area and
