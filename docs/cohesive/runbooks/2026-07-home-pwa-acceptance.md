@@ -28,7 +28,11 @@ each result. A skipped row is not a pass.
    reload, uncached `/readyz`, local capture/export, revoke, auth repair, and
    one logical replay in system Chrome. Before pairing, Chrome also validates
    the emitted platform metadata and decodes the exact favicon, SVG, touch,
-   `any`, and maskable icon set at their declared dimensions.
+   `any`, and maskable icon set at their declared dimensions. After readiness,
+   it checks 320×568, 390×844, and 844×390 for overflow, 44px enabled controls
+   and coarse targets (excluding inline prose links), critical-control
+   containment, visible keyboard focus, and reduced-motion computed styles,
+   then resets to 390×844 for the remaining journey.
 4. Record `/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --version`
    beside the artifact id and archive SHA-256 printed by the builder. Preserve
    the builder's installed-activation evidence.
@@ -73,20 +77,21 @@ a newer unadopted edit, and opens its exact path and commit only with read
 access. They must also prove one pending task settlement, polite success,
 alerting failure, and explicit single-flight Retry. The implementation retains
 the normal App refresh path without adding an App-level acknowledgement; its
-exact installed behavior remains part of the deferred journey below.
+exact installed behavior remains owner evidence below.
 
 These portable checks do not prove the exact installed Activity/settlement
-journey and do not replace the P5.5b adaptive-layout, focus, screen-reader,
-safe-area, dynamic-type, touch-target, visual, or real-device owner-hardware
-evidence.
+journey. P5.5b adds installed Chrome viewport/target/focus/reduced-motion
+evidence, but not the real-device owner-hardware evidence below.
 
 ## Current nonclaims
 
 The P5.4 manifest/icon contract is checked in and artifact-gated. P5.5a has
 portable contract-test evidence only; its exact installed Activity/settlement
-journey remains P5.5b/owner evidence. Neither claims that Chrome presents or
-completes its install UI or replaces a real-device iOS visual check. Until
-separately delivered and recorded, this runbook also does not claim automated waiting-worker replacement,
-visual-regression coverage, the P5.5 accessibility/safe-area/dynamic-type
-matrix, signed execution without the three Apple inputs, or clean-consumer
-acceptance without the clean Mac run above.
+journey remains owner evidence. P5.5b implements the artifact-bound responsive
+gate; fresh exact installed Chrome evidence requires running the artifact
+builder above. These checkpoints do not claim Chrome install UI,
+real-iPhone portrait/landscape/notch or software-keyboard behavior, Dynamic
+Type/200%, VoiceOver, Safari touch/microphone flows, visual regression, or an
+automated waiting-worker N→N+1 replacement. Signed execution still requires
+the three Apple inputs; clean-consumer acceptance still requires the clean Mac
+run above.

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { DomeClient } from "../src/api/client";
 import { ChatTranscript } from "../src/components/ChatTranscript";
 
@@ -16,6 +17,7 @@ describe("ChatTranscript", () => {
     expect(screen.getByText("q")).toBeDefined();
     expect(screen.getByText("a")).toBeDefined();
     expect(screen.getByText(/wiki\/x\.md/)).toBeDefined();
+    expect(screen.getByRole("region", { name: "Conversation" }).hasAttribute("aria-live")).toBe(false);
   });
   test("renders a changes line for agent writes", () => {
     const state = { messages: [{ role: "assistant" as const, text: "Done.", citations: [], changes: [{ path: "wiki/todo.md", kind: "edit" as const }], streaming: false }] };
@@ -38,18 +40,20 @@ describe("ChatTranscript", () => {
       }), { status: 200, headers: { "content-type": "application/json" } });
     }) as typeof fetch;
     try {
-      render(<ChatTranscript state={{ messages: [{
+      render(<StrictMode><ChatTranscript state={{ messages: [{
         role: "assistant",
         text: "answer",
         citations: [{ path: "wiki/x.md", commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }],
         changes: [],
         streaming: false,
-      }] }} client={client} />);
+      }] }} client={client} /></StrictMode>);
       const chip = screen.getByRole("button", { name: /wiki\/x\.md/ });
       fireEvent.click(chip);
       expect(screen.getByRole("dialog")).toBeDefined();
       expect(screen.getByText(/Revision aaaaaaaa/)).toBeDefined();
       const close = screen.getByRole("button", { name: "Close source" });
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+      expect(screen.getByRole("dialog")).toBeDefined();
       expect(document.activeElement).toBe(close);
       fireEvent.keyDown(document, { key: "Tab" });
       expect(document.activeElement).toBe(close);
@@ -95,6 +99,7 @@ describe("ChatTranscript", () => {
       await waitFor(() => expect(screen.getByRole("dialog")).toBeDefined());
       fireEvent.click(screen.getByRole("button", { name: "Close source" }));
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: /wiki\/x\.md/ }));
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(failures).toEqual([]);
     } finally {

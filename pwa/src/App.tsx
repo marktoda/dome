@@ -310,7 +310,7 @@ function Screen({ client, availability, connection }: {
         ) : null}
         <ChatTranscript state={chat} client={client} interactive={access.read} />
       </div>
-      {ack !== null ? <div className="ack-wrap"><div className="ack">{ack}</div></div> : null}
+      {ack !== null ? <div className="ack-wrap"><div className="ack" role="status" aria-live="polite" aria-atomic="true">{ack}</div></div> : null}
       <Composer
         onAsk={onAsk}
         turnPhase={turnPhase}

@@ -48,7 +48,7 @@ function Cites({ citations, interactive, client }: { citations: Citation[]; inte
 
 export function ChatTranscript({ state, client, interactive = true }: { state: ChatState; client: DomeClient; interactive?: boolean }): React.ReactElement {
   return (
-    <div className="transcript">
+    <section className="transcript" aria-label="Conversation">
       {state.messages.map((m, i) => (
         <div key={i} className={`msg ${m.role}`}>
           {m.role === "assistant" ? (
@@ -67,6 +67,6 @@ export function ChatTranscript({ state, client, interactive = true }: { state: C
           {m.notice !== undefined ? <p className="turn-notice" role={m.noticeTone === "error" ? "alert" : "status"}>{m.notice}</p> : null}
         </div>
       ))}
-    </div>
+    </section>
   );
 }

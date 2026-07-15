@@ -866,11 +866,27 @@ Today refresh; failure remains visible as an alert with an explicit Retry that
 cannot issue a duplicate in-flight settlement.
 
 P5.5a evidence is limited to surface, HTTP, and component tests; the exact
-installed Activity and settlement journey remains P5.5b/owner evidence. P5.5a
-also does not claim adaptive layout completion, global focus-order or
+installed Activity and settlement journey remains owner evidence. P5.5a also
+does not claim adaptive layout completion, global focus-order or
 44px-target auditing, screen-reader acceptance, safe-area or dynamic-type
 acceptance, visual regression coverage, or real-device iOS evidence. Those
-remain the broader P5.5b and owner-hardware gates.
+continue into P5.5b and the owner-hardware gates.
+
+The bounded P5.5b adaptive-accessibility checkpoint introduces one local modal
+focus Module for source and capture surfaces, four-axis safe-area and dynamic
+viewport policy, a 44px enabled-control/coarse-target contract with an inline
+prose-link exception, high-contrast focus and secondary text/control
+boundaries, reduced-motion suppression, and concise status semantics. The
+existing installed system-Chrome journey now includes a gate that checks the
+ready shell at 320×568, 390×844, and 844×390 for horizontal overflow, target
+size, critical-control containment, visible keyboard focus, and reduced-motion
+computed styles, then returns to a stable 390×844 viewport.
+
+Fresh exact installed Chrome responsive evidence requires executing that
+artifact-bound gate. It does not prove real-iPhone portrait, landscape, notch,
+software-keyboard, Dynamic Type/200%, VoiceOver, or Safari touch/microphone
+behavior. Those remain owner-hardware gates. A waiting-worker N→N+1
+replacement journey also remains separate.
 
 Exit journey: installed PWA boots offline, preserves/exports/replays text
 capture, recovers from expired auth and premature SSE EOF, passes keyboard and

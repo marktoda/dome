@@ -24,7 +24,8 @@ function PriorityMark({ priority }: { priority: TodayTaskRow["priority"] }): Rea
   const chars = priorityMarkerChars(priority, true);
   if (chars.length === 0) return null;
   const high = priority === "highest" || priority === "high";
-  return <span className={`prio ${high ? "prio-high" : "prio-low"}`}>{chars} </span>;
+  const label = priority === "highest" ? "Highest" : priority === "high" ? "High" : priority === "low" ? "Low" : "Lowest";
+  return <><span className={`prio ${high ? "prio-high" : "prio-low"}`} aria-hidden="true">{chars} </span><span className="sr-only">{label} priority. </span></>;
 }
 
 function TaskRow(
@@ -42,20 +43,22 @@ function TaskRow(
   return (
     <div className={`row${settling || settled ? " settling" : ""}${settlement === "failure" ? " settle-failed" : ""}`}>
       {blockId !== undefined ? (
-        <input
-          type="checkbox"
-          className="box"
-          checked={settling || settled}
-          disabled={settlement !== null || !interactive}
-          aria-label={item.text}
-          aria-describedby={settlement === null ? undefined : statusId}
-          onChange={() => onSettle(item)}
-        />
+        <label className="task-hit">
+          <input
+            type="checkbox"
+            className="box"
+            checked={settling || settled}
+            disabled={settlement !== null || !interactive}
+            aria-label={item.text}
+            aria-describedby={settlement === null ? undefined : statusId}
+            onChange={() => onSettle(item)}
+          />
+        </label>
       ) : (
         // No blockId (not yet anchored) — decorative-only. Completing a task
         // here means a git commit; without a stable ^block-anchor there's no
         // settle identity to write to, so the box stays inert.
-        <div className="box" />
+        <span className="task-hit" aria-hidden="true"><span className="box" /></span>
       )}
       <div className="text">
         <span className="task-copy"><PriorityMark priority={item.priority} />{renderRich(item.text)}</span>
@@ -74,13 +77,14 @@ function TaskRow(
 }
 
 function QuestionCard({ q, onResolve, interactive }: { q: TodayQuestionRow; onResolve: (id: number, value: string) => void; interactive: boolean }): React.ReactElement {
+  const titleId = `question-${q.id}`;
   return (
-    <div className="qcard">
-      <div className="body">{renderRich(q.question)}</div>
+    <section className="qcard" aria-labelledby={titleId}>
+      <div id={titleId} className="body">{renderRich(q.question)}</div>
       <div className="opts">
         {q.options.map((opt) => <button key={opt} type="button" disabled={!interactive} onClick={() => onResolve(q.id, opt)}>{opt}</button>)}
       </div>
-    </div>
+    </section>
   );
 }
 

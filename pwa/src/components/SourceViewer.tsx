@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { DomeClient } from "../api/client";
 import type { Citation } from "../api/types";
 import type { SourceDocumentResult } from "../../../contracts/source-document";
+import { useModalFocus } from "../accessibility/modalFocus";
 
 type State =
   | { readonly kind: "loading" }
@@ -24,6 +25,15 @@ export function SourceViewer({
   const dialogRef = useRef<HTMLElement>(null);
   const shortCommit = citation.commit?.slice(0, 8) ?? "revision unavailable";
 
+  useModalFocus({
+    active: true,
+    focusKey: "source",
+    containerRef: dialogRef,
+    initialFocus: () => closeRef.current,
+    onEscape: onClose,
+    restoreFocus: () => returnFocus,
+  });
+
   useEffect(() => {
     const controller = new AbortController();
     client.source(citation, controller.signal).then(
@@ -39,42 +49,6 @@ export function SourceViewer({
     );
     return () => controller.abort();
   }, [citation, client]);
-
-  useEffect(() => {
-    closeRef.current?.focus();
-    const keyboard = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-        return;
-      }
-      if (event.key === "Tab") {
-        const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>(
-          "button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])",
-        ) ?? [])];
-        if (focusable.length === 0) {
-          event.preventDefault();
-          dialogRef.current?.focus();
-          return;
-        }
-        const first = focusable[0]!;
-        const last = focusable[focusable.length - 1]!;
-        if (
-          focusable.length === 1 ||
-          (!event.shiftKey && document.activeElement === last) ||
-          (event.shiftKey && document.activeElement === first)
-        ) {
-          event.preventDefault();
-          (event.shiftKey ? last : first).focus();
-        }
-      }
-    };
-    document.addEventListener("keydown", keyboard);
-    return () => {
-      document.removeEventListener("keydown", keyboard);
-      returnFocus?.focus();
-    };
-  }, [onClose, returnFocus]);
 
   return (
     <div className="source-backdrop" onMouseDown={(event) => {

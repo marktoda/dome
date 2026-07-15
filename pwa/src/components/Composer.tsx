@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { captureReducer, INITIAL } from "../capture/captureMachine";
+import { useModalFocus } from "../accessibility/modalFocus";
 
 type Props = {
   onAsk: (q: string) => void;
@@ -39,8 +40,30 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
   const availabilityRef = useRef(availability);
   const voiceEnabledRef = useRef(voiceEnabled);
   const discardRecordingRef = useRef(false);
+  const captureContainerRef = useRef<HTMLElement>(null);
+  const stopRecordingRef = useRef<HTMLButtonElement>(null);
+  const reviewTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const composerInputRef = useRef<HTMLInputElement>(null);
   availabilityRef.current = availability;
   voiceEnabledRef.current = voiceEnabled;
+
+  const captureModalActive = captured !== null || cap.phase === "recording" || cap.phase === "transcribing" || cap.phase === "review" || cap.phase === "filing";
+  const captureFocusKey = captured !== null ? "saved" : cap.phase;
+  useModalFocus({
+    active: captureModalActive,
+    focusKey: captureFocusKey,
+    containerRef: captureContainerRef,
+    initialFocus: () => cap.phase === "recording"
+      ? stopRecordingRef.current
+      : cap.phase === "review"
+        ? reviewTextareaRef.current
+        : captureContainerRef.current,
+    onEscape: () => {
+      if (cap.phase === "recording") recorderRef.current?.stop();
+      else if (cap.phase === "review") dispatch({ kind: "cancel" });
+    },
+    restoreFocus: () => composerInputRef.current,
+  });
 
   useEffect(() => {
     const recorder = recorderRef.current;
@@ -103,22 +126,22 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
   // Local-save confirmation — remote commit/adoption is acknowledged only from a receipt.
   if (captured !== null) {
     return (
-      <div className="overlay captured">
+      <section ref={captureContainerRef} className="overlay captured" tabIndex={-1} role="status" aria-live="polite" aria-atomic="true">
         <div className="center">
           <div className="check"><span className="mark" /></div>
           <h2>Saved locally</h2>
           <p>Pending sync to Dome Home.</p>
           {captured.length > 0 ? <div className="path">{captured}</div> : null}
         </div>
-      </div>
+      </section>
     );
   }
 
   if (cap.phase === "recording") {
     return (
-      <div className="overlay">
+      <section ref={captureContainerRef} className="overlay" tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="recording-title">
         <div className="center">
-          <div className="rec-tag"><span className="dot" /><span className="label">LISTENING</span></div>
+          <div className="rec-tag"><span className="dot" /><span id="recording-title" className="label">LISTENING</span></div>
           <div className="waveform">
             {WAVE.map((h, i) => <div key={i} className="bar" style={{ height: `${h}px`, animationDelay: `${(i * 0.045).toFixed(3)}s` }} />)}
           </div>
@@ -126,21 +149,21 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
           <div className="hint">tap to stop &amp; review</div>
         </div>
         <div className="rec-controls">
-          <button type="button" className="rec-btn" aria-label="stop recording" onClick={() => recorderRef.current?.stop()}><span className="stop" /></button>
+          <button ref={stopRecordingRef} type="button" className="rec-btn" aria-label="stop recording" onClick={() => recorderRef.current?.stop()}><span className="stop" /></button>
         </div>
-      </div>
+      </section>
     );
   }
 
   if (cap.phase === "transcribing") {
     return (
-      <div className="overlay">
+      <section ref={captureContainerRef} className="overlay" tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="transcribing-title" aria-busy="true">
         <div className="center">
           <div className="spinner" />
-          <div className="transcribing-label">transcribing…</div>
+          <div id="transcribing-title" className="transcribing-label" role="status" aria-live="polite">Transcribing recording…</div>
           <div className="shimmer-lines"><div className="line" style={{ width: "90%" }} /><div className="line" style={{ width: "70%" }} /></div>
         </div>
-      </div>
+      </section>
     );
   }
 
@@ -148,15 +171,15 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
     const filing = cap.phase === "filing";
     return (
       <div className="sheet-backdrop">
-        <div className="sheet">
+        <section ref={captureContainerRef} className="sheet" tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="capture-review-title">
           <div className="grip" />
-          <div className="tag"><span className="dot" /><span className="label">HEARD THIS — FIX IF NEEDED</span></div>
-          <textarea aria-label="capture draft" value={cap.draft} disabled={filing} onChange={(e) => dispatch({ kind: "edit", text: e.target.value })} />
+          <div className="tag"><span className="dot" /><span id="capture-review-title" className="label">HEARD THIS — FIX IF NEEDED</span></div>
+          <textarea ref={reviewTextareaRef} aria-label="capture draft" value={cap.draft} disabled={filing} onChange={(e) => dispatch({ kind: "edit", text: e.target.value })} />
           <div className="actions">
             <button type="button" className="cancel" disabled={filing} onClick={() => dispatch({ kind: "cancel" })}>Cancel</button>
             <button type="button" className="fileit" disabled={filing} onClick={() => { void file(); }}>{filing ? "Filing…" : "File it"}</button>
           </div>
-        </div>
+        </section>
       </div>
     );
   }
@@ -167,7 +190,7 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
   const askBlocked = activeTurn || turnPhase === "session-ended" || !remoteAvailable || !askEnabled;
   const inputBlocked = activeTurn;
   return (
-    <form className="composer" onSubmit={(e) => { e.preventDefault(); const q = text.trim(); if (!askBlocked && q.length > 0) { onAsk(q); setText(""); } }}>
+    <form className="composer" aria-label="Message composer" onSubmit={(e) => { e.preventDefault(); const q = text.trim(); if (!askBlocked && q.length > 0) { onAsk(q); setText(""); } }}>
       {activeTurn ? (
         <div className="turn-control" role="status" aria-live="polite">
           <span>{turnPhase === "stopping" ? "Stopping…" : "Thinking…"}</span>
@@ -187,7 +210,7 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
         <button type="button" className="mic" aria-label="record" disabled={!canRecord() || activeTurn || !remoteAvailable || !voiceEnabled} onClick={() => { void startRecording(); }}>
           <span className="glyph"><span className="stem" /><span className="base" /></span>
         </button>
-        <input aria-label="ask your brain" placeholder={remoteAvailable && askEnabled ? "ask your brain…" : "capture a thought…"} value={text} disabled={inputBlocked} onChange={(e) => setText(e.target.value)} />
+        <input ref={composerInputRef} aria-label="ask your brain" placeholder={remoteAvailable && askEnabled ? "ask your brain…" : "capture a thought…"} value={text} disabled={inputBlocked} onChange={(e) => setText(e.target.value)} />
         <button
           type="button"
           className="capture-text"
@@ -202,7 +225,7 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
       </div>
       {!remoteAvailable ? <span className="connection-hint">Ask and voice need Dome Home. Text capture stays local.</span>
         : !askEnabled || !voiceEnabled ? <span className="connection-hint">Unavailable remote features are explained under Connection. Text capture stays local.</span> : null}
-      {cap.error !== null ? <span className="err">{cap.error}</span> : null}
+      {cap.error !== null ? <span className="err" role="alert">{cap.error}</span> : null}
     </form>
   );
 }

@@ -40,6 +40,8 @@ describe("Brief", () => {
     expect(screen.getByText(/today · 1/i)).toBeDefined();
     expect(screen.getByText(/Overdue thing/)).toBeDefined();
     expect(screen.getByText("▲▲")).toBeDefined();             // priority marker (shared glyph)
+    expect(screen.getByText("▲▲").getAttribute("aria-hidden")).toBe("true");
+    expect(screen.getByText(/Highest priority/)).toBeDefined();
     expect(screen.queryByText(/THE ONE THING/)).toBeNull();   // hero retired
   });
 
@@ -96,6 +98,7 @@ describe("Brief — checkbox settle", () => {
     expect(box).toBeDefined();
     expect((box as HTMLInputElement).disabled).toBe(false);
     expect((box as HTMLInputElement).checked).toBe(false);
+    expect(box.closest(".task-hit")).not.toBeNull();
   });
 
   test("a task with no blockId renders no checkbox at all (decorative-only)", () => {
