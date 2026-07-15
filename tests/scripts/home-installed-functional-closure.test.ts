@@ -81,15 +81,28 @@ describe("installed functional closure deep module", () => {
     ["missing", (canary: FunctionalClosureCanary) => ({ ...todayTaskFixture(canary), sourceRefs: [] })],
     ["duplicate", (canary: FunctionalClosureCanary) => {
       const row = todayTaskFixture(canary);
-      return { ...row, sourceRefs: [...row.sourceRefs, row.sourceRefs[1]] };
+      const origin = todayOriginRef(canary);
+      return { ...row, sourceRefs: [todayDailyRef(canary), origin, origin] };
     }],
     ["wrong commit", (canary: FunctionalClosureCanary) => {
       const row = todayTaskFixture(canary);
-      return { ...row, sourceRefs: [row.sourceRefs[0], { ...row.sourceRefs[1], commit: "f".repeat(40) }] };
+      return {
+        ...row,
+        sourceRefs: [
+          todayDailyRef(canary),
+          { ...todayOriginRef(canary), commit: "f".repeat(40) },
+        ],
+      };
     }],
     ["wrong stable anchor", (canary: FunctionalClosureCanary) => {
       const row = todayTaskFixture(canary);
-      return { ...row, sourceRefs: [row.sourceRefs[0], { ...row.sourceRefs[1], stableId: "dome.daily.open-loop:wrong" }] };
+      return {
+        ...row,
+        sourceRefs: [
+          todayDailyRef(canary),
+          { ...todayOriginRef(canary), stableId: "dome.daily.open-loop:wrong" },
+        ],
+      };
     }],
   ] as const)("rejects %s Today origin provenance", (_name, mutate) => {
     const canary = canaryFixture();
@@ -432,17 +445,38 @@ function canaryFixture(): FunctionalClosureCanary {
 }
 
 function todayTaskFixture(canary: FunctionalClosureCanary) {
-  const stableId = `dome.daily.open-loop:${canary.blockId}`;
   return {
     path: `wiki/dailies/${canary.date}.md`,
     text: canary.taskText,
     blockId: canary.blockId,
     dueDate: canary.date,
     sourceRefs: [
-      { path: `wiki/dailies/${canary.date}.md`, commit: canary.commit, stableId },
-      { path: canary.path, commit: canary.commit, stableId },
+      todayDailyRef(canary),
+      todayOriginRef(canary),
     ],
   };
+}
+
+type TaskSourceRefFixture = Readonly<{
+  path: string;
+  commit: string;
+  stableId: string;
+}>;
+
+function todayDailyRef(canary: FunctionalClosureCanary): TaskSourceRefFixture {
+  return Object.freeze({
+    path: `wiki/dailies/${canary.date}.md`,
+    commit: canary.commit,
+    stableId: `dome.daily.open-loop:${canary.blockId}`,
+  });
+}
+
+function todayOriginRef(canary: FunctionalClosureCanary): TaskSourceRefFixture {
+  return Object.freeze({
+    path: canary.path,
+    commit: canary.commit,
+    stableId: `dome.daily.open-loop:${canary.blockId}`,
+  });
 }
 
 function todayDocument(
