@@ -121,9 +121,14 @@ input, textarea { font: inherit; color: inherit; background: none; border: none;
 .auth-repair form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 7px; }
 .auth-repair input { flex: 1 1 10rem; min-width: 0; border: 1px solid var(--control-border); border-radius: 8px; padding: 7px 9px; background: var(--input); color: var(--text); font-size: 16px; }
 .auth-repair button { color: var(--amber); font-weight: 600; white-space: nowrap; }
-.connection { flex: none; margin: 0 calc(var(--pad) + var(--safe-right)) 10px calc(var(--pad) + var(--safe-left)); padding: 8px 12px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-2); color: var(--text-soft); font-size: 12px; }
-.connection > summary { cursor: pointer; color: var(--text-dim); font: 500 11px var(--mono); }
-.connection > p { margin: 8px 0 0; }
+.connection { flex: 0 1 auto; min-height: 44px; overflow: hidden; margin: 0 calc(var(--pad) + var(--safe-right)) 10px calc(var(--pad) + var(--safe-left)); padding: 8px 12px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-2); color: var(--text-soft); font-size: 12px; }
+.connection.open { display: flex; flex-direction: column; }
+.connection-summary { flex: none; width: 100%; text-align: left; color: var(--text-dim); font: 500 11px var(--mono); }
+.connection-summary::before { content: "▸"; margin-right: 8px; color: var(--text-faint); }
+.connection-summary[aria-expanded="true"]::before { content: "▾"; }
+.connection-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.connection-body:focus-visible { outline-offset: -3px; }
+.connection-body > p { margin: 8px 0 0; }
 .connection dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 12px; margin: 10px 0 0; }
 .connection dt { color: var(--text-dim); }
 .connection dd { margin: 0; overflow-wrap: anywhere; }

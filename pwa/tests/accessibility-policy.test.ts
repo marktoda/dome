@@ -48,6 +48,31 @@ describe("PWA adaptive accessibility CSS policy", () => {
     expect(runner).not.toContain('summary, a[href], input:not([disabled])');
   });
 
+  test("keeps expanded connection diagnostics bounded and independently keyboard-scrollable", async () => {
+    const css = await readFile(join(import.meta.dir, "..", "src", "styles.css"), "utf8");
+    const connection = css.match(/\.connection\s*\{([^}]*)\}/)?.[1] ?? "";
+    const openConnection = css.match(/\.connection\.open\s*\{([^}]*)\}/)?.[1] ?? "";
+    const summary = css.match(/\.connection-summary\s*\{([^}]*)\}/)?.[1] ?? "";
+    const body = css.match(/\.connection-body\s*\{([^}]*)\}/)?.[1] ?? "";
+
+    expect(connection).toMatch(/flex:\s*0\s+1\s+auto/);
+    expect(connection).toMatch(/min-height:\s*44px/);
+    expect(connection).toMatch(/overflow:\s*hidden/);
+    expect(openConnection).toMatch(/display:\s*flex/);
+    expect(openConnection).toMatch(/flex-direction:\s*column/);
+    expect(summary).toMatch(/flex:\s*none/);
+    expect(body).toMatch(/min-height:\s*0/);
+    expect(body).toMatch(/overflow-y:\s*auto/);
+    expect(body).toMatch(/overscroll-behavior:\s*contain/);
+    expect(css).toMatch(/\.connection-body:focus-visible\s*\{[^}]*outline-offset:\s*-3px/);
+
+    const runner = await readFile(join(import.meta.dir, "..", "..", "scripts", "home-pwa-chromium-acceptance.ts"), "utf8");
+    expect(runner).toContain('page.keyboard.press("PageDown")');
+    expect(runner).toContain("installed PWA connection diagnostics did not receive keyboard focus");
+    expect(runner).toContain("installed PWA connection diagnostics did not keyboard-scroll");
+    expect(runner).toContain("installed PWA connection summary or focus left the viewport during keyboard scroll");
+  });
+
   test("secondary text and interactive boundaries meet their contrast floors", async () => {
     const css = await readFile(join(import.meta.dir, "..", "src", "styles.css"), "utf8");
     const background = token(css, "bg-screen");

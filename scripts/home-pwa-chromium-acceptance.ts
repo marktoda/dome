@@ -330,6 +330,62 @@ async function assertAdaptiveAccessibility(page: Page): Promise<void> {
         rect.left >= -0.5 && rect.top >= -0.5 && rect.right <= innerWidth + 0.5 && rect.bottom <= innerHeight + 0.5;
     })()`);
     if (!focusVisible) throw new Error(`installed PWA keyboard focus is not visibly contained at ${viewport.width}x${viewport.height}`);
+
+    const diagnostics = page.locator(".connection-body");
+    if (await diagnostics.count() !== 1) {
+      throw new Error(`installed PWA connection diagnostics are unavailable at ${viewport.width}x${viewport.height}`);
+    }
+    await diagnostics.evaluate(`(element) => { element.scrollTop = 0; element.focus({ preventScroll: true }); }`);
+    const diagnosticFocus = await page.evaluate(`(() => {
+      const body = document.querySelector(".connection-body");
+      const summary = document.querySelector(".connection-summary");
+      if (!(body instanceof HTMLElement) || !(summary instanceof HTMLElement)) return null;
+      const bodyStyle = getComputedStyle(body);
+      const bodyRect = body.getBoundingClientRect();
+      const summaryRect = summary.getBoundingClientRect();
+      const inside = (rect) => rect.left >= -0.5 && rect.top >= -0.5 &&
+        rect.right <= innerWidth + 0.5 && rect.bottom <= innerHeight + 0.5;
+      return {
+        focused: document.activeElement === body,
+        focusVisible: bodyStyle.outlineStyle !== "none" && parseFloat(bodyStyle.outlineWidth) >= 3,
+        bodyInside: inside(bodyRect),
+        summaryInside: inside(summaryRect),
+        scrollable: body.scrollHeight > body.clientHeight + 0.5,
+      };
+    })()` ) as null | Readonly<{
+      focused: boolean;
+      focusVisible: boolean;
+      bodyInside: boolean;
+      summaryInside: boolean;
+      scrollable: boolean;
+    }>;
+    if (diagnosticFocus === null || !diagnosticFocus.focused || !diagnosticFocus.focusVisible ||
+      !diagnosticFocus.bodyInside || !diagnosticFocus.summaryInside) {
+      throw new Error(`installed PWA connection diagnostics did not receive keyboard focus at ${viewport.width}x${viewport.height}`);
+    }
+    if (diagnosticFocus.scrollable) {
+      await page.keyboard.press("PageDown");
+      await page.evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+      const keyboardScroll = await page.evaluate(`(() => {
+        const body = document.querySelector(".connection-body");
+        const summary = document.querySelector(".connection-summary");
+        if (!(body instanceof HTMLElement) || !(summary instanceof HTMLElement)) return null;
+        const rect = summary.getBoundingClientRect();
+        return {
+          scrolled: body.scrollTop > 0,
+          focused: document.activeElement === body,
+          summaryInside: rect.left >= -0.5 && rect.top >= -0.5 &&
+            rect.right <= innerWidth + 0.5 && rect.bottom <= innerHeight + 0.5,
+        };
+      })()` ) as null | Readonly<{ scrolled: boolean; focused: boolean; summaryInside: boolean }>;
+      if (keyboardScroll === null || !keyboardScroll.scrolled) {
+        throw new Error(`installed PWA connection diagnostics did not keyboard-scroll at ${viewport.width}x${viewport.height}`);
+      }
+      if (!keyboardScroll.focused || !keyboardScroll.summaryInside) {
+        throw new Error(`installed PWA connection summary or focus left the viewport during keyboard scroll at ${viewport.width}x${viewport.height}`);
+      }
+      await diagnostics.evaluate(`(element) => { element.scrollTop = 0; }`);
+    }
   }
 
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -611,10 +667,10 @@ async function assertReadyConnection(
   expected: HomePwaChromiumAcceptanceInput["expected"],
   deviceName: string,
 ): Promise<void> {
-  const summary = page.locator("details.connection > summary");
+  const summary = page.locator(".connection-summary");
   await summary.filter({ hasText: "Connection · ready" }).waitFor({ timeout: WAIT_MS });
-  if (await page.locator("details.connection").getAttribute("open") === null) await summary.click();
-  const details = page.locator("details.connection");
+  if (await summary.getAttribute("aria-expanded") !== "true") await summary.click();
+  const details = page.locator(".connection");
   await details.getByText(expected.vaultName, { exact: true }).waitFor({ timeout: WAIT_MS });
   await details.getByText(deviceName, { exact: true }).waitFor({ timeout: WAIT_MS });
   await details.getByText(expected.productVersion, { exact: true }).waitFor({ timeout: WAIT_MS });
