@@ -79,6 +79,9 @@ export {
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const ACTIVATION_EVIDENCE_SUFFIX = ".installed-upgrade-evidence.json";
+export const HOME_ARTIFACT_READINESS_TIMEOUT_MS = 60_000;
+const HOME_ARTIFACT_SHUTDOWN_TIMEOUT_MS = 5_000;
+const HOME_ARTIFACT_DIAGNOSTIC_LIMIT = 2_048;
 const ACTIVATION_SCENARIOS = Object.freeze([
   "ready-success",
   "stopped-precommit-crash",
@@ -1254,19 +1257,14 @@ async function rehearseHomeServer(dome: string, vault: string, cwd: string): Pro
     stdout: "pipe",
     stderr: "pipe",
   });
-  try {
-    const stderr = child.stderr;
-    if (typeof stderr === "number") throw new Error("home rehearsal stderr was not piped");
-    const reader = stderr.getReader();
-    const decoder = new TextDecoder();
-    const ready = readHomeUrl(reader, decoder);
-    const result = await Promise.race([
-      ready,
-      Bun.sleep(15_000).then(() => ({ output: "", url: undefined })),
-    ]);
-    reader.releaseLock();
-    if (result.url === undefined) throw new Error(`artifact dome home did not become ready\n${result.output}`);
-    const response = await fetch(result.url);
+  const stderr = child.stderr;
+  if (typeof stderr === "number") {
+    const cleanup = await stopArtifactHomeChild(child, HOME_ARTIFACT_SHUTDOWN_TIMEOUT_MS);
+    throw new Error(`home rehearsal stderr was not piped${cleanupSuffix(cleanup)}`);
+  }
+  const reader = stderr.getReader();
+  await exerciseArtifactHomeProcess(child, reader, async (url) => {
+    const response = await fetch(url);
     const body = await response.text();
     if (!response.ok || !body.includes("id=\"root\"")) {
       throw new Error(`artifact dome home did not serve the bundled PWA (${response.status})`);
@@ -1287,22 +1285,22 @@ async function rehearseHomeServer(dome: string, vault: string, cwd: string): Pro
     if (assetPath === undefined || !/[-.][a-zA-Z0-9_]{6,}\.(?:js|css)$/.test(assetPath)) {
       throw new Error("artifact PWA shell did not reference a hashed asset");
     }
-    const asset = await fetch(new URL(assetPath, result.url));
+    const asset = await fetch(new URL(assetPath, url));
     if (!asset.ok || (await asset.arrayBuffer()).byteLength === 0) {
       throw new Error(`artifact dome home did not serve bundled asset ${assetPath}`);
     }
-    const manifestResponse = await fetch(new URL("/manifest.webmanifest", result.url));
+    const manifestResponse = await fetch(new URL("/manifest.webmanifest", url));
     const manifest = await manifestResponse.json() as Record<string, unknown>;
     if (!manifestResponse.ok || !exactPwaManifest(manifest)) {
       throw new Error("artifact Dome Home did not serve the honest generated PWA manifest");
     }
-    const workerResponse = await fetch(new URL("/sw.js", result.url));
+    const workerResponse = await fetch(new URL("/sw.js", url));
     const workerBody = await workerResponse.text();
     if (!workerResponse.ok) {
       throw new Error("artifact Dome Home did not serve the generated service worker");
     }
     const workboxPath = parseGeneratedWorkboxRuntimePath(workerBody);
-    const workbox = await fetch(new URL(`/${workboxPath}`, result.url));
+    const workbox = await fetch(new URL(`/${workboxPath}`, url));
     if (!workbox.ok || (await workbox.arrayBuffer()).byteLength === 0) {
       throw new Error("artifact Dome Home did not serve the generated Workbox runtime");
     }
@@ -1313,21 +1311,18 @@ async function rehearseHomeServer(dome: string, vault: string, cwd: string): Pro
     if (PWA_INSTALL_ASSETS.some((url) => !precache.includes(url))) {
       throw new Error("artifact Dome Home service worker omitted an install asset");
     }
-    for (const url of precache) {
-      const cached = await fetch(new URL(`/${url}`, result.url));
+    for (const precacheUrl of precache) {
+      const cached = await fetch(new URL(`/${precacheUrl}`, url));
       if (!cached.ok) {
-        throw new Error(`artifact Dome Home could not serve precache URL ${url}`);
+        throw new Error(`artifact Dome Home could not serve precache URL ${precacheUrl}`);
       }
     }
-    await assertPwaInstallAssets(result.url);
-    const closedRoot = await fetch(new URL("/robots.txt", result.url));
+    await assertPwaInstallAssets(url);
+    const closedRoot = await fetch(new URL("/robots.txt", url));
     if (closedRoot.status !== 401) {
       throw new Error("artifact Dome Home static root exposed an unrecognized file");
     }
-  } finally {
-    child.kill("SIGTERM");
-    await child.exited;
-  }
+  });
 }
 
 function exactPwaManifest(manifest: Record<string, unknown>): boolean {
@@ -1409,19 +1404,135 @@ async function rehearseAgeToolchain(artifactRoot: string, temporary: string): Pr
   }
 }
 
-async function readHomeUrl(
-  reader: { read(): Promise<{ readonly done: boolean; readonly value: Uint8Array | undefined }> },
-  decoder: TextDecoder,
-): Promise<{ readonly output: string; readonly url: string | undefined }> {
-  let output = "";
-  while (true) {
-    const next = await reader.read();
-    if (next.done) return { output, url: undefined };
-    output += decoder.decode(next.value ?? new Uint8Array(), { stream: true });
-    const url = output.match(/dome home: serving (http:\/\/[^\s]+)/)?.[1];
-    if (url !== undefined) return { output, url };
+type HomeStderrReader = {
+  read(): Promise<{ readonly done: boolean; readonly value: Uint8Array | undefined }>;
+  cancel(reason?: unknown): Promise<void>;
+  releaseLock(): void;
+};
+
+type HomeRehearsalChild = {
+  readonly exited: Promise<number>;
+  readonly kill: (signal?: NodeJS.Signals | number) => void;
+};
+
+async function awaitArtifactHomeUrl(
+  reader: HomeStderrReader,
+  exited: Promise<number>,
+  timeoutMs = HOME_ARTIFACT_READINESS_TIMEOUT_MS,
+): Promise<string> {
+  const timedOut = "timeout" as const;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<typeof timedOut>((resolveTimeout) => {
+    timer = setTimeout(() => resolveTimeout(timedOut), timeoutMs);
+  });
+  const decoder = new TextDecoder();
+  let tail = "";
+  try {
+    while (true) {
+      const pendingRead = reader.read();
+      const next = await Promise.race([pendingRead, deadline]);
+      if (next === timedOut) {
+        void pendingRead.catch(() => {});
+        throw new Error(`artifact dome home startup timed out after ${timeoutMs}ms${diagnosticSuffix(tail)}`);
+      }
+      if (next.done) {
+        const exitCode = await Promise.race([exited, deadline]);
+        if (exitCode === timedOut) {
+          throw new Error(`artifact dome home startup timed out after ${timeoutMs}ms${diagnosticSuffix(tail)}`);
+        }
+        throw new Error(`artifact dome home exited before readiness (code ${exitCode})${diagnosticSuffix(tail)}`);
+      }
+      const decoded = decoder.decode(next.value ?? new Uint8Array(), { stream: true });
+      const url = `${tail}${decoded}`.match(/dome home: serving (http:\/\/[^\s]+)/)?.[1];
+      tail = artifactHomeDiagnostic(`${tail}${decoded}`);
+      if (url !== undefined) return url;
+    }
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
+
+async function exerciseArtifactHomeProcess(
+  child: HomeRehearsalChild,
+  reader: HomeStderrReader,
+  onReady: (url: string) => Promise<void>,
+  readinessTimeoutMs = HOME_ARTIFACT_READINESS_TIMEOUT_MS,
+  shutdownTimeoutMs = HOME_ARTIFACT_SHUTDOWN_TIMEOUT_MS,
+): Promise<void> {
+  let primary: unknown | null = null;
+  try { await onReady(await awaitArtifactHomeUrl(reader, child.exited, readinessTimeoutMs)); }
+  catch (error) { primary = error; }
+
+  const cleanup = await stopArtifactHomeChild(child, shutdownTimeoutMs);
+  try {
+    const drained = await waitWithin(reader.cancel(), shutdownTimeoutMs);
+    if (drained === "timeout") cleanup.push("stderr did not drain");
+    else if (typeof drained === "object") cleanup.push(`stderr drain failed: ${drained.error}`);
+  } catch (error) { cleanup.push(errorMessage(error)); }
+  try { reader.releaseLock(); }
+  catch (error) { cleanup.push(errorMessage(error)); }
+
+  const cleanupMessage = cleanup.length === 0 ? null : artifactHomeDiagnostic(cleanup.join("; "));
+  if (primary !== null && cleanupMessage !== null) {
+    throw new Error(`${errorMessage(primary)}; cleanup also failed: ${cleanupMessage}`);
+  }
+  if (primary !== null) throw primary;
+  if (cleanupMessage !== null) throw new Error(`artifact Dome Home cleanup failed: ${cleanupMessage}`);
+}
+
+async function stopArtifactHomeChild(child: HomeRehearsalChild, timeoutMs: number): Promise<string[]> {
+  const cleanup: string[] = [];
+  try { child.kill("SIGTERM"); }
+  catch (error) { cleanup.push(`SIGTERM failed: ${errorMessage(error)}`); }
+  const term = await waitWithin(child.exited, timeoutMs);
+  if (term === "settled") return cleanup;
+  if (typeof term === "object") cleanup.push(`child exit wait failed: ${term.error}`);
+  try { child.kill("SIGKILL"); }
+  catch (error) { cleanup.push(`SIGKILL failed: ${errorMessage(error)}`); }
+  const killed = await waitWithin(child.exited, timeoutMs);
+  if (killed === "timeout") cleanup.push("child did not terminate after SIGKILL");
+  else if (typeof killed === "object") cleanup.push(`child exit wait failed after SIGKILL: ${killed.error}`);
+  return cleanup;
+}
+
+function artifactHomeDiagnostic(output: string): string {
+  const redacted = output
+    .replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]")
+    .replace(/\bdome_(?:pair|cred|csrf)(?:\.[A-Za-z0-9_-]+)+(?![A-Za-z0-9_-])/g, "[REDACTED]")
+    .replace(/\/Users\/[^/\s]+\//g, "/Users/[REDACTED]/");
+  return redacted.length <= HOME_ARTIFACT_DIAGNOSTIC_LIMIT
+    ? redacted
+    : `…${redacted.slice(-(HOME_ARTIFACT_DIAGNOSTIC_LIMIT - 1))}`;
+}
+
+function diagnosticSuffix(diagnostic: string): string {
+  return diagnostic === "" ? "" : `\n${diagnostic}`;
+}
+
+function cleanupSuffix(cleanup: ReadonlyArray<string>): string {
+  return cleanup.length === 0 ? "" : `; cleanup also failed: ${artifactHomeDiagnostic(cleanup.join("; "))}`;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function waitWithin(
+  value: Promise<unknown>,
+  timeoutMs: number,
+): Promise<"settled" | "timeout" | Readonly<{ error: string }>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      value.then(() => "settled" as const, (error) => Object.freeze({ error: errorMessage(error) })),
+      new Promise<"timeout">((resolveTimeout) => { timer = setTimeout(() => resolveTimeout("timeout"), timeoutMs); }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+export const exerciseArtifactHomeReadinessForTests = exerciseArtifactHomeProcess;
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);

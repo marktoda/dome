@@ -6,6 +6,8 @@ import { basename, dirname, join } from "node:path";
 import {
   createDeterministicTar,
   compileHomeCredentialHelper,
+  exerciseArtifactHomeReadinessForTests,
+  HOME_ARTIFACT_READINESS_TIMEOUT_MS,
   inspectHomeArtifactTar,
   assertSourceSnapshot,
   HOME_ARTIFACT_SCHEMA,
@@ -112,6 +114,102 @@ describe("Dome Home artifact", () => {
     const source = await readFile(join(import.meta.dir, "..", "..", "scripts", "home-artifact.ts"), "utf8");
     expect(source).toContain('const shippedBun = join(directory, "runtime", "bun");');
     expect(source).toContain("shippedModelProviderSource,\n          shippedBun,\n");
+  });
+
+  test("portable Home rehearsal allows the release-only cold-start budget", () => {
+    expect(HOME_ARTIFACT_READINESS_TIMEOUT_MS).toBe(60_000);
+  });
+
+  test("portable Home readiness accepts completion beyond the modeled old deadline", async () => {
+    const encoder = new TextEncoder();
+    const oldDeadlineMs = 10;
+    const delayed = new ReadableStream<Uint8Array>({
+      start(controller) {
+        setTimeout(() => {
+          controller.enqueue(encoder.encode("dome home: serving http://127.0.0.1:43123\n"));
+          controller.close();
+        }, oldDeadlineMs + 10);
+      },
+    });
+    let resolveExit: ((code: number) => void) | undefined;
+    const child = {
+      exited: new Promise<number>((resolve) => { resolveExit = resolve; }),
+      kill() { resolveExit?.(0); },
+    };
+    const started = performance.now();
+    let readyUrl = "";
+    await exerciseArtifactHomeReadinessForTests(child, delayed.getReader(), async (url) => { readyUrl = url; }, 100, 10);
+    expect(performance.now() - started).toBeGreaterThan(oldDeadlineMs);
+    expect(readyUrl).toBe("http://127.0.0.1:43123");
+  });
+
+  test("portable Home timeout terminates then drains the same pending reader with bounded diagnostics", async () => {
+    const encoder = new TextEncoder();
+    const stalled = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(`${"x".repeat(12_000)}\nBearer secret-value\n/Users/mark.toda/private\n`));
+      },
+      cancel() { events.push("drain"); },
+    });
+    const events: string[] = [];
+    const signals: string[] = [];
+    let resolveExit: ((code: number) => void) | undefined;
+    const reader = stalled.getReader();
+    const release = reader.releaseLock.bind(reader);
+    reader.releaseLock = () => { events.push("release"); release(); };
+    let failure: unknown;
+    try {
+      await exerciseArtifactHomeReadinessForTests({
+        exited: new Promise<number>((resolve) => { resolveExit = resolve; }),
+        kill(signal) {
+          signals.push(String(signal));
+          if (signal === "SIGKILL") resolveExit?.(137);
+        },
+      }, reader, async () => {}, 5, 5);
+    } catch (error) { failure = error; }
+    const message = failure instanceof Error ? failure.message : String(failure);
+    expect(message).toContain("startup timed out after 5ms");
+    expect(message.length).toBeLessThanOrEqual(2_200);
+    expect(message).not.toContain("secret-value");
+    expect(message).not.toContain("mark.toda");
+    expect(signals).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(events).toEqual(["drain", "release"]);
+  });
+
+  test("portable Home readiness distinguishes early exit and preserves primary cleanup failure", async () => {
+    const encoder = new TextEncoder();
+    const failed = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(encoder.encode("bind failed\n")); controller.close(); },
+    });
+    await expect(exerciseArtifactHomeReadinessForTests({
+      exited: Promise.resolve(78),
+      kill() {},
+    }, failed.getReader(), async () => {}, 50, 5)).rejects.toThrow(
+      "artifact dome home exited before readiness (code 78)\nbind failed\n",
+    );
+
+    const ready = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(encoder.encode("dome home: serving http://127.0.0.1:43123\n")); },
+      cancel() { events.push("cancel"); },
+    });
+    const events: string[] = [];
+    const reader = ready.getReader();
+    const release = reader.releaseLock.bind(reader);
+    reader.releaseLock = () => { events.push("release"); release(); };
+    let combinedFailure: unknown;
+    try {
+      await exerciseArtifactHomeReadinessForTests({
+        exited: Promise.reject(new Error("exit observer failed")),
+        kill(signal) { events.push(String(signal)); },
+      }, reader, async () => {
+        throw new Error("primary gate failed");
+      }, 50, 5);
+    } catch (error) { combinedFailure = error; }
+    expect(combinedFailure).toBeInstanceOf(Error);
+    const combinedMessage = combinedFailure instanceof Error ? combinedFailure.message : "";
+    expect(combinedMessage).toContain("primary gate failed; cleanup also failed:");
+    expect(combinedMessage).toContain("child exit wait failed after SIGKILL: exit observer failed");
+    expect(events).toEqual(["SIGTERM", "SIGKILL", "cancel", "release"]);
   });
 
   test("assembles and runs configured gates in private state before one publication", async () => {
