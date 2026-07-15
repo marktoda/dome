@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 const PREPARATION_MS = 15_000;
 const CONVERGENCE_MS = 60_000;
-const SETTLEMENT_MS = 15_000;
+const SETTLEMENT_MS = 60_000;
 const POLL_MS = 100;
 const PATH = "notes/installed-functional-canary.md";
 const TITLE = "Installed functional closure canary";
@@ -29,6 +29,10 @@ export type FunctionalClosureBoundary = Readonly<{
 export type FunctionalClosurePreparationBounds = Readonly<{
   setupMs?: number;
   convergenceMs?: number;
+  pollMs?: number;
+}>;
+export type FunctionalClosureSettlementBounds = Readonly<{
+  timeoutMs?: number;
   pollMs?: number;
 }>;
 
@@ -76,7 +80,7 @@ export async function prepareInstalledFunctionalClosure(
     return Object.freeze({ ...rendered, date, commit });
   });
 
-  const convergence: FunctionalConvergenceEvidence = {
+  let convergence: FunctionalConvergenceEvidence = {
     humanCommit: canary.commit,
     adoptedCommit: null,
     humanInAdopted: false,
@@ -87,21 +91,40 @@ export async function prepareInstalledFunctionalClosure(
     while (true) {
       signal.throwIfAborted();
       const adopted = await adoptedCommit(boundary, signal, true);
-      convergence.adoptedCommit = adopted;
-      convergence.humanInAdopted = adopted !== null && await isAncestor(boundary, canary.commit, adopted, signal);
-      convergence.recentsPresent = false;
-      convergence.todayPresent = false;
-      if (convergence.humanInAdopted && adopted !== null) {
-        await requireAncestor(boundary, adopted, "HEAD", "functional adopted truth is not an ancestor of human HEAD", signal);
+      const humanInAdopted = adopted !== null && await isAncestor(boundary, canary.commit, adopted, signal);
+      convergence = {
+        humanCommit: canary.commit,
+        adoptedCommit: adopted,
+        humanInAdopted,
+        recentsPresent: false,
+        todayPresent: false,
+      };
+      if (humanInAdopted && adopted !== null) {
+        const observedHead = await headCommit(boundary, signal);
+        await requireAncestor(boundary, adopted, observedHead, "functional adopted truth is not an ancestor of human HEAD", signal);
         const recents = await boundary.readHome("/recents", signal);
-        convergence.recentsPresent = hasExactRecent(recents, canary);
-        if (convergence.recentsPresent) {
+        const recentsPresent = hasExactRecent(recents, canary);
+        convergence = {
+          humanCommit: canary.commit,
+          adoptedCommit: adopted,
+          humanInAdopted: true,
+          recentsPresent,
+          todayPresent: false,
+        };
+        if (recentsPresent) {
           const tasks = await boundary.readHome("/tasks", signal);
           if (tasks["date"] !== canary.date) {
             throw new Error("functional canary crossed the authenticated Home-local date boundary");
           }
-          convergence.todayPresent = hasExactTask(tasks, canary);
-          if (convergence.todayPresent) return canary;
+          const todayPresent = hasExactTask(tasks, canary);
+          convergence = {
+            humanCommit: canary.commit,
+            adoptedCommit: adopted,
+            humanInAdopted: true,
+            recentsPresent: true,
+            todayPresent,
+          };
+          if (todayPresent) return canary;
         }
       }
       await abortableDelay(deadlines.pollMs, signal);
@@ -119,12 +142,13 @@ type FunctionalConvergenceEvidence = {
 
 function preparationBounds(bounds: number | FunctionalClosurePreparationBounds): Required<FunctionalClosurePreparationBounds> {
   if (typeof bounds === "number") {
-    return { setupMs: bounds, convergenceMs: bounds, pollMs: Math.min(POLL_MS, bounds) };
+    const value = positiveFiniteBound("functional canary bound", bounds);
+    return { setupMs: value, convergenceMs: value, pollMs: Math.min(POLL_MS, value) };
   }
   return {
-    setupMs: bounds.setupMs ?? PREPARATION_MS,
-    convergenceMs: bounds.convergenceMs ?? CONVERGENCE_MS,
-    pollMs: bounds.pollMs ?? POLL_MS,
+    setupMs: positiveFiniteBound("functional canary setup bound", bounds.setupMs ?? PREPARATION_MS),
+    convergenceMs: positiveFiniteBound("functional canary convergence bound", bounds.convergenceMs ?? CONVERGENCE_MS),
+    pollMs: positiveFiniteBound("functional canary poll bound", bounds.pollMs ?? POLL_MS),
   };
 }
 
@@ -134,8 +158,8 @@ function convergenceTimeoutMessage(evidence: FunctionalConvergenceEvidence): str
   return [
     "functional canary convergence timed out:",
     `phase=${phase}`,
-    `humanCommit=${evidence.humanCommit}`,
-    `adoptedCommit=${evidence.adoptedCommit ?? "unavailable"}`,
+    `humanCommit=${commitEvidence(evidence.humanCommit)}`,
+    `adoptedCommit=${commitEvidence(evidence.adoptedCommit)}`,
     `humanInAdopted=${evidence.humanInAdopted}`,
     `recentsPresent=${evidence.recentsPresent}`,
     `todayPresent=${evidence.todayPresent}`,
@@ -148,33 +172,106 @@ export async function assertInstalledFunctionalClosure(
   canary: FunctionalClosureCanary,
   settleCommit: string,
   parentSignal: AbortSignal,
-  timeoutMs = SETTLEMENT_MS,
+  bounds: number | FunctionalClosureSettlementBounds = {},
 ): Promise<void> {
-  await withinDeadline(timeoutMs, "functional task settlement did not enter adopted Today truth", async (deadlineSignal) => {
-    const signal = combinedSignal(parentSignal, deadlineSignal);
+  const deadlines = settlementBounds(bounds);
+  let convergence: FunctionalSettlementEvidence = {
+    settlementCommit: settleCommit,
+    headCommit: null,
+    adoptedCommit: null,
+    settlementObserved: false,
+    settlementInAdopted: false,
+    todayClosed: false,
+  };
+  await withinDeadline(deadlines.timeoutMs, () => settlementTimeoutMessage(convergence), async (signal) => {
     while (true) {
       signal.throwIfAborted();
+      const observedHead = await headCommit(boundary, signal);
       const commits = lines(await gitOk(boundary, [
-        "log", "--format=%H", `${canary.commit}..HEAD`, "--", canary.path,
+        "log", "--format=%H", `${canary.commit}..${observedHead}`, "--", canary.path,
       ], signal));
       if (commits.length > 1 || (commits.length === 1 && commits[0] !== settleCommit)) {
         throw new Error("functional task source was changed by more than the receipted commit");
       }
-      if (commits.length === 1) {
+      const settlementObserved = commits.length === 1;
+      if (!settlementObserved) {
+        convergence = {
+          settlementCommit: settleCommit,
+          headCommit: observedHead,
+          adoptedCommit: null,
+          settlementObserved: false,
+          settlementInAdopted: false,
+          todayClosed: false,
+        };
+      } else {
         const adopted = await adoptedCommit(boundary, signal, true);
-        if (adopted !== null) {
+        const settlementInAdopted = adopted !== null && await isAncestor(boundary, settleCommit, adopted, signal);
+        convergence = {
+          settlementCommit: settleCommit,
+          headCommit: observedHead,
+          adoptedCommit: adopted,
+          settlementObserved: true,
+          settlementInAdopted,
+          todayClosed: false,
+        };
+        if (settlementInAdopted && adopted !== null) {
+          await requireAncestor(boundary, adopted, observedHead, "functional adopted truth is not an ancestor of settlement HEAD", signal);
           const tasks = await boundary.readHome("/tasks", signal);
           if (tasks["date"] !== canary.date) {
             throw new Error("functional settlement crossed the authenticated Home-local date boundary");
           }
-          if (await isAncestor(boundary, settleCommit, adopted, signal) &&
-            await isAncestor(boundary, adopted, "HEAD", signal) && !hasTask(tasks, canary.blockId)) break;
+          const todayClosed = !hasTask(tasks, canary.blockId);
+          convergence = {
+            settlementCommit: settleCommit,
+            headCommit: observedHead,
+            adoptedCommit: adopted,
+            settlementObserved: true,
+            settlementInAdopted: true,
+            todayClosed,
+          };
+          if (todayClosed) break;
         }
       }
-      await abortableDelay(100, signal);
+      await abortableDelay(deadlines.pollMs, signal);
     }
     await verifySettlementEvidence(boundary, canary, settleCommit, signal);
   }, parentSignal);
+}
+
+type FunctionalSettlementEvidence = {
+  settlementCommit: string;
+  headCommit: string | null;
+  adoptedCommit: string | null;
+  settlementObserved: boolean;
+  settlementInAdopted: boolean;
+  todayClosed: boolean;
+};
+
+function settlementBounds(bounds: number | FunctionalClosureSettlementBounds): Required<FunctionalClosureSettlementBounds> {
+  if (typeof bounds === "number") {
+    const value = positiveFiniteBound("functional settlement bound", bounds);
+    return { timeoutMs: value, pollMs: Math.min(POLL_MS, value) };
+  }
+  return {
+    timeoutMs: positiveFiniteBound("functional settlement bound", bounds.timeoutMs ?? SETTLEMENT_MS),
+    pollMs: positiveFiniteBound("functional settlement poll bound", bounds.pollMs ?? POLL_MS),
+  };
+}
+
+function settlementTimeoutMessage(evidence: FunctionalSettlementEvidence): string {
+  const phase = !evidence.settlementObserved ? "settlement-not-observed" :
+    !evidence.settlementInAdopted ? "settlement-not-adopted" :
+    !evidence.todayClosed ? "settlement-adopted-today-open" : "settlement-evidence-incomplete";
+  return [
+    "functional task settlement convergence timed out:",
+    `phase=${phase}`,
+    `settlementCommit=${commitEvidence(evidence.settlementCommit)}`,
+    `headCommit=${commitEvidence(evidence.headCommit)}`,
+    `adoptedCommit=${commitEvidence(evidence.adoptedCommit)}`,
+    `settlementObserved=${evidence.settlementObserved}`,
+    `settlementInAdopted=${evidence.settlementInAdopted}`,
+    `todayClosed=${evidence.todayClosed}`,
+  ].join(" ");
 }
 
 async function assertHumanCanaryCommit(
@@ -232,6 +329,9 @@ async function adoptedCommit(boundary: FunctionalClosureBoundary, signal: AbortS
   }
   return result.stdout.trim();
 }
+async function headCommit(boundary: FunctionalClosureBoundary, signal: AbortSignal): Promise<string> {
+  return (await gitOk(boundary, ["rev-parse", "HEAD"], signal)).trim();
+}
 
 async function requireAncestor(boundary: FunctionalClosureBoundary, ancestor: string, descendant: string, message: string, signal: AbortSignal): Promise<void> {
   if (!await isAncestor(boundary, ancestor, descendant, signal)) throw new Error(message);
@@ -264,36 +364,40 @@ function record(value: unknown): Record<string, unknown> { return value !== null
 function array(value: unknown): ReadonlyArray<unknown> { return Array.isArray(value) ? value : []; }
 function lines(value: string): string[] { return value.split("\n").filter(Boolean); }
 function occurrences(value: string, needle: string): number { return value.split(needle).length - 1; }
+function positiveFiniteBound(name: string, value: number): number {
+  if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} must be positive and finite`);
+  return value;
+}
+function commitEvidence(value: string | null): string {
+  return value !== null && /^[0-9a-f]{40}$/.test(value) ? value : "unavailable";
+}
 
 async function withinDeadline<T>(
   timeoutMs: number, timeoutMessage: string | (() => string), operation: (signal: AbortSignal) => Promise<T>, parent?: AbortSignal,
 ): Promise<T> {
   const controller = new AbortController();
-  let timedOut = false;
   const onParentAbort = (): void => controller.abort(parent?.reason);
   parent?.addEventListener("abort", onParentAbort, { once: true });
   if (parent?.aborted === true) onParentAbort();
   const message = (): string => typeof timeoutMessage === "string" ? timeoutMessage : timeoutMessage();
+  const deadline: { reason: Error | null } = { reason: null };
   const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort(new Error(message()));
+    deadline.reason = new Error(message());
+    controller.abort(deadline.reason);
   }, timeoutMs);
   try { return await operation(controller.signal); }
   catch (error) {
+    if (deadline.reason !== null && controller.signal.reason === deadline.reason) {
+      throw new Error(deadline.reason.message, { cause: error });
+    }
     if (controller.signal.aborted) {
-      const timeoutAtAbort = timedOut && controller.signal.reason instanceof Error
-        ? controller.signal.reason.message
-        : message();
-      throw new Error(timeoutAtAbort, { cause: error });
+      throw controller.signal.reason;
     }
     throw error;
   } finally {
     clearTimeout(timer);
     parent?.removeEventListener("abort", onParentAbort);
   }
-}
-function combinedSignal(first: AbortSignal, second: AbortSignal): AbortSignal {
-  return AbortSignal.any([first, second]);
 }
 async function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
   await new Promise<void>((resolve, reject) => {

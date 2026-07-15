@@ -75,6 +75,70 @@ describe("installed functional closure deep module", () => {
     await assertInstalledFunctionalClosure(fixture.boundary, fixture.canary, fixture.settleCommit, new AbortController().signal, 1_000);
   });
 
+  test("waits for one receipted S to enter adopted Today truth", async () => {
+    const fixture = await settledFixture({ settlementState: "delayed" });
+    await assertInstalledFunctionalClosure(
+      fixture.boundary,
+      fixture.canary,
+      fixture.settleCommit,
+      new AbortController().signal,
+      { timeoutMs: 1_000, pollMs: 1 },
+    );
+    expect(await adopted(fixture.root)).toBe(fixture.settleCommit);
+  });
+
+  test.each([
+    ["S is not observed", "not-observed", "settlement-not-observed", false, false, false],
+    ["S is observed but not adopted", "unadopted", "settlement-not-adopted", true, false, false],
+    ["S is adopted but Today remains open", "today-open", "settlement-adopted-today-open", true, true, false],
+  ] as const)("classifies settlement convergence timeout when %s", async (_name, state, phase, observed, inAdopted, todayClosed) => {
+    const fixture = state === "not-observed"
+      ? await unsettledFixture()
+      : await settledFixture({ settlementState: state });
+    let error: unknown;
+    try {
+      await assertInstalledFunctionalClosure(
+        fixture.boundary,
+        fixture.canary,
+        fixture.settleCommit,
+        new AbortController().signal,
+        { timeoutMs: 500, pollMs: 1 },
+      );
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(Error);
+    const head = await gitOk(fixture.root, ["rev-parse", "HEAD"]);
+    const expectedAdopted = inAdopted ? fixture.settleCommit : observed ? await adopted(fixture.root) : "unavailable";
+    expect((error as Error).message).toBe(
+      `functional task settlement convergence timed out: phase=${phase} settlementCommit=${fixture.settleCommit} ` +
+      `headCommit=${head} adoptedCommit=${expectedAdopted} settlementObserved=${observed} ` +
+      `settlementInAdopted=${inAdopted} todayClosed=${todayClosed}`,
+    );
+  });
+
+  test("classifies a final S evidence stall inside the same overall bound", async () => {
+    const fixture = await settledFixture();
+    const boundary: FunctionalClosureBoundary = {
+      ...fixture.boundary,
+      git: async (args, signal) => {
+        if (args[0] === "show" && args[1] === `${fixture.settleCommit}:${fixture.canary.path}`) {
+          await new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+        }
+        return await fixture.boundary.git(args, signal);
+      },
+    };
+    await expect(assertInstalledFunctionalClosure(
+      boundary,
+      fixture.canary,
+      fixture.settleCommit,
+      new AbortController().signal,
+      { timeoutMs: 500, pollMs: 1 },
+    )).rejects.toThrow(
+      "functional task settlement convergence timed out: phase=settlement-evidence-incomplete",
+    );
+  });
+
   test("rejects wrong S and an extra source-changing commit", async () => {
     const wrong = await settledFixture();
     await expect(assertInstalledFunctionalClosure(wrong.boundary, wrong.canary, wrong.seed, new AbortController().signal, 100))
@@ -101,15 +165,48 @@ describe("installed functional closure deep module", () => {
       .rejects.toThrow(message);
   });
 
-  test("aborts a settlement poll without waiting for its full bound", async () => {
+  test("preserves caller cancellation without waiting for the settlement bound", async () => {
     const fixture = await fixtureBoundary();
     const canary = await prepareInstalledFunctionalClosure(fixture.boundary, 1_000);
     const controller = new AbortController();
-    setTimeout(() => controller.abort(), 10);
+    const reason = new Error("caller cancelled functional settlement");
+    setTimeout(() => controller.abort(reason), 10);
     const started = Date.now();
-    await expect(assertInstalledFunctionalClosure(fixture.boundary, canary, "f".repeat(40), controller.signal, 1_000))
-      .rejects.toThrow("did not enter adopted Today truth");
+    let error: unknown;
+    try {
+      await assertInstalledFunctionalClosure(fixture.boundary, canary, "f".repeat(40), controller.signal, 1_000);
+    } catch (caught) { error = caught; }
+    expect(error).toBe(reason);
     expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  test("keeps a convergence deadline distinct when it wins a cancellation race", async () => {
+    const fixture = await fixtureBoundary();
+    const canary = await prepareInstalledFunctionalClosure(fixture.boundary, 1_000);
+    const controller = new AbortController();
+    const cancellation = setTimeout(() => controller.abort(new Error("late caller cancellation")), 500);
+    await expect(assertInstalledFunctionalClosure(
+      fixture.boundary,
+      canary,
+      "f".repeat(40),
+      controller.signal,
+      { timeoutMs: 50, pollMs: 1 },
+    )).rejects.toThrow("functional task settlement convergence timed out: phase=settlement-not-observed");
+    clearTimeout(cancellation);
+  });
+
+  test("rejects non-positive and non-finite injected bounds before work", async () => {
+    const fixture = await fixtureBoundary();
+    await expect(prepareInstalledFunctionalClosure(fixture.boundary, { setupMs: 0 }))
+      .rejects.toThrow("functional canary setup bound must be positive and finite");
+    const canary = await prepareInstalledFunctionalClosure(fixture.boundary, 1_000);
+    await expect(assertInstalledFunctionalClosure(
+      fixture.boundary,
+      canary,
+      "f".repeat(40),
+      new AbortController().signal,
+      { timeoutMs: Number.POSITIVE_INFINITY },
+    )).rejects.toThrow("functional settlement bound must be positive and finite");
   });
 });
 
@@ -118,13 +215,24 @@ type SettlementOptions = Readonly<{
   duplicateBullet?: boolean;
   trailer?: "missing" | "duplicate" | "mixed" | "wrong";
   extraPath?: boolean;
+  settlementState?: "settled" | "delayed" | "unadopted" | "today-open";
 }>;
+
+async function unsettledFixture(): Promise<{
+  root: string; boundary: FunctionalClosureBoundary; canary: FunctionalClosureCanary; settleCommit: string; seed: string;
+}> {
+  const fixture = await fixtureBoundary();
+  const canary = await prepareInstalledFunctionalClosure(fixture.boundary, 1_000);
+  fixture.state.autoAdopt = false;
+  return { ...fixture, canary, settleCommit: "f".repeat(40) };
+}
 
 async function settledFixture(options: SettlementOptions = {}): Promise<{
   root: string; boundary: FunctionalClosureBoundary; canary: FunctionalClosureCanary; settleCommit: string; seed: string;
 }> {
   const fixture = await fixtureBoundary();
   const canary = await prepareInstalledFunctionalClosure(fixture.boundary, 1_000);
+  fixture.state.autoAdopt = false;
   const closed = `- [x] ${canary.taskText} 📅 ${canary.date} ^${canary.blockId}`;
   const source = canary.content.replace(`- [ ] ${canary.taskText} 📅 ${canary.date} ^${canary.blockId}`, closed) +
     (options.duplicateSource ? `${closed}\n` : "");
@@ -146,8 +254,18 @@ async function settledFixture(options: SettlementOptions = {}): Promise<{
   const settleCommit = await commit(
     fixture.root, paths, `settle(close): ${taskBody.slice(0, 50)}`, "dome settle", "dome-settle@local", messages,
   );
-  await gitOk(fixture.root, ["update-ref", "refs/dome/adopted/main", settleCommit]);
-  fixture.state.settled = true;
+  const settlementState = options.settlementState ?? "settled";
+  if (settlementState === "settled" || settlementState === "today-open") {
+    await gitOk(fixture.root, ["update-ref", "refs/dome/adopted/main", settleCommit]);
+  }
+  if (settlementState === "settled") fixture.state.settled = true;
+  if (settlementState === "delayed") {
+    setTimeout(() => {
+      void gitOk(fixture.root, ["update-ref", "refs/dome/adopted/main", settleCommit]).then(() => {
+        fixture.state.settled = true;
+      });
+    }, 50);
+  }
   return { ...fixture, canary, settleCommit };
 }
 
@@ -161,7 +279,7 @@ async function fixtureBoundary(options: Readonly<{
   recentsAfterReads?: number;
   todayAfterReads?: number;
 }> = {}): Promise<{
-  root: string; boundary: FunctionalClosureBoundary; seed: string; state: { settled: boolean };
+  root: string; boundary: FunctionalClosureBoundary; seed: string; state: { settled: boolean; autoAdopt: boolean };
 }> {
   const root = await mkdtemp(join(tmpdir(), "dome-installed-functional-"));
   roots.push(root);
@@ -169,7 +287,7 @@ async function fixtureBoundary(options: Readonly<{
   await writeFile(join(root, "seed.md"), "seed\n");
   const seed = await commit(root, ["seed.md"], "seed", "Owner", "owner@example.invalid");
   await gitOk(root, ["update-ref", "refs/dome/adopted/main", seed]);
-  const state = { settled: false };
+  const state = { settled: false, autoAdopt: true };
   let taskReads = 0;
   let recentsReads = 0;
   let adoptedChecks = 0;
@@ -179,7 +297,7 @@ async function fixtureBoundary(options: Readonly<{
       let result = await runGit(root, args, signal);
       if (JSON.stringify(args) === JSON.stringify(["rev-parse", "--verify", "refs/dome/adopted/main"])) {
         adoptedChecks += 1;
-        if (!options.keepSeedAdopted && adoptedChecks > (options.adoptAfterChecks ?? 0)) {
+        if (state.autoAdopt && !options.keepSeedAdopted && adoptedChecks > (options.adoptAfterChecks ?? 0)) {
           const head = await gitOk(root, ["rev-parse", "HEAD"]);
           await gitOk(root, ["update-ref", "refs/dome/adopted/main", head]);
           result = await runGit(root, args, signal);
