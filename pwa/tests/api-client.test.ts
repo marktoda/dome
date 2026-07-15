@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, mock } from "bun:test";
 import { DomeClient } from "../src/api/client";
 import type { StreamEvent } from "../src/api/types";
 import { AGENT_STREAM_SCHEMA } from "../../contracts/agent-stream";
+import { READY_PRODUCT } from "./readiness-fixture";
 
 const realFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = realFetch; });
@@ -11,6 +12,81 @@ function mockJson(status: number, body: unknown): void {
 }
 
 describe("DomeClient", () => {
+  test("readiness strictly classifies valid, incompatible, failed, and auth responses", async () => {
+    const responses = [
+      new Response(JSON.stringify(READY_PRODUCT), { status: 200 }),
+      new Response(JSON.stringify({ ...READY_PRODUCT, unexpected: true }), { status: 200 }),
+      new Response(JSON.stringify({ error: "busy" }), { status: 503 }),
+      new Response(JSON.stringify({ error: "device-revoked" }), { status: 401 }),
+    ];
+    globalThis.fetch = mock(async () => responses.shift()!) as never;
+    const failures: unknown[] = [];
+    const client = new DomeClient("", "", () => (failure) => failures.push(failure));
+
+    expect(await client.readiness()).toEqual({ kind: "ready", document: READY_PRODUCT });
+    expect(await client.readiness()).toEqual({ kind: "incompatible" });
+    expect(await client.readiness()).toEqual({ kind: "readiness-failed", status: 503 });
+    expect(await client.readiness()).toEqual({ kind: "auth-required" });
+    expect(failures).toEqual([{ kind: "auth-required" }]);
+  });
+
+  test("readiness distinguishes browser-offline from an unreachable Home", async () => {
+    globalThis.fetch = mock(async () => { throw new Error("no response"); }) as never;
+    const client = new DomeClient();
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    expect(await client.readiness()).toEqual({ kind: "offline" });
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    expect(await client.readiness()).toEqual({ kind: "unreachable" });
+  });
+
+  test("a rejected pairing code is a visible request error, not global auth loss", async () => {
+    const failures: unknown[] = [];
+    globalThis.fetch = mock(async () => new Response(JSON.stringify({
+      error: "pairing-code-invalid",
+      message: "The pairing code is invalid or expired.",
+    }), { status: 401 })) as never;
+    const client = new DomeClient("", "", () => (failure) => failures.push(failure));
+
+    await expect(client.pair("expired-code")).rejects.toThrow("pairing-code-invalid: The pairing code is invalid or expired.");
+    expect(failures).toEqual([]);
+  });
+
+  test("auth loss and successful re-pair retire the cached agent session locally", async () => {
+    const paths: string[] = [];
+    let sessions = 0;
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      paths.push(path);
+      if (path === "/sessions") {
+        sessions++;
+        return new Response(JSON.stringify({
+          schema: "dome.agent-session/v1", status: "created", sessionId: `s${sessions}`,
+        }), { status: 201 });
+      }
+      if (path === "/sessions/s1/messages") {
+        return new Response(JSON.stringify({ error: "device-revoked", message: "Pair again." }), { status: 401 });
+      }
+      if (path === "/pair") {
+        return new Response(JSON.stringify({
+          schema: "dome.device.pairing/v1", status: "paired", csrfToken: "new-csrf",
+        }), { status: 200 });
+      }
+      if (path === "/sessions/s2/messages") {
+        return new Response(`data: {"schema":"${AGENT_STREAM_SCHEMA}","type":"done","citations":[],"stopReason":"final"}\n\n`, { status: 200 });
+      }
+      throw new Error(`unexpected request: ${path}`);
+    }) as never;
+    const client = new DomeClient();
+
+    expect(await client.agentStream("before revoke", () => {})).toMatchObject({ kind: "failed", code: "device-revoked" });
+    await client.pair("fresh-code");
+    expect(await client.agentStream("after re-pair", () => {})).toEqual({ kind: "done" });
+    expect(paths).toEqual([
+      "/sessions", "/sessions/s1/messages", "/pair", "/sessions", "/sessions/s2/messages",
+    ]);
+    expect(paths.some((path) => path.endsWith("/cancel") || path === "/sessions/s1")).toBe(false);
+  });
+
   test("restores CSRF from a cookie without a network rotation", () => {
     const client = new DomeClient();
     expect(client.restoreCsrfFromCookie("other=x; dome_csrf=restored%20secret")).toBe(true);

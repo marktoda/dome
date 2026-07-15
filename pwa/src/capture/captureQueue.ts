@@ -57,7 +57,7 @@ export class CaptureQueue {
   }
 
   async remove(id: string): Promise<void> {
-    await this.tx("readwrite", (s) => s.delete(id));
+    await this.deleteStored(id);
   }
 
   async drain(
@@ -81,7 +81,7 @@ export class CaptureQueue {
         attempts: item.attempts + 1,
         lastError: undefined,
       };
-      await this.put(sending);
+      if (!await this.putIfPresent(item.id, sending)) continue;
       try {
         const receipt = await send({
           text: item.text,
@@ -91,10 +91,10 @@ export class CaptureQueue {
         if (receipt.status === "error") {
           throw new Error(receipt.error);
         }
-        await this.remove(item.id);
+        await this.deleteStored(item.id);
         completed.push({ id: item.id, receipt });
       } catch (error) {
-        await this.put({
+        await this.putIfPresent(item.id, {
           ...sending,
           state: "failed",
           lastError: error instanceof Error ? error.message : String(error),
@@ -115,6 +115,42 @@ export class CaptureQueue {
 
   private put(item: QueuedCapture): Promise<void> {
     return this.tx("readwrite", (s) => s.put(item)).then(() => undefined);
+  }
+
+  private deleteStored(id: string): Promise<void> {
+    return this.tx("readwrite", (s) => s.delete(id)).then(() => undefined);
+  }
+
+  /**
+   * Failure settlement and local deletion may race across tabs. Keeping the
+   * existence check and failure write in one IndexedDB transaction lets the
+   * database serialize both outcomes: a completed delete is never recreated,
+   * while a failed or later delete leaves/removes the failed row normally.
+   */
+  private async putIfPresent(id: string, item: QueuedCapture): Promise<boolean> {
+    const db = await this.open();
+    return new Promise<boolean>((resolve, reject) => {
+      const transaction = db.transaction(STORE, "readwrite");
+      const store = transaction.objectStore(STORE);
+      const request = store.get(id) as IDBRequest<QueuedCapture | undefined>;
+      let present = false;
+      request.onsuccess = () => {
+        if (request.result !== undefined) {
+          present = true;
+          store.put(item);
+        }
+      };
+      request.onerror = () => reject(request.error ?? new Error("indexeddb request failed"));
+      transaction.oncomplete = () => {
+        db.close();
+        resolve(present);
+      };
+      transaction.onerror = () => {
+        db.close();
+        reject(transaction.error ?? new Error("indexeddb transaction failed"));
+      };
+      transaction.onabort = transaction.onerror;
+    });
   }
 
   private open(): Promise<IDBDatabase> {

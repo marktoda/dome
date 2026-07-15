@@ -1,9 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DomeClient } from "../api/client";
+import { DomeClient, type ConnectionFailure, type ReadinessResult } from "../api/client";
+import type { ProductReadiness } from "../../../contracts/product-readiness";
 
 export type HomeAvailability = "available" | "offline" | "unreachable";
+export type HomeReadinessEvidence = Readonly<{
+  document: ProductReadiness | null;
+  stale: boolean;
+  issue: "readiness-failed" | "incompatible" | null;
+}>;
 export type HomeConnectionControl = Readonly<{
   recheck: () => void;
+  readiness: HomeReadinessEvidence;
+  authRepair: Readonly<{
+    pairing: boolean;
+    error: string | null;
+    pair: (code: string) => void;
+  }> | null;
 }>;
 type State = "checking" | "unavailable" | "connection-required" | "status-error" | "unpaired" | "pairing" | "paired";
 
@@ -16,17 +28,41 @@ export function PairingGate({
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [availability, setAvailability] = useState<HomeAvailability>("available");
+  const [repairRequired, setRepairRequired] = useState(false);
+  const [repairPairing, setRepairPairing] = useState(false);
+  const [repairError, setRepairError] = useState<string | null>(null);
+  const [readiness, setReadiness] = useState<HomeReadinessEvidence>({
+    document: null,
+    stale: false,
+    issue: null,
+  });
   const recheckRef = useRef<() => void>(() => {});
   const evidenceGeneration = useRef(0);
+  const pairedThisSession = useRef(false);
+  const pairingInFlight = useRef(false);
   const client = useMemo(() => {
     let ownedClient!: DomeClient;
     ownedClient = new DomeClient("", "", () => {
       const generation = evidenceGeneration.current;
-      return () => {
+      return (failure: ConnectionFailure) => {
         if (generation !== evidenceGeneration.current) return;
         evidenceGeneration.current++;
+        if (failure.kind === "auth-required") {
+          const hadLocalEvidence = ownedClient.restoreCsrfFromCookie(document.cookie) || pairedThisSession.current;
+          pairedThisSession.current = false;
+          setAvailability("available");
+          setReadiness((current) => ({ ...current, stale: current.document !== null }));
+          setRepairRequired(hadLocalEvidence);
+          setRepairPairing(false);
+          setRepairError(null);
+          setState(hadLocalEvidence ? "paired" : "unpaired");
+          return;
+        }
         setAvailability(navigator.onLine === false ? "offline" : "unreachable");
-        setState(ownedClient.restoreCsrfFromCookie(document.cookie) ? "paired" : "connection-required");
+        setReadiness((current) => ({ ...current, stale: current.document !== null }));
+        setState(ownedClient.restoreCsrfFromCookie(document.cookie) || pairedThisSession.current
+          ? "paired"
+          : "connection-required");
       };
     });
     return ownedClient;
@@ -41,11 +77,48 @@ export function PairingGate({
     let inFlight = false;
     let inFlightGeneration = 0;
     let queued = false;
-    const localEvidence = (): boolean => client.restoreCsrfFromCookie(document.cookie);
+    const localEvidence = (): boolean =>
+      client.restoreCsrfFromCookie(document.cookie) || pairedThisSession.current;
+    const acceptReadiness = (result: ReadinessResult, generation: number): void => {
+      if (!active || generation !== evidenceGeneration.current) return;
+      if (result.kind === "auth-required") {
+        const hadLocalEvidence = localEvidence();
+        pairedThisSession.current = false;
+        setAvailability("available");
+        setReadiness((current) => ({ ...current, stale: current.document !== null }));
+        setRepairRequired(hadLocalEvidence);
+        setRepairPairing(false);
+        setRepairError(null);
+        setState(hadLocalEvidence ? "paired" : "unpaired");
+        return;
+      }
+      if (result.kind === "offline" || result.kind === "unreachable") {
+        setAvailability(result.kind);
+        setReadiness((current) => ({ ...current, stale: current.document !== null }));
+        setState(localEvidence() ? "paired" : "connection-required");
+        return;
+      }
+      setAvailability("available");
+      setState("paired");
+      if (result.kind === "ready") {
+        setRepairRequired(false);
+        setRepairPairing(false);
+        setRepairError(null);
+        setReadiness({ document: result.document, stale: false, issue: null });
+      } else {
+        setReadiness((current) => ({
+          document: current.document,
+          stale: current.document !== null,
+          issue: result.kind,
+        }));
+      }
+    };
     const check = (): void => {
+      if (pairingInFlight.current) return;
       if (navigator.onLine === false) {
         evidenceGeneration.current++;
         setAvailability("offline");
+        setReadiness((current) => ({ ...current, stale: current.document !== null }));
         setState(localEvidence() ? "paired" : "connection-required");
         return;
       }
@@ -58,13 +131,19 @@ export function PairingGate({
       const generation = ++evidenceGeneration.current;
       inFlight = true;
       inFlightGeneration = generation;
-      void client.pairingStatus().then((status) => {
-        if (!active || generation !== evidenceGeneration.current) return;
-        const csrfReady = status.schema !== "dome.device.pairing/v1" || localEvidence();
-        setAvailability("available");
-        setState(status.paired && csrfReady
-          ? "paired"
-          : status.available ? "unpaired" : "unavailable");
+      const proof = localEvidence()
+        ? client.readiness()
+        : client.pairingStatus().then(async (status): Promise<ReadinessResult | null> => {
+          if (!status.paired || status.schema === "dome.device.pairing/v1") {
+            if (!active || generation !== evidenceGeneration.current) return null;
+            setAvailability("available");
+            setState(status.available ? "unpaired" : "unavailable");
+            return null;
+          }
+          return client.readiness();
+        });
+      void proof.then((result) => {
+        if (result !== null) acceptReadiness(result, generation);
       }).catch(() => {
         if (!active || generation !== evidenceGeneration.current) return;
         setAvailability("available");
@@ -80,6 +159,7 @@ export function PairingGate({
     const offline = (): void => {
       evidenceGeneration.current++;
       setAvailability("offline");
+      setReadiness((current) => ({ ...current, stale: current.document !== null }));
       setState(localEvidence() ? "paired" : "connection-required");
     };
     const online = (): void => { check(); };
@@ -99,8 +179,57 @@ export function PairingGate({
     };
   }, [client]);
 
+  const pair = useCallback((code: string, repair: boolean): void => {
+    const value = code.trim();
+    if (value.length === 0 || pairingInFlight.current) return;
+    pairingInFlight.current = true;
+    const generation = ++evidenceGeneration.current;
+    if (repair) {
+      setRepairPairing(true);
+      setRepairError(null);
+    } else {
+      setState("pairing");
+      setError(null);
+    }
+    void client.pair(value)
+      .then(() => {
+        pairingInFlight.current = false;
+        if (repair) setRepairPairing(false);
+        if (generation !== evidenceGeneration.current) return;
+        pairedThisSession.current = true;
+        setAvailability("available");
+        setReadiness((current) => ({ ...current, stale: current.document !== null }));
+        setRepairRequired(false);
+        setRepairPairing(false);
+        setRepairError(null);
+        setState("paired");
+        queueMicrotask(recheck);
+      })
+      .catch((reason) => {
+        pairingInFlight.current = false;
+        if (repair) setRepairPairing(false);
+        if (generation !== evidenceGeneration.current) return;
+        const message = reason instanceof Error ? reason.message : String(reason);
+        if (repair) {
+          setRepairPairing(false);
+          setRepairError(message);
+        } else {
+          setError(message);
+          setState("unpaired");
+        }
+      });
+  }, [client, recheck]);
+
   if (state === "paired") {
-    return <>{children(client, availability, { recheck })}</>;
+    return <>{children(client, availability, {
+      recheck,
+      readiness,
+      authRepair: repairRequired ? {
+        pairing: repairPairing,
+        error: repairError,
+        pair: (code) => pair(code, true),
+      } : null,
+    })}</>;
   }
   return (
     <main className="gate">
@@ -123,22 +252,7 @@ export function PairingGate({
           <p className="lede">Enter the pairing code shown on your Dome host.</p>
           <form onSubmit={(event) => {
             event.preventDefault();
-            const code = draft.trim();
-            if (code.length === 0 || state === "pairing") return;
-            const generation = ++evidenceGeneration.current;
-            setState("pairing");
-            setError(null);
-            void client.pair(code)
-              .then(() => {
-                if (generation !== evidenceGeneration.current) return;
-                setAvailability("available");
-                setState("paired");
-              })
-              .catch((reason) => {
-                if (generation !== evidenceGeneration.current) return;
-                setError(reason instanceof Error ? reason.message : String(reason));
-                setState("unpaired");
-              });
+            pair(draft, false);
           }}>
             <input
               aria-label="Pairing code"

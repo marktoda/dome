@@ -9,6 +9,8 @@ import { Composer } from "./components/Composer";
 import { chatReducer } from "./chat/streamReducer";
 import { CaptureQueue, type QueuedCapture } from "./capture/captureQueue";
 import { UpdatePrompt } from "./offline/UpdatePrompt";
+import { AuthRepair, Connection } from "./components/Connection";
+import { deriveProductAccess, NO_PRODUCT_ACCESS } from "./connection/product-access";
 
 function todayLabel(): string {
   try {
@@ -52,6 +54,14 @@ function Screen({ client, availability, connection }: {
   const retryQuestion = useRef<string | null>(null);
   const hasMessages = chat.messages.length > 0;
   const remoteAvailable = availability === "available";
+  const readinessCurrent = remoteAvailable && !connection.readiness.stale &&
+    connection.readiness.issue === null && connection.readiness.document !== null;
+  const access = useMemo(() => {
+    const evidence = connection.readiness;
+    return remoteAvailable && !evidence.stale && evidence.issue === null && evidence.document !== null
+      ? deriveProductAccess(evidence.document)
+      : NO_PRODUCT_ACCESS;
+  }, [connection.readiness, remoteAvailable]);
   const priorRemoteAvailable = useRef(remoteAvailable);
 
   useLayoutEffect(() => {
@@ -60,7 +70,7 @@ function Screen({ client, availability, connection }: {
   }, [remoteAvailable]);
 
   const refresh = useCallback(() => {
-    if (!remoteAvailable) return;
+    if (!access.read) return;
     const sequence = ++refreshSequence.current;
     setViewLoad({ today: "loading", recents: "loading" });
     void Promise.allSettled([client.tasks(), client.recents()]).then(([todayResult, recentsResult]) => {
@@ -72,18 +82,18 @@ function Screen({ client, availability, connection }: {
         recents: recentsResult.status === "fulfilled" ? "ready" : "failed",
       });
     });
-  }, [client, remoteAvailable]);
+  }, [access.read, client]);
 
   const refreshPending = useCallback(async (): Promise<void> => {
     setPendingCaptures(await captureQueue.all());
   }, [captureQueue]);
 
   const drainCaptures = useCallback(async (): Promise<void> => {
-    if (!remoteAvailable) return;
+    if (!access.captureReplay) return;
     const completed = await captureQueue.drain((request) => client.capture(request));
     await refreshPending();
     if (completed.length > 0) refresh();
-  }, [captureQueue, client, refresh, refreshPending, remoteAvailable]);
+  }, [access.captureReplay, captureQueue, client, refresh, refreshPending]);
 
   useEffect(() => {
     refresh();
@@ -127,6 +137,13 @@ function Screen({ client, availability, connection }: {
     URL.revokeObjectURL(url);
   };
 
+  const removePending = (id: string): void => {
+    // A delete is a local-only operation. Reflect the user's intent
+    // immediately, then restore IndexedDB truth if the durable delete fails.
+    setPendingCaptures((current) => current.filter((item) => item.id !== id));
+    void captureQueue.remove(id).catch(() => refreshPending());
+  };
+
   const finishTurn = useCallback((turnId: string, question: string, outcome: AgentStreamOutcome): void => {
     dispatch({ kind: "outcome", turnId, outcome });
     retryQuestion.current = outcome.kind === "done" ? null : question;
@@ -136,7 +153,7 @@ function Screen({ client, availability, connection }: {
   }, []);
 
   const startAsk = useCallback((q: string): void => {
-    if (!remoteAvailable || activeTurn.current !== null) return;
+    if (!access.converse || activeTurn.current !== null) return;
     let turnId = "";
     const handle = client.startAgentTurn(q, (e) => {
       dispatch({ kind: "event", turnId, event: e });
@@ -154,7 +171,7 @@ function Screen({ client, availability, connection }: {
       activeTurn.current = null;
       finishTurn(handle.turnId, q, outcome);
     });
-  }, [client, finishTurn, refresh, remoteAvailable]);
+  }, [access.converse, client, finishTurn, refresh]);
 
   const onAsk = useCallback((q: string): void => {
     if (turnPhase === "session-ended") return;
@@ -175,22 +192,22 @@ function Screen({ client, availability, connection }: {
 
   const retryTurn = useCallback((): void => {
     const question = retryQuestion.current;
-    if (!remoteAvailable || question === null || activeTurn.current !== null) return;
+    if (!access.converse || question === null || activeTurn.current !== null) return;
     client.startNewConversation();
     dispatch({ kind: "boundary", text: "Retrying may repeat actions from the previous response." });
     startAsk(question);
-  }, [client, remoteAvailable, startAsk]);
+  }, [access.converse, client, startAsk]);
 
   const newConversation = useCallback((): void => {
-    if (!remoteAvailable || activeTurn.current !== null) return;
+    if (!access.converse || activeTurn.current !== null) return;
     retryQuestion.current = null;
     setTurnPhase("idle");
     client.startNewConversation();
     dispatch({ kind: "boundary", text: "New conversation started." });
-  }, [client, remoteAvailable]);
+  }, [access.converse, client]);
 
   const resolve = (id: number, value: string): void => {
-    if (!remoteAvailable) return;
+    if (!access.resolve) return;
     void client.resolve(id, value).then((result) => {
       if (result.status !== "answered" && result.status !== "already-answered") {
         setAck("Answer not saved · Try again");
@@ -211,7 +228,7 @@ function Screen({ client, availability, connection }: {
   // reports success/failure, then refetches on success so the settled task
   // drops off the list for good.
   const settle = (blockId: string): Promise<boolean> => {
-    if (!remoteAvailable) return Promise.resolve(false);
+    if (!access.resolve) return Promise.resolve(false);
     return client.settle(blockId, "close")
       .then((r) => {
         const ok = r.status === "settled";
@@ -225,8 +242,9 @@ function Screen({ client, availability, connection }: {
     <main className="screen">
       <header className="masthead">
         <span className="brand">Dome</span>
-        <span className="meta">{todayLabel()}<span className={`availability-dot ${availability}`} aria-hidden="true" /></span>
+        <span className="meta">{todayLabel()}<span className={`availability-dot ${readinessCurrent ? "available" : availability === "available" ? "unknown" : availability}`} aria-hidden="true" /></span>
       </header>
+      <Connection availability={availability} readiness={connection.readiness} access={access} />
       {!remoteAvailable ? (
         <div className="availability-banner" role="status">
           <strong>{availability === "offline" ? "Offline" : "Dome Home unavailable"}</strong>
@@ -236,7 +254,23 @@ function Screen({ client, availability, connection }: {
           <button type="button" onClick={connection.recheck}>Retry connection</button>
         </div>
       ) : null}
-      {remoteAvailable && (viewLoad.today === "failed" || viewLoad.recents === "failed") ? (
+      {remoteAvailable && !readinessCurrent ? (
+        <div className="availability-banner readiness-banner" role="status">
+          <strong>{connection.readiness.issue === "incompatible"
+            ? "Incompatible Dome Home"
+            : connection.readiness.issue === "readiness-failed"
+              ? "Product readiness unavailable"
+              : connection.readiness.stale
+                ? "Connection details are stale"
+                : "Checking Dome Home"}</strong>
+          <span>{connection.readiness.document === null
+            ? "Remote actions stay disabled until authenticated product readiness is validated."
+            : "Last known details are context only; remote actions stay disabled until readiness is validated again."}</span>
+          <button type="button" onClick={connection.recheck}>Retry product readiness</button>
+        </div>
+      ) : null}
+      {connection.authRepair !== null ? <AuthRepair control={connection.authRepair} /> : null}
+      {access.read && (viewLoad.today === "failed" || viewLoad.recents === "failed") ? (
         <div className="availability-banner live-data-warning" role="status">
           <strong>Live views incomplete</strong>
           <span>{viewLoad.today === "failed" && viewLoad.recents === "failed"
@@ -252,23 +286,21 @@ function Screen({ client, availability, connection }: {
           <div className="capture-outbox-head">
             <strong>{pendingCaptures.length} saved locally</strong>
             <span>offline storage: {storageStatus}</span>
-            <button type="button" disabled={!remoteAvailable} onClick={() => { void drainCaptures(); }}>Retry</button>
+            <button type="button" disabled={!access.captureReplay} onClick={() => { void drainCaptures(); }}>Retry</button>
             <button type="button" onClick={() => { void exportPending(); }}>Export</button>
           </div>
           {pendingCaptures.map((item) => (
             <div className="capture-outbox-item" key={item.id}>
               <span>{item.text}</span>
               <small>{item.state}{item.lastError !== undefined ? ` · ${item.lastError}` : ""}</small>
-              <button type="button" aria-label={`delete pending capture ${item.id}`} onClick={() => {
-                void captureQueue.remove(item.id).then(refreshPending);
-              }}>Delete</button>
+              <button type="button" aria-label={`delete pending capture ${item.id}`} onClick={() => removePending(item.id)}>Delete</button>
             </div>
           ))}
         </section>
       ) : null}
       <div className="scroll">
         {today !== null ? (
-          <Brief today={today} onResolve={resolve} onSettle={settle} collapsed={briefCollapsed} hasMessages={hasMessages} onToggle={() => setBriefCollapsed((c) => !c)} interactive={remoteAvailable} />
+          <Brief today={today} onResolve={resolve} onSettle={settle} collapsed={briefCollapsed} hasMessages={hasMessages} onToggle={() => setBriefCollapsed((c) => !c)} interactive={access.resolve} />
         ) : null}
         {recents !== null ? (
           <details className="recents-wrap">
@@ -276,7 +308,7 @@ function Screen({ client, availability, connection }: {
             <Recents recents={recents} />
           </details>
         ) : null}
-        <ChatTranscript state={chat} client={client} interactive={remoteAvailable} />
+        <ChatTranscript state={chat} client={client} interactive={access.read} />
       </div>
       {ack !== null ? <div className="ack-wrap"><div className="ack">{ack}</div></div> : null}
       <Composer
@@ -289,6 +321,8 @@ function Screen({ client, availability, connection }: {
         onTranscribe={(blob) => client.transcribe(blob).then((t) => t.text)}
         onFile={captureText}
         availability={availability}
+        askEnabled={access.converse}
+        voiceEnabled={access.voice}
       />
     </main>
   );

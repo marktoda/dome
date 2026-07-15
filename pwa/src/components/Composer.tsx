@@ -11,6 +11,8 @@ type Props = {
   onTranscribe: (audio: Blob) => Promise<string>;
   onFile: (text: string) => Promise<string | void>;
   availability?: "available" | "offline" | "unreachable";
+  askEnabled?: boolean;
+  voiceEnabled?: boolean;
 };
 
 function canRecord(): boolean {
@@ -27,7 +29,7 @@ function fmtTime(s: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConversation, onCapture, onTranscribe, onFile, availability = "available" }: Props): React.ReactElement {
+export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConversation, onCapture, onTranscribe, onFile, availability = "available", askEnabled = true, voiceEnabled = true }: Props): React.ReactElement {
   const [text, setText] = useState("");
   const [cap, dispatch] = useReducer(captureReducer, INITIAL);
   const [secs, setSecs] = useState(0);
@@ -35,16 +37,18 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const availabilityRef = useRef(availability);
+  const voiceEnabledRef = useRef(voiceEnabled);
   const discardRecordingRef = useRef(false);
   availabilityRef.current = availability;
+  voiceEnabledRef.current = voiceEnabled;
 
   useEffect(() => {
     const recorder = recorderRef.current;
-    if (availability !== "available" && recorder !== null && recorder.state !== "inactive") {
+    if ((availability !== "available" || !voiceEnabled) && recorder !== null && recorder.state !== "inactive") {
       discardRecordingRef.current = true;
       recorder.stop();
     }
-  }, [availability]);
+  }, [availability, voiceEnabled]);
 
   useEffect(() => {
     if (cap.phase !== "recording") { setSecs(0); return; }
@@ -54,9 +58,9 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
 
   const startRecording = async (): Promise<void> => {
     try {
-      if (availabilityRef.current !== "available") return;
+      if (availabilityRef.current !== "available" || !voiceEnabledRef.current) return;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (availabilityRef.current !== "available") {
+      if (availabilityRef.current !== "available" || !voiceEnabledRef.current) {
         stream.getTracks().forEach((track) => track.stop());
         dispatch({ kind: "fail", error: "Recording discarded because Dome Home is unavailable." });
         return;
@@ -66,7 +70,7 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
       rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       rec.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
-        const discard = discardRecordingRef.current || availabilityRef.current !== "available";
+        const discard = discardRecordingRef.current || availabilityRef.current !== "available" || !voiceEnabledRef.current;
         discardRecordingRef.current = false;
         const recordedChunks = chunksRef.current;
         chunksRef.current = [];
@@ -160,7 +164,7 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
   // idle
   const activeTurn = turnPhase === "streaming" || turnPhase === "stopping";
   const remoteAvailable = availability === "available";
-  const askBlocked = activeTurn || turnPhase === "session-ended" || !remoteAvailable;
+  const askBlocked = activeTurn || turnPhase === "session-ended" || !remoteAvailable || !askEnabled;
   const inputBlocked = activeTurn;
   return (
     <form className="composer" onSubmit={(e) => { e.preventDefault(); const q = text.trim(); if (!askBlocked && q.length > 0) { onAsk(q); setText(""); } }}>
@@ -175,15 +179,15 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
       {turnPhase === "retryable" || turnPhase === "session-ended" ? (
         <div className="turn-control" role="status" aria-live="polite">
           <span>{turnPhase === "session-ended" ? "Conversation ended. Retry may repeat actions." : "Response interrupted; outcome may be uncertain. Retry may repeat actions."}</span>
-          <button type="button" onClick={onRetry} disabled={!remoteAvailable}>Retry question</button>
-          <button type="button" onClick={onNewConversation} disabled={!remoteAvailable}>New conversation</button>
+          <button type="button" onClick={onRetry} disabled={!remoteAvailable || !askEnabled}>Retry question</button>
+          <button type="button" onClick={onNewConversation} disabled={!remoteAvailable || !askEnabled}>New conversation</button>
         </div>
       ) : null}
       <div className="pill">
-        <button type="button" className="mic" aria-label="record" disabled={!canRecord() || askBlocked} onClick={() => { void startRecording(); }}>
+        <button type="button" className="mic" aria-label="record" disabled={!canRecord() || activeTurn || !remoteAvailable || !voiceEnabled} onClick={() => { void startRecording(); }}>
           <span className="glyph"><span className="stem" /><span className="base" /></span>
         </button>
-        <input aria-label="ask your brain" placeholder={remoteAvailable ? "ask your brain…" : "capture a thought…"} value={text} disabled={inputBlocked} onChange={(e) => setText(e.target.value)} />
+        <input aria-label="ask your brain" placeholder={remoteAvailable && askEnabled ? "ask your brain…" : "capture a thought…"} value={text} disabled={inputBlocked} onChange={(e) => setText(e.target.value)} />
         <button
           type="button"
           className="capture-text"
@@ -196,7 +200,8 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
         >+</button>
         <button type="submit" disabled={askBlocked || text.trim().length === 0} className={`send${text.trim().length > 0 ? " active" : ""}`} aria-label="send">↑</button>
       </div>
-      {!remoteAvailable ? <span className="connection-hint">Ask and voice need Dome Home. Text capture stays local.</span> : null}
+      {!remoteAvailable ? <span className="connection-hint">Ask and voice need Dome Home. Text capture stays local.</span>
+        : !askEnabled || !voiceEnabled ? <span className="connection-hint">Unavailable remote features are explained under Connection. Text capture stays local.</span> : null}
       {cap.error !== null ? <span className="err">{cap.error}</span> : null}
     </form>
   );

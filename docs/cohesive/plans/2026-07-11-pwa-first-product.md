@@ -809,6 +809,22 @@ This checkpoint does not claim final installability icons, full Connection and
 readiness UX, offline knowledge browsing, browser automation, real-device iOS
 acceptance, or the complete accessibility matrix.
 
+The bounded P5.2 checkpoint ships authenticated Connection truth. The PWA
+strictly validates `GET /readyz`, distinguishes offline, unreachable, expired
+or revoked authentication, reachable readiness failure, and incompatible
+contracts, and keeps prior readiness only as visibly stale context. One pure
+access derivation gates Today/source reads, Ask/model use, voice/transcription,
+capture replay, and owner decisions from the validated device capabilities,
+provider state, and write admission. Host state remains separately visible
+rather than disabling read routes that the Home still admits. A compact accessible
+Connection disclosure explains vault, device, version, dependency states,
+capabilities, and the host's text-only next actions. Re-pairing never clears
+the local text queue or replaces the limited local-capture shell.
+
+P5.2 does not add polling, another persisted connection schema, a workflow or
+state-machine framework, offline knowledge browsing, install icons, browser
+automation, real-device iOS acceptance, or the complete accessibility matrix.
+
 Exit journey: installed PWA boots offline, preserves/exports/replays text
 capture, recovers from expired auth and premature SSE EOF, passes keyboard and
 screen-reader flows, and explains every degraded dependency.

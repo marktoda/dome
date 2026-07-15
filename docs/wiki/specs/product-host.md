@@ -237,6 +237,18 @@ but `writesAdmitted` is necessarily false. It must never be interpreted as
 ordinary product readiness. Model/transcription degradation does not block
 Today, text capture, owner decisions, document reads, or lexical recall.
 
+The PWA consumes this document as authority only after exact runtime
+validation. It derives remote affordances in one place: Today and source reads
+require `read`; Ask requires `converse` plus a ready model; voice requires
+`capture` plus ready transcription; capture replay requires `capture` plus
+`writesAdmitted`; resolve and settle require `resolve` plus
+`writesAdmitted`. A previous valid document may be shown after transport or
+readiness failure, but only as labelled stale context and never to enable an
+action. An authenticated 401 returns the device to pairing without clearing
+its local text-capture queue or unmounting the limited local-capture shell. A
+rejected pairing-code request remains an inline pairing error; it is not fresh
+evidence that the current product credential was revoked.
+
 ## Capture durability contract
 
 Offline V1 capture is text-only. The PWA requests persistent browser storage

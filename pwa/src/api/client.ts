@@ -13,6 +13,10 @@ import {
   type ExactCitation,
 } from "../source/source-client";
 import type { SourceDocumentResult } from "../../../contracts/source-document";
+import {
+  parseProductReadiness,
+  type ProductReadiness,
+} from "../../../contracts/product-readiness";
 
 export type AgentTurnHandle = {
   turnId: string;
@@ -20,8 +24,19 @@ export type AgentTurnHandle = {
   stop: () => Promise<AgentStopOutcome>;
 };
 
-export type TransportFailureTicket = (cause: unknown) => void;
+export type ConnectionFailure =
+  | { readonly kind: "transport"; readonly cause: unknown }
+  | { readonly kind: "auth-required" };
+export type TransportFailureTicket = (failure: ConnectionFailure) => void;
 export type BeginTransportRequest = () => TransportFailureTicket;
+
+export type ReadinessResult =
+  | { readonly kind: "ready"; readonly document: ProductReadiness }
+  | { readonly kind: "offline" }
+  | { readonly kind: "unreachable" }
+  | { readonly kind: "auth-required" }
+  | { readonly kind: "readiness-failed"; readonly status: number }
+  | { readonly kind: "incompatible" };
 
 /** A request never reached an HTTP response; callers may downgrade transport availability. */
 export class DomeTransportError extends Error {
@@ -93,22 +108,50 @@ export class DomeClient {
   private transportFailureTicket(request: Request): TransportFailureTicket {
     const report = this.beginTransportRequest?.();
     let reported = false;
-    return (cause: unknown): void => {
-      if (reported || report === undefined || request.signal.aborted || isAbortError(cause)) return;
+    return (failure: ConnectionFailure): void => {
+      if (reported || report === undefined || request.signal.aborted ||
+        (failure.kind === "transport" && isAbortError(failure.cause))) return;
       reported = true;
-      report(cause);
+      report(failure);
     };
   }
 
   private async fetchResponse(
     request: Request,
     reportTransportFailure: TransportFailureTicket = this.transportFailureTicket(request),
+    observeAuthFailure: boolean = true,
   ): Promise<Response> {
     try {
-      return await fetch(request);
+      const response = await fetch(request);
+      if (observeAuthFailure && response.status === 401) {
+        this.retireSessionIdentity();
+        reportTransportFailure({ kind: "auth-required" });
+      }
+      return response;
     } catch (error) {
-      reportTransportFailure(error);
+      reportTransportFailure({ kind: "transport", cause: error });
       throw new DomeTransportError(error);
+    }
+  }
+
+  /** Authenticated product truth. Invalid or failed documents never become authority. */
+  async readiness(): Promise<ReadinessResult> {
+    let response: Response;
+    try {
+      response = await this.fetchResponse(this.request("/readyz", {
+        headers: this.authHeaders(false),
+      }));
+    } catch (error) {
+      if (!(error instanceof DomeTransportError)) throw error;
+      return { kind: navigator.onLine === false ? "offline" : "unreachable" };
+    }
+    if (response.status === 401) return { kind: "auth-required" };
+    if (!response.ok) return { kind: "readiness-failed", status: response.status };
+    const value = await response.json().catch(() => null);
+    try {
+      return { kind: "ready", document: parseProductReadiness(value) };
+    } catch {
+      return { kind: "incompatible" };
     }
   }
 
@@ -143,11 +186,17 @@ export class DomeClient {
   }
 
   async pair(code: string): Promise<PairingResult> {
-    const paired = await this.parse<PairingResult>(await this.fetchResponse(this.request("/pair", {
+    const request = this.request("/pair", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ code }),
-    })));
+    });
+    const paired = await this.parse<PairingResult>(await this.fetchResponse(
+      request,
+      this.transportFailureTicket(request),
+      false,
+    ));
+    this.retireSessionIdentity();
     if (paired.csrfToken !== undefined) this.csrfToken = paired.csrfToken;
     return paired;
   }
@@ -291,7 +340,7 @@ export class DomeClient {
       }
       if (!(error instanceof AgentStreamProtocolError)) {
         void reader.cancel(error).catch(() => {});
-        reportTransportFailure(error);
+        reportTransportFailure({ kind: "transport", cause: error });
         const outcome = this.failedOutcome("network-error", error, true);
         this.emitFailure(onEvent, outcome);
         return outcome;
@@ -401,6 +450,10 @@ export class DomeClient {
 
   private clearSession(session: Promise<string>): void {
     if (this.sessionPromise === session) this.sessionPromise = null;
+  }
+
+  private retireSessionIdentity(): void {
+    this.sessionPromise = null;
   }
 
   private sessionId(): Promise<string> {

@@ -101,6 +101,18 @@ input, textarea { font: inherit; color: inherit; background: none; border: none;
   display: flex; flex-direction: column; gap: 2px; font-size: 12px;
 }
 .availability-banner strong { color: var(--amber); }
+.auth-repair form { display: flex; gap: 8px; margin-top: 7px; }
+.auth-repair input { flex: 1; min-width: 0; border: 1px solid var(--amber-bdr); border-radius: 8px; padding: 7px 9px; background: var(--input); color: var(--text); font-size: 16px; }
+.auth-repair button { color: var(--amber); font-weight: 600; white-space: nowrap; }
+.connection { flex: none; margin: 0 var(--pad) 10px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-2); color: var(--text-soft); font-size: 12px; }
+.connection > summary { cursor: pointer; color: var(--text-dim); font: 500 11px var(--mono); }
+.connection > p { margin: 8px 0 0; }
+.connection dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 12px; margin: 10px 0 0; }
+.connection dt { color: var(--text-dim); }
+.connection dd { margin: 0; overflow-wrap: anywhere; }
+.connection-access { color: var(--sage); }
+.connection-actions { margin-top: 9px; }
+.connection-actions ul { margin: 5px 0 0; padding-left: 18px; }
 
 .scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0 var(--pad) 8px; -webkit-overflow-scrolling: touch; }
 .screen, .overlay { overflow-x: hidden; }
