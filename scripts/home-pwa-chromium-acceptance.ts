@@ -6,6 +6,7 @@ const REPAIRED_DEVICE_NAME = "Dome installed Chromium acceptance repaired";
 const CAPTURE_TEXT = "Dome installed Chromium offline capture canary";
 const WAIT_MS = 15_000;
 const PHASE_TIMEOUT_MS = 30_000;
+const TASK_SETTLEMENT_PHASE_TIMEOUT_MS = 120_000;
 const CLEANUP_TIMEOUT_MS = 15_000;
 const HANDLE_CLOSE_TIMEOUT_MS = 5_000;
 const MAX_EXPORT_BYTES = 64 * 1024;
@@ -57,6 +58,7 @@ type AcceptanceOperations = Readonly<{
 
 type AcceptanceDeadlines = Readonly<{
   phaseMs: number;
+  taskSettlementPhaseMs: number;
   cleanupMs: number;
 }>;
 
@@ -410,6 +412,7 @@ export async function exerciseHomePwaChromiumAcceptanceForTests(
 ): Promise<Readonly<{ evidence: false }>> {
   await runAcceptanceSequence(operations, {
     phaseMs: deadlines.phaseMs ?? PHASE_TIMEOUT_MS,
+    taskSettlementPhaseMs: deadlines.taskSettlementPhaseMs ?? TASK_SETTLEMENT_PHASE_TIMEOUT_MS,
     cleanupMs: deadlines.cleanupMs ?? CLEANUP_TIMEOUT_MS,
   });
   return Object.freeze({ evidence: false });
@@ -417,7 +420,11 @@ export async function exerciseHomePwaChromiumAcceptanceForTests(
 
 async function runAcceptanceSequence(
   operations: AcceptanceOperations,
-  deadlines: AcceptanceDeadlines = { phaseMs: PHASE_TIMEOUT_MS, cleanupMs: CLEANUP_TIMEOUT_MS },
+  deadlines: AcceptanceDeadlines = {
+    phaseMs: PHASE_TIMEOUT_MS,
+    taskSettlementPhaseMs: TASK_SETTLEMENT_PHASE_TIMEOUT_MS,
+    cleanupMs: CLEANUP_TIMEOUT_MS,
+  },
 ): Promise<void> {
   const steps: ReadonlyArray<readonly [AcceptancePhase, (signal: AbortSignal) => Promise<void>]> = [
     ["launch", operations.launch],
@@ -439,7 +446,7 @@ async function runAcceptanceSequence(
     const outcome = await runCooperativePhase(
       operation,
       operations.emergencyClose,
-      deadlines.phaseMs,
+      phase === "task-settlement" ? deadlines.taskSettlementPhaseMs : deadlines.phaseMs,
       deadlines.cleanupMs,
     );
     if (!outcome.ok) {
@@ -617,7 +624,7 @@ async function assertActivitySource(page: Page, canary: InstalledFunctionalCanar
   await dialog.getByText(`Revision ${canary.commit.slice(0, 8)}`, { exact: true }).waitFor({ timeout: WAIT_MS });
   const source = await dialog.locator("pre").textContent();
   if (source === null || !source.includes(canary.sourceMarker) ||
-    !source.includes(`- [ ] ${canary.taskText}`) || !source.includes(`^${canary.blockId}`)) {
+    !source.includes(`- [ ] #task ${canary.taskText}`) || !source.includes(`^${canary.blockId}`)) {
     throw new Error("installed PWA source viewer did not return the exact canary content");
   }
   await page.keyboard.press("Escape");

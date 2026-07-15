@@ -37,6 +37,13 @@ each result. A skipped row is not a pass.
    and coarse targets (excluding inline prose links), critical-control
    containment, visible keyboard focus, and reduced-motion computed styles,
    then resets to 390×844 for the remaining journey.
+   The release-only functional gate gives H→adopted→Activity+Today one
+   60-second convergence budget after its separately bounded human commit.
+   After Chrome receives S, adoption, Today removal, and the final Git/Markdown
+   proof share one overall 60-second budget. The containing task-settlement
+   Chrome phase is 120 seconds so its click/receipt and final reload checks do
+   not consume either convergence budget; every other Chrome phase remains 30
+   seconds.
 4. Record `/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --version`
    beside the artifact id and archive SHA-256 printed by the builder. Preserve
    the builder's installed-activation evidence.
@@ -94,6 +101,9 @@ pending/success presentation because refresh may remove the installed row.
 The Chrome grant is exactly `read,capture,resolve`; neither runner uses an
 engine write API. Portable ordering and canary tests remain explicitly
 non-evidence. Fresh exact evidence requires running the artifact builder.
+The 60-second H and S windows are release-gate convergence bounds, not product
+request timeouts: H gets one window after its 15-second deterministic setup,
+while S adoption and final evidence share one overall window.
 
 ## Checked-in P5.6 waiting-worker gate
 

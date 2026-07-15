@@ -297,6 +297,7 @@ describe("Dome Home 0.3 activation", () => {
     expect(installedSource).toContain('"--grant", "read,capture,resolve"');
     expect(chromiumSource).toContain('["activity-source", operations.assertActivitySource]');
     expect(chromiumSource).toContain('["task-settlement", operations.assertTaskSettlement]');
+    expect(chromiumSource).toContain("const TASK_SETTLEMENT_PHASE_TIMEOUT_MS = 120_000;");
     const chromiumRunner = sourceFunction(
       chromiumSource,
       "export async function runHomePwaChromiumAcceptance",
@@ -305,6 +306,7 @@ describe("Dome Home 0.3 activation", () => {
     expect(chromiumRunner).toContain("await assertActivitySource(requirePage(), input.expected.functionalCanary)");
     expect(chromiumRunner).toContain("await settleFunctionalTask(activePage, input.expected.functionalCanary)");
     expect(chromiumSource).toContain("async function assertActivitySource(");
+    expect(chromiumSource).toContain("`- [ ] #task ${canary.taskText}`");
     expect(chromiumSource).toContain("async function settleFunctionalTask(");
 
     const updateSource = await readFile(

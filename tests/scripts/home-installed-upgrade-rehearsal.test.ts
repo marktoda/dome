@@ -152,6 +152,28 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     expect(events).toEqual(["partial-launch", "cleanup"]);
 
     events.length = 0;
+    await exerciseHomePwaChromiumAcceptanceForTests({
+      launch: operation("launch"),
+      pair: operation("pair"),
+      assertReadiness: operation("readiness"),
+      assertAdaptiveAccessibility: operation("adaptive-accessibility"),
+      controlServiceWorker: operation("service-worker"),
+      assertActivitySource: operation("activity-source"),
+      assertTaskSettlement: async () => { events.push("task-settlement"); await Bun.sleep(20); },
+      assertOfflineShell: operation("offline-shell"),
+      saveLocalCapture: operation("local-capture"),
+      revoke: operation("revoke"),
+      repairAuthentication: operation("auth-repair"),
+      assertReplay: operation("replay"),
+      emergencyClose: operation("emergency-close"),
+      close: operation("cleanup"),
+    }, { phaseMs: 5, taskSettlementPhaseMs: 100, cleanupMs: 50 });
+    expect(events).toEqual([
+      "launch", "pair", "readiness", "adaptive-accessibility", "service-worker", "activity-source", "task-settlement", "offline-shell",
+      "local-capture", "revoke", "auth-repair", "replay", "cleanup",
+    ]);
+
+    events.length = 0;
     await expect(exerciseHomePwaChromiumAcceptanceForTests({
       launch: operation("launch"),
       pair: operation("pair"),
@@ -194,7 +216,7 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       assertReplay: operation("replay"),
       emergencyClose: operation("emergency-close"),
       close: operation("cleanup"),
-    }, { phaseMs: 5, cleanupMs: 5 })).rejects.toThrow("installed Home Chromium acceptance failed at pair");
+    }, { phaseMs: 5, taskSettlementPhaseMs: 100, cleanupMs: 5 })).rejects.toThrow("installed Home Chromium acceptance failed at pair");
     expect(events).toEqual(["launch", "abort", "emergency-close", "settled", "cleanup"]);
   });
 
@@ -244,7 +266,7 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
         "",
         "Dome installed functional source marker",
         "",
-        "- [ ] Close the installed functional closure canary 📅 2026-07-15 ^tinstalledfunctional",
+        "- [ ] #task Close the installed functional closure canary 📅 2026-07-15 ^tinstalledfunctional",
         "",
       ].join("\n"),
     });
