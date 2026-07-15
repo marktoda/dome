@@ -259,6 +259,10 @@ describe("Dome Home 0.3 activation", () => {
     );
     expect(readySuccess).toContain("await packagedBackup(context, prepared.candidateRoot)");
     expect(readySuccess).toContain("await runHomePwaChromiumAcceptance(");
+    expect(readySuccess).toContain("await runHomePwaUpdateRehearsal(");
+    expect(readySuccess.indexOf("await runHomePwaChromiumAcceptance("))
+      .toBeLessThan(readySuccess.indexOf("await runHomePwaUpdateRehearsal("));
+    expect(readySuccess).toContain('staticRoot: join(prepared.candidateRoot, "app", "pwa", "dist")');
     expect(readySuccess).toContain("await prepareInstalledFunctionalClosure(functionalClosure)");
     expect(readySuccess.indexOf("await prepareInstalledFunctionalClosure(functionalClosure)"))
       .toBeLessThan(readySuccess.indexOf("await runHomePwaChromiumAcceptance("));
@@ -302,6 +306,38 @@ describe("Dome Home 0.3 activation", () => {
     expect(chromiumRunner).toContain("await settleFunctionalTask(activePage, input.expected.functionalCanary)");
     expect(chromiumSource).toContain("async function assertActivitySource(");
     expect(chromiumSource).toContain("async function settleFunctionalTask(");
+
+    const updateSource = await readFile(
+      join(import.meta.dir, "..", "..", "scripts", "home-pwa-update-rehearsal.ts"),
+      "utf8",
+    );
+    expect(updateSource).toContain('channel: "chrome"');
+    expect(updateSource).toContain('headless: true');
+    expect(updateSource).toContain('name: "dome_csrf"');
+    expect(updateSource).toContain("synthetic-predecessor");
+    expect(updateSource).toContain("registration.update()");
+    expect(updateSource).toContain('name: "Update now"');
+    expect(updateSource).toContain('sessionStorage.setItem("dome-rehearsal-controllerchange", "observed")');
+    const updateActivation = sourceFunction(
+      updateSource,
+      "activateUpdate: async",
+      "assertSurvival: async",
+    );
+    expect(updateActivation).toContain("const reloaded = activePage.waitForNavigation(");
+    expect(updateActivation.indexOf("const reloaded = activePage.waitForNavigation("))
+      .toBeLessThan(updateActivation.indexOf('name: "Update now"'));
+    expect(updateActivation).toContain("await Promise.all([");
+    expect(updateActivation).not.toContain("waitForFunction(");
+    expect(updateActivation).toContain('activated.controllerchange !== "observed" || activated.marked');
+    expect(updateSource).toContain("browser-fetched candidate bytes do not match the extracted artifact");
+    expect(updateSource).toContain("local capture row changed during activation");
+    expect(updateSource).toContain("JSON.stringify(survived) !== JSON.stringify(capture)");
+    expect(updateSource).toContain("createdAt: value.createdAt");
+    expect(updateSource).not.toContain("recordHar:");
+    expect(updateSource).not.toContain("recordVideo:");
+    expect(updateSource).not.toContain("storageState:");
+    expect(updateSource).not.toContain("launchPersistentContext");
+    expect(updateSource).not.toContain("screenshot(");
 
     const functionalSource = await readFile(
       join(import.meta.dir, "..", "..", "scripts", "home-installed-functional-closure.ts"),
