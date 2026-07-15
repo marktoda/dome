@@ -335,6 +335,18 @@ describe("authenticateDeviceRequest", () => {
 });
 
 describe("hardenDeviceResponse", () => {
+  test("preserves an explicit static cache policy", () => {
+    const response = hardenDeviceResponse(new Response("asset", {
+      headers: { "cache-control": "public, max-age=31536000, immutable" },
+    }), { requestId: "request-static", preserveStaticCacheControl: true });
+    expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    expect(response.headers.get("content-security-policy")).toContain("worker-src 'self'");
+    const authenticated = hardenDeviceResponse(new Response("private", {
+      headers: { "cache-control": "public, max-age=31536000, immutable" },
+    }), { requestId: "request-private" });
+    expect(authenticated.headers.get("cache-control")).toBe("no-store");
+  });
+
   test("adds strict PWA-compatible headers, no-store, request id, and strips CORS", async () => {
     const response = hardenDeviceResponse(new Response("ok", {
       status: 201,

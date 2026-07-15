@@ -7,6 +7,8 @@ const originalFetch = globalThis.fetch;
 afterEach(() => {
   cleanup();
   globalThis.fetch = originalFetch;
+  document.cookie = "dome_csrf=; Max-Age=0; Path=/";
+  Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
 });
 
 const TODAY_BODY = JSON.stringify({ schema: "dome.daily.today/v1", date: "2026-06-17", openTasks: [], followups: [], questions: [], brief: null, calendar: null, hero: null, counts: { openTasks: 0, followups: 0, questions: 0 } });
@@ -141,6 +143,7 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Retry question" })).toBeDefined());
     expect(screen.getByText("keep this question")).toBeDefined();
     expect(screen.getByText("Cancellation confirmed by the server.")).toBeDefined();
+    expect(screen.queryByText("Dome Home unavailable")).toBeNull();
   });
 
   test("unmount stops an active server turn", async () => {
@@ -198,7 +201,8 @@ describe("App", () => {
     fireEvent.submit(input.closest("form")!);
     await waitFor(() => expect(screen.getByText(/Conversation ended\. Retry may repeat actions/i)).toBeDefined());
     expect(screen.getByText("preserve this question")).toBeDefined();
-    expect(input.disabled).toBe(true);
+    expect(input.disabled).toBe(false); // local capture remains available after a remote session ends
+    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.submit(input.closest("form")!);
     expect(messages).toBe(1);
     expect(sessions).toBe(1);
@@ -207,5 +211,233 @@ describe("App", () => {
     await waitFor(() => expect(messages).toBe(2));
     expect(sessions).toBe(2);
     expect(screen.getByText("Retrying may repeat actions from the previous response.")).toBeDefined();
+  });
+
+  test("an offline paired device renders honest limited mode without remote requests", async () => {
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    document.cookie = "dome_csrf=offline-app; Path=/";
+    const requests = mock(async () => { throw new Error("remote fetch is forbidden offline"); });
+    globalThis.fetch = requests as never;
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Offline")).toBeDefined());
+    expect(screen.getByText(/Live data is unavailable/i)).toBeDefined();
+    const input = screen.getByLabelText("ask your brain") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "offline app capture" } });
+    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "capture thought" }));
+    await waitFor(() => expect(screen.getByText("offline app capture")).toBeDefined());
+    expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(requests).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /delete pending capture/i }));
+  });
+
+  test("reports two HTTP view failures without falsely calling Home unreachable", async () => {
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/pair/status") {
+        return new Response(JSON.stringify({ schema: "dome.pairing/v1", available: true, paired: true }), { status: 200 });
+      }
+      if (path === "/tasks" || path === "/recents") return new Response("{}", { status: 503 });
+      return new Response("{}", { status: 200 });
+    }) as never;
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Live views incomplete")).toBeDefined());
+    expect(screen.getByText(/Today and Activity could not be refreshed\. Home is connected/i)).toBeDefined();
+    expect(screen.queryByText("Dome Home unavailable")).toBeNull();
+  });
+
+  test("reports a partial view failure while preserving the successful Today view", async () => {
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/pair/status") {
+        return new Response(JSON.stringify({ schema: "dome.pairing/v1", available: true, paired: true }), { status: 200 });
+      }
+      if (path === "/tasks") return new Response(TODAY_BODY, { status: 200 });
+      if (path === "/recents") return new Response("{}", { status: 503 });
+      return new Response("{}", { status: 200 });
+    }) as never;
+    render(<App />);
+    await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
+    expect(screen.getByText(/Activity could not be refreshed\. Today is current/i)).toBeDefined();
+    expect(screen.queryByText("Dome Home unavailable")).toBeNull();
+  });
+
+  test("two transport failures feed unreachable truth back to the pairing owner", async () => {
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/pair/status") {
+        return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 });
+      }
+      throw new Error("transport down");
+    }) as never;
+    document.cookie = "dome_csrf=transport-evidence; Path=/";
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Dome Home unavailable")).toBeDefined());
+    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Retry connection" })).toBeDefined();
+  });
+
+  test("a queued capture transport failure visibly downgrades all live controls", async () => {
+    document.cookie = "dome_csrf=capture-transport; Path=/";
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/pair/status") {
+        return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 });
+      }
+      if (path === "/tasks") return new Response(TODAY_BODY, { status: 200 });
+      if (path === "/recents") return new Response(RECENTS_BODY, { status: 200 });
+      if (path === "/capture") throw new Error("capture transport lost");
+      return new Response("{}", { status: 200 });
+    }) as never;
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
+    const input = screen.getByLabelText("ask your brain") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "keep this locally" } });
+    fireEvent.click(screen.getByRole("button", { name: "capture thought" }));
+
+    await waitFor(() => expect(screen.getByText("Dome Home unavailable")).toBeDefined());
+    expect(screen.getByText("keep this locally")).toBeDefined();
+    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "record" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /delete pending capture/i }));
+  });
+
+  test("a failed answer stays visible and is never acknowledged as answered", async () => {
+    document.cookie = "dome_csrf=resolve-transport; Path=/";
+    const todayWithQuestion = JSON.stringify({
+      schema: "dome.daily.today/v1",
+      date: "2026-06-17",
+      openTasks: [],
+      followups: [],
+      questions: [{ id: 7, question: "Hourly or daily?", resolveCommand: "dome resolve 7 <value>", options: ["hourly", "daily"] }],
+      brief: null,
+      calendar: null,
+      hero: null,
+      counts: { openTasks: 0, followups: 0, questions: 1 },
+    });
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/pair/status") {
+        return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 });
+      }
+      if (path === "/tasks") return new Response(todayWithQuestion, { status: 200 });
+      if (path === "/recents") return new Response(RECENTS_BODY, { status: 200 });
+      if (path === "/resolve") throw new Error("resolve transport lost");
+      return new Response("{}", { status: 200 });
+    }) as never;
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Hourly or daily?")).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "hourly" }));
+
+    await waitFor(() => expect(screen.getByText("Dome Home unavailable")).toBeDefined());
+    expect(screen.getByText("Hourly or daily?")).toBeDefined();
+    expect(screen.getByText("Answer not saved · Try again")).toBeDefined();
+    expect(screen.queryByText(/Answer saved|Answered/)).toBeNull();
+  });
+
+  test("an Ask transport failure visibly downgrades live controls", async () => {
+    document.cookie = "dome_csrf=ask-transport; Path=/";
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/pair/status") {
+        return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 });
+      }
+      if (path === "/tasks") return new Response(TODAY_BODY, { status: 200 });
+      if (path === "/recents") return new Response(RECENTS_BODY, { status: 200 });
+      if (path === "/sessions") throw new Error("agent transport lost");
+      return new Response("{}", { status: 200 });
+    }) as never;
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
+    const input = screen.getByLabelText("ask your brain") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "question during outage" } });
+    fireEvent.submit(input.closest("form")!);
+
+    await waitFor(() => expect(screen.getByText("Dome Home unavailable")).toBeDefined());
+    expect(screen.getByText("question during outage")).toBeDefined();
+    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "record" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Retry connection" })).toBeDefined();
+  });
+
+  test("explicit connection recovery re-enables live controls and drains local capture", async () => {
+    let serverUp = false;
+    let captureCalls = 0;
+    document.cookie = "dome_csrf=recovery-evidence; Path=/";
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (!serverUp) throw new Error("host unavailable");
+      if (path === "/pair/status") {
+        return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 });
+      }
+      if (path === "/tasks") return new Response(TODAY_BODY, { status: 200 });
+      if (path === "/recents") return new Response(RECENTS_BODY, { status: 200 });
+      if (path === "/capture") {
+        captureCalls++;
+        return new Response(JSON.stringify({
+          schema: "dome.capture/v1", status: "captured", vault: "vault", path: "inbox/raw/recovered.md",
+          commit: "abc", title: "recovered", captured_at: "2026-07-15T12:00:00.000Z", source: "pwa",
+          branch: "main", serve_status: "running", adopted_initialized: true, compile_pending: false,
+          commit_status: "committed", adoption_status: "pending",
+        }), { status: 200 });
+      }
+      return new Response("{}", { status: 200 });
+    }) as never;
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Dome Home unavailable")).toBeDefined());
+    const input = screen.getByLabelText("ask your brain") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "replay after reconnect" } });
+    fireEvent.click(screen.getByRole("button", { name: "capture thought" }));
+    await waitFor(() => expect(screen.getByText("replay after reconnect")).toBeDefined());
+    serverUp = true;
+    fireEvent.click(screen.getByRole("button", { name: "Retry connection" }));
+    await waitFor(() => expect(captureCalls).toBe(1));
+    await waitFor(() => expect(screen.queryByText("replay after reconnect")).toBeNull());
+    fireEvent.change(input, { target: { value: "ask after reconnect" } });
+    expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  test("delayed old view failures cannot downgrade a successful connection recheck", async () => {
+    document.cookie = "dome_csrf=view-generation; Path=/";
+    let pairCalls = 0;
+    let taskCalls = 0;
+    let recentCalls = 0;
+    let rejectOldTasks!: (reason: unknown) => void;
+    let rejectOldRecents!: (reason: unknown) => void;
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/pair/status") {
+        pairCalls++;
+        if (pairCalls === 2) throw new Error("temporary pairing transport failure");
+        return new Response(JSON.stringify({ schema: "dome.device.pairing/v1", available: true, paired: true }), { status: 200 });
+      }
+      if (path === "/tasks") {
+        taskCalls++;
+        if (taskCalls === 1) return await new Promise<Response>((_resolve, reject) => { rejectOldTasks = reject; });
+        return new Response(TODAY_BODY, { status: 200 });
+      }
+      if (path === "/recents") {
+        recentCalls++;
+        if (recentCalls === 1) return await new Promise<Response>((_resolve, reject) => { rejectOldRecents = reject; });
+        return new Response(RECENTS_BODY, { status: 200 });
+      }
+      return new Response("{}", { status: 200 });
+    }) as never;
+    render(<App />);
+    await waitFor(() => expect(rejectOldTasks).toBeDefined());
+    await waitFor(() => expect(rejectOldRecents).toBeDefined());
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(screen.getByText("Dome Home unavailable")).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "Retry connection" }));
+    await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
+    rejectOldTasks(new Error("old tasks transport failure"));
+    rejectOldRecents(new Error("old recents transport failure"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText("Dome Home unavailable")).toBeNull();
+    expect(screen.queryByText("Live views incomplete")).toBeNull();
   });
 });

@@ -37,6 +37,7 @@
   "scripts": {
     "test": "bun test ./tests",
     "build:pwa": "bun run --cwd pwa build",
+    "check:pwa": "bun run --cwd pwa check",
     "build:home-artifact": "bun scripts/home-artifact.ts",
     "build:home-distribution": "bun scripts/home-macos-distribution.ts",
     "test:invariants": "bun test tests/invariants",
@@ -50,7 +51,7 @@
     "eval:product": "bun scripts/product-quality.ts",
     "release:package-rehearsal": "bun scripts/release-package.ts",
     "v1:implementation-check": "bun run v1:check && bun run release:package-rehearsal",
-    "v1:check": "bun run typecheck && git diff --check && bun test ./tests && bun run v1:smoke",
+    "v1:check": "bun run typecheck && bun run check:pwa && git diff --check && bun test ./tests && bun run v1:smoke",
     "v1:release-check": "bun scripts/v1-release-check.ts",
     "product:journey": "bun test tests/harness/scenarios/cli-surface/capture-ingest-captured-block.scenario.test.ts"
   },

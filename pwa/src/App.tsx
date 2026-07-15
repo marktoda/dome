@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { DomeClient, type AgentTurnHandle } from "./api/client";
 import type { AgentStopOutcome, AgentStreamOutcome, Recents as RecentsT, Today } from "./api/types";
-import { PairingGate } from "./auth/PairingGate";
+import { PairingGate, type HomeAvailability, type HomeConnectionControl } from "./auth/PairingGate";
 import { Brief } from "./components/Brief";
 import { Recents } from "./components/Recents";
 import { ChatTranscript } from "./components/ChatTranscript";
 import { Composer } from "./components/Composer";
 import { chatReducer } from "./chat/streamReducer";
 import { CaptureQueue, type QueuedCapture } from "./capture/captureQueue";
+import { UpdatePrompt } from "./offline/UpdatePrompt";
 
 function todayLabel(): string {
   try {
@@ -29,7 +30,13 @@ export function reconcileStoppedTurn(stream: AgentStreamOutcome, stop: AgentStop
   };
 }
 
-function Screen({ client }: { client: DomeClient }): React.ReactElement {
+type ViewLoadState = "idle" | "loading" | "ready" | "failed";
+
+function Screen({ client, availability, connection }: {
+  client: DomeClient;
+  availability: HomeAvailability;
+  connection: HomeConnectionControl;
+}): React.ReactElement {
   const captureQueue = useMemo(() => new CaptureQueue(), []);
   const [today, setToday] = useState<Today | null>(null);
   const [recents, setRecents] = useState<RecentsT | null>(null);
@@ -39,25 +46,44 @@ function Screen({ client }: { client: DomeClient }): React.ReactElement {
   const [pendingCaptures, setPendingCaptures] = useState<QueuedCapture[]>([]);
   const [storageStatus, setStorageStatus] = useState<"persistent" | "best-effort" | "unknown">("unknown");
   const [turnPhase, setTurnPhase] = useState<"idle" | "streaming" | "stopping" | "retryable" | "session-ended">("idle");
+  const [viewLoad, setViewLoad] = useState<{ today: ViewLoadState; recents: ViewLoadState }>({ today: "idle", recents: "idle" });
+  const refreshSequence = useRef(0);
   const activeTurn = useRef<{ handle: AgentTurnHandle; question: string; stopping: boolean } | null>(null);
   const retryQuestion = useRef<string | null>(null);
   const hasMessages = chat.messages.length > 0;
+  const remoteAvailable = availability === "available";
+  const priorRemoteAvailable = useRef(remoteAvailable);
+
+  useLayoutEffect(() => {
+    if (priorRemoteAvailable.current && !remoteAvailable) refreshSequence.current++;
+    priorRemoteAvailable.current = remoteAvailable;
+  }, [remoteAvailable]);
 
   const refresh = useCallback(() => {
-    client.tasks().then(setToday).catch(() => {});
-    client.recents().then(setRecents).catch(() => {});
-  }, [client]);
+    if (!remoteAvailable) return;
+    const sequence = ++refreshSequence.current;
+    setViewLoad({ today: "loading", recents: "loading" });
+    void Promise.allSettled([client.tasks(), client.recents()]).then(([todayResult, recentsResult]) => {
+      if (sequence !== refreshSequence.current) return;
+      if (todayResult.status === "fulfilled") setToday(todayResult.value);
+      if (recentsResult.status === "fulfilled") setRecents(recentsResult.value);
+      setViewLoad({
+        today: todayResult.status === "fulfilled" ? "ready" : "failed",
+        recents: recentsResult.status === "fulfilled" ? "ready" : "failed",
+      });
+    });
+  }, [client, remoteAvailable]);
 
   const refreshPending = useCallback(async (): Promise<void> => {
     setPendingCaptures(await captureQueue.all());
   }, [captureQueue]);
 
   const drainCaptures = useCallback(async (): Promise<void> => {
-    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    if (!remoteAvailable) return;
     const completed = await captureQueue.drain((request) => client.capture(request));
     await refreshPending();
     if (completed.length > 0) refresh();
-  }, [captureQueue, client, refresh, refreshPending]);
+  }, [captureQueue, client, refresh, refreshPending, remoteAvailable]);
 
   useEffect(() => {
     refresh();
@@ -68,8 +94,6 @@ function Screen({ client }: { client: DomeClient }): React.ReactElement {
 
   useEffect(() => {
     void refreshPending().then(drainCaptures);
-    const onOnline = (): void => { void drainCaptures(); };
-    window.addEventListener("online", onOnline);
     const storage = navigator.storage;
     if (storage?.persist !== undefined) {
       void storage.persist().then((persistent) => {
@@ -78,20 +102,19 @@ function Screen({ client }: { client: DomeClient }): React.ReactElement {
     } else {
       setStorageStatus("best-effort");
     }
-    return () => window.removeEventListener("online", onOnline);
   }, [drainCaptures, refreshPending]);
 
   useEffect(() => () => {
+    refreshSequence.current++;
     const active = activeTurn.current;
     activeTurn.current = null;
     if (active !== null) void active.handle.stop();
   }, []);
 
-  const captureText = async (text: string): Promise<string> => {
+  const captureText = async (text: string): Promise<void> => {
     await captureQueue.save({ text });
     await refreshPending();
     void drainCaptures();
-    return "Saved locally · pending";
   };
 
   const exportPending = async (): Promise<void> => {
@@ -113,7 +136,7 @@ function Screen({ client }: { client: DomeClient }): React.ReactElement {
   }, []);
 
   const startAsk = useCallback((q: string): void => {
-    if (activeTurn.current !== null) return;
+    if (!remoteAvailable || activeTurn.current !== null) return;
     let turnId = "";
     const handle = client.startAgentTurn(q, (e) => {
       dispatch({ kind: "event", turnId, event: e });
@@ -131,7 +154,7 @@ function Screen({ client }: { client: DomeClient }): React.ReactElement {
       activeTurn.current = null;
       finishTurn(handle.turnId, q, outcome);
     });
-  }, [client, finishTurn, refresh]);
+  }, [client, finishTurn, refresh, remoteAvailable]);
 
   const onAsk = useCallback((q: string): void => {
     if (turnPhase === "session-ended") return;
@@ -152,43 +175,35 @@ function Screen({ client }: { client: DomeClient }): React.ReactElement {
 
   const retryTurn = useCallback((): void => {
     const question = retryQuestion.current;
-    if (question === null || activeTurn.current !== null) return;
+    if (!remoteAvailable || question === null || activeTurn.current !== null) return;
     client.startNewConversation();
     dispatch({ kind: "boundary", text: "Retrying may repeat actions from the previous response." });
     startAsk(question);
-  }, [client, startAsk]);
+  }, [client, remoteAvailable, startAsk]);
 
   const newConversation = useCallback((): void => {
-    if (activeTurn.current !== null) return;
+    if (!remoteAvailable || activeTurn.current !== null) return;
     retryQuestion.current = null;
     setTurnPhase("idle");
     client.startNewConversation();
     dispatch({ kind: "boundary", text: "New conversation started." });
-  }, [client]);
+  }, [client, remoteAvailable]);
 
-  // Optimistic: drop the answered question immediately, toast the answer, then
-  // resolve against the API and refetch to confirm.
   const resolve = (id: number, value: string): void => {
-    setToday((prev) =>
-      prev === null ? prev : {
-        ...prev,
-        questions: prev.questions.filter((q) => q.id !== id),
-      });
-    setAck(`Answered · "${value}"`);
-    setTimeout(() => setAck(null), 2200);
-    void client.resolve(id, value).then(refresh).catch(() => {});
-  };
-
-  const review = (id: number, decision: "apply" | "reject"): void => {
-    setToday((prev) => prev === null
-      ? prev
-      : { ...prev, reviews: (prev.reviews ?? []).filter((review) => review.id !== id) });
-    setAck(decision === "apply" ? "Proposal applied" : "Proposal rejected");
-    setTimeout(() => setAck(null), 2200);
-    const request = decision === "apply"
-      ? client.applyProposal(id)
-      : client.rejectProposal(id);
-    void request.then(refresh).catch(refresh);
+    if (!remoteAvailable) return;
+    void client.resolve(id, value).then((result) => {
+      if (result.status !== "answered" && result.status !== "already-answered") {
+        setAck("Answer not saved · Try again");
+        setTimeout(() => setAck(null), 2200);
+        return;
+      }
+      setAck(`Answer saved · "${value}"`);
+      setTimeout(() => setAck(null), 2200);
+      refresh();
+    }).catch(() => {
+      setAck("Answer not saved · Try again");
+      setTimeout(() => setAck(null), 2200);
+    });
   };
 
   // Glance-and-settle: tap the checkbox -> settle 'close' via /settle. Brief
@@ -196,6 +211,7 @@ function Screen({ client }: { client: DomeClient }): React.ReactElement {
   // reports success/failure, then refetches on success so the settled task
   // drops off the list for good.
   const settle = (blockId: string): Promise<boolean> => {
+    if (!remoteAvailable) return Promise.resolve(false);
     return client.settle(blockId, "close")
       .then((r) => {
         const ok = r.status === "settled";
@@ -209,14 +225,34 @@ function Screen({ client }: { client: DomeClient }): React.ReactElement {
     <main className="screen">
       <header className="masthead">
         <span className="brand">Dome</span>
-        <span className="meta">{todayLabel()}<span className="pulse" aria-hidden="true" /></span>
+        <span className="meta">{todayLabel()}<span className={`availability-dot ${availability}`} aria-hidden="true" /></span>
       </header>
+      {!remoteAvailable ? (
+        <div className="availability-banner" role="status">
+          <strong>{availability === "offline" ? "Offline" : "Dome Home unavailable"}</strong>
+          <span>{today === null && recents === null
+            ? "Live data is unavailable. Text captures stay on this device."
+            : "Showing the last loaded data; it may be stale. Text captures stay on this device."}</span>
+          <button type="button" onClick={connection.recheck}>Retry connection</button>
+        </div>
+      ) : null}
+      {remoteAvailable && (viewLoad.today === "failed" || viewLoad.recents === "failed") ? (
+        <div className="availability-banner live-data-warning" role="status">
+          <strong>Live views incomplete</strong>
+          <span>{viewLoad.today === "failed" && viewLoad.recents === "failed"
+            ? "Today and Activity could not be refreshed. Home is connected; previously loaded data may be stale."
+            : viewLoad.today === "failed"
+              ? "Today could not be refreshed. Activity is current; any Today data shown may be stale."
+              : "Activity could not be refreshed. Today is current; any Activity data shown may be stale."}</span>
+          <button type="button" onClick={refresh}>Retry live data</button>
+        </div>
+      ) : null}
       {pendingCaptures.length > 0 ? (
         <section className="capture-outbox" aria-label="pending captures">
           <div className="capture-outbox-head">
             <strong>{pendingCaptures.length} saved locally</strong>
             <span>offline storage: {storageStatus}</span>
-            <button type="button" onClick={() => { void drainCaptures(); }}>Retry</button>
+            <button type="button" disabled={!remoteAvailable} onClick={() => { void drainCaptures(); }}>Retry</button>
             <button type="button" onClick={() => { void exportPending(); }}>Export</button>
           </div>
           {pendingCaptures.map((item) => (
@@ -232,7 +268,7 @@ function Screen({ client }: { client: DomeClient }): React.ReactElement {
       ) : null}
       <div className="scroll">
         {today !== null ? (
-          <Brief today={today} onResolve={resolve} onReview={review} onSettle={settle} collapsed={briefCollapsed} hasMessages={hasMessages} onToggle={() => setBriefCollapsed((c) => !c)} />
+          <Brief today={today} onResolve={resolve} onSettle={settle} collapsed={briefCollapsed} hasMessages={hasMessages} onToggle={() => setBriefCollapsed((c) => !c)} interactive={remoteAvailable} />
         ) : null}
         {recents !== null ? (
           <details className="recents-wrap">
@@ -240,7 +276,7 @@ function Screen({ client }: { client: DomeClient }): React.ReactElement {
             <Recents recents={recents} />
           </details>
         ) : null}
-        <ChatTranscript state={chat} />
+        <ChatTranscript state={chat} client={client} interactive={remoteAvailable} />
       </div>
       {ack !== null ? <div className="ack-wrap"><div className="ack">{ack}</div></div> : null}
       <Composer
@@ -252,11 +288,17 @@ function Screen({ client }: { client: DomeClient }): React.ReactElement {
         onCapture={captureText}
         onTranscribe={(blob) => client.transcribe(blob).then((t) => t.text)}
         onFile={captureText}
+        availability={availability}
       />
     </main>
   );
 }
 
 export default function App(): React.ReactElement {
-  return <PairingGate>{(client) => <Screen client={client} />}</PairingGate>;
+  return (
+    <>
+      <PairingGate>{(client, availability, connection) => <Screen client={client} availability={availability} connection={connection} />}</PairingGate>
+      <UpdatePrompt />
+    </>
+  );
 }

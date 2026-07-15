@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-10
-updated: 2026-07-12
+updated: 2026-07-15
 sources:
   - "[[wiki/specs/capture]]"
   - "[[wiki/specs/sdk-surface]]"
@@ -76,6 +76,8 @@ Every route requires `Authorization: Bearer <token>` (constant-time
 comparison; 401 otherwise) — with two scoped exceptions: `GET /today` accepts
 the token as `?token=` (below), and the two `GET /today/fonts/*.woff2` static
 asset routes are served fully **unauthenticated** (§"Cacheable font assets").
+When a built PWA directory is configured, its closed generated static routes
+are also unauthenticated so an installed shell can boot before device auth.
 One vault per process.
 
 | Route | Same path as | Result schema |
@@ -224,6 +226,25 @@ whose URL can carry `?token=`, and whose freshness contract is the JS poll
 interval — it must never be cached. (The font assets below are the deliberate
 exception — non-sensitive static bytes that *should* cache hard.)
 
+### Closed PWA static root
+
+When `staticDir` is configured, the unauthenticated static surface recognizes
+only `/`, its GenerateSW-required `/index.html` alias,
+`/manifest.webmanifest`, `/sw.js`, the generated
+`/workbox-<8-hex>.js`, and one-level hashed `/assets/<name>-<hash>.<ext>`
+payloads where `<ext>` is exactly `js` or `css`. Arbitrary root files,
+unhashed or nested assets, other extensions, and every API path
+fall through to normal authenticated routing. A recognized but missing build
+file is a 404.
+
+The shell, manifest, and service worker use `cache-control: no-cache`; hashed
+assets and the hashed Workbox runtime are immutable for one year. The service
+worker scope is `/`. GenerateSW precaches only these build outputs, has no
+runtime caching rules, and permits navigation fallback only for the exact root
+path. In production Device/Home mode, authenticated documents and events
+remain `no-store` and can never be mistaken for offline knowledge state. The
+compatibility bearer surface is not the production PWA cache contract.
+
 ### Cacheable font assets (`GET /today/fonts/*.woff2`)
 
 The cockpit's CSS references the Basel typeface via two static routes —
@@ -233,12 +254,12 @@ They are served:
 - with `content-type: font/woff2`;
 - with `cache-control: public, max-age=31536000, immutable` — the fonts are
   content-stable, so the browser fetches each once and never revalidates;
-- **unauthenticated** — these two GET routes (and only these) skip the bearer
+- **unauthenticated** — these two GET routes skip the bearer
   check. A browser's CSS `url()` font fetch carries no `Authorization` header
   and no cookies, so requiring a token would simply break font loading; the
-  bytes are non-sensitive public static assets, not vault data. Every other
-  route — including the `GET /today` HTML itself — keeps its bearer/query-token
-  auth.
+  bytes are non-sensitive public static assets, not vault data. Apart from the
+  closed PWA static root above, every other route — including the `GET /today`
+  HTML itself — keeps its bearer/query-token auth.
 
 Pulling the fonts out of the HTML (they were previously inlined as base64)
 drops the `/today` page to ~25 KB and lets the browser cache the heavy font
@@ -358,8 +379,8 @@ request receipt. Assistant tool mutations are separate child operations that
 share the foreground turn's request id; read tools and prompts are never
 recorded. Admission fails closed, while a crash or lost post-mutation result is
 preserved as recovery-required uncertainty rather than a replayable failure.
-Credential lifecycle failures share one public 401;
-responses are no-store and carry CSP, frame, content-type, referrer,
+Credential lifecycle failures share one public 401. In production Device/Home
+mode, responses are no-store and carry CSP, frame, content-type, referrer,
 permissions, and request-id hardening headers.
 
 ### One shared bearer token (the v1 compatibility contract)

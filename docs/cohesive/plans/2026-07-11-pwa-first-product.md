@@ -1,7 +1,7 @@
 ---
 type: plan
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-07-15
 status: reviewed
 description: "Reviewed product vision and vertical execution path for a self-contained, PWA-first Dome personal knowledge appliance."
 sources:
@@ -795,6 +795,19 @@ Chromium and real iOS Safari matrix.
 
 Garden proposal review remains absent unless this phase also delivers full
 diff/base/provenance/staleness evidence. Blind apply/reject is removed.
+
+The bounded P5.1 checkpoint now ships the honest offline shell: established
+GenerateSW/Workbox libraries precache only the generated shell, manifest, and
+hashed static payloads; runtime API caching and broad navigation fallback are
+absent. A locally paired device can boot into visibly limited offline or
+host-unreachable mode, retain/export/replay text capture, and explicitly
+activate a waiting update. Live reads and mutations remain disabled until Home
+is reachable. The PWA no longer exposes proposal decisions without full review
+evidence, and the root implementation gate now tests and builds the PWA.
+
+This checkpoint does not claim final installability icons, full Connection and
+readiness UX, offline knowledge browsing, browser automation, real-device iOS
+acceptance, or the complete accessibility matrix.
 
 Exit journey: installed PWA boots offline, preserves/exports/replays text
 capture, recovers from expired auth and premature SSE EOF, passes keyboard and

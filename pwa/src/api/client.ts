@@ -1,4 +1,4 @@
-import type { AgentSession, AgentStopOutcome, AgentStreamOutcome, ApplyProposalResult, CaptureResult, PairingResult, PairingStatus, Recents, RejectProposalResult, ResolveResult, SettleDisposition, SettleResult, StreamEvent, Today, Transcript } from "./types";
+import type { AgentSession, AgentStopOutcome, AgentStreamOutcome, CaptureResult, PairingResult, PairingStatus, Recents, ResolveResult, SettleDisposition, SettleResult, StreamEvent, Today, Transcript } from "./types";
 import {
   parseCaptureReceipt,
   type CaptureRequest,
@@ -8,12 +8,28 @@ import {
   AgentStreamProtocolError,
   createAgentStreamDecoder,
 } from "../../../contracts/agent-stream";
+import {
+  fetchSourceDocument,
+  type ExactCitation,
+} from "../source/source-client";
+import type { SourceDocumentResult } from "../../../contracts/source-document";
 
 export type AgentTurnHandle = {
   turnId: string;
   result: Promise<AgentStreamOutcome>;
   stop: () => Promise<AgentStopOutcome>;
 };
+
+export type TransportFailureTicket = (cause: unknown) => void;
+export type BeginTransportRequest = () => TransportFailureTicket;
+
+/** A request never reached an HTTP response; callers may downgrade transport availability. */
+export class DomeTransportError extends Error {
+  constructor(cause: unknown) {
+    super("Dome Home could not be reached.", { cause });
+    this.name = "DomeTransportError";
+  }
+}
 
 let nextTurnId = 1;
 const AGENT_SESSION_SCHEMA = "dome.agent-session/v1";
@@ -22,7 +38,11 @@ export class DomeClient {
   private sessionPromise: Promise<string> | null = null;
   private csrfToken: string | null = null;
 
-  constructor(private readonly token: string = "", private readonly baseUrl: string = "") {}
+  constructor(
+    private readonly token: string = "",
+    private readonly baseUrl: string = "",
+    private readonly beginTransportRequest?: BeginTransportRequest,
+  ) {}
 
   private authHeaders(json: boolean): Record<string, string> {
     const h: Record<string, string> = {};
@@ -62,54 +82,68 @@ export class DomeClient {
 
   async tasks(date?: string): Promise<Today> {
     const q = date !== undefined ? `?date=${encodeURIComponent(date)}` : "";
-    return this.parse<Today>(await fetch(this.request(`/tasks${q}`, { headers: this.authHeaders(false) })));
+    return this.parse<Today>(await this.fetchResponse(this.request(`/tasks${q}`, { headers: this.authHeaders(false) })));
   }
 
   async recents(limit?: number): Promise<Recents> {
     const q = limit !== undefined ? `?limit=${limit}` : "";
-    return this.parse<Recents>(await fetch(this.request(`/recents${q}`, { headers: this.authHeaders(false) })));
+    return this.parse<Recents>(await this.fetchResponse(this.request(`/recents${q}`, { headers: this.authHeaders(false) })));
+  }
+
+  private transportFailureTicket(request: Request): TransportFailureTicket {
+    const report = this.beginTransportRequest?.();
+    let reported = false;
+    return (cause: unknown): void => {
+      if (reported || report === undefined || request.signal.aborted || isAbortError(cause)) return;
+      reported = true;
+      report(cause);
+    };
+  }
+
+  private async fetchResponse(
+    request: Request,
+    reportTransportFailure: TransportFailureTicket = this.transportFailureTicket(request),
+  ): Promise<Response> {
+    try {
+      return await fetch(request);
+    } catch (error) {
+      reportTransportFailure(error);
+      throw new DomeTransportError(error);
+    }
   }
 
   async capture(input: CaptureRequest): Promise<CaptureResult> {
-    const value = await this.parse<unknown>(await fetch(this.request("/capture", { method: "POST", headers: this.authHeaders(true), body: JSON.stringify(input) })));
+    const value = await this.parse<unknown>(await this.fetchResponse(this.request("/capture", { method: "POST", headers: this.authHeaders(true), body: JSON.stringify(input) })));
     return parseCaptureReceipt(value);
   }
 
   async resolve(id: number, value: string): Promise<ResolveResult> {
-    return this.parse<ResolveResult>(await fetch(this.request("/resolve", { method: "POST", headers: this.authHeaders(true), body: JSON.stringify({ id, value }) })));
-  }
-
-  async applyProposal(id: number): Promise<ApplyProposalResult> {
-    return this.parse<ApplyProposalResult>(await fetch(this.request("/apply", {
-      method: "POST",
-      headers: this.authHeaders(true),
-      body: JSON.stringify({ id }),
-    })));
-  }
-
-  async rejectProposal(id: number): Promise<RejectProposalResult> {
-    return this.parse<RejectProposalResult>(await fetch(this.request("/reject", {
-      method: "POST",
-      headers: this.authHeaders(true),
-      body: JSON.stringify({ id }),
-    })));
+    return this.parse<ResolveResult>(await this.fetchResponse(this.request("/resolve", { method: "POST", headers: this.authHeaders(true), body: JSON.stringify({ id, value }) })));
   }
 
   async settle(blockId: string, disposition: SettleDisposition, deferUntil?: string): Promise<SettleResult> {
     const body = { blockId, disposition, ...(deferUntil !== undefined ? { deferUntil } : {}) };
-    return this.parse<SettleResult>(await fetch(this.request("/settle", { method: "POST", headers: this.authHeaders(true), body: JSON.stringify(body) })));
+    return this.parse<SettleResult>(await this.fetchResponse(this.request("/settle", { method: "POST", headers: this.authHeaders(true), body: JSON.stringify(body) })));
   }
 
   async transcribe(audio: Blob): Promise<Transcript> {
-    return this.parse<Transcript>(await fetch(this.request("/transcribe", { method: "POST", headers: { ...this.authHeaders(false), "content-type": audio.type || "audio/webm" }, body: audio })));
+    return this.parse<Transcript>(await this.fetchResponse(this.request("/transcribe", { method: "POST", headers: { ...this.authHeaders(false), "content-type": audio.type || "audio/webm" }, body: audio })));
   }
 
   async pairingStatus(): Promise<PairingStatus> {
-    return this.parse<PairingStatus>(await fetch(this.request("/pair/status")));
+    return this.parse<PairingStatus>(await this.fetchResponse(this.request("/pair/status")));
+  }
+
+  async source(citation: ExactCitation, signal?: AbortSignal): Promise<SourceDocumentResult> {
+    return fetchSourceDocument(
+      citation,
+      (request) => this.fetchResponse(request),
+      signal,
+    );
   }
 
   async pair(code: string): Promise<PairingResult> {
-    const paired = await this.parse<PairingResult>(await fetch(this.request("/pair", {
+    const paired = await this.parse<PairingResult>(await this.fetchResponse(this.request("/pair", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ code }),
@@ -198,13 +232,15 @@ export class DomeClient {
     }
 
     let res: Response;
+    const messageRequest = this.request(`/sessions/${encodeURIComponent(sessionId)}/messages`, {
+      method: "POST",
+      headers: { ...this.authHeaders(true), accept: "text/event-stream" },
+      body: JSON.stringify({ message: question }),
+      signal,
+    });
+    const reportTransportFailure = this.transportFailureTicket(messageRequest);
     try {
-      res = await fetch(this.request(`/sessions/${encodeURIComponent(sessionId)}/messages`, {
-        method: "POST",
-        headers: { ...this.authHeaders(true), accept: "text/event-stream" },
-        body: JSON.stringify({ message: question }),
-        signal,
-      }));
+      res = await this.fetchResponse(messageRequest, reportTransportFailure);
     } catch (error) {
       if (signal.aborted) return { kind: "cancelled", source: "local-abort" };
       return this.failedOutcome("network-error", error, true);
@@ -255,6 +291,7 @@ export class DomeClient {
       }
       if (!(error instanceof AgentStreamProtocolError)) {
         void reader.cancel(error).catch(() => {});
+        reportTransportFailure(error);
         const outcome = this.failedOutcome("network-error", error, true);
         this.emitFailure(onEvent, outcome);
         return outcome;
@@ -279,7 +316,7 @@ export class DomeClient {
     }
 
     try {
-      const res = await fetch(this.request(`/sessions/${encodeURIComponent(sessionId)}/cancel`, {
+      const res = await this.fetchResponse(this.request(`/sessions/${encodeURIComponent(sessionId)}/cancel`, {
         method: "POST",
         headers: this.authHeaders(false),
       }));
@@ -306,7 +343,7 @@ export class DomeClient {
     const previous = this.sessionPromise;
     this.sessionPromise = null;
     if (previous === null) return;
-    void previous.then((sessionId) => fetch(this.request(`/sessions/${encodeURIComponent(sessionId)}`, {
+    void previous.then((sessionId) => this.fetchResponse(this.request(`/sessions/${encodeURIComponent(sessionId)}`, {
         method: "DELETE",
         headers: this.authHeaders(false),
       }))).catch(() => {
@@ -368,7 +405,7 @@ export class DomeClient {
 
   private sessionId(): Promise<string> {
     if (this.sessionPromise === null) {
-      const pending = fetch(this.request("/sessions", {
+      const pending = this.fetchResponse(this.request("/sessions", {
         method: "POST",
         headers: this.authHeaders(false),
       }))
@@ -381,4 +418,10 @@ export class DomeClient {
     }
     return this.sessionPromise;
   }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error && error.name === "AbortError";
 }

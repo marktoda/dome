@@ -53,6 +53,35 @@ describe("DomeClient", () => {
     expect(seen[1]!.headers.get("x-dome-csrf")).toBe("csrf-secret");
   });
 
+  test("every direct client request reports a no-response failure through one transport seam", async () => {
+    const failures: unknown[] = [];
+    globalThis.fetch = mock(async () => { throw new Error("Home disappeared"); }) as never;
+    const client = new DomeClient("", "", () => (cause) => { failures.push(cause); });
+    const requests = [
+      () => client.tasks(),
+      () => client.recents(),
+      () => client.capture({ text: "save me" }),
+      () => client.resolve(7, "yes"),
+      () => client.settle("task-1", "close"),
+      () => client.transcribe(new Blob(["audio"], { type: "audio/webm" })),
+      () => client.pairingStatus(),
+      () => client.pair("code"),
+      () => client.source({ path: "wiki/source.md", commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }),
+    ];
+
+    for (const request of requests) await expect(request()).rejects.toThrow("Dome Home could not be reached");
+    expect(failures).toHaveLength(requests.length);
+  });
+
+  test("HTTP responses are reachable evidence and do not report transport failure", async () => {
+    const failures: unknown[] = [];
+    mockJson(503, { error: "temporarily-unavailable" });
+    const client = new DomeClient("", "", () => (cause) => { failures.push(cause); });
+
+    await expect(client.capture({ text: "save me" })).rejects.toThrow("temporarily-unavailable");
+    expect(failures).toEqual([]);
+  });
+
   test("agentStream creates one session and reuses it across turns", async () => {
     const paths: string[] = [];
     const bodies: unknown[] = [];
@@ -355,25 +384,6 @@ describe("DomeClient", () => {
     const r = await c.resolve(3, "yes");
     expect(r.status).toBe("answered");
     expect(body).toEqual({ id: 3, value: "yes" });
-  });
-
-  test("proposal decisions POST the canonical id to apply and reject", async () => {
-    const requests: Array<{ path: string; body: unknown }> = [];
-    globalThis.fetch = mock(async (req: Request) => {
-      requests.push({ path: new URL(req.url).pathname, body: await req.json() });
-      const rejected = req.url.endsWith("/reject");
-      return new Response(JSON.stringify(rejected
-        ? { schema: "dome.reject/v1", status: "rejected", id: 8 }
-        : { schema: "dome.apply/v1", status: "applied", id: 7, commit: "abc" }),
-      { status: 200 });
-    }) as never;
-    const c = new DomeClient("tok");
-    expect((await c.applyProposal(7)).status).toBe("applied");
-    expect((await c.rejectProposal(8)).status).toBe("rejected");
-    expect(requests).toEqual([
-      { path: "/apply", body: { id: 7 } },
-      { path: "/reject", body: { id: 8 } },
-    ]);
   });
 
   test("settle() POSTs blockId+disposition to /settle", async () => {

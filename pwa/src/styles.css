@@ -92,10 +92,29 @@ input, textarea { font: inherit; color: inherit; background: none; border: none;
 }
 .masthead .brand { font-size: 21px; font-weight: 600; color: var(--text-strong); letter-spacing: -.02em; }
 .masthead .meta { display: flex; align-items: center; gap: 9px; font: 500 11px var(--mono); color: var(--text-dim); }
-.pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--sage); animation: breathe 3.6s ease-in-out infinite; flex: none; }
+.availability-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); flex: none; }
+.availability-dot.available { background: var(--sage); }
+.availability-dot.offline, .availability-dot.unreachable { background: var(--amber); }
+.availability-banner {
+  flex: none; margin: 0 var(--pad) 10px; padding: 10px 12px; border-radius: 11px;
+  border: 1px solid var(--amber-bdr); background: var(--amber-bg); color: var(--text-soft);
+  display: flex; flex-direction: column; gap: 2px; font-size: 12px;
+}
+.availability-banner strong { color: var(--amber); }
 
 .scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0 var(--pad) 8px; -webkit-overflow-scrolling: touch; }
 .screen, .overlay { overflow-x: hidden; }
+.pwa-prompt {
+  position: fixed; z-index: 80; left: 50%; bottom: calc(88px + env(safe-area-inset-bottom));
+  transform: translateX(-50%); width: min(calc(100% - 32px), 28rem);
+  display: flex; align-items: center; gap: 10px; padding: 11px 13px;
+  border: 1px solid var(--sage-bdr); border-radius: 12px;
+  background: #1a1a18; color: var(--text-soft); box-shadow: 0 12px 34px rgba(0,0,0,.35);
+  font-size: 12px;
+}
+.pwa-prompt span { flex: 1; }
+.pwa-prompt button { color: var(--sage); font-weight: 600; white-space: nowrap; }
+.connection-hint { display: block; padding: 5px 14px 0; color: var(--amber); font: 500 10px var(--mono); }
 /* Long unbreakable strings (bare URLs, slugs, paths in vault content) must wrap,
    not widen the page off the side of the phone. */
 .answer, .row .text, .qcard .body, .hero .body, .brief-text,

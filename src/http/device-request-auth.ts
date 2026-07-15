@@ -207,7 +207,7 @@ export function authenticateDeviceRequest(
 
 export function hardenDeviceResponse(
   response: Response,
-  input: { readonly requestId: string },
+  input: { readonly requestId: string; readonly preserveStaticCacheControl?: boolean },
 ): Response {
   const headers = new Headers(response.headers);
   headers.set(
@@ -225,7 +225,12 @@ export function hardenDeviceResponse(
     "permissions-policy",
     "camera=(), geolocation=(), microphone=(self), payment=(), usb=()",
   );
-  headers.set("cache-control", "no-store");
+  // Only callers that have already classified a response as public static
+  // bytes may preserve caching. Every authenticated document remains no-store
+  // even if an internal Adapter accidentally supplied a cacheable header.
+  if (input.preserveStaticCacheControl !== true || !headers.has("cache-control")) {
+    headers.set("cache-control", "no-store");
+  }
   headers.set("x-dome-request-id", input.requestId);
   for (const name of [
     "access-control-allow-origin",

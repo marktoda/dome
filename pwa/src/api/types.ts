@@ -93,21 +93,6 @@ export type Today = {
   counts: { openTasks: number; followups: number; questions: number; reviews?: number };
 };
 
-export type ApplyProposalResult = {
-  schema: "dome.apply/v1";
-  status: "applied" | "stale" | "not-found" | "not-pending" | "invalid";
-  id?: number;
-  commit?: string;
-  message?: string;
-};
-
-export type RejectProposalResult = {
-  schema: "dome.reject/v1";
-  status: "rejected" | "not-found" | "not-pending" | "invalid";
-  id?: number;
-  message?: string;
-};
-
 export type RecentEntry = {
   path: string;
   title: string;
