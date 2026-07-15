@@ -44,7 +44,7 @@ export function renderInstalledFunctionalCanary(date: string): Readonly<Omit<Fun
     taskText: TASK,
     blockId: BLOCK_ID,
     sourceMarker: MARKER,
-    content: [`# ${TITLE}`, "", MARKER, "", `- [ ] ${TASK} 📅 ${date} ^${BLOCK_ID}`, ""].join("\n"),
+    content: [`# ${TITLE}`, "", MARKER, "", `- [ ] #task ${TASK} 📅 ${date} ^${BLOCK_ID}`, ""].join("\n"),
   });
 }
 
@@ -186,6 +186,7 @@ export async function assertInstalledFunctionalClosure(
   await withinDeadline(deadlines.timeoutMs, () => settlementTimeoutMessage(convergence), async (signal) => {
     while (true) {
       signal.throwIfAborted();
+      const adopted = await adoptedCommit(boundary, signal, true);
       const observedHead = await headCommit(boundary, signal);
       const commits = lines(await gitOk(boundary, [
         "log", "--format=%H", `${canary.commit}..${observedHead}`, "--", canary.path,
@@ -198,13 +199,12 @@ export async function assertInstalledFunctionalClosure(
         convergence = {
           settlementCommit: settleCommit,
           headCommit: observedHead,
-          adoptedCommit: null,
+          adoptedCommit: adopted,
           settlementObserved: false,
           settlementInAdopted: false,
           todayClosed: false,
         };
       } else {
-        const adopted = await adoptedCommit(boundary, signal, true);
         const settlementInAdopted = adopted !== null && await isAncestor(boundary, settleCommit, adopted, signal);
         convergence = {
           settlementCommit: settleCommit,
@@ -293,8 +293,8 @@ async function verifySettlementEvidence(
   await requireAncestor(boundary, canary.commit, settleCommit, "functional settlement does not descend from its canary", signal);
   const sourceAtS = await gitOk(boundary, ["show", `${settleCommit}:${canary.path}`], signal);
   const sourceFinal = await readFile(join(boundary.vaultPath, canary.path), "utf8");
-  const open = `- [ ] ${canary.taskText} 📅 ${canary.date} ^${canary.blockId}`;
-  const closed = `- [x] ${canary.taskText} 📅 ${canary.date} ^${canary.blockId}`;
+  const open = `- [ ] #task ${canary.taskText} 📅 ${canary.date} ^${canary.blockId}`;
+  const closed = `- [x] #task ${canary.taskText} 📅 ${canary.date} ^${canary.blockId}`;
   if ([sourceAtS, sourceFinal].some((content) =>
     occurrences(content, closed) !== 1 || occurrences(content, open) !== 0 ||
     occurrences(content, `^${canary.blockId}`) !== 1 || occurrences(content, canary.sourceMarker) !== 1)) {

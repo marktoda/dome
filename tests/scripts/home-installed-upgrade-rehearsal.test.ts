@@ -266,7 +266,7 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
         "",
         "Dome installed functional source marker",
         "",
-        "- [ ] Close the installed functional closure canary 📅 2026-07-15 ^tinstalledfunctional",
+        "- [ ] #task Close the installed functional closure canary 📅 2026-07-15 ^tinstalledfunctional",
         "",
       ].join("\n"),
     });

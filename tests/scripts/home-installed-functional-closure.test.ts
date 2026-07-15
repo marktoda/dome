@@ -87,6 +87,38 @@ describe("installed functional closure deep module", () => {
     expect(await adopted(fixture.root)).toBe(fixture.settleCommit);
   });
 
+  test("binds S ancestry to the immutable HEAD observed after an adopted-ref advance", async () => {
+    const fixture = await settledFixture();
+    await gitOk(fixture.root, [
+      "-c", "commit.gpgsign=false", "-c", "user.name=Dome Engine", "-c", "user.email=engine@dome.invalid",
+      "commit", "--allow-empty", "-m", "engine closure",
+    ]);
+    const closureCommit = await gitOk(fixture.root, ["rev-parse", "HEAD"]);
+    await gitOk(fixture.root, ["update-ref", "refs/dome/adopted/main", closureCommit]);
+    await gitOk(fixture.root, ["update-ref", "refs/heads/main", fixture.settleCommit]);
+    let advanced = false;
+    const boundary: FunctionalClosureBoundary = {
+      ...fixture.boundary,
+      git: async (args, signal) => {
+        const result = await fixture.boundary.git(args, signal);
+        if (!advanced && JSON.stringify(args) === JSON.stringify(["rev-parse", "--verify", "refs/dome/adopted/main"])) {
+          advanced = true;
+          await gitOk(fixture.root, ["update-ref", "refs/heads/main", closureCommit]);
+        }
+        return result;
+      },
+    };
+    await assertInstalledFunctionalClosure(
+      boundary,
+      fixture.canary,
+      fixture.settleCommit,
+      new AbortController().signal,
+      1_000,
+    );
+    expect(advanced).toBe(true);
+    expect(await gitOk(fixture.root, ["rev-parse", "HEAD"])).toBe(closureCommit);
+  });
+
   test.each([
     ["S is not observed", "not-observed", "settlement-not-observed", false, false, false],
     ["S is observed but not adopted", "unadopted", "settlement-not-adopted", true, false, false],
@@ -109,7 +141,7 @@ describe("installed functional closure deep module", () => {
     }
     expect(error).toBeInstanceOf(Error);
     const head = await gitOk(fixture.root, ["rev-parse", "HEAD"]);
-    const expectedAdopted = inAdopted ? fixture.settleCommit : observed ? await adopted(fixture.root) : "unavailable";
+    const expectedAdopted = inAdopted ? fixture.settleCommit : await adopted(fixture.root);
     expect((error as Error).message).toBe(
       `functional task settlement convergence timed out: phase=${phase} settlementCommit=${fixture.settleCommit} ` +
       `headCommit=${head} adoptedCommit=${expectedAdopted} settlementObserved=${observed} ` +
@@ -233,8 +265,8 @@ async function settledFixture(options: SettlementOptions = {}): Promise<{
   const fixture = await fixtureBoundary();
   const canary = await prepareInstalledFunctionalClosure(fixture.boundary, 1_000);
   fixture.state.autoAdopt = false;
-  const closed = `- [x] ${canary.taskText} 📅 ${canary.date} ^${canary.blockId}`;
-  const source = canary.content.replace(`- [ ] ${canary.taskText} 📅 ${canary.date} ^${canary.blockId}`, closed) +
+  const closed = `- [x] #task ${canary.taskText} 📅 ${canary.date} ^${canary.blockId}`;
+  const source = canary.content.replace(`- [ ] #task ${canary.taskText} 📅 ${canary.date} ^${canary.blockId}`, closed) +
     (options.duplicateSource ? `${closed}\n` : "");
   await writeFile(join(fixture.root, canary.path), source);
   const dailyPath = `wiki/dailies/${canary.date}.md`;
