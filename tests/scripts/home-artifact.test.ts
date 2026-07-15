@@ -11,6 +11,7 @@ import {
   HOME_ARTIFACT_SCHEMA,
   normalizeArtifactModes,
   parseGeneratedPwaPrecache,
+  parseGeneratedWorkboxRuntimePath,
   PINNED_AGE_ARCHIVE_SHA256,
   PINNED_AGE_ARCHIVE_URL,
   PINNED_AGE_BINARY_SHA256,
@@ -33,6 +34,31 @@ import {
 } from "../../src/product-host/home-artifact";
 
 describe("Dome Home artifact", () => {
+  test("normalizes the pinned GenerateSW Workbox dependency to its served runtime path", () => {
+    const worker = 'if(!self.define){/* pinned loader */}define(["./workbox-1234abcd"],function(e){e.precacheAndRoute([],{})});';
+    expect(parseGeneratedWorkboxRuntimePath(worker)).toBe("workbox-1234abcd.js");
+  });
+
+  test("rejects missing, duplicate, or malformed GenerateSW Workbox dependencies", () => {
+    const worker = (dependency: string) =>
+      `if(!self.define){/* pinned loader */}define([${dependency}],function(e){e.precacheAndRoute([],{})});`;
+    for (const dependency of [
+      '"./workbox-1234abcd.js"',
+      '"../workbox-1234abcd"',
+      '"./other-1234abcd"',
+      '"./workbox-1234ABCD"',
+      '"./workbox-1234abcd","./other-1234abcd"',
+      "'./workbox-1234abcd'",
+    ]) {
+      expect(() => parseGeneratedWorkboxRuntimePath(worker(dependency))).toThrow("malformed");
+    }
+    expect(() => parseGeneratedWorkboxRuntimePath("self.addEventListener('install',()=>{})"))
+      .toThrow("one AMD dependency list");
+    expect(() => parseGeneratedWorkboxRuntimePath(
+      `${worker('"./workbox-1234abcd"')}${worker('"./workbox-deadbeef"')}`,
+    )).toThrow("one AMD dependency list");
+  });
+
   test("strictly parses the pinned GenerateSW precache object literal", () => {
     const revision = "a".repeat(32);
     const worker = `define(["./workbox-1234abcd"],function(e){e.precacheAndRoute([{url:"manifest.webmanifest",revision:"${revision}"},{url:"index.html",revision:"${revision}"},{url:"pwa-192x192.png",revision:"${revision}"},{url:"maskable-icon-512x512.png",revision:"${revision}"},{url:"assets/index-AbCd1234.js",revision:null}],{}),e.cleanupOutdatedCaches()});`;
