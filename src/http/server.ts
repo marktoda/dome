@@ -432,7 +432,6 @@ function queryTokenAuthorized(request: Request, url: URL, tokenDigest: Buffer): 
 const PWA_INSTALL_ASSETS = new Set([
   "apple-touch-icon-180x180.png",
   "dome.svg",
-  "favicon.ico",
   "maskable-icon-512x512.png",
   "pwa-64x64.png",
   "pwa-192x192.png",

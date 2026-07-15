@@ -62,7 +62,6 @@ describe("closed PWA static root", () => {
       expect(worker.headers.get("service-worker-allowed")).toBe("/");
       for (const path of [
         "/dome.svg",
-        "/favicon.ico",
         "/apple-touch-icon-180x180.png",
         "/pwa-64x64.png",
         "/pwa-192x192.png",
@@ -74,6 +73,14 @@ describe("closed PWA static root", () => {
         expect(response.headers.get("cache-control")).toBe("no-cache");
         expect(response.headers.get("content-type")).not.toBeNull();
       }
+      const staleFavicon = await handler.fetch(new Request("http://localhost/favicon.ico"));
+      expect(staleFavicon.status).toBe(401);
+      expect(staleFavicon.headers.get("cache-control")).toBeNull();
+      const authenticatedStaleFavicon = await handler.fetch(new Request("http://localhost/favicon.ico", {
+        headers: { authorization: `Bearer ${TOKEN}` },
+      }));
+      expect(authenticatedStaleFavicon.status).toBe(404);
+      expect(authenticatedStaleFavicon.headers.get("cache-control")).toBeNull();
       for (const path of ["/workbox-1234abcd.js", "/assets/index-AbCd1234.js"]) {
         const response = await handler.fetch(new Request(`http://localhost${path}`));
         expect(response.status).toBe(200);
