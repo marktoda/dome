@@ -109,7 +109,7 @@ One vault per process.
 | `POST /sessions/:id/cancel` | idempotently abort the active owned turn | `dome.agent-session/v1` |
 | `DELETE /sessions/:id` | close an agent session | `dome.agent-session/v1` |
 | `POST /transcribe` audio body | STT step: shell command or OpenAI-compatible cloud endpoint (`capture` capability; 501 when unconfigured) | `dome.transcribe/v1` `{text}` |
-| `GET /recents` | recent vault changes (`read` capability) | `dome.recents/v1` `{count, entries}` |
+| `GET /recents` | recent changes from the current branch's adopted ref (`read` capability; empty before initialization) | `dome.recents/v1` `{count, entries}`; every entry carries its exact newest-change commit |
 
 `GET /source` is the citation-resolution route. Both `path` and a full commit
 OID are required. The path must already be canonical and vault-relative, must

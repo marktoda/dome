@@ -136,8 +136,10 @@ describe("Brief — checkbox settle", () => {
 
     resolveSettle(false);
     await waitFor(() => expect(box.checked).toBe(false));
-    expect(box.disabled).toBe(false);
+    expect(box.disabled).toBe(true);
     expect(box.closest(".row")?.className).not.toContain("settling");
+    expect(screen.getByRole("alert").textContent).toContain("Completion was not saved");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeDefined();
   });
 
   test("reverts the optimistic strike-through when onSettle rejects", async () => {
@@ -153,6 +155,41 @@ describe("Brief — checkbox settle", () => {
 
     rejectSettle(new Error("network down"));
     await waitFor(() => expect(box.checked).toBe(false));
-    expect(box.disabled).toBe(false);
+    expect(box.disabled).toBe(true);
+    expect(screen.getByRole("alert")).toBeDefined();
+  });
+
+  test("confirms success politely and prevents duplicate settlement", async () => {
+    let resolveSettle: (ok: boolean) => void = () => {};
+    const onSettle = mock(() => new Promise<boolean>((resolve) => { resolveSettle = resolve; }));
+    const today: Today = { ...base,
+      openTasks: [{ text: "Ship the thing", path: "p", line: 1, dueDate: "2026-06-17", blockId: "t1a2b3c4" }],
+      counts: { openTasks: 1, followups: 0, questions: 0 } };
+    render(<Brief today={today} onResolve={noop} onSettle={onSettle} />);
+    const box = screen.getByRole("checkbox", { name: /ship the thing/i }) as HTMLInputElement;
+    fireEvent.click(box);
+    fireEvent.click(box);
+    expect(onSettle).toHaveBeenCalledTimes(1);
+    resolveSettle(true);
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Completed “Ship the thing”."));
+    expect(screen.getByText("Completed", { exact: true })).toBeDefined();
+    expect(box.checked).toBe(true);
+    expect(box.disabled).toBe(true);
+  });
+
+  test("Retry invokes the same settlement once after failure", async () => {
+    const outcomes = [false, true];
+    const onSettle = mock(async () => outcomes.shift() ?? true);
+    const today: Today = { ...base,
+      openTasks: [{ text: "Ship the thing", path: "p", line: 1, dueDate: "2026-06-17", blockId: "t1a2b3c4" }],
+      counts: { openTasks: 1, followups: 0, questions: 0 } };
+    render(<Brief today={today} onResolve={noop} onSettle={onSettle} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: /ship the thing/i }));
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    fireEvent.click(retry);
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Completed"));
+    expect(onSettle).toHaveBeenCalledTimes(2);
+    expect(onSettle).toHaveBeenNthCalledWith(1, "t1a2b3c4");
+    expect(onSettle).toHaveBeenNthCalledWith(2, "t1a2b3c4");
   });
 });

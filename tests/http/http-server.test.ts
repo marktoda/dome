@@ -124,6 +124,7 @@ type Fixture = {
   readonly vault: string;
   readonly baseUrl: string;
   readonly server: ReturnType<typeof Bun.serve>;
+  readonly recentCommit: string;
 };
 
 let fixturePromise: Promise<Fixture> | null = null;
@@ -139,6 +140,7 @@ async function buildFixture(): Promise<Fixture> {
   expect(await runInit({ path: vault })).toBe(0);
 
   await mkdir(join(vault, "wiki", "dailies"), { recursive: true });
+  await mkdir(join(vault, "wiki", "concepts"), { recursive: true });
   await writeFile(
     join(vault, "wiki", "project-omega.md"),
     "---\ntype: project\n---\n# Project Omega\n\n" +
@@ -150,10 +152,16 @@ async function buildFixture(): Promise<Fixture> {
     `# ${TODAY}\n\n## Tasks\n\n- [ ] ship the http surface\n`,
     "utf8",
   );
+  await writeFile(
+    join(vault, "wiki", "concepts", "http-recents.md"),
+    "# HTTP Recents Evidence\n\nAdopted source-reader canary.\n",
+    "utf8",
+  );
   const { add, commit } = await import("../../src/git");
   await add(vault, "wiki/project-omega.md");
   await add(vault, DAILY_PATH);
-  await commit({ path: vault, message: "seed searchable content" });
+  await add(vault, "wiki/concepts/http-recents.md");
+  const recentCommit = await commit({ path: vault, message: "seed searchable content" });
   expect(await runSync({ vault, quiet: true })).toBe(0);
 
   const handler = createDomeHttpServer({ vaultPath: vault, token: TOKEN });
@@ -162,6 +170,7 @@ async function buildFixture(): Promise<Fixture> {
     vault,
     baseUrl: `http://127.0.0.1:${server.port}`,
     server,
+    recentCommit,
   };
   fixtureForCleanup = built;
   return built;
@@ -832,6 +841,23 @@ describe("read routes", () => {
       expect(json.query).toBe("omega launch");
       const matches = json.matches as Array<Record<string, unknown>>;
       expect(matches.map((m) => m.path)).toContain("wiki/project-omega.md");
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "GET /recents returns exact adopted change evidence",
+    async () => {
+      const f = await fixture();
+      const { status, json } = await get("/recents");
+      expect(status).toBe(200);
+      expect(json.schema).toBe("dome.recents/v1");
+      const entries = json.entries as Array<Record<string, unknown>>;
+      expect(entries).toContainEqual(expect.objectContaining({
+        path: "wiki/concepts/http-recents.md",
+        title: "HTTP Recents Evidence",
+        commit: f.recentCommit,
+      }));
     },
     TEST_TIMEOUT_MS,
   );

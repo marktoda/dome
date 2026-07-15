@@ -9,6 +9,7 @@
 // files (index.md, etc.) are excluded.
 
 import matter from "gray-matter";
+import { getAdoptedRef, getCurrentBranch } from "../adopted-ref";
 import { changedPathsForCommit, logWithTrailers, readBlob } from "../git";
 import { resolveVaultPath } from "./resolve-vault";
 
@@ -31,6 +32,8 @@ export type RecentEntry = {
   readonly changedBy: "human" | "engine";
   /** Commit subject line. */
   readonly subject: string;
+  /** Exact newest-change commit in the current branch's adopted ancestry. */
+  readonly commit: string;
 };
 
 // ----- Knowledge-page predicate ----------------------------------------------
@@ -81,8 +84,12 @@ export async function buildRecents(
 ): Promise<ReadonlyArray<RecentEntry>> {
   const vault = resolveVaultPath(options.vault);
   const limit = options.limit ?? DEFAULT_LIMIT;
+  const branch = await getCurrentBranch(vault);
+  if (branch === null) return Object.freeze([]);
+  const adopted = await getAdoptedRef(vault, branch);
+  if (adopted === null) return Object.freeze([]);
 
-  const commits = await logWithTrailers({ path: vault, limit: COMMIT_SCAN_CAP });
+  const commits = await logWithTrailers({ path: vault, limit: COMMIT_SCAN_CAP, ref: adopted });
   const seen = new Set<string>();
   const out: RecentEntry[] = [];
 
@@ -104,6 +111,7 @@ export async function buildRecents(
           lastChangedAt: commit.at,
           changedBy: commit.domeRun === null ? ("human" as const) : ("engine" as const),
           subject: commit.subject,
+          commit: commit.sha,
         }),
       );
     }

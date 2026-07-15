@@ -855,6 +855,23 @@ screen-reader acceptance, dynamic type/safe-area behavior, waiting-worker
 replacement, signed/notarized execution, or clean-consumer-Mac evidence. Those
 remain P5.5 and owner-window work.
 
+The bounded P5.5a functional-closure checkpoint closes portable contracts for
+two existing Home surfaces. Activity is derived from the current branch's
+adopted ref, is honestly empty before that ref exists, and identifies each row
+with the exact newest-change commit in adopted ancestry. A readable row opens
+that immutable revision in the existing source reader; unadopted `HEAD` work
+cannot enter the feed. Task completion owns one per-task pending, success, or
+failure lifecycle. Success is announced politely and followed by the normal
+Today refresh; failure remains visible as an alert with an explicit Retry that
+cannot issue a duplicate in-flight settlement.
+
+P5.5a evidence is limited to surface, HTTP, and component tests; the exact
+installed Activity and settlement journey remains P5.5b/owner evidence. P5.5a
+also does not claim adaptive layout completion, global focus-order or
+44px-target auditing, screen-reader acceptance, safe-area or dynamic-type
+acceptance, visual regression coverage, or real-device iOS evidence. Those
+remain the broader P5.5b and owner-hardware gates.
+
 Exit journey: installed PWA boots offline, preserves/exports/replays text
 capture, recovers from expired auth and premature SSE EOF, passes keyboard and
 screen-reader flows, and explains every degraded dependency.

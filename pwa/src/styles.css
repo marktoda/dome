@@ -190,7 +190,12 @@ a.wl { text-decoration: underline; text-decoration-thickness: 1px; text-underlin
 input.box { appearance: none; -webkit-appearance: none; padding: 0; background: transparent; cursor: pointer; }
 input.box:disabled { cursor: default; opacity: .7; }
 input.box:checked { background: var(--amber); border-color: var(--amber); }
-.row.settling .text { text-decoration: line-through; opacity: .55; }
+.row.settling .task-copy { text-decoration: line-through; opacity: .55; }
+.task-settle-state { margin-top: 5px; font: 500 11px var(--mono); color: var(--text-dim); text-decoration: none; }
+.task-settle-success { color: var(--sage); }
+.task-settle-failure { color: var(--coral); }
+.task-settle-failure button { margin-left: 8px; color: var(--peri); font-weight: 600; }
+.task-settle-announcement { margin: 4px 2px 10px; color: var(--sage); font: 500 12px var(--mono); }
 
 /* urgency buckets (overdue / today / this week / later) — painted from the shared view-model */
 .bucket-label { font: 500 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; margin: 10px 0 7px 2px; }
@@ -236,7 +241,9 @@ input.box:checked { background: var(--amber); border-color: var(--amber); }
 .recents-wrap > summary::before { content: "▸"; color: var(--text-faint); }
 .recents-wrap[open] > summary::before { content: "▾"; }
 .recents ul { list-style: none; display: flex; flex-direction: column; gap: 2px; padding: 2px 2px 14px; }
-.recents li { display: flex; gap: 11px; align-items: flex-start; padding: 7px 0; }
+.recents li { display: block; }
+.recent-entry { width: 100%; display: flex; gap: 11px; align-items: flex-start; padding: 7px 0; text-align: left; }
+.recent-entry:disabled { cursor: default; opacity: .65; }
 .recents .rdot { width: 6px; height: 6px; border-radius: 50%; margin-top: 7px; flex: none; }
 .recents .rdot.engine { background: var(--sage); }
 .recents .rdot.you { background: var(--peri); }

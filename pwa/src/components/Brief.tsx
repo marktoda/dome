@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   buildTodayViewModel,
   parseTodayView,
@@ -28,24 +28,28 @@ function PriorityMark({ priority }: { priority: TodayTaskRow["priority"] }): Rea
 }
 
 function TaskRow(
-  { item, settling, onSettle, interactive }: {
+  { item, settlement, onSettle, interactive }: {
     item: TodayTaskRow;
-    settling: boolean;
-    onSettle: (blockId: string) => void;
+    settlement: "pending" | "success" | "failure" | null;
+    onSettle: (item: TodayTaskRow) => void;
     interactive: boolean;
   },
 ): React.ReactElement {
   const blockId = item.blockId;
+  const settling = settlement === "pending";
+  const settled = settlement === "success";
+  const statusId = blockId === undefined ? undefined : `settlement-${blockId}`;
   return (
-    <div className={`row${settling ? " settling" : ""}`}>
+    <div className={`row${settling || settled ? " settling" : ""}${settlement === "failure" ? " settle-failed" : ""}`}>
       {blockId !== undefined ? (
         <input
           type="checkbox"
           className="box"
-          checked={settling}
-          disabled={settling || !interactive}
+          checked={settling || settled}
+          disabled={settlement !== null || !interactive}
           aria-label={item.text}
-          onChange={() => onSettle(blockId)}
+          aria-describedby={settlement === null ? undefined : statusId}
+          onChange={() => onSettle(item)}
         />
       ) : (
         // No blockId (not yet anchored) — decorative-only. Completing a task
@@ -53,7 +57,17 @@ function TaskRow(
         // settle identity to write to, so the box stays inert.
         <div className="box" />
       )}
-      <div className="text"><PriorityMark priority={item.priority} />{renderRich(item.text)}</div>
+      <div className="text">
+        <span className="task-copy"><PriorityMark priority={item.priority} />{renderRich(item.text)}</span>
+        {settlement === "pending" ? <div id={statusId} className="task-settle-state">Saving…</div> : null}
+        {settlement === "success" ? <div id={statusId} className="task-settle-state task-settle-success">Completed</div> : null}
+        {settlement === "failure" ? (
+          <div id={statusId} className="task-settle-state task-settle-failure" role="alert">
+            Completion was not saved.
+            <button type="button" onClick={() => onSettle(item)}>Retry</button>
+          </div>
+        ) : null}
+      </div>
       {item.dueDate !== null ? <span className="due">{fmtDue(item.dueDate)}</span> : null}
     </div>
   );
@@ -72,12 +86,12 @@ function QuestionCard({ q, onResolve, interactive }: { q: TodayQuestionRow; onRe
 
 /** One urgency bucket (overdue / today / this week / later) — header + rows; nothing when empty. */
 function Bucket(
-  { label, cls, items, settlingIds, onSettle, interactive }: {
+  { label, cls, items, settlements, onSettle, interactive }: {
     label: string;
     cls: string;
     items: ReadonlyArray<TodayTaskRow>;
-    settlingIds: ReadonlySet<string>;
-    onSettle: (blockId: string) => void;
+    settlements: ReadonlyMap<string, "pending" | "success" | "failure">;
+    onSettle: (item: TodayTaskRow) => void;
     interactive: boolean;
   },
 ): React.ReactElement | null {
@@ -90,7 +104,7 @@ function Bucket(
           <TaskRow
             key={`${cls}${i}`}
             item={t}
-            settling={t.blockId !== undefined && settlingIds.has(t.blockId)}
+            settlement={t.blockId === undefined ? null : settlements.get(t.blockId) ?? null}
             onSettle={onSettle}
             interactive={interactive}
           />
@@ -117,19 +131,24 @@ export function Brief(
   { today, onResolve, onSettle = async () => false, collapsed = false, hasMessages = false, onToggle = () => {}, interactive = true }: Props,
 ): React.ReactElement | null {
   const [showAll, setShowAll] = useState(false);
-  const [settlingIds, setSettlingIds] = useState<ReadonlySet<string>>(new Set());
+  const [settlements, setSettlements] = useState<ReadonlyMap<string, "pending" | "success" | "failure">>(new Map());
+  const [settlementNotice, setSettlementNotice] = useState<string | null>(null);
+  const settlementInFlight = useRef(new Set<string>());
 
-  const handleSettle = (blockId: string): void => {
-    setSettlingIds((prev) => new Set(prev).add(blockId));
-    const revert = (): void => {
-      setSettlingIds((prev) => {
-        if (!prev.has(blockId)) return prev;
-        const next = new Set(prev);
-        next.delete(blockId);
-        return next;
-      });
-    };
-    void onSettle(blockId).then((ok) => { if (!ok) revert(); }).catch(revert);
+  const handleSettle = (item: TodayTaskRow): void => {
+    const blockId = item.blockId;
+    if (blockId === undefined || settlementInFlight.current.has(blockId) || settlements.get(blockId) === "success") return;
+    settlementInFlight.current.add(blockId);
+    setSettlements((current) => new Map(current).set(blockId, "pending"));
+    setSettlementNotice(null);
+    void onSettle(blockId).then((ok) => {
+      setSettlements((current) => new Map(current).set(blockId, ok ? "success" : "failure"));
+      if (ok) setSettlementNotice(`Completed “${item.text}”.`);
+    }).catch(() => {
+      setSettlements((current) => new Map(current).set(blockId, "failure"));
+    }).finally(() => {
+      settlementInFlight.current.delete(blockId);
+    });
   };
 
   // Paint the SHARED view-model — same urgency classification, sections, and
@@ -151,6 +170,7 @@ export function Brief(
     if (hasMessages) return null;
     return (
       <section className="brief">
+        {settlementNotice !== null ? <p className="task-settle-announcement" role="status" aria-live="polite">{settlementNotice}</p> : null}
         <div className="all-clear">
           <div className="halo"><div className="ring" /><div className="core" /></div>
           <h2>You&apos;re clear.</h2>
@@ -173,10 +193,13 @@ export function Brief(
 
   if (collapsed) {
     return (
-      <button type="button" className="brief-bar" onClick={onToggle}>
-        <span className="left"><span className="dot" />Today&apos;s brief</span>
-        <span className="sum">{summary} ▾</span>
-      </button>
+      <>
+        {settlementNotice !== null ? <p className="task-settle-announcement" role="status" aria-live="polite">{settlementNotice}</p> : null}
+        <button type="button" className="brief-bar" onClick={onToggle}>
+          <span className="left"><span className="dot" />Today&apos;s brief</span>
+          <span className="sum">{summary} ▾</span>
+        </button>
+      </>
     );
   }
 
@@ -191,6 +214,7 @@ export function Brief(
 
   return (
     <section className="brief">
+      {settlementNotice !== null ? <p className="task-settle-announcement" role="status" aria-live="polite">{settlementNotice}</p> : null}
       <div className="brief-head">
         <span className="label">today · {summary}</span>
         {hasMessages ? <button type="button" className="hide" onClick={onToggle}>hide ▴</button> : null}
@@ -217,10 +241,10 @@ export function Brief(
       {shownInline > 0 || laterAll.length > 0 ? (
         <div className="section">
           <div className="label">Still open</div>
-          <Bucket label="overdue" cls="bucket-overdue" items={overdue} settlingIds={settlingIds} onSettle={handleSettle} interactive={interactive} />
-          <Bucket label="today" cls="bucket-today" items={dueToday} settlingIds={settlingIds} onSettle={handleSettle} interactive={interactive} />
-          <Bucket label="this week" cls="bucket-week" items={thisWeek} settlingIds={settlingIds} onSettle={handleSettle} interactive={interactive} />
-          {showAll ? <Bucket label="later" cls="bucket-later" items={laterAll} settlingIds={settlingIds} onSettle={handleSettle} interactive={interactive} /> : null}
+          <Bucket label="overdue" cls="bucket-overdue" items={overdue} settlements={settlements} onSettle={handleSettle} interactive={interactive} />
+          <Bucket label="today" cls="bucket-today" items={dueToday} settlements={settlements} onSettle={handleSettle} interactive={interactive} />
+          <Bucket label="this week" cls="bucket-week" items={thisWeek} settlements={settlements} onSettle={handleSettle} interactive={interactive} />
+          {showAll ? <Bucket label="later" cls="bucket-later" items={laterAll} settlements={settlements} onSettle={handleSettle} interactive={interactive} /> : null}
           {!showAll && hidden > 0 ? (
             <button type="button" className="brief-more" onClick={() => setShowAll(true)}>+{hidden} more, later ▾</button>
           ) : null}

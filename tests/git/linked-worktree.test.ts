@@ -166,7 +166,11 @@ describe("git boundary in a linked worktree", () => {
       expect(await countCommitsSince({ path: linked, ancestor: initial, descendant: captureCommit })).toBe(1);
       expect(await countCommitsSince({ path: linked, ancestor: initial, descendant: captureCommit, maxDepth: 0 })).toBeNull();
       expect(await countCommitsOnlyIn({ path: linked, tip: captureCommit, exclude: initial })).toBe(1);
-      expect((await logWithTrailers({ path: linked, limit: 1 }))[0]?.subject).toBe("capture: linked-worktree thought");
+      const defaultHeadLog = await logWithTrailers({ path: join(linked, "inbox"), limit: 1 });
+      expect(defaultHeadLog[0]?.subject).toBe("capture: linked-worktree thought");
+      // A caller-controlled ref must remain a revision token. Without the
+      // end-of-options boundary this value would silently expand to every ref.
+      expect(await logWithTrailers({ path: join(linked, "inbox"), ref: "--all" })).toEqual([]);
       expect((await fileInfoAtCommit({ path: linked, commit: captureCommit, filepath: "inbox/captured.md" }))?.lastChangedCommit).toBe(captureCommit);
 
       const controlled = await applyControlledMutation({

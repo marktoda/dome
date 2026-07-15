@@ -1044,6 +1044,27 @@ Chrome install UI or real-device iOS rendering. Accessibility, safe-area and
 dynamic-type acceptance, visual review, automated update replacement, signed
 distribution, and clean-consumer execution remain P5.5/owner-window gates.
 
+### P5.5a portable functional closure checkpoint
+
+Activity is immutable adopted evidence. The host walks the current branch's
+adopted ref rather than working-tree `HEAD`; a branch without an adopted ref
+has an empty feed. Every entry includes the exact newest-change commit from
+that adopted ancestry. With `access.read`, its row opens the existing source
+reader at that path and commit; otherwise it is non-interactive. Newer
+unadopted commits must not affect `/recents` rows, titles, or source revisions.
+
+Today task completion owns a per-task pending, success, or failure lifecycle.
+Pending settlement is visibly disabled and cannot be submitted twice. Success
+uses one polite status announcement before normal Today refresh removes the
+task. Failure persists as an alert with explicit Retry for the same task; the
+App refresh must not add a second acknowledgement.
+
+Evidence for this checkpoint is limited to portable surface, HTTP, and
+component tests. The exact installed Activity and settlement journey, adaptive
+layout, global focus/touch-target auditing, screen-reader,
+safe-area/dynamic-type, visual-regression, and real-iPhone evidence remain
+P5.5b/owner-window work.
+
 ### P6 managed-release collection checkpoint 1
 
 `src/product-host/managed-release-gc.ts` is the one host-wide managed-release
