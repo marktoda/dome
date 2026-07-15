@@ -351,12 +351,23 @@ function hasExactRecent(doc: Record<string, unknown>, canary: FunctionalClosureC
     return row["path"] === canary.path && row["title"] === canary.title && row["commit"] === canary.commit && row["changedBy"] === "human";
   }).length === 1;
 }
-function hasExactTask(doc: Record<string, unknown>, canary: FunctionalClosureCanary): boolean {
-  return array(doc["openTasks"]).filter((value) => {
+export function hasExactTaskForTests(doc: Record<string, unknown>, canary: FunctionalClosureCanary): boolean {
+  const dailyPath = record(doc["daily"])["path"];
+  const rows = array(doc["openTasks"]).filter((value) => {
     const row = record(value);
-    return row["path"] === canary.path && row["text"] === canary.taskText && row["blockId"] === canary.blockId && row["dueDate"] === canary.date;
-  }).length === 1;
+    const displayPath = row["path"];
+    return (displayPath === canary.path || (typeof dailyPath === "string" && displayPath === dailyPath)) &&
+      row["text"] === canary.taskText && row["blockId"] === canary.blockId && row["dueDate"] === canary.date;
+  });
+  if (rows.length !== 1) return false;
+  const sourceRefs = array(record(rows[0])["sourceRefs"]);
+  const originRefs = sourceRefs.filter((value) => record(value)["path"] === canary.path);
+  if (originRefs.length !== 1) return false;
+  const origin = record(originRefs[0]);
+  return origin["commit"] === canary.commit &&
+    origin["stableId"] === `dome.daily.open-loop:${canary.blockId}`;
 }
+const hasExactTask = hasExactTaskForTests;
 function hasTask(doc: Record<string, unknown>, blockId: string): boolean {
   return array(doc["openTasks"]).some((value) => record(value)["blockId"] === blockId);
 }

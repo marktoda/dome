@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import {
   assertInstalledFunctionalClosure,
+  hasExactTaskForTests,
   prepareInstalledFunctionalClosure,
   type FunctionalClosureBoundary,
   type FunctionalClosureCanary,
@@ -12,12 +13,13 @@ import {
 } from "../../scripts/home-installed-functional-closure";
 
 const roots: string[] = [];
+const CORRECTNESS_MS = 5_000;
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 
 describe("installed functional closure deep module", () => {
   test("collects H from Home-local Today and proves H <= adopted <= HEAD", async () => {
     const fixture = await fixtureBoundary();
-    const canary = await prepareInstalledFunctionalClosure(fixture.boundary, 1_000);
+    const canary = await prepareInstalledFunctionalClosure(fixture.boundary, CORRECTNESS_MS);
     expect(canary.date).toBe("2026-07-15");
     expect(await git(fixture.root, ["merge-base", "--is-ancestor", canary.commit, await adopted(fixture.root)])).toBe(0);
     expect(await git(fixture.root, ["merge-base", "--is-ancestor", await adopted(fixture.root), "HEAD"])).toBe(0);
@@ -26,8 +28,8 @@ describe("installed functional closure deep module", () => {
   test("keeps one H while adopted truth, Recents, and Today converge at different times", async () => {
     const fixture = await fixtureBoundary({ adoptAfterChecks: 2, recentsAfterReads: 2, todayAfterReads: 2 });
     const canary = await prepareInstalledFunctionalClosure(fixture.boundary, {
-      setupMs: 1_000,
-      convergenceMs: 1_000,
+      setupMs: CORRECTNESS_MS,
+      convergenceMs: CORRECTNESS_MS,
       pollMs: 1,
     });
     expect(canary.commit).toBe(await gitOk(fixture.root, ["rev-parse", "HEAD"]));
@@ -36,7 +38,7 @@ describe("installed functional closure deep module", () => {
 
   test("fails boundedly on Home-date rollover and an accepted response body that stalls", async () => {
     const rollover = await fixtureBoundary({ rollover: true });
-    await expect(prepareInstalledFunctionalClosure(rollover.boundary, 1_000))
+    await expect(prepareInstalledFunctionalClosure(rollover.boundary, CORRECTNESS_MS))
       .rejects.toThrow("crossed the authenticated Home-local date boundary");
 
     const stalled = await fixtureBoundary({ stallInitialTasks: true });
@@ -54,7 +56,7 @@ describe("installed functional closure deep module", () => {
     const fixture = await fixtureBoundary(options);
     let error: unknown;
     try {
-      await prepareInstalledFunctionalClosure(fixture.boundary, { setupMs: 1_000, convergenceMs: 500, pollMs: 1 });
+      await prepareInstalledFunctionalClosure(fixture.boundary, { setupMs: CORRECTNESS_MS, convergenceMs: 500, pollMs: 1 });
     } catch (caught) {
       error = caught;
     }
@@ -70,9 +72,45 @@ describe("installed functional closure deep module", () => {
     expect(message).not.toContain("Close the installed functional closure canary");
   });
 
+  test("accepts one daily display row with exact human-origin provenance", () => {
+    const canary = canaryFixture();
+    expect(hasExactTaskForTests(todayDocument(canary), canary)).toBe(true);
+  });
+
+  test.each([
+    ["missing", (canary: FunctionalClosureCanary) => ({ ...todayTaskFixture(canary), sourceRefs: [] })],
+    ["duplicate", (canary: FunctionalClosureCanary) => {
+      const row = todayTaskFixture(canary);
+      return { ...row, sourceRefs: [...row.sourceRefs, row.sourceRefs[1]] };
+    }],
+    ["wrong commit", (canary: FunctionalClosureCanary) => {
+      const row = todayTaskFixture(canary);
+      return { ...row, sourceRefs: [row.sourceRefs[0], { ...row.sourceRefs[1], commit: "f".repeat(40) }] };
+    }],
+    ["wrong stable anchor", (canary: FunctionalClosureCanary) => {
+      const row = todayTaskFixture(canary);
+      return { ...row, sourceRefs: [row.sourceRefs[0], { ...row.sourceRefs[1], stableId: "dome.daily.open-loop:wrong" }] };
+    }],
+  ] as const)("rejects %s Today origin provenance", (_name, mutate) => {
+    const canary = canaryFixture();
+    expect(hasExactTaskForTests(todayDocument(canary, [mutate(canary)]), canary)).toBe(false);
+  });
+
+  test("rejects duplicate semantic Today rows", () => {
+    const canary = canaryFixture();
+    const row = todayTaskFixture(canary);
+    expect(hasExactTaskForTests(todayDocument(canary, [row, row]), canary)).toBe(false);
+  });
+
+  test("rejects an unrelated Today display path", () => {
+    const canary = canaryFixture();
+    const row = { ...todayTaskFixture(canary), path: "notes/unrelated.md" };
+    expect(hasExactTaskForTests(todayDocument(canary, [row]), canary)).toBe(false);
+  });
+
   test("proves receipted S ancestry, exact two paths, attribution, and exactly-once Markdown", async () => {
     const fixture = await settledFixture();
-    await assertInstalledFunctionalClosure(fixture.boundary, fixture.canary, fixture.settleCommit, new AbortController().signal, 1_000);
+    await assertInstalledFunctionalClosure(fixture.boundary, fixture.canary, fixture.settleCommit, new AbortController().signal, CORRECTNESS_MS);
   });
 
   test("waits for one receipted S to enter adopted Today truth", async () => {
@@ -82,7 +120,7 @@ describe("installed functional closure deep module", () => {
       fixture.canary,
       fixture.settleCommit,
       new AbortController().signal,
-      { timeoutMs: 1_000, pollMs: 1 },
+      { timeoutMs: CORRECTNESS_MS, pollMs: 1 },
     );
     expect(await adopted(fixture.root)).toBe(fixture.settleCommit);
   });
@@ -113,7 +151,7 @@ describe("installed functional closure deep module", () => {
       fixture.canary,
       fixture.settleCommit,
       new AbortController().signal,
-      1_000,
+      CORRECTNESS_MS,
     );
     expect(advanced).toBe(true);
     expect(await gitOk(fixture.root, ["rev-parse", "HEAD"])).toBe(closureCommit);
@@ -173,13 +211,13 @@ describe("installed functional closure deep module", () => {
 
   test("rejects wrong S and an extra source-changing commit", async () => {
     const wrong = await settledFixture();
-    await expect(assertInstalledFunctionalClosure(wrong.boundary, wrong.canary, wrong.seed, new AbortController().signal, 100))
+    await expect(assertInstalledFunctionalClosure(wrong.boundary, wrong.canary, wrong.seed, new AbortController().signal, CORRECTNESS_MS))
       .rejects.toThrow("receipted commit");
 
     const extra = await settledFixture();
     await writeFile(join(extra.root, extra.canary.path), `${await readFile(join(extra.root, extra.canary.path), "utf8")}\nextra\n`);
     await commit(extra.root, [extra.canary.path], "extra source change", "Owner", "owner@example.invalid");
-    await expect(assertInstalledFunctionalClosure(extra.boundary, extra.canary, extra.settleCommit, new AbortController().signal, 100))
+    await expect(assertInstalledFunctionalClosure(extra.boundary, extra.canary, extra.settleCommit, new AbortController().signal, CORRECTNESS_MS))
       .rejects.toThrow("more than the receipted commit");
   });
 
@@ -193,20 +231,20 @@ describe("installed functional closure deep module", () => {
     ["extra changed path", { extraPath: true }, "attribution semantics"],
   ])("rejects %s", async (_name, options, message) => {
     const fixture = await settledFixture(options);
-    await expect(assertInstalledFunctionalClosure(fixture.boundary, fixture.canary, fixture.settleCommit, new AbortController().signal, 1_000))
+    await expect(assertInstalledFunctionalClosure(fixture.boundary, fixture.canary, fixture.settleCommit, new AbortController().signal, CORRECTNESS_MS))
       .rejects.toThrow(message);
   });
 
   test("preserves caller cancellation without waiting for the settlement bound", async () => {
     const fixture = await fixtureBoundary();
-    const canary = await prepareInstalledFunctionalClosure(fixture.boundary, 1_000);
+    const canary = await prepareInstalledFunctionalClosure(fixture.boundary, CORRECTNESS_MS);
     const controller = new AbortController();
     const reason = new Error("caller cancelled functional settlement");
     setTimeout(() => controller.abort(reason), 10);
     const started = Date.now();
     let error: unknown;
     try {
-      await assertInstalledFunctionalClosure(fixture.boundary, canary, "f".repeat(40), controller.signal, 1_000);
+      await assertInstalledFunctionalClosure(fixture.boundary, canary, "f".repeat(40), controller.signal, CORRECTNESS_MS);
     } catch (caught) { error = caught; }
     expect(error).toBe(reason);
     expect(Date.now() - started).toBeLessThan(500);
@@ -214,7 +252,7 @@ describe("installed functional closure deep module", () => {
 
   test("keeps a convergence deadline distinct when it wins a cancellation race", async () => {
     const fixture = await fixtureBoundary();
-    const canary = await prepareInstalledFunctionalClosure(fixture.boundary, 1_000);
+    const canary = await prepareInstalledFunctionalClosure(fixture.boundary, CORRECTNESS_MS);
     const controller = new AbortController();
     const cancellation = setTimeout(() => controller.abort(new Error("late caller cancellation")), 500);
     await expect(assertInstalledFunctionalClosure(
@@ -231,7 +269,7 @@ describe("installed functional closure deep module", () => {
     const fixture = await fixtureBoundary();
     await expect(prepareInstalledFunctionalClosure(fixture.boundary, { setupMs: 0 }))
       .rejects.toThrow("functional canary setup bound must be positive and finite");
-    const canary = await prepareInstalledFunctionalClosure(fixture.boundary, 1_000);
+    const canary = await prepareInstalledFunctionalClosure(fixture.boundary, CORRECTNESS_MS);
     await expect(assertInstalledFunctionalClosure(
       fixture.boundary,
       canary,
@@ -254,7 +292,7 @@ async function unsettledFixture(): Promise<{
   root: string; boundary: FunctionalClosureBoundary; canary: FunctionalClosureCanary; settleCommit: string; seed: string;
 }> {
   const fixture = await fixtureBoundary();
-  const canary = await prepareInstalledFunctionalClosure(fixture.boundary, 1_000);
+  const canary = await prepareInstalledFunctionalClosure(fixture.boundary, CORRECTNESS_MS);
   fixture.state.autoAdopt = false;
   return { ...fixture, canary, settleCommit: "f".repeat(40) };
 }
@@ -263,7 +301,7 @@ async function settledFixture(options: SettlementOptions = {}): Promise<{
   root: string; boundary: FunctionalClosureBoundary; canary: FunctionalClosureCanary; settleCommit: string; seed: string;
 }> {
   const fixture = await fixtureBoundary();
-  const canary = await prepareInstalledFunctionalClosure(fixture.boundary, 1_000);
+  const canary = await prepareInstalledFunctionalClosure(fixture.boundary, CORRECTNESS_MS);
   fixture.state.autoAdopt = false;
   const closed = `- [x] #task ${canary.taskText} 📅 ${canary.date} ^${canary.blockId}`;
   const source = canary.content.replace(`- [ ] #task ${canary.taskText} 📅 ${canary.date} ^${canary.blockId}`, closed) +
@@ -351,7 +389,22 @@ async function fixtureBoundary(options: Readonly<{
         if (taskReads === 1 || state.settled) return { date, openTasks: [] };
         if (taskReads - 1 <= (options.todayAfterReads ?? 0)) return { date, openTasks: [] };
         const head = await gitOk(root, ["rev-parse", "HEAD"]);
-        return { date, openTasks: [{ path: "notes/installed-functional-canary.md", text: "Close the installed functional closure canary", blockId: "tinstalledfunctional", dueDate: "2026-07-15" }], head };
+        const stableId = "dome.daily.open-loop:tinstalledfunctional";
+        return {
+          date,
+          daily: { path: "wiki/dailies/2026-07-15.md" },
+          openTasks: [{
+            path: "wiki/dailies/2026-07-15.md",
+            text: "Close the installed functional closure canary",
+            blockId: "tinstalledfunctional",
+            dueDate: "2026-07-15",
+            sourceRefs: [
+              { path: "wiki/dailies/2026-07-15.md", commit: head, stableId },
+              { path: "notes/installed-functional-canary.md", commit: head, stableId },
+            ],
+          }],
+          head,
+        };
       }
       recentsReads += 1;
       if (options.stallRecents) {
@@ -363,6 +416,43 @@ async function fixtureBoundary(options: Readonly<{
     },
   };
   return { root, boundary, seed, state };
+}
+
+function canaryFixture(): FunctionalClosureCanary {
+  return Object.freeze({
+    path: "notes/installed-functional-canary.md",
+    title: "Installed functional closure canary",
+    taskText: "Close the installed functional closure canary",
+    blockId: "tinstalledfunctional",
+    commit: "a".repeat(40),
+    sourceMarker: "Dome installed functional source marker",
+    date: "2026-07-15",
+    content: "",
+  });
+}
+
+function todayTaskFixture(canary: FunctionalClosureCanary) {
+  const stableId = `dome.daily.open-loop:${canary.blockId}`;
+  return {
+    path: `wiki/dailies/${canary.date}.md`,
+    text: canary.taskText,
+    blockId: canary.blockId,
+    dueDate: canary.date,
+    sourceRefs: [
+      { path: `wiki/dailies/${canary.date}.md`, commit: canary.commit, stableId },
+      { path: canary.path, commit: canary.commit, stableId },
+    ],
+  };
+}
+
+function todayDocument(
+  canary: FunctionalClosureCanary,
+  openTasks = [todayTaskFixture(canary)],
+): Record<string, unknown> {
+  return {
+    daily: { path: `wiki/dailies/${canary.date}.md` },
+    openTasks,
+  };
 }
 
 async function commit(root: string, paths: string[], subject: string, name: string, email: string, bodies: string[] = []): Promise<string> {
