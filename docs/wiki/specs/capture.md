@@ -138,9 +138,9 @@ dedupe against each other.
 dome recipe ios --url http://<your-server>:3663
 ```
 
-prints the full setup: prerequisites, the Shortcut actions step by step, a
-copyable `curl` verification command, and the `GET /today` cockpit URL for
-the home screen. The recipe is normative in [[wiki/specs/cli]]
+prints the full setup: prerequisites, the Shortcut actions step by step, and a
+copyable `curl` verification command. The browser Today surface is the paired
+Dome Home PWA at `/`, not part of this shared-token capture recipe. The recipe is normative in [[wiki/specs/cli]]
 §"`dome recipe`"; it lives next to the CLI so it cannot drift from the HTTP
 surface. No SSH, no Mac-side shell — and the Action button / Apple Watch can
 trigger the Shortcut directly.

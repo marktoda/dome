@@ -129,7 +129,7 @@ dome http [--vault <path>] [--port <port>] [--host <host>] [--token <token>]
           [--transcribe-url <url>] [--transcribe-model <model>]
                                 Run the Dome HTTP surface (bearer or loopback pairing;
                                 loopback by default): read/capture/resolve/settle
-                                routes, the GET /today HTML cockpit, session-oriented
+                                routes, the PWA static root, session-oriented
                                 AgentRuntime conversation, POST /transcribe
                                 (voice STT; capture capability), and GET /recents.
                                 --allow-write grants the agent the `author` write
@@ -1665,10 +1665,11 @@ before the POST** — queue-first, because Shortcuts has no try/catch and an
 unreachable host simply stops the Shortcut, so the pre-saved file is the only
 failure branch ([[wiki/specs/capture]] §"The iCloud queue fallback") — then
 Get Contents of URL with the bearer header, then Delete Files on success.
-Plus a copyable `curl` verification command and the `GET /today?token=…`
-cockpit URL. The queue this Shortcut leaves behind is drained by its sibling
-recipe, `dome recipe capture-queue`; once captures flow, the brief they feed
-is only as personal as `core.md` — seed it with `dome recipe core-seed`.
+Plus a copyable `curl` verification command. It does not put the shared bearer
+in a browser URL; the browser product is the paired Dome Home PWA at `/`. The
+queue this Shortcut leaves behind is drained by its sibling recipe,
+`dome recipe capture-queue`; once captures flow, the brief they feed is only
+as personal as `core.md` — seed it with `dome recipe core-seed`.
 
 **`capture-queue`** — the laptop half of the queue fallback whose phone half
 is the `ios` recipe's Shortcut: the printed text
@@ -2984,9 +2985,8 @@ protocol adapter per [[wiki/specs/http-surface]] and the first shipped form of
 the remote-capture seam ([[wiki/specs/capture]] §"The remote-capture seam").
 Routes: `POST /capture`, `GET /status`, `GET /query`, `GET /views`, `GET /tasks`,
 `GET /doc`, `GET /questions`, `POST /resolve` — the same JSON documents the
-corresponding CLI verbs emit under `--json` — plus `GET /today` (the
-self-refreshing HTML cockpit page; [[wiki/specs/http-surface]] §"The cockpit
-page (`GET /today`)"), `POST /sessions`,
+corresponding CLI verbs emit under `--json` — plus the closed PWA static root,
+a legacy `GET /today` redirect/migration response, `POST /sessions`,
 `POST /sessions/:id/messages` (SSE AgentRuntime turn),
 `DELETE /sessions/:id`, `POST /transcribe` (voice STT; capture capability),
 and `GET /recents`.

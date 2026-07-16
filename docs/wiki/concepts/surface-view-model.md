@@ -117,8 +117,8 @@ Realized design notes (the shape the build settled into):
   `automationPolicy`, so the old consumer-side derivation fallback was dead — no
   view-model needed.
 - **Degrade is an explicit per-adapter choice.** `today` keeps
-  degrade-don't-fail: the CLI verb, the HTTP `/tasks` + today-html routes, and
-  the MCP tasks tool each pass an explicit `payload: z.unknown()` override and
+  degrade-don't-fail: the CLI verb, the HTTP `/tasks` route, and the MCP tasks
+  tool each pass an explicit `payload: z.unknown()` override and
   enrich via the total `parseTodayView`, making the degrade choice visible at
   the call site. The strict `todayPayloadSchema` stays bound to the entry for
   consumers that want it (the MCP brief-source narrowing). `query` / `lint` /

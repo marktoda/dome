@@ -12,10 +12,9 @@
 //      — the contract is the consumed subset.
 //   2. View-model — `buildTodayViewModel`: urgency classification, aged-backlog
 //      partition, sections, totalOpen, bounded-payload omissions.
-//   3. Paint — the CLI (src/cli/commands/today.ts) and HTTP
-//      (src/http/today-html.ts) adapters.
+//   3. Paint — the CLI (src/cli/commands/today.ts), MCP, and PWA consumers.
 //
-// `parseTodayView` is the CLI/HTTP render path's lenient enrich (strip
+// `parseTodayView` is the CLI/HTTP/PWA render path's lenient enrich (strip
 // wikilinks, extract entities, count fallbacks, null-safe). It stays total
 // (never throws) for render resilience; the strict schema validates the wire
 // contract for the producer + agent/MCP consumers.

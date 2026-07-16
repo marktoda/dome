@@ -124,10 +124,9 @@ Verify from any shell on the Tailscale network
     -d '{"text":"recipe smoke test","captureId":"recipe-test-1"}'
   → {"status":"captured", ...}   (compile_pending until the daemon adopts)
 
-The cockpit
-  Open ${base}/today?token=<token> on any device in the trust domain for the
-  self-refreshing today view (add it to the iPhone home screen via Safari →
-  Share → Add to Home Screen).
+The app
+  This shared-token recipe configures capture only. Dome Home serves the PWA
+  at its root URL and pairs browsers without putting credentials in a URL.
 `;
 }
 

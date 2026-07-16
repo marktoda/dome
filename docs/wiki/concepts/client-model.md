@@ -203,7 +203,7 @@ a human runs.
 - **The mobile unlock is a reachable agent over the product host** (always-on
   single-vault host + paired device credentials), with voice as the primary
   online capture input and durable text capture as the V1 offline boundary. The brief
-  cockpit (`/today`) and a recents history are the static glance panels that
+  Today and recents are glance panels inside the PWA that
   frame it — components of the app, not the primary element and not the whole
   app.
 

@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-10
-updated: 2026-07-15
+updated: 2026-07-16
 sources:
   - "[[wiki/specs/capture]]"
   - "[[wiki/specs/sdk-surface]]"
@@ -72,13 +72,12 @@ logged to stderr — they never propagate into the request path.
 
 ## Routes
 
-Every route requires `Authorization: Bearer <token>` (constant-time
-comparison; 401 otherwise) — with two scoped exceptions: `GET /today` accepts
-the token as `?token=` (below), and the two `GET /today/fonts/*.woff2` static
-asset routes are served fully **unauthenticated** (§"Cacheable font assets").
-When a built PWA directory is configured, its closed generated static routes
-are also unauthenticated so an installed shell can boot before device auth.
-One vault per process.
+Every data and operation route requires `Authorization: Bearer <token>`
+(constant-time comparison; 401 otherwise). When a built PWA directory is
+configured, its closed generated static routes are unauthenticated so an
+installed shell can boot before device auth. The data-free `GET /today`
+migration response is also public; it never authorizes an API request. One
+vault per process.
 
 | Route | Same path as | Result schema |
 |---|---|---|
@@ -93,9 +92,7 @@ One vault per process.
 | `GET /views` | `vault.listViews()` | `dome.views/v1` |
 | `POST /views/:command` JSON input | `runInstalledView` → `vault.runView(command)` | `dome.view-run/v1` |
 | `GET /tasks?date=…` | `dome run today` | `dome.daily.today/v1` |
-| `GET /today?refresh=…` | the `dome.daily.today` view → `renderTodayHtml` | `text/html` cockpit page (`cache-control: no-store`) |
-| `GET /today/fonts/basel-book.woff2` | static Basel asset (cacheable) | `font/woff2` (immutable; **unauthenticated**) |
-| `GET /today/fonts/basel-medium.woff2` | static Basel asset (cacheable) | `font/woff2` (immutable; **unauthenticated**) |
+| `GET /today` | legacy browser bookmark migration | `308` to `/` when the PWA shell is present; otherwise a data-free `410` notice |
 | `GET /doc?path=…` | `vault.readDocument` (adopted ref) | `dome.http.document/v1` |
 | `GET /source?path=…&commit=…` | exact adopted-source reader | `dome.source-document/v1` with explicit `status` |
 | `GET /questions` | `vault.listQuestions` (open only) | `dome.http.questions/v1` |
@@ -183,59 +180,25 @@ Tests: `tests/assistant/tools.test.ts` (§"contract-tool provisioning" pins the
 capability gates; §"contract tools (invocation)" exercises the collectors
 against real vault fixtures).
 
-Errors are JSON envelopes (`{status: "error", error, message}`) with honest
-HTTP codes: 400 usage, 401 auth, 404 missing, 409 unworkable git state or a
-proposal-decision conflict (`POST /apply`/`POST /reject` on a proposal that
-is already decided, or `POST /apply` on one that has gone stale),
-413 oversized body, 503 adopted-ref churn, 500 the rest.
+Protected-operation errors are JSON envelopes (`{status: "error", error,
+message}`) with honest HTTP codes: 400 usage, 401 auth, 404 missing, 409
+unworkable git state, 413 oversized body, 503 adopted-ref churn, and 500 the
+rest. Proposal-decision conflicts also use 409: `POST /apply` or `POST /reject`
+on a proposal that is already decided, or `POST /apply` on one that has gone
+stale.
 
-## The cockpit page (`GET /today`)
+## Closed PWA static root and legacy migration
 
-The one non-JSON route: it runs the same `dome.daily.today` view as
-`GET /tasks`, then renders the structured result through `renderTodayHtml`
-(`src/http/today-html.ts`, a pure data→HTML function with no engine imports)
-into a phone-friendly dark-mode page — open tasks, follow-ups, and questions
-with their `dome resolve` hints, or "All clear" when nothing is open. This is
-the glanceable cockpit surface of the v1 plan; `dome today --watch` is its
-terminal sibling.
-
-Freshness is **JS polling by design** (the v1 plan's "dumb polling is
-acceptable" resolution): the page ships a self-contained inline `<script>`
-that polls `GET /tasks` on an interval, diffs the fingerprint against the
-last result, and calls `location.reload()` when content changes. The script
-reads `?token=` from `location.search` at runtime so the parameter survives
-reloads without any server-side per-reload round-trip. There is no `<meta
-http-equiv="refresh">`. `?refresh=<seconds>` sets the poll cadence (JS
-`POLL_MS = refreshSeconds * 1000`) — a positive integer, default 15 when
-absent or unparseable; the renderer floors it at 1.
-
-The poll **fingerprint projects only user-visible fields** — the task/question
-ids, titles, and urgency the page actually renders — never the volatile
-projection metadata (`attention`, `lastChangedAt`, and the like) that churns on
-every compiler tick without changing what the page shows. A naive whole-payload
-fingerprint reloaded the page on every background adoption; narrowing it to the
-visible projection means the page reloads only when the rendered content
-actually changes.
-
-Once the page loads, the inline script **scrubs `?token=` from the URL** via
-`history.replaceState` (the token is kept in the JS closure for the polls'
-`Authorization` header). The bearer survives in memory for the session; it no
-longer sits in the visible address bar or in any link copied off the loaded
-page.
-
-The HTML response is sent with `cache-control: no-store`: an authenticated page
-whose URL can carry `?token=`, and whose freshness contract is the JS poll
-interval — it must never be cached. (The font assets below are the deliberate
-exception — non-sensitive static bytes that *should* cache hard.)
-
-### Closed PWA static root
+The PWA is Dome's one browser product. It consumes the authenticated JSON
+routes, including `GET /tasks` for the `dome.daily.today/v1` document, rather
+than carrying a second server-rendered Today implementation.
 
 When `staticDir` is configured, the unauthenticated static surface recognizes
 only `/`, its GenerateSW-required `/index.html` alias,
 `/manifest.webmanifest`, `/sw.js`, the generated
 `/workbox-<8-hex>.js`, and one-level hashed `/assets/<name>-<hash>.<ext>`
 payloads where `<ext>` is exactly `js` or `css`. Arbitrary root files,
-unhashed or nested assets, other extensions, and every API path
+unhashed or nested assets, other extensions, and every data/operation path
 fall through to normal authenticated routing. A recognized but missing build
 file is a 404.
 
@@ -247,68 +210,18 @@ path. In production Device/Home mode, authenticated documents and events
 remain `no-store` and can never be mistaken for offline knowledge state. The
 compatibility bearer surface is not the production PWA cache contract.
 
-### Cacheable font assets (`GET /today/fonts/*.woff2`)
+`GET /today` exists only to migrate old bookmarks. If the configured static
+directory can serve its verified root shell, the route returns `308` with
+`Location: /`. The location never copies query parameters, so an old
+`?token=...` bookmark is scrubbed rather than propagated. If no PWA shell is
+available, it returns a public, data-free `410 text/plain` notice pointing
+programmatic callers to authenticated `GET /tasks`. Both responses use
+`cache-control: no-store`.
 
-The cockpit's CSS references the Basel typeface via two static routes —
-`GET /today/fonts/basel-book.woff2` and `GET /today/fonts/basel-medium.woff2`.
-They are served:
-
-- with `content-type: font/woff2`;
-- with `cache-control: public, max-age=31536000, immutable` — the fonts are
-  content-stable, so the browser fetches each once and never revalidates;
-- **unauthenticated** — these two GET routes skip the bearer
-  check. A browser's CSS `url()` font fetch carries no `Authorization` header
-  and no cookies, so requiring a token would simply break font loading; the
-  bytes are non-sensitive public static assets, not vault data. Apart from the
-  closed PWA static root above, every other route — including the `GET /today`
-  HTML itself — keeps its bearer/query-token auth.
-
-Pulling the fonts out of the HTML (they were previously inlined as base64)
-drops the `/today` page to ~25 KB and lets the browser cache the heavy font
-bytes across reloads instead of re-parsing them inside every poll-triggered
-page load.
-
-**Briefing panels.** The cockpit page includes three additive panels sourced
-from graph facts emitted by the `dome.agent` adoption extractors:
-
-- **Brief** — driven by `dome.agent.brief` facts (predicate `dome.agent.brief`);
-  `dome.agent.brief-index` extracts the `dome.agent.brief:today` block from each
-  adopted daily note and emits one fact carrying the stripped plain-text body +
-  a sourceRef. The panel is omitted when no fact exists for today.
-- **Calendar** — driven by `dome.agent.calendar.event` facts (predicate
-  `dome.agent.calendar.event`); `dome.agent.calendar-index` extracts events from
-  `sources/calendar/<date>.md` files and emits one fact per event. The panel is
-  omitted when no events exist for today.
-- **Hero** — the single highest-priority open task or question, derived from
-  the same `dome.daily.today/v1` view data as the rest of the page; no
-  separate fact.
-
-**Mutations via the query token.** The cockpit's inline script uses the `?token=`
-bearer to authorize mutations (`POST /capture` and `POST /resolve`) in addition
-to the read polls. This is an accepted trust boundary: the shared bearer already
-authorizes the page fetch; reusing it for mutations inside the same loopback/
-trusted-LAN session is the intended v1 contract (§"Trust domain").
-
-### Query-token escape hatch (`GET /today`)
-
-`GET /today` — and **only** `GET /today` — additionally accepts the bearer
-token as `?token=<token>`, because browser navigations cannot carry an
-`Authorization` header and the cockpit's whole point is "open it from the
-phone's home screen". The query token goes through the same SHA-256 digest
-and constant-time comparison as the header path; the scoping is method- and
-path-exact, so `POST /today?token=…` and every other route stay header-only.
-
-The trade is named honestly: the token appears in the URL (browser history,
-possibly proxy logs). That is acceptable inside the loopback/Tailscale
-owner-trust domain this surface is restricted to (§"Trust domain") — and it
-is exactly why this escape hatch **never widens** to other routes: every
-programmatic caller can set a header, so no other route has the
-browser-navigation excuse.
-
-Tests: `tests/http/http-server.test.ts` (§"GET /today" — header and query
-auth, GET-only scoping, JS poll interval default/override, no-store, no
-meta-refresh) and `tests/http/today-html.test.ts` (renderer shape,
-escaping, poll-interval floor, no meta-refresh assertion).
+There is no query-token authentication path and no standalone cockpit font
+surface. Compatibility callers put the bearer in `Authorization`; Dome Home
+uses paired device credentials. Tests: `tests/http/http-server.test.ts`
+§"closed PWA static root" and §"GET /today".
 
 ## The capture route is the seam
 
@@ -361,8 +274,8 @@ and local-console recovery.
 ### Dome Home durable device authentication
 
 The Product Host uses the same route implementation in a distinct auth mode;
-it never falls back to the compatibility bearer, query token, or process-local
-pairing cookie. `POST /pair` exchanges a `dome devices pair` grant for a
+it never falls back to the compatibility bearer or process-local pairing
+cookie. `POST /pair` exchanges a `dome devices pair` grant for a
 host-only `HttpOnly; SameSite=Strict` device cookie and a double-submit CSRF
 cookie. HTTPS origins always receive `Secure`; an explicitly configured HTTP
 loopback development origin omits it, and insecure non-loopback pairing is
@@ -387,12 +300,12 @@ permissions, and request-id hardening headers.
 
 ### One shared bearer token (the v1 compatibility contract)
 
-The token is a **single static shared bearer** for the whole surface: one
-secret, configured once on the host, presented by every caller (header on
-every route, `?token=` on `GET /today`). There is no per-device issuance, no
-per-device identity, and no rotation primitive — rotating means editing
-`DOME_HTTP_TOKEN` (or `--token`) and restarting, which invalidates every
-device at once.
+The token is a **single static shared bearer** for the whole compatibility
+surface: one secret, configured once on the host, presented in the
+`Authorization` header on every protected route. There is no per-device
+issuance, no per-device identity, and no rotation primitive — rotating means
+editing `DOME_HTTP_TOKEN` (or `--token`) and restarting, which invalidates
+every device at once.
 
 This is a **deliberate v1 scope cut, not an oversight.** The v1 plan's scope
 decision floated "per-device token issuance/rotation from day one"

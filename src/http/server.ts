@@ -2,7 +2,7 @@
 //
 // The one Dome HTTP surface (`dome http`). A single capability-gated server
 // over one vault + injected Product Host admission (or one compatibility mutex): read (query/doc/questions/status/plugin views/
-// tasks/today/recents), capture, resolve, session-oriented foreground agents,
+// tasks/recents), capture, resolve, session-oriented foreground agents,
 // transcribe, and static PWA serving. Compatibility callers use a bearer;
 // P1 browsers may exchange a loopback pairing code for an HttpOnly cookie.
 // `author` (write) is gated by --allow-write and provisioned in Phase 2.
@@ -65,8 +65,6 @@ import type { AgentMessage } from "../assistant/types";
 import { buildStatusSnapshot } from "../surface/status";
 import { collectViews } from "../surface/views";
 import { runInstalledView, viewRunStatus } from "../surface/run-view";
-import { renderTodayHtml } from "./today-html";
-import { BASEL_BOOK_WOFF2_B64, BASEL_MEDIUM_WOFF2_B64 } from "./today-fonts";
 import { grantedCapabilities, has, type Capability } from "../capabilities";
 import { makeAgentLogSink, type AgentLogSink } from "./agent-log";
 import { drainAgentWork, type AgentWorkAgent } from "../agent-work/attempt";
@@ -134,7 +132,6 @@ const ROUTE_CAPABILITY: Readonly<Record<string, Capability>> = {
   "GET /recents": "read",
   "GET /status": "read",
   "GET /query": "read",
-  "GET /today": "read",
   "GET /doc": "read",
   "GET /source": "read",
   "GET /questions": "read",
@@ -401,35 +398,6 @@ function authorized(request: Request, tokenDigest: Buffer): boolean {
   return timingSafeEqual(sha256(match[1]), tokenDigest);
 }
 
-/** Serve the cockpit's two woff2 fonts (base64-inlined) unauthenticated, or null. */
-function fontResponse(request: Request): Response | null {
-  if (request.method !== "GET") return null;
-  const pathname = new URL(request.url).pathname;
-  const b64 =
-    pathname === "/today/fonts/basel-book.woff2"
-      ? BASEL_BOOK_WOFF2_B64
-      : pathname === "/today/fonts/basel-medium.woff2"
-        ? BASEL_MEDIUM_WOFF2_B64
-        : null;
-  if (b64 === null) return null;
-  return new Response(Buffer.from(b64, "base64"), {
-    status: 200,
-    headers: { "content-type": "font/woff2", "cache-control": "public, max-age=31536000, immutable" },
-  });
-}
-
-/**
- * Browser-navigation escape hatch for the HTML cockpit ONLY: `GET /today` may
- * carry the bearer as `?token=` (a plain navigation cannot set Authorization).
- * Same digest, same constant-time comparison; every other route stays header-only.
- */
-function queryTokenAuthorized(request: Request, url: URL, tokenDigest: Buffer): boolean {
-  if (request.method !== "GET" || url.pathname !== "/today") return false;
-  const token = url.searchParams.get("token");
-  if (token === null || token.length === 0) return false;
-  return timingSafeEqual(sha256(token), tokenDigest);
-}
-
 // ----- Static asset serving --------------------------------------------------
 
 const PWA_INSTALL_ASSETS = new Set([
@@ -486,6 +454,35 @@ function staticPath(pathname: string): string | null {
     return `assets/${asset}`;
   }
   return null;
+}
+
+/**
+ * Preserve old cockpit bookmarks without preserving the duplicate cockpit.
+ * The redirect deliberately drops every query parameter, including legacy
+ * bearer tokens. A compatibility server without PWA assets returns a public,
+ * data-free retirement notice instead of redirecting to its JSON root.
+ */
+async function todayMigrationResponse(staticDir: string | undefined): Promise<Response> {
+  if (staticDir !== undefined) {
+    const shell = await serveStatic(staticDir, "/");
+    if (shell?.ok === true) {
+      return new Response(null, {
+        status: 308,
+        headers: { location: "/", "cache-control": "no-store" },
+      });
+    }
+  }
+  return new Response(
+    "The legacy /today page has retired. Dome Home now shows Today at /. " +
+      "This server has no PWA assets; use authenticated GET /tasks for JSON.\n",
+    {
+      status: 410,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+      },
+    },
+  );
 }
 
 // ----- Server factory -------------------------------------------------------
@@ -1506,23 +1503,6 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       return run.kind === "rendered" ? run.envelope : jsonResponse(200, run.data);
     }
 
-    if (route === "GET /today") {
-      const refresh = positiveInt(url.searchParams.get("refresh")) ?? 15;
-      // Lenient degrade (see GET /tasks): override the strict contract and
-      // enrich via `parseTodayView` so the HTML surface always renders.
-      const lenientToday = { ...FIRST_PARTY_VIEWS.today, payload: z.unknown() };
-      const run = await dispatchHttpView(
-        lenientToday,
-        Object.freeze({}),
-        httpViewRenderer("GET /today", lenientToday),
-      );
-      if (run.kind === "rendered") return run.envelope;
-      return new Response(renderTodayHtml(run.data, { refreshSeconds: refresh }), {
-        status: 200,
-        headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
-      });
-    }
-
     if (route === "GET /doc") {
       const path = url.searchParams.get("path")?.trim() ?? "";
       if (path.length === 0) {
@@ -1650,8 +1630,6 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       }), { status: 200, headers }), { requestId });
     }
     const requestId = randomUUID();
-    const font = fontResponse(request);
-    if (font !== null) return hardenDeviceResponse(font, { requestId, preserveStaticCacheControl: true });
     if (request.method === "GET" && opts.staticDir !== undefined) {
       const served = await serveStatic(opts.staticDir, url.pathname);
       if (served !== null) {
@@ -1745,17 +1723,14 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
         },
       });
     }
-    // Unauthenticated subresources: cockpit fonts, and (when configured) the PWA shell/assets.
-    const font = fontResponse(request);
-    if (font !== null) return font;
+    // When configured, the PWA shell and its closed asset inventory are public.
     if (request.method === "GET" && opts.staticDir !== undefined) {
       const served = await serveStatic(opts.staticDir, url.pathname);
       if (served !== null) return served; // unauthenticated, no mutex
     }
-    // Compatibility bearer/query token or the P1 loopback browser cookie.
+    // Compatibility bearer or the P1 loopback browser cookie.
     if (
       !authorized(request, tokenDigest!) &&
-      !queryTokenAuthorized(request, url, tokenDigest!) &&
       !cookieAuthorized
     ) {
       return jsonResponse(401, {
@@ -1826,7 +1801,17 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
     }
   };
 
-  const handle = deviceMode ? handleDevice : handleCompatibility;
+  const authenticatedHandle = deviceMode ? handleDevice : handleCompatibility;
+  const handle = async (request: Request): Promise<Response> => {
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/today") {
+      const response = await todayMigrationResponse(opts.staticDir);
+      return deviceMode
+        ? hardenDeviceResponse(response, { requestId: randomUUID() })
+        : response;
+    }
+    return authenticatedHandle(request);
+  };
 
   return Object.freeze({
     fetch: handle,
@@ -1845,7 +1830,7 @@ function operationClassFor(request: Request): ProductOperationClass {
     return "model-generation";
   }
   if (
-    (request.method === "GET" && ["/tasks", "/today", "/query", "/status"].includes(pathname)) ||
+    (request.method === "GET" && ["/tasks", "/query", "/status"].includes(pathname)) ||
     (request.method === "POST" && pathname.startsWith("/views/"))
   ) {
     return "view-execution";

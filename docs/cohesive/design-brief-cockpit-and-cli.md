@@ -7,6 +7,11 @@ audience: external designer
 
 # Design brief — Dome cockpit & CLI output
 
+> **Historical design brief.** The standalone `/today` cockpit described here
+> was retired on 2026-07-16 in favor of the cohesive Dome Home PWA at `/`.
+> `GET /tasks` remains the structured Today contract and `GET /today` only
+> migrates old bookmarks.
+
 ## What we're asking for
 
 We have two human-facing surfaces that show the same underlying information, and we
@@ -240,8 +245,8 @@ they've changed apps.
 - **CLI**: run `dome status`, `dome check`, `dome today`, `dome query <text>` in a
   terminal (and the same with `--verbose`) against a vault. The current visual
   system is what you'll see.
-- **Cockpit**: run `dome http --vault <vault> --token <pick-one>` and open
-  `http://127.0.0.1:3663/today?token=<that-token>` in a browser.
+- **Cockpit (historical)**: this surface can no longer be launched. For the
+  current browser product, start Dome Home and open its root PWA URL.
 
 ## Reference material (background, optional)
 
@@ -249,5 +254,6 @@ they've changed apps.
   and `docs/superpowers/specs/2026-06-14-cli-output-density-v2-design.md`.
 - Where the cockpit came from (it's "workstream 4" of the v1 plan):
   `docs/cohesive/brainstorms/2026-06-11-dome-v1-plan.md`.
-- The web renderer as built: `src/http/today-html.ts`. The terminal brief:
-  `src/cli/commands/today.ts`.
+- The retired web renderer was deleted with the `/today` cockpit. The terminal
+  brief remains at `src/cli/commands/today.ts`; the browser implementation is
+  the PWA.

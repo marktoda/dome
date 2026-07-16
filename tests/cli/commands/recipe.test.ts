@@ -32,7 +32,8 @@ describe("dome recipe ios", () => {
     expect(out).toContain("Authorization");
     expect(out).toContain("Dictate Text");
     expect(out).toContain("curl"); // the verification step
-    expect(out).toContain("/today?token="); // the cockpit pointer
+    expect(out).toContain("Dome Home serves the PWA");
+    expect(out).not.toContain("?token=");
   });
 
   test("carries the iCloud queue fallback for an unreachable host", async () => {

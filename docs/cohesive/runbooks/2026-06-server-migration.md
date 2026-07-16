@@ -9,6 +9,10 @@ sources:
 
 # Runbook — move the Dome daemon from the MacBook to the home server
 
+> **Historical topology.** The `/today?token=...` browser step below was
+> retired on 2026-07-16. Use the capture smoke for a compatibility server;
+> deploy Dome Home and open its paired PWA root for the browser product.
+
 Decision of record: vault is single-residency on the server; laptop sessions
 SSH in. (v1 plan §"Deployment topology", §open-questions "laptop write path".)
 
@@ -52,8 +56,9 @@ SSH in. (v1 plan §"Deployment topology", §open-questions "laptop write path".)
 ## 4. Wire the phone
 
 - `dome recipe ios --url http://<server-magicdns>:3663` and follow it.
-- Smoke: the curl from the recipe; then open `/today?token=…` and add to
-  home screen.
+- Smoke: run the curl from the recipe. For a browser surface, deploy Dome Home
+  and open its paired PWA root; this compatibility-server setup does not
+  install the PWA.
 
 ## 5. Switch the laptop workflow
 

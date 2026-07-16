@@ -262,12 +262,13 @@ dome recipe capture-queue  # laptop-side iCloud-queue drain (launchd)
 
 Both print complete, self-contained setup walkthroughs against the
 `dome http` surface ([[wiki/specs/http-surface]]). Read the trust-domain
-paragraph before exposing anything: the HTTP surface authenticates with a
-single bearer token (`DOME_HTTP_TOKEN`), and the phone cockpit URL carries
-that token **as a query parameter** (`/today?token=…`) — visible in browser
-history and server logs. That is acceptable only inside a loopback or
-Tailscale-class private network. Bind a Tailscale interface, never a public
-one, and treat everyone inside the trust domain as the owner.
+paragraph before exposing anything: the compatibility HTTP surface uses one
+bearer token (`DOME_HTTP_TOKEN`) in the `Authorization` header and is
+acceptable only inside a loopback or Tailscale-class private network. Never
+put the token in a URL. Bind a Tailscale interface, never a public one, and
+treat everyone inside the trust domain as the owner. The browser product is
+the Dome Home PWA at `/`, paired through its device flow rather than this
+shared-token capture recipe.
 
 ## 9. Daily driving
 

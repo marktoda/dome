@@ -55,6 +55,22 @@ describe("durable device HTTP mode", () => {
     store.close();
   });
 
+  test("hardens the public, data-free legacy Today migration", async () => {
+    const store = await authority();
+    const server = createDomeHttpServer({
+      vaultPath: "/tmp/unused",
+      deviceAuth: { authority: store, allowedOrigins: () => [ORIGIN] },
+    });
+    const response = await server.fetch(new Request(`${ORIGIN}/today?token=legacy-root-token`));
+    expect(response.status).toBe(410);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(await response.text()).not.toContain("legacy-root-token");
+    await server.close();
+    store.close();
+  });
+
   test("isolates devices and sessions, revokes immediately, and reuses CSRF after reload", async () => {
     const store = await authority();
     let runtimeNow = 0;

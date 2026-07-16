@@ -53,6 +53,12 @@ describe("closed PWA static root", () => {
       ]);
       await symlink("index-AbCd1234.js", join(staticDir, "assets", "linked-AbCd1234.js"));
       const handler = createDomeHttpServer({ vaultPath: "/unused", token: TOKEN, staticDir });
+      const migratedToday = await handler.fetch(new Request(
+        `http://localhost/today?token=${TOKEN}&refresh=30`,
+      ));
+      expect(migratedToday.status).toBe(308);
+      expect(migratedToday.headers.get("location")).toBe("/");
+      expect(migratedToday.headers.get("cache-control")).toBe("no-store");
       for (const path of ["/", "/index.html", "/manifest.webmanifest", "/sw.js"]) {
         const response = await handler.fetch(new Request(`http://localhost${path}`));
         expect(response.status).toBe(200);
@@ -86,13 +92,26 @@ describe("closed PWA static root", () => {
         expect(response.status).toBe(200);
         expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
       }
-      for (const path of ["/robots.txt", "/icon.png", "/pwa-128x128.png", "/assets/plain.js", "/assets/image-AbCd1234.png", "/assets/nested/index-AbCd1234.js", "/readyz"]) {
+      for (const path of ["/robots.txt", "/icon.png", "/pwa-128x128.png", "/assets/plain.js", "/assets/image-AbCd1234.png", "/assets/nested/index-AbCd1234.js", "/today/fonts/basel-book.woff2", "/readyz"]) {
         const response = await handler.fetch(new Request(`http://localhost${path}`));
         expect(response.status).toBe(401);
         expect(response.headers.get("cache-control")).toBeNull();
       }
       expect((await handler.fetch(new Request("http://localhost/assets/missing-AbCd1234.js"))).status).toBe(404);
       expect((await handler.fetch(new Request("http://localhost/assets/linked-AbCd1234.js"))).status).toBe(404);
+      await handler.close();
+    } finally {
+      await rm(staticDir, { recursive: true, force: true });
+    }
+  });
+
+  test("does not redirect when a configured PWA shell is unavailable", async () => {
+    const staticDir = mkdtempSync(join(tmpdir(), "dome-http-static-missing-"));
+    try {
+      const handler = createDomeHttpServer({ vaultPath: "/unused", token: TOKEN, staticDir });
+      const response = await handler.fetch(new Request("http://localhost/today"));
+      expect(response.status).toBe(410);
+      expect(response.headers.get("location")).toBeNull();
       await handler.close();
     } finally {
       await rm(staticDir, { recursive: true, force: true });
@@ -1194,88 +1213,29 @@ describe("fallthrough", () => {
   );
 });
 
-// ----- The HTML cockpit ----------------------------------------------------------------
+// ----- Retired HTML cockpit -------------------------------------------------------------
 
 describe("GET /today", () => {
-  test("renders the HTML cockpit with bearer header", async () => {
-    const f = await fixture();
-    const res = await fetch(`${f.baseUrl}/today`, {
-      headers: { authorization: `Bearer ${TOKEN}` },
-    });
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toContain("text/html");
+  test("returns a data-free migration notice when PWA assets are absent", async () => {
+    const handler = createDomeHttpServer({ vaultPath: "/unused", token: TOKEN });
+    const res = await handler.fetch(new Request(`http://localhost/today?token=${TOKEN}`));
+    expect(res.status).toBe(410);
+    expect(res.headers.get("content-type")).toContain("text/plain");
     expect(res.headers.get("cache-control")).toBe("no-store");
-    const html = await res.text();
-    expect(html).toContain("ship the http surface");
-    // CB-T3: the page now JS-polls; there is no <meta http-equiv="refresh">
-    expect(html).not.toContain('http-equiv="refresh"');
-    expect(html).toContain("POLL_MS");
-    expect(html).toContain("setInterval(poll,");
+    const body = await res.text();
+    expect(body).toContain("legacy /today page has retired");
+    expect(body).toContain("GET /tasks");
+    expect(body).not.toContain(TOKEN);
+    await handler.close();
   }, TEST_TIMEOUT_MS);
 
-  test("accepts ?token= on /today only", async () => {
+  test("a legacy query token never authorizes API routes", async () => {
     const f = await fixture();
-    const ok = await fetch(`${f.baseUrl}/today?token=${TOKEN}`);
-    expect(ok.status).toBe(200);
-
-    const wrong = await fetch(`${f.baseUrl}/today?token=nope`);
-    expect(wrong.status).toBe(401);
-
-    // Query-param token must NOT authorize other routes.
     const other = await fetch(`${f.baseUrl}/tasks?token=${TOKEN}`);
     expect(other.status).toBe(401);
-
-    // ...and must NOT authorize other methods on /today (GET-only scoping).
     const wrongMethod = await fetch(`${f.baseUrl}/today?token=${TOKEN}`, {
       method: "POST",
     });
     expect(wrongMethod.status).toBe(401);
-  }, TEST_TIMEOUT_MS);
-
-  test("honors ?refresh= seconds", async () => {
-    const f = await fixture();
-    const res = await fetch(`${f.baseUrl}/today?token=${TOKEN}&refresh=30`);
-    // CB-T3: JS polling — ?refresh= controls POLL_MS (refreshSeconds * 1000)
-    expect(await res.text()).toContain("POLL_MS = 30000");
-  }, TEST_TIMEOUT_MS);
-
-  test("absent or garbage ?refresh= falls back to 15 seconds", async () => {
-    const f = await fixture();
-    // CB-T3: JS polling — default POLL_MS = 15 * 1000 = 15000
-    const absent = await fetch(`${f.baseUrl}/today?token=${TOKEN}`);
-    expect(await absent.text()).toContain("POLL_MS = 15000");
-
-    const garbage = await fetch(`${f.baseUrl}/today?token=${TOKEN}&refresh=banana`);
-    expect(await garbage.text()).toContain("POLL_MS = 15000");
-  }, TEST_TIMEOUT_MS);
-});
-
-// ----- Cacheable font routes (CB-T7) ------------------------------------------
-
-describe("GET /today/fonts/*.woff2", () => {
-  test("GET /today/fonts/basel-book.woff2 returns the font with an immutable long cache", async () => {
-    const f = await fixture();
-    const res = await fetch(`${f.baseUrl}/today/fonts/basel-book.woff2`, {
-      headers: { authorization: `Bearer ${TOKEN}` },
-    });
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toContain("font/woff2");
-    expect(res.headers.get("cache-control")).toMatch(/immutable|max-age=\d{6,}/);
-  }, TEST_TIMEOUT_MS);
-
-  test("/today HTML references font routes, not megabytes of base64", async () => {
-    const f = await fixture();
-    const res = await fetch(`${f.baseUrl}/today?token=${TOKEN}`);
-    const html = await res.text();
-    expect(html).toContain("/today/fonts/basel-book.woff2");
-    expect(html).not.toContain("data:font/woff2;base64,");
-    expect(html.length).toBeLessThan(60000); // ~25KB, not ~270KB
-  }, TEST_TIMEOUT_MS);
-
-  test("font route is served without authentication", async () => {
-    const f = await fixture();
-    // No Authorization header — a browser loading url() from CSS sends none.
-    const res = await fetch(`${f.baseUrl}/today/fonts/basel-medium.woff2`);
-    expect(res.status).toBe(200);
   }, TEST_TIMEOUT_MS);
 });
