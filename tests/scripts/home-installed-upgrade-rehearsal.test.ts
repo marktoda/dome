@@ -26,6 +26,7 @@ import {
 } from "../../scripts/home-installed-upgrade-rehearsal";
 import { renderInstalledFunctionalCanary } from "../../scripts/home-installed-functional-closure";
 import {
+  exerciseHomePwaLocalCaptureStageForTests,
   exerciseHomePwaTaskSettlementStageForTests,
   exerciseHomePwaChromiumAcceptanceForTests,
   parseHomePwaCaptureExportForTests,
@@ -482,6 +483,69 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     }), { phaseMs: 50, taskSettlementPhaseMs: 5, cleanupMs: 50 });
     expect(timedOut).toBe(
       "installed Home Chromium acceptance failed at task-settlement [phase-timeout]",
+    );
+  });
+
+  test("reports only fixed local-capture stages and hides underlying failures", async () => {
+    const operation = async (): Promise<void> => {};
+    const journey = (capture: (signal: AbortSignal) => Promise<void>) => ({
+      launch: operation,
+      assertInstallIdentity: operation,
+      pair: operation,
+      assertReadiness: operation,
+      assertAdaptiveAccessibility: operation,
+      controlServiceWorker: operation,
+      assertActivitySource: operation,
+      assertTaskSettlement: operation,
+      assertOfflineShell: operation,
+      saveLocalCapture: capture,
+      revoke: operation,
+      repairAuthentication: operation,
+      assertReplay: operation,
+      emergencyClose: operation,
+      close: operation,
+    });
+    const failure = async (
+      capture: (signal: AbortSignal) => Promise<void>,
+      deadlines?: { phaseMs: number; cleanupMs: number },
+    ): Promise<string> => {
+      try {
+        await exerciseHomePwaChromiumAcceptanceForTests(journey(capture), deadlines);
+        throw new Error("expected local capture failure");
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    };
+
+    const secret = "private capture text and downloaded bytes";
+    for (const stage of ["save", "outbox", "export"] as const) {
+      const message = await failure(async () => {
+        await exerciseHomePwaLocalCaptureStageForTests(stage, async () => {
+          throw new Error(secret);
+        });
+      });
+      expect(message).toBe(
+        `installed Home Chromium acceptance failed at local-capture [${stage}]`,
+      );
+      expect(message).not.toContain(secret);
+    }
+
+    const unclassified = await failure(async () => { throw new Error(secret); });
+    expect(unclassified).toBe(
+      "installed Home Chromium acceptance failed at local-capture [unclassified]",
+    );
+    expect(unclassified).not.toContain(secret);
+    const nonError = await failure(async () => { throw secret; });
+    expect(nonError).toBe(
+      "installed Home Chromium acceptance failed at local-capture [unclassified]",
+    );
+    expect(nonError).not.toContain(secret);
+
+    const timedOut = await failure(async (signal) => await new Promise<void>((resolve) => {
+      signal.addEventListener("abort", () => resolve(), { once: true });
+    }), { phaseMs: 5, cleanupMs: 50 });
+    expect(timedOut).toBe(
+      "installed Home Chromium acceptance failed at local-capture [phase-timeout]",
     );
   });
 
