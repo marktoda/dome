@@ -695,7 +695,7 @@ dangling symlink; the builder creates only its parent and never deletes,
 merges, or replaces prior output. It assembles the expanded artifact and its
 archive together in a private same-filesystem sibling, then runs the shipped
 artifact verifier and the ordinary archive rehearsal in that fixed order. The
-exact `0.3.2` builder then privately reconstructs the pinned `0.1.0`
+exact `0.3.3` builder then privately reconstructs the pinned `0.1.0`
 predecessor twice, runs the installed N-1→N rehearsal against that archive,
 the exact staged candidate archive, and the frozen fixture, and binds the
 returned predecessor, candidate, fixture, host, and scenario identity. It
@@ -708,7 +708,7 @@ failures remove their private staging state when
 its owned inode is still present and expose neither final path; cleanup never
 follows a replaced path. Concurrent builders leave one complete winner and
 never replace it. This is an atomic-visibility and no-replace boundary, not a
-new power-loss durability claim. The package is `0.3.2`; only this closed
+new power-loss durability claim. The package is `0.3.3`; only this closed
 installed-gated builder writes `distribution.upgradeSupported: true`. The
 exported fixture metadata writer remains fixed-false and cannot publish.
 
