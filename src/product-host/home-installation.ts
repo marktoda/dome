@@ -140,29 +140,40 @@ export async function verifyManagedHomeRuntime(input: Readonly<{
   await assertRuntimeFile(managedHomeRuntimePath(input.paths), entry, "stable Home runtime");
 }
 
-/** Read-only intent preflight; absence is the supported one-time bootstrap. */
-export async function preflightManagedHomeRuntime(input: Readonly<{
+export type ManagedHomeRuntimeUpgradePlan = "ready" | "repair-current" | "bootstrap-candidate";
+
+/** Compare the stable executable to both verified sides before upgrade writes. */
+export async function preflightManagedHomeRuntimeUpgrade(input: Readonly<{
   paths: HomeInstallationPaths;
-  artifactRoot: string;
-  manifest: HomeArtifactManifest;
-}>): Promise<void> {
-  const launch = homeArtifactLaunchCapability(input.manifest);
-  if (launch.kind === "legacy") return;
-  const entry = input.manifest.entries.find((candidate) => candidate.path === launch.programPath);
-  if (entry?.type !== "file") throw new Error("managed Home runtime manifest entry is unavailable");
-  await assertRuntimeFile(
-    join(resolve(input.artifactRoot), launch.programPath),
-    entry,
-    "artifact Home runtime",
-    false,
-  );
+  current: Readonly<{ artifactRoot: string; manifest: HomeArtifactManifest }>;
+  candidate: Readonly<{ artifactRoot: string; manifest: HomeArtifactManifest }>;
+}>): Promise<ManagedHomeRuntimeUpgradePlan> {
+  const candidate = runtimeArtifact(input.candidate, "candidate Home runtime");
+  if (candidate === null) return "ready";
+  const current = runtimeArtifact(input.current, "selected Home runtime");
+  if (current !== null) await assertRuntimeFile(current.source, current.entry, "selected Home runtime", false);
+  await assertRuntimeFile(candidate.source, candidate.entry, "candidate Home runtime", false);
   const target = managedHomeRuntimePath(input.paths);
-  if (!await pathPresent(target)) return;
-  try { await assertRuntimeFile(target, entry, "stable Home runtime"); }
-  catch (error) {
-    if (await isDirectExecutableRuntime(target)) throw new HomeRuntimeMigrationRequiredError();
-    throw error;
+  if (!await pathPresent(target)) {
+    if (current === null) return "bootstrap-candidate";
+    if (!sameRuntimeEntry(current.entry, candidate.entry)) {
+      throw new HomeRuntimeMigrationRequiredError();
+    }
+    return "repair-current";
   }
+  if (current !== null) {
+    if (!await runtimeFileMatches(target, current.entry)) {
+      throw new Error("stable Home runtime is corrupt for the selected release");
+    }
+    if (!sameRuntimeEntry(current.entry, candidate.entry)) {
+      throw new HomeRuntimeMigrationRequiredError();
+    }
+    return "ready";
+  }
+  if (!await runtimeFileMatches(target, candidate.entry)) {
+    throw new Error("stable Home runtime is corrupt for the candidate release");
+  }
+  return "ready";
 }
 
 /**
@@ -193,7 +204,7 @@ export async function ensureManagedHomeRuntimeOwned(
   await ensureDurableDirectDirectory(input.paths.root, deps);
   await ensureDurableDirectDirectory(runtimeDirectory, deps);
   if (await pathPresent(target)) {
-    await preflightManagedHomeRuntime(input);
+    await assertRuntimeFile(target, entry, "stable Home runtime");
     await (deps.syncRuntimeParent ?? fsyncDirectory)(runtimeDirectory);
     return;
   }
@@ -277,12 +288,6 @@ export async function ensureManagedReleaseOwned(
   const source = resolve(input.source);
   const sourceManifest = await verify(source);
   assertSameManifest(sourceManifest, input.manifest, "managed release identity mismatch");
-  await ensureManagedHomeRuntimeOwned(owner, {
-    paths: input.paths,
-    artifactRoot: source,
-    manifest: input.manifest,
-    platform: input.platform,
-  }, deps);
   const target = releaseRoot(input.paths, input.manifest.artifact.id);
   return withManagedReleaseOwnership(owner, input.paths, input.manifest.artifact.id, "publish", async () => {
     if (await pathPresent(target)) {
@@ -355,6 +360,12 @@ export async function publishManagedHomeInstallation(
   await prepareManagedReleaseStoreRoot(input.paths, deps);
   const ownership = await withManagedReleaseStoreCoordinator(input.paths.root, async (owner) => {
     const managed = await ensureManagedReleaseOwned(owner, input, deps);
+    await ensureManagedHomeRuntimeOwned(owner, {
+      paths: input.paths,
+      artifactRoot: managed.root,
+      manifest: input.manifest,
+      platform: input.platform,
+    }, deps);
     try { await publishHomeInstallation(input.paths.record, input.record, deps); }
     catch (error) { throw new ManagedHomeInstallationPublicationError(error, managed.published); }
     return Object.freeze({ managed, record: input.record });
@@ -742,13 +753,35 @@ async function assertRuntimeFile(
   }
 }
 
-async function isDirectExecutableRuntime(path: string): Promise<boolean> {
+async function runtimeFileMatches(
+  path: string,
+  expected: Extract<HomeArtifactManifest["entries"][number], { readonly type: "file" }>,
+): Promise<boolean> {
   try {
-    const canonical = resolve(path);
-    const info = await lstat(canonical);
-    return info.isFile() && !info.isSymbolicLink() && info.nlink === 1 &&
-      await realpath(canonical) === canonical && (info.mode & 0o111) !== 0;
+    await assertRuntimeFile(path, expected, "managed Home runtime");
+    return true;
   } catch { return false; }
+}
+
+function runtimeArtifact(
+  input: Readonly<{ artifactRoot: string; manifest: HomeArtifactManifest }>,
+  label: string,
+): Readonly<{
+  source: string;
+  entry: Extract<HomeArtifactManifest["entries"][number], { readonly type: "file" }>;
+}> | null {
+  const launch = homeArtifactLaunchCapability(input.manifest);
+  if (launch.kind === "legacy") return null;
+  const entry = input.manifest.entries.find((candidate) => candidate.path === launch.programPath);
+  if (entry?.type !== "file") throw new Error(`${label} manifest entry is unavailable`);
+  return Object.freeze({ source: join(resolve(input.artifactRoot), launch.programPath), entry });
+}
+
+function sameRuntimeEntry(
+  left: Extract<HomeArtifactManifest["entries"][number], { readonly type: "file" }>,
+  right: Extract<HomeArtifactManifest["entries"][number], { readonly type: "file" }>,
+): boolean {
+  return left.bytes === right.bytes && left.sha256 === right.sha256 && left.mode === right.mode;
 }
 
 async function pathPresent(path: string): Promise<boolean> {

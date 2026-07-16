@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
-import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -21,11 +21,13 @@ import {
 } from "../../src/product-host/home-artifact";
 import {
   createHomeInstallation,
+  ensureManagedHomeRuntimeOwned,
   ensureManagedRelease,
   ensureManagedReleaseOwned,
   HomeRuntimeMigrationRequiredError,
   homeInstallationPaths,
   managedHomeRuntimePath,
+  preflightManagedHomeRuntimeUpgrade,
   parseHomeInstallationRecord,
   publishHomeInstallation,
   repairManagedRelease,
@@ -139,8 +141,9 @@ describe("immutable Dome Home release publication", () => {
     try {
       const first = await makeArtifact("a", "2.0.0");
       const second = await makeArtifact("b", "2.1.0");
+      const futureRuntime = await makeArtifact("c", "3.0.0", "future Bun generation\n");
       const publish = async (artifact: Awaited<ReturnType<typeof makeArtifact>>) => {
-        await ensureManagedRelease({
+        const managed = await ensureManagedRelease({
           source: artifact.source,
           manifest: artifact.manifest,
           paths,
@@ -151,10 +154,28 @@ describe("immutable Dome Home release publication", () => {
           publishRelease: rename,
           publishRuntime: rename,
         });
+        const ownership = await withManagedReleaseStoreCoordinator(paths.root, async (owner) => {
+          await ensureManagedHomeRuntimeOwned(owner, {
+            paths,
+            artifactRoot: managed.root,
+            manifest: artifact.manifest,
+            platform: "darwin",
+          }, { publishRuntime: rename });
+        }, { waitMs: 0 });
+        expect(ownership.kind).toBe("owned");
+        return managed;
       };
 
-      await publish(first);
       const stableRuntime = managedHomeRuntimePath(paths);
+      await expect(preflightManagedHomeRuntimeUpgrade({
+        paths,
+        current: { artifactRoot: first.source, manifest: first.manifest },
+        candidate: { artifactRoot: futureRuntime.source, manifest: futureRuntime.manifest },
+      })).rejects.toBeInstanceOf(HomeRuntimeMigrationRequiredError);
+      await expect(lstat(stableRuntime)).rejects.toThrow();
+      await expect(lstat(releaseRoot(paths, futureRuntime.manifest.artifact.id))).rejects.toThrow();
+
+      const firstManaged = await publish(first);
       const firstIdentity = await lstat(stableRuntime);
       await publish(second);
 
@@ -164,30 +185,19 @@ describe("immutable Dome Home release publication", () => {
       expect(stableIdentity.nlink).toBe(1);
       expect(stableIdentity.mode & 0o777).toBe(0o700);
 
-      const futureRuntime = await makeArtifact("c", "3.0.0", "future Bun generation\n");
-      await expect(ensureManagedRelease({
-        source: futureRuntime.source,
-        manifest: futureRuntime.manifest,
+      await expect(preflightManagedHomeRuntimeUpgrade({
         paths,
-        platform: "darwin",
-      }, {
-        verifyArtifact: async () => futureRuntime.manifest,
-        publishRuntime: rename,
+        current: { artifactRoot: firstManaged.root, manifest: first.manifest },
+        candidate: { artifactRoot: futureRuntime.source, manifest: futureRuntime.manifest },
       })).rejects.toBeInstanceOf(HomeRuntimeMigrationRequiredError);
       await expect(lstat(releaseRoot(paths, futureRuntime.manifest.artifact.id))).rejects.toThrow();
 
-      await chmod(stableRuntime, 0o600);
-      const third = await makeArtifact("d", "2.2.0");
-      await expect(ensureManagedRelease({
-        source: third.source,
-        manifest: third.manifest,
+      await writeFile(stableRuntime, "arbitrary executable corruption\n", { mode: 0o700 });
+      await expect(preflightManagedHomeRuntimeUpgrade({
         paths,
-        platform: "darwin",
-      }, {
-        verifyArtifact: async () => third.manifest,
-        publishRuntime: rename,
-      })).rejects.toThrow("stable Home runtime");
-      await expect(lstat(releaseRoot(paths, third.manifest.artifact.id))).rejects.toThrow();
+        current: { artifactRoot: firstManaged.root, manifest: first.manifest },
+        candidate: { artifactRoot: second.source, manifest: second.manifest },
+      })).rejects.not.toBeInstanceOf(HomeRuntimeMigrationRequiredError);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 

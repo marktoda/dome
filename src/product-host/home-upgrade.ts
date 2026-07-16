@@ -9,14 +9,17 @@ import { resolve } from "node:path";
 import {
   HomeRuntimeMigrationRequiredError,
   homeInstallationPaths,
-  preflightManagedHomeRuntime,
+  preflightManagedHomeRuntimeUpgrade,
   readHomeInstallation,
+  releaseRoot,
   type HomeInstallationRecord,
 } from "./home-installation";
 import {
   HOME_CREDENTIAL_HELPER_PATH,
   HOME_CREDENTIAL_HELPER_PROTOCOL,
+  homeArtifactLaunchCapability,
   verifyHomeArtifact,
+  verifyHomeArtifactEvidence,
   type HomeArtifactManifest,
 } from "./home-artifact";
 import { manageHome } from "./home-lifecycle";
@@ -270,11 +273,22 @@ export async function manageHomeUpgrade(input: {
     }
 
     try {
-      await preflightManagedHomeRuntime({
-        paths: homeInstallationPaths(vault, deps),
-        artifactRoot,
-        manifest,
-      });
+      if (homeArtifactLaunchCapability(manifest).kind === "named") {
+        const paths = homeInstallationPaths(vault, deps);
+        const currentRoot = releaseRoot(paths, current.artifact.id);
+        const currentManifest = (await (
+          deps.verifyArtifactEvidence ?? verifyHomeArtifactEvidence
+        )(currentRoot)).manifest;
+        if (currentManifest.artifact.id !== current.artifact.id ||
+          currentManifest.product.version !== current.artifact.version) {
+          throw new Error("selected Home release differs from its installation record");
+        }
+        await preflightManagedHomeRuntimeUpgrade({
+          paths,
+          current: { artifactRoot: currentRoot, manifest: currentManifest },
+          candidate: { artifactRoot, manifest },
+        });
+      }
     } catch (error) {
       if (!(error instanceof HomeRuntimeMigrationRequiredError)) throw error;
       return failure(

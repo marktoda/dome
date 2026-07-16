@@ -16,8 +16,11 @@ import {
 } from "../../src/operational-state/writer-barrier";
 import {
   createHomeInstallation,
+  HomeRuntimeMigrationRequiredError,
   homeInstallationPaths,
+  managedHomeRuntimePath,
   publishHomeInstallation,
+  readHomeInstallation,
   releaseRoot,
 } from "../../src/product-host/home-installation";
 import { homeServiceLabelForVault } from "../../src/product-host/home-lifecycle";
@@ -288,6 +291,29 @@ describe("Product Host pre-commit upgrade transaction", () => {
       });
       expect(plan.plan.candidates).toEqual([]);
       expect(plan.plan.protections.map((entry) => entry.artifactId)).toEqual([OLD_ID, CANDIDATE_ID]);
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("missing stable runtime refuses a differing named candidate before rollback state or candidate runtime publication", async () => {
+    const f = await fixture({ namedRuntimes: { old: "selected Bun\n", candidate: "candidate Bun\n" } });
+    try {
+      const paths = homeInstallationPaths(f.vault, f.deps);
+      const managed = releaseRoot(paths, CANDIDATE_ID);
+      const source = join(f.root, "different-runtime-candidate");
+      await cp(managed, source, { recursive: true });
+      const manifest = (await f.deps.verifyArtifactEvidence!(source)).manifest;
+      await rm(managed, { recursive: true });
+
+      await expect(prepareHomeUpgradeCandidate({
+        vaultPath: f.vault,
+        transactionId: randomUUID(),
+        candidate: { source, manifest },
+      }, f.deps)).rejects.toBeInstanceOf(HomeRuntimeMigrationRequiredError);
+      expect(await readHomeUpgradeDisposition(f.vault, f.deps)).toBeNull();
+      expect((await readHomeInstallation(f.vault, f.deps))?.artifact.id).toBe(OLD_ID);
+      await expect(stat(managedHomeRuntimePath(paths))).rejects.toThrow();
+      await expect(stat(managed)).rejects.toThrow();
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });
 
@@ -2174,7 +2200,10 @@ function historyDeps(
   };
 }
 
-async function fixture(options: { durableFiles?: boolean } = {}) {
+async function fixture(options: {
+  durableFiles?: boolean;
+  namedRuntimes?: Readonly<{ old: string; candidate: string }>;
+} = {}) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "dome-home-upgrade-")));
   const vault = join(root, "vault");
   const support = join(root, "Application Support", "Dome", "Home");
@@ -2223,17 +2252,31 @@ async function fixture(options: { durableFiles?: boolean } = {}) {
   for (const [id, version] of [[OLD_ID, "1.0.0"], [CANDIDATE_ID, "2.0.0"]] as const) {
     const release = releaseRoot(paths, id);
     await mkdir(release, { recursive: true });
+    const namedBytes = options.namedRuntimes === undefined
+      ? null
+      : id === OLD_ID ? options.namedRuntimes.old : options.namedRuntimes.candidate;
+    const runtimeSha = namedBytes === null
+      ? "0".repeat(64)
+      : createHash("sha256").update(namedBytes).digest("hex");
+    const runtimeEntry = {
+      type: "file" as const,
+      path: "runtime/bun",
+      bytes: namedBytes === null ? 1 : Buffer.byteLength(namedBytes),
+      sha256: runtimeSha,
+      mode: "0755",
+    };
+    if (namedBytes !== null) {
+      await mkdir(join(release, "runtime"), { recursive: true });
+      await writeFile(join(release, "runtime", "bun"), namedBytes, { mode: 0o755 });
+      await writeFile(join(release, "runtime", "Dome Home"), namedBytes, { mode: 0o755 });
+    }
     await writeFile(join(release, "manifest.json"), `${JSON.stringify({
       artifact: { id },
       product: { name: "Dome Home", version },
-      runtime: { sha256: "0".repeat(64) },
-      entries: [{
-        type: "file",
-        path: "runtime/bun",
-        bytes: 1,
-        sha256: "0".repeat(64),
-        mode: "0755",
-      }],
+      runtime: { sha256: runtimeSha },
+      entries: namedBytes === null
+        ? [runtimeEntry]
+        : [{ ...runtimeEntry, path: "runtime/Dome Home" }, runtimeEntry],
       writerBarrier: { protocol: 1 },
       ...(id === CANDIDATE_ID ? {
         distribution: { signed: false, notarized: false, upgradeSupported: true },

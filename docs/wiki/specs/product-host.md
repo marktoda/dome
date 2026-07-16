@@ -354,9 +354,10 @@ Managed publication copies that verified twin once to the direct, host-wide
 path `~/Library/Application Support/Dome/Home/runtime/Dome Home` while holding
 the global release-store owner. The file and its parent are fsynced, and every
 later named release must exact-match the same bytes, mode, and executable
-intent. Ordinary product upgrades therefore preserve one macOS executable
-identity instead of asking Calendar and other privacy controls to authorize a
-new content-addressed path on every release.
+intent. Ordinary product upgrades therefore preserve the intended stable
+responsible-code path. This is the design expected to let macOS privacy
+controls retain Calendar consent; the signed-Mac Calendar acceptance gate is
+the evidence for that behavior, not this path property alone.
 
 For such an artifact the LaunchAgent sets `Program` to that stable host-wide
 `runtime/Dome Home` and sets `ProgramArguments` to exact argv0 `Dome Home`, followed by
@@ -383,13 +384,18 @@ Adapter.
 
 The current artifact contract pins one official Bun generation, so the stable
 runtime is deliberately outside the two-document release selector transaction:
-selection, rollback, and power-loss recovery never rewrite it. A future
-artifact whose verified Bun bytes differ is refused before release or selector
-publication with typed `runtime-migration-required` truth. Such a runtime
-generation change must ship an explicit migration design for executable
-replacement, rollback compatibility, and possible one-time macOS privacy
-re-consent; it may not silently overwrite this identity or masquerade as a
-corrupt selected release.
+selection, rollback, and power-loss recovery never replace it. Upgrade
+preflight compares the stable file with both the verified selected release and
+the verified candidate. An exact selected-runtime match plus a different
+candidate is refused before candidate publication with typed
+`runtime-migration-required` truth; a file matching neither verified side is
+reported as corruption. A missing stable file may be repaired from the named
+selected release. Candidate bootstrap is reserved for a legacy selected
+release with no named runtime and occurs only after the prepared transaction
+has durably captured rollback evidence. A runtime generation change must ship
+an explicit migration design for executable replacement, rollback
+compatibility, and possible one-time macOS privacy re-consent; it may not
+silently overwrite this identity or masquerade as a corrupt selected release.
 
 Lifecycle ownership is intentionally narrow. Start, restart, and status derive
 their paths only from the record and re-verify its release. Status reports the

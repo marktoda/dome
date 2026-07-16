@@ -22,8 +22,10 @@ import {
   validateSqliteSnapshot,
 } from "../sqlite/snapshot";
 import {
+  ensureManagedHomeRuntimeOwned,
   ensureManagedReleaseOwned,
   homeInstallationPaths,
+  preflightManagedHomeRuntimeUpgrade,
   repairManagedReleaseOwned,
   readHomeInstallation,
   releaseRoot,
@@ -276,6 +278,55 @@ async function assertInstallationCredentialMigrationComplete(
   assertHomeEnvironmentHasNoSecrets(installation.environment);
 }
 
+async function convergeUpgradeRuntimeOwned(
+  owner: ManagedReleaseStoreOwner,
+  vault: string,
+  candidate: HomeUpgradeRepairCandidate,
+  candidateBootstrapAuthorized: boolean,
+  deps: HomeUpgradeTransactionDeps,
+): Promise<void> {
+  const paths = homeInstallationPaths(vault, deps);
+  const installation = await readHomeInstallation(vault, deps);
+  if (installation === null) throw new Error("Dome Home upgrade requires an installed release");
+  const currentRoot = releaseRoot(paths, installation.artifact.id);
+  const currentManifest = (await (
+    deps.verifyArtifactEvidence ?? verifyHomeArtifactEvidence
+  )(currentRoot)).manifest;
+  if (currentManifest.artifact.id !== installation.artifact.id ||
+    currentManifest.product.version !== installation.artifact.version) {
+    throw new Error("selected Home release differs from its installation record");
+  }
+  const input = Object.freeze({
+    paths,
+    current: Object.freeze({ artifactRoot: currentRoot, manifest: currentManifest }),
+    candidate: Object.freeze({ artifactRoot: candidate.source, manifest: candidate.manifest }),
+  });
+  const plan = await preflightManagedHomeRuntimeUpgrade(input);
+  if (plan === "ready") return;
+  if (plan === "repair-current") {
+    await ensureManagedHomeRuntimeOwned(owner, {
+      paths,
+      artifactRoot: currentRoot,
+      manifest: currentManifest,
+      platform: deps.platform ?? process.platform,
+    }, deps);
+    if (await preflightManagedHomeRuntimeUpgrade(input) !== "ready") {
+      throw new Error("selected Home runtime repair did not converge");
+    }
+    return;
+  }
+  if (!candidateBootstrapAuthorized) return;
+  await ensureManagedHomeRuntimeOwned(owner, {
+    paths,
+    artifactRoot: candidate.source,
+    manifest: candidate.manifest,
+    platform: deps.platform ?? process.platform,
+  }, deps);
+  if (await preflightManagedHomeRuntimeUpgrade(input) !== "ready") {
+    throw new Error("candidate Home runtime bootstrap did not converge");
+  }
+}
+
 async function runPreparedOwnership(
   input: {
     readonly transactionId: string;
@@ -292,12 +343,15 @@ async function runPreparedOwnership(
     }, deps, async (owner) => {
       const current = await readHomeUpgrade(vault, deps);
       validateMatchingPrepare(current, input);
-      if (current !== null) return Object.freeze({ kind: "prepared" as const, value: current });
+      if (current !== null && candidate === undefined) {
+        return Object.freeze({ kind: "prepared" as const, value: current });
+      }
       try {
         const prepared = await withQuiescedOwnership(vault, async () => {
           const paths = homeInstallationPaths(vault, deps);
           return withManagedReleaseStoreOwnership(paths, async (globalOwner) => {
             if (candidate !== undefined) {
+              await convergeUpgradeRuntimeOwned(globalOwner, vault, candidate, false, deps);
               await ensureManagedReleaseOwned(globalOwner, {
                 source: candidate.source,
                 manifest: candidate.manifest,
@@ -305,7 +359,11 @@ async function runPreparedOwnership(
                 platform: deps.platform ?? process.platform,
               }, { ...deps, verifyArtifact: manifestVerifier(deps) });
             }
-            return prepareHomeUpgradeWhileQuiesced(input, vault, deps);
+            const value = current ?? await prepareHomeUpgradeWhileQuiesced(input, vault, deps);
+            if (candidate !== undefined) {
+              await convergeUpgradeRuntimeOwned(globalOwner, vault, candidate, true, deps);
+            }
+            return value;
           });
         });
         return Object.freeze({ kind: "prepared" as const, value: prepared });
