@@ -309,6 +309,8 @@ describe("Dome Home 0.3 activation", () => {
     expect(chromiumRunner).toContain("await settleFunctionalTask(activePage, input.expected.functionalCanary)");
     expect(chromiumSource).toContain("async function assertActivitySource(");
     expect(chromiumSource).toContain("await row.waitFor({ timeout: WAIT_MS })");
+    expect(chromiumSource).toContain('getByRole("region", { name: "You\'re offline", exact: true })');
+    expect(chromiumSource).not.toContain('getByText("Offline", { exact: true })');
     expect(chromiumSource).toContain('getByRole("button", { name: "Raw", exact: true })');
     expect(chromiumSource).toContain("did not switch to exact Raw content");
     expect(chromiumSource).toContain("`- [ ] #task ${canary.taskText}`");

@@ -280,7 +280,8 @@ export async function runHomePwaChromiumAcceptance(
       const activePage = requirePage();
       await activeContext.setOffline(true);
       await activePage.reload({ waitUntil: "domcontentloaded", timeout: WAIT_MS });
-      await activePage.getByText("Offline", { exact: true }).waitFor({ timeout: WAIT_MS });
+      await activePage.getByRole("region", { name: "You're offline", exact: true })
+        .waitFor({ timeout: WAIT_MS });
       if (!await activePage.getByRole("button", { name: "send" }).isDisabled()) {
         throw new Error("Ask remained enabled offline");
       }
