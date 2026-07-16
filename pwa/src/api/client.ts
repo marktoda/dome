@@ -121,16 +121,35 @@ export class DomeClient {
     if (input.limit !== undefined) query.set("limit", String(input.limit));
     if (input.cursor !== undefined) query.set("cursor", input.cursor);
     const suffix = query.size === 0 ? "" : `?${query.toString()}`;
-    const value = await this.parse<unknown>(
-      await this.fetchResponse(this.request(`/task-backlog${suffix}`, {
-        headers: this.authHeaders(false),
-      })),
+    const response = await this.fetchResponse(
+      this.request(`/task-backlog${suffix}`, { headers: this.authHeaders(false) }),
     );
+    const value = await response.json().catch(() => null) as unknown;
     const parsed = taskBacklogListSchema.safeParse(value);
-    if (!parsed.success || parsed.data.status !== "ok") {
-      throw new Error("Task backlog response is incompatible.");
+    if (parsed.success) {
+      if (response.ok && parsed.data.status === "ok") return parsed.data;
+      if (
+        !response.ok && parsed.data.status === "error" &&
+        ((response.status === 400 && parsed.data.error === "invalid-cursor") ||
+          (response.status === 409 && parsed.data.error === "stale-cursor"))
+      ) {
+        return parsed.data;
+      }
     }
-    return parsed.data;
+    if (!response.ok) {
+      const body = value !== null && typeof value === "object"
+        ? value as Record<string, unknown>
+        : null;
+      if (body?.["schema"] === "dome.daily.task-backlog.list/v1") {
+        throw new Error("Task backlog response is incompatible.");
+      }
+      if (body !== null && typeof body["error"] === "string") {
+        throw new Error(
+          `${body["error"]}${typeof body["message"] === "string" ? `: ${body["message"]}` : ""}`,
+        );
+      }
+    }
+    throw new Error("Task backlog response is incompatible.");
   }
 
   async recents(limit?: number): Promise<Recents> {

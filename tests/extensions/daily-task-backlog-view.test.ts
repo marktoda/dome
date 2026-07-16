@@ -93,20 +93,11 @@ describe("dome.daily.task-backlog", () => {
       fact("wiki/b.md", 10, "dome.daily.open-loop:0123456789abcdef01234567", "Call Alex"),
       fact("wiki/b.md", 11, "dome.daily.open-loop:0123456789abcdef01234567", "Call Alex"),
     ];
-    const [todayDoc, backlogRaw] = await Promise.all([
-      structured(today, facts),
-      structured(taskBacklog as typeof today, facts),
-    ]);
+    const backlogRaw = await structured(taskBacklog as typeof today, facts);
     const parsed = taskBacklogListSchema.parse(backlogRaw);
     expect(parsed.status).toBe("ok");
     if (parsed.status !== "ok") return;
 
-    expect(parsed.page.total).toBe(
-      (todayDoc["counts"] as { openTasks: number }).openTasks,
-    );
-    expect(parsed.items.map((item) => item.text)).toEqual(
-      (todayDoc["openTasks"] as Array<{ text: string }>).map((item) => item.text),
-    );
     const duplicate = parsed.items.find(
       (item) => item.normalizedText === "review launch plan",
     );
@@ -122,5 +113,38 @@ describe("dome.daily.task-backlog", () => {
       overdue: 1,
       exactDuplicateCandidates: 2,
     });
+  });
+
+  test("shares Today's projected origin selector but does not apply its near-duplicate paint fold", async () => {
+    const first = "Review detailed launch plan with Alex and product team tomorrow";
+    const second = "Review detailed launch plan with Alex product team tomorrow";
+    const facts = [
+      fact("wiki/a.md", 2, "dome.daily.open-loop:tnear1", first),
+      fact("wiki/b.md", 4, "dome.daily.open-loop:tnear2", second),
+    ];
+    const [todayRaw, backlogRaw] = await Promise.all([
+      structured(today, facts),
+      structured(taskBacklog as typeof today, facts),
+    ]);
+    const parsed = taskBacklogListSchema.parse(backlogRaw);
+    expect(parsed.status).toBe("ok");
+    if (parsed.status !== "ok") return;
+
+    const todayLaunchRows = (todayRaw["openTasks"] as Array<{ text: string }>)
+      .filter((item) => item.text.startsWith("Review detailed launch plan"));
+    expect(todayLaunchRows).toHaveLength(1);
+    const backlogLaunchUnits = parsed.items.filter((item) =>
+      item.normalizedText.startsWith("review detailed launch plan")
+    );
+    expect(backlogLaunchUnits.map((unit) => unit.normalizedText)).toEqual([
+      first.toLowerCase(),
+      second.toLowerCase(),
+    ]);
+    expect(backlogLaunchUnits.flatMap((unit) =>
+      unit.members.map((member) => member.sourceRefs[0]?.stableId)
+    )).toEqual([
+      "dome.daily.open-loop:tnear1",
+      "dome.daily.open-loop:tnear2",
+    ]);
   });
 });

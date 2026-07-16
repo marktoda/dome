@@ -7,6 +7,8 @@ import {
   type TaskBacklogTaskInput,
 } from "../../src/surface/task-backlog";
 
+const COMMIT = "abcdef1234567890abcdef1234567890abcdef12";
+
 function task(
   text: string,
   line: number,
@@ -14,6 +16,7 @@ function task(
 ): TaskBacklogTaskInput {
   const ref = {
     path: "wiki/projects/alpha.md",
+    commit: COMMIT,
     range: { startLine: line, endLine: line },
     stableId: `dome.daily.open-loop:t${line}`,
   };
@@ -35,8 +38,8 @@ function task(
 describe("TaskBacklog.list document", () => {
   test("classifies the complete logical selector and preserves undated source context", () => {
     const exactRefs = [
-      { path: "wiki/a.md", range: { startLine: 2, endLine: 2 }, stableId: "a" },
-      { path: "wiki/a.md", range: { startLine: 9, endLine: 9 }, stableId: "b" },
+      { path: "wiki/a.md", commit: COMMIT, range: { startLine: 2, endLine: 2 }, stableId: "a" },
+      { path: "wiki/a.md", commit: COMMIT, range: { startLine: 9, endLine: 9 }, stableId: "b" },
     ];
     const doc = buildTaskBacklogList({
       date: "2026-07-16",
@@ -163,6 +166,7 @@ describe("TaskBacklog.list document", () => {
       task("Call Alex", 5, {
         sourceRefs: [{
           path: "wiki/projects/alpha.md",
+          commit: COMMIT,
           range: { startLine: 5, endLine: 5 },
           stableId: "dome.daily.open-loop:shared-body-hash",
         }],
@@ -170,6 +174,7 @@ describe("TaskBacklog.list document", () => {
       task("Call Alex", 11, {
         sourceRefs: [{
           path: "wiki/projects/alpha.md",
+          commit: COMMIT,
           range: { startLine: 11, endLine: 11 },
           stableId: "dome.daily.open-loop:shared-body-hash",
         }],
@@ -187,5 +192,68 @@ describe("TaskBacklog.list document", () => {
     expect(new Set(doc.items[0]?.members.map((member) => member.id)).size).toBe(2);
     expect(doc.items[0]?.members.every((member) => !member.reviewable)).toBe(true);
     expect(doc.items[0]?.reviewable).toBe(false);
+  });
+
+  test("duplicate block anchors disable every affected unit without duplicating member ids", () => {
+    const doc = buildTaskBacklogList({
+      date: "2026-07-16",
+      revision: COMMIT,
+      tasks: [
+        task("First commitment", 6, {
+          path: "wiki/a.md",
+          line: 6,
+          blockId: "tduplicate",
+          sourceRefs: [{
+            path: "wiki/a.md",
+            commit: COMMIT,
+            range: { startLine: 6, endLine: 6 },
+            stableId: "dome.daily.open-loop:tduplicate",
+          }],
+        }),
+        task("Second commitment", 12, {
+          path: "wiki/b.md",
+          line: 12,
+          blockId: "tduplicate",
+          sourceRefs: [{
+            path: "wiki/b.md",
+            commit: COMMIT,
+            range: { startLine: 12, endLine: 12 },
+            stableId: "dome.daily.open-loop:tduplicate",
+          }],
+        }),
+      ],
+    });
+    expect(doc.status).toBe("ok");
+    if (doc.status !== "ok") return;
+    expect(doc.items).toHaveLength(2);
+    expect(doc.items.every((unit) => !unit.reviewable)).toBe(true);
+    const members = doc.items.flatMap((unit) => unit.members);
+    expect(members.every((member) => !member.reviewable)).toBe(true);
+    expect(new Set(members.map((member) => member.id)).size).toBe(2);
+    expect(members.every((member) => member.id.startsWith("dome.task.duplicate-anchor:")))
+      .toBe(true);
+  });
+
+  test("the wire contract requires exact commit, range, and stableId provenance", () => {
+    const doc = buildTaskBacklogList({
+      date: "2026-07-16",
+      revision: COMMIT,
+      tasks: [task("Exact evidence", 4, { blockId: "t4" })],
+    });
+    expect(doc.status).toBe("ok");
+    if (doc.status !== "ok") return;
+    const valid = structuredClone(doc);
+    const ref = valid.items[0]?.members[0]?.sourceRefs[0] as Record<string, unknown>;
+    for (const key of ["commit", "range", "stableId"] as const) {
+      const broken = structuredClone(valid);
+      const brokenRef = broken.items[0]?.members[0]?.sourceRefs[0] as Record<string, unknown>;
+      delete brokenRef[key];
+      expect(taskBacklogListSchema.safeParse(broken).success, key).toBe(false);
+    }
+    expect(ref).toMatchObject({
+      commit: COMMIT,
+      stableId: "dome.daily.open-loop:t4",
+      range: { startLine: 4, endLine: 4 },
+    });
   });
 });

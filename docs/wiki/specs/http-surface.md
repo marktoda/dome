@@ -114,8 +114,11 @@ cleanup. It reads the individual `dome.daily.open_task` origin facts selected
 by the same global open-loop index as Today, before Today's glance-oriented
 near-duplicate display fold. It groups only exact normalized visible text,
 across the complete set before pagination; a duplicate candidate is therefore
-one page unit and is never split across cursors. Each member retains its exact
-SourceRefs, source title/context, and `blockId`. An unanchored member remains
+one page unit and is never split across cursors. Each member retains exact
+adopted commit+range+stableId SourceRefs, source title/context, and `blockId`.
+Duplicate block anchors are detected across the full open set and make every
+affected member/unit non-reviewable with collision-free source-located read
+ids. An unanchored member remains
 visible with `reviewable: false`; the surface never invents a settlement
 identity. Group counters describe the complete snapshot, not only the current
 page.
@@ -125,7 +128,11 @@ last unit id to the adopted commit and a hash of the derived unit list. A
 malformed cursor returns `400 invalid-cursor`; any adopted/task-list change
 returns `409 stale-cursor` and requires a fresh first page. Page size defaults
 to 25 and caps at 100. This slice is read-only: keep/defer/close batch mutation
-is a separate controlled-mutation contract.
+is a separate controlled-mutation contract and will re-scan global source
+state at commit time rather than trusting a paged read receipt. The PWA client
+validates the discriminated union even on non-2xx responses, returning typed
+`invalid-cursor` / `stale-cursor` recovery documents while rejecting malformed
+problem payloads.
 
 `GET /source` is the citation-resolution route. Both `path` and a full commit
 OID are required. The path must already be canonical and vault-relative, must

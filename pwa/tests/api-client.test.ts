@@ -37,7 +37,7 @@ describe("DomeClient", () => {
     await expect(client.tasks()).rejects.toThrow("Today response is incompatible");
   });
 
-  test("taskBacklog validates the shared contract and carries the opaque cursor", async () => {
+  test("taskBacklog preserves typed cursor recovery and rejects malformed problem documents", async () => {
     const valid = {
       schema: "dome.daily.task-backlog.list/v1" as const,
       status: "ok" as const,
@@ -56,9 +56,24 @@ describe("DomeClient", () => {
       items: [],
     };
     const seen: string[] = [];
+    const stale = {
+      schema: "dome.daily.task-backlog.list/v1" as const,
+      status: "error" as const,
+      error: "stale-cursor" as const,
+      message: "Restart from page one.",
+    };
+    const invalid = {
+      schema: "dome.daily.task-backlog.list/v1" as const,
+      status: "error" as const,
+      error: "invalid-cursor" as const,
+      message: "Cursor is malformed.",
+    };
     const responses = [
       new Response(JSON.stringify(valid), { status: 200 }),
-      new Response(JSON.stringify({ ...valid, revision: 7 }), { status: 200 }),
+      new Response(JSON.stringify(stale), { status: 409 }),
+      new Response(JSON.stringify(invalid), { status: 400 }),
+      new Response(JSON.stringify({ ...stale, error: "unknown-problem" }), { status: 409 }),
+      new Response(JSON.stringify({ error: "busy", message: "Try later." }), { status: 503 }),
     ];
     globalThis.fetch = mock(async (request: Request) => {
       seen.push(new URL(request.url).pathname + new URL(request.url).search);
@@ -74,9 +89,12 @@ describe("DomeClient", () => {
     expect(seen[0]).toBe(
       "/task-backlog?date=2026-07-16&limit=10&cursor=opaque+cursor",
     );
+    expect(await client.taskBacklog()).toEqual(stale);
+    expect(await client.taskBacklog()).toEqual(invalid);
     await expect(client.taskBacklog()).rejects.toThrow(
       "Task backlog response is incompatible",
     );
+    await expect(client.taskBacklog()).rejects.toThrow("busy: Try later.");
   });
 
   test("readiness strictly classifies valid, incompatible, failed, and auth responses", async () => {

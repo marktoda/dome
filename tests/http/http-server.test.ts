@@ -9,6 +9,7 @@
 // and question lists).
 
 import { afterAll, beforeEach, afterEach, describe, expect, test } from "bun:test";
+import { Buffer } from "node:buffer";
 import { existsSync, mkdtempSync, readdirSync } from "node:fs";
 import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -990,6 +991,29 @@ describe("read routes", () => {
         schema: "dome.daily.task-backlog.list/v1",
         status: "error",
         error: "invalid-cursor",
+      });
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "GET /task-backlog maps a valid cursor for another revision to a typed 409",
+    async () => {
+      const cursor = Buffer.from(JSON.stringify({
+        v: 1,
+        date: TODAY,
+        revision: "stale-adopted-commit",
+        snapshot: "a".repeat(64),
+        after: "dome.task-backlog.unit:stale",
+      }), "utf8").toString("base64url");
+      const response = await get(
+        `/task-backlog?date=${TODAY}&cursor=${encodeURIComponent(cursor)}`,
+      );
+      expect(response.status).toBe(409);
+      expect(response.json).toMatchObject({
+        schema: "dome.daily.task-backlog.list/v1",
+        status: "error",
+        error: "stale-cursor",
       });
     },
     TEST_TIMEOUT_MS,

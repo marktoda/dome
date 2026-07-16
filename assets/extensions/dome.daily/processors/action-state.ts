@@ -108,7 +108,13 @@ export type DailyTaskPriority =
   | "low"
   | "lowest";
 
-export type TaskBacklogCandidate = DailyTaskItem & {
+export type TaskBacklogOriginRef = SourceRef & {
+  readonly range: NonNullable<SourceRef["range"]>;
+  readonly stableId: string;
+};
+
+export type TaskBacklogCandidate = Omit<DailyTaskItem, "sourceRefs"> & {
+  readonly sourceRefs: ReadonlyArray<TaskBacklogOriginRef>;
   readonly sourceTitle: string | null;
 };
 
@@ -407,8 +413,10 @@ export async function collectTaskBacklogCandidates(
         originByStableId,
         originByCorrelation,
       });
+      const sourceRefs = exactTaskOriginRefs(item.sourceRefs);
       return Object.freeze({
         ...item,
+        sourceRefs,
         sourceTitle: titleByPath.get(item.path) ?? null,
       });
     })
@@ -418,6 +426,20 @@ export async function collectTaskBacklogCandidates(
     revision: String(ctx.snapshot.commit),
     tasks: Object.freeze(tasks),
   });
+}
+
+function exactTaskOriginRefs(
+  refs: ReadonlyArray<SourceRef>,
+): ReadonlyArray<TaskBacklogOriginRef> {
+  const exact = refs.filter((ref): ref is TaskBacklogOriginRef =>
+    ref.range !== undefined && ref.stableId !== undefined
+  );
+  if (exact.length === 0 || exact.length !== refs.length) {
+    throw new Error(
+      "dome.daily.task-backlog: projected open_task fact lacks exact commit/range/stableId provenance",
+    );
+  }
+  return Object.freeze(exact);
 }
 
 export function parseInputDate(input: unknown): DailyDate | null {

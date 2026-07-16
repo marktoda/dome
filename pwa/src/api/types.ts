@@ -3,7 +3,7 @@ import type {
   AgentStreamCitation,
   AgentStreamEvent,
 } from "../../../contracts/agent-stream";
-import type { TaskBacklogListOk } from "../../../src/surface/task-backlog";
+import type { TaskBacklogListDocument } from "../../../src/surface/task-backlog";
 
 export type Citation = AgentStreamCitation;
 
@@ -97,7 +97,7 @@ export type Today = {
   counts: { openTasks: number; followups: number; questions: number; reviews?: number };
 };
 
-export type TaskBacklog = TaskBacklogListOk;
+export type TaskBacklog = TaskBacklogListDocument;
 
 export type RecentEntry = {
   path: string;

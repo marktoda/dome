@@ -11,7 +11,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import { stripWikilinks } from "../core/wikilink";
-import type { TodaySourceRef, TodayTaskRow } from "./today-view";
+import type { TodayTaskRow } from "./today-view";
 
 export const TASK_BACKLOG_LIST_SCHEMA = "dome.daily.task-backlog.list/v1";
 export const DEFAULT_TASK_BACKLOG_PAGE_SIZE = 25;
@@ -19,12 +19,15 @@ export const MAX_TASK_BACKLOG_PAGE_SIZE = 100;
 
 const sourceRefSchema = z.object({
   path: z.string(),
-  commit: z.string().optional(),
-  stableId: z.string().optional(),
+  commit: z.string().min(1),
+  stableId: z.string().min(1),
   range: z.object({
     startLine: z.number().int().positive(),
     endLine: z.number().int().positive(),
-  }).optional(),
+  }).refine((range) => range.endLine >= range.startLine, {
+    message: "endLine must be greater than or equal to startLine",
+    path: ["endLine"],
+  }),
 });
 
 const memberSchema = z.object({
@@ -45,7 +48,7 @@ const memberSchema = z.object({
     line: z.number().int().positive().nullable(),
     lastChangedAt: z.string().nullable(),
   }),
-  sourceRefs: z.array(sourceRefSchema).readonly(),
+  sourceRefs: z.array(sourceRefSchema).min(1).readonly(),
 });
 
 const unitSchema = z.object({
@@ -99,13 +102,23 @@ export type TaskBacklogListDocument = z.infer<typeof taskBacklogListSchema>;
 export type TaskBacklogListOk = z.infer<typeof okSchema>;
 export type TaskBacklogUnit = z.infer<typeof unitSchema>;
 
+export type TaskBacklogOriginRef = {
+  readonly path: string;
+  readonly commit: string;
+  readonly stableId: string;
+  readonly range: {
+    readonly startLine: number;
+    readonly endLine: number;
+  };
+};
+
 export type TaskBacklogTaskInput = TodayTaskRow & {
   readonly source: "daily" | "backlog";
   readonly followup: boolean;
   readonly dueDate: string | null;
   readonly priority: TodayTaskRow["priority"];
   readonly lastChangedAt: string | null;
-  readonly sourceRefs: ReadonlyArray<TodaySourceRef>;
+  readonly sourceRefs: ReadonlyArray<TaskBacklogOriginRef>;
   readonly sourceTitle: string | null;
 };
 
@@ -187,6 +200,7 @@ function groupExactTasks(
   tasks: ReadonlyArray<TaskBacklogTaskInput>,
   date: string,
 ): ReadonlyArray<TaskBacklogUnit> {
+  const duplicateBlockIds = duplicateBlockIdsAcross(tasks);
   const grouped = new Map<string, TaskBacklogTaskInput[]>();
   for (const task of tasks) {
     const key = normalizeTaskText(task.text);
@@ -195,7 +209,9 @@ function groupExactTasks(
     else existing.push(task);
   }
   return Object.freeze([...grouped.entries()].map(([normalizedText, members]) => {
-    const rows = Object.freeze(members.map(member));
+    const rows = Object.freeze(members.map((task) =>
+      member(task, duplicateBlockIds)
+    ));
     const timing = timingOf(members, date);
     return Object.freeze({
       id: `dome.task-backlog.unit:${hash(JSON.stringify([
@@ -214,10 +230,14 @@ function groupExactTasks(
   }));
 }
 
-function member(task: TaskBacklogTaskInput) {
+function member(
+  task: TaskBacklogTaskInput,
+  duplicateBlockIds: ReadonlySet<string>,
+) {
   const blockId = task.blockId;
+  const duplicateBlockId = blockId !== undefined && duplicateBlockIds.has(blockId);
   return Object.freeze({
-    id: taskIdentity(task),
+    id: taskIdentity(task, duplicateBlockId),
     path: task.path,
     line: task.line,
     source: task.source,
@@ -227,7 +247,7 @@ function member(task: TaskBacklogTaskInput) {
     lastChangedAt: task.lastChangedAt,
     ...(blockId !== undefined ? { blockId } : {}),
     ...(task.origin !== undefined ? { origin: task.origin } : {}),
-    reviewable: blockId !== undefined,
+    reviewable: blockId !== undefined && !duplicateBlockId,
     sourceContext: Object.freeze({
       path: task.path,
       title: task.sourceTitle,
@@ -238,14 +258,34 @@ function member(task: TaskBacklogTaskInput) {
   });
 }
 
-function taskIdentity(task: TaskBacklogTaskInput): string {
-  if (task.blockId !== undefined) return `dome.task:${task.blockId}`;
+function taskIdentity(
+  task: TaskBacklogTaskInput,
+  duplicateBlockId: boolean,
+): string {
+  if (task.blockId !== undefined && !duplicateBlockId) {
+    return `dome.task:${task.blockId}`;
+  }
   const ref = task.sourceRefs[0];
-  return `dome.task.transient:${hash(JSON.stringify([
+  const kind = task.blockId === undefined ? "transient" : "duplicate-anchor";
+  return `dome.task.${kind}:${hash(JSON.stringify([
     task.path,
-    ref?.range?.startLine ?? task.line,
+    ref?.range.startLine ?? task.line,
+    task.blockId ?? null,
     normalizeTaskText(task.text),
   ])).slice(0, 24)}`;
+}
+
+function duplicateBlockIdsAcross(
+  tasks: ReadonlyArray<TaskBacklogTaskInput>,
+): ReadonlySet<string> {
+  const counts = new Map<string, number>();
+  for (const task of tasks) {
+    if (task.blockId === undefined) continue;
+    counts.set(task.blockId, (counts.get(task.blockId) ?? 0) + 1);
+  }
+  return new Set(
+    [...counts.entries()].flatMap(([blockId, count]) => count > 1 ? [blockId] : []),
+  );
 }
 
 function timingOf(

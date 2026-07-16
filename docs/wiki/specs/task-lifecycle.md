@@ -40,12 +40,25 @@ is reviewable only when every member has a real stamped block anchor;
 unanchored members use a transient path+line+normalized-body read identity and
 are explicitly `reviewable: false`.
 
+Every member SourceRef is exact projected-origin evidence: adopted `commit`,
+line `range`, and `stableId` are required by the wire contract. Block-anchor
+uniqueness is checked across the complete open set before grouping or paging.
+If one `blockId` appears on multiple origins, every affected member and unit is
+`reviewable: false`; their read identities include source location so the
+duplicate anchor cannot also create duplicate `dome.task:<blockId>` ids.
+
 Timing classification is deterministic over the group: any past due date is
 `overdue`; otherwise any due date is `dated`; otherwise it is `undated`.
 Counters cover the full set before paging. The opaque keyset cursor binds to
 the adopted commit and a derived-list hash, so list drift produces a typed
 `stale-cursor` instead of skipping or repeating work. This read model makes no
 closure inference and performs no mutation.
+
+The future keep/defer/close batch operation must treat these ids and refs as
+review evidence, not write authority. At commit time it re-scans the global
+source state for every selected anchor under the controlled-mutation lease and
+refuses missing, duplicated, moved-to-an-ineligible-source, or otherwise
+ambiguous identities before changing Markdown.
 
 ## Block-anchor identity
 
