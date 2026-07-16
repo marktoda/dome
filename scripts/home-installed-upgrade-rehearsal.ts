@@ -54,7 +54,7 @@ const PORT = 3663;
 const MAX_COMPRESSED_ARTIFACT_BYTES = 256 * 1024 * 1024;
 const PREDECESSOR_INSTALL_TIMEOUT_MS = 60_000;
 const PREDECESSOR_LATE_READINESS_TIMEOUT_MS = 30_000;
-const INSTALLED_TEMPORARY_CLEANUP_TIMEOUT_MS = 30_000;
+const INSTALLED_TEMPORARY_CLEANUP_TIMEOUT_MS = 120_000;
 const INSTALLED_TEMPORARY_PREFIX = "dome-installed-upgrade-";
 const FROZEN_PREDECESSOR_ARTIFACT_ID = "911d5219bd5888f8a45fbfb0bbcf6da57b54e3a0ffcf8077bd2d843327747096";
 const FROZEN_PREDECESSOR_VERSION = "0.1.0";
@@ -771,7 +771,7 @@ async function createScenario(
     vault,
     home,
   });
-  const installed = await runJsonOutcomeWithin(
+  const installed = await runPredecessorInstallWithin(
     predecessorInstall.command,
     predecessorInstall.cwd,
     environment,
@@ -1776,19 +1776,40 @@ async function runJsonOutcome(
   });
 }
 
-async function runJsonOutcomeWithin(
+async function runPredecessorInstallWithin(
   command: ReadonlyArray<string>,
   cwd: string,
   environment: Readonly<Record<string, string | undefined>>,
   timeoutMs: number,
 ): Promise<PackagedJsonOutcome> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try { return await runJsonOutcome(command, cwd, environment, controller.signal); }
+  let expired = false;
+  const timeout = setTimeout(() => {
+    expired = true;
+    controller.abort();
+  }, timeoutMs);
+  try {
+    return await runJsonOutcome(command, cwd, environment, controller.signal);
+  } catch (error) {
+    // runRawAllowFailure has already killed and drained the packaged child
+    // before control returns here. Preserve that process bound while naming
+    // the owning predecessor-install phase instead of leaking a Chromium
+    // adapter implementation detail.
+    if (expired) throw new Error("frozen predecessor Home install command timed out");
+    throw error;
+  }
   finally {
     clearTimeout(timeout);
     controller.abort();
   }
+}
+
+/** Portable timeout-classification seam; launches no Home and emits no evidence. */
+export async function exercisePredecessorInstallTimeoutForTests(
+  command: ReadonlyArray<string>,
+  timeoutMs: number,
+): Promise<void> {
+  await runPredecessorInstallWithin(command, process.cwd(), process.env, timeoutMs);
 }
 
 async function runRaw(
