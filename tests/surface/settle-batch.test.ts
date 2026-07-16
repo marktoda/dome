@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 
 import { setAdoptedRef } from "../../src/adopted-ref";
 import { runInit } from "../../src/cli/commands/init";
-import { add, commitSingleFileOnHead, currentBranch, currentSha, log } from "../../src/git";
+import { add, commitFilesOnHead, commitSingleFileOnHead, currentBranch, currentSha, log } from "../../src/git";
 import {
   performSettleBatch,
   SETTLE_BATCH_SCHEMA,
@@ -130,6 +130,11 @@ describe("performSettleBatch", () => {
     const replay = await performSettleBatch(path, request, { now });
     expect(replay).toMatchObject({ status: "settled", commit: null, adoptionStatus: "unchanged" });
     expect(await currentSha(path)).toBe(landed);
+    await adoptHead(path);
+    expect(await performSettleBatch(path, request, { now })).toMatchObject({
+      status: "error",
+      error: "stale-review",
+    });
   });
 
   test("validates keep decisions but lands no commit", async () => {
@@ -203,5 +208,89 @@ describe("performSettleBatch", () => {
     expect(await currentSha(path)).toBe(before);
     expect(await readFile(join(path, "owner-draft.md"), "utf8"))
       .toBe("unrelated untracked draft\n");
+  });
+
+  test("rejects a crafted anchored local checklist that was never a global task", async () => {
+    const path = await vault();
+    await commitFile(path, "wiki/local.md", "# Local\n\n- [ ] ordinary checklist ^tlocal\n");
+    const revision = await adoptHead(path);
+    const before = await currentSha(path);
+    const result = await performSettleBatch(path, {
+      schema: SETTLE_BATCH_SCHEMA,
+      revision,
+      decisions: [decision(revision, "wiki/local.md", 3, "tlocal", "keep")],
+    });
+    expect(result).toMatchObject({ status: "error", error: "conflict" });
+    expect(await currentSha(path)).toBe(before);
+  });
+
+  test("follows one unchanged eligible task relocation by its move-stable anchor", async () => {
+    const path = await vault();
+    const content = "# A\n\n- [ ] #task movable task ^tmove\n";
+    await commitFile(path, "wiki/a.md", content);
+    const revision = await adoptHead(path);
+    await mkdir(join(path, "notes"), { recursive: true });
+    await writeFile(join(path, "notes/moved.md"), content);
+    await rm(join(path, "wiki/a.md"));
+    await commitFilesOnHead({
+      path,
+      files: [
+        { filepath: "wiki/a.md", content: null },
+        { filepath: "notes/moved.md", content },
+      ],
+      message: "owner: move task",
+    });
+
+    const result = await performSettleBatch(path, {
+      schema: SETTLE_BATCH_SCHEMA,
+      revision,
+      decisions: [decision(revision, "wiki/a.md", 3, "tmove", "close")],
+    }, { now });
+    expect(result).toMatchObject({ status: "settled", adoptionStatus: "pending" });
+    expect(await readFile(join(path, "notes/moved.md"), "utf8"))
+      .toContain("- [x] #task movable task ^tmove");
+    expect(await readFile(join(path, "wiki/dailies/2026-07-16.md"), "utf8"))
+      .toContain("[[notes/moved#^tmove|from]]");
+  });
+
+  test("immediate replay survives its own Done insertion shifting a task in today's daily", async () => {
+    const path = await vault();
+    const dailyPath = "wiki/dailies/2026-07-16.md";
+    const content = [
+      "# 2026-07-16", "", "## Done", "", "## Tasks", "",
+      "- [ ] daily task ^tdaily", "",
+    ].join("\n");
+    await commitFile(path, dailyPath, content);
+    const revision = await adoptHead(path);
+    const request = {
+      schema: SETTLE_BATCH_SCHEMA,
+      revision,
+      decisions: [decision(revision, dailyPath, 7, "tdaily", "close")],
+    } as const;
+    expect(await performSettleBatch(path, request, { now }))
+      .toMatchObject({ status: "settled", adoptionStatus: "pending" });
+    const landed = await currentSha(path);
+    expect(await performSettleBatch(path, request, { now }))
+      .toMatchObject({ status: "settled", commit: null, adoptionStatus: "unchanged" });
+    expect(await currentSha(path)).toBe(landed);
+  });
+
+  test("a pasted backlink outside bare Done today cannot suppress required evidence", async () => {
+    const path = await vault();
+    await commitFile(path, "wiki/a.md", "# A\n\n- [ ] #task close me ^tpaste\n");
+    await commitFile(path, "wiki/dailies/2026-07-16.md", [
+      "# 2026-07-16", "", "## Notes", "",
+      "- pasted ([[wiki/a#^tpaste|from]])", "", "## Done", "",
+    ].join("\n"));
+    const revision = await adoptHead(path);
+    const result = await performSettleBatch(path, {
+      schema: SETTLE_BATCH_SCHEMA,
+      revision,
+      decisions: [decision(revision, "wiki/a.md", 3, "tpaste", "close")],
+    }, { now });
+    expect(result.status).toBe("settled");
+    const daily = await readFile(join(path, "wiki/dailies/2026-07-16.md"), "utf8");
+    expect(daily.match(/#\^tpaste\|from/g)).toHaveLength(2);
+    expect(daily).toMatch(/### Done today\n- close me \(\[\[wiki\/a#\^tpaste\|from\]\]\)/);
   });
 });

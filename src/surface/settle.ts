@@ -37,6 +37,7 @@ import { join } from "node:path";
 
 import {
   dailyPath,
+  dailyPathSettings,
   localDateParts,
   previousLocalDate,
 } from "../../assets/extensions/dome.daily/processors/daily-paths";
@@ -49,12 +50,15 @@ import {
 import {
   appendDoneTodayBullet,
   appendDoneTodayBullets,
+  doneTodayBacklinkAnchors,
   findAnchorLine,
   isOpenCheckbox,
   setCheckboxMark,
   setDueDate,
   taskLineBody,
 } from "../../assets/extensions/dome.daily/processors/task-disposition";
+import { openLoopSurfaceSources } from "../../assets/extensions/dome.daily/processors/open-loop-surface";
+import { parseBlockAnchor } from "../core/block-anchor";
 import {
   currentBranch,
   currentSha,
@@ -64,6 +68,7 @@ import {
   statusMatrix,
 } from "../git";
 import { getAdoptedRef } from "../adopted-ref";
+import { loadCapabilityPolicy } from "../engine/core/capability-policy";
 import {
   applyControlledMutation,
   type ControlledMutationResult,
@@ -342,11 +347,25 @@ async function planSettleBatch(
     );
   }
 
-  const requestedIds = new Set(decisions.map((decision) => decision.blockId));
-  const scan = scanMarkdownAnchors(vaultPath, requestedIds);
+  const policy = await loadCapabilityPolicy(vaultPath);
+  if (!policy.ok) {
+    return rejectedPlan("configuration-conflict", policy.error);
+  }
+  const settings = dailyPathSettings(policy.value.configForExtension("dome.daily"));
   const now = (deps.now ?? (() => new Date()))();
-  const todayDaily = dailyPath(localDateParts(now), DEFAULT_DAILY_PATH_SETTINGS);
+  const todayDaily = dailyPath(localDateParts(now), settings);
+  const requestedIds = new Set(decisions.map((decision) => decision.blockId));
+  const scan = scanMarkdownAnchors(
+    vaultPath,
+    requestedIds,
+    new Set([todayDaily]),
+  );
   const reviewedLines = new Map<string, string>();
+  const reviewedFiles = new Map<string, {
+    lines: ReadonlyArray<string>;
+    sources: ReturnType<typeof openLoopSurfaceSources>;
+  }>();
+  const currentSources = new Map<string, ReturnType<typeof openLoopSurfaceSources>>();
 
   for (const decision of decisions) {
     const ref = decision.sourceRef;
@@ -360,16 +379,32 @@ async function planSettleBatch(
         `^${decision.blockId} does not carry the exact reviewed source identity`,
       );
     }
-    const reviewedContent = await readBlob({
-      path: vaultPath,
-      commit: revision,
-      filepath: ref.path,
-    });
-    const reviewedLine = reviewedContent?.split("\n")[ref.range.startLine - 1];
+    let reviewed = reviewedFiles.get(ref.path);
+    if (reviewed === undefined) {
+      const content = await readBlob({
+        path: vaultPath,
+        commit: revision,
+        filepath: ref.path,
+      });
+      reviewed = {
+        lines: content?.split("\n") ?? Object.freeze([]),
+        sources: content === null
+          ? Object.freeze([])
+          : openLoopSurfaceSources({ path: ref.path, content, settings }),
+      };
+      reviewedFiles.set(ref.path, reviewed);
+    }
+    const reviewedLine = reviewed.lines[ref.range.startLine - 1];
+    const admitted = reviewed.sources.find((item) =>
+      item.line === ref.range.startLine &&
+      item.anchor === decision.blockId &&
+      item.stableId === ref.stableId
+    );
     if (
       reviewedLine === undefined ||
       findAnchorLine([reviewedLine], decision.blockId) !== 0 ||
-      !isOpenCheckbox(reviewedLine)
+      !isOpenCheckbox(reviewedLine) ||
+      admitted === undefined
     ) {
       return rejectedPlan(
         "identity-conflict",
@@ -386,13 +421,7 @@ async function planSettleBatch(
       );
     }
     const match = matches[0]!;
-    if (match.relPath !== ref.path || match.lineIdx + 1 !== ref.range.startLine) {
-      return rejectedPlan(
-        "identity-conflict",
-        `reviewed task ^${decision.blockId} moved from its exact reviewed source`,
-      );
-    }
-    const currentLine = scan.files.get(match.relPath)?.lines[match.lineIdx];
+    const currentLine = match.line;
     const terminal = terminalLine(reviewedLine, decision);
     if (currentLine !== reviewedLine && currentLine !== terminal) {
       return rejectedPlan(
@@ -400,10 +429,35 @@ async function planSettleBatch(
         `reviewed task ^${decision.blockId} changed; refresh before applying decisions`,
       );
     }
+    if (currentLine === reviewedLine) {
+      const currentContent = scan.files.get(match.relPath)!.content;
+      let sources = currentSources.get(match.relPath);
+      if (sources === undefined) {
+        sources = openLoopSurfaceSources({
+          path: match.relPath,
+          content: currentContent,
+          settings,
+        });
+        currentSources.set(match.relPath, sources);
+      }
+      const currentAdmitted = sources.some((item) =>
+        item.line === match.lineIdx + 1 &&
+        item.anchor === decision.blockId &&
+        item.stableId === ref.stableId
+      );
+      if (!currentAdmitted) {
+        return rejectedPlan(
+          "identity-conflict",
+          `reviewed task ^${decision.blockId} moved to an ineligible current source`,
+        );
+      }
+    }
     reviewedLines.set(decision.blockId, reviewedLine);
   }
 
-  const touched = new Set(decisions.map((decision) => decision.sourceRef.path));
+  const touched = new Set(decisions.map((decision) =>
+    (scan.anchors.get(decision.blockId) ?? [])[0]!.relPath
+  ));
   if (decisions.some((decision) => decision.disposition === "close")) {
     touched.add(todayDaily);
   }
@@ -433,6 +487,7 @@ async function planSettleBatch(
   };
   const doneBullets: string[] = [];
   const dailyExisting = scan.files.get(todayDaily)?.content ?? null;
+  const recordedDoneAnchors = doneTodayBacklinkAnchors(dailyExisting ?? "");
 
   for (const decision of decisions) {
     if (decision.disposition === "keep") continue;
@@ -446,9 +501,8 @@ async function planSettleBatch(
       continue;
     }
     const closed = setCheckboxMark(reviewedLine, "x")!;
-    const anchorNeedle = `#^${decision.blockId}|from]])`;
     if (currentLine === closed) {
-      if (!(dailyExisting ?? "").includes(anchorNeedle)) {
+      if (!recordedDoneAnchors.has(decision.blockId)) {
         return rejectedPlan(
           "identity-conflict",
           `^${decision.blockId} is closed without its required Done-today record`,
@@ -457,7 +511,7 @@ async function planSettleBatch(
       continue;
     }
     file.lines[match.lineIdx] = closed;
-    if (!(dailyExisting ?? "").includes(anchorNeedle)) {
+    if (!recordedDoneAnchors.has(decision.blockId)) {
       doneBullets.push(
         `- ${taskLineBody(reviewedLine)} ([[${stripMd(match.relPath)}#^${decision.blockId}|from]])`,
       );
@@ -713,7 +767,12 @@ function findAnchoredLines(
   vaultPath: string,
   blockId: string,
 ): ReadonlyArray<{ relPath: string; lineIdx: number; lines: string[] }> {
-  return scanMarkdownAnchors(vaultPath, new Set([blockId])).anchors.get(blockId) ?? [];
+  const scan = scanMarkdownAnchors(vaultPath, new Set([blockId]));
+  return (scan.anchors.get(blockId) ?? []).map((match) => ({
+    relPath: match.relPath,
+    lineIdx: match.lineIdx,
+    lines: scan.files.get(match.relPath)!.lines,
+  }));
 }
 
 type MarkdownScan = {
@@ -721,17 +780,18 @@ type MarkdownScan = {
   readonly anchors: ReadonlyMap<string, ReadonlyArray<{
     relPath: string;
     lineIdx: number;
-    lines: string[];
+    line: string;
   }>>;
 };
 
-/** One filesystem walk/read pass for every requested identity. */
+/** One line pass; retains only matched target files plus explicit support files. */
 function scanMarkdownAnchors(
   vaultPath: string,
   blockIds: ReadonlySet<string>,
+  retainPaths: ReadonlySet<string> = new Set(),
 ): MarkdownScan {
   const files = new Map<string, { content: string; lines: string[] }>();
-  const anchors = new Map<string, Array<{ relPath: string; lineIdx: number; lines: string[] }>>();
+  const anchors = new Map<string, Array<{ relPath: string; lineIdx: number; line: string }>>();
   for (const id of blockIds) anchors.set(id, []);
   for (const relPath of listMarkdownFiles(vaultPath)) {
     let text: string;
@@ -741,19 +801,19 @@ function scanMarkdownAnchors(
       continue;
     }
     const lines = text.split("\n");
-    files.set(relPath, { content: text, lines });
     const ignoredRanges = actionExtractionLineRanges(text);
-    for (const blockId of blockIds) {
-      let offset = 0;
-      while (offset < lines.length) {
-        const lineIdx = findAnchorLine(lines, blockId, offset);
-        if (lineIdx === -1) break;
-        if (!lineIsInsideRanges(lineIdx + 1, ignoredRanges)) {
-          anchors.get(blockId)!.push({ relPath, lineIdx, lines });
-        }
-        offset = lineIdx + 1;
-      }
+    let matched = false;
+    for (const [lineIdx, line] of lines.entries()) {
+      const parsed = parseBlockAnchor(line);
+      if (
+        parsed === null ||
+        !blockIds.has(parsed.id) ||
+        lineIsInsideRanges(lineIdx + 1, ignoredRanges)
+      ) continue;
+      anchors.get(parsed.id)!.push({ relPath, lineIdx, line });
+      matched = true;
     }
+    if (matched || retainPaths.has(relPath)) files.set(relPath, { content: text, lines });
   }
   return Object.freeze({ files, anchors });
 }

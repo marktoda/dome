@@ -153,7 +153,15 @@ export function appendDoneTodayBullets(
   content: string,
   bullets: ReadonlyArray<string>,
 ): string {
-  const unique = [...new Set(bullets)].filter((bullet) => !content.includes(bullet));
+  const existingAnchors = doneTodayBacklinkAnchors(content);
+  const seen = new Set<string>();
+  const unique = bullets.filter((bullet) => {
+    const anchor = doneBacklinkAnchor(bullet);
+    const key = anchor === null ? `bullet:${bullet}` : `anchor:${anchor}`;
+    if (seen.has(key) || (anchor !== null && existingAnchors.has(anchor))) return false;
+    seen.add(key);
+    return true;
+  });
   if (unique.length === 0) return content;
   const lines = content.split("\n");
   // 1-indexed inclusive line ranges of EVERY registered daily generated block
@@ -214,4 +222,33 @@ export function appendDoneTodayBullets(
   }
   const suffix = content.endsWith("\n") ? "" : "\n";
   return `${content}${suffix}\n${block.join("\n")}\n`;
+}
+
+/** Anchors evidenced by backlink bullets in the bare human-owned Done section. */
+export function doneTodayBacklinkAnchors(content: string): ReadonlySet<string> {
+  const lines = content.split("\n");
+  const blockRanges: Array<{ start: number; end: number }> = [];
+  for (const block of DAILY_GENERATED_BLOCKS) {
+    const { range } = findGeneratedBlock(content, block.owner, block.block);
+    if (range !== null) blockRanges.push({ start: range.startLine, end: range.endLine });
+  }
+  const inGeneratedBlock = (idx: number): boolean =>
+    blockRanges.some((range) => idx + 1 >= range.start && idx + 1 <= range.end);
+  const headingIdx = lines.findIndex(
+    (line, idx) => /^###\s+Done today\s*$/.test(line) && !inGeneratedBlock(idx),
+  );
+  if (headingIdx === -1) return new Set();
+  const anchors = new Set<string>();
+  for (let idx = headingIdx + 1; idx < lines.length; idx += 1) {
+    const line = lines[idx] ?? "";
+    if (HEADING_RE.test(line) || inGeneratedBlock(idx)) break;
+    if (!/^\s*-\s+/.test(line)) continue;
+    const anchor = doneBacklinkAnchor(line);
+    if (anchor !== null) anchors.add(anchor);
+  }
+  return anchors;
+}
+
+function doneBacklinkAnchor(value: string): string | null {
+  return /\(\[\[[^\]\n]*#\^([A-Za-z0-9][A-Za-z0-9-]*)\|from\]\]\)/.exec(value)?.[1] ?? null;
 }

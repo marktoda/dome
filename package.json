@@ -11,6 +11,8 @@
     "contracts/capture.ts",
     "contracts/product-readiness.ts",
     "contracts/source-document.ts",
+    "contracts/task-backlog.ts",
+    "contracts/task-backlog-review.ts",
     "assets/extensions/",
     "assets/model-providers/",
     "assets/source-handlers/",

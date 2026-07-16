@@ -59,13 +59,19 @@ closure inference and performs no mutation.
 authority. Its strict `dome.task-backlog.review/v1` request carries one adopted
 `revision` and 1–100 unique keep/defer/close decisions, each with the exact
 SourceRef returned by `TaskBacklog.list`. At commit time it re-reads every
-reviewed line from that revision and performs one global current-Markdown scan
-under the controlled-mutation locks. A changed adopted revision, malformed or
-conflicting decision, missing/duplicate/moved anchor, mismatched stable id, or
-dirty target file rejects the whole batch before a commit.
+reviewed line from that revision, proves that exact line was admitted by the
+same `openLoopSurfaceSources` selector as `task-index`, and performs one
+line-linear global current-Markdown scan under the controlled-mutation locks.
+The scan retains only matched target files and today's daily. A changed
+adopted revision, malformed or conflicting decision, missing/duplicate anchor,
+mismatched stable id, ineligible current source, or dirty target file rejects
+the whole batch before a commit. A unique unchanged eligible line may move:
+its anchor remains the identity, and the current path/line becomes the target.
 
 Valid changes are composed per unique file in memory. Every close flips its
-origin and contributes one anchor-deduplicated Done-today backlink; all bullets
+origin and contributes one anchor-deduplicated Done-today backlink; only a
+backlink bullet parsed inside the bare human-owned `### Done today` section is
+evidence, so a pasted link elsewhere cannot suppress the record. All bullets
 merge into the daily once. Defers in the same file compose with closes, keeps
 participate in identity validation, and a keep-only or exact replay is a
 successful no-op. The batch produces at most one ordinary human commit with
@@ -73,7 +79,9 @@ one deterministic `Dome-Request` identity. A newer unadopted HEAD is allowed
 only when it descends from the reviewed revision and every reviewed task line
 still equals either its reviewed bytes or the exact terminal bytes from an
 idempotent replay. A lost branch CAS aborts rather than splicing stale
-full-file content onto the newer tip.
+full-file content onto the newer tip. Once adoption advances beyond the
+reviewed revision, the same request is deliberately `stale-review`, even if
+its prior terminal bytes remain present; the owner must refresh the review.
 
 ## Block-anchor identity
 
