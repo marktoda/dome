@@ -42,6 +42,7 @@ describe("bin/dome process boundary", () => {
       "today",
       // Maintain:
       "check",
+      "retry",
       "audit",
       "garden",
       "backup",

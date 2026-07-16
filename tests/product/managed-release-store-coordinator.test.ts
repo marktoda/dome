@@ -231,6 +231,7 @@ test("production imports, exports, and mentions remain on exact reviewed ownersh
       "product-host/managed-release-store-coordinator.ts",
     ]],
     ["ManagedReleaseStoreOwner", [
+      "product-host/home-credential-residue.ts",
       "product-host/home-installation.ts",
       "product-host/home-upgrade-transaction.ts",
       "product-host/managed-release-store-coordinator.ts",
