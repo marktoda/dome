@@ -13,6 +13,7 @@ import {
   classifyInstalledHomeDrainForTests,
   exerciseAbortableInstalledCommandForTests,
   exerciseInstalledUpgradeOrchestrationForTests,
+  exercisePredecessorInstallTimeoutForTests,
   pairedDeviceIdForTests,
   predecessorHomeInstallInvocationForTests,
   retainedCheckpointOwnershipMatchesForTests,
@@ -118,6 +119,42 @@ describe("installed rehearsal temporary-root removal", () => {
       await rm(unchangedRoot, { recursive: true, force: true });
       await rm(timeoutRoot, { recursive: true, force: true });
     }
+  });
+
+  test("accepts a release-scale cleanup bound and rejects an unbounded one", async () => {
+    const acceptedRoot = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
+    const rejectedRoot = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
+    try {
+      await expect(removeInstalledTemporaryRootForTests(acceptedRoot, {
+        command: ["/usr/bin/true"],
+        timeoutMs: 30_001,
+      })).rejects.toThrow("installed rehearsal temporary cleanup command left the root present");
+      await expect(removeInstalledTemporaryRootForTests(rejectedRoot, {
+        command: ["/usr/bin/true"],
+        timeoutMs: 120_001,
+      })).rejects.toThrow("installed rehearsal temporary cleanup timeout is invalid");
+      expect(await pathExists(acceptedRoot)).toBe(true);
+      expect(await pathExists(rejectedRoot)).toBe(true);
+    } finally {
+      await rm(acceptedRoot, { recursive: true, force: true });
+      await rm(rejectedRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("frozen predecessor install process bound", () => {
+  test("kills, drains, and classifies its own command timeout", async () => {
+    let failure: unknown;
+    try {
+      await exercisePredecessorInstallTimeoutForTests(
+        [process.execPath, "-e", "await Bun.sleep(60_000)"],
+        20,
+      );
+    } catch (error) { failure = error; }
+    expect(failure).toBeInstanceOf(Error);
+    const message = failure instanceof Error ? failure.message : "";
+    expect(message).toBe("frozen predecessor Home install command timed out");
+    expect(message).not.toContain("installed Chromium acceptance command aborted");
   });
 });
 
