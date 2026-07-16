@@ -50,7 +50,8 @@ import { assertHomeEnvironmentHasNoSecrets } from "./home-credentials";
 import {
   HOME_CREDENTIAL_HELPER_PATH,
   HOME_CREDENTIAL_HELPER_PROTOCOL,
-  verifyHomeArtifact,
+  verifyHomeArtifactEvidence,
+  type HomeArtifactEvidenceVerifier,
   type HomeArtifactManifest,
   type HomeArtifactVerifier,
 } from "./home-artifact";
@@ -189,7 +190,9 @@ export type HomeUpgradeRepairCandidate = {
   readonly manifest: HomeArtifactManifest;
 };
 
-export type HomeUpgradeTransactionDeps = HomeInstallationDeps & {
+export type HomeUpgradeTransactionDeps = Omit<HomeInstallationDeps, "verifyArtifact"> & {
+  /** Deep verifier evidence binds the parsed manifest to its exact bytes. */
+  readonly verifyArtifactEvidence?: HomeArtifactEvidenceVerifier | undefined;
   readonly platform?: NodeJS.Platform | undefined;
   readonly now?: (() => Date) | undefined;
   readonly publishTransaction?: ((source: string, target: string) => Promise<void>) | undefined;
@@ -300,7 +303,7 @@ async function runPreparedOwnership(
                 manifest: candidate.manifest,
                 paths,
                 platform: deps.platform ?? process.platform,
-              }, deps);
+              }, { ...deps, verifyArtifact: manifestVerifier(deps) });
             }
             return prepareHomeUpgradeWhileQuiesced(input, vault, deps);
           });
@@ -387,12 +390,14 @@ async function prepareHomeUpgradeWhileQuiesced(
       installation: await fileEvidence(paths.record, "installation.json"),
       plist: await fileEvidence(homePlistPath(vault, deps), "Dome Home launchd plist"),
     });
-    const verify = deps.verifyArtifact ?? verifyHomeArtifact;
+    const verify = deps.verifyArtifactEvidence ?? verifyHomeArtifactEvidence;
     const old = await artifactEvidence(paths, installation.artifact.id, verify);
     if (old.version !== installation.artifact.version) {
       throw new Error("installed release version disagrees with installation.json");
     }
-    const candidate = await artifactEvidence(paths, input.candidateArtifactId, verify);
+    const verifiedCandidate = await verifiedArtifactEvidence(paths, input.candidateArtifactId, verify);
+    const candidate = verifiedCandidate.evidence;
+    const candidateManifest = verifiedCandidate.manifest;
     if (candidate.artifactId === old.artifactId) {
       throw new Error("Dome Home upgrade candidate must differ from the selected release");
     }
@@ -410,6 +415,7 @@ async function prepareHomeUpgradeWhileQuiesced(
         id: candidate.artifactId,
         version: candidate.version,
         releasePath: candidate.releasePath,
+        manifest: candidateManifest,
       },
       environment: installation.environment,
     }, deps);
@@ -423,7 +429,7 @@ async function prepareHomeUpgradeWhileQuiesced(
       snapshotRoot,
       phase: "prepare",
     });
-    await assertCandidateDurableCompatibility(candidate, inventory, verify);
+    await assertCandidateDurableCompatibility(candidate, inventory, candidateManifest);
     const preparedAt = (deps.now?.() ?? new Date()).toISOString();
     assertTimestamp(preparedAt, "prepared timestamp");
     const journal: HomeUpgradeTransaction = Object.freeze({
@@ -489,8 +495,9 @@ export async function migratePreparedHomeUpgrade(
         if (journal.phase !== "prepared" || journal.transactionId !== initial.transactionId) {
           throw new Error("prepared Dome Home upgrade evidence changed before migration");
         }
-        const verify = deps.verifyArtifact ?? verifyHomeArtifact;
-        await assertCandidateDurableCompatibility(journal.candidate, journal.snapshot.inventory, verify);
+        const verify = deps.verifyArtifactEvidence ?? verifyHomeArtifactEvidence;
+        const evidence = await verify(journal.candidate.releasePath);
+        await assertCandidateDurableCompatibility(journal.candidate, journal.snapshot.inventory, evidence.manifest);
         const paths = homeInstallationPaths(vault, deps);
         const preflightRoot = join(
           paths.installations,
@@ -554,11 +561,8 @@ export async function commitPreparedHomeUpgrade(input: {
         }
         await validateCommitProof(vault, journal, input.proof, deps.now?.() ?? new Date());
         if (journal.phase === "committed") return journal;
-        await assertCandidateDurableCompatibility(
-          journal.candidate,
-          journal.snapshot.inventory,
-          deps.verifyArtifact ?? verifyHomeArtifact,
-        );
+        const evidence = await (deps.verifyArtifactEvidence ?? verifyHomeArtifactEvidence)(journal.candidate.releasePath);
+        await assertCandidateDurableCompatibility(journal.candidate, journal.snapshot.inventory, evidence.manifest);
         await assertAllHomeStoresCurrent(vault, journal.transactionId, deps);
         const journalPath = join(
           homeInstallationPaths(vault, deps).installations,
@@ -778,7 +782,7 @@ export async function repairCommittedHomeUpgrade(input: {
             expectedManifestSha256: journal.candidate.manifestSha256,
             paths,
             platform: deps.platform ?? process.platform,
-          }, deps);
+          }, { ...deps, verifyArtifact: manifestVerifier(deps) });
           await deps.forwardRepairCheckpoint?.("release-ready");
           const afterRelease = await readRequiredUpgradeDisposition(vault, deps);
           if (JSON.stringify(afterRelease) !== JSON.stringify(journal)) {
@@ -1010,7 +1014,11 @@ async function runRestoreOwnership(
         const paths = homeInstallationPaths(vault, deps);
         await assertFileEvidence(journal.selectors.installation, paths.record, "installation.json");
         await assertFileEvidence(journal.selectors.plist, homePlistPath(vault, deps), "Dome Home launchd plist");
-        const old = await artifactEvidence(paths, journal.old.artifactId, deps.verifyArtifact ?? verifyHomeArtifact);
+        const old = await artifactEvidence(
+          paths,
+          journal.old.artifactId,
+          deps.verifyArtifactEvidence ?? verifyHomeArtifactEvidence,
+        );
         if (JSON.stringify(old) !== JSON.stringify(journal.old)) {
           throw new Error("selected N-1 release evidence changed before restore");
         }
@@ -1383,33 +1391,52 @@ async function ensureUpgradeLayout(paths: HomeInstallationPaths): Promise<{ read
 async function artifactEvidence(
   paths: HomeInstallationPaths,
   artifactId: string,
-  verify: HomeArtifactVerifier,
+  verify: HomeArtifactEvidenceVerifier,
 ): Promise<HomeUpgradeArtifactEvidence> {
+  return (await verifiedArtifactEvidence(paths, artifactId, verify)).evidence;
+}
+
+async function verifiedArtifactEvidence(
+  paths: HomeInstallationPaths,
+  artifactId: string,
+  verify: HomeArtifactEvidenceVerifier,
+): Promise<Readonly<{
+  evidence: HomeUpgradeArtifactEvidence;
+  manifest: HomeArtifactManifest;
+}>> {
   const root = releaseRoot(paths, artifactId);
   await assertDirectDirectory(root, "managed release");
   await assertRegular(join(root, "manifest.json"), "managed release manifest");
-  const manifest = await verify(root);
+  const verified = await verify(root);
+  const manifest = verified.manifest;
   if (manifest.artifact.id !== artifactId) throw new Error("managed release artifact identity changed");
   if (manifest.writerBarrier?.protocol !== 1) {
     throw new Error("managed release is ineligible for upgrade: writer-barrier protocol 1 is required");
   }
-  return Object.freeze({
+  const evidence = Object.freeze({
     artifactId,
     version: manifest.product.version,
     releasePath: root,
-    manifestSha256: await hashFile(join(root, "manifest.json")),
+    manifestSha256: verified.manifestSha256,
   });
+  return Object.freeze({ evidence, manifest });
+}
+
+function manifestVerifier(
+  deps: Pick<HomeUpgradeTransactionDeps, "verifyArtifactEvidence">,
+): HomeArtifactVerifier {
+  const verify = deps.verifyArtifactEvidence ?? verifyHomeArtifactEvidence;
+  return async (root) => (await verify(root)).manifest;
 }
 
 async function assertCandidateDurableCompatibility(
   candidate: HomeUpgradeArtifactEvidence,
   inventory: ReadonlyArray<HomeUpgradeSnapshotEntry>,
-  verify: HomeArtifactVerifier,
+  manifest: HomeArtifactManifest,
 ): Promise<void> {
   if (await hashFile(join(candidate.releasePath, "manifest.json")) !== candidate.manifestSha256) {
     throw new Error("upgrade candidate manifest changed before durable-state migration");
   }
-  const manifest = await verify(candidate.releasePath);
   if (manifest.artifact.id !== candidate.artifactId || manifest.product.version !== candidate.version) {
     throw new Error("upgrade candidate artifact or product version changed");
   }
@@ -2219,12 +2246,12 @@ async function assertExactRepairCandidate(
   deps: HomeUpgradeTransactionDeps,
 ): Promise<void> {
   try {
-    const verify = deps.verifyArtifact ?? verifyHomeArtifact;
+    const verify = deps.verifyArtifactEvidence ?? verifyHomeArtifactEvidence;
     const actual = await verify(resolve(candidate.source));
-    if (isDeepStrictEqual(actual, candidate.manifest) &&
-      actual.artifact.id === journal.candidate.artifactId &&
-      actual.product.version === journal.candidate.version &&
-      await hashFile(join(resolve(candidate.source), "manifest.json")) === journal.candidate.manifestSha256) return;
+    if (isDeepStrictEqual(actual.manifest, candidate.manifest) &&
+      actual.manifest.artifact.id === journal.candidate.artifactId &&
+      actual.manifest.product.version === journal.candidate.version &&
+      actual.manifestSha256 === journal.candidate.manifestSha256) return;
   } catch { /* Collapse filesystem detail at the private repair gate. */ }
   throw new Error("invoking artifact is not the exact committed repair candidate");
 }

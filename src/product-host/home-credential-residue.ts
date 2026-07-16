@@ -337,14 +337,15 @@ function addNames(
 }
 
 function parsePlistEnvironmentNames(bytes: string): ReadonlyArray<string> {
-  const plist = /^<\?xml version="1\.0" encoding="UTF-8"\?>\n<!DOCTYPE plist PUBLIC "-\/\/Apple\/\/DTD PLIST 1\.0\/\/EN" "http:\/\/www\.apple\.com\/DTDs\/PropertyList-1\.0\.dtd">\n<plist version="1\.0">\n<dict>\n  <key>Label<\/key>\n  <string>([^<]*)<\/string>\n  <key>ProgramArguments<\/key>\n  <array>\n((?:    <string>[^<]*<\/string>\n)+)  <\/array>\n  <key>EnvironmentVariables<\/key>\n  <dict>\n((?:    <key>[^<]*<\/key>\n    <string>[^<]*<\/string>\n)*)  <\/dict>\n  <key>WorkingDirectory<\/key>\n  <string>([^<]*)<\/string>\n  <key>RunAtLoad<\/key>\n  <true\/>\n  <key>KeepAlive<\/key>\n  <true\/>\n  <key>StandardOutPath<\/key>\n  <string>([^<]*)<\/string>\n  <key>StandardErrorPath<\/key>\n  <string>([^<]*)<\/string>\n<\/dict>\n<\/plist>\n$/.exec(bytes);
+  const plist = /^<\?xml version="1\.0" encoding="UTF-8"\?>\n<!DOCTYPE plist PUBLIC "-\/\/Apple\/\/DTD PLIST 1\.0\/\/EN" "http:\/\/www\.apple\.com\/DTDs\/PropertyList-1\.0\.dtd">\n<plist version="1\.0">\n<dict>\n  <key>Label<\/key>\n  <string>([^<]*)<\/string>\n(?:  <key>Program<\/key>\n  <string>([^<]*)<\/string>\n)?  <key>ProgramArguments<\/key>\n  <array>\n((?:    <string>[^<]*<\/string>\n)+)  <\/array>\n  <key>EnvironmentVariables<\/key>\n  <dict>\n((?:    <key>[^<]*<\/key>\n    <string>[^<]*<\/string>\n)*)  <\/dict>\n  <key>WorkingDirectory<\/key>\n  <string>([^<]*)<\/string>\n  <key>RunAtLoad<\/key>\n  <true\/>\n  <key>KeepAlive<\/key>\n  <true\/>\n  <key>StandardOutPath<\/key>\n  <string>([^<]*)<\/string>\n  <key>StandardErrorPath<\/key>\n  <string>([^<]*)<\/string>\n<\/dict>\n<\/plist>\n$/.exec(bytes);
   if (plist === null) throw new InspectionFailure("verification-failed");
   decodeXml(plist[1]!);
-  for (const argument of plist[2]!.matchAll(/    <string>([^<]*)<\/string>\n/g)) decodeXml(argument[1]!);
-  decodeXml(plist[4]!);
-  const stdout = decodeXml(plist[5]!);
-  if (decodeXml(plist[6]!) !== stdout) throw new InspectionFailure("verification-failed");
-  const body = plist[3]!;
+  if (plist[2] !== undefined) decodeXml(plist[2]);
+  for (const argument of plist[3]!.matchAll(/    <string>([^<]*)<\/string>\n/g)) decodeXml(argument[1]!);
+  decodeXml(plist[5]!);
+  const stdout = decodeXml(plist[6]!);
+  if (decodeXml(plist[7]!) !== stdout) throw new InspectionFailure("verification-failed");
+  const body = plist[4]!;
   const names: string[] = [];
   for (const match of body.matchAll(/    <key>([^<]*)<\/key>\n    <string>([^<]*)<\/string>\n/g)) {
     names.push(decodeXml(match[1]!));
@@ -661,7 +662,7 @@ async function sanitizeLiveSelection(
   const desired = renderHomeSelection({
     vault,
     artifact: { id: record.artifact.id, version: record.artifact.version,
-      releasePath },
+      releasePath, manifest },
     environment,
   }, deps);
   const current = await captureHomeSelectionDocument(paths.record, "legacy Home installation selector");

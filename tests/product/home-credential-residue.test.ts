@@ -504,6 +504,14 @@ function cleanupDeps(
     verifyArtifact: async () => ({
       artifact: { id: "a".repeat(64) },
       product: { version: "1.0.0" },
+      runtime: { sha256: "0".repeat(64) },
+      entries: [{
+        type: "file",
+        path: "runtime/bun",
+        bytes: 1,
+        sha256: "0".repeat(64),
+        mode: "0755",
+      }],
     } as never),
     suspend: (async (_input: never, operation: (context: HomeSuspensionOperationContext) => Promise<unknown>) => {
       const value = await operation({ operationId: "cleanup-op", purpose: "credential-cleanup",

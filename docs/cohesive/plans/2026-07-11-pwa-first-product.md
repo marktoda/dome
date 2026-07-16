@@ -938,8 +938,11 @@ Run the complete adversarial scenario:
 
 1. clean install and vault init/import;
 2. pair phone and desktop;
-3. run concurrent Ask, Today, source read, capture, and owner question;
-4. kill the host mid-operation and reconcile on restart;
+3. run twenty ordered rounds in which desktop Ask is visibly streaming while
+   the paired phone activates the general `Refresh Today` control and opens one
+   preselected exact adopted source, waiting for each accessible terminal;
+4. while one mediated mutation is pending, Force Quit the exact `Dome Home`
+   process and reconcile after launchd `KeepAlive` restarts it automatically;
 5. replay one offline logical capture;
 6. revoke one device;
 7. back up and exercise a failed pre-admission upgrade;
@@ -947,10 +950,25 @@ Run the complete adversarial scenario:
 9. rebuild projections and compare Markdown/Git, adopted ref, answers,
    proposals, pending outbox, and audit receipts.
 
-Exit: at least five external owner-vaults complete the journey without
-developer intervention. Review capture loss/duplication, P95 Today latency
-during model work, adoption latency, readiness, model cost, backup/restore, and
-upgrade outcomes.
+Exit: at least five distinct external owner-vaults complete the journey with
+consent and without developer intervention. Review capture loss/duplication,
+P95 Today/source latency during model work, adoption latency, readiness, model
+cost, backup/restore, and upgrade outcomes. All packets must qualify and the
+release operator must explicitly complete the out-of-band owner review before
+the aggregate becomes `ready`.
+
+Status: local content-free packet validation and aggregation tooling is
+implemented. Installed-artifact automation is proven by its separate release
+gates; it is not owner-beta evidence. The PWA's independent always-visible
+`Refresh Today` control and the managed LaunchAgent's manifest-verified
+`runtime/Dome Home` executable alias plus exact `Dome Home` argv0 are general
+product seams, not beta-only
+telemetry or a collector;
+the evidence Adapter has no production caller and can be deleted without
+removing them. P6 exit remains blocked on five genuine external-owner runs,
+explicit operator review, and the real-device/accessibility and
+signed-distribution owner gates. No owner evidence is claimed by checked-in
+tests or tooling.
 
 ### P7 — Re-evaluate broader deployment
 

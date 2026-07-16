@@ -33,6 +33,7 @@ export function reconcileStoppedTurn(stream: AgentStreamOutcome, stop: AgentStop
 }
 
 type ViewLoadState = "idle" | "loading" | "ready" | "failed";
+type TodayRefreshState = "idle" | "loading" | "ready" | "failed";
 
 function Screen({ client, availability, connection }: {
   client: DomeClient;
@@ -48,8 +49,10 @@ function Screen({ client, availability, connection }: {
   const [pendingCaptures, setPendingCaptures] = useState<QueuedCapture[]>([]);
   const [storageStatus, setStorageStatus] = useState<"persistent" | "best-effort" | "unknown">("unknown");
   const [turnPhase, setTurnPhase] = useState<"idle" | "streaming" | "stopping" | "retryable" | "session-ended">("idle");
-  const [viewLoad, setViewLoad] = useState<{ today: ViewLoadState; recents: ViewLoadState }>({ today: "idle", recents: "idle" });
-  const refreshSequence = useRef(0);
+  const [todayRefreshState, setTodayRefreshState] = useState<TodayRefreshState>("idle");
+  const [recentsLoad, setRecentsLoad] = useState<ViewLoadState>("idle");
+  const todayRefreshSequence = useRef(0);
+  const recentsRefreshSequence = useRef(0);
   const activeTurn = useRef<{ handle: AgentTurnHandle; question: string; stopping: boolean } | null>(null);
   const retryQuestion = useRef<string | null>(null);
   const hasMessages = chat.messages.length > 0;
@@ -62,27 +65,56 @@ function Screen({ client, availability, connection }: {
       ? deriveProductAccess(evidence.document)
       : NO_PRODUCT_ACCESS;
   }, [connection.readiness, remoteAvailable]);
-  const priorRemoteAvailable = useRef(remoteAvailable);
+  const priorReadAccess = useRef(access.read);
 
   useLayoutEffect(() => {
-    if (priorRemoteAvailable.current && !remoteAvailable) refreshSequence.current++;
-    priorRemoteAvailable.current = remoteAvailable;
-  }, [remoteAvailable]);
+    if (priorReadAccess.current && !access.read) {
+      todayRefreshSequence.current++;
+      recentsRefreshSequence.current++;
+      setTodayRefreshState("idle");
+      setRecentsLoad("idle");
+    }
+    priorReadAccess.current = access.read;
+  }, [access.read]);
 
-  const refresh = useCallback(() => {
+  const refreshToday = useCallback(() => {
     if (!access.read) return;
-    const sequence = ++refreshSequence.current;
-    setViewLoad({ today: "loading", recents: "loading" });
-    void Promise.allSettled([client.tasks(), client.recents()]).then(([todayResult, recentsResult]) => {
-      if (sequence !== refreshSequence.current) return;
-      if (todayResult.status === "fulfilled") setToday(todayResult.value);
-      if (recentsResult.status === "fulfilled") setRecents(recentsResult.value);
-      setViewLoad({
-        today: todayResult.status === "fulfilled" ? "ready" : "failed",
-        recents: recentsResult.status === "fulfilled" ? "ready" : "failed",
-      });
-    });
+    const sequence = ++todayRefreshSequence.current;
+    setTodayRefreshState("loading");
+    void client.tasks().then(
+      (nextToday) => {
+        if (sequence !== todayRefreshSequence.current) return;
+        setToday(nextToday);
+        setTodayRefreshState("ready");
+      },
+      () => {
+        if (sequence !== todayRefreshSequence.current) return;
+        setTodayRefreshState("failed");
+      },
+    );
   }, [access.read, client]);
+
+  const refreshRecents = useCallback(() => {
+    if (!access.read) return;
+    const sequence = ++recentsRefreshSequence.current;
+    setRecentsLoad("loading");
+    void client.recents().then(
+      (nextRecents) => {
+        if (sequence !== recentsRefreshSequence.current) return;
+        setRecents(nextRecents);
+        setRecentsLoad("ready");
+      },
+      () => {
+        if (sequence !== recentsRefreshSequence.current) return;
+        setRecentsLoad("failed");
+      },
+    );
+  }, [access.read, client]);
+
+  const refreshAll = useCallback(() => {
+    refreshToday();
+    refreshRecents();
+  }, [refreshRecents, refreshToday]);
 
   const refreshPending = useCallback(async (): Promise<void> => {
     setPendingCaptures(await captureQueue.all());
@@ -92,15 +124,15 @@ function Screen({ client, availability, connection }: {
     if (!access.captureReplay) return;
     const completed = await captureQueue.drain((request) => client.capture(request));
     await refreshPending();
-    if (completed.length > 0) refresh();
-  }, [access.captureReplay, captureQueue, client, refresh, refreshPending]);
+    if (completed.length > 0) refreshAll();
+  }, [access.captureReplay, captureQueue, client, refreshAll, refreshPending]);
 
   useEffect(() => {
-    refresh();
-    const onVis = (): void => { if (document.visibilityState === "visible") refresh(); };
+    refreshAll();
+    const onVis = (): void => { if (document.visibilityState === "visible") refreshAll(); };
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
-  }, [refresh]);
+  }, [refreshAll]);
 
   useEffect(() => {
     void refreshPending().then(drainCaptures);
@@ -115,7 +147,8 @@ function Screen({ client, availability, connection }: {
   }, [drainCaptures, refreshPending]);
 
   useEffect(() => () => {
-    refreshSequence.current++;
+    todayRefreshSequence.current++;
+    recentsRefreshSequence.current++;
     const active = activeTurn.current;
     activeTurn.current = null;
     if (active !== null) void active.handle.stop();
@@ -157,7 +190,7 @@ function Screen({ client, availability, connection }: {
     let turnId = "";
     const handle = client.startAgentTurn(q, (e) => {
       dispatch({ kind: "event", turnId, event: e });
-      if (e.type === "done" && (e.changes?.length ?? 0) > 0) refresh();
+      if (e.type === "done" && (e.changes?.length ?? 0) > 0) refreshAll();
     });
     turnId = handle.turnId;
     activeTurn.current = { handle, question: q, stopping: false };
@@ -171,7 +204,7 @@ function Screen({ client, availability, connection }: {
       activeTurn.current = null;
       finishTurn(handle.turnId, q, outcome);
     });
-  }, [access.converse, client, finishTurn, refresh]);
+  }, [access.converse, client, finishTurn, refreshAll]);
 
   const onAsk = useCallback((q: string): void => {
     if (turnPhase === "session-ended") return;
@@ -216,7 +249,7 @@ function Screen({ client, availability, connection }: {
       }
       setAck(`Answer saved · "${value}"`);
       setTimeout(() => setAck(null), 2200);
-      refresh();
+      refreshAll();
     }).catch(() => {
       setAck("Answer not saved · Try again");
       setTimeout(() => setAck(null), 2200);
@@ -232,11 +265,25 @@ function Screen({ client, availability, connection }: {
     return client.settle(blockId, "close")
       .then((r) => {
         const ok = r.status === "settled";
-        if (ok) refresh();
+        if (ok) refreshAll();
         return ok;
       })
       .catch(() => false);
   };
+
+  const todayRefreshMessage = !access.read
+    ? "Today refresh is unavailable until Dome Home has fresh read access."
+    : todayRefreshState === "loading"
+      ? "Refreshing Today…"
+      : todayRefreshState === "ready"
+        ? "Today is fresh."
+        : todayRefreshState === "failed"
+          ? "Today refresh failed. Previously loaded Today data may be stale."
+          : "Refresh Today to load a fresh view.";
+  // Read authority is part of freshness. Derive the rendered state from the
+  // current grant as well as invalidating pending generations above, so even
+  // the render that observes access loss cannot retain a green ready class.
+  const visibleTodayRefreshState: TodayRefreshState = access.read ? todayRefreshState : "idle";
 
   return (
     <main className="screen">
@@ -244,6 +291,28 @@ function Screen({ client, availability, connection }: {
         <span className="brand">Dome</span>
         <span className="meta">{todayLabel()}<span className={`availability-dot ${readinessCurrent ? "available" : availability === "available" ? "unknown" : availability}`} aria-hidden="true" /></span>
       </header>
+      <section
+        className={`today-refresh ${visibleTodayRefreshState}`}
+        aria-label="Today refresh"
+      >
+        <button
+          type="button"
+          aria-describedby="today-refresh-status"
+          aria-busy={visibleTodayRefreshState === "loading"}
+          disabled={!access.read || todayRefreshState === "loading"}
+          onClick={refreshToday}
+        >
+          Refresh Today
+        </button>
+        <p
+          id="today-refresh-status"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {todayRefreshMessage}
+        </p>
+      </section>
       <Connection availability={availability} readiness={connection.readiness} access={access} />
       {!remoteAvailable ? (
         <div className="availability-banner" role="status">
@@ -270,15 +339,11 @@ function Screen({ client, availability, connection }: {
         </div>
       ) : null}
       {connection.authRepair !== null ? <AuthRepair control={connection.authRepair} /> : null}
-      {access.read && (viewLoad.today === "failed" || viewLoad.recents === "failed") ? (
+      {access.read && recentsLoad === "failed" ? (
         <div className="availability-banner live-data-warning" role="status">
-          <strong>Live views incomplete</strong>
-          <span>{viewLoad.today === "failed" && viewLoad.recents === "failed"
-            ? "Today and Activity could not be refreshed. Home is connected; previously loaded data may be stale."
-            : viewLoad.today === "failed"
-              ? "Today could not be refreshed. Activity is current; any Today data shown may be stale."
-              : "Activity could not be refreshed. Today is current; any Activity data shown may be stale."}</span>
-          <button type="button" onClick={refresh}>Retry live data</button>
+          <strong>Activity unavailable</strong>
+          <span>Activity could not be refreshed. Previously loaded Activity data may be stale.</span>
+          <button type="button" onClick={refreshRecents}>Retry Activity</button>
         </div>
       ) : null}
       {pendingCaptures.length > 0 ? (

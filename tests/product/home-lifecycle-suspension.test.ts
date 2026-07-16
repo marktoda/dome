@@ -1084,6 +1084,26 @@ describe("supervised Home lifecycle suspension", () => {
     });
   });
 
+  test("named resume provenance requires the installed launch alias while legacy provenance retains Bun", async () => {
+    const named = await fixture(true, true);
+    await seedResuming(named, "startup-named");
+    const admitted = await acquireHomeStartupAdmission({
+      vaultPath: named.vault,
+      launchArtifact: { id: named.artifactId, version: named.artifactVersion },
+    }, startupDeps(named));
+    expect(admitted.ok).toBeTrue();
+    if (admitted.ok) admitted.lease.close();
+
+    const wrongExecutable = await acquireHomeStartupAdmission({
+      vaultPath: named.vault,
+      launchArtifact: { id: named.artifactId, version: named.artifactVersion },
+    }, startupDeps(named, { invokingRuntimePath: named.canonicalRuntime }));
+    expect(wrongExecutable).toMatchObject({
+      ok: false,
+      error: { kind: "resume-evidence-invalid", operationId: "startup-named" },
+    });
+  });
+
   test("resuming startup rejects artifact, selector, plist, runtime, and entrypoint mismatch", async () => {
     for (const mismatch of ["artifact", "selector", "plist", "runtime", "entrypoint"] as const) {
       const f = await fixture(true);
@@ -1165,7 +1185,7 @@ describe("supervised Home lifecycle suspension", () => {
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 
-async function fixture(loaded: boolean) {
+async function fixture(loaded: boolean, namedLaunch = false) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "dome-home-suspension-")));
   roots.push(root);
   const vault = join(root, "vault");
@@ -1178,11 +1198,13 @@ async function fixture(loaded: boolean) {
   const artifactId = "a".repeat(64);
   const artifactVersion = "1.0.0";
   const release = releaseRoot(paths, artifactId);
-  const runtime = join(release, "runtime", "bun");
+  const canonicalRuntime = join(release, "runtime", "bun");
+  const runtime = namedLaunch ? join(release, "runtime", "Dome Home") : canonicalRuntime;
   const entrypoint = join(release, "app", "bin", "dome");
-  await mkdir(dirname(runtime), { recursive: true });
+  await mkdir(dirname(canonicalRuntime), { recursive: true });
   await mkdir(dirname(entrypoint), { recursive: true });
-  await writeFile(runtime, "test bun runtime\n", { mode: 0o700 });
+  await writeFile(canonicalRuntime, "test bun runtime\n", { mode: 0o700 });
+  if (namedLaunch) await writeFile(runtime, "test bun runtime\n", { mode: 0o700 });
   await writeFile(entrypoint, "test Dome entrypoint\n", { mode: 0o700 });
   const installation = paths.record;
   await writeFile(installation, `${JSON.stringify({
@@ -1214,7 +1236,7 @@ async function fixture(loaded: boolean) {
   const launchd: FakeLaunchd = { calls, loaded: loadedTargets, runner: baseRunner };
   return {
     root, vault, support, agents, installation, plist, label, target, launchd, baseRunner,
-    artifactId, artifactVersion, release, runtime, entrypoint,
+    artifactId, artifactVersion, release, runtime, canonicalRuntime, namedLaunch, entrypoint,
     readiness: async () => launchd.loaded.has(target),
   };
 }
@@ -1270,9 +1292,20 @@ function startupDeps(
     invokingEntrypointPath: f.entrypoint,
     verifyArtifact: async (root) => {
       if (root !== f.release) throw new Error("unexpected managed release path");
+      const runtimeEntry = {
+        type: "file" as const,
+        path: "runtime/bun",
+        bytes: 17,
+        sha256: "0".repeat(64),
+        mode: "0700",
+      };
       return {
         artifact: { id: f.artifactId },
         product: { version: f.artifactVersion },
+        runtime: { sha256: runtimeEntry.sha256 },
+        entries: f.namedLaunch
+          ? [runtimeEntry, { ...runtimeEntry, path: "runtime/Dome Home" }]
+          : [runtimeEntry],
       } as never;
     },
     ...overrides,

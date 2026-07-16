@@ -109,6 +109,20 @@ input, textarea { font: inherit; color: inherit; background: none; border: none;
 }
 .masthead .brand { font-size: 21px; font-weight: 600; color: var(--text-strong); letter-spacing: -.02em; }
 .masthead .meta { display: flex; align-items: center; gap: 9px; font: 500 11px var(--mono); color: var(--text-dim); }
+.today-refresh {
+  flex: none;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 0 calc(var(--pad) + var(--safe-right)) 10px calc(var(--pad) + var(--safe-left));
+}
+.today-refresh button { min-height: 44px; color: var(--sage); font-weight: 600; }
+.today-refresh button[disabled] { color: var(--text-faint); }
+.today-refresh p { min-width: 0; flex: 1 1 12rem; margin: 0; color: var(--text-dim); font: 500 11px var(--mono); overflow-wrap: anywhere; }
+.today-refresh.ready p { color: var(--sage); }
+.today-refresh.failed p { color: var(--amber); }
 .availability-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); flex: none; }
 .availability-dot.available { background: var(--sage); }
 .availability-dot.offline, .availability-dot.unreachable { background: var(--amber); }

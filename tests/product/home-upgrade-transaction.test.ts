@@ -251,7 +251,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
       const managed = releaseRoot(paths, CANDIDATE_ID);
       const source = join(f.root, "external-candidate");
       await cp(managed, source, { recursive: true });
-      const manifest = await f.deps.verifyArtifact!(source);
+      const manifest = (await f.deps.verifyArtifactEvidence!(source)).manifest;
       await rm(managed, { recursive: true });
       let entered!: () => void;
       const activePublicationEntered = new Promise<void>((resolve) => { entered = resolve; });
@@ -294,7 +294,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
       const candidateRoot = releaseRoot(paths, CANDIDATE_ID);
       const repairSource = join(f.root, "self-contained-candidate");
       await cp(candidateRoot, repairSource, { recursive: true });
-      const repairManifest = await f.deps.verifyArtifact!(repairSource);
+      const repairManifest = (await f.deps.verifyArtifactEvidence!(repairSource)).manifest;
       let lifecycleActive = false;
       let candidateAuthorized = false;
       let crashRelease = true;
@@ -884,6 +884,72 @@ describe("Product Host pre-commit upgrade transaction", () => {
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });
 
+  test("one candidate verification supplies both transient selection and journal evidence", async () => {
+    const f = await fixture();
+    try {
+      const baseVerify = f.deps.verifyArtifactEvidence!;
+      let oldCalls = 0;
+      let candidateCalls = 0;
+      const prepared = await prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId: randomUUID(),
+        candidateArtifactId: CANDIDATE_ID,
+      }, {
+        ...f.deps,
+        verifyArtifactEvidence: async (path) => {
+          const verified = await baseVerify(path);
+          if (path.endsWith(CANDIDATE_ID)) {
+            candidateCalls += 1;
+            return candidateCalls === 1
+              ? verified
+              : { ...verified, manifest: {
+                  ...verified.manifest,
+                  product: { ...verified.manifest.product, version: "99.0.0" },
+                } };
+          }
+          oldCalls += 1;
+          return verified;
+        },
+      });
+      expect(oldCalls).toBe(1);
+      expect(candidateCalls).toBe(1);
+      expect(prepared.candidate).toMatchObject({ artifactId: CANDIDATE_ID, version: "2.0.0" });
+      const active = join(homeInstallationPaths(f.vault, f.deps).installations, "upgrade", "active");
+      const selected = await readFile(join(active, "selectors", "candidate-installation.json"), "utf8");
+      expect(selected).toContain('"version": "2.0.0"');
+      expect(selected).not.toContain("99.0.0");
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
+  test("manifest mutation after verifier return fails exact-byte reproof without a second parse", async () => {
+    const f = await fixture();
+    try {
+      const baseVerify = f.deps.verifyArtifactEvidence!;
+      let candidateCalls = 0;
+      await expect(prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId: randomUUID(),
+        candidateArtifactId: CANDIDATE_ID,
+      }, {
+        ...f.deps,
+        verifyArtifactEvidence: async (path) => {
+          const evidence = await baseVerify(path);
+          if (path.endsWith(CANDIDATE_ID)) {
+            candidateCalls += 1;
+            const manifestPath = join(path, "manifest.json");
+            const changed = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>;
+            changed["postVerificationMutation"] = true;
+            await writeFile(manifestPath, `${JSON.stringify(changed)}\n`, { mode: 0o600 });
+          }
+          return evidence;
+        },
+      })).rejects.toThrow("manifest changed before durable-state migration");
+      expect(candidateCalls).toBe(1);
+      expect(await readHomeUpgrade(f.vault, f.deps)).toBeNull();
+      expect((await inspectOperationalWriterBarrier(f.vault)).blocked).toBeFalse();
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
   test("prepares a closed external snapshot and restores exact N-1 logical state", async () => {
     const f = await fixture();
     try {
@@ -1231,14 +1297,14 @@ describe("Product Host pre-commit upgrade transaction", () => {
         "upgrade",
         "writer-barrier.json",
       );
-      const baseVerify = f.deps.verifyArtifact!;
+      const baseVerify = f.deps.verifyArtifactEvidence!;
       await expect(prepareHomeUpgrade({
         vaultPath: f.vault,
         transactionId: randomUUID(),
         candidateArtifactId: CANDIDATE_ID,
       }, {
         ...f.deps,
-        verifyArtifact: async (path) => {
+        verifyArtifactEvidence: async (path) => {
           if (path.endsWith(CANDIDATE_ID)) {
             await writeFile(markerPath, "{corrupt marker\n", { mode: 0o600 });
             throw new Error("candidate verification failed");
@@ -1987,7 +2053,7 @@ type UpgradeFixture = Awaited<ReturnType<typeof fixture>>;
 
 async function managedCandidate(f: UpgradeFixture) {
   const source = releaseRoot(homeInstallationPaths(f.vault, f.deps), CANDIDATE_ID);
-  return Object.freeze({ source, manifest: await f.deps.verifyArtifact!(source) });
+  return Object.freeze({ source, manifest: (await f.deps.verifyArtifactEvidence!(source)).manifest });
 }
 
 async function verifyManagedRelease(root: string) {
@@ -2101,7 +2167,13 @@ async function fixture(options: { durableFiles?: boolean } = {}) {
     platform: "darwin",
     publishTransaction: rename,
     now: () => new Date("2026-07-13T01:00:00.000Z"),
-    verifyArtifact: async (path) => JSON.parse(await readFile(join(path, "manifest.json"), "utf8")) as HomeArtifactManifest,
+    verifyArtifactEvidence: async (path) => {
+      const bytes = await readFile(join(path, "manifest.json"));
+      return Object.freeze({
+        manifest: JSON.parse(bytes.toString("utf8")) as HomeArtifactManifest,
+        manifestSha256: createHash("sha256").update(bytes).digest("hex"),
+      });
+    },
   };
   const paths = homeInstallationPaths(vault, deps);
   await mkdir(launchAgentsDir, { recursive: true });
@@ -2111,6 +2183,14 @@ async function fixture(options: { durableFiles?: boolean } = {}) {
     await writeFile(join(release, "manifest.json"), `${JSON.stringify({
       artifact: { id },
       product: { name: "Dome Home", version },
+      runtime: { sha256: "0".repeat(64) },
+      entries: [{
+        type: "file",
+        path: "runtime/bun",
+        bytes: 1,
+        sha256: "0".repeat(64),
+        mode: "0755",
+      }],
       writerBarrier: { protocol: 1 },
       ...(id === CANDIDATE_ID ? {
         distribution: { signed: false, notarized: false, upgradeSupported: true },

@@ -23,6 +23,10 @@ import {
   type HomeInstallationRecord,
 } from "./home-installation";
 import { assertHomeEnvironmentHasNoSecrets } from "./home-credentials";
+import {
+  homeArtifactLaunchCapability,
+  type HomeArtifactManifest,
+} from "./home-artifact";
 
 const HOME_HOST = "127.0.0.1";
 const HOME_PORT = 3663;
@@ -70,7 +74,13 @@ export function homeSelectionPaths(vault: string, deps: HomeSelectionDeps = {}):
 /** Render the complete candidate selector pair from one verified artifact. */
 export function renderHomeSelection(input: {
   readonly vault: string;
-  readonly artifact: { readonly id: string; readonly version: string; readonly releasePath: string };
+  readonly artifact: {
+    readonly id: string;
+    readonly version: string;
+    readonly releasePath: string;
+    /** Verified transient evidence; historical manifests derive legacy launch. */
+    readonly manifest: HomeArtifactManifest;
+  };
   readonly environment: ReadonlyArray<{ readonly name: string; readonly value: string }>;
 }, deps: HomeSelectionDeps = {}): HomeSelection {
   const vault = resolve(input.vault);
@@ -102,14 +112,21 @@ export function renderHomeSelection(input: {
   const installationBytes = `${JSON.stringify(record, null, 2)}\n`;
   const paths = homeSelectionPaths(vault, deps);
   const label = `com.dome.home.${vaultServiceSlug(vault)}`;
-  const runtime = join(input.artifact.releasePath, "runtime", "bun");
+  if (input.artifact.manifest.artifact.id !== input.artifact.id ||
+    input.artifact.manifest.product.version !== input.artifact.version) {
+    throw new Error("Home selection manifest does not match its artifact");
+  }
+  const launch = homeArtifactLaunchCapability(input.artifact.manifest);
+  const runtime = join(input.artifact.releasePath, launch.programPath);
+  const entrypoint = join(input.artifact.releasePath, "app", "bin", "dome");
   const launchEnvironment = new Map(environment.map((entry) => [entry.name, entry.value]));
   launchEnvironment.set("PATH", homeServicePath(runtime));
   const plistBytes = renderLaunchAgentPlist({
     label,
+    ...(launch.kind === "named" ? { program: runtime } : {}),
     programArguments: [
-      runtime,
-      join(input.artifact.releasePath, "app", "bin", "dome"),
+      launch.kind === "named" ? launch.argv0 : runtime,
+      entrypoint,
       "home", "--vault", vault,
       "--host", HOME_HOST,
       "--port", String(HOME_PORT),

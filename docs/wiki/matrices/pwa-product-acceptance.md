@@ -12,7 +12,7 @@ description: Versioned second-user and adversarial acceptance matrix for the PWA
 
 # PWA product acceptance
 
-**Scenario version:** `dome.product.acceptance/2026-07-11.9`
+**Scenario version:** `dome.product.acceptance/2026-07-11.10`
 
 This matrix is the product release charter. Unit, contract, and interface tests
 support it; they do not replace it. Every implementation phase P1–P6 extends
@@ -60,7 +60,7 @@ and runs the installed-artifact journey available at that phase.
 | P6 managed-release collection checkpoint 2B | pause candidate preparation after active fsync/readback, committed repair after release reproof and during selector replay, and retirement after both parent fsyncs; contend the zero-wait collector; inject every retirement crash seam and collect before retry; fail upgrade-namespace stabilization | lifecycle → operational → optional host → global → artifact ordering across every release reachability writer; candidate global span ends before migration; committed repair span ends before selector replay; retirement span includes active→history reproof plus history-before-upgrade fsync; one linear pre-inventory crash-convergence pass; exact structural seams; collector remains dormant pending separate activation policy |
 | P6 managed-release collection checkpoint 3 — manual activation | run `dome home cleanup` from a non-vault cwd with missing, clean, unreachable, busy, redirected, and partially-collected Home stores; repeat with explicit `--apply`; try both inherited `--vault` positions; inspect JSON and human output | one host-wide path-free `dome.home.cleanup/v1` interface; default inspect removes nothing; apply removes the exact ordered candidate set or reports unknown evidence; absent Home is a zero no-op; fixed exits 0/1/64/75; one lazy CLI Adapter only; no SDK, scheduler, daemon, HTTP, MCP, or automatic caller |
 | P6 managed-release collection checkpoint 4 — post-retirement advisory | finish fresh committed, recovered committed, restored, rerun, unhealthy, and retirement-failure upgrade paths; inspect JSON/human output and production callsites | healthy committed retirement preserves upgrade schema/status/exit and gives one count-free optional `dome home cleanup` action; rollback and every stronger action win; no automatic inventory, fsync, global owner, cleanup apply, or candidate claim |
-| P6 beta | full adversarial journey on at least five external owner-vaults | measured reliability, latency, cost, restore, and upgrade report |
+| P6 beta | execute `dome.home.beta-protocol/2026-07-15.1` through installed UI and locally validate one content-free packet per opted-in run; aggregate 5–100 explicit inputs bound to one public product version and distribution receipt; operator separately reviews consent, external-owner truth, and five distinct owners | denominator-preserving `dome.home.beta-evidence-report/v1`; twenty ordered Ask/phone Today/source rounds; launchd-restarted `Dome Home` force-quit recovery; pooled successful-sample nearest-rank P95; low-sample maximum-owner P95; `not-ready` / `review-required` / operator-reviewed `ready`; no stored identity or automatic collector |
 
 ## Adversarial P6 sequence
 
@@ -83,6 +83,40 @@ and runs the installed-artifact journey available at that phase.
     again through local-console recovery.
 12. Rebuild projections and compare Markdown/Git, adopted ref, answers,
     proposals, pending outbox, quarantine, and audit receipts.
+
+The twelve numbered steps are recorded under the exact keys `install`,
+`vault-start`, `pair`, `concurrent-use`, `mutation-admission`, `external-edit`,
+`restart-reconciliation`, `offline-replay`, `revoke-isolation`,
+`backup-upgrade-rollback`, `blank-host-restore`, and
+`projection-rebuild-audit`. Every timer uses one monotonic clock and terminates
+as `ok`, `timeout`, `failed`, or `not-run`. Exactly twenty sequential rounds
+start one desktop Ask, then activate phone `Refresh Today` and one preselected
+exact adopted source while that same Ask remains visibly streaming. Each UI
+activation starts its own clock and waits for its runtime-valid accessible
+terminal; a late activation is `not-run`. Both twenty-element arrays retain
+round order without post-hoc selection, automation, developer tools, or API
+calls. Capture uses the fixed
+`online` and `offline-replay` start→local→commit→adopt clocks. Restart uses one
+owner-observable `mid-operation-reconcile` clock from Activity Monitor Force
+Quit of the single exact `Dome Home` process while a mutation is visibly
+pending, through automatic launchd `KeepAlive` restart, authenticated readiness,
+and a closed reconciled UI receipt. Manual relaunch, PID/label observation, and
+unsafe timeout fallback are excluded. Internal mediated-write phase faulting remains
+installed/test evidence and is not an owner packet field.
+
+The packet additionally fixes mutation-queue keys `scheduled`, `success`,
+`timeout`, `failed`, `notRun`, `saturationEvents`, `conflictEvents`, and
+`retryAttempts`; device keys `desktop-pair`, `phone-pair`, `phone-revoke`,
+`revoked-unauthorized`, and `desktop-authorized`; recovery keys `backup`,
+`migration`, `rollback`, and `restore`; and, under both `chromium` and `ios`,
+platform keys `install`, `offline`, `update`, and `accessibility`. The two fixed
+capture `start-to-adopt` clocks are the only adoption-latency samples.
+The exact clock origins, runtime-valid UI terminal predicates, and fixed
+collection timeout budgets live in the Product Host spec. They terminate
+collection and do not define latency SLOs. Any failed packet is `not-ready`;
+all-qualifying packets remain `review-required` until the release operator
+verifies the three manual truths and passes `--operator-reviewed`. Validation
+cannot complete review and the aggregate retains no identity.
 
 ## Required measures
 

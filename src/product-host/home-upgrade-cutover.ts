@@ -28,6 +28,7 @@ import {
   type HomeUpgradeTransaction,
   type HomeUpgradeTransactionDeps,
 } from "./home-upgrade-transaction";
+import { verifyHomeArtifactEvidence } from "./home-artifact";
 import {
   proveHomeUpgradeCandidate,
   type HomeUpgradeCandidateDeps,
@@ -330,7 +331,12 @@ export async function runHomeUpgradeCutover(input: {
         }
         throw error;
       }
-    }, deps);
+    }, {
+      ...deps,
+      verifyArtifact: async (root) => (await (
+        deps.verifyArtifactEvidence ?? verifyHomeArtifactEvidence
+      )(root)).manifest,
+    });
   } catch (error) {
     if (error instanceof HomeLifecycleContentionError) {
       throw new HomeUpgradeBusyError(

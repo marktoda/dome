@@ -8,7 +8,7 @@ export const MAX_HOME_ARTIFACT_TAR_BYTES = 512 * 1024 * 1024;
 
 export type HomeArtifactTarEntry = Readonly<{
   path: string;
-  type: "file" | "directory" | "symlink";
+  type: "file" | "directory" | "symlink" | "hardlink";
   size: number;
   linkTarget: string | null;
 }>;
@@ -38,7 +38,7 @@ export function inspectHomeArtifactTar(input: Uint8Array): Readonly<{
     assertHomeTarHeader(header);
     const typeFlag = String.fromCharCode(header[156]!);
     const type = typeFlag === "0" ? "file" : typeFlag === "5" ? "directory" :
-      typeFlag === "2" ? "symlink" : null;
+      typeFlag === "2" ? "symlink" : typeFlag === "1" ? "hardlink" : null;
     if (type === null) throw new Error(`Home artifact tar contains unsupported entry type ${JSON.stringify(typeFlag)}`);
     const name = homeTarString(header, 0, 100);
     const prefix = homeTarString(header, 345, 155);
@@ -50,10 +50,12 @@ export function inspectHomeArtifactTar(input: Uint8Array): Readonly<{
     if (seen.has(path)) throw new Error(`Home artifact tar contains duplicate member: ${path}`);
     seen.add(path);
     const size = homeTarOctal(header, 124, 12);
-    if ((type === "directory" || type === "symlink") && size !== 0) {
+    if ((type === "directory" || type === "symlink" || type === "hardlink") && size !== 0) {
       throw new Error(`Home artifact tar ${type} has a body: ${path}`);
     }
-    const linkTarget = type === "symlink" ? homeTarString(header, 157, 100) : null;
+    const linkTarget = type === "symlink" || type === "hardlink"
+      ? homeTarString(header, 157, 100)
+      : null;
     if (offset + size > tar.length) throw new Error(`Home artifact tar body is truncated: ${path}`);
     offset += size;
     const padding = (512 - (size % 512)) % 512;
@@ -71,6 +73,22 @@ export function inspectHomeArtifactTar(input: Uint8Array): Readonly<{
     throw new Error("Home artifact tar root must be an explicit directory");
   }
   const rootAbsolute = resolve("/payload", root);
+  const reservedAlias = `${root}/runtime/Dome Home`;
+  const reservedEntry = entries.find((entry) => entry.path === reservedAlias);
+  if (reservedEntry !== undefined && reservedEntry.type !== "hardlink") {
+    throw new Error(`Home artifact tar reserved runtime alias is not the canonical hardlink: ${reservedAlias}`);
+  }
+  const hardlinks = entries.filter((entry) => entry.type === "hardlink");
+  for (const link of hardlinks) {
+    const expectedPath = reservedAlias;
+    const expectedTarget = `${root}/runtime/bun`;
+    const target = entries.find((entry) => entry.path === expectedTarget);
+    if (link.path !== expectedPath || link.linkTarget !== expectedTarget ||
+      target?.type !== "file" || entries.indexOf(target) >= entries.indexOf(link) ||
+      entries.some((entry) => entry.path.startsWith(`${link.path}/`))) {
+      throw new Error(`Home artifact tar contains unsupported hardlink: ${link.path}`);
+    }
+  }
   const symlinks = entries.filter((entry) => entry.type === "symlink");
   for (const link of symlinks) {
     const target = link.linkTarget;
