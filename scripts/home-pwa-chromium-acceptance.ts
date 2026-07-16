@@ -66,6 +66,7 @@ type AcceptanceDeadlines = Readonly<{
 
 export type HomePwaTaskSettlementStage = "submit" | "closure" | "reload" | "removal";
 export type HomePwaLocalCaptureStage = "save" | "outbox" | "export";
+export type HomePwaReplayStage = "outbox" | "logical-capture";
 
 class HomePwaTaskSettlementStageError extends Error {
   readonly stage: HomePwaTaskSettlementStage;
@@ -83,6 +84,16 @@ class HomePwaLocalCaptureStageError extends Error {
   constructor(stage: HomePwaLocalCaptureStage) {
     super(`installed PWA local capture failed at ${stage}`);
     this.name = "HomePwaLocalCaptureStageError";
+    this.stage = stage;
+  }
+}
+
+class HomePwaReplayStageError extends Error {
+  readonly stage: HomePwaReplayStage;
+
+  constructor(stage: HomePwaReplayStage) {
+    super(`installed PWA replay failed at ${stage}`);
+    this.name = "HomePwaReplayStageError";
     this.stage = stage;
   }
 }
@@ -306,11 +317,16 @@ export async function runHomePwaChromiumAcceptance(
       signal.throwIfAborted();
     },
     assertReplay: async (signal) => {
-      const pending = requirePage().getByText("1 saved locally", { exact: true });
-      await pending.waitFor({ state: "hidden", timeout: WAIT_MS });
-      if (captureId === "") throw new Error("exported capture identity is unavailable");
-      await input.assertLogicalCapture(CAPTURE_TEXT, captureId, signal);
-      signal.throwIfAborted();
+      await atReplayStage("outbox", async () => {
+        const pending = requirePage().getByText("1 saved locally", { exact: true });
+        await pending.waitFor({ state: "hidden", timeout: WAIT_MS });
+        if (captureId === "") throw new Error("exported capture identity is unavailable");
+        signal.throwIfAborted();
+      });
+      await atReplayStage("logical-capture", async () => {
+        await input.assertLogicalCapture(CAPTURE_TEXT, captureId, signal);
+        signal.throwIfAborted();
+      });
     },
     emergencyClose: async () => { await closeBrowser(false); },
     close: async (signal) => {
@@ -573,7 +589,9 @@ async function runAcceptanceSequence(
           ? safeTaskSettlementFailureDiagnostic(outcome.kind, outcome.cause)
           : phase === "local-capture"
             ? safeLocalCaptureFailureDiagnostic(outcome.kind, outcome.cause)
-            : null;
+            : phase === "replay"
+              ? safeReplayFailureDiagnostic(outcome.kind, outcome.cause)
+              : null;
       cleanupFailed ||= outcome.emergencyCloseFailed;
       break;
     }
@@ -709,6 +727,18 @@ function safeLocalCaptureFailureDiagnostic(
   return cause.stage;
 }
 
+function safeReplayFailureDiagnostic(
+  kind: "fulfilled" | "rejected" | "timed-out" | "invalid-deadline",
+  cause: unknown,
+): string {
+  if (kind === "timed-out") return "phase-timeout";
+  if (kind === "invalid-deadline") return "invalid-deadline";
+  if (kind !== "rejected" || !(cause instanceof HomePwaReplayStageError)) {
+    return "unclassified";
+  }
+  return cause.stage;
+}
+
 async function atTaskSettlementStage<T>(
   stage: HomePwaTaskSettlementStage,
   operation: () => Promise<T>,
@@ -745,6 +775,25 @@ export async function exerciseHomePwaLocalCaptureStageForTests(
   operation: () => Promise<void>,
 ): Promise<void> {
   await atLocalCaptureStage(stage, operation);
+}
+
+async function atReplayStage<T>(
+  stage: HomePwaReplayStage,
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch {
+    throw new HomePwaReplayStageError(stage);
+  }
+}
+
+/** Portable stage-classification seam; launches no browser and emits no evidence. */
+export async function exerciseHomePwaReplayStageForTests(
+  stage: HomePwaReplayStage,
+  operation: () => Promise<void>,
+): Promise<void> {
+  await atReplayStage(stage, operation);
 }
 
 export function parseHomePwaCaptureExportForTests(bytes: Uint8Array, expectedText: string): string {
