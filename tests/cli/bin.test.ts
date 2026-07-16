@@ -44,10 +44,6 @@ describe("bin/dome process boundary", () => {
       "check",
       "audit",
       "garden",
-      "serve",
-      "install",
-      "restart",
-      "uninstall",
       "backup",
       "status",
       "sync",
@@ -66,7 +62,6 @@ describe("bin/dome process boundary", () => {
       "export-context",
       // Adapters:
       "mcp",
-      "http",
     ]);
     expect(help.stdout).not.toContain("inspect");
     expect(help.stdout).not.toContain("doctor");
