@@ -195,6 +195,13 @@ single-attempt boundary for timeout/cancellation/output validation;
 model-provider transient retries belong inside the `ctx.modelInvoke` boundary
 while still respecting the run timeout.
 
+After an operator repairs an external cause, `dome retry <processor-id>` is the
+explicit on-demand recovery for an installed schedule-triggered garden
+processor. It is a new invocation, not an in-run retry: it reuses the declared
+schedule trigger and the ordinary `dispatchGardenRun` routing path without
+mutating the schedule cursor. This keeps garden×command prohibited while
+allowing `dome.agent.brief` to recover immediately after provider repair.
+
 The target runtime classifies run failures:
 
 | Class | Examples | Retry behavior |

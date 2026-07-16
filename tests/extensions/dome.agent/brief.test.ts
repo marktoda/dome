@@ -539,6 +539,7 @@ describe("dome.agent.brief", () => {
     expect(content).toContain("Deterministic sections remain available");
     expect(content).not.toContain("Dome retries");
     expect(content).not.toContain("dome run dome.agent.brief");
+    expect(content).toContain("Retry: `dome retry dome.agent.brief`");
     // The stub lives INSIDE the brief's own block markers — splice, not append.
     const stubAt = content.indexOf("Morning narrative unavailable");
     expect(content.lastIndexOf("<!-- dome.agent.brief:yesterday:start -->", stubAt)).toBeGreaterThan(-1);

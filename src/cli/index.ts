@@ -35,6 +35,7 @@ import { runRepair } from "./commands/repair";
 import { runRecipe } from "./commands/recipe";
 import { runRebuild } from "./commands/rebuild";
 import { runResolve } from "./commands/resolve";
+import { runRetry } from "./commands/retry";
 import { runRun } from "./commands/run";
 import { runSettle } from "./commands/settle";
 import { runServe } from "./commands/serve";
@@ -543,6 +544,23 @@ function buildProgram(setExitCode: (code: number) => void): Command {
           bundlesRoot: options.bundlesRoot,
         }),
       );
+    });
+
+  program
+    .command("retry")
+    .helpGroup(GROUP_SERVICE)
+    .description("Retry one scheduled maintenance processor now.")
+    .argument("<processor-id>", "Installed schedule-triggered garden processor id.")
+    .option("--json", "Emit JSON.")
+    .option("--vault <path>", "Vault path (defaults to current directory).")
+    .option("--bundles-root <path>", "Extension bundles root.")
+    .action(async (processorId: string, options: RetryCliOptions) => {
+      setExitCode(await runRetry({
+        processorId,
+        json: options.json,
+        vault: options.vault,
+        bundlesRoot: options.bundlesRoot,
+      }));
     });
 
   program
@@ -1459,6 +1477,12 @@ type RejectCliOptions = {
 };
 
 type RunCliOptions = {
+  readonly json?: boolean;
+  readonly vault?: string;
+  readonly bundlesRoot?: string;
+};
+
+type RetryCliOptions = {
   readonly json?: boolean;
   readonly vault?: string;
   readonly bundlesRoot?: string;

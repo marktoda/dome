@@ -222,6 +222,7 @@ export {
   type RebuildOutcome,
   type AdoptionStatus,
   type CompilerHostTickResult,
+  type RetryScheduledProcessorResult,
   type QuestionRecord,
   type SearchDocumentResult,
 } from "./vault";

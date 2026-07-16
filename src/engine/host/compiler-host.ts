@@ -29,6 +29,7 @@
 //   - The host wires view capture explicitly; protocol-specific command
 //     runners use their own capture sinks when they need to return views.
 
+import type { DiagnosticEffect } from "../../core/effect";
 import { commitOid, type CommitOid } from "../../core/source-ref";
 import { makeManualProposal, type AdoptionResult } from "../../core/proposal";
 import { adopt, type AdoptEvent } from "../core/adopt";
@@ -43,7 +44,16 @@ import {
   type AdoptSubProposalFn,
   type GardenPhaseResult,
 } from "../garden/garden";
+import {
+  dispatchGardenRun,
+} from "../garden/garden-run";
+import type { GardenRunEffectRoutingSummary } from "../garden/garden-run-routing";
 import type { GardenProcessorStart } from "../core/runner-contract";
+import type {
+  RunnerError,
+  RunnerExecutionStatus,
+  RunId,
+} from "../core/runner-contract";
 import {
   runOperationalWork,
   type OperationalWorkResult,
@@ -183,6 +193,54 @@ export type CompilerHostTickResult =
 export type AdoptedCursor = {
   current: CommitOid;
 };
+
+/**
+ * Outcome of one explicit replay of an installed schedule-triggered garden
+ * processor. This is engine control, not a command trigger: the processor is
+ * invoked with its existing schedule envelope and the scheduler cursor is
+ * deliberately untouched.
+ */
+export type RetryScheduledProcessorResult =
+  | CompilerHostLockBusy
+  | { readonly kind: "detached-head" | "no-commits" }
+  | { readonly kind: "branch-changed"; readonly branch: string }
+  | {
+      readonly kind: "diverged";
+      readonly branch: string;
+      readonly adopted: CommitOid;
+      readonly head: CommitOid;
+    }
+  | {
+      readonly kind: "sync-needed";
+      readonly branch: string;
+      readonly adopted: CommitOid;
+      readonly head: CommitOid;
+    }
+  | { readonly kind: "not-found"; readonly processorId: string }
+  | {
+      readonly kind: "not-scheduled-garden";
+      readonly processorId: string;
+      readonly phase: "adoption" | "garden" | "view";
+    }
+  | {
+      readonly kind: "completed";
+      readonly processorId: string;
+      readonly runId: RunId;
+      readonly executionStatus: RunnerExecutionStatus;
+      readonly executionError: RunnerError | null;
+      readonly routing: GardenRunEffectRoutingSummary;
+      readonly diagnostics: ReadonlyArray<{
+        readonly severity: "info" | "warning" | "error" | "block";
+        readonly code: string;
+        readonly message: string;
+      }>;
+      readonly subProposals: {
+        readonly attempted: number;
+        readonly adopted: number;
+        readonly blocked: number;
+      };
+      readonly adopted: CommitOid;
+    };
 
 /**
  * Host-scoped `questions.changed` accumulator (one per open VaultRuntime).
@@ -717,6 +775,269 @@ export async function runOperationalWorkForAdopted(opts: {
   }
 
   return runOperationalWorkForAdoptedUnlocked(opts);
+}
+
+/**
+ * Re-run one installed schedule-triggered garden processor immediately.
+ *
+ * The interface hides the entire host ceremony: branch exclusion, adopted
+ * state validation, projection freshness, schedule-envelope construction,
+ * processor execution, capability routing, and garden sub-Proposal adoption.
+ * It intentionally does not call the scheduler and therefore cannot consume
+ * or advance a schedule slot. Garden×command remains prohibited.
+ */
+export async function retryScheduledProcessor(opts: {
+  readonly runtime: VaultRuntime;
+  readonly processorId: string;
+  readonly now?: () => Date;
+  readonly signal?: AbortSignal;
+}, deps: {
+  readonly getBranch?: typeof getCurrentBranch;
+  readonly detect?: typeof detectDrift;
+} = {}): Promise<RetryScheduledProcessorResult> {
+  const branch = await (deps.getBranch ?? getCurrentBranch)(opts.runtime.path);
+  if (branch === null) return Object.freeze({ kind: "detached-head" as const });
+  return retryScheduledProcessorForBranch(opts, branch, 0, deps);
+}
+
+type RetryScheduledProcessorLockValue =
+  | Exclude<RetryScheduledProcessorResult, CompilerHostLockBusy>
+  | { readonly kind: "relock"; readonly branch: string };
+
+async function retryScheduledProcessorForBranch(
+  opts: {
+    readonly runtime: VaultRuntime;
+    readonly processorId: string;
+    readonly now?: () => Date;
+    readonly signal?: AbortSignal;
+  },
+  branch: string,
+  relockAttempts: number,
+  deps: {
+    readonly detect?: typeof detectDrift;
+  },
+): Promise<RetryScheduledProcessorResult> {
+  const locked = await withCompilerHostBranchLock(
+    {
+      vaultPath: opts.runtime.path,
+      branch,
+      command: "compiler-host-retry-scheduled",
+    },
+    async (): Promise<RetryScheduledProcessorLockValue> => {
+      await replayFinalizeJournal(opts.runtime.path);
+      const drift = await (deps.detect ?? detectDrift)(opts.runtime.path);
+      const freshBranch = drift.kind === "drift"
+        ? drift.info.branch
+        : drift.kind === "in-sync" || drift.kind === "diverged"
+        ? drift.branch
+        : null;
+      if (freshBranch !== null && freshBranch !== branch) {
+        return relockAttempts < 1
+          ? Object.freeze({ kind: "relock" as const, branch: freshBranch })
+          : Object.freeze({ kind: "branch-changed" as const, branch: freshBranch });
+      }
+      if (drift.kind === "detached-head" || drift.kind === "no-commits") {
+        return Object.freeze({ kind: drift.kind });
+      }
+      if (drift.kind === "diverged") return Object.freeze({ ...drift });
+      if (drift.kind === "drift") {
+        return Object.freeze({
+          kind: "sync-needed" as const,
+          branch: drift.info.branch,
+          adopted: drift.info.base,
+          head: drift.info.head,
+        });
+      }
+
+      const processor = opts.runtime.registry.get(opts.processorId);
+      if (processor === undefined) {
+        return Object.freeze({
+          kind: "not-found" as const,
+          processorId: opts.processorId,
+        });
+      }
+      const schedules = processor.triggers.filter((trigger) =>
+        trigger.kind === "schedule"
+      );
+      const schedule = schedules[0];
+      if (
+        processor.phase !== "garden" || schedules.length !== 1 ||
+        schedule?.kind !== "schedule"
+      ) {
+        return Object.freeze({
+          kind: "not-scheduled-garden" as const,
+          processorId: processor.id,
+          phase: processor.phase,
+        });
+      }
+
+      const now = opts.now ?? ((): Date => new Date());
+      const firedAt = now();
+      await rebuildProjectionIfStale({
+        runtime: opts.runtime,
+        adopted: drift.head,
+        branch: drift.branch,
+        now,
+      });
+
+      const cursor: AdoptedCursor = { current: drift.head };
+      const vault = runtimeVault(opts.runtime);
+      const sinksFor = sinksForRuntime(
+        opts.runtime,
+        now,
+        () => {
+          questionsChangedFlagFor(opts.runtime).changed = true;
+        },
+        () => {
+          outboxChangedFlagFor(opts.runtime).changed = true;
+        },
+        () => {
+          markProposalsChanged(opts.runtime);
+        },
+      );
+      const sinks = sinksForCursor({ sinksFor, cursor });
+      const subProposalResults: AdoptionResult[] = [];
+      const adoptSubProposal = makeAdoptSubProposal({
+        runtime: opts.runtime,
+        vault,
+        sinksFor,
+        cursor,
+        now,
+        onResult: (result) => subProposalResults.push(result),
+      });
+      const routingDiagnostics: DiagnosticEffect[] = [];
+      const outcome = await dispatchGardenRun(
+        {
+          vault,
+          adopted: cursor.current,
+          currentAdopted: () => cursor.current,
+          resolveTree: makeResolveTree(opts.runtime.path),
+          sinks,
+          resolveGrants: opts.runtime.resolveGrants,
+          extensionIdFor: opts.runtime.extensionIdFor,
+          extensionConfigFor: opts.runtime.extensionConfigFor,
+          ledger: opts.runtime.ledgerDb,
+          executionState: opts.runtime.processorRuntime.executionState,
+          needUnmetSeen: opts.runtime.processorRuntime.needUnmetSeen,
+          executionCap: opts.runtime.config.engine.executionCap,
+          operational: operationalQueryViewForRuntime(opts.runtime, now),
+          now,
+          adoptSubProposal,
+          ...(opts.runtime.modelProvider !== undefined
+            ? { modelProvider: opts.runtime.modelProvider }
+            : {}),
+          ...(opts.runtime.modelStepProvider !== undefined
+            ? { modelStepProvider: opts.runtime.modelStepProvider }
+            : {}),
+          ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+        },
+        {
+          processor,
+          phase: "garden",
+          envelope: Object.freeze({
+            kind: "schedule" as const,
+            cron: schedule.cron,
+            firedAt: firedAt.toISOString(),
+          }),
+          matches: Object.freeze([
+            Object.freeze({
+              trigger: schedule,
+              matchedSignals: Object.freeze([]),
+            }),
+          ]),
+          now: firedAt,
+          disabledDiagnostic: {
+            code: "scheduled-retry.garden-sub-proposal-spawn-disabled",
+            message:
+              `Retry of scheduled garden processor ${processor.id} emitted ` +
+              "an authorized PatchEffect, but no adoptSubProposal callback was wired; patch dropped.",
+          },
+        },
+        routingDiagnostics,
+      );
+
+      if (cursor.current !== drift.head) {
+        await rebuildProjectionIfGlobalConfigChanged({
+          runtime: opts.runtime,
+          base: drift.head,
+          head: cursor.current,
+          branch: drift.branch,
+          now,
+        });
+        await markProjectionBuiltForRuntime(opts.runtime, {
+          adoptedCommit: cursor.current,
+          builtAt: now(),
+        });
+      }
+
+      const processorDiagnostics = outcome.result.effects.flatMap((effect) =>
+        effect.kind === "diagnostic" ? [effect] : []
+      );
+      const allDiagnostics = [
+        ...processorDiagnostics,
+        ...routingDiagnostics,
+      ];
+      // Schedule dispatch has no changed-path set. A successful explicit
+      // retry scopes reconciliation to paths the processor actually cited,
+      // so the previous failure finding clears without resolving unrelated
+      // processor diagnostics elsewhere in the vault.
+      const citedPaths = Object.freeze([
+        ...new Set(
+          outcome.result.effects.flatMap((effect) =>
+            "sourceRefs" in effect
+              ? effect.sourceRefs.map((sourceRef) => sourceRef.path)
+              : []
+          ),
+        ),
+      ]);
+      const adoptedSubProposals = subProposalResults.filter((result) =>
+        result.adopted
+      ).length;
+      const blockedSubProposals =
+        subProposalResults.length - adoptedSubProposals;
+      if (
+        outcome.result.executionStatus === "succeeded" &&
+        blockedSubProposals === 0 &&
+        citedPaths.length > 0 && sinks.resolveDiagnostics !== undefined
+      ) {
+        await sinks.resolveDiagnostics({
+          processorId: processor.id,
+          runId: outcome.result.runId,
+          inspectedPaths: citedPaths,
+          emittedDiagnostics: allDiagnostics,
+        });
+      }
+      return Object.freeze({
+        kind: "completed" as const,
+        processorId: processor.id,
+        runId: outcome.result.runId,
+        executionStatus: outcome.result.executionStatus,
+        executionError: outcome.result.executionError ?? null,
+        routing: outcome.routing,
+        diagnostics: Object.freeze(allDiagnostics.map((diagnostic) => Object.freeze({
+          severity: diagnostic.severity,
+          code: diagnostic.code,
+          message: diagnostic.message,
+        }))),
+        subProposals: Object.freeze({
+          attempted: subProposalResults.length,
+          adopted: adoptedSubProposals,
+          blocked: blockedSubProposals,
+        }),
+        adopted: cursor.current,
+      });
+    },
+  );
+  if (locked.kind === "busy") return locked;
+  if (locked.value.kind === "relock") {
+    return retryScheduledProcessorForBranch(
+      opts,
+      locked.value.branch,
+      relockAttempts + 1,
+      deps,
+    );
+  }
+  return locked.value;
 }
 
 async function runOperationalWorkForAdoptedUnlocked(opts: {
@@ -1374,6 +1695,7 @@ function makeAdoptSubProposal(opts: {
   readonly now?: () => Date;
   readonly onEvent?: (event: AdoptEvent) => void;
   readonly onGardenProcessorStart?: (info: GardenProcessorStart) => void;
+  readonly onResult?: (result: AdoptionResult) => void;
 }): AdoptSubProposalFn {
   const adoptSubProposal: AdoptSubProposalFn = async (
     subProposal,
@@ -1401,6 +1723,7 @@ function makeAdoptSubProposal(opts: {
     };
     if (opts.onEvent !== undefined) subAdoptOpts.onEvent = opts.onEvent;
     const subResult = await adopt(subAdoptOpts);
+    opts.onResult?.(subResult);
     if (subResult.adopted) {
       if (opts.cursor !== undefined) {
         opts.cursor.current = subResult.adoptedRef;

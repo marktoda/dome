@@ -119,7 +119,7 @@ processors:
     module: processors/garden-view.ts
 
   - id: dome.agent.brief
-    version: 0.3.1
+    version: 0.3.2
     phase: garden
     triggers:
       # 05:30, before dome.daily.create-daily's 06:00 tick. The brief creates

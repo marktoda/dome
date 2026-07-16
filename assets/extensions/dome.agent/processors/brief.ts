@@ -315,7 +315,7 @@ const brief = defineProcessorImplementation({
       const stub = [
         YESTERDAY_BLOCK.start,
         "### Yesterday",
-        `_Morning narrative unavailable (brief failed: ${flattened}). Yesterday's note: [[${yesterdayPath.replace(/\.md$/, "")}]]. Deterministic sections remain available._`,
+        `_Morning narrative unavailable (brief failed: ${flattened}). Yesterday's note: [[${yesterdayPath.replace(/\.md$/, "")}]]. Deterministic sections remain available. Retry: \`dome retry dome.agent.brief\`._`,
         YESTERDAY_BLOCK.end,
       ].join("\n");
       // The today block is model-written with no fallback prose: omit it from

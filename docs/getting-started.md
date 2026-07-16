@@ -163,8 +163,16 @@ state and any source day-files that really exist.
 
 If the provider or network fails, deterministic Today content stays available
 and `dome check` reports the model failure. Fix the credential/runtime cause
-with `home setup check`; the next scheduled run will try again. There is no
-owner question or magic retry command for a failed brief.
+with `home setup check`, then retry the brief without waiting for tomorrow or
+moving its schedule cursor:
+
+```sh
+"$DOME" retry dome.agent.brief --vault "$VAULT"
+```
+
+`dome run dome.agent.brief` is intentionally unsupported: `dome run` invokes
+read-only command-triggered views, while the brief remains a scheduled garden
+processor whose effects pass through the normal capability and Proposal path.
 
 ## 7. Update Dome Home
 

@@ -17,7 +17,7 @@ types, effect constructors, processor authoring helpers, adopted-ref read
 helpers, the bundle loader, first-party maintenance-loop metadata, pure
 commit-trailer helpers, and the public `openVault` wrapper (`src/vault.ts`).
 The shipped `Vault` handle carries the read + engine-control subset —
-`query`, `readDocument`, `runView`, `sync`, `rebuild`, `getAdoptionStatus`,
+`query`, `readDocument`, `runView`, `sync`, `retryScheduled`, `rebuild`, `getAdoptionStatus`,
 `attention`, `agentWork`, `completeAgentWork`, `listQuestions`, `getQuestion`,
 `resolve`, `close` — over the internal
 `openVaultRuntime` boundary. Still target-shape, not shipped:
@@ -73,6 +73,7 @@ type Vault = {
 
   // Engine control
   sync(opts?: VaultSyncOptions): Promise<CompilerHostTickResult>;
+  retryScheduled(processorId: string): Promise<RetryScheduledProcessorResult>;
   rebuild(): Promise<RebuildOutcome>;
   getAdoptionStatus(): Promise<AdoptionStatus>;
   operationalSummary(): Promise<OperationalSummary>;
@@ -115,6 +116,10 @@ Method semantics:
   carries optional progress callbacks (`onEvent` for adoption events,
   `onGardenProcessorStart` for garden dispatch) so any surface can stream
   tick progress.
+- `retryScheduled` explicitly replays one installed schedule-triggered garden
+  processor through the normal capability and sub-Proposal path while leaving
+  the live schedule cursor untouched. It requires an in-sync adopted branch
+  and does not create a garden command trigger.
 - `operationalSummary` returns the attention counters over the
   operational stores (runs, diagnostics, questions, outbox, quarantine) —
   the runtime-side sibling of `getAdoptionStatus`'s git cursor, and what a
@@ -238,9 +243,10 @@ Queries default to the adopted ref — never HEAD. The "draft state" between ado
 
 ## Engine control
 
-Three engine APIs are exposed on the Vault surface:
+Four primary engine-control APIs are exposed on the Vault surface:
 
 - `sync(opts?)` — explicitly run the adoption loop against the current `adopted..HEAD` range. See [[wiki/specs/adoption]] §"`dome sync`".
+- `retryScheduled(processorId)` — replay one declared schedule-triggered garden processor after repairing an external failure, under the compiler-host lock and without updating its live schedule cursor.
 - `rebuild()` — wipe and rebuild `projection.db` from the adopted commit. See [[wiki/specs/projection-store]] §"Rebuild path".
 - `getAdoptionStatus()` — read-only snapshot of adoption state (current branch, HEAD, adopted ref, pending commits, dirty status, divergence flag). See [[wiki/specs/adoption]] §"`dome status`".
 

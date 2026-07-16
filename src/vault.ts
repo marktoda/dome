@@ -70,8 +70,10 @@ import {
 } from "./engine/core/adoption-status";
 import {
   runCompilerHostTick,
+  retryScheduledProcessor,
   type AdoptEvent,
   type CompilerHostTickResult,
+  type RetryScheduledProcessorResult,
 } from "./engine/host/compiler-host";
 import { rebuildProjection } from "./engine/host/projection-rebuild";
 import {
@@ -291,6 +293,10 @@ export type Vault = {
 
   // Engine control
   readonly sync: (opts?: VaultSyncOptions) => Promise<CompilerHostTickResult>;
+  /** Retry one installed schedule-triggered garden processor without moving its cron cursor. */
+  readonly retryScheduled: (
+    processorId: string,
+  ) => Promise<RetryScheduledProcessorResult>;
   readonly rebuild: () => Promise<RebuildOutcome>;
   readonly getAdoptionStatus: () => Promise<AdoptionStatus>;
   readonly operationalSummary: () => Promise<OperationalSummary>;
@@ -388,6 +394,8 @@ function bindVault(runtime: VaultRuntime): Vault {
           ? { onGardenProcessorStart: opts.onGardenProcessorStart }
           : {}),
       }),
+    retryScheduled: (processorId: string) =>
+      retryScheduledProcessor({ runtime, processorId }),
     rebuild: () => rebuildVaultProjection(runtime),
     operationalSummary: async () => collectOperationalSummary(runtime),
     attention: async () => collectVaultAttention(runtime),
@@ -748,7 +756,10 @@ async function completeVaultAgentWork(
 export type { AdoptionStatus } from "./engine/core/adoption-status";
 export type { AdoptEvent } from "./engine/host/compiler-host";
 export type { GardenProcessorStart } from "./engine/core/runner-contract";
-export type { CompilerHostTickResult } from "./engine/host/compiler-host";
+export type {
+  CompilerHostTickResult,
+  RetryScheduledProcessorResult,
+} from "./engine/host/compiler-host";
 export type { AnswerHandlerDispatchResult } from "./engine/host/question-answering";
 export type { QuestionRecord } from "./projections/questions";
 export type { SearchDocumentResult } from "./core/processor";

@@ -136,7 +136,7 @@ The PWA is the user-facing primary surface. The CLI is the local-console and
 foreground-harness surface. Its implemented commands map to one of:
 
 - **Product lifecycle and local authority:** `dome home`, its nested lifecycle/setup/upgrade commands, `dome devices`, and `dome backup`. These are the supported owner-console path for the supervised PWA product.
-- **Compiler and decision loop:** `dome sync`, `dome status`, `dome check`, `dome resolve`, `dome agent-work`, `dome settle`, `dome proposals`, `dome apply`, and `dome reject`. Installed Home runs the long-lived compiler; `sync` is the one-shot catch-up path for an explicit wait or local SDK use. `status` is the cheap pulse and next-action router; `check` explains remaining attention.
+- **Compiler and decision loop:** `dome sync`, `dome status`, `dome check`, `dome retry`, `dome resolve`, `dome agent-work`, `dome settle`, `dome proposals`, `dome apply`, and `dome reject`. Installed Home runs the long-lived compiler; `sync` is the one-shot catch-up path for an explicit wait or local SDK use. `status` is the cheap pulse and next-action router; `check` explains remaining attention. `retry` is the narrow on-demand recovery for an installed schedule-triggered garden processor after its external cause has been repaired.
 - **Adopted-state recall surfaces:** `dome views --json` discovers every command-triggered view contributed by installed plugins; `dome run <command>` is the generic invocation seam. `dome query`, `dome export-context`, and `dome today` are ergonomic first-party wrappers, not hard-coded categories plugins must fit. `dome log` is the activity-recall sibling with a CLI-native posture (the `dome status` stance — no runtime, no view boundary): it reads git history directly and joins the run ledger (§"`dome log`"). `dome explain` is the provenance debugger over the same adopted state: for a page or one anchored claim it renders the chain claim → facts → runs → engine commits (§"`dome explain`").
 - **Advanced/debug and compatibility surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer` (deprecated alias — use `dome resolve`), `dome run`, `dome rebuild`, `dome reanchor`, standalone `dome serve`, legacy `dome install|restart|uninstall`, and standalone `dome http` remain available for detailed state inspection, extension development, maintenance, and explicit compatibility work. They are hidden from top-level help.
 
@@ -1715,6 +1715,37 @@ their own option shapes without changing the core CLI parser.
 
 Exit codes: 0 on success; 64 when no matching view processor exists or the
 vault has no usable adopted ref; 1 on runtime or dispatch failure.
+
+### `dome retry <processor-id> [--json]`
+
+Replays one installed schedule-triggered garden processor immediately against
+the current adopted snapshot. This is the supported recovery after fixing a
+transient external cause such as the model provider used by
+`dome.agent.brief`: `dome retry dome.agent.brief`. The engine takes the same
+compiler-host branch lock, constructs the processor's existing schedule
+envelope, dispatches through `dispatchGardenRun`, capability-checks every
+effect, and routes garden patches through sub-Proposals. HEAD must already be
+adopted; pending drift reports `sync-needed` and points to `dome sync`.
+
+The retry does **not** call the scheduler and does not read, consume, or update
+the live `schedule_cursors` row; the ordinary next cron slot remains unchanged.
+Eligibility requires a garden processor with exactly one declared schedule
+trigger. The engine does not make a non-idempotent processor safe: callers
+should retry only after repairing the cause, while processors such as the
+morning brief converge through their existing fingerprint/compose-record gate.
+The retry still writes an ordinary schedule-kind run-ledger row, so if derived
+projection state is later destroyed, the scheduler's documented ledger
+fallback may use that newest schedule-run timestamp when reconstructing a
+missing cursor. It also does
+not add a command trigger to the processor: garden×command stays prohibited and
+`dome run dome.agent.brief` remains an unknown view command. Quarantine remains
+authoritative, so a quarantined schedule trigger is skipped until its normal
+`dome resolve` recovery is approved.
+
+Exit codes: 0 when the processor execution succeeds; 1 on processor failure,
+pending/diverged adopted state, or runtime-open failure; 64 for an unknown or
+non-scheduled-garden processor and unusable Git states; 75 while another
+compiler host owns the branch lock.
 
 ### Daily view processors — shared substrate
 
