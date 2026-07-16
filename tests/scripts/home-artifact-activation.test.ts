@@ -209,11 +209,11 @@ describe("Dome Home 0.3 activation", () => {
       .toThrow("identity does not match the staged release");
   });
 
-  test("fixes the official release claim at package 0.3.4 and upgrade support true", async () => {
+  test("fixes the official release claim at package 0.3.5 and upgrade support true", async () => {
     const pkg = JSON.parse(await readFile(join(import.meta.dir, "..", "..", "package.json"), "utf8")) as {
       readonly version: string;
     };
-    expect(homeArtifactReleaseClaimForTests()).toEqual({ version: "0.3.4", upgradeSupported: true });
+    expect(homeArtifactReleaseClaimForTests()).toEqual({ version: "0.3.5", upgradeSupported: true });
     expect(pkg.version).toBe(homeArtifactReleaseClaimForTests().version);
   });
 
