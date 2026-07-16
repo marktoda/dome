@@ -97,6 +97,55 @@ describe("DomeClient", () => {
     await expect(client.taskBacklog()).rejects.toThrow("busy: Try later.");
   });
 
+  test("reviewTaskBacklog posts the strict review contract and preserves typed conflicts", async () => {
+    const revision = "a".repeat(40);
+    const request = {
+      schema: "dome.task-backlog.review/v1" as const,
+      revision,
+      decisions: [{
+        blockId: "task1",
+        disposition: "keep" as const,
+        sourceRef: {
+          path: "wiki/a.md",
+          commit: revision,
+          stableId: "dome.daily.open-loop:task1",
+          range: { startLine: 3, endLine: 3 },
+        },
+      }],
+    };
+    const success = {
+      schema: "dome.task-backlog.review/v1",
+      status: "settled",
+      revision,
+      reviewed: { keep: 1, close: 0, defer: 0 },
+      commit: null,
+      adoptionStatus: "unchanged",
+    } as const;
+    const conflict = {
+      schema: "dome.task-backlog.review/v1",
+      status: "error",
+      error: "stale-review",
+      message: "Refresh the review.",
+      retryable: false,
+      recoveryRequired: false,
+    } as const;
+    const seen: Request[] = [];
+    const responses = [
+      new Response(JSON.stringify(success), { status: 200 }),
+      new Response(JSON.stringify(conflict), { status: 409 }),
+    ];
+    globalThis.fetch = mock(async (req: Request) => {
+      seen.push(req);
+      return responses.shift()!;
+    }) as never;
+    const client = new DomeClient("tok");
+
+    expect(await client.reviewTaskBacklog(request)).toEqual(success);
+    expect(new URL(seen[0]!.url).pathname).toBe("/task-backlog/review");
+    expect(await seen[0]!.clone().json()).toEqual(request);
+    expect(await client.reviewTaskBacklog(request)).toEqual(conflict);
+  });
+
   test("readiness strictly classifies valid, incompatible, failed, and auth responses", async () => {
     const responses = [
       new Response(JSON.stringify(READY_PRODUCT), { status: 200 }),

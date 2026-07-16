@@ -48,17 +48,42 @@ import {
 } from "../../assets/extensions/dome.daily/processors/action-extraction";
 import {
   appendDoneTodayBullet,
+  appendDoneTodayBullets,
   findAnchorLine,
+  isOpenCheckbox,
   setCheckboxMark,
   setDueDate,
   taskLineBody,
 } from "../../assets/extensions/dome.daily/processors/task-disposition";
-import { currentBranch, currentSha, findGitRoot } from "../git";
+import {
+  currentBranch,
+  currentSha,
+  findGitRoot,
+  isAncestor,
+  readBlob,
+  statusMatrix,
+} from "../git";
+import { getAdoptedRef } from "../adopted-ref";
 import {
   applyControlledMutation,
   type ControlledMutationResult,
+  type ControlledMutationPlan,
+  type PlannedControlledMutationResult,
 } from "../mutation/controlled-mutation";
 import { resolveVaultPath } from "./resolve-vault";
+import {
+  TASK_BACKLOG_REVIEW_SCHEMA as SETTLE_BATCH_SCHEMA,
+  taskBacklogReviewRequestSchema as settleBatchRequestSchema,
+  type TaskBacklogReviewRequest as SettleBatchRequest,
+  type TaskBacklogReviewResult as SettleBatchResult,
+} from "../../contracts/task-backlog-review";
+export {
+  TASK_BACKLOG_REVIEW_SCHEMA as SETTLE_BATCH_SCHEMA,
+  taskBacklogReviewRequestSchema as settleBatchRequestSchema,
+  taskBacklogReviewResultSchema as settleBatchResultSchema,
+  type TaskBacklogReviewRequest as SettleBatchRequest,
+  type TaskBacklogReviewResult as SettleBatchResult,
+} from "../../contracts/task-backlog-review";
 
 // ----- Public types ---------------------------------------------------------
 
@@ -95,6 +120,8 @@ export type SettleDeps = {
 /** Wire schema for the settle result document — shared by `dome settle`
  * `--json`, `POST /settle`, and the MCP `settle` tool. */
 export const SETTLE_SCHEMA = "dome.settle/v1";
+
+export type SettleBatchDeps = SettleDeps;
 
 /**
  * Render a `SettleResult` as its `dome.settle/v1` document body — the one
@@ -220,6 +247,251 @@ export async function performSettle(
   }
 }
 
+/**
+ * Atomically review a bounded backlog page. Validation, one global Markdown
+ * identity scan, planning, and the one possible commit all run under the
+ * controlled-mutation locks. A stale review can therefore never partially
+ * land or overwrite newer owner bytes.
+ */
+export async function performSettleBatch(
+  vault: string,
+  request: unknown,
+  deps: SettleBatchDeps = {},
+): Promise<SettleBatchResult> {
+  const parsed = settleBatchRequestSchema.safeParse(request);
+  if (!parsed.success) {
+    return batchError("invalid-request", parsed.error.issues[0]?.message ?? "invalid backlog review request");
+  }
+  const req = parsed.data;
+  const vaultPath = resolveVaultPath(vault);
+  const gitRoot = await findGitRoot(vaultPath);
+  if (gitRoot === null || !existsSync(join(vaultPath, ".dome", "config.yaml"))) {
+    return batchError("invalid-request", "not an initialized Dome vault; run `dome init` first");
+  }
+  const branch = await currentBranch(vaultPath);
+  if (branch === null) {
+    return batchError("conflict", "detached HEAD: backlog review needs a branch", true);
+  }
+
+  const decisions = [...req.decisions].sort((a, b) =>
+    a.blockId.localeCompare(b.blockId)
+  );
+  const reviewed = Object.freeze({
+    keep: decisions.filter((d) => d.disposition === "keep").length,
+    close: decisions.filter((d) => d.disposition === "close").length,
+    defer: decisions.filter((d) => d.disposition === "defer").length,
+  });
+  const requestId = settleBatchRequestId(req.revision, decisions);
+
+  try {
+    const mutation = await applyControlledMutation({
+      vaultPath,
+      branch,
+      requestId,
+      plan: () => planSettleBatch(vaultPath, branch, req.revision, decisions, deps),
+    });
+    if (mutation.kind === "committed") {
+      return Object.freeze({
+        schema: SETTLE_BATCH_SCHEMA,
+        status: "settled" as const,
+        revision: req.revision,
+        reviewed,
+        commit: mutation.commit,
+        adoptionStatus: "pending" as const,
+      });
+    }
+    if (mutation.kind === "no-changes") {
+      return Object.freeze({
+        schema: SETTLE_BATCH_SCHEMA,
+        status: "settled" as const,
+        revision: req.revision,
+        reviewed,
+        commit: null,
+        adoptionStatus: "unchanged" as const,
+      });
+    }
+    return settleBatchMutationFailure(mutation);
+  } catch (error) {
+    return batchError(
+      "outcome-unknown",
+      `backlog review outcome is unknown: ${error instanceof Error ? error.message : String(error)}`,
+      true,
+      true,
+    );
+  }
+}
+
+async function planSettleBatch(
+  vaultPath: string,
+  branch: string,
+  revision: string,
+  decisions: ReadonlyArray<SettleBatchRequest["decisions"][number]>,
+  deps: SettleBatchDeps,
+): Promise<ControlledMutationPlan> {
+  const adopted = await getAdoptedRef(vaultPath, branch);
+  const head = await currentSha(vaultPath);
+  if (
+    adopted !== revision ||
+    head === null ||
+    (head !== revision &&
+      !(await isAncestor({ path: vaultPath, ancestor: revision, descendant: head })))
+  ) {
+    return rejectedPlan(
+      "stale-review",
+      "the adopted task backlog changed; refresh the review before applying decisions",
+    );
+  }
+
+  const requestedIds = new Set(decisions.map((decision) => decision.blockId));
+  const scan = scanMarkdownAnchors(vaultPath, requestedIds);
+  const now = (deps.now ?? (() => new Date()))();
+  const todayDaily = dailyPath(localDateParts(now), DEFAULT_DAILY_PATH_SETTINGS);
+  const reviewedLines = new Map<string, string>();
+
+  for (const decision of decisions) {
+    const ref = decision.sourceRef;
+    if (
+      ref.commit !== revision ||
+      ref.stableId !== `dome.daily.open-loop:${decision.blockId}` ||
+      ref.range.startLine !== ref.range.endLine
+    ) {
+      return rejectedPlan(
+        "identity-conflict",
+        `^${decision.blockId} does not carry the exact reviewed source identity`,
+      );
+    }
+    const reviewedContent = await readBlob({
+      path: vaultPath,
+      commit: revision,
+      filepath: ref.path,
+    });
+    const reviewedLine = reviewedContent?.split("\n")[ref.range.startLine - 1];
+    if (
+      reviewedLine === undefined ||
+      findAnchorLine([reviewedLine], decision.blockId) !== 0 ||
+      !isOpenCheckbox(reviewedLine)
+    ) {
+      return rejectedPlan(
+        "identity-conflict",
+        `^${decision.blockId} was not an eligible open task at the reviewed source`,
+      );
+    }
+    const matches = scan.anchors.get(decision.blockId) ?? [];
+    if (matches.length !== 1) {
+      return rejectedPlan(
+        "identity-conflict",
+        matches.length === 0
+          ? `reviewed task ^${decision.blockId} is missing from the current vault`
+          : `reviewed task ^${decision.blockId} has duplicate current anchors`,
+      );
+    }
+    const match = matches[0]!;
+    if (match.relPath !== ref.path || match.lineIdx + 1 !== ref.range.startLine) {
+      return rejectedPlan(
+        "identity-conflict",
+        `reviewed task ^${decision.blockId} moved from its exact reviewed source`,
+      );
+    }
+    const currentLine = scan.files.get(match.relPath)?.lines[match.lineIdx];
+    const terminal = terminalLine(reviewedLine, decision);
+    if (currentLine !== reviewedLine && currentLine !== terminal) {
+      return rejectedPlan(
+        "identity-conflict",
+        `reviewed task ^${decision.blockId} changed; refresh before applying decisions`,
+      );
+    }
+    reviewedLines.set(decision.blockId, reviewedLine);
+  }
+
+  const touched = new Set(decisions.map((decision) => decision.sourceRef.path));
+  if (decisions.some((decision) => decision.disposition === "close")) {
+    touched.add(todayDaily);
+  }
+  const matrix = await statusMatrix(vaultPath);
+  const dirty = matrix.filter(([path, h, w, s]) =>
+    touched.has(path) && !(h === 1 && w === 1 && s === 1)
+  ).map(([path]) => path);
+  if (dirty.length > 0) {
+    return rejectedPlan(
+      "dirty-conflict",
+      `review target files have uncommitted owner changes: ${dirty.join(", ")}`,
+    );
+  }
+
+  type EvolvingFile = { original: string | null; lines: string[] };
+  const evolving = new Map<string, EvolvingFile>();
+  const fileFor = (path: string): EvolvingFile => {
+    const prior = evolving.get(path);
+    if (prior !== undefined) return prior;
+    const scanned = scan.files.get(path);
+    const value = {
+      original: scanned?.content ?? null,
+      lines: [...(scanned?.lines ?? [])],
+    };
+    evolving.set(path, value);
+    return value;
+  };
+  const doneBullets: string[] = [];
+  const dailyExisting = scan.files.get(todayDaily)?.content ?? null;
+
+  for (const decision of decisions) {
+    if (decision.disposition === "keep") continue;
+    const match = (scan.anchors.get(decision.blockId) ?? [])[0]!;
+    const file = fileFor(match.relPath);
+    const reviewedLine = reviewedLines.get(decision.blockId)!;
+    const currentLine = file.lines[match.lineIdx]!;
+    if (decision.disposition === "defer") {
+      const deferred = setDueDate(reviewedLine, decision.deferUntil);
+      if (currentLine === reviewedLine) file.lines[match.lineIdx] = deferred;
+      continue;
+    }
+    const closed = setCheckboxMark(reviewedLine, "x")!;
+    const anchorNeedle = `#^${decision.blockId}|from]])`;
+    if (currentLine === closed) {
+      if (!(dailyExisting ?? "").includes(anchorNeedle)) {
+        return rejectedPlan(
+          "identity-conflict",
+          `^${decision.blockId} is closed without its required Done-today record`,
+        );
+      }
+      continue;
+    }
+    file.lines[match.lineIdx] = closed;
+    if (!(dailyExisting ?? "").includes(anchorNeedle)) {
+      doneBullets.push(
+        `- ${taskLineBody(reviewedLine)} ([[${stripMd(match.relPath)}#^${decision.blockId}|from]])`,
+      );
+    }
+  }
+
+  if (doneBullets.length > 0) {
+    const daily = fileFor(todayDaily);
+    const base = daily.original === null
+      ? renderDailySkeleton({
+          today: localDateParts(now),
+          yesterday: previousLocalDate(localDateParts(now)),
+        })
+      : daily.lines.join("\n");
+    daily.lines = appendDoneTodayBullets(base, doneBullets).split("\n");
+  }
+
+  const files = [...evolving.entries()].flatMap(([path, file]) => {
+    const content = file.lines.join("\n");
+    return content === file.original ? [] : [{
+      path,
+      expectedContent: file.original,
+      content,
+    }];
+  }).sort((a, b) => a.path.localeCompare(b.path));
+  if (files.length === 0) return Object.freeze({ kind: "no-changes" as const });
+  return Object.freeze({
+    kind: "apply" as const,
+    files: Object.freeze(files),
+    message: `task backlog review: ${decisions.length} decisions`,
+    author: { name: "dome review", email: "dome-review@local" },
+  });
+}
+
 // ----- disposition → file changes --------------------------------------------
 
 type FileWrite = {
@@ -306,6 +578,86 @@ function invalid(message: string): SettleResult {
   return Object.freeze({ status: "invalid" as const, message });
 }
 
+type SettleBatchError = Extract<SettleBatchResult, { status: "error" }>["error"];
+
+function batchError(
+  error: SettleBatchError,
+  message: string,
+  retryable = false,
+  recoveryRequired = false,
+): SettleBatchResult {
+  return Object.freeze({
+    schema: SETTLE_BATCH_SCHEMA,
+    status: "error" as const,
+    error,
+    message,
+    retryable,
+    recoveryRequired,
+  });
+}
+
+function rejectedPlan(code: string, message: string): ControlledMutationPlan {
+  return Object.freeze({ kind: "rejected" as const, code, message });
+}
+
+function terminalLine(
+  reviewedLine: string,
+  decision: SettleBatchRequest["decisions"][number],
+): string {
+  if (decision.disposition === "keep") return reviewedLine;
+  if (decision.disposition === "defer") {
+    return setDueDate(reviewedLine, decision.deferUntil);
+  }
+  return setCheckboxMark(reviewedLine, "x") ?? reviewedLine;
+}
+
+function settleBatchRequestId(
+  revision: string,
+  decisions: ReadonlyArray<SettleBatchRequest["decisions"][number]>,
+): string {
+  const digest = createHash("sha256")
+    .update(JSON.stringify({ revision, decisions }))
+    .digest("hex");
+  return `task-backlog-review:${digest}`;
+}
+
+function settleBatchMutationFailure(
+  mutation: Exclude<PlannedControlledMutationResult,
+    { readonly kind: "committed" | "no-changes" }>,
+): SettleBatchResult {
+  switch (mutation.kind) {
+    case "rejected":
+      if (mutation.code === "stale-review") {
+        return batchError("stale-review", mutation.message);
+      }
+      return batchError(
+        mutation.code === "dirty-conflict" || mutation.code === "identity-conflict"
+          ? "conflict"
+          : "invalid-request",
+        mutation.message,
+      );
+    case "busy":
+      return batchError("busy", "the vault mutation lane is busy; retry later", true);
+    case "diverged":
+      return batchError(
+        "outcome-unknown",
+        `backlog review requires recovery at ${mutation.paths.join(", ") || "the target files"}`,
+        true,
+        true,
+      );
+    case "no-commit":
+      return batchError(
+        "conflict",
+        mutation.reason === "working-tree-conflict"
+          ? `review target files changed before commit: ${mutation.paths.join(", ") || "unknown paths"}`
+          : mutation.reason === "branch-mismatch"
+            ? "the current branch changed before backlog review could commit"
+            : "the branch changed while backlog review was committing; refresh and retry",
+        true,
+      );
+  }
+}
+
 function settleRequestId(req: SettleRequest): string {
   const digest = createHash("sha256")
     .update(JSON.stringify({
@@ -361,7 +713,26 @@ function findAnchoredLines(
   vaultPath: string,
   blockId: string,
 ): ReadonlyArray<{ relPath: string; lineIdx: number; lines: string[] }> {
-  const matches: { relPath: string; lineIdx: number; lines: string[] }[] = [];
+  return scanMarkdownAnchors(vaultPath, new Set([blockId])).anchors.get(blockId) ?? [];
+}
+
+type MarkdownScan = {
+  readonly files: ReadonlyMap<string, { content: string; lines: string[] }>;
+  readonly anchors: ReadonlyMap<string, ReadonlyArray<{
+    relPath: string;
+    lineIdx: number;
+    lines: string[];
+  }>>;
+};
+
+/** One filesystem walk/read pass for every requested identity. */
+function scanMarkdownAnchors(
+  vaultPath: string,
+  blockIds: ReadonlySet<string>,
+): MarkdownScan {
+  const files = new Map<string, { content: string; lines: string[] }>();
+  const anchors = new Map<string, Array<{ relPath: string; lineIdx: number; lines: string[] }>>();
+  for (const id of blockIds) anchors.set(id, []);
   for (const relPath of listMarkdownFiles(vaultPath)) {
     let text: string;
     try {
@@ -370,18 +741,21 @@ function findAnchoredLines(
       continue;
     }
     const lines = text.split("\n");
+    files.set(relPath, { content: text, lines });
     const ignoredRanges = actionExtractionLineRanges(text);
-    let offset = 0;
-    while (offset < lines.length) {
-      const lineIdx = findAnchorLine(lines, blockId, offset);
-      if (lineIdx === -1) break;
-      if (!lineIsInsideRanges(lineIdx + 1, ignoredRanges)) {
-        matches.push({ relPath, lineIdx, lines });
+    for (const blockId of blockIds) {
+      let offset = 0;
+      while (offset < lines.length) {
+        const lineIdx = findAnchorLine(lines, blockId, offset);
+        if (lineIdx === -1) break;
+        if (!lineIsInsideRanges(lineIdx + 1, ignoredRanges)) {
+          anchors.get(blockId)!.push({ relPath, lineIdx, lines });
+        }
+        offset = lineIdx + 1;
       }
-      offset = lineIdx + 1;
     }
   }
-  return Object.freeze(matches);
+  return Object.freeze({ files, anchors });
 }
 
 const SKIP_DIRS = new Set([".git", ".dome", "node_modules"]);

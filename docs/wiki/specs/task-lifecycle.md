@@ -40,7 +40,8 @@ is reviewable only when every member has a real stamped block anchor;
 unanchored members use a transient path+line+normalized-body read identity and
 are explicitly `reviewable: false`.
 
-Every member SourceRef is exact projected-origin evidence: adopted `commit`,
+Every member SourceRef is exact reviewed-origin evidence: its `commit` is
+re-keyed to the list document's adopted `revision`, and its
 line `range`, and `stableId` are required by the wire contract. Block-anchor
 uniqueness is checked across the complete open set before grouping or paging.
 If one `blockId` appears on multiple origins, every affected member and unit is
@@ -54,11 +55,25 @@ the adopted commit and a derived-list hash, so list drift produces a typed
 `stale-cursor` instead of skipping or repeating work. This read model makes no
 closure inference and performs no mutation.
 
-The future keep/defer/close batch operation must treat these ids and refs as
-review evidence, not write authority. At commit time it re-scans the global
-source state for every selected anchor under the controlled-mutation lease and
-refuses missing, duplicated, moved-to-an-ineligible-source, or otherwise
-ambiguous identities before changing Markdown.
+`performSettleBatch` treats these ids and refs as review evidence, not write
+authority. Its strict `dome.task-backlog.review/v1` request carries one adopted
+`revision` and 1–100 unique keep/defer/close decisions, each with the exact
+SourceRef returned by `TaskBacklog.list`. At commit time it re-reads every
+reviewed line from that revision and performs one global current-Markdown scan
+under the controlled-mutation locks. A changed adopted revision, malformed or
+conflicting decision, missing/duplicate/moved anchor, mismatched stable id, or
+dirty target file rejects the whole batch before a commit.
+
+Valid changes are composed per unique file in memory. Every close flips its
+origin and contributes one anchor-deduplicated Done-today backlink; all bullets
+merge into the daily once. Defers in the same file compose with closes, keeps
+participate in identity validation, and a keep-only or exact replay is a
+successful no-op. The batch produces at most one ordinary human commit with
+one deterministic `Dome-Request` identity. A newer unadopted HEAD is allowed
+only when it descends from the reviewed revision and every reviewed task line
+still equals either its reviewed bytes or the exact terminal bytes from an
+idempotent replay. A lost branch CAS aborts rather than splicing stale
+full-file content onto the newer tip.
 
 ## Block-anchor identity
 
@@ -120,6 +135,15 @@ Settling a task is a **decision**, not authoring — the same shape as resolving
 - **close** — set the origin line to `- [x]` (done) and, in the SAME commit, append `- <task text> ([[<source page>#^<block>|from]])` under today's daily `### Done today` section (created under `## Done` when absent — `## Done` is shared scaffold + human bullets, [[wiki/specs/daily-surface]] §"Block ownership"). Commit-or-nothing: one commit carries both edits, or none. Idempotent — an already-settled line is a no-op.
 - **defer** — rewrite (or insert) the `📅 YYYY-MM-DD` due token to `deferUntil` (required, `YYYY-MM-DD`; a defer without it answers `{ status: "invalid" }`). The task stays open; the origin marker and trailing `^anchor` are preserved.
 - **keep** — touch nothing, record nothing, **commit nothing**: `{ status: "settled" }` with no commit.
+
+**Backlog-review batch.** Authenticated Home clients apply the review document
+through `POST /task-backlog/review`. The route requires `resolve`, is admitted
+as one workspace mutation, records one request receipt, and delegates to the
+locked batch contract above. `400 invalid-request` is malformed input;
+`409 stale-review` or `conflict` means refresh/repair without outcome
+uncertainty; `503 busy` is safe to retry; only `503 outcome-unknown` carries
+`recoveryRequired: true`. A successful response reports decision counts, the
+single commit or `null`, and whether adoption is `pending` or `unchanged`.
 
 **Shared line mechanics.** The find-by-anchor / flip-if-open / rewrite-`📅` transforms are pure and live once in `dome.daily`'s `task-disposition` module. `performSettle` owns the remote operation and does the filesystem/git work. The commit subject is `settle(<disposition>): <first 50 chars of task text>`.
 

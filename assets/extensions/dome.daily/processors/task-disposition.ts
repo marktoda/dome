@@ -145,6 +145,16 @@ const HEADING_RE = /^#{1,6}\s/;
  * scaffold + human bullets/edits).
  */
 export function appendDoneTodayBullet(content: string, bullet: string): string {
+  return appendDoneTodayBullets(content, [bullet]);
+}
+
+/** Bulk form used by backlog review so one batch performs one section merge. */
+export function appendDoneTodayBullets(
+  content: string,
+  bullets: ReadonlyArray<string>,
+): string {
+  const unique = [...new Set(bullets)].filter((bullet) => !content.includes(bullet));
+  if (unique.length === 0) return content;
   const lines = content.split("\n");
   // 1-indexed inclusive line ranges of EVERY registered daily generated block
   // — including `dome.daily:captured`, which task extraction deliberately
@@ -179,12 +189,12 @@ export function appendDoneTodayBullet(content: string, bullet: string): string {
     while (insertAt > headingIdx + 1 && (lines[insertAt - 1] ?? "").trim() === "") {
       insertAt -= 1;
     }
-    lines.splice(insertAt, 0, bullet);
+    lines.splice(insertAt, 0, ...unique);
     return lines.join("\n");
   }
 
   // No bare section yet — create it under `## Done`.
-  const section = [DONE_TODAY_HEADING, bullet];
+  const section = [DONE_TODAY_HEADING, ...unique];
   const doneIdx = lines.findIndex(
     (l, i) => /^##\s+Done\s*$/.test(l) && !inGeneratedBlock(i),
   );

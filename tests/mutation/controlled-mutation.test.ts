@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { runInit } from "../../src/cli/commands/init";
 import { compilerHostLockPath } from "../../src/engine/host/compiler-host-lock";
 import { withExclusiveFileLock } from "../../src/engine/host/file-lock";
-import { currentSha, log, readBlob, statusMatrix } from "../../src/git";
+import { commitSingleFileOnHead, currentSha, log, readBlob, statusMatrix } from "../../src/git";
 import {
   applyControlledMutation,
   mutationJournalPath,
@@ -87,6 +87,47 @@ describe("controlled mutation", () => {
     expect(result).toMatchObject({ kind: "no-commit", reason: "branch-mismatch" });
     expect(await currentSha(path)).toBe(before);
     expect(existsSync(join(path, "inbox/raw/wrong.md"))).toBe(false);
+  });
+
+  test("a planned full-file mutation aborts a lost ref CAS without stale-splicing", async () => {
+    const path = await vault();
+    await writeFile(join(path, "wiki/target.md"), "owner truth\n", "utf8");
+    await commitSingleFileOnHead({
+      path,
+      filepath: "wiki/target.md",
+      content: "owner truth\n",
+      message: "fixture target",
+    });
+
+    const result = await applyControlledMutation({
+      vaultPath: path,
+      branch: "main",
+      requestId: "planned:cas",
+      plan: async () => ({
+        kind: "apply" as const,
+        files: [{
+          path: "wiki/target.md",
+          expectedContent: "owner truth\n",
+          content: "planned change\n",
+        }],
+        message: "planned change",
+      }),
+    }, {
+      beforeRefAdvance: async () => {
+        await writeFile(join(path, "owner-race.md"), "new owner tip\n", "utf8");
+        await commitSingleFileOnHead({
+          path,
+          filepath: "owner-race.md",
+          content: "new owner tip\n",
+          message: "owner wins race",
+        });
+      },
+    });
+
+    expect(result).toMatchObject({ kind: "no-commit", reason: "candidate-not-landed" });
+    expect((await log({ path, depth: 1 }))[0]?.commit.message).toBe("owner wins race\n");
+    expect(await readFile(join(path, "wiki/target.md"), "utf8")).toBe("owner truth\n");
+    expect(await readFile(join(path, "owner-race.md"), "utf8")).toBe("new owner tip\n");
   });
 
   test("the host lane is bounded and returns busy without writing", async () => {

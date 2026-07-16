@@ -43,7 +43,7 @@ describe("TaskBacklog.list document", () => {
     ];
     const doc = buildTaskBacklogList({
       date: "2026-07-16",
-      revision: "abc123",
+      revision: COMMIT,
       tasks: [
         task("past", 1, { dueDate: "2026-07-15" }),
         task("future", 2, { dueDate: "2026-07-20" }),

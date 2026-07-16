@@ -79,7 +79,49 @@ export type ControlledMutationResult =
       readonly lockPath: string;
     };
 
+export type ControlledMutationPlan =
+  | {
+      readonly kind: "apply";
+      readonly files: ReadonlyArray<ControlledFileChange>;
+      readonly message: string;
+      readonly author?: CommitIdentity;
+    }
+  | { readonly kind: "no-changes" }
+  | {
+      readonly kind: "rejected";
+      readonly code: string;
+      readonly message: string;
+    };
+
+export type PlannedControlledMutationResult = ControlledMutationResult
+  | { readonly kind: "no-changes"; readonly requestId: string }
+  | {
+      readonly kind: "rejected";
+      readonly requestId: string;
+      readonly code: string;
+      readonly message: string;
+    };
+
+type ControlledMutationBaseInput = {
+  readonly vaultPath: string;
+  readonly branch: string;
+  readonly requestId: string;
+};
+
+type StaticControlledMutationInput = ControlledMutationBaseInput & {
+  readonly files: ReadonlyArray<ControlledFileChange>;
+  readonly message: string;
+  readonly author?: CommitIdentity;
+};
+
+type PlannedControlledMutationInput = ControlledMutationBaseInput & {
+  /** Runs after recovery + branch validation while both mutation locks are held. */
+  readonly plan: () => Promise<ControlledMutationPlan>;
+};
+
 export type ControlledMutationDeps = {
+  /** Test seam: runs after candidate creation and journal write, before ref CAS. */
+  readonly beforeRefAdvance?: (attempt: number) => Promise<void>;
   /** Fault-injection seam: runs after the ref advances and before checkout repair. */
   readonly afterRefAdvance?: (commit: string) => Promise<void>;
   /** Test-only crash seam: false leaves durable journals for explicit recovery. */
@@ -88,17 +130,18 @@ export type ControlledMutationDeps = {
   readonly now?: () => Date;
 };
 
+export function applyControlledMutation(
+  input: StaticControlledMutationInput,
+  deps?: ControlledMutationDeps,
+): Promise<ControlledMutationResult>;
+export function applyControlledMutation(
+  input: PlannedControlledMutationInput,
+  deps?: ControlledMutationDeps,
+): Promise<PlannedControlledMutationResult>;
 export async function applyControlledMutation(
-  input: {
-    readonly vaultPath: string;
-    readonly branch: string;
-    readonly requestId: string;
-    readonly files: ReadonlyArray<ControlledFileChange>;
-    readonly message: string;
-    readonly author?: CommitIdentity;
-  },
+  input: StaticControlledMutationInput | PlannedControlledMutationInput,
   deps: ControlledMutationDeps = {},
-): Promise<ControlledMutationResult> {
+): Promise<PlannedControlledMutationResult> {
   if (
     input.requestId.length === 0 ||
     input.requestId.length > 256 ||
@@ -106,7 +149,7 @@ export async function applyControlledMutation(
   ) {
     throw new Error("controlled mutation request id must be 1-256 single-line characters");
   }
-  validateInput(input.files);
+  if ("files" in input) validateInput(input.files);
   const wait = deps.lockWait ?? DEFAULT_WAIT;
   const hostLocked = await withCompilerHostBranchLock(
     {
@@ -188,9 +231,9 @@ export async function recoverControlledMutation(input: {
 }
 
 async function applyWhileLocked(
-  input: Parameters<typeof applyControlledMutation>[0],
+  input: StaticControlledMutationInput | PlannedControlledMutationInput,
   deps: ControlledMutationDeps,
-): Promise<ControlledMutationResult> {
+): Promise<PlannedControlledMutationResult> {
   const replay = await replayFinalizeJournal(input.vaultPath);
   if (replay.kind === "replayed" && replay.skippedPaths.length > 0) {
     return Object.freeze({
@@ -212,16 +255,40 @@ async function applyWhileLocked(
     });
   }
 
+  const planned = "plan" in input ? await input.plan() : null;
+  if (planned?.kind === "rejected") {
+    return Object.freeze({
+      kind: "rejected" as const,
+      requestId: input.requestId,
+      code: planned.code,
+      message: planned.message,
+    });
+  }
+  if (planned?.kind === "no-changes") {
+    return Object.freeze({ kind: "no-changes" as const, requestId: input.requestId });
+  }
+  const mutation: StaticControlledMutationInput = planned === null
+    ? input as StaticControlledMutationInput
+    : {
+        vaultPath: input.vaultPath,
+        branch: input.branch,
+        requestId: input.requestId,
+        files: planned.files,
+        message: planned.message,
+        ...(planned.author !== undefined ? { author: planned.author } : {}),
+      };
+  validateInput(mutation.files);
+
   const conflicts: string[] = [];
-  for (const file of input.files) {
-    if ((await readWorkingFile(input.vaultPath, file.path)) !== file.expectedContent) {
+  for (const file of mutation.files) {
+    if ((await readWorkingFile(mutation.vaultPath, file.path)) !== file.expectedContent) {
       conflicts.push(file.path);
     }
   }
   if (conflicts.length > 0) {
     return Object.freeze({
       kind: "no-commit" as const,
-      requestId: input.requestId,
+      requestId: mutation.requestId,
       reason: "working-tree-conflict" as const,
       paths: Object.freeze(conflicts),
     });
@@ -229,29 +296,35 @@ async function applyWhileLocked(
 
   try {
     await commitFilesOnHead({
-      path: input.vaultPath,
-      files: input.files.map((file) => ({ filepath: file.path, content: file.content })),
-      message: `${input.message.trimEnd()}\n\n${CONTROLLED_MUTATION_TRAILER}: ${input.requestId}`,
-      ...(input.author !== undefined ? { author: input.author } : {}),
+      path: mutation.vaultPath,
+      files: mutation.files.map((file) => ({ filepath: file.path, content: file.content })),
+      message: `${mutation.message.trimEnd()}\n\n${CONTROLLED_MUTATION_TRAILER}: ${mutation.requestId}`,
+      ...(mutation.author !== undefined ? { author: mutation.author } : {}),
+      // A plan is a full-file CAS snapshot. If HEAD moves, return a known
+      // conflict and let the caller re-plan; never stale-splice onto a new tip.
+      ...(planned !== null ? { retryOnCas: false } : {}),
       onCandidate: async (candidate) => {
         const writtenAt = (deps.now ?? (() => new Date()))().toISOString();
-        await writeMutationJournal(input.vaultPath, {
+        await writeMutationJournal(mutation.vaultPath, {
           schema: SCHEMA,
-          requestId: input.requestId,
-          branch: input.branch,
+          requestId: mutation.requestId,
+          branch: mutation.branch,
           sourceHead: candidate.head,
           target: candidate.commit,
           writtenAt,
-          files: input.files.map((file) => ({ ...file })),
+          files: mutation.files.map((file) => ({ ...file })),
         });
-        await writeFinalizeJournal(input.vaultPath, {
-          branch: input.branch,
+        await writeFinalizeJournal(mutation.vaultPath, {
+          branch: mutation.branch,
           sourceHead: candidate.head,
           target: candidate.commit,
-          paths: input.files.map((file) => file.path),
+          paths: mutation.files.map((file) => file.path),
           writtenAt,
         });
       },
+      ...(deps.beforeRefAdvance !== undefined
+        ? { beforeRefAdvance: deps.beforeRefAdvance }
+        : {}),
       ...(deps.afterRefAdvance !== undefined
         ? { afterRefAdvance: deps.afterRefAdvance }
         : {}),
@@ -262,16 +335,16 @@ async function applyWhileLocked(
     if (deps.reconcileAfterFailure === false) throw error;
   }
 
-  await replayFinalizeJournal(input.vaultPath);
+  await replayFinalizeJournal(mutation.vaultPath);
   const reconciled = await reconcileJournal(
-    input.vaultPath,
-    input.branch,
-    input.requestId,
+    mutation.vaultPath,
+    mutation.branch,
+    mutation.requestId,
   );
   return reconciled.kind === "none"
     ? Object.freeze({
         kind: "no-commit" as const,
-        requestId: input.requestId,
+        requestId: mutation.requestId,
         reason: "candidate-not-landed" as const,
         paths: Object.freeze([] as string[]),
       })

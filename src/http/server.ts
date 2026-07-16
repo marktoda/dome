@@ -26,7 +26,11 @@ import {
   questionRecordJson,
 } from "../surface/answer";
 import { captureJsonDocument, performCapture } from "../surface/capture";
-import { performSettle, settleResultJson } from "../surface/settle";
+import {
+  performSettle,
+  performSettleBatch,
+  settleResultJson,
+} from "../surface/settle";
 import {
   applyResultJson,
   collectProposals,
@@ -121,6 +125,7 @@ const ROUTE_CAPABILITY: Readonly<Record<string, Capability>> = {
   "POST /capture": "capture",
   "POST /resolve": "resolve",
   "POST /settle": "resolve",
+  "POST /task-backlog/review": "resolve",
   "GET /proposals": "read",
   "GET /attention": "read",
   "GET /agent-work": "read",
@@ -1274,6 +1279,44 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       });
     }
 
+    if (route === "POST /task-backlog/review") {
+      const read = await jsonBody(request, maxBodyBytes);
+      if (read.kind === "too-large") {
+        return dataErrorResponse(413, "payload-too-large", `request body exceeds the ${maxBodyBytes}-byte limit.`);
+      }
+      // performSettleBatch owns the strict versioned request boundary and
+      // performs its scan + plan under the one controlled-mutation lock.
+      return recordMutation(client, "settle", "workspace-mutation", async () => {
+        const outcome = await performSettleBatch(opts.vaultPath, read.body);
+        if (outcome.status === "settled") {
+          return {
+            response: jsonResponse(200, outcome),
+            terminal: {
+              state: "succeeded",
+              resultCode: outcome.commit === null ? "reviewed-noop" : "reviewed",
+              ...(outcome.commit !== null ? { commitOid: outcome.commit } : {}),
+            },
+          };
+        }
+        const status = outcome.error === "invalid-request"
+          ? 400
+          : outcome.error === "busy" || outcome.error === "outcome-unknown"
+            ? 503
+            : 409;
+        return {
+          response: jsonResponse(status, outcome),
+          terminal: outcome.error === "outcome-unknown"
+            ? {
+                state: "interrupted",
+                resultCode: "mutation-outcome-unknown",
+                adoptionState: "unknown",
+                recoveryRequired: true,
+              }
+            : { state: "rejected", resultCode: outcome.error },
+        };
+      });
+    }
+
     if (route === "GET /proposals") {
       // collectProposals is runtime-free (reads proposals.db directly) —
       // no enqueue/withVault needed, same as POST /capture and POST /settle.
@@ -1867,7 +1910,7 @@ function operationClassFor(request: Request): ProductOperationClass {
   }
   if (
     request.method === "POST" &&
-    ["/capture", "/settle", "/apply"].includes(pathname)
+    ["/capture", "/settle", "/task-backlog/review", "/apply"].includes(pathname)
   ) {
     return "workspace-mutation";
   }

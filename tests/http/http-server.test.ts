@@ -290,6 +290,7 @@ describe("auth", () => {
       expect(
         (await post("/settle", { blockId: "x", disposition: "close" }, null)).status,
       ).toBe(401);
+      expect((await post("/task-backlog/review", {}, null)).status).toBe(401);
       expect((await get("/proposals", null)).status).toBe(401);
       expect((await get("/attention", null)).status).toBe(401);
       expect((await get("/agent-work", null)).status).toBe(401);
@@ -995,6 +996,54 @@ describe("read routes", () => {
     },
     TEST_TIMEOUT_MS,
   );
+
+  test(
+    "POST /task-backlog/review validates and settles a reviewed keep batch",
+    async () => {
+      const backlog = await get(`/task-backlog?date=${TODAY}`);
+      expect(backlog.status).toBe(200);
+      const items = backlog.json.items as Array<Record<string, unknown>>;
+      const members = items.flatMap((item) => item.members as Array<Record<string, unknown>>);
+      const member = members.find((candidate) =>
+        candidate.reviewable === true && typeof candidate.blockId === "string"
+      );
+      expect(member).toBeDefined();
+      const refs = member!.sourceRefs as Array<Record<string, unknown>>;
+      expect(refs[0]?.commit).toBe(backlog.json.revision);
+      const response = await post("/task-backlog/review", {
+        schema: "dome.task-backlog.review/v1",
+        revision: backlog.json.revision,
+        decisions: [{
+          blockId: member!.blockId,
+          disposition: "keep",
+          sourceRef: refs[0],
+        }],
+      });
+      expect(response.json).toMatchObject({ status: "settled" });
+      expect(response.status).toBe(200);
+      expect(response.json).toMatchObject({
+        schema: "dome.task-backlog.review/v1",
+        status: "settled",
+        commit: null,
+        adoptionStatus: "unchanged",
+      });
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test("POST /task-backlog/review maps malformed contracts to typed 400", async () => {
+    const response = await post("/task-backlog/review", {
+      schema: "dome.task-backlog.review/v1",
+      revision: "not-an-oid",
+      decisions: [],
+    });
+    expect(response.status).toBe(400);
+    expect(response.json).toMatchObject({
+      schema: "dome.task-backlog.review/v1",
+      status: "error",
+      error: "invalid-request",
+    });
+  });
 
   test(
     "GET /task-backlog maps a valid cursor for another revision to a typed 409",

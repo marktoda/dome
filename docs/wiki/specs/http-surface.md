@@ -99,6 +99,7 @@ vault per process.
 | `GET /questions` | `vault.listQuestions` (open only) | `dome.http.questions/v1` |
 | `POST /resolve` `{id, value}` | `dome resolve` | `dome.answer/v1` |
 | `POST /settle` `{blockId, disposition, deferUntil?}` | `performSettle` (`resolve` capability — settling is a decision, same trust domain as resolve) | `dome.settle/v1` (`status: settled \| not-found \| invalid`) |
+| `POST /task-backlog/review` `{schema, revision, decisions[]}` | `performSettleBatch` (`resolve`; one locked workspace mutation + receipt) | `dome.task-backlog.review/v1` (`settled` or typed invalid/stale/conflict/busy/outcome-unknown) |
 | `GET /proposals?all=1` | `collectProposals` (`read` capability; defaults to pending rows only) | `dome.proposals/v1` |
 | `POST /apply` `{id}` | `performApply` (`resolve` capability — the settle pattern for garden-proposed edits) | `dome.apply/v1` (`status: applied \| stale \| not-found \| not-pending \| invalid`) |
 | `POST /reject` `{id, note?}` | `performReject` (`resolve` capability) | `dome.reject/v1` (`status: rejected \| not-found \| not-pending \| invalid`) |
@@ -127,9 +128,13 @@ Pagination is deterministic and keyset-based. The opaque cursor binds the
 last unit id to the adopted commit and a hash of the derived unit list. A
 malformed cursor returns `400 invalid-cursor`; any adopted/task-list change
 returns `409 stale-cursor` and requires a fresh first page. Page size defaults
-to 25 and caps at 100. This slice is read-only: keep/defer/close batch mutation
-is a separate controlled-mutation contract and will re-scan global source
-state at commit time rather than trusting a paged read receipt. The PWA client
+to 25 and caps at 100. Mutation is the separate
+`POST /task-backlog/review` contract: every unique decision returns the exact
+SourceRef from this revision-bound read, and the server re-reads that evidence
+and re-scans global source state under the controlled-mutation locks rather
+than trusting a paged read receipt. Mixed close/defer edits and Done-today
+backlinks land in at most one attributable commit; keep-only and exact replay
+land none. The PWA client
 validates the discriminated union even on non-2xx responses, returning typed
 `invalid-cursor` / `stale-cursor` recovery documents while rejecting malformed
 problem payloads.

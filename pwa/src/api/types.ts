@@ -3,7 +3,11 @@ import type {
   AgentStreamCitation,
   AgentStreamEvent,
 } from "../../../contracts/agent-stream";
-import type { TaskBacklogListDocument } from "../../../src/surface/task-backlog";
+import type { TaskBacklogListDocument } from "../../../contracts/task-backlog";
+import type {
+  TaskBacklogReviewRequest,
+  TaskBacklogReviewResult,
+} from "../../../contracts/task-backlog-review";
 
 export type Citation = AgentStreamCitation;
 
@@ -98,6 +102,7 @@ export type Today = {
 };
 
 export type TaskBacklog = TaskBacklogListDocument;
+export type { TaskBacklogReviewRequest, TaskBacklogReviewResult };
 
 export type RecentEntry = {
   path: string;

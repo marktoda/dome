@@ -1010,10 +1010,12 @@ The next product mission is a **Backlog Review**, not another broad feature:
 1. **Shipped:** a paged, projection-backed `TaskBacklog.list` read interface
    over the same global open-loop origin selector, with exact-only grouping,
    full source/block-anchor evidence, and revision-bound keyset cursors;
-2. group explicit commitments by overdue, dated, exact duplicate candidate,
-   and undated source context;
-3. let the owner keep, defer, or close a reviewed batch with one attributable,
-   recoverable commit and one adoption receipt;
+2. **Shipped:** group explicit commitments by overdue, dated, exact duplicate
+   candidate, and undated source context;
+3. **Shipped engine/HTTP/PWA-client seam:** keep, defer, or close a reviewed
+   batch through `dome.task-backlog.review/v1`, with one locked attributable,
+   recoverable commit and one adoption receipt. The owner-facing PWA review
+   paint is the next bounded checkpoint;
 4. never infer closure, delete prose, or mutate a task merely because it looks
    old or duplicated.
 

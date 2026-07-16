@@ -1,4 +1,4 @@
-import type { AgentSession, AgentStopOutcome, AgentStreamOutcome, CaptureResult, PairingResult, PairingStatus, Recents, ResolveResult, SettleDisposition, SettleResult, StreamEvent, TaskBacklog, Today, Transcript } from "./types";
+import type { AgentSession, AgentStopOutcome, AgentStreamOutcome, CaptureResult, PairingResult, PairingStatus, Recents, ResolveResult, SettleDisposition, SettleResult, StreamEvent, TaskBacklog, TaskBacklogReviewRequest, TaskBacklogReviewResult, Today, Transcript } from "./types";
 import {
   parseCaptureReceipt,
   type CaptureRequest,
@@ -17,7 +17,8 @@ import {
   parseProductReadiness,
   type ProductReadiness,
 } from "../../../contracts/product-readiness";
-import { taskBacklogListSchema } from "../../../src/surface/task-backlog";
+import { taskBacklogListSchema } from "../../../contracts/task-backlog";
+import { taskBacklogReviewResultSchema } from "../../../contracts/task-backlog-review";
 import { todayPayloadSchema } from "../../../src/surface/today-view";
 
 export type AgentTurnHandle = {
@@ -219,6 +220,23 @@ export class DomeClient {
   async settle(blockId: string, disposition: SettleDisposition, deferUntil?: string): Promise<SettleResult> {
     const body = { blockId, disposition, ...(deferUntil !== undefined ? { deferUntil } : {}) };
     return this.parse<SettleResult>(await this.fetchResponse(this.request("/settle", { method: "POST", headers: this.authHeaders(true), body: JSON.stringify(body) })));
+  }
+
+  async reviewTaskBacklog(
+    request: TaskBacklogReviewRequest,
+  ): Promise<TaskBacklogReviewResult> {
+    const response = await this.fetchResponse(this.request("/task-backlog/review", {
+      method: "POST",
+      headers: this.authHeaders(true),
+      body: JSON.stringify(request),
+    }));
+    const value = await response.json().catch(() => null) as unknown;
+    const parsed = taskBacklogReviewResultSchema.safeParse(value);
+    if (parsed.success) {
+      if (response.ok && parsed.data.status === "settled") return parsed.data;
+      if (!response.ok && parsed.data.status === "error") return parsed.data;
+    }
+    throw new Error("Task backlog review response is incompatible.");
   }
 
   async transcribe(audio: Blob): Promise<Transcript> {

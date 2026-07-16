@@ -528,6 +528,7 @@ export async function commitSingleFileOnHead(opts: {
    * branch concurrently to exercise the retry path deterministically.
    */
   beforeRefAdvance?: (attempt: number) => Promise<void>;
+  retryOnCas?: boolean;
   onCandidate?: (candidate: {
     readonly attempt: number;
     readonly branch: string;
@@ -544,6 +545,7 @@ export async function commitSingleFileOnHead(opts: {
     ...(opts.beforeRefAdvance !== undefined
       ? { beforeRefAdvance: opts.beforeRefAdvance }
       : {}),
+    ...(opts.retryOnCas !== undefined ? { retryOnCas: opts.retryOnCas } : {}),
     ...(opts.onCandidate !== undefined ? { onCandidate: opts.onCandidate } : {}),
     ...(opts.afterRefAdvance !== undefined
       ? { afterRefAdvance: opts.afterRefAdvance }
@@ -580,6 +582,8 @@ export async function commitFilesOnHead(opts: {
   message: string;
   author?: CommitIdentity;
   beforeRefAdvance?: (attempt: number) => Promise<void>;
+  /** Defaults true. False aborts rather than splicing full-file content onto a newer HEAD. */
+  retryOnCas?: boolean;
   onCandidate?: (candidate: {
     readonly attempt: number;
     readonly branch: string;
@@ -654,6 +658,7 @@ export async function commitFilesOnHead(opts: {
       // GC'd. A failure with an unmoved head is a real error — rethrow.
       const current = await git.resolveRef({ fs, dir: root, ref: branch });
       if (current === head) throw e;
+      if (opts.retryOnCas === false) throw e;
       head = current;
       continue;
     }
@@ -1534,6 +1539,7 @@ async function nativeGitFileCommitFilesOnHead(opts: {
   readonly message: string;
   readonly author?: CommitIdentity;
   readonly beforeRefAdvance?: (attempt: number) => Promise<void>;
+  readonly retryOnCas?: boolean;
   readonly onCandidate?: (candidate: {
     readonly attempt: number;
     readonly branch: string;
@@ -1592,6 +1598,7 @@ async function nativeGitFileCommitFilesOnHead(opts: {
       } catch (error) {
         const current = (await runNativeGit(["-C", opts.root, "rev-parse", branch])).trim();
         if (current === head) throw error;
+        if (opts.retryOnCas === false) throw error;
         head = current;
         continue;
       }

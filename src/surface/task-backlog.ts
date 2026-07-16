@@ -8,99 +8,23 @@
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 
-import { z } from "zod";
-
 import { stripWikilinks } from "../core/wikilink";
 import type { TodayTaskRow } from "./today-view";
+import {
+  TASK_BACKLOG_LIST_SCHEMA,
+  type TaskBacklogListDocument,
+  type TaskBacklogUnit,
+} from "../../contracts/task-backlog";
+export {
+  TASK_BACKLOG_LIST_SCHEMA,
+  taskBacklogListSchema,
+  type TaskBacklogListDocument,
+  type TaskBacklogListOk,
+  type TaskBacklogUnit,
+} from "../../contracts/task-backlog";
 
-export const TASK_BACKLOG_LIST_SCHEMA = "dome.daily.task-backlog.list/v1";
 export const DEFAULT_TASK_BACKLOG_PAGE_SIZE = 25;
 export const MAX_TASK_BACKLOG_PAGE_SIZE = 100;
-
-const sourceRefSchema = z.object({
-  path: z.string(),
-  commit: z.string().min(1),
-  stableId: z.string().min(1),
-  range: z.object({
-    startLine: z.number().int().positive(),
-    endLine: z.number().int().positive(),
-  }).refine((range) => range.endLine >= range.startLine, {
-    message: "endLine must be greater than or equal to startLine",
-    path: ["endLine"],
-  }),
-});
-
-const memberSchema = z.object({
-  id: z.string(),
-  path: z.string(),
-  line: z.number().int().positive().nullable(),
-  source: z.enum(["daily", "backlog"]),
-  followup: z.boolean(),
-  dueDate: z.string().nullable(),
-  priority: z.enum(["highest", "high", "medium", "low", "lowest"]).nullable(),
-  lastChangedAt: z.string().nullable(),
-  blockId: z.string().optional(),
-  origin: z.string().optional(),
-  reviewable: z.boolean(),
-  sourceContext: z.object({
-    path: z.string(),
-    title: z.string().nullable(),
-    line: z.number().int().positive().nullable(),
-    lastChangedAt: z.string().nullable(),
-  }),
-  sourceRefs: z.array(sourceRefSchema).min(1).readonly(),
-});
-
-const unitSchema = z.object({
-  id: z.string(),
-  text: z.string(),
-  normalizedText: z.string(),
-  classification: z.object({
-    timing: z.enum(["overdue", "dated", "undated"]),
-    exactDuplicateCandidate: z.boolean(),
-  }),
-  reviewable: z.boolean(),
-  members: z.array(memberSchema).min(1).readonly(),
-});
-
-const okSchema = z.object({
-  schema: z.literal(TASK_BACKLOG_LIST_SCHEMA),
-  status: z.literal("ok"),
-  date: z.string(),
-  revision: z.string(),
-  snapshot: z.string(),
-  groups: z.object({
-    overdue: z.number().int().nonnegative(),
-    dated: z.number().int().nonnegative(),
-    exactDuplicateCandidates: z.number().int().nonnegative(),
-    undated: z.number().int().nonnegative(),
-  }),
-  page: z.object({
-    limit: z.number().int().positive(),
-    returned: z.number().int().nonnegative(),
-    total: z.number().int().nonnegative(),
-    commitments: z.number().int().nonnegative(),
-    hasMore: z.boolean(),
-    nextCursor: z.string().nullable(),
-  }),
-  items: z.array(unitSchema).readonly(),
-});
-
-const problemSchema = z.object({
-  schema: z.literal(TASK_BACKLOG_LIST_SCHEMA),
-  status: z.literal("error"),
-  error: z.enum(["invalid-cursor", "stale-cursor"]),
-  message: z.string(),
-});
-
-export const taskBacklogListSchema = z.discriminatedUnion("status", [
-  okSchema,
-  problemSchema,
-]);
-
-export type TaskBacklogListDocument = z.infer<typeof taskBacklogListSchema>;
-export type TaskBacklogListOk = z.infer<typeof okSchema>;
-export type TaskBacklogUnit = z.infer<typeof unitSchema>;
 
 export type TaskBacklogOriginRef = {
   readonly path: string;
@@ -112,7 +36,7 @@ export type TaskBacklogOriginRef = {
   };
 };
 
-export type TaskBacklogTaskInput = TodayTaskRow & {
+export type TaskBacklogTaskInput = Omit<TodayTaskRow, "sourceRefs"> & {
   readonly source: "daily" | "backlog";
   readonly followup: boolean;
   readonly dueDate: string | null;
@@ -137,7 +61,7 @@ export function buildTaskBacklogList(input: {
   readonly limit?: number;
   readonly cursor?: string | null;
 }): TaskBacklogListDocument {
-  const units = groupExactTasks(input.tasks, input.date);
+  const units = groupExactTasks(input.tasks, input.date, input.revision);
   const snapshot = snapshotOf(units);
   const cursor = decodeCursor(input.cursor ?? null);
   if (cursor.kind === "invalid") {
@@ -199,6 +123,7 @@ export function buildTaskBacklogList(input: {
 function groupExactTasks(
   tasks: ReadonlyArray<TaskBacklogTaskInput>,
   date: string,
+  revision: string,
 ): ReadonlyArray<TaskBacklogUnit> {
   const duplicateBlockIds = duplicateBlockIdsAcross(tasks);
   const grouped = new Map<string, TaskBacklogTaskInput[]>();
@@ -210,7 +135,7 @@ function groupExactTasks(
   }
   return Object.freeze([...grouped.entries()].map(([normalizedText, members]) => {
     const rows = Object.freeze(members.map((task) =>
-      member(task, duplicateBlockIds)
+      member(task, duplicateBlockIds, revision)
     ));
     const timing = timingOf(members, date);
     return Object.freeze({
@@ -233,6 +158,7 @@ function groupExactTasks(
 function member(
   task: TaskBacklogTaskInput,
   duplicateBlockIds: ReadonlySet<string>,
+  revision: string,
 ) {
   const blockId = task.blockId;
   const duplicateBlockId = blockId !== undefined && duplicateBlockIds.has(blockId);
@@ -254,7 +180,15 @@ function member(
       line: task.line,
       lastChangedAt: task.lastChangedAt,
     }),
-    sourceRefs: Object.freeze([...task.sourceRefs]),
+    // The review document is a revision-bound snapshot. Re-key otherwise
+    // exact origin refs to that adopted commit so a later mutation can prove
+    // the reviewed line against one coherent source identity.
+    sourceRefs: Object.freeze(task.sourceRefs.map((ref): TaskBacklogOriginRef => Object.freeze({
+      path: ref.path,
+      range: ref.range,
+      stableId: ref.stableId,
+      commit: revision,
+    }))),
   });
 }
 
