@@ -68,7 +68,7 @@ import {
   statusMatrix,
 } from "../git";
 import { getAdoptedRef } from "../adopted-ref";
-import { loadCapabilityPolicy } from "../engine/core/capability-policy";
+import { parseCapabilityPolicy } from "../engine/core/capability-policy";
 import {
   applyControlledMutation,
   type ControlledMutationResult,
@@ -347,11 +347,33 @@ async function planSettleBatch(
     );
   }
 
-  const policy = await loadCapabilityPolicy(vaultPath);
+  const reviewedConfig = await readBlob({
+    path: vaultPath,
+    commit: revision,
+    filepath: ".dome/config.yaml",
+  });
+  if (reviewedConfig === null) {
+    return rejectedPlan(
+      "configuration-conflict",
+      "the reviewed revision has no .dome/config.yaml",
+    );
+  }
+  const policy = parseCapabilityPolicy(
+    reviewedConfig,
+    `${revision}:.dome/config.yaml`,
+  );
   if (!policy.ok) {
     return rejectedPlan("configuration-conflict", policy.error);
   }
-  const settings = dailyPathSettings(policy.value.configForExtension("dome.daily"));
+  let settings: ReturnType<typeof dailyPathSettings>;
+  try {
+    settings = dailyPathSettings(policy.value.configForExtension("dome.daily"));
+  } catch (error) {
+    return rejectedPlan(
+      "configuration-conflict",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
   const now = (deps.now ?? (() => new Date()))();
   const todayDaily = dailyPath(localDateParts(now), settings);
   const requestedIds = new Set(decisions.map((decision) => decision.blockId));
@@ -685,7 +707,9 @@ function settleBatchMutationFailure(
         return batchError("stale-review", mutation.message);
       }
       return batchError(
-        mutation.code === "dirty-conflict" || mutation.code === "identity-conflict"
+        mutation.code === "dirty-conflict" ||
+          mutation.code === "identity-conflict" ||
+          mutation.code === "configuration-conflict"
           ? "conflict"
           : "invalid-request",
         mutation.message,

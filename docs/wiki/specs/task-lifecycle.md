@@ -62,6 +62,9 @@ SourceRef returned by `TaskBacklog.list`. At commit time it re-reads every
 reviewed line from that revision, proves that exact line was admitted by the
 same `openLoopSurfaceSources` selector as `task-index`, and performs one
 line-linear global current-Markdown scan under the controlled-mutation locks.
+The selector settings and server-now Done-daily target both come from that
+revision's `.dome/config.yaml`; dirty or unadopted `daily_path` changes cannot
+widen authority or redirect this reviewed batch.
 The scan retains only matched target files and today's daily. A changed
 adopted revision, malformed or conflicting decision, missing/duplicate anchor,
 mismatched stable id, ineligible current source, or dirty target file rejects

@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
+import { parseDocument } from "yaml";
 
 import { setAdoptedRef } from "../../src/adopted-ref";
 import { runInit } from "../../src/cli/commands/init";
@@ -221,6 +222,54 @@ describe("performSettleBatch", () => {
       decisions: [decision(revision, "wiki/local.md", 3, "tlocal", "keep")],
     });
     expect(result).toMatchObject({ status: "error", error: "conflict" });
+    expect(await currentSha(path)).toBe(before);
+  });
+
+  test("dirty live daily_path cannot reclassify a reviewed local checklist", async () => {
+    const path = await vault();
+    const taskPath = "notes/2026-07-16.md";
+    const taskContent = "# Local\n\n- [ ] ordinary checklist ^tconfig\n";
+    await commitFile(path, taskPath, taskContent);
+    const revision = await adoptHead(path);
+
+    const configPath = join(path, ".dome/config.yaml");
+    const config = parseDocument(await readFile(configPath, "utf8"));
+    config.setIn(["shared_config", "daily_path"], "notes/{date}.md");
+    await writeFile(configPath, config.toString());
+    const dirtyConfig = await readFile(configPath, "utf8");
+    const before = await currentSha(path);
+
+    const result = await performSettleBatch(path, {
+      schema: SETTLE_BATCH_SCHEMA,
+      revision,
+      decisions: [decision(revision, taskPath, 3, "tconfig", "keep")],
+    }, { now });
+    expect(result).toMatchObject({ status: "error", error: "conflict" });
+    expect(await currentSha(path)).toBe(before);
+    expect(await readFile(join(path, taskPath), "utf8")).toBe(taskContent);
+    expect(await readFile(configPath, "utf8")).toBe(dirtyConfig);
+  });
+
+  test("invalid reviewed daily_path is a deterministic configuration conflict", async () => {
+    const path = await vault();
+    const configPath = join(path, ".dome/config.yaml");
+    const config = parseDocument(await readFile(configPath, "utf8"));
+    config.setIn(["shared_config", "daily_path"], "notes/not-a-template.md");
+    await commitFile(path, ".dome/config.yaml", config.toString());
+    await commitFile(path, "wiki/a.md", "# A\n\n- [ ] #task keep A ^tbadconfig\n");
+    const revision = await adoptHead(path);
+    const before = await currentSha(path);
+
+    const result = await performSettleBatch(path, {
+      schema: SETTLE_BATCH_SCHEMA,
+      revision,
+      decisions: [decision(revision, "wiki/a.md", 3, "tbadconfig", "keep")],
+    }, { now });
+    expect(result).toMatchObject({
+      status: "error",
+      error: "conflict",
+      recoveryRequired: false,
+    });
     expect(await currentSha(path)).toBe(before);
   });
 
