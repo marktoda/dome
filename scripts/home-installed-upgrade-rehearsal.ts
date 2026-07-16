@@ -464,6 +464,15 @@ type InstalledTemporaryRemovalOptions = Readonly<{
   timeoutMs?: number;
 }>;
 
+type InstalledOwnedRoot =
+  | Readonly<{ kind: "temporary"; root: string }>
+  | Readonly<{
+      kind: "scenario";
+      root: string;
+      temporaryRoot: string;
+      scenario: InstalledHomeUpgradeScenario;
+    }>;
+
 /**
  * Portable test seam for the top-level installed-rehearsal root remover. It
  * emits no evidence and never certifies unsafe or incomplete removal.
@@ -473,6 +482,16 @@ export async function removeInstalledTemporaryRootForTests(
   options: InstalledTemporaryRemovalOptions = {},
 ): Promise<void> {
   await removeInstalledTemporaryRoot(root, options);
+}
+
+/** Specific non-evidence seam for scenario-root containment and cleanup tests. */
+export async function removeInstalledScenarioRootForTests(
+  root: string,
+  temporaryRoot: string,
+  scenario: InstalledHomeUpgradeScenario,
+  options: InstalledTemporaryRemovalOptions = {},
+): Promise<void> {
+  await removeInstalledScenarioRoot(root, temporaryRoot, scenario, options);
 }
 
 /**
@@ -487,18 +506,38 @@ async function removeInstalledTemporaryRoot(
   root: string,
   options: InstalledTemporaryRemovalOptions = {},
 ): Promise<void> {
-  const canonicalRoot = await canonicalInstalledTemporaryRoot(root);
+  await removeInstalledOwnedRoot({ kind: "temporary", root }, options);
+}
+
+async function removeInstalledScenarioRoot(
+  root: string,
+  temporaryRoot: string,
+  scenario: InstalledHomeUpgradeScenario,
+  options: InstalledTemporaryRemovalOptions = {},
+): Promise<void> {
+  await removeInstalledOwnedRoot({ kind: "scenario", root, temporaryRoot, scenario }, options);
+}
+
+/** One containment, process-supervision, and absence-proof path for every deep rehearsal tree. */
+async function removeInstalledOwnedRoot(
+  owned: InstalledOwnedRoot,
+  options: InstalledTemporaryRemovalOptions,
+): Promise<void> {
+  const scope = owned.kind === "temporary" ? "temporary" : "scenario";
+  const canonicalRoot = owned.kind === "temporary"
+    ? await canonicalInstalledTemporaryRoot(owned.root)
+    : await canonicalInstalledScenarioRoot(owned);
   const timeoutMs = options.timeoutMs ?? INSTALLED_TEMPORARY_CLEANUP_TIMEOUT_MS;
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > INSTALLED_TEMPORARY_CLEANUP_TIMEOUT_MS) {
-    throw new Error("installed rehearsal temporary cleanup timeout is invalid");
+    throw new Error(`installed rehearsal ${scope} cleanup timeout is invalid`);
   }
   const command = options.command ?? ["/bin/rm", "-rf", "--", canonicalRoot];
   if (command.length === 0) {
-    throw new Error("installed rehearsal temporary cleanup command is invalid");
+    throw new Error(`installed rehearsal ${scope} cleanup command is invalid`);
   }
-  await runBoundedInstalledRemovalCommand(command, timeoutMs);
-  if (await pathStillExists(canonicalRoot)) {
-    throw new Error("installed rehearsal temporary cleanup command left the root present");
+  await runBoundedInstalledRemovalCommand(command, timeoutMs, scope);
+  if (await pathStillExists(canonicalRoot, scope)) {
+    throw new Error(`installed rehearsal ${scope} cleanup command left the root present`);
   }
 }
 
@@ -529,15 +568,44 @@ async function canonicalInstalledTemporaryRoot(root: string): Promise<string> {
   }
 }
 
+async function canonicalInstalledScenarioRoot(
+  owned: Extract<InstalledOwnedRoot, { kind: "scenario" }>,
+): Promise<string> {
+  try {
+    if (!SCENARIOS.includes(owned.scenario) || !isAbsolute(owned.root) || owned.root !== resolve(owned.root)) {
+      throw new Error("invalid scenario input");
+    }
+    const canonicalTemporary = await canonicalInstalledTemporaryRoot(owned.temporaryRoot);
+    const name = basename(owned.root);
+    const prefix = `${owned.scenario}-`;
+    if (dirname(owned.root) !== canonicalTemporary || !name.startsWith(prefix) || name.length === prefix.length) {
+      throw new Error("not a direct named scenario child");
+    }
+    const info = await lstat(owned.root);
+    const uid = process.getuid?.();
+    if (!info.isDirectory() || info.isSymbolicLink() || uid === undefined || info.uid !== uid) {
+      throw new Error("not an owned directory");
+    }
+    const physical = await realpath(owned.root);
+    if (physical !== owned.root || dirname(physical) !== canonicalTemporary || basename(physical) !== name) {
+      throw new Error("physical scenario root escaped temporary directory");
+    }
+    return physical;
+  } catch {
+    throw new Error("installed rehearsal scenario root is unsafe");
+  }
+}
+
 async function runBoundedInstalledRemovalCommand(
   command: ReadonlyArray<string>,
   timeoutMs: number,
+  scope: "temporary" | "scenario",
 ): Promise<void> {
   let child: ReturnType<typeof Bun.spawn>;
   try {
     child = Bun.spawn([...command], { stdout: "ignore", stderr: "ignore" });
   } catch {
-    throw new Error("installed rehearsal temporary cleanup command failed");
+    throw new Error(`installed rehearsal ${scope} cleanup command failed`);
   }
   const exited = child.exited.then(
     (exitCode) => ({ kind: "exit" as const, exitCode }),
@@ -554,20 +622,20 @@ async function runBoundedInstalledRemovalCommand(
     // Do not report retention while a remover could still mutate the root.
     // SIGKILL is the bound; `exited` is the mandatory child-reap barrier.
     await exited;
-    throw new Error("installed rehearsal temporary cleanup command timed out");
+    throw new Error(`installed rehearsal ${scope} cleanup command timed out`);
   }
   if (outcome.kind === "failed" || outcome.exitCode !== 0) {
-    throw new Error("installed rehearsal temporary cleanup command failed");
+    throw new Error(`installed rehearsal ${scope} cleanup command failed`);
   }
 }
 
-async function pathStillExists(path: string): Promise<boolean> {
+async function pathStillExists(path: string, scope: "temporary" | "scenario"): Promise<boolean> {
   try {
     await lstat(path);
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw new Error("installed rehearsal temporary cleanup could not verify absence");
+    throw new Error(`installed rehearsal ${scope} cleanup could not verify absence`);
   }
 }
 
@@ -708,6 +776,7 @@ type LiveDevice = Readonly<{ deviceId: string; cookie: string }>;
 type ScenarioContext = {
   readonly name: InstalledHomeUpgradeScenario;
   readonly root: string;
+  readonly temporaryRoot: string;
   readonly home: string;
   readonly vault: string;
   readonly label: string;
@@ -796,7 +865,7 @@ async function createScenario(
   const plist = expectedInstall.plist;
 
   const context: ScenarioContext = {
-    name, root, home, vault, label, plist, environment, seedCommit, ownerMarkdown,
+    name, root, temporaryRoot: prepared.temporary, home, vault, label, plist, environment, seedCommit, ownerMarkdown,
     fixtureRoot: prepared.fixtureRoot,
     ownerMarkdownSha256: await fileSha256(ownerMarkdown), fixtureManifest,
     runtimeBaseline: null, activeDevice: null, revokedDevice: null, checkpointChild: null,
@@ -827,7 +896,15 @@ async function createScenario(
     try { await bootoutAndDrain({ label, vault }); } catch (cleanupError) { cleanupFailures.push(cleanupError); }
     try { await assertPortFree(); } catch (cleanupError) { cleanupFailures.push(cleanupError); }
     if (cleanupFailures.length === 0) {
-      await rm(root, { recursive: true, force: true });
+      try {
+        await removeInstalledScenarioRoot(root, prepared.temporary, name);
+      } catch (cleanupError) {
+        unsafeCleanup();
+        throw new AggregateError(
+          [error, cleanupError],
+          `partial installed rehearsal cleanup failed for ${label}; root retained at ${root}`,
+        );
+      }
       throw error;
     }
     unsafeCleanup();
@@ -1713,7 +1790,7 @@ async function cleanupScenario(context: ScenarioContext): Promise<void> {
   try { await bootoutAndDrain(context); } catch (error) { failures.push(error); }
   try { await assertPortFree(); } catch (error) { failures.push(error); }
   if (failures.length === 0) {
-    await rm(context.root, { recursive: true, force: true });
+    await removeInstalledScenarioRoot(context.root, context.temporaryRoot, context.name);
   }
   if (failures.length > 0) {
     throw new AggregateError(failures, `installed rehearsal cleanup failed for ${context.label}; roots retained`);

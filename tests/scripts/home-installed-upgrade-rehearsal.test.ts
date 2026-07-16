@@ -19,6 +19,7 @@ import {
   predecessorHomeInstallInvocationForTests,
   retainedCheckpointOwnershipMatchesForTests,
   renderInstalledCoordinationErrorForTests,
+  removeInstalledScenarioRootForTests,
   removeInstalledTemporaryRootForTests,
   retainedCheckpointOwnershipSummaryForTests,
   resolveContainedArtifactRootForTests,
@@ -141,6 +142,94 @@ describe("installed rehearsal temporary-root removal", () => {
     } finally {
       await rm(acceptedRoot, { recursive: true, force: true });
       await rm(rejectedRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("installed rehearsal scenario-root removal", () => {
+  test("removes one validated direct scenario child and verifies absence", async () => {
+    const temporary = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
+    const scenario = await realpath(await mkdtemp(join(temporary, "ready-success-")));
+    await mkdir(join(scenario, "nested", "payload"), { recursive: true });
+
+    await removeInstalledScenarioRootForTests(scenario, temporary, "ready-success");
+
+    expect(await pathExists(scenario)).toBe(false);
+    await rm(temporary, { recursive: true, force: true });
+  });
+
+  test("rejects wrong-parent, nested, wrong-prefix, mismatched, path-trick, and symlink roots", async () => {
+    const temporary = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
+    const otherTemporary = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
+    const valid = await realpath(await mkdtemp(join(temporary, "ready-success-")));
+    const nested = await realpath(await mkdtemp(join(valid, "ready-success-")));
+    const wrongPrefix = join(await realpath(temporary), "ready-successes-abcdef");
+    await mkdir(wrongPrefix);
+    const alias = join(await realpath(temporary), "ready-success-alias");
+    await symlink(valid, alias, "dir");
+    const parentAlias = join(tmpdir(), `dome-installed-upgrade-parent-alias-${Date.now()}`);
+    await symlink(temporary, parentAlias, "dir");
+    const pathTrick = join(temporary, "..", basename(temporary), basename(valid));
+    try {
+      for (const [root, parent, scenario] of [
+        [valid, otherTemporary, "ready-success"],
+        [valid, parentAlias, "ready-success"],
+        [nested, temporary, "ready-success"],
+        [wrongPrefix, temporary, "ready-success"],
+        [valid, temporary, "stopped-precommit-crash"],
+        [pathTrick, temporary, "ready-success"],
+        [alias, temporary, "ready-success"],
+      ] as const) {
+        await expect(removeInstalledScenarioRootForTests(root, parent, scenario)).rejects.toThrow(
+          "installed rehearsal scenario root is unsafe",
+        );
+      }
+      expect(await pathExists(valid)).toBe(true);
+      expect(await pathExists(nested)).toBe(true);
+      expect(await pathExists(wrongPrefix)).toBe(true);
+      expect(await pathExists(alias)).toBe(true);
+    } finally {
+      await rm(alias, { force: true });
+      await rm(parentAlias, { force: true });
+      await rm(temporary, { recursive: true, force: true });
+      await rm(otherTemporary, { recursive: true, force: true });
+    }
+  });
+
+  test("retains a validated scenario root when the remover fails, lies, or times out", async () => {
+    const temporary = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
+    const nonzero = await realpath(await mkdtemp(join(temporary, "ready-success-")));
+    const unchanged = await realpath(await mkdtemp(join(temporary, "stopped-precommit-crash-")));
+    const timeout = await realpath(await mkdtemp(join(temporary, "committed-exact-repair-")));
+    const removerPid = join(timeout, "remover.pid");
+    try {
+      await expect(removeInstalledScenarioRootForTests(nonzero, temporary, "ready-success", {
+        command: ["/usr/bin/false"],
+        timeoutMs: 500,
+      })).rejects.toThrow("installed rehearsal scenario cleanup command failed");
+      expect(await pathExists(nonzero)).toBe(true);
+
+      await expect(removeInstalledScenarioRootForTests(unchanged, temporary, "stopped-precommit-crash", {
+        command: ["/usr/bin/true"],
+        timeoutMs: 500,
+      })).rejects.toThrow("installed rehearsal scenario cleanup command left the root present");
+      expect(await pathExists(unchanged)).toBe(true);
+
+      await expect(removeInstalledScenarioRootForTests(timeout, temporary, "committed-exact-repair", {
+        command: [
+          process.execPath,
+          "-e",
+          "await Bun.write(process.argv[1], String(process.pid)); await Bun.sleep(60_000)",
+          removerPid,
+        ],
+        timeoutMs: 200,
+      })).rejects.toThrow("installed rehearsal scenario cleanup command timed out");
+      expect(await pathExists(timeout)).toBe(true);
+      const pid = (await Bun.file(removerPid).text()).trim();
+      const probe = Bun.spawn(["/bin/kill", "-0", pid], { stdout: "ignore", stderr: "ignore" });
+      expect(await probe.exited).not.toBe(0);
+    } finally {
+      await rm(temporary, { recursive: true, force: true });
     }
   });
 });
