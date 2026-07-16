@@ -14,6 +14,7 @@ import {
   exerciseAbortableInstalledCommandForTests,
   exerciseInstalledUpgradeOrchestrationForTests,
   exercisePredecessorInstallTimeoutForTests,
+  hasExactHomePwaCaptureIdentityForTests,
   pairedDeviceIdForTests,
   parseHomePwaRevisionGrepPathsForTests,
   predecessorHomeInstallInvocationForTests,
@@ -883,6 +884,15 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     const running = exerciseAbortableInstalledCommandForTests(controller.signal);
     setTimeout(() => controller.abort(), 10);
     await expect(running).rejects.toThrow("installed Chromium acceptance command aborted");
+  });
+
+  test("accepts one capture identity across canonical YAML quote removal", () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    expect(hasExactHomePwaCaptureIdentityForTests(`---\ncapture_id: ${JSON.stringify(id)}\n---\n`, id)).toBe(true);
+    expect(hasExactHomePwaCaptureIdentityForTests(`---\ncapture_id: ${id}\n---\n`, id)).toBe(true);
+    expect(hasExactHomePwaCaptureIdentityForTests(`capture_id: ${id}\ncapture_id: ${id}\n`, id)).toBe(false);
+    expect(hasExactHomePwaCaptureIdentityForTests("capture_id: another-id\n", id)).toBe(false);
+    expect(hasExactHomePwaCaptureIdentityForTests(`capture_id: ${id}\n`, "not-a-uuid")).toBe(false);
   });
 
   test("strictly binds the exported offline capture identity", () => {

@@ -1399,10 +1399,20 @@ async function assertChromiumLogicalCapture(
   ], context.vault, context.environment, signal)).stdout;
   signal.throwIfAborted();
   if (body.split(text).length !== 2 ||
-    !body.includes(`capture_id: ${JSON.stringify(captureId)}`) ||
-    body.split(`capture_id: ${JSON.stringify(captureId)}`).length !== 2) {
+    !hasExactHomePwaCaptureIdentityForTests(body, captureId)) {
     throw new Error("Chromium offline capture identity is missing or duplicated");
   }
+}
+
+/** Accept the capture scalar before or after canonical YAML quote removal. */
+export function hasExactHomePwaCaptureIdentityForTests(body: string, captureId: string): boolean {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(captureId)) {
+    return false;
+  }
+  const values = body.split(/\r?\n/)
+    .filter((line) => line.startsWith("capture_id: "))
+    .map((line) => line.slice("capture_id: ".length));
+  return values.length === 1 && (values[0] === captureId || values[0] === JSON.stringify(captureId));
 }
 
 /** Parse `git grep -l -z <revision>` without confusing its revision prefix for a path. */
