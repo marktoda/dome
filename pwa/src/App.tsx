@@ -337,7 +337,7 @@ function Screen({ client, availability, connection }: {
             <p className="view-error">Today could not be refreshed. Try again when Dome Home is available.</p>
           ) : null}
         </section>
-        <details className="activity-wrap" key={recentsLoad === "failed" ? "activity-failed" : "activity"} open={recentsLoad === "failed" ? true : undefined}>
+        <details aria-label="Activity" className="activity-wrap" key={recentsLoad === "failed" ? "activity-failed" : "activity"} open={recentsLoad === "failed" ? true : undefined}>
           <summary>Activity{recents !== null ? ` · ${recents.count}` : ""}</summary>
           {recentsLoad === "failed" ? (
             <div className="surface-error" role="status">

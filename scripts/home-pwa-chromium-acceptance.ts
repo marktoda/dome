@@ -1086,7 +1086,7 @@ function safeReadinessFailureDiagnostic(
 }
 
 async function assertActivitySource(page: Page, canary: InstalledFunctionalCanary): Promise<void> {
-  const activity = page.locator("details.recents-wrap");
+  const activity = page.locator('details[aria-label="Activity"]');
   if (await activity.getAttribute("open") === null) await activity.locator("summary").click();
   const row = activity.getByRole("button").filter({ hasText: canary.title });
   if (await row.count() !== 1) throw new Error("installed PWA functional Activity row is not unique");

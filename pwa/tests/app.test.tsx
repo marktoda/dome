@@ -62,6 +62,7 @@ describe("App", () => {
   test("renders the brief (all-clear), recents, and composer when paired", async () => {
     render(<App />);
     await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
+    expect(screen.getByLabelText("Activity")).toBeDefined();
     expect(screen.getByPlaceholderText(/ask/i)).toBeDefined();
     expect(screen.getByRole("form", { name: "Message composer" })).toBeDefined();
     expect(screen.getByRole("region", { name: "Conversation" }).hasAttribute("aria-live")).toBe(false);

@@ -98,11 +98,14 @@ describe("PWA adaptive accessibility CSS policy", () => {
     expect(app).toContain('role="status"');
     expect(app).toContain('aria-live="polite"');
     expect(app).toContain('aria-atomic="true"');
+    expect(app).toContain('<details aria-label="Activity" className="activity-wrap"');
 
     const runner = await readFile(join(
       import.meta.dir, "..", "..", "scripts", "home-pwa-chromium-acceptance.ts",
     ), "utf8");
     expect(runner).toContain("'[aria-label=\"Refresh Today\"]'");
+    expect(runner).toContain("details[aria-label=\"Activity\"]");
+    expect(runner).not.toContain("details.recents-wrap");
     expect(runner).toContain('const scroll = document.querySelector(".scroll")');
     expect(runner).toContain("child.bottom <= clip.bottom + 0.5");
     expect(runner).toContain("installed PWA critical controls leave the viewport");
