@@ -1023,6 +1023,7 @@ async function assertReadyConnection(
     if (await technical.getAttribute("open") === null) await technical.locator("summary").click();
     await technical.getByText(expected.productVersion, { exact: true }).waitFor({ timeout: WAIT_MS });
     await technical.getByText("capture, read, resolve", { exact: true }).waitFor({ timeout: WAIT_MS });
+    await technical.locator("summary").click();
   } catch { throw new HomePwaReadinessStageError("details"); }
 }
 
