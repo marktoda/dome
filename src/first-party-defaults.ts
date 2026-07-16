@@ -135,6 +135,11 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
       read: [
         "wiki/**/*.md",
         "notes/*.md",
+        // Operational questions (for example, failed source-fetch recovery)
+        // cite the vault config that authorized the action. Today includes
+        // those SourceRefs in its ViewEffect scope, so the declared and
+        // granted read sets must both cover the config provenance.
+        ".dome/config.yaml",
         "sources/calendar/*.md",
         "sources/slack/*.md",
       ],

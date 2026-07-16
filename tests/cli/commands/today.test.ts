@@ -12,7 +12,12 @@ import { join } from "node:path";
 import { runInit } from "../../../src/cli/commands/init";
 import { runSync } from "../../../src/cli/commands/sync";
 import { runToday } from "../../../src/cli/commands/today";
-import { add, commit, initRepo } from "../../../src/git";
+import { resolveBundleRoots } from "../../../src/cli/commands/sync-shared";
+import { questionEffect } from "../../../src/core/effect";
+import { commitOid, sourceRef } from "../../../src/core/source-ref";
+import { openVaultRuntime } from "../../../src/engine/host/vault-runtime";
+import { add, commit, initRepo, resolveRef } from "../../../src/git";
+import { insertQuestion } from "../../../src/projections/questions";
 
 let logs: string[] = [];
 let errors: string[] = [];
@@ -76,6 +81,55 @@ describe("dome today", () => {
     const doc = JSON.parse(logs.join("\n"));
     expect(doc.schema).toBe("dome.daily.today/v1");
     expect(Array.isArray(doc.openTasks)).toBe(true);
+  }, 120_000);
+
+  test("--json includes a health question sourced from vault config", async () => {
+    const v = mkdtempSync(join(tmpdir(), "dome-today-health-question-"));
+    try {
+      expect(await runInit({ path: v })).toBe(0);
+      expect(await runSync({ vault: v, quiet: true })).toBe(0);
+      const adopted = commitOid(await resolveRef({ path: v, ref: "HEAD" }));
+      const runtime = await openVaultRuntime({
+        vaultPath: v,
+        ...resolveBundleRoots({ vaultPath: v }),
+      });
+      expect(runtime.ok).toBe(true);
+      if (!runtime.ok) return;
+      insertQuestion(runtime.value.projectionDb, {
+        effect: questionEffect({
+          question: "Retry the failed calendar fetch?",
+          options: ["retry", "abandon"],
+          idempotencyKey: "test.today.health-config-source",
+          sourceRefs: [sourceRef({ commit: adopted, path: ".dome/config.yaml" })],
+          metadata: {
+            resolutionMode: "dispatch",
+            automationPolicy: "owner-needed",
+            risk: "medium",
+            attention: {
+              consequence: "high",
+              urgency: "now",
+            },
+          },
+        }),
+        processorId: "dome.health.outbox-recovery-questions",
+        runId: "run-test-today-health-config-source",
+        adoptedCommit: adopted,
+      });
+      await runtime.value.close();
+
+      logs = [];
+      errors = [];
+      expect(await runToday({ vault: v, json: true })).toBe(0);
+      const doc = JSON.parse(logs.join("\n"));
+      expect(doc.questions).toHaveLength(1);
+      expect(doc.questions[0]).toMatchObject({
+        question: "Retry the failed calendar fetch?",
+        sourceRefs: [{ path: ".dome/config.yaml" }],
+      });
+      expect(errors).toEqual([]);
+    } finally {
+      await rm(v, { recursive: true, force: true });
+    }
   }, 120_000);
 
   test("--watch with --json is a usage error", async () => {

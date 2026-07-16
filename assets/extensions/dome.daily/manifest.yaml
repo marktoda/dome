@@ -105,14 +105,14 @@ processors:
     module: processors/ambiguous-followup-answer.ts
 
   - id: dome.daily.today
-    version: 0.1.12
+    version: 0.1.13
     phase: view
     triggers:
       - kind: command
         name: today
     capabilities:
       - kind: read
-        paths: ["wiki/**/*.md", "notes/*.md"]
+        paths: ["wiki/**/*.md", "notes/*.md", ".dome/config.yaml"]
       - kind: questions.read
       - kind: proposals.read
     module: processors/today.ts
@@ -254,6 +254,16 @@ processors:
 # pre-rollout vault must add.
 doctor:
   grantEntries:
+    - processorId: dome.daily.today
+      entries:
+        - kind: read
+          target: .dome/config.yaml
+      why: >-
+        open operational questions sourced from the vault config make the
+        Today ViewEffect fail its source-scope capability check
+      recovery: >-
+        Add ".dome/config.yaml" to extensions.dome.daily.grant.read in
+        .dome/config.yaml.
     - processorId: dome.daily.compose-blocks
       entries:
         - kind: read
