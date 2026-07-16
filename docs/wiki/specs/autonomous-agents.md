@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-09
-updated: 2026-07-11
+updated: 2026-07-16
 description: Agent-as-processor model, provider-neutral tool loop, and the ingest, semantic garden, and morning brief agents
 ---
 
@@ -82,7 +82,10 @@ The brief runs at 05:30 and on late calendar/Slack day-file creation. Its
 compose-record hashes calendar, Slack, and yesterday inputs. Matching hashes
 are a zero-model no-op; changed inputs recompose the narrative, capped at
 three successful composes per day. A failed model run writes a deterministic
-fallback and does not stamp a successful compose record.
+fallback and does not stamp a successful compose record. It emits a warning
+diagnostic, not a QuestionEffect: provider/runtime failure is operational
+evidence, not a decision the owner can meaningfully answer. The fallback makes
+no retry promise and preserves access to the deterministic daily sections.
 
 Model text is treated as untrusted. Only grounded narrative bullets and
 validated captured-task appends survive the splice. The brief may append

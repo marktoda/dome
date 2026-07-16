@@ -249,8 +249,10 @@ would populate them only with a deterministic fetcher swapped in.
 
 When the brief *can't* run (bad key, network), it degrades honestly: a
 deterministic stub lands in the daily note, `dome check` carries a
-`dome.agent.brief-failed` warning, and an open question offers
-`dome resolve <id> retried` after you fix the cause — or `skip-today`.
+`dome.agent.brief-failed` warning, and the deterministic daily sections remain
+available. Dome does not turn an operational outage into an owner-decision
+question or advertise a retry action that has no continuation; correct the
+provider/runtime cause before the next scheduled brief.
 [[wiki/specs/daily-surface]] owns the choreography.
 
 ## 8. Phone capture (optional)

@@ -130,8 +130,9 @@ export function actionItemsFromMarkdown(
  * a fenced ` ```tasks ` (or `~~~tasks`) query block. Such files are managed by
  * the plugin (which parses task lines and would choke on a `^anchor` suffix),
  * so the task-lifecycle rewriters (stamp / normalize / reconcile) leave the
- * whole file alone. Read-only extraction (`actionItemsFromMarkdown`,
- * task-index) is unaffected — the tasks still project into facts.
+ * whole file alone. Read-only parsing (`actionItemsFromMarkdown`) is
+ * unaffected; task-index still applies the shared daily/non-daily global-task
+ * eligibility rule before projecting facts.
  */
 export function isObsidianTasksDashboard(content: string): boolean {
   return /^[ ]{0,3}(?:```|~~~)\s*tasks(?:\s|$)/m.test(content);

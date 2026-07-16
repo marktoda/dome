@@ -66,6 +66,7 @@ export function openLoopSurfaceSources(input: {
         body: item.body,
         followup: item.followup,
         sourcePath: input.path,
+        ...(item.origin !== undefined ? { origin: item.origin } : {}),
         ...(anchor !== undefined ? { anchor } : {}),
       }),
     );

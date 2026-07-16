@@ -22,16 +22,15 @@
 // Trust posture: the model's writes are spliced — only the content between
 // the dome.agent.brief markers can land, only in the daily note, and every
 // bullet must carry a [[wikilink]] source ref; ungrounded bullets are
-// stripped and re-emitted as QuestionEffects. One PatchEffect (auto) per
+// stripped and surfaced as diagnostics. One PatchEffect (auto) per
 // run; a mid-run throw rolls the model's work back atomically and recovers
-// with deterministic effects only: a fallback stub spliced into the brief's
-// yesterday block plus an acknowledgeable brief-failed question (no answer
-// handler — resolution is the acknowledgment).
+// with deterministic effects only: an honest fallback stub spliced into the
+// brief's yesterday block plus a warning diagnostic. Operational failure is
+// not an owner decision and therefore never becomes a QuestionEffect.
 
 import {
   diagnosticEffect,
   patchEffect,
-  questionEffect,
   type Effect,
 } from "../../../../src/core/effect";
 import { findGeneratedBlock } from "../../../../src/core/generated-block";
@@ -165,9 +164,9 @@ const brief = defineProcessorImplementation({
     //     for the day; emit one info diagnostic and stop (compose-blocks' own
     //     deterministic blocks keep updating live regardless);
     //   - a `garden` (signal) fire with NO parseable record → the brief has not
-    //     successfully composed today; the 05:30 cron or a manual run owns the
-    //     first compose, and a failed brief's recovery stays with its question,
-    //     so signals never auto-retry — zero effects.
+    //     successfully composed today; the 05:30 cron owns the first compose,
+    //     so signals never initiate it or retry a failed scheduled compose —
+    //     zero effects.
     // Otherwise (a schedule fire with no record, or any fire with a mismatch
     // under the cap) fall through to compose. The failure-stub path never
     // writes the record, so a parseable record means a prior SUCCESSFUL compose.
@@ -293,18 +292,13 @@ const brief = defineProcessorImplementation({
       // Atomic per run: drop ALL of the model's edits (a mid-run throw means
       // unknown partial state) and surface a diagnostic. Recovery is
       // effects-only and fully deterministic — nothing from the agent loop
-      // carries over:
-      //   (a) a fallback PatchEffect splices a failure stub into the brief's
-      //       own yesterday block of the daily (the pre-run `prepared`
-      //       content — existing daily or the freshly re-seeded skeleton —
-      //       is deterministic, so a same-day refailure REPLACES the stub
-      //       via the marker splice rather than appending a second copy);
-      //   (b) a QuestionEffect (idempotency `dome.agent.brief-failed:<date>`)
-      //       the owner or an agent acknowledges. There is deliberately NO
-      //       answer handler: resolving the question IS the durable
-      //       acknowledgment — "retried" records that someone re-ran the
-      //       brief, "skip-today" records the day was let go; nothing fires
-      //       on either answer.
+      // carries over. A fallback PatchEffect splices a failure stub into the
+      // brief's own yesterday block of the daily. The pre-run `prepared`
+      // content — existing daily or freshly re-seeded skeleton — is
+      // deterministic, so a same-day refailure REPLACES the stub via the
+      // marker splice rather than appending a second copy. The failure remains
+      // operational evidence: a warning diagnostic, never an owner-decision
+      // QuestionEffect.
       //
       // Re-compose exception: when the daily already carries a SUCCESSFUL
       // compose (the compose-record is written only on success), the
@@ -313,17 +307,15 @@ const brief = defineProcessorImplementation({
       // bodies the morning compose landed. The honest minimal: keep the
       // existing daily untouched (no patch at all — the good blocks ARE the
       // content; a stub riding alongside would misreport the morning as
-      // failed) and let the warning diagnostic + brief-failed question
-      // carry the failure on their own.
+      // failed) and let the warning diagnostic carry the failure on its own.
       const message = error instanceof Error ? error.message : String(error);
-      const todayDate = formatDate(today);
       const flattened = flattenErrorMessage(message);
       const composedAlready =
         existing !== null && parseBriefComposeRecord(existing) !== null;
       const stub = [
         YESTERDAY_BLOCK.start,
         "### Yesterday",
-        `_Morning brief failed (${flattened}). Yesterday's note: [[${yesterdayPath.replace(/\.md$/, "")}]]. Dome retries at the next scheduled brief._`,
+        `_Morning narrative unavailable (brief failed: ${flattened}). Yesterday's note: [[${yesterdayPath.replace(/\.md$/, "")}]]. Deterministic sections remain available._`,
         YESTERDAY_BLOCK.end,
       ].join("\n");
       // The today block is model-written with no fallback prose: omit it from
@@ -358,17 +350,6 @@ const brief = defineProcessorImplementation({
               }),
             ]
           : []),
-        questionEffect({
-          question: `Morning brief for ${todayDate} failed (${flattened}). Retry with \`dome run dome.agent.brief\` and answer "retried", or answer "skip-today" to let the day go.`,
-          options: ["retried", "skip-today"],
-          idempotencyKey: `dome.agent.brief-failed:${todayDate}`,
-          metadata: {
-            resolutionMode: "acknowledge",
-            automationPolicy: "agent-safe",
-            recommendedAnswer: "retried",
-          },
-          sourceRefs,
-        }),
       ]);
     }
 

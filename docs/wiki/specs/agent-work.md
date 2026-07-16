@@ -5,7 +5,7 @@ tags:
   - questions
   - evidence
 created: 2026-07-09
-updated: 2026-07-11
+updated: 2026-07-16
 description: Derived, evidence-backed agent work over open questions, with revision-safe completion through the durable answer path.
 status: shipped
 ---
@@ -65,9 +65,9 @@ Readiness is explicit:
 - `needs-contract` — a legacy producer omitted resolution semantics.
 
 Non-ready rows stay visible for repair or a more capable foreground harness,
-but the generic attempt loop will not pretend to settle them. In particular,
-the morning-brief `retried` acknowledgement cannot be answered by a model that
-did not actually rerun the brief.
+but the generic attempt loop will not pretend to settle them. Operational
+processor failures do not enter this view: they remain diagnostics unless a
+producer defines a real owner decision with a meaningful continuation.
 
 ## Evidence-backed completion
 

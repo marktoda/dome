@@ -512,7 +512,7 @@ describe("dome.agent.brief", () => {
     ).toBe(false);
   });
 
-  test("mid-run throw rolls back atomically: warning diagnostic + deterministic fallback stub + acknowledgeable question (no model edits)", async () => {
+  test("mid-run throw rolls back atomically: warning diagnostic + honest deterministic fallback, never an owner question", async () => {
     const ctx = makeCtx({
       files: { [YESTERDAY_PATH]: YESTERDAY_DAILY },
       stepFn: async () => {
@@ -534,26 +534,21 @@ describe("dome.agent.brief", () => {
     // 2) A deterministic fallback patch splices the failure stub into the
     //    brief's own yesterday block region of the (re-seeded) daily.
     const content = writtenDaily(effects);
-    expect(content).toContain("Morning brief failed (provider died)");
+    expect(content).toContain("Morning narrative unavailable (brief failed: provider died)");
     expect(content).toContain("Yesterday's note: [[wiki/dailies/2026-06-08]]");
-    expect(content).toContain("Dome retries at the next scheduled brief");
+    expect(content).toContain("Deterministic sections remain available");
+    expect(content).not.toContain("Dome retries");
     expect(content).not.toContain("dome run dome.agent.brief");
     // The stub lives INSIDE the brief's own block markers — splice, not append.
-    const stubAt = content.indexOf("Morning brief failed");
+    const stubAt = content.indexOf("Morning narrative unavailable");
     expect(content.lastIndexOf("<!-- dome.agent.brief:yesterday:start -->", stubAt)).toBeGreaterThan(-1);
     expect(content.indexOf("<!-- dome.agent.brief:yesterday:end -->", stubAt)).toBeGreaterThan(stubAt);
 
-    // 3) The acknowledgeable question with the pinned idempotency key.
-    const q = effects.find((e) => e.kind === "question") as QuestionEffect;
-    expect(q).toBeDefined();
-    expect(q.idempotencyKey).toBe("dome.agent.brief-failed:2026-06-09");
-    expect(q.options).toEqual(["retried", "skip-today"]);
-    expect(q.metadata?.automationPolicy).toBe("agent-safe");
-    expect(q.metadata?.recommendedAnswer).toBe("retried");
-    expect(q.question).toContain("dome run dome.agent.brief");
+    // Operational failures are not owner decisions.
+    expect(effects.some((effect) => effect.kind === "question")).toBe(false);
   });
 
-  test("same-day refailure is idempotent: same question key, stub spliced (never appended twice)", async () => {
+  test("same-day refailure is idempotent: stub spliced, never appended twice", async () => {
     // First failure produced the fallback daily; the engine adopted it. The
     // 2nd failure (different error) must REPLACE the stub, not append one.
     const firstRun = await brief.run(
@@ -565,7 +560,7 @@ describe("dome.agent.brief", () => {
       }),
     );
     const adopted = writtenDaily(firstRun);
-    expect(adopted).toContain("Morning brief failed (provider died)");
+    expect(adopted).toContain("Morning narrative unavailable (brief failed: provider died)");
 
     const secondRun = await brief.run(
       makeCtx({
@@ -575,12 +570,11 @@ describe("dome.agent.brief", () => {
         },
       }),
     );
-    const q = secondRun.find((e) => e.kind === "question") as QuestionEffect;
-    expect(q.idempotencyKey).toBe("dome.agent.brief-failed:2026-06-09");
     const content = writtenDaily(secondRun);
-    expect(content.split("Morning brief failed").length - 1).toBe(1);
+    expect(content.split("Morning narrative unavailable").length - 1).toBe(1);
     expect(content).toContain("provider died again");
-    expect(content).not.toContain("(provider died)");
+    expect(content).not.toContain("brief failed: provider died)");
+    expect(secondRun.some((effect) => effect.kind === "question")).toBe(false);
   });
 
   test("same-day refailure with an identical error emits no patch at all (content unchanged)", async () => {
@@ -598,9 +592,8 @@ describe("dome.agent.brief", () => {
       }),
     );
     expect(patchOf(secondRun)).toBeUndefined();
-    // The question and diagnostic still surface (idempotency dedupes the
-    // question downstream by key).
-    expect(secondRun.some((e) => e.kind === "question")).toBe(true);
+    // The diagnostic still surfaces; no inert owner question is created.
+    expect(secondRun.some((e) => e.kind === "question")).toBe(false);
   });
 
   test("fallback stub flattens multi-line errors and caps them near 120 chars", async () => {
@@ -616,11 +609,11 @@ describe("dome.agent.brief", () => {
     const content = writtenDaily(effects);
     const stubLine = content
       .split("\n")
-      .find((l) => l.includes("Morning brief failed"));
+      .find((l) => l.includes("Morning narrative unavailable"));
     expect(stubLine).toBeDefined();
     expect(stubLine).toContain("line one line two");
     expect(stubLine).not.toContain("\n");
-    const flattened = /Morning brief failed \((.*?)\)\. Yesterday/.exec(
+    const flattened = /brief failed: (.*?)\)\. Yesterday/.exec(
       stubLine!,
     );
     expect(flattened?.[1]?.length).toBeLessThanOrEqual(120);
@@ -1525,7 +1518,7 @@ describe("dome.agent.brief:today narrative block", () => {
     // The today block markers must NOT appear in the fallback content
     expect(content).not.toContain("dome.agent.brief:today");
     // But the fallback stub IS present (yesterday block contains the error)
-    expect(content).toContain("Morning brief failed");
+    expect(content).toContain("Morning narrative unavailable");
   });
 
   test("model leaves the today block at its empty seed → no today content, no ungrounded questions", async () => {
@@ -1882,15 +1875,15 @@ describe("dome.agent.brief — compose-record gate", () => {
       input: SCHEDULE_INPUT,
     });
     const content = writtenDaily(await brief.run(ctx));
-    expect(content).toContain("Morning brief failed");
+    expect(content).toContain("Morning narrative unavailable");
     expect(parseBriefComposeRecord(content)).toBeNull();
   });
 
-  test("a failed re-compose over a daily that already carries a compose-record emits NO patch (good blocks stay); diagnostic + question still emitted", async () => {
+  test("a failed re-compose over a daily that already carries a compose-record emits NO patch; only the diagnostic reports it", async () => {
     // A successful morning compose (compose-record present) → a stale calendar
     // hash triggers the re-compose → the model throws. The failure stub must
     // NOT clobber the good blocks: no patch at all (composedAlready keys off
-    // parseBriefComposeRecord); the warning + question carry the failure.
+    // parseBriefComposeRecord); the warning carries the failure.
     const adopted = composedDaily({
       count: 1,
       time: "05:30",
@@ -1916,9 +1909,7 @@ describe("dome.agent.brief — compose-record gate", () => {
     ) as DiagnosticEffect;
     expect(diag).toBeDefined();
     expect(diag.severity).toBe("warning");
-    const q = effects.find((e) => e.kind === "question") as QuestionEffect;
-    expect(q).toBeDefined();
-    expect(q.idempotencyKey).toBe("dome.agent.brief-failed:2026-06-09");
+    expect(effects.some((effect) => effect.kind === "question")).toBe(false);
   });
 });
 

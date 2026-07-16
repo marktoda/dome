@@ -1,7 +1,7 @@
 ---
 type: spec
 created: 2026-06-03
-updated: 2026-07-11
+updated: 2026-07-16
 sources:
   - "[[v1]]"
 description: "Task substrate: move-stable ^block anchors, splice-guard generated blocks, stamp/reconcile/normalize, lastHumanChangedAt, overdue-only staleness"
@@ -12,6 +12,12 @@ description: "Task substrate: move-stable ^block anchors, splice-guard generated
 This spec is normative for Dome's task-lifecycle substrate — the `^block-anchor` line-identity primitive, the three deterministic `dome.daily` task processors (stamp / reconcile / normalize), the `lastHumanChangedAt` freshness rule, **staleness** (overdue-only stale-settle), and the **warden** pattern (model-gated garden processors). It explains why each piece sits where it does and what contract it holds.
 
 The task-lifecycle layer is the machinery behind "close a task in one place, close it everywhere." It introduces no new primitive: a "warden" is a [[wiki/specs/processors|Processor]] (`kind: llm`, garden phase), not a new concept beside Vault / Proposal / Processor / Effect. The four-concept core stays sealed.
+
+## Global task semantics
+
+An unchecked checkbox is not automatically a global Dome task. Inside a daily note, every extracted checkbox or `TODO:` / `Follow up:` directive is intentional daily work and is eligible for task facts and carry-forward. Outside dailies, a plain checkbox is a **local document checklist** unless it carries an explicit task signal: `#task` / `#followup`, a supported priority emoji, a `📅` or ISO due date, or directive syntax. Local checklist lines remain ordinary source Markdown; they do not enter the global open-task projection or daily open-loop surface.
+
+`openLoopSurfaceSources` is the single compiler for this semantic rule. Both `dome.daily.task-index` and `dome.daily.carry-forward` consume that interface, so the fact inventory cannot be broader than the surface inventory. The compiler also owns daily-path recognition, generated-block/frontmatter/fence exclusions, duplicate-anchor handling, semantic bodies, source identity, and origin metadata. Task-line hygiene may still parse local checkboxes to preserve stable syntax and anchors; eligibility is specifically the boundary for global facts and surfaces.
 
 ## Block-anchor identity
 
@@ -44,7 +50,7 @@ Three garden-phase, `patch.auto` processors maintain task lines. All three are d
 
 All three are **garden** (not adoption) phase. The reason is the capability-failure surface. In the adoption phase a capability-denied auto-patch becomes a `severity: "block"` diagnostic that blocks the human's adoption — a cosmetic or convenience patch that cannot land would wedge the loop. In the garden phase the same denial degrades quietly (the patch is downgraded or skipped) without blocking the human's commit from being adopted. Task maintenance is convenience work; it must never gate the human. See [[wiki/specs/adoption]] §"The fixed-point adoption loop".
 
-**Obsidian Tasks dashboards are left alone.** A file containing a fenced ` ```tasks ` query block is an Obsidian Tasks plugin dashboard — the plugin parses task lines and would be confused by an injected `^anchor`. All three rewriters skip such files entirely (`isObsidianTasksDashboard`), so a vault's `notes/tasks.md`-style query files stay user-maintained. This is interop, not a capability grant: the grant model matches paths with positive globs only (`notes/*.md` cannot subtract one file), so the exclusion lives in the processor logic. Read-only extraction (`task-index`) still projects those task lines into facts.
+**Obsidian Tasks dashboards are left alone.** A file containing a fenced ` ```tasks ` query block is an Obsidian Tasks plugin dashboard — the plugin parses task lines and would be confused by an injected `^anchor`. All three rewriters skip such files entirely (`isObsidianTasksDashboard`), so a vault's `notes/tasks.md`-style query files stay user-maintained. This is interop, not a capability grant: the grant model matches paths with positive globs only (`notes/*.md` cannot subtract one file), so the exclusion lives in the processor logic. Read-only extraction may still inspect those lines, but `task-index` projects only lines eligible under §"Global task semantics".
 
 ## Task origin (source provenance)
 

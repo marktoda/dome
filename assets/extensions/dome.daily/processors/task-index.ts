@@ -10,9 +10,10 @@ import {
   type ProcessorContext,
 } from "../../../../src/core/processor";
 
-import { actionItemsFromMarkdown, ambiguousFollowupsFromMarkdown } from "./action-extraction";
+import { ambiguousFollowupsFromMarkdown } from "./action-extraction";
 import { FOLLOWUP_PREDICATE, OPEN_TASK_PREDICATE, TASK_ORIGIN_PREDICATE } from "./action-state";
-import { openLoopStableId, taskStableId } from "./open-loop-surface";
+import { dailyPathSettings } from "./daily-paths";
+import { openLoopStableId, openLoopSurfaceSources } from "./open-loop-surface";
 import {
   AMBIGUOUS_FOLLOWUP_OPTIONS,
   ambiguousFollowupQuestionKey,
@@ -21,16 +22,21 @@ import {
 const taskIndex = defineProcessorImplementation({
   run: async (ctx: ProcessorContext): Promise<ReadonlyArray<Effect>> => {
     const effects: Effect[] = [];
+    const settings = dailyPathSettings(ctx.extensionConfig);
     for (const path of ctx.changedPaths) {
       const content = await ctx.snapshot.readFile(path);
       if (content === null) continue;
 
-      for (const task of actionItemsFromMarkdown(content)) {
-        const stableId = taskStableId({
-          sourcePath: path,
-          body: task.body,
-          ...(task.anchor !== undefined ? { anchor: task.anchor } : {}),
-        });
+      // Index exactly the canonical candidates carry-forward can surface.
+      // Daily notes treat every action item as intentional. Elsewhere, a plain
+      // checkbox is a local checklist unless it carries an explicit task
+      // signal (directive, #task/#followup, priority, or due date).
+      for (const task of openLoopSurfaceSources({
+        path,
+        content,
+        settings,
+      })) {
+        const stableId = task.stableId;
         const ref = ctx.sourceRef(path, lineRange(task.line), stableId);
         // The open_task fact value is the clean semantic body (no origin marker).
         // Origin is carried by a parallel dome.daily.task_origin fact correlated

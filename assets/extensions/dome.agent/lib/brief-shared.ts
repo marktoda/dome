@@ -332,10 +332,9 @@ export function groundBriefBlockBody(body: string): GroundedBlockBody {
 // mismatch re-composes all three narrative blocks and rewrites the record
 // with fresh hashes and an incremented count. Re-composes are capped at
 // MAX_DAILY_COMPOSES model composes per day. The failure-stub path
-// deliberately never writes this record — a failed brief's recovery stays
-// with its acknowledgeable question, never an automatic signal-triggered
-// retry, so a parseable record means the brief has SUCCESSFULLY composed
-// today.
+// deliberately never writes this record, and signal triggers never initiate
+// a first compose or retry a failed scheduled compose, so a parseable record
+// means the brief has SUCCESSFULLY composed today.
 
 /** The per-day cap on model composes; beyond it the narrative freezes for the day. */
 export const MAX_DAILY_COMPOSES = 3;
