@@ -15,6 +15,7 @@ import {
   exerciseInstalledUpgradeOrchestrationForTests,
   exercisePredecessorInstallTimeoutForTests,
   pairedDeviceIdForTests,
+  parseHomePwaRevisionGrepPathsForTests,
   predecessorHomeInstallInvocationForTests,
   retainedCheckpointOwnershipMatchesForTests,
   renderInstalledCoordinationErrorForTests,
@@ -27,6 +28,7 @@ import {
 import { renderInstalledFunctionalCanary } from "../../scripts/home-installed-functional-closure";
 import {
   exerciseHomePwaLocalCaptureStageForTests,
+  exerciseHomePwaReplayStageForTests,
   exerciseHomePwaTaskSettlementStageForTests,
   exerciseHomePwaChromiumAcceptanceForTests,
   parseHomePwaCaptureExportForTests,
@@ -547,6 +549,86 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     expect(timedOut).toBe(
       "installed Home Chromium acceptance failed at local-capture [phase-timeout]",
     );
+  });
+
+  test("reports only fixed replay stages and hides underlying failures", async () => {
+    const operation = async (): Promise<void> => {};
+    const journey = (replay: (signal: AbortSignal) => Promise<void>) => ({
+      launch: operation,
+      assertInstallIdentity: operation,
+      pair: operation,
+      assertReadiness: operation,
+      assertAdaptiveAccessibility: operation,
+      controlServiceWorker: operation,
+      assertActivitySource: operation,
+      assertTaskSettlement: operation,
+      assertOfflineShell: operation,
+      saveLocalCapture: operation,
+      revoke: operation,
+      repairAuthentication: operation,
+      assertReplay: replay,
+      emergencyClose: operation,
+      close: operation,
+    });
+    const failure = async (
+      replay: (signal: AbortSignal) => Promise<void>,
+      deadlines?: { phaseMs: number; cleanupMs: number },
+    ): Promise<string> => {
+      try {
+        await exerciseHomePwaChromiumAcceptanceForTests(journey(replay), deadlines);
+        throw new Error("expected replay failure");
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    };
+
+    const secret = "private capture text, identity, and vault path";
+    for (const stage of ["outbox", "logical-capture"] as const) {
+      const message = await failure(async () => {
+        await exerciseHomePwaReplayStageForTests(stage, async () => {
+          throw new Error(secret);
+        });
+      });
+      expect(message).toBe(`installed Home Chromium acceptance failed at replay [${stage}]`);
+      expect(message).not.toContain(secret);
+    }
+
+    const unclassified = await failure(async () => { throw new Error(secret); });
+    expect(unclassified).toBe("installed Home Chromium acceptance failed at replay [unclassified]");
+    expect(unclassified).not.toContain(secret);
+    const nonError = await failure(async () => { throw secret; });
+    expect(nonError).toBe("installed Home Chromium acceptance failed at replay [unclassified]");
+    expect(nonError).not.toContain(secret);
+
+    const timedOut = await failure(async (signal) => await new Promise<void>((resolve) => {
+      signal.addEventListener("abort", () => resolve(), { once: true });
+    }), { phaseMs: 5, cleanupMs: 50 });
+    expect(timedOut).toBe("installed Home Chromium acceptance failed at replay [phase-timeout]");
+  });
+
+  test("parses one immutable-revision grep path without treating the revision as a directory", () => {
+    const revision = "a".repeat(40);
+    expect(parseHomePwaRevisionGrepPathsForTests(
+      `${revision}:inbox/raw/replayed capture.md\0`,
+      revision,
+    )).toEqual(["inbox/raw/replayed capture.md"]);
+    expect(parseHomePwaRevisionGrepPathsForTests("", revision)).toEqual([]);
+    expect(parseHomePwaRevisionGrepPathsForTests(
+      `${revision}:inbox/raw/one.md\0${revision}:inbox/raw/two.md\0`,
+      revision,
+    )).toEqual(["inbox/raw/one.md", "inbox/raw/two.md"]);
+    expect(() => parseHomePwaRevisionGrepPathsForTests(
+      `HEAD:inbox/raw/replayed.md\0`,
+      revision,
+    )).toThrow("path inventory is malformed");
+    expect(() => parseHomePwaRevisionGrepPathsForTests(`${revision}:\0`, revision))
+      .toThrow("path inventory is malformed");
+    expect(() => parseHomePwaRevisionGrepPathsForTests(
+      `${revision}:inbox/raw/replayed.md\n`,
+      revision,
+    )).toThrow("path inventory is malformed");
+    expect(() => parseHomePwaRevisionGrepPathsForTests("", "HEAD"))
+      .toThrow("revision is invalid");
   });
 
   test("SIGKILLs and drains an aborted installed Chromium child", async () => {

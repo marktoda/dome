@@ -1314,19 +1314,49 @@ async function assertChromiumLogicalCapture(
   captureId: string,
   signal: AbortSignal,
 ): Promise<void> {
-  const result = await runRaw([
-    "/usr/bin/git", "grep", "-l", "--fixed-strings", text, "HEAD",
+  const revision = (await runRaw([
+    "/usr/bin/git", "rev-parse", "--verify", "HEAD^{commit}",
+  ], context.vault, context.environment, signal)).stdout.trim();
+  const result = await runRawAllowFailure([
+    "/usr/bin/git", "grep", "-l", "-z", "--fixed-strings", "-e", text, revision, "--",
   ], context.vault, context.environment, signal);
   signal.throwIfAborted();
-  const paths = result.stdout.split("\n").map((path) => path.trim()).filter((path) => path !== "");
+  if (result.exitCode !== 0 && !(result.exitCode === 1 && result.stdout === "" && result.stderr === "")) {
+    throw new Error("Chromium offline capture revision search failed");
+  }
+  const paths = parseHomePwaRevisionGrepPathsForTests(result.stdout, revision);
   if (paths.length !== 1) throw new Error("Chromium offline capture did not reconcile exactly once");
-  const body = await readFile(join(context.vault, paths[0]!), "utf8");
+  const body = (await runRaw([
+    "/usr/bin/git", "show", `${revision}:${paths[0]!}`,
+  ], context.vault, context.environment, signal)).stdout;
   signal.throwIfAborted();
   if (body.split(text).length !== 2 ||
     !body.includes(`capture_id: ${JSON.stringify(captureId)}`) ||
     body.split(`capture_id: ${JSON.stringify(captureId)}`).length !== 2) {
     throw new Error("Chromium offline capture identity is missing or duplicated");
   }
+}
+
+/** Parse `git grep -l -z <revision>` without confusing its revision prefix for a path. */
+export function parseHomePwaRevisionGrepPathsForTests(
+  output: string,
+  revision: string,
+): readonly string[] {
+  if (!/^[0-9a-f]{40,64}$/.test(revision)) {
+    throw new Error("Chromium offline capture revision is invalid");
+  }
+  if (output === "") return Object.freeze([]);
+  if (!output.endsWith("\0")) {
+    throw new Error("Chromium offline capture path inventory is malformed");
+  }
+  const prefix = `${revision}:`;
+  const records = output.slice(0, -1).split("\0");
+  return Object.freeze(records.map((record) => {
+    if (!record.startsWith(prefix) || record.length === prefix.length) {
+      throw new Error("Chromium offline capture path inventory is malformed");
+    }
+    return record.slice(prefix.length);
+  }));
 }
 
 async function assertLiveCredentialTruth(

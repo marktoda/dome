@@ -435,6 +435,56 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /delete pending capture/i }));
   });
 
+  test("fresh repaired readiness replays one queued capture with its stable identity", async () => {
+    document.cookie = "dome_csrf=revoked-replay; Path=/";
+    let pairedAgain = false;
+    const captureIds: string[] = [];
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/readyz") return readinessResponse();
+      if (path === "/tasks") return new Response(TODAY_BODY, { status: 200 });
+      if (path === "/recents") return new Response(RECENTS_BODY, { status: 200 });
+      if (path === "/capture") {
+        const body = await request.json() as { captureId?: unknown };
+        captureIds.push(typeof body.captureId === "string" ? body.captureId : "");
+        if (!pairedAgain) {
+          return new Response(JSON.stringify({ error: "device-revoked" }), { status: 401 });
+        }
+        return new Response(JSON.stringify({
+          schema: "dome.capture/v1", status: "captured", vault: "vault",
+          path: "inbox/raw/repaired.md", commit: "abc", capture_id: body.captureId,
+          title: "repaired", captured_at: "2026-07-15T12:00:00.000Z", source: "pwa",
+          branch: "main", serve_status: "running", adopted_initialized: true,
+          compile_pending: false, commit_status: "committed", adoption_status: "pending",
+        }), { status: 200 });
+      }
+      if (path === "/pair") {
+        pairedAgain = true;
+        return new Response(JSON.stringify({
+          schema: "dome.device.pairing/v1", status: "paired", csrfToken: "repaired-csrf",
+        }), { status: 200 });
+      }
+      throw new Error(`unexpected remote request: ${path}`);
+    }) as never;
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
+    const input = screen.getByLabelText("ask your brain") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "replay after auth repair" } });
+    fireEvent.click(screen.getByRole("button", { name: "capture thought" }));
+    await waitFor(() => expect(screen.getByLabelText("New pairing code")).toBeDefined());
+    await waitFor(() => expect(screen.getByText(/failed · device-revoked/i)).toBeDefined());
+
+    fireEvent.change(screen.getByLabelText("New pairing code"), { target: { value: "fresh-code" } });
+    fireEvent.click(screen.getByRole("button", { name: "Pair again" }));
+
+    await waitFor(() => expect(captureIds).toHaveLength(2));
+    expect(captureIds[0]).not.toBe("");
+    expect(captureIds[1]).toBe(captureIds[0]);
+    await waitFor(() => expect(screen.queryByText("replay after auth repair")).toBeNull());
+    expect(await new CaptureQueue().all()).toEqual([]);
+  });
+
   test("two transport failures feed unreachable truth back to the pairing owner", async () => {
     globalThis.fetch = mock(async (request: Request) => {
       const path = new URL(request.url).pathname;
