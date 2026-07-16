@@ -140,7 +140,7 @@ input, textarea { font: inherit; color: inherit; background: none; border: none;
 @media (max-height: 40rem) {
   /* Diagnostics must not consume the short-screen workspace. The disclosure
      stays available and keyboard-scrollable inside this bounded region. */
-  .connection.open { max-height: 16dvh; }
+  .connection.open { max-height: max(7rem, 16vh); max-height: max(7rem, 16dvh); }
 }
 
 .scroll { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0 calc(var(--pad) + var(--safe-right)) 8px calc(var(--pad) + var(--safe-left)); -webkit-overflow-scrolling: touch; }

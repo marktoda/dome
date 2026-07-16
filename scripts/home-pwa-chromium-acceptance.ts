@@ -400,7 +400,7 @@ async function assertAdaptiveAccessibility(page: Page): Promise<void> {
         const rect = target.getBoundingClientRect();
         return rect.width < 43.5 || rect.height < 43.5;
       }).map((element) => element.getAttribute("aria-label") || element.textContent?.trim().slice(0, 40) || element.tagName);
-      const critical = [".composer", '[aria-label="Today"]', '[aria-label="ask your brain"]', '[aria-label="capture thought"]', '[aria-label="send"]']
+      const critical = [".composer", '[aria-label="Refresh Today"]', '[aria-label="ask your brain"]', '[aria-label="capture thought"]', '[aria-label="send"]']
         .map((selector) => document.querySelector(selector));
       return {
         overflow: document.documentElement.scrollWidth > innerWidth || document.body.scrollWidth > innerWidth,
@@ -450,6 +450,7 @@ async function assertAdaptiveAccessibility(page: Page): Promise<void> {
         focusVisible: bodyStyle.outlineStyle !== "none" && parseFloat(bodyStyle.outlineWidth) >= 3,
         bodyInside: inside(bodyRect),
         summaryInside: inside(summaryRect),
+        bodyHeight: body.clientHeight,
         scrollable: body.scrollHeight > body.clientHeight + 0.5,
       };
     })()` ) as null | Readonly<{
@@ -457,11 +458,15 @@ async function assertAdaptiveAccessibility(page: Page): Promise<void> {
       focusVisible: boolean;
       bodyInside: boolean;
       summaryInside: boolean;
+      bodyHeight: number;
       scrollable: boolean;
     }>;
     if (diagnosticFocus === null || !diagnosticFocus.focused || !diagnosticFocus.focusVisible ||
       !diagnosticFocus.bodyInside || !diagnosticFocus.summaryInside) {
       throw new Error(`installed PWA connection diagnostics did not receive keyboard focus at ${viewport.width}x${viewport.height}`);
+    }
+    if (diagnosticFocus.bodyHeight < 44) {
+      throw new Error(`installed PWA connection diagnostics are not visibly usable at ${viewport.width}x${viewport.height}`);
     }
     if (diagnosticFocus.scrollable) {
       await page.keyboard.press("PageDown");
@@ -732,6 +737,7 @@ function safeAdaptiveFailureDiagnostic(
     [/^installed PWA keyboard focus is not visibly contained at (320x568|390x844|844x390)$/, "initial-focus"],
     [/^installed PWA connection diagnostics are unavailable at (320x568|390x844|844x390)$/, "diagnostics-missing"],
     [/^installed PWA connection diagnostics did not receive keyboard focus at (320x568|390x844|844x390)$/, "diagnostics-focus"],
+    [/^installed PWA connection diagnostics are not visibly usable at (320x568|390x844|844x390)$/, "diagnostics-viewport"],
     [/^installed PWA connection diagnostics did not keyboard-scroll at (320x568|390x844|844x390)$/, "diagnostics-scroll"],
     [/^installed PWA connection summary or focus left the viewport during keyboard scroll at (320x568|390x844|844x390)$/, "diagnostics-containment"],
   ];

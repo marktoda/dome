@@ -592,6 +592,13 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       "installed Home Chromium acceptance failed at adaptive-accessibility [diagnostics-focus@320x568]",
     );
 
+    const collapsed = await failure(async () => {
+      throw new Error("installed PWA connection diagnostics are not visibly usable at 844x390");
+    });
+    expect(collapsed).toBe(
+      "installed Home Chromium acceptance failed at adaptive-accessibility [diagnostics-viewport@844x390]",
+    );
+
     const secret = "private pairing code and vault path";
     const hidden = await failure(async () => { throw new Error(secret); });
     expect(hidden).toBe("installed Home Chromium acceptance failed at adaptive-accessibility [unclassified]");

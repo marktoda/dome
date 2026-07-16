@@ -68,8 +68,11 @@ describe("PWA adaptive accessibility CSS policy", () => {
     expect(body).toMatch(/overflow-y:\s*auto/);
     expect(body).toMatch(/overscroll-behavior:\s*contain/);
     expect(css).toMatch(/\.connection-body:focus-visible\s*\{[^}]*outline-offset:\s*-3px/);
+    expect(css).toContain("max-height: max(7rem, 16vh); max-height: max(7rem, 16dvh)");
 
     const runner = await readFile(join(import.meta.dir, "..", "..", "scripts", "home-pwa-chromium-acceptance.ts"), "utf8");
+    expect(runner).toContain("diagnosticFocus.bodyHeight < 44");
+    expect(runner).toContain("installed PWA connection diagnostics are not visibly usable");
     expect(runner).toContain('page.keyboard.press("PageDown")');
     expect(runner).toContain("installed PWA connection diagnostics did not receive keyboard focus");
     expect(runner).toContain("installed PWA connection diagnostics did not keyboard-scroll");
@@ -97,7 +100,7 @@ describe("PWA adaptive accessibility CSS policy", () => {
     const runner = await readFile(join(
       import.meta.dir, "..", "..", "scripts", "home-pwa-chromium-acceptance.ts",
     ), "utf8");
-    expect(runner).toContain("'[aria-label=\"Today\"]'");
+    expect(runner).toContain("'[aria-label=\"Refresh Today\"]'");
     expect(runner).toContain("installed PWA critical controls leave the viewport");
   });
 
