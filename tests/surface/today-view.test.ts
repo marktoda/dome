@@ -133,7 +133,23 @@ test("parses proposal reviews and the owner backlog", () => {
     reason: "Promote the repair processor",
   }));
   expect(v.attentionBacklog).toBe(2);
-  expect(buildTodayViewModel(v).totalOpen).toBe(1);
+  expect(buildTodayViewModel(v).totalOpen).toBe(3);
+});
+
+test("owner attention prevents a false all-clear when no primary rows are loaded", () => {
+  const v = parseTodayView({
+    date: "x",
+    openTasks: [],
+    followups: [],
+    questions: [],
+    reviews: [],
+    attentionBacklog: 4,
+    counts: { openTasks: 0, followups: 0, questions: 0, reviews: 0 },
+    brief: null,
+    calendar: null,
+    hero: null,
+  });
+  expect(buildTodayViewModel(v).totalOpen).toBe(4);
 });
 
 test("brief/calendar/hero null-safe + counts carried", () => {

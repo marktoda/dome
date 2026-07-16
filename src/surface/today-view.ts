@@ -480,7 +480,11 @@ export type TodaySections = {
 export type TodayViewModel = {
   readonly date: string;
   readonly counts: TodayCounts;
-  /** Declared tasks + followups + questions + reviews; all-clear is `=== 0`. */
+  /**
+   * Declared tasks + followups + primary questions/reviews + bounded owner
+   * attention. All-clear is `=== 0`; lower-ranked attention must never vanish
+   * merely because it was omitted from the loaded primary rows.
+   */
   readonly totalOpen: number;
   /** Loaded backlog rows that are at least 30 days overdue, folded by glance surfaces. */
   readonly agedBacklog: ReadonlyArray<TodayTaskRow>;
@@ -549,7 +553,7 @@ export function buildTodayViewModel(view: TodayView): TodayViewModel {
     counts,
     totalOpen:
       counts.openTasks + counts.followups + counts.questions +
-      (counts.reviews ?? reviews.length),
+      (counts.reviews ?? reviews.length) + attentionBacklog,
     agedBacklog,
     omittedOpenCount: Math.max(
       0,

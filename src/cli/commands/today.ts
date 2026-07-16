@@ -396,7 +396,7 @@ export function formatTodayResult(
   // All-clear calm body: a quiet two-line state under the verdict header,
   // not a bare one-liner. (No hero, no list — there is nothing open.)
   if (isAllClear) {
-    lines.push(`  ${paint(glyph("pending", caps), "muted", caps)} nothing open · inbox empty`);
+    lines.push(`  ${paint(glyph("pending", caps), "muted", caps)} nothing needs your attention`);
     lines.push(`  ${paint("you're clear. go make something.", "muted", caps)}`);
     lines.push("");
   }

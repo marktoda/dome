@@ -434,7 +434,8 @@ describe("dome today: Briefing terminal restyle", () => {
       "/vault",
     );
     expect(out).toMatch(/all clear/);
-    expect(out).toMatch(/nothing open|inbox/i);
+    expect(out).toMatch(/nothing needs your attention/i);
+    expect(out).not.toMatch(/inbox empty/i);
     expect(out).toMatch(/go make something|you're clear/i);
   });
 

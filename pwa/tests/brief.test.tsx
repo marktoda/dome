@@ -79,6 +79,17 @@ describe("Brief", () => {
     expect(screen.queryByRole("button", { name: "reject" })).toBeNull();
   });
 
+  test("does not render all-clear when only bounded owner attention remains", () => {
+    const today: Today = {
+      ...base,
+      attentionBacklog: 2,
+      counts: { openTasks: 0, followups: 0, questions: 0, reviews: 0 },
+    };
+    render(<Brief today={today} onResolve={noop} />);
+    expect(screen.queryByText("You're clear.")).toBeNull();
+    expect(screen.getByText(/today · 2 to review/i)).toBeDefined();
+  });
+
   test("folds 30-day backlog debt separately and expands it with live settlement", async () => {
     const onSettle = mock(async () => true);
     const today: Today = {
