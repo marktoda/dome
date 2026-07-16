@@ -83,10 +83,18 @@ describe("dome today", () => {
     expect(Array.isArray(doc.openTasks)).toBe(true);
   }, 120_000);
 
-  test("--json includes a health question sourced from vault config", async () => {
+  test("--json includes global-attention questions with unrelated provenance", async () => {
     const v = mkdtempSync(join(tmpdir(), "dome-today-health-question-"));
     try {
       expect(await runInit({ path: v })).toBe(0);
+      await mkdir(join(v, "preferences"), { recursive: true });
+      await writeFile(
+        join(v, "preferences", "signals.md"),
+        "# Preference signals\n",
+        "utf8",
+      );
+      await add(v, "preferences/signals.md");
+      await commit({ path: v, message: "seed preference provenance" });
       expect(await runSync({ vault: v, quiet: true })).toBe(0);
       const adopted = commitOid(await resolveRef({ path: v, ref: "HEAD" }));
       const runtime = await openVaultRuntime({
@@ -115,17 +123,43 @@ describe("dome today", () => {
         runId: "run-test-today-health-config-source",
         adoptedCommit: adopted,
       });
+      insertQuestion(runtime.value.projectionDb, {
+        effect: questionEffect({
+          question: "Promote the observed preference?",
+          options: ["promote", "dismiss"],
+          idempotencyKey: "test.today.preference-source",
+          sourceRefs: [sourceRef({ commit: adopted, path: "preferences/signals.md" })],
+          metadata: {
+            resolutionMode: "dispatch",
+            automationPolicy: "owner-needed",
+            risk: "medium",
+          },
+        }),
+        processorId: "dome.agent.preference-promotion",
+        runId: "run-test-today-preference-source",
+        adoptedCommit: adopted,
+      });
       await runtime.value.close();
 
       logs = [];
       errors = [];
       expect(await runToday({ vault: v, json: true })).toBe(0);
       const doc = JSON.parse(logs.join("\n"));
-      expect(doc.questions).toHaveLength(1);
-      expect(doc.questions[0]).toMatchObject({
-        question: "Retry the failed calendar fetch?",
-        sourceRefs: [{ path: ".dome/config.yaml" }],
-      });
+      expect(doc.questions).toHaveLength(2);
+      expect(doc.questions).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          question: "Retry the failed calendar fetch?",
+          sourceRefs: expect.arrayContaining([
+            expect.objectContaining({ path: ".dome/config.yaml" }),
+          ]),
+        }),
+        expect.objectContaining({
+          question: "Promote the observed preference?",
+          sourceRefs: expect.arrayContaining([
+            expect.objectContaining({ path: "preferences/signals.md" }),
+          ]),
+        }),
+      ]));
       expect(errors).toEqual([]);
     } finally {
       await rm(v, { recursive: true, force: true });

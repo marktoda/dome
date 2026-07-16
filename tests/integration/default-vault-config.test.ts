@@ -180,6 +180,40 @@ describe("default vault config", () => {
     }
   });
 
+  test("default config gives only Today a global provenance read grant", async () => {
+    const root = mkdtempSync(join(tmpdir(), "dome-default-config-today-"));
+    try {
+      await mkdir(join(root, ".dome"), { recursive: true });
+      await writeFile(
+        join(root, ".dome", "config.yaml"),
+        defaultConfigYaml(),
+        "utf8",
+      );
+      const policy = await loadCapabilityPolicy(root);
+      expect(policy.ok).toBe(true);
+      if (!policy.ok) throw new Error(policy.error);
+
+      expect(
+        policy.value.grantsForProcessor("dome.daily", "dome.daily.today"),
+      ).toEqual([
+        { kind: "read", paths: ["**"] },
+        { kind: "questions.read" },
+        { kind: "proposals.read" },
+      ]);
+
+      // The replacement is processor-local: the remaining daily processors
+      // retain the bundle's narrow knowledge/source read grant.
+      expect(
+        policy.value.grantsForProcessor(
+          "dome.daily",
+          "dome.daily.compose-blocks",
+        ),
+      ).not.toContainEqual({ kind: "read", paths: ["**"] });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("first-party defaults do not grant undeclared capability kinds", async () => {
     const loaded = await loadBundles({ bundlesRoot: resolveShippedBundlesRoot() });
     expect(loaded.ok).toBe(true);

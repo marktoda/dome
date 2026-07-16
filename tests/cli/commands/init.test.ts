@@ -613,6 +613,17 @@ describe("runInit", () => {
       ]);
       expect(record(record(extensions["dome.daily"]).grant)["patch.auto"])
         .toEqual(["wiki/**/*.md", "notes/*.md"]);
+      expect(
+        record(
+          record(
+            record(extensions["dome.daily"]).processors,
+          )["dome.daily.today"],
+        ).grant,
+      ).toEqual({
+        read: ["**"],
+        "questions.read": true,
+        "proposals.read": true,
+      });
       // dome.sources declares no doctor grant entries, so its narrowed grant is
       // byte-untouched.
       expect(record(record(extensions["dome.sources"]).grant).read).toEqual([
@@ -807,6 +818,14 @@ describe("runInit", () => {
       expect(refreshed.extensions["dome.daily"]?.enabled).toBe(true);
       expect(refreshed.extensions["dome.daily"]?.grant?.["patch.auto"])
         .toEqual(["wiki/**/*.md", "notes/*.md"]);
+      expect(
+        refreshed.extensions["dome.daily"]?.processors?.["dome.daily.today"]
+          ?.grant,
+      ).toEqual({
+        read: ["**"],
+        "questions.read": true,
+        "proposals.read": true,
+      });
       // dome.health was explicitly written `enabled: false`; refresh must
       // leave an explicit value alone (no grant merge for a disabled bundle).
       expect(refreshed.extensions["dome.health"]?.enabled).toBe(false);
@@ -981,6 +1000,13 @@ describe("runInit", () => {
         "sources/calendar/*.md",
         "sources/slack/*.md",
       ]);
+      expect(
+        record(record(record(daily.processors)["dome.daily.today"]).grant),
+      ).toEqual({
+        read: ["**"],
+        "questions.read": true,
+        "proposals.read": true,
+      });
       // And the summary printed nothing for the withheld kinds.
       const printed = captured.out.join("\n");
       expect(printed).not.toContain("dome.daily patch.auto");

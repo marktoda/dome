@@ -127,34 +127,44 @@ export const FIRST_PARTY_EXTENSION_DEFAULTS: ReadonlyArray<FirstPartyExtensionDe
       read: ["**/*.md"],
       "graph.write": ["dome.graph.*"],
     }),
-    extension("dome.daily", true, {
-      // Source files feed dome.daily.compose-blocks' deterministic agenda and
-      // honest source record.
-      // without them the reads return null and the blocks silently never
-      // render (grant-scoped snapshot misses are silent).
-      read: [
-        "wiki/**/*.md",
-        "notes/*.md",
-        // Operational questions (for example, failed source-fetch recovery)
-        // cite the vault config that authorized the action. Today includes
-        // those SourceRefs in its ViewEffect scope, so the declared and
-        // granted read sets must both cover the config provenance.
-        ".dome/config.yaml",
-        "sources/calendar/*.md",
-        "sources/slack/*.md",
-      ],
-      "patch.auto": ["wiki/**/*.md", "notes/*.md"],
-      "graph.write": ["dome.daily.*"],
-      "question.ask": true,
-      // dome.daily.compose-blocks reads open question rows via
-      // ctx.operational.questions to render the deterministic "To decide"
-      // block (daily-surface §"Block ownership").
-      "questions.read": true,
-      // dome.daily.compose-blocks reads pending garden-proposal rows via
-      // ctx.operational.proposals to render the deterministic "To review"
-      // block (daily-surface §"Block ownership").
-      "proposals.read": true,
-    }),
+    extension(
+      "dome.daily",
+      true,
+      {
+        // Source files feed dome.daily.compose-blocks' deterministic agenda
+        // and honest source record. Without them the reads return null and
+        // the blocks silently never render (grant-scoped snapshot misses are
+        // silent).
+        read: [
+          "wiki/**/*.md",
+          "notes/*.md",
+          "sources/calendar/*.md",
+          "sources/slack/*.md",
+        ],
+        "patch.auto": ["wiki/**/*.md", "notes/*.md"],
+        "graph.write": ["dome.daily.*"],
+        "question.ask": true,
+        // dome.daily.compose-blocks reads open question rows via
+        // ctx.operational.questions to render the deterministic "To decide"
+        // block (daily-surface §"Block ownership").
+        "questions.read": true,
+        // dome.daily.compose-blocks reads pending garden-proposal rows via
+        // ctx.operational.proposals to render the deterministic "To review"
+        // block (daily-surface §"Block ownership").
+        "proposals.read": true,
+      },
+      {
+        // Today is the global owner-attention view: questions and proposals
+        // retain producer-owned SourceRefs from anywhere in the vault. Keep
+        // that broad provenance read on this one view processor rather than
+        // widening every dome.daily processor.
+        "dome.daily.today": Object.freeze({
+          read: ["**"],
+          "questions.read": true,
+          "proposals.read": true,
+        }),
+      },
+    ),
     extension("dome.claims", true, {
       read: ["wiki/**/*.md", "notes/*.md"],
       "patch.auto": ["wiki/**/*.md", "notes/*.md"],
