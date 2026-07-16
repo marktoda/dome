@@ -137,21 +137,19 @@ scenario(
 
     expect(payload.topic).toBe("Ada");
     expect(payload.date).toBe("2026-01-05");
-    expect(payload.counts.agendaItems).toBe(4);
+    expect(payload.counts.agendaItems).toBe(3);
     expect(payload.counts.context).toBeGreaterThan(0);
-    expect(payload.shown.agendaItems).toBe(4);
+    expect(payload.shown.agendaItems).toBe(3);
     expect(payload.shown.context).toBe(payload.context.length);
     expect(payload.omitted.agendaItems).toBe(0);
     expect(payload.agendaItems.map((item) => item.text)).toEqual([
       "Send Ada launch notes",
       "Ask Ada about rollout risks",
       "Draft Ada staffing note",
-      "Share Ada launch checklist",
     ]);
     expect(payload.agendaItems.map((item) => item.priority)).toEqual([
       null,
       "highest",
-      null,
       null,
     ]);
     expect(payload.agendaItems[1]?.evidenceLabel).toBe(

@@ -250,12 +250,12 @@ describe("dome.agent manifest cadence + grants", () => {
     }
   });
 
-  test("brief's write grant is bounded to the daily-note targets and reads the calendar source", async () => {
+  test("brief's write grant is bounded, source-backed, and never invents owner questions", async () => {
     const manifest = await loadManifest();
     const brief = manifest.processors.find((p) => p.id === "dome.agent.brief");
     const kinds = (brief?.capabilities ?? []).map((c) => c.kind);
     expect(kinds).toContain("model.invoke");
-    expect(kinds).toContain("question.ask");
+    expect(kinds).not.toContain("question.ask");
     expect(kinds).not.toContain("graph.write"); // MODEL_PROCESSORS_EMIT_NO_DURABLE_FACTS
 
     const read = brief?.capabilities.find((c) => c.kind === "read");

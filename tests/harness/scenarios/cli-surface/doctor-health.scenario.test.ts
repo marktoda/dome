@@ -361,7 +361,7 @@ scenario(
     expect(report.status).toBe("unhealthy");
     // Every capability kind is granted — the kind-level probe stays quiet.
     expect(report.summary.capabilityGrantGaps).toBe(0);
-    expect(report.summary.capabilityGrantEntryGaps).toBe(10);
+    expect(report.summary.capabilityGrantEntryGaps).toBe(11);
 
     const entryGaps = report.findings.filter(
       (finding) => finding.code === "capability.grant-entry-missing",
@@ -376,6 +376,7 @@ scenario(
       "dome.agent.preference-promotion-answer",
       "dome.agent.preference-signals",
       "dome.daily.compose-blocks",
+      "dome.daily.today",
       "dome.markdown.core-size",
       "dome.markdown.page-status",
       "dome.markdown.render-index",
