@@ -50,6 +50,8 @@ export type TodayItem = {
   path: string;
   line: number | null;
   source?: "daily" | "backlog";
+  /** Follow-up is a facet of this logical task, not a second task. */
+  followup?: boolean;
   dueDate: string | null;
   origin?: string;
   entities?: string[];

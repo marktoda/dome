@@ -59,6 +59,7 @@ describe("closed PWA static root", () => {
       expect(migratedToday.status).toBe(308);
       expect(migratedToday.headers.get("location")).toBe("/");
       expect(migratedToday.headers.get("cache-control")).toBe("no-store");
+      expect(migratedToday.headers.get("referrer-policy")).toBe("no-referrer");
       for (const path of ["/", "/index.html", "/manifest.webmanifest", "/sw.js"]) {
         const response = await handler.fetch(new Request(`http://localhost${path}`));
         expect(response.status).toBe(200);
@@ -1222,6 +1223,7 @@ describe("GET /today", () => {
     expect(res.status).toBe(410);
     expect(res.headers.get("content-type")).toContain("text/plain");
     expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
     const body = await res.text();
     expect(body).toContain("legacy /today page has retired");
     expect(body).toContain("GET /tasks");

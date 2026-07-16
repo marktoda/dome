@@ -19,6 +19,8 @@ An unchecked checkbox is not automatically a global Dome task. Inside a daily no
 
 `openLoopSurfaceSources` is the single compiler for this semantic rule. Both `dome.daily.task-index` and `dome.daily.carry-forward` consume that interface, so the fact inventory cannot be broader than the surface inventory. The compiler also owns daily-path recognition, generated-block/frontmatter/fence exclusions, duplicate-anchor handling, semantic bodies, source identity, and origin metadata. Task-line hygiene may still parse local checkboxes to preserve stable syntax and anchors; eligibility is specifically the boundary for global facts and surfaces.
 
+Every global task projects one `dome.daily.open_task` fact. A follow-up projects the same open-task fact plus `dome.daily.followup` as a facet keyed by the same stable identity; it is not a second logical task. Accordingly, `dome.daily.today/v1` keeps `openTasks` as the canonical logical collection and exposes `followups`/`counts.followups` for filtering and metadata. Product totals and task rows consume `openTasks` once rather than adding the follow-up facet again.
+
 ## Block-anchor identity
 
 A **block anchor** is a trailing `^id` token on a line, separated from the preceding text by whitespace — e.g. `- [ ] ship the thing ^t1a2b3c4`. The grammar is a core primitive at `src/core/block-anchor.ts`: pure (string-only, no IO), Obsidian-compatible, and rebuild-safe. The anchor is stamped *into the markdown itself*, so identity travels with the line.

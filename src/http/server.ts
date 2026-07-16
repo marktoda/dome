@@ -468,7 +468,11 @@ async function todayMigrationResponse(staticDir: string | undefined): Promise<Re
     if (shell?.ok === true) {
       return new Response(null, {
         status: 308,
-        headers: { location: "/", "cache-control": "no-store" },
+        headers: {
+          location: "/",
+          "cache-control": "no-store",
+          "referrer-policy": "no-referrer",
+        },
       });
     }
   }
@@ -480,6 +484,7 @@ async function todayMigrationResponse(staticDir: string | undefined): Promise<Re
       headers: {
         "content-type": "text/plain; charset=utf-8",
         "cache-control": "no-store",
+        "referrer-policy": "no-referrer",
       },
     },
   );

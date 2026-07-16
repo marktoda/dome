@@ -18,12 +18,13 @@ test("priorityMarkerChars maps all five levels + null", () => {
   expect(priorityMarkerChars("lowest", false)).toBe("vv");
 });
 
-test("parses tasks with wikilinks stripped + dueDate", () => {
+test("parses tasks with wikilinks stripped + dueDate + followup facet", () => {
   const v = parseTodayView({ date: "2026-06-14",
-    openTasks: [{ text: "talk to [[wiki/x|Eric]]", path: "p", line: 1, dueDate: "2026-06-10" }],
-    followups: [], questions: [], counts: { openTasks: 1, followups: 0, questions: 0 }, brief: null, calendar: null, hero: null });
+    openTasks: [{ text: "talk to [[wiki/x|Eric]]", path: "p", line: 1, dueDate: "2026-06-10", followup: true }],
+    followups: [], questions: [], counts: { openTasks: 1, followups: 1, questions: 0 }, brief: null, calendar: null, hero: null });
   expect(v.openTasks[0]!.text).toBe("talk to Eric");
   expect(v.openTasks[0]!.dueDate).toBe("2026-06-10");
+  expect(v.openTasks[0]!.followup).toBe(true);
 });
 
 test("parseTaskRows carries priority for all five literals + null/unknown", () => {
@@ -264,16 +265,34 @@ describe("buildTodayViewModel", () => {
     expect(vm.stillOpen.dueToday.map((t) => t.text)).toEqual(["other"]);
   });
 
-  test("totalOpen counts tasks + followups + questions", () => {
+  test("counts a followup once as a logical task while retaining its facet", () => {
     const vm = buildTodayViewModel(
       parseTodayView({
         ...base,
-        openTasks: [],
+        counts: { openTasks: 1, followups: 1, questions: 1 },
+        openTasks: [{
+          text: "Follow up with Jane",
+          path: "p",
+          line: 1,
+          dueDate: null,
+          followup: true,
+        }],
+        followups: [{
+          text: "Follow up with Jane",
+          path: "p",
+          line: 1,
+          dueDate: null,
+          followup: true,
+        }],
         questions: [{ id: 1, question: "go?", options: [], resolveCommand: "dome resolve 1" }],
         hero: null,
       }),
     );
-    expect(vm.totalOpen).toBe(5); // counts 4 + 0 + 1
+    expect(vm.totalOpen).toBe(2);
+    expect(vm.counts.followups).toBe(1);
+    expect(vm.stillOpen.someday).toHaveLength(1);
+    expect(vm.stillOpen.someday[0]!.followup).toBe(true);
+    expect(vm.omittedOpenCount).toBe(0);
   });
 
   test("partitions only backlog rows at the 30-day boundary into aged backlog", () => {

@@ -10,13 +10,13 @@
 import { describe, expect, test } from "bun:test";
 
 import today from "../../assets/extensions/dome.daily/processors/today";
-import { OPEN_TASK_PREDICATE, TASK_ORIGIN_PREDICATE } from "../../assets/extensions/dome.daily/processors/action-state";
+import { FOLLOWUP_PREDICATE, OPEN_TASK_PREDICATE, TASK_ORIGIN_PREDICATE } from "../../assets/extensions/dome.daily/processors/action-state";
 import type { FactEffect, ViewEffect } from "../../src/core/effect";
 import { treeOid, type ProjectionQueryView, type Snapshot } from "../../src/core/processor";
 import { makeManualProposal } from "../../src/core/proposal";
 import { commitOid } from "../../src/core/source-ref";
 import { makeProcessorContext } from "../../src/processors/context";
-import { parseTodayView } from "../../src/surface/today-view";
+import { buildTodayViewModel, parseTodayView } from "../../src/surface/today-view";
 
 // ---------------------------------------------------------------------------
 // Fixed date anchor — 2026-06-14, which is also the date used across the
@@ -415,5 +415,40 @@ describe("dome.daily.today — task origin propagation", () => {
     expect(rows).toHaveLength(1);
     // That row must carry the rescued origin URL.
     expect(rows[0]!.origin).toBe(ORIGIN_URL);
+  });
+});
+
+describe("dome.daily.today — followup facet", () => {
+  test("one followup fact pair produces one logical Today row and total", async () => {
+    const stableId = "t-follow-up-jane-001";
+    const facts = [
+      makeFact({
+        predicate: OPEN_TASK_PREDICATE,
+        subjectPath: "wiki/projects/client.md",
+        value: "Follow up with Jane",
+        stableId,
+      }),
+      makeFact({
+        predicate: FOLLOWUP_PREDICATE,
+        subjectPath: "wiki/projects/client.md",
+        value: "Follow up with Jane",
+        stableId,
+      }),
+    ];
+    const data = await runTodayRaw({
+      files: { [DAILY_PATH]: MINIMAL_DAILY },
+      facts,
+    });
+
+    const view = parseTodayView(data);
+    expect(view.openTasks).toHaveLength(1);
+    expect(view.followups).toHaveLength(1);
+    expect(view.openTasks[0]!.followup).toBe(true);
+    expect(view.counts).toMatchObject({ openTasks: 1, followups: 1 });
+
+    const model = buildTodayViewModel(view);
+    expect(Object.values(model.stillOpen).flat()).toHaveLength(1);
+    expect(model.totalOpen).toBe(1);
+    expect(model.omittedOpenCount).toBe(0);
   });
 });

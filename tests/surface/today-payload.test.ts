@@ -57,12 +57,14 @@ test("validates priority and still strips unknown extras", () => {
         line: 1,
         dueDate: null,
         priority: "high",
+        followup: true,
         zebra: 1,
       },
     ],
     followups: [], questions: [], brief: null, calendar: null, hero: null,
   });
   expect(parsed.openTasks[0]!.priority).toBe("high");
+  expect(parsed.openTasks[0]!.followup).toBe(true);
   expect((parsed.openTasks[0] as Record<string, unknown>).zebra).toBeUndefined(); // unknown extra stripped
 });
 

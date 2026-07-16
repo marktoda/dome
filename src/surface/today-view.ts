@@ -30,6 +30,8 @@ export type TodayTaskRow = {
   readonly path: string;
   readonly line: number | null;
   readonly source?: "daily" | "backlog";
+  /** True when this logical task also belongs to the follow-up facet. */
+  readonly followup?: boolean;
   readonly dueDate: string | null;
   /** Decoded URL/path from an inline `([↗](target))` origin marker, if present. */
   readonly origin?: string;
@@ -143,6 +145,7 @@ const taskRowWireSchema = z.object({
   path: z.string(),
   line: z.number().nullable().optional(),
   source: z.enum(["daily", "backlog"]).optional(),
+  followup: z.boolean().optional(),
   dueDate: z.string().nullable().optional(),
   origin: z.string().optional(),
   evidenceLabel: z.string().optional(),
@@ -303,6 +306,7 @@ function parseTaskRowRecord(r: Record<string, unknown>): TodayTaskRow | null {
   const source = r.source === "daily" || r.source === "backlog"
     ? r.source
     : undefined;
+  const followup = typeof r.followup === "boolean" ? r.followup : undefined;
   const evidenceLabel = typeof r.evidenceLabel === "string"
     ? r.evidenceLabel
     : undefined;
@@ -318,6 +322,7 @@ function parseTaskRowRecord(r: Record<string, unknown>): TodayTaskRow | null {
     path: typeof r.path === "string" ? r.path : "",
     line: typeof r.line === "number" ? r.line : null,
     ...(source !== undefined ? { source } : {}),
+    ...(followup !== undefined ? { followup } : {}),
     dueDate: typeof r.dueDate === "string" ? r.dueDate : null,
     ...(origin !== undefined ? { origin } : {}),
     ...(evidenceLabel !== undefined ? { evidenceLabel } : {}),
@@ -481,14 +486,15 @@ export type TodayViewModel = {
   readonly date: string;
   readonly counts: TodayCounts;
   /**
-   * Declared tasks + followups + primary questions/reviews + bounded owner
-   * attention. All-clear is `=== 0`; lower-ranked attention must never vanish
-   * merely because it was omitted from the loaded primary rows.
+   * Declared logical tasks + primary questions/reviews + bounded owner
+   * attention. Followups are a facet of openTasks, not additional work.
+   * All-clear is `=== 0`; lower-ranked attention must never vanish merely
+   * because it was omitted from the loaded primary rows.
    */
   readonly totalOpen: number;
   /** Loaded backlog rows that are at least 30 days overdue, folded by glance surfaces. */
   readonly agedBacklog: ReadonlyArray<TodayTaskRow>;
-  /** Open task/followup rows declared by counts but absent from this bounded payload. */
+  /** Logical task rows declared by counts but absent from this bounded payload. */
   readonly omittedOpenCount: number;
   readonly stillOpen: TodaySections;
   readonly brief: TodayBriefField | null;
@@ -515,7 +521,6 @@ export function buildTodayViewModel(view: TodayView): TodayViewModel {
   const {
     date,
     openTasks,
-    followups,
     questions,
     reviews,
     attentionBacklog,
@@ -533,7 +538,10 @@ export function buildTodayViewModel(view: TodayView): TodayViewModel {
   } = { overdue: [], dueToday: [], thisWeek: [], later: [], someday: [] };
   const agedBacklog: TodayTaskRow[] = [];
 
-  for (const t of [...openTasks, ...followups]) {
+  // `openTasks` is the canonical logical-task collection. `followups` is a
+  // filter/facet over those same tasks on the v1 wire contract; concatenating
+  // it here renders and counts one follow-up twice.
+  for (const t of openTasks) {
     const urgency = classifyUrgency(t.dueDate, date);
     if (
       t.source === "backlog" &&
@@ -552,12 +560,12 @@ export function buildTodayViewModel(view: TodayView): TodayViewModel {
     date,
     counts,
     totalOpen:
-      counts.openTasks + counts.followups + counts.questions +
+      counts.openTasks + counts.questions +
       (counts.reviews ?? reviews.length) + attentionBacklog,
     agedBacklog,
     omittedOpenCount: Math.max(
       0,
-      counts.openTasks + counts.followups - openTasks.length - followups.length,
+      counts.openTasks - openTasks.length,
     ),
     stillOpen: {
       overdue: sections.overdue,

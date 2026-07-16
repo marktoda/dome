@@ -26,6 +26,29 @@ describe("Brief", () => {
     expect(screen.getByText(/you're clear/i)).toBeDefined();
   });
 
+  test("renders and summarizes a followup once even when the facet array repeats it", () => {
+    const followup = {
+      text: "Follow up with Jane",
+      path: "p",
+      line: 1,
+      dueDate: null,
+      followup: true,
+    } as const;
+    render(<Brief
+      today={{
+        ...base,
+        openTasks: [followup],
+        followups: [followup],
+        counts: { openTasks: 1, followups: 1, questions: 0 },
+      }}
+      onResolve={noop}
+    />);
+    fireEvent.click(screen.getByRole("button", { name: /\+1 more, later/ }));
+    expect(screen.getAllByText("Follow up with Jane")).toHaveLength(1);
+    expect(screen.getByText(/today · 1 open/i)).toBeDefined();
+    expect(screen.queryByText(/2 open/i)).toBeNull();
+  });
+
   test("buckets tasks by urgency, shows a priority marker, and renders no hero card", () => {
     const today: Today = { ...base, date: "2026-06-17",
       openTasks: [

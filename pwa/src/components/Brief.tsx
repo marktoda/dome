@@ -187,7 +187,8 @@ export function Brief(
     );
   }
 
-  const openCount = counts.openTasks + counts.followups;
+  // Followups are a facet of openTasks, not a second logical-task collection.
+  const openCount = counts.openTasks;
   const focusOpenCount = stillOpen.overdue.length + stillOpen.dueToday.length +
     stillOpen.thisWeek.length + stillOpen.later.length + stillOpen.someday.length;
   const hasDeferredDebt = agedBacklog.length > 0 || omittedOpenCount > 0;
