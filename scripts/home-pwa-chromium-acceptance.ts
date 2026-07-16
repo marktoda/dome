@@ -1089,6 +1089,7 @@ async function assertActivitySource(page: Page, canary: InstalledFunctionalCanar
   const activity = page.locator('details[aria-label="Activity"]');
   if (await activity.getAttribute("open") === null) await activity.locator("summary").click();
   const row = activity.getByRole("button").filter({ hasText: canary.title });
+  await row.waitFor({ timeout: WAIT_MS });
   if (await row.count() !== 1) throw new Error("installed PWA functional Activity row is not unique");
   await row.click();
   const dialog = page.getByRole("dialog", { name: canary.path });
