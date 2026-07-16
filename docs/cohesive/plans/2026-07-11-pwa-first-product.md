@@ -1016,6 +1016,19 @@ The next product mission is a **Backlog Review**, not another broad feature:
 4. never infer closure, delete prose, or mutate a task merely because it looks
    old or duplicated.
 
+**Live migration checkpoint (2026-07-16).** Dome Home 0.3.7 is installed on
+the owner vault from the gated artifact and runs through the stable host-wide
+macOS executable identity. The model-provider probe is healthy, and the new
+scheduled-processor recovery path replaced the failed morning fallback with an
+adopted, source-backed brief. Today's derived task count fell from 311 to 112
+because the shared open-loop selector removed 199 ordinary checklist items
+from the global commitment surface; no Markdown task was silently closed. The
+remaining 112 are 7 daily commitments and 105 backlog commitments (2 overdue,
+110 undated), so further reduction requires the explicit reviewed workflow
+above. Calendar ingestion remains an owner-visible degraded dependency until
+the stable Home executable passes the signed-Mac Calendar privacy gate; do not
+turn that permission failure into repeated background retries.
+
 After that bounded workflow, deepen the existing local Capture Queue with
 visible queued/sending/failed/filed states and give Ask its own primary action
 instead of overloading global Capture. Then return to the P6 external-owner
