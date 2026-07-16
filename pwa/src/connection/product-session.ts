@@ -114,7 +114,14 @@ function composerPresentation(
   document: ProductReadiness | null,
   access: ProductAccess,
   cause: "offline" | "unreachable" | "connection" | "auth" | null = null,
+  recoveryVisible = false,
 ): ComposerPresentation {
+  if (recoveryVisible) {
+    return Object.freeze({
+      placeholder: access.converse ? "ask your brain…" : "capture a thought…",
+      hint: null,
+    });
+  }
   if (cause === "offline" || cause === "unreachable" || cause === "connection") {
     return Object.freeze({
       placeholder: "capture a thought…",
@@ -163,7 +170,7 @@ function unavailable(
     recovery,
     connection,
     operational: document === null ? UNKNOWN_OPERATIONAL : operationalPresentation(document),
-    composer: composerPresentation(document, NO_ACCESS, cause),
+    composer: composerPresentation(document, NO_ACCESS, cause, true),
     staleContext: document !== null,
   });
 }
@@ -236,7 +243,7 @@ function liveSession(
     access,
     connection,
     operational: operationalPresentation(document),
-    composer: composerPresentation(document, access),
+    composer: composerPresentation(document, access, null, recovery !== null),
     recovery,
     staleContext: false,
   });
@@ -264,7 +271,7 @@ export function deriveProductSession(input: Readonly<{
       },
       connection: { label: "needs attention", tone: "attention" },
       operational: readiness.document === null ? UNKNOWN_OPERATIONAL : operationalPresentation(readiness.document),
-      composer: composerPresentation(readiness.document, NO_ACCESS, "auth"),
+      composer: composerPresentation(readiness.document, NO_ACCESS, "auth", true),
       staleContext: readiness.document !== null,
     };
     return Object.freeze(session);

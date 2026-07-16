@@ -45,8 +45,7 @@ describe("deriveProductSession", () => {
       operational: { host: "ready", adoption: "current", current: true },
     });
     expect(session.recovery?.detail).toContain("dome home setup configure");
-    expect(session.composer.hint).toContain("Ask needs model setup on your Mac");
-    expect(session.composer.hint).toContain("Voice transcription is temporarily unavailable");
+    expect(session.composer.hint).toBeNull();
   });
 
   test("preserves route-level access while every non-ready host state stays non-green", () => {
@@ -137,8 +136,7 @@ describe("deriveProductSession", () => {
       readiness: { document: READY_PRODUCT, stale: true, issue: null },
       authRepair: true,
     });
-    expect(session.composer.hint).toContain("Pair this device again");
-    expect(session.composer.hint).not.toContain("model");
+    expect(session.composer.hint).toBeNull();
   });
 
   test("turns non-current evidence into local-only sessions with one prioritized recovery", () => {

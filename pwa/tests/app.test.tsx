@@ -517,7 +517,7 @@ describe("App", () => {
     fireEvent.click(screen.getByText(/Connection · limited/i));
     expect(screen.getByText(/dome home status/)).toBeDefined();
     expect(screen.getByText(/Available now: Today and Activity/i)).toBeDefined();
-    expect(screen.getByText(/Ask needs model setup on your Mac/i)).toBeDefined();
+    expect(screen.queryByText(/Ask needs model setup on your Mac/i)).toBeNull();
 
     const input = screen.getByLabelText("ask your brain") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "still saved locally" } });
