@@ -97,9 +97,9 @@ describe("Brief", () => {
     expect(screen.getByText("Promote the link repair processor")).toBeDefined();
     expect(screen.getByText(/Evidence: \.dome\/config.yaml/)).toBeDefined();
     expect(screen.getByText("dome proposals")).toBeDefined();
-    expect(screen.getByText(/2 more items need review/)).toBeDefined();
+    expect(screen.getByText(/2 more items need attention/)).toBeDefined();
     expect(screen.getByText("dome check --decisions")).toBeDefined();
-    expect(screen.getByText(/today · 3 to review/i)).toBeDefined();
+    expect(screen.getByText(/today · 3 need attention/i)).toBeDefined();
     expect(screen.queryByRole("button", { name: "apply" })).toBeNull();
     expect(screen.queryByRole("button", { name: "reject" })).toBeNull();
   });
@@ -112,7 +112,18 @@ describe("Brief", () => {
     };
     render(<Brief today={today} onResolve={noop} />);
     expect(screen.queryByText("You're clear.")).toBeNull();
-    expect(screen.getByText(/today · 2 to review/i)).toBeDefined();
+    expect(screen.getByText(/today · 2 need attention/i)).toBeDefined();
+  });
+
+  test("uses the bounded review count even when no review rows were loaded", () => {
+    const today: Today = {
+      ...base,
+      reviews: [],
+      counts: { openTasks: 0, followups: 0, questions: 0, reviews: 3 },
+    };
+    render(<Brief today={today} onResolve={noop} />);
+    expect(screen.queryByText("You're clear.")).toBeNull();
+    expect(screen.getByText(/today · 3 need attention/i)).toBeDefined();
   });
 
   test("folds 30-day backlog debt separately and expands it with live settlement", async () => {

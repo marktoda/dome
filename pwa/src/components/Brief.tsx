@@ -209,12 +209,13 @@ export function Brief(
       ? `${focusOpenCount} in focus · ${openCount} open total`
       : `${openCount} open${hasDeferredDebt ? " total" : ""}`;
   const qCount = counts.questions;
-  const ownerBacklog = attentionBacklog + reviews.length;
+  const reviewCount = counts.reviews ?? reviews.length;
+  const ownerBacklog = attentionBacklog + reviewCount;
   const summary =
     [
       openSummary,
       qCount > 0 ? `${qCount} to decide` : null,
-      ownerBacklog > 0 ? `${ownerBacklog} to review` : null,
+      ownerBacklog > 0 ? `${ownerBacklog} need attention` : null,
     ]
       .filter(Boolean).join(" · ") || "all clear";
 
@@ -320,7 +321,7 @@ export function Brief(
       ) : null}
       {attentionBacklog > 0 ? (
         <div className="brief-more review-backlog-action">
-          {attentionBacklog} more {attentionBacklog === 1 ? "item needs" : "items need"} review. On your Mac, run <code>dome check --decisions</code>.
+          {attentionBacklog} more {attentionBacklog === 1 ? "item needs" : "items need"} attention. On your Mac, run <code>dome check --decisions</code>.
         </div>
       ) : null}
     </section>
