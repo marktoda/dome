@@ -1,7 +1,7 @@
 ---
 type: plan
 created: 2026-07-11
-updated: 2026-07-15
+updated: 2026-07-16
 status: reviewed
 description: "Reviewed product vision and vertical execution path for a self-contained, PWA-first Dome personal knowledge appliance."
 sources:
@@ -978,6 +978,49 @@ tests or tooling.
 Use P6 evidence to decide whether the next need is more vaults, an optional
 relay, or collaboration. Each requires a new design review. No hosted topology
 is committed by this plan.
+
+## Current product-compression checkpoint (2026-07-16)
+
+The reliability program delivered the required host, upgrade, recovery, and
+installed-PWA machinery, but it also left too many implementation concepts on
+the owner's everyday surface. Before broadening the product, Dome is taking a
+deliberate compression checkpoint:
+
+- Dome Home and its PWA are the one appliance experience. The old
+  server-rendered Today cockpit is retired; `/today` is only a compatibility
+  redirect to the PWA when that shell is installed.
+- One derived `ProductSession` owns browser access and recovery truth. The
+  default surface says Today, Activity, Capture, Ask, Connection, Dome, and
+  You. Engine state, provider probes, and protocol details live under explicit
+  technical disclosure instead of becoming navigation or competing alerts.
+- One Recovery Card presents the highest-priority owner action. Today and
+  Activity keep only their local refresh/retry controls.
+- One open-loop selector decides which checkboxes are global commitments.
+  Daily tasks and explicitly actionable non-daily tasks enter Today; ordinary
+  undated checklists stay in their source documents. This changes derived
+  projection truth only and never silently edits or closes vault content.
+- A failed generated brief is a warning with honest fallback content, not an
+  invented owner question or a non-functional acknowledgement workflow.
+- The default CLI and onboarding path start with Home. Low-level compiler and
+  compatibility hosts remain callable for SDK operators but are not presented
+  as a second consumer product.
+
+The next product mission is a **Backlog Review**, not another broad feature:
+
+1. add a paged, projection-backed `TaskBacklog.list` read interface over the
+   same open-loop selector;
+2. group explicit commitments by overdue, dated, exact duplicate candidate,
+   and undated source context;
+3. let the owner keep, defer, or close a reviewed batch with one attributable,
+   recoverable commit and one adoption receipt;
+4. never infer closure, delete prose, or mutate a task merely because it looks
+   old or duplicated.
+
+After that bounded workflow, deepen the existing local Capture Queue with
+visible queued/sending/failed/filed states and give Ask its own primary action
+instead of overloading global Capture. Then return to the P6 external-owner
+beta gates. No collaboration, hosted relay, embeddings, generic workflow
+builder, or new engine primitive begins before that evidence.
 
 ## Cross-cutting release gates
 
