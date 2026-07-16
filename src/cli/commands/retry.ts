@@ -13,6 +13,7 @@ import { formatJson } from "../../surface/format";
 import { resolveVaultPath } from "../../surface/resolve-vault";
 import { resolveHomeModelRuntime } from "../../product-host/home-model-provider";
 import { openVault } from "../../vault";
+import type { RetryScheduledProcessorResult } from "../../vault";
 import { EX_TEMPFAIL, EX_USAGE } from "../exit-codes";
 
 export type RetryCommandOptions = {
@@ -76,103 +77,129 @@ export async function runRetry(
     const vault = opened.value;
     const result = await vault.retryScheduled(processorId);
     if (result.kind === "completed") {
-        const hasProblemDiagnostic = result.diagnostics.some((diagnostic) =>
-          diagnostic.severity !== "info"
-        );
-        const status =
-          result.executionStatus === "succeeded" &&
-            result.subProposals.blocked === 0 &&
-            !hasProblemDiagnostic
-          ? "succeeded"
-          : "failed";
-        const message = status === "succeeded"
-          ? `Retried ${processorId}.`
-          : `Retry of ${processorId} finished with ${result.executionStatus}.`;
-        emit(options.json, {
-          schema: "dome.retry/v1",
-          status,
-          processorId,
-          runId: result.runId,
-          executionStatus: result.executionStatus,
-          executionError: result.executionError,
-          adoptedRef: result.adopted,
-          routing: result.routing,
-          subProposals: result.subProposals,
-          diagnostics: result.diagnostics,
-        }, message);
-        return status === "succeeded" ? 0 : 1;
+      const problemDiagnostic = result.diagnostics.find((diagnostic) =>
+        diagnostic.severity !== "info"
+      );
+      const fullyRecovered =
+        result.executionStatus === "succeeded" &&
+        result.subProposals.blocked === 0 &&
+        result.routing.rejectedPatchCount === 0 &&
+        problemDiagnostic === undefined;
+      const reason = fullyRecovered
+        ? null
+        : retryFailureReason(result, problemDiagnostic);
+      const status = fullyRecovered ? "succeeded" : "failed";
+      const message = fullyRecovered
+        ? `Retried ${processorId}.`
+        : `Retry of ${processorId} did not recover: ${reason}.`;
+      emit(options.json, {
+        schema: "dome.retry/v1",
+        status,
+        processorId,
+        runId: result.runId,
+        executionStatus: result.executionStatus,
+        executionError: result.executionError,
+        reason,
+        adoptedRef: result.adopted,
+        routing: result.routing,
+        subProposals: result.subProposals,
+        diagnostics: result.diagnostics,
+      }, message);
+      return fullyRecovered ? 0 : 1;
     }
 
     if (result.kind === "busy") {
-        const message =
-          `dome retry: ${result.branch} is already being processed; retry shortly.`;
-        emit(options.json, {
-          schema: "dome.retry/v1",
-          status: "busy",
-          processorId,
-          error: "compiler-host-busy",
-          message,
-        }, message);
-        return EX_TEMPFAIL;
+      const message =
+        `dome retry: ${result.branch} is already being processed; retry shortly.`;
+      emit(options.json, {
+        schema: "dome.retry/v1",
+        status: "busy",
+        processorId,
+        error: "compiler-host-busy",
+        message,
+      }, message);
+      return EX_TEMPFAIL;
     }
 
     if (result.kind === "branch-changed") {
-        const message =
-          `dome retry: the checked-out branch changed to ${result.branch}; retry.`;
-        emit(options.json, {
-          schema: "dome.retry/v1",
-          status: "busy",
-          processorId,
-          error: "branch-changed",
-          message,
-        }, message);
-        return EX_TEMPFAIL;
+      const message =
+        `dome retry: the checked-out branch changed to ${result.branch}; retry.`;
+      emit(options.json, {
+        schema: "dome.retry/v1",
+        status: "busy",
+        processorId,
+        error: "branch-changed",
+        message,
+      }, message);
+      return EX_TEMPFAIL;
     }
 
     let error: string;
     let message: string;
     let exitCode = EX_USAGE;
     switch (result.kind) {
-        case "not-found":
-          error = "processor-not-found";
-          message = `dome retry: no installed processor named '${processorId}'.`;
-          break;
-        case "not-scheduled-garden":
-          error = "not-scheduled-garden";
-          message =
-            `dome retry: '${processorId}' is not a schedule-triggered garden processor. ` +
-            "Use `dome run <name>` only for command-triggered views.";
-          break;
-        case "sync-needed":
-          error = "sync-needed";
-          message = "dome retry: adopt pending vault changes with `dome sync`, then retry.";
-          exitCode = 1;
-          break;
-        case "diverged":
-          error = "adopted-ref-diverged";
-          message = "dome retry: adopted history diverged; inspect and run `dome reanchor` before retrying.";
-          exitCode = 1;
-          break;
-        case "detached-head":
-          error = "detached-head";
-          message = "dome retry: HEAD is detached; check out a branch first.";
-          break;
-        case "no-commits":
-          error = "no-commits";
-          message = "dome retry: the vault has no commits to run against.";
-          break;
+      case "not-found":
+        error = "processor-not-found";
+        message = `dome retry: no installed processor named '${processorId}'.`;
+        break;
+      case "not-scheduled-garden":
+        error = "not-scheduled-garden";
+        message =
+          `dome retry: '${processorId}' is not a schedule-triggered garden processor. ` +
+          "Use `dome run <name>` only for command-triggered views.";
+        break;
+      case "sync-needed":
+        error = "sync-needed";
+        message = "dome retry: adopt pending vault changes with `dome sync`, then retry.";
+        exitCode = 1;
+        break;
+      case "diverged":
+        error = "adopted-ref-diverged";
+        message = "dome retry: adopted history diverged; inspect and run `dome reanchor` before retrying.";
+        exitCode = 1;
+        break;
+      case "detached-head":
+        error = "detached-head";
+        message = "dome retry: HEAD is detached; check out a branch first.";
+        break;
+      case "no-commits":
+        error = "no-commits";
+        message = "dome retry: the vault has no commits to run against.";
+        break;
     }
     emit(options.json, {
-        schema: "dome.retry/v1",
-        status: "error",
-        processorId,
-        error,
-        message,
+      schema: "dome.retry/v1",
+      status: "error",
+      processorId,
+      error,
+      message,
     }, message);
     return exitCode;
   } finally {
     await opened.value.close();
   }
+}
+
+function retryFailureReason(
+  result: Extract<
+    RetryScheduledProcessorResult,
+    { readonly kind: "completed" }
+  >,
+  diagnostic: typeof result.diagnostics[number] | undefined,
+): string {
+  if (result.executionError !== null) {
+    return `${result.executionError.code}: ${result.executionError.message}`;
+  }
+  if (diagnostic !== undefined) {
+    return `${diagnostic.code}: ${diagnostic.message}`;
+  }
+  if (result.subProposals.blocked > 0) {
+    return `${result.subProposals.blocked} generated change proposal(s) were blocked`;
+  }
+  if (result.routing.rejectedPatchCount > 0) {
+    return `${result.routing.rejectedPatchCount} patch effect(s) were rejected`;
+  }
+  return `processor finished with ${result.executionStatus}`;
 }
 
 function emit(

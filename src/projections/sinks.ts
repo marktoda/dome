@@ -232,11 +232,12 @@ export function buildSqliteSinks(opts: BuildSqliteSinksOpts): ApplyEffectSinks {
       });
     },
 
-    resolveFacts: async ({ processorId, inspectedPaths }) => {
+    resolveFacts: async ({ processorId, runId, inspectedPaths }) => {
       await projectionWrite(async () => {
         resolveStalePageFacts(opts.projectionDb, {
           processorId,
           inspectedPaths,
+          runId,
         });
       });
     },

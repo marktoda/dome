@@ -198,17 +198,27 @@ describe("retryScheduledProcessor", () => {
         sourceRefs: [ctx.sourceRef("wiki/blocked.md")],
       })],
     });
-    const runtime = await openRuntime(vaultPath, async (ctx) =>
-      shouldPatch
-        ? [patchEffect({
+    const runtime = await openRuntime(vaultPath, async (ctx) => {
+      if (shouldPatch) {
+        return [patchEffect({
             mode: "auto",
             changes: [{ kind: "write", path: "wiki/blocked.md", content: "blocked\n" }],
             reason: "exercise blocked recovery",
             sourceRefs: [ctx.sourceRef("wiki/blocked.md")],
-          })]
-        : [], [blocker]);
+          })];
+      }
+      return [diagnosticEffect({
+        severity: "warning",
+        code: "test.agent.brief-failed",
+        message: "prior failure must survive a blocked recovery",
+        sourceRefs: [ctx.sourceRef("wiki/blocked.md")],
+      })];
+    }, [blocker]);
     try {
       await runCompilerHostTick({ runtime, now: () => NOW });
+      expect(queryDiagnostics(runtime.projectionDb, { processorId: PROCESSOR_ID })
+        .map((diagnostic) => diagnostic.code))
+        .toContain("test.agent.brief-failed");
       shouldPatch = true;
       const cursorBefore = getCursor(runtime.projectionDb, PROCESSOR_ID);
       const result = await retryScheduledProcessor({
@@ -219,6 +229,33 @@ describe("retryScheduledProcessor", () => {
       if (result.kind !== "completed") return;
       expect(result.routing.spawnedPatchCount).toBe(1);
       expect(result.subProposals).toEqual({ attempted: 1, adopted: 0, blocked: 1 });
+      expect(getCursor(runtime.projectionDb, PROCESSOR_ID)).toEqual(cursorBefore);
+      expect(queryDiagnostics(runtime.projectionDb, { processorId: PROCESSOR_ID })
+        .map((diagnostic) => diagnostic.code))
+        .toContain("test.agent.brief-failed");
+    } finally {
+      await runtime.close();
+    }
+  }, 30_000);
+
+  test("restores the exact live schedule cursor when stale projection state is rebuilt", async () => {
+    const vaultPath = await makeVault();
+    const runtime = await openRuntime(vaultPath, async () => []);
+    try {
+      await runCompilerHostTick({ runtime, now: () => NOW });
+      const cursorBefore = getCursor(runtime.projectionDb, PROCESSOR_ID);
+      expect(cursorBefore).not.toBeNull();
+      runtime.projectionDb.raw
+        .query("UPDATE projection_meta SET adopted_commit = NULL")
+        .run();
+
+      const result = await retryScheduledProcessor({
+        runtime,
+        processorId: PROCESSOR_ID,
+        now: () => new Date("2026-07-16T10:45:00.000Z"),
+      });
+
+      expect(result.kind).toBe("completed");
       expect(getCursor(runtime.projectionDb, PROCESSOR_ID)).toEqual(cursorBefore);
     } finally {
       await runtime.close();

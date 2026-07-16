@@ -6,7 +6,7 @@ import type {
   ModelStepProvider,
 } from "../../src/engine/core/model-invoke";
 import type { HomeModelRuntime } from "../../src/product-host/home-model-provider";
-import type { Vault } from "../../src/vault";
+import type { RetryScheduledProcessorResult, Vault } from "../../src/vault";
 
 const originalLog = console.log;
 const originalError = console.error;
@@ -16,13 +16,19 @@ afterEach(() => {
   console.error = originalError;
 });
 
+type CompletedResult = Extract<
+  RetryScheduledProcessorResult,
+  { readonly kind: "completed" }
+>;
+
 function completed(
   diagnostics: ReadonlyArray<{
     severity: "info" | "warning" | "error" | "block";
     code: string;
     message: string;
   }> = [],
-) {
+  overrides: Partial<CompletedResult> = {},
+): CompletedResult {
   return {
     kind: "completed" as const,
     processorId: "dome.agent.brief",
@@ -37,6 +43,7 @@ function completed(
     diagnostics,
     subProposals: { attempted: 1, adopted: 1, blocked: 0 },
     adopted: "a".repeat(40) as never,
+    ...overrides,
   };
 }
 
@@ -106,11 +113,12 @@ describe("dome retry", () => {
       }]),
       close: async () => {},
     } as unknown as Vault;
-    console.log = () => {};
+    const output: string[] = [];
+    console.log = (...parts: unknown[]) => output.push(parts.join(" "));
     console.error = () => {};
 
     const exit = await runRetry(
-      { processorId: "dome.agent.brief", vault: "/tmp/test" },
+      { processorId: "dome.agent.brief", vault: "/tmp/test", json: true },
       {
         resolveModel: async () => Object.freeze({
           configuration: "missing" as const,
@@ -124,6 +132,78 @@ describe("dome retry", () => {
     );
 
     expect(exit).toBe(1);
+    expect(JSON.parse(output[0]!).reason).toContain(
+      "dome.agent.brief-failed: provider still unavailable",
+    );
+  });
+
+  test("names blocked, rejected, and quarantined recovery reasons", async () => {
+    const cases: ReadonlyArray<{
+      readonly result: CompletedResult;
+      readonly reason: string;
+    }> = [
+      {
+        result: completed([], {
+          subProposals: { attempted: 1, adopted: 0, blocked: 1 },
+        }),
+        reason: "generated change proposal(s) were blocked",
+      },
+      {
+        result: completed([], {
+          routing: {
+            authorizedPatchCount: 0,
+            spawnedPatchCount: 0,
+            rejectedPatchCount: 1,
+          },
+          subProposals: { attempted: 0, adopted: 0, blocked: 0 },
+        }),
+        reason: "patch effect(s) were rejected",
+      },
+      {
+        result: completed([], {
+          executionStatus: "skipped",
+          executionError: {
+            code: "processor.quarantined",
+            message: "processor is quarantined after repeated failures",
+            retryable: false,
+            phase: "garden",
+            processorId: "dome.agent.brief",
+          },
+          routing: {
+            authorizedPatchCount: 0,
+            spawnedPatchCount: 0,
+            rejectedPatchCount: 0,
+          },
+          subProposals: { attempted: 0, adopted: 0, blocked: 0 },
+        }),
+        reason: "processor.quarantined: processor is quarantined",
+      },
+    ];
+
+    for (const entry of cases) {
+      const output: string[] = [];
+      console.log = (...parts: unknown[]) => output.push(parts.join(" "));
+      console.error = () => {};
+      const vault = {
+        retryScheduled: async () => entry.result,
+        close: async () => {},
+      } as unknown as Vault;
+      const exit = await runRetry(
+        { processorId: "dome.agent.brief", vault: "/tmp/test", json: true },
+        {
+          resolveModel: async () => Object.freeze({
+            configuration: "missing" as const,
+            credential: "not-managed" as const,
+            modelState: "unconfigured" as const,
+            probe: null,
+            detail: null,
+          }),
+          open: async () => ({ ok: true as const, value: vault }),
+        },
+      );
+      expect(exit).toBe(1);
+      expect(JSON.parse(output[0]!).reason).toContain(entry.reason);
+    }
   });
 
   test("leaves custom providers to the normal Vault environment", async () => {

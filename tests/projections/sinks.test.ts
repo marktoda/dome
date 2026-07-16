@@ -145,7 +145,7 @@ describe("buildSqliteSinks projection-store sinks", () => {
     expect(got[0]?.predicate).toBe("dome.tasks.dueDate");
   });
 
-  it("resolveFacts clears stale page facts before replacement inserts", async () => {
+  it("resolveFacts clears stale page facts while preserving the current run", async () => {
     const sinks = buildSqliteSinks({
       projectionDb,
       outboxDb,
@@ -174,17 +174,17 @@ describe("buildSqliteSinks projection-store sinks", () => {
     await sinks.recordFact({
       effect: stale,
       processorId: PROCESSOR_ID,
+      runId: "run-old" as RunId,
+    });
+    await sinks.recordFact({
+      effect: fresh,
+      processorId: PROCESSOR_ID,
       runId: RUN_ID,
     });
     await sinks.resolveFacts?.({
       processorId: PROCESSOR_ID,
       runId: RUN_ID,
       inspectedPaths: ["wiki/alice.md"],
-    });
-    await sinks.recordFact({
-      effect: fresh,
-      processorId: PROCESSOR_ID,
-      runId: RUN_ID,
     });
 
     const got = factsBySubject(projectionDb, {

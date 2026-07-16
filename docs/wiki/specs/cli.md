@@ -1742,10 +1742,13 @@ not add a command trigger to the processor: garden×command stays prohibited and
 authoritative, so a quarantined schedule trigger is skipped until its normal
 `dome resolve` recovery is approved.
 
-Exit codes: 0 when the processor execution succeeds; 1 on processor failure,
-pending/diverged adopted state, or runtime-open failure; 64 for an unknown or
+Exit codes: 0 only when the processor succeeds, every emitted patch is
+authorized, and every spawned sub-Proposal adopts without warning/error/block
+diagnostics; 1 when that full recovery does not complete, for pending/diverged
+adopted state, or on runtime-open failure; 64 for an unknown or
 non-scheduled-garden processor and unusable Git states; 75 while another
-compiler host owns the branch lock.
+compiler host owns the branch lock. Human and JSON failures name the first
+concrete executor, diagnostic, blocked-Proposal, or rejected-patch reason.
 
 ### Daily view processors — shared substrate
 

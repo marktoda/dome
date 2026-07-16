@@ -83,6 +83,10 @@ import {
 } from "../../projections/db";
 import { buildSqliteSinks } from "../../projections/sinks";
 import {
+  getCursor,
+  upsertCursor,
+} from "../../projections/schedule-cursors";
+import {
   queryQuestionRecords,
   type QuestionRecord,
 } from "../../projections/questions";
@@ -873,12 +877,22 @@ async function retryScheduledProcessorForBranch(
 
       const now = opts.now ?? ((): Date => new Date());
       const firedAt = now();
+      // A stale projection rebuild wipes volatile schedule cursors. Preserve
+      // this processor's exact live cadence across the maintenance retry;
+      // the retry itself must not become a scheduler state transition.
+      const scheduleCursorBefore = getCursor(
+        opts.runtime.projectionDb,
+        processor.id,
+      );
       await rebuildProjectionIfStale({
         runtime: opts.runtime,
         adopted: drift.head,
         branch: drift.branch,
         now,
       });
+      if (scheduleCursorBefore !== null) {
+        upsertCursor(opts.runtime.projectionDb, scheduleCursorBefore);
+      }
 
       const cursor: AdoptedCursor = { current: drift.head };
       const vault = runtimeVault(opts.runtime);
@@ -896,6 +910,12 @@ async function retryScheduledProcessorForBranch(
         },
       );
       const sinks = sinksForCursor({ sinksFor, cursor });
+      const {
+        resolveDiagnostics: deferredResolveDiagnostics,
+        resolveFacts: deferredResolveFacts,
+        resolveQuestions: deferredResolveQuestions,
+        ...dispatchSinks
+      } = sinks;
       const subProposalResults: AdoptionResult[] = [];
       const adoptSubProposal = makeAdoptSubProposal({
         runtime: opts.runtime,
@@ -912,7 +932,7 @@ async function retryScheduledProcessorForBranch(
           adopted: cursor.current,
           currentAdopted: () => cursor.current,
           resolveTree: makeResolveTree(opts.runtime.path),
-          sinks,
+          sinks: dispatchSinks,
           resolveGrants: opts.runtime.resolveGrants,
           extensionIdFor: opts.runtime.extensionIdFor,
           extensionConfigFor: opts.runtime.extensionConfigFor,
@@ -995,16 +1015,30 @@ async function retryScheduledProcessorForBranch(
       ).length;
       const blockedSubProposals =
         subProposalResults.length - adoptedSubProposals;
-      if (
+      const fullyRecovered =
         outcome.result.executionStatus === "succeeded" &&
         blockedSubProposals === 0 &&
-        citedPaths.length > 0 && sinks.resolveDiagnostics !== undefined
-      ) {
-        await sinks.resolveDiagnostics({
+        outcome.routing.rejectedPatchCount === 0 &&
+        allDiagnostics.every((diagnostic) => diagnostic.severity === "info");
+      if (fullyRecovered && citedPaths.length > 0) {
+        await deferredResolveFacts?.({
+          processorId: processor.id,
+          runId: outcome.result.runId,
+          inspectedPaths: citedPaths,
+        });
+        await deferredResolveDiagnostics?.({
           processorId: processor.id,
           runId: outcome.result.runId,
           inspectedPaths: citedPaths,
           emittedDiagnostics: allDiagnostics,
+        });
+        await deferredResolveQuestions?.({
+          processorId: processor.id,
+          runId: outcome.result.runId,
+          inspectedPaths: citedPaths,
+          emittedQuestions: outcome.result.effects.flatMap((effect) =>
+            effect.kind === "question" ? [effect] : []
+          ),
         });
       }
       return Object.freeze({

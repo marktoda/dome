@@ -47,6 +47,8 @@ export type FactInsertOpts = {
 export type ResolveStalePageFactsOpts = {
   readonly processorId: string;
   readonly inspectedPaths: ReadonlyArray<string>;
+  /** Preserve facts emitted by this run when reconciliation is deferred. */
+  readonly runId?: string;
 };
 
 export type FactRecordFilter = {
@@ -109,6 +111,7 @@ ORDER BY id
 const DELETE_PAGE_FACTS_BY_PROCESSOR_AND_SUBJECT_SQL = `
 DELETE FROM facts
 WHERE processor_id = ? AND subject_kind = 'page' AND subject_id = ?
+  AND (? IS NULL OR run_id <> ?)
 `.trim();
 
 // ----- Row shape ------------------------------------------------------------
@@ -225,10 +228,10 @@ export function queryFactRecords(
 }
 
 /**
- * Clear page-subject facts for paths a processor just re-inspected. The
- * engine calls this before routing the processor's newly emitted FactEffects,
- * so each successful run replaces that processor's extracted facts for the
- * inspected page set instead of appending stale rows forever.
+ * Clear page-subject facts for paths a processor just re-inspected. Ordinary
+ * routing calls this before inserting the new FactEffects. Recovery routing
+ * may defer it until all generated Proposals adopt; in that case `runId`
+ * preserves facts from the successful current run while older rows clear.
  *
  * Scope is intentionally narrow: page-subject facts are the v1 extraction
  * shape used by graph/link/tag processors. Task/entity fact lifecycles need
@@ -242,7 +245,8 @@ export function resolveStalePageFacts(
   const stmt = db.raw.query(DELETE_PAGE_FACTS_BY_PROCESSOR_AND_SUBJECT_SQL);
   let deleted = 0;
   for (const path of new Set(opts.inspectedPaths)) {
-    const result = stmt.run(opts.processorId, path);
+    const runId = opts.runId ?? null;
+    const result = stmt.run(opts.processorId, path, runId, runId);
     deleted += result.changes;
   }
   return deleted;
