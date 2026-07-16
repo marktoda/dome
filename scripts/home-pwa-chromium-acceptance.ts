@@ -65,6 +65,7 @@ type AcceptanceDeadlines = Readonly<{
 }>;
 
 export type HomePwaTaskSettlementStage = "submit" | "closure" | "reload" | "removal";
+export type HomePwaLocalCaptureStage = "save" | "outbox" | "export";
 
 class HomePwaTaskSettlementStageError extends Error {
   readonly stage: HomePwaTaskSettlementStage;
@@ -72,6 +73,16 @@ class HomePwaTaskSettlementStageError extends Error {
   constructor(stage: HomePwaTaskSettlementStage) {
     super(`installed PWA task settlement failed at ${stage}`);
     this.name = "HomePwaTaskSettlementStageError";
+    this.stage = stage;
+  }
+}
+
+class HomePwaLocalCaptureStageError extends Error {
+  readonly stage: HomePwaLocalCaptureStage;
+
+  constructor(stage: HomePwaLocalCaptureStage) {
+    super(`installed PWA local capture failed at ${stage}`);
+    this.name = "HomePwaLocalCaptureStageError";
     this.stage = stage;
   }
 }
@@ -243,29 +254,40 @@ export async function runHomePwaChromiumAcceptance(
     },
     saveLocalCapture: async (signal) => {
       const activePage = requirePage();
-      await activePage.getByLabel("ask your brain").fill(CAPTURE_TEXT);
-      await activePage.getByRole("button", { name: "capture thought" }).click();
-      await activePage.getByRole("heading", { name: "Saved locally" }).waitFor({ timeout: WAIT_MS });
-      await activePage.getByText("1 saved locally", { exact: true }).waitFor({ timeout: WAIT_MS });
-      const exportButton = activePage.getByRole("button", { name: "Export" });
-      if (!await exportButton.isEnabled()) throw new Error("pending capture export is unavailable");
-      const downloadPromise = activePage.waitForEvent("download", { timeout: WAIT_MS });
-      await exportButton.click();
-      const download = await downloadPromise;
-      if (download.suggestedFilename() !== "dome-pending-captures.json" || await download.failure() !== null) {
-        throw new Error("pending capture export failed");
-      }
-      try {
-        captureId = parseHomePwaCaptureExportForTests(
-          await readBoundedDownload(download),
-          CAPTURE_TEXT,
-        );
-      } finally {
-        await download.delete();
-      }
-      await activePage.getByRole("heading", { name: "Saved locally" })
-        .waitFor({ state: "hidden", timeout: WAIT_MS });
-      signal.throwIfAborted();
+      await atLocalCaptureStage("save", async () => {
+        await activePage.getByLabel("ask your brain").fill(CAPTURE_TEXT);
+        await activePage.getByRole("button", { name: "capture thought" }).click();
+        signal.throwIfAborted();
+      });
+      const outbox = activePage.getByLabel("pending captures");
+      await atLocalCaptureStage("outbox", async () => {
+        await outbox.getByText("1 saved locally", { exact: true }).waitFor({ timeout: WAIT_MS });
+        const rows = outbox.locator(".capture-outbox-item");
+        await rows.getByText(CAPTURE_TEXT, { exact: true }).waitFor({ timeout: WAIT_MS });
+        await rows.getByText("saved-locally", { exact: true }).waitFor({ timeout: WAIT_MS });
+        if (await rows.count() !== 1) throw new Error("pending capture row is not unique");
+        signal.throwIfAborted();
+      });
+      await atLocalCaptureStage("export", async () => {
+        const exportButton = outbox.getByRole("button", { name: "Export" });
+        if (!await exportButton.isEnabled()) throw new Error("pending capture export is unavailable");
+        const downloadPromise = activePage.waitForEvent("download", { timeout: WAIT_MS });
+        await exportButton.click();
+        const download = await downloadPromise;
+        if (download.suggestedFilename() !== "dome-pending-captures.json" || await download.failure() !== null) {
+          throw new Error("pending capture export failed");
+        }
+        try {
+          captureId = parseHomePwaCaptureExportForTests(
+            await readBoundedDownload(download),
+            CAPTURE_TEXT,
+          );
+        } finally {
+          await download.delete();
+        }
+        await outbox.getByText("1 saved locally", { exact: true }).waitFor({ timeout: WAIT_MS });
+        signal.throwIfAborted();
+      });
     },
     revoke: async (signal) => {
       await input.revokeDevice(DEVICE_NAME, signal);
@@ -549,7 +571,9 @@ async function runAcceptanceSequence(
         ? safeAdaptiveFailureDiagnostic(outcome.kind, outcome.cause)
         : phase === "task-settlement"
           ? safeTaskSettlementFailureDiagnostic(outcome.kind, outcome.cause)
-          : null;
+          : phase === "local-capture"
+            ? safeLocalCaptureFailureDiagnostic(outcome.kind, outcome.cause)
+            : null;
       cleanupFailed ||= outcome.emergencyCloseFailed;
       break;
     }
@@ -673,6 +697,18 @@ function safeTaskSettlementFailureDiagnostic(
   return cause.stage;
 }
 
+function safeLocalCaptureFailureDiagnostic(
+  kind: "fulfilled" | "rejected" | "timed-out" | "invalid-deadline",
+  cause: unknown,
+): string {
+  if (kind === "timed-out") return "phase-timeout";
+  if (kind === "invalid-deadline") return "invalid-deadline";
+  if (kind !== "rejected" || !(cause instanceof HomePwaLocalCaptureStageError)) {
+    return "unclassified";
+  }
+  return cause.stage;
+}
+
 async function atTaskSettlementStage<T>(
   stage: HomePwaTaskSettlementStage,
   operation: () => Promise<T>,
@@ -690,6 +726,25 @@ export async function exerciseHomePwaTaskSettlementStageForTests(
   operation: () => Promise<void>,
 ): Promise<void> {
   await atTaskSettlementStage(stage, operation);
+}
+
+async function atLocalCaptureStage<T>(
+  stage: HomePwaLocalCaptureStage,
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch {
+    throw new HomePwaLocalCaptureStageError(stage);
+  }
+}
+
+/** Portable stage-classification seam; launches no browser and emits no evidence. */
+export async function exerciseHomePwaLocalCaptureStageForTests(
+  stage: HomePwaLocalCaptureStage,
+  operation: () => Promise<void>,
+): Promise<void> {
+  await atLocalCaptureStage(stage, operation);
 }
 
 export function parseHomePwaCaptureExportForTests(bytes: Uint8Array, expectedText: string): string {
