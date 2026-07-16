@@ -838,8 +838,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
-    .command("serve")
-    .helpGroup(GROUP_SERVICE)
+    .command("serve", { hidden: true })
     .description("Run the local compiler host.")
     .option(
       "--poll-interval-ms <n>",
@@ -876,8 +875,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
-    .command("install")
-    .helpGroup(GROUP_SERVICE)
+    .command("install", { hidden: true })
     .description("Install dome serve as a background service (launchd on macOS, systemd --user on Linux).")
     .option("--status", "Report installed/loaded service state without changes.")
     .option(
@@ -905,8 +903,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
-    .command("restart")
-    .helpGroup(GROUP_SERVICE)
+    .command("restart", { hidden: true })
     .description("Restart the vault's launchd service from the installed plist.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
@@ -920,8 +917,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
-    .command("uninstall")
-    .helpGroup(GROUP_SERVICE)
+    .command("uninstall", { hidden: true })
     .description("Boot out and remove the vault's launchd service.")
     .option("--json", "Emit JSON.")
     .option("--vault <path>", "Vault path (defaults to current directory).")
@@ -1151,8 +1147,7 @@ function buildProgram(setExitCode: (code: number) => void): Command {
     });
 
   program
-    .command("http")
-    .helpGroup(GROUP_ADAPTERS)
+    .command("http", { hidden: true })
     .description("Run the Dome HTTP surface over this vault: read · capture · resolve · agent · transcribe · PWA (bearer or loopback pairing).")
     .option("--vault <path>", "Vault path (defaults to current directory).")
     .option("--bundles-root <path>", "Extension bundles root.")

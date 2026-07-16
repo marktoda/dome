@@ -1,58 +1,49 @@
-# Dome SDK
+# Dome
 
-> A compiler for your second brain.
+> A self-tending second brain, built on your Markdown and Git vault.
 
-`@dome/sdk` is the TypeScript SDK for Dome — a markdown-vault-shaped substrate that quietly keeps itself coherent over time. See [`docs/VISION.md`](https://github.com/marktoda/dome/blob/main/docs/VISION.md) for the product framing.
+Dome Home is the product: a supervised local engine and installable PWA for
+capturing thoughts, asking source-backed questions, seeing the day, and keeping
+a growing vault coherent. Your Markdown and Git history remain the durable
+source of truth. The first supported beta is one owner, one vault, and multiple
+paired browsers, hosted on Apple Silicon macOS.
 
-The repository currently ships four consumer surfaces:
+The product has four jobs: **Today** presents the current action surface and
+accepts captures; **Recall** retrieves source-backed context; **Decide** routes
+questions and proposed garden changes; **Maintain** compiles committed changes
+and reports operational attention.
 
-- `@dome/sdk` — core SDK surface for the four-concept model: Vault,
-  Proposal, Processor, Effect. No LLM or MCP dependencies.
-- `@dome/sdk/cli` — the Commander-based `dome` CLI dispatch surface.
-- `dome mcp` and `dome http` — companion protocol adapters over the same
-  capture, recall, decision, and status operations. They intentionally remain
-  outside the core SDK import graph.
-- `dome home` — the loopback-bound PWA Product Host: one long-lived vault,
-  durable paired-device authority, compiler scheduler, authenticated API and
-  readiness, and built browser app. An exact private HTTPS proxy origin is
-  optional.
+## Start with Dome Home
 
-The day-to-day product has four jobs: **Today** presents the current action
-surface and accepts captures; **Recall** retrieves source-backed context;
-**Decide** routes questions and proposed garden changes to a human or agent;
-**Maintain** compiles committed changes and reports operational attention.
-Run `dome --help` to see commands grouped by those jobs.
+There is not yet a public download or package-registry release. Use a reviewed
+Dome Home artifact supplied by the project owner, or build one from a clean
+checkout. Then initialize a new or existing vault, store the model credential
+in macOS Keychain, install Home, pair a browser, and make the first capture.
 
-## Getting started
+The complete, command-by-command path is in
+[`docs/getting-started.md`](https://github.com/marktoda/dome/blob/main/docs/getting-started.md).
+It also covers upgrades, encrypted backups, restore, and recovery. The PWA at
+Home's root URL is the canonical user interface; standalone `dome serve` and
+`dome http` are compatibility/operator surfaces, not alternate onboarding
+paths.
 
-Want to run Dome yourself — clone → vault → daemon → first morning brief?
-[`docs/getting-started.md`](https://github.com/marktoda/dome/blob/main/docs/getting-started.md) is the walkthrough,
-written for someone with no Dome context and verified command-by-command
-against a scratch vault. The repository now rehearses a minimal installable
-tarball with `bun run release:package-rehearsal`, but no registry release has
-been published; install remains clone + `bun install` until the owner chooses
-the license, version, and publication policy.
+## SDK and contributors
 
-## For contributors and agents
+This repository also contains the TypeScript SDK and companion adapters:
 
-Start at [`AGENTS.md`](https://github.com/marktoda/dome/blob/main/AGENTS.md)
-(also pointed at by
-[`CLAUDE.md`](https://github.com/marktoda/dome/blob/main/CLAUDE.md) for Claude
-Code sessions). It carries orientation, the load-bearing rules (the named
-invariants, AC3 lockstep, the four-concept core), and the "Adding a new X"
-recipes for every common change shape.
+- `@dome/sdk` — the four-concept core: Vault, Proposal, Processor, Effect.
+- `@dome/sdk/cli` — the Commander CLI dispatch surface.
+- `dome mcp` — the stdio adapter for foreground agent harnesses.
 
-The canonical substrate map is
-[`docs/index.md`](https://github.com/marktoda/dome/blob/main/docs/index.md).
-Every spec, named invariant, behavior matrix, and gotcha is linked from there.
+Contributors and coding agents should start at
+[`AGENTS.md`](https://github.com/marktoda/dome/blob/main/AGENTS.md), then use
+[`docs/index.md`](https://github.com/marktoda/dome/blob/main/docs/index.md) as
+the canonical map of specs, invariants, matrices, and gotchas.
 
-## Runtime
-
-- TypeScript 5.x on Bun 1.x
-- Tests: `bun test`
-- Invariant lockstep: `bun test tests/invariants`
+Local development requires Bun 1.x. Run `bun install`, then `bun test`; the
+invariant-only suite is `bun test tests/invariants`.
 
 ## License
 
-No license file has been selected yet. The rehearsed package intentionally
-does not claim or ship one; that owner decision is required before publishing.
+No license file has been selected yet. The project must make that decision
+before any public distribution.

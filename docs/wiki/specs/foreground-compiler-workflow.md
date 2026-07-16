@@ -1,27 +1,28 @@
 ---
 type: spec
 created: 2026-05-29
-updated: 2026-07-11
+updated: 2026-07-16
 sources:
   - "[[v1]]"
-description: "Day-to-day operating guide for running dome serve beside an agent session: commit-boundary loop, source-first reading, host-off catch-up"
+description: "Day-to-day operating guide for Dome Home plus a foreground agent: commit-boundary loop, source-first reading, catch-up, and recovery."
 ---
 
 # Foreground compiler workflow
 
-This is the v1 operating guide for using Dome day to day with Claude Code or
-another shell-capable agentic harness. It is intentionally foreground-first:
-`dome serve` can later be wrapped by launchd/systemd or embedded in a native
-app, but the first reliable product loop is a visible compiler process next to
-the agent session.
+This is the operating guide for using installed Dome Home alongside Claude
+Code or another shell-capable agentic harness. Home is the canonical product
+host: launchd supervises the compiler, scheduler, authenticated HTTP contracts,
+and PWA. A visible standalone `dome serve` remains a hidden compatibility path
+for contributors debugging the SDK, not a second product lifecycle.
 
 ## Roles
 
 - **Claude/user** edits markdown, commits coherent work, and asks for explicit
   views when useful.
 - **Git** is the queue. Committed `HEAD` movement is what Dome compiles.
-- **`dome serve`** is the foreground compiler host. It watches the branch,
-  runs adoption, drains garden/operational work, and keeps projections current.
+- **Dome Home** is the supervised compiler and product host. It watches the
+  branch, runs adoption, drains garden/operational work, and keeps projections
+  current while serving the paired PWA.
 - **`dome sync`** is the blocking one-shot catch-up path. It runs the same
   compiler tick when the host is off or the user wants to wait.
 - **`dome status` / `dome check` / `dome resolve`** are the normal recovery
@@ -32,15 +33,14 @@ the agent session.
 
 ## Session startup
 
-1. Open one terminal in the vault and start the compiler:
+1. Confirm the installed Home service is ready:
 
    ```bash
-   dome serve
+   dome home status --vault /path/to/vault
    ```
 
-   Use `--vault <path>` when starting outside the vault. In early dogfood this
-   process should stay visible so adoption, blocking diagnostics, and garden
-   failures are obvious.
+   Install and pair Home through [[getting-started]] first. Do not also start
+   standalone `dome serve` or `dome http` against the same vault.
 
 2. Open Claude Code in the same vault. `CLAUDE.md` imports `AGENTS.md`; Claude
    should follow the vault instructions there.
@@ -61,7 +61,7 @@ The steady-state loop is:
 ```text
 Claude/user edits markdown
   -> git add / git commit
-  -> dome serve observes branch movement
+  -> Dome Home observes branch movement
   -> adoption processors run to a fixed point
   -> adopted ref advances
   -> garden processors run follow-on work
@@ -92,10 +92,10 @@ important claims or edits. If a packet misses obvious context or returns noisy
 results, record that as dogfood evidence; those misses are search/context-loop
 bugs to fix.
 
-## Host-off catch-up
+## Host-off or explicit catch-up
 
-If `dome serve` was not running, committed work is not lost. The next
-foreground host startup or explicit sync uses the same git queue:
+If Home was stopped, committed work is not lost. Its next start or an explicit
+sync uses the same Git queue:
 
 ```bash
 dome sync --json
@@ -110,7 +110,8 @@ a latency/cost issue, not a correctness issue.
 
 When something looks wrong, use the recovery surfaces in this order:
 
-1. **Pulse:** run `dome status --json`.
+1. **Host truth:** run `dome home status --vault /path/to/vault`, then use
+   `dome status --json` for vault attention.
    - `next_actions` is the canonical branch for Claude Code.
    - `dome sync --json` means the compiler needs to catch up or drain due
      work.
@@ -186,6 +187,7 @@ state file to patch.
 
 ## What success looks like
 
+- `dome home status` reports the supervised host ready.
 - `dome status --json` shows `attention_required: false` after sync, or
   `next_actions` points to an understandable follow-up.
 - Draft counts are expected only while the user has uncommitted work.

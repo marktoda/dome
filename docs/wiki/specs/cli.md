@@ -1,11 +1,11 @@
 ---
 type: spec
 created: 2026-05-27
-updated: 2026-07-13
+updated: 2026-07-16
 sources:
   - "[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"
   - "[[v1]]"
-description: "Normative command-by-command CLI spec: capture, sync, status, check, resolve, query, today, log, serve/install, mcp, http, recipe and more"
+description: "Normative command-by-command CLI spec: Dome Home, capture, sync, status, decisions, recall, MCP, and hidden compatibility commands."
 ---
 
 # CLI
@@ -23,6 +23,10 @@ router, `check` is the normal explanation surface, and hidden `doctor` runs
 fresh dependency and storage probes only while troubleshooting.
 
 ## The CLI surface
+
+`dome --help` presents the product and foreground-harness commands below.
+Home is the canonical lifecycle and PWA host; the standalone Serve lifecycle
+and HTTP adapter remain callable but are hidden compatibility commands.
 
 ```text
 dome init [path] [--with-model-provider anthropic]
@@ -86,19 +90,6 @@ dome log [--since <date>] [--processor <id>] [--grep <text>] [--limit <n>] [--js
                                 Vault activity: git history joined with the
                                 run ledger. Engine commit bodies carry the
                                 patch narrative (log.md is frozen).
-dome serve [--vault <path>] [--daemon] [--poll-interval-ms <n>] [-v|--verbose]
-           [--filter-processor <glob>] [-q|--quiet]
-                                Run the local compiler host. Polls refs/heads/<branch>
-                                every 500ms; constructs a manual Proposal and adopts on drift.
-dome install [--vault <path>] [--status] [--env KEY=VALUE]... [--env-file <path>] [--json]
-                                Install `dome serve` for this vault as an ambient
-                                service (macOS launchd LaunchAgent; Linux systemd
-                                --user unit). Survives crashes and reboots.
-dome restart [--vault <path>] [--json]
-                                Restart the vault's ambient service from the
-                                existing plist/unit (never re-rendered; --env preserved).
-dome uninstall [--vault <path>] [--json]
-                                Stop and remove the vault's ambient service.
 dome devices <pair|list|revoke|rotate|invalidate-all> [device-id]
           [--name <name>] [--grant <capabilities>] [--json]
                                 Manage durable Dome Home device authority from
@@ -121,22 +112,7 @@ dome home setup cleanup [--apply] [--vault <path>] [--json]
 dome mcp [--vault <path>]       Run the stdio MCP server over this vault: typed
                                 read/capture tools (capture, views, query, export_context,
                                 status, check, resolve, settle, tasks, brief) for
-                                MCP harnesses. The daemon still owns compilation.
-dome http [--vault <path>] [--port <port>] [--host <host>] [--token <token>]
-          [--pair-code <code>]
-          [--model <id>] [--static-dir <path>] [--allow-write]
-          [--transcribe-cmd <cmd>] [--transcribe-key <key>]
-          [--transcribe-url <url>] [--transcribe-model <model>]
-                                Run the Dome HTTP surface (bearer or loopback pairing;
-                                loopback by default): read/capture/resolve/settle
-                                routes, the PWA static root, session-oriented
-                                AgentRuntime conversation, POST /transcribe
-                                (voice STT; capture capability), and GET /recents.
-                                --allow-write grants the agent the `author` write
-                                capability (create_document / edit_document →
-                                git commit → daemon adopts); default off,
-                                read-only-safe. DOME_ALLOW_WRITE=1 is the env form.
-                                The daemon still owns compilation.
+                                MCP harnesses. Home owns compilation when installed.
 dome recipe <kind> [--url <base>]
                                 Print a setup recipe. v1 ships three kinds:
                                 ios — voice capture via an iOS Shortcut against
@@ -146,11 +122,23 @@ dome recipe <kind> [--url <base>]
                                 owner interview that seeds core.md.
 ```
 
-The CLI is the user-facing primary surface in v1. The implemented commands above map to one of:
+The hidden compatibility/operator commands remain directly addressable and
+retain their existing behavior and subcommand help:
 
-- **Primary compiler loop:** `dome serve`, `dome sync`, `dome status`, `dome check`, `dome resolve`, `dome agent-work`, `dome settle`, `dome proposals`, `dome apply`, and `dome reject`. `serve` is the foreground compiler host; `sync` is the one-shot catch-up path; `status` is the cheap pulse and next-action router; `check` explains remaining attention across engine health, content diagnostics, and open decisions; `resolve` records an owner-directed answer; `agent-work` lists or completes revisioned evidence-backed agent decisions; `settle` records an owner or agent decision on an open task by its `^block-anchor` (close / defer / keep) — resolve's sibling for tasks rather than questions (§"`dome settle`"). `dome proposals` / `dome apply` / `dome reject` are the review-loop siblings for garden propose-mode patches: a downgraded or explicitly-proposed `PatchEffect` lands as a durable row in `proposals.db` instead of being silently dropped, and `apply`/`reject` are the human-side decision verbs — the same settle pattern (staleness check → working-tree write → one ordinary commit) applied to garden-authored changes instead of task lines (§"`dome proposals` / `dome apply` / `dome reject`").
+```text
+dome serve ...                 Standalone foreground compiler host.
+dome install|restart|uninstall ...
+                               Legacy Serve service lifecycle.
+dome http ...                  Standalone bearer/pair-code HTTP adapter.
+```
+
+The PWA is the user-facing primary surface. The CLI is the local-console and
+foreground-harness surface. Its implemented commands map to one of:
+
+- **Product lifecycle and local authority:** `dome home`, its nested lifecycle/setup/upgrade commands, `dome devices`, and `dome backup`. These are the supported owner-console path for the supervised PWA product.
+- **Compiler and decision loop:** `dome sync`, `dome status`, `dome check`, `dome resolve`, `dome agent-work`, `dome settle`, `dome proposals`, `dome apply`, and `dome reject`. Installed Home runs the long-lived compiler; `sync` is the one-shot catch-up path for an explicit wait or local SDK use. `status` is the cheap pulse and next-action router; `check` explains remaining attention.
 - **Adopted-state recall surfaces:** `dome views --json` discovers every command-triggered view contributed by installed plugins; `dome run <command>` is the generic invocation seam. `dome query`, `dome export-context`, and `dome today` are ergonomic first-party wrappers, not hard-coded categories plugins must fit. `dome log` is the activity-recall sibling with a CLI-native posture (the `dome status` stance — no runtime, no view boundary): it reads git history directly and joins the run ledger (§"`dome log`"). `dome explain` is the provenance debugger over the same adopted state: for a page or one anchored claim it renders the chain claim → facts → runs → engine commits (§"`dome explain`").
-- **Advanced/debug and compatibility surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer` (deprecated alias — use `dome resolve`), `dome run`, `dome rebuild`, and `dome reanchor` remain available for detailed state inspection, extension development, maintenance, and explicit recovery. They are hidden from top-level help and are not the normal Claude Code workflow.
+- **Advanced/debug and compatibility surfaces:** `dome inspect`, `dome doctor`, `dome lint`, `dome answer` (deprecated alias — use `dome resolve`), `dome run`, `dome rebuild`, `dome reanchor`, standalone `dome serve`, legacy `dome install|restart|uninstall`, and standalone `dome http` remain available for detailed state inspection, extension development, maintenance, and explicit compatibility work. They are hidden from top-level help.
 
 `dome doctor` is read-only in V1. The `--repair` flag is a reserved surface for
 future answer-mediated mitigations and exits with usage status instead of
@@ -159,14 +147,14 @@ questions and `dome resolve`, so recovery still goes through normal Effect
 routing and capability checks.
 - **View-phase commands:** `dome run <name>` plus dedicated wrappers such as `dome query`, `dome lint`, `dome export-context`, `dome today` (whose `--prep`/`--with` flags dispatch the `prep`/`agenda-with` view processors), and `dome audit` (whose subjects dispatch `stale-claims`/`orphan-pages`) — command-triggered view-phase processors invoked through the shared view-command boundary. `dome run <name>` remains available as the generic escape hatch for extension-authored view processors that have not (yet) earned a dedicated binding.
 - **Capture ingress:** `dome capture` — the frictionless write-side entry point ([[wedge]] §"Phase 3 — Capture loop"). It writes a timestamped raw source into `inbox/raw/` and lands it as an ordinary human commit on the current branch; adoption and `dome.agent.ingest` handle everything after the commit boundary. See [[wiki/specs/capture]] for the capture-loop spec and the phone/voice ingress recipe.
-- **Lifecycle:** `dome init` — vault construction; `dome home` — the PWA-first loopback Product Host owning one long-lived vault, compiler scheduler, and HTTP listener; `dome install` / `dome restart` / `dome uninstall` — the existing ambient compiler lifecycle pending Product Host delegation. Schema migration is currently handled by storage open/rebuild paths; a dedicated `dome migrate` remains a v1.x roadmap item.
-- **Protocol adapters:** `dome mcp` — the stdio MCP server ([[wedge]] §"Phase 5 — MCP server"; [[wiki/specs/mcp-surface]]) — and `dome http` — the HTTP read+capture+converse surface and first shipped form of the remote-capture seam ([[wiki/specs/http-surface]]). Both are thin adapters over the public `openVault` wrapper plus the protocol-neutral `src/surface/` collectors. `dome recipe` prints client-side setup text (`ios`: the queue-first iOS Shortcut against `dome http`; `capture-queue`: the laptop-side iCloud queue drain; `core-seed`: the owner interview that seeds `core.md` — §"`dome recipe`").
+- **Lifecycle:** `dome init` constructs a vault; `dome home` is the canonical PWA-first Product Host owning one long-lived vault, compiler scheduler, HTTP listener, setup, upgrade, and supervised service. The hidden top-level service commands preserve the pre-Home Serve lifecycle only for compatibility. Schema migration is handled by storage open/rebuild and Home upgrade paths; a dedicated `dome migrate` remains a roadmap item.
+- **Protocol adapters:** `dome mcp` is the visible stdio server for foreground harnesses ([[wiki/specs/mcp-surface]]). Hidden `dome http` is the standalone compatibility form of HTTP contracts Home now hosts as a cohesive product ([[wiki/specs/http-surface]]). Both consume the public `openVault` wrapper and protocol-neutral `src/surface/` collectors.
 
 Planned dedicated view aliases such as `dome stats` are not Commander bindings
 yet. Until they ship, their processors are invoked through `dome run
 <command-name>` when present.
 
-The `dome submit` command is **retired in v1.0** (Phase 11a demolition). It was the wrong shape: the canonical client-to-engine write path is plain `git commit`, observed by the local compiler host (`dome serve`). For a one-shot catch-up (the host isn't running and the user wants the current working tree adopted), use `dome sync`. The `dome reconcile` deprecated alias from v0.5+phase1+phase3 is **also retired in v1.** The cohesion review 2026-07-06 retired four more top-level spellings — `dome prep` → `dome today --prep`, `dome agenda-with` → `dome today --with <person-or-topic>`, `dome stale-claims` → `dome audit stale-claims`, `dome orphan-pages` → `dome audit orphan-pages`. Every retired spelling fails with exit 64 and a one-line pointer to its replacement (a `{status:"error", error:"retired-command"}` JSON envelope under `--json`).
+The `dome submit` command is **retired in v1.0** (Phase 11a demolition). It was the wrong shape: the canonical client-to-engine write path is plain `git commit`, observed by installed Home or a local compiler host. For a one-shot catch-up, use `dome sync`. The `dome reconcile` deprecated alias from v0.5+phase1+phase3 is **also retired in v1.** The cohesion review 2026-07-06 retired four more top-level spellings — `dome prep` → `dome today --prep`, `dome agenda-with` → `dome today --with <person-or-topic>`, `dome stale-claims` → `dome audit stale-claims`, `dome orphan-pages` → `dome audit orphan-pages`. Every retired spelling fails with exit 64 and a one-line pointer to its replacement (a `{status:"error", error:"retired-command"}` JSON envelope under `--json`).
 
 ## CLI implementation
 
@@ -2418,9 +2406,12 @@ processor reset loop, and orphan-run fail loop as first-party processors.
 All three use the same question/answer flow rather than hidden per-substrate
 CLI verbs.
 
-### `dome serve [--vault <path>] [--bundles-root <path>] [--daemon] [--poll-interval-ms <n>] [-v|--verbose] [--filter-processor <glob>] [-q|--quiet]`
+### `dome serve [--vault <path>] [--bundles-root <path>] [--daemon] [--poll-interval-ms <n>] [-v|--verbose] [--filter-processor <glob>] [-q|--quiet]` *(hidden compatibility host)*
 
-Runs the local compiler host — the canonical write path per [[v1]] §13.2 ("Claude Code edits project notes"). The user commits markdown via `git commit` (directly or via their harness's native write tool); the host catches up by adopting the new HEAD.
+Runs the pre-Home standalone compiler host. It remains useful for local SDK
+development and focused foreground diagnostics, but installed Dome Home is the
+canonical product host. The user commits markdown via `git commit` (directly
+or through a harness); the host catches up by adopting the new HEAD.
 
 Composition (v1.0):
 
@@ -2480,9 +2471,10 @@ The scheduled-trigger dispatcher for garden processors is wired through the same
 
 Exit codes: 0 on graceful shutdown; 1 on startup error (detached HEAD, runtime open failure, malformed `--poll-interval-ms`).
 
-### `dome install [--vault <path>] [--status] [--env KEY=VALUE]... [--env-file <path>] [--json]`
+### `dome install [--vault <path>] [--status] [--env KEY=VALUE]... [--env-file <path>] [--json]` *(hidden legacy Serve lifecycle)*
 
-Makes the local compiler host **ambient**: installs `dome serve` for the
+Preserves the pre-Home service contract. `dome install` makes the standalone
+compiler host ambient by installing `dome serve` for the
 vault under the platform's user service manager, keeps it alive across
 crashes, and starts it immediately. This is the Phase 1 wedge enabler
 ([[wedge]] §"Phase 1 — Ambient daemon"): scheduled garden processors fire
@@ -2638,7 +2630,7 @@ newline-bearing environment value on Linux; 1 on an unsupported platform,
 undeterminable uid (macOS), `launchctl bootstrap` / `kickstart` / `systemctl`
 failure, or unexpected I/O failure.
 
-### `dome uninstall [--vault <path>] [--json]`
+### `dome uninstall [--vault <path>] [--json]` *(hidden legacy Serve lifecycle)*
 
 Removes the vault's ambient service. On macOS: `launchctl bootout
 gui/<uid>/<label>` (failure ignored when the service is not loaded), then
@@ -2661,7 +2653,7 @@ on Linux the payload additionally carries the unit path as `unit` (with
 Exit codes: 0 on success or already-not-installed; 1 on an unsupported
 platform, undeterminable uid (macOS), or unexpected I/O failure.
 
-### `dome restart [--vault <path>] [--json]`
+### `dome restart [--vault <path>] [--json]` *(hidden legacy Serve lifecycle)*
 
 Restarts the vault's ambient service from the service definition already on
 disk. On macOS (launchd): `launchctl bootout gui/<uid>/<label>` (failure
@@ -2733,7 +2725,8 @@ Boundary discipline:
   mutex serializes tool calls (one runtime at a time). Server-side notices
   go to stderr.
 - **No compilation.** The MCP server runs no adoption loop or scheduler;
-  `dome serve` (kept alive by `dome install`) owns that. `capture` and
+  installed Dome Home owns that in the product path. A standalone `dome
+  serve` owns it in local SDK/compatibility use. `capture` and
   `resolve` are the only write-shaped tools and reuse the existing
   non-engine write channels (ordinary human commit; `answers.db`).
 - **Static-graph hygiene.** The Commander action loads
@@ -2978,11 +2971,11 @@ restore reports target, authority status/epoch, and publication durability. A
 post-publication parent-fsync failure is nonzero but truthfully reports
 `status: "restored"` and `durability: "uncertain"`.
 
-### `dome http [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--token <token>] [--pair-code <code>] [--model <id>] [--static-dir <path>] [--allow-write] [--transcribe-cmd <cmd>] [--transcribe-key <key>] [--transcribe-url <url>] [--transcribe-model <model>]`
+### `dome http [--vault <path>] [--bundles-root <path>] [--port <port>] [--host <host>] [--token <token>] [--pair-code <code>] [--model <id>] [--static-dir <path>] [--allow-write] [--transcribe-cmd <cmd>] [--transcribe-key <key>] [--transcribe-url <url>] [--transcribe-model <model>]` *(hidden standalone compatibility adapter)*
 
-Runs the Dome HTTP read+capture+converse surface for one vault — the shipped
-protocol adapter per [[wiki/specs/http-surface]] and the first shipped form of
-the remote-capture seam ([[wiki/specs/capture]] §"The remote-capture seam").
+Runs the HTTP contracts outside the cohesive Product Host for compatibility,
+adapter development, and focused testing. Dome Home hosts the paired PWA and
+production device-authenticated form; normal users do not run this command.
 Routes: `POST /capture`, `GET /status`, `GET /query`, `GET /views`, `GET /tasks`,
 `GET /doc`, `GET /questions`, `POST /resolve` — the same JSON documents the
 corresponding CLI verbs emit under `--json` — plus the closed PWA static root,

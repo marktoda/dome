@@ -38,6 +38,8 @@ describe("runCli", () => {
     for (
       const command of [
         "init",
+        "home",
+        "devices",
         "capture",
         "sync",
         "status",
@@ -50,24 +52,25 @@ describe("runCli", () => {
         "recipe",
         "export-context",
         "audit",
-        "serve",
-        "install",
-        "uninstall",
+        "mcp",
       ]
     ) {
       expect(out).toContain(command);
     }
-    for (
-      const hiddenCommand of [
-        "inspect",
-        "doctor",
-        "lint",
-        "answer",
-        "run",
-        "rebuild",
-      ]
-    ) {
-      expect(out).not.toContain(hiddenCommand);
+    for (const hiddenCommand of [
+      "inspect",
+      "doctor",
+      "lint",
+      "answer",
+      "run",
+      "rebuild",
+      "serve",
+      "install",
+      "restart",
+      "uninstall",
+      "http",
+    ]) {
+      expect(out).not.toMatch(new RegExp(`^\\s{2}${hiddenCommand}(?:\\s|$)`, "m"));
     }
     // Visible commands render under grouped headings, not one flat
     // "Commands:" wall — and the implicit help subcommand (which cannot join
@@ -85,6 +88,14 @@ describe("runCli", () => {
       expect(out).toContain(heading);
     }
     expect(out).not.toContain("Commands:");
+  });
+
+  test("hidden compatibility hosts remain directly callable through help", async () => {
+    for (const command of ["serve", "install", "restart", "uninstall", "http"]) {
+      captured.out = [];
+      expect(await runCli([command, "--help"])).toBe(0);
+      expect(captured.out.join("\n")).toContain(`Usage: dome ${command}`);
+    }
   });
 
   test("subcommand -h exits 0 and does not run the command action", async () => {

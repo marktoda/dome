@@ -2,323 +2,242 @@
 type: guide
 tags:
   - onboarding
-  - second-user
-  - ws6
+  - dome-home
+  - pwa
 created: 2026-06-12
-updated: 2026-07-06
+updated: 2026-07-16
 sources:
-  - "[[cohesive/second-user-blockers]]"
+  - "[[wiki/specs/product-host]]"
   - "[[wiki/specs/cli]]"
-description: "Clone → vault → daemon → capture → first morning brief, every command verified against a scratch vault; the WS6 second-user walkthrough"
+  - "[[wiki/specs/daily-surface]]"
+description: "Dome Home onboarding: artifact, vault, Keychain setup, supervised host, paired PWA, first capture and recovery."
 ---
 
-# Getting started
+# Getting started with Dome Home
 
-Clone to first morning brief, in nine numbered steps. Written for someone with
-a Mac or Linux box and no Dome context. Every command below was run against a
-fresh scratch vault before it was written down; where something is rough, the
-guide says so instead of smoothing it over. Depth lives in the specs — this
-page links out rather than restating.
+Dome Home is the one product beginning. It runs one Markdown/Git vault under a
+supervised local host and serves the paired PWA at `http://127.0.0.1:3663/`.
+The first supported beta is one owner on Apple Silicon macOS. Standalone
+`dome serve`, `dome install`, and `dome http` remain advanced compatibility
+tools; they are not needed for this walkthrough.
 
-## The product loop
+## 1. Obtain Dome Home
 
-Dome has four user-facing jobs, all backed by the same adopted vault state:
+There is no public download or package-registry release yet. Use an expanded,
+reviewed artifact supplied by the project owner. If you are building it
+yourself, use Apple Silicon macOS, Bun 1.x, Git, and an installed stable Google
+Chrome. The release gate launches Chrome and refuses a dirty source tree.
 
-- **Today** — capture new material and render the day's action surface.
-- **Recall** — find source-backed context and explain where it came from.
-- **Decide** — settle tasks, answer explicit questions, and review proposed
-  garden changes.
-- **Maintain** — compile commits, surface attention, and keep projections and
-  background loops healthy.
-
-These are navigation labels, not new engine primitives. The core remains
-Vault, Proposal, Processor, and Effect; `dome --help` groups the existing
-commands around the four jobs.
-
-## 1. Prerequisites
-
-- **macOS or Linux.** The daemon installs as a launchd LaunchAgent (macOS) or
-  a systemd `--user` unit (Linux). Windows is unsupported.
-- **[Bun](https://bun.sh) 1.x** — the only runtime dependency.
-- **A git identity** (`git config --global user.name` / `user.email`) — you
-  will be making ordinary git commits in your vault.
-- **An Anthropic API key** (create one in the [Anthropic
-  Console](https://console.anthropic.com)) for the model-backed loops (ingest, nightly
-  consolidation, the morning brief). Everything deterministic works without
-  one; step 4 shows exactly how Dome behaves keyless, so you can try it
-  before paying.
-
-Honest note up front: Dome now has a hermetically rehearsed npm tarball, but it
-is **not published**. Installing Dome still means cloning the repo; updating
-means `git pull` + `dome restart` — and new code reaches a running daemon only
-after that restart. Publication waits on explicit owner choices for licensing,
-versioning, and registry policy.
+From a clean checkout:
 
 ```sh
-git clone <dome-repo> ~/dome
-cd ~/dome && bun install
-export PATH="$HOME/dome/bin:$PATH"   # add to your shell profile too
+bun install --frozen-lockfile
+bun run build:home-artifact -- --output "$HOME/Dome-artifact"
 ```
 
-`dome` is a Bun script at `bin/dome`; putting that directory on PATH is the
-whole install.
-
-## 2. Create the vault
+The output directory must not already exist. The command runs the product
+gates and prints JSON containing `directory`, the expanded artifact that may be
+invoked, plus `archive` and their evidence. Set a shell variable to the exact
+binary in the printed `directory`:
 
 ```sh
-dome init ~/vault --with-model-provider anthropic
+DOME="/path/from-the-directory-field/bin/dome"
+"$DOME" --help
 ```
 
-This scaffolds a git repo containing: `AGENTS.md` + `CLAUDE.md` (the agent
-orientation surface — what a Claude Code session in this vault reads first),
-`core.md` (your always-loaded core memory, a commented skeleton for now),
-`preferences/signals.md` (append-only preference-signal log), `wiki/`,
-`notes/`, `inbox/raw/` + `inbox/processed/`, `.dome/config.yaml` (which
-extensions are on, with what grants), and a `.gitignore` for the derived
-`.dome/state/`. It ends with an initial commit. Re-runs are idempotent and
-never overwrite your edits.
+The artifact contains its pinned runtime, PWA, provider helper, and backup
+tools. Do not replace `DOME` with the checkout's `bin/dome`: Home installation
+verifies and copies the exact invoking artifact.
 
-`--with-model-provider anthropic` copies a self-contained provider script to
-`.dome/model-provider.ts` and points `model_provider:` in the config at it.
-It speaks to the Anthropic Messages API with plain `fetch` and expects
-`ANTHROPIC_API_KEY` in the environment of whatever runs the compiler (step 3
-wires that into the daemon). Default model `claude-sonnet-4-6`; see
-[[wiki/specs/cli]] §"`dome init`" for the env overrides.
+## 2. Initialize a new or existing vault
 
-**Optional sources** (you can come back to this later):
+Choose an absolute path and initialize the shipped Anthropic provider:
 
 ```sh
-dome init ~/vault --with-source calendar   # and/or --with-source slack
+VAULT="$HOME/Documents/My Vault"
+"$DOME" init "$VAULT" --with-model-provider anthropic
 ```
 
-Each drops a fetch script at `.dome/bin/fetch-<kind>.sh` and a subscription
-stanza in the config — **shipped `enabled: false`, always**. Scaffolding is
-not consent: the script runs headless Claude *as you* against your calendar
-or Slack connector, so read it before flipping the flag — it lands untracked
-for exactly this reason, and `dome status` will nudge you to commit it once
-you have.
-
-**Honest note: calendar and Slack are foreground by default.** The shipped
-scripts drive your **claude.ai connectors**, which load only in an interactive
-Claude session — *not* in the non-interactive `claude -p` the daemon spawns
-(this was verified; an interactive terminal made it look like it worked). So
-live calendar and Slack belong in your **morning foreground Claude session**,
-where the connectors are present — not in a daemon-automated subscription. The
-daemon-composed brief (step 7) covers your vault state and simply omits
-meetings/Slack when no day-file is present. To make a subscription genuinely
-daemon-driven, swap the script's FETCH block for a **deterministic** source
-that needs no interactive login (`icalBuddy` reading Calendar.app, or a direct
-API call with a file-stored token). [[wiki/specs/sources]]
-§"Connector-backed fetch is foreground-only" is the contract.
-
-## 3. Start the daemon
-
-Dome compiles your vault at the git commit boundary. The daemon is just
-`dome serve` kept alive by the OS:
+For a new directory, Dome creates a Git repository, the vault orientation and
+configuration, and an initial commit. For an existing Obsidian vault, it fills
+only missing scaffold and preserves existing files. Review and commit those
+additions before starting Home:
 
 ```sh
-cd ~/vault
-dome install --env ANTHROPIC_API_KEY=sk-ant-...
-dome install --status     # → installed yes, loaded yes
+git -C "$VAULT" status --short
+git -C "$VAULT" add AGENTS.md CLAUDE.md .dome core.md preferences wiki notes inbox
+git -C "$VAULT" commit -m "Initialize Dome"
 ```
 
-`--env` entries land in the service environment (use `--env-file` for a
-file of KEY=VALUE lines). The service survives crashes and reboots.
+Adjust the paths in `git add` if the existing vault already had some of them.
+Do not commit `.dome/state`; the generated `.gitignore` excludes operational
+databases and logs. Dome requires an ordinary Git identity for commits.
 
-- **macOS:** a LaunchAgent at `~/Library/LaunchAgents/com.dome.serve.<id>.plist`.
-- **Linux:** a systemd `--user` unit — plus one manual prerequisite Dome
-  deliberately does not automate: run `loginctl enable-linger $USER` once, or
-  the unit dies when you log out.
+`dome init` is idempotent. It never overwrites owner content on an ordinary
+rerun. See [[wiki/specs/cli]] §"`dome init`" for source scaffolds and the
+maintenance-only refresh flags.
 
-Logs live at `<vault>/.dome/state/serve.log` on both platforms. After a
-`git pull` in the SDK repo, run `dome restart` to load the new code (the
-installed plist/unit and its `--env` values are reused as-is).
+## 3. Configure the model and install Home
 
-## 4. Verify
+You need an Anthropic API key for ingestion, consolidation, Ask, and the
+morning brief. Store it through Home's prompt; the shipped helper writes it to
+the macOS login Keychain, not the launchd environment or vault:
 
 ```sh
-dome status
+"$DOME" home setup configure --vault "$VAULT"
+"$DOME" home setup check --vault "$VAULT"
 ```
 
-`dome status` is the cheap pulse you (and any agent session) run at
-boundaries. Read the `NEXT` block — `next_actions` is the canonical "what
-now". If the daemon hasn't caught up yet, status says `sync needed`; let its
-next tick handle it (it polls sub-second) or run `dome sync` yourself. While
-the daemon is running, a manual `dome sync` may answer `branch main is already
-being processed by another Dome host` — that's the daemon holding the lock,
-not an error.
+Unlock Keychain and approve the prompt if macOS asks. `setup check` succeeds
+only when the credential is readable and the provider probe works.
 
-If status points to attention, run `dome check`; it explains the health,
-content, and decisions that need action. `dome doctor` is the hidden,
-troubleshooting-only probe set for dependencies and operational storage. On a
-fresh vault its detailed report may include:
-
-- `model.provider-key-missing` *(warning)* — until the key is present in the
-  environment doctor runs in. The daemon has its own environment (step 3);
-  this finding tells you which one is missing it.
-- `git.commit-signing` *(info)* — if your global git config sets
-  `commit.gpgsign=true`. Dome's own commits never invoke gpg, but your own
-  `git commit` in the vault will try to sign; the finding shows the opt-out.
-- `capability.grant-starved` *(info)* — a processor whose config grant gives
-  it nothing to act on. Zero on a fresh vault.
-
-## 5. First loop: capture
+Install and verify the supervised Home service:
 
 ```sh
-dome capture "hello dome"
+"$DOME" home install --vault "$VAULT"
+"$DOME" home status --vault "$VAULT"
+"$DOME" status --vault "$VAULT"
 ```
 
-This writes `inbox/raw/<date>-<time>-<slug>.md` and commits it — and that's all it
-does. The cycle in three sentences: every change to the vault is an ordinary
-git commit; the daemon notices the branch moved and runs the commit through
-the adoption loop (deterministic processors first, model-backed ones when
-enabled); adopted state is what `dome today`, `dome query`, and the brief are
-built from. Nothing you commit is rewritten behind your back — processors
-propose, the engine applies, git history is the audit trail.
+Home installs a per-vault launchd service, copies the verified artifact into
+its immutable managed release store, and waits for pairing readiness. launchd
+restarts it after process crashes and on later logins/reboots. Product logs are at
+`$VAULT/.dome/state/home.log`.
 
-Captures are *digested* (filed into the wiki, archived to
-`inbox/processed/`) by `dome.agent.ingest`, and **`dome.agent` ships
-enabled** — the brain is on from the first commit. The old protection was a
-disabled bundle; the new protection is a shipped **$2.00/day** model-spend
-cap (`extensions.dome.agent.grant.model.invoke.maxDailyCostUsd` in
-`.dome/config.yaml`), a modest pool shared across ingest/consolidate/sweep/
-brief. If you ran `dome init --with-model-provider` (step 2) and the API key
-is present in the daemon's environment, ingest runs on the next sync — no
-extra flip required. Two ways it can be starved, and both are **loud, never
-silent**:
+## 4. Pair the PWA
 
-- **No model provider configured at all** (`dome init` without
-  `--with-model-provider`, or the `model_provider:` stanza removed): `dome
-  serve` logs a one-line `agent.no-model-provider` warning once per host
-  start — "dome.agent is enabled but no model provider is configured; run
-  `dome init --with-model-provider` or set `enabled: false`." `dome
-  doctor`'s `model.provider-missing` finding reports the same gap on
-  demand (also from `dome sync`, which doesn't keep a long-running host to
-  log at boot).
-- **A provider is configured but the key is missing or bad**: the agent
-  processors run and fail *visibly* — `dome check` shows
-  `dome.agent.*-failed` warnings (`source-failed` for a capture being
-  ingested, `brief-failed` for the brief) and your captures simply stay in
-  `inbox/raw/` until the key works.
-
-`dome status` nudges you either way when raw captures are waiting. To turn
-the bundle off entirely: edit `.dome/config.yaml`, set `enabled: false` under
-`extensions.dome.agent`, commit.
-
-Then look around:
+Mint a one-time, short-lived pairing code from the local console:
 
 ```sh
-dome today    # today's action surface (open tasks, follow-ups, questions)
-dome log      # vault activity: git history joined with the engine's run ledger
+"$DOME" devices pair --vault "$VAULT" --name "Safari on this Mac"
+open http://127.0.0.1:3663/
 ```
 
-## 6. Personalize: seed core.md
-
-Without this step the morning brief stays generic — Dome knows your files
-but not your role, your people, or your rules.
+Enter the printed code in the PWA's **Pairing code** field and choose **Pair
+device**. The code expires and cannot be reused. Each browser receives its own
+durable credential, so a lost device can be revoked without disrupting the
+others:
 
 ```sh
-dome recipe core-seed
+"$DOME" devices list --vault "$VAULT"
+"$DOME" devices revoke <device-id> --vault "$VAULT"
 ```
 
-It prints an interview prompt. Open your vault in Claude Code, paste the
-prompt, answer the questions, review the draft, commit. That seeds the two
-owner-authored sections of `core.md` (`## Who I am`, `## Standing
-preferences`); `## Active projects` is generated nightly — leave it alone.
+Do not put pairing codes or credentials in URLs. The supported local product
+URL is the root PWA, not `/today`, a query-token cockpit, or a bearer-token HTTP
+page.
 
-The standing contract from there: `core.md` is propose-only for Dome. Your
-foreground assistant logs explicit preferences and corrections as one-line
-signals in `preferences/signals.md` (the vault's `AGENTS.md` instructs it
-to); Dome tallies them and *asks you* before promoting a recurring rule into
-`core.md`. Promotion is owner-mediated, never automatic
-([[wiki/specs/preferences]]).
+## 5. First capture, Ask, and Today
 
-## 7. The morning brief
+In the PWA composer:
 
-At **05:30** the brief agent fills the marker-delimited blocks in today's
-daily note (`wiki/dailies/<date>.md`) — yesterday's thread, what's on today —
-so the first read of the day is grounded and short. If the laptop was asleep
-at 05:30, it fires on wake instead (at most once per day); a wake-tick brief
-is normal, not a bug. The brief is built from your **vault state**, not live
-integrations: when a `sources/calendar/<date>.md` or `sources/slack/<date>.md`
-day-file is present it feeds the meetings/digest surfaces, and when it is
-absent the brief simply omits them — no error, no fabricated agenda. With the
-connector-backed scripts from step 2 left foreground (the default), those
-day-files are written in your morning session, not by the daemon; a daemon
-would populate them only with a deterministic fetcher swapped in.
+1. Type a thought and choose the **+** capture control. Dome commits it to the
+   vault and the engine digests it asynchronously.
+2. Type a question and press Enter or the send arrow. Ask answers from adopted
+   vault state and cites its sources.
+3. Open Today or choose **Refresh Today** to see tasks, follow-ups, meetings,
+   decisions, and operational attention that are actually available.
 
-When the brief *can't* run (bad key, network), it degrades honestly: a
-deterministic stub lands in the daily note, `dome check` carries a
-`dome.agent.brief-failed` warning, and the deterministic daily sections remain
-available. Dome does not turn an operational outage into an owner-decision
-question or advertise a retry action that has no continuation; correct the
-provider/runtime cause before the next scheduled brief.
-[[wiki/specs/daily-surface]] owns the choreography.
+You can also edit the vault in Obsidian or with a foreground coding agent.
+Make coherent Git commits; Home observes the commit boundary and adopts them.
+Use `"$DOME" sync --vault "$VAULT"` when you explicitly want to block until a
+commit is compiled, and `"$DOME" status --vault "$VAULT"` for the cheap pulse.
 
-## 8. Phone capture (optional)
+Seed `core.md` with your role, projects, people, and standing preferences so
+Ask and the brief have durable owner context. The optional owner interview is:
 
 ```sh
-dome recipe ios            # iOS Shortcut → POST /capture, queue-first
-dome recipe capture-queue  # laptop-side iCloud-queue drain (launchd)
+"$DOME" recipe core-seed
 ```
 
-Both print complete, self-contained setup walkthroughs against the
-`dome http` surface ([[wiki/specs/http-surface]]). Read the trust-domain
-paragraph before exposing anything: the compatibility HTTP surface uses one
-bearer token (`DOME_HTTP_TOKEN`) in the `Authorization` header and is
-acceptable only inside a loopback or Tailscale-class private network. Never
-put the token in a URL. Bind a Tailscale interface, never a public one, and
-treat everyone inside the trust domain as the owner. The browser product is
-the Dome Home PWA at `/`, paired through its device flow rather than this
-shared-token capture recipe.
+Review its output with your foreground agent, then commit the resulting
+`core.md` changes.
 
-## 9. Daily driving
+## 6. The morning brief
 
-Your vault's own `AGENTS.md` is the session contract — Claude Code (or any
-harness) reads it and knows the loop: edit markdown, commit coherent units,
-let the daemon adopt, run `dome status` at session boundaries and follow
-`next_actions`. You don't run Dome commands after every edit; Dome works at
-the commit boundary.
+Home schedules the brief for 05:30 local time. If the Mac sleeps through the
+interval, the operational scheduler collapses the missed interval on wake and
+runs at most the due work; it does not fabricate repeated briefs. The brief
+updates marker-delimited blocks in `wiki/dailies/<date>.md` from adopted vault
+state and any source day-files that really exist.
 
-When status says attention remains, `dome check` explains it in one report —
-engine health, content diagnostics, open decisions — and every open question
-comes with its `dome resolve <id> <value>` command. Questions marked
-`owner-needed` are yours; agent-safe ones a vault-aware session may answer
-from sources.
+If the provider or network fails, deterministic Today content stays available
+and `dome check` reports the model failure. Fix the credential/runtime cause
+with `home setup check`; the next scheduled run will try again. There is no
+owner question or magic retry command for a failed brief.
 
-Dome's gardeners don't only ask questions — some **propose edits**, and those
-behaviors ship on by default (the weekly attic sweep for dead-stub pages,
-page-split proposals from the nightly consolidate pass). So within the first
-week or two, `dome status` will start routing you to `dome proposals`: read
-each diff, then decide it with `dome apply <id>` (writes the change as one
-ordinary commit) or `dome reject <id>`. Autonomy is earned, not assumed —
-every mutating behavior starts at propose level, and the Monday trust review
-promotes a behavior to auto-apply only after its accept rate across your own
-decisions has earned it. That promotion arrives as just another proposal for
-you to apply or reject, with the evidence in the weekly report card your
-daily note links ([[wiki/specs/proposals]] §"Trust ladder").
+## 7. Update Dome Home
 
-Tasks have their own disposition verb: `dome settle <block-anchor>
-close|defer|keep` (defer takes `--until YYYY-MM-DD`) settles a task line in
-one ordinary commit, and the stale-task warden raises questions pointing at
-tasks that have stopped moving.
+There is no in-app updater or public release channel yet. Obtain a newer
+reviewed artifact, or build a newer clean commit with step 1. Invoke upgrade
+from that new artifact so Home can verify, rehearse, and atomically select it:
 
-Sharp edges that are real and known: updating still means `git pull` +
-`dome restart` (§1); a handful of recovery situations (un-escalating a
-poisoned sweep pair, migrating a pre-Dome vault, the hand-written
-`dome-http` service unit) are operator surgery documented in the
-[[cohesive/runbooks/2026-06-server-migration|server-migration runbook]] and
-tracked honestly in [[cohesive/second-user-blockers]]. When something feels
-off, start with `dome doctor` and `dome check` — every failure mode you're
-likely to hit surfaces in one of the two.
+```sh
+NEW_DOME="/path/to/new/artifact/bin/dome"
+"$NEW_DOME" home upgrade --vault "$VAULT"
+"$NEW_DOME" home status --vault "$VAULT"
+"$NEW_DOME" home cleanup
+```
 
-**Adopting an existing vault?** Dome's lifecycle processors stamp stable
-identity anchors (`^c…` on claim lines, `^…` on task lines) as pages are
-edited — they fire on changed paths, not retroactively, so a vault with prior
-content keeps unanchored backlog until each page is next touched. To complete
-coverage in one pass, a one-time content commit that puts every page into a
-diff lets the garden stamp the backlog on the next tick; the
-[[wiki/specs/claims]] §"Backfilling coverage on an existing vault" gives the
-exact (idempotent, anchor-only) incantation. A fresh `dome init` vault — the
-path this guide walks — needs none of this; coverage accrues from the first
-edit.
+`home cleanup` is a preview. Run it again with `--apply` only after reviewing
+the unreachable managed releases it reports. Do not update a running Home by
+pulling a checkout or replacing files inside its managed release directory.
+
+## 8. Back up and recover
+
+Generate an age identity once. Put the private identity on separate recovery
+media, not beside the backup archive; the command prints its public recipient:
+
+```sh
+"$DOME" backup keygen --output "/Volumes/RecoveryKey/dome-backup.agekey"
+```
+
+With the printed `age1...` recipient, create and verify an encrypted backup on
+external storage:
+
+```sh
+"$DOME" backup create --vault "$VAULT" \
+  --output "/Volumes/Backup/dome-vault.age" \
+  --recipient "age1..."
+"$DOME" backup verify "/Volumes/Backup/dome-vault.age" \
+  --identity "/Volumes/RecoveryKey/dome-backup.agekey"
+```
+
+Backup requires a clean standalone vault and an installed Home. It fences
+writes, snapshots committed Markdown/Git plus the durable operational stores,
+then resumes Home. Restore always publishes into an absent absolute path:
+
+```sh
+"$DOME" backup restore "/Volumes/Backup/dome-vault.age" \
+  --identity "/path/to/offline/backup.agekey" \
+  --target "/absolute/absent/path/My Restored Vault"
+```
+
+A restore invalidates prior device authority by design. Run `home install`
+against the restored path, mint a new pairing code, and pair each browser
+again.
+
+For an unhealthy installation, start with:
+
+```sh
+"$DOME" home status --vault "$VAULT"
+"$DOME" home setup check --vault "$VAULT"
+"$DOME" status --vault "$VAULT"
+"$DOME" check --vault "$VAULT"
+```
+
+Follow the reported next action. Re-running `home upgrade` safely recovers a
+retained upgrade intent. Do not hand-edit `.dome/state` or the managed release
+store. The detailed lifecycle, backup, and failure contracts live in
+[[wiki/specs/product-host]].
+
+## Contributor and local SDK path
+
+To work on Dome itself, clone the repository, run `bun install`, and invoke
+`bin/dome` against a disposable vault. `bin/dome home` can run in the
+foreground for PWA development; `dome sync` is the one-shot compiler path and
+`dome mcp` is the foreground-harness adapter. The hidden standalone `serve`,
+legacy service lifecycle, and `http` commands remain available for focused
+compatibility testing. Their contracts are documented in
+[[wiki/specs/cli]], [[wiki/specs/http-surface]], and
+[[wiki/specs/foreground-compiler-workflow]] rather than duplicated here.

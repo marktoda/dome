@@ -133,7 +133,7 @@ counts: { openTasks, followups, questions }  # from dome.daily.today
 
 ## Writes and lifecycle
 
-The MCP server is a **read/capture/decision surface over an existing vault** (no hosted model — the MCP surface brings typed tools for harnesses that already carry their own agent; the HTTP session protocol is the co-located `AgentRuntime` path). It runs no adoption loop, no scheduler, and no garden processors — the daemon (`dome serve`, kept alive by `dome install`, per [[wedge]] §"Phase 1") owns compilation. The six write-shaped tools reuse existing non-engine write channels unchanged:
+The MCP server is a **read/capture/decision surface over an existing vault** (no hosted model — the MCP surface brings typed tools for harnesses that already carry their own agent; the HTTP session protocol is the co-located `AgentRuntime` path). It runs no adoption loop, no scheduler, and no garden processors — installed Dome Home owns compilation in the product path. A hidden standalone `dome serve` may own it during local SDK development. The six write-shaped tools reuse existing non-engine write channels unchanged:
 
 - **`capture`** lands an ordinary human commit via the same single-file commit path as `dome capture` (no `Dome-*` trailers; the daemon constructs the Proposal from branch drift, per [[wiki/invariants/PROPOSALS_ARE_THE_ONLY_WRITE_PATH]]). The payload's `compile_pending` / `serve_status` fields tell the caller whether a daemon will pick it up.
 - **`resolve`** records an answer durably in `answers.db` and dispatches answer handlers via the identical `answerQuestionDurably` path `dome resolve` uses.
@@ -144,7 +144,13 @@ The MCP server is a **read/capture/decision surface over an existing vault** (no
 
 An earlier draft of this spec said "no write tools." Wedge Phase 5 deliberately amends that: `capture` and `resolve` are the validated wedge loop's ingress and decision channels, both already designed as non-engine write paths, and an MCP server launched locally by the vault owner sits in the same trust domain as the owner's CLI. `settle`, `apply_proposal`/`reject_proposal`, and `report_miss` join them: `settle` is the decision channel for tasks; `apply_proposal`/`reject_proposal` are the decision channel for garden-proposed edits (the `proposals` tool is their read-only list view); `report_miss` is the dogfood-evidence channel for retrieval quality.
 
-**Composition with `dome serve`:** run both. The MCP server gives an agent typed read/capture access; the daemon compiles what the agent captures. Captures and resolutions made over MCP are durable immediately and compile on the daemon's next tick (or the next `dome sync`). The MCP server stays correct with no daemon running — reads serve the last-adopted state and `capture` reports `compile_pending: true` — it just goes stale.
+**Composition with Dome Home:** run `dome mcp` beside the installed Home service.
+MCP gives an agent typed read/capture access; Home compiles what the agent
+captures. Captures and resolutions are durable immediately and compile on
+Home's next tick (or the next `dome sync`). MCP stays correct with no host
+running — reads serve the last-adopted state and `capture` reports
+`compile_pending: true` — it just goes stale. Contributors may substitute the
+hidden standalone `dome serve` host when testing the local SDK.
 
 **Mount lifecycle:** `dome mcp` validates the vault (git repo + `.dome/config.yaml`), builds the server, and serves stdio until the client disconnects. Disconnect detection watches stdin `end`/`close` directly — the SDK's `StdioServerTransport` fires `onclose` only from an explicit `close()`, never from stdin EOF — and the shutdown handlers are registered before `connect()` so an instant disconnect cannot race them and hang the process. Per tool call, the underlying handler opens and closes its own runtime; shutdown therefore needs no drain. Single-vault per process — multi-vault setups run one `dome mcp` per vault. The tool-execution mutex (one runtime open at a time; the MCP SDK does not serialize overlapping tool calls) is per-server closure state, not module state, so two servers in one process don't share it.
 
