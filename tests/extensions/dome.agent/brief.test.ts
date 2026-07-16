@@ -536,7 +536,8 @@ describe("dome.agent.brief", () => {
     const content = writtenDaily(effects);
     expect(content).toContain("Morning brief failed (provider died)");
     expect(content).toContain("Yesterday's note: [[wiki/dailies/2026-06-08]]");
-    expect(content).toContain("Retry: `dome run dome.agent.brief`");
+    expect(content).toContain("Dome retries at the next scheduled brief");
+    expect(content).not.toContain("dome run dome.agent.brief");
     // The stub lives INSIDE the brief's own block markers — splice, not append.
     const stubAt = content.indexOf("Morning brief failed");
     expect(content.lastIndexOf("<!-- dome.agent.brief:yesterday:start -->", stubAt)).toBeGreaterThan(-1);

@@ -323,7 +323,7 @@ const brief = defineProcessorImplementation({
       const stub = [
         YESTERDAY_BLOCK.start,
         "### Yesterday",
-        `_Morning brief failed (${flattened}). Yesterday's note: [[${yesterdayPath.replace(/\.md$/, "")}]]. Retry: \`dome run dome.agent.brief\`._`,
+        `_Morning brief failed (${flattened}). Yesterday's note: [[${yesterdayPath.replace(/\.md$/, "")}]]. Dome retries at the next scheduled brief._`,
         YESTERDAY_BLOCK.end,
       ].join("\n");
       // The today block is model-written with no fallback prose: omit it from
