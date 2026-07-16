@@ -1409,7 +1409,11 @@ export function hasExactHomePwaCaptureIdentityForTests(body: string, captureId: 
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(captureId)) {
     return false;
   }
-  const values = body.split(/\r?\n/)
+  const lines = body.split(/\r?\n/);
+  if (lines[0] !== "---") return false;
+  const closing = lines.indexOf("---", 1);
+  if (closing < 2) return false;
+  const values = lines.slice(1, closing)
     .filter((line) => line.startsWith("capture_id: "))
     .map((line) => line.slice("capture_id: ".length));
   return values.length === 1 && (values[0] === captureId || values[0] === JSON.stringify(captureId));

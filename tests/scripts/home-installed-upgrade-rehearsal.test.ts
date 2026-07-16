@@ -890,9 +890,15 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
     const id = "11111111-1111-4111-8111-111111111111";
     expect(hasExactHomePwaCaptureIdentityForTests(`---\ncapture_id: ${JSON.stringify(id)}\n---\n`, id)).toBe(true);
     expect(hasExactHomePwaCaptureIdentityForTests(`---\ncapture_id: ${id}\n---\n`, id)).toBe(true);
-    expect(hasExactHomePwaCaptureIdentityForTests(`capture_id: ${id}\ncapture_id: ${id}\n`, id)).toBe(false);
+    expect(hasExactHomePwaCaptureIdentityForTests(`---\ncapture_id: ${id}\ncapture_id: ${id}\n---\n`, id)).toBe(false);
     expect(hasExactHomePwaCaptureIdentityForTests("capture_id: another-id\n", id)).toBe(false);
     expect(hasExactHomePwaCaptureIdentityForTests(`capture_id: ${id}\n`, "not-a-uuid")).toBe(false);
+    expect(hasExactHomePwaCaptureIdentityForTests(`---\nsource: pwa\n---\ncapture_id: ${id}\n`, id)).toBe(false);
+    expect(hasExactHomePwaCaptureIdentityForTests(
+      `---\ncapture_id: ${id}\n---\nbody\ncapture_id: ${id}\n`,
+      id,
+    )).toBe(true);
+    expect(hasExactHomePwaCaptureIdentityForTests(`---\ncapture_id: ${id}\n`, id)).toBe(false);
   });
 
   test("strictly binds the exported offline capture identity", () => {
