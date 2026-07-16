@@ -284,6 +284,9 @@ export async function startProductHost(
           }),
           ...(options.staticDir !== undefined ? { staticDir: options.staticDir } : {}),
           ...(options.agentRuntime !== undefined ? { agentRuntime: options.agentRuntime } : {}),
+          ...(options.modelStepProvider !== undefined
+            ? { modelStepProvider: options.modelStepProvider }
+            : {}),
         });
         listener = Bun.serve({
           hostname,

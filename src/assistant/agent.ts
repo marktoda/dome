@@ -18,7 +18,9 @@ import {
 import { anthropic } from "@ai-sdk/anthropic";
 import type { Vault } from "../vault";
 import type { Capability } from "../capabilities";
+import type { ModelStepProvider } from "../engine/core/model-invoke";
 import { buildAgentTools, type AgentActionContext } from "./tools";
+import { languageModelForStepProvider } from "./model-step-language-model";
 import type { AssistantMutationExecutor, AuthenticatedMutationActor } from "../request-receipts/assistant-mutation-executor";
 import type {
   AgentChange,
@@ -55,8 +57,10 @@ export type AgentOptions = {
   readonly vault: Vault;
   readonly question: string;
   readonly modelId?: string | undefined;
-  /** Injectable model for tests; defaults to anthropic(modelId ?? DEFAULT_MODEL). */
+  /** Exact AI SDK model override, primarily for adapter tests. */
   readonly model?: LanguageModel | undefined;
+  /** Provider-neutral step seam used by Product Host's credential-backed model command. */
+  readonly modelStepProvider?: ModelStepProvider | undefined;
   readonly maxSteps?: number | undefined;
   readonly abortSignal?: AbortSignal | undefined;
   /** Prior prose turns supplied by the session-owning AgentRuntime. */
@@ -121,7 +125,10 @@ function setupAgent(opts: AgentOptions): {
     ...(capabilities.has("author") ? [WRITE_CHARTER] : []),
   ].join(" ");
   return {
-    model: opts.model ?? anthropic(modelId),
+    model: opts.model
+      ?? (opts.modelStepProvider !== undefined
+        ? languageModelForStepProvider(opts.modelStepProvider, modelId)
+        : anthropic(modelId)),
     system,
     messages: [
       ...(opts.history ?? []).map((message) => ({
