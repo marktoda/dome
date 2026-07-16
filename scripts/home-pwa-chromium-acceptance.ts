@@ -67,6 +67,8 @@ type AcceptanceDeadlines = Readonly<{
 export type HomePwaTaskSettlementStage = "submit" | "closure" | "reload" | "removal";
 export type HomePwaLocalCaptureStage = "save" | "outbox" | "export";
 export type HomePwaReplayStage = "outbox" | "logical-capture";
+export type HomePwaReplayOutboxDiagnostic =
+  `outbox:${"absent" | "saved-locally" | "sending" | "failed" | "unknown"}:${"zero" | "one" | "many" | "unknown"}:${"no-request" | "request-started"}:${"no-response" | "response-received"}`;
 
 class HomePwaTaskSettlementStageError extends Error {
   readonly stage: HomePwaTaskSettlementStage;
@@ -90,11 +92,13 @@ class HomePwaLocalCaptureStageError extends Error {
 
 class HomePwaReplayStageError extends Error {
   readonly stage: HomePwaReplayStage;
+  readonly outboxDiagnostic: HomePwaReplayOutboxDiagnostic | null;
 
-  constructor(stage: HomePwaReplayStage) {
+  constructor(stage: HomePwaReplayStage, outboxDiagnostic: HomePwaReplayOutboxDiagnostic | null = null) {
     super(`installed PWA replay failed at ${stage}`);
     this.name = "HomePwaReplayStageError";
     this.stage = stage;
+    this.outboxDiagnostic = outboxDiagnostic;
   }
 }
 
@@ -115,6 +119,8 @@ export async function runHomePwaChromiumAcceptance(
   let firstCode = "";
   let repairCode = "";
   let captureId = "";
+  let replayCaptureRequests = 0;
+  let replayCaptureResponses = 0;
   let closeInFlight: Promise<void> | null = null;
 
   const requirePage = (): Page => {
@@ -186,6 +192,13 @@ export async function runHomePwaChromiumAcceptance(
         else await route.abort("blockedbyclient");
       });
       page = await context.newPage();
+      page.on("request", (request) => {
+        if (isCaptureRequest(request.method(), request.url(), baseUrl)) replayCaptureRequests++;
+      });
+      page.on("response", (response) => {
+        const request = response.request();
+        if (isCaptureRequest(request.method(), request.url(), baseUrl)) replayCaptureResponses++;
+      });
       await page.goto(baseUrl.href, { waitUntil: "domcontentloaded", timeout: WAIT_MS });
       await assertInstallIdentity(page);
       signal.throwIfAborted();
@@ -317,12 +330,20 @@ export async function runHomePwaChromiumAcceptance(
       signal.throwIfAborted();
     },
     assertReplay: async (signal) => {
-      await atReplayStage("outbox", async () => {
-        const pending = requirePage().getByText("1 saved locally", { exact: true });
-        await pending.waitFor({ state: "hidden", timeout: WAIT_MS });
-        if (captureId === "") throw new Error("exported capture identity is unavailable");
-        signal.throwIfAborted();
-      });
+      try {
+        await atReplayStage("outbox", async () => {
+          const pending = requirePage().getByText("1 saved locally", { exact: true });
+          await pending.waitFor({ state: "hidden", timeout: WAIT_MS });
+          if (captureId === "") throw new Error("exported capture identity is unavailable");
+          signal.throwIfAborted();
+        });
+      } catch {
+        throw new HomePwaReplayStageError("outbox", await observeReplayOutbox(
+          requirePage(),
+          replayCaptureRequests,
+          replayCaptureResponses,
+        ));
+      }
       await atReplayStage("logical-capture", async () => {
         await input.assertLogicalCapture(CAPTURE_TEXT, captureId, signal);
         signal.throwIfAborted();
@@ -736,7 +757,7 @@ function safeReplayFailureDiagnostic(
   if (kind !== "rejected" || !(cause instanceof HomePwaReplayStageError)) {
     return "unclassified";
   }
-  return cause.stage;
+  return cause.outboxDiagnostic ?? cause.stage;
 }
 
 async function atTaskSettlementStage<T>(
@@ -780,11 +801,12 @@ export async function exerciseHomePwaLocalCaptureStageForTests(
 async function atReplayStage<T>(
   stage: HomePwaReplayStage,
   operation: () => Promise<T>,
+  outboxDiagnostic: HomePwaReplayOutboxDiagnostic | null = null,
 ): Promise<T> {
   try {
     return await operation();
   } catch {
-    throw new HomePwaReplayStageError(stage);
+    throw new HomePwaReplayStageError(stage, stage === "outbox" ? outboxDiagnostic : null);
   }
 }
 
@@ -792,8 +814,59 @@ async function atReplayStage<T>(
 export async function exerciseHomePwaReplayStageForTests(
   stage: HomePwaReplayStage,
   operation: () => Promise<void>,
+  outboxDiagnostic: HomePwaReplayOutboxDiagnostic | null = null,
 ): Promise<void> {
-  await atReplayStage(stage, operation);
+  await atReplayStage(stage, operation, outboxDiagnostic);
+}
+
+/** Closed, content-free replay state classifier used by installed failure evidence. */
+export function classifyHomePwaReplayOutboxForTests(input: Readonly<{
+  state: string | null;
+  attemptCategory: string | null;
+  requests: number;
+  responses: number;
+}>): HomePwaReplayOutboxDiagnostic {
+  const state = (["saved-locally", "sending", "failed"] as const).find((value) => value === input.state) ??
+    (input.state === null ? "absent" : "unknown");
+  const attempts = (["zero", "one", "many"] as const).find((value) => value === input.attemptCategory) ?? "unknown";
+  return `outbox:${state}:${attempts}:${input.requests > 0 ? "request-started" : "no-request"}:${input.responses > 0 ? "response-received" : "no-response"}`;
+}
+
+async function observeReplayOutbox(
+  page: Page,
+  requests: number,
+  responses: number,
+): Promise<HomePwaReplayOutboxDiagnostic> {
+  try {
+    const row = page.locator(".capture-outbox-item");
+    const count = await row.count();
+    const attributes = count === 1
+      ? await row.evaluate((element) => ({
+          state: element.getAttribute("data-queue-state"),
+          attemptCategory: element.getAttribute("data-attempt-category"),
+        }))
+      : count === 0
+        ? { state: null, attemptCategory: null }
+        : { state: "unknown", attemptCategory: "unknown" };
+    return classifyHomePwaReplayOutboxForTests({ ...attributes, requests, responses });
+  } catch {
+    return classifyHomePwaReplayOutboxForTests({
+      state: "unknown",
+      attemptCategory: "unknown",
+      requests,
+      responses,
+    });
+  }
+}
+
+function isCaptureRequest(method: string, rawUrl: string, baseUrl: URL): boolean {
+  if (method !== "POST") return false;
+  try {
+    const url = new URL(rawUrl);
+    return url.origin === baseUrl.origin && url.pathname === "/capture";
+  } catch {
+    return false;
+  }
 }
 
 export function parseHomePwaCaptureExportForTests(bytes: Uint8Array, expectedText: string): string {

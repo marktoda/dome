@@ -287,6 +287,10 @@ describe("App", () => {
     expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "capture thought" }));
     await waitFor(() => expect(screen.getByText("offline app capture")).toBeDefined());
+    const queued = screen.getByText("offline app capture").closest(".capture-outbox-item") as HTMLElement;
+    expect(queued.dataset["queueState"]).toBe("saved-locally");
+    expect(queued.dataset["attemptCategory"]).toBe("zero");
+    expect(Object.keys(queued.dataset).sort()).toEqual(["attemptCategory", "queueState"]);
     expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(true);
     expect(requests).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /delete pending capture/i }));

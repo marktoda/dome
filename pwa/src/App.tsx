@@ -290,7 +290,12 @@ function Screen({ client, availability, connection }: {
             <button type="button" onClick={() => { void exportPending(); }}>Export</button>
           </div>
           {pendingCaptures.map((item) => (
-            <div className="capture-outbox-item" key={item.id}>
+            <div
+              className="capture-outbox-item"
+              data-queue-state={item.state}
+              data-attempt-category={item.attempts === 0 ? "zero" : item.attempts === 1 ? "one" : "many"}
+              key={item.id}
+            >
               <span>{item.text}</span>
               <small>{item.state}{item.lastError !== undefined ? ` · ${item.lastError}` : ""}</small>
               <button type="button" aria-label={`delete pending capture ${item.id}`} onClick={() => removePending(item.id)}>Delete</button>

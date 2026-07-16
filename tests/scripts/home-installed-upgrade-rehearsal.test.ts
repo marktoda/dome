@@ -28,6 +28,7 @@ import {
 } from "../../scripts/home-installed-upgrade-rehearsal";
 import { renderInstalledFunctionalCanary } from "../../scripts/home-installed-functional-closure";
 import {
+  classifyHomePwaReplayOutboxForTests,
   exerciseHomePwaLocalCaptureStageForTests,
   exerciseHomePwaReplayStageForTests,
   exerciseHomePwaTaskSettlementStageForTests,
@@ -682,6 +683,16 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       expect(message).not.toContain(secret);
     }
 
+    const observed = await failure(async () => {
+      await exerciseHomePwaReplayStageForTests("outbox", async () => {
+        throw new Error(secret);
+      }, "outbox:sending:one:request-started:no-response");
+    });
+    expect(observed).toBe(
+      "installed Home Chromium acceptance failed at replay [outbox:sending:one:request-started:no-response]",
+    );
+    expect(observed).not.toContain(secret);
+
     const unclassified = await failure(async () => { throw new Error(secret); });
     expect(unclassified).toBe("installed Home Chromium acceptance failed at replay [unclassified]");
     expect(unclassified).not.toContain(secret);
@@ -693,6 +704,27 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       signal.addEventListener("abort", () => resolve(), { once: true });
     }), { phaseMs: 5, cleanupMs: 50 });
     expect(timedOut).toBe("installed Home Chromium acceptance failed at replay [phase-timeout]");
+  });
+
+  test("classifies replay outbox evidence with closed content-free categories", () => {
+    expect(classifyHomePwaReplayOutboxForTests({
+      state: "sending",
+      attemptCategory: "one",
+      requests: 1,
+      responses: 0,
+    })).toBe("outbox:sending:one:request-started:no-response");
+    expect(classifyHomePwaReplayOutboxForTests({
+      state: "private capture text",
+      attemptCategory: "private id",
+      requests: 0,
+      responses: 0,
+    })).toBe("outbox:unknown:unknown:no-request:no-response");
+    expect(classifyHomePwaReplayOutboxForTests({
+      state: null,
+      attemptCategory: null,
+      requests: 0,
+      responses: 2,
+    })).toBe("outbox:absent:unknown:no-request:response-received");
   });
 
   test("parses one immutable-revision grep path without treating the revision as a directory", () => {
