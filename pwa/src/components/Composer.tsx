@@ -189,6 +189,15 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
   const remoteAvailable = availability === "available";
   const askBlocked = activeTurn || turnPhase === "session-ended" || !remoteAvailable || !askEnabled;
   const inputBlocked = activeTurn;
+  const featureHint = !remoteAvailable
+    ? "Ask and voice need Dome Home. Text capture stays local."
+    : !askEnabled && !voiceEnabled
+      ? "Ask needs a model credential; voice needs transcription. Configure them under Connection. Text capture still works."
+      : !askEnabled
+        ? "Ask needs a model credential. Configure it under Connection. Voice and text capture still work."
+        : !voiceEnabled
+          ? "Voice needs transcription. Configure it under Connection. Ask and text capture still work."
+          : null;
   return (
     <form className="composer" aria-label="Message composer" onSubmit={(e) => { e.preventDefault(); const q = text.trim(); if (!askBlocked && q.length > 0) { onAsk(q); setText(""); } }}>
       {activeTurn ? (
@@ -223,8 +232,7 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
         >+</button>
         <button type="submit" disabled={askBlocked || text.trim().length === 0} className={`send${text.trim().length > 0 ? " active" : ""}`} aria-label="send">↑</button>
       </div>
-      {!remoteAvailable ? <span className="connection-hint">Ask and voice need Dome Home. Text capture stays local.</span>
-        : !askEnabled || !voiceEnabled ? <span className="connection-hint">Unavailable remote features are explained under Connection. Text capture stays local.</span> : null}
+      {featureHint === null ? null : <span className="connection-hint">{featureHint}</span>}
       {cap.error !== null ? <span className="err" role="alert">{cap.error}</span> : null}
     </form>
   );

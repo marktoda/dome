@@ -61,6 +61,24 @@ describe("Composer", () => {
     expect(ask).not.toHaveBeenCalled();
   });
 
+  test("names the unavailable model and transcription features directly", () => {
+    const props = {
+      onAsk: () => {},
+      onCapture: async () => {},
+      onTranscribe: async () => "",
+      onFile: async () => {},
+    };
+    const view = render(<Composer {...props} askEnabled={false} voiceEnabled={false} />);
+    expect(screen.getByText(/Ask needs a model credential; voice needs transcription/i)).toBeDefined();
+
+    view.rerender(<Composer {...props} askEnabled={true} voiceEnabled={false} />);
+    expect(screen.getByText(/Voice needs transcription.*Ask and text capture still work/i)).toBeDefined();
+
+    view.rerender(<Composer {...props} askEnabled={false} voiceEnabled={true} />);
+    expect(screen.getByText(/Ask needs a model credential.*Voice and text capture still work/i)).toBeDefined();
+    expect(screen.queryByText(/Unavailable remote features/i)).toBeNull();
+  });
+
   test("an availability loss while recording discards audio without transcription", async () => {
     const originalRecorder = globalThis.MediaRecorder;
     const originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
