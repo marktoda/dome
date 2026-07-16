@@ -137,6 +137,11 @@ input, textarea { font: inherit; color: inherit; background: none; border: none;
 .connection-access { color: var(--sage); }
 .technical-details { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
 .technical-details > summary { min-height: 44px; display: flex; align-items: center; color: var(--text-dim); cursor: pointer; font: 500 11px var(--mono); }
+@media (max-height: 40rem) {
+  /* Diagnostics must not consume the short-screen workspace. The disclosure
+     stays available and keyboard-scrollable inside this bounded region. */
+  .connection.open { max-height: 16dvh; }
+}
 
 .scroll { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0 calc(var(--pad) + var(--safe-right)) 8px calc(var(--pad) + var(--safe-left)); -webkit-overflow-scrolling: touch; }
 .screen, .overlay { overflow-x: hidden; }
