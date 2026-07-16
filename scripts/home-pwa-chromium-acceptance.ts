@@ -1,4 +1,5 @@
 import { chromium, type Browser, type BrowserContext, type Download, type Page } from "playwright-core";
+import { parseProductReadiness, type ProductReadiness } from "../contracts/product-readiness";
 import type { InstalledFunctionalCanary } from "./home-installed-functional-closure";
 
 const DEVICE_NAME = "Dome installed Chromium acceptance";
@@ -979,13 +980,47 @@ async function assertReadyConnection(
   deviceName: string,
 ): Promise<void> {
   const summary = page.locator(".connection-summary");
-  await summary.filter({ hasText: "Connection · ready" }).waitFor({ timeout: WAIT_MS });
+  await summary.waitFor({ timeout: WAIT_MS });
+  const readinessResponse = await page.evaluate(`fetch("/readyz", { cache: "no-store" }).then(async (response) => ({
+    status: response.status,
+    body: await response.json(),
+  }))`) as Readonly<{ status: number; body: unknown }>;
+  if (readinessResponse.status !== 200) throw new Error("installed PWA readiness document is unavailable");
+  assertInstalledHomeConnectionEvidenceForTests({
+    summaryText: await summary.innerText(),
+    readiness: readinessResponse.body,
+    expected: { productVersion: expected.productVersion, vaultName: expected.vaultName, deviceName },
+  });
   if (await summary.getAttribute("aria-expanded") !== "true") await summary.click();
   const details = page.locator(".connection");
   await details.getByText(expected.vaultName, { exact: true }).waitFor({ timeout: WAIT_MS });
   await details.getByText(deviceName, { exact: true }).waitFor({ timeout: WAIT_MS });
   await details.getByText(expected.productVersion, { exact: true }).waitFor({ timeout: WAIT_MS });
   await details.getByText("capture, read, resolve", { exact: true }).waitFor({ timeout: WAIT_MS });
+}
+
+/**
+ * Bind the installed UI label to validated core readiness. Optional model
+ * availability may honestly paint `limited`; it must never weaken the host,
+ * adoption, write-admission, identity, or device-grant proof.
+ */
+export function assertInstalledHomeConnectionEvidenceForTests(input: Readonly<{
+  summaryText: string;
+  readiness: unknown;
+  expected: Readonly<{ productVersion: string; vaultName: string; deviceName: string }>;
+}>): ProductReadiness {
+  const document = parseProductReadiness(input.readiness);
+  const expectedSummary = document.model.state === "ready"
+    ? "Connection · ready"
+    : "Connection · limited";
+  if (input.summaryText.trim() !== expectedSummary ||
+    document.host.state !== "ready" || document.adoption.state !== "current" ||
+    document.writesAdmitted !== true || document.productVersion !== input.expected.productVersion ||
+    document.vault.name !== input.expected.vaultName || document.device.name !== input.expected.deviceName ||
+    JSON.stringify([...document.device.capabilities].sort()) !== JSON.stringify(["capture", "read", "resolve"])) {
+    throw new Error("installed PWA connection does not match ready core truth");
+  }
+  return document;
 }
 
 async function assertActivitySource(page: Page, canary: InstalledFunctionalCanary): Promise<void> {

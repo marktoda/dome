@@ -28,6 +28,7 @@ import {
 } from "../../scripts/home-installed-upgrade-rehearsal";
 import { renderInstalledFunctionalCanary } from "../../scripts/home-installed-functional-closure";
 import {
+  assertInstalledHomeConnectionEvidenceForTests,
   classifyHomePwaReplayOutboxForTests,
   exerciseHomePwaLocalCaptureStageForTests,
   exerciseHomePwaReplayStageForTests,
@@ -36,6 +37,65 @@ import {
   parseHomePwaCaptureExportForTests,
   parseHomePwaSettlementReceiptForTests,
 } from "../../scripts/home-pwa-chromium-acceptance";
+
+const INSTALLED_READINESS = Object.freeze({
+  schema: "dome.product.readiness/v1",
+  productVersion: "0.3.6",
+  artifactId: "artifact-test",
+  writesAdmitted: true,
+  contractVersions: Object.freeze(["dome.product.readiness/v1"]),
+  assetVersion: "asset-test",
+  vault: Object.freeze({ id: "vault-test", name: "work" }),
+  device: Object.freeze({
+    id: "device-test",
+    name: "Dome installed Chromium acceptance",
+    capabilities: Object.freeze(["read", "capture", "resolve"]),
+  }),
+  host: Object.freeze({ state: "ready", since: "2026-07-16T12:00:00.000Z" }),
+  adoption: Object.freeze({
+    state: "current",
+    head: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    adopted: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    lastSuccessAt: "2026-07-16T12:00:00.000Z",
+  }),
+  model: Object.freeze({ state: "unconfigured" }),
+  transcription: Object.freeze({ state: "unconfigured" }),
+  nextActions: Object.freeze([]),
+});
+
+describe("installed Chromium core-readiness evidence", () => {
+  const expected = Object.freeze({
+    productVersion: "0.3.6",
+    vaultName: "work",
+    deviceName: "Dome installed Chromium acceptance",
+  });
+
+  test("accepts an honest limited label when only the optional model is unconfigured", () => {
+    expect(assertInstalledHomeConnectionEvidenceForTests({
+      summaryText: "Connection · limited",
+      readiness: INSTALLED_READINESS,
+      expected,
+    })).toBe(INSTALLED_READINESS);
+  });
+
+  test("rejects false green, non-current core state, and identity drift", () => {
+    expect(() => assertInstalledHomeConnectionEvidenceForTests({
+      summaryText: "Connection · ready",
+      readiness: INSTALLED_READINESS,
+      expected,
+    })).toThrow("does not match ready core truth");
+    expect(() => assertInstalledHomeConnectionEvidenceForTests({
+      summaryText: "Connection · limited",
+      readiness: { ...INSTALLED_READINESS, adoption: { ...INSTALLED_READINESS.adoption, state: "pending" } },
+      expected,
+    })).toThrow("does not match ready core truth");
+    expect(() => assertInstalledHomeConnectionEvidenceForTests({
+      summaryText: "Connection · limited",
+      readiness: INSTALLED_READINESS,
+      expected: { ...expected, vaultName: "wrong" },
+    })).toThrow("does not match ready core truth");
+  });
+});
 
 const INPUT: InstalledHomeUpgradeRehearsalInput = Object.freeze({
   predecessorArchive: "/synthetic/predecessor.tar.gz",
