@@ -9,6 +9,7 @@ const PHASE_TIMEOUT_MS = 30_000;
 const TASK_SETTLEMENT_PHASE_TIMEOUT_MS = 120_000;
 const CLEANUP_TIMEOUT_MS = 15_000;
 const HANDLE_CLOSE_TIMEOUT_MS = 5_000;
+const REPLAY_OBSERVATION_TIMEOUT_MS = 500;
 const MAX_EXPORT_BYTES = 64 * 1024;
 
 export type HomePwaChromiumAcceptanceInput = Readonly<{
@@ -325,6 +326,8 @@ export async function runHomePwaChromiumAcceptance(
       repairCode = await input.mintPairingCode(REPAIRED_DEVICE_NAME, signal);
       signal.throwIfAborted();
       await activePage.getByLabel("New pairing code").fill(repairCode);
+      replayCaptureRequests = 0;
+      replayCaptureResponses = 0;
       await activePage.getByRole("button", { name: "Pair again" }).click();
       await assertReadyConnection(activePage, input.expected, REPAIRED_DEVICE_NAME);
       signal.throwIfAborted();
@@ -733,7 +736,7 @@ function safeTaskSettlementFailureDiagnostic(
   if (kind !== "rejected" || !(cause instanceof HomePwaTaskSettlementStageError)) {
     return "unclassified";
   }
-  return cause.stage;
+  return validTaskSettlementStage(cause.stage) ? cause.stage : "unclassified";
 }
 
 function safeLocalCaptureFailureDiagnostic(
@@ -745,7 +748,7 @@ function safeLocalCaptureFailureDiagnostic(
   if (kind !== "rejected" || !(cause instanceof HomePwaLocalCaptureStageError)) {
     return "unclassified";
   }
-  return cause.stage;
+  return validLocalCaptureStage(cause.stage) ? cause.stage : "unclassified";
 }
 
 function safeReplayFailureDiagnostic(
@@ -757,7 +760,12 @@ function safeReplayFailureDiagnostic(
   if (kind !== "rejected" || !(cause instanceof HomePwaReplayStageError)) {
     return "unclassified";
   }
-  return cause.outboxDiagnostic ?? cause.stage;
+  if (!validReplayStage(cause.stage)) return "unclassified";
+  return validReplayOutboxDiagnostic(cause.outboxDiagnostic)
+    ? cause.outboxDiagnostic
+    : cause.outboxDiagnostic === null
+      ? cause.stage
+      : "unclassified";
 }
 
 async function atTaskSettlementStage<T>(
@@ -838,14 +846,19 @@ async function observeReplayOutbox(
   responses: number,
 ): Promise<HomePwaReplayOutboxDiagnostic> {
   try {
-    const row = page.locator(".capture-outbox-item");
-    const count = await row.count();
-    const attributes = count === 1
-      ? await row.evaluate((element) => ({
-          state: element.getAttribute("data-queue-state"),
-          attemptCategory: element.getAttribute("data-attempt-category"),
-        }))
-      : count === 0
+    const snapshot = await page.locator("main.screen").evaluate((root) => {
+      const elements = root.querySelectorAll(".capture-outbox-item");
+      return {
+        count: elements.length,
+        state: elements.length === 1 ? elements[0]?.getAttribute("data-queue-state") ?? null : null,
+        attemptCategory: elements.length === 1
+          ? elements[0]?.getAttribute("data-attempt-category") ?? null
+          : null,
+      };
+    }, { timeout: REPLAY_OBSERVATION_TIMEOUT_MS });
+    const attributes = snapshot.count === 1
+      ? { state: snapshot.state, attemptCategory: snapshot.attemptCategory }
+      : snapshot.count === 0
         ? { state: null, attemptCategory: null }
         : { state: "unknown", attemptCategory: "unknown" };
     return classifyHomePwaReplayOutboxForTests({ ...attributes, requests, responses });
@@ -857,6 +870,23 @@ async function observeReplayOutbox(
       responses,
     });
   }
+}
+
+function validReplayOutboxDiagnostic(value: unknown): value is HomePwaReplayOutboxDiagnostic {
+  return typeof value === "string" &&
+    /^outbox:(?:absent|saved-locally|sending|failed|unknown):(?:zero|one|many|unknown):(?:no-request|request-started):(?:no-response|response-received)$/.test(value);
+}
+
+function validReplayStage(value: unknown): value is HomePwaReplayStage {
+  return value === "outbox" || value === "logical-capture";
+}
+
+function validTaskSettlementStage(value: unknown): value is HomePwaTaskSettlementStage {
+  return value === "submit" || value === "closure" || value === "reload" || value === "removal";
+}
+
+function validLocalCaptureStage(value: unknown): value is HomePwaLocalCaptureStage {
+  return value === "save" || value === "outbox" || value === "export";
 }
 
 function isCaptureRequest(method: string, rawUrl: string, baseUrl: URL): boolean {

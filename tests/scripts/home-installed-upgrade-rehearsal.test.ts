@@ -564,6 +564,16 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       expect(message).not.toContain(secret);
     }
 
+    const maliciousStage = await failure(async () => {
+      await exerciseHomePwaTaskSettlementStageForTests(secret as never, async () => {
+        throw new Error(secret);
+      });
+    });
+    expect(maliciousStage).toBe(
+      "installed Home Chromium acceptance failed at task-settlement [unclassified]",
+    );
+    expect(maliciousStage).not.toContain(secret);
+
     const unclassified = await failure(async () => { throw new Error(secret); });
     expect(unclassified).toBe(
       "installed Home Chromium acceptance failed at task-settlement [unclassified]",
@@ -621,6 +631,16 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       );
       expect(message).not.toContain(secret);
     }
+
+    const maliciousStage = await failure(async () => {
+      await exerciseHomePwaLocalCaptureStageForTests(secret as never, async () => {
+        throw new Error(secret);
+      });
+    });
+    expect(maliciousStage).toBe(
+      "installed Home Chromium acceptance failed at local-capture [unclassified]",
+    );
+    expect(maliciousStage).not.toContain(secret);
 
     const unclassified = await failure(async () => { throw new Error(secret); });
     expect(unclassified).toBe(
@@ -692,6 +712,22 @@ describe("installed Home upgrade portable orchestration (explicitly non-evidence
       "installed Home Chromium acceptance failed at replay [outbox:sending:one:request-started:no-response]",
     );
     expect(observed).not.toContain(secret);
+
+    const malicious = await failure(async () => {
+      await exerciseHomePwaReplayStageForTests("outbox", async () => {
+        throw new Error(secret);
+      }, secret as never);
+    });
+    expect(malicious).toBe("installed Home Chromium acceptance failed at replay [unclassified]");
+    expect(malicious).not.toContain(secret);
+
+    const maliciousStage = await failure(async () => {
+      await exerciseHomePwaReplayStageForTests(secret as never, async () => {
+        throw new Error(secret);
+      });
+    });
+    expect(maliciousStage).toBe("installed Home Chromium acceptance failed at replay [unclassified]");
+    expect(maliciousStage).not.toContain(secret);
 
     const unclassified = await failure(async () => { throw new Error(secret); });
     expect(unclassified).toBe("installed Home Chromium acceptance failed at replay [unclassified]");
