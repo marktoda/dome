@@ -341,14 +341,37 @@ re-verified, fsynced tree at the immutable content-addressed path
 `~/Library/Application Support/Dome/Home/releases/<artifact-id>`. A closed
 per-vault `installations/<vault-slug>/installation.json` is the sole selector;
 no `current` symlink or ambient invoking path participates after installation.
-The LaunchAgent runs the selected release's pinned `runtime/bun` and
-`app/bin/dome` directly with `home`,
+Current artifacts retain the pinned, signed canonical executable at
+`runtime/bun` and add `runtime/Dome Home` as an exact executable twin after
+signing and before manifest closure. The deterministic USTAR carries exactly
+that alias as a zero-body hardlink to the earlier Bun member; no other
+hardlink is admitted. The alias is an ordinary checksummed manifest file, not
+a new schema capability or code-signing inventory row. Installed publication
+may materialize the two paths as separate ordinary files, but their manifest
+bytes, hash, mode, and executable intent remain identical.
+
+For such an artifact the LaunchAgent sets `Program` to the selected release's
+`runtime/Dome Home` and sets `ProgramArguments` to exact argv0 `Dome Home`, followed by
+`app/bin/dome`, `home`,
 loopback `127.0.0.1:3663`, and the bundled PWA path. `RunAtLoad` and
 `KeepAlive` supervise it; stdout and stderr append to
 `<vault>/.dome/state/home.log`. Install/start/restart succeed only after the
 public `/pair/status` document returns exactly `dome.device.pairing/v1` with
 `available: true` and a boolean `paired`; the compatibility pairing document
 is not Product Host readiness.
+
+This executable-basename/argv launch shape makes both the managed Home
+process's macOS command name (`ps comm`) and accounting name (`ps ucomm`)
+exactly `Dome Home`; argv0 alone does not earn that result. The canonical
+pinned Bun path remains unchanged for verification, probation, and runtime
+tooling. Historical manifests with no alias remain runnable: selection emits
+their byte-compatible legacy plist with no separate `Program` key and
+`runtime/bun` as the first program argument. This is a general operator surface, not beta
+instrumentation, and gives command-line inspection one human-recognizable
+target without runtime mutation or exposing a PID or launchd label as product
+evidence. Bare foreground `dome home` remains
+an ordinary invoking-shell process; the name is earned by the managed launch
+Adapter.
 
 Lifecycle ownership is intentionally narrow. Start, restart, and status derive
 their paths only from the record and re-verify its release. Status reports the
@@ -1411,6 +1434,170 @@ collector Module-local in production. The upgrade Module additionally fences
 both cleanup symbols, the cleanup module import, and either apply mode. There
 is still no automatic inspection or deletion caller, scheduler, daemon, HTTP,
 MCP, or SDK export.
+
+### P6 owner beta evidence checkpoint
+
+The local beta measurement protocol is
+`dome.home.beta-protocol/2026-07-15.1`. One manually authored
+`dome.home.beta-evidence/v1` packet records one opted-in run against one public
+macOS distribution receipt. The only adapter is
+`bun scripts/home-beta-evidence.ts`: `validate` accepts one explicit packet and
+`aggregate` accepts 5–100 explicit packet inputs. Both require the trusted
+public `--expected-version` and `--expected-receipt` values; packet strings are
+matched exactly and never become reflected release truth. It reads bounded local JSON
+and prints JSON; it has no template command, output writer, product call,
+network call, database, configuration, log, telemetry, SDK export, or automatic
+caller.
+
+Two earned product controls remain independent of this removable evidence
+Adapter. The PWA always exposes `Refresh Today` whenever the shell is visible;
+it performs only the runtime-validated Today request, retains prior data on
+failure, and announces loading plus fresh or failed terminal state without
+waiting for Activity or Ask. Its live-status node is a sibling of the busy
+Refresh button, so loading and terminal announcements are never suppressed by
+an `aria-busy` ancestor. It remains usable during Ask streaming. The managed
+launch Adapter owns the verified `runtime/Dome Home` executable alias and
+exact `Dome Home` argv0 described above. Neither
+control calls, imports, records, or publishes beta evidence; deleting this
+script leaves both controls intact.
+
+Every packet has exactly these twelve timed step keys, in protocol order:
+
+1. `install`
+2. `vault-start`
+3. `pair`
+4. `concurrent-use`
+5. `mutation-admission`
+6. `external-edit`
+7. `restart-reconciliation`
+8. `offline-replay`
+9. `revoke-isolation`
+10. `backup-upgrade-rollback`
+11. `blank-host-restore`
+12. `projection-rebuild-audit`
+
+All durations are elapsed milliseconds from the owner's monotonic clock. A timed
+outcome is exactly `ok`, `timeout`, `failed`, or `not-run`. `ok`, `timeout`,
+and `failed` carry the observed non-negative integer duration to success,
+timeout, or terminal failure; `not-run` carries `null`. Failure and omission
+remain valid evidence and make the packet nonqualifying rather than making its
+shape invalid. A `timeout` duration is exactly its protocol budget; the budgets
+terminate collection and are not latency SLOs.
+
+The authenticated readiness predicate is exact: the current UI has
+runtime-validated a fresh `dome.product.readiness/v1` document for the expected
+product version, the current device and vault session; `host.state` is `ready`,
+`writesAdmitted` is true, `adoption.state` is `current`, and the device has the
+capability required by the observed action. Stale Connection context, a pairing
+document, liveness, or a document from a prior request is never terminal
+evidence.
+
+Install-to-paired-Ask starts immediately before the owner opens the signed DMG
+and ends when the paired PWA satisfies authenticated readiness and renders the
+first complete, non-stale Ask response; its budget is 900,000 ms. Active-read
+collection is exactly twenty sequential owner rounds, preserving round order.
+In each round the desktop starts one Ask. While that same Ask visibly reports
+active generation, the paired phone activates the always-visible `Refresh
+Today` control and waits for the persistent status to render exactly `Today is
+fresh.` or the visible Today failure terminal. Its 30,000 ms clock starts at
+button activation. Next, while the same desktop Ask is still visibly
+generating, the phone activates one existing Activity/citation source-opening
+control for a preselected exact adopted SourceRef and waits for SourceViewer's
+accessible `Source loaded` or `Source failed to load` terminal; that 30,000 ms
+clock starts at source-control activation. A request whose activation begins
+after Ask stops visibly generating is recorded `not-run`. The owner then lets
+that Ask finish before starting the next round. Thus the arrays remain exactly
+twenty ordered Today and twenty ordered source observations—one pair per Ask,
+not forty unawaited requests—with no post-hoc selection. Collection uses only
+the installed UI: no automation, developer tools, direct API, or script caller.
+The two fixed capture cases are `online` and
+`offline-replay`; each starts one monotonic clock at the capture action and
+records `start-to-local`, `start-to-commit`, and `start-to-adopt`, plus lost and
+duplicate logical-capture counts. Their terminal events are respectively the
+durable local-queue row, the attributable committed receipt, and the same
+logical capture visible at the current adopted commit. Their budgets are
+10,000, 120,000, and 180,000 ms. Completed capture clocks are monotonic
+across those three milestones. Those two `start-to-adopt` observations are the
+protocol's sole adoption-latency samples; no separately selected adoption
+sample is accepted. Restart has one owner-observable
+`mid-operation-reconcile` outcome. Exactly one Home is running. While the UI
+visibly shows a mediated mutation pending, the owner starts the clock, opens
+Activity Monitor, selects the exact process named `Dome Home`, and chooses
+Force Quit. launchd `KeepAlive` must restart it automatically; the owner must
+not manually relaunch Home. The clock stops only when authenticated readiness
+holds and that mutation's UI receipt has reconciled to one closed non-pending
+outcome. Its budget is 300,000 ms; reaching it records `timeout` with no unsafe
+fallback. A quiescent `dome home restart`, PID, launchd label, or internal
+write phase is not a substitute. Internal before-ref-advance,
+after-ref-advance, and checkout-repair fault injection remains installed/test
+evidence and is explicitly not owner-beta input.
+
+The three readiness clocks start immediately before initial Home launch,
+quiescent restart, and restored-host launch. Each ends at the authenticated
+readiness predicate above and has a 300,000 ms budget. Device timers start at
+the pair/revoke/access action and end at its fresh runtime-valid UI result,
+with a 120,000 ms budget. Backup/migration/rollback/restore and real
+Chromium/iOS install/offline/update/accessibility timers likewise start at the
+owner's named action and end at the corresponding live, runtime-valid result
+(accessibility ends after the fixed live checklist); each has a 900,000 ms
+budget. The twelve journey-step timers use the same owner-action/result rule
+and a 900,000 ms budget.
+
+Mutation-queue evidence is the exact integer record `scheduled`, `success`,
+`timeout`, `failed`, `notRun`, `saturationEvents`, `conflictEvents`, and
+`retryAttempts`; the four outcome counts must partition `scheduled`, and zero
+scheduled operations is valid but nonqualifying. Device evidence has exactly
+the timed keys `desktop-pair`, `phone-pair`, `phone-revoke`,
+`revoked-unauthorized`, and `desktop-authorized`. Recovery has exactly
+`backup`, `migration`, `rollback`, and `restore`. Each of `chromium` and `ios`
+has exactly the real-client timed keys `install`, `offline`, `update`, and
+`accessibility`. Any timeout, failure, or omission in these required outcomes
+makes a packet nonqualifying while preserving it as evidence.
+
+The packet binds the protocol, strict product SemVer, `darwin-arm64`, and the
+expected public distribution-receipt SHA-256. It may retain only date precision
+plus macOS, iOS, and Chromium major versions as raw local context. iOS or
+Chromium major may be `null` only when every corresponding platform outcome is
+`not-run`; a major is mandatory when any corresponding check ran. Those values,
+individual rows, filenames, and every hash except the public receipt binding
+are absent from aggregation output. Model and transcription cost use integer
+micro-USD and the closed sources `run-ledger`, `provider-receipt`, `not-used`,
+or `unavailable`; no provider or model name is recorded. Model cost must be
+measured from `run-ledger` or `provider-receipt` because paired Ask and active
+generation ran. Model `not-used` or `unavailable` is nonqualifying;
+transcription may be `not-used`, while transcription `unavailable` is
+nonqualifying.
+
+Packets contain no packet, owner, vault, device, credential, or run identity;
+no UUID, signature, wall-clock timestamp, free text, path, name, content, raw
+error, provider name, or model name is accepted. Consent, external-owner truth,
+and absence of developer intervention are boolean attestations: `false` is
+valid evidence and nonqualifying. The validator cannot prove consent or that
+five packets came from five distinct owners. The release operator verifies
+those facts outside the content-free artifact.
+
+Aggregation rejects canonically identical packets and release-binding drift,
+but identical numeric measurements alone are not identity. It preserves every
+outcome denominator; `attempted` excludes `not-run`, while the success-rate
+denominator retains every scheduled slot. It computes nearest-rank P95 only
+over pooled successful samples, and labels the maximum observed owner P95 as a
+low-sample observation with no population claim. Any nonqualifying packet
+produces `not-ready`. When all 5–100 packets qualify but the release operator
+has not passed `--operator-reviewed`, the report is `review-required` with the
+fixed `operator-review-required` blocker and `--require-ready` exits 1. Only
+after the operator verifies out of band that the runs were consented, external
+owner runs from five distinct owners may aggregate use `--operator-reviewed`;
+then, and only then, all-qualifying evidence produces `ready`. The report stores
+only the closed manual-review status and check names, never an owner or packet
+identity. `validate` is aggregate-only for this review and cannot complete it.
+Failures remain `not-ready` even when the operator flag is present. Latency and
+cost remain reported measures with no invented SLO.
+
+Individual counts are bounded at 1,000,000 and individual cost observations at
+1,000,000,000 micro-USD so a 100-packet aggregate remains safely representable.
+Input is one direct regular non-symlink file at most 64 KiB. The adapter binds
+path lookup to the opened file and rejects identity, size, mtime, or ctime
+drift before or during its capped nonblocking read as `input-unstable`.
 
 ### P3 device-authority foundation
 

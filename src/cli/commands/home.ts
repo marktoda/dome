@@ -91,16 +91,16 @@ export async function runHome(options: RunHomeOptions = {}, deps: RunHomeDeps = 
   }
 
   const host = started.value;
-  console.error(`dome home: serving ${host.url}`);
-  if (launch?.kind === "upgrade-probation") {
-    console.error(
-      `dome home: validating artifact ${launch.artifact.id} with writes disabled.`,
-    );
-  } else {
-    console.error("dome home: mint pairing codes locally with `dome devices pair --name <device>`.");
-  }
-  options.onReady?.(host);
   try {
+    console.error(`dome home: serving ${host.url}`);
+    if (launch?.kind === "upgrade-probation") {
+      console.error(
+        `dome home: validating artifact ${launch.artifact.id} with writes disabled.`,
+      );
+    } else {
+      console.error("dome home: mint pairing codes locally with `dome devices pair --name <device>`.");
+    }
+    options.onReady?.(host);
     await untilStopped(options.signal);
   } finally {
     await host.close();

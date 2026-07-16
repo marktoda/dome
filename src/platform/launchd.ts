@@ -17,6 +17,8 @@ export type LaunchctlRunner = (
 
 export function renderLaunchAgentPlist(input: {
   readonly label: string;
+  /** Absolute executable path. When omitted, argv[0] remains the executable. */
+  readonly program?: string | undefined;
   readonly programArguments: ReadonlyArray<string>;
   readonly workingDirectory: string;
   readonly logPath: string;
@@ -30,13 +32,16 @@ export function renderLaunchAgentPlist(input: {
       `    <key>${xmlEscape(key)}</key>\n    <string>${xmlEscape(value)}</string>`
     )
     .join("\n");
+  const programXml = input.program === undefined
+    ? ""
+    : `  <key>Program</key>\n  <string>${xmlEscape(input.program)}</string>\n`;
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key>
   <string>${xmlEscape(input.label)}</string>
-  <key>ProgramArguments</key>
+${programXml}  <key>ProgramArguments</key>
   <array>
 ${argXml}
   </array>

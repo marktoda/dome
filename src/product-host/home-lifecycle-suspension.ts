@@ -41,7 +41,7 @@ import {
   releaseRoot,
   type HomeInstallationDeps,
 } from "./home-installation";
-import { verifyHomeArtifact } from "./home-artifact";
+import { homeArtifactLaunchCapability, verifyHomeArtifact } from "./home-artifact";
 import { HOME_PAIRING_READINESS_TIMEOUT_MS, isHomePairingReadiness } from "./home-readiness";
 
 export const HOME_LIFECYCLE_SUSPENSION_SCHEMA =
@@ -1626,9 +1626,10 @@ async function verifyStartupProvenance(
   if (manifest.artifact.id !== evidence.artifactId || manifest.product.version !== evidence.artifactVersion) {
     throw new Error("verified managed release does not match the authorized Home resume artifact");
   }
+  const launch = homeArtifactLaunchCapability(manifest);
   await assertExactInvokingFile(
     deps.invokingRuntimePath ?? process.execPath,
-    join(release, "runtime", "bun"),
+    join(release, launch.programPath),
     "runtime",
   );
   await assertExactInvokingFile(
@@ -1638,7 +1639,11 @@ async function verifyStartupProvenance(
   );
 }
 
-async function assertExactInvokingFile(actualInput: string, expectedInput: string, label: string): Promise<void> {
+async function assertExactInvokingFile(
+  actualInput: string,
+  expectedInput: string,
+  label: string,
+): Promise<void> {
   if (actualInput.length === 0) throw new Error(`invoking Home ${label} path is unavailable`);
   const actual = resolve(actualInput);
   const expected = resolve(expectedInput);

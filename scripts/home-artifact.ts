@@ -6,6 +6,7 @@ import {
   chmod,
   cp,
   lstat,
+  link,
   mkdir,
   mkdtemp,
   readFile,
@@ -24,6 +25,8 @@ import { publishDirectoryExclusive } from "../src/platform/exclusive-rename";
 import {
   HOME_ARTIFACT_SCHEMA,
   HOME_ARTIFACT_TARGET,
+  HOME_RUNTIME_LAUNCH_ALIAS_PATH,
+  HOME_RUNTIME_PATH,
   HOME_CREDENTIAL_HELPER_PATH,
   HOME_CREDENTIAL_HELPER_PROTOCOL,
   HOME_SHIPPED_MODEL_PROVIDER_PATH,
@@ -62,6 +65,8 @@ export {
 export {
   HOME_ARTIFACT_SCHEMA,
   HOME_ARTIFACT_TARGET,
+  HOME_RUNTIME_LAUNCH_ALIAS_PATH,
+  HOME_RUNTIME_PATH,
   HOME_WRITER_BARRIER_PROTOCOL,
   PINNED_AGE_ARCHIVE_SHA256,
   PINNED_AGE_ARCHIVE_URL,
@@ -380,6 +385,9 @@ export async function buildHomeArtifact(options: BuildOptions = {}): Promise<{
             homeCredentialHelper: credentialHelperSource,
           }),
         });
+        // The alias is added only after optional signing so it shares the
+        // final pinned Bun inode and never widens the code-signing inventory.
+        await link(shippedBun, join(directory, HOME_RUNTIME_LAUNCH_ALIAS_PATH));
         const manifest = await writeArtifactMetadataForRelease(
           directory,
           pkg.version,
@@ -963,18 +971,36 @@ export async function createDeterministicTar(root: string, prefix = ""): Promise
   if (prefix !== "") {
     chunks.push(tarHeader(`${prefix}/`, { mode: 0o755, size: 0, type: "5", link: "" }));
   }
-  for (const path of await archiveEntries(root)) {
+  const entries = await archiveEntries(root);
+  const aliasIndex = entries.indexOf(HOME_RUNTIME_LAUNCH_ALIAS_PATH);
+  const runtimeIndex = entries.indexOf(HOME_RUNTIME_PATH);
+  if (aliasIndex >= 0) {
+    if (runtimeIndex < 0) throw new Error("Home runtime launch alias has no canonical Bun entry");
+    entries.splice(aliasIndex, 1);
+    entries.splice(entries.indexOf(HOME_RUNTIME_PATH) + 1, 0, HOME_RUNTIME_LAUNCH_ALIAS_PATH);
+  }
+  for (const path of entries) {
     const absolute = join(root, path);
     const info = await lstat(absolute);
-    const type = info.isDirectory() ? "5" : info.isSymbolicLink() ? "2" : "0";
-    const body = info.isFile() ? await readFile(absolute) : Buffer.alloc(0);
-    const link = info.isSymbolicLink() ? await readlink(absolute) : "";
+    const isLaunchAlias = path === HOME_RUNTIME_LAUNCH_ALIAS_PATH;
+    if (isLaunchAlias) {
+      const runtime = await lstat(join(root, HOME_RUNTIME_PATH));
+      if (!info.isFile() || info.isSymbolicLink() || !runtime.isFile() || runtime.isSymbolicLink() ||
+        info.dev !== runtime.dev || info.ino !== runtime.ino || info.nlink < 2 || runtime.nlink < 2) {
+        throw new Error("Home runtime launch alias is not the canonical Bun hardlink");
+      }
+    }
+    const type = isLaunchAlias ? "1" : info.isDirectory() ? "5" : info.isSymbolicLink() ? "2" : "0";
+    const body = !isLaunchAlias && info.isFile() ? await readFile(absolute) : Buffer.alloc(0);
+    const linkTarget = isLaunchAlias
+      ? `${prefix === "" ? "" : `${prefix}/`}${HOME_RUNTIME_PATH}`
+      : info.isSymbolicLink() ? await readlink(absolute) : "";
     const archivePath = `${prefix === "" ? "" : `${prefix}/`}${path}${info.isDirectory() ? "/" : ""}`;
     chunks.push(tarHeader(archivePath, {
       mode: info.mode & 0o777,
       size: body.length,
       type,
-      link,
+      link: linkTarget,
     }));
     if (body.length > 0) {
       chunks.push(body);

@@ -16,7 +16,6 @@ import {
   activateLaunchAgent,
   probeLaunchAgentLoadedStrict,
   publishLaunchAgentPlist,
-  renderLaunchAgentPlist,
   waitForLaunchAgentDrainStrict,
 } from "../platform/launchd";
 import {
@@ -25,7 +24,12 @@ import {
   vaultServiceSlug,
   type ServiceDeps,
 } from "../surface/service-probe";
-import { verifyHomeArtifact, type HomeArtifactManifest, type HomeArtifactVerifier } from "./home-artifact";
+import {
+  verifyHomeArtifact,
+  type HomeArtifactManifest,
+  type HomeArtifactVerifier,
+} from "./home-artifact";
+import { renderHomeSelection } from "./home-selection";
 import {
   createHomeInstallation,
   homeInstallationPaths,
@@ -418,7 +422,10 @@ async function executeOwnedInstall(
     selected = baseForRecord(context.neutral, context.paths, record);
     const environment = new Map<string, string>(intendedEnvironment);
     environment.set("PATH", homeServicePath(join(managed.root, "runtime", "bun")));
-    await (deps.publishPlist ?? publishLaunchAgentPlist)(context.plist, renderExpectedPlist(selected, environment));
+    await (deps.publishPlist ?? publishLaunchAgentPlist)(
+      context.plist,
+      renderExpectedPlist(selected, environment, manifest, deps),
+    );
     activationAttempted = true;
     const activation = await activateLaunchAgent({
       launchctl: context.service.launchctl,
@@ -501,14 +508,21 @@ async function executeOwnedStart(
   }
   const selected = baseForRecord(context.neutral, context.paths, record);
   const integrity = await inspectSelectedRelease(selected, deps);
-  if (integrity !== null) return complete(result(selected, integrity.status, hasPlist, loaded, null, { error: integrity.error }));
+  if (integrity.kind === "error") {
+    return complete(result(selected, integrity.status, hasPlist, loaded, null, { error: integrity.error }));
+  }
   if (!hasPlist) {
     return complete(result(selected, "error", false, loaded, null, {
       error: `not installed (no plist at ${context.plist}); run \`dome home install\` first`,
       exitCode: 64,
     }));
   }
-  const expectedPlist = renderExpectedPlist(selected, recordEnvironment(record, selected));
+  const expectedPlist = renderExpectedPlist(
+    selected,
+    recordEnvironment(record, selected),
+    integrity.manifest,
+    deps,
+  );
   let plistBytes: string;
   try { plistBytes = await readFile(context.plist, "utf8"); }
   catch (error) { return complete(result(selected, "error", true, loaded, null, { error: message(error) })); }
@@ -658,7 +672,7 @@ async function inspectHomeStatus(context: HomeContext, deps: HomeLifecycleDeps):
     ), lifecycle, upgrade);
   }
   const integrity = await inspectSelectedRelease(base, deps);
-  if (integrity !== null) {
+  if (integrity.kind === "error") {
     return statusWithLifecycle(result(base, integrity.status, hasPlist, loaded, null, { error: integrity.error }), lifecycle, upgrade);
   }
   if (!hasPlist) {
@@ -666,7 +680,7 @@ async function inspectHomeStatus(context: HomeContext, deps: HomeLifecycleDeps):
       ? result(base, "orphaned-service", false, true, null, { error: `Dome Home is loaded without its plist at ${context.plist}` })
       : result(base, "not-installed", false, false, null), lifecycle, upgrade);
   }
-  const expectedPlist = renderExpectedPlist(base, recordEnvironment(record, base));
+  const expectedPlist = renderExpectedPlist(base, recordEnvironment(record, base), integrity.manifest, deps);
   if (await readFile(context.plist, "utf8") !== expectedPlist) {
     return statusWithLifecycle(result(base, "plist-mismatch", true, loaded, null, {
       error: `LaunchAgent plist does not select artifact ${record.artifact.id}`,
@@ -920,25 +934,39 @@ async function selectedBase(base: Base, vault: string, deps: HomeLifecycleDeps):
   } catch { return base; }
 }
 
-async function inspectSelectedRelease(base: Base, deps: HomeLifecycleDeps): Promise<{ status: "missing-release" | "corrupt-release"; error: string } | null> {
-  if (base.release === null || !await pathPresent(base.release)) return { status: "missing-release", error: `managed Dome Home release is missing at ${base.release ?? "unknown"}` };
+async function inspectSelectedRelease(base: Base, deps: HomeLifecycleDeps): Promise<
+  | { readonly kind: "verified"; readonly manifest: HomeArtifactManifest }
+  | { readonly kind: "error"; readonly status: "missing-release" | "corrupt-release"; readonly error: string }
+> {
+  if (base.release === null || !await pathPresent(base.release)) {
+    return { kind: "error", status: "missing-release", error: `managed Dome Home release is missing at ${base.release ?? "unknown"}` };
+  }
   try {
     const manifest = await (deps.verifyArtifact ?? verifyHomeArtifact)(base.release);
     if (manifest.artifact.id !== base.artifactId || manifest.product.version !== base.productVersion) throw new Error("release manifest differs from installation record");
-    return null;
-  } catch (error) { return { status: "corrupt-release", error: `managed Dome Home release is corrupt: ${message(error)}` }; }
+    return { kind: "verified", manifest };
+  } catch (error) {
+    return { kind: "error", status: "corrupt-release", error: `managed Dome Home release is corrupt: ${message(error)}` };
+  }
 }
 
-function renderExpectedPlist(base: Base, environment: ReadonlyMap<string, string>): string {
+function renderExpectedPlist(
+  base: Base,
+  environment: ReadonlyMap<string, string>,
+  manifest: HomeArtifactManifest,
+  deps: HomeLifecycleDeps,
+): string {
   if (base.release === null) throw new Error("cannot render Home plist without a selected release");
-  return renderLaunchAgentPlist({
-    label: base.label,
-    programArguments: [join(base.release, "runtime", "bun"), join(base.release, "app", "bin", "dome"), "home", "--vault", base.vault,
-      "--host", HOME_HOST, "--port", String(HOME_PORT), "--static-dir", join(base.release, "app", "pwa", "dist")],
-    workingDirectory: base.vault,
-    logPath: base.log,
-    environment,
-  });
+  return renderHomeSelection({
+    vault: base.vault,
+    artifact: {
+      id: manifest.artifact.id,
+      version: manifest.product.version,
+      releasePath: base.release,
+      manifest,
+    },
+    environment: [...environment].map(([name, value]) => ({ name, value })),
+  }, deps).plist.bytes;
 }
 function recordEnvironment(record: HomeInstallationRecord, base: Base): ReadonlyMap<string, string> {
   const environment = new Map(record.environment.map((entry) => [entry.name, entry.value] as const));

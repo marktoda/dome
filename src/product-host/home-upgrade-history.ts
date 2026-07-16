@@ -35,6 +35,7 @@ import {
   type HomeUpgradeTransaction,
   type HomeUpgradeTransactionDeps,
 } from "./home-upgrade-transaction";
+import { verifyHomeArtifactEvidence } from "./home-artifact";
 
 const HOME_UPGRADE_TERMINAL_SUMMARY_SCHEMA = "dome.home-upgrade-terminal-summary/v1" as const;
 const MAX_SUMMARY_BYTES = 4096;
@@ -313,7 +314,12 @@ async function inspectTerminalService(
   vault: string,
   deps: HomeUpgradeHistoryDeps,
 ): Promise<HomeUpgradeTerminalService> {
-  const status = await manageHome({ action: "status", vaultPath: vault }, deps);
+  const status = await manageHome({ action: "status", vaultPath: vault }, {
+    ...deps,
+    verifyArtifact: async (root) => (await (
+      deps.verifyArtifactEvidence ?? verifyHomeArtifactEvidence
+    )(root)).manifest,
+  });
   if (status.artifactId === null || status.productVersion === null) {
     throw new Error("Dome Home terminal service has no selected artifact");
   }

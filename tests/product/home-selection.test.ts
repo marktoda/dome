@@ -11,12 +11,50 @@ import {
   repairHomeSelection,
   renderHomeSelection,
 } from "../../src/product-host/home-selection";
+import type { HomeArtifactManifest } from "../../src/product-host/home-artifact";
 
 describe("Home release selection", () => {
+  test("renders historical manifests byte-compatibly and names only a verified alias", () => {
+    const release = `/support/releases/${"a".repeat(64)}`;
+    const base = { vault: "/vault", environment: [] };
+    const legacy = renderHomeSelection({
+      ...base,
+      artifact: selectionArtifact("a", "2.0.0", release),
+    }, { applicationSupportDir: "/support", launchAgentsDir: "/agents" }).plist.bytes;
+    expect(legacy).not.toContain("<key>Program</key>");
+    expect(legacy).toContain(
+      `<key>ProgramArguments</key>\n  <array>\n    <string>${join(release, "runtime", "bun")}</string>\n` +
+      `    <string>${join(release, "app", "bin", "dome")}</string>`,
+    );
+
+    const namedArtifact = selectionArtifact("a", "2.0.0", release, true);
+    const named = renderHomeSelection({ ...base, artifact: namedArtifact }, {
+      applicationSupportDir: "/support", launchAgentsDir: "/agents",
+    }).plist.bytes;
+    expect(named).toContain(
+      `<key>Program</key>\n  <string>${join(release, "runtime", "Dome Home")}</string>\n` +
+      "  <key>ProgramArguments</key>\n  <array>\n    <string>Dome Home</string>",
+    );
+
+    expect(() => renderHomeSelection({
+      ...base,
+      artifact: { ...namedArtifact, version: "2.0.1" },
+    }, { applicationSupportDir: "/support", launchAgentsDir: "/agents" }))
+      .toThrow("manifest does not match");
+    const malformed = structuredClone(namedArtifact.manifest);
+    const alias = malformed.entries.find((entry) => entry.path === "runtime/Dome Home");
+    if (alias?.type === "file") (alias as { mode: string }).mode = "0644";
+    expect(() => renderHomeSelection({
+      ...base,
+      artifact: { ...namedArtifact, manifest: malformed },
+    }, { applicationSupportDir: "/support", launchAgentsDir: "/agents" }))
+      .toThrow("not an exact executable Bun twin");
+  });
+
   test("rejects secret-like environment before rendering selector or plist bytes", () => {
     const input = {
       vault: "/vault",
-      artifact: { id: "a".repeat(64), version: "2.0.0", releasePath: `/support/releases/${"a".repeat(64)}` },
+      artifact: selectionArtifact("a", "2.0.0", `/support/releases/${"a".repeat(64)}`),
       environment: [{ name: "SERVICE_TOKEN", value: "must-not-persist" }],
     };
     expect(() => renderHomeSelection(input, { applicationSupportDir: "/support" })).toThrow("macOS Keychain");
@@ -41,11 +79,21 @@ describe("Home release selection", () => {
       const old = await captureHomeSelection(vault, deps);
       const candidate = renderHomeSelection({
         vault,
-        artifact: { id: "a".repeat(64), version: "2.0.0", releasePath: join(support, "releases", "a".repeat(64)) },
+        artifact: selectionArtifact("a", "2.0.0", join(support, "releases", "a".repeat(64)), true),
         environment: [{ name: "DOME_TEST", value: "yes" }],
       }, deps);
       expect(candidate.installation.bytes).toContain('"version": "2.0.0"');
-      expect(candidate.plist.bytes).toContain(join(support, "releases", "a".repeat(64)));
+      const release = join(support, "releases", "a".repeat(64));
+      expect(candidate.plist.bytes).toContain(
+        `<key>Program</key>\n  <string>${join(release, "runtime", "Dome Home")}</string>`,
+      );
+      expect(candidate.plist.bytes).toContain(
+        `<key>ProgramArguments</key>\n  <array>\n    <string>Dome Home</string>\n` +
+        `    <string>${join(release, "app", "bin", "dome")}</string>`,
+      );
+      expect(candidate.plist.bytes).not.toContain(
+        `<array>\n    <string>${join(release, "runtime", "bun")}</string>`,
+      );
       expect(await classifyHomeSelection({ old, candidate })).toBe("old");
 
       await publishHomeSelectionDocument({ expected: old.plist, desired: candidate.plist });
@@ -75,7 +123,7 @@ describe("Home release selection", () => {
       const old = await captureHomeSelection(vault, deps);
       const candidate = renderHomeSelection({
         vault,
-        artifact: { id: "b".repeat(64), version: "2.0.0", releasePath: join(support, "releases", "b".repeat(64)) },
+        artifact: selectionArtifact("b", "2.0.0", join(support, "releases", "b".repeat(64))),
         environment: [],
       }, deps);
 
@@ -133,7 +181,7 @@ describe("Home release selection", () => {
       await writeFile(paths.plist, "old plist\n", { mode: 0o600 });
       const candidate = renderHomeSelection({
         vault,
-        artifact: { id: "c".repeat(64), version: "3.0.0", releasePath: join(support, "releases", "c".repeat(64)) },
+        artifact: selectionArtifact("c", "3.0.0", join(support, "releases", "c".repeat(64))),
         environment: [],
       }, deps);
 
@@ -168,7 +216,7 @@ describe("Home release selection", () => {
       await mkdir(join(support, "installations", paths.installation.split("/").at(-2)!), { recursive: true });
       const candidate = renderHomeSelection({
         vault,
-        artifact: { id: "d".repeat(64), version: "4.0.0", releasePath: join(support, "releases", "d".repeat(64)) },
+        artifact: selectionArtifact("d", "4.0.0", join(support, "releases", "d".repeat(64))),
         environment: [],
       }, deps);
       await writeFile(paths.plist, candidate.plist.bytes, { mode: candidate.plist.mode });
@@ -204,3 +252,34 @@ describe("Home release selection", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
+
+function selectionArtifact(
+  idCharacter: string,
+  version: string,
+  releasePath: string,
+  named = false,
+): {
+  readonly id: string;
+  readonly version: string;
+  readonly releasePath: string;
+  readonly manifest: HomeArtifactManifest;
+} {
+  const id = idCharacter.repeat(64);
+  const runtime = {
+    type: "file" as const,
+    path: "runtime/bun",
+    bytes: 3,
+    sha256: "e".repeat(64),
+    mode: "0755",
+  };
+  const entries = named
+    ? [{ ...runtime, path: "runtime/Dome Home" }, runtime]
+    : [runtime];
+  const manifest = {
+    artifact: { id },
+    product: { name: "Dome Home", version },
+    runtime: { sha256: runtime.sha256 },
+    entries,
+  } as unknown as HomeArtifactManifest;
+  return { id, version, releasePath, manifest };
+}

@@ -29,6 +29,8 @@ export const PINNED_AGE_BINARY_SHA256 = "0e3ea0b1bed2b30aa2dc46eef4e1723864d626c
 export const PINNED_AGE_KEYGEN_BINARY_SHA256 = "37c4b509d86f233d8dd065f5a905e11d2e1d5549d59445a9bc52da9235a622ad";
 export const PINNED_AGE_LICENSE_SHA256 = "afbdb4e07a359499db587ae632815809b1fc1670a92d5449af112ce9a67833a2";
 export const PINNED_BUN_DEVELOPER_ID_TEAM_ID = "7FRXF46ZSN";
+export const HOME_RUNTIME_PATH = "runtime/bun" as const;
+export const HOME_RUNTIME_LAUNCH_ALIAS_PATH = "runtime/Dome Home" as const;
 
 export const LEGACY_HOME_CODE_SIGNING_PATHS = Object.freeze([
   "runtime/age",
@@ -116,19 +118,68 @@ export type HomeArtifactEntry =
   | { readonly type: "symlink"; readonly path: string; readonly target: string; readonly targetSha256: string };
 
 export type HomeArtifactVerifier = (artifactRoot: string) => Promise<HomeArtifactManifest>;
+export type HomeArtifactVerificationEvidence = Readonly<{
+  manifest: HomeArtifactManifest;
+  /** Digest of the exact manifest bytes parsed by the deep verifier. */
+  manifestSha256: string;
+}>;
+export type HomeArtifactEvidenceVerifier = (
+  artifactRoot: string,
+) => Promise<HomeArtifactVerificationEvidence>;
+
+export type HomeArtifactLaunchCapability = Readonly<
+  | { kind: "legacy"; programPath: typeof HOME_RUNTIME_PATH; argv0: null }
+  | { kind: "named"; programPath: typeof HOME_RUNTIME_LAUNCH_ALIAS_PATH; argv0: "Dome Home" }
+>;
+
+/**
+ * Derive the managed-launch shape from payload evidence already closed by the
+ * manifest. The reserved alias earns a named launch only when it is an exact,
+ * executable ordinary-file twin of the canonical Bun entry.
+ */
+export function homeArtifactLaunchCapability(
+  manifest: HomeArtifactManifest,
+): HomeArtifactLaunchCapability {
+  const runtime = manifest.entries.find((entry) => entry.path === HOME_RUNTIME_PATH);
+  if (runtime?.type !== "file" || runtime.sha256 !== manifest.runtime.sha256 ||
+    (Number.parseInt(runtime.mode, 8) & 0o111) === 0) {
+    throw new Error("artifact runtime launch entry is missing or inconsistent");
+  }
+  const alias = manifest.entries.find((entry) => entry.path === HOME_RUNTIME_LAUNCH_ALIAS_PATH);
+  if (alias === undefined) {
+    return Object.freeze({ kind: "legacy" as const, programPath: HOME_RUNTIME_PATH, argv0: null });
+  }
+  if (alias.type !== "file" || alias.bytes !== runtime.bytes || alias.sha256 !== runtime.sha256 ||
+    alias.mode !== runtime.mode || (Number.parseInt(alias.mode, 8) & 0o111) === 0) {
+    throw new Error("artifact Home launch alias is not an exact executable Bun twin");
+  }
+  return Object.freeze({
+    kind: "named" as const,
+    programPath: HOME_RUNTIME_LAUNCH_ALIAS_PATH,
+    argv0: "Dome Home" as const,
+  });
+}
 
 type NativeCommandResult = Readonly<{ exitCode: number; stdout: string; stderr: string }>;
 type NativeCommandRunner = (argv: ReadonlyArray<string>, cwd: string) => Promise<NativeCommandResult>;
 
 export async function verifyHomeArtifact(artifactRootInput: string): Promise<HomeArtifactManifest> {
+  return (await verifyHomeArtifactEvidence(artifactRootInput)).manifest;
+}
+
+export async function verifyHomeArtifactEvidence(
+  artifactRootInput: string,
+): Promise<HomeArtifactVerificationEvidence> {
   const artifactRoot = resolve(artifactRootInput);
   const manifestPath = join(artifactRoot, "manifest.json");
   const manifestInfo = await lstat(manifestPath);
   if (!manifestInfo.isFile() || manifestInfo.size > 16 * 1024 * 1024) {
     throw new Error("artifact manifest is missing, not a file, or exceeds its size budget");
   }
+  const manifestBytes = await readFile(manifestPath);
+  const manifestSha256 = sha256(manifestBytes);
   let decoded: unknown;
-  try { decoded = JSON.parse(await readFile(manifestPath, "utf8")); }
+  try { decoded = JSON.parse(manifestBytes.toString("utf8")); }
   catch { throw new Error(`artifact manifest is invalid at ${manifestPath}`); }
   const manifest = parseHomeArtifactManifest(decoded);
 
@@ -160,10 +211,11 @@ export async function verifyHomeArtifact(artifactRootInput: string): Promise<Hom
   if (runtimeEntry?.type !== "file" || runtimeEntry.sha256 !== manifest.runtime.sha256) {
     throw new Error("artifact runtime checksum is missing or inconsistent");
   }
+  const launchCapability = homeArtifactLaunchCapability(manifest);
   const expectedChecksums = [
     ...manifest.entries.filter((entry): entry is Extract<HomeArtifactEntry, { type: "file" }> => entry.type === "file")
       .map((entry) => `${entry.sha256}  ${entry.path}`),
-    `${sha256(await readFile(manifestPath))}  manifest.json`,
+    `${manifestSha256}  manifest.json`,
   ].sort((left, right) => compareStrings(left.slice(66), right.slice(66))).join("\n") + "\n";
   if (await readFile(join(artifactRoot, "checksums.sha256"), "utf8") !== expectedChecksums) {
     throw new Error("artifact checksums.sha256 is incomplete or inconsistent");
@@ -224,7 +276,12 @@ export async function verifyHomeArtifact(artifactRootInput: string): Promise<Hom
       domeSigned.some((row) => row.teamId !== domeSigned[0]!.teamId)) {
       throw new Error("artifact code signing provenance is inconsistent");
     }
-    await verifySignedHomeArtifactNativeCode(artifactRoot, manifest.codeSigning, runNativeCommand);
+    await verifySignedHomeArtifactNativeCode(
+      artifactRoot,
+      manifest.codeSigning,
+      runNativeCommand,
+      launchCapability,
+    );
   }
   const runtimeVersion = (await runVersion(join(artifactRoot, "runtime", "bun"), artifactRoot)).trim();
   if (runtimeVersion !== PINNED_BUN_VERSION) throw new Error(`artifact runtime reports ${runtimeVersion}`);
@@ -232,7 +289,7 @@ export async function verifyHomeArtifact(artifactRootInput: string): Promise<Hom
     const reported = (await runVersion(join(artifactRoot, tool.path), artifactRoot)).trim();
     if (reported !== `v${PINNED_AGE_VERSION}`) throw new Error(`artifact ${tool.name} reports ${reported}`);
   }
-  return manifest;
+  return Object.freeze({ manifest, manifestSha256 });
 }
 
 export function parseHomeArtifactManifest(value: unknown): HomeArtifactManifest {
@@ -350,16 +407,22 @@ export async function verifySignedHomeArtifactNativeCodeForTests(
   artifactRoot: string,
   codeSigning: HomeArtifactCodeSigning,
   run: NativeCommandRunner,
+  launchCapability?: HomeArtifactLaunchCapability,
 ): Promise<void> {
-  await verifySignedHomeArtifactNativeCode(resolve(artifactRoot), codeSigning, run);
+  await verifySignedHomeArtifactNativeCode(resolve(artifactRoot), codeSigning, run, launchCapability);
 }
 
 async function verifySignedHomeArtifactNativeCode(
   artifactRoot: string,
   codeSigning: HomeArtifactCodeSigning,
   run: NativeCommandRunner,
+  launchCapability: HomeArtifactLaunchCapability = Object.freeze({
+    kind: "legacy",
+    programPath: HOME_RUNTIME_PATH,
+    argv0: null,
+  }),
 ): Promise<void> {
-  const inventory = await inventorySignedMachO(artifactRoot);
+  const inventory = await inventorySignedMachO(artifactRoot, launchCapability);
   const expectedInventory = codeSigning.executables.map((row) => row.path);
   if (JSON.stringify(inventory) !== JSON.stringify(expectedInventory)) {
     throw new Error(`signed Home artifact Mach-O inventory is not exact: ${inventory.join(", ") || "empty"}`);
@@ -407,9 +470,13 @@ export function canonicalHomeEntitlementsSha256(output: string): string {
   return sha256(Buffer.from(canonical));
 }
 
-async function inventorySignedMachO(root: string): Promise<ReadonlyArray<string>> {
+async function inventorySignedMachO(
+  root: string,
+  launchCapability: HomeArtifactLaunchCapability,
+): Promise<ReadonlyArray<string>> {
   const found: string[] = [];
   for (const path of await archiveEntries(root)) {
+    if (launchCapability.kind === "named" && path === HOME_RUNTIME_LAUNCH_ALIAS_PATH) continue;
     const absolute = join(root, ...path.split("/"));
     const info = await lstat(absolute);
     if (info.isFile() && await isMachO(absolute)) found.push(path);

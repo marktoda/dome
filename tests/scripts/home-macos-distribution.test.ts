@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -23,6 +23,8 @@ import {
   PINNED_BUN_BINARY_SHA256,
   PINNED_BUN_DEVELOPER_ID_TEAM_ID,
   HOME_CREDENTIAL_HELPER_PATH,
+  HOME_RUNTIME_LAUNCH_ALIAS_PATH,
+  HOME_RUNTIME_PATH,
   canonicalHomeEntitlementsSha256,
   verifySignedHomeArtifactNativeCodeForTests,
   type HomeArtifactCodeSigning,
@@ -212,8 +214,22 @@ describe("installed signed-artifact native verification", () => {
       await verifySignedHomeArtifactNativeCodeForTests(root, codeSigning, run);
       expect(commands).toHaveLength(9);
 
+      await link(join(root, HOME_RUNTIME_PATH), join(root, HOME_RUNTIME_LAUNCH_ALIAS_PATH));
+      await verifySignedHomeArtifactNativeCodeForTests(root, codeSigning, run, {
+        kind: "named",
+        programPath: HOME_RUNTIME_LAUNCH_ALIAS_PATH,
+        argv0: "Dome Home",
+      });
+      expect(commands).toHaveLength(18);
+      expect(codeSigning.executables.map((row) => row.path as string))
+        .not.toContain(HOME_RUNTIME_LAUNCH_ALIAS_PATH);
+
       await symlink("age", join(root, "runtime", "age-alias"));
-      await expect(verifySignedHomeArtifactNativeCodeForTests(root, codeSigning, run))
+      await expect(verifySignedHomeArtifactNativeCodeForTests(root, codeSigning, run, {
+        kind: "named",
+        programPath: HOME_RUNTIME_LAUNCH_ALIAS_PATH,
+        argv0: "Dome Home",
+      }))
         .rejects.toThrow("symlink alias to native code");
     } finally {
       await rm(root, { recursive: true, force: true });

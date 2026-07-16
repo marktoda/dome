@@ -63,6 +63,122 @@ describe("App", () => {
     expect(screen.getByRole("region", { name: "Conversation" }).hasAttribute("aria-live")).toBe(false);
   });
 
+  test("keeps one permanent accessible Today refresh control with fresh terminal state", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
+    const button = screen.getByRole("button", { name: "Refresh Today" });
+    const region = screen.getByRole("region", { name: "Today refresh" });
+    const status = document.getElementById("today-refresh-status")!;
+    await waitFor(() => expect(status.textContent).toBe("Today is fresh."));
+    expect(button.getAttribute("aria-describedby")).toBe(status.id);
+    expect(status.getAttribute("role")).toBe("status");
+    expect(status.getAttribute("aria-live")).toBe("polite");
+    expect(status.getAttribute("aria-atomic")).toBe("true");
+    expect(region.hasAttribute("aria-busy")).toBe(false);
+    expect(button.getAttribute("aria-busy")).toBe("false");
+    expect(button.contains(status)).toBe(false);
+  });
+
+  test("refreshes only Today while Ask remains visibly streaming", async () => {
+    let taskCalls = 0;
+    let recentsCalls = 0;
+    let releaseManualToday!: (response: Response) => void;
+    globalThis.fetch = mock(async (requestOrUrl: Request | string, init?: RequestInit) => {
+      const request = typeof requestOrUrl === "string"
+        ? new Request(new URL(requestOrUrl, "http://x"), init)
+        : requestOrUrl;
+      const path = new URL(request.url).pathname;
+      if (path === "/readyz") return readinessResponse();
+      if (path === "/pair/status") {
+        return new Response(JSON.stringify({ schema: "dome.pairing/v1", available: true, paired: true }), { status: 200 });
+      }
+      if (path === "/tasks") {
+        taskCalls++;
+        if (taskCalls === 1) return new Response(TODAY_BODY, { status: 200 });
+        return await new Promise<Response>((resolve) => { releaseManualToday = resolve; });
+      }
+      if (path === "/recents") {
+        recentsCalls++;
+        return new Response(RECENTS_BODY, { status: 200 });
+      }
+      if (path === "/sessions") {
+        return new Response(JSON.stringify({
+          schema: "dome.agent-session/v1", status: "created", sessionId: "s1",
+        }), { status: 201 });
+      }
+      if (path === "/sessions/s1/messages") {
+        return new Response(new ReadableStream({
+          start(controller) {
+            request.signal.addEventListener("abort", () => {
+              controller.error(new DOMException("aborted", "AbortError"));
+            }, { once: true });
+          },
+        }), { status: 200 });
+      }
+      if (path === "/sessions/s1/cancel") {
+        return new Response(JSON.stringify({
+          schema: "dome.agent-session/v1", status: "cancelled", sessionId: "s1",
+        }), { status: 200 });
+      }
+      throw new Error(`unexpected request: ${path}`);
+    }) as never;
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Today is fresh.")).toBeDefined());
+    const recentsAfterMount = recentsCalls;
+    const input = screen.getByPlaceholderText(/ask/i);
+    fireEvent.change(input, { target: { value: "keep streaming" } });
+    fireEvent.submit(input.closest("form")!);
+    await waitFor(() => expect(screen.getByRole("button", { name: "stop response" })).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh Today" }));
+    expect(screen.getByText("Refreshing Today…")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Refresh Today" }).getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByRole("button", { name: "stop response" })).toBeDefined();
+    expect(recentsCalls).toBe(recentsAfterMount);
+    releaseManualToday(new Response(TODAY_BODY, { status: 200 }));
+    await waitFor(() => expect(screen.getByText("Today is fresh.")).toBeDefined());
+    expect(screen.getByRole("button", { name: "Refresh Today" }).getAttribute("aria-busy")).toBe("false");
+    expect(screen.getByRole("button", { name: "stop response" })).toBeDefined();
+    expect(recentsCalls).toBe(recentsAfterMount);
+    fireEvent.click(screen.getByRole("button", { name: "stop response" }));
+  });
+
+  test("preserves prior Today on manual failure and permits an independent retry", async () => {
+    let taskCalls = 0;
+    let recentsCalls = 0;
+    globalThis.fetch = mock(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/readyz") return readinessResponse();
+      if (path === "/pair/status") {
+        return new Response(JSON.stringify({ schema: "dome.pairing/v1", available: true, paired: true }), { status: 200 });
+      }
+      if (path === "/tasks") {
+        taskCalls++;
+        return taskCalls === 2
+          ? new Response("{}", { status: 503 })
+          : new Response(TODAY_BODY, { status: 200 });
+      }
+      if (path === "/recents") {
+        recentsCalls++;
+        return new Response(RECENTS_BODY, { status: 200 });
+      }
+      return new Response("{}", { status: 200 });
+    }) as never;
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
+    const recentsAfterMount = recentsCalls;
+    fireEvent.click(screen.getByRole("button", { name: "Refresh Today" }));
+    await waitFor(() => expect(screen.getByText(/Today refresh failed/i)).toBeDefined());
+    expect(screen.getByText(/you're clear/i)).toBeDefined();
+    expect(recentsCalls).toBe(recentsAfterMount);
+    expect((screen.getByRole("button", { name: "Refresh Today" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh Today" }));
+    await waitFor(() => expect(screen.getByText("Today is fresh.")).toBeDefined());
+    expect(recentsCalls).toBe(recentsAfterMount);
+  });
+
   test("expanded connection diagnostics expose a keyboard-focusable scroll region after the summary", async () => {
     render(<App />);
     const summary = await screen.findByRole("button", { name: /Connection · ready/i });
@@ -296,7 +412,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /delete pending capture/i }));
   });
 
-  test("reports two HTTP view failures without falsely calling Home unreachable", async () => {
+  test("reports independent Today and Activity failures without falsely calling Home unreachable", async () => {
     globalThis.fetch = mock(async (request: Request) => {
       const path = new URL(request.url).pathname;
       if (path === "/readyz") return readinessResponse();
@@ -307,8 +423,13 @@ describe("App", () => {
       return new Response("{}", { status: 200 });
     }) as never;
     render(<App />);
-    await waitFor(() => expect(screen.getByText("Live views incomplete")).toBeDefined());
-    expect(screen.getByText(/Today and Activity could not be refreshed\. Home is connected/i)).toBeDefined();
+    const failure = await screen.findByText(/Today refresh failed/i);
+    const refresh = screen.getByRole("region", { name: "Today refresh" });
+    expect(failure.getAttribute("role")).toBe("status");
+    expect(refresh.classList.contains("failed")).toBe(true);
+    expect(refresh.classList.contains("ready")).toBe(false);
+    expect(screen.queryByText(/you're clear/i)).toBeNull();
+    expect(screen.getByText("Activity unavailable")).toBeDefined();
     expect(screen.queryByText("Dome Home unavailable")).toBeNull();
   });
 
@@ -325,7 +446,7 @@ describe("App", () => {
     }) as never;
     render(<App />);
     await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
-    expect(screen.getByText(/Activity could not be refreshed\. Today is current/i)).toBeDefined();
+    expect(screen.getByText(/Activity could not be refreshed/i)).toBeDefined();
     expect(screen.queryByText("Dome Home unavailable")).toBeNull();
   });
 
@@ -346,12 +467,21 @@ describe("App", () => {
     }) as never;
     render(<App />);
     await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
+    await waitFor(() => expect(screen.getByText("Today is fresh.")).toBeDefined());
+    const refresh = screen.getByRole("region", { name: "Today refresh" });
+    expect(refresh.classList.contains("ready")).toBe(true);
     document.dispatchEvent(new Event("visibilitychange"));
     await waitFor(() => expect(screen.getByText("Product readiness unavailable")).toBeDefined());
     expect(screen.getByText(/Last known details are context only/i)).toBeDefined();
     expect(screen.getByText(/Connection · readiness unavailable/i)).toBeDefined();
     expect(document.querySelector(".availability-dot.available")).toBeNull();
     expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Refresh Today" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/Today refresh is unavailable until Dome Home has fresh read access/i)).toBeDefined();
+    expect(refresh.hasAttribute("aria-busy")).toBe(false);
+    expect(screen.getByRole("button", { name: "Refresh Today" }).getAttribute("aria-busy")).toBe("false");
+    expect(refresh.classList.contains("ready")).toBe(false);
+    expect(refresh.classList.contains("failed")).toBe(false);
   });
 
   test("optional providers and write admission gate only their dependent affordances", async () => {
@@ -668,10 +798,13 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByText("Dome Home unavailable")).toBeDefined());
     fireEvent.click(screen.getByRole("button", { name: "Retry connection" }));
     await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
+    await waitFor(() => expect(screen.getByText("Today is fresh.")).toBeDefined());
     rejectOldTasks(new Error("old tasks transport failure"));
     rejectOldRecents(new Error("old recents transport failure"));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByText("Dome Home unavailable")).toBeNull();
     expect(screen.queryByText("Live views incomplete")).toBeNull();
+    expect(screen.getByRole("region", { name: "Today refresh" }).classList.contains("ready")).toBe(true);
+    expect(screen.queryByText(/Today refresh failed/i)).toBeNull();
   });
 });

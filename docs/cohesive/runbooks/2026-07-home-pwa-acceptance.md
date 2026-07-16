@@ -80,6 +80,241 @@ checkout. In current desktop Chrome and on a real iPhone in Safari, verify:
 Record failures and device details. Playwright WebKit, desktop responsive mode,
 or the automated Chrome journey is not real-device iOS Safari evidence.
 
+## P6 local owner-beta packet
+
+Use `dome.home.beta-protocol/2026-07-15.1`. Consent, external-owner status, and
+the fact that five packets belong to five distinct owners are manual truths;
+the validator deliberately retains no identity that could prove them. Use one
+monotonic clock for every elapsed duration. Record all twelve protocol steps,
+both fixed capture cases, and the one owner-observable
+`mid-operation-reconcile` restart. Do not discard slow, timed-out, failed, or
+not-run observations. The internal before/after-ref and checkout-repair fault
+phases belong to installed/test automation and are not owner-beta fields.
+
+Use these exact owner clocks and collection budgets (a timeout duration equals
+the budget; these are collection termination rules, not latency SLOs):
+
+- install→paired Ask: start immediately before opening the signed DMG; stop at
+  the first complete non-stale Ask response after pairing; 900,000 ms;
+- active-generation reads: perform exactly twenty rounds in order. On desktop,
+  start one Ask. While that same Ask is visibly streaming, use the paired phone
+  to activate the always-visible `Refresh Today`; start its clock at activation
+  and wait for the persistent `Today is fresh.` or visible failed terminal.
+  Then, while that Ask is still visibly streaming, activate one existing
+  Activity/citation source control for a preselected exact adopted SourceRef;
+  start its clock at activation and wait for SourceViewer's accessible `Source
+  loaded` or `Source failed to load` terminal. If either activation starts
+  after streaming ends, record that slot `not-run`. Let the Ask finish, then
+  begin the next round. Each clock has a 30,000 ms budget; preserve both exact
+  twenty-element arrays and round order. Do not dispatch forty unawaited
+  requests, select results post hoc, or use automation, developer tools, a
+  direct API, or a script caller;
+- capture: start when Save is activated; stop the three clocks at the durable
+  local row, attributable commit receipt, and same logical capture at the
+  current adopted commit; 10,000/120,000/180,000 ms;
+- mid-operation reconcile: first confirm exactly one Home is running. While a
+  mediated mutation is visibly pending, start the clock, open Activity Monitor,
+  select the exact managed process named `Dome Home`, and choose Force Quit.
+  Wait for
+  launchd `KeepAlive` to restart it automatically; do not manually relaunch it.
+  Stop at authenticated readiness plus a closed non-pending UI receipt for that
+  mutation; 300,000 ms. At the budget record `timeout`; there is no unsafe
+  fallback. Do not substitute a quiescent `dome home restart`, and do not
+  inspect or record a PID, launch label, or internal write phase;
+- initial/after-restart/after-restore readiness: start immediately before the
+  corresponding launch or quiescent restart and stop at authenticated
+  readiness; 300,000 ms each;
+- each journey step, recovery action, and real-client platform action starts at
+  the named owner action and ends at its fresh runtime-valid UI result;
+  900,000 ms. Device actions use the same rule with 120,000 ms.
+
+Authenticated readiness means the current UI has runtime-validated a fresh
+`dome.product.readiness/v1` for the expected product version and current
+device/vault session, with `host.state: ready`, `writesAdmitted: true`,
+`adoption.state: current`, and the required device capability. Stale context,
+liveness, and pairing status do not count.
+
+The two capture `start-to-adopt` clocks are the only adoption-latency samples.
+Also record the exact mutation queue partition and saturation/conflict/retry
+counts, device pair/revoke/unauthorized/remaining-authorized outcomes,
+backup/migration/rollback/restore outcomes, and real Chromium plus iOS
+install/offline/update/accessibility outcomes. Set an iOS or Chromium major to
+`null` only when every outcome for that platform is `not-run`; once any check
+runs, its coarse major is required.
+
+The closed packet shape is illustrated below. The repeated scheduled outcomes
+are all written out so this example can be parsed and validated without a
+template-expansion convention.
+
+```json
+{
+  "schema": "dome.home.beta-evidence/v1",
+  "protocol": "dome.home.beta-protocol/2026-07-15.1",
+  "product": {
+    "version": "0.3.0",
+    "target": "darwin-arm64",
+    "distributionReceiptSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "environment": {
+    "date": "2026-07-15",
+    "macosMajor": 15,
+    "iosMajor": 18,
+    "chromiumMajor": 138
+  },
+  "attestations": {
+    "consented": true,
+    "externalOwner": true,
+    "withoutDeveloperIntervention": true
+  },
+  "steps": {
+    "install": { "outcome": "ok", "durationMs": 1 },
+    "vault-start": { "outcome": "ok", "durationMs": 1 },
+    "pair": { "outcome": "ok", "durationMs": 1 },
+    "concurrent-use": { "outcome": "ok", "durationMs": 1 },
+    "mutation-admission": { "outcome": "ok", "durationMs": 1 },
+    "external-edit": { "outcome": "ok", "durationMs": 1 },
+    "restart-reconciliation": { "outcome": "ok", "durationMs": 1 },
+    "offline-replay": { "outcome": "ok", "durationMs": 1 },
+    "revoke-isolation": { "outcome": "ok", "durationMs": 1 },
+    "backup-upgrade-rollback": { "outcome": "ok", "durationMs": 1 },
+    "blank-host-restore": { "outcome": "ok", "durationMs": 1 },
+    "projection-rebuild-audit": { "outcome": "ok", "durationMs": 1 }
+  },
+  "observations": {
+    "installToPairedAsk": { "outcome": "ok", "durationMs": 1 },
+    "todayDuringGeneration": [
+      { "outcome": "ok", "durationMs": 1 },
+      { "outcome": "ok", "durationMs": 2 },
+      { "outcome": "ok", "durationMs": 3 },
+      { "outcome": "ok", "durationMs": 4 },
+      { "outcome": "ok", "durationMs": 5 },
+      { "outcome": "ok", "durationMs": 6 },
+      { "outcome": "ok", "durationMs": 7 },
+      { "outcome": "ok", "durationMs": 8 },
+      { "outcome": "ok", "durationMs": 9 },
+      { "outcome": "ok", "durationMs": 10 },
+      { "outcome": "ok", "durationMs": 11 },
+      { "outcome": "ok", "durationMs": 12 },
+      { "outcome": "ok", "durationMs": 13 },
+      { "outcome": "ok", "durationMs": 14 },
+      { "outcome": "ok", "durationMs": 15 },
+      { "outcome": "ok", "durationMs": 16 },
+      { "outcome": "ok", "durationMs": 17 },
+      { "outcome": "ok", "durationMs": 18 },
+      { "outcome": "ok", "durationMs": 19 },
+      { "outcome": "ok", "durationMs": 20 }
+    ],
+    "sourceDuringGeneration": [
+      { "outcome": "ok", "durationMs": 1 },
+      { "outcome": "ok", "durationMs": 2 },
+      { "outcome": "ok", "durationMs": 3 },
+      { "outcome": "ok", "durationMs": 4 },
+      { "outcome": "ok", "durationMs": 5 },
+      { "outcome": "ok", "durationMs": 6 },
+      { "outcome": "ok", "durationMs": 7 },
+      { "outcome": "ok", "durationMs": 8 },
+      { "outcome": "ok", "durationMs": 9 },
+      { "outcome": "ok", "durationMs": 10 },
+      { "outcome": "ok", "durationMs": 11 },
+      { "outcome": "ok", "durationMs": 12 },
+      { "outcome": "ok", "durationMs": 13 },
+      { "outcome": "ok", "durationMs": 14 },
+      { "outcome": "ok", "durationMs": 15 },
+      { "outcome": "ok", "durationMs": 16 },
+      { "outcome": "ok", "durationMs": 17 },
+      { "outcome": "ok", "durationMs": 18 },
+      { "outcome": "ok", "durationMs": 19 },
+      { "outcome": "ok", "durationMs": 20 }
+    ],
+    "captures": {
+      "online": {
+        "start-to-local": { "outcome": "ok", "durationMs": 1 },
+        "start-to-commit": { "outcome": "ok", "durationMs": 2 },
+        "start-to-adopt": { "outcome": "ok", "durationMs": 3 },
+        "lostLogicalCaptures": 0,
+        "duplicateLogicalCaptures": 0
+      },
+      "offline-replay": {
+        "start-to-local": { "outcome": "ok", "durationMs": 1 },
+        "start-to-commit": { "outcome": "ok", "durationMs": 2 },
+        "start-to-adopt": { "outcome": "ok", "durationMs": 3 },
+        "lostLogicalCaptures": 0,
+        "duplicateLogicalCaptures": 0
+      }
+    },
+    "restart": {
+      "mid-operation-reconcile": { "outcome": "ok", "durationMs": 1 }
+    },
+    "readiness": {
+      "initial": { "outcome": "ok", "durationMs": 1 },
+      "after-restart": { "outcome": "ok", "durationMs": 1 },
+      "after-restore": { "outcome": "ok", "durationMs": 1 }
+    },
+    "mutationQueue": {
+      "scheduled": 3,
+      "success": 3,
+      "timeout": 0,
+      "failed": 0,
+      "notRun": 0,
+      "saturationEvents": 0,
+      "conflictEvents": 0,
+      "retryAttempts": 0
+    },
+    "device": {
+      "desktop-pair": { "outcome": "ok", "durationMs": 1 },
+      "phone-pair": { "outcome": "ok", "durationMs": 1 },
+      "phone-revoke": { "outcome": "ok", "durationMs": 1 },
+      "revoked-unauthorized": { "outcome": "ok", "durationMs": 1 },
+      "desktop-authorized": { "outcome": "ok", "durationMs": 1 }
+    },
+    "recovery": {
+      "backup": { "outcome": "ok", "durationMs": 1 },
+      "migration": { "outcome": "ok", "durationMs": 1 },
+      "rollback": { "outcome": "ok", "durationMs": 1 },
+      "restore": { "outcome": "ok", "durationMs": 1 }
+    },
+    "platform": {
+      "chromium": {
+        "install": { "outcome": "ok", "durationMs": 1 },
+        "offline": { "outcome": "ok", "durationMs": 1 },
+        "update": { "outcome": "ok", "durationMs": 1 },
+        "accessibility": { "outcome": "ok", "durationMs": 1 }
+      },
+      "ios": {
+        "install": { "outcome": "ok", "durationMs": 1 },
+        "offline": { "outcome": "ok", "durationMs": 1 },
+        "update": { "outcome": "ok", "durationMs": 1 },
+        "accessibility": { "outcome": "ok", "durationMs": 1 }
+      }
+    },
+    "cost": {
+      "model": { "source": "run-ledger", "microUsd": 1000 },
+      "transcription": { "source": "not-used", "microUsd": 0 }
+    }
+  }
+}
+```
+
+Validate one packet without publishing it:
+
+`bun scripts/home-beta-evidence.ts validate --input <packet.json> --expected-version <semver> --expected-receipt <sha256>`
+
+After separately verifying consent, external-owner truth, and five distinct
+owners, aggregate at least five explicit packets and record that completed
+operator review:
+
+`bun scripts/home-beta-evidence.ts aggregate --input <one.json> --input <two.json> --input <three.json> --input <four.json> --input <five.json> --expected-version <semver> --expected-receipt <sha256> --operator-reviewed --require-ready`
+
+Both commands emit JSON only. The aggregate omits filenames, packet rows,
+dates, environments, and all hashes except the expected public receipt binding.
+It cannot prove distinct ownership or consent. Without `--operator-reviewed`,
+an otherwise qualifying aggregate is `review-required` and `--require-ready`
+exits 1. Use the flag only after the out-of-band review above. Readiness also
+requires every one of the 5–100 submitted packets to qualify; any failure is
+`not-ready` even with the flag. Validation cannot complete manual review. The
+report retains only closed review check names/status, never identity. Never
+drop a failed scheduled run after collection.
+
 ## Checked-in P5.5a portable contract gates
 
 The focused surface, HTTP, and PWA suites must prove that Activity reads only

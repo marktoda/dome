@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { lstat, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -21,6 +22,7 @@ import {
   engageOperationalWriterBarrier,
   releaseOperationalWriterBarrier,
 } from "../../src/operational-state/writer-barrier";
+import type { HomeArtifactManifest } from "../../src/product-host/home-artifact";
 
 const roots: string[] = [];
 const hosts: ProductHost[] = [];
@@ -429,7 +431,7 @@ async function installedResumeFixture(vaultPath: string) {
   const verifyArtifact = async (candidate: string) => {
     verification.calls += 1;
     if (candidate !== release) throw new Error("unexpected managed release path");
-    return { artifact: { id: artifactId }, product: { version: artifactVersion } } as never;
+    return legacyManifest(artifactId, artifactVersion, "test Bun runtime\n", "0700");
   };
   return {
     support,
@@ -445,6 +447,40 @@ async function installedResumeFixture(vaultPath: string) {
       invokingEntrypointPath: entrypoint,
       verifyArtifact,
     },
+  };
+}
+
+function legacyManifest(
+  artifactId: string,
+  version: string,
+  runtimeBytes: string,
+  runtimeMode: string,
+): HomeArtifactManifest {
+  const runtimeSha256 = createHash("sha256").update(runtimeBytes).digest("hex");
+  return {
+    schema: "dome.home-artifact/v1",
+    product: { name: "Dome Home", version },
+    target: { os: "darwin", arch: "arm64" },
+    build: { gitCommit: "fixture" },
+    artifact: { id: artifactId },
+    runtime: {
+      name: "bun",
+      version: "1.2.13",
+      sourceUrl: "https://example.invalid/bun.zip",
+      archiveSha256: "0".repeat(64),
+      sha256: runtimeSha256,
+    },
+    tools: [],
+    entrypoint: "bin/dome",
+    pwa: "app/pwa/dist",
+    distribution: { signed: false, notarized: false, upgradeSupported: false },
+    entries: [{
+      type: "file",
+      path: "runtime/bun",
+      bytes: Buffer.byteLength(runtimeBytes),
+      sha256: runtimeSha256,
+      mode: runtimeMode,
+    }],
   };
 }
 

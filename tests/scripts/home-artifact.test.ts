@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, link, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import {
@@ -31,9 +31,13 @@ import { HOME_DURABLE_STATE_PROTOCOL, HOME_STORE_MIGRATIONS } from "../../src/pr
 import { HOME_PAIRING_READINESS_TIMEOUT_MS } from "../../src/product-host/home-readiness";
 import {
   parseHomeArtifactManifest,
+  HOME_RUNTIME_LAUNCH_ALIAS_PATH,
+  HOME_RUNTIME_PATH,
+  homeArtifactLaunchCapability,
   verifyHomeArtifactToolChecksumMetadataForTests,
   verifyHomeArtifact as shippedVerifyHomeArtifact,
   type HomeArtifactCodeSigning,
+  type HomeArtifactManifest,
 } from "../../src/product-host/home-artifact";
 
 describe("Dome Home artifact", () => {
@@ -115,6 +119,47 @@ describe("Dome Home artifact", () => {
     const source = await readFile(join(import.meta.dir, "..", "..", "scripts", "home-artifact.ts"), "utf8");
     expect(source).toContain('const shippedBun = join(directory, "runtime", "bun");');
     expect(source).toContain("shippedModelProviderSource,\n          shippedBun,\n");
+    const signing = source.indexOf("const codeSigning = options.beforeManifest");
+    const alias = source.indexOf("await link(shippedBun, join(directory, HOME_RUNTIME_LAUNCH_ALIAS_PATH))");
+    const metadata = source.indexOf("const manifest = await writeArtifactMetadataForRelease");
+    expect(signing).toBeGreaterThan(-1);
+    expect(alias).toBeGreaterThan(signing);
+    expect(metadata).toBeGreaterThan(alias);
+  });
+
+  test("derives named launch only from an exact executable manifest twin", async () => {
+    const root = await verifiableFixture();
+    try {
+      const legacy = JSON.parse(await readFile(join(root, "manifest.json"), "utf8"));
+      expect(homeArtifactLaunchCapability(parseHomeArtifactManifest(legacy))).toEqual({
+        kind: "legacy", programPath: HOME_RUNTIME_PATH, argv0: null,
+      });
+
+      await link(join(root, HOME_RUNTIME_PATH), join(root, HOME_RUNTIME_LAUNCH_ALIAS_PATH));
+      const named = await writeArtifactMetadata(root, "1.0.0");
+      expect(homeArtifactLaunchCapability(named)).toEqual({
+        kind: "named", programPath: HOME_RUNTIME_LAUNCH_ALIAS_PATH, argv0: "Dome Home",
+      });
+      const runtime = named.entries.find((entry) => entry.path === HOME_RUNTIME_PATH);
+      const alias = named.entries.find((entry) => entry.path === HOME_RUNTIME_LAUNCH_ALIAS_PATH);
+      if (runtime?.type !== "file") throw new Error("test runtime missing");
+      expect(alias).toEqual({ ...runtime, path: HOME_RUNTIME_LAUNCH_ALIAS_PATH });
+      const checksums = await readFile(join(root, "checksums.sha256"), "utf8");
+      expect(checksums).toContain(`${runtime.sha256}  ${HOME_RUNTIME_PATH}`);
+      expect(checksums).toContain(`${runtime.sha256}  ${HOME_RUNTIME_LAUNCH_ALIAS_PATH}`);
+
+      for (const mutate of [
+        (entry: Record<string, unknown>) => { entry["sha256"] = "f".repeat(64); },
+        (entry: Record<string, unknown>) => { entry["bytes"] = 1; },
+        (entry: Record<string, unknown>) => { entry["mode"] = "0644"; },
+        (entry: Record<string, unknown>) => { entry["type"] = "directory"; delete entry["bytes"]; delete entry["sha256"]; },
+      ]) {
+        const malformed = structuredClone(named) as unknown as { entries: Array<Record<string, unknown>> };
+        mutate(malformed.entries.find((entry) => entry["path"] === HOME_RUNTIME_LAUNCH_ALIAS_PATH)!);
+        expect(() => homeArtifactLaunchCapability(malformed as unknown as HomeArtifactManifest))
+          .toThrow("not an exact executable Bun twin");
+      }
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 
   test("portable Home rehearsal shares the supervised startup budget", () => {
@@ -654,14 +699,77 @@ describe("Dome Home artifact", () => {
     }
   });
 
-  test("rejects hardlinks and malformed USTAR checksums before extraction", async () => {
+  test("encodes one Bun body plus the exact extractable Home hardlink", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dome-home-tar-hardlink-"));
+    const extracted = await mkdtemp(join(tmpdir(), "dome-home-tar-hardlink-extract-"));
+    try {
+      await mkdir(join(root, "runtime"));
+      await writeFile(join(root, HOME_RUNTIME_PATH), "bun body\n", { mode: 0o755 });
+      await link(join(root, HOME_RUNTIME_PATH), join(root, HOME_RUNTIME_LAUNCH_ALIAS_PATH));
+      const tar = await createDeterministicTar(root, "dome");
+      expect(await createDeterministicTar(root, "dome")).toEqual(tar);
+      const inspected = inspectHomeArtifactTar(tar);
+      expect(inspected.entries.find((entry) => entry.path === "dome/runtime/bun")).toMatchObject({
+        type: "file", size: 9, linkTarget: null,
+      });
+      expect(inspected.entries.find((entry) => entry.path === "dome/runtime/Dome Home")).toEqual({
+        path: "dome/runtime/Dome Home",
+        type: "hardlink",
+        size: 0,
+        linkTarget: "dome/runtime/bun",
+      });
+      const tarPath = join(extracted, "artifact.tar");
+      await writeFile(tarPath, tar);
+      const child = Bun.spawn(["/usr/bin/tar", "-xf", tarPath, "-C", extracted], {
+        stdout: "ignore", stderr: "pipe",
+      });
+      expect(await child.exited).toBe(0);
+      const [runtimeInfo, aliasInfo] = await Promise.all([
+        lstat(join(extracted, "dome", HOME_RUNTIME_PATH)),
+        lstat(join(extracted, "dome", HOME_RUNTIME_LAUNCH_ALIAS_PATH)),
+      ]);
+      expect([runtimeInfo.dev, runtimeInfo.ino, runtimeInfo.nlink]).toEqual([
+        aliasInfo.dev, aliasInfo.ino, 2,
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(extracted, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects every other or malformed USTAR hardlink and bad checksums", async () => {
     const root = await mkdtemp(join(tmpdir(), "dome-home-tar-types-"));
     try {
       await writeFile(join(root, "file"), "payload\n");
       const original = await createDeterministicTar(root, "dome");
       const hardlink = Buffer.from(original);
       rewriteTarType(hardlink, 512, "1");
-      expect(() => inspectHomeArtifactTar(hardlink)).toThrow("unsupported entry type");
+      expect(() => inspectHomeArtifactTar(hardlink)).toThrow("hardlink has a body");
+
+      await mkdir(join(root, "runtime"));
+      await writeFile(join(root, HOME_RUNTIME_PATH), "");
+      await link(join(root, HOME_RUNTIME_PATH), join(root, HOME_RUNTIME_LAUNCH_ALIAS_PATH));
+      const normalized = await createDeterministicTar(root, "dome");
+      const aliasOffset = tarHeaderOffset(normalized, "dome/runtime/Dome Home");
+      const runtimeOffset = tarHeaderOffset(normalized, "dome/runtime/bun");
+      const ordinaryAlias = Buffer.from(normalized);
+      rewriteTarType(ordinaryAlias, aliasOffset, "0");
+      expect(() => inspectHomeArtifactTar(ordinaryAlias)).toThrow("reserved runtime alias");
+      const symlinkAlias = Buffer.from(normalized);
+      rewriteTarLink(symlinkAlias, aliasOffset, "bun");
+      expect(() => inspectHomeArtifactTar(symlinkAlias)).toThrow("reserved runtime alias");
+      const wrongTarget = Buffer.from(normalized);
+      rewriteTarLink(wrongTarget, aliasOffset, "dome/runtime/age", "1");
+      expect(() => inspectHomeArtifactTar(wrongTarget)).toThrow("unsupported hardlink");
+      const body = Buffer.from(normalized);
+      rewriteTarSize(body, aliasOffset, 1);
+      expect(() => inspectHomeArtifactTar(body)).toThrow("hardlink has a body");
+      const forward = Buffer.from(normalized);
+      const runtimeHeader = Buffer.from(forward.subarray(runtimeOffset, runtimeOffset + 512));
+      const aliasHeader = Buffer.from(forward.subarray(aliasOffset, aliasOffset + 512));
+      aliasHeader.copy(forward, runtimeOffset);
+      runtimeHeader.copy(forward, aliasOffset);
+      expect(() => inspectHomeArtifactTar(forward)).toThrow("unsupported hardlink");
 
       const corrupt = Buffer.from(original);
       corrupt[512] = (corrupt[512] ?? 0) ^ 1;
@@ -1021,11 +1129,38 @@ function rewriteTarType(tar: Buffer, headerOffset: number, type: string): void {
   rewriteTarChecksum(tar, headerOffset);
 }
 
-function rewriteTarLink(tar: Buffer, headerOffset: number, target: string): void {
-  tar[headerOffset + 156] = "2".charCodeAt(0);
+function rewriteTarLink(tar: Buffer, headerOffset: number, target: string, type = "2"): void {
+  tar[headerOffset + 156] = type.charCodeAt(0);
   tar.fill(0, headerOffset + 157, headerOffset + 257);
   Buffer.from(target).copy(tar, headerOffset + 157);
   rewriteTarChecksum(tar, headerOffset);
+}
+
+function rewriteTarSize(tar: Buffer, headerOffset: number, size: number): void {
+  tar.fill(0, headerOffset + 124, headerOffset + 136);
+  Buffer.from(`${size.toString(8).padStart(11, "0")}\0`).copy(tar, headerOffset + 124);
+  rewriteTarChecksum(tar, headerOffset);
+}
+
+function tarHeaderOffset(tar: Buffer, expectedPath: string): number {
+  let offset = 0;
+  while (offset + 512 <= tar.length) {
+    const header = tar.subarray(offset, offset + 512);
+    if (header.every((byte) => byte === 0)) break;
+    const text = (start: number, length: number) => {
+      const field = header.subarray(start, start + length);
+      const zero = field.indexOf(0);
+      return field.subarray(0, zero < 0 ? field.length : zero).toString();
+    };
+    const name = text(0, 100);
+    const prefix = text(345, 155);
+    const path = prefix === "" ? name : `${prefix}/${name}`;
+    if (path === expectedPath) return offset;
+    const sizeText = text(124, 12).trim();
+    const size = sizeText === "" ? 0 : Number.parseInt(sizeText, 8);
+    offset += 512 + size + ((512 - (size % 512)) % 512);
+  }
+  throw new Error(`missing tar header ${expectedPath}`);
 }
 
 function rewriteTarName(tar: Buffer, headerOffset: number, name: string): void {

@@ -12,6 +12,31 @@ function mockJson(status: number, body: unknown): void {
 }
 
 describe("DomeClient", () => {
+  test("tasks accepts only a runtime-valid Today document", async () => {
+    const valid = {
+      schema: "dome.daily.today/v1" as const,
+      date: "2026-07-16",
+      openTasks: [],
+      followups: [],
+      questions: [],
+      brief: null,
+      calendar: null,
+      hero: null,
+      counts: { openTasks: 0, followups: 0, questions: 0 },
+    };
+    const responses = [
+      new Response(JSON.stringify(valid), { status: 200 }),
+      new Response(JSON.stringify({ ...valid, schema: "dome.recents/v1" }), { status: 200 }),
+      new Response(JSON.stringify({ schema: "dome.daily.today/v1" }), { status: 200 }),
+    ];
+    globalThis.fetch = mock(async () => responses.shift()!) as never;
+    const client = new DomeClient();
+
+    expect(await client.tasks()).toEqual(valid);
+    await expect(client.tasks()).rejects.toThrow("Today response is incompatible");
+    await expect(client.tasks()).rejects.toThrow("Today response is incompatible");
+  });
+
   test("readiness strictly classifies valid, incompatible, failed, and auth responses", async () => {
     const responses = [
       new Response(JSON.stringify(READY_PRODUCT), { status: 200 }),

@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, realpathSync } from "node:fs";
-import { chmod, lstat, mkdir, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { chmod, link, lstat, mkdir, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 
@@ -101,6 +101,7 @@ async function fixture(): Promise<{
   await mkdir(join(artifact, "app", "bin"), { recursive: true });
   await mkdir(pwa, { recursive: true });
   await writeFile(runtime, "runtime bytes");
+  await link(runtime, join(artifact, "runtime", "Dome Home"));
   await writeFile(program, "program bytes");
   await chmod(runtime, 0o755);
   await chmod(program, 0o755);
@@ -118,7 +119,19 @@ async function verifyFixtureArtifact(root: string): Promise<HomeArtifactManifest
     await readFile(join(root, "app", "bin", "dome"), "utf8") !== "program bytes") {
     throw new Error("Dome artifact payload checksum mismatch");
   }
-  return { artifact: { id: ARTIFACT_ID }, product: { name: "Dome Home", version: "1.0.0" } } as HomeArtifactManifest;
+  const runtimeEntry = {
+    type: "file" as const,
+    path: "runtime/bun",
+    bytes: 13,
+    sha256: "0".repeat(64),
+    mode: "0755",
+  };
+  return {
+    artifact: { id: ARTIFACT_ID },
+    product: { name: "Dome Home", version: "1.0.0" },
+    runtime: { sha256: runtimeEntry.sha256 },
+    entries: [runtimeEntry, { ...runtimeEntry, path: "runtime/Dome Home" }],
+  } as unknown as HomeArtifactManifest;
 }
 
 function deps(f: Awaited<ReturnType<typeof fixture>>, fake: Fake, extra: Partial<HomeLifecycleDeps> = {}): HomeLifecycleDeps {
@@ -366,8 +379,13 @@ describe("manageHome macOS lifecycle", () => {
     expect(result.ready).toBe(true);
     expect(result.label).toBe(homeServiceLabelForVault(f.vault));
     const plist = await readFile(result.plist, "utf8");
+    expect(plist).toContain(
+      `<key>Program</key>\n  <string>${join(result.release!, "runtime", "Dome Home")}</string>\n` +
+      "  <key>ProgramArguments</key>\n  <array>\n    <string>Dome Home</string>\n" +
+      `    <string>${result.program}</string>`,
+    );
     for (const value of [
-      join(result.release!, "runtime", "bun"), result.program, "home", "--vault", f.vault, "--host", "127.0.0.1",
+      join(result.release!, "runtime", "Dome Home"), result.program, "home", "--vault", f.vault, "--host", "127.0.0.1",
       "--port", "3663", "--static-dir", join(result.release!, "app", "pwa", "dist"),
     ]) expect(plist).toContain(`<string>${value}</string>`);
     expect(plist).toContain("a&amp;&lt;b&gt;");

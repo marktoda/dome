@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, realpathSync } from "node:fs";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -216,7 +217,7 @@ test("runHomeLifecycle rejects secret persistence before coordination and preser
   const d: HomeLifecycleDeps = {
     platform: "darwin", uid: 501, launchAgentsDir: join(root, "agents"),
     artifactRoot: artifact, applicationSupportDir: join(root, "support"),
-    verifyArtifact: async () => ({ artifact: { id: "c".repeat(64) }, product: { name: "Dome Home", version: "1.0.0" } } as HomeArtifactManifest),
+    verifyArtifact: async () => legacyManifest("c".repeat(64), "1.0.0", "runtime", "0755"),
     publishRelease: rename, syncRelease: async () => {},
     launchctl: async (args) => {
       const target = args.at(-1) ?? "";
@@ -248,3 +249,37 @@ test("runHomeLifecycle rejects secret persistence before coordination and preser
   const record = JSON.parse(await readFile(result.installation, "utf8")) as { readonly environment: ReadonlyArray<{ readonly name: string; readonly value: string }> };
   expect(record.environment).toEqual([{ name: "DOME_SETTING", value: "kept" }]);
 });
+
+function legacyManifest(
+  artifactId: string,
+  version: string,
+  runtimeBytes: string,
+  runtimeMode: string,
+): HomeArtifactManifest {
+  const runtimeSha256 = createHash("sha256").update(runtimeBytes).digest("hex");
+  return {
+    schema: "dome.home-artifact/v1",
+    product: { name: "Dome Home", version },
+    target: { os: "darwin", arch: "arm64" },
+    build: { gitCommit: "fixture" },
+    artifact: { id: artifactId },
+    runtime: {
+      name: "bun",
+      version: "1.2.13",
+      sourceUrl: "https://example.invalid/bun.zip",
+      archiveSha256: "0".repeat(64),
+      sha256: runtimeSha256,
+    },
+    tools: [],
+    entrypoint: "bin/dome",
+    pwa: "app/pwa/dist",
+    distribution: { signed: false, notarized: false, upgradeSupported: false },
+    entries: [{
+      type: "file",
+      path: "runtime/bun",
+      bytes: Buffer.byteLength(runtimeBytes),
+      sha256: runtimeSha256,
+      mode: runtimeMode,
+    }],
+  };
+}

@@ -17,6 +17,7 @@ import {
   parseProductReadiness,
   type ProductReadiness,
 } from "../../../contracts/product-readiness";
+import { todayPayloadSchema } from "../../../src/surface/today-view";
 
 export type AgentTurnHandle = {
   turnId: string;
@@ -97,7 +98,16 @@ export class DomeClient {
 
   async tasks(date?: string): Promise<Today> {
     const q = date !== undefined ? `?date=${encodeURIComponent(date)}` : "";
-    return this.parse<Today>(await this.fetchResponse(this.request(`/tasks${q}`, { headers: this.authHeaders(false) })));
+    const value = await this.parse<unknown>(
+      await this.fetchResponse(this.request(`/tasks${q}`, { headers: this.authHeaders(false) })),
+    );
+    const parsed = todayPayloadSchema.safeParse(value);
+    if (typeof value !== "object" || value === null ||
+      (value as Record<string, unknown>)["schema"] !== "dome.daily.today/v1" ||
+      !parsed.success) {
+      throw new Error("Today response is incompatible.");
+    }
+    return value as Today;
   }
 
   async recents(limit?: number): Promise<Recents> {
