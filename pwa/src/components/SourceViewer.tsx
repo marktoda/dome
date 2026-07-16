@@ -1,8 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { DomeClient } from "../api/client";
 import type { Citation } from "../api/types";
 import type { SourceDocumentResult } from "../../../contracts/source-document";
 import { useModalFocus } from "../accessibility/modalFocus";
+
+const VaultMarkdown = lazy(async () => {
+  const module = await import("./VaultMarkdown");
+  return { default: module.VaultMarkdown };
+});
 
 type State =
   | { readonly kind: "loading" }
@@ -21,6 +26,7 @@ export function SourceViewer({
   readonly returnFocus: HTMLElement | null;
 }): React.ReactElement {
   const [state, setState] = useState<State>({ kind: "loading" });
+  const [view, setView] = useState<"rendered" | "raw">("rendered");
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const shortCommit = citation.commit?.slice(0, 8) ?? "revision unavailable";
@@ -77,6 +83,12 @@ export function SourceViewer({
               ? "Source failed to load"
               : "Source loaded"}
         </p>
+        {state.kind === "loaded" && state.result.status === "ok"
+          ? <div className="source-view-toggle" role="group" aria-label="Source display">
+              <button type="button" aria-pressed={view === "rendered"} onClick={() => setView("rendered")}>Rendered</button>
+              <button type="button" aria-pressed={view === "raw"} onClick={() => setView("raw")}>Raw</button>
+            </div>
+          : null}
         <div className="source-body">
           {state.kind === "loading" ? <p className="source-state">Loading source…</p> : null}
           {state.kind === "error" ? <p className="source-state source-error">{state.message}</p> : null}
@@ -84,7 +96,11 @@ export function SourceViewer({
             ? <p className="source-state source-error">{state.result.message}</p>
             : null}
           {state.kind === "loaded" && state.result.status === "ok"
-            ? <pre>{state.result.content}</pre>
+            ? view === "rendered"
+              ? <Suspense fallback={<p className="source-state">Rendering source…</p>}>
+                  <VaultMarkdown content={state.result.content} />
+                </Suspense>
+              : <pre className="source-raw">{state.result.content}</pre>
             : null}
         </div>
       </section>

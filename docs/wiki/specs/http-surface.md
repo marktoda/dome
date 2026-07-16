@@ -122,7 +122,9 @@ route. Responses are capped at 512 KiB; the Git Adapter probes uncompressed
 blob size before reading or UTF-8 decoding the object. The closed
 `dome.source-document/v1` contract reports `ok`, `invalid-path`,
 `invalid-commit`, `not-adopted`, `not-found`, `too-large`, or `unavailable`.
-The PWA renders successful content as inert plain text.
+The PWA defaults successful content to safe rendered CommonMark/GFM, including
+inert Obsidian wiki-links, and retains an exact raw toggle. Raw HTML and remote
+images are never activated by the rendered view.
 
 The session routes are backed by **AgentRuntime** (`src/assistant/runtime.ts`).
 The shipped adapter uses the co-located AI SDK loop in `src/assistant/`; a

@@ -40,7 +40,7 @@ describe("Recents", () => {
       const row = screen.getByRole("button", { name: /Robinhood Chain/ });
       fireEvent.click(row);
       await waitFor(() => expect(screen.getByRole("dialog")).toBeDefined());
-      expect(screen.getByText("Adopted activity evidence", { exact: false })).toBeDefined();
+      await waitFor(() => expect(screen.getByText("Adopted activity evidence", { exact: false })).toBeDefined());
       fireEvent.keyDown(document, { key: "Escape" });
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
       expect(document.activeElement).toBe(row);

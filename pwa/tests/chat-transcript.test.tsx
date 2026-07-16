@@ -25,7 +25,7 @@ describe("ChatTranscript", () => {
     expect(screen.getByText(/updated wiki\/todo\.md/)).toBeTruthy();
   });
 
-  test("opens an exact citation as safe plain text and returns focus on Escape", async () => {
+  test("opens an exact citation as safe Markdown with an exact raw view and returns focus on Escape", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = input instanceof Request ? input.url : String(input);
@@ -55,13 +55,21 @@ describe("ChatTranscript", () => {
       await new Promise<void>((resolve) => queueMicrotask(resolve));
       expect(screen.getByRole("dialog")).toBeDefined();
       expect(document.activeElement).toBe(close);
+      await waitFor(() => expect(screen.getByText("Source loaded")).toBeDefined());
+      const rendered = screen.getByRole("button", { name: "Rendered" });
+      const raw = screen.getByRole("button", { name: "Raw" });
+      expect(rendered.getAttribute("aria-pressed")).toBe("true");
+      await waitFor(() => expect(screen.getByRole("heading", { name: "Literal source", level: 1 })).toBeDefined());
+      expect(document.querySelector(".source-body script")).toBeNull();
+      raw.focus();
       fireEvent.keyDown(document, { key: "Tab" });
       expect(document.activeElement).toBe(close);
       fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
-      expect(document.activeElement).toBe(close);
-      await waitFor(() => expect(screen.getByText(/<script>never active<\/script>/)).toBeDefined());
+      expect(document.activeElement).toBe(raw);
+      fireEvent.click(raw);
+      expect(raw.getAttribute("aria-pressed")).toBe("true");
+      expect(screen.getByText(/<script>never active<\/script>/)).toBeDefined();
       expect(document.querySelector(".source-body script")).toBeNull();
-      expect(screen.getByText("Source loaded")).toBeDefined();
       expect(document.querySelector(".source-body[aria-live]")).toBeNull();
 
       fireEvent.keyDown(document, { key: "Escape" });

@@ -362,7 +362,8 @@ Ask supports Stop, Retry, timeout, premature EOF, host restart, and session
 recreation. Other devices and Today remain responsive during generation.
 
 Citations and Activity rows open an adopted source reader with path, commit,
-and relevant content. This closes the Recall loop before adding more panels.
+and readable inert Markdown plus an exact raw view. This closes the Recall
+loop before adding more panels.
 
 ### PWA platform
 
@@ -513,8 +514,10 @@ the cited commit when it is the current adopted commit or retained adopted
 history. The reader checks Git blob metadata before allocation, caps responses
 at 512 KiB, excludes engine metadata, and maps repository failures to typed
 unavailability. The PWA binds every successful response back to the requested
-path and commit and presents it as inert plain text in a keyboard-contained
-dialog. Persistent device-attributed mutation receipts remain P3.3d.
+path and commit and presents it as safe rendered CommonMark/GFM with inert
+Obsidian wiki-links and an exact raw toggle in a keyboard-contained dialog.
+Raw HTML and remote images are never activated. Persistent device-attributed
+mutation receipts remain P3.3d.
 
 **Checkpoint P3.3d implemented 2026-07-12.** The Product Host owns a separate,
 non-rebuildable `request-receipts.db` using WAL with full synchronous durability.

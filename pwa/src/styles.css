@@ -315,8 +315,8 @@ input.box:checked { background: var(--amber); border-color: var(--amber); }
 .changes { display: flex; flex-direction: column; gap: 2px; margin-top: 9px; }
 .change { font: 500 11px var(--mono); color: var(--sage); }
 
-/* Exact cited-source reader: plain text is intentional. Vault content is
-   never interpreted as active markup inside the product shell. */
+/* Exact cited-source reader: Markdown is parsed into inert React elements;
+   raw HTML and remote images are never activated inside the product shell. */
 .source-backdrop {
   position: fixed; inset: 0; z-index: 80; display: flex; align-items: flex-end;
   height: 100%; height: 100svh; height: 100dvh;
@@ -333,8 +333,43 @@ input.box:checked { background: var(--amber); border-color: var(--amber); }
 .source-head p { margin-top: 4px; font: 500 10px var(--mono); color: var(--text-dim); }
 .source-close { width: 44px; height: 44px; flex: none; border-radius: 50%; color: var(--text-soft); font-size: 23px; line-height: 1; }
 .source-close:hover, .source-close:focus-visible { background: var(--sage-bg); color: var(--sage); }
+.source-view-toggle { display: flex; gap: 4px; padding: 7px 12px; border-bottom: 1px solid var(--border); }
+.source-view-toggle button { min-height: 36px; padding: 0 12px; border-radius: 8px; color: var(--text-dim); font: 600 11px var(--mono); }
+.source-view-toggle button[aria-pressed="true"] { background: var(--sage-bg); color: var(--sage); }
 .source-body { min-height: 9rem; overflow: auto; overscroll-behavior: contain; }
-.source-body pre { padding: 18px; white-space: pre-wrap; overflow-wrap: anywhere; font: 400 12px/1.65 var(--mono); color: var(--text-soft); tab-size: 2; }
+.source-raw { padding: 18px; white-space: pre-wrap; overflow-wrap: anywhere; font: 400 12px/1.65 var(--mono); color: var(--text-soft); tab-size: 2; }
+.source-markdown { padding: 20px; color: var(--text-soft); font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
+.source-markdown > :first-child { margin-top: 0; }
+.source-markdown > :last-child { margin-bottom: 0; }
+.source-markdown h1, .source-markdown h2, .source-markdown h3,
+.source-markdown h4, .source-markdown h5, .source-markdown h6 { margin: 1.35em 0 .55em; color: var(--text-strong); line-height: 1.25; text-wrap: pretty; }
+.source-markdown h1 { font-size: 1.65rem; }
+.source-markdown h2 { padding-bottom: .28em; border-bottom: 1px solid var(--border-mid); font-size: 1.35rem; }
+.source-markdown h3 { font-size: 1.12rem; }
+.source-markdown h4, .source-markdown h5, .source-markdown h6 { font-size: 1rem; }
+.source-markdown p, .source-markdown ul, .source-markdown ol,
+.source-markdown blockquote, .source-markdown pre, .source-markdown table { margin: 0 0 1em; }
+.source-markdown ul, .source-markdown ol { padding-left: 1.5rem; }
+.source-markdown li + li { margin-top: .28em; }
+.source-markdown li > ul, .source-markdown li > ol { margin-top: .28em; margin-bottom: 0; }
+.source-markdown .contains-task-list { padding-left: 0; list-style: none; }
+.source-markdown .task-list-item { display: flex; align-items: flex-start; gap: 9px; }
+.source-markdown .task-list-item input { width: 17px; height: 17px; flex: none; margin-top: .25em; accent-color: var(--sage); opacity: 1; }
+.source-markdown blockquote { padding: .2em 0 .2em 1rem; border-left: 3px solid var(--sage-bdr); color: var(--text-dim); }
+.source-markdown blockquote > :last-child { margin-bottom: 0; }
+.source-markdown strong { color: var(--text-strong); }
+.source-markdown a, .source-wikilink { color: var(--sage); text-decoration: underline; text-decoration-color: var(--sage-bdr); text-underline-offset: 2px; }
+.source-wikilink::before { content: "[["; color: var(--text-faint); text-decoration: none; }
+.source-wikilink::after { content: "]]"; color: var(--text-faint); text-decoration: none; }
+.source-link-label { color: var(--text-soft); text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+.source-image-label { display: inline-block; padding: 2px 7px; border: 1px solid var(--border-mid); border-radius: 6px; color: var(--text-dim); font: 500 11px var(--mono); }
+.source-markdown code { padding: .13em .32em; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-screen); color: var(--amber); font: 400 .88em/1.5 var(--mono); }
+.source-markdown pre { overflow-x: auto; padding: 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-screen); }
+.source-markdown pre code { padding: 0; border: 0; background: transparent; color: var(--text-soft); font-size: 12px; white-space: pre; }
+.source-markdown table { width: 100%; border-spacing: 0; border-collapse: collapse; font-size: 12px; }
+.source-markdown th, .source-markdown td { padding: 7px 9px; border: 1px solid var(--border-mid); text-align: left; vertical-align: top; }
+.source-markdown th { background: var(--bg-screen); color: var(--text-strong); }
+.source-markdown hr { margin: 1.35em 0; border: 0; border-top: 1px solid var(--border-mid); }
 .source-state { padding: 30px 18px; text-align: center; font: 500 12px var(--mono); color: var(--text-dim); }
 .source-error { color: var(--coral); }
 .source-a11y-status { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
