@@ -10,7 +10,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { diagnosticEffect, patchEffect } from "../../src/core/effect";
-import { defineProcessor, type Processor } from "../../src/core/processor";
+import {
+  defineProcessor,
+  type InspectionScope,
+  type Processor,
+} from "../../src/core/processor";
 import { transientProcessorError } from "../../src/core/processor-error";
 import { commitOid } from "../../src/core/source-ref";
 import {
@@ -52,6 +56,7 @@ async function openRuntime(
   vaultPath: string,
   run: Parameters<typeof defineProcessor>[0]["run"],
   extras: ReadonlyArray<Processor<unknown>> = [],
+  inspection?: InspectionScope,
 ): Promise<VaultRuntime> {
   const processor = defineProcessor({
     id: PROCESSOR_ID,
@@ -62,6 +67,7 @@ async function openRuntime(
       { kind: "read", paths: ["wiki/**"] },
       { kind: "patch.auto", paths: ["wiki/**"] },
     ],
+    ...(inspection !== undefined ? { inspection } : {}),
     run,
   });
   const processors = [processor, ...extras];
@@ -153,6 +159,46 @@ describe("retryScheduledProcessor", () => {
         .not.toContain("test.agent.brief-failed");
       expect(getCursor(runtime.projectionDb, PROCESSOR_ID)).toEqual(cursorBefore);
       expect(attempts).toBe(2);
+    } finally {
+      await runtime.close();
+    }
+  }, 30_000);
+
+  test("a successful no-effect retry resolves source-less and inspected-path failures", async () => {
+    const vaultPath = await makeVault();
+    let recovered = false;
+    const runtime = await openRuntime(vaultPath, async (ctx) =>
+      recovered
+        ? []
+        : [
+            diagnosticEffect({
+              severity: "warning",
+              code: "test.source-less-failure",
+              message: "provider failed before selecting a source",
+              sourceRefs: [],
+            }),
+            diagnosticEffect({
+              severity: "warning",
+              code: "test.path-backed-failure",
+              message: "provider failed while inspecting the seed",
+              sourceRefs: [ctx.sourceRef("wiki/seed.md")],
+            }),
+          ], [], { kind: "all-readable-markdown" });
+    try {
+      await runCompilerHostTick({ runtime, now: () => NOW });
+      expect(queryDiagnostics(runtime.projectionDb, { processorId: PROCESSOR_ID })
+        .map((diagnostic) => diagnostic.code).sort())
+        .toEqual(["test.path-backed-failure", "test.source-less-failure"]);
+
+      recovered = true;
+      const result = await retryScheduledProcessor({
+        runtime,
+        processorId: PROCESSOR_ID,
+      });
+
+      expect(result.kind).toBe("completed");
+      expect(queryDiagnostics(runtime.projectionDb, { processorId: PROCESSOR_ID }))
+        .toEqual([]);
     } finally {
       await runtime.close();
     }

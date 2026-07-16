@@ -1727,8 +1727,11 @@ envelope, dispatches through `dispatchGardenRun`, capability-checks every
 effect, and routes garden patches through sub-Proposals. HEAD must already be
 adopted; pending drift reports `sync-needed` and points to `dome sync`.
 
-The retry does **not** call the scheduler and does not read, consume, or update
-the live `schedule_cursors` row; the ordinary next cron slot remains unchanged.
+The retry does **not** call the scheduler and does not consume or advance the
+live `schedule_cursors` row; the ordinary next cron slot remains unchanged. If
+the retry must rebuild a stale projection (which wipes volatile cursor rows),
+it snapshots the target processor's exact live row and restores it after the
+rebuild.
 Eligibility requires a garden processor with exactly one declared schedule
 trigger. The engine does not make a non-idempotent processor safe: callers
 should retry only after repairing the cause, while processors such as the

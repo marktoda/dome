@@ -997,10 +997,10 @@ async function retryScheduledProcessorForBranch(
         ...processorDiagnostics,
         ...routingDiagnostics,
       ];
-      // Schedule dispatch has no changed-path set. A successful explicit
-      // retry scopes reconciliation to paths the processor actually cited,
-      // so the previous failure finding clears without resolving unrelated
-      // processor diagnostics elsewhere in the vault.
+      // Schedule dispatch has no changed-path set. Reconcile only the scope
+      // the processor declared it inspected plus paths its effects cited.
+      // The inspection half matters for a successful no-effect retry; cited
+      // paths keep effect-backed recovery precise.
       const citedPaths = Object.freeze([
         ...new Set(
           outcome.result.effects.flatMap((effect) =>
@@ -1009,6 +1009,9 @@ async function retryScheduledProcessorForBranch(
               : []
           ),
         ),
+      ]);
+      const resolutionPaths = Object.freeze([
+        ...new Set([...outcome.result.inspectedPaths, ...citedPaths]),
       ]);
       const adoptedSubProposals = subProposalResults.filter((result) =>
         result.adopted
@@ -1020,22 +1023,22 @@ async function retryScheduledProcessorForBranch(
         blockedSubProposals === 0 &&
         outcome.routing.rejectedPatchCount === 0 &&
         allDiagnostics.every((diagnostic) => diagnostic.severity === "info");
-      if (fullyRecovered && citedPaths.length > 0) {
+      if (fullyRecovered) {
         await deferredResolveFacts?.({
           processorId: processor.id,
           runId: outcome.result.runId,
-          inspectedPaths: citedPaths,
+          inspectedPaths: resolutionPaths,
         });
         await deferredResolveDiagnostics?.({
           processorId: processor.id,
           runId: outcome.result.runId,
-          inspectedPaths: citedPaths,
+          inspectedPaths: resolutionPaths,
           emittedDiagnostics: allDiagnostics,
         });
         await deferredResolveQuestions?.({
           processorId: processor.id,
           runId: outcome.result.runId,
-          inspectedPaths: citedPaths,
+          inspectedPaths: resolutionPaths,
           emittedQuestions: outcome.result.effects.flatMap((effect) =>
             effect.kind === "question" ? [effect] : []
           ),
