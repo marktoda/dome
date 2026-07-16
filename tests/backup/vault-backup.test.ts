@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { createVaultBackup, generateBackupIdentity, restoreVaultBackup, verifyVaultBackup } from "../../src/backup/vault-backup";
-import { add, commit, initRepo } from "../../src/git";
+import { add, commit, initRepo, readStandaloneBackupSource, statusMatrix } from "../../src/git";
 import { extractTarFile, inspectTar, writeTarTree } from "../../src/backup/tar";
 import { openDeviceAuthority } from "../../src/device-authority/device-authority";
 import { homeInstallationPaths } from "../../src/product-host/home-installation";
@@ -86,6 +86,31 @@ describe("encrypted vault backup checkpoint", () => {
 
       const archiveHash = fileHash(await readFile(archive));
       const identityHash = fileHash(await readFile(identity));
+      const mismatchedTree = join(root, "mismatched-tree");
+      await extractArchiveForTest(archive, mismatchedTree);
+      const mismatchedBytes = Buffer.from("# Different working tree\n");
+      await writeFile(join(mismatchedTree, "vault", "index.md"), mismatchedBytes);
+      const mismatchedManifestPath = join(mismatchedTree, "manifest.json");
+      const mismatchedManifest = JSON.parse(await readFile(mismatchedManifestPath, "utf8")) as {
+        entries: Array<{ path: string; size: number; sha256?: string }>;
+      };
+      const mismatchedEntry = mismatchedManifest.entries.find((entry) => entry.path === "vault/index.md");
+      if (!mismatchedEntry) throw new Error("index.md manifest fixture missing");
+      mismatchedEntry.size = mismatchedBytes.byteLength;
+      mismatchedEntry.sha256 = fileHash(mismatchedBytes);
+      await writeFile(mismatchedManifestPath, `${JSON.stringify(mismatchedManifest, null, 2)}\n`);
+      const mismatchedArchive = join(root, "mismatched.age");
+      await writeTarTree(mismatchedTree, mismatchedArchive);
+      const mismatchedTarget = join(root, "mismatched-target");
+      const rejectedMismatch = await restoreVaultBackup({
+        archive: mismatchedArchive,
+        identity,
+        target: mismatchedTarget,
+      }, tools);
+      expect(rejectedMismatch.status).toBe("error");
+      expect(rejectedMismatch.error).toContain("reconstructed working tree differs from committed Git: index.md");
+      expect(await pathPresent(mismatchedTarget)).toBeFalse();
+
       const restored = join(root, "restored");
       const existingEmpty = join(root, "existing-empty");
       await mkdir(existingEmpty);
@@ -101,6 +126,11 @@ describe("encrypted vault backup checkpoint", () => {
       expect(fileHash(await readFile(archive))).toBe(archiveHash);
       expect(fileHash(await readFile(identity))).toBe(identityHash);
       expect(await readFile(join(restored, "index.md"), "utf8")).toBe("# Vault\n");
+      expect((await readStandaloneBackupSource(restored)).clean).toBeTrue();
+      expect(await statusMatrix(restored)).toEqual([
+        [".dome/config.yaml", 1, 1, 1],
+        ["index.md", 1, 1, 1],
+      ]);
       for (const name of ["answers.db", "proposals.db", "outbox.db", "runs.db", "request-receipts.db", "projection.db"]) {
         const db = new Database(join(restored, ".dome", "state", name), { readonly: true });
         expect(db.query<{ value: string }, []>("SELECT value FROM evidence").get()?.value).toBe(name);
@@ -597,10 +627,14 @@ async function extractArchiveForTest(archive: string, destination: string): Prom
   await mkdir(destination, { recursive: true });
   for (const entry of entries) {
     const target = join(destination, entry.path);
-    if (entry.type === "directory") await mkdir(target, { recursive: true });
+    if (entry.type === "directory") {
+      await mkdir(target, { recursive: true });
+      await chmod(target, entry.mode);
+    }
     else {
       await mkdir(dirname(target), { recursive: true });
       await extractTarFile(archive, entry.path, target);
+      await chmod(target, entry.mode);
     }
   }
 }

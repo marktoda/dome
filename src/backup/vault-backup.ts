@@ -18,6 +18,7 @@ import { compareStrings } from "../core/compare";
 import { withExclusiveFileLock } from "../engine/host/file-lock";
 import { acquireOperationalWriterLease } from "../operational-state/writer-barrier";
 import {
+  checkoutPathsAtRef,
   readStandaloneBackupSource,
   readStandaloneBackupBlob,
   validateStandaloneBackupRepository,
@@ -422,8 +423,22 @@ async function stageVerifiedBackup(input: {
   const manifest = await validatePlainArchive(tarPath);
   await extractTarStrict(tarPath, restored);
   const vault = join(restored, "vault");
-  await validateReconstructedVault(vault, manifest);
+  await validateReconstructedVault(vault, manifest, false);
+  await rebuildRestoredGitIndex(vault);
   return Object.freeze({ manifest, vault });
+}
+
+async function rebuildRestoredGitIndex(vault: string): Promise<void> {
+  const source = await validateStandaloneBackupRepository(vault);
+  await checkoutPathsAtRef({
+    path: vault,
+    ref: source.head,
+    filepaths: source.tree.map((entry) => entry.path),
+    force: true,
+  });
+  if (!(await readStandaloneBackupSource(vault)).clean) {
+    throw new Error("reconstructed Git index and working tree are not clean at HEAD");
+  }
 }
 
 async function invalidateRestoredAuthority(
@@ -711,11 +726,18 @@ async function extractTarStrict(tarPath: string, destination: string): Promise<v
   await extractTarTree(tarPath, destination);
 }
 
-async function validateReconstructedVault(vault: string, manifest: BackupManifest): Promise<void> {
+async function validateReconstructedVault(
+  vault: string,
+  manifest: BackupManifest,
+  requireCleanIndex = true,
+): Promise<void> {
   if (!(await exists(join(vault, ".git", "HEAD")))) {
     throw new Error("reconstructed Git directory is missing HEAD");
   }
   const source = await validateStandaloneBackupRepository(vault);
+  if (requireCleanIndex && !source.clean) {
+    throw new Error("reconstructed Git index and working tree are not clean at HEAD");
+  }
   const refs = source.refs;
   if (source.head !== manifest.source.head || source.branch.replace(/^refs\/heads\//, "") !== manifest.source.branch || sha256(Buffer.from(JSON.stringify(refs))) !== manifest.source.refDigest) {
     throw new Error("reconstructed Git state does not match the backup manifest");

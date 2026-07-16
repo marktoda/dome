@@ -509,7 +509,10 @@ sizes/SHA-256 values, tar structure and size budgets, and every database.
 `restore` accepts only an absent absolute target. It decrypts into a private
 sibling staging directory, shares the same closed verification and one
 extraction path, reconstructs standalone Git and every store, and increments
-and checkpoints the Device Authority epoch before publication. Existing
+the excluded recomputable Git index from the exact restored HEAD before
+publication, then increments and checkpoints the Device Authority epoch.
+The published vault therefore opens as a clean ordinary Git worktree rather
+than showing every committed path as deleted/untracked. Existing
 credentials and unused grants therefore fail; an archive with no prior Device
 Authority reports that truth explicitly. The requested parent is canonicalized
 once so symlink retargeting cannot change the lock, staging, or publication
