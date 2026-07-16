@@ -49,6 +49,7 @@ export type TodayItem = {
   text: string;
   path: string;
   line: number | null;
+  source?: "daily" | "backlog";
   dueDate: string | null;
   origin?: string;
   entities?: string[];

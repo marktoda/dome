@@ -259,4 +259,73 @@ describe("buildTodayViewModel", () => {
     );
     expect(vm.totalOpen).toBe(5); // counts 4 + 0 + 1
   });
+
+  test("partitions only backlog rows at the 30-day boundary into aged backlog", () => {
+    const vm = buildTodayViewModel(parseTodayView({
+      date: "2026-07-01",
+      openTasks: [
+        { text: "backlog 29", path: "p", line: 1, source: "backlog", dueDate: "2026-06-02" },
+        { text: "backlog 30", path: "p", line: 2, source: "backlog", dueDate: "2026-06-01" },
+        { text: "daily 60", path: "d", line: 3, source: "daily", dueDate: "2026-05-02" },
+      ],
+      followups: [],
+      questions: [],
+      counts: { openTasks: 3, followups: 0, questions: 0 },
+      brief: null,
+      calendar: null,
+      hero: null,
+    }));
+
+    expect(vm.agedBacklog.map((task) => task.text)).toEqual(["backlog 30"]);
+    expect(vm.stillOpen.overdue.map((task) => task.text)).toEqual(["backlog 29", "daily 60"]);
+    expect(vm.totalOpen).toBe(3);
+  });
+
+  test("partitions every loaded row exactly once and reports count-only omissions separately", () => {
+    const daily = Array.from({ length: 12 }, (_, index) => ({
+      text: `daily ${index}`,
+      path: "wiki/dailies/2026-07-01.md",
+      line: index + 1,
+      source: "daily",
+      dueDate: "2026-05-01",
+    }));
+    const backlog = Array.from({ length: 12 }, (_, index) => ({
+      text: `backlog ${index}`,
+      path: "wiki/tasks.md",
+      line: index + 1,
+      source: "backlog",
+      dueDate: "2026-05-01",
+    }));
+    const vm = buildTodayViewModel(parseTodayView({
+      date: "2026-07-01",
+      openTasks: [...daily, ...backlog],
+      followups: [],
+      questions: [],
+      counts: { openTasks: 40, followups: 0, questions: 0 },
+      brief: null,
+      calendar: null,
+      hero: null,
+    }));
+
+    const ordinaryRows = Object.values(vm.stillOpen).flat();
+    expect(ordinaryRows.map((task) => task.text)).toEqual(daily.map((task) => task.text));
+    expect(vm.agedBacklog.map((task) => task.text)).toEqual(backlog.map((task) => task.text));
+    expect(ordinaryRows.length + vm.agedBacklog.length).toBe(24);
+    expect(vm.omittedOpenCount).toBe(16);
+    expect(vm.totalOpen).toBe(40);
+  });
+
+  test("omitted open count never goes negative when loaded rows exceed stale counts", () => {
+    const vm = buildTodayViewModel(parseTodayView({
+      date: "2026-07-01",
+      openTasks: [
+        { text: "one", path: "p", line: 1, source: "daily", dueDate: null },
+        { text: "two", path: "p", line: 2, source: "daily", dueDate: null },
+      ],
+      followups: [],
+      questions: [],
+      counts: { openTasks: 1, followups: 0, questions: 0 },
+    }));
+    expect(vm.omittedOpenCount).toBe(0);
+  });
 });

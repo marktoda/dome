@@ -43,13 +43,16 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
     brief,
     calendar,
     stillOpen,
+    agedBacklog,
+    omittedOpenCount,
     counts,
     totalOpen,
   } = vm;
   const isAllClear = totalOpen === 0;
   const hasOpenItems =
     stillOpen.overdue.length + stillOpen.dueToday.length + stillOpen.thisWeek.length +
-    stillOpen.later.length + stillOpen.someday.length > 0;
+    stillOpen.later.length + stillOpen.someday.length + agedBacklog.length +
+    omittedOpenCount > 0;
   // True total for the "Still open" header (tasks + followups).
   const trueOpenCount = counts.openTasks + counts.followups;
 
@@ -197,7 +200,7 @@ export function renderTodayHtml(data: unknown, opts: TodayHtmlOptions): string {
     : "";
 
   const stillOpenHtml = hasOpenItems
-    ? renderStillOpenHtml(stillOpen, date, trueOpenCount)
+    ? renderStillOpenHtml(stillOpen, agedBacklog, date, trueOpenCount, omittedOpenCount)
     : "";
 
   const allClearHtml = isAllClear
@@ -559,24 +562,18 @@ function renderReviewsHtml(
 
 function renderStillOpenHtml(
   sections: TodaySections,
+  agedBacklog: ReadonlyArray<TodayTaskRow>,
   today: string,
   trueCount: number,
+  omittedOpenCount: number,
 ): string {
-  // Buckets come from the view-model (same overdue/today/this-week partition the
-  // local filters used to compute). The cockpit shows these three inline and
-  // folds later + someday into the "+N more, later" chip — its presentation
-  // choice; the CLI surfaces them as sections instead.
+  // Buckets come from the view-model. The cockpit shows ordinary
+  // overdue/today/this-week inline, then folds later work and aged backlog into
+  // separate expandable groups. Count-only omissions are not expandable.
   const overdue = sections.overdue;
   const todayItems = sections.dueToday;
   const thisWeek = sections.thisWeek;
-  // Full hero-deduped list (urgency-ordered) for the no-urgent-content fallback.
-  const items: ReadonlyArray<TodayTaskRow> = [
-    ...sections.overdue,
-    ...sections.dueToday,
-    ...sections.thisWeek,
-    ...sections.later,
-    ...sections.someday,
-  ];
+  const laterItems: ReadonlyArray<TodayTaskRow> = [...sections.later, ...sections.someday];
 
   function renderItem(t: TodayTaskRow): string {
     const glyph = taskGlyph(t, today);
@@ -610,36 +607,29 @@ function renderStillOpenHtml(
   const overdueHtml = renderBucket("overdue", "bucket-overdue", overdue);
   const todayHtml = renderBucket("today", "bucket-today", todayItems);
   const thisWeekHtml = renderBucket("this week", "bucket-week", thisWeek);
+  const inlineHtml = `${overdueHtml}${todayHtml}${thisWeekHtml}`;
 
-  // Fall back to a flat list if all items are in the "later" bucket (no urgent items)
-  // — this keeps the chip intact but still shows a flat list for the common case where
-  // all displayed items are undated/far-future and only the chip is rendered.
-  const hasUrgentContent = overdueHtml.length > 0 || todayHtml.length > 0 || thisWeekHtml.length > 0;
-  const itemsHtml = hasUrgentContent
-    ? `${overdueHtml}${todayHtml}${thisWeekHtml}`
-    : items.map(renderItem).join("\n      ");
-
-  const gridOrBuckets = hasUrgentContent
-    ? itemsHtml
-    : `<div class="still-open-grid">${itemsHtml}</div>`;
-
-  // Derive the chip from what is actually rendered inline so the two branches can't
-  // disagree with the header: (items shown inline) + chipCount === trueCount.
-  // urgent branch shows only the overdue/today/this-week buckets; fallback shows all items.
-  const shownInline = hasUrgentContent
-    ? overdue.length + todayItems.length + thisWeek.length
-    : items.length;
-  const chipCount = Math.max(0, trueCount - shownInline);
-
-  const chipHtml = chipCount > 0
-    ? `<div class="still-open-more"><span>+</span><span>${chipCount} more, later</span></div>`
+  const laterHtml = laterItems.length > 0
+    ? `<details class="still-open-fold">
+      <summary class="still-open-more"><span>+</span><span>${laterItems.length} more, later</span></summary>
+      <div class="still-open-grid">${laterItems.map(renderItem).join("\n      ")}</div>
+    </details>`
+    : "";
+  const agedBacklogHtml = agedBacklog.length > 0
+    ? `<details class="still-open-fold">
+      <summary class="still-open-more"><span>${agedBacklog.length}</span><span>older backlog ${agedBacklog.length === 1 ? "item" : "items"} · 30+ days overdue</span></summary>
+      ${renderBucket("older backlog · 30+ days overdue", "bucket-overdue", agedBacklog)}
+    </details>`
+    : "";
+  const omittedHtml = omittedOpenCount > 0
+    ? `<div class="still-open-more"><span>&hellip;</span><span>${omittedOpenCount} additional open ${omittedOpenCount === 1 ? "item" : "items"} omitted from this view</span></div>`
     : "";
 
   return `<div class="still-open-header">
     <span class="section-label" style="margin-bottom:0">Still open</span>
     <span class="still-open-count">${trueCount}</span>
   </div>
-  ${gridOrBuckets}${chipHtml}`;
+  ${inlineHtml}${laterHtml}${agedBacklogHtml}${omittedHtml}`;
 }
 
 function taskGlyph(

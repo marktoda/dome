@@ -135,6 +135,7 @@ export function Brief(
   { today, onResolve, onSettle = async () => false, collapsed = false, hasMessages = false, onToggle = () => {}, interactive = true }: Props,
 ): React.ReactElement | null {
   const [showAll, setShowAll] = useState(false);
+  const [showAgedBacklog, setShowAgedBacklog] = useState(false);
   const [settlements, setSettlements] = useState<ReadonlyMap<string, "pending" | "success" | "failure">>(new Map());
   const [settlementNotice, setSettlementNotice] = useState<string | null>(null);
   const settlementInFlight = useRef(new Set<string>());
@@ -166,6 +167,8 @@ export function Brief(
     reviews,
     attentionBacklog,
     stillOpen,
+    agedBacklog,
+    omittedOpenCount,
     counts,
     totalOpen,
   } = vm;
@@ -212,7 +215,7 @@ export function Brief(
   const { overdue, dueToday, thisWeek, later, someday } = stillOpen;
   const laterAll = [...later, ...someday];
   const shownInline = overdue.length + dueToday.length + thisWeek.length;
-  const hidden = openCount - shownInline; // == laterAll.length
+  const hidden = laterAll.length;
   const agendaEvents = calendar !== null ? calendar.events.slice(0, AGENDA_CAP) : [];
   const agendaMore = calendar !== null ? calendar.events.length - agendaEvents.length : 0;
 
@@ -242,7 +245,7 @@ export function Brief(
         </div>
       ) : null}
 
-      {shownInline > 0 || laterAll.length > 0 ? (
+      {shownInline > 0 || laterAll.length > 0 || agedBacklog.length > 0 || omittedOpenCount > 0 ? (
         <div className="section">
           <div className="label">Still open</div>
           <Bucket label="overdue" cls="bucket-overdue" items={overdue} settlements={settlements} onSettle={handleSettle} interactive={interactive} />
@@ -254,6 +257,31 @@ export function Brief(
           ) : null}
           {showAll && hidden > 0 ? (
             <button type="button" className="brief-more" onClick={() => setShowAll(false)}>show less ▴</button>
+          ) : null}
+          {agedBacklog.length > 0 ? (
+            <>
+              <button
+                type="button"
+                className="brief-more"
+                aria-expanded={showAgedBacklog}
+                onClick={() => setShowAgedBacklog((shown) => !shown)}
+              >
+                {agedBacklog.length} older backlog {agedBacklog.length === 1 ? "item" : "items"} · 30+ days overdue {showAgedBacklog ? "▴" : "▾"}
+              </button>
+              {showAgedBacklog ? (
+                <Bucket
+                  label="older backlog · 30+ days overdue"
+                  cls="bucket-overdue"
+                  items={agedBacklog}
+                  settlements={settlements}
+                  onSettle={handleSettle}
+                  interactive={interactive}
+                />
+              ) : null}
+            </>
+          ) : null}
+          {omittedOpenCount > 0 ? (
+            <div className="brief-more">{omittedOpenCount} additional open {omittedOpenCount === 1 ? "item" : "items"} omitted from this view</div>
           ) : null}
         </div>
       ) : null}

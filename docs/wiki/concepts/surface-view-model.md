@@ -48,12 +48,19 @@ The worked instance ([[wiki/specs/daily-surface]]; `src/surface/today-view.ts`):
   (`assets/extensions/dome.daily/processors/today.ts`) emits `satisfies
   TodayPayload`; the agent tools and the MCP brief validate against the schema.
 - **View-model** — `buildTodayViewModel`: per-task `TaskUrgency`
-  (overdue / due-today / this-week / later / someday), hero-dedup, the five
-  urgency sections, `totalOpen`.
-- **Paint** — the CLI briefing renders all five sections; the HTTP cockpit
-  renders overdue/today/this-week and folds the rest into a "+N more, later"
-  chip. Same model, two presentations — and they can no longer disagree on
-  which tasks are overdue.
+  (overdue / due-today / this-week / later / someday), the five urgency
+  sections, `totalOpen`, and two bounded-payload semantics. `agedBacklog`
+  partitions only `source: backlog` rows that are at least 30 days overdue;
+  `omittedOpenCount` is the non-negative difference between declared open
+  task/followup counts and the rows actually loaded into the payload. Aged
+  rows remain open, overdue, source-backed rows; they are not discarded.
+- **Paint** — the CLI briefing labels older backlog explicitly; the HTTP
+  cockpit and PWA fold it separately from ordinary overdue work. Later rows
+  are folded using the actual selected bucket length, while count-only
+  omissions get a separate non-expandable label (because an adapter cannot
+  reveal rows it never received). Same model, three presentations — and they
+  can no longer disagree on which tasks are overdue or pretend an omitted row
+  is locally expandable.
 
 `parseTodayView` (the CLI/HTTP lenient enrich — strip wikilinks, count
 fallbacks) sits between the contract and the view-model on the render path; it

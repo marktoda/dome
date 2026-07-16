@@ -271,7 +271,7 @@ describe("wikilink stripping (web cockpit)", () => {
 });
 
 describe("dome today: web still-open true totals", () => {
-  test("web still-open shows the true total + a +N more affordance", () => {
+  test("web still-open separates loaded later rows from count-only omissions", () => {
     const html = renderTodayHtml(
       {
         ...base,
@@ -285,15 +285,12 @@ describe("dome today: web still-open true totals", () => {
     );
     // The still-open-count span should show the true count (50), not the list length (6)
     expect(html).toMatch(/class="still-open-count"[^>]*>\s*50\s*</);
-    // An overflow affordance (+ N more, later) should be present in the still-open section
-    // The chip renders as <span>+</span><span>N more, later</span> — no leading + in label text
-    // 6 undated rows shown inline + chip must equal trueCount=50 → chip reads exactly "44 more, later".
-    expect(html).toContain("44 more, later");
-    expect(html).not.toContain("50 more, later");
+    expect(html).toContain("6 more, later");
+    expect(html).toContain("44 additional open items omitted from this view");
+    expect(html).not.toContain("44 more, later");
   });
 
-  test("still-open fallback (all later) chip does not double-count shown items", () => {
-    // 6 undated tasks shown inline, true total 50 → chip must read exactly "44 more, later", never 50
+  test("still-open all-later fold uses the selected bucket length", () => {
     const html = renderTodayHtml(
       {
         ...base,
@@ -306,8 +303,27 @@ describe("dome today: web still-open true totals", () => {
       },
       { refreshSeconds: 15 },
     );
-    expect(html).toContain("44 more, later");
+    expect(html).toContain("6 more, later");
+    expect(html).toContain("44 additional open items omitted from this view");
     expect(html).not.toContain("50 more, later");
+  });
+
+  test("labels and folds aged backlog independently from ordinary overdue work", () => {
+    const html = renderTodayHtml({
+      ...base,
+      date: "2026-07-01",
+      openTasks: [
+        { text: "Recent backlog", path: "p", line: 1, source: "backlog", dueDate: "2026-06-02" },
+        { text: "Old backlog", path: "p", line: 2, source: "backlog", dueDate: "2026-06-01" },
+      ],
+      followups: [],
+      questions: [],
+      counts: { openTasks: 2, followups: 0, questions: 0 },
+    }, { refreshSeconds: 15 });
+
+    expect(html).toContain("overdue · 1");
+    expect(html).toContain("1</span><span>older backlog item · 30+ days overdue");
+    expect(html).toContain("Old backlog");
   });
 });
 

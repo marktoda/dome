@@ -10,8 +10,8 @@
 //      footgun). Unknown keys are passed through, so the producer's extra
 //      envelope fields (limit, daily, sourceCounts, …) don't break validation
 //      — the contract is the consumed subset.
-//   2. View-model — `buildTodayViewModel`: urgency classification, hero-dedup,
-//      sections, totalOpen. Consumer-derived; adapters paint it.
+//   2. View-model — `buildTodayViewModel`: urgency classification, aged-backlog
+//      partition, sections, totalOpen, bounded-payload omissions.
 //   3. Paint — the CLI (src/cli/commands/today.ts) and HTTP
 //      (src/http/today-html.ts) adapters.
 //
@@ -458,9 +458,9 @@ function parseHero(raw: unknown): TodayHeroItem | null {
 }
 
 // ── Tier 2: the view-model ──────────────────────────────────────────────────
-// The semantic decisions both adapters used to recompute independently: per-task
-// urgency, hero-dedup, and the five due-date sections. Adapters paint this; they
-// no longer derive "is this overdue" or "is this the hero" themselves.
+// The semantic decisions adapters used to recompute independently: per-task
+// urgency, aged-backlog partition, the five ordinary due-date sections, and
+// bounded-payload omissions. Adapters paint this.
 
 export type TaskUrgency =
   | { readonly kind: "overdue"; readonly days: number }
@@ -469,7 +469,7 @@ export type TaskUrgency =
   | { readonly kind: "later"; readonly date: string }
   | { readonly kind: "someday" };
 
-/** Open tasks partitioned by urgency. A row's section IS its urgency. */
+/** Ordinary loaded tasks partitioned by urgency, excluding `agedBacklog`. */
 export type TodaySections = {
   readonly overdue: ReadonlyArray<TodayTaskRow>;
   readonly dueToday: ReadonlyArray<TodayTaskRow>;
@@ -481,8 +481,12 @@ export type TodaySections = {
 export type TodayViewModel = {
   readonly date: string;
   readonly counts: TodayCounts;
-  /** counts.openTasks + followups + questions — the "N open" headline; all-clear is `=== 0`. */
+  /** Declared tasks + followups + questions + reviews; all-clear is `=== 0`. */
   readonly totalOpen: number;
+  /** Loaded backlog rows that are at least 30 days overdue, folded by glance surfaces. */
+  readonly agedBacklog: ReadonlyArray<TodayTaskRow>;
+  /** Open task/followup rows declared by counts but absent from this bounded payload. */
+  readonly omittedOpenCount: number;
   readonly stillOpen: TodaySections;
   readonly brief: TodayBriefField | null;
   readonly calendar: TodayCalendar | null;
@@ -490,6 +494,9 @@ export type TodayViewModel = {
   readonly reviews: ReadonlyArray<TodayReviewRow>;
   readonly attentionBacklog: number;
 };
+
+/** Backlog debt becomes a distinct presentation concern after this many days. */
+export const AGED_BACKLOG_DAYS = 30;
 
 /** Classify a task's due date relative to `today` (both "YYYY-MM-DD" or null). */
 export function classifyUrgency(dueDate: string | null, today: string): TaskUrgency {
@@ -521,10 +528,17 @@ export function buildTodayViewModel(view: TodayView): TodayViewModel {
     later: TodayTaskRow[];
     someday: TodayTaskRow[];
   } = { overdue: [], dueToday: [], thisWeek: [], later: [], someday: [] };
+  const agedBacklog: TodayTaskRow[] = [];
 
   for (const t of [...openTasks, ...followups]) {
     const urgency = classifyUrgency(t.dueDate, date);
-    if (urgency.kind === "overdue") sections.overdue.push(t);
+    if (
+      t.source === "backlog" &&
+      urgency.kind === "overdue" &&
+      urgency.days >= AGED_BACKLOG_DAYS
+    ) {
+      agedBacklog.push(t);
+    } else if (urgency.kind === "overdue") sections.overdue.push(t);
     else if (urgency.kind === "due-today") sections.dueToday.push(t);
     else if (urgency.kind === "this-week") sections.thisWeek.push(t);
     else if (urgency.kind === "later") sections.later.push(t);
@@ -537,6 +551,11 @@ export function buildTodayViewModel(view: TodayView): TodayViewModel {
     totalOpen:
       counts.openTasks + counts.followups + counts.questions +
       (counts.reviews ?? reviews.length),
+    agedBacklog,
+    omittedOpenCount: Math.max(
+      0,
+      counts.openTasks + counts.followups - openTasks.length - followups.length,
+    ),
     stillOpen: {
       overdue: sections.overdue,
       dueToday: sections.dueToday,

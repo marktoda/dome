@@ -352,16 +352,17 @@ export function formatTodayResult(
   const vm = buildTodayViewModel(parseTodayView(data));
   const {
     date,
-    counts,
     totalOpen,
     stillOpen,
+    agedBacklog,
+    omittedOpenCount,
     brief,
     calendar,
     questions,
     reviews,
     attentionBacklog,
   } = vm;
-  const overdueCount = stillOpen.overdue.length;
+  const overdueCount = stillOpen.overdue.length + agedBacklog.length;
   const isAllClear = totalOpen === 0;
 
   // Verdict header
@@ -499,6 +500,7 @@ export function formatTodayResult(
     const THIS_WEEK_CAP = 4;
     const LATER_CAP = 3;
     const SOMEDAY_CAP = 3;
+    const AGED_BACKLOG_CAP = 3;
     const capOf = (n: number): number => (opts.verbose === true ? Number.POSITIVE_INFINITY : n);
 
     // Group shown tasks by entity clusters, then emit bucket header + clusters + ungrouped.
@@ -577,20 +579,32 @@ export function formatTodayResult(
     const thisWeekShown = section("THIS WEEK", thisWeek, THIS_WEEK_CAP, "plain");
     const laterShown = section("LATER", later, LATER_CAP, "plain");
     const somedayShown = section("SOMEDAY", someday, SOMEDAY_CAP, "plain");
+    const agedBacklogShown = section(
+      "OLDER BACKLOG · 30+ DAYS OVERDUE",
+      agedBacklog,
+      AGED_BACKLOG_CAP,
+      "err",
+    );
 
-    // Honest overflow using the view's TRUE totals (counts.*), not the received
-    // (possibly display-capped) arrays. Overdue is reported exactly (the verdict
-    // header already relies on the received list carrying all overdue); every
-    // other non-shown task folds into a single "more" so the math never lies.
-    const trueTotal = counts.openTasks + counts.followups;
+    // Renderer caps apply only to rows actually loaded into the payload. Rows
+    // absent from the producer's bounded selection are reported independently:
+    // --verbose can reveal renderer-capped rows, but cannot reveal omitted rows.
     const overdueMore = Math.max(0, overdue.length - overdueShown);
+    const agedBacklogMore = Math.max(0, agedBacklog.length - agedBacklogShown);
+    const loadedNonOverdue = dueToday.length + thisWeek.length + later.length + someday.length;
     const shownNonOverdue = todayShown + thisWeekShown + laterShown + somedayShown;
-    const otherMore = Math.max(0, (trueTotal - overdue.length) - shownNonOverdue);
-    if (overdueMore > 0 || otherMore > 0) {
+    const otherMore = Math.max(0, loadedNonOverdue - shownNonOverdue);
+    if (overdueMore > 0 || agedBacklogMore > 0 || otherMore > 0) {
       const parts: string[] = [];
       if (overdueMore > 0) parts.push(`${overdueMore} more overdue`);
+      if (agedBacklogMore > 0) parts.push(`${agedBacklogMore} more older backlog`);
       if (otherMore > 0) parts.push(`${otherMore} more`);
       lines.push(`  ${paint(`… ${parts.join(" · ")} · dome today --verbose`, "muted", caps)}`);
+    }
+    if (omittedOpenCount > 0) {
+      lines.push(
+        `  ${paint(`… ${omittedOpenCount} additional open ${omittedOpenCount === 1 ? "item" : "items"} omitted from this view`, "muted", caps)}`,
+      );
     }
 
     // ? ask line — top question + +N if more. Shortened at a word/clause

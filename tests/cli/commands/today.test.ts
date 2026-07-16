@@ -736,10 +736,7 @@ describe("dome today: flat signal-led task list", () => {
     expect((out.match(/The hero task/g) || []).length).toBe(1);
     expect(out).toContain("Another task");
   });
-  test("overflow count uses true totals not the display-limited list", () => {
-    // doc with counts.openTasks = 234 but openTasks list (received) only has 8 rows, hero null
-    // bucketed = 8 rows, cap = 7 shown → overflow from received list = 1 (wrong)
-    // true overflow = 234 - 7 = 227 (correct)
+  test("separates renderer-capped rows from count-only omissions", () => {
     const data = {
       date: "2026-06-14", hero: null, brief: null, calendar: null,
       openTasks: Array.from({ length: 8 }, (_, i) => ({ text: `t${i}`, path: "p", line: i, dueDate: "2026-06-01" })),
@@ -747,11 +744,26 @@ describe("dome today: flat signal-led task list", () => {
       counts: { openTasks: 234, followups: 0, questions: 0 }, dueCounts: {},
     };
     const out = formatTodayResult(data, ASCII_CAPS, "/vault");
-    // true overflow: 8 received overdue, 6 shown → 2 more overdue;
-    // trueTotal=234, otherMore = (234−8)−0 = 226 → "226 more"
     expect(out).toContain("2 more overdue");
-    expect(out).toContain("226 more");
+    expect(out).toContain("226 additional open items omitted from this view");
+    expect(out).not.toContain("226 more · dome today --verbose");
     expect(out).toContain("dome today --verbose");
+  });
+
+  test("labels aged backlog separately and includes it in the overdue verdict", () => {
+    const data = {
+      date: "2026-07-01", hero: null, brief: null, calendar: null,
+      openTasks: [
+        { text: "Recent backlog", path: "p", line: 1, source: "backlog", dueDate: "2026-06-02" },
+        { text: "Old backlog", path: "p", line: 2, source: "backlog", dueDate: "2026-06-01" },
+      ],
+      followups: [], questions: [],
+      counts: { openTasks: 2, followups: 0, questions: 0 }, dueCounts: {},
+    };
+    const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(out).toContain("2 overdue · 2 open");
+    expect(out).toContain("OLDER BACKLOG · 30+ DAYS OVERDUE");
+    expect(out).toContain("Old backlog");
   });
 });
 
@@ -799,9 +811,10 @@ describe("formatTodayResult grouping + links", () => {
     }
   });
 
-  test("honest overflow: many open tasks report a '… N more' line", () => {
+  test("honest overflow: count-only rows are reported as omitted, not revealable", () => {
     const out = formatTodayResult(doc({ counts: { openTasks: 50, followups: 0, questions: 0 } }), caps, "/v/work");
-    expect(out).toMatch(/…\s.*more.*dome today --verbose/);
+    expect(out).toContain("47 additional open items omitted from this view");
+    expect(out).not.toContain("47 more · dome today --verbose");
   });
 
   test("no rendered line exceeds caps.width even with link affordances", () => {

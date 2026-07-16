@@ -77,6 +77,45 @@ describe("Brief", () => {
     expect(screen.queryByRole("button", { name: "apply" })).toBeNull();
     expect(screen.queryByRole("button", { name: "reject" })).toBeNull();
   });
+
+  test("folds 30-day backlog debt separately and expands it with live settlement", async () => {
+    const onSettle = mock(async () => true);
+    const today: Today = {
+      ...base,
+      date: "2026-07-01",
+      openTasks: [
+        { text: "Recent backlog", path: "p", line: 1, source: "backlog", dueDate: "2026-06-02" },
+        { text: "Old backlog", path: "p", line: 2, source: "backlog", dueDate: "2026-06-01", blockId: "old12345" },
+      ],
+      counts: { openTasks: 2, followups: 0, questions: 0 },
+    };
+
+    render(<Brief today={today} onResolve={noop} onSettle={onSettle} />);
+    expect(screen.getByText("Recent backlog")).toBeDefined();
+    expect(screen.queryByText("Old backlog")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /1 older backlog item · 30\+ days overdue/ }));
+    const checkbox = screen.getByRole("checkbox", { name: "Old backlog" });
+    fireEvent.click(checkbox);
+    await waitFor(() => expect(onSettle).toHaveBeenCalledWith("old12345"));
+  });
+
+  test("uses loaded bucket lengths for reveal math and reports omitted rows separately", () => {
+    const today: Today = {
+      ...base,
+      openTasks: [
+        { text: "Due now", path: "p", line: 1, source: "daily", dueDate: "2026-06-17" },
+        { text: "Later one", path: "p", line: 2, source: "daily", dueDate: null },
+        { text: "Later two", path: "p", line: 3, source: "daily", dueDate: null },
+      ],
+      counts: { openTasks: 10, followups: 0, questions: 0 },
+    };
+
+    render(<Brief today={today} onResolve={noop} />);
+    expect(screen.getByRole("button", { name: /\+2 more, later/ })).toBeDefined();
+    expect(screen.getByText("7 additional open items omitted from this view")).toBeDefined();
+    expect(screen.queryByText(/\+9 more, later/)).toBeNull();
+  });
 });
 
 // ----- checkbox settle (Task 9: PWA checkbox settles for real) --------------
