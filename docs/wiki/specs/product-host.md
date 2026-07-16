@@ -455,7 +455,13 @@ surviving mutation/finalize journals, output inside the vault, and unknown
 `.dome/state` entries. The crash-honest lifecycle suspension Module records
 intent, boots out a loaded supervised Home, and proves drain before backup
 acquires an operational SHARED lease and both Product Host locks. It then
-best-effort resumes Home through strict pairing readiness. Active suspension,
+best-effort resumes Home through strict pairing readiness. Initial launch,
+lifecycle resume, and installed-release evidence share one 120-second pairing
+readiness budget measured from readiness observation after activation or
+loaded-service admission. Parent preflight verification is outside this readiness
+clock; candidate probation remains separately bounded at 15 seconds.
+An already-started listener never weakens the exact document check. Active
+suspension,
 ambiguous launchctl results, selector/plist drift, and either ownership lock
 fail closed. An exact installed Home record and direct plist are required even
 when launchd reports that Home was previously stopped. Archive creation and

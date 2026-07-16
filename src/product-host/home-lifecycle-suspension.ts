@@ -42,7 +42,7 @@ import {
   type HomeInstallationDeps,
 } from "./home-installation";
 import { verifyHomeArtifact } from "./home-artifact";
-import { isHomePairingReadiness } from "./home-readiness";
+import { HOME_PAIRING_READINESS_TIMEOUT_MS, isHomePairingReadiness } from "./home-readiness";
 
 export const HOME_LIFECYCLE_SUSPENSION_SCHEMA =
   "dome.home-lifecycle-suspension/v1" as const;
@@ -1760,15 +1760,32 @@ async function assertNoCompetingHost(
   }
 }
 
-async function waitForReadiness(deps: HomeLifecycleSuspensionDeps): Promise<boolean> {
-  const deadline = Date.now() + (deps.readinessTimeoutMs ?? 10_000);
+type ReadinessTiming = Readonly<{
+  nowMs: () => number;
+  sleep: (milliseconds: number) => Promise<void>;
+}>;
+
+async function waitForReadiness(
+  deps: HomeLifecycleSuspensionDeps,
+  timing: ReadinessTiming = { nowMs: Date.now, sleep: Bun.sleep },
+): Promise<boolean> {
+  const deadline = timing.nowMs() + (deps.readinessTimeoutMs ?? HOME_PAIRING_READINESS_TIMEOUT_MS);
   do {
     try {
       if (await probeReadiness(deps)) return true;
     } catch { /* retry until bounded timeout */ }
-    if (Date.now() >= deadline) return false;
-    await Bun.sleep(200);
+    if (timing.nowMs() >= deadline) return false;
+    await timing.sleep(200);
   } while (true);
+}
+
+/** Virtual-time coverage for the exact internal readiness loop; not re-exported by the SDK. */
+export async function exerciseHomeLifecycleReadinessForTests(readyAtMs: number): Promise<boolean> {
+  let elapsedMs = 0;
+  return waitForReadiness({ readiness: async () => elapsedMs >= readyAtMs }, {
+    nowMs: () => elapsedMs,
+    sleep: async (milliseconds) => { elapsedMs += milliseconds; },
+  });
 }
 
 async function probeReadiness(deps: HomeLifecycleSuspensionDeps): Promise<boolean> {

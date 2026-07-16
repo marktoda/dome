@@ -13,6 +13,7 @@ import {
 import { homeInstallationPaths, releaseRoot } from "../../src/product-host/home-installation";
 import {
   acquireHomeStartupAdmission,
+  exerciseHomeLifecycleReadinessForTests,
   homeLifecycleCoordinatorPath,
   HomeLifecycleContentionError,
   inspectHomeLifecycleSuspension,
@@ -41,6 +42,16 @@ type FakeLaunchd = {
 };
 
 describe("supervised Home lifecycle suspension", () => {
+  test("resumes after the old 10-second bound and at the end of the shared envelope", async () => {
+    expect(await exerciseHomeLifecycleReadinessForTests(10_200)).toBeTrue();
+    expect(await exerciseHomeLifecycleReadinessForTests(60_200)).toBeTrue();
+    expect(await exerciseHomeLifecycleReadinessForTests(119_800)).toBeTrue();
+  });
+
+  test("fails closed after the shared pairing-readiness envelope", async () => {
+    expect(await exerciseHomeLifecycleReadinessForTests(120_200)).toBeFalse();
+  });
+
   test("reads and denies mutation against an active legacy backup row without migrating it", async () => {
     const f = await fixture(true);
     f.readiness = async () => false;
