@@ -188,11 +188,19 @@ export function Brief(
   }
 
   const openCount = counts.openTasks + counts.followups;
+  const focusOpenCount = stillOpen.overdue.length + stillOpen.dueToday.length +
+    stillOpen.thisWeek.length + stillOpen.later.length + stillOpen.someday.length;
+  const hasDeferredDebt = agedBacklog.length > 0 || omittedOpenCount > 0;
+  const openSummary = openCount === 0
+    ? null
+    : hasDeferredDebt && focusOpenCount > 0
+      ? `${focusOpenCount} in focus · ${openCount} open total`
+      : `${openCount} open${hasDeferredDebt ? " total" : ""}`;
   const qCount = counts.questions;
   const ownerBacklog = attentionBacklog + reviews.length;
   const summary =
     [
-      openCount > 0 ? `${openCount} open` : null,
+      openSummary,
       qCount > 0 ? `${qCount} to decide` : null,
       ownerBacklog > 0 ? `${ownerBacklog} in CLI backlog` : null,
     ]

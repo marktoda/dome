@@ -91,6 +91,7 @@ describe("Brief", () => {
     };
 
     render(<Brief today={today} onResolve={noop} onSettle={onSettle} />);
+    expect(screen.getByText(/today · 1 in focus · 2 open total/i)).toBeDefined();
     expect(screen.getByText("Recent backlog")).toBeDefined();
     expect(screen.queryByText("Old backlog")).toBeNull();
 
@@ -112,6 +113,7 @@ describe("Brief", () => {
     };
 
     render(<Brief today={today} onResolve={noop} />);
+    expect(screen.getByText(/today · 3 in focus · 10 open total/i)).toBeDefined();
     expect(screen.getByRole("button", { name: /\+2 more, later/ })).toBeDefined();
     expect(screen.getByText("7 additional open items omitted from this view")).toBeDefined();
     expect(screen.queryByText(/\+9 more, later/)).toBeNull();
