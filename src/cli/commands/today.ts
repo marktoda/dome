@@ -369,7 +369,7 @@ export function formatTodayResult(
   const verdictLabel = isAllClear
     ? "all clear"
     : overdueCount > 0
-    ? `${overdueCount === 1 ? "1 overdue" : `${overdueCount} overdue`} · ${totalOpen} open`
+    ? `${overdueCount === 1 ? "1" : overdueCount}${omittedOpenCount > 0 ? "+" : ""} overdue · ${totalOpen} open`
     : `${totalOpen} open`;
   const verdictTone = isAllClear ? "ok" as const : overdueCount > 0 ? "err" as const : "warn" as const;
   const status = { tone: verdictTone, label: verdictLabel };

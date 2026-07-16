@@ -744,6 +744,8 @@ describe("dome today: flat signal-led task list", () => {
       counts: { openTasks: 234, followups: 0, questions: 0 }, dueCounts: {},
     };
     const out = formatTodayResult(data, ASCII_CAPS, "/vault");
+    expect(out).toContain("8+ overdue · 234 open");
+    expect(out).not.toContain("8 overdue · 234 open");
     expect(out).toContain("2 more overdue");
     expect(out).toContain("226 additional open items omitted from this view");
     expect(out).not.toContain("226 more · dome today --verbose");
