@@ -186,7 +186,7 @@ export async function runHomePwaUpdateRehearsal(
     },
     assertPredecessor: async (signal) => {
       const activePage = requirePage();
-      await activePage.getByText("Product readiness unavailable", { exact: true })
+      await activePage.getByRole("region", { name: "Connection needs a refresh", exact: true })
         .waitFor({ timeout: WAIT_MS });
       await waitForServiceWorkerControl(activePage);
       await activePage.reload({ waitUntil: "domcontentloaded", timeout: WAIT_MS });

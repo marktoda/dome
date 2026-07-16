@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
 
 import {
@@ -95,6 +96,12 @@ describe("Home PWA closed static gateway policy", () => {
 });
 
 describe("Home PWA update rehearsal orchestration", () => {
+  test("binds the synthetic predecessor to the canonical recovery surface", async () => {
+    const source = await readFile(new URL("../../scripts/home-pwa-update-rehearsal.ts", import.meta.url), "utf8");
+    expect(source).toContain('getByRole("region", { name: "Connection needs a refresh", exact: true })');
+    expect(source).not.toContain("Product readiness unavailable");
+  });
+
   test("orders every proof before cleanup and returns no evidence document", async () => {
     const seen: string[] = [];
     const result = await exerciseHomePwaUpdateRehearsalForTests(operations(seen));
