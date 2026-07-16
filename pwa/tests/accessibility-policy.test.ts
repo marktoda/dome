@@ -70,6 +70,7 @@ describe("PWA adaptive accessibility CSS policy", () => {
     expect(css).toMatch(/\.connection-body:focus-visible\s*\{[^}]*outline-offset:\s*-3px/);
     expect(css).toMatch(/\.connection\.open\s*\{[^}]*flex-shrink:\s*0;[^}]*min-height:\s*7rem/);
     expect(css).toContain("max-height: max(7rem, 16vh); max-height: max(7rem, 16dvh)");
+    expect(css).toMatch(/@media \(max-height: 40rem\) and \(min-width: 40rem\)[\s\S]*\.recovery-card\s*\{[^}]*flex-direction:\s*row;[^}]*align-items:\s*center/);
 
     const runner = await readFile(join(import.meta.dir, "..", "..", "scripts", "home-pwa-chromium-acceptance.ts"), "utf8");
     expect(runner).toContain("diagnosticFocus.bodyHeight < 44");
