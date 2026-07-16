@@ -12,6 +12,7 @@ import { existsSync, mkdtempSync } from "node:fs";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import matter from "gray-matter";
 
 import { runCapture } from "../../src/cli/commands/capture";
 import {
@@ -625,6 +626,8 @@ describe("performCapture seam extensions", () => {
       reorderFrontmatterKeys(parsed.data),
     );
     expect(normalized).toContain(`capture_id: ${captureId}\n`);
+    (matter as typeof matter & { clearCache(): void }).clearCache();
+    expect(parseFrontmatter(normalized)).not.toBeNull();
     await mkdir(join(vault, "inbox", "processed"), { recursive: true });
     await rename(join(vault, first.result.path), join(vault, processedPath));
     await writeFile(join(vault, processedPath), normalized, "utf8");

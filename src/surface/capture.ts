@@ -567,7 +567,11 @@ function readCaptureIdentity(content: string): {
   readonly value: string | null;
 } {
   try {
-    const frontmatter = matter(content).matter;
+    // An explicit options object bypasses gray-matter's content cache. Cache
+    // hits are shallow enumerable clones and lose the non-enumerable `matter`
+    // field, which the long-lived Home process commonly warms via canonical
+    // frontmatter normalization before a capture retry arrives.
+    const frontmatter = matter(content, {}).matter;
     const document = parseDocument(frontmatter);
     if (document.errors.length > 0) throw document.errors[0];
     if (!document.has("capture_id")) {
