@@ -455,8 +455,10 @@ The target path is `inbox/raw/<YYYY-MM-DD-HHmm>-<slug>.md`:
 `--capture-id <id>` is the CLI binding of the remote-capture seam's
 retry-idempotency key ([[wiki/specs/capture]] §"Retry semantics"). When given,
 the id — not the title — drives the slug (same sanitization rules), and an
-existing `inbox/raw/` capture whose filename slug already matches answers
-**duplicate** instead of writing: exit 0, nothing written, nothing committed.
+existing capture with the same parsed `capture_id` in the current commit's
+`inbox/raw/` or `inbox/processed/` tree answers **duplicate** instead of
+writing: exit 0, nothing written, nothing committed. Frontmatter normalization
+may reorder or requote the scalar without changing that identity.
 Text output prints `dome capture: duplicate of <path>`; `--json` emits
 `{ "schema": "dome.capture/v1", "status": "duplicate", "vault", "path",
 "capture_id" }`. Duplicate-as-success is the seam the queue drain relies on

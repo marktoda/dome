@@ -32,9 +32,10 @@
 // resulting ordinary commit is still a human-side compiler-boundary write,
 // not an engine-applied Effect.
 
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import matter from "gray-matter";
 
 import { getAdoptedRef } from "../adopted-ref";
 import {
@@ -44,6 +45,8 @@ import {
   currentBranch,
   currentSha,
   findGitRoot,
+  readBlobByOid,
+  readTree,
 } from "../git";
 import { applyControlledMutation } from "../mutation/controlled-mutation";
 import { resolveVaultPath } from "./resolve-vault";
@@ -369,7 +372,8 @@ export async function performCapture(
       }); run \`dome init\` first`,
     );
   }
-  if ((await currentSha(vaultPath)) === null) {
+  const head = await currentSha(vaultPath);
+  if (head === null) {
     return failWith(
       EX_USAGE,
       "the vault has no commits yet; run `dome init` first",
@@ -408,7 +412,7 @@ export async function performCapture(
         ? captureSlug(captureId)
         : captureSlug(explicitTitle ?? derivedTitle);
     if (captureId !== undefined) {
-      const existing = findCaptureById(vaultPath, captureId, slug);
+      const existing = await findCaptureById(vaultPath, head, captureId, slug);
       if (existing !== null) {
         return Object.freeze({
           kind: "duplicate" as const,
@@ -497,45 +501,89 @@ function realStdin(): CaptureStdin {
  * The filename lookup remains only as a compatibility fallback for captures
  * written before `capture_id` was embedded in the artifact.
  *
- * Scans BOTH `inbox/raw/` and `inbox/processed/`: ingestion archives a
- * consumed capture to processed with its basename preserved, so a raw-only
- * scan would let a queued copy re-captured after ingestion double-file.
- * Either directory may be absent (a vault that has never archived, or a
- * bare vault before the first capture) — a missing dir is simply skipped.
+ * Scans BOTH `inbox/raw/` and `inbox/processed/` in the immutable commit:
+ * ingestion archives a consumed capture to processed with its basename
+ * preserved, so a raw-only scan would let a queued copy re-captured after
+ * ingestion double-file. Either tree may be absent (a vault that has never
+ * archived, or a bare vault before the first capture) and is simply skipped.
  */
-function findCaptureById(
+async function findCaptureById(
   vaultPath: string,
+  commit: string,
   captureId: string,
   legacySlug: string,
-): string | null {
+): Promise<string | null> {
   const pattern = new RegExp(
     `^\\d{4}-\\d{2}-\\d{2}-\\d{4}-${escapeRegExp(legacySlug)}\\.md$`,
   );
   let legacyMatch: string | null = null;
-  const identityLine = `capture_id: ${JSON.stringify(captureId)}`;
+
+  // HEAD is the durable receipt for every completed capture. Reading its
+  // immutable tree keeps dedupe stable while ingestion checks out the atomic
+  // raw-delete + processed-write archive commit in the working tree.
+  const root = await readTree({ path: vaultPath, oid: commit });
+  const inboxEntry = root.tree.find((entry) =>
+    entry.type === "tree" && entry.path === "inbox"
+  );
+  if (inboxEntry === undefined) return null;
+  const inbox = await readTree({ path: vaultPath, oid: inboxEntry.oid });
+
   for (const dirRel of [RAW_INBOX_DIR, PROCESSED_INBOX_DIR]) {
-    const dir = join(vaultPath, dirRel);
-    if (!existsSync(dir)) continue;
-    for (const name of readdirSync(dir)) {
-      if (!name.endsWith(".md")) continue;
+    const dirName = dirRel.slice(dirRel.lastIndexOf("/") + 1);
+    const dirEntry = inbox.tree.find((entry) =>
+      entry.type === "tree" && entry.path === dirName
+    );
+    if (dirEntry === undefined) continue;
+    const dir = await readTree({ path: vaultPath, oid: dirEntry.oid });
+    for (const entry of dir.tree) {
+      const name = entry.path;
+      if (entry.type !== "blob" || !name.endsWith(".md")) continue;
       const relPath = `${dirRel}/${name}`;
-      try {
-        const content = readFileSync(join(vaultPath, relPath), "utf8");
-        const lines = content.split(/\r?\n/);
-        if (lines.includes(identityLine)) return relPath;
-        if (
-          legacyMatch === null &&
-          !lines.some((line) => line.startsWith("capture_id:")) &&
-          pattern.test(name)
-        ) {
-          legacyMatch = relPath;
-        }
-      } catch {
-        // A concurrent archive/remove can make a directory entry disappear.
+      const content = await readBlobByOid({ path: vaultPath, oid: entry.oid });
+      if (content === null) continue;
+      const identity = readCaptureIdentity(content);
+      if (identity.value === captureId) return relPath;
+      if (
+        legacyMatch === null &&
+        !identity.present &&
+        pattern.test(name)
+      ) {
+        legacyMatch = relPath;
       }
     }
   }
   return legacyMatch;
+}
+
+/**
+ * Read the durable identity as YAML data rather than comparing source bytes.
+ * dome.markdown.normalize-frontmatter is allowed to reorder fields and change
+ * scalar quoting while preserving the same value; neither representation
+ * change creates a new logical capture.
+ */
+function readCaptureIdentity(content: string): {
+  readonly present: boolean;
+  readonly value: string | null;
+} {
+  try {
+    const data = matter(content).data as Record<string, unknown>;
+    if (!Object.prototype.hasOwnProperty.call(data, "capture_id")) {
+      return { present: false, value: null };
+    }
+    const value = data["capture_id"];
+    return {
+      present: true,
+      value: typeof value === "string" ? value : null,
+    };
+  } catch {
+    // Malformed frontmatter must not activate the filename-only compatibility
+    // fallback: a visible capture_id still declares a durable identity, even
+    // when its value cannot be compared safely.
+    const present = content
+      .split(/\r?\n/)
+      .some((line) => /^capture_id\s*:/.test(line));
+    return { present, value: null };
+  }
 }
 
 function escapeRegExp(raw: string): string {

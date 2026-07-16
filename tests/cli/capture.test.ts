@@ -557,11 +557,20 @@ describe("performCapture seam extensions", () => {
     // inbox/processed with its basename preserved (vault-tools'
     // archiveSource shape).
     const basename = first.result.path.replace(/^inbox\/raw\//, "");
+    const captured = await readFile(join(vault, first.result.path), "utf8");
     await mkdir(join(vault, "inbox", "processed"), { recursive: true });
     await rename(
       join(vault, first.result.path),
       join(vault, "inbox", "processed", basename),
     );
+    await commitFilesOnHead({
+      path: vault,
+      files: [
+        { filepath: first.result.path, content: null },
+        { filepath: `inbox/processed/${basename}`, content: captured },
+      ],
+      message: "ingest capture",
+    });
     const headAfterArchive = (await headCommit(vault)).oid;
 
     // The queued copy arrives late (the cross-channel race): same id,
@@ -581,6 +590,95 @@ describe("performCapture seam extensions", () => {
     );
     expect(rawFiles).toEqual([]);
     expect((await headCommit(vault)).oid).toBe(headAfterArchive);
+  });
+
+  test("capture identity survives archival after frontmatter normalization", async () => {
+    const vault = await initVault();
+
+    const first = await performCapture(
+      {
+        text: "captured then normalized",
+        vault,
+        captureId: "phone-normalized-1",
+      },
+      clock,
+    );
+    expect(first.kind).toBe("captured");
+    if (first.kind !== "captured") return;
+
+    const basename = first.result.path.replace(/^inbox\/raw\//, "");
+    const processedPath = `inbox/processed/${basename}`;
+    const captured = await readFile(join(vault, first.result.path), "utf8");
+    const normalized = captured.replace(
+      'capture_id: "phone-normalized-1"',
+      "capture_id: phone-normalized-1",
+    );
+    await mkdir(join(vault, "inbox", "processed"), { recursive: true });
+    await rename(join(vault, first.result.path), join(vault, processedPath));
+    await writeFile(join(vault, processedPath), normalized, "utf8");
+    await commitFilesOnHead({
+      path: vault,
+      files: [
+        { filepath: first.result.path, content: null },
+        { filepath: processedPath, content: normalized },
+      ],
+      message: "ingest normalized capture",
+    });
+    const headAfterIngest = (await headCommit(vault)).oid;
+
+    const later = { now: () => new Date(2026, 5, 9, 23, 45, 0) };
+    const retry = await performCapture(
+      {
+        text: "captured then normalized",
+        vault,
+        captureId: "phone-normalized-1",
+      },
+      later,
+    );
+
+    expect(retry).toMatchObject({
+      kind: "duplicate",
+      path: processedPath,
+      captureId: "phone-normalized-1",
+    });
+    expect((await headCommit(vault)).oid).toBe(headAfterIngest);
+  });
+
+  test("capture identity remains visible through a transient working-tree archive gap", async () => {
+    const vault = await initVault();
+
+    const first = await performCapture(
+      {
+        text: "captured during archive",
+        vault,
+        captureId: "phone-archive-gap-1",
+      },
+      clock,
+    );
+    expect(first.kind).toBe("captured");
+    if (first.kind !== "captured") return;
+    const headAfterFirst = (await headCommit(vault)).oid;
+
+    // Ingestion applies a raw delete + processed write as one commit, but the
+    // working tree can briefly expose neither path while that commit is being
+    // checked out. HEAD remains an immutable receipt throughout the move.
+    await rm(join(vault, first.result.path));
+
+    const retry = await performCapture(
+      {
+        text: "captured during archive",
+        vault,
+        captureId: "phone-archive-gap-1",
+      },
+      { now: () => new Date(2026, 5, 9, 23, 45, 0) },
+    );
+
+    expect(retry).toMatchObject({
+      kind: "duplicate",
+      path: first.result.path,
+      captureId: "phone-archive-gap-1",
+    });
+    expect((await headCommit(vault)).oid).toBe(headAfterFirst);
   });
 
   test("different captureIds file separately", async () => {

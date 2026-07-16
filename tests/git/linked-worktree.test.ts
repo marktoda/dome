@@ -373,12 +373,25 @@ describe("git boundary in a linked worktree", () => {
       const mainIndexBefore = await readFile(join(main, ".git", "index"));
 
       const captured = await performCapture(
-        { vault: linked, text: "A linked worktree product thought", title: "linked thought" },
+        {
+          vault: linked,
+          text: "A linked worktree product thought",
+          title: "linked thought",
+          captureId: "linked-capture-1",
+        },
         { now: () => new Date("2026-07-11T12:00:00.000Z") },
       );
       expect(captured.kind).toBe("captured");
       if (captured.kind !== "captured") throw new Error(`capture failed: ${captured.kind}`);
       const captureHead = captured.result.commit;
+      expect(await performCapture(
+        {
+          vault: linked,
+          text: "A linked worktree product thought",
+          captureId: "linked-capture-1",
+        },
+        { now: () => new Date("2026-07-11T12:01:00.000Z") },
+      )).toMatchObject({ kind: "duplicate", path: captured.result.path });
       const result = await adopt({
         vault: { path: linked, config: { git: { auto_commit_workflows: true } } },
         proposal: makeManualProposal({

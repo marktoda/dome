@@ -300,7 +300,10 @@ client-supplied `captureId`; it is embedded as `capture_id` and also drives
 the filename slug. An existing file for the exact same id — in `inbox/raw/`
 or archived to `inbox/processed/` —
 answers `status: "duplicate"` with the original path — nothing written,
-nothing committed. Clients without an id accept duplicate
+nothing committed. The lookup reads the immutable current commit and compares
+the parsed YAML scalar, so ingestion's working-tree archive move and canonical
+frontmatter reordering or requoting cannot turn a retry into a second logical
+capture. Clients without an id accept duplicate
 risk; ingest tolerates duplicates either way. Implemented in
 `performCapture` (`source` + `captureId` options). The CLI exposes the same
 key as `dome capture --capture-id <id>` ([[wiki/specs/cli]]
