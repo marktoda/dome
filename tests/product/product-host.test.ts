@@ -115,6 +115,52 @@ describe("P3 Product Host", () => {
     expect(reads).toBe(3);
   }, 30_000);
 
+  test("Ask uses the Product Host's injected model step provider", async () => {
+    const vault = await initializedVault();
+    const pairingCode = await mintPairingCode(vault, "Injected model browser", [
+      "converse", "read",
+    ]);
+    let askCalls = 0;
+    const started = await startProductHost({
+      vaultPath: vault,
+      port: 0,
+      modelState: "ready",
+      modelStepProvider: async (request) => {
+        const last = request.messages.at(-1);
+        if (last?.role !== "user" || last.content !== "Use the configured provider") {
+          return { text: "no-op background response" };
+        }
+        askCalls += 1;
+        return { text: "configured provider response" };
+      },
+    });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    hosts.push(started.value);
+    const auth = await pair(started.value.url, pairingCode);
+
+    const created = await fetch(`${started.value.url}/sessions`, {
+      method: "POST",
+      headers: mutationHeaders(started.value.url, auth),
+    });
+    expect(created.status).toBe(201);
+    const sessionId = (await created.json() as { readonly sessionId: string }).sessionId;
+    const turn = await fetch(`${started.value.url}/sessions/${sessionId}/messages`, {
+      method: "POST",
+      headers: {
+        ...mutationHeaders(started.value.url, auth),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ message: "Use the configured provider" }),
+    });
+
+    expect(turn.status).toBe(200);
+    const events = await turn.text();
+    expect(events).toContain('"text":"configured provider response"');
+    expect(events).toContain('"stopReason":"final"');
+    expect(askCalls).toBe(1);
+  }, 30_000);
+
   test("an exact launchd child starts while its supervisor holds resuming Tx2", async () => {
     const vault = await initializedVault();
     const f = await installedResumeFixture(vault);

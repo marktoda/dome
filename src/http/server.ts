@@ -100,6 +100,7 @@ import type {
   AssistantMutationExecutor,
   AuthenticatedMutationActor,
 } from "../request-receipts/assistant-mutation-executor";
+import type { ModelStepProvider } from "../engine/core/model-invoke";
 
 // ----- Constants ------------------------------------------------------------
 
@@ -170,6 +171,8 @@ export type DomeHttpServerOptions = {
   readonly requestReceiptRecorder?: HttpRequestReceiptRecorder | undefined;
   readonly assistantMutationExecutor?: AssistantMutationExecutor | undefined;
   readonly model?: string | undefined;
+  /** Injected provider-neutral model seam for the built-in Ask runtime. */
+  readonly modelStepProvider?: ModelStepProvider | undefined;
   /**
    * Grant the `author` capability (agent write tools). Default off
    * (read-only-safe). Provisioned in Phase 2; accepted now as the seam.
@@ -573,6 +576,9 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
         ...(mutationActor !== undefined ? { mutationActor } : {}),
         ...(opts.assistantMutationExecutor !== undefined ? { mutationExecutor: opts.assistantMutationExecutor } : {}),
         ...(opts.model !== undefined ? { modelId: opts.model } : {}),
+        ...(opts.modelStepProvider !== undefined
+          ? { modelStepProvider: opts.modelStepProvider }
+          : {}),
       });
     }
     let stream: AgentStream | undefined;
@@ -599,6 +605,9 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
           ...(mutationActor !== undefined ? { mutationActor } : {}),
           ...(opts.assistantMutationExecutor !== undefined ? { mutationExecutor: opts.assistantMutationExecutor } : {}),
           ...(opts.model !== undefined ? { modelId: opts.model } : {}),
+          ...(opts.modelStepProvider !== undefined
+            ? { modelStepProvider: opts.modelStepProvider }
+            : {}),
         });
         ready();
         // Hold the vault open until the route finishes draining the stream.

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { runAgentStream } from "../../src/assistant/agent";
+import type { ModelStepProvider } from "../../src/engine/core/model-invoke";
 
 function fakeVault() {
   return {
@@ -95,5 +96,51 @@ describe("runAgentStream", () => {
     }
     const { stopReason } = await ask.finished;
     expect(stopReason).toBe("budget");
+  });
+
+  test("runs tools and records citations through an injected step provider", async () => {
+    let calls = 0;
+    const provider: ModelStepProvider = async (request) => {
+      calls += 1;
+      expect(request.tools.map((tool) => tool.name)).toContain("read_document");
+      if (calls === 1) {
+        expect(request.messages.at(-1)).toMatchObject({
+          role: "user",
+          content: "When does Robinhood Chain launch?",
+        });
+        return {
+          toolCalls: [{
+            id: "read-1",
+            name: "read_document",
+            input: { path: "wiki/entities/robinhood-chain.md" },
+          }],
+        };
+      }
+      expect(request.messages).toContainEqual(expect.objectContaining({
+        role: "tool",
+        toolCallId: "read-1",
+        toolName: "read_document",
+        content: "Robinhood Chain launches July 2026.",
+      }));
+      return { text: "Robinhood Chain launches July 2026." };
+    };
+
+    const ask = runAgentStream({
+      vault: fakeVault(),
+      modelStepProvider: provider,
+      question: "When does Robinhood Chain launch?",
+    });
+    const deltas: string[] = [];
+    for await (const part of ask.fullStream) {
+      if (part.type === "text-delta") deltas.push(part.text);
+    }
+
+    expect(deltas.join("")).toBe("Robinhood Chain launches July 2026.");
+    expect(ask.citations).toEqual([{
+      path: "wiki/entities/robinhood-chain.md",
+      commit: "c1",
+    }]);
+    expect((await ask.finished).stopReason).toBe("final");
+    expect(calls).toBe(2);
   });
 });
