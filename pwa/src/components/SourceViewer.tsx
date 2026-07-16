@@ -1,4 +1,13 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import {
+  Component,
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 import type { DomeClient } from "../api/client";
 import type { Citation } from "../api/types";
 import type { SourceDocumentResult } from "../../../contracts/source-document";
@@ -8,6 +17,33 @@ const VaultMarkdown = lazy(async () => {
   const module = await import("./VaultMarkdown");
   return { default: module.VaultMarkdown };
 });
+
+export const MARKDOWN_RENDER_BUDGET_BYTES = 128 * 1024;
+
+type MarkdownRenderer = ComponentType<{ readonly content: string }>;
+
+type MarkdownRenderBoundaryProps = {
+  readonly children: ReactNode;
+};
+
+class MarkdownRenderBoundary extends Component<MarkdownRenderBoundaryProps, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  render(): ReactNode {
+    if (this.state.failed) {
+      return (
+        <p className="source-state source-error" role="alert">
+          The rendered view failed. Switch to Raw to read the exact source.
+        </p>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 type State =
   | { readonly kind: "loading" }
@@ -19,11 +55,14 @@ export function SourceViewer({
   client,
   onClose,
   returnFocus,
+  MarkdownRenderer = VaultMarkdown,
 }: {
   readonly citation: Citation;
   readonly client: DomeClient;
   readonly onClose: () => void;
   readonly returnFocus: HTMLElement | null;
+  /** A narrow renderer seam used by failure-containment tests. */
+  readonly MarkdownRenderer?: MarkdownRenderer;
 }): React.ReactElement {
   const [state, setState] = useState<State>({ kind: "loading" });
   const [view, setView] = useState<"rendered" | "raw">("rendered");
@@ -42,8 +81,14 @@ export function SourceViewer({
 
   useEffect(() => {
     const controller = new AbortController();
+    setState({ kind: "loading" });
+    setView("rendered");
     client.source(citation, controller.signal).then(
-      (result) => setState({ kind: "loaded", result }),
+      (result) => {
+        if (controller.signal.aborted) return;
+        if (result.status === "ok" && exceedsMarkdownRenderBudget(result.content)) setView("raw");
+        setState({ kind: "loaded", result });
+      },
       (error: unknown) => {
         if (!controller.signal.aborted) {
           setState({
@@ -55,6 +100,9 @@ export function SourceViewer({
     );
     return () => controller.abort();
   }, [citation, client]);
+
+  const overRenderBudget = state.kind === "loaded" && state.result.status === "ok" &&
+    exceedsMarkdownRenderBudget(state.result.content);
 
   return (
     <div className="source-backdrop" onMouseDown={(event) => {
@@ -84,10 +132,22 @@ export function SourceViewer({
               : "Source loaded"}
         </p>
         {state.kind === "loaded" && state.result.status === "ok"
-          ? <div className="source-view-toggle" role="group" aria-label="Source display">
-              <button type="button" aria-pressed={view === "rendered"} onClick={() => setView("rendered")}>Rendered</button>
-              <button type="button" aria-pressed={view === "raw"} onClick={() => setView("raw")}>Raw</button>
-            </div>
+          ? <>
+              <div className="source-view-toggle" role="group" aria-label="Source display">
+                <button
+                  type="button"
+                  aria-pressed={view === "rendered"}
+                  disabled={overRenderBudget}
+                  onClick={() => setView("rendered")}
+                >Rendered</button>
+                <button type="button" aria-pressed={view === "raw"} onClick={() => setView("raw")}>Raw</button>
+              </div>
+              {overRenderBudget
+                ? <p className="source-render-notice" role="status">
+                    This source is too large to render safely, so it opened in Raw. The exact content is unchanged.
+                  </p>
+                : null}
+            </>
           : null}
         <div className="source-body">
           {state.kind === "loading" ? <p className="source-state">Loading source…</p> : null}
@@ -97,13 +157,19 @@ export function SourceViewer({
             : null}
           {state.kind === "loaded" && state.result.status === "ok"
             ? view === "rendered"
-              ? <Suspense fallback={<p className="source-state">Rendering source…</p>}>
-                  <VaultMarkdown content={state.result.content} />
-                </Suspense>
+              ? <MarkdownRenderBoundary key={`${state.result.path}\u0000${state.result.commit}`}>
+                  <Suspense fallback={<p className="source-state">Rendering source…</p>}>
+                    <MarkdownRenderer content={state.result.content} />
+                  </Suspense>
+                </MarkdownRenderBoundary>
               : <pre className="source-raw">{state.result.content}</pre>
             : null}
         </div>
       </section>
     </div>
   );
+}
+
+function exceedsMarkdownRenderBudget(content: string): boolean {
+  return new TextEncoder().encode(content).byteLength > MARKDOWN_RENDER_BUDGET_BYTES;
 }
