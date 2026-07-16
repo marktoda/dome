@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { captureReducer, INITIAL } from "../capture/captureMachine";
 import { useModalFocus } from "../accessibility/modalFocus";
+import type { ComposerPresentation } from "../connection/product-session";
 
 type Props = {
   onAsk: (q: string) => void;
@@ -14,6 +15,7 @@ type Props = {
   availability?: "available" | "offline" | "unreachable";
   askEnabled?: boolean;
   voiceEnabled?: boolean;
+  presentation?: ComposerPresentation;
 };
 
 function canRecord(): boolean {
@@ -30,7 +32,20 @@ function fmtTime(s: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConversation, onCapture, onTranscribe, onFile, availability = "available", askEnabled = true, voiceEnabled = true }: Props): React.ReactElement {
+export function Composer({
+  onAsk,
+  turnPhase = "idle",
+  onStop,
+  onRetry,
+  onNewConversation,
+  onCapture,
+  onTranscribe,
+  onFile,
+  availability = "available",
+  askEnabled = true,
+  voiceEnabled = true,
+  presentation = { placeholder: "ask your brain…", hint: null },
+}: Props): React.ReactElement {
   const [text, setText] = useState("");
   const [cap, dispatch] = useReducer(captureReducer, INITIAL);
   const [secs, setSecs] = useState(0);
@@ -189,15 +204,6 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
   const remoteAvailable = availability === "available";
   const askBlocked = activeTurn || turnPhase === "session-ended" || !remoteAvailable || !askEnabled;
   const inputBlocked = activeTurn;
-  const featureHint = !remoteAvailable
-    ? "Ask and voice need Dome Home. Text capture stays local."
-    : !askEnabled && !voiceEnabled
-      ? "Ask needs setup; voice needs transcription. Follow the setup step above. Text capture still works."
-      : !askEnabled
-        ? "Ask needs setup. Follow the setup step above. Voice and text capture still work."
-        : !voiceEnabled
-          ? "Voice needs transcription setup. Ask and text capture still work."
-          : null;
   return (
     <form className="composer" aria-label="Message composer" onSubmit={(e) => { e.preventDefault(); const q = text.trim(); if (!askBlocked && q.length > 0) { onAsk(q); setText(""); } }}>
       {activeTurn ? (
@@ -219,7 +225,7 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
         <button type="button" className="mic" aria-label="record" disabled={!canRecord() || activeTurn || !remoteAvailable || !voiceEnabled} onClick={() => { void startRecording(); }}>
           <span className="glyph"><span className="stem" /><span className="base" /></span>
         </button>
-        <input ref={composerInputRef} aria-label="ask your brain" placeholder={remoteAvailable && askEnabled ? "ask your brain…" : "capture a thought…"} value={text} disabled={inputBlocked} onChange={(e) => setText(e.target.value)} />
+        <input ref={composerInputRef} aria-label="ask your brain" placeholder={presentation.placeholder} value={text} disabled={inputBlocked} onChange={(e) => setText(e.target.value)} />
         <button
           type="button"
           className="capture-text"
@@ -232,7 +238,7 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
         >+</button>
         <button type="submit" disabled={askBlocked || text.trim().length === 0} className={`send${text.trim().length > 0 ? " active" : ""}`} aria-label="send">↑</button>
       </div>
-      {featureHint === null ? null : <span className="connection-hint">{featureHint}</span>}
+      {presentation.hint === null ? null : <span className="connection-hint">{presentation.hint}</span>}
       {cap.error !== null ? <span className="err" role="alert">{cap.error}</span> : null}
     </form>
   );

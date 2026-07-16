@@ -79,7 +79,7 @@ describe("Brief", () => {
     expect(screen.getByText(/Standup/)).toBeDefined();
   });
 
-  test("counts proposal reviews without exposing operator terminology or blind controls", () => {
+  test("makes bounded reviews evidence-backed and gives the backlog one exact Mac action", () => {
     const today: Today = {
       ...base,
       reviews: [{
@@ -93,11 +93,13 @@ describe("Brief", () => {
       counts: { openTasks: 0, followups: 0, questions: 0, reviews: 1 },
     };
     render(<Brief today={today} onResolve={noop} />);
-    expect(screen.queryByText("To review")).toBeNull();
-    expect(screen.queryByText("Promote the link repair processor")).toBeNull();
-    expect(screen.getByText("+3 more items need review")).toBeDefined();
+    expect(screen.getByText("Needs review")).toBeDefined();
+    expect(screen.getByText("Promote the link repair processor")).toBeDefined();
+    expect(screen.getByText(/Evidence: \.dome\/config.yaml/)).toBeDefined();
+    expect(screen.getByText("dome proposals")).toBeDefined();
+    expect(screen.getByText(/2 more items need review/)).toBeDefined();
+    expect(screen.getByText("dome check --decisions")).toBeDefined();
     expect(screen.getByText(/today · 3 to review/i)).toBeDefined();
-    expect(screen.queryByText(/CLI|backlog/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "apply" })).toBeNull();
     expect(screen.queryByRole("button", { name: "reject" })).toBeNull();
   });

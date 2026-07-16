@@ -274,7 +274,9 @@ function Screen({ client, availability, connection }: {
         ? "Today is fresh."
         : todayRefreshState === "failed"
           ? "Today refresh failed. Previously loaded Today data may be stale."
-          : "Today has not been loaded yet.";
+          : today === null
+            ? "Today has not been loaded yet."
+            : "Showing previously loaded Today information.";
   const visibleTodayRefreshState: TodayRefreshState = access.read ? todayRefreshState : "idle";
 
   return (
@@ -360,6 +362,7 @@ function Screen({ client, availability, connection }: {
         availability={availability}
         askEnabled={access.converse}
         voiceEnabled={access.voice}
+        presentation={session.composer}
       />
     </main>
   );

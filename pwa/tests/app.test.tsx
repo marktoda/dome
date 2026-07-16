@@ -484,6 +484,8 @@ describe("App", () => {
     expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Refresh Today" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/Live actions are paused/i)).toBeDefined();
+    expect(screen.getByText("Showing previously loaded Today information.")).toBeDefined();
+    expect(screen.queryByText("Today has not been loaded yet.")).toBeNull();
     expect(refresh.hasAttribute("aria-busy")).toBe(false);
     expect(screen.getByRole("button", { name: "Refresh Today" }).getAttribute("aria-busy")).toBe("false");
     expect(refresh.classList.contains("ready")).toBe(false);
@@ -510,11 +512,12 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
     expect((screen.getByRole("button", { name: "send" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "record" }) as HTMLButtonElement).disabled).toBe(true);
-    const recovery = screen.getByText("Ask needs setup").closest(".recovery-card")!;
+    const recovery = screen.getByText("Dome Home is not accepting changes").closest(".recovery-card")!;
     expect(primaryRecoveryCount(recovery)).toBe(1);
     fireEvent.click(screen.getByText(/Connection · limited/i));
-    expect(screen.getByText(/dome home setup configure/)).toBeDefined();
+    expect(screen.getByText(/dome home status/)).toBeDefined();
     expect(screen.getByText(/Available now: Today and Activity/i)).toBeDefined();
+    expect(screen.getByText(/Ask needs model setup on your Mac/i)).toBeDefined();
 
     const input = screen.getByLabelText("ask your brain") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "still saved locally" } });

@@ -18,6 +18,8 @@ describe("deriveProductSession", () => {
       access: { read: true, converse: true, voice: true, captureReplay: true, resolve: true },
       recovery: null,
       connection: { label: "ready", tone: "healthy" },
+      operational: { host: "ready", adoption: "current", current: true },
+      composer: { placeholder: "ask your brain…", hint: null },
     });
   });
 
@@ -40,12 +42,21 @@ describe("deriveProductSession", () => {
       access: { read: true, converse: false, voice: false, captureReplay: true, resolve: true },
       recovery: { kind: "retry", title: "Ask needs setup", actionLabel: "Check again" },
       connection: { label: "limited", tone: "attention" },
+      operational: { host: "ready", adoption: "current", current: true },
     });
     expect(session.recovery?.detail).toContain("dome home setup configure");
+    expect(session.composer.hint).toContain("Ask needs model setup on your Mac");
+    expect(session.composer.hint).toContain("Voice transcription is temporarily unavailable");
   });
 
-  test("preserves route-level access when host presentation is not ready", () => {
-    for (const state of ["starting", "blocked", "probation"] as const) {
+  test("preserves route-level access while every non-ready host state stays non-green", () => {
+    const cases = [
+      ["starting", "checking"],
+      ["degraded", "limited"],
+      ["blocked", "needs attention"],
+      ["probation", "checking"],
+    ] as const;
+    for (const [state, label] of cases) {
       const session = deriveProductSession({
         availability: "available",
         readiness: {
@@ -62,7 +73,72 @@ describe("deriveProductSession", () => {
         captureReplay: true,
         resolve: true,
       });
+      expect(session).toMatchObject({
+        kind: "operational",
+        connection: { label },
+        operational: { host: state, adoption: "current", current: false },
+      });
+      expect(session.connection.tone).not.toBe("healthy");
+      expect(session.recovery).not.toBeNull();
     }
+  });
+
+  test("preserves route-level access while every non-current adoption state stays non-green", () => {
+    const cases = [
+      ["pending", "syncing"],
+      ["blocked", "needs attention"],
+      ["diverged", "needs attention"],
+      ["unknown", "needs attention"],
+    ] as const;
+    for (const [state, label] of cases) {
+      const session = deriveProductSession({
+        availability: "available",
+        readiness: {
+          document: readiness({ adoption: { ...READY_PRODUCT.adoption, state } }),
+          stale: false,
+          issue: null,
+        },
+        authRepair: false,
+      });
+      expect(session).toMatchObject({
+        kind: "operational",
+        access: { read: true, converse: true, captureReplay: true, resolve: true },
+        connection: { label },
+        operational: { host: "ready", adoption: state, current: false },
+      });
+      expect(session.connection.tone).not.toBe("healthy");
+      expect(session.recovery).not.toBeNull();
+    }
+  });
+
+  test("explains device capability denial without reinterpreting it as model setup", () => {
+    const session = deriveProductSession({
+      availability: "available",
+      readiness: {
+        document: readiness({
+          device: { ...READY_PRODUCT.device, capabilities: ["read"] },
+        }),
+        stale: false,
+        issue: null,
+      },
+      authRepair: false,
+    });
+    expect(session.kind).toBe("current");
+    expect(session.composer).toEqual({
+      placeholder: "capture a thought…",
+      hint: "Ask is not enabled for this device. Voice is not enabled for this device. Text capture still works.",
+    });
+    expect(session.composer.hint).not.toContain("setup");
+  });
+
+  test("explains authorization loss at the product seam", () => {
+    const session = deriveProductSession({
+      availability: "available",
+      readiness: { document: READY_PRODUCT, stale: true, issue: null },
+      authRepair: true,
+    });
+    expect(session.composer.hint).toContain("Pair this device again");
+    expect(session.composer.hint).not.toContain("model");
   });
 
   test("turns non-current evidence into local-only sessions with one prioritized recovery", () => {

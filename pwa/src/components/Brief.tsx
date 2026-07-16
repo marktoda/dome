@@ -5,6 +5,7 @@ import {
   priorityMarkerChars,
   type TodayTaskRow,
   type TodayQuestionRow,
+  type TodayReviewRow,
 } from "../../../src/surface/today-view";
 import type { Today } from "../api/types";
 import { renderRich } from "../rich";
@@ -84,6 +85,16 @@ function QuestionCard({ q, onResolve, interactive }: { q: TodayQuestionRow; onRe
       <div className="opts">
         {q.options.map((opt) => <button key={opt} type="button" disabled={!interactive} onClick={() => onResolve(q.id, opt)}>{opt}</button>)}
       </div>
+    </section>
+  );
+}
+
+function ReviewCard({ review }: { review: TodayReviewRow }): React.ReactElement {
+  return (
+    <section className="qcard review-card" aria-label="Review needed">
+      <div className="body">{renderRich(review.reason)}</div>
+      {review.paths.length > 0 ? <div className="review-evidence">Evidence: {review.paths.join(", ")}</div> : null}
+      <div className="review-action">On your Mac, run <code>{review.reviewCommand}</code></div>
     </section>
   );
 }
@@ -301,8 +312,16 @@ export function Brief(
           <div className="rows">{questions.map((q) => <QuestionCard key={q.id} q={q} onResolve={onResolve} interactive={interactive} />)}</div>
         </div>
       ) : null}
-      {ownerBacklog > 0 ? (
-        <div className="brief-more">+{ownerBacklog} more {ownerBacklog === 1 ? "item needs" : "items need"} review</div>
+      {reviews.length > 0 ? (
+        <div className="section">
+          <div className="label">Needs review</div>
+          <div className="rows">{reviews.map((review) => <ReviewCard key={review.id} review={review} />)}</div>
+        </div>
+      ) : null}
+      {attentionBacklog > 0 ? (
+        <div className="brief-more review-backlog-action">
+          {attentionBacklog} more {attentionBacklog === 1 ? "item needs" : "items need"} review. On your Mac, run <code>dome check --decisions</code>.
+        </div>
       ) : null}
     </section>
   );

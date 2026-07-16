@@ -258,6 +258,11 @@ input.box:checked { background: var(--amber); border-color: var(--amber); }
 .qcard .tag .q { font-size: 13px; color: var(--peri); line-height: 1; }
 .qcard .tag .label { font: 600 10px var(--mono); color: var(--peri); letter-spacing: .1em; }
 .qcard .body { font-size: 15px; line-height: 1.4; color: var(--text); margin-bottom: 13px; text-wrap: pretty; }
+.review-card .body { margin-bottom: 8px; }
+.review-evidence, .review-action, .review-backlog-action { overflow-wrap: anywhere; }
+.review-evidence { color: var(--text-dim); font: 500 10px/1.45 var(--mono); margin-bottom: 8px; }
+.review-action { color: var(--text); font-size: 12px; line-height: 1.45; }
+.review-action code, .review-backlog-action code { color: var(--peri); font: 600 11px var(--mono); }
 .qcard .opts { display: flex; gap: 9px; flex-wrap: wrap; }
 .qcard .opts button { flex: 1 1 40%; min-width: 96px; text-align: center; padding: 11px; border: 1px solid var(--control-border); border-radius: 10px; background: var(--peri-bg); color: var(--peri); font-size: 13px; font-weight: 600; }
 .qcard .opts button:active { background: rgba(185,192,240,.22); }

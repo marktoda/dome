@@ -61,22 +61,25 @@ describe("Composer", () => {
     expect(ask).not.toHaveBeenCalled();
   });
 
-  test("names the unavailable model and transcription features directly", () => {
+  test("paints the feature cause supplied by the product session", () => {
     const props = {
       onAsk: () => {},
       onCapture: async () => {},
       onTranscribe: async () => "",
       onFile: async () => {},
     };
-    const view = render(<Composer {...props} askEnabled={false} voiceEnabled={false} />);
-    expect(screen.getByText(/Ask needs setup; voice needs transcription/i)).toBeDefined();
-
-    view.rerender(<Composer {...props} askEnabled={true} voiceEnabled={false} />);
-    expect(screen.getByText(/Voice needs transcription.*Ask and text capture still work/i)).toBeDefined();
-
-    view.rerender(<Composer {...props} askEnabled={false} voiceEnabled={true} />);
-    expect(screen.getByText(/Ask needs setup.*Voice and text capture still work/i)).toBeDefined();
-    expect(screen.queryByText(/Unavailable remote features/i)).toBeNull();
+    render(<Composer
+      {...props}
+      askEnabled={false}
+      voiceEnabled={false}
+      presentation={{
+        placeholder: "capture a thought…",
+        hint: "Pair this device again to use Ask and voice. Text capture stays on this device.",
+      }}
+    />);
+    expect(screen.getByText(/Pair this device again/i)).toBeDefined();
+    expect(screen.getByPlaceholderText("capture a thought…")).toBeDefined();
+    expect(screen.queryByText(/setup/i)).toBeNull();
   });
 
   test("an availability loss while recording discards audio without transcription", async () => {
