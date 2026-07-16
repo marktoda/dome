@@ -279,6 +279,12 @@ extensions:
       question.ask: true
       questions.read: true
       proposals.read: true
+    processors:
+      dome.daily.today:
+        grant:
+          read: ["**"]
+          questions.read: true
+          proposals.read: true
   dome.lint:
     enabled: true
     grant:

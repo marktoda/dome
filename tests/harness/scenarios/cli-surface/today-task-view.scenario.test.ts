@@ -582,9 +582,9 @@ scenario(
         "wiki/projects/backlog.md": [
           "# Backlog",
           "",
-          "- [ ] Backlog one",
-          "- [ ] Backlog two",
-          "- [ ] Backlog three",
+          "- [ ] #task Backlog one",
+          "- [ ] #task Backlog two",
+          "- [ ] #task Backlog three",
           "",
         ].join("\n"),
       },
