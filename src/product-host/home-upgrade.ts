@@ -7,6 +7,9 @@ import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import {
+  HomeRuntimeMigrationRequiredError,
+  homeInstallationPaths,
+  preflightManagedHomeRuntime,
   readHomeInstallation,
   type HomeInstallationRecord,
 } from "./home-installation";
@@ -79,6 +82,7 @@ export type HomeUpgradeResult = {
   readonly reason:
     | "preflight-failed"
     | "credential-migration-required"
+    | "runtime-migration-required"
     | "candidate-failed"
     | "prior-attempt-recovered"
     | "candidate-repair-required"
@@ -265,6 +269,26 @@ export async function manageHomeUpgrade(input: {
       );
     }
 
+    try {
+      await preflightManagedHomeRuntime({
+        paths: homeInstallationPaths(vault, deps),
+        artifactRoot,
+        manifest,
+      });
+    } catch (error) {
+      if (!(error instanceof HomeRuntimeMigrationRequiredError)) throw error;
+      return failure(
+        vault,
+        requested,
+        "error",
+        64,
+        "runtime-migration-required",
+        "Dome Home runtime migration is required before this artifact can be selected",
+        "inspect-home-status",
+        { selected: installationSummary(current) },
+      );
+    }
+
     const transactionId = operations.operationId();
     try {
       const cutover = await operations.cutover({
@@ -299,6 +323,18 @@ export async function manageHomeUpgrade(input: {
         return failure(vault, requested, "error", 75, "busy", "another Dome Home lifecycle operation is active", "rerun-requested-upgrade", {
           selected: installationSummary(current),
         });
+      }
+      if (error instanceof HomeRuntimeMigrationRequiredError) {
+        return failure(
+          vault,
+          requested,
+          "error",
+          64,
+          "runtime-migration-required",
+          "Dome Home runtime migration is required before this artifact can be selected",
+          "inspect-home-status",
+          { selected: installationSummary(current) },
+        );
       }
       throw error;
     }

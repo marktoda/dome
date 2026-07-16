@@ -37,8 +37,10 @@ import { resolveServiceDeps, serviceLabelForVault, vaultServiceSlug, type Servic
 import { readServeHeartbeatStatus } from "../engine/host/compiler-host-heartbeat";
 import {
   homeInstallationPaths,
+  managedHomeRuntimePath,
   readHomeInstallation,
   releaseRoot,
+  verifyManagedHomeRuntime,
   type HomeInstallationDeps,
 } from "./home-installation";
 import { homeArtifactLaunchCapability, verifyHomeArtifact } from "./home-artifact";
@@ -1627,9 +1629,10 @@ async function verifyStartupProvenance(
     throw new Error("verified managed release does not match the authorized Home resume artifact");
   }
   const launch = homeArtifactLaunchCapability(manifest);
+  await verifyManagedHomeRuntime({ paths, artifactRoot: release, manifest });
   await assertExactInvokingFile(
     deps.invokingRuntimePath ?? process.execPath,
-    join(release, launch.programPath),
+    launch.kind === "named" ? managedHomeRuntimePath(paths) : join(release, launch.programPath),
     "runtime",
   );
   await assertExactInvokingFile(
@@ -1656,7 +1659,7 @@ async function assertExactInvokingFile(
   if (!actualInfo.isFile() || actualInfo.isSymbolicLink() || actualInfo.nlink !== 1 ||
     !expectedInfo.isFile() || expectedInfo.isSymbolicLink() || expectedInfo.nlink !== 1 ||
     actual !== actualReal || expected !== expectedReal || actualReal !== expectedReal) {
-    throw new Error(`invoking Home ${label} is not the exact direct managed-release file`);
+    throw new Error(`invoking Home ${label} is not the exact direct managed Home file`);
   }
 }
 

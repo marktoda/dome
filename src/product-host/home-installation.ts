@@ -3,16 +3,17 @@
 // selection: one closed per-vault record names one content-addressed release.
 
 import { createHash, randomUUID } from "node:crypto";
-import { cp, lstat, mkdir, open, readFile, readdir, realpath, rename, rm } from "node:fs/promises";
+import { chmod, copyFile, cp, lstat, mkdir, open, readFile, readdir, realpath, rename, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
-import { publishDirectoryExclusive } from "../platform/exclusive-rename";
+import { publishDirectoryExclusive, publishPathExclusive } from "../platform/exclusive-rename";
 import { compareStrings } from "../core/compare";
 import { withExclusiveFileLock } from "../engine/host/file-lock";
 import { vaultServiceSlug } from "../surface/service-probe";
 import {
+  homeArtifactLaunchCapability,
   verifyHomeArtifact,
   type HomeArtifactManifest,
   type HomeArtifactVerifier,
@@ -49,6 +50,8 @@ export type HomeInstallationDeps = {
   readonly publishRecord?: ((path: string, record: HomeInstallationRecord) => Promise<void>) | undefined;
   readonly quarantineRelease?: ((source: string, target: string) => Promise<void>) | undefined;
   readonly syncReleaseParent?: ((path: string) => Promise<void>) | undefined;
+  readonly publishRuntime?: ((source: string, target: string) => Promise<void>) | undefined;
+  readonly syncRuntimeParent?: ((path: string) => Promise<void>) | undefined;
   /** Test/diagnostic seam; runs immediately before each real directory fsync. */
   readonly directoryDurabilityCheckpoint?: ((step: ManagedDirectoryDurabilityStep) => Promise<void>) | undefined;
   /** Test/diagnostic crash seam for committed-candidate release repair. */
@@ -85,6 +88,14 @@ export class ManagedHomeInstallationPublicationError extends Error {
   }
 }
 
+/** A pinned Bun generation change needs an explicit executable-identity migration. */
+export class HomeRuntimeMigrationRequiredError extends Error {
+  constructor() {
+    super("Dome Home runtime migration is required before this artifact can be selected");
+    this.name = "HomeRuntimeMigrationRequiredError";
+  }
+}
+
 export function homeInstallationRoot(
   deps: Pick<HomeInstallationDeps, "applicationSupportDir"> = {},
 ): string {
@@ -103,6 +114,116 @@ export function homeInstallationPaths(vault: string, deps: HomeInstallationDeps 
 export function releaseRoot(paths: HomeInstallationPaths, artifactId: string): string {
   if (!/^[a-f0-9]{64}$/.test(artifactId)) throw new Error("installation artifact id is invalid");
   return join(paths.releases, artifactId);
+}
+
+/** One host-wide executable identity; release selectors never alter this path. */
+export function managedHomeRuntimePath(paths: HomeInstallationPaths): string {
+  assertManagedReleasePaths(paths);
+  return join(paths.root, "runtime", "Dome Home");
+}
+
+/**
+ * Verify the stable named runtime against one already-verified artifact.
+ * Legacy artifacts intentionally keep their historical release-scoped launch.
+ */
+export async function verifyManagedHomeRuntime(input: Readonly<{
+  paths: HomeInstallationPaths;
+  artifactRoot: string;
+  manifest: HomeArtifactManifest;
+}>): Promise<void> {
+  const launch = homeArtifactLaunchCapability(input.manifest);
+  if (launch.kind === "legacy") return;
+  const entry = input.manifest.entries.find((candidate) => candidate.path === launch.programPath);
+  if (entry?.type !== "file") throw new Error("managed Home runtime manifest entry is unavailable");
+  const source = join(resolve(input.artifactRoot), launch.programPath);
+  await assertRuntimeFile(source, entry, "artifact Home runtime", false);
+  await assertRuntimeFile(managedHomeRuntimePath(input.paths), entry, "stable Home runtime");
+}
+
+/** Read-only intent preflight; absence is the supported one-time bootstrap. */
+export async function preflightManagedHomeRuntime(input: Readonly<{
+  paths: HomeInstallationPaths;
+  artifactRoot: string;
+  manifest: HomeArtifactManifest;
+}>): Promise<void> {
+  const launch = homeArtifactLaunchCapability(input.manifest);
+  if (launch.kind === "legacy") return;
+  const entry = input.manifest.entries.find((candidate) => candidate.path === launch.programPath);
+  if (entry?.type !== "file") throw new Error("managed Home runtime manifest entry is unavailable");
+  await assertRuntimeFile(
+    join(resolve(input.artifactRoot), launch.programPath),
+    entry,
+    "artifact Home runtime",
+    false,
+  );
+  const target = managedHomeRuntimePath(input.paths);
+  if (!await pathPresent(target)) return;
+  try { await assertRuntimeFile(target, entry, "stable Home runtime"); }
+  catch (error) {
+    if (await isDirectExecutableRuntime(target)) throw new HomeRuntimeMigrationRequiredError();
+    throw error;
+  }
+}
+
+/**
+ * Publish the pinned Bun twin once under a stable host-wide path. The global
+ * release-store owner makes this a single-writer operation; exact convergence
+ * means ordinary app upgrades never replace the executable macOS authorizes.
+ */
+export async function ensureManagedHomeRuntimeOwned(
+  owner: ManagedReleaseStoreOwner,
+  input: Readonly<{
+    paths: HomeInstallationPaths;
+    artifactRoot: string;
+    manifest: HomeArtifactManifest;
+    platform: NodeJS.Platform;
+  }>,
+  deps: HomeInstallationDeps = {},
+): Promise<void> {
+  assertManagedReleaseStoreOwner(owner, input.paths.root);
+  assertManagedReleasePaths(input.paths);
+  const launch = homeArtifactLaunchCapability(input.manifest);
+  if (launch.kind === "legacy") return;
+  const entry = input.manifest.entries.find((candidate) => candidate.path === launch.programPath);
+  if (entry?.type !== "file") throw new Error("managed Home runtime manifest entry is unavailable");
+  const source = join(resolve(input.artifactRoot), launch.programPath);
+  await assertRuntimeFile(source, entry, "artifact Home runtime", false);
+  const runtimeDirectory = join(input.paths.root, "runtime");
+  const target = managedHomeRuntimePath(input.paths);
+  await ensureDurableDirectDirectory(input.paths.root, deps);
+  await ensureDurableDirectDirectory(runtimeDirectory, deps);
+  if (await pathPresent(target)) {
+    await preflightManagedHomeRuntime(input);
+    await (deps.syncRuntimeParent ?? fsyncDirectory)(runtimeDirectory);
+    return;
+  }
+
+  const temporary = join(runtimeDirectory, `.Dome Home-${process.pid}-${randomUUID()}`);
+  try {
+    await copyFile(source, temporary);
+    await chmod(temporary, Number.parseInt(entry.mode, 8) & 0o777);
+    const handle = await open(temporary, "r");
+    try { await handle.sync(); } finally { await handle.close(); }
+    await assertRuntimeFile(temporary, entry, "staged stable Home runtime");
+    try {
+      await (deps.publishRuntime ?? ((from, to) => publishPathExclusive({
+        source: from,
+        target: to,
+        platform: input.platform,
+      })))(temporary, target);
+    } catch (error) {
+      if (!await pathPresent(target)) throw error;
+      try { await assertRuntimeFile(target, entry, "concurrent stable Home runtime"); }
+      catch (verifyError) {
+        throw new AggregateError([error, verifyError], "stable Home runtime publication conflicted");
+      }
+    }
+    await (deps.syncRuntimeParent ?? fsyncDirectory)(runtimeDirectory);
+    await assertRuntimeFile(source, entry, "artifact Home runtime", false);
+    await assertRuntimeFile(target, entry, "stable Home runtime");
+  } finally {
+    await rm(temporary, { force: true });
+  }
 }
 
 export async function readHomeInstallation(vault: string, deps: HomeInstallationDeps = {}): Promise<HomeInstallationRecord | null> {
@@ -156,6 +277,12 @@ export async function ensureManagedReleaseOwned(
   const source = resolve(input.source);
   const sourceManifest = await verify(source);
   assertSameManifest(sourceManifest, input.manifest, "managed release identity mismatch");
+  await ensureManagedHomeRuntimeOwned(owner, {
+    paths: input.paths,
+    artifactRoot: source,
+    manifest: input.manifest,
+    platform: input.platform,
+  }, deps);
   const target = releaseRoot(input.paths, input.manifest.artifact.id);
   return withManagedReleaseOwnership(owner, input.paths, input.manifest.artifact.id, "publish", async () => {
     if (await pathPresent(target)) {
@@ -597,6 +724,31 @@ async function fsyncTree(root: string): Promise<void> {
 async function fsyncDirectory(path: string): Promise<void> {
   const handle = await open(path, "r");
   try { await handle.sync(); } finally { await handle.close(); }
+}
+
+async function assertRuntimeFile(
+  path: string,
+  expected: Extract<HomeArtifactManifest["entries"][number], { readonly type: "file" }>,
+  label: string,
+  requireSingleLink = true,
+): Promise<void> {
+  const canonical = resolve(path);
+  const info = await lstat(canonical);
+  if (!info.isFile() || info.isSymbolicLink() || (requireSingleLink && info.nlink !== 1) ||
+    await realpath(canonical) !== canonical || info.size !== expected.bytes ||
+    (info.mode & 0o777) !== (Number.parseInt(expected.mode, 8) & 0o777) ||
+    createHash("sha256").update(await readFile(canonical)).digest("hex") !== expected.sha256) {
+    throw new Error(`${label} is not the exact direct executable selected by the artifact`);
+  }
+}
+
+async function isDirectExecutableRuntime(path: string): Promise<boolean> {
+  try {
+    const canonical = resolve(path);
+    const info = await lstat(canonical);
+    return info.isFile() && !info.isSymbolicLink() && info.nlink === 1 &&
+      await realpath(canonical) === canonical && (info.mode & 0o111) !== 0;
+  } catch { return false; }
 }
 
 async function pathPresent(path: string): Promise<boolean> {

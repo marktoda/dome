@@ -18,6 +18,7 @@ import { vaultServiceSlug } from "../surface/service-probe";
 import {
   HOME_INSTALLATION_SCHEMA,
   homeInstallationPaths,
+  managedHomeRuntimePath,
   releaseRoot,
   type HomeInstallationDeps,
   type HomeInstallationRecord,
@@ -117,10 +118,13 @@ export function renderHomeSelection(input: {
     throw new Error("Home selection manifest does not match its artifact");
   }
   const launch = homeArtifactLaunchCapability(input.artifact.manifest);
-  const runtime = join(input.artifact.releasePath, launch.programPath);
+  const releaseRuntime = join(input.artifact.releasePath, launch.programPath);
+  const runtime = launch.kind === "named"
+    ? managedHomeRuntimePath(homeInstallationPaths(vault, deps))
+    : releaseRuntime;
   const entrypoint = join(input.artifact.releasePath, "app", "bin", "dome");
   const launchEnvironment = new Map(environment.map((entry) => [entry.name, entry.value]));
-  launchEnvironment.set("PATH", homeServicePath(runtime));
+  launchEnvironment.set("PATH", homeServicePath(releaseRuntime));
   const plistBytes = renderLaunchAgentPlist({
     label,
     ...(launch.kind === "named" ? { program: runtime } : {}),

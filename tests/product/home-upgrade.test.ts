@@ -6,6 +6,7 @@ import { join } from "node:path";
 import type { HomeArtifactManifest } from "../../src/product-host/home-artifact";
 import {
   ensureManagedRelease,
+  HomeRuntimeMigrationRequiredError,
   homeInstallationPaths,
 } from "../../src/product-host/home-installation";
 import { homeServiceLabelForVault } from "../../src/product-host/home-lifecycle";
@@ -477,6 +478,17 @@ describe("Home upgrade intent", () => {
     });
   });
 
+  test("classifies a changed pinned Bun generation as an explicit runtime migration", async () => {
+    const f = intentFixture({ cutoverError: new HomeRuntimeMigrationRequiredError() });
+    expect(await manageHomeUpgrade({ action: "run", vaultPath: "/vault" }, f.deps)).toMatchObject({
+      status: "error",
+      exitCode: 64,
+      reason: "runtime-migration-required",
+      selectedArtifact: { artifactId: OLD, productVersion: "1.0.0" },
+      message: "Dome Home runtime migration is required before this artifact can be selected",
+    });
+  });
+
   test("reports the exact internal error without changing the public coordination result", async () => {
     const diagnostics: unknown[] = [];
     const failure = new Error("candidate cutover failed for a private internal path");
@@ -841,9 +853,18 @@ function installation(
 }
 
 function manifest(): HomeArtifactManifest {
+  const runtime = {
+    type: "file" as const,
+    path: "runtime/bun",
+    bytes: 1,
+    sha256: "0".repeat(64),
+    mode: "0755",
+  };
   return {
     artifact: { id: REQUESTED },
     product: { name: "Dome Home", version: "2.0.0" },
+    runtime: { sha256: runtime.sha256 },
+    entries: [runtime],
     writerBarrier: { protocol: 1 },
     durableState: { protocol: 1, stores: [] },
     homeCredentials: { protocol: 1, path: "runtime/dome-keychain-helper", sha256: "a".repeat(64),

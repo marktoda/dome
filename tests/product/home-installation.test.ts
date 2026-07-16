@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -23,7 +23,9 @@ import {
   createHomeInstallation,
   ensureManagedRelease,
   ensureManagedReleaseOwned,
+  HomeRuntimeMigrationRequiredError,
   homeInstallationPaths,
+  managedHomeRuntimePath,
   parseHomeInstallationRecord,
   publishHomeInstallation,
   repairManagedRelease,
@@ -109,6 +111,86 @@ const semanticMismatches = [
 ] as const;
 
 describe("immutable Dome Home release publication", () => {
+  test("publishes one stable named runtime identity across release upgrades", async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "dome-stable-home-runtime-")));
+    const paths = homeInstallationPaths("/vault", { applicationSupportDir: join(root, "support") });
+    const runtimeBytes = "stable test Bun runtime\n";
+    const makeArtifact = async (idCharacter: string, version: string, bytes = runtimeBytes) => {
+      const runtimeSha = createHash("sha256").update(bytes).digest("hex");
+      const source = join(root, `artifact-${idCharacter}`);
+      await mkdir(join(source, "runtime"), { recursive: true });
+      await writeFile(join(source, "runtime", "Dome Home"), bytes, { mode: 0o700 });
+      const runtime = {
+        type: "file" as const,
+        path: "runtime/bun",
+        bytes: Buffer.byteLength(bytes),
+        sha256: runtimeSha,
+        mode: "0700",
+      };
+      const value: HomeArtifactManifest = {
+        ...manifest(),
+        product: { name: "Dome Home", version },
+        artifact: { id: idCharacter.repeat(64) },
+        runtime: { ...manifest().runtime, sha256: runtimeSha },
+        entries: [{ ...runtime, path: "runtime/Dome Home" }, runtime],
+      };
+      return { source, manifest: value };
+    };
+    try {
+      const first = await makeArtifact("a", "2.0.0");
+      const second = await makeArtifact("b", "2.1.0");
+      const publish = async (artifact: Awaited<ReturnType<typeof makeArtifact>>) => {
+        await ensureManagedRelease({
+          source: artifact.source,
+          manifest: artifact.manifest,
+          paths,
+          platform: "darwin",
+        }, {
+          verifyArtifact: async () => artifact.manifest,
+          syncRelease: async () => {},
+          publishRelease: rename,
+          publishRuntime: rename,
+        });
+      };
+
+      await publish(first);
+      const stableRuntime = managedHomeRuntimePath(paths);
+      const firstIdentity = await lstat(stableRuntime);
+      await publish(second);
+
+      expect(await readFile(stableRuntime, "utf8")).toBe(runtimeBytes);
+      const stableIdentity = await lstat(stableRuntime);
+      expect(stableIdentity.ino).toBe(firstIdentity.ino);
+      expect(stableIdentity.nlink).toBe(1);
+      expect(stableIdentity.mode & 0o777).toBe(0o700);
+
+      const futureRuntime = await makeArtifact("c", "3.0.0", "future Bun generation\n");
+      await expect(ensureManagedRelease({
+        source: futureRuntime.source,
+        manifest: futureRuntime.manifest,
+        paths,
+        platform: "darwin",
+      }, {
+        verifyArtifact: async () => futureRuntime.manifest,
+        publishRuntime: rename,
+      })).rejects.toBeInstanceOf(HomeRuntimeMigrationRequiredError);
+      await expect(lstat(releaseRoot(paths, futureRuntime.manifest.artifact.id))).rejects.toThrow();
+
+      await chmod(stableRuntime, 0o600);
+      const third = await makeArtifact("d", "2.2.0");
+      await expect(ensureManagedRelease({
+        source: third.source,
+        manifest: third.manifest,
+        paths,
+        platform: "darwin",
+      }, {
+        verifyArtifact: async () => third.manifest,
+        publishRuntime: rename,
+      })).rejects.toThrow("stable Home runtime");
+      await expect(lstat(releaseRoot(paths, third.manifest.artifact.id))).rejects.toThrow();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   test("owned publication rejects a token bound to another Home root", async () => {
     const first = await releaseFixture("dome-release-owner-first-");
     const second = await releaseFixture("dome-release-owner-second-");

@@ -8,7 +8,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { compareStrings } from "../core/compare";
 import { probeLaunchAgentLoadedStrict } from "../platform/launchd";
 import { resolveServiceDeps, vaultServiceSlug } from "../surface/service-probe";
-import { homeInstallationPaths, parseHomeInstallationRecord, readHomeInstallation, releaseRoot, syncDirectory, type HomeInstallationDeps } from "./home-installation";
+import { ensureManagedHomeRuntimeOwned, homeInstallationPaths, parseHomeInstallationRecord, readHomeInstallation, releaseRoot, syncDirectory, type HomeInstallationDeps } from "./home-installation";
 import { captureHomeSelectionDocument, homeSelectionPaths, publishHomeSelectionDocument, renderHomeSelection, type HomeSelectionDeps } from "./home-selection";
 import {
   readHomeUpgrade,
@@ -29,7 +29,7 @@ import {
   type SupervisedHomeSuspensionResult,
 } from "./home-lifecycle-suspension";
 import { withProductHostOwnership } from "./host-ownership";
-import { withManagedReleaseStoreCoordinator } from "./managed-release-store-coordinator";
+import { withManagedReleaseStoreCoordinator, type ManagedReleaseStoreOwner } from "./managed-release-store-coordinator";
 import { verifyHomeArtifact } from "./home-artifact";
 import { readVaultId } from "./vault-id";
 
@@ -80,7 +80,8 @@ export type HomeCredentialResidueCleanupResult = Readonly<{
 }>;
 
 export type HomeCredentialResidueCleanupDeps = HomeCredentialResidueDeps &
-  Pick<HomeInstallationDeps, "verifyArtifact"> &
+  Pick<HomeInstallationDeps, "verifyArtifact" | "publishRuntime" | "syncRuntimeParent" |
+    "directoryDurabilityCheckpoint"> &
   Pick<HomeLifecycleSuspensionDeps, "platform" | "uid" | "launchctl" | "drainTimeoutMs" |
     "readiness" | "readinessTimeoutMs" | "legacyServeRunning"> & {
     readonly credentials?: HomeCredentials;
@@ -612,8 +613,8 @@ async function cleanupWhileOwned(
   requireSupportedInspection(before);
   await requireReadyShippedModel(vault, resolveModel);
   const paths = homeInstallationPaths(vault, deps);
-  const global = await withManagedReleaseStoreCoordinator(paths.root, async () => {
-    if (liveSelection !== "absent") await sanitizeLiveSelection(vault, deps, liveSelection);
+  const global = await withManagedReleaseStoreCoordinator(paths.root, async (owner) => {
+    if (liveSelection !== "absent") await sanitizeLiveSelection(vault, deps, liveSelection, owner);
     await removeTransientResidue(vault, operationId, deps);
     await removeContaminatedHistory(vault, operationId, deps);
   }, { waitMs: 30_000 });
@@ -645,6 +646,7 @@ async function sanitizeLiveSelection(
   vault: string,
   deps: HomeCredentialResidueCleanupDeps,
   expected: "complete" | "installation-only",
+  owner: ManagedReleaseStoreOwner,
 ): Promise<void> {
   if (await classifyLiveSelection(vault, deps) !== expected) {
     throw new Error("Home selection changed before credential cleanup mutation");
@@ -657,6 +659,12 @@ async function sanitizeLiveSelection(
   if (manifest.artifact.id !== record.artifact.id || manifest.product.version !== record.artifact.version) {
     throw new Error("selected Home release does not match the installation record");
   }
+  await ensureManagedHomeRuntimeOwned(owner, {
+    paths,
+    artifactRoot: releasePath,
+    manifest,
+    platform: deps.platform ?? process.platform,
+  }, deps);
   const environment = record.environment.filter((entry) => entry.name !== "ANTHROPIC_API_KEY");
   if (environment.some((entry) => isHomeSecretEnvironmentName(entry.name))) throw new CleanupRefusal("unsupported-residue");
   const desired = renderHomeSelection({

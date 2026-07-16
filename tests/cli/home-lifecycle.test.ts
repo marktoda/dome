@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, realpathSync } from "node:fs";
 import { chmod, link, lstat, mkdir, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -29,6 +30,7 @@ import { startProductHost, type ProductHost } from "../../src/product-host/produ
 import {
   ensureManagedRelease,
   homeInstallationPaths,
+  managedHomeRuntimePath,
   publishHomeInstallation,
   releaseRoot,
   syncDirectory,
@@ -123,7 +125,7 @@ async function verifyFixtureArtifact(root: string): Promise<HomeArtifactManifest
     type: "file" as const,
     path: "runtime/bun",
     bytes: 13,
-    sha256: "0".repeat(64),
+    sha256: createHash("sha256").update("runtime bytes").digest("hex"),
     mode: "0755",
   };
   return {
@@ -379,13 +381,16 @@ describe("manageHome macOS lifecycle", () => {
     expect(result.ready).toBe(true);
     expect(result.label).toBe(homeServiceLabelForVault(f.vault));
     const plist = await readFile(result.plist, "utf8");
+    const stableRuntime = managedHomeRuntimePath(homeInstallationPaths(f.vault, {
+      applicationSupportDir: f.support,
+    }));
     expect(plist).toContain(
-      `<key>Program</key>\n  <string>${join(result.release!, "runtime", "Dome Home")}</string>\n` +
+      `<key>Program</key>\n  <string>${stableRuntime}</string>\n` +
       "  <key>ProgramArguments</key>\n  <array>\n    <string>Dome Home</string>\n" +
       `    <string>${result.program}</string>`,
     );
     for (const value of [
-      join(result.release!, "runtime", "Dome Home"), result.program, "home", "--vault", f.vault, "--host", "127.0.0.1",
+      stableRuntime, result.program, "home", "--vault", f.vault, "--host", "127.0.0.1",
       "--port", "3663", "--static-dir", join(result.release!, "app", "pwa", "dist"),
     ]) expect(plist).toContain(`<string>${value}</string>`);
     expect(plist).toContain("a&amp;&lt;b&gt;");

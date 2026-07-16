@@ -350,7 +350,15 @@ a new schema capability or code-signing inventory row. Installed publication
 may materialize the two paths as separate ordinary files, but their manifest
 bytes, hash, mode, and executable intent remain identical.
 
-For such an artifact the LaunchAgent sets `Program` to the selected release's
+Managed publication copies that verified twin once to the direct, host-wide
+path `~/Library/Application Support/Dome/Home/runtime/Dome Home` while holding
+the global release-store owner. The file and its parent are fsynced, and every
+later named release must exact-match the same bytes, mode, and executable
+intent. Ordinary product upgrades therefore preserve one macOS executable
+identity instead of asking Calendar and other privacy controls to authorize a
+new content-addressed path on every release.
+
+For such an artifact the LaunchAgent sets `Program` to that stable host-wide
 `runtime/Dome Home` and sets `ProgramArguments` to exact argv0 `Dome Home`, followed by
 `app/bin/dome`, `home`,
 loopback `127.0.0.1:3663`, and the bundled PWA path. `RunAtLoad` and
@@ -372,6 +380,16 @@ target without runtime mutation or exposing a PID or launchd label as product
 evidence. Bare foreground `dome home` remains
 an ordinary invoking-shell process; the name is earned by the managed launch
 Adapter.
+
+The current artifact contract pins one official Bun generation, so the stable
+runtime is deliberately outside the two-document release selector transaction:
+selection, rollback, and power-loss recovery never rewrite it. A future
+artifact whose verified Bun bytes differ is refused before release or selector
+publication with typed `runtime-migration-required` truth. Such a runtime
+generation change must ship an explicit migration design for executable
+replacement, rollback compatibility, and possible one-time macOS privacy
+re-consent; it may not silently overwrite this identity or masquerade as a
+corrupt selected release.
 
 Lifecycle ownership is intentionally narrow. Start, restart, and status derive
 their paths only from the record and re-verify its release. Status reports the

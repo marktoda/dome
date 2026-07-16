@@ -34,6 +34,7 @@ import {
   createHomeInstallation,
   homeInstallationPaths,
   ManagedHomeInstallationPublicationError,
+  verifyManagedHomeRuntime,
   publishManagedHomeInstallation,
   readHomeInstallation,
   releaseRoot,
@@ -944,6 +945,11 @@ async function inspectSelectedRelease(base: Base, deps: HomeLifecycleDeps): Prom
   try {
     const manifest = await (deps.verifyArtifact ?? verifyHomeArtifact)(base.release);
     if (manifest.artifact.id !== base.artifactId || manifest.product.version !== base.productVersion) throw new Error("release manifest differs from installation record");
+    await verifyManagedHomeRuntime({
+      paths: homeInstallationPaths(base.vault, deps),
+      artifactRoot: base.release,
+      manifest,
+    });
     return { kind: "verified", manifest };
   } catch (error) {
     return { kind: "error", status: "corrupt-release", error: `managed Dome Home release is corrupt: ${message(error)}` };

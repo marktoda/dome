@@ -32,7 +32,7 @@ describe("Home release selection", () => {
       applicationSupportDir: "/support", launchAgentsDir: "/agents",
     }).plist.bytes;
     expect(named).toContain(
-      `<key>Program</key>\n  <string>${join(release, "runtime", "Dome Home")}</string>\n` +
+      `<key>Program</key>\n  <string>/support/runtime/Dome Home</string>\n` +
       "  <key>ProgramArguments</key>\n  <array>\n    <string>Dome Home</string>",
     );
 
@@ -49,6 +49,39 @@ describe("Home release selection", () => {
       artifact: { ...namedArtifact, manifest: malformed },
     }, { applicationSupportDir: "/support", launchAgentsDir: "/agents" }))
       .toThrow("not an exact executable Bun twin");
+  });
+
+  test("keeps the managed executable identity stable across artifact upgrades", () => {
+    const deps = { applicationSupportDir: "/support", launchAgentsDir: "/agents" };
+    const base = { vault: "/vault", environment: [] };
+    const first = renderHomeSelection({
+      ...base,
+      artifact: selectionArtifact(
+        "a",
+        "2.0.0",
+        `/support/releases/${"a".repeat(64)}`,
+        true,
+      ),
+    }, deps).plist.bytes;
+    const second = renderHomeSelection({
+      ...base,
+      artifact: selectionArtifact(
+        "b",
+        "2.1.0",
+        `/support/releases/${"b".repeat(64)}`,
+        true,
+      ),
+    }, deps).plist.bytes;
+
+    const stableProgram = "<key>Program</key>\n  <string>/support/runtime/Dome Home</string>";
+    expect(first).toContain(stableProgram);
+    expect(second).toContain(stableProgram);
+    expect(first).not.toContain(
+      `<key>Program</key>\n  <string>/support/releases/${"a".repeat(64)}/runtime/Dome Home</string>`,
+    );
+    expect(second).not.toContain(
+      `<key>Program</key>\n  <string>/support/releases/${"b".repeat(64)}/runtime/Dome Home</string>`,
+    );
   });
 
   test("rejects secret-like environment before rendering selector or plist bytes", () => {
@@ -85,7 +118,7 @@ describe("Home release selection", () => {
       expect(candidate.installation.bytes).toContain('"version": "2.0.0"');
       const release = join(support, "releases", "a".repeat(64));
       expect(candidate.plist.bytes).toContain(
-        `<key>Program</key>\n  <string>${join(release, "runtime", "Dome Home")}</string>`,
+        `<key>Program</key>\n  <string>${join(support, "runtime", "Dome Home")}</string>`,
       );
       expect(candidate.plist.bytes).toContain(
         `<key>ProgramArguments</key>\n  <array>\n    <string>Dome Home</string>\n` +

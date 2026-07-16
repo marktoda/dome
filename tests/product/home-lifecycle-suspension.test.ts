@@ -10,7 +10,7 @@ import {
   engageOperationalWriterBarrier,
   releaseOperationalWriterBarrier,
 } from "../../src/operational-state/writer-barrier";
-import { homeInstallationPaths, releaseRoot } from "../../src/product-host/home-installation";
+import { homeInstallationPaths, managedHomeRuntimePath, releaseRoot } from "../../src/product-host/home-installation";
 import {
   acquireHomeStartupAdmission,
   exerciseHomeLifecycleReadinessForTests,
@@ -1084,7 +1084,7 @@ describe("supervised Home lifecycle suspension", () => {
     });
   });
 
-  test("named resume provenance requires the installed launch alias while legacy provenance retains Bun", async () => {
+  test("named resume provenance requires the stable Home runtime while legacy provenance retains Bun", async () => {
     const named = await fixture(true, true);
     await seedResuming(named, "startup-named");
     const admitted = await acquireHomeStartupAdmission({
@@ -1199,12 +1199,17 @@ async function fixture(loaded: boolean, namedLaunch = false) {
   const artifactVersion = "1.0.0";
   const release = releaseRoot(paths, artifactId);
   const canonicalRuntime = join(release, "runtime", "bun");
-  const runtime = namedLaunch ? join(release, "runtime", "Dome Home") : canonicalRuntime;
+  const releaseRuntime = namedLaunch ? join(release, "runtime", "Dome Home") : canonicalRuntime;
+  const runtime = namedLaunch ? managedHomeRuntimePath(paths) : canonicalRuntime;
   const entrypoint = join(release, "app", "bin", "dome");
   await mkdir(dirname(canonicalRuntime), { recursive: true });
+  await mkdir(dirname(runtime), { recursive: true });
   await mkdir(dirname(entrypoint), { recursive: true });
   await writeFile(canonicalRuntime, "test bun runtime\n", { mode: 0o700 });
-  if (namedLaunch) await writeFile(runtime, "test bun runtime\n", { mode: 0o700 });
+  if (namedLaunch) {
+    await writeFile(releaseRuntime, "test bun runtime\n", { mode: 0o700 });
+    await writeFile(runtime, "test bun runtime\n", { mode: 0o700 });
+  }
   await writeFile(entrypoint, "test Dome entrypoint\n", { mode: 0o700 });
   const installation = paths.record;
   await writeFile(installation, `${JSON.stringify({
@@ -1296,7 +1301,7 @@ function startupDeps(
         type: "file" as const,
         path: "runtime/bun",
         bytes: 17,
-        sha256: "0".repeat(64),
+        sha256: createHash("sha256").update("test bun runtime\n").digest("hex"),
         mode: "0700",
       };
       return {

@@ -76,6 +76,12 @@ checkout. In current desktop Chrome and on a real iPhone in Safari, verify:
 - keyboard-only pairing/capture/Connection operation and visible focus;
 - VoiceOver announces status changes and controls in a useful order;
 - 200% zoom, iOS dynamic type, safe areas, and 44px touch targets remain usable.
+- with Calendar access granted and a calendar source producing events, install
+  one ordinary same-Bun upgrade and confirm the post-upgrade scheduled fetch
+  still produces events without another privacy prompt. The first cutover from
+  a historical release-scoped Home executable to the stable Home identity may
+  require one explicit re-grant; record it separately. Any later same-Bun
+  upgrade prompt or `No calendars` result is a release failure.
 
 Record failures and device details. Playwright WebKit, desktop responsive mode,
 or the automated Chrome journey is not real-device iOS Safari evidence.
