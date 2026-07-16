@@ -1,13 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DomeClient, type ConnectionFailure, type ReadinessResult } from "../api/client";
-import type { ProductReadiness } from "../../../contracts/product-readiness";
+import type { HomeAvailability, HomeReadinessEvidence } from "../connection/product-session";
 
-export type HomeAvailability = "available" | "offline" | "unreachable";
-export type HomeReadinessEvidence = Readonly<{
-  document: ProductReadiness | null;
-  stale: boolean;
-  issue: "readiness-failed" | "incompatible" | null;
-}>;
+export type { HomeAvailability, HomeReadinessEvidence } from "../connection/product-session";
 export type HomeConnectionControl = Readonly<{
   recheck: () => void;
   readiness: HomeReadinessEvidence;

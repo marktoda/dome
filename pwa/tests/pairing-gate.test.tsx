@@ -1,10 +1,24 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { PairingGate } from "../src/auth/PairingGate";
-import { AuthRepair } from "../src/components/Connection";
+import { PairingGate, type HomeAvailability, type HomeConnectionControl } from "../src/auth/PairingGate";
+import { RecoveryCard } from "../src/components/Connection";
+import { deriveProductSession } from "../src/connection/product-session";
 import { readinessResponse } from "./readiness-fixture";
 
 const originalFetch = globalThis.fetch;
+
+function Repair({ availability, connection }: {
+  availability: HomeAvailability;
+  connection: HomeConnectionControl;
+}): React.ReactElement | null {
+  if (connection.authRepair === null) return null;
+  const session = deriveProductSession({
+    availability,
+    readiness: connection.readiness,
+    authRepair: true,
+  });
+  return <RecoveryCard session={session} onRetry={connection.recheck} authRepair={connection.authRepair} />;
+}
 
 afterEach(() => {
   cleanup();
@@ -201,7 +215,7 @@ describe("PairingGate", () => {
       throw new Error(`unexpected request: ${path}`);
     }) as never;
     render(<PairingGate>{(_client, _availability, connection) => (
-      <div>limited shell {connection.authRepair === null ? "authorized" : "repair"}{connection.authRepair === null ? null : <AuthRepair control={connection.authRepair} />}</div>
+      <div>limited shell {connection.authRepair === null ? "authorized" : "repair"}<Repair availability={_availability} connection={connection} /></div>
     )}</PairingGate>);
     await waitFor(() => expect(screen.getByText(/limited shell repair/i)).toBeDefined());
     fireEvent.change(screen.getByLabelText("New pairing code"), { target: { value: "expired" } });
@@ -220,7 +234,7 @@ describe("PairingGate", () => {
       throw new Error(`unexpected request: ${path}`);
     }) as never;
     render(<PairingGate>{(client, availability, connection) => (
-      <div>limited shell {availability}{connection.authRepair === null ? null : <AuthRepair control={connection.authRepair} />}<button type="button" onClick={() => { void client.tasks().catch(() => {}); }}>revoke fixture</button></div>
+      <div>limited shell {availability}<Repair availability={availability} connection={connection} /><button type="button" onClick={() => { void client.tasks().catch(() => {}); }}>revoke fixture</button></div>
     )}</PairingGate>);
     await waitFor(() => expect(screen.getByRole("button", { name: "revoke fixture" })).toBeDefined());
     fireEvent.click(screen.getByRole("button", { name: "revoke fixture" }));

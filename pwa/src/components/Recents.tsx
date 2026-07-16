@@ -23,13 +23,14 @@ export function Recents({ recents, client, interactive }: {
     trigger: HTMLButtonElement;
   } | null>(null);
   if (recents.count === 0) {
-    return <div className="recents"><p className="empty">nothing recent</p></div>;
+    return <div className="recents"><p className="empty">No recent activity.</p></div>;
   }
   return (
     <div className="recents">
       <ul>
         {recents.entries.map((e) => {
-          const who = e.changedBy === "engine" ? "engine" : "you";
+          const who = e.changedBy === "engine" ? "Dome" : "You";
+          const whoClass = e.changedBy === "engine" ? "dome" : "you";
           return (
             <li key={`${e.path}:${e.commit}`}>
               <button
@@ -38,7 +39,7 @@ export function Recents({ recents, client, interactive }: {
                 disabled={!interactive}
                 onClick={(event) => setOpened({ entry: e, trigger: event.currentTarget })}
               >
-                <span className={`rdot ${who}`} aria-hidden="true" />
+                <span className={`rdot ${whoClass}`} aria-hidden="true" />
                 <span className="rbody">
                   <span className="title">{e.title}</span>
                   <span className="meta">{who} · {e.subject} · {ago(e.lastChangedAt)}</span>

@@ -56,7 +56,7 @@ describe("Brief", () => {
     expect(screen.getByText(/Standup/)).toBeDefined();
   });
 
-  test("counts proposal reviews in the CLI backlog without blind decision controls", () => {
+  test("counts proposal reviews without exposing operator terminology or blind controls", () => {
     const today: Today = {
       ...base,
       reviews: [{
@@ -72,8 +72,9 @@ describe("Brief", () => {
     render(<Brief today={today} onResolve={noop} />);
     expect(screen.queryByText("To review")).toBeNull();
     expect(screen.queryByText("Promote the link repair processor")).toBeNull();
-    expect(screen.getByText("+3 in owner backlog · review with Dome CLI")).toBeDefined();
-    expect(screen.getByText(/today · 3 in CLI backlog/i)).toBeDefined();
+    expect(screen.getByText("+3 more items need review")).toBeDefined();
+    expect(screen.getByText(/today · 3 to review/i)).toBeDefined();
+    expect(screen.queryByText(/CLI|backlog/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "apply" })).toBeNull();
     expect(screen.queryByRole("button", { name: "reject" })).toBeNull();
   });

@@ -18,7 +18,7 @@ describe("Recents", () => {
   });
   test("empty state when count is 0", () => {
     render(<Recents recents={{ schema: "dome.recents/v1", count: 0, entries: [] }} client={client} interactive />);
-    expect(screen.getByText(/nothing recent/i)).toBeDefined();
+    expect(screen.getByText(/No recent activity/i)).toBeDefined();
   });
 
   test("opens exact adopted source evidence and restores row focus on Escape", async () => {

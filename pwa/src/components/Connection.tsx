@@ -1,25 +1,14 @@
 import { useState } from "react";
-import type { HomeAvailability, HomeConnectionControl, HomeReadinessEvidence } from "../auth/PairingGate";
-import type { ProductAccess } from "../connection/product-access";
+import type { HomeConnectionControl } from "../auth/PairingGate";
+import type { ProductSession } from "../connection/product-session";
 
 type Props = {
-  availability: HomeAvailability;
-  readiness: HomeReadinessEvidence;
-  access: ProductAccess;
+  session: ProductSession;
 };
 
-export function Connection({ availability, readiness, access }: Props): React.ReactElement {
+export function Connection({ session }: Props): React.ReactElement {
   const [open, setOpen] = useState(false);
-  const document = readiness.document;
-  const status = availability !== "available"
-    ? availability
-    : readiness.issue === "incompatible"
-      ? "incompatible"
-      : readiness.issue === "readiness-failed"
-        ? "readiness unavailable"
-        : readiness.stale
-          ? "stale"
-          : document?.host.state ?? "checking";
+  const document = session.document;
   return (
     <section className={`connection${open ? " open" : ""}`} aria-label="Dome Home connection">
       <button
@@ -28,37 +17,30 @@ export function Connection({ availability, readiness, access }: Props): React.Re
         aria-expanded={open}
         aria-controls="dome-connection-details"
         onClick={() => setOpen((value) => !value)}
-      >Connection · {status}</button>
+      >Connection · {session.connection.label}</button>
       {open ? <div id="dome-connection-details" className="connection-body" role="region" aria-label="Connection details" tabIndex={0}>
-        {readiness.stale ? <p role="status">Last known details are stale and do not enable remote actions.</p> : null}
-        {readiness.issue === "incompatible" ? (
-          <p role="alert">This Dome Home uses an incompatible readiness contract. Update Dome before continuing.</p>
-        ) : readiness.issue === "readiness-failed" ? (
-          <p role="status">Dome Home responded, but product readiness is unavailable.</p>
-        ) : null}
-        {document === null ? <p>No validated product details are available.</p> : (
+        {document === null ? <p>No connection details are available yet.</p> : (
           <>
-            <dl>
-              <dt>Vault</dt><dd>{document.vault.name}</dd>
-              <dt>Device</dt><dd>{document.device.name}</dd>
-              <dt>Version</dt><dd>{document.productVersion}</dd>
-              <dt>Host</dt><dd>{document.host.state}</dd>
-              <dt>Adoption</dt><dd>{document.adoption.state}</dd>
-              <dt>Model</dt><dd>{document.model.state}</dd>
-              <dt>Transcription</dt><dd>{document.transcription.state}</dd>
-              <dt>Capabilities</dt><dd>{document.device.capabilities.length > 0 ? document.device.capabilities.join(", ") : "none"}</dd>
-            </dl>
-            <p className="connection-access">
-              Available now: {[access.read ? "read" : null, access.converse ? "Ask" : null,
-                access.voice ? "voice" : null, access.captureReplay ? "capture sync" : null,
-                access.resolve ? "resolve" : null].filter((item) => item !== null).join(", ") || "local capture only"}.
-            </p>
-            {document.nextActions.length > 0 ? (
-              <div className="connection-actions">
-                <strong>Next actions</strong>
-                <ul>{document.nextActions.map((action) => <li key={action.code}>{action.label}</li>)}</ul>
-              </div>
-            ) : <p>No host action is required.</p>}
+            <p>{document.vault.name} · {document.device.name}</p>
+            <p className="connection-access">Available now: {[
+              session.access.read ? "Today and Activity" : null,
+              session.access.converse ? "Ask" : null,
+              session.access.voice ? "voice" : null,
+              session.access.captureReplay ? "Capture" : null,
+              session.access.resolve ? "decisions" : null,
+            ].filter((item) => item !== null).join(", ") || "text capture only"}.</p>
+            <details className="technical-details">
+              <summary>Technical details</summary>
+              <dl>
+                <dt>Version</dt><dd>{document.productVersion}</dd>
+                <dt>Product readiness</dt><dd>{session.staleContext ? "stale" : "validated"}</dd>
+                <dt>Host</dt><dd>{document.host.state}</dd>
+                <dt>Adoption</dt><dd>{document.adoption.state}</dd>
+                <dt>Model</dt><dd>{document.model.state}</dd>
+                <dt>Transcription</dt><dd>{document.transcription.state}</dd>
+                <dt>Capabilities</dt><dd>{document.device.capabilities.length > 0 ? document.device.capabilities.join(", ") : "none"}</dd>
+              </dl>
+            </details>
           </>
         )}
       </div> : null}
@@ -66,31 +48,42 @@ export function Connection({ availability, readiness, access }: Props): React.Re
   );
 }
 
-export function AuthRepair({ control }: {
-  control: NonNullable<HomeConnectionControl["authRepair"]>;
+export function RecoveryCard({ session, onRetry, authRepair }: {
+  session: ProductSession;
+  onRetry: () => void;
+  authRepair: HomeConnectionControl["authRepair"];
 }): React.ReactElement {
   const [code, setCode] = useState("");
+  const recovery = session.recovery;
+  if (recovery === null) throw new Error("RecoveryCard requires a session recovery");
+  const repair = recovery.kind === "repair" ? authRepair : null;
   return (
-    <section className="availability-banner auth-repair" aria-labelledby="auth-repair-title">
-      <strong id="auth-repair-title">Pair this device again</strong>
-      <span>This device's authorization expired or was revoked. Local captures remain available.</span>
-      <form onSubmit={(event) => {
-        event.preventDefault();
-        if (!control.pairing && code.trim().length > 0) control.pair(code);
-      }}>
-        <input
-          aria-label="New pairing code"
-          type="password"
-          value={code}
-          onChange={(event) => setCode(event.target.value)}
-          autoComplete="one-time-code"
-          disabled={control.pairing}
-        />
-        <button type="submit" disabled={control.pairing || code.trim().length === 0}>
-          {control.pairing ? "Pairing…" : "Pair again"}
-        </button>
-      </form>
-      {control.error !== null ? <span role="alert">{control.error}</span> : null}
+    <section className={`recovery-card recovery-${session.kind}`} aria-labelledby="recovery-title">
+      <div className="recovery-message" role="status">
+        <strong id="recovery-title">{recovery.title}</strong>
+        <span>{recovery.detail}</span>
+      </div>
+      {recovery.kind === "repair" && repair !== null ? (
+        <form onSubmit={(event) => {
+          event.preventDefault();
+          if (!repair.pairing && code.trim().length > 0) repair.pair(code);
+        }}>
+          <input
+            aria-label="New pairing code"
+            type="password"
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+            autoComplete="one-time-code"
+            disabled={repair.pairing}
+          />
+          <button type="submit" disabled={repair.pairing || code.trim().length === 0}>
+            {repair.pairing ? "Pairing…" : "Pair again"}
+          </button>
+          {repair.error !== null ? <span role="alert">{repair.error}</span> : null}
+        </form>
+      ) : recovery.kind === "retry" ? (
+        <button type="button" onClick={onRetry}>{recovery.actionLabel}</button>
+      ) : null}
     </section>
   );
 }

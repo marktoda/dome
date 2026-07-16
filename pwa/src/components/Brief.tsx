@@ -202,7 +202,7 @@ export function Brief(
     [
       openSummary,
       qCount > 0 ? `${qCount} to decide` : null,
-      ownerBacklog > 0 ? `${ownerBacklog} in CLI backlog` : null,
+      ownerBacklog > 0 ? `${ownerBacklog} to review` : null,
     ]
       .filter(Boolean).join(" · ") || "all clear";
 
@@ -301,7 +301,7 @@ export function Brief(
         </div>
       ) : null}
       {ownerBacklog > 0 ? (
-        <div className="brief-more">+{ownerBacklog} in owner backlog · review with Dome CLI</div>
+        <div className="brief-more">+{ownerBacklog} more {ownerBacklog === 1 ? "item needs" : "items need"} review</div>
       ) : null}
     </section>
   );

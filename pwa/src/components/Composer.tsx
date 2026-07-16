@@ -192,11 +192,11 @@ export function Composer({ onAsk, turnPhase = "idle", onStop, onRetry, onNewConv
   const featureHint = !remoteAvailable
     ? "Ask and voice need Dome Home. Text capture stays local."
     : !askEnabled && !voiceEnabled
-      ? "Ask needs a model credential; voice needs transcription. Configure them under Connection. Text capture still works."
+      ? "Ask needs setup; voice needs transcription. Follow the setup step above. Text capture still works."
       : !askEnabled
-        ? "Ask needs a model credential. Configure it under Connection. Voice and text capture still work."
+        ? "Ask needs setup. Follow the setup step above. Voice and text capture still work."
         : !voiceEnabled
-          ? "Voice needs transcription. Configure it under Connection. Ask and text capture still work."
+          ? "Voice needs transcription setup. Ask and text capture still work."
           : null;
   return (
     <form className="composer" aria-label="Message composer" onSubmit={(e) => { e.preventDefault(); const q = text.trim(); if (!askBlocked && q.length > 0) { onAsk(q); setText(""); } }}>

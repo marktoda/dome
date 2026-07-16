@@ -9,8 +9,8 @@ import { Composer } from "./components/Composer";
 import { chatReducer } from "./chat/streamReducer";
 import { CaptureQueue, type QueuedCapture } from "./capture/captureQueue";
 import { UpdatePrompt } from "./offline/UpdatePrompt";
-import { AuthRepair, Connection } from "./components/Connection";
-import { deriveProductAccess, NO_PRODUCT_ACCESS } from "./connection/product-access";
+import { Connection, RecoveryCard } from "./components/Connection";
+import { deriveProductSession } from "./connection/product-session";
 
 function todayLabel(): string {
   try {
@@ -56,15 +56,12 @@ function Screen({ client, availability, connection }: {
   const activeTurn = useRef<{ handle: AgentTurnHandle; question: string; stopping: boolean } | null>(null);
   const retryQuestion = useRef<string | null>(null);
   const hasMessages = chat.messages.length > 0;
-  const remoteAvailable = availability === "available";
-  const readinessCurrent = remoteAvailable && !connection.readiness.stale &&
-    connection.readiness.issue === null && connection.readiness.document !== null;
-  const access = useMemo(() => {
-    const evidence = connection.readiness;
-    return remoteAvailable && !evidence.stale && evidence.issue === null && evidence.document !== null
-      ? deriveProductAccess(evidence.document)
-      : NO_PRODUCT_ACCESS;
-  }, [connection.readiness, remoteAvailable]);
+  const session = useMemo(() => deriveProductSession({
+    availability,
+    readiness: connection.readiness,
+    authRepair: connection.authRepair !== null,
+  }), [availability, connection.authRepair, connection.readiness]);
+  const access = session.access;
   const priorReadAccess = useRef(access.read);
 
   useLayoutEffect(() => {
@@ -271,80 +268,24 @@ function Screen({ client, availability, connection }: {
       .catch(() => false);
   };
 
-  const todayRefreshMessage = !access.read
-    ? "Today refresh is unavailable until Dome Home has fresh read access."
-    : todayRefreshState === "loading"
+  const todayRefreshMessage = todayRefreshState === "loading"
       ? "Refreshing Today…"
       : todayRefreshState === "ready"
         ? "Today is fresh."
         : todayRefreshState === "failed"
           ? "Today refresh failed. Previously loaded Today data may be stale."
-          : "Refresh Today to load a fresh view.";
-  // Read authority is part of freshness. Derive the rendered state from the
-  // current grant as well as invalidating pending generations above, so even
-  // the render that observes access loss cannot retain a green ready class.
+          : "Today has not been loaded yet.";
   const visibleTodayRefreshState: TodayRefreshState = access.read ? todayRefreshState : "idle";
 
   return (
     <main className="screen">
       <header className="masthead">
         <span className="brand">Dome</span>
-        <span className="meta">{todayLabel()}<span className={`availability-dot ${readinessCurrent ? "available" : availability === "available" ? "unknown" : availability}`} aria-hidden="true" /></span>
+        <span className="meta">{todayLabel()}<span className={`availability-dot ${session.connection.tone}`} aria-hidden="true" /></span>
       </header>
-      <section
-        className={`today-refresh ${visibleTodayRefreshState}`}
-        aria-label="Today refresh"
-      >
-        <button
-          type="button"
-          aria-describedby="today-refresh-status"
-          aria-busy={visibleTodayRefreshState === "loading"}
-          disabled={!access.read || todayRefreshState === "loading"}
-          onClick={refreshToday}
-        >
-          Refresh Today
-        </button>
-        <p
-          id="today-refresh-status"
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-        >
-          {todayRefreshMessage}
-        </p>
-      </section>
-      <Connection availability={availability} readiness={connection.readiness} access={access} />
-      {!remoteAvailable ? (
-        <div className="availability-banner" role="status">
-          <strong>{availability === "offline" ? "Offline" : "Dome Home unavailable"}</strong>
-          <span>{today === null && recents === null
-            ? "Live data is unavailable. Text captures stay on this device."
-            : "Showing the last loaded data; it may be stale. Text captures stay on this device."}</span>
-          <button type="button" onClick={connection.recheck}>Retry connection</button>
-        </div>
-      ) : null}
-      {remoteAvailable && !readinessCurrent ? (
-        <div className="availability-banner readiness-banner" role="status">
-          <strong>{connection.readiness.issue === "incompatible"
-            ? "Incompatible Dome Home"
-            : connection.readiness.issue === "readiness-failed"
-              ? "Product readiness unavailable"
-              : connection.readiness.stale
-                ? "Connection details are stale"
-                : "Checking Dome Home"}</strong>
-          <span>{connection.readiness.document === null
-            ? "Remote actions stay disabled until authenticated product readiness is validated."
-            : "Last known details are context only; remote actions stay disabled until readiness is validated again."}</span>
-          <button type="button" onClick={connection.recheck}>Retry product readiness</button>
-        </div>
-      ) : null}
-      {connection.authRepair !== null ? <AuthRepair control={connection.authRepair} /> : null}
-      {access.read && recentsLoad === "failed" ? (
-        <div className="availability-banner live-data-warning" role="status">
-          <strong>Activity unavailable</strong>
-          <span>Activity could not be refreshed. Previously loaded Activity data may be stale.</span>
-          <button type="button" onClick={refreshRecents}>Retry Activity</button>
-        </div>
+      <Connection session={session} />
+      {session.recovery !== null ? (
+        <RecoveryCard session={session} onRetry={connection.recheck} authRepair={connection.authRepair} />
       ) : null}
       {pendingCaptures.length > 0 ? (
         <section className="capture-outbox" aria-label="pending captures">
@@ -369,15 +310,41 @@ function Screen({ client, availability, connection }: {
         </section>
       ) : null}
       <div className="scroll">
-        {today !== null ? (
-          <Brief today={today} onResolve={resolve} onSettle={settle} collapsed={briefCollapsed} hasMessages={hasMessages} onToggle={() => setBriefCollapsed((c) => !c)} interactive={access.resolve} />
-        ) : null}
-        {recents !== null ? (
-          <details className="recents-wrap">
-            <summary>recents · {recents.count}</summary>
-            <Recents recents={recents} client={client} interactive={access.read} />
-          </details>
-        ) : null}
+        <section className={`today-panel ${visibleTodayRefreshState}`} aria-label="Today">
+          <div className="surface-refresh">
+            <span>Today</span>
+            <button
+              type="button"
+              aria-label="Refresh Today"
+              aria-describedby="today-refresh-status"
+              aria-busy={visibleTodayRefreshState === "loading"}
+              disabled={!access.read || todayRefreshState === "loading"}
+              onClick={refreshToday}
+            >{todayRefreshState === "failed" ? "Retry" : "Refresh"}</button>
+            <p
+              id="today-refresh-status"
+              className={todayRefreshState === "failed" || todayRefreshState === "loading" ? "" : "sr-only"}
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >{todayRefreshMessage}</p>
+          </div>
+          {today !== null ? (
+            <Brief today={today} onResolve={resolve} onSettle={settle} collapsed={briefCollapsed} hasMessages={hasMessages} onToggle={() => setBriefCollapsed((c) => !c)} interactive={access.resolve} />
+          ) : todayRefreshState === "failed" ? (
+            <p className="view-error">Today could not be refreshed. Try again when Dome Home is available.</p>
+          ) : null}
+        </section>
+        <details className="activity-wrap" key={recentsLoad === "failed" ? "activity-failed" : "activity"} open={recentsLoad === "failed" ? true : undefined}>
+          <summary>Activity{recents !== null ? ` · ${recents.count}` : ""}</summary>
+          {recentsLoad === "failed" ? (
+            <div className="surface-error" role="status">
+              <span>Activity could not be refreshed. Previously loaded activity may be stale.</span>
+              <button type="button" disabled={!access.read} onClick={refreshRecents}>Retry Activity</button>
+            </div>
+          ) : null}
+          {recents !== null ? <Recents recents={recents} client={client} interactive={access.read} /> : null}
+        </details>
         <ChatTranscript state={chat} client={client} interactive={access.read} />
       </div>
       {ack !== null ? <div className="ack-wrap"><div className="ack" role="status" aria-live="polite" aria-atomic="true">{ack}</div></div> : null}

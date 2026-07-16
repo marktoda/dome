@@ -76,19 +76,20 @@ describe("PWA adaptive accessibility CSS policy", () => {
     expect(runner).toContain("installed PWA connection summary or focus left the viewport during keyboard scroll");
   });
 
-  test("keeps Refresh Today persistent, safe-axis bounded, and in the installed containment audit", async () => {
+  test("keeps compact Today refresh inside its surface and in the installed containment audit", async () => {
     const css = await readFile(join(import.meta.dir, "..", "src", "styles.css"), "utf8");
     const app = await readFile(join(import.meta.dir, "..", "src", "App.tsx"), "utf8");
-    const refresh = css.match(/\.today-refresh\s*\{([^}]*)\}/)?.[1] ?? "";
-    const button = css.match(/\.today-refresh button\s*\{([^}]*)\}/)?.[1] ?? "";
-    expect(refresh).toMatch(/flex:\s*none/);
-    expect(refresh).toContain("var(--safe-left)");
-    expect(refresh).toContain("var(--safe-right)");
+    const refresh = css.match(/\.surface-refresh\s*\{([^}]*)\}/)?.[1] ?? "";
+    const button = css.match(/\.surface-refresh button\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(css).not.toContain(".today-refresh");
+    expect(css).toMatch(/\.today-panel\s*\{[^}]*border-top/);
+    expect(refresh).toMatch(/min-height:\s*44px/);
     expect(refresh).toMatch(/flex-wrap:\s*wrap/);
     expect(button).toMatch(/min-height:\s*44px/);
     expect(app).toContain('const visibleTodayRefreshState: TodayRefreshState = access.read ? todayRefreshState : "idle"');
     expect(app).toContain('aria-busy={visibleTodayRefreshState === "loading"}');
-    expect(app).not.toContain('aria-label="Today refresh"\n        aria-busy=');
+    expect(app).toContain('className={`today-panel ${visibleTodayRefreshState}`} aria-label="Today"');
+    expect(app).not.toContain('aria-label="Today refresh"');
     expect(app).toContain('role="status"');
     expect(app).toContain('aria-live="polite"');
     expect(app).toContain('aria-atomic="true"');
@@ -96,7 +97,7 @@ describe("PWA adaptive accessibility CSS policy", () => {
     const runner = await readFile(join(
       import.meta.dir, "..", "..", "scripts", "home-pwa-chromium-acceptance.ts",
     ), "utf8");
-    expect(runner).toContain("'[aria-label=\"Today refresh\"]'");
+    expect(runner).toContain("'[aria-label=\"Today\"]'");
     expect(runner).toContain("installed PWA critical controls leave the viewport");
   });
 

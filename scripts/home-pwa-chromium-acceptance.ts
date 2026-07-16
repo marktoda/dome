@@ -387,7 +387,7 @@ async function assertAdaptiveAccessibility(page: Page): Promise<void> {
         const rect = target.getBoundingClientRect();
         return rect.width < 43.5 || rect.height < 43.5;
       }).map((element) => element.getAttribute("aria-label") || element.textContent?.trim().slice(0, 40) || element.tagName);
-      const critical = [".composer", '[aria-label="Today refresh"]', '[aria-label="ask your brain"]', '[aria-label="capture thought"]', '[aria-label="send"]']
+      const critical = [".composer", '[aria-label="Today"]', '[aria-label="ask your brain"]', '[aria-label="capture thought"]', '[aria-label="send"]']
         .map((selector) => document.querySelector(selector));
       return {
         overflow: document.documentElement.scrollWidth > innerWidth || document.body.scrollWidth > innerWidth,
