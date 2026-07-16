@@ -1020,8 +1020,10 @@ async function assertReadyConnection(
   try {
     await details.getByText(expected.vaultName, { exact: true }).waitFor({ timeout: WAIT_MS });
     await details.getByText(deviceName, { exact: true }).waitFor({ timeout: WAIT_MS });
-    await details.getByText(expected.productVersion, { exact: true }).waitFor({ timeout: WAIT_MS });
-    await details.getByText("capture, read, resolve", { exact: true }).waitFor({ timeout: WAIT_MS });
+    const technical = details.locator("details.technical-details");
+    if (await technical.getAttribute("open") === null) await technical.locator("summary").click();
+    await technical.getByText(expected.productVersion, { exact: true }).waitFor({ timeout: WAIT_MS });
+    await technical.getByText("capture, read, resolve", { exact: true }).waitFor({ timeout: WAIT_MS });
   } catch { throw new HomePwaReadinessStageError("details"); }
 }
 
