@@ -997,6 +997,11 @@ async function assertActivitySource(page: Page, canary: InstalledFunctionalCanar
   const dialog = page.getByRole("dialog", { name: canary.path });
   await dialog.waitFor({ timeout: WAIT_MS });
   await dialog.getByText(`Revision ${canary.commit.slice(0, 8)}`, { exact: true }).waitFor({ timeout: WAIT_MS });
+  const raw = dialog.getByRole("button", { name: "Raw", exact: true });
+  await raw.click();
+  if (await raw.getAttribute("aria-pressed") !== "true") {
+    throw new Error("installed PWA source viewer did not switch to exact Raw content");
+  }
   const source = await dialog.locator("pre").textContent();
   if (source === null || !source.includes(canary.sourceMarker) ||
     !source.includes(`- [ ] #task ${canary.taskText}`) || !source.includes(`^${canary.blockId}`)) {
