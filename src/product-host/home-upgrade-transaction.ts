@@ -391,7 +391,9 @@ async function prepareHomeUpgradeWhileQuiesced(
       plist: await fileEvidence(homePlistPath(vault, deps), "Dome Home launchd plist"),
     });
     const verify = deps.verifyArtifactEvidence ?? verifyHomeArtifactEvidence;
-    const old = await artifactEvidence(paths, installation.artifact.id, verify);
+    const verifiedOld = await verifiedArtifactEvidence(paths, installation.artifact.id, verify);
+    const old = verifiedOld.evidence;
+    const oldManifest = verifiedOld.manifest;
     if (old.version !== installation.artifact.version) {
       throw new Error("installed release version disagrees with installation.json");
     }
@@ -421,13 +423,16 @@ async function prepareHomeUpgradeWhileQuiesced(
     }, deps);
     const selection = await storeSelectionEvidence(staging, oldSelection, candidateSelection);
 
-    // Copy live SQLite state without opening it. Exact N-1 compatibility is
-    // then proved from the private standalone rollback snapshots before the
-    // journal is published.
+    // Copy live SQLite state without opening it. The private standalone
+    // rollback snapshots must then match the verified selected-old inventory;
+    // legacy inventory omission retains the frozen exact-N-1 proof.
     const inventory = await snapshotDurableState(vault, snapshotRoot);
     await preflightHomeStoreSnapshots({
       snapshotRoot,
       phase: "prepare",
+      ...(oldManifest.durableState !== undefined
+        ? { selectedStores: oldManifest.durableState.stores }
+        : {}),
     });
     await assertCandidateDurableCompatibility(candidate, inventory, candidateManifest);
     const preparedAt = (deps.now?.() ?? new Date()).toISOString();

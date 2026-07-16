@@ -657,8 +657,8 @@ upgrade owner are the narrow exceptions.
 Normal current Home also inspects active upgrade evidence after ownership and
 before controlled-mutation recovery or any mutable store opener; prepared,
 switching, corrupt, unknown, or selector-diverged evidence keeps write
-admission closed. After `restored`, startup requires the exact N-1 selectors
-and old manifest. After `committed`, startup requires the exact
+admission closed. After `restored`, startup requires the exact selected-old
+selectors and old manifest. After `committed`, startup requires the exact
 manifest-derived candidate runtime identity and candidate selector/plist
 evidence; N-1 and wrong-version launches remain closed. Full snapshot
 validation remains the `read`/`restore` and restored-retirement contract.
@@ -788,17 +788,23 @@ table/index validation, and single meta-row replacement commit in one
 back.
 
 Prepare copies all six live stores without opening them while operational
-EXCLUSIVE and both Product Host locks are held, then proves exact N-1 from the
-private standalone rollback snapshots before journal publication. It also
-proves the candidate manifest's optional `durableState` protocol has the exact
-compiled six-store inventory compatible with every snapshot hash. General
-artifact verification accepts a structurally valid historical protocol-1
-inventory on the old side; it does not reinterpret old hashes as current.
-Legacy omission remains runnable and is allowed on the old side, but makes a
-candidate ineligible. Writer-barrier protocol 1 remains required on both
-sides. The artifact builder always emits both protocols. At this frozen P4
-checkpoint `distribution.upgradeSupported` remained false; the 0.2 activation
-pipeline described below is the only path that can now emit true.
+EXCLUSIVE and both Product Host locks are held, then proves the private
+standalone rollback snapshots against the verified selected-old artifact
+before journal publication. A modern old artifact with protocol-1
+`durableState` must name all six exact snapshot hashes as its current schemas;
+this admits a sequential patch upgrade whose stores are already current while
+rejecting mixed or unknown state. A legacy old artifact with no inventory
+retains the frozen exact-N-1 rule, so an unjournaled partial migration is never
+reinterpreted as a sequential upgrade. The candidate manifest is proved
+separately to carry the exact compiled six-store inventory and a migration
+route for every selected snapshot hash. General artifact verification still
+accepts a structurally valid historical protocol-1 inventory; prepare adds the
+selected-manifest-to-live-state equality proof. Legacy omission remains
+runnable and is allowed on the old side, but makes a candidate ineligible.
+Writer-barrier protocol 1 remains required on both sides. The artifact builder
+always emits both protocols. At this frozen P4 checkpoint
+`distribution.upgradeSupported` remained false; the 0.2 activation pipeline
+described below is the only path that can now emit true.
 
 `migratePreparedHomeUpgrade` is private and has no CLI. It revalidates the
 prepared marker, journal, selectors, candidate product version, manifest hash,
@@ -810,7 +816,7 @@ the first live-store mutation, migrates remaining predecessors
 transactionally, and finishes with WAL-aware `quick_check` and target-hash
 proofs. The journal deliberately remains `prepared` and both barriers remain
 engaged. A crash after one store commits therefore retries forward or restores
-the exact retained N-1 snapshot; it can never admit writes or bless an
+the exact retained selected-old snapshot; it can never admit writes or bless an
 unjournaled partial vault.
 
 ### P4 private candidate-cutover checkpoint
@@ -830,7 +836,7 @@ Commit re-proves all six live stores current, records probation and
 `switching`, publishes the plist first and `installation.json` last with
 expected-old/desired-candidate CAS-shaped verification and directory fsync,
 then durably records irreversible `committed`. Any `prepared`/`switching`
-failure automatically restores exact N-1 selection and state. `committed`
+failure automatically restores exact selected-old selection and state. `committed`
 never rolls back: recovery proceeds only forward through exact candidate
 authorization, barrier release, and resume. Missing or corrupt committed
 candidate payload remains closed and reports recovery required.

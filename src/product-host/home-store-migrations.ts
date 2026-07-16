@@ -42,13 +42,21 @@ export type HomeStoreEvidence = Readonly<{
   state: "current" | "predecessor";
 }>;
 
+/** Verified durable-state inventory from the selected (old) Home artifact. */
+export type HomeStoreSelectedInventory = ReadonlyArray<Pick<
+  HomeStoreMigrationEntry,
+  "name" | "metaTable" | "currentSchemaHash"
+>>;
+
 /** Read-only, all-six compatibility proof performed before any store mutates. */
 export async function preflightHomeStoreMigrations(input: {
   readonly stateRoot: string;
   /** Empty caller-owned private directory; no scratch state is placed beside the stores. */
   readonly snapshotRoot: string;
-  /** Prepare is stricter: every store must still be the frozen N-1 release. */
+  /** Prepare: legacy installs must be frozen N-1; modern installs must match their selected manifest. */
   readonly phase: "prepare" | "prepared-retry";
+  /** Prepare-only exact source inventory from the verified selected artifact. */
+  readonly selectedStores?: HomeStoreSelectedInventory | undefined;
 }): Promise<ReadonlyArray<HomeStoreEvidence>> {
   await assertEmptyPrivateSnapshotRoot(input.snapshotRoot);
   // Prove the entire source file set before copying any of it. SQLite is never
@@ -62,7 +70,11 @@ export async function preflightHomeStoreMigrations(input: {
       destination: join(input.snapshotRoot, entry.name),
     });
   }
-  return await inspectHomeStoreSnapshots({ snapshotRoot: input.snapshotRoot, phase: input.phase });
+  return await inspectHomeStoreSnapshots({
+    snapshotRoot: input.snapshotRoot,
+    phase: input.phase,
+    selectedStores: input.selectedStores,
+  });
 }
 
 async function assertEmptyPrivateSnapshotRoot(path: string): Promise<void> {
@@ -80,6 +92,7 @@ async function assertEmptyPrivateSnapshotRoot(path: string): Promise<void> {
 export async function preflightHomeStoreSnapshots(input: {
   readonly snapshotRoot: string;
   readonly phase: "prepare" | "prepared-retry";
+  readonly selectedStores?: HomeStoreSelectedInventory | undefined;
 }): Promise<ReadonlyArray<HomeStoreEvidence>> {
   return await inspectHomeStoreSnapshots(input);
 }
@@ -87,9 +100,13 @@ export async function preflightHomeStoreSnapshots(input: {
 async function inspectHomeStoreSnapshots(input: {
   readonly snapshotRoot: string;
   readonly phase: "prepare" | "prepared-retry";
+  readonly selectedStores?: HomeStoreSelectedInventory | undefined;
 }): Promise<ReadonlyArray<HomeStoreEvidence>> {
+  const selectedStores = input.phase === "prepare" && input.selectedStores !== undefined
+    ? validateSelectedInventory(input.selectedStores)
+    : null;
   const evidence: HomeStoreEvidence[] = [];
-  for (const entry of HOME_STORE_MIGRATIONS) {
+  for (const [index, entry] of HOME_STORE_MIGRATIONS.entries()) {
     const path = join(input.snapshotRoot, entry.name);
     await assertDirectDatabase(path, entry.name);
     await validateSqliteSnapshot(path);
@@ -97,9 +114,19 @@ async function inspectHomeStoreSnapshots(input: {
     const predecessor = entry.migratesFrom.includes(schemaHash);
     const current = schemaHash === entry.currentSchemaHash;
     if (input.phase === "prepare") {
-      // Unchanged stores are simultaneously N-1 and current. Changed stores
-      // must be the one named predecessor before the journal is published.
-      if (!(predecessor || (entry.migratesFrom.length === 0 && current))) {
+      if (selectedStores !== null) {
+        // A modern sequential upgrade is safe only when all six snapshots
+        // exactly match the verified selected release. Candidate compatibility
+        // remains a separate proof after this source-state proof.
+        if (schemaHash !== selectedStores[index]!.currentSchemaHash) {
+          throw new Error(`Home upgrade snapshot differs from selected release schema: ${entry.name}`);
+        }
+        if (!predecessor && !current) {
+          throw new Error(`Home upgrade has no durable-state route for ${entry.name}: ${schemaHash}`);
+        }
+      // Legacy selected artifacts have no durable-state inventory. Preserve
+      // the frozen N-1 rule so an unjournaled partial migration stays closed.
+      } else if (!(predecessor || (entry.migratesFrom.length === 0 && current))) {
         throw new Error(`Home upgrade prepare requires exact N-1 schema: ${entry.name}`);
       }
     } else if (!predecessor && !current) {
@@ -112,6 +139,20 @@ async function inspectHomeStoreSnapshots(input: {
     }));
   }
   return Object.freeze(evidence);
+}
+
+function validateSelectedInventory(
+  stores: HomeStoreSelectedInventory,
+): HomeStoreSelectedInventory {
+  if (stores.length !== HOME_STORE_MIGRATIONS.length ||
+    !HOME_STORE_MIGRATIONS.every((expected, index) => {
+      const actual = stores[index];
+      return actual?.name === expected.name && actual.metaTable === expected.metaTable &&
+        /^[0-9a-f]{64}$/.test(actual.currentSchemaHash);
+    })) {
+    throw new Error("selected Home durable-state inventory is invalid");
+  }
+  return stores;
 }
 
 /** Migrate remaining predecessor stores after the prepared journal exists. */

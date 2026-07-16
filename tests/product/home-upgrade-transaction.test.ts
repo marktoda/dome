@@ -54,7 +54,12 @@ import {
   restoreHomeUpgrade,
   type HomeUpgradeTransactionDeps,
 } from "../../src/product-host/home-upgrade-transaction";
-import { computeRequestReceiptsSchemaHash, openRequestReceiptsDb, REQUEST_RECEIPTS_N1_SCHEMA_HASH } from "../../src/request-receipts/db";
+import {
+  computeRequestReceiptsSchemaHash,
+  migrateRequestReceiptsN1,
+  openRequestReceiptsDb,
+  REQUEST_RECEIPTS_N1_SCHEMA_HASH,
+} from "../../src/request-receipts/db";
 import type { HomeArtifactManifest } from "../../src/product-host/home-artifact";
 import { HOME_DURABLE_STATE_PROTOCOL, HOME_STORE_MIGRATIONS } from "../../src/product-host/home-store-migrations";
 import {
@@ -1082,6 +1087,41 @@ describe("Product Host pre-commit upgrade transaction", () => {
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });
 
+  test("sequential patch prepare accepts all-current stores proved by the selected manifest", async () => {
+    const f = await fixture();
+    try {
+      const stateRoot = join(f.vault, ".dome", "state");
+      expect((await migrateRequestReceiptsN1({
+        path: join(stateRoot, "request-receipts.db"),
+      })).ok).toBeTrue();
+      const before = await logicalState(f.vault);
+
+      const paths = homeInstallationPaths(f.vault, f.deps);
+      const oldManifestPath = join(releaseRoot(paths, OLD_ID), "manifest.json");
+      const oldManifest = JSON.parse(await readFile(oldManifestPath, "utf8")) as Record<string, unknown>;
+      oldManifest["durableState"] = {
+        protocol: HOME_DURABLE_STATE_PROTOCOL,
+        stores: HOME_STORE_MIGRATIONS,
+      };
+      await writeFile(oldManifestPath, `${JSON.stringify(oldManifest)}\n`, { mode: 0o600 });
+
+      const prepared = await prepareHomeUpgrade({
+        vaultPath: f.vault,
+        transactionId: randomUUID(),
+        candidateArtifactId: CANDIDATE_ID,
+      }, f.deps);
+      expect(prepared.phase).toBe("prepared");
+      expect(prepared.snapshot.inventory.filter((entry) => entry.kind === "sqlite"))
+        .toHaveLength(6);
+      expect(prepared.snapshot.inventory.filter((entry) => entry.kind === "sqlite")
+        .every((entry) => HOME_STORE_MIGRATIONS.some((store) =>
+          store.name === entry.name && store.currentSchemaHash === entry.schemaHash))).toBeTrue();
+      await mutateDurableState(f.vault);
+      expect((await restoreHomeUpgrade(f.vault, f.deps)).phase).toBe("restored");
+      expect(await logicalState(f.vault)).toEqual(before);
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+
   test("rollback succeeds when the failed candidate artifact is missing", async () => {
     const f = await fixture();
     try {
@@ -1412,7 +1452,7 @@ describe("Product Host pre-commit upgrade transaction", () => {
     }
   });
 
-  test("historical durable-state drift is old-side eligible but candidate-side incompatible", async () => {
+  test("historical inventory remains parseable but cannot disagree with selected live state or candidate build", async () => {
     for (const artifactId of [OLD_ID, CANDIDATE_ID]) {
       const f = await fixture();
       try {
@@ -1435,8 +1475,11 @@ describe("Product Host pre-commit upgrade transaction", () => {
           transactionId: randomUUID(),
           candidateArtifactId: CANDIDATE_ID,
         }, f.deps);
-        if (artifactId === OLD_ID) expect((await prepare).phase).toBe("prepared");
-        else await expect(prepare).rejects.toThrow("differs from this build");
+        await expect(prepare).rejects.toThrow(
+          artifactId === OLD_ID
+            ? "snapshot differs from selected release schema: answers.db"
+            : "differs from this build",
+        );
       } finally {
         await rm(f.root, { recursive: true, force: true });
       }

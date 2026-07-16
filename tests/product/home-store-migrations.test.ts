@@ -8,6 +8,7 @@ import {
   HOME_STORE_MIGRATIONS,
   migratePreparedHomeStores,
   preflightHomeStoreMigrations,
+  type HomeStoreSelectedInventory,
 } from "../../src/product-host/home-store-migrations";
 import { REQUEST_RECEIPTS_N1_SCHEMA_HASH } from "../../src/request-receipts/db";
 import {
@@ -40,7 +41,19 @@ describe("Home durable-store migrations", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
-  test("initial prepare refuses an unjournaled mixed vault with receipts already current", async () => {
+  test("legacy prepare accepts the exact predecessor and returns all-six evidence", async () => {
+    const root = await materialized();
+    try {
+      const evidence = await preflight(root, "prepare");
+      expect(evidence).toHaveLength(6);
+      expect(evidence.find((entry) => entry.name === "request-receipts.db"))
+        .toMatchObject({ schemaHash: REQUEST_RECEIPTS_N1_SCHEMA_HASH, state: "predecessor" });
+      expect(evidence.filter((entry) => entry.name !== "request-receipts.db")
+        .every((entry) => entry.state === "current")).toBeTrue();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("legacy prepare rejects receipts already current as an unjournaled partial migration", async () => {
     const root = await materialized();
     try {
       await migrate(root);
@@ -48,6 +61,41 @@ describe("Home durable-store migrations", () => {
         .rejects.toThrow("requires exact N-1 schema: request-receipts.db");
       expect((await preflight(root, "prepared-retry"))
         .every((entry) => entry.state === "current")).toBeTrue();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("selected-manifest prepare accepts all-six current evidence", async () => {
+    const root = await materialized();
+    try {
+      await migrate(root);
+      const evidence = await preflight(root, "prepare", HOME_STORE_MIGRATIONS);
+      expect(evidence).toHaveLength(6);
+      expect(evidence.every((entry) => entry.state === "current")).toBeTrue();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("selected-manifest prepare rejects mixed predecessor/current state", async () => {
+    const root = await materialized();
+    try {
+      await expect(preflight(root, "prepare", HOME_STORE_MIGRATIONS))
+        .rejects.toThrow("differs from selected release schema: request-receipts.db");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("selected-manifest prepare cannot bless an unknown changed-store schema", async () => {
+    const root = await materialized();
+    try {
+      const unknownHash = "d".repeat(64);
+      const receipts = new Database(join(root, "request-receipts.db"));
+      receipts.run("UPDATE request_receipts_meta SET schema_hash=?", [unknownHash]);
+      receipts.run("PRAGMA wal_checkpoint(TRUNCATE)");
+      receipts.close();
+      const selectedStores = HOME_STORE_MIGRATIONS.map((store) =>
+        store.name === "request-receipts.db"
+          ? { ...store, currentSchemaHash: unknownHash }
+          : store);
+      await expect(preflight(root, "prepare", selectedStores))
+        .rejects.toThrow(`no durable-state route for request-receipts.db: ${unknownHash}`);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
@@ -142,11 +190,19 @@ async function materialized(): Promise<string> {
 async function preflight(
   stateRoot: string,
   phase: "prepare" | "prepared-retry",
+  selectedStores?: HomeStoreSelectedInventory,
 ): ReturnType<typeof preflightHomeStoreMigrations> {
   const snapshotRoot = scratch(stateRoot, `preflight-${phase}`);
   await rm(snapshotRoot, { recursive: true, force: true });
   await mkdir(snapshotRoot, { mode: 0o700 });
-  try { return await preflightHomeStoreMigrations({ stateRoot, snapshotRoot, phase }); }
+  try {
+    return await preflightHomeStoreMigrations({
+      stateRoot,
+      snapshotRoot,
+      phase,
+      ...(selectedStores !== undefined ? { selectedStores } : {}),
+    });
+  }
   finally { await rm(snapshotRoot, { recursive: true, force: true }); }
 }
 
