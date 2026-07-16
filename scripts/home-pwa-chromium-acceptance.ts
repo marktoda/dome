@@ -1018,8 +1018,7 @@ async function assertReadyConnection(
   if (await summary.getAttribute("aria-expanded") !== "true") await summary.click();
   const details = page.locator(".connection");
   try {
-    await details.getByText(expected.vaultName, { exact: true }).waitFor({ timeout: WAIT_MS });
-    await details.getByText(deviceName, { exact: true }).waitFor({ timeout: WAIT_MS });
+    await details.getByText(`${expected.vaultName} · ${deviceName}`, { exact: true }).waitFor({ timeout: WAIT_MS });
     const technical = details.locator("details.technical-details");
     if (await technical.getAttribute("open") === null) await technical.locator("summary").click();
     await technical.getByText(expected.productVersion, { exact: true }).waitFor({ timeout: WAIT_MS });
