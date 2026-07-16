@@ -66,6 +66,18 @@ type AcceptanceDeadlines = Readonly<{
   cleanupMs: number;
 }>;
 
+type HomePwaReadinessStage = "unavailable" | "invalid-document" | "summary" | "core-state" | "identity" | "grants" | "details";
+
+class HomePwaReadinessStageError extends Error {
+  readonly stage: HomePwaReadinessStage;
+
+  constructor(stage: HomePwaReadinessStage) {
+    super(`installed PWA readiness failed at ${stage}`);
+    this.name = "HomePwaReadinessStageError";
+    this.stage = stage;
+  }
+}
+
 export type HomePwaTaskSettlementStage = "submit" | "closure" | "reload" | "removal";
 export type HomePwaLocalCaptureStage = "save" | "outbox" | "export";
 export type HomePwaReplayStage = "outbox" | "logical-capture";
@@ -610,6 +622,8 @@ async function runAcceptanceSequence(
       failure = phase;
       failureDiagnostic = phase === "adaptive-accessibility"
         ? safeAdaptiveFailureDiagnostic(outcome.kind, outcome.cause)
+        : phase === "readiness"
+          ? safeReadinessFailureDiagnostic(outcome.kind, outcome.cause)
         : phase === "task-settlement"
           ? safeTaskSettlementFailureDiagnostic(outcome.kind, outcome.cause)
           : phase === "local-capture"
@@ -981,22 +995,34 @@ async function assertReadyConnection(
 ): Promise<void> {
   const summary = page.locator(".connection-summary");
   await summary.waitFor({ timeout: WAIT_MS });
-  const readinessResponse = await page.evaluate(`fetch("/readyz", { cache: "no-store" }).then(async (response) => ({
-    status: response.status,
-    body: await response.json(),
-  }))`) as Readonly<{ status: number; body: unknown }>;
-  if (readinessResponse.status !== 200) throw new Error("installed PWA readiness document is unavailable");
-  assertInstalledHomeConnectionEvidenceForTests({
-    summaryText: await summary.innerText(),
-    readiness: readinessResponse.body,
-    expected: { productVersion: expected.productVersion, vaultName: expected.vaultName, deviceName },
-  });
+  const deadline = Date.now() + WAIT_MS;
+  let failure: HomePwaReadinessStage | null = "unavailable";
+  while (Date.now() < deadline) {
+    try {
+      const readinessResponse = await page.evaluate(`fetch("/readyz", { cache: "no-store" }).then(async (response) => ({
+        status: response.status,
+        body: await response.json(),
+      }))`) as Readonly<{ status: number; body: unknown }>;
+      failure = readinessResponse.status === 200
+        ? installedHomeConnectionEvidenceFailureForTests({
+            summaryText: await summary.innerText(),
+            readiness: readinessResponse.body,
+            expected: { productVersion: expected.productVersion, vaultName: expected.vaultName, deviceName },
+          })
+        : "unavailable";
+      if (failure === null) break;
+    } catch { failure = "unavailable"; }
+    await Bun.sleep(100);
+  }
+  if (failure !== null) throw new HomePwaReadinessStageError(failure);
   if (await summary.getAttribute("aria-expanded") !== "true") await summary.click();
   const details = page.locator(".connection");
-  await details.getByText(expected.vaultName, { exact: true }).waitFor({ timeout: WAIT_MS });
-  await details.getByText(deviceName, { exact: true }).waitFor({ timeout: WAIT_MS });
-  await details.getByText(expected.productVersion, { exact: true }).waitFor({ timeout: WAIT_MS });
-  await details.getByText("capture, read, resolve", { exact: true }).waitFor({ timeout: WAIT_MS });
+  try {
+    await details.getByText(expected.vaultName, { exact: true }).waitFor({ timeout: WAIT_MS });
+    await details.getByText(deviceName, { exact: true }).waitFor({ timeout: WAIT_MS });
+    await details.getByText(expected.productVersion, { exact: true }).waitFor({ timeout: WAIT_MS });
+    await details.getByText("capture, read, resolve", { exact: true }).waitFor({ timeout: WAIT_MS });
+  } catch { throw new HomePwaReadinessStageError("details"); }
 }
 
 /**
@@ -1009,18 +1035,38 @@ export function assertInstalledHomeConnectionEvidenceForTests(input: Readonly<{
   readiness: unknown;
   expected: Readonly<{ productVersion: string; vaultName: string; deviceName: string }>;
 }>): ProductReadiness {
-  const document = parseProductReadiness(input.readiness);
+  const failure = installedHomeConnectionEvidenceFailureForTests(input);
+  if (failure !== null) throw new Error("installed PWA connection does not match ready core truth");
+  return parseProductReadiness(input.readiness);
+}
+
+export function installedHomeConnectionEvidenceFailureForTests(input: Readonly<{
+  summaryText: string;
+  readiness: unknown;
+  expected: Readonly<{ productVersion: string; vaultName: string; deviceName: string }>;
+}>): HomePwaReadinessStage | null {
+  let document: ProductReadiness;
+  try { document = parseProductReadiness(input.readiness); }
+  catch { return "invalid-document"; }
   const expectedSummary = document.model.state === "ready"
     ? "Connection · ready"
     : "Connection · limited";
-  if (input.summaryText.trim() !== expectedSummary ||
-    document.host.state !== "ready" || document.adoption.state !== "current" ||
-    document.writesAdmitted !== true || document.productVersion !== input.expected.productVersion ||
-    document.vault.name !== input.expected.vaultName || document.device.name !== input.expected.deviceName ||
-    JSON.stringify([...document.device.capabilities].sort()) !== JSON.stringify(["capture", "read", "resolve"])) {
-    throw new Error("installed PWA connection does not match ready core truth");
-  }
-  return document;
+  if (input.summaryText.trim() !== expectedSummary) return "summary";
+  if (document.host.state !== "ready" || document.adoption.state !== "current" ||
+    document.writesAdmitted !== true) return "core-state";
+  if (document.productVersion !== input.expected.productVersion ||
+    document.vault.name !== input.expected.vaultName || document.device.name !== input.expected.deviceName) return "identity";
+  if (JSON.stringify([...document.device.capabilities].sort()) !==
+    JSON.stringify(["capture", "read", "resolve"])) return "grants";
+  return null;
+}
+
+function safeReadinessFailureDiagnostic(
+  kind: "fulfilled" | "rejected" | "timed-out" | "invalid-deadline",
+  cause: unknown,
+): HomePwaReadinessStage | "phase-timeout" | null {
+  if (kind === "timed-out") return "phase-timeout";
+  return cause instanceof HomePwaReadinessStageError ? cause.stage : null;
 }
 
 async function assertActivitySource(page: Page, canary: InstalledFunctionalCanary): Promise<void> {

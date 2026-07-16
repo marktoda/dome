@@ -34,6 +34,7 @@ import {
   exerciseHomePwaReplayStageForTests,
   exerciseHomePwaTaskSettlementStageForTests,
   exerciseHomePwaChromiumAcceptanceForTests,
+  installedHomeConnectionEvidenceFailureForTests,
   parseHomePwaCaptureExportForTests,
   parseHomePwaSettlementReceiptForTests,
 } from "../../scripts/home-pwa-chromium-acceptance";
@@ -84,6 +85,16 @@ describe("installed Chromium core-readiness evidence", () => {
       readiness: INSTALLED_READINESS,
       expected,
     })).toThrow("does not match ready core truth");
+    expect(installedHomeConnectionEvidenceFailureForTests({
+      summaryText: "Connection · ready",
+      readiness: INSTALLED_READINESS,
+      expected,
+    })).toBe("summary");
+    expect(installedHomeConnectionEvidenceFailureForTests({
+      summaryText: "Connection · limited",
+      readiness: { ...INSTALLED_READINESS, adoption: { ...INSTALLED_READINESS.adoption, state: "pending" } },
+      expected,
+    })).toBe("core-state");
     expect(() => assertInstalledHomeConnectionEvidenceForTests({
       summaryText: "Connection · limited",
       readiness: { ...INSTALLED_READINESS, adoption: { ...INSTALLED_READINESS.adoption, state: "pending" } },
