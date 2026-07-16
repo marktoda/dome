@@ -59,9 +59,11 @@ export function RecoveryCard({ session, onRetry, authRepair }: {
   const repair = recovery.kind === "repair" ? authRepair : null;
   return (
     <section className={`recovery-card recovery-${session.kind}`} aria-labelledby="recovery-title">
-      <div className="recovery-message" role="status">
+      <div className="recovery-message" role={repair?.error === null || repair === null ? "status" : undefined}>
         <strong id="recovery-title">{recovery.title}</strong>
-        <span>{recovery.detail}</span>
+        {repair?.error !== null && repair !== null
+          ? <span role="alert">{repair.error}</span>
+          : <span>{recovery.detail}</span>}
       </div>
       {recovery.kind === "repair" && repair !== null ? (
         <form onSubmit={(event) => {
@@ -79,7 +81,6 @@ export function RecoveryCard({ session, onRetry, authRepair }: {
           <button type="submit" disabled={repair.pairing || code.trim().length === 0}>
             {repair.pairing ? "Pairing…" : "Pair again"}
           </button>
-          {repair.error !== null ? <span role="alert">{repair.error}</span> : null}
         </form>
       ) : recovery.kind === "retry" ? (
         <button type="button" onClick={onRetry}>{recovery.actionLabel}</button>

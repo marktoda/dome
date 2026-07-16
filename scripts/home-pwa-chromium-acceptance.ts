@@ -402,10 +402,18 @@ async function assertAdaptiveAccessibility(page: Page): Promise<void> {
       }).map((element) => element.getAttribute("aria-label") || element.textContent?.trim().slice(0, 40) || element.tagName);
       const critical = [".composer", '[aria-label="Refresh Today"]', '[aria-label="ask your brain"]', '[aria-label="capture thought"]', '[aria-label="send"]']
         .map((selector) => document.querySelector(selector));
+      const refresh = document.querySelector('[aria-label="Refresh Today"]');
+      const scroll = document.querySelector(".scroll");
+      const refreshInsideScroll = refresh !== null && scroll !== null && (() => {
+        const child = refresh.getBoundingClientRect();
+        const clip = scroll.getBoundingClientRect();
+        return child.left >= clip.left - 0.5 && child.top >= clip.top - 0.5 &&
+          child.right <= clip.right + 0.5 && child.bottom <= clip.bottom + 0.5;
+      })();
       return {
         overflow: document.documentElement.scrollWidth > innerWidth || document.body.scrollWidth > innerWidth,
         undersized,
-        criticalMissing: critical.some((element) => element === null || !visible(element) || !inside(element)),
+        criticalMissing: !refreshInsideScroll || critical.some((element) => element === null || !visible(element) || !inside(element)),
       };
     })()` ) as { readonly overflow: boolean; readonly undersized: readonly string[]; readonly criticalMissing: boolean };
     if (result.overflow) throw new Error(`installed PWA overflows horizontally at ${viewport.width}x${viewport.height}`);

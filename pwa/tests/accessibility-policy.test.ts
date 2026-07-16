@@ -103,6 +103,8 @@ describe("PWA adaptive accessibility CSS policy", () => {
       import.meta.dir, "..", "..", "scripts", "home-pwa-chromium-acceptance.ts",
     ), "utf8");
     expect(runner).toContain("'[aria-label=\"Refresh Today\"]'");
+    expect(runner).toContain('const scroll = document.querySelector(".scroll")');
+    expect(runner).toContain("child.bottom <= clip.bottom + 0.5");
     expect(runner).toContain("installed PWA critical controls leave the viewport");
   });
 
