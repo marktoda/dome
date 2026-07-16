@@ -108,6 +108,16 @@ export type DailyTaskPriority =
   | "low"
   | "lowest";
 
+export type TaskBacklogCandidate = DailyTaskItem & {
+  readonly sourceTitle: string | null;
+};
+
+export type TaskBacklogCandidateState = {
+  readonly date: string;
+  readonly revision: string;
+  readonly tasks: ReadonlyArray<TaskBacklogCandidate>;
+};
+
 export type DailyQuestionItem = {
   readonly id: number;
   readonly question: string;
@@ -340,6 +350,76 @@ export async function collectDailyActionState(
   });
 }
 
+/**
+ * Read the individual origin facts selected by the global open-loop index,
+ * before Today's exact/near display folding. Backlog review groups exact
+ * visible text itself; keeping facts individual here prevents same-file
+ * duplicate commitments and their separate block anchors from disappearing.
+ */
+export async function collectTaskBacklogCandidates(
+  ctx: ProcessorContext,
+  date: DailyDate,
+): Promise<TaskBacklogCandidateState> {
+  if (ctx.projection === undefined) {
+    throw new Error(
+      "dome.daily: ctx.projection is undefined; view-phase processors require a ProjectionQueryView",
+    );
+  }
+  const dateString = formatDate(date);
+  const settings = dailyPathSettings(ctx.extensionConfig);
+  const currentDailyPath = dailyPath(date, settings);
+  const openFacts = uniqueTaskOriginFacts(ctx.projection.facts({
+    predicate: OPEN_TASK_PREDICATE,
+  }));
+  const followupKeys = new Set(
+    uniqueTaskOriginFacts(ctx.projection.facts({ predicate: FOLLOWUP_PREDICATE }))
+      .map(taskOriginCorrelationKey),
+  );
+  const originFacts = uniqueTaskOriginFacts(ctx.projection.facts({
+    predicate: TASK_ORIGIN_PREDICATE,
+  }));
+  const originByCorrelation = new Map<string, string>();
+  const originByStableId = new Map<string, string>();
+  for (const fact of originFacts) {
+    const value = fact.object.kind === "string" ? fact.object.value : undefined;
+    if (value === undefined) continue;
+    originByCorrelation.set(taskOriginCorrelationKey(fact), value);
+    const stableId = fact.sourceRefs[0]?.stableId;
+    if (stableId !== undefined && !originByStableId.has(stableId)) {
+      originByStableId.set(stableId, value);
+    }
+  }
+  const paths = openFacts.map(factSourcePath);
+  const sourceLastChangedAt = await sourceLastChangedAtIndex(ctx, paths);
+  const titleByPath = new Map(
+    ctx.projection.documentsByPath(paths).map((document) => [
+      document.path,
+      document.title,
+    ] as const),
+  );
+  const tasks = openFacts
+    .map((fact): TaskBacklogCandidate => {
+      const item = taskItemFromFact({
+        fact,
+        followup: followupKeys.has(taskOriginCorrelationKey(fact)),
+        dailyPath: currentDailyPath,
+        sourceLastChangedAt,
+        originByStableId,
+        originByCorrelation,
+      });
+      return Object.freeze({
+        ...item,
+        sourceTitle: titleByPath.get(item.path) ?? null,
+      });
+    })
+    .sort(compareTaskItemsForDaily(currentDailyPath, settings));
+  return Object.freeze({
+    date: dateString,
+    revision: String(ctx.snapshot.commit),
+    tasks: Object.freeze(tasks),
+  });
+}
+
 export function parseInputDate(input: unknown): DailyDate | null {
   const { record, flags } = commandArgsRecord(input);
   return parseDateString(stringValue(record.date) ?? stringValue(flags.date));
@@ -441,6 +521,7 @@ function taskItemFromFact(input: {
   readonly dailyPath: string;
   readonly sourceLastChangedAt: ReadonlyMap<string, string>;
   readonly originByStableId: ReadonlyMap<string, string>;
+  readonly originByCorrelation?: ReadonlyMap<string, string>;
 }): DailyTaskItem {
   const { fact } = input;
   const ref = fact.sourceRefs[0];
@@ -449,7 +530,8 @@ function taskItemFromFact(input: {
   const body = literalToString(fact.object);
   // Correlate origin via the parallel dome.daily.task_origin fact using stableId.
   const sid = ref?.stableId;
-  const origin = sid !== undefined ? input.originByStableId.get(sid) : undefined;
+  const origin = input.originByCorrelation?.get(taskOriginCorrelationKey(fact)) ??
+    (sid !== undefined ? input.originByStableId.get(sid) : undefined);
   // Recover the raw ^anchor from the stableId, when it names one (not the
   // transient body-hash fallback) — the settle-able identity.
   const blockId = openLoopAnchorFromStableId(sid);
@@ -671,6 +753,33 @@ function uniqueFactsByKey(
     out.push(fact);
   }
   return Object.freeze(out);
+}
+
+function uniqueTaskOriginFacts(
+  facts: ReadonlyArray<FactEffect>,
+): ReadonlyArray<FactEffect> {
+  const seen = new Set<string>();
+  const out: FactEffect[] = [];
+  for (const fact of facts) {
+    const key = [
+      taskOriginCorrelationKey(fact),
+      literalIdentity(fact.object),
+    ].join("\u0000");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(fact);
+  }
+  return Object.freeze(out);
+}
+
+function taskOriginCorrelationKey(fact: FactEffect): string {
+  const ref = fact.sourceRefs[0];
+  return [
+    ref?.path ?? subjectPath(fact),
+    ref?.range?.startLine ?? "",
+    ref?.range?.endLine ?? "",
+    ref?.stableId ?? "",
+  ].join("\u0000");
 }
 
 function dedupeDailyTaskItems(

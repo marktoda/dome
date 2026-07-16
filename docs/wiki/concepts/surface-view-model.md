@@ -81,6 +81,16 @@ decorative. Adding the field is a pure widening — the schema, the lenient
 parser, and every existing consumer treat its absence as "not yet anchored",
 not an error.
 
+## Product read contract: `dome.daily.task-backlog.list/v1`
+
+`TaskBacklog.list` applies the same three-tier discipline without a paint yet.
+The producer supplies individual projection-backed open-task origins;
+`src/surface/task-backlog.ts` owns exact-visible-text grouping, timing/source
+classification, and adopted-revision-bound keyset pagination; HTTP and the PWA
+client validate and transport that one contract. Unlike Today's glance view,
+backlog review never applies near-duplicate folding, and it keeps unanchored
+origins visible but explicitly non-reviewable.
+
 ## The generic layer: the View Contract (built)
 
 The generic surface-view layer now exists. Each first-party catalog entry
@@ -92,7 +102,8 @@ The generic surface-view layer now exists. Each first-party catalog entry
 a tag-match-but-malformed payload is a distinct `invalid-payload` problem.
 `data: unknown` is dead at the seam.
 
-All four catalog views carry contracts: `today` (`todayPayloadSchema`), `query`
+All five catalog views carry contracts: `today` (`todayPayloadSchema`), `task-backlog`
+(`taskBacklogListSchema`), `query`
 (`queryPayloadSchema`), `lint` (`lintPayloadSchema`), and `export-context` (an
 inline passthrough `{ markdown }`). The three hand-rolled `parse(unknown)`
 coercers that predated this — `parseQueryResult`, `parseLintData`, and

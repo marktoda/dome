@@ -1,5 +1,5 @@
 id: dome.daily
-version: 0.4.0
+version: 0.4.1
 processors:
   - id: dome.daily.normalize-task-syntax
     version: 0.2.0
@@ -120,6 +120,19 @@ processors:
       - kind: questions.read
       - kind: proposals.read
     module: processors/today.ts
+
+  - id: dome.daily.task-backlog
+    version: 0.1.0
+    phase: view
+    triggers:
+      - kind: command
+        name: task-backlog
+    capabilities:
+      - kind: read
+        # Same origin-fact universe indexed by dome.daily.task-index/Today;
+        # no owner-attention or mutation capability is needed for this read.
+        paths: ["wiki/**/*.md", "notes/*.md"]
+    module: processors/task-backlog.ts
 
   - id: dome.daily.prep
     version: 0.1.14

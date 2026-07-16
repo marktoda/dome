@@ -12,6 +12,7 @@ import { z, type ZodType } from "zod";
 
 import { lintPayloadSchema } from "./lint-view";
 import { queryPayloadSchema } from "./query-view";
+import { taskBacklogListSchema } from "./task-backlog";
 import { todayPayloadSchema } from "./today-view";
 
 /**
@@ -100,5 +101,13 @@ export const FIRST_PARTY_VIEWS = {
     // tier-2 `buildTodayViewModel` consumes the enriched `TodayView`, not the
     // raw `TodayPayload`, so adapters compose it after `parseTodayView`.
     payload: todayPayloadSchema,
+  }),
+  taskBacklog: Object.freeze({
+    command: "task-backlog",
+    viewName: "dome.daily.task-backlog.list",
+    schemaTag: "dome.daily.task-backlog.list/v1",
+    bundleId: "dome.daily",
+    processorName: "task-backlog",
+    payload: taskBacklogListSchema,
   }),
 } as const satisfies Record<string, FirstPartyViewEntry>;

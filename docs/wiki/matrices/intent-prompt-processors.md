@@ -35,6 +35,7 @@ This matrix replaces v0.5's `intent-prompt-tools` matrix. The shape generalized:
 | "What did Dome do?" | shipped | `dome log` (CLI-native — no processor; git history joined with the run ledger) | — | none | none (read-only; `log.md` is frozen per NO_ACCRETING_REGISTRIES) |
 | "Index explicit wiki-page tasks/followups" | shipped | `dome.daily.task-index`, `dome.daily.ambiguous-followup-answer` | adoption + garden answer | none | FactEffect (`dome.daily.open_task`, `dome.daily.followup`), QuestionEffect for ambiguous prose follow-ups, answer-triggered PatchEffect to write accepted prose follow-ups back into markdown |
 | "Show today's action surface" | hidden compatibility | `dome.daily.today` | view (hidden command wrapper / `dome run today`) | none | ViewEffect (structured daily note, open tasks, followups, questions) |
+| "Review my task backlog" | shipped product read | `dome.daily.task-backlog` | view (`GET /task-backlog` / `dome run task-backlog`) | none | ViewEffect (`dome.daily.task-backlog.list/v1`: exact groups, source context, revision-bound pagination) |
 | "Lint the wiki for issues" | shipped | `dome.lint.report` | view (command via `dome lint`) | none (projection diagnostics + deterministic adopted-state checks) | ViewEffect (structured lint report) |
 | "Apply a lint finding" | planned | `dome.lint.apply-finding` | view (command) | `assets/extensions/dome.lint/processors/apply-finding.prompt.md` | PatchEffect (the proposed fix) |
 

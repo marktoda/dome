@@ -3,6 +3,7 @@ import type {
   AgentStreamCitation,
   AgentStreamEvent,
 } from "../../../contracts/agent-stream";
+import type { TaskBacklogListOk } from "../../../src/surface/task-backlog";
 
 export type Citation = AgentStreamCitation;
 
@@ -95,6 +96,8 @@ export type Today = {
   hero: { kind: "task" | "question"; item: TodayItem | TodayQuestion } | null;
   counts: { openTasks: number; followups: number; questions: number; reviews?: number };
 };
+
+export type TaskBacklog = TaskBacklogListOk;
 
 export type RecentEntry = {
   path: string;

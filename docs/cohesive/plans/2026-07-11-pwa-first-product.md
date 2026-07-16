@@ -1007,8 +1007,9 @@ deliberate compression checkpoint:
 
 The next product mission is a **Backlog Review**, not another broad feature:
 
-1. add a paged, projection-backed `TaskBacklog.list` read interface over the
-   same open-loop selector;
+1. **Shipped:** a paged, projection-backed `TaskBacklog.list` read interface
+   over the same global open-loop origin selector, with exact-only grouping,
+   full source/block-anchor evidence, and revision-bound keyset cursors;
 2. group explicit commitments by overdue, dated, exact duplicate candidate,
    and undated source context;
 3. let the owner keep, defer, or close a reviewed batch with one attributable,

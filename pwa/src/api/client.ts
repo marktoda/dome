@@ -1,4 +1,4 @@
-import type { AgentSession, AgentStopOutcome, AgentStreamOutcome, CaptureResult, PairingResult, PairingStatus, Recents, ResolveResult, SettleDisposition, SettleResult, StreamEvent, Today, Transcript } from "./types";
+import type { AgentSession, AgentStopOutcome, AgentStreamOutcome, CaptureResult, PairingResult, PairingStatus, Recents, ResolveResult, SettleDisposition, SettleResult, StreamEvent, TaskBacklog, Today, Transcript } from "./types";
 import {
   parseCaptureReceipt,
   type CaptureRequest,
@@ -17,6 +17,7 @@ import {
   parseProductReadiness,
   type ProductReadiness,
 } from "../../../contracts/product-readiness";
+import { taskBacklogListSchema } from "../../../src/surface/task-backlog";
 import { todayPayloadSchema } from "../../../src/surface/today-view";
 
 export type AgentTurnHandle = {
@@ -108,6 +109,28 @@ export class DomeClient {
       throw new Error("Today response is incompatible.");
     }
     return value as Today;
+  }
+
+  async taskBacklog(input: {
+    readonly date?: string;
+    readonly limit?: number;
+    readonly cursor?: string;
+  } = {}): Promise<TaskBacklog> {
+    const query = new URLSearchParams();
+    if (input.date !== undefined) query.set("date", input.date);
+    if (input.limit !== undefined) query.set("limit", String(input.limit));
+    if (input.cursor !== undefined) query.set("cursor", input.cursor);
+    const suffix = query.size === 0 ? "" : `?${query.toString()}`;
+    const value = await this.parse<unknown>(
+      await this.fetchResponse(this.request(`/task-backlog${suffix}`, {
+        headers: this.authHeaders(false),
+      })),
+    );
+    const parsed = taskBacklogListSchema.safeParse(value);
+    if (!parsed.success || parsed.data.status !== "ok") {
+      throw new Error("Task backlog response is incompatible.");
+    }
+    return parsed.data;
   }
 
   async recents(limit?: number): Promise<Recents> {

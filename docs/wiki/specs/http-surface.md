@@ -92,6 +92,7 @@ vault per process.
 | `GET /views` | `vault.listViews()` | `dome.views/v1` |
 | `POST /views/:command` JSON input | `runInstalledView` → `vault.runView(command)` | `dome.view-run/v1` |
 | `GET /tasks?date=…` | `dome run today` | `dome.daily.today/v1` |
+| `GET /task-backlog?date=…&limit=…&cursor=…` | `dome run task-backlog` | `dome.daily.task-backlog.list/v1` |
 | `GET /today` | legacy browser bookmark migration | `308` to `/` when the PWA shell is present; otherwise a data-free `410` notice |
 | `GET /doc?path=…` | `vault.readDocument` (adopted ref) | `dome.http.document/v1` |
 | `GET /source?path=…&commit=…` | exact adopted-source reader | `dome.source-document/v1` with explicit `status` |
@@ -107,6 +108,24 @@ vault per process.
 | `DELETE /sessions/:id` | close an agent session | `dome.agent-session/v1` |
 | `POST /transcribe` audio body | STT step: shell command or OpenAI-compatible cloud endpoint (`capture` capability; 501 when unconfigured) | `dome.transcribe/v1` `{text}` |
 | `GET /recents` | recent changes from the current branch's adopted ref (`read` capability; empty before initialization) | `dome.recents/v1` `{count, entries}`; every entry carries its exact newest-change commit |
+
+`GET /task-backlog` is the read-only `TaskBacklog.list` seam for reviewed
+cleanup. It reads the individual `dome.daily.open_task` origin facts selected
+by the same global open-loop index as Today, before Today's glance-oriented
+near-duplicate display fold. It groups only exact normalized visible text,
+across the complete set before pagination; a duplicate candidate is therefore
+one page unit and is never split across cursors. Each member retains its exact
+SourceRefs, source title/context, and `blockId`. An unanchored member remains
+visible with `reviewable: false`; the surface never invents a settlement
+identity. Group counters describe the complete snapshot, not only the current
+page.
+
+Pagination is deterministic and keyset-based. The opaque cursor binds the
+last unit id to the adopted commit and a hash of the derived unit list. A
+malformed cursor returns `400 invalid-cursor`; any adopted/task-list change
+returns `409 stale-cursor` and requires a fresh first page. Page size defaults
+to 25 and caps at 100. This slice is read-only: keep/defer/close batch mutation
+is a separate controlled-mutation contract.
 
 `GET /source` is the citation-resolution route. Both `path` and a full commit
 OID are required. The path must already be canonical and vault-relative, must

@@ -21,6 +21,32 @@ An unchecked checkbox is not automatically a global Dome task. Inside a daily no
 
 Every global task projects one `dome.daily.open_task` fact. A follow-up projects the same open-task fact plus `dome.daily.followup` as a facet keyed by the same stable identity; it is not a second logical task. Accordingly, `dome.daily.today/v1` keeps `openTasks` as the canonical logical collection and exposes `followups`/`counts.followups` for filtering and metadata. Product totals and task rows consume `openTasks` once rather than adding the follow-up facet again.
 
+## Backlog review read model
+
+`dome.daily.task-backlog` exposes the versioned
+`dome.daily.task-backlog.list/v1` document (`TaskBacklog.list`; authenticated
+Home route `GET /task-backlog`). It consumes the individual projected
+`dome.daily.open_task` origin facts before Today's display dedupe, so two
+identical commitments in one file remain two members even when an unanchored
+legacy pair shares the same path+body-hash stable id.
+
+The document groups the complete selected set by exact normalized visible
+text only. It never uses the conservative near-duplicate/Jaccard heuristic:
+review is allowed to show extra units, but must not hide a distinct
+commitment. Each exact group is an indivisible pagination unit and carries all
+member SourceRefs, block anchors, due/priority metadata, and source context
+(projection-backed page title plus path/line/last-human-change time). A group
+is reviewable only when every member has a real stamped block anchor;
+unanchored members use a transient path+line+normalized-body read identity and
+are explicitly `reviewable: false`.
+
+Timing classification is deterministic over the group: any past due date is
+`overdue`; otherwise any due date is `dated`; otherwise it is `undated`.
+Counters cover the full set before paging. The opaque keyset cursor binds to
+the adopted commit and a derived-list hash, so list drift produces a typed
+`stale-cursor` instead of skipping or repeating work. This read model makes no
+closure inference and performs no mutation.
+
 ## Block-anchor identity
 
 A **block anchor** is a trailing `^id` token on a line, separated from the preceding text by whitespace — e.g. `- [ ] ship the thing ^t1a2b3c4`. The grammar is a core primitive at `src/core/block-anchor.ts`: pure (string-only, no IO), Obsidian-compatible, and rebuild-safe. The anchor is stamped *into the markdown itself*, so identity travels with the line.

@@ -129,6 +129,7 @@ const ROUTE_CAPABILITY: Readonly<Record<string, Capability>> = {
   "POST /apply": "resolve",
   "POST /reject": "resolve",
   "GET /tasks": "read",
+  "GET /task-backlog": "read",
   "GET /recents": "read",
   "GET /status": "read",
   "GET /query": "read",
@@ -1148,6 +1149,30 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
       return run.kind === "rendered" ? run.envelope : jsonResponse(200, run.data);
     }
 
+    if (route === "GET /task-backlog") {
+      const date = url.searchParams.get("date") ?? undefined;
+      const limit = positiveInt(url.searchParams.get("limit"));
+      const cursor = url.searchParams.get("cursor") ?? undefined;
+      const args = Object.freeze({
+        ...(date !== undefined ? { date } : {}),
+        ...(limit !== null ? { limit } : {}),
+        ...(cursor !== undefined ? { cursor } : {}),
+      });
+      const run = await dispatchHttpView(
+        FIRST_PARTY_VIEWS.taskBacklog,
+        args,
+        httpViewRenderer("GET /task-backlog", FIRST_PARTY_VIEWS.taskBacklog),
+      );
+      if (run.kind === "rendered") return run.envelope;
+      if (run.data.status === "error") {
+        return jsonResponse(
+          run.data.error === "stale-cursor" ? 409 : 400,
+          run.data,
+        );
+      }
+      return jsonResponse(200, run.data);
+    }
+
     if (route === "POST /resolve") {
       const read = await jsonBody(request, maxBodyBytes);
       if (read.kind === "too-large") {
@@ -1835,7 +1860,7 @@ function operationClassFor(request: Request): ProductOperationClass {
     return "model-generation";
   }
   if (
-    (request.method === "GET" && ["/tasks", "/query", "/status"].includes(pathname)) ||
+    (request.method === "GET" && ["/tasks", "/task-backlog", "/query", "/status"].includes(pathname)) ||
     (request.method === "POST" && pathname.startsWith("/views/"))
   ) {
     return "view-execution";

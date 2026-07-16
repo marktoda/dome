@@ -37,6 +37,48 @@ describe("DomeClient", () => {
     await expect(client.tasks()).rejects.toThrow("Today response is incompatible");
   });
 
+  test("taskBacklog validates the shared contract and carries the opaque cursor", async () => {
+    const valid = {
+      schema: "dome.daily.task-backlog.list/v1" as const,
+      status: "ok" as const,
+      date: "2026-07-16",
+      revision: "abc123",
+      snapshot: "a".repeat(64),
+      groups: { overdue: 0, dated: 0, exactDuplicateCandidates: 0, undated: 0 },
+      page: {
+        limit: 25,
+        returned: 0,
+        total: 0,
+        commitments: 0,
+        hasMore: false,
+        nextCursor: null,
+      },
+      items: [],
+    };
+    const seen: string[] = [];
+    const responses = [
+      new Response(JSON.stringify(valid), { status: 200 }),
+      new Response(JSON.stringify({ ...valid, revision: 7 }), { status: 200 }),
+    ];
+    globalThis.fetch = mock(async (request: Request) => {
+      seen.push(new URL(request.url).pathname + new URL(request.url).search);
+      return responses.shift()!;
+    }) as never;
+    const client = new DomeClient();
+
+    expect(await client.taskBacklog({
+      date: "2026-07-16",
+      limit: 10,
+      cursor: "opaque cursor",
+    })).toEqual(valid);
+    expect(seen[0]).toBe(
+      "/task-backlog?date=2026-07-16&limit=10&cursor=opaque+cursor",
+    );
+    await expect(client.taskBacklog()).rejects.toThrow(
+      "Task backlog response is incompatible",
+    );
+  });
+
   test("readiness strictly classifies valid, incompatible, failed, and auth responses", async () => {
     const responses = [
       new Response(JSON.stringify(READY_PRODUCT), { status: 200 }),
@@ -160,6 +202,7 @@ describe("DomeClient", () => {
     const client = new DomeClient("", "", () => (cause) => { failures.push(cause); });
     const requests = [
       () => client.tasks(),
+      () => client.taskBacklog(),
       () => client.recents(),
       () => client.capture({ text: "save me" }),
       () => client.resolve(7, "yes"),

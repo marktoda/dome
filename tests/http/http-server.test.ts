@@ -953,6 +953,49 @@ describe("read routes", () => {
   );
 
   test(
+    "GET /task-backlog returns the strict paged TaskBacklog.list document",
+    async () => {
+      const first = await get(`/task-backlog?date=${TODAY}&limit=1`);
+      expect(first.status).toBe(200);
+      expect(first.json).toMatchObject({
+        schema: "dome.daily.task-backlog.list/v1",
+        status: "ok",
+        date: TODAY,
+        page: { limit: 1 },
+      });
+      const page = first.json.page as Record<string, unknown>;
+      expect(page.returned).toBe(1);
+      expect(typeof first.json.revision).toBe("string");
+      const items = first.json.items as Array<Record<string, unknown>>;
+      expect(Array.isArray(items[0]?.members)).toBe(true);
+
+      if (page.hasMore === true) {
+        const second = await get(
+          `/task-backlog?date=${TODAY}&limit=1&cursor=${encodeURIComponent(String(page.nextCursor))}`,
+        );
+        expect(second.status).toBe(200);
+        expect((second.json.items as Array<Record<string, unknown>>)[0]?.id)
+          .not.toBe(items[0]?.id);
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "GET /task-backlog maps malformed cursors to a typed 400",
+    async () => {
+      const response = await get("/task-backlog?cursor=not%2Ba%2Bcursor");
+      expect(response.status).toBe(400);
+      expect(response.json).toMatchObject({
+        schema: "dome.daily.task-backlog.list/v1",
+        status: "error",
+        error: "invalid-cursor",
+      });
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
     "GET /doc returns adopted content; missing paths are 404",
     async () => {
       const ok = await get("/doc?path=wiki/project-omega.md");
