@@ -25,6 +25,11 @@ import {
 } from "../../src/surface/capture";
 import { runInit } from "../../src/cli/commands/init";
 import { add, commitFilesOnHead, log, readBlob, resolveRef, statusMatrix } from "../../src/git";
+import {
+  parseFrontmatter,
+  reorderFrontmatterKeys,
+  stringifyFrontmatter,
+} from "../../assets/extensions/dome.markdown/processors/frontmatter-normalization";
 
 // ----- Console capture ------------------------------------------------------
 
@@ -592,14 +597,18 @@ describe("performCapture seam extensions", () => {
     expect((await headCommit(vault)).oid).toBe(headAfterArchive);
   });
 
-  test("capture identity survives archival after frontmatter normalization", async () => {
+  test.each([
+    "phone-normalized-1",
+    "2026-07-16",
+    "2026-07-16T12:34:56-04:00",
+  ])("capture identity %s survives archival after canonical frontmatter normalization", async (captureId) => {
     const vault = await initVault();
 
     const first = await performCapture(
       {
         text: "captured then normalized",
         vault,
-        captureId: "phone-normalized-1",
+        captureId,
       },
       clock,
     );
@@ -609,10 +618,13 @@ describe("performCapture seam extensions", () => {
     const basename = first.result.path.replace(/^inbox\/raw\//, "");
     const processedPath = `inbox/processed/${basename}`;
     const captured = await readFile(join(vault, first.result.path), "utf8");
-    const normalized = captured.replace(
-      'capture_id: "phone-normalized-1"',
-      "capture_id: phone-normalized-1",
+    const parsed = parseFrontmatter(captured);
+    if (parsed === null) throw new Error("expected capture frontmatter");
+    const normalized = stringifyFrontmatter(
+      parsed.body,
+      reorderFrontmatterKeys(parsed.data),
     );
+    expect(normalized).toContain(`capture_id: ${captureId}\n`);
     await mkdir(join(vault, "inbox", "processed"), { recursive: true });
     await rename(join(vault, first.result.path), join(vault, processedPath));
     await writeFile(join(vault, processedPath), normalized, "utf8");
@@ -631,7 +643,7 @@ describe("performCapture seam extensions", () => {
       {
         text: "captured then normalized",
         vault,
-        captureId: "phone-normalized-1",
+        captureId,
       },
       later,
     );
@@ -639,7 +651,7 @@ describe("performCapture seam extensions", () => {
     expect(retry).toMatchObject({
       kind: "duplicate",
       path: processedPath,
-      captureId: "phone-normalized-1",
+      captureId,
     });
     expect((await headCommit(vault)).oid).toBe(headAfterIngest);
   });

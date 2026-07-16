@@ -36,6 +36,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import matter from "gray-matter";
+import { parseDocument } from "yaml";
 
 import { getAdoptedRef } from "../adopted-ref";
 import {
@@ -566,11 +567,16 @@ function readCaptureIdentity(content: string): {
   readonly value: string | null;
 } {
   try {
-    const data = matter(content).data as Record<string, unknown>;
-    if (!Object.prototype.hasOwnProperty.call(data, "capture_id")) {
+    const frontmatter = matter(content).matter;
+    const document = parseDocument(frontmatter);
+    if (document.errors.length > 0) throw document.errors[0];
+    if (!document.has("capture_id")) {
       return { present: false, value: null };
     }
-    const value = data["capture_id"];
+    // The canonical serializer is `yaml`, whose core schema preserves
+    // date/timestamp-looking strings as strings. Reparse with that same schema
+    // instead of gray-matter's YAML 1.1 engine, which coerces them to Date.
+    const value = document.get("capture_id");
     return {
       present: true,
       value: typeof value === "string" ? value : null,
