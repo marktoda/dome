@@ -97,9 +97,10 @@ describe("installed rehearsal temporary-root removal", () => {
     }
   });
 
-  test("retains the root when the bounded remover fails, lies about removal, or times out", async () => {
+  test("retains the root when the bounded remover fails, lies, is missing, or times out", async () => {
     const nonzeroRoot = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
     const unchangedRoot = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
+    const missingRoot = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
     const timeoutRoot = await mkdtemp(join(tmpdir(), "dome-installed-upgrade-"));
     try {
       await expect(removeInstalledTemporaryRootForTests(nonzeroRoot, {
@@ -114,14 +115,21 @@ describe("installed rehearsal temporary-root removal", () => {
       })).rejects.toThrow("installed rehearsal temporary cleanup command left the root present");
       expect(await pathExists(unchangedRoot)).toBe(true);
 
+      await expect(removeInstalledTemporaryRootForTests(missingRoot, {
+        command: [join(missingRoot, "missing-remover")],
+        timeoutMs: 500,
+      })).rejects.toThrow("installed rehearsal temporary cleanup command failed");
+      expect(await pathExists(missingRoot)).toBe(true);
+
       await expect(removeInstalledTemporaryRootForTests(timeoutRoot, {
-        command: [process.execPath, "-e", "await Bun.sleep(60_000)"],
+        command: ["/bin/sleep", "2"],
         timeoutMs: 20,
       })).rejects.toThrow("installed rehearsal temporary cleanup command timed out");
       expect(await pathExists(timeoutRoot)).toBe(true);
     } finally {
       await rm(nonzeroRoot, { recursive: true, force: true });
       await rm(unchangedRoot, { recursive: true, force: true });
+      await rm(missingRoot, { recursive: true, force: true });
       await rm(timeoutRoot, { recursive: true, force: true });
     }
   });
@@ -218,17 +226,21 @@ describe("installed rehearsal scenario-root removal", () => {
 
       await expect(removeInstalledScenarioRootForTests(timeout, temporary, "committed-exact-repair", {
         command: [
-          process.execPath,
-          "-e",
-          "await Bun.write(process.argv[1], String(process.pid)); await Bun.sleep(60_000)",
+          "/bin/sh",
+          "-c",
+          'echo "$$" > "$1"; exec /bin/sleep 60',
+          "dome-remover-test",
           removerPid,
         ],
         timeoutMs: 200,
       })).rejects.toThrow("installed rehearsal scenario cleanup command timed out");
       expect(await pathExists(timeout)).toBe(true);
-      const pid = (await Bun.file(removerPid).text()).trim();
-      const probe = Bun.spawn(["/bin/kill", "-0", pid], { stdout: "ignore", stderr: "ignore" });
-      expect(await probe.exited).not.toBe(0);
+      const pidText = (await Bun.file(removerPid).text()).trim();
+      expect(pidText).toMatch(/^[1-9][0-9]*$/);
+      let probeError: unknown;
+      try { process.kill(Number(pidText), 0); }
+      catch (error) { probeError = error; }
+      expect((probeError as NodeJS.ErrnoException | undefined)?.code).toBe("ESRCH");
     } finally {
       await rm(temporary, { recursive: true, force: true });
     }

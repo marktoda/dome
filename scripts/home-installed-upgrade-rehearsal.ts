@@ -601,30 +601,21 @@ async function runBoundedInstalledRemovalCommand(
   timeoutMs: number,
   scope: "temporary" | "scenario",
 ): Promise<void> {
-  let child: ReturnType<typeof Bun.spawn>;
+  let outcome: ReturnType<typeof Bun.spawnSync>;
   try {
-    child = Bun.spawn([...command], { stdout: "ignore", stderr: "ignore" });
+    outcome = Bun.spawnSync([...command], {
+      stdout: "ignore",
+      stderr: "ignore",
+      timeout: timeoutMs,
+      killSignal: "SIGKILL",
+    });
   } catch {
     throw new Error(`installed rehearsal ${scope} cleanup command failed`);
   }
-  const exited = child.exited.then(
-    (exitCode) => ({ kind: "exit" as const, exitCode }),
-    () => ({ kind: "failed" as const }),
-  );
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const bounded = new Promise<{ kind: "timeout" }>((resolveTimeout) => {
-    timer = setTimeout(() => resolveTimeout({ kind: "timeout" }), timeoutMs);
-  });
-  const outcome = await Promise.race([exited, bounded]);
-  if (timer !== undefined) clearTimeout(timer);
-  if (outcome.kind === "timeout") {
-    try { child.kill("SIGKILL"); } catch { /* already gone */ }
-    // Do not report retention while a remover could still mutate the root.
-    // SIGKILL is the bound; `exited` is the mandatory child-reap barrier.
-    await exited;
+  if (outcome.exitedDueToTimeout) {
     throw new Error(`installed rehearsal ${scope} cleanup command timed out`);
   }
-  if (outcome.kind === "failed" || outcome.exitCode !== 0) {
+  if (outcome.exitCode !== 0) {
     throw new Error(`installed rehearsal ${scope} cleanup command failed`);
   }
 }
