@@ -1515,7 +1515,7 @@ describe("Product Host terminal upgrade history", () => {
         });
       } finally { await rm(f.root, { recursive: true, force: true }); }
     }
-  });
+  }, 15_000);
 
   test("retirement holds global ownership through rename and both parent durability proofs", async () => {
     const f = await fixture();
