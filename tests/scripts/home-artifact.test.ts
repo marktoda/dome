@@ -28,6 +28,7 @@ import {
   writeSignedArtifactMetadataForTests,
 } from "../../scripts/home-artifact";
 import { HOME_DURABLE_STATE_PROTOCOL, HOME_STORE_MIGRATIONS } from "../../src/product-host/home-store-migrations";
+import { HOME_PAIRING_READINESS_TIMEOUT_MS } from "../../src/product-host/home-readiness";
 import {
   parseHomeArtifactManifest,
   verifyHomeArtifactToolChecksumMetadataForTests,
@@ -116,8 +117,9 @@ describe("Dome Home artifact", () => {
     expect(source).toContain("shippedModelProviderSource,\n          shippedBun,\n");
   });
 
-  test("portable Home rehearsal allows the release-only cold-start budget", () => {
-    expect(HOME_ARTIFACT_READINESS_TIMEOUT_MS).toBe(60_000);
+  test("portable Home rehearsal shares the supervised startup budget", () => {
+    expect(HOME_PAIRING_READINESS_TIMEOUT_MS).toBe(120_000);
+    expect(HOME_ARTIFACT_READINESS_TIMEOUT_MS).toBe(HOME_PAIRING_READINESS_TIMEOUT_MS);
   });
 
   test("portable Home readiness accepts completion beyond the modeled old deadline", async () => {

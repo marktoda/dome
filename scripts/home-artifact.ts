@@ -44,6 +44,7 @@ import {
   type HomeArtifactManifest,
 } from "../src/product-host/home-artifact";
 import { HOME_DURABLE_STATE_PROTOCOL, HOME_STORE_MIGRATIONS } from "../src/product-host/home-store-migrations";
+import { HOME_PAIRING_READINESS_TIMEOUT_MS } from "../src/product-host/home-readiness";
 import {
   assertInstalledHomeUpgradeHostPreconditions,
   rehearseInstalledHomeUpgrade,
@@ -79,7 +80,7 @@ export {
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const ACTIVATION_EVIDENCE_SUFFIX = ".installed-upgrade-evidence.json";
-export const HOME_ARTIFACT_READINESS_TIMEOUT_MS = 60_000;
+export const HOME_ARTIFACT_READINESS_TIMEOUT_MS = HOME_PAIRING_READINESS_TIMEOUT_MS;
 const HOME_ARTIFACT_SHUTDOWN_TIMEOUT_MS = 5_000;
 const HOME_ARTIFACT_DIAGNOSTIC_LIMIT = 2_048;
 const ACTIVATION_SCENARIOS = Object.freeze([

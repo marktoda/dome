@@ -2,6 +2,9 @@
 // supervised Dome Home startup. Lifecycle callers share this parser so a
 // transport success can never be mistaken for product readiness.
 
+/** One post-activation startup budget for lifecycle launch/resume and artifact rehearsal. */
+export const HOME_PAIRING_READINESS_TIMEOUT_MS = 120_000;
+
 export async function isHomePairingReadiness(response: Response): Promise<boolean> {
   if (response.status !== 200) return false;
   try {

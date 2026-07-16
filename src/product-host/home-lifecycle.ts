@@ -37,7 +37,7 @@ import {
   type HomeInstallationDeps,
   type HomeInstallationRecord,
 } from "./home-installation";
-import { isHomePairingReadiness } from "./home-readiness";
+import { HOME_PAIRING_READINESS_TIMEOUT_MS, isHomePairingReadiness } from "./home-readiness";
 import {
   assertHomeEnvironmentHasNoSecrets,
   HomeCredentialMigrationRequiredError,
@@ -994,7 +994,7 @@ async function hasLegacyServeConflict(
   });
 }
 async function waitForHomeReadiness(deps: HomeLifecycleDeps): Promise<boolean> {
-  const deadline = Date.now() + (deps.readinessTimeoutMs ?? 10_000);
+  const deadline = Date.now() + (deps.readinessTimeoutMs ?? HOME_PAIRING_READINESS_TIMEOUT_MS);
   do { if (await probeHomeReadiness(deps)) return true; await new Promise((resolvePromise) => setTimeout(resolvePromise, 200)); } while (Date.now() < deadline);
   return false;
 }
