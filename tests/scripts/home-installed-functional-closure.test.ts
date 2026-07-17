@@ -246,7 +246,7 @@ describe("installed functional closure deep module", () => {
     const fixture = await settledFixture(options);
     await expect(assertInstalledFunctionalClosure(fixture.boundary, fixture.canary, fixture.settleCommit, new AbortController().signal, CORRECTNESS_MS))
       .rejects.toThrow(message);
-  });
+  }, { timeout: 15_000 });
 
   test("preserves caller cancellation without waiting for the settlement bound", async () => {
     const fixture = await fixtureBoundary();

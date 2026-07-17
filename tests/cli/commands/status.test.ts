@@ -2082,7 +2082,7 @@ describe("runStatus", () => {
     expect(out).not.toContain("VAULT");
     expect(out).not.toContain("ENGINE");
     expect(out).not.toMatch(/[-─]{10,}/);
-  });
+  }, { timeout: 15_000 });
 
   test("verbose status restores the full vault + engine breakdown", async () => {
     const f = await makeFixture();

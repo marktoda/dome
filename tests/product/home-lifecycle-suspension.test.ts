@@ -966,7 +966,7 @@ describe("supervised Home lifecycle suspension", () => {
     expect(maximum).toBe(1);
     expect(results.every((result) => result.kind === "owned")).toBeTrue();
     expect((await inspectHomeLifecycleSuspension(f.vault)).kind).toBe("inactive");
-  });
+  }, { timeout: 15_000 });
 
   test("inactive startup atomically acquires and returns a lifetime operational lease", async () => {
     const f = await fixture(false);

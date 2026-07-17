@@ -171,6 +171,29 @@ async function runDomeJson<T>(args: ReadonlyArray<string>): Promise<T> {
   return JSON.parse(result.stdout) as T;
 }
 
+type DomeJsonAttempt<T> =
+  | { readonly value: T; readonly failure: null }
+  | { readonly value: null; readonly failure: string };
+
+async function tryRunDomeJson<T>(args: ReadonlyArray<string>): Promise<DomeJsonAttempt<T>> {
+  const result = await runDome(args);
+  if (result.exitCode !== 0) {
+    return { value: null, failure: `status exited ${result.exitCode}` };
+  }
+  if (result.stderr !== "") {
+    return { value: null, failure: "status wrote to stderr" };
+  }
+  try {
+    const parsed: unknown = JSON.parse(result.stdout);
+    if (typeof parsed !== "object" || parsed === null) {
+      return { value: null, failure: "status returned non-object JSON" };
+    }
+    return { value: parsed as T, failure: null };
+  } catch {
+    return { value: null, failure: "status returned malformed JSON" };
+  }
+}
+
 async function expectServeSignalClearsHeartbeat(
   signal: NodeJS.Signals,
 ): Promise<void> {
@@ -204,32 +227,71 @@ async function expectServeSignalClearsHeartbeat(
     timeout: 25_000,
     killSignal: "SIGKILL",
   });
+  let shutdown: Promise<SettledProcess> | null = null;
+  const stopServe = (shutdownSignal: NodeJS.Signals): Promise<SettledProcess> => {
+    shutdown ??= stopAndDrainProcess(serve, shutdownSignal, 5_000);
+    return shutdown;
+  };
 
   try {
+    type ServeStatus = {
+      readonly head: string | null;
+      readonly adopted: string | null;
+      readonly serve_status: string;
+      readonly serve_pid: number | null;
+    };
+    let lastStatusObservation = "status has not responded";
     await waitFor(async () => {
-      const status = await runDomeJson<{
-        readonly head: string | null;
-        readonly adopted: string | null;
-        readonly serve_status: string;
-        readonly serve_pid: number | null;
-      }>(["status", "--vault", vaultPath, "--json"]);
-      return (
+      // The serve process owns compiler startup concurrently. Status can
+      // legitimately be nonzero or incomplete before the first adoption;
+      // those observations mean "not ready yet", not a process-boundary
+      // assertion failure.
+      const attempt = await tryRunDomeJson<ServeStatus>([
+        "status",
+        "--vault",
+        vaultPath,
+        "--json",
+      ]);
+      if (attempt.value === null) {
+        lastStatusObservation = attempt.failure;
+        return false;
+      }
+      const status = attempt.value;
+      const ready = (
         status.serve_status === "running" &&
         status.serve_pid === serve.pid &&
         status.head !== null &&
         status.adopted === status.head
       );
-    }, 5_000);
+      if (!ready) {
+        lastStatusObservation = [
+          `running=${status.serve_status === "running"}`,
+          `pidMatch=${status.serve_pid === serve.pid}`,
+          `headPresent=${status.head !== null}`,
+          `adoptedMatches=${status.head !== null && status.adopted === status.head}`,
+        ].join(" ");
+      }
+      return ready;
+    }, 5_000, () => lastStatusObservation);
 
-    serve.kill(signal);
-    const exitCode = await exitWithin(serve, 5_000);
-    const [stdout, stderr] = await Promise.all([
-      new Response(serve.stdout).text(),
-      new Response(serve.stderr).text(),
+    // Once readiness has been observed, retain the strict process contract:
+    // exit 0, empty stderr, exact service identity, and fully adopted HEAD.
+    const ready = await runDomeJson<ServeStatus>([
+      "status",
+      "--vault",
+      vaultPath,
+      "--json",
     ]);
-    expect(exitCode).toBe(0);
-    expect(stdout).toBe("");
-    expect(stderr).toBe("");
+    expect(ready.serve_status).toBe("running");
+    expect(ready.serve_pid).toBe(serve.pid);
+    expect(ready.head).not.toBeNull();
+    expect(ready.adopted).toBe(ready.head);
+
+    const stopped = await stopServe(signal);
+    expect(stopped.forced).toBe(false);
+    expect(stopped.exitCode).toBe(0);
+    expect(stopped.stdout).toBe("");
+    expect(stopped.stderr).toBe("");
 
     const after = await runDomeJson<{
       readonly serve_status: string;
@@ -238,20 +300,57 @@ async function expectServeSignalClearsHeartbeat(
     expect(after.serve_status).toBe("off");
     expect(after.serve_pid).toBeNull();
   } finally {
-    if (!serve.killed) serve.kill("SIGTERM");
+    // Never let cleanup replace the primary test failure. The memoized helper
+    // also guarantees stdout/stderr are drained at most once when normal
+    // shutdown already completed.
+    await stopServe("SIGTERM").catch(() => {});
   }
 }
 
 async function waitFor(
   predicate: () => Promise<boolean>,
   timeoutMs: number,
+  timeoutDetail?: () => string,
 ): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (await predicate()) return;
     await new Promise<void>((resolve) => setTimeout(resolve, 25));
   }
-  throw new Error(`waitFor: predicate did not become true within ${timeoutMs}ms`);
+  const detail = timeoutDetail?.().trim();
+  throw new Error(
+    `waitFor: predicate did not become true within ${timeoutMs}ms` +
+      (detail === undefined || detail === "" ? "" : ` (${detail})`),
+  );
+}
+
+type SettledProcess = {
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly forced: boolean;
+};
+
+async function stopAndDrainProcess(
+  proc: Bun.Subprocess<"ignore", "pipe", "pipe">,
+  signal: NodeJS.Signals,
+  timeoutMs: number,
+): Promise<SettledProcess> {
+  if (proc.exitCode === null) proc.kill(signal);
+  let forced = false;
+  let exitCode: number;
+  try {
+    exitCode = await exitWithin(proc, timeoutMs);
+  } catch {
+    forced = true;
+    if (proc.exitCode === null) proc.kill("SIGKILL");
+    exitCode = await exitWithin(proc, timeoutMs);
+  }
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+  return { exitCode, stdout, stderr, forced };
 }
 
 async function exitWithin(
