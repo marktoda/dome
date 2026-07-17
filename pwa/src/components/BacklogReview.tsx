@@ -25,7 +25,7 @@ type LoadState =
   | { readonly kind: "ready" }
   | { readonly kind: "error"; readonly message: string };
 type SubmitProblem = {
-  readonly kind: "conflict" | "busy" | "unknown";
+  readonly kind: "conflict" | "busy" | "invalid" | "unknown";
   readonly message: string;
 };
 
@@ -464,6 +464,15 @@ export function BacklogReview({
       setSubmitProblem({ kind: "unknown", message: `${result.message} Do not submit again until you refresh the backlog and reconcile the result.` });
       return;
     }
+    if (result.error === "invalid-request") {
+      setSubmitProblem({
+        kind: "invalid",
+        message: `${result.message} Refresh the backlog. If this repeats, update Dome Home and this PWA together, then check Connection.`,
+      });
+      setDecisions(new Map());
+      setRetryRequest(null);
+      return;
+    }
     setSubmitProblem({
       kind: "conflict",
       message: `${result.message} Refresh the backlog; if it repeats, open the affected sources and repair them on your Mac.`,
@@ -485,11 +494,11 @@ export function BacklogReview({
       {receipt !== null ? <p className="backlog-receipt" role="status" aria-live="polite">{receipt}</p> : null}
       {submitProblem !== null ? (
         <section className={`backlog-problem ${submitProblem.kind}`} role="alert">
-          <strong>{submitProblem.kind === "busy" ? "Home is busy" : submitProblem.kind === "conflict" ? "Source conflict" : "Outcome needs reconciliation"}</strong>
+          <strong>{submitProblem.kind === "busy" ? "Home is busy" : submitProblem.kind === "conflict" ? "Source conflict" : submitProblem.kind === "invalid" ? "Review request incompatible" : "Outcome needs reconciliation"}</strong>
           <p>{submitProblem.message}</p>
           {submitProblem.kind === "busy"
             ? <div className="backlog-problem-actions">
-                <button type="button" disabled={retryRequest === null} onClick={() => { if (retryRequest !== null) submitRequest(retryRequest); }}>Retry same batch</button>
+                <button type="button" disabled={retryRequest === null || !interactive} onClick={() => { if (retryRequest !== null) submitRequest(retryRequest); }}>Retry same batch</button>
                 <button type="button" onClick={() => refreshAfterUncertain("The busy review was discarded. Recheck every decision before submitting.")}>Discard and refresh</button>
               </div>
             : <button type="button" onClick={() => refreshAfterUncertain("Backlog refreshed after the previous review problem. Recheck every decision before submitting.")}>Refresh backlog</button>}

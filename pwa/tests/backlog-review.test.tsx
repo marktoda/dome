@@ -359,6 +359,56 @@ describe("BacklogReview", () => {
     expect((screen.getByRole("radio", { name: "Close" }).closest("fieldset") as HTMLFieldSetElement).disabled).toBe(true);
   });
 
+  test("revoking resolve access disables a busy retry and guards the frozen batch", async () => {
+    const busy = {
+      schema: "dome.task-backlog.review/v1" as const,
+      status: "error" as const,
+      error: "busy" as const,
+      message: "Workspace is busy.",
+      retryable: true,
+      recoveryRequired: false,
+    };
+    const review = mock(async (_request: unknown) => busy);
+    const client = fakeClient({ review });
+    const rendered = render(<BacklogReview client={client} interactive onReviewed={() => {}} />);
+    await screen.findByText("Ship the launch");
+    fireEvent.click(screen.getByRole("radio", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review selected" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply 1 selected" }));
+    await waitFor(() => expect(screen.getByText("Home is busy")).toBeDefined());
+    expect(review).toHaveBeenCalledTimes(1);
+
+    rendered.rerender(<BacklogReview client={client} interactive={false} onReviewed={() => {}} />);
+    const retry = screen.getByRole("button", { name: "Retry same batch" }) as HTMLButtonElement;
+    expect(retry.disabled).toBe(true);
+    fireEvent.click(retry);
+    await Promise.resolve();
+    expect(review).toHaveBeenCalledTimes(1);
+  });
+
+  test("invalid requests are incompatible-client problems, not source conflicts", async () => {
+    const invalid = {
+      schema: "dome.task-backlog.review/v1" as const,
+      status: "error" as const,
+      error: "invalid-request" as const,
+      message: "The review document was rejected.",
+      retryable: false,
+      recoveryRequired: false,
+    };
+    const review = mock(async (_request: unknown) => invalid);
+    render(<BacklogReview client={fakeClient({ review })} interactive onReviewed={() => {}} />);
+    await screen.findByText("Ship the launch");
+    fireEvent.click(screen.getByRole("radio", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review selected" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply 1 selected" }));
+
+    await waitFor(() => expect(screen.getByText("Review request incompatible")).toBeDefined());
+    expect(screen.queryByText("Source conflict")).toBeNull();
+    expect(screen.getByText(/update Dome Home and this PWA together/)).toBeDefined();
+    expect(screen.getByRole("button", { name: "Refresh backlog" })).toBeDefined();
+    expect(screen.getByText("0 selected")).toBeDefined();
+  });
+
   test("an ambiguous exact-match group visibly disables every disposition but leaves sources openable", async () => {
     const ambiguous = unit({
       duplicate: true,
