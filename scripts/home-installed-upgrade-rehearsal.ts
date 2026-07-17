@@ -33,6 +33,7 @@ import { readHomePredecessorReceipt } from "./home-predecessor-artifact";
 import { inspectHomeArtifactTar, MAX_HOME_ARTIFACT_TAR_BYTES } from "./home-artifact-tar";
 import { runHomePwaChromiumAcceptance } from "./home-pwa-chromium-acceptance";
 import { runHomePwaUpdateRehearsal } from "./home-pwa-update-rehearsal";
+import { parsePwaShellHashedAssetPath } from "./home-pwa-shell";
 import {
   assertInstalledFunctionalClosure,
   prepareInstalledFunctionalClosure,
@@ -1731,8 +1732,10 @@ async function assertPwa(): Promise<void> {
   if (!response.ok || !html.includes('id="root"')) {
     throw new Error(`installed Home did not serve its PWA shell (${response.status})`);
   }
-  const assetPath = html.match(/(?:src|href)="(\/assets\/[^"]+)"/)?.[1];
-  if (assetPath === undefined || !/[-.][a-zA-Z0-9_]{6,}\.(?:js|css)$/.test(assetPath)) {
+  let assetPath: string;
+  try {
+    assetPath = parsePwaShellHashedAssetPath(html);
+  } catch {
     throw new Error("installed PWA shell did not reference a hashed asset");
   }
   const asset = await fetch(new URL(assetPath, `http://${HOST}:${PORT}/`));

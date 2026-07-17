@@ -27,6 +27,7 @@ import {
   writeArtifactMetadata,
   writeSignedArtifactMetadataForTests,
 } from "../../scripts/home-artifact";
+import { parsePwaShellHashedAssetPath } from "../../scripts/home-pwa-shell";
 import { HOME_DURABLE_STATE_PROTOCOL, HOME_STORE_MIGRATIONS } from "../../src/product-host/home-store-migrations";
 import { HOME_PAIRING_READINESS_TIMEOUT_MS } from "../../src/product-host/home-readiness";
 import {
@@ -41,6 +42,26 @@ import {
 } from "../../src/product-host/home-artifact";
 
 describe("Dome Home artifact", () => {
+  test("accepts the URL-safe hashed asset names emitted in the generated PWA shell", () => {
+    expect(parsePwaShellHashedAssetPath(
+      '<link rel="stylesheet" href="/assets/index-CVJzGQWh.css"><script src="/assets/index-CX_-7ChH.js"></script>',
+    )).toBe("/assets/index-CVJzGQWh.css");
+    expect(parsePwaShellHashedAssetPath(
+      '<script type="module" src="/assets/index-CX_-7ChH.js"></script>',
+    )).toBe("/assets/index-CX_-7ChH.js");
+    for (const body of [
+      '<script src="/assets/index.js"></script>',
+      '<script src="/index-AbCd1234.js"></script>',
+      '<script src="/assets/index-AbCd12!.js"></script>',
+      '<script src="/assets/nested/index-AbCd1234.js"></script>',
+      '<script src="/assets/../index-AbCd1234.js"></script>',
+    ]) {
+      expect(() => parsePwaShellHashedAssetPath(body)).toThrow(
+        "PWA shell did not reference a hashed asset",
+      );
+    }
+  });
+
   test("normalizes the pinned GenerateSW Workbox dependency to its served runtime path", () => {
     const worker = 'if(!self.define){/* pinned loader */}define(["./workbox-1234abcd"],function(e){e.precacheAndRoute([],{})});';
     expect(parseGeneratedWorkboxRuntimePath(worker)).toBe("workbox-1234abcd.js");

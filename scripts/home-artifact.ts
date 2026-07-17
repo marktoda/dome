@@ -53,6 +53,7 @@ import {
   rehearseInstalledHomeUpgrade,
   type InstalledHomeUpgradeRehearsalResult,
 } from "./home-installed-upgrade-rehearsal";
+import { parsePwaShellHashedAssetPath } from "./home-pwa-shell";
 import { reconstructHomePredecessorArtifact } from "./home-predecessor-artifact";
 import { readFrozenN1Manifest } from "../tests/fixtures/home-upgrade/n-1/freeze-n1";
 
@@ -1308,8 +1309,10 @@ async function rehearseHomeServer(dome: string, vault: string, cwd: string): Pro
     ]) {
       if (!body.includes(metadata)) throw new Error("artifact PWA shell omitted required install metadata");
     }
-    const assetPath = body.match(/(?:src|href)="(\/assets\/[^"]+)"/)?.[1];
-    if (assetPath === undefined || !/[-.][a-zA-Z0-9_]{6,}\.(?:js|css)$/.test(assetPath)) {
+    let assetPath: string;
+    try {
+      assetPath = parsePwaShellHashedAssetPath(body);
+    } catch {
       throw new Error("artifact PWA shell did not reference a hashed asset");
     }
     const asset = await fetch(new URL(assetPath, url));
