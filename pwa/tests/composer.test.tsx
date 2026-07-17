@@ -61,7 +61,7 @@ describe("Composer", () => {
     expect((screen.getByRole("button", { name: "New conversation" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Capture" }));
     expect((screen.getByRole("button", { name: "Record voice" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "File it" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save capture" }));
     expect(capture).toHaveBeenCalledWith("save this offline");
     expect(ask).not.toHaveBeenCalled();
   });
@@ -151,7 +151,7 @@ describe("Composer", () => {
       fireEvent.click(screen.getByRole("button", { name: "stop recording" }));
       await waitFor(() => expect(screen.getByLabelText("capture draft")).toBeDefined());
       expect(receivedBytes).toBeGreaterThan(0);
-      fireEvent.click(screen.getByRole("button", { name: "File it" }));
+      fireEvent.click(screen.getByRole("button", { name: "Save capture" }));
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
       expect(screen.queryByText("Captured")).toBeNull();
       expect(screen.queryByText(/Filed to your inbox/i)).toBeNull();
@@ -204,7 +204,7 @@ describe("Composer", () => {
       resolveTranscript("heard words");
       const review = await screen.findByRole("dialog", { name: /capture a thought/i });
       const textarea = screen.getByLabelText("capture draft");
-      const fileButton = screen.getByRole("button", { name: "File it" });
+      const fileButton = screen.getByRole("button", { name: "Save capture" });
       expect(document.activeElement).toBe(textarea);
       fileButton.focus();
       fireEvent.keyDown(document, { key: "Tab" });

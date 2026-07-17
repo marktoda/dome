@@ -20,6 +20,7 @@ import {
 import { taskBacklogListSchema } from "../../../contracts/task-backlog";
 import { taskBacklogReviewResultSchema } from "../../../contracts/task-backlog-review";
 import { todayPayloadSchema } from "../../../src/surface/today-view";
+import { CaptureDeliveryError } from "../capture/captureFailure";
 
 export type AgentTurnHandle = {
   turnId: string;
@@ -209,8 +210,59 @@ export class DomeClient {
   }
 
   async capture(input: CaptureRequest): Promise<CaptureResult> {
-    const value = await this.parse<unknown>(await this.fetchResponse(this.request("/capture", { method: "POST", headers: this.authHeaders(true), body: JSON.stringify(input) })));
-    return parseCaptureReceipt(value);
+    let response: Response;
+    try {
+      response = await this.fetchResponse(this.request("/capture", {
+        method: "POST",
+        headers: this.authHeaders(true),
+        body: JSON.stringify(input),
+      }));
+    } catch (error) {
+      if (!(error instanceof DomeTransportError)) throw error;
+      throw new CaptureDeliveryError(
+        "not-confirmed",
+        "Dome Home did not confirm this capture. Safe to retry.",
+        null,
+        { cause: error },
+      );
+    }
+    const value = await response.json().catch(() => null) as unknown;
+    if (!response.ok) {
+      const body = value !== null && typeof value === "object"
+        ? value as Record<string, unknown>
+        : null;
+      const code = typeof body?.["error"] === "string" ? body["error"] : null;
+      const message = code === null
+        ? `capture request failed (${response.status})`
+        : `${code}${typeof body?.["message"] === "string" ? `: ${body["message"]}` : ""}`;
+      const notConfirmed = response.status === 408 || response.status === 429 || response.status >= 500 ||
+        code === "outcome-unknown" || code === "mutation-outcome-unknown";
+      throw new CaptureDeliveryError(
+        notConfirmed ? "not-confirmed" : "needs-attention",
+        message,
+        response.status,
+      );
+    }
+    try {
+      const receipt = parseCaptureReceipt(value);
+      if (receipt.status === "error") {
+        const notConfirmed = receipt.error === "outcome-unknown" || receipt.error === "mutation-outcome-unknown";
+        throw new CaptureDeliveryError(
+          notConfirmed ? "not-confirmed" : "needs-attention",
+          receipt.error,
+          response.status,
+        );
+      }
+      return receipt;
+    } catch (error) {
+      if (error instanceof CaptureDeliveryError) throw error;
+      throw new CaptureDeliveryError(
+        "not-confirmed",
+        "Dome Home returned an invalid capture confirmation. Safe to retry.",
+        response.status,
+        { cause: error },
+      );
+    }
   }
 
   async resolve(id: number, value: string): Promise<ResolveResult> {

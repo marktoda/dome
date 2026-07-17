@@ -296,7 +296,7 @@ export async function runHomePwaChromiumAcceptance(
       await atLocalCaptureStage("save", async () => {
         await activePage.getByLabel("ask or capture").fill(CAPTURE_TEXT);
         await activePage.getByRole("button", { name: "Capture" }).click();
-        await activePage.getByRole("button", { name: "File it" }).click();
+        await activePage.getByRole("button", { name: "Save capture" }).click();
         signal.throwIfAborted();
       });
       const outbox = activePage.getByLabel("capture queue");

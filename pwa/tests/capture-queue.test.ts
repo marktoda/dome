@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { IDBFactory } from "fake-indexeddb";
 import { CaptureQueue } from "../src/capture/captureQueue";
+import { CaptureDeliveryError } from "../src/capture/captureFailure";
 
 const VAULT = "vault-public-id";
 const deps = {
@@ -55,6 +56,7 @@ describe("CaptureQueue", () => {
     expect(await queue.all()).toMatchObject([{
       state: "failed",
       attempts: 1,
+      failureKind: "needs-attention",
       lastError: "capture receipt did not match the queued vault and capture identity",
     }]);
   });
@@ -68,7 +70,9 @@ describe("CaptureQueue", () => {
     const seen: string[] = [];
     const done = await queue.drain(VAULT, async (request) => {
       seen.push(request.captureId!);
-      if (request.captureId === "capture-1") throw new Error("offline once");
+      if (request.captureId === "capture-1") {
+        throw new CaptureDeliveryError("not-confirmed", "offline once");
+      }
       return capturedReceipt(request.captureId!);
     });
 
@@ -78,6 +82,7 @@ describe("CaptureQueue", () => {
       id: "capture-1",
       state: "failed",
       attempts: 1,
+      failureKind: "not-confirmed",
       lastError: "offline once",
     }]);
   });
@@ -116,9 +121,30 @@ describe("CaptureQueue", () => {
       vaultId: null,
       state: "saved-locally",
       attempts: 2,
+      failureKind: undefined,
       lastError: undefined,
     }]);
     expect(await new CaptureQueue(factory).all()).toEqual(await queue.all());
+  });
+
+  test("an overlapping drain for another vault waits and then drains that vault", async () => {
+    const factory = new IDBFactory();
+    const queue = new CaptureQueue(factory);
+    await queue.save({ text: "first vault" }, VAULT, { ...deps, randomId: () => "capture-one" });
+    await queue.save({ text: "second vault" }, "another-vault", { ...deps, randomId: () => "capture-two" });
+    let releaseFirst!: () => void;
+    const first = queue.drain(VAULT, async (request) => {
+      await new Promise<void>((resolve) => { releaseFirst = resolve; });
+      return capturedReceipt(request.captureId!);
+    });
+    const second = queue.drain("another-vault", async (request) =>
+      capturedReceipt(request.captureId!, "another-vault"));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releaseFirst();
+    expect((await first).map((item) => item.id)).toEqual(["capture-one"]);
+    expect((await second).map((item) => item.id)).toEqual(["capture-two"]);
+    expect(await queue.all()).toEqual([]);
   });
 
   test("a cross-instance delete cannot be resurrected by a late failure", async () => {
@@ -161,11 +187,11 @@ describe("CaptureQueue", () => {
   });
 });
 
-function capturedReceipt(captureId: string) {
+function capturedReceipt(captureId: string, vault: string = VAULT) {
   return {
     schema: "dome.capture/v1" as const,
     status: "captured" as const,
-    vault: VAULT,
+    vault,
     path: "inbox/raw/first.md",
     commit: "abc",
     capture_id: captureId,

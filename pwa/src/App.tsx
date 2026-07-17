@@ -214,6 +214,7 @@ function Screen({ client, availability, connection }: {
   };
 
   const removePending = (id: string): void => {
+    if (sendingCaptureIds.has(id)) return;
     // A delete is a local-only operation. Reflect the user's intent
     // immediately, then restore IndexedDB truth if the durable delete fails.
     setPendingCaptures((current) => current.filter((item) => item.id !== id));
@@ -324,6 +325,13 @@ function Screen({ client, availability, connection }: {
             ? "Today has not been loaded yet."
             : "Showing previously loaded Today information.";
   const visibleTodayRefreshState: TodayRefreshState = access.read ? todayRefreshState : "idle";
+  const captureLifecycleAnnouncement = sendingCaptureIds.size > 0
+    ? `${sendingCaptureIds.size} capture${sendingCaptureIds.size === 1 ? " is" : "s are"} sending.`
+    : filedCaptures.length > 0
+      ? `${filedCaptures.length} capture${filedCaptures.length === 1 ? " is" : "s are"} filed.`
+      : pendingCaptures.length > 0
+        ? `${pendingCaptures.length} capture${pendingCaptures.length === 1 ? " is" : "s are"} saved locally for retry.`
+        : "Capture queue is clear.";
 
   return (
     <main className="screen">
@@ -337,6 +345,9 @@ function Screen({ client, availability, connection }: {
       ) : null}
       {pendingCaptures.length > 0 || filedCaptures.length > 0 ? (
         <section className="capture-outbox" aria-label="capture queue">
+          <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+            {captureLifecycleAnnouncement}
+          </p>
           <div className="capture-outbox-head">
             <strong>{pendingCaptures.length} queued{filedCaptures.length > 0 ? ` · ${filedCaptures.length} filed` : ""}</strong>
             <span>offline storage: {storageStatus}</span>
@@ -355,10 +366,10 @@ function Screen({ client, availability, connection }: {
               key={item.id}
             >
               <span>{item.text}</span>
-              <small>{sendingCaptureIds.has(item.id)
+              <small role={item.state === "failed" && !sendingCaptureIds.has(item.id) ? "alert" : undefined}>{sendingCaptureIds.has(item.id)
                 ? "Sending"
                 : item.state === "failed"
-                  ? `Failed${item.lastError !== undefined ? ` · ${item.lastError}` : ""}`
+                  ? `${item.failureKind === "not-confirmed" ? "Not confirmed — safe to retry" : "Needs attention"}${item.lastError !== undefined ? ` · ${item.lastError}` : ""}`
                   : "Queued · saved on this device"}</small>
               {item.vaultId === null && currentVaultId !== null ? (
                 <button type="button" onClick={() => { void bindCapture(item.id); }}>Bind to this vault</button>
@@ -367,7 +378,12 @@ function Screen({ client, availability, connection }: {
               ) : item.vaultId !== null && currentVaultId !== null && item.vaultId !== currentVaultId ? (
                 <small>Saved for another vault</small>
               ) : null}
-              <button type="button" aria-label={`delete pending capture ${item.id}`} onClick={() => removePending(item.id)}>Delete</button>
+              <button
+                type="button"
+                disabled={sendingCaptureIds.has(item.id)}
+                aria-label={`remove local retry ${item.id}`}
+                onClick={() => removePending(item.id)}
+              >Remove local retry</button>
             </div>
           ))}
           {filedCaptures.map((item) => (

@@ -1,4 +1,5 @@
 import type { CaptureReceipt, CaptureRequest } from "../../../contracts/capture";
+import { captureFailureOf, type CaptureFailureKind } from "./captureFailure";
 
 export type CaptureQueueState = "saved-locally" | "failed";
 
@@ -11,6 +12,7 @@ export type QueuedCapture = {
   readonly vaultId: string | null;
   readonly state: CaptureQueueState;
   readonly attempts: number;
+  readonly failureKind?: CaptureFailureKind;
   readonly lastError?: string;
 };
 
@@ -30,7 +32,10 @@ const STORE = "captures";
 
 /** Durable browser outbox. Only queued/failed plaintext persists. */
 export class CaptureQueue {
-  private activeDrain: Promise<CaptureDrainResult[]> | null = null;
+  private activeDrain: Readonly<{
+    vaultId: string;
+    promise: Promise<CaptureDrainResult[]>;
+  }> | null = null;
 
   constructor(private readonly factory: IDBFactory = indexedDB) {}
 
@@ -82,11 +87,17 @@ export class CaptureQueue {
     send: (request: CaptureRequest) => Promise<CaptureReceipt>,
   ): Promise<CaptureDrainResult[]> {
     requireVaultId(vaultId);
-    if (this.activeDrain !== null) return this.activeDrain;
-    this.activeDrain = this.drainOnce(vaultId, send).finally(() => {
-      this.activeDrain = null;
+    const active = this.activeDrain;
+    if (active !== null) {
+      if (active.vaultId === vaultId) return active.promise;
+      await active.promise;
+      return this.drain(vaultId, send);
+    }
+    const promise = this.drainOnce(vaultId, send).finally(() => {
+      if (this.activeDrain?.promise === promise) this.activeDrain = null;
     });
-    return this.activeDrain;
+    this.activeDrain = { vaultId, promise };
+    return promise;
   }
 
   private async drainOnce(
@@ -112,11 +123,13 @@ export class CaptureQueue {
         await this.deleteStored(item.id);
         completed.push({ id: item.id, text: item.text, receipt });
       } catch (error) {
+        const failure = captureFailureOf(error);
         await this.putIfPresent(item.id, {
           ...item,
           state: "failed",
           attempts: item.attempts + 1,
-          lastError: error instanceof Error ? error.message : String(error),
+          failureKind: failure.kind,
+          lastError: failure.message,
         });
       }
     }
@@ -259,7 +272,7 @@ function normalizeStoredCapture(item: QueuedCapture | LegacyQueuedCapture): Queu
     ...item,
     vaultId,
     state,
-    ...(state === "saved-locally" ? { lastError: undefined } : {}),
+    ...(state === "saved-locally" ? { failureKind: undefined, lastError: undefined } : {}),
   };
 }
 

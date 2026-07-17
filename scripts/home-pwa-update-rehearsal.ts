@@ -197,7 +197,7 @@ export async function runHomePwaUpdateRehearsal(
       const activePage = requirePage();
       await activePage.getByLabel("ask or capture").fill(CAPTURE_TEXT);
       await activePage.getByRole("button", { name: "Capture" }).click();
-      await activePage.getByRole("button", { name: "File it" }).click();
+      await activePage.getByRole("button", { name: "Save capture" }).click();
       await activePage.getByText("1 queued", { exact: true }).waitFor({ timeout: WAIT_MS });
       capture = await readOnlyCapture(activePage);
       assertCapture(capture, CAPTURE_TEXT);
@@ -260,7 +260,7 @@ export async function runHomePwaUpdateRehearsal(
         throw new Error("local capture row changed during activation");
       }
       assertCapture(survived, CAPTURE_TEXT);
-      const remove = activePage.getByRole("button", { name: `delete pending capture ${capture.id}` });
+      const remove = activePage.getByRole("button", { name: `remove local retry ${capture.id}` });
       await remove.waitFor({ timeout: WAIT_MS });
       await remove.click();
       await activePage.getByText("1 queued", { exact: true })

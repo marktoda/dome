@@ -59,7 +59,7 @@ export function Composer({
   availabilityRef.current = availability;
   voiceEnabledRef.current = voiceEnabled;
 
-  const captureModalActive = cap.phase === "recording" || cap.phase === "transcribing" || cap.phase === "review" || cap.phase === "filing";
+  const captureModalActive = cap.phase === "recording" || cap.phase === "transcribing" || cap.phase === "review" || cap.phase === "saving";
   const captureFocusKey = cap.phase;
   useModalFocus({
     active: captureModalActive,
@@ -125,13 +125,13 @@ export function Composer({
     } catch (e) { dispatch({ kind: "fail", error: e instanceof Error ? e.message : String(e) }); }
   };
 
-  const file = async (): Promise<void> => {
+  const saveLocally = async (): Promise<void> => {
     if (cap.draft.trim().length === 0) return;
-    dispatch({ kind: "file" });
+    dispatch({ kind: "save" });
     try {
       await onCapture(cap.draft);
       setText("");
-      dispatch({ kind: "filed" });
+      dispatch({ kind: "saved" });
     } catch (e) { dispatch({ kind: "fail", error: e instanceof Error ? e.message : String(e) }); }
   };
 
@@ -165,23 +165,23 @@ export function Composer({
     );
   }
 
-  if (cap.phase === "review" || cap.phase === "filing") {
-    const filing = cap.phase === "filing";
+  if (cap.phase === "review" || cap.phase === "saving") {
+    const saving = cap.phase === "saving";
     return (
       <div className="sheet-backdrop">
         <section ref={captureContainerRef} className="sheet" tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="capture-review-title">
           <div className="grip" />
           <div className="tag"><span className="dot" /><span id="capture-review-title" className="label">CAPTURE A THOUGHT</span></div>
-          <textarea ref={reviewTextareaRef} aria-label="capture draft" value={cap.draft} disabled={filing} onChange={(e) => dispatch({ kind: "edit", text: e.target.value })} />
+          <textarea ref={reviewTextareaRef} aria-label="capture draft" value={cap.draft} disabled={saving} onChange={(e) => dispatch({ kind: "edit", text: e.target.value })} />
           <div className="actions">
-            <button type="button" className="cancel" disabled={filing} onClick={() => dispatch({ kind: "cancel" })}>Cancel</button>
+            <button type="button" className="cancel" disabled={saving} onClick={() => dispatch({ kind: "cancel" })}>Cancel</button>
             <button
               type="button"
               className="record-capture"
-              disabled={filing || !canRecord() || availability !== "available" || !voiceEnabled}
+              disabled={saving || !canRecord() || availability !== "available" || !voiceEnabled}
               onClick={() => { void startRecording(); }}
             >Record voice</button>
-            <button type="button" className="fileit" disabled={filing || cap.draft.trim().length === 0} onClick={() => { void file(); }}>{filing ? "Filing…" : "File it"}</button>
+            <button type="button" className="save-capture" disabled={saving || cap.draft.trim().length === 0} onClick={() => { void saveLocally(); }}>{saving ? "Saving locally…" : "Save capture"}</button>
           </div>
         </section>
       </div>

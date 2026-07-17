@@ -540,7 +540,7 @@ input.box:checked { background: var(--amber); border-color: var(--amber); }
 .sheet .cancel, .sheet .record-capture { flex: none; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--control-border); color: var(--text-dim); font-size: 14px; font-weight: 500; }
 .sheet .record-capture { color: var(--sage); }
 .sheet .record-capture:disabled { opacity: .4; }
-.sheet .fileit { flex: 1; text-align: center; padding: 14px; border-radius: 14px; background: var(--sage); color: var(--sage-ink); font-size: 15px; font-weight: 600; }
+.sheet .save-capture { flex: 1; text-align: center; padding: 14px; border-radius: 14px; background: var(--sage); color: var(--sage-ink); font-size: 15px; font-weight: 600; }
 
 /* ── Token gate (first run) ── */
 .gate { height: 100%; height: 100svh; height: 100dvh; display: flex; flex-direction: column; justify-content: center; max-width: var(--max-w); margin: 0 auto; padding: calc(20px + var(--safe-top)) calc(30px + var(--safe-right)) calc(20px + var(--safe-bottom)) calc(30px + var(--safe-left)); background: #0e0e0d; overflow: auto; }
@@ -565,5 +565,5 @@ button:not([disabled]), summary, input:not([disabled]):not([type="checkbox"]), t
   .masthead, .source-head, .pwa-prompt { flex-wrap: wrap; }
   .connection dl { grid-template-columns: 1fr; }
   .hero .opts, .sheet .actions { flex-wrap: wrap; }
-  .hero .opts button, .sheet .cancel, .sheet .fileit { flex: 1 1 100%; }
+  .hero .opts button, .sheet .cancel, .sheet .save-capture { flex: 1 1 100%; }
 }

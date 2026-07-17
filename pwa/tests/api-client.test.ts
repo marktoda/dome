@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, mock } from "bun:test";
 import { DomeClient } from "../src/api/client";
+import { CaptureDeliveryError } from "../src/capture/captureFailure";
 import type { StreamEvent } from "../src/api/types";
 import { AGENT_STREAM_SCHEMA } from "../../contracts/agent-stream";
 import { READY_PRODUCT } from "./readiness-fixture";
@@ -271,7 +272,6 @@ describe("DomeClient", () => {
       () => client.tasks(),
       () => client.taskBacklog(),
       () => client.recents(),
-      () => client.capture({ text: "save me" }),
       () => client.resolve(7, "yes"),
       () => client.settle("task-1", "close"),
       () => client.transcribe(new Blob(["audio"], { type: "audio/webm" })),
@@ -281,7 +281,8 @@ describe("DomeClient", () => {
     ];
 
     for (const request of requests) await expect(request()).rejects.toThrow("Dome Home could not be reached");
-    expect(failures).toHaveLength(requests.length);
+    await expect(client.capture({ text: "save me" })).rejects.toThrow("Dome Home did not confirm this capture");
+    expect(failures).toHaveLength(requests.length + 1);
   });
 
   test("HTTP responses are reachable evidence and do not report transport failure", async () => {
@@ -582,10 +583,44 @@ describe("DomeClient", () => {
     expect(res.path).toBe("inbox/raw/x.md");
   });
 
-  test("a non-2xx rejects with the error envelope message", async () => {
+  test("a definite capture 4xx needs attention", async () => {
     mockJson(400, { status: "error", error: "capture-usage", message: "needs text" });
     const c = new DomeClient("tok");
-    await expect(c.capture({ text: "" })).rejects.toThrow("capture-usage");
+    try {
+      await c.capture({ text: "" });
+      throw new Error("expected capture to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CaptureDeliveryError);
+      expect(error).toMatchObject({ kind: "needs-attention", status: 400 });
+      expect((error as Error).message).toContain("capture-usage");
+    }
+  });
+
+  test("ambiguous capture HTTP and transport failures are safe to retry", async () => {
+    for (const [status, body] of [
+      [408, { error: "timeout" }],
+      [429, { error: "busy" }],
+      [503, { error: "unavailable" }],
+      [409, { error: "mutation-outcome-unknown" }],
+    ] as const) {
+      mockJson(status, body);
+      try {
+        await new DomeClient("tok").capture({ text: "retry me" });
+        throw new Error("expected capture to fail");
+      } catch (error) {
+        expect(error).toBeInstanceOf(CaptureDeliveryError);
+        expect(error).toMatchObject({ kind: "not-confirmed", status });
+      }
+    }
+
+    globalThis.fetch = mock(async () => { throw new Error("network down"); }) as never;
+    try {
+      await new DomeClient("tok").capture({ text: "retry me" });
+      throw new Error("expected capture to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CaptureDeliveryError);
+      expect(error).toMatchObject({ kind: "not-confirmed", status: null });
+    }
   });
 
   test("resolve() POSTs id+value to /resolve", async () => {

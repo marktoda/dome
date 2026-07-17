@@ -409,7 +409,7 @@ describe("App", () => {
     fireEvent.change(input, { target: { value: "offline app capture" } });
     expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Capture" }));
-    fireEvent.click(screen.getByRole("button", { name: "File it" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save capture" }));
     await waitFor(() => expect(screen.getByLabelText("capture queue")).toBeDefined());
     const queued = screen.getByLabelText("capture queue").querySelector('[data-queue-state="saved-locally"]') as HTMLElement;
     expect(queued.textContent).toContain("offline app capture");
@@ -418,7 +418,7 @@ describe("App", () => {
     expect(Object.keys(queued.dataset).sort()).toEqual(["attemptCategory", "queueState"]);
     expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(true);
     expect(requests).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: /delete pending capture/i }));
+    fireEvent.click(screen.getByRole("button", { name: /remove local retry/i }));
   });
 
   test("reports independent Today and Activity failures without falsely calling Home unreachable", async () => {
@@ -525,11 +525,11 @@ describe("App", () => {
     const input = screen.getByLabelText("ask or capture") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "still saved locally" } });
     fireEvent.click(screen.getByRole("button", { name: "Capture" }));
-    fireEvent.click(screen.getByRole("button", { name: "File it" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save capture" }));
     await waitFor(() => expect(screen.getByLabelText("capture queue")).toBeDefined());
     expect(screen.getByLabelText("capture queue").textContent).toContain("still saved locally");
     expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: /delete pending capture/i }));
+    fireEvent.click(screen.getByRole("button", { name: /remove local retry/i }));
   });
 
   test("revoked auth returns to re-pair without deleting the local capture queue", async () => {
@@ -560,21 +560,24 @@ describe("App", () => {
     const input = screen.getByLabelText("ask or capture") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "survive revoked auth" } });
     fireEvent.click(screen.getByRole("button", { name: "Capture" }));
-    fireEvent.click(screen.getByRole("button", { name: "File it" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save capture" }));
     await waitFor(() => expect(screen.getByLabelText("New pairing code")).toBeDefined());
     const recovery = screen.getByLabelText("New pairing code").closest(".recovery-card")!;
     expect(primaryRecoveryCount(recovery)).toBe(1);
     expect(screen.getByText("survive revoked auth")).toBeDefined();
     expect(screen.getByText(/you're clear/i)).toBeDefined();
-    await waitFor(() => expect(screen.getByText(/failed · device-revoked/i)).toBeDefined());
+    await waitFor(() => expect(screen.getByText(/Needs attention · device-revoked/i)).toBeDefined());
 
     fireEvent.change(screen.getByLabelText("ask or capture"), { target: { value: "local during repair" } });
     fireEvent.click(screen.getByRole("button", { name: "Capture" }));
-    fireEvent.click(screen.getByRole("button", { name: "File it" }));
-    await waitFor(() => expect(screen.getByText("local during repair")).toBeDefined());
-    const repairItem = screen.getByText("local during repair").closest(".capture-outbox-item");
-    expect(repairItem).not.toBeNull();
-    fireEvent.click(repairItem!.querySelector("button")!);
+    fireEvent.click(screen.getByRole("button", { name: "Save capture" }));
+    let repairItem: Element | undefined;
+    await waitFor(() => {
+      repairItem = Array.from(document.querySelectorAll(".capture-outbox-item"))
+        .find((item) => item.textContent?.includes("local during repair"));
+      expect(repairItem).toBeDefined();
+    });
+    fireEvent.click(repairItem!.querySelector('[aria-label^="remove local retry"]')!);
     await waitFor(() => expect(screen.queryByText("local during repair")).toBeNull());
     await waitFor(async () => expect((await new CaptureQueue().all()).some((item) => item.text === "local during repair")).toBe(false));
     expect(screen.getByText("survive revoked auth")).toBeDefined();
@@ -586,7 +589,7 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByText("survive revoked auth")).toBeDefined());
     await waitFor(() => expect(screen.queryByLabelText("New pairing code")).toBeNull());
     expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: /delete pending capture/i }));
+    fireEvent.click(screen.getByRole("button", { name: /remove local retry/i }));
   });
 
   test("fresh repaired readiness replays one queued capture with its stable identity", async () => {
@@ -626,9 +629,9 @@ describe("App", () => {
     const input = screen.getByLabelText("ask or capture") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "replay after auth repair" } });
     fireEvent.click(screen.getByRole("button", { name: "Capture" }));
-    fireEvent.click(screen.getByRole("button", { name: "File it" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save capture" }));
     await waitFor(() => expect(screen.getByLabelText("New pairing code")).toBeDefined());
-    await waitFor(() => expect(screen.getByText(/failed · device-revoked/i)).toBeDefined());
+    await waitFor(() => expect(screen.getByText(/Needs attention · device-revoked/i)).toBeDefined());
 
     fireEvent.change(screen.getByLabelText("New pairing code"), { target: { value: "fresh-code" } });
     fireEvent.click(screen.getByRole("button", { name: "Pair again" }));
@@ -666,9 +669,12 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByText(/you're clear/i)).toBeDefined());
     fireEvent.change(screen.getByLabelText("ask or capture"), { target: { value: "show the honest lifecycle" } });
     fireEvent.click(screen.getByRole("button", { name: "Capture" }));
-    fireEvent.click(screen.getByRole("button", { name: "File it" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save capture" }));
 
     await waitFor(() => expect(screen.getByText("Sending")).toBeDefined());
+    const removeWhileSending = screen.getByRole("button", { name: /remove local retry/i }) as HTMLButtonElement;
+    expect(removeWhileSending.disabled).toBe(true);
+    fireEvent.click(removeWhileSending);
     const durable = await new CaptureQueue().all();
     expect(durable).toHaveLength(1);
     expect(durable[0]?.state).toBe("saved-locally");
@@ -684,6 +690,10 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByText(/Filed · committed to the vault/)).toBeDefined());
     expect(await new CaptureQueue().all()).toEqual([]);
     expect(screen.getByText(/0 queued · 1 filed/)).toBeDefined();
+    const lifecycle = screen.getByLabelText("capture queue").querySelector('[role="status"]')!;
+    expect(lifecycle.getAttribute("aria-live")).toBe("polite");
+    expect(lifecycle.getAttribute("aria-atomic")).toBe("true");
+    expect(lifecycle.textContent).toContain("1 capture is filed");
     expect((screen.getByRole("button", { name: "Export" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: /dismiss filed capture/i }));
     expect(screen.queryByLabelText("capture queue")).toBeNull();
@@ -724,14 +734,15 @@ describe("App", () => {
     const input = screen.getByLabelText("ask or capture") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "keep this locally" } });
     fireEvent.click(screen.getByRole("button", { name: "Capture" }));
-    fireEvent.click(screen.getByRole("button", { name: "File it" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save capture" }));
 
     await waitFor(() => expect(screen.getByText("Dome Home can't be reached")).toBeDefined());
     expect(screen.getByText("keep this locally")).toBeDefined();
+    expect(screen.getByText(/Not confirmed — safe to retry/).getAttribute("role")).toBe("alert");
     expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Capture" }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: /delete pending capture/i }));
+    fireEvent.click(screen.getByRole("button", { name: /remove local retry/i }));
   });
 
   test("a failed answer stays visible and is never acknowledged as answered", async () => {
@@ -829,7 +840,7 @@ describe("App", () => {
     const input = screen.getByLabelText("ask or capture") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "replay after reconnect" } });
     fireEvent.click(screen.getByRole("button", { name: "Capture" }));
-    fireEvent.click(screen.getByRole("button", { name: "File it" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save capture" }));
     await waitFor(() => expect(screen.getByText("replay after reconnect")).toBeDefined());
     serverUp = true;
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
