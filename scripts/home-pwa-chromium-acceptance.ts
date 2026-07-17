@@ -345,6 +345,12 @@ export async function runHomePwaChromiumAcceptance(
       replayCaptureResponses = 0;
       await activePage.getByRole("button", { name: "Pair again" }).click();
       await assertReadyConnection(activePage, input.expected, REPAIRED_DEVICE_NAME);
+      if (replayCaptureRequests !== 0) {
+        throw new Error("an unbound offline capture replayed before explicit vault binding");
+      }
+      const bind = activePage.getByRole("button", { name: "Bind to this vault" });
+      await bind.waitFor({ timeout: WAIT_MS });
+      await bind.click();
       signal.throwIfAborted();
     },
     assertReplay: async (signal) => {
@@ -946,7 +952,7 @@ export function parseHomePwaCaptureExportForTests(bytes: Uint8Array, expectedTex
   if (typeof capture["id"] !== "string" ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(capture["id"]) ||
     capture["text"] !== expectedText || !exactTimestamp(capture["createdAt"]) ||
-    typeof capture["vaultId"] !== "string" || capture["vaultId"].length === 0 ||
+    capture["vaultId"] !== null ||
     capture["state"] !== "saved-locally" || capture["attempts"] !== 0) {
     throw new Error("pending capture export item is invalid");
   }

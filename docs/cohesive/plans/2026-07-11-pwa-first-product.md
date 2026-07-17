@@ -1042,8 +1042,9 @@ and Capture distinct primary actions over one neutral draft. Capture opens a
 separate text/voice review sheet and stays usable while Ask is streaming or
 the Home connection is unavailable. Its durable queue persists only queued or
 failed plaintext, binds new rows to the validated opaque vault identity, and
-requires an explicit one-way bind for legacy unbound rows. Sending is live UI
-state only. A matching committed or duplicate receipt removes plaintext and
+requires an explicit one-way bind for rows captured without validated
+readiness as well as legacy unbound rows. Sending is live UI state only. A
+matching committed or duplicate receipt removes plaintext and
 creates the only transient **Filed** acknowledgement; it does not claim
 adoption. Transport, timeout, rate-limit, server, and outcome-unknown failures
 say **Not confirmed — safe to retry**, while definite rejections say **Needs
