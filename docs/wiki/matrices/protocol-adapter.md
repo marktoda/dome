@@ -36,7 +36,7 @@ in the adapter.
 | Investigate agent work | `Vault.agentWork/completeAgentWork` + `attemptAgentWork` | `dome agent-work` | `agent_work` / `complete_agent_work` | `GET /agent-work`, `POST /agent-work/complete`, `POST /agent-work/drain` | `list_agent_work` / `complete_agent_work` |
 | Settle a task | `performSettle` | `dome settle` | `settle` | `POST /settle` | `settle_task` |
 | Review task backlog (read) | `dome.daily.task-backlog` view / `dome.daily.task-backlog.list/v1` | `dome run task-backlog` | generic `run_view` | `GET /task-backlog` | generic `run_view` |
-| Apply backlog review batch | `performSettleBatch` / `dome.task-backlog.review/v1` | — | — | `POST /task-backlog/review` | PWA client (UI next checkpoint) |
+| Apply backlog review batch | `performSettleBatch` / `dome.task-backlog.review/v1` | — | — | `POST /task-backlog/review` | owner-facing PWA Backlog Review |
 | Review proposals | proposal collectors | `dome proposals/apply/reject` | `proposals` / `apply_proposal` / `reject_proposal` | `GET /proposals`, `POST /apply`, `POST /reject` | same three action tools |
 | Converse | `AgentRuntime` (outside engine) | external harness such as Claude Code | harness brings its own agent | session protocol: create / message SSE / close | provider adapter behind `AgentRuntime` |
 | Engine control | `Vault.sync/rebuild` + host internals | `dome sync/serve/rebuild` | — | — | — |

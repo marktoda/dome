@@ -8,6 +8,7 @@ const proxy = Object.fromEntries(
     "/sessions",
     "/capture",
     "/tasks",
+    "/task-backlog",
     "/recents",
     "/resolve",
     "/settle",

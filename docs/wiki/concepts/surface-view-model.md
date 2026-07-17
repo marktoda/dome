@@ -83,13 +83,22 @@ not an error.
 
 ## Product read contract: `dome.daily.task-backlog.list/v1`
 
-`TaskBacklog.list` applies the same three-tier discipline without a paint yet.
+`TaskBacklog.list` applies the same three-tier discipline through the PWA's
+owner-facing Backlog Review paint.
 The producer supplies individual projection-backed open-task origins;
 `src/surface/task-backlog.ts` owns exact-visible-text grouping, timing/source
 classification, and adopted-revision-bound keyset pagination; HTTP and the PWA
 client validate and transport that one contract. Unlike Today's glance view,
 backlog review never applies near-duplicate folding, and it keeps unanchored
 origins visible but explicitly non-reviewable.
+
+The paint remains a Today-owned secondary surface, not top-level navigation.
+It pages 25 exact-text candidate groups at a time, labels review units and
+actual commitments separately, and compiles only explicit per-member
+leave-open, defer, or close choices. Ambiguous groups stay source-readable but
+mutation-disabled. Close/defer choices receive a visible confirmation, exact
+adopted SourceRefs open through the shared source reader, and stale, conflict,
+busy, and outcome-unknown responses keep distinct recovery semantics.
 
 ## The generic layer: the View Contract (built)
 

@@ -140,10 +140,11 @@ type Props = {
   hasMessages?: boolean;
   onToggle?: () => void;
   interactive?: boolean;
+  onReviewBacklog?: () => void;
 };
 
 export function Brief(
-  { today, onResolve, onSettle = async () => false, collapsed = false, hasMessages = false, onToggle = () => {}, interactive = true }: Props,
+  { today, onResolve, onSettle = async () => false, collapsed = false, hasMessages = false, onToggle = () => {}, interactive = true, onReviewBacklog }: Props,
 ): React.ReactElement | null {
   const [showAll, setShowAll] = useState(false);
   const [showAgedBacklog, setShowAgedBacklog] = useState(false);
@@ -303,6 +304,11 @@ export function Brief(
           ) : null}
           {omittedOpenCount > 0 ? (
             <div className="brief-more">{omittedOpenCount} additional open {omittedOpenCount === 1 ? "item" : "items"} omitted from this view</div>
+          ) : null}
+          {openCount > 0 && onReviewBacklog !== undefined ? (
+            <button type="button" className="review-backlog-entry" onClick={onReviewBacklog}>
+              Review backlog · {openCount} open {openCount === 1 ? "commitment" : "commitments"}
+            </button>
           ) : null}
         </div>
       ) : null}

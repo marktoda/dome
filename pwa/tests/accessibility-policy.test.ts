@@ -93,7 +93,7 @@ describe("PWA adaptive accessibility CSS policy", () => {
     expect(button).toMatch(/min-height:\s*44px/);
     expect(app).toContain('const visibleTodayRefreshState: TodayRefreshState = access.read ? todayRefreshState : "idle"');
     expect(app).toContain('aria-busy={visibleTodayRefreshState === "loading"}');
-    expect(app).toContain('className={`today-panel ${visibleTodayRefreshState}`} aria-label="Today"');
+    expect(app).toContain('className={`today-panel ${visibleTodayRefreshState}`} aria-label={reviewingBacklog ? "Backlog review" : "Today"}');
     expect(app).not.toContain('aria-label="Today refresh"');
     expect(app).toContain('role="status"');
     expect(app).toContain('aria-live="polite"');

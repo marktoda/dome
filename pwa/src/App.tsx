@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { DomeClient, type AgentTurnHandle } from "./api/client";
 import type { AgentStopOutcome, AgentStreamOutcome, Recents as RecentsT, Today } from "./api/types";
 import { PairingGate, type HomeAvailability, type HomeConnectionControl } from "./auth/PairingGate";
@@ -11,6 +11,11 @@ import { CaptureQueue, type QueuedCapture } from "./capture/captureQueue";
 import { UpdatePrompt } from "./offline/UpdatePrompt";
 import { Connection, RecoveryCard } from "./components/Connection";
 import { deriveProductSession } from "./connection/product-session";
+
+const BacklogReview = lazy(async () => {
+  const module = await import("./components/BacklogReview");
+  return { default: module.BacklogReview };
+});
 
 function todayLabel(): string {
   try {
@@ -45,6 +50,7 @@ function Screen({ client, availability, connection }: {
   const [recents, setRecents] = useState<RecentsT | null>(null);
   const [chat, dispatch] = useReducer(chatReducer, { messages: [] });
   const [briefCollapsed, setBriefCollapsed] = useState(false);
+  const [reviewingBacklog, setReviewingBacklog] = useState(false);
   const [ack, setAck] = useState<string | null>(null);
   const [pendingCaptures, setPendingCaptures] = useState<QueuedCapture[]>([]);
   const [storageStatus, setStorageStatus] = useState<"persistent" | "best-effort" | "unknown">("unknown");
@@ -70,6 +76,7 @@ function Screen({ client, availability, connection }: {
       recentsRefreshSequence.current++;
       setTodayRefreshState("idle");
       setRecentsLoad("idle");
+      setReviewingBacklog(false);
     }
     priorReadAccess.current = access.read;
   }, [access.read]);
@@ -312,27 +319,37 @@ function Screen({ client, availability, connection }: {
         </section>
       ) : null}
       <div className="scroll">
-        <section className={`today-panel ${visibleTodayRefreshState}`} aria-label="Today">
+        <section className={`today-panel ${visibleTodayRefreshState}`} aria-label={reviewingBacklog ? "Backlog review" : "Today"}>
           <div className="surface-refresh">
-            <span>Today</span>
-            <button
-              type="button"
-              aria-label="Refresh Today"
-              aria-describedby="today-refresh-status"
-              aria-busy={visibleTodayRefreshState === "loading"}
-              disabled={!access.read || todayRefreshState === "loading"}
-              onClick={refreshToday}
-            >{todayRefreshState === "failed" ? "Retry" : "Refresh"}</button>
-            <p
-              id="today-refresh-status"
-              className={todayRefreshState === "failed" || todayRefreshState === "loading" ? "" : "sr-only"}
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-            >{todayRefreshMessage}</p>
+            <span>{reviewingBacklog ? "Backlog review" : "Today"}</span>
+            {reviewingBacklog ? (
+              <button type="button" onClick={() => setReviewingBacklog(false)}>Back to Today</button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  aria-label="Refresh Today"
+                  aria-describedby="today-refresh-status"
+                  aria-busy={visibleTodayRefreshState === "loading"}
+                  disabled={!access.read || todayRefreshState === "loading"}
+                  onClick={refreshToday}
+                >{todayRefreshState === "failed" ? "Retry" : "Refresh"}</button>
+                <p
+                  id="today-refresh-status"
+                  className={todayRefreshState === "failed" || todayRefreshState === "loading" ? "" : "sr-only"}
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >{todayRefreshMessage}</p>
+              </>
+            )}
           </div>
-          {today !== null ? (
-            <Brief today={today} onResolve={resolve} onSettle={settle} collapsed={briefCollapsed} hasMessages={hasMessages} onToggle={() => setBriefCollapsed((c) => !c)} interactive={access.resolve} />
+          {reviewingBacklog ? (
+            <Suspense fallback={<p className="backlog-loading" role="status">Opening backlog review…</p>}>
+              <BacklogReview client={client} readable={access.read} interactive={access.resolve} onReviewed={refreshToday} />
+            </Suspense>
+          ) : today !== null ? (
+            <Brief today={today} onResolve={resolve} onSettle={settle} collapsed={briefCollapsed} hasMessages={hasMessages} onToggle={() => setBriefCollapsed((c) => !c)} interactive={access.resolve} onReviewBacklog={() => setReviewingBacklog(true)} />
           ) : todayRefreshState === "failed" ? (
             <p className="view-error">Today could not be refreshed. Try again when Dome Home is available.</p>
           ) : null}

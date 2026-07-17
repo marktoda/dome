@@ -26,6 +26,21 @@ describe("Brief", () => {
     expect(screen.getByText(/you're clear/i)).toBeDefined();
   });
 
+  test("offers one backlog-review entry from the open-task surface", () => {
+    const onReviewBacklog = mock(() => {});
+    const today: Today = {
+      ...base,
+      openTasks: [{ text: "Review me", path: "wiki/a.md", line: 3, dueDate: null }],
+      counts: { openTasks: 1, followups: 0, questions: 0 },
+    };
+    render(<Brief today={today} onResolve={noop} onReviewBacklog={onReviewBacklog} />);
+
+    const entry = screen.getByRole("button", { name: "Review backlog · 1 open commitment" });
+    expect(screen.getAllByRole("button", { name: /Review backlog/ })).toHaveLength(1);
+    fireEvent.click(entry);
+    expect(onReviewBacklog).toHaveBeenCalledTimes(1);
+  });
+
   test("renders and summarizes a followup once even when the facet array repeats it", () => {
     const followup = {
       text: "Follow up with Jane",

@@ -1012,10 +1012,13 @@ The next product mission is a **Backlog Review**, not another broad feature:
    full source/block-anchor evidence, and revision-bound keyset cursors;
 2. **Shipped:** group explicit commitments by overdue, dated, exact duplicate
    candidate, and undated source context;
-3. **Shipped engine/HTTP/PWA-client seam:** keep, defer, or close a reviewed
-   batch through `dome.task-backlog.review/v1`, with one locked attributable,
-   recoverable commit and one adoption receipt. The owner-facing PWA review
-   paint is the next bounded checkpoint;
+3. **Shipped end to end:** the Today-owned PWA Backlog Review pages 25
+   exact-text candidate groups, opens exact adopted source evidence, and lets
+   the owner explicitly leave open, defer, or close individual commitments.
+   It submits one reviewed batch through `dome.task-backlog.review/v1`, with
+   one locked attributable, recoverable commit and one adoption receipt;
+   ambiguous groups remain visible but mutation-disabled, and stale,
+   conflict, busy, and outcome-unknown results retain distinct recovery paths;
 4. never infer closure, delete prose, or mutate a task merely because it looks
    old or duplicated.
 
