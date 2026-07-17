@@ -137,7 +137,8 @@ type ReceiptRow = {
 const SELECT_COLUMNS = "operation_id, request_id, actor_id, "
   + "device_id, credential_id, transport, host_instance_id, executor, operation, operation_class, state, "
   + "result_code, commit_oid, adoption_state, recovery_required, admitted_at, finished_at";
-const SAFE_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const OPAQUE_ID = /^[A-Za-z0-9_-][A-Za-z0-9._:-]{0,127}$/;
+const SEMANTIC_CODE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const OID = /^[0-9a-f]{40}$/;
 const MAX_LIST = 100;
 const MAX_PRUNE = 10_000;
@@ -167,7 +168,7 @@ export function createRequestReceipts(
     input: FinishRequestReceiptInput,
   ): FinishRequestReceiptResult => {
     assertOpen();
-    requireToken(input.resultCode, "resultCode");
+    requireSemanticCode(input.resultCode, "resultCode");
     if (input.state === "interrupted" && input.commitOid !== undefined) {
       throw new Error("interrupted receipt cannot claim a commit");
     }
@@ -207,12 +208,12 @@ export function createRequestReceipts(
   const receipts: RequestReceipts = Object.freeze({
     admit(input) {
       assertOpen();
-      requireToken(input.requestId, "requestId");
-      requireToken(input.deviceId, "deviceId");
-      requireToken(input.credentialId, "credentialId");
-      requireToken(input.hostInstanceId, "hostInstanceId");
+      requireOpaqueId(input.requestId, "requestId");
+      requireOpaqueId(input.deviceId, "deviceId");
+      requireOpaqueId(input.credentialId, "credentialId");
+      requireOpaqueId(input.hostInstanceId, "hostInstanceId");
       const operationId = createId();
-      requireToken(operationId, "operationId");
+      requireOpaqueId(operationId, "operationId");
       const admittedAt = iso(now(), "admittedAt");
       db.raw.query(
         "INSERT INTO request_receipts (operation_id, request_id, "
@@ -236,11 +237,11 @@ export function createRequestReceipts(
       const where: string[] = [];
       const values: string[] = [];
       if (input.requestId !== undefined) {
-        requireToken(input.requestId, "requestId");
+        requireOpaqueId(input.requestId, "requestId");
         where.push("request_id = ?"); values.push(input.requestId);
       }
       if (input.deviceId !== undefined) {
-        requireToken(input.deviceId, "deviceId");
+        requireOpaqueId(input.deviceId, "deviceId");
         where.push("device_id = ?"); values.push(input.deviceId);
       }
       if (input.state !== undefined) {
@@ -256,10 +257,10 @@ export function createRequestReceipts(
 
     interruptAdmitted(input) {
       assertOpen();
-      requireToken(input.exceptHostInstanceId, "exceptHostInstanceId");
+      requireOpaqueId(input.exceptHostInstanceId, "exceptHostInstanceId");
       const at = iso(input.interruptedAt ?? now(), "interruptedAt");
       const code = input.resultCode ?? "host-restarted";
-      requireToken(code, "resultCode");
+      requireSemanticCode(code, "resultCode");
       const result = db.raw.query(
         "UPDATE request_receipts SET state = 'interrupted', result_code = ?, "
           + "adoption_state = 'unknown', recovery_required = 1, finished_at = ? "
@@ -303,12 +304,12 @@ function rowToReceipt(row: ReceiptRow): RequestReceipt {
     ["deviceId", row.device_id],
     ["credentialId", row.credential_id],
     ["hostInstanceId", row.host_instance_id],
-  ] as const) requireToken(value, label);
+  ] as const) requireOpaqueId(value, label);
   if (row.actor_id !== "owner") throw new Error("stored request receipt has invalid actorId");
   if (row.recovery_required !== 0 && row.recovery_required !== 1) {
     throw new Error("stored request receipt has invalid recoveryRequired");
   }
-  if (row.result_code !== null) requireToken(row.result_code, "resultCode");
+  if (row.result_code !== null) requireSemanticCode(row.result_code, "resultCode");
   if (row.commit_oid !== null && !OID.test(row.commit_oid)) {
     throw new Error("stored request receipt has invalid commitOid");
   }
@@ -363,8 +364,12 @@ function requireCommitAdoptionMatrix(
   if (!valid) throw new Error(`${prefix} has an invalid commit/adoption state`);
 }
 
-function requireToken(value: string, label: string): void {
-  if (!SAFE_TOKEN.test(value)) throw new Error(`${label} must be an opaque safe token`);
+function requireSemanticCode(value: string, label: string): void {
+  if (!SEMANTIC_CODE.test(value)) throw new Error(`${label} must be a safe semantic code`);
+}
+
+function requireOpaqueId(value: string, label: string): void {
+  if (!OPAQUE_ID.test(value)) throw new Error(`${label} must be a safe opaque identifier`);
 }
 
 function iso(value: Date, label: string): string {

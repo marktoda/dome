@@ -348,7 +348,9 @@ describe("P3 Product Host", () => {
       expect(ready.status).toBe(200);
       expect(today.status).toBe(200);
       expect(doc.status).toBe(200);
-      expect(capture.status).toBe(200);
+      if (capture.status !== 200) {
+        throw new Error(`capture returned ${capture.status}: ${await capture.text()}`);
+      }
       const captureDocument = await capture.json() as { status: string; commit: string };
       expect(captureDocument).toMatchObject({
         status: "captured",

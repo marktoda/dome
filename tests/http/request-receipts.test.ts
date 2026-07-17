@@ -17,6 +17,7 @@ import {
 
 const ORIGIN = "https://dome.example";
 const PUBLIC_VAULT_ID = "vault-public-id";
+const LEADING_HYPHEN_CREDENTIAL_ID = `-${"A".repeat(21)}`;
 const roots: string[] = [];
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
@@ -84,6 +85,48 @@ describe("device mutation request receipts", () => {
     });
     await server.close();
     f.authority.close();
+  });
+
+  test("capture durably admits a legal credential id with leading base64url punctuation", async () => {
+    const f = await fixture();
+    try {
+      const vault = join(f.root, "vault");
+      const originalLog = console.log;
+      console.log = () => {};
+      try { expect(await runInit({ path: vault })).toBe(0); } finally { console.log = originalLog; }
+      const opened = await openRequestReceiptsDb({ path: join(f.root, "receipts.db") });
+      if (!opened.ok) throw new Error(opened.error.kind);
+      const receipts = createRequestReceipts(opened.value.db, { createId: () => "_receipt-1" });
+      try {
+        const authority: DeviceAuthority = Object.freeze({
+          ...f.authority,
+          authenticate: (input) => {
+            const result = f.authority.authenticate(input);
+            return result.kind === "authenticated"
+              ? Object.freeze({ ...result, credentialId: LEADING_HYPHEN_CREDENTIAL_ID })
+              : result;
+          },
+        });
+        const server = createDomeHttpServer({
+          vaultPath: vault,
+          publicVaultId: PUBLIC_VAULT_ID,
+          deviceAuth: { authority, allowedOrigins: () => [ORIGIN] },
+          requestReceiptRecorder: bindHttpRequestReceiptRecorder(receipts, "_host-1"),
+        });
+        try {
+          const auth = await paired(authority, server, ["capture"]);
+          const response = await server.fetch(request(ORIGIN, auth, "leading punctuation credential"));
+
+          expect(response.status).toBe(200);
+          expect(receipts.list()).toEqual([expect.objectContaining({
+            operationId: "_receipt-1",
+            credentialId: LEADING_HYPHEN_CREDENTIAL_ID,
+            hostInstanceId: "_host-1",
+            state: "succeeded",
+          })]);
+        } finally { await server.close(); }
+      } finally { receipts.close(); }
+    } finally { f.authority.close(); }
   });
 
   test("validation and capability denial precede fail-closed admission", async () => {

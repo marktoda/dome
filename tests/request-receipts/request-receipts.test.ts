@@ -22,6 +22,8 @@ import {
 } from "../fixtures/home-upgrade/n-1/freeze-n1";
 
 const roots: string[] = [];
+const LEADING_HYPHEN_CREDENTIAL_ID = `-${"A".repeat(21)}`;
+const LEADING_UNDERSCORE_CREDENTIAL_ID = `_${"A".repeat(21)}`;
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -181,10 +183,14 @@ describe("request receipts store", () => {
     receipts.close();
   });
 
-  test("validates safe fields and commit/adoption combinations before persistence", async () => {
-    const { receipts } = await opened(path(), { ids: ["operation-1", "operation-2"] });
-    expect(() => receipts.admit({ ...BASE, requestId: "request with prose" })).toThrow("safe token");
+  test("validates opaque identifiers, semantic codes, and commit/adoption combinations before persistence", async () => {
+    const { receipts } = await opened(path(), { ids: ["operation with prose", "operation-1"] });
+    expect(() => receipts.admit({ ...BASE, requestId: "request with prose" })).toThrow("safe opaque identifier");
+    expect(() => receipts.admit({ ...BASE, credentialId: "credential\ncontrol" })).toThrow("safe opaque identifier");
+    expect(() => receipts.admit({ ...BASE, deviceId: "d".repeat(129) })).toThrow("safe opaque identifier");
+    expect(() => receipts.admit(BASE)).toThrow("operationId must be a safe opaque identifier");
     const lease = receipts.admit(BASE);
+    expect(() => lease.finish({ state: "failed", resultCode: "-not-semantic" })).toThrow("safe semantic code");
     expect(() => lease.finish({
       state: "succeeded",
       resultCode: "ok",
@@ -204,20 +210,29 @@ describe("request receipts store", () => {
     receipts.close();
   });
 
-  test("accepts representative uppercase base64url authority identifiers", async () => {
-    const { receipts } = await opened(path(), { ids: ["Operation_AZ-19"] });
-    const lease = receipts.admit({
+  test("accepts legal opaque authority identifiers beginning with base64url punctuation", async () => {
+    const { receipts } = await opened(path(), { ids: ["-Operation_AZ-19", "_Operation_ZX-42"] });
+    const hyphen = receipts.admit({
       ...BASE,
-      requestId: "Request_QwE-19",
-      deviceId: "Device_QwE-19",
-      credentialId: "Credential_ZXc-42",
-      hostInstanceId: "Host_ASD-7",
+      requestId: "-Request_QwE-19",
+      deviceId: "_Device_QwE-19",
+      credentialId: LEADING_HYPHEN_CREDENTIAL_ID,
+      hostInstanceId: "_Host_ASD-7",
     });
-    expect(lease.operationId).toBe("Operation_AZ-19");
-    expect(receipts.list()[0]).toMatchObject({
-      deviceId: "Device_QwE-19",
-      credentialId: "Credential_ZXc-42",
+    const underscore = receipts.admit({
+      ...BASE,
+      requestId: "_Request_ZXc-42",
+      credentialId: LEADING_UNDERSCORE_CREDENTIAL_ID,
     });
+    expect(hyphen.operationId).toBe("-Operation_AZ-19");
+    expect(underscore.operationId).toBe("_Operation_ZX-42");
+    expect(receipts.list({ requestId: "-Request_QwE-19" })[0]).toMatchObject({
+      deviceId: "_Device_QwE-19",
+      credentialId: LEADING_HYPHEN_CREDENTIAL_ID,
+      hostInstanceId: "_Host_ASD-7",
+    });
+    expect(receipts.list({ requestId: "_Request_ZXc-42" })[0]?.credentialId)
+      .toBe(LEADING_UNDERSCORE_CREDENTIAL_ID);
     receipts.close();
   });
 
@@ -341,7 +356,7 @@ describe("request receipts store", () => {
       "UPDATE request_receipts SET admitted_at = '2026-07-12T12:00:00.000Z', "
         + "result_code = 'unsafe prose' WHERE operation_id = 'operation-1'",
     );
-    expect(() => receipts.list()).toThrow("resultCode must be an opaque safe token");
+    expect(() => receipts.list()).toThrow("resultCode must be a safe semantic code");
     result.value.db.raw.run(
       "UPDATE request_receipts SET result_code = NULL, commit_oid = 'bad-oid' "
         + "WHERE operation_id = 'operation-1'",
