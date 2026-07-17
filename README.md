@@ -128,11 +128,17 @@ to find the relevant specification, invariant, matrix, and gotcha.
 ```sh
 bun install
 bun run typecheck
-bun test ./tests
+bun run test
 ```
 
-Useful narrower gates include `bun test tests/invariants`, `bun run check:pwa`,
-and `bin/dome <command>` for a local CLI invocation. The package currently
+`bun run test` discovers every root `tests/**/*.test.ts` file and runs the
+scripts, harness, product, and remaining runtime partitions in fresh Bun
+processes. This preserves complete root coverage without carrying one test
+VM's scheduler and SQLite pressure across the whole repository. Run
+`bun run check:pwa` separately for the PWA package.
+
+Useful narrower gates include `bun test tests/invariants` and
+`bin/dome <command>` for a local CLI invocation. The package currently
 exports `@dome/sdk`, `@dome/sdk/cli`, and `@dome/sdk/mcp`; its public rename to
 `@marktoda/dome` belongs to the registry-distribution milestone.
 

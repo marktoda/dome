@@ -18,7 +18,8 @@ describe("V1 package scripts", () => {
     expect(scripts["check:pwa"]).toBe("bun run --cwd pwa check");
     expect(scripts["v1:check"]).toContain("bun run check:pwa");
     expect(scripts["v1:check"]).toContain("git diff --check");
-    expect(scripts["v1:check"]).toContain("bun test");
+    expect(scripts.test).toBe("bun scripts/test-root.ts");
+    expect(scripts["v1:check"]).toContain("bun run test");
     expect(scripts["v1:check"]).toContain("bun run v1:smoke");
     expect(scripts["release:package-rehearsal"]).toBe(
       "bun scripts/release-package.ts",

@@ -146,9 +146,15 @@ Work:
 2. Pin CI to Bun `1.2.13`, the runtime used by the current release evidence,
    instead of allowing `bun-version: latest` to change behavior without a
    repository commit.
-3. Run `bun test ./tests` at the repository root. Do not use bare recursive
-   `bun test`, which crosses into nested package tests and turns unrelated PWA
-   and dependency fixtures into an opaque cascade.
+3. Run `bun run test` at the repository root. Its typed orchestrator discovers
+   every current `tests/**/*.test.ts` file, sorts the inventory, assigns each
+   file exactly once to the ordered scripts, harness, product, or runtime
+   partition, and runs each nonempty partition in a fresh Bun process. Hosted
+   evidence showed that one 4,001-test process accumulated enough scheduler
+   and SQLite pressure for late tests to exceed their own bounds even though
+   every failure passed in isolation. Process isolation replaces that measured
+   failure mode without retries, global timeout changes, or coverage loss. Do
+   not use bare recursive `bun test`, which also crosses into nested packages.
 4. Run `bun run check:pwa` as its own explicit gate, alongside typecheck and
    the root tests, so the PWA remains required without conflating test roots.
    Keep one macOS job with named attributable steps unless measured latency or
@@ -158,21 +164,24 @@ Work:
    route both `settle.ts` `localeCompare` sites through the deterministic-sort
    fence; and register the read-only `task-backlog` maintenance-loop exemption.
    These are real product/substrate corrections, not runner noise.
-6. Change the README contributor command to the canonical scoped root command,
-   `bun test ./tests`, so local guidance and CI exercise the same suite.
+6. Change README and contributor guidance to the canonical scoped root command,
+   `bun run test`, so local guidance, package scripts, and CI exercise the same
+   exhaustive partition plan.
 
 Acceptance gate:
 
 - the `macos-15`/arm64 workflow passes twice on the same commit, including a
   clean rerun, under Bun `1.2.13`;
-- typecheck, `check:pwa`, and `bun test ./tests` are named, separately
+- typecheck, `check:pwa`, and `bun run test` are named, separately
   attributable required steps in the same job;
-- a deliberate failing test produces one attributable failure rather than an
-  opaque resource cascade;
+- the root runner proves a lossless, duplicate-free inventory and a deliberate
+  failing test stops at its named partition rather than producing a late
+  cross-suite resource cascade;
 - the CI and artifact toolchain versions are explicit and reviewable; and
 - no test is disabled merely to make `main` green.
 
-Non-goal: redesigning the test suite or broadening the platform matrix.
+Non-goal: changing test semantics, adding retries or global timeout inflation,
+or broadening the platform matrix.
 
 Checkpoint: a release-truth checkpoint after a fresh independent review. Keep
 the genuine drift repair distinct from the workflow/toolchain correction when

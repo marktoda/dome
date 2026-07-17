@@ -68,7 +68,7 @@ jobs:
           fi
 
       - name: Test SDK and product runtime
-        run: bun test ./tests
+        run: bun run test
 
       - name: Check PWA
         run: bun run check:pwa
