@@ -9,6 +9,7 @@ import { createAgentRuntime, type AgentRun } from "../../src/assistant/runtime";
 import { runInit } from "../../src/cli/commands/init";
 import { openDeviceAuthority } from "../../src/device-authority/device-authority";
 import { add, commit } from "../../src/git";
+import { exchangeDevicePairing } from "../../src/http/device-request-auth";
 import { startProductHost, type ProductHost } from "../../src/product-host/product-host";
 import { homeInstallationPaths, releaseRoot } from "../../src/product-host/home-installation";
 import {
@@ -117,13 +118,19 @@ describe("P3 Product Host", () => {
 
   test("Ask uses the Product Host's injected model step provider", async () => {
     const vault = await initializedVault();
-    const pairingCode = await mintPairingCode(vault, "Injected model browser", [
+    // Pair directly before the host opens the authority store. The /pair route
+    // deliberately bypasses host scheduling, and this proof is about Ask's
+    // provider seam rather than the separately-covered pairing adapter.
+    const auth = await bootstrapBrowserAuth(vault, "Injected model browser", [
       "converse", "read",
     ]);
     let askCalls = 0;
     const started = await startProductHost({
       vaultPath: vault,
       port: 0,
+      // This proof needs the Product Host scheduler and initial engine tick,
+      // but not a second background tick competing with its one model turn.
+      pollIntervalMs: 60_000,
       modelState: "ready",
       modelStepProvider: async (request) => {
         const last = request.messages.at(-1);
@@ -137,29 +144,43 @@ describe("P3 Product Host", () => {
     expect(started.ok).toBe(true);
     if (!started.ok) return;
     hosts.push(started.value);
-    const auth = await pair(started.value.url, pairingCode);
+    try {
+      const created = await fetchTextWithin(
+        "session creation",
+        5_000,
+        `${started.value.url}/sessions`,
+        {
+          method: "POST",
+          headers: mutationHeaders(started.value.url, auth),
+        },
+      );
+      expect(created.response.status).toBe(201);
+      const sessionId = (JSON.parse(created.text) as { readonly sessionId: string }).sessionId;
+      const turn = await fetchTextWithin(
+        "injected-provider SSE turn",
+        10_000,
+        `${started.value.url}/sessions/${sessionId}/messages`,
+        {
+          method: "POST",
+          headers: {
+            ...mutationHeaders(started.value.url, auth),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ message: "Use the configured provider" }),
+        },
+        () => `provider calls observed: ${askCalls}`,
+      );
 
-    const created = await fetch(`${started.value.url}/sessions`, {
-      method: "POST",
-      headers: mutationHeaders(started.value.url, auth),
-    });
-    expect(created.status).toBe(201);
-    const sessionId = (await created.json() as { readonly sessionId: string }).sessionId;
-    const turn = await fetch(`${started.value.url}/sessions/${sessionId}/messages`, {
-      method: "POST",
-      headers: {
-        ...mutationHeaders(started.value.url, auth),
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ message: "Use the configured provider" }),
-    });
-
-    expect(turn.status).toBe(200);
-    const events = await turn.text();
-    expect(events).toContain('"text":"configured provider response"');
-    expect(events).toContain('"stopReason":"final"');
-    expect(askCalls).toBe(1);
-  }, 30_000);
+      expect(turn.response.status).toBe(200);
+      expect(turn.text).toContain('"text":"configured provider response"');
+      expect(turn.text).toContain('"stopReason":"final"');
+      expect(askCalls).toBe(1);
+    } finally {
+      // Bun does not cancel a timed-out async test body. Close here, while the
+      // vault still exists, so a slow request cannot outlive fixture cleanup.
+      await closeTrackedHost(started.value);
+    }
+  }, 60_000);
 
   test("an exact launchd child starts while its supervisor holds resuming Tx2", async () => {
     const vault = await initializedVault();
@@ -573,6 +594,64 @@ async function pair(
 
 function mutationHeaders(baseUrl: string, auth: BrowserAuth): Record<string, string> {
   return { cookie: auth.cookie, origin: baseUrl, "x-dome-csrf": auth.csrf };
+}
+
+async function fetchTextWithin(
+  operation: string,
+  milliseconds: number,
+  url: string,
+  init: RequestInit,
+  diagnostic?: () => string,
+): Promise<{ readonly response: Response; readonly text: string }> {
+  const signal = AbortSignal.timeout(milliseconds);
+  try {
+    const response = await fetch(url, { ...init, signal });
+    return { response, text: await response.text() };
+  } catch (error) {
+    if (!signal.aborted) throw error;
+    const detail = diagnostic?.();
+    throw new Error(
+      `${operation} exceeded ${milliseconds}ms${detail === undefined ? "" : ` (${detail})`}`,
+      { cause: error },
+    );
+  }
+}
+
+async function closeTrackedHost(host: ProductHost): Promise<void> {
+  await host.close();
+  const index = hosts.indexOf(host);
+  if (index >= 0) hosts.splice(index, 1);
+}
+
+async function bootstrapBrowserAuth(
+  vault: string,
+  deviceName: string,
+  capabilities: Array<"capture" | "converse" | "read" | "resolve">,
+): Promise<BrowserAuth> {
+  const opened = await openDeviceAuthority({
+    path: join(vault, ".dome", "state", "device-authority.db"),
+  });
+  expect(opened.ok).toBe(true);
+  if (!opened.ok) throw new Error("device authority did not open");
+  try {
+    const minted = opened.value.authority.mintPairingGrant({ deviceName, capabilities });
+    expect(minted.kind).toBe("minted");
+    if (minted.kind !== "minted") throw new Error("pairing code did not mint");
+    const exchanged = exchangeDevicePairing(opened.value.authority, {
+      pairingCode: minted.pairingCode,
+      requestOrigin: "http://127.0.0.1",
+    });
+    expect(exchanged.ok).toBe(true);
+    if (!exchanged.ok) throw new Error(`pairing exchange failed: ${exchanged.failure.code}`);
+    return {
+      cookie: exchanged.setCookies
+        .map((value) => value.split(";", 1)[0] ?? "")
+        .join("; "),
+      csrf: exchanged.csrfToken,
+    };
+  } finally {
+    opened.value.authority.close();
+  }
 }
 
 async function mintPairingCode(
