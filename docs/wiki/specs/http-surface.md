@@ -79,6 +79,11 @@ installed shell can boot before device auth. The data-free `GET /today`
 migration response is also public; it never authorizes an API request. One
 vault per process.
 
+`dome.capture/v1`'s `vault` locator is mode-dependent by design. The hidden
+compatibility bearer adapter preserves the canonical filesystem path used by
+CLI and MCP. Durable paired-device mode replaces it with the Product Host's
+opaque stable vault id; an absolute host path is never returned to a browser.
+
 | Route | Same path as | Result schema |
 |---|---|---|
 | `GET /` | — | `dome.http/v1` identity document; includes `capabilities: string[]` — the sorted list of granted capabilities (e.g. `["capture","converse","read","resolve"]`; `"author"` only when `--allow-write` is set) |

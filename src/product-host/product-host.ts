@@ -270,6 +270,7 @@ export async function startProductHost(
         http = createDomeHttpServer({
           vaultPath,
           vault,
+          publicVaultId: state.vaultId,
           deviceAuth: {
             authority: deviceAuthority,
             allowedOrigins: () => allowedOrigins,

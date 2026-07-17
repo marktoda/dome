@@ -9,6 +9,7 @@ import { openDeviceAuthority, type DeviceAuthority } from "../../src/device-auth
 import { createDomeHttpServer } from "../../src/http/server";
 
 const ORIGIN = "https://dome.example";
+const PUBLIC_VAULT_ID = "vault-public-id";
 
 async function authority(): Promise<DeviceAuthority> {
   const dir = mkdtempSync(join(tmpdir(), "dome-device-server-"));
@@ -49,9 +50,19 @@ describe("durable device HTTP mode", () => {
     const store = await authority();
     expect(() => createDomeHttpServer({
       vaultPath: "/tmp/unused",
+      publicVaultId: PUBLIC_VAULT_ID,
       deviceAuth: { authority: store, allowedOrigins: () => [ORIGIN] },
       token: "legacy-root-token",
     })).toThrow("cannot use a compatibility token");
+    store.close();
+  });
+
+  test("requires an opaque public vault locator", async () => {
+    const store = await authority();
+    expect(() => createDomeHttpServer({
+      vaultPath: "/tmp/unused",
+      deviceAuth: { authority: store, allowedOrigins: () => [ORIGIN] },
+    })).toThrow("requires a safe publicVaultId");
     store.close();
   });
 
@@ -59,6 +70,7 @@ describe("durable device HTTP mode", () => {
     const store = await authority();
     const server = createDomeHttpServer({
       vaultPath: "/tmp/unused",
+      publicVaultId: PUBLIC_VAULT_ID,
       deviceAuth: { authority: store, allowedOrigins: () => [ORIGIN] },
     });
     const response = await server.fetch(new Request(`${ORIGIN}/today?token=legacy-root-token`));
@@ -93,6 +105,7 @@ describe("durable device HTTP mode", () => {
     });
     const server = createDomeHttpServer({
       vaultPath: "/tmp/unused",
+      publicVaultId: PUBLIC_VAULT_ID,
       deviceAuth: { authority: store, allowedOrigins: () => [ORIGIN] },
       agentRuntime: runtime,
       readiness: async (client) => ({ deviceId: client?.deviceId }),

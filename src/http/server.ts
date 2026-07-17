@@ -159,6 +159,12 @@ export type DomeHttpServerOptions = {
     readonly allowedOrigins: () => ReadonlyArray<string>;
   } | undefined;
   /**
+   * Opaque vault locator exposed to durable paired devices. Required with
+   * `deviceAuth`; compatibility callers retain the canonical filesystem path
+   * in capture receipts.
+   */
+  readonly publicVaultId?: string | undefined;
+  /**
    * Optional P1 loopback-only browser pairing. The CLI refuses this option on
    * non-loopback binds. Sessions are process-local; P3 owns durable devices.
    */
@@ -512,6 +518,12 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
   }
   if (deviceMode && opts.token !== undefined) {
     throw new Error("createDomeHttpServer: durable device auth cannot use a compatibility token");
+  }
+  if (
+    deviceMode &&
+    (opts.publicVaultId === undefined || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(opts.publicVaultId))
+  ) {
+    throw new Error("createDomeHttpServer: durable device auth requires a safe publicVaultId");
   }
   const tokenDigest = deviceMode ? null : sha256(opts.token!);
   const pairing: LoopbackPairing | null = deviceMode || opts.loopbackPairing === undefined
@@ -1117,7 +1129,10 @@ export function createDomeHttpServer(opts: DomeHttpServerOptions): DomeHttpServe
           vault: opts.vaultPath,
           source: "http",
         });
-        const doc = captureJsonDocument(outcome);
+        const canonicalDoc = captureJsonDocument(outcome);
+        const doc = deviceMode
+          ? { ...canonicalDoc, vault: opts.publicVaultId! }
+          : canonicalDoc;
         if (outcome.kind === "error") return {
           response: outcome.exitCode === 64 || client === undefined
             ? jsonResponse(outcome.exitCode === 64 ? 400 : 500, doc)

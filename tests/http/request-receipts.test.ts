@@ -16,6 +16,7 @@ import {
 } from "../../src/request-receipts/request-receipts";
 
 const ORIGIN = "https://dome.example";
+const PUBLIC_VAULT_ID = "vault-public-id";
 const roots: string[] = [];
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
@@ -50,12 +51,48 @@ function request(base: string, auth: { cookie: string; csrf: string }, text: str
 }
 
 describe("device mutation request receipts", () => {
+  test("paired capture receipts expose only the opaque vault id", async () => {
+    const f = await fixture();
+    const vault = join(f.root, "private", "work-vault");
+    const originalLog = console.log;
+    console.log = () => {};
+    try { expect(await runInit({ path: vault })).toBe(0); } finally { console.log = originalLog; }
+    const server = createDomeHttpServer({
+      vaultPath: vault,
+      publicVaultId: PUBLIC_VAULT_ID,
+      deviceAuth: { authority: f.authority, allowedOrigins: () => [ORIGIN] },
+    });
+    const auth = await paired(f.authority, server, ["capture"]);
+    const response = await server.fetch(new Request(`${ORIGIN}/capture`, {
+      method: "POST",
+      headers: {
+        cookie: auth.cookie,
+        origin: ORIGIN,
+        "x-dome-csrf": auth.csrf,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ text: "private locator regression", captureId: "redacted-vault-1" }),
+    }));
+    const raw = await response.text();
+    expect(response.status).toBe(200);
+    expect(raw).not.toContain(vault);
+    expect(JSON.parse(raw)).toMatchObject({
+      schema: "dome.capture/v1",
+      status: "captured",
+      vault: PUBLIC_VAULT_ID,
+      capture_id: "redacted-vault-1",
+    });
+    await server.close();
+    f.authority.close();
+  });
+
   test("validation and capability denial precede fail-closed admission", async () => {
     const f = await fixture();
     let admissions = 0;
     const recorder: HttpRequestReceiptRecorder = { admit: () => { admissions++; throw new Error("disk full"); } };
     const server = createDomeHttpServer({
       vaultPath: f.root,
+      publicVaultId: PUBLIC_VAULT_ID,
       deviceAuth: { authority: f.authority, allowedOrigins: () => [ORIGIN] },
       requestReceiptRecorder: recorder,
     });
@@ -89,6 +126,7 @@ describe("device mutation request receipts", () => {
     };
     const server = createDomeHttpServer({
       vaultPath: vault,
+      publicVaultId: PUBLIC_VAULT_ID,
       deviceAuth: { authority: f.authority, allowedOrigins: () => [ORIGIN] },
       requestReceiptRecorder: recorder,
     });
@@ -127,6 +165,7 @@ describe("device mutation request receipts", () => {
     const server = createDomeHttpServer({
       vaultPath: f.root,
       vault,
+      publicVaultId: PUBLIC_VAULT_ID,
       deviceAuth: { authority: f.authority, allowedOrigins: () => [ORIGIN] },
       requestReceiptRecorder: bindHttpRequestReceiptRecorder(receipts, "host-1"),
     });
@@ -158,6 +197,7 @@ describe("device mutation request receipts", () => {
     const receipts = createRequestReceipts(opened.value.db, { createId: () => `receipt-${++n}` });
     const server = createDomeHttpServer({
       vaultPath: f.root,
+      publicVaultId: PUBLIC_VAULT_ID,
       deviceAuth: { authority: f.authority, allowedOrigins: () => [ORIGIN] },
       requestReceiptRecorder: bindHttpRequestReceiptRecorder(receipts, "host-1"),
     });
